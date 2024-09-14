@@ -322,37 +322,15 @@ impl S3CompatibleObjectStorage {
             .key(key)
             .body(body)
             .content_length(len as i64);
-        let (server_side_encryption, kms_key_id) = self.apply_server_side_encryption(
+        let (s3_sse, kms_key_id) = self.apply_server_side_encryption(
             self.server_side_encryption.clone(),
             self.sse_kms_key_id.clone()
         );
-        if let Some(encryption) = server_side_encryption {
+        if let Some(encryption) = s3_sse {
             put_object_request = put_object_request.server_side_encryption(encryption);
-
             if let Some(kms_key_id) = kms_key_id {
                 put_object_request = put_object_request.ssekms_key_id(kms_key_id);
             }
-            // put_object_request = match encryption {
-            //     S3ServerSideEncryption::Aes256 => put_object_request.server_side_encryption(ServerSideEncryption::Aes256),
-            //     S3ServerSideEncryption::AwsKms => { 
-            //         if let Some(kms_key_id) = &self.sse_kms_key_id {
-            //             put_object_request
-            //                 .server_side_encryption(ServerSideEncryption::AwsKms)
-            //                 .ssekms_key_id(kms_key_id)
-            //         } else {
-            //             put_object_request.server_side_encryption(ServerSideEncryption::AwsKms)
-            //         }
-            //     },
-            //     S3ServerSideEncryption::AwsKmsDsse => {
-            //         if let Some(kms_key_id) = &self.sse_kms_key_id {
-            //             put_object_request
-            //                 .server_side_encryption(ServerSideEncryption::AwsKmsDsse)
-            //                 .ssekms_key_id(kms_key_id)
-            //         } else {
-            //             put_object_request.server_side_encryption(ServerSideEncryption::AwsKmsDsse)
-            //         }
-            //     }
-            // }
         }
         put_object_request
             .send()
@@ -390,10 +368,21 @@ impl S3CompatibleObjectStorage {
 
     async fn create_multipart_upload(&self, key: &str) -> StorageResult<MultipartUploadId> {
         let upload_id = aws_retry(&self.retry_params, || async {
-            self.s3_client
+            let mut create_multipart_req = self.s3_client
                 .create_multipart_upload()
                 .bucket(self.bucket.clone())
-                .key(key)
+                .key(key);
+            let (s3_sse, kms_key_id) = self.apply_server_side_encryption(
+                self.server_side_encryption.clone(),
+                self.sse_kms_key_id.clone()
+            );
+            if let Some(encryption) = s3_sse {
+                create_multipart_req = create_multipart_req.server_side_encryption(encryption);
+                if let Some(kms_key_id) = kms_key_id {
+                    create_multipart_req = create_multipart_req.ssekms_key_id(kms_key_id);
+                }
+            }
+            create_multipart_req
                 .send()
                 .await
         })
