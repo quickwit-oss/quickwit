@@ -306,26 +306,25 @@ impl S3CompatibleObjectStorage {
         if let Some(encryption) = &self.server_side_encryption {
             put_object_request = match encryption {
                 S3ServerSideEncryption::Aes256 => put_object_request.server_side_encryption(ServerSideEncryption::Aes256),
-                S3ServerSideEncryption::AwsKms => { //put_object_request.server_side_encryption(ServerSideEncryption::AwsKms)
+                S3ServerSideEncryption::AwsKms => { 
                     if let Some(kms_key_id) = &self.sse_kms_key_id {
                         put_object_request
                             .server_side_encryption(ServerSideEncryption::AwsKms)
-                            .ssekms_key_id(kms_key_id) 
+                            .ssekms_key_id(kms_key_id)
                     } else {
-                        put_object_request.server_side_encryption(ServerSideEncryption::AwsKms)  // ไม่มี key ID
+                        put_object_request.server_side_encryption(ServerSideEncryption::AwsKms)
                     }
                 },
-                S3ServerSideEncryption::AwsKmsDsse => { //put_object_request.server_side_encryption(ServerSideEncryption::AwsKmsDsse)
+                S3ServerSideEncryption::AwsKmsDsse => {
                     if let Some(kms_key_id) = &self.sse_kms_key_id {
                         put_object_request
                             .server_side_encryption(ServerSideEncryption::AwsKmsDsse)
-                            .ssekms_key_id(kms_key_id) 
+                            .ssekms_key_id(kms_key_id)
                     } else {
-                        put_object_request.server_side_encryption(ServerSideEncryption::AwsKmsDsse)  // ไม่มี key ID
+                        put_object_request.server_side_encryption(ServerSideEncryption::AwsKmsDsse)
                     }
                 }
-                _ => put_object_request,
-            };
+            }
         }
         put_object_request
             .send()
