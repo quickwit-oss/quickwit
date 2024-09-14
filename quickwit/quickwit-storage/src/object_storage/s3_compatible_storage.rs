@@ -92,6 +92,7 @@ pub struct S3CompatibleObjectStorage {
     disable_multi_object_delete: bool,
     disable_multipart_upload: bool,
     server_side_encryption: Option<S3ServerSideEncryption>,
+    sse_kms_key_id: Option<String>,
 }
 
 impl fmt::Debug for S3CompatibleObjectStorage {
@@ -179,6 +180,7 @@ impl S3CompatibleObjectStorage {
         let disable_multi_object_delete = s3_storage_config.disable_multi_object_delete;
         let disable_multipart_upload = s3_storage_config.disable_multipart_upload;
         let server_side_encryption = s3_storage_config.server_side_encryption.clone();
+        let sse_kms_key_id = s3_storage_config.sse_kms_key_id.clone();
         Ok(Self {
             s3_client,
             uri: uri.clone(),
@@ -189,6 +191,7 @@ impl S3CompatibleObjectStorage {
             disable_multi_object_delete,
             disable_multipart_upload,
             server_side_encryption,
+            sse_kms_key_id,
         })
     }
 
@@ -207,6 +210,7 @@ impl S3CompatibleObjectStorage {
             disable_multi_object_delete: self.disable_multi_object_delete,
             disable_multipart_upload: self.disable_multipart_upload,
             server_side_encryption: self.server_side_encryption,
+            sse_kms_key_id: self.sse_kms_key_id,
         }
     }
 
@@ -302,10 +306,25 @@ impl S3CompatibleObjectStorage {
         if let Some(encryption) = &self.server_side_encryption {
             put_object_request = match encryption {
                 S3ServerSideEncryption::Aes256 => put_object_request.server_side_encryption(ServerSideEncryption::Aes256),
-                S3ServerSideEncryption::AwsKms => put_object_request.server_side_encryption(ServerSideEncryption::AwsKms),
-                S3ServerSideEncryption::AwsKmsDsse => put_object_request.server_side_encryption(ServerSideEncryption::AwsKmsDsse),
-                _ => put_object_request,
-            };
+                S3ServerSideEncryption::AwsKms => { 
+                    if let Some(kms_key_id) = &self.sse_kms_key_id {
+                        put_object_request
+                            .server_side_encryption(ServerSideEncryption::AwsKms)
+                            .ssekms_key_id(kms_key_id)
+                    } else {
+                        put_object_request.server_side_encryption(ServerSideEncryption::AwsKms)
+                    }
+                },
+                S3ServerSideEncryption::AwsKmsDsse => {
+                    if let Some(kms_key_id) = &self.sse_kms_key_id {
+                        put_object_request
+                            .server_side_encryption(ServerSideEncryption::AwsKmsDsse)
+                            .ssekms_key_id(kms_key_id)
+                    } else {
+                        put_object_request.server_side_encryption(ServerSideEncryption::AwsKmsDsse)
+                    }
+                }
+            }
         }
         put_object_request
             .send()
@@ -970,6 +989,7 @@ mod tests {
             disable_multi_object_delete: false,
             disable_multipart_upload: false,
             server_side_encryption: None,
+            sse_kms_key_id: None,
         };
         assert_eq!(
             s3_storage.relative_path("indexes/foo"),
@@ -1026,6 +1046,7 @@ mod tests {
             disable_multi_object_delete: true,
             disable_multipart_upload: false,
             server_side_encryption: None,
+            sse_kms_key_id: None,
         };
         let _ = s3_storage
             .bulk_delete(&[Path::new("foo"), Path::new("bar")])
@@ -1068,6 +1089,7 @@ mod tests {
             disable_multi_object_delete: false,
             disable_multipart_upload: false,
             server_side_encryption: None,
+            sse_kms_key_id: None,
         };
         let _ = s3_storage
             .bulk_delete(&[Path::new("foo"), Path::new("bar")])
@@ -1151,6 +1173,7 @@ mod tests {
             disable_multi_object_delete: false,
             disable_multipart_upload: false,
             server_side_encryption: None,
+            sse_kms_key_id: None,
         };
         let bulk_delete_error = s3_storage
             .bulk_delete(&[
@@ -1245,6 +1268,7 @@ mod tests {
             disable_multi_object_delete: false,
             disable_multipart_upload: false,
             server_side_encryption: None,
+            sse_kms_key_id: None,
         };
         s3_storage
             .put(Path::new("my-path"), Box::new(vec![1, 2, 3]))
