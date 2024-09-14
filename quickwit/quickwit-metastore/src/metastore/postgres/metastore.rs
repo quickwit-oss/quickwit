@@ -26,7 +26,7 @@ use futures::StreamExt;
 use itertools::Itertools;
 use quickwit_common::pretty::PrettySample;
 use quickwit_common::uri::Uri;
-use quickwit_common::ServiceStream;
+use quickwit_common::{get_bool_from_env, ServiceStream};
 use quickwit_config::{
     validate_index_id_pattern, IndexTemplate, IndexTemplateId, PostgresMetastoreConfig,
 };
@@ -63,6 +63,10 @@ use super::model::{PgDeleteTask, PgIndex, PgIndexTemplate, PgShard, PgSplit, Spl
 use super::pool::TrackedPool;
 use super::split_stream::SplitStream;
 use super::utils::{append_query_filters, establish_connection};
+use super::{
+    QW_POSTGRES_READ_ONLY_ENV_KEY, QW_POSTGRES_SKIP_MIGRATIONS_ENV_KEY,
+    QW_POSTGRES_SKIP_MIGRATION_LOCKING_ENV_KEY,
+};
 use crate::checkpoint::{
     IndexCheckpointDelta, PartitionId, SourceCheckpoint, SourceCheckpointDelta,
 };
@@ -111,6 +115,10 @@ impl PostgresqlMetastore {
             .max_connection_lifetime_opt()
             .expect("PostgreSQL metastore config should have been validated");
 
+        let read_only = get_bool_from_env(QW_POSTGRES_READ_ONLY_ENV_KEY, false);
+        let skip_migrations = get_bool_from_env(QW_POSTGRES_SKIP_MIGRATIONS_ENV_KEY, false);
+        let skip_locking = get_bool_from_env(QW_POSTGRES_SKIP_MIGRATION_LOCKING_ENV_KEY, false);
+
         let connection_pool = establish_connection(
             connection_uri,
             min_connections,
@@ -118,10 +126,11 @@ impl PostgresqlMetastore {
             acquire_timeout,
             idle_timeout_opt,
             max_lifetime_opt,
+            read_only,
         )
         .await?;
 
-        run_migrations(&connection_pool).await?;
+        run_migrations(&connection_pool, skip_migrations, skip_locking).await?;
 
         let metastore = PostgresqlMetastore {
             uri: connection_uri.clone(),
@@ -861,9 +870,7 @@ impl MetastoreService for PostgresqlMetastore {
     ) -> MetastoreResult<MetastoreServiceStream<ListSplitsResponse>> {
         let list_splits_query = request.deserialize_list_splits_query()?;
         let mut sql_query_builder = Query::select();
-        sql_query_builder
-            .column((Splits::Table, Asterisk))
-            .from(Splits::Table);
+        sql_query_builder.column(Asterisk).from(Splits::Table);
         append_query_filters(&mut sql_query_builder, &list_splits_query);
 
         let (sql_query, values) = sql_query_builder.build_sqlx(PostgresQueryBuilder);
@@ -1920,7 +1927,7 @@ mod tests {
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
-                r#"SELECT * FROM "splits" WHERE "splits"."index_uid" IN ('{index_uid}') AND "split_state" IN ('Staged')"#
+                r#"SELECT * FROM "splits" WHERE "index_uid" IN ('{index_uid}') AND "split_state" IN ('Staged')"#
             )
         );
 
@@ -1934,7 +1941,7 @@ mod tests {
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
-                r#"SELECT * FROM "splits" WHERE "splits"."index_uid" IN ('{index_uid}') AND "split_state" IN ('Published')"#
+                r#"SELECT * FROM "splits" WHERE "index_uid" IN ('{index_uid}') AND "split_state" IN ('Published')"#
             )
         );
 
@@ -1947,7 +1954,7 @@ mod tests {
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
-                r#"SELECT * FROM "splits" WHERE "splits"."index_uid" IN ('{index_uid}') AND "split_state" IN ('Published', 'MarkedForDeletion')"#
+                r#"SELECT * FROM "splits" WHERE "index_uid" IN ('{index_uid}') AND "split_state" IN ('Published', 'MarkedForDeletion')"#
             )
         );
 
@@ -1959,7 +1966,7 @@ mod tests {
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
-                r#"SELECT * FROM "splits" WHERE "splits"."index_uid" IN ('{index_uid}') AND "update_timestamp" < TO_TIMESTAMP(51)"#
+                r#"SELECT * FROM "splits" WHERE "index_uid" IN ('{index_uid}') AND "update_timestamp" < TO_TIMESTAMP(51)"#
             )
         );
 
@@ -1971,7 +1978,7 @@ mod tests {
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
-                r#"SELECT * FROM "splits" WHERE "splits"."index_uid" IN ('{index_uid}') AND "create_timestamp" <= TO_TIMESTAMP(55)"#
+                r#"SELECT * FROM "splits" WHERE "index_uid" IN ('{index_uid}') AND "create_timestamp" <= TO_TIMESTAMP(55)"#
             )
         );
 
@@ -1986,7 +1993,7 @@ mod tests {
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
-                r#"SELECT * FROM "splits" WHERE "splits"."index_uid" IN ('{index_uid}') AND ("maturity_timestamp" = TO_TIMESTAMP(0) OR "maturity_timestamp" <= TO_TIMESTAMP(55))"#
+                r#"SELECT * FROM "splits" WHERE "index_uid" IN ('{index_uid}') AND ("maturity_timestamp" = TO_TIMESTAMP(0) OR "maturity_timestamp" <= TO_TIMESTAMP(55))"#
             )
         );
 
@@ -1999,7 +2006,7 @@ mod tests {
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
-                r#"SELECT * FROM "splits" WHERE "splits"."index_uid" IN ('{index_uid}') AND "maturity_timestamp" > TO_TIMESTAMP(55)"#
+                r#"SELECT * FROM "splits" WHERE "index_uid" IN ('{index_uid}') AND "maturity_timestamp" > TO_TIMESTAMP(55)"#
             )
         );
 
@@ -2011,7 +2018,7 @@ mod tests {
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
-                r#"SELECT * FROM "splits" WHERE "splits"."index_uid" IN ('{index_uid}') AND "delete_opstamp" >= 4"#
+                r#"SELECT * FROM "splits" WHERE "index_uid" IN ('{index_uid}') AND "delete_opstamp" >= 4"#
             )
         );
 
@@ -2023,7 +2030,7 @@ mod tests {
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
-                r#"SELECT * FROM "splits" WHERE "splits"."index_uid" IN ('{index_uid}') AND ("time_range_end" > 45 OR "time_range_end" IS NULL)"#
+                r#"SELECT * FROM "splits" WHERE "index_uid" IN ('{index_uid}') AND ("time_range_end" > 45 OR "time_range_end" IS NULL)"#
             )
         );
 
@@ -2035,7 +2042,7 @@ mod tests {
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
-                r#"SELECT * FROM "splits" WHERE "splits"."index_uid" IN ('{index_uid}') AND ("time_range_start" < 45 OR "time_range_start" IS NULL)"#
+                r#"SELECT * FROM "splits" WHERE "index_uid" IN ('{index_uid}') AND ("time_range_start" < 45 OR "time_range_start" IS NULL)"#
             )
         );
 
@@ -2052,7 +2059,7 @@ mod tests {
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
-                r#"SELECT * FROM "splits" WHERE "splits"."index_uid" IN ('{index_uid}') AND (NOT ($$tag-2$$ = ANY(tags)))"#
+                r#"SELECT * FROM "splits" WHERE "index_uid" IN ('{index_uid}') AND (NOT ($$tag-2$$ = ANY(tags)))"#
             )
         );
 
@@ -2065,14 +2072,12 @@ mod tests {
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
-                r#"SELECT * FROM "splits" WHERE "splits"."index_uid" IN ('{index_uid}') ORDER BY "split_id" ASC OFFSET 4"#
+                r#"SELECT * FROM "splits" WHERE "index_uid" IN ('{index_uid}') ORDER BY "split_id" ASC OFFSET 4"#
             )
         );
 
         let mut select_statement = Query::select();
-        let sql = select_statement
-            .column((Splits::Table, Asterisk))
-            .from(Splits::Table);
+        let sql = select_statement.column(Asterisk).from(Splits::Table);
 
         let query = ListSplitsQuery::for_index(index_uid.clone()).sort_by_index_uid();
         append_query_filters(sql, &query);
@@ -2080,7 +2085,7 @@ mod tests {
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
-                r#"SELECT "splits".* FROM "splits" JOIN "indexes" ON "splits"."index_uid" = "indexes"."index_uid" WHERE "splits"."index_uid" IN ('{index_uid}') ORDER BY "index_uid" ASC"#
+                r#"SELECT * FROM "splits" WHERE "index_uid" IN ('{index_uid}') ORDER BY "index_uid" ASC"#
             )
         );
     }
@@ -2098,7 +2103,7 @@ mod tests {
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
-                r#"SELECT * FROM "splits" WHERE "splits"."index_uid" IN ('{index_uid}') AND ("time_range_end" > 0 OR "time_range_end" IS NULL) AND ("time_range_start" < 40 OR "time_range_start" IS NULL)"#
+                r#"SELECT * FROM "splits" WHERE "index_uid" IN ('{index_uid}') AND ("time_range_end" > 0 OR "time_range_end" IS NULL) AND ("time_range_start" < 40 OR "time_range_start" IS NULL)"#
             )
         );
 
@@ -2112,7 +2117,7 @@ mod tests {
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
-                r#"SELECT * FROM "splits" WHERE "splits"."index_uid" IN ('{index_uid}') AND ("time_range_end" > 45 OR "time_range_end" IS NULL) AND "delete_opstamp" > 0"#
+                r#"SELECT * FROM "splits" WHERE "index_uid" IN ('{index_uid}') AND ("time_range_end" > 45 OR "time_range_end" IS NULL) AND "delete_opstamp" > 0"#
             )
         );
 
@@ -2126,7 +2131,7 @@ mod tests {
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
-                r#"SELECT * FROM "splits" WHERE "splits"."index_uid" IN ('{index_uid}') AND "update_timestamp" < TO_TIMESTAMP(51) AND "create_timestamp" <= TO_TIMESTAMP(63)"#
+                r#"SELECT * FROM "splits" WHERE "index_uid" IN ('{index_uid}') AND "update_timestamp" < TO_TIMESTAMP(51) AND "create_timestamp" <= TO_TIMESTAMP(63)"#
             )
         );
 
@@ -2143,7 +2148,7 @@ mod tests {
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
-                r#"SELECT * FROM "splits" WHERE "splits"."index_uid" IN ('{index_uid}') AND ($$tag-1$$ = ANY(tags)) AND ("time_range_end" > 90 OR "time_range_end" IS NULL)"#
+                r#"SELECT * FROM "splits" WHERE "index_uid" IN ('{index_uid}') AND ($$tag-1$$ = ANY(tags)) AND ("time_range_end" > 90 OR "time_range_end" IS NULL)"#
             )
         );
 
@@ -2158,7 +2163,7 @@ mod tests {
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
-                r#"SELECT * FROM "splits" WHERE "splits"."index_uid" IN ('{index_uid}', '{index_uid_2}')"#
+                r#"SELECT * FROM "splits" WHERE "index_uid" IN ('{index_uid}', '{index_uid_2}')"#
             )
         );
     }

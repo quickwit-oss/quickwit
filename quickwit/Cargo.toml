@@ -339,7 +339,7 @@ tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "9f81d59", d
 encoding_rs = "=0.8.32"
 
 [patch.crates-io]
-sasl2-sys = { git = "https://github.com/quickwit-oss/rust-sasl/", rev = "daca921" }
+sasl2-sys = { git = "https://github.com/quickwit-oss/rust-sasl/", rev = "085a4c7" }
 
 ## this patched version of tracing helps better understand what happens inside futures (when are
 ## they polled, how long does poll take...)
