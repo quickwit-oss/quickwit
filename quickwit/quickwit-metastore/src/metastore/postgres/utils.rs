@@ -24,13 +24,13 @@ use std::time::Duration;
 
 use quickwit_common::uri::Uri;
 use quickwit_proto::metastore::{MetastoreError, MetastoreResult};
-use sea_query::{any, Expr, Func, JoinType, Order, SelectStatement};
+use sea_query::{any, Expr, Func, Order, SelectStatement};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{ConnectOptions, Postgres};
 use tracing::error;
 use tracing::log::LevelFilter;
 
-use super::model::{Indexes, Splits, ToTimestampFunc};
+use super::model::{Splits, ToTimestampFunc};
 use super::pool::TrackedPool;
 use super::tags::generate_sql_condition;
 use crate::metastore::{FilterRange, SortBy};
@@ -44,6 +44,7 @@ pub(super) async fn establish_connection(
     acquire_timeout: Duration,
     idle_timeout_opt: Option<Duration>,
     max_lifetime_opt: Option<Duration>,
+    read_only: bool,
 ) -> MetastoreResult<TrackedPool<Postgres>> {
     let pool_options = PgPoolOptions::new()
         .min_connections(min_connections as u32)
@@ -51,9 +52,16 @@ pub(super) async fn establish_connection(
         .acquire_timeout(acquire_timeout)
         .idle_timeout(idle_timeout_opt)
         .max_lifetime(max_lifetime_opt);
-    let connect_options: PgConnectOptions = PgConnectOptions::from_str(connection_uri.as_str())?
-        .application_name("quickwit-metastore")
-        .log_statements(LevelFilter::Info);
+
+    let mut connect_options: PgConnectOptions =
+        PgConnectOptions::from_str(connection_uri.as_str())?
+            .application_name("quickwit-metastore")
+            .log_statements(LevelFilter::Info);
+
+    if read_only {
+        // this isn't a security mechanism, only a safeguard against involontary missuse
+        connect_options = connect_options.options([("default_transaction_read_only", "on")]);
+    }
     let sqlx_pool = pool_options
         .connect_with(connect_options)
         .await
@@ -96,7 +104,7 @@ pub(super) fn append_range_filters<V: Display>(
 pub(super) fn append_query_filters(sql: &mut SelectStatement, query: &ListSplitsQuery) {
     // Note: `ListSplitsQuery` builder enforces a non empty `index_uids` list.
 
-    sql.cond_where(Expr::col((Splits::Table, Splits::IndexUid)).is_in(&query.index_uids));
+    sql.cond_where(Expr::col(Splits::IndexUid).is_in(&query.index_uids));
 
     if let Some(node_id) = &query.node_id {
         sql.cond_where(Expr::col(Splits::NodeId).eq(node_id));
@@ -182,8 +190,8 @@ pub(super) fn append_query_filters(sql: &mut SelectStatement, query: &ListSplits
     if let Some((index_uid, split_id)) = &query.after_split {
         sql.cond_where(
             Expr::tuple([
-                Expr::col((Splits::Table, Splits::IndexUid)).into(),
-                Expr::col((Splits::Table, Splits::SplitId)).into(),
+                Expr::col(Splits::IndexUid).into(),
+                Expr::col(Splits::SplitId).into(),
             ])
             .gt(Expr::tuple([Expr::value(index_uid), Expr::value(split_id)])),
         );
@@ -197,28 +205,8 @@ pub(super) fn append_query_filters(sql: &mut SelectStatement, query: &ListSplits
             );
         }
         SortBy::IndexUid => {
-            // this order by can be fairly costly,
-            // from testing, adding a join here was way faster, because we do an index-only scan on
-            // indexes.index_uid, nested-loop merged with a bitmap index scan on splits.index_uid,
-            // filter for our conditions, and just take the first N results. This is guaranteed to
-            // return correct result because indexes.index_uid is a non-null foreign key
-            //
-            // We also need to do .column((Splits::Table, Asterisk)) from the caller side, to not
-            // return unexpected columns
-            //
-            // On the other hand, without join, we do a seq scan on splits, sort everything, and
-            // truncate.
-            //
-            // Or we could just add a btree index to splits.index_uid. That might be the better
-            // long term solution.
-            sql.join(
-                JoinType::Join,
-                Indexes::Table,
-                Expr::col((Splits::Table, Splits::IndexUid))
-                    .equals((Indexes::Table, Indexes::IndexUid)),
-            )
-            .order_by(Splits::IndexUid, Order::Asc)
-            .order_by(Splits::SplitId, Order::Asc);
+            sql.order_by(Splits::IndexUid, Order::Asc)
+                .order_by(Splits::SplitId, Order::Asc);
         }
         SortBy::None => (),
     }
