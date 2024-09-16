@@ -43,7 +43,7 @@ fn initialize_tests() {
 async fn test_ingest_recreated_index() {
     initialize_tests();
     let mut sandbox = ClusterSandboxBuilder::build_and_start_standalone().await;
-    let index_id = "test-single-node-cluster";
+    let index_id = "test-ingest-recreated-index";
     let index_config = format!(
         r#"
             version: 0.8
@@ -160,7 +160,7 @@ async fn test_ingest_recreated_index() {
         .await
         .unwrap();
 
-    // Delete the index
+    // Delete the index to avoid potential hanging on shutdown #5068
     sandbox
         .indexer_rest_client
         .indexes()
@@ -257,6 +257,7 @@ async fn test_ingest_v2_happy_path() {
 
     sandbox.assert_hit_count(index_id, "*", 1).await;
 
+    // Delete the index to avoid potential hanging on shutdown #5068
     sandbox
         .indexer_rest_client
         .indexes()
@@ -285,7 +286,6 @@ async fn test_commit_force() {
         "#
     );
 
-    // Create index
     sandbox
         .indexer_rest_client
         .indexes()
@@ -457,13 +457,13 @@ async fn test_very_large_index_name() {
         .await;
     sandbox.enable_ingest_v2();
 
-    let index_id = "its_very_very_very_very_very_very_very_very_very_very_very_\
+    let acceptable_index_id = "its_very_very_very_very_very_very_very_very_very_very_very_\
     very_very_very_very_very_very_very_very_very_very_very_very_very_very_very_\
     very_very_very_very_very_very_very_very_very_very_very_very_very_very_very_\
     very_very_very_very_very_very_index_large_name";
-    assert_eq!(index_id.len(), 255);
-    let oversized_index_id = format!("{index_id}1");
-    // Create index
+    assert_eq!(acceptable_index_id.len(), 255);
+    let oversized_index_id = format!("{acceptable_index_id}1");
+
     sandbox
         .indexer_rest_client
         .indexes()
@@ -471,7 +471,7 @@ async fn test_very_large_index_name() {
             format!(
                 r#"
                 version: 0.8
-                index_id: {index_id}
+                index_id: {acceptable_index_id}
                 doc_mapping:
                   field_mappings:
                     - name: body
@@ -486,10 +486,9 @@ async fn test_very_large_index_name() {
         .await
         .unwrap();
 
-    // Test force commit
     ingest(
         &sandbox.indexer_rest_client,
-        index_id,
+        acceptable_index_id,
         ingest_json!({"body": "not too long"}),
         CommitType::Auto,
     )
@@ -497,21 +496,22 @@ async fn test_very_large_index_name() {
     .unwrap();
 
     sandbox
-        .wait_for_splits(index_id, Some(vec![SplitState::Published]), 1)
+        .wait_for_splits(acceptable_index_id, Some(vec![SplitState::Published]), 1)
         .await
         .unwrap();
 
-    sandbox.assert_hit_count(index_id, "body:long", 1).await;
+    sandbox
+        .assert_hit_count(acceptable_index_id, "body:long", 1)
+        .await;
 
-    // Delete the index
+    // Delete the index to avoid potential hanging on shutdown #5068
     sandbox
         .indexer_rest_client
         .indexes()
-        .delete(index_id, false)
+        .delete(acceptable_index_id, false)
         .await
         .unwrap();
 
-    // Try to create an index with a very long name
     let error = sandbox
         .indexer_rest_client
         .indexes()
@@ -539,7 +539,6 @@ async fn test_very_large_index_name() {
          `^[a-zA-Z][a-zA-Z0-9-_\\.]{2,254}$`)"
     ));
 
-    // Clean up
     sandbox.shutdown().await.unwrap();
 }
 
@@ -551,7 +550,6 @@ async fn test_shutdown_single_node() {
 
     sandbox.enable_ingest_v2();
 
-    // Create index
     sandbox
         .indexer_rest_client
         .indexes()
@@ -574,7 +572,6 @@ async fn test_shutdown_single_node() {
         .await
         .unwrap();
 
-    // Ensure that the index is ready to accept records.
     ingest(
         &sandbox.indexer_rest_client,
         index_id,
@@ -584,7 +581,6 @@ async fn test_shutdown_single_node() {
     .await
     .unwrap();
 
-    // Test force commit
     sandbox
         .indexer_rest_client
         .ingest(
@@ -686,7 +682,6 @@ async fn test_shutdown_indexer_first() {
 
     sandbox.enable_ingest_v2();
 
-    // Create index
     sandbox
         .indexer_rest_client
         .indexes()
