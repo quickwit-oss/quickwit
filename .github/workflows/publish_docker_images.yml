@@ -95,6 +95,7 @@ jobs:
         with:
           pattern: digest-*
           path: /tmp/digests
+          merge-multiple: true
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
