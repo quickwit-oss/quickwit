@@ -36,8 +36,11 @@ fn initialize_tests() {
     std::env::set_var("QW_ENABLE_INGEST_V2", "true");
 }
 
+// TODO: The control plane schedules the old pipeline and this test fails (not
+// always). It might be because the reschedule takes too long to happen
+// or another bug.
 #[tokio::test]
-async fn test_single_node_multi_splits() {
+async fn test_ingest_recreated_index() {
     initialize_tests();
     let mut sandbox = ClusterSandboxBuilder::build_and_start_standalone().await;
     let index_id = "test-single-node-cluster";
@@ -60,7 +63,6 @@ async fn test_single_node_multi_splits() {
     );
     sandbox.enable_ingest_v2();
 
-    // Create the index.
     let current_index_metadata = sandbox
         .indexer_rest_client
         .indexes()
@@ -68,7 +70,6 @@ async fn test_single_node_multi_splits() {
         .await
         .unwrap();
 
-    // Index one record.
     ingest(
         &sandbox.indexer_rest_client,
         index_id,
@@ -78,13 +79,11 @@ async fn test_single_node_multi_splits() {
     .await
     .unwrap();
 
-    // Wait for the split to be published.
     sandbox
         .wait_for_splits(index_id, Some(vec![SplitState::Published]), 1)
         .await
         .unwrap();
 
-    // Delete the index
     sandbox
         .indexer_rest_client
         .indexes()
@@ -92,7 +91,8 @@ async fn test_single_node_multi_splits() {
         .await
         .unwrap();
 
-    // Create the index again.
+    // Recreate the index and start ingesting into it again
+
     let new_index_metadata = sandbox
         .indexer_rest_client
         .indexes()
@@ -105,7 +105,6 @@ async fn test_single_node_multi_splits() {
         new_index_metadata.index_uid.incarnation_id
     );
 
-    // Index multiple records in different splits.
     ingest(
         &sandbox.indexer_rest_client,
         index_id,
@@ -665,10 +664,9 @@ async fn test_shutdown_control_plane_first() {
 
     // The indexer should fail to shutdown because it cannot commit the
     // shard EOF
-    match tokio::time::timeout(Duration::from_secs(5), sandbox.shutdown()).await {
-        Ok(Ok(_)) => panic!("Expected timeout or error on shutdown"),
-        _ => {}
-    };
+    if let Ok(Ok(_)) = tokio::time::timeout(Duration::from_secs(5), sandbox.shutdown()).await {
+        panic!("Expected timeout or error on shutdown");
+    }
 }
 
 #[tokio::test]
