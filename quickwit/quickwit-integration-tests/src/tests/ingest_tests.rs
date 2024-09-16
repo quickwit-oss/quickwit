@@ -36,9 +36,7 @@ fn initialize_tests() {
     std::env::set_var("QW_ENABLE_INGEST_V2", "true");
 }
 
-// TODO: This test is flaky. Sometimes the control plane schedules the old
-// pipeline and this test fails (not always). It might be because the reschedule
-// takes too long to happen or another bug.
+/// Ingesting on a freshly re-created index sometimes fails, see #5430
 #[tokio::test]
 #[ignore]
 async fn test_ingest_recreated_index() {
