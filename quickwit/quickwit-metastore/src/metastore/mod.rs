@@ -855,13 +855,14 @@ impl ListSplitsQuery {
         self
     }
 
-    /// Sorts the splits by index_uid.
+    /// Sorts the splits by index_uid and split_id.
     pub fn sort_by_index_uid(mut self) -> Self {
         self.sort_by = SortBy::IndexUid;
         self
     }
 
-    /// Only return splits whose (index_uid, split_id) are lexicographically after this split
+    /// Only return splits whose (index_uid, split_id) are lexicographically after this split.
+    /// This is only useful if results are sorted by index_uid and split_id.
     pub fn after_split(mut self, split_meta: &SplitMetadata) -> Self {
         self.after_split = Some((split_meta.index_uid.clone(), split_meta.split_id.clone()));
         self
