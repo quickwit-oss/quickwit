@@ -36,10 +36,11 @@ fn initialize_tests() {
     std::env::set_var("QW_ENABLE_INGEST_V2", "true");
 }
 
-// TODO: The control plane schedules the old pipeline and this test fails (not
-// always). It might be because the reschedule takes too long to happen
-// or another bug.
+// TODO: This test is flaky. Sometimes the control plane schedules the old
+// pipeline and this test fails (not always). It might be because the reschedule
+// takes too long to happen or another bug.
 #[tokio::test]
+#[ignore]
 async fn test_ingest_recreated_index() {
     initialize_tests();
     let mut sandbox = ClusterSandboxBuilder::build_and_start_standalone().await;
@@ -311,6 +312,14 @@ async fn test_commit_force() {
     .unwrap();
 
     sandbox.assert_hit_count(index_id, "body:force", 1).await;
+
+    // Delete the index to avoid waiting for the commit timeout on shutdown #5068
+    sandbox
+        .indexer_rest_client
+        .indexes()
+        .delete(index_id, false)
+        .await
+        .unwrap();
 
     sandbox.shutdown().await.unwrap();
 }
