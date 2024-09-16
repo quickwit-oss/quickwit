@@ -51,6 +51,20 @@ pub struct GcMetrics {
     pub failed_splits: IntCounter,
 }
 
+trait RecordGcMetrics {
+    fn record(&self, num_delete_splits: usize, num_deleted_bytes: u64, num_failed_splits: usize);
+}
+
+impl RecordGcMetrics for Option<GcMetrics> {
+    fn record(&self, num_deleted_splits: usize, num_deleted_bytes: u64, num_failed_splits: usize) {
+        if let Some(metrics) = self {
+            metrics.deleted_splits.inc_by(num_deleted_splits as u64);
+            metrics.deleted_bytes.inc_by(num_deleted_bytes);
+            metrics.failed_splits.inc_by(num_failed_splits as u64);
+        }
+    }
+}
+
 /// [`DeleteSplitsError`] describes the errors that occurred during the deletion of splits from
 /// storage and metastore.
 #[derive(Error, Debug)]
@@ -188,7 +202,7 @@ async fn delete_splits(
     storages: &HashMap<IndexUid, Arc<dyn Storage>>,
     metastore: MetastoreServiceClient,
     progress_opt: Option<&Progress>,
-    metrics: Option<&GcMetrics>,
+    metrics: &Option<GcMetrics>,
     split_removal_info: &mut SplitRemovalInfo,
 ) -> Result<(), ()> {
     let mut delete_split_from_index_res_stream =
@@ -229,32 +243,26 @@ async fn delete_splits(
     while let Some(delete_split_result) = delete_split_from_index_res_stream.next().await {
         match delete_split_result {
             Ok(entries) => {
-                if let Some(metrics) = metrics {
-                    let deleted_bytes = entries
-                        .iter()
-                        .map(|entry| entry.file_size_bytes.as_u64())
-                        .sum::<u64>();
-                    metrics.deleted_splits.inc_by(entries.len() as u64);
-                    metrics.deleted_bytes.inc_by(deleted_bytes);
-                }
+                let deleted_bytes = entries
+                    .iter()
+                    .map(|entry| entry.file_size_bytes.as_u64())
+                    .sum::<u64>();
+                let deleted_splits_count = entries.len();
+
+                metrics.record(deleted_splits_count, deleted_bytes, 0);
                 split_removal_info.removed_split_entries.extend(entries);
             }
             Err(delete_split_error) => {
-                if let Some(metrics) = metrics {
-                    let deleted_bytes = delete_split_error
-                        .successes
-                        .iter()
-                        .map(|entry| entry.file_size_bytes.as_u64())
-                        .sum::<u64>();
-                    metrics
-                        .deleted_splits
-                        .inc_by(delete_split_error.successes.len() as u64);
-                    metrics.deleted_bytes.inc_by(deleted_bytes);
-                    metrics.failed_splits.inc_by(
-                        delete_split_error.storage_failures.len() as u64
-                            + delete_split_error.metastore_failures.len() as u64,
-                    );
-                }
+                let deleted_bytes = delete_split_error
+                    .successes
+                    .iter()
+                    .map(|entry| entry.file_size_bytes.as_u64())
+                    .sum::<u64>();
+                let deleted_splits_count = delete_split_error.successes.len();
+                let failed_splits_count = delete_split_error.storage_failures.len()
+                    + delete_split_error.metastore_failures.len();
+
+                metrics.record(deleted_splits_count, deleted_bytes, failed_splits_count);
                 split_removal_info
                     .removed_split_entries
                     .extend(delete_split_error.successes);
@@ -334,15 +342,13 @@ async fn delete_splits_marked_for_deletion_several_indexes(
             }
         };
 
-        let num_splits_to_delete = splits_metadata_to_delete.len();
-
-        if num_splits_to_delete == 0 {
-            break;
-        }
-
         // set split after which to search for the next loop
-        list_splits_query =
-            list_splits_query.after_split(splits_metadata_to_delete.last().unwrap());
+        let Some(last_split_metadata) = splits_metadata_to_delete.last() else {
+            break;
+        };
+        list_splits_query = list_splits_query.after_split(last_split_metadata);
+
+        let num_splits_to_delete = splits_metadata_to_delete.len();
 
         let splits_metadata_to_delete_per_index: HashMap<IndexUid, Vec<SplitMetadata>> =
             splits_metadata_to_delete
@@ -356,7 +362,7 @@ async fn delete_splits_marked_for_deletion_several_indexes(
             &storages,
             metastore.clone(),
             progress_opt,
-            metrics.as_ref(),
+            &metrics,
             &mut split_removal_info,
         )
         .await;
@@ -385,7 +391,7 @@ pub async fn delete_splits_from_storage_and_metastore(
     metastore: MetastoreServiceClient,
     splits: Vec<SplitMetadata>,
     progress_opt: Option<&Progress>,
-) -> anyhow::Result<Vec<SplitInfo>, DeleteSplitsError> {
+) -> Result<Vec<SplitInfo>, DeleteSplitsError> {
     let mut split_infos: HashMap<PathBuf, SplitInfo> = HashMap::with_capacity(splits.len());
 
     for split in splits {

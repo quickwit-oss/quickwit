@@ -24,11 +24,10 @@ use quickwit_common::metrics::{
 
 pub struct JanitorMetrics {
     pub ongoing_num_delete_operations_total: IntGaugeVec<1>,
-    pub gc_deleted_splits: IntCounter,
+    pub gc_deleted_splits: IntCounterVec<1>,
     pub gc_deleted_bytes: IntCounter,
-    pub gc_failed_deleted_splits: IntCounter,
     pub gc_run_count: IntCounterVec<1>,
-    pub gc_duration_seconds_sum: IntCounter,
+    pub gc_seconds_total: IntCounter,
     // TODO having a current run duration which is 0|undefined out of run, and returns `now -
     // start_time` during a run would be nice
 }
@@ -43,33 +42,28 @@ impl Default for JanitorMetrics {
                 &[],
                 ["index"],
             ),
-            gc_deleted_splits: new_counter(
+            gc_deleted_splits: new_counter_vec(
                 "gc_deleted_splits_count",
                 "Total number of splits deleted by the garbage collector.",
                 "quickwit_janitor",
                 &[],
+                ["result"],
             ),
             gc_deleted_bytes: new_counter(
-                "gc_deleted_bytes_count",
+                "gc_deleted_bytes_total",
                 "Total number of bytes deleted by the garbage collector.",
                 "quickwit_janitor",
                 &[],
             ),
-            gc_failed_deleted_splits: new_counter(
-                "gc_deleted_splits_error_count",
-                "Total number of splits that failed to be delete.",
-                "quickwit_janitor",
-                &[],
-            ),
             gc_run_count: new_counter_vec(
-                "gc_run_count",
+                "gc_run_total",
                 "Total number of garbage collector execition.",
                 "quickwit_janitor",
                 &[],
                 ["result"],
             ),
-            gc_duration_seconds_sum: new_counter(
-                "gc_duration_seconds_sum",
+            gc_seconds_total: new_counter(
+                "gc_seconds_total",
                 "Total time spent running the garbage collector",
                 "quickwit_janitor",
                 &[],

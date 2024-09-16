@@ -142,15 +142,21 @@ impl GarbageCollector {
             false,
             Some(ctx.progress()),
             Some(GcMetrics {
-                deleted_splits: JANITOR_METRICS.gc_deleted_splits.clone(),
+                deleted_splits: JANITOR_METRICS
+                    .gc_deleted_splits
+                    .with_label_values(["success"])
+                    .clone(),
                 deleted_bytes: JANITOR_METRICS.gc_deleted_bytes.clone(),
-                failed_splits: JANITOR_METRICS.gc_failed_deleted_splits.clone(),
+                failed_splits: JANITOR_METRICS
+                    .gc_deleted_splits
+                    .with_label_values(["error"])
+                    .clone(),
             }),
         )
         .await;
 
         let run_duration = start.elapsed().as_secs();
-        JANITOR_METRICS.gc_duration_seconds_sum.inc_by(run_duration);
+        JANITOR_METRICS.gc_seconds_total.inc_by(run_duration);
 
         let deleted_file_entries = match gc_res {
             Ok(removal_info) => {
