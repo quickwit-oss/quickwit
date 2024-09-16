@@ -266,33 +266,15 @@ macro_rules! ingest_json {
     };
 }
 
-pub(crate) async fn ingest_with_retry(
+pub(crate) async fn ingest(
     client: &QuickwitClient,
     index_id: &str,
     ingest_source: IngestSource,
     commit_type: CommitType,
 ) -> anyhow::Result<()> {
-    wait_until_predicate(
-        || {
-            let commit_type_clone = commit_type;
-            let ingest_source_clone = ingest_source.clone();
-            async move {
-                // Index one record.
-                if let Err(err) = client
-                    .ingest(index_id, ingest_source_clone, None, None, commit_type_clone)
-                    .await
-                {
-                    debug!(index=%index_id, err=%err, "failed to ingest");
-                    false
-                } else {
-                    true
-                }
-            }
-        },
-        Duration::from_secs(10),
-        Duration::from_millis(100),
-    )
-    .await?;
+    client
+        .ingest(index_id, ingest_source, None, None, commit_type)
+        .await?;
     Ok(())
 }
 

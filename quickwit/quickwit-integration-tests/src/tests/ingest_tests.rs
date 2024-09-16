@@ -29,7 +29,7 @@ use quickwit_serve::ListSplitsQueryParams;
 use serde_json::json;
 
 use crate::ingest_json;
-use crate::test_utils::{ingest_with_retry, ClusterSandboxBuilder};
+use crate::test_utils::{ingest, ClusterSandboxBuilder};
 
 fn initialize_tests() {
     quickwit_common::setup_logging_for_tests();
@@ -69,7 +69,7 @@ async fn test_single_node_multi_splits() {
         .unwrap();
 
     // Index one record.
-    ingest_with_retry(
+    ingest(
         &sandbox.indexer_rest_client,
         index_id,
         ingest_json!({"body": "first record"}),
@@ -106,7 +106,7 @@ async fn test_single_node_multi_splits() {
     );
 
     // Index multiple records in different splits.
-    ingest_with_retry(
+    ingest(
         &sandbox.indexer_rest_client,
         index_id,
         ingest_json!({"body": "second record"}),
@@ -120,7 +120,7 @@ async fn test_single_node_multi_splits() {
         .await
         .unwrap();
 
-    ingest_with_retry(
+    ingest(
         &sandbox.indexer_rest_client,
         index_id,
         ingest_json!({"body": "third record"}),
@@ -134,7 +134,7 @@ async fn test_single_node_multi_splits() {
         .await
         .unwrap();
 
-    ingest_with_retry(
+    ingest(
         &sandbox.indexer_rest_client,
         index_id,
         ingest_json!({"body": "fourth record"}),
@@ -242,7 +242,7 @@ async fn test_ingest_v2_happy_path() {
         .await
         .unwrap();
 
-    ingest_with_retry(
+    ingest(
         &sandbox.indexer_rest_client,
         index_id,
         ingest_json!({"body": "doc1"}),
@@ -300,7 +300,7 @@ async fn test_commit_force() {
     // the commit isn't forced
     tokio::time::timeout(
         Duration::from_secs(20),
-        ingest_with_retry(
+        ingest(
             &sandbox.indexer_rest_client,
             index_id,
             ingest_json!({"body": "force"}),
@@ -488,7 +488,7 @@ async fn test_very_large_index_name() {
         .unwrap();
 
     // Test force commit
-    ingest_with_retry(
+    ingest(
         &sandbox.indexer_rest_client,
         index_id,
         ingest_json!({"body": "not too long"}),
@@ -576,7 +576,7 @@ async fn test_shutdown_single_node() {
         .unwrap();
 
     // Ensure that the index is ready to accept records.
-    ingest_with_retry(
+    ingest(
         &sandbox.indexer_rest_client,
         index_id,
         ingest_json!({"body": "one"}),
@@ -644,7 +644,7 @@ async fn test_shutdown_control_plane_first() {
         .await
         .unwrap();
 
-    ingest_with_retry(
+    ingest(
         &sandbox.indexer_rest_client,
         index_id,
         ingest_json!({"body": "one"}),
@@ -711,7 +711,7 @@ async fn test_shutdown_indexer_first() {
         .await
         .unwrap();
 
-    ingest_with_retry(
+    ingest(
         &sandbox.indexer_rest_client,
         index_id,
         ingest_json!({"body": "one"}),

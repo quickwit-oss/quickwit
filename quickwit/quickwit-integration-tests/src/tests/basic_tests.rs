@@ -27,7 +27,7 @@ use quickwit_rest_client::models::IngestSource;
 use quickwit_rest_client::rest_client::CommitType;
 use quickwit_serve::SearchRequestQueryString;
 
-use crate::test_utils::{ingest_with_retry, ClusterSandboxBuilder};
+use crate::test_utils::{ingest, ClusterSandboxBuilder};
 
 fn get_ndjson_filepath(ndjson_dataset_filename: &str) -> String {
     format!(
@@ -190,7 +190,7 @@ async fn test_multi_nodes_cluster() {
     // Check that ingest request send to searcher is forwarded to indexer and thus indexed.
     let ndjson_filepath = get_ndjson_filepath("documents_to_ingest.json");
     let ingest_source = IngestSource::File(PathBuf::from_str(&ndjson_filepath).unwrap());
-    ingest_with_retry(
+    ingest(
         &sandbox.searcher_rest_client,
         "my-new-multi-node-index",
         ingest_source,
