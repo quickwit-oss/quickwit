@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 use anyhow::{bail, Context};
@@ -61,7 +61,7 @@ impl QueueSharedState {
             max_age,
             max_count,
             pruning_interval,
-            cleanup_handle.clone(),
+            Arc::downgrade(&cleanup_handle),
         ));
         Self {
             metastore,
@@ -77,7 +77,7 @@ impl QueueSharedState {
         max_age: Option<Duration>,
         max_count: Option<u32>,
         pruning_interval: Duration,
-        owner_handle: Arc<()>,
+        owner_handle: Weak<()>,
     ) {
         if max_count.is_none() && max_age.is_none() {
             return;
@@ -91,7 +91,7 @@ impl QueueSharedState {
             let mut interval = tokio::time::interval(pruning_interval);
             loop {
                 interval.tick().await;
-                if Arc::strong_count(&owner_handle) == 1 {
+                if owner_handle.upgrade().is_none() {
                     break;
                 }
                 let result: Result<_, _> = metastore
