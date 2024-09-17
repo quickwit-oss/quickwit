@@ -24,6 +24,7 @@ pub mod postgres;
 
 pub mod control_plane_metastore;
 
+use std::cmp::Ordering;
 use std::ops::{Bound, RangeInclusive};
 
 use async_trait::async_trait;
@@ -642,6 +643,33 @@ pub enum SortBy {
     None,
     Staleness,
     IndexUid,
+}
+
+impl SortBy {
+    fn compare(&self, left_split: &Split, right_split: &Split) -> Ordering {
+        match self {
+            SortBy::None => Ordering::Equal,
+            SortBy::Staleness => left_split
+                .split_metadata
+                .delete_opstamp
+                .cmp(&right_split.split_metadata.delete_opstamp)
+                .then_with(|| {
+                    left_split
+                        .publish_timestamp
+                        .cmp(&right_split.publish_timestamp)
+                }),
+            SortBy::IndexUid => left_split
+                .split_metadata
+                .index_uid
+                .cmp(&right_split.split_metadata.index_uid)
+                .then_with(|| {
+                    left_split
+                        .split_metadata
+                        .split_id
+                        .cmp(&right_split.split_metadata.split_id)
+                }),
+        }
+    }
 }
 
 #[allow(unused_attributes)]

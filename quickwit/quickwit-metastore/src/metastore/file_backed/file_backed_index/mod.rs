@@ -425,59 +425,32 @@ impl FileBackedIndex {
 
     /// Lists splits.
     pub(crate) fn list_splits(&self, query: &ListSplitsQuery) -> MetastoreResult<Vec<Split>> {
-        let limit = query.limit.unwrap_or(usize::MAX);
-        let offset = query.offset.unwrap_or_default();
+        let limit = query
+            .limit
+            .map(|limit| limit + query.offset.unwrap_or_default())
+            .unwrap_or(usize::MAX);
+        // skip is done at a higher layer in case other indexes give spltis that would go before
+        // ours
 
-        let splits: Vec<Split> = match query.sort_by {
-            SortBy::Staleness => self
-                .splits
+        let results = if query.sort_by == SortBy::None {
+            // internally sorted_unstable_by collect everything to an intermediary vec. When not
+            // sorting at all, skip that.
+            self.splits
                 .values()
                 .filter(|split| split_query_predicate(split, query))
-                .sorted_unstable_by(|left_split, right_split| {
-                    left_split
-                        .split_metadata
-                        .delete_opstamp
-                        .cmp(&right_split.split_metadata.delete_opstamp)
-                        .then_with(|| {
-                            left_split
-                                .publish_timestamp
-                                .cmp(&right_split.publish_timestamp)
-                        })
-                })
-                .skip(offset)
                 .take(limit)
                 .cloned()
-                .collect(),
-            SortBy::IndexUid => self
-                .splits
+                .collect()
+        } else {
+            self.splits
                 .values()
                 .filter(|split| split_query_predicate(split, query))
-                .sorted_unstable_by(|left_split, right_split| {
-                    left_split
-                        .split_metadata
-                        .index_uid
-                        .cmp(&right_split.split_metadata.index_uid)
-                        .then_with(|| {
-                            left_split
-                                .split_metadata
-                                .split_id
-                                .cmp(&right_split.split_metadata.split_id)
-                        })
-                })
-                .skip(offset)
+                .sorted_unstable_by(|lhs, rhs| query.sort_by.compare(lhs, rhs))
                 .take(limit)
                 .cloned()
-                .collect(),
-            SortBy::None => self
-                .splits
-                .values()
-                .filter(|split| split_query_predicate(split, query))
-                .skip(offset)
-                .take(limit)
-                .cloned()
-                .collect(),
+                .collect()
         };
-        Ok(splits)
+        Ok(results)
     }
 
     /// Deletes a split.

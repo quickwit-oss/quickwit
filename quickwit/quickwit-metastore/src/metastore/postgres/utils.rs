@@ -199,10 +199,8 @@ pub(super) fn append_query_filters(sql: &mut SelectStatement, query: &ListSplits
 
     match query.sort_by {
         SortBy::Staleness => {
-            sql.order_by(
-                (Splits::DeleteOpstamp, Splits::PublishTimestamp),
-                Order::Asc,
-            );
+            sql.order_by(Splits::DeleteOpstamp, Order::Asc)
+                .order_by(Splits::PublishTimestamp, Order::Asc);
         }
         SortBy::IndexUid => {
             sql.order_by(Splits::IndexUid, Order::Asc)

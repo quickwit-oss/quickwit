@@ -1155,3 +1155,187 @@ pub async fn test_metastore_list_stale_splits<
         cleanup_index(&mut metastore, index_uid).await;
     }
 }
+
+pub async fn test_metastore_list_sorted_splits<
+    MetastoreToTest: MetastoreServiceExt + DefaultForTest,
+>() {
+    let mut metastore = MetastoreToTest::default_for_test().await;
+
+    let split_id = append_random_suffix("test-list-sorted-splits-");
+    let index_id_1 = append_random_suffix("test-list-sorted-splits-1");
+    let index_uid_1 = IndexUid::new_with_random_ulid(&index_id_1);
+    let index_uri_1 = format!("ram:///indexes/{index_id_1}");
+    let index_config_1 = IndexConfig::for_test(&index_id_1, &index_uri_1);
+
+    let index_id_2 = append_random_suffix("test-list-sorted-splits-2");
+    let index_uid_2 = IndexUid::new_with_random_ulid(&index_id_2);
+    let index_uri_2 = format!("ram:///indexes/{index_id_2}");
+    let index_config_2 = IndexConfig::for_test(&index_id_2, &index_uri_2);
+
+    let split_id_1 = format!("{split_id}--split-1");
+    let split_metadata_1 = SplitMetadata {
+        split_id: split_id_1.clone(),
+        index_uid: index_uid_1.clone(),
+        delete_opstamp: 5,
+        ..Default::default()
+    };
+    let split_id_2 = format!("{split_id}--split-2");
+    let split_metadata_2 = SplitMetadata {
+        split_id: split_id_2.clone(),
+        index_uid: index_uid_2.clone(),
+        delete_opstamp: 3,
+        ..Default::default()
+    };
+    let split_id_3 = format!("{split_id}--split-3");
+    let split_metadata_3 = SplitMetadata {
+        split_id: split_id_3.clone(),
+        index_uid: index_uid_1.clone(),
+        delete_opstamp: 1,
+        ..Default::default()
+    };
+    let split_id_4 = format!("{split_id}--split-4");
+    let split_metadata_4 = SplitMetadata {
+        split_id: split_id_4.clone(),
+        index_uid: index_uid_2.clone(),
+        delete_opstamp: 0,
+        ..Default::default()
+    };
+    let split_id_5 = format!("{split_id}--split-5");
+    let split_metadata_5 = SplitMetadata {
+        split_id: split_id_5.clone(),
+        index_uid: index_uid_1.clone(),
+        delete_opstamp: 2,
+        ..Default::default()
+    };
+    let split_id_6 = format!("{split_id}--split-6");
+    let split_metadata_6 = SplitMetadata {
+        split_id: split_id_6.clone(),
+        index_uid: index_uid_2.clone(),
+        delete_opstamp: 4,
+        ..Default::default()
+    };
+
+    let create_index_request = CreateIndexRequest::try_from_index_config(&index_config_1).unwrap();
+    let index_uid_1: IndexUid = metastore
+        .create_index(create_index_request)
+        .await
+        .unwrap()
+        .index_uid()
+        .clone();
+    let create_index_request = CreateIndexRequest::try_from_index_config(&index_config_2).unwrap();
+    let index_uid_2: IndexUid = metastore
+        .create_index(create_index_request)
+        .await
+        .unwrap()
+        .index_uid()
+        .clone();
+
+    {
+        let stage_splits_request = StageSplitsRequest::try_from_splits_metadata(
+            index_uid_1.clone(),
+            vec![split_metadata_1, split_metadata_3, split_metadata_5],
+        )
+        .unwrap();
+        metastore.stage_splits(stage_splits_request).await.unwrap();
+
+        let publish_splits_request = PublishSplitsRequest {
+            index_uid: Some(index_uid_1.clone()),
+            staged_split_ids: vec![split_id_1.clone()],
+            ..Default::default()
+        };
+        metastore
+            .publish_splits(publish_splits_request)
+            .await
+            .unwrap();
+
+        let mark_splits_for_deletion =
+            MarkSplitsForDeletionRequest::new(index_uid_1.clone(), vec![split_id_3.clone()]);
+        metastore
+            .mark_splits_for_deletion(mark_splits_for_deletion)
+            .await
+            .unwrap();
+
+        let stage_splits_request = StageSplitsRequest::try_from_splits_metadata(
+            index_uid_2.clone(),
+            vec![split_metadata_2, split_metadata_4, split_metadata_6],
+        )
+        .unwrap();
+        metastore.stage_splits(stage_splits_request).await.unwrap();
+
+        let publish_splits_request = PublishSplitsRequest {
+            index_uid: Some(index_uid_2.clone()),
+            staged_split_ids: vec![split_id_2.clone()],
+            ..Default::default()
+        };
+        metastore
+            .publish_splits(publish_splits_request)
+            .await
+            .unwrap();
+
+        let mark_splits_for_deletion =
+            MarkSplitsForDeletionRequest::new(index_uid_2.clone(), vec![split_id_4.clone()]);
+        metastore
+            .mark_splits_for_deletion(mark_splits_for_deletion)
+            .await
+            .unwrap();
+    }
+
+    let query =
+        ListSplitsQuery::try_from_index_uids(vec![index_uid_1.clone(), index_uid_2.clone()])
+            .unwrap()
+            .sort_by_staleness();
+    let splits = metastore
+        .list_splits(ListSplitsRequest::try_from_list_splits_query(&query).unwrap())
+        .await
+        .unwrap()
+        .collect_splits()
+        .await
+        .unwrap();
+    // we don't use collect_split_ids because it sorts splits internally
+    let split_ids = splits
+        .iter()
+        .map(|split| split.split_id())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        split_ids,
+        &[
+            &split_id_4,
+            &split_id_3,
+            &split_id_5,
+            &split_id_2,
+            &split_id_6,
+            &split_id_1,
+        ]
+    );
+
+    let query =
+        ListSplitsQuery::try_from_index_uids(vec![index_uid_1.clone(), index_uid_2.clone()])
+            .unwrap()
+            .sort_by_index_uid();
+    let splits = metastore
+        .list_splits(ListSplitsRequest::try_from_list_splits_query(&query).unwrap())
+        .await
+        .unwrap()
+        .collect_splits()
+        .await
+        .unwrap();
+    // we don't use collect_split_ids because it sorts splits internally
+    let split_ids = splits
+        .iter()
+        .map(|split| split.split_id())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        split_ids,
+        &[
+            &split_id_1,
+            &split_id_3,
+            &split_id_5,
+            &split_id_2,
+            &split_id_4,
+            &split_id_6,
+        ]
+    );
+
+    cleanup_index(&mut metastore, index_uid_1.clone()).await;
+    cleanup_index(&mut metastore, index_uid_2.clone()).await;
+}
