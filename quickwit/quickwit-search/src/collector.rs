@@ -32,7 +32,7 @@ use quickwit_proto::types::SplitId;
 use serde::Deserialize;
 use tantivy::aggregation::agg_req::{get_fast_field_names, Aggregations};
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
-use tantivy::aggregation::{AggregationLimits, AggregationSegmentCollector};
+use tantivy::aggregation::{AggregationLimitsGuard, AggregationSegmentCollector};
 use tantivy::collector::{Collector, SegmentCollector};
 use tantivy::columnar::{ColumnType, MonotonicallyMappableToU64};
 use tantivy::fastfield::Column;
@@ -717,7 +717,7 @@ pub(crate) struct QuickwitCollector {
     pub max_hits: usize,
     pub sort_by: SortByPair,
     pub aggregation: Option<QuickwitAggregations>,
-    pub aggregation_limits: AggregationLimits,
+    pub aggregation_limits: AggregationLimitsGuard,
     search_after: Option<PartialHit>,
 }
 
@@ -1015,7 +1015,7 @@ pub(crate) fn sort_by_from_request(search_request: &SearchRequest) -> SortByPair
 pub(crate) fn make_collector_for_split(
     split_id: SplitId,
     search_request: &SearchRequest,
-    aggregation_limits: AggregationLimits,
+    aggregation_limits: AggregationLimitsGuard,
 ) -> crate::Result<QuickwitCollector> {
     let aggregation = match &search_request.aggregation_request {
         Some(aggregation) => Some(serde_json::from_str(aggregation)?),
@@ -1036,7 +1036,7 @@ pub(crate) fn make_collector_for_split(
 /// Builds a QuickwitCollector that's only useful for merging fruits.
 pub(crate) fn make_merge_collector(
     search_request: &SearchRequest,
-    aggregation_limits: &AggregationLimits,
+    aggregation_limits: &AggregationLimitsGuard,
 ) -> crate::Result<QuickwitCollector> {
     let aggregation = match &search_request.aggregation_request {
         Some(aggregation) => Some(serde_json::from_str(aggregation)?),

@@ -39,7 +39,7 @@ use quickwit_storage::{
     StorageResolver,
 };
 use tantivy::aggregation::agg_req::{AggregationVariants, Aggregations};
-use tantivy::aggregation::AggregationLimits;
+use tantivy::aggregation::AggregationLimitsGuard;
 use tantivy::directory::FileSlice;
 use tantivy::fastfield::FastFieldReaders;
 use tantivy::schema::Field;
@@ -350,7 +350,7 @@ async fn leaf_search_single_split(
     split: SplitIdAndFooterOffsets,
     doc_mapper: Arc<dyn DocMapper>,
     split_filter: Arc<RwLock<CanSplitDoBetter>>,
-    aggregations_limits: AggregationLimits,
+    aggregations_limits: AggregationLimitsGuard,
 ) -> crate::Result<LeafSearchResponse> {
     rewrite_request(
         &mut search_request,
@@ -1157,7 +1157,7 @@ async fn resolve_storage_and_leaf_search(
     storage_resolver: StorageResolver,
     splits: Vec<SplitIdAndFooterOffsets>,
     doc_mapper: Arc<dyn DocMapper>,
-    aggregations_limits: AggregationLimits,
+    aggregations_limits: AggregationLimitsGuard,
 ) -> crate::Result<LeafSearchResponse> {
     let storage = storage_resolver.resolve(&index_uri).await?;
 
@@ -1208,7 +1208,7 @@ pub async fn leaf_search(
     index_storage: Arc<dyn Storage>,
     splits: Vec<SplitIdAndFooterOffsets>,
     doc_mapper: Arc<dyn DocMapper>,
-    aggregations_limits: AggregationLimits,
+    aggregations_limits: AggregationLimitsGuard,
 ) -> Result<LeafSearchResponse, SearchError> {
     info!(splits_num = splits.len(), split_offsets = ?PrettySample::new(&splits, 5));
 
@@ -1317,7 +1317,7 @@ async fn leaf_search_single_split_wrapper(
     split_filter: Arc<RwLock<CanSplitDoBetter>>,
     incremental_merge_collector: Arc<Mutex<IncrementalCollector>>,
     leaf_split_search_permit: tokio::sync::OwnedSemaphorePermit,
-    aggregations_limits: AggregationLimits,
+    aggregations_limits: AggregationLimitsGuard,
 ) {
     crate::SEARCH_METRICS.leaf_searches_splits_total.inc();
     let timer = crate::SEARCH_METRICS
