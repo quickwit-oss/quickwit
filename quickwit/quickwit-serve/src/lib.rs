@@ -174,6 +174,9 @@ static METASTORE_GRPC_CLIENT_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
 static METASTORE_GRPC_SERVER_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
     Lazy::new(|| GrpcMetricsLayer::new("metastore", "server"));
 
+static GRPC_TIMEOUT_LAYER: Lazy<TimeoutLayer> =
+    Lazy::new(|| TimeoutLayer::new(Duration::from_secs(30)));
+
 struct QuickwitServices {
     pub node_config: Arc<NodeConfig>,
     pub cluster: Cluster,
@@ -946,7 +949,7 @@ async fn setup_ingest_v2(
                     } else {
                         let ingester_service = IngesterServiceClient::tower()
                             .stack_layer(INGEST_GRPC_CLIENT_METRICS_LAYER.clone())
-                            .stack_layer(TimeoutLayer::new(Duration::from_secs(30)))
+                            .stack_layer(GRPC_TIMEOUT_LAYER.clone())
                             .build_from_channel(
                                 node.grpc_advertise_addr(),
                                 node.channel(),
@@ -1147,7 +1150,7 @@ fn setup_indexer_pool(
                     } else {
                         let client = IndexingServiceClient::tower()
                             .stack_layer(INDEXING_GRPC_CLIENT_METRICS_LAYER.clone())
-                            .stack_layer(TimeoutLayer::new(Duration::from_secs(30)))
+                            .stack_layer(GRPC_TIMEOUT_LAYER.clone())
                             .build_from_channel(
                                 node.grpc_advertise_addr(),
                                 node.channel(),

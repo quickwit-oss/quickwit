@@ -95,12 +95,11 @@ where
     }
 }
 
-/// Applies timeouts on the inner service.
+/// This is similar to tower's Timeout Layer except it requires
+/// the error of the service to implement `From<TimeoutExceeded>`.
 ///
 /// If the inner service does not complete within the specified duration,
 /// the response will be aborted with the error `TimeoutExceeded`.
-///
-/// The error of the service must implement `From<TimeoutExceeded>`.
 #[derive(Debug, Clone)]
 pub struct TimeoutLayer {
     timeout: Duration,
