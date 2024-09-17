@@ -49,6 +49,7 @@ use crate::garbage_collection::{
     delete_splits_from_storage_and_metastore, run_garbage_collect, DeleteSplitsError,
     SplitRemovalInfo,
 };
+use crate::DoNotRecordGcMetrics;
 
 #[derive(Error, Debug)]
 pub enum IndexServiceError {
@@ -373,7 +374,7 @@ impl IndexService {
             Duration::ZERO,
             dry_run,
             None,
-            None,
+            &DoNotRecordGcMetrics,
         )
         .await?;
 

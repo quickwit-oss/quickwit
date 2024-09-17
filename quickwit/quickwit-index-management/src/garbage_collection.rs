@@ -25,7 +25,6 @@ use std::time::Duration;
 use anyhow::Context;
 use futures::{Future, StreamExt};
 use itertools::Itertools;
-use quickwit_common::metrics::IntCounter;
 use quickwit_common::pretty::PrettySample;
 use quickwit_common::Progress;
 use quickwit_metastore::{
@@ -45,24 +44,14 @@ use tracing::{error, instrument};
 /// The maximum number of splits that the GC should delete per attempt.
 const DELETE_SPLITS_BATCH_SIZE: usize = 10_000;
 
-pub struct GcMetrics {
-    pub deleted_splits: IntCounter,
-    pub deleted_bytes: IntCounter,
-    pub failed_splits: IntCounter,
-}
-
-trait RecordGcMetrics {
+pub trait RecordGcMetrics: Sync {
     fn record(&self, num_delete_splits: usize, num_deleted_bytes: u64, num_failed_splits: usize);
 }
 
-impl RecordGcMetrics for Option<GcMetrics> {
-    fn record(&self, num_deleted_splits: usize, num_deleted_bytes: u64, num_failed_splits: usize) {
-        if let Some(metrics) = self {
-            metrics.deleted_splits.inc_by(num_deleted_splits as u64);
-            metrics.deleted_bytes.inc_by(num_deleted_bytes);
-            metrics.failed_splits.inc_by(num_failed_splits as u64);
-        }
-    }
+pub(crate) struct DoNotRecordGcMetrics;
+
+impl RecordGcMetrics for DoNotRecordGcMetrics {
+    fn record(&self, _num_deleted_splits: usize, _num_deleted_bytes: u64, _num_failed_splits: usize) {}
 }
 
 /// [`DeleteSplitsError`] describes the errors that occurred during the deletion of splits from
@@ -115,7 +104,7 @@ pub async fn run_garbage_collect(
     deletion_grace_period: Duration,
     dry_run: bool,
     progress_opt: Option<&Progress>,
-    metrics: Option<GcMetrics>,
+    metrics: &dyn RecordGcMetrics,
 ) -> anyhow::Result<SplitRemovalInfo> {
     let grace_period_timestamp =
         OffsetDateTime::now_utc().unix_timestamp() - staged_grace_period.as_secs() as i64;
@@ -202,7 +191,7 @@ async fn delete_splits(
     storages: &HashMap<IndexUid, Arc<dyn Storage>>,
     metastore: MetastoreServiceClient,
     progress_opt: Option<&Progress>,
-    metrics: &Option<GcMetrics>,
+    metrics: &dyn RecordGcMetrics,
     split_removal_info: &mut SplitRemovalInfo,
 ) -> Result<(), ()> {
     let mut delete_split_from_index_res_stream =
@@ -313,7 +302,7 @@ async fn delete_splits_marked_for_deletion_several_indexes(
     metastore: MetastoreServiceClient,
     storages: HashMap<IndexUid, Arc<dyn Storage>>,
     progress_opt: Option<&Progress>,
-    metrics: Option<GcMetrics>,
+    metrics: &dyn RecordGcMetrics,
 ) -> SplitRemovalInfo {
     let mut split_removal_info = SplitRemovalInfo::default();
 
@@ -362,7 +351,7 @@ async fn delete_splits_marked_for_deletion_several_indexes(
             &storages,
             metastore.clone(),
             progress_opt,
-            &metrics,
+            metrics,
             &mut split_removal_info,
         )
         .await;
@@ -557,7 +546,7 @@ mod tests {
             Duration::from_secs(30),
             false,
             None,
-            None,
+            &DoNotRecordGcMetrics,
         )
         .await
         .unwrap();
@@ -585,7 +574,7 @@ mod tests {
             Duration::from_secs(30),
             false,
             None,
-            None,
+            &DoNotRecordGcMetrics,
         )
         .await
         .unwrap();
@@ -663,7 +652,7 @@ mod tests {
             Duration::from_secs(30),
             false,
             None,
-            None,
+            &DoNotRecordGcMetrics,
         )
         .await
         .unwrap();

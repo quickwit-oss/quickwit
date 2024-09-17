@@ -26,7 +26,7 @@ use async_trait::async_trait;
 use futures::{stream, StreamExt};
 use quickwit_actors::{Actor, ActorContext, Handler};
 use quickwit_common::shared_consts::split_deletion_grace_period;
-use quickwit_index_management::{run_garbage_collect, GcMetrics};
+use quickwit_index_management::run_garbage_collect;
 use quickwit_metastore::ListIndexesMetadataResponseExt;
 use quickwit_proto::metastore::{
     ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
@@ -141,17 +141,7 @@ impl GarbageCollector {
             split_deletion_grace_period(),
             false,
             Some(ctx.progress()),
-            Some(GcMetrics {
-                deleted_splits: JANITOR_METRICS
-                    .gc_deleted_splits
-                    .with_label_values(["success"])
-                    .clone(),
-                deleted_bytes: JANITOR_METRICS.gc_deleted_bytes.clone(),
-                failed_splits: JANITOR_METRICS
-                    .gc_deleted_splits
-                    .with_label_values(["error"])
-                    .clone(),
-            }),
+            &JANITOR_METRICS.gc_metrics,
         )
         .await;
 
