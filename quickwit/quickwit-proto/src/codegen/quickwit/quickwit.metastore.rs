@@ -418,7 +418,7 @@ pub struct PruneShardsRequest {
     pub source_id: ::prost::alloc::string::String,
     /// The maximum age of the shards to keep, in seconds.
     #[prost(uint32, optional, tag = "5")]
-    pub max_age: ::core::option::Option<u32>,
+    pub max_age_secs: ::core::option::Option<u32>,
     /// The maximum number of the shards to keep. Delete older shards first.
     #[prost(uint32, optional, tag = "6")]
     pub max_count: ::core::option::Option<u32>,

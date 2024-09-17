@@ -27,7 +27,7 @@ use quickwit_proto::metastore::{
     AcquireShardsRequest, MetastoreService, MetastoreServiceClient, OpenShardSubrequest,
     OpenShardsRequest, PruneShardsRequest,
 };
-use quickwit_proto::types::{DocMappingUid, IndexUid, Position, ShardId};
+use quickwit_proto::types::{DocMappingUid, Position, ShardId, SourceUid};
 use time::OffsetDateTime;
 use tracing::{error, info};
 
@@ -36,8 +36,7 @@ use super::message::PreProcessedMessage;
 #[derive(Clone)]
 pub struct QueueSharedState {
     metastore: MetastoreServiceClient,
-    pub index_uid: IndexUid,
-    pub source_id: String,
+    pub source_uid: SourceUid,
     /// Duration after which the processing of a shard is considered stale and
     /// should be reacquired
     reacquire_grace_period: Duration,
@@ -49,18 +48,16 @@ impl QueueSharedState {
     /// in the background
     pub fn new(
         metastore: MetastoreServiceClient,
-        index_uid: IndexUid,
-        source_id: String,
+        source_uid: SourceUid,
         reacquire_grace_period: Duration,
-        max_age: Option<u32>,
+        max_age: Option<Duration>,
         max_count: Option<u32>,
         pruning_interval: Duration,
     ) -> Self {
         let cleanup_handle = Arc::new(());
         tokio::spawn(Self::run_cleanup_task(
             metastore.clone(),
-            index_uid.clone(),
-            source_id.clone(),
+            source_uid.clone(),
             max_age,
             max_count,
             pruning_interval,
@@ -68,8 +65,7 @@ impl QueueSharedState {
         ));
         Self {
             metastore,
-            index_uid,
-            source_id,
+            source_uid,
             reacquire_grace_period,
             _cleanup_handle: cleanup_handle,
         }
@@ -77,9 +73,8 @@ impl QueueSharedState {
 
     async fn run_cleanup_task(
         metastore: MetastoreServiceClient,
-        index_uid: IndexUid,
-        source_id: String,
-        max_age: Option<u32>,
+        source_uid: SourceUid,
+        max_age: Option<Duration>,
         max_count: Option<u32>,
         pruning_interval: Duration,
         owner_handle: Arc<()>,
@@ -87,6 +82,11 @@ impl QueueSharedState {
         if max_count.is_none() && max_age.is_none() {
             return;
         }
+        let max_age_secs = max_age.map(|duration| duration.as_secs() as u32);
+        let SourceUid {
+            index_uid,
+            source_id,
+        } = source_uid;
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(pruning_interval);
             loop {
@@ -98,7 +98,7 @@ impl QueueSharedState {
                     .prune_shards(PruneShardsRequest {
                         index_uid: Some(index_uid.clone()),
                         source_id: source_id.clone(),
-                        max_age,
+                        max_age_secs,
                         max_count,
                     })
                     .await;
@@ -124,8 +124,8 @@ impl QueueSharedState {
             .enumerate()
             .map(|(idx, partition_id)| OpenShardSubrequest {
                 subrequest_id: idx as u32,
-                index_uid: Some(self.index_uid.clone()),
-                source_id: self.source_id.clone(),
+                index_uid: Some(self.source_uid.index_uid.clone()),
+                source_id: self.source_uid.source_id.clone(),
                 leader_id: String::new(),
                 follower_id: None,
                 shard_id: Some(ShardId::from(partition_id.as_str())),
@@ -171,8 +171,8 @@ impl QueueSharedState {
         let acquire_shard_resp = self
             .metastore
             .acquire_shards(AcquireShardsRequest {
-                index_uid: Some(self.index_uid.clone()),
-                source_id: self.source_id.clone(),
+                index_uid: Some(self.source_uid.index_uid.clone()),
+                source_id: self.source_uid.source_id.clone(),
                 shard_ids: re_acquired_shards,
                 publish_token: publish_token.to_string(),
             })
@@ -224,6 +224,7 @@ pub mod shared_state_for_tests {
     use quickwit_proto::metastore::{
         AcquireShardsResponse, MockMetastoreService, OpenShardSubresponse, OpenShardsResponse,
     };
+    use quickwit_proto::types::IndexUid;
 
     use super::*;
 
@@ -357,8 +358,10 @@ pub mod shared_state_for_tests {
         let metastore = mock_metastore(&metastore_state, None, None);
         QueueSharedState {
             metastore,
-            index_uid,
-            source_id: "test-queue-src".to_string(),
+            source_uid: SourceUid {
+                index_uid,
+                source_id: "test-queue-src".to_string(),
+            },
             reacquire_grace_period: Duration::from_secs(10),
             _cleanup_handle: Arc::new(()),
         }
@@ -372,6 +375,7 @@ mod tests {
     use std::vec;
 
     use quickwit_common::uri::Uri;
+    use quickwit_proto::types::IndexUid;
     use shared_state_for_tests::mock_metastore;
 
     use super::*;
@@ -409,8 +413,10 @@ mod tests {
 
         let mut shared_state = QueueSharedState {
             metastore,
-            index_uid,
-            source_id: "test-sqs-source".to_string(),
+            source_uid: SourceUid {
+                index_uid,
+                source_id: "test-sqs-source".to_string(),
+            },
             reacquire_grace_period: Duration::from_secs(10),
             _cleanup_handle: Arc::new(()),
         };
@@ -439,8 +445,10 @@ mod tests {
 
         let mut shared_state = QueueSharedState {
             metastore,
-            index_uid,
-            source_id: "test-sqs-source".to_string(),
+            source_uid: SourceUid {
+                index_uid,
+                source_id: "test-sqs-source".to_string(),
+            },
             reacquire_grace_period: Duration::from_secs(10),
             _cleanup_handle: Arc::new(()),
         };
@@ -469,8 +477,10 @@ mod tests {
 
         let mut shared_state = QueueSharedState {
             metastore,
-            index_uid,
-            source_id: "test-sqs-source".to_string(),
+            source_uid: SourceUid {
+                index_uid,
+                source_id: "test-sqs-source".to_string(),
+            },
             reacquire_grace_period: Duration::from_secs(10),
             _cleanup_handle: Arc::new(()),
         };
@@ -503,8 +513,10 @@ mod tests {
         let metastore = mock_metastore(init_state, Some(1), Some(0));
         let mut shared_state = QueueSharedState {
             metastore,
-            index_uid,
-            source_id: "test-sqs-source".to_string(),
+            source_uid: SourceUid {
+                index_uid,
+                source_id: "test-sqs-source".to_string(),
+            },
             reacquire_grace_period: Duration::from_secs(10),
             _cleanup_handle: Arc::new(()),
         };

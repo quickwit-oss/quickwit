@@ -944,7 +944,7 @@ async fn get_source_shards(
         .await?
         .deserialize_index_metadata()?
         .index_uid;
-    let shards = metastore
+    let response = metastore
         .list_shards(ListShardsRequest {
             subrequests: vec![ListShardsSubrequest {
                 index_uid: Some(index_uid),
@@ -953,8 +953,12 @@ async fn get_source_shards(
             }],
         })
         .await?;
-
-    Ok(shards.subresponses[0].clone().shards)
+    let shards = response
+        .subresponses
+        .into_iter()
+        .flat_map(|resp| resp.shards)
+        .collect();
+    Ok(shards)
 }
 
 #[derive(Debug, Deserialize, utoipa::IntoParams, utoipa::ToSchema)]

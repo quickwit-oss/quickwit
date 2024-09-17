@@ -245,9 +245,10 @@ impl Shards {
     ) -> MetastoreResult<MutationOccurred<PruneShardsResponse>> {
         let initial_shard_count = self.shards.len();
 
-        if let Some(max_age) = request.max_age {
+        if let Some(max_age_secs) = request.max_age_secs {
             self.shards.retain(|_, shard| {
-                let limit_timestamp = OffsetDateTime::now_utc().unix_timestamp() - max_age as i64;
+                let limit_timestamp =
+                    OffsetDateTime::now_utc().unix_timestamp() - max_age_secs as i64;
                 shard.update_timestamp >= limit_timestamp
             });
         };
@@ -643,7 +644,7 @@ mod tests {
         let request = PruneShardsRequest {
             index_uid: Some(index_uid.clone()),
             source_id: source_id.clone(),
-            max_age: None,
+            max_age_secs: None,
             max_count: None,
         };
         let MutationOccurred::No(response) = shards.prune_shards(request).unwrap() else {
@@ -655,7 +656,7 @@ mod tests {
         let request = PruneShardsRequest {
             index_uid: Some(index_uid.clone()),
             source_id: source_id.clone(),
-            max_age: Some(50),
+            max_age_secs: Some(50),
             max_count: None,
         };
         let MutationOccurred::No(response) = shards.prune_shards(request).unwrap() else {
@@ -693,7 +694,7 @@ mod tests {
         let request = PruneShardsRequest {
             index_uid: Some(index_uid.clone()),
             source_id: source_id.clone(),
-            max_age: Some(150),
+            max_age_secs: Some(150),
             max_count: None,
         };
         let MutationOccurred::Yes(response) = shards.prune_shards(request).unwrap() else {
@@ -705,7 +706,7 @@ mod tests {
         let request = PruneShardsRequest {
             index_uid: Some(index_uid.clone()),
             source_id: source_id.clone(),
-            max_age: Some(150),
+            max_age_secs: Some(150),
             max_count: None,
         };
         let MutationOccurred::No(response) = shards.prune_shards(request).unwrap() else {

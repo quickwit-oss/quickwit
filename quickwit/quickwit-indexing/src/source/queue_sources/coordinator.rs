@@ -28,6 +28,7 @@ use quickwit_config::{FileSourceMessageType, FileSourceSqs};
 use quickwit_metastore::checkpoint::SourceCheckpoint;
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::SourceType;
+use quickwit_proto::types::SourceUid;
 use quickwit_storage::StorageResolver;
 use serde::Serialize;
 use ulid::Ulid;
@@ -96,15 +97,17 @@ impl QueueCoordinator {
         source_runtime: SourceRuntime,
         queue: Arc<dyn Queue>,
         message_type: MessageType,
-        shard_max_age: Option<u32>,
+        shard_max_age: Option<Duration>,
         shard_max_count: Option<u32>,
         shard_pruning_interval: Duration,
     ) -> Self {
         Self {
             shared_state: QueueSharedState::new(
                 source_runtime.metastore,
-                source_runtime.pipeline_id.index_uid.clone(),
-                source_runtime.pipeline_id.source_id.clone(),
+                SourceUid {
+                    index_uid: source_runtime.pipeline_id.index_uid.clone(),
+                    source_id: source_runtime.pipeline_id.source_id.clone(),
+                },
                 Duration::from_secs(2 * source_runtime.indexing_setting.commit_timeout_secs as u64),
                 shard_max_age,
                 shard_max_count,
@@ -137,11 +140,12 @@ impl QueueCoordinator {
             FileSourceMessageType::S3Notification => MessageType::S3Notification,
             FileSourceMessageType::RawUri => MessageType::RawUri,
         };
+        let shard_max_age = Duration::from_secs(config.deduplication_window_duration_secs as u64);
         Ok(QueueCoordinator::new(
             source_runtime,
             Arc::new(queue),
             message_type,
-            Some(config.deduplication_window_duration_secs),
+            Some(shard_max_age),
             Some(config.deduplication_window_max_messages),
             Duration::from_secs(config.deduplication_cleanup_interval_secs as u64),
         ))
@@ -342,8 +346,8 @@ mod tests {
     ) -> QueueCoordinator {
         let pipeline_id = IndexingPipelineId {
             node_id: NodeId::from_str("test-node").unwrap(),
-            index_uid: shared_state.index_uid.clone(),
-            source_id: shared_state.source_id.clone(),
+            index_uid: shared_state.source_uid.index_uid.clone(),
+            source_id: shared_state.source_uid.source_id.clone(),
             pipeline_uid: PipelineUid::random(),
         };
 
