@@ -26,7 +26,7 @@ use bytesize::ByteSize;
 use quickwit_actors::AskError;
 use quickwit_common::pubsub::Event;
 use quickwit_common::rate_limited_error;
-use quickwit_common::tower::{MakeLoadShedError, RpcName};
+use quickwit_common::tower::{MakeLoadShedError, RpcName, TimeoutExceeded};
 use serde::{Deserialize, Serialize};
 use thiserror;
 
@@ -51,6 +51,11 @@ pub enum IndexingError {
     TooManyRequests,
     #[error("service unavailable: {0}")]
     Unavailable(String),
+}
+impl From<TimeoutExceeded> for IndexingError {
+    fn from(_timeout_exceeded: TimeoutExceeded) -> Self {
+        Self::Timeout("tower layer timeout".to_string())
+    }
 }
 
 impl ServiceError for IndexingError {

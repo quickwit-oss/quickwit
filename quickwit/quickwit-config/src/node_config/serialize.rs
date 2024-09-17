@@ -611,6 +611,7 @@ mod tests {
                 max_num_concurrent_split_searches: 150,
                 max_num_concurrent_split_streams: 120,
                 split_cache: None,
+                request_timeout_secs: NonZeroU64::new(30).unwrap(),
             }
         );
         assert_eq!(

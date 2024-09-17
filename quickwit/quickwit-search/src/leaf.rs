@@ -1119,7 +1119,11 @@ pub async fn multi_leaf_search(
         leaf_request_tasks.push(leaf_request_future);
     }
 
-    let leaf_responses = try_join_all(leaf_request_tasks).await?;
+    let leaf_responses: Vec<crate::Result<LeafSearchResponse>> = tokio::time::timeout(
+        searcher_context.searcher_config.request_timeout(),
+        try_join_all(leaf_request_tasks),
+    )
+    .await??;
     let merge_collector = make_merge_collector(&search_request, &aggregation_limits)?;
     let mut incremental_merge_collector = IncrementalCollector::new(merge_collector);
     for result in leaf_responses {
@@ -1145,6 +1149,7 @@ pub async fn multi_leaf_search(
 }
 
 /// Resolves storage and calls leaf_search
+#[allow(clippy::too_many_arguments)]
 async fn resolve_storage_and_leaf_search(
     searcher_context: Arc<SearcherContext>,
     search_request: Arc<SearchRequest>,

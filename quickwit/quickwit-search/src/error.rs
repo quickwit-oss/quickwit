@@ -115,6 +115,12 @@ impl From<TantivyError> for SearchError {
     }
 }
 
+impl From<tokio::time::error::Elapsed> for SearchError {
+    fn from(_elapsed: tokio::time::error::Elapsed) -> Self {
+        SearchError::Timeout("timeout exceeded".to_string())
+    }
+}
+
 impl From<postcard::Error> for SearchError {
     fn from(error: postcard::Error) -> Self {
         SearchError::Internal(format!("Postcard error: {error}"))
