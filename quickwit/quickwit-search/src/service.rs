@@ -39,7 +39,7 @@ use quickwit_proto::search::{
 use quickwit_storage::{
     MemorySizedCache, QuickwitCache, SplitCache, StorageCache, StorageResolver,
 };
-use tantivy::aggregation::AggregationLimits;
+use tantivy::aggregation::AggregationLimitsGuard;
 use tokio::sync::Semaphore;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
@@ -459,7 +459,7 @@ pub struct SearcherContext {
     /// List fields cache. Caches the list fields response for a given split.
     pub list_fields_cache: ListFieldsCache,
     /// The aggregation limits are passed to limit the memory usage.
-    pub aggregation_limit: AggregationLimits,
+    pub aggregation_limit: AggregationLimitsGuard,
 }
 
 impl std::fmt::Debug for SearcherContext {
@@ -500,7 +500,7 @@ impl SearcherContext {
             LeafSearchCache::new(searcher_config.partial_request_cache_capacity.as_u64() as usize);
         let list_fields_cache =
             ListFieldsCache::new(searcher_config.partial_request_cache_capacity.as_u64() as usize);
-        let aggregation_limit = AggregationLimits::new(
+        let aggregation_limit = AggregationLimitsGuard::new(
             Some(searcher_config.aggregation_memory_limit.as_u64()),
             Some(searcher_config.aggregation_bucket_limit),
         );
@@ -519,7 +519,7 @@ impl SearcherContext {
     }
 
     /// Returns the shared instance to track the aggregation memory usage.
-    pub fn get_aggregation_limits(&self) -> AggregationLimits {
+    pub fn get_aggregation_limits(&self) -> AggregationLimitsGuard {
         self.aggregation_limit.clone()
     }
 }
