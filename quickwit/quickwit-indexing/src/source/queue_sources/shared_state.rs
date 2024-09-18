@@ -203,16 +203,13 @@ pub async fn checkpoint_messages(
         .acquire_partitions(publish_token, partition_ids)
         .await?;
 
-    shards
-    .into_iter()
-    .map(|(partition_id, position)| {
-        let content = message_map.remove(&partition_id).context("Unexpected partition ID. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.")?;
-        Ok((
-            content,
-            position,
-        ))
-    })
-    .collect::<anyhow::Result<_>>()
+    let mut result = Vec::with_capacity(shards.len());
+    for (position_id, position) in shards {
+        let content = message_map.remove(&position_id).context("Unexpected partition ID. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.")?;
+        result.push((content, position));
+    }
+
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -247,44 +244,41 @@ pub mod shared_state_for_tests {
             mock_metastore
                 .expect_open_shards()
                 .returning(move |request| {
-                    let subresponses = request
-                        .subrequests
-                        .into_iter()
-                        .map(|sub_req| {
-                            let partition_id: PartitionId = sub_req.shard_id().to_string().into();
-                            let req_token = sub_req.publish_token.unwrap();
-                            let (token, position, update_timestamp) = inner_state_ref
-                                .lock()
-                                .unwrap()
-                                .get(&partition_id)
-                                .cloned()
-                                .unwrap_or((
-                                    req_token.clone(),
-                                    Position::Beginning,
-                                    OffsetDateTime::now_utc().unix_timestamp(),
-                                ));
+                    let mut subresponses = Vec::with_capacity(request.subrequests.len());
+                    for sub_req in request.subrequests {
+                        let partition_id: PartitionId = sub_req.shard_id().to_string().into();
+                        let req_token = sub_req.publish_token.unwrap();
+                        let (token, position, update_timestamp) = inner_state_ref
+                            .lock()
+                            .unwrap()
+                            .get(&partition_id)
+                            .cloned()
+                            .unwrap_or((
+                                req_token.clone(),
+                                Position::Beginning,
+                                OffsetDateTime::now_utc().unix_timestamp(),
+                            ));
 
-                            inner_state_ref.lock().unwrap().insert(
-                                partition_id,
-                                (token.clone(), position.clone(), update_timestamp),
-                            );
-                            OpenShardSubresponse {
-                                subrequest_id: sub_req.subrequest_id,
-                                open_shard: Some(Shard {
-                                    shard_id: sub_req.shard_id,
-                                    source_id: sub_req.source_id,
-                                    publish_token: Some(token),
-                                    index_uid: sub_req.index_uid,
-                                    follower_id: sub_req.follower_id,
-                                    leader_id: sub_req.leader_id,
-                                    doc_mapping_uid: sub_req.doc_mapping_uid,
-                                    publish_position_inclusive: Some(position),
-                                    shard_state: ShardState::Open as i32,
-                                    update_timestamp,
-                                }),
-                            }
-                        })
-                        .collect();
+                        inner_state_ref.lock().unwrap().insert(
+                            partition_id,
+                            (token.clone(), position.clone(), update_timestamp),
+                        );
+                        subresponses.push(OpenShardSubresponse {
+                            subrequest_id: sub_req.subrequest_id,
+                            open_shard: Some(Shard {
+                                shard_id: sub_req.shard_id,
+                                source_id: sub_req.source_id,
+                                publish_token: Some(token),
+                                index_uid: sub_req.index_uid,
+                                follower_id: sub_req.follower_id,
+                                leader_id: sub_req.leader_id,
+                                doc_mapping_uid: sub_req.doc_mapping_uid,
+                                publish_position_inclusive: Some(position),
+                                shard_state: ShardState::Open as i32,
+                                update_timestamp,
+                            }),
+                        });
+                    }
                     Ok(OpenShardsResponse { subresponses })
                 });
         if let Some(times) = open_shard_times {
@@ -294,42 +288,37 @@ pub mod shared_state_for_tests {
             mock_metastore
                 .expect_acquire_shards()
                 .returning(move |request| {
-                    let acquired_shards = request
-                        .shard_ids
-                        .into_iter()
-                        .map(|shard_id| {
-                            let partition_id: PartitionId = shard_id.to_string().into();
-                            let (existing_token, position, update_timestamp) = inner_state
-                                .lock()
-                                .unwrap()
-                                .get(&partition_id)
-                                .cloned()
-                                .expect(
-                                    "we should never try to acquire a shard that doesn't exist",
-                                );
-                            inner_state.lock().unwrap().insert(
-                                partition_id,
-                                (
-                                    request.publish_token.clone(),
-                                    position.clone(),
-                                    update_timestamp,
-                                ),
-                            );
-                            assert_ne!(existing_token, request.publish_token);
-                            Shard {
-                                shard_id: Some(shard_id),
-                                source_id: "dummy".to_string(),
-                                publish_token: Some(request.publish_token.clone()),
-                                index_uid: None,
-                                follower_id: None,
-                                leader_id: "dummy".to_string(),
-                                doc_mapping_uid: None,
-                                publish_position_inclusive: Some(position),
-                                shard_state: ShardState::Open as i32,
+                    let mut acquired_shards = Vec::with_capacity(request.shard_ids.len());
+                    for shard_id in request.shard_ids {
+                        let partition_id: PartitionId = shard_id.to_string().into();
+                        let (existing_token, position, update_timestamp) = inner_state
+                            .lock()
+                            .unwrap()
+                            .get(&partition_id)
+                            .cloned()
+                            .expect("we should never try to acquire a shard that doesn't exist");
+                        inner_state.lock().unwrap().insert(
+                            partition_id,
+                            (
+                                request.publish_token.clone(),
+                                position.clone(),
                                 update_timestamp,
-                            }
-                        })
-                        .collect();
+                            ),
+                        );
+                        assert_ne!(existing_token, request.publish_token);
+                        acquired_shards.push(Shard {
+                            shard_id: Some(shard_id),
+                            source_id: "dummy".to_string(),
+                            publish_token: Some(request.publish_token.clone()),
+                            index_uid: None,
+                            follower_id: None,
+                            leader_id: "dummy".to_string(),
+                            doc_mapping_uid: None,
+                            publish_position_inclusive: Some(position),
+                            shard_state: ShardState::Open as i32,
+                            update_timestamp,
+                        });
+                    }
                     Ok(AcquireShardsResponse { acquired_shards })
                 });
         if let Some(times) = acquire_times {
