@@ -740,11 +740,10 @@ async fn test_shutdown_control_plane_first() {
         .await
         .unwrap();
 
-    // The indexer should fail to shutdown because it cannot commit the
-    // shard EOF
-    if let Ok(Ok(_)) = tokio::time::timeout(Duration::from_secs(5), sandbox.shutdown()).await {
-        panic!("Expected timeout or error on shutdown");
-    }
+    // The indexer hangs on shutdown because it cannot commit the shard EOF
+    tokio::time::timeout(Duration::from_secs(5), sandbox.shutdown())
+        .await
+        .unwrap_err();
 }
 
 #[tokio::test]
