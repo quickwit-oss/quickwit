@@ -247,9 +247,9 @@ impl Shards {
 
         if let Some(max_age_secs) = request.max_age_secs {
             self.shards.retain(|_, shard| {
-                let limit_timestamp =
-                    OffsetDateTime::now_utc().unix_timestamp() - max_age_secs as i64;
-                shard.update_timestamp >= limit_timestamp
+                let gc_deadline = shard.update_timestamp + max_age_secs as i64;
+                let now = OffsetDateTime::now_utc().unix_timestamp();
+                gc_deadline >= now
             });
         };
         if let Some(max_count) = request.max_count {
