@@ -20,8 +20,11 @@
 use std::time::Duration;
 
 use futures_util::FutureExt;
+use itertools::Itertools;
+use quickwit_common::test_utils::wait_until_predicate;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::ConfigFormat;
+use quickwit_indexing::actors::INDEXING_DIR_NAME;
 use quickwit_metastore::SplitState;
 use quickwit_rest_client::error::{ApiError, Error};
 use quickwit_rest_client::rest_client::CommitType;
@@ -166,6 +169,78 @@ async fn test_ingest_recreated_index() {
         .delete(index_id, false)
         .await
         .unwrap();
+
+    sandbox.shutdown().await.unwrap();
+}
+
+/// Indexing directory is not cleaned up after deleting an index, see #5436
+#[tokio::test]
+#[ignore]
+async fn test_indexing_directory_cleanup() {
+    initialize_tests();
+    let mut sandbox = ClusterSandboxBuilder::build_and_start_standalone().await;
+    let index_id = "test-ingest-directory-cleanup";
+    let index_config = format!(
+        r#"
+            version: 0.8
+            index_id: {}
+            doc_mapping:
+                field_mappings:
+                - name: body
+                  type: text
+            indexing_settings:
+                commit_timeout_secs: 1
+                merge_policy:
+                    type: stable_log
+                    merge_factor: 3
+                    max_merge_factor: 3
+            "#,
+        index_id
+    );
+
+    sandbox.enable_ingest_v2();
+
+    sandbox
+        .indexer_rest_client
+        .indexes()
+        .create(index_config.clone(), ConfigFormat::Yaml, false)
+        .await
+        .unwrap();
+
+    ingest(
+        &sandbox.indexer_rest_client,
+        index_id,
+        ingest_json!({"body": "first record"}),
+        CommitType::Force,
+    )
+    .await
+    .unwrap();
+
+    sandbox
+        .wait_for_splits(index_id, Some(vec![SplitState::Published]), 1)
+        .await
+        .unwrap();
+
+    sandbox
+        .indexer_rest_client
+        .indexes()
+        .delete(index_id, false)
+        .await
+        .unwrap();
+
+    // The index is deleted so the `indexing` directory should be cleaned up
+    let data_dir_path = &sandbox.node_configs.first().unwrap().0.data_dir_path;
+    let indexing_dir_path = data_dir_path.join(INDEXING_DIR_NAME);
+    wait_until_predicate(
+        || async {
+            let indexing_dir_entries = indexing_dir_path.read_dir().unwrap().collect_vec();
+            indexing_dir_entries.is_empty()
+        },
+        Duration::from_secs(100),
+        Duration::from_millis(500),
+    )
+    .await
+    .unwrap();
 
     sandbox.shutdown().await.unwrap();
 }
