@@ -34,7 +34,7 @@ running in DEBUG mode is fine.
 ```
 
 When targeting elasticsearch, the script expects elastic to be running on
-`http://localhost:9200`.
+`http://localhost:9200` (see [compose script](./docker-compose.yaml)).
 
 In both cases, the test will take care of setting up, ingesting and tearing down the
 indexes involved.

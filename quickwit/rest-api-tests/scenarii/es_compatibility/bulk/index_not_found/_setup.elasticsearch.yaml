@@ -1,6 +1,0 @@
-# Disable automatic creation of indexes.
-method: PUT
-endpoint: _cluster/settings
-json:
-  transient:
-    action.auto_create_index: "false"
