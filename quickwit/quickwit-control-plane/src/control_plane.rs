@@ -20,6 +20,7 @@
 use std::collections::{BTreeSet, HashMap};
 use std::fmt;
 use std::fmt::Formatter;
+use std::num::NonZeroUsize;
 use std::time::Duration;
 
 use anyhow::Context;
@@ -49,14 +50,15 @@ use quickwit_proto::metastore::{
     serde_utils, AddSourceRequest, CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest,
     DeleteShardsRequest, DeleteSourceRequest, EmptyResponse, FindIndexTemplateMatchesRequest,
     IndexMetadataResponse, IndexTemplateMatch, MetastoreError, MetastoreResult, MetastoreService,
-    MetastoreServiceClient, ToggleSourceRequest, UpdateIndexRequest,
+    MetastoreServiceClient, PruneShardsRequest, ToggleSourceRequest, UpdateIndexRequest,
 };
-use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceUid};
+use quickwit_proto::types::{IndexId, IndexUid, NodeId, ShardId, SourceId, SourceUid};
 use serde::Serialize;
 use serde_json::{json, Value as JsonValue};
 use tokio::sync::watch;
 use tracing::{debug, error, info};
 
+use crate::cooldown_map::{CooldownMap, CooldownStatus};
 use crate::debouncer::Debouncer;
 use crate::indexing_scheduler::{IndexingScheduler, IndexingSchedulerState};
 use crate::ingest::ingest_controller::{IngestControllerStats, RebalanceShardsCallback};
@@ -71,13 +73,16 @@ pub(crate) const CONTROL_PLAN_LOOP_INTERVAL: Duration = if cfg!(any(test, featur
     Duration::from_secs(5)
 };
 
+/// Minimum period between two identical shard pruning operations.
+const PRUNE_SHARDS_DEFAULT_COOLDOWN_PERIOD: Duration = Duration::from_secs(120);
+
 /// Minimum period between two rebuild plan operations.
 const REBUILD_PLAN_COOLDOWN_PERIOD: Duration = Duration::from_secs(2);
 
 #[derive(Debug)]
 struct ControlPlanLoop;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Copy)]
 struct RebuildPlan;
 
 pub struct ControlPlane {
@@ -94,6 +99,7 @@ pub struct ControlPlane {
     ingest_controller: IngestController,
     metastore: MetastoreServiceClient,
     model: ControlPlaneModel,
+    prune_shard_cooldown: CooldownMap<(IndexId, SourceId)>,
     rebuild_plan_debouncer: Debouncer,
     readiness_tx: watch::Sender<bool>,
     // Disables the control loop. This is useful for unit testing.
@@ -177,6 +183,7 @@ impl ControlPlane {
                     ingest_controller,
                     metastore: metastore.clone(),
                     model: Default::default(),
+                    prune_shard_cooldown: CooldownMap::new(NonZeroUsize::new(1024).unwrap()),
                     rebuild_plan_debouncer: Debouncer::new(REBUILD_PLAN_COOLDOWN_PERIOD),
                     readiness_tx,
                     disable_control_loop,
@@ -769,6 +776,38 @@ impl Handler<DeleteSourceRequest> for ControlPlane {
         let response = EmptyResponse {};
 
         Ok(Ok(response))
+    }
+}
+
+#[async_trait]
+impl Handler<PruneShardsRequest> for ControlPlane {
+    type Reply = ControlPlaneResult<EmptyResponse>;
+
+    async fn handle(
+        &mut self,
+        request: PruneShardsRequest,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<ControlPlaneResult<EmptyResponse>, ActorExitStatus> {
+        let interval = request
+            .interval_secs
+            .map(|interval_secs| Duration::from_secs(interval_secs as u64))
+            .unwrap_or_else(|| PRUNE_SHARDS_DEFAULT_COOLDOWN_PERIOD);
+
+        // A very basic debounce is enough here, missing one call to the pruning API is fine
+        let status = self.prune_shard_cooldown.update(
+            (
+                request.index_uid().index_id.clone(),
+                request.source_id.clone(),
+            ),
+            interval,
+        );
+        if let CooldownStatus::Ready = status {
+            if let Err(metastore_error) = self.metastore.prune_shards(request).await {
+                return convert_metastore_error(metastore_error);
+            };
+        }
+        // Return ok regardless of whether the call was successful or debounced
+        Ok(Ok(EmptyResponse {}))
     }
 }
 
