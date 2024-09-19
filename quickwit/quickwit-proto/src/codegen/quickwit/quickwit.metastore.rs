@@ -424,7 +424,7 @@ pub struct PruneShardsRequest {
     pub max_count: ::core::option::Option<u32>,
     /// The interval between two pruning operations, in seconds.
     #[prost(uint32, optional, tag = "7")]
-    pub interval: ::core::option::Option<u32>,
+    pub interval_secs: ::core::option::Option<u32>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]

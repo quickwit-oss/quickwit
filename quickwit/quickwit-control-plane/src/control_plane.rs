@@ -789,8 +789,8 @@ impl Handler<PruneShardsRequest> for ControlPlane {
         _ctx: &ActorContext<Self>,
     ) -> Result<ControlPlaneResult<EmptyResponse>, ActorExitStatus> {
         let interval = request
-            .interval
-            .map(|interval| Duration::from_secs(interval as u64))
+            .interval_secs
+            .map(|interval_secs| Duration::from_secs(interval_secs as u64))
             .unwrap_or_else(|| PRUNE_SHARDS_DEFAULT_COOLDOWN_PERIOD);
 
         // A very basic debounce is enough here, missing one call to the pruning API is fine

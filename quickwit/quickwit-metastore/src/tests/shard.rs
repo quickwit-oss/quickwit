@@ -654,7 +654,7 @@ pub async fn test_metastore_prune_shards<
             source_id: test_index.source_id.clone(),
             max_age_secs: None,
             max_count: None,
-            interval: None,
+            interval_secs: None,
         };
         metastore.prune_shards(prune_index_request).await.unwrap();
         let all_shards = metastore
@@ -670,7 +670,7 @@ pub async fn test_metastore_prune_shards<
             source_id: test_index.source_id.clone(),
             max_age_secs: Some(oldest_shard_age - 350),
             max_count: None,
-            interval: None,
+            interval_secs: None,
         };
         metastore.prune_shards(prune_index_request).await.unwrap();
 
@@ -690,7 +690,7 @@ pub async fn test_metastore_prune_shards<
             source_id: test_index.source_id.clone(),
             max_age_secs: None,
             max_count: Some(90),
-            interval: None,
+            interval_secs: None,
         };
         metastore.prune_shards(prune_index_request).await.unwrap();
         let mut all_shards = metastore
@@ -708,7 +708,7 @@ pub async fn test_metastore_prune_shards<
         source_id: test_index.source_id.clone(),
         max_age_secs: Some(oldest_shard_age - 2950),
         max_count: Some(80),
-        interval: None,
+        interval_secs: None,
     };
     metastore.prune_shards(prune_index_request).await.unwrap();
     let all_shards = metastore
@@ -722,7 +722,7 @@ pub async fn test_metastore_prune_shards<
         source_id: test_index.source_id.clone(),
         max_age_secs: Some(oldest_shard_age - 4000),
         max_count: Some(50),
-        interval: None,
+        interval_secs: None,
     };
     metastore.prune_shards(prune_index_request).await.unwrap();
     let all_shards = metastore

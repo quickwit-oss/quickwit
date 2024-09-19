@@ -642,7 +642,7 @@ mod tests {
             source_id: source_id.clone(),
             max_age_secs: None,
             max_count: None,
-            interval: None,
+            interval_secs: None,
         };
         let MutationOccurred::No(()) = shards.prune_shards(request).unwrap() else {
             panic!("expected `MutationOccurred::No`");
@@ -653,7 +653,7 @@ mod tests {
             source_id: source_id.clone(),
             max_age_secs: Some(50),
             max_count: None,
-            interval: None,
+            interval_secs: None,
         };
         let MutationOccurred::No(()) = shards.prune_shards(request).unwrap() else {
             panic!("expected `MutationOccurred::No`");
@@ -690,7 +690,7 @@ mod tests {
             source_id: source_id.clone(),
             max_age_secs: Some(150),
             max_count: None,
-            interval: None,
+            interval_secs: None,
         };
         let MutationOccurred::Yes(()) = shards.prune_shards(request).unwrap() else {
             panic!("expected `MutationOccurred::Yes`");
@@ -701,7 +701,7 @@ mod tests {
             source_id: source_id.clone(),
             max_age_secs: Some(150),
             max_count: None,
-            interval: None,
+            interval_secs: None,
         };
         let MutationOccurred::No(()) = shards.prune_shards(request).unwrap() else {
             panic!("expected `MutationOccurred::No`");

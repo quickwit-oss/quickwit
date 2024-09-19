@@ -462,7 +462,7 @@ message PruneShardsRequest {
   // The maximum number of the shards to keep. Delete older shards first.
   optional uint32 max_count = 6;
   // The interval between two pruning operations, in seconds.
-  optional uint32 interval = 7;
+  optional uint32 interval_secs = 7;
 }
 
 message ListShardsRequest {
