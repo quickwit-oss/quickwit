@@ -42,7 +42,8 @@ use quickwit_ingest::{IngesterPool, LocalShardsUpdate};
 use quickwit_metastore::{CreateIndexRequestExt, CreateIndexResponseExt, IndexMetadataResponseExt};
 use quickwit_proto::control_plane::{
     AdviseResetShardsRequest, AdviseResetShardsResponse, ControlPlaneError, ControlPlaneResult,
-    GetOrCreateOpenShardsRequest, GetOrCreateOpenShardsResponse, GetOrCreateOpenShardsSubrequest,
+    DebouncedPruneShardsRequest, GetOrCreateOpenShardsRequest, GetOrCreateOpenShardsResponse,
+    GetOrCreateOpenShardsSubrequest,
 };
 use quickwit_proto::indexing::ShardPositionsUpdate;
 use quickwit_proto::metastore::{
@@ -51,7 +52,7 @@ use quickwit_proto::metastore::{
     IndexMetadataResponse, IndexTemplateMatch, MetastoreError, MetastoreResult, MetastoreService,
     MetastoreServiceClient, ToggleSourceRequest, UpdateIndexRequest,
 };
-use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceUid};
+use quickwit_proto::types::{IndexId, IndexUid, NodeId, ShardId, SourceId, SourceUid};
 use serde::Serialize;
 use serde_json::{json, Value as JsonValue};
 use tokio::sync::watch;
@@ -71,13 +72,16 @@ pub(crate) const CONTROL_PLAN_LOOP_INTERVAL: Duration = if cfg!(any(test, featur
     Duration::from_secs(5)
 };
 
+/// Minimum period between two identical shard pruning operations.
+const PRUNE_SHARDS_COOLDOWN_PERIOD: Duration = Duration::from_secs(120);
+
 /// Minimum period between two rebuild plan operations.
 const REBUILD_PLAN_COOLDOWN_PERIOD: Duration = Duration::from_secs(2);
 
 #[derive(Debug)]
 struct ControlPlanLoop;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 struct RebuildPlan;
 
 pub struct ControlPlane {
@@ -94,6 +98,7 @@ pub struct ControlPlane {
     ingest_controller: IngestController,
     metastore: MetastoreServiceClient,
     model: ControlPlaneModel,
+    prune_shards_debouncers: HashMap<(IndexId, SourceId), Debouncer>,
     rebuild_plan_debouncer: Debouncer,
     readiness_tx: watch::Sender<bool>,
     // Disables the control loop. This is useful for unit testing.
@@ -177,6 +182,7 @@ impl ControlPlane {
                     ingest_controller,
                     metastore: metastore.clone(),
                     model: Default::default(),
+                    prune_shards_debouncers: HashMap::new(),
                     rebuild_plan_debouncer: Debouncer::new(REBUILD_PLAN_COOLDOWN_PERIOD),
                     readiness_tx,
                     disable_control_loop,
@@ -387,7 +393,7 @@ impl ControlPlane {
             .next_rebuild_tracker
             .next_rebuild_waiter();
         self.rebuild_plan_debouncer
-            .self_send_with_cooldown::<RebuildPlan>(ctx);
+            .self_send_with_cooldown(ctx, RebuildPlan);
         next_rebuild_waiter
     }
 }
@@ -769,6 +775,41 @@ impl Handler<DeleteSourceRequest> for ControlPlane {
         let response = EmptyResponse {};
 
         Ok(Ok(response))
+    }
+}
+
+#[async_trait]
+impl Handler<DebouncedPruneShardsRequest> for ControlPlane {
+    type Reply = ControlPlaneResult<EmptyResponse>;
+
+    async fn handle(
+        &mut self,
+        request: DebouncedPruneShardsRequest,
+        ctx: &ActorContext<Self>,
+    ) -> Result<ControlPlaneResult<EmptyResponse>, ActorExitStatus> {
+        let metastore_request = request.request.unwrap();
+        if request.execute_now {
+            self.metastore
+                .prune_shards(metastore_request)
+                .await
+                .context("failed to prune shards")?;
+            return Ok(Ok(EmptyResponse {}));
+        }
+
+        self.prune_shards_debouncers
+            .entry((
+                metastore_request.index_uid().index_id.clone(),
+                metastore_request.source_id.clone(),
+            ))
+            .or_insert_with(|| Debouncer::new(PRUNE_SHARDS_COOLDOWN_PERIOD))
+            .self_send_with_cooldown(
+                ctx,
+                DebouncedPruneShardsRequest {
+                    request: Some(metastore_request),
+                    execute_now: true,
+                },
+            );
+        Ok(Ok(EmptyResponse {}))
     }
 }
 

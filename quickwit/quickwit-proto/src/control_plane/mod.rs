@@ -139,6 +139,12 @@ impl RpcName for AdviseResetShardsRequest {
     }
 }
 
+impl RpcName for DebouncedPruneShardsRequest {
+    fn rpc_name() -> &'static str {
+        "debounced_prune_shards"
+    }
+}
+
 impl GetOrCreateOpenShardsFailureReason {
     pub fn create_failure(
         &self,

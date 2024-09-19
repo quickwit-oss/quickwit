@@ -426,15 +426,6 @@ pub struct PruneShardsRequest {
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct PruneShardsResponse {
-    #[prost(message, optional, tag = "1")]
-    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
-    #[prost(string, tag = "2")]
-    pub source_id: ::prost::alloc::string::String,
-}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListShardsRequest {
     #[prost(message, repeated, tag = "1")]
     pub subrequests: ::prost::alloc::vec::Vec<ListShardsSubrequest>,
@@ -933,7 +924,7 @@ pub trait MetastoreService: std::fmt::Debug + Send + Sync + 'static {
     async fn prune_shards(
         &self,
         request: PruneShardsRequest,
-    ) -> crate::metastore::MetastoreResult<PruneShardsResponse>;
+    ) -> crate::metastore::MetastoreResult<EmptyResponse>;
     async fn list_shards(
         &self,
         request: ListShardsRequest,
@@ -1198,7 +1189,7 @@ impl MetastoreService for MetastoreServiceClient {
     async fn prune_shards(
         &self,
         request: PruneShardsRequest,
-    ) -> crate::metastore::MetastoreResult<PruneShardsResponse> {
+    ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.inner.0.prune_shards(request).await
     }
     async fn list_shards(
@@ -1398,7 +1389,7 @@ pub mod mock_metastore_service {
         async fn prune_shards(
             &self,
             request: super::PruneShardsRequest,
-        ) -> crate::metastore::MetastoreResult<super::PruneShardsResponse> {
+        ) -> crate::metastore::MetastoreResult<super::EmptyResponse> {
             self.inner.lock().await.prune_shards(request).await
         }
         async fn list_shards(
@@ -1817,7 +1808,7 @@ impl tower::Service<DeleteShardsRequest> for InnerMetastoreServiceClient {
     }
 }
 impl tower::Service<PruneShardsRequest> for InnerMetastoreServiceClient {
-    type Response = PruneShardsResponse;
+    type Response = EmptyResponse;
     type Error = crate::metastore::MetastoreError;
     type Future = BoxFuture<Self::Response, Self::Error>;
     fn poll_ready(
@@ -2050,7 +2041,7 @@ struct MetastoreServiceTowerServiceStack {
     >,
     prune_shards_svc: quickwit_common::tower::BoxService<
         PruneShardsRequest,
-        PruneShardsResponse,
+        EmptyResponse,
         crate::metastore::MetastoreError,
     >,
     list_shards_svc: quickwit_common::tower::BoxService<
@@ -2227,7 +2218,7 @@ impl MetastoreService for MetastoreServiceTowerServiceStack {
     async fn prune_shards(
         &self,
         request: PruneShardsRequest,
-    ) -> crate::metastore::MetastoreResult<PruneShardsResponse> {
+    ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.prune_shards_svc.clone().ready().await?.call(request).await
     }
     async fn list_shards(
@@ -2506,11 +2497,11 @@ type DeleteShardsLayer = quickwit_common::tower::BoxLayer<
 type PruneShardsLayer = quickwit_common::tower::BoxLayer<
     quickwit_common::tower::BoxService<
         PruneShardsRequest,
-        PruneShardsResponse,
+        EmptyResponse,
         crate::metastore::MetastoreError,
     >,
     PruneShardsRequest,
-    PruneShardsResponse,
+    EmptyResponse,
     crate::metastore::MetastoreError,
 >;
 type ListShardsLayer = quickwit_common::tower::BoxLayer<
@@ -3195,25 +3186,25 @@ impl MetastoreServiceTowerLayerStack {
         L: tower::Layer<
                 quickwit_common::tower::BoxService<
                     PruneShardsRequest,
-                    PruneShardsResponse,
+                    EmptyResponse,
                     crate::metastore::MetastoreError,
                 >,
             > + Clone + Send + Sync + 'static,
         <L as tower::Layer<
             quickwit_common::tower::BoxService<
                 PruneShardsRequest,
-                PruneShardsResponse,
+                EmptyResponse,
                 crate::metastore::MetastoreError,
             >,
         >>::Service: tower::Service<
                 PruneShardsRequest,
-                Response = PruneShardsResponse,
+                Response = EmptyResponse,
                 Error = crate::metastore::MetastoreError,
             > + Clone + Send + Sync + 'static,
         <<L as tower::Layer<
             quickwit_common::tower::BoxService<
                 PruneShardsRequest,
-                PruneShardsResponse,
+                EmptyResponse,
                 crate::metastore::MetastoreError,
             >,
         >>::Service as tower::Service<PruneShardsRequest>>::Future: Send + 'static,
@@ -3894,13 +3885,13 @@ impl MetastoreServiceTowerLayerStack {
         L: tower::Layer<
                 quickwit_common::tower::BoxService<
                     PruneShardsRequest,
-                    PruneShardsResponse,
+                    EmptyResponse,
                     crate::metastore::MetastoreError,
                 >,
             > + Send + Sync + 'static,
         L::Service: tower::Service<
                 PruneShardsRequest,
-                Response = PruneShardsResponse,
+                Response = EmptyResponse,
                 Error = crate::metastore::MetastoreError,
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<PruneShardsRequest>>::Future: Send + 'static,
@@ -4591,9 +4582,9 @@ where
         >
         + tower::Service<
             PruneShardsRequest,
-            Response = PruneShardsResponse,
+            Response = EmptyResponse,
             Error = crate::metastore::MetastoreError,
-            Future = BoxFuture<PruneShardsResponse, crate::metastore::MetastoreError>,
+            Future = BoxFuture<EmptyResponse, crate::metastore::MetastoreError>,
         >
         + tower::Service<
             ListShardsRequest,
@@ -4782,7 +4773,7 @@ where
     async fn prune_shards(
         &self,
         request: PruneShardsRequest,
-    ) -> crate::metastore::MetastoreResult<PruneShardsResponse> {
+    ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.clone().call(request).await
     }
     async fn list_shards(
@@ -5201,7 +5192,7 @@ where
     async fn prune_shards(
         &self,
         request: PruneShardsRequest,
-    ) -> crate::metastore::MetastoreResult<PruneShardsResponse> {
+    ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.inner
             .clone()
             .prune_shards(request)
@@ -5590,7 +5581,7 @@ for MetastoreServiceGrpcServerAdapter {
     async fn prune_shards(
         &self,
         request: tonic::Request<PruneShardsRequest>,
-    ) -> Result<tonic::Response<PruneShardsResponse>, tonic::Status> {
+    ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
         self.inner
             .0
             .prune_shards(request.into_inner())
@@ -6479,10 +6470,7 @@ pub mod metastore_service_grpc_client {
         pub async fn prune_shards(
             &mut self,
             request: impl tonic::IntoRequest<super::PruneShardsRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::PruneShardsResponse>,
-            tonic::Status,
-        > {
+        ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -6866,10 +6854,7 @@ pub mod metastore_service_grpc_server {
         async fn prune_shards(
             &self,
             request: tonic::Request<super::PruneShardsRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::PruneShardsResponse>,
-            tonic::Status,
-        >;
+        ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status>;
         async fn list_shards(
             &self,
             request: tonic::Request<super::ListShardsRequest>,
@@ -8103,7 +8088,7 @@ pub mod metastore_service_grpc_server {
                         T: MetastoreServiceGrpc,
                     > tonic::server::UnaryService<super::PruneShardsRequest>
                     for PruneShardsSvc<T> {
-                        type Response = super::PruneShardsResponse;
+                        type Response = super::EmptyResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,

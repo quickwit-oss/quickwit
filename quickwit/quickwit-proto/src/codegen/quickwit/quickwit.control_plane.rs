@@ -76,6 +76,15 @@ pub struct AdviseResetShardsResponse {
     pub shards_to_truncate: ::prost::alloc::vec::Vec<super::ingest::ShardIdPositions>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DebouncedPruneShardsRequest {
+    #[prost(message, optional, tag = "1")]
+    pub request: ::core::option::Option<super::metastore::PruneShardsRequest>,
+    #[prost(bool, tag = "2")]
+    pub execute_now: bool,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -175,6 +184,11 @@ pub trait ControlPlaneService: std::fmt::Debug + Send + Sync + 'static {
         &self,
         request: AdviseResetShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<AdviseResetShardsResponse>;
+    /// Performs a debounced shard pruning request to the metastore.
+    async fn prune_shards(
+        &self,
+        request: DebouncedPruneShardsRequest,
+    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse>;
 }
 #[derive(Debug, Clone)]
 pub struct ControlPlaneServiceClient {
@@ -319,6 +333,12 @@ impl ControlPlaneService for ControlPlaneServiceClient {
     ) -> crate::control_plane::ControlPlaneResult<AdviseResetShardsResponse> {
         self.inner.0.advise_reset_shards(request).await
     }
+    async fn prune_shards(
+        &self,
+        request: DebouncedPruneShardsRequest,
+    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
+        self.inner.0.prune_shards(request).await
+    }
 }
 #[cfg(any(test, feature = "testsuite"))]
 pub mod mock_control_plane_service {
@@ -390,6 +410,14 @@ pub mod mock_control_plane_service {
             request: super::AdviseResetShardsRequest,
         ) -> crate::control_plane::ControlPlaneResult<super::AdviseResetShardsResponse> {
             self.inner.lock().await.advise_reset_shards(request).await
+        }
+        async fn prune_shards(
+            &self,
+            request: super::DebouncedPruneShardsRequest,
+        ) -> crate::control_plane::ControlPlaneResult<
+            super::super::metastore::EmptyResponse,
+        > {
+            self.inner.lock().await.prune_shards(request).await
         }
     }
 }
@@ -530,6 +558,22 @@ impl tower::Service<AdviseResetShardsRequest> for InnerControlPlaneServiceClient
         Box::pin(fut)
     }
 }
+impl tower::Service<DebouncedPruneShardsRequest> for InnerControlPlaneServiceClient {
+    type Response = super::metastore::EmptyResponse;
+    type Error = crate::control_plane::ControlPlaneError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: DebouncedPruneShardsRequest) -> Self::Future {
+        let svc = self.clone();
+        let fut = async move { svc.0.prune_shards(request).await };
+        Box::pin(fut)
+    }
+}
 /// A tower service stack is a set of tower services.
 #[derive(Debug)]
 struct ControlPlaneServiceTowerServiceStack {
@@ -573,6 +617,11 @@ struct ControlPlaneServiceTowerServiceStack {
     advise_reset_shards_svc: quickwit_common::tower::BoxService<
         AdviseResetShardsRequest,
         AdviseResetShardsResponse,
+        crate::control_plane::ControlPlaneError,
+    >,
+    prune_shards_svc: quickwit_common::tower::BoxService<
+        DebouncedPruneShardsRequest,
+        super::metastore::EmptyResponse,
         crate::control_plane::ControlPlaneError,
     >,
 }
@@ -629,6 +678,12 @@ impl ControlPlaneService for ControlPlaneServiceTowerServiceStack {
         request: AdviseResetShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<AdviseResetShardsResponse> {
         self.advise_reset_shards_svc.clone().ready().await?.call(request).await
+    }
+    async fn prune_shards(
+        &self,
+        request: DebouncedPruneShardsRequest,
+    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
+        self.prune_shards_svc.clone().ready().await?.call(request).await
     }
 }
 type CreateIndexLayer = quickwit_common::tower::BoxLayer<
@@ -711,6 +766,16 @@ type AdviseResetShardsLayer = quickwit_common::tower::BoxLayer<
     AdviseResetShardsResponse,
     crate::control_plane::ControlPlaneError,
 >;
+type PruneShardsLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        DebouncedPruneShardsRequest,
+        super::metastore::EmptyResponse,
+        crate::control_plane::ControlPlaneError,
+    >,
+    DebouncedPruneShardsRequest,
+    super::metastore::EmptyResponse,
+    crate::control_plane::ControlPlaneError,
+>;
 #[derive(Debug, Default)]
 pub struct ControlPlaneServiceTowerLayerStack {
     create_index_layers: Vec<CreateIndexLayer>,
@@ -721,6 +786,7 @@ pub struct ControlPlaneServiceTowerLayerStack {
     delete_source_layers: Vec<DeleteSourceLayer>,
     get_or_create_open_shards_layers: Vec<GetOrCreateOpenShardsLayer>,
     advise_reset_shards_layers: Vec<AdviseResetShardsLayer>,
+    prune_shards_layers: Vec<PruneShardsLayer>,
 }
 impl ControlPlaneServiceTowerLayerStack {
     pub fn stack_layer<L>(mut self, layer: L) -> Self
@@ -939,6 +1005,33 @@ impl ControlPlaneServiceTowerLayerStack {
                 crate::control_plane::ControlPlaneError,
             >,
         >>::Service as tower::Service<AdviseResetShardsRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    DebouncedPruneShardsRequest,
+                    super::metastore::EmptyResponse,
+                    crate::control_plane::ControlPlaneError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                DebouncedPruneShardsRequest,
+                super::metastore::EmptyResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
+        >>::Service: tower::Service<
+                DebouncedPruneShardsRequest,
+                Response = super::metastore::EmptyResponse,
+                Error = crate::control_plane::ControlPlaneError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                DebouncedPruneShardsRequest,
+                super::metastore::EmptyResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
+        >>::Service as tower::Service<
+            DebouncedPruneShardsRequest,
+        >>::Future: Send + 'static,
     {
         self.create_index_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
@@ -955,6 +1048,8 @@ impl ControlPlaneServiceTowerLayerStack {
         self.get_or_create_open_shards_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.advise_reset_shards_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.prune_shards_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self
     }
@@ -1126,6 +1221,27 @@ impl ControlPlaneServiceTowerLayerStack {
             .push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
+    pub fn stack_prune_shards_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    DebouncedPruneShardsRequest,
+                    super::metastore::EmptyResponse,
+                    crate::control_plane::ControlPlaneError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                DebouncedPruneShardsRequest,
+                Response = super::metastore::EmptyResponse,
+                Error = crate::control_plane::ControlPlaneError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<
+            DebouncedPruneShardsRequest,
+        >>::Future: Send + 'static,
+    {
+        self.prune_shards_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
     pub fn build<T>(self, instance: T) -> ControlPlaneServiceClient
     where
         T: ControlPlaneService,
@@ -1249,6 +1365,14 @@ impl ControlPlaneServiceTowerLayerStack {
                 quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
+        let prune_shards_svc = self
+            .prune_shards_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
+                |svc, layer| layer.layer(svc),
+            );
         let tower_svc_stack = ControlPlaneServiceTowerServiceStack {
             inner: inner_client,
             create_index_svc,
@@ -1259,6 +1383,7 @@ impl ControlPlaneServiceTowerLayerStack {
             delete_source_svc,
             get_or_create_open_shards_svc,
             advise_reset_shards_svc,
+            prune_shards_svc,
         };
         ControlPlaneServiceClient::new(tower_svc_stack)
     }
@@ -1406,6 +1531,15 @@ where
                 AdviseResetShardsResponse,
                 crate::control_plane::ControlPlaneError,
             >,
+        >
+        + tower::Service<
+            DebouncedPruneShardsRequest,
+            Response = super::metastore::EmptyResponse,
+            Error = crate::control_plane::ControlPlaneError,
+            Future = BoxFuture<
+                super::metastore::EmptyResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
         >,
 {
     async fn create_index(
@@ -1458,6 +1592,12 @@ where
         &self,
         request: AdviseResetShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<AdviseResetShardsResponse> {
+        self.clone().call(request).await
+    }
+    async fn prune_shards(
+        &self,
+        request: DebouncedPruneShardsRequest,
+    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
         self.clone().call(request).await
     }
 }
@@ -1611,6 +1751,20 @@ where
                 AdviseResetShardsRequest::rpc_name(),
             ))
     }
+    async fn prune_shards(
+        &self,
+        request: DebouncedPruneShardsRequest,
+    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
+        self.inner
+            .clone()
+            .prune_shards(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                DebouncedPruneShardsRequest::rpc_name(),
+            ))
+    }
 }
 #[derive(Debug)]
 pub struct ControlPlaneServiceGrpcServerAdapter {
@@ -1716,6 +1870,17 @@ for ControlPlaneServiceGrpcServerAdapter {
         self.inner
             .0
             .advise_reset_shards(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(crate::error::grpc_error_to_grpc_status)
+    }
+    async fn prune_shards(
+        &self,
+        request: tonic::Request<DebouncedPruneShardsRequest>,
+    ) -> Result<tonic::Response<super::metastore::EmptyResponse>, tonic::Status> {
+        self.inner
+            .0
+            .prune_shards(request.into_inner())
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -2061,6 +2226,37 @@ pub mod control_plane_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// Performs a debounced shard pruning request to the metastore.
+        pub async fn prune_shards(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DebouncedPruneShardsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::metastore::EmptyResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.control_plane.ControlPlaneService/PruneShards",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit.control_plane.ControlPlaneService",
+                        "PruneShards",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -2133,6 +2329,14 @@ pub mod control_plane_service_grpc_server {
             request: tonic::Request<super::AdviseResetShardsRequest>,
         ) -> std::result::Result<
             tonic::Response<super::AdviseResetShardsResponse>,
+            tonic::Status,
+        >;
+        /// Performs a debounced shard pruning request to the metastore.
+        async fn prune_shards(
+            &self,
+            request: tonic::Request<super::DebouncedPruneShardsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::metastore::EmptyResponse>,
             tonic::Status,
         >;
     }
@@ -2587,6 +2791,52 @@ pub mod control_plane_service_grpc_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = AdviseResetShardsSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.control_plane.ControlPlaneService/PruneShards" => {
+                    #[allow(non_camel_case_types)]
+                    struct PruneShardsSvc<T: ControlPlaneServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: ControlPlaneServiceGrpc,
+                    > tonic::server::UnaryService<super::DebouncedPruneShardsRequest>
+                    for PruneShardsSvc<T> {
+                        type Response = super::super::metastore::EmptyResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::DebouncedPruneShardsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).prune_shards(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = PruneShardsSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

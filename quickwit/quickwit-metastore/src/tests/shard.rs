@@ -655,9 +655,7 @@ pub async fn test_metastore_prune_shards<
             max_age_secs: None,
             max_count: None,
         };
-        let response = metastore.prune_shards(prune_index_request).await.unwrap();
-        assert_eq!(response.index_uid(), &test_index.index_uid);
-        assert_eq!(response.source_id, test_index.source_id);
+        metastore.prune_shards(prune_index_request).await.unwrap();
         let all_shards = metastore
             .list_all_shards(&test_index.index_uid, &test_index.source_id)
             .await;
@@ -672,9 +670,8 @@ pub async fn test_metastore_prune_shards<
             max_age_secs: Some(oldest_shard_age - 350),
             max_count: None,
         };
-        let response = metastore.prune_shards(prune_index_request).await.unwrap();
-        assert_eq!(response.index_uid(), &test_index.index_uid);
-        assert_eq!(response.source_id, test_index.source_id);
+        metastore.prune_shards(prune_index_request).await.unwrap();
+
         let mut all_shards = metastore
             .list_all_shards(&test_index.index_uid, &test_index.source_id)
             .await;
@@ -692,9 +689,7 @@ pub async fn test_metastore_prune_shards<
             max_age_secs: None,
             max_count: Some(90),
         };
-        let response = metastore.prune_shards(prune_index_request).await.unwrap();
-        assert_eq!(response.index_uid(), &test_index.index_uid);
-        assert_eq!(response.source_id, test_index.source_id);
+        metastore.prune_shards(prune_index_request).await.unwrap();
         let mut all_shards = metastore
             .list_all_shards(&test_index.index_uid, &test_index.source_id)
             .await;
@@ -711,9 +706,7 @@ pub async fn test_metastore_prune_shards<
         max_age_secs: Some(oldest_shard_age - 2950),
         max_count: Some(80),
     };
-    let response = metastore.prune_shards(prune_index_request).await.unwrap();
-    assert_eq!(response.index_uid(), &test_index.index_uid);
-    assert_eq!(response.source_id, test_index.source_id);
+    metastore.prune_shards(prune_index_request).await.unwrap();
     let all_shards = metastore
         .list_all_shards(&test_index.index_uid, &test_index.source_id)
         .await;
@@ -726,9 +719,7 @@ pub async fn test_metastore_prune_shards<
         max_age_secs: Some(oldest_shard_age - 4000),
         max_count: Some(50),
     };
-    let response = metastore.prune_shards(prune_index_request).await.unwrap();
-    assert_eq!(response.index_uid(), &test_index.index_uid);
-    assert_eq!(response.source_id, test_index.source_id);
+    metastore.prune_shards(prune_index_request).await.unwrap();
     let all_shards = metastore
         .list_all_shards(&test_index.index_uid, &test_index.source_id)
         .await;

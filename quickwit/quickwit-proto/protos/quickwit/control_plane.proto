@@ -68,6 +68,9 @@ service ControlPlaneService {
 
   // Asks the control plane whether the shards listed in the request should be deleted or truncated.
   rpc AdviseResetShards(AdviseResetShardsRequest) returns (AdviseResetShardsResponse);
+
+  // Performs a debounced shard pruning request to the metastore.
+  rpc PruneShards(DebouncedPruneShardsRequest) returns (quickwit.metastore.EmptyResponse);
 }
 
 // Shard API
@@ -121,4 +124,9 @@ message AdviseResetShardsRequest {
 message AdviseResetShardsResponse {
   repeated quickwit.ingest.ShardIds shards_to_delete = 1;
   repeated quickwit.ingest.ShardIdPositions shards_to_truncate = 2;
+}
+
+message DebouncedPruneShardsRequest {
+  quickwit.metastore.PruneShardsRequest request = 1;
+  bool execute_now = 2;
 }

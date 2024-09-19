@@ -91,25 +91,25 @@ impl Debouncer {
         previous_state
     }
 
-    fn emit_message<A, M>(&self, ctx: &ActorContext<A>)
+    fn emit_message<A, M>(&self, ctx: &ActorContext<A>, message: M)
     where
         A: Actor + Handler<M> + DeferableReplyHandler<M>,
-        M: Default + std::fmt::Debug + Send + Sync + 'static,
+        M: std::fmt::Debug + Send + Sync + 'static,
     {
-        let _ = ctx.mailbox().send_message_with_high_priority(M::default());
+        let _ = ctx.mailbox().send_message_with_high_priority(message);
     }
 
-    fn schedule_post_cooldown_callback<A, M>(&self, ctx: &ActorContext<A>)
+    fn schedule_post_cooldown_callback<A, M>(&self, ctx: &ActorContext<A>, message: M)
     where
         A: Actor + Handler<M> + DeferableReplyHandler<M>,
-        M: Default + std::fmt::Debug + Send + Sync + 'static,
+        M: Clone + std::fmt::Debug + Send + Sync + 'static,
     {
         let ctx_clone = ctx.clone();
         let self_clone = self.clone();
         let callback = move || {
             let previous_state = self_clone.accept_transition(Transition::CooldownExpired);
             if previous_state == DebouncerState::CooldownScheduled {
-                self_clone.self_send_with_cooldown(&ctx_clone);
+                self_clone.self_send_with_cooldown(&ctx_clone, message);
             }
         };
         ctx.spawn_ctx()
@@ -119,14 +119,15 @@ impl Debouncer {
     pub fn self_send_with_cooldown<M>(
         &self,
         ctx: &ActorContext<impl Handler<M> + DeferableReplyHandler<M>>,
+        message: M,
     ) where
-        M: Default + std::fmt::Debug + Send + Sync + 'static,
+        M: Clone + std::fmt::Debug + Send + Sync + 'static,
     {
         let cooldown_state = self.accept_transition(Transition::Emit);
         match cooldown_state {
             DebouncerState::NoCooldown => {
-                self.emit_message(ctx);
-                self.schedule_post_cooldown_callback(ctx);
+                self.emit_message(ctx, message.clone());
+                self.schedule_post_cooldown_callback(ctx, message);
             }
             DebouncerState::CooldownNotScheduled | DebouncerState::CooldownScheduled => {}
         }
@@ -156,7 +157,7 @@ mod tests {
         }
     }
 
-    #[derive(Debug, Default)]
+    #[derive(Debug, Default, Clone)]
     struct Increment;
 
     #[derive(Debug)]
@@ -194,7 +195,7 @@ mod tests {
             _message: DebouncedIncrement,
             ctx: &ActorContext<Self>,
         ) -> Result<Self::Reply, ActorExitStatus> {
-            self.debouncer.self_send_with_cooldown::<Increment>(ctx);
+            self.debouncer.self_send_with_cooldown(ctx, Increment);
             Ok(())
         }
     }
