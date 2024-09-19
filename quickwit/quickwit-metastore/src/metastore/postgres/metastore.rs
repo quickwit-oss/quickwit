@@ -1504,8 +1504,9 @@ impl MetastoreService for PostgresqlMetastore {
         const PRUNE_AGE_SHARDS_QUERY: &str = include_str!("queries/shards/prune_age.sql");
         const PRUNE_COUNT_SHARDS_QUERY: &str = include_str!("queries/shards/prune_count.sql");
 
-        if let Some(max_age) = request.max_age {
-            let limit_datetime = OffsetDateTime::now_utc() - Duration::from_secs(max_age as u64);
+        if let Some(max_age_secs) = request.max_age_secs {
+            let limit_datetime =
+                OffsetDateTime::now_utc() - Duration::from_secs(max_age_secs as u64);
             sqlx::query(PRUNE_AGE_SHARDS_QUERY)
                 .bind(request.index_uid())
                 .bind(&request.source_id)
