@@ -81,8 +81,6 @@ pub struct AdviseResetShardsResponse {
 pub struct DebouncedPruneShardsRequest {
     #[prost(message, optional, tag = "1")]
     pub request: ::core::option::Option<super::metastore::PruneShardsRequest>,
-    #[prost(bool, tag = "2")]
-    pub execute_now: bool,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]

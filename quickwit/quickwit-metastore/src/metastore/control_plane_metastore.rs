@@ -125,7 +125,6 @@ impl MetastoreService for ControlPlaneMetastore {
     async fn prune_shards(&self, request: PruneShardsRequest) -> MetastoreResult<EmptyResponse> {
         let debounced_request = DebouncedPruneShardsRequest {
             request: Some(request),
-            execute_now: false,
         };
         let response = self.control_plane.prune_shards(debounced_request).await?;
         Ok(response)

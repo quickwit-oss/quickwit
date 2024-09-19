@@ -128,5 +128,4 @@ message AdviseResetShardsResponse {
 
 message DebouncedPruneShardsRequest {
   quickwit.metastore.PruneShardsRequest request = 1;
-  bool execute_now = 2;
 }

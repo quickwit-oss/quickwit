@@ -109,7 +109,7 @@ impl Debouncer {
         let callback = move || {
             let previous_state = self_clone.accept_transition(Transition::CooldownExpired);
             if previous_state == DebouncerState::CooldownScheduled {
-                self_clone.self_send_with_cooldown(&ctx_clone, message);
+                self_clone.self_send_with_cooldown(message, &ctx_clone);
             }
         };
         ctx.spawn_ctx()
@@ -118,8 +118,8 @@ impl Debouncer {
 
     pub fn self_send_with_cooldown<M>(
         &self,
-        ctx: &ActorContext<impl Handler<M> + DeferableReplyHandler<M>>,
         message: M,
+        ctx: &ActorContext<impl Handler<M> + DeferableReplyHandler<M>>,
     ) where
         M: Clone + std::fmt::Debug + Send + Sync + 'static,
     {
@@ -204,7 +204,7 @@ mod tests {
             _message: DebouncedIncrement,
             ctx: &ActorContext<Self>,
         ) -> Result<Self::Reply, ActorExitStatus> {
-            self.debouncer.self_send_with_cooldown(ctx, Increment);
+            self.debouncer.self_send_with_cooldown(Increment, ctx);
             Ok(())
         }
     }
