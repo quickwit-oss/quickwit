@@ -640,7 +640,7 @@ impl MetastoreService for PostgresqlMetastore {
                 FROM
                     UNNEST($1, $2, $3, $4, $5, $6, $7, $8)
                     AS staged_splits (split_id, time_range_start, time_range_end, tags_json, split_metadata_json, delete_opstamp, maturity_timestamp, node_id)
-                ON CONFLICT(split_id) DO UPDATE
+                ON CONFLICT(index_uid, split_id) DO UPDATE
                     SET
                         time_range_start = excluded.time_range_start,
                         time_range_end = excluded.time_range_end,
@@ -648,7 +648,6 @@ impl MetastoreService for PostgresqlMetastore {
                         split_metadata_json = excluded.split_metadata_json,
                         delete_opstamp = excluded.delete_opstamp,
                         maturity_timestamp = excluded.maturity_timestamp,
-                        index_uid = excluded.index_uid,
                         node_id = excluded.node_id,
                         update_timestamp = CURRENT_TIMESTAMP,
                         create_timestamp = CURRENT_TIMESTAMP
