@@ -458,9 +458,11 @@ message PruneShardsRequest {
   quickwit.common.IndexUid index_uid = 1;
   string source_id = 2;
   // The maximum age of the shards to keep, in seconds.
-  optional uint32 max_age_secs = 5;
+  optional uint32 max_age_secs = 3;
   // The maximum number of the shards to keep. Delete older shards first.
-  optional uint32 max_count = 6;
+  optional uint32 max_count = 4;
+  // The interval between two pruning operations, in seconds.
+  optional uint32 interval = 5;
 }
 
 message ListShardsRequest {

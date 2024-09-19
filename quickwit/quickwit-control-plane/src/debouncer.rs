@@ -132,6 +132,10 @@ impl Debouncer {
             DebouncerState::CooldownNotScheduled | DebouncerState::CooldownScheduled => {}
         }
     }
+
+    pub fn set_next_cooldown_period(&mut self, period: Duration) {
+        self.cooldown_period = period;
+    }
 }
 
 #[cfg(test)]
@@ -162,6 +166,11 @@ mod tests {
 
     #[derive(Debug)]
     struct DebouncedIncrement;
+
+    #[derive(Debug, Default, Clone)]
+    struct UpdateCooldownPeriod {
+        cooldown_period: Duration,
+    }
 
     #[async_trait]
     impl Actor for DebouncingActor {
@@ -200,10 +209,25 @@ mod tests {
         }
     }
 
+    #[async_trait]
+    impl Handler<UpdateCooldownPeriod> for DebouncingActor {
+        type Reply = ();
+
+        async fn handle(
+            &mut self,
+            message: UpdateCooldownPeriod,
+            _ctx: &ActorContext<Self>,
+        ) -> Result<Self::Reply, ActorExitStatus> {
+            self.debouncer
+                .set_next_cooldown_period(message.cooldown_period);
+            Ok(())
+        }
+    }
+
     #[tokio::test]
     async fn test_debouncer() {
         let universe = Universe::default();
-        let cooldown_period = Duration::from_millis(1_000);
+        let cooldown_period = Duration::from_millis(100);
         let debouncer = DebouncingActor::new(cooldown_period);
         let (debouncer_mailbox, debouncer_handle) = universe.spawn_builder().spawn(debouncer);
         {
@@ -234,6 +258,53 @@ mod tests {
             universe.sleep(cooldown_period * 2).await;
             let count = *debouncer_handle.process_pending_and_observe().await;
             assert_eq!(count, 3);
+        }
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_debouncer_cooldown_update() {
+        let universe = Universe::default();
+        let cooldown_period = Duration::from_millis(100);
+        let debouncer = DebouncingActor::new(cooldown_period);
+        let (debouncer_mailbox, debouncer_handle) = universe.spawn_builder().spawn(debouncer);
+        for _ in 0..10 {
+            debouncer_mailbox.ask(DebouncedIncrement).await.unwrap();
+            let count = *debouncer_handle.process_pending_and_observe().await;
+            assert_eq!(count, 1);
+        }
+        {
+            universe.sleep(cooldown_period.mul_f32(1.2)).await;
+            let count = *debouncer_handle.process_pending_and_observe().await;
+            assert_eq!(count, 2);
+        }
+        // at this point, we are still cooling down
+        debouncer_mailbox
+            .ask(UpdateCooldownPeriod {
+                cooldown_period: cooldown_period.mul_f32(2.0),
+            })
+            .await
+            .unwrap();
+        {
+            universe.sleep(cooldown_period.mul_f32(1.2)).await;
+            let count = *debouncer_handle.process_pending_and_observe().await;
+            assert_eq!(count, 2);
+        }
+        // the previous cooldown now expired, the new one will apply
+        for _ in 0..10 {
+            debouncer_mailbox.ask(DebouncedIncrement).await.unwrap();
+            let count = *debouncer_handle.process_pending_and_observe().await;
+            assert_eq!(count, 3);
+        }
+        {
+            universe.sleep(cooldown_period.mul_f32(1.2)).await;
+            let count = *debouncer_handle.process_pending_and_observe().await;
+            assert_eq!(count, 3);
+        }
+        {
+            universe.sleep(cooldown_period.mul_f32(1.2)).await;
+            let count = *debouncer_handle.process_pending_and_observe().await;
+            assert_eq!(count, 4);
         }
         universe.assert_quit().await;
     }

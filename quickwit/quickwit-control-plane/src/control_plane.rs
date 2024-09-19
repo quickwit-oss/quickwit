@@ -73,7 +73,7 @@ pub(crate) const CONTROL_PLAN_LOOP_INTERVAL: Duration = if cfg!(any(test, featur
 };
 
 /// Minimum period between two identical shard pruning operations.
-const PRUNE_SHARDS_COOLDOWN_PERIOD: Duration = Duration::from_secs(120);
+const PRUNE_SHARDS_DEFAULT_COOLDOWN_PERIOD: Duration = Duration::from_secs(120);
 
 /// Minimum period between two rebuild plan operations.
 const REBUILD_PLAN_COOLDOWN_PERIOD: Duration = Duration::from_secs(2);
@@ -796,19 +796,27 @@ impl Handler<DebouncedPruneShardsRequest> for ControlPlane {
             return Ok(Ok(EmptyResponse {}));
         }
 
-        self.prune_shards_debouncers
+        let debouncer = self
+            .prune_shards_debouncers
             .entry((
                 metastore_request.index_uid().index_id.clone(),
                 metastore_request.source_id.clone(),
             ))
-            .or_insert_with(|| Debouncer::new(PRUNE_SHARDS_COOLDOWN_PERIOD))
-            .self_send_with_cooldown(
-                ctx,
-                DebouncedPruneShardsRequest {
-                    request: Some(metastore_request),
-                    execute_now: true,
-                },
-            );
+            .or_insert_with(|| Debouncer::new(PRUNE_SHARDS_DEFAULT_COOLDOWN_PERIOD));
+
+        // Update the cooldown period in case the config changes. If multiple
+        // indexers run with different configs, the control plane ends up
+        // running one of them in a seemingly arbitrary way.
+        if let Some(interval) = metastore_request.interval {
+            debouncer.set_next_cooldown_period(Duration::from_secs(interval as u64));
+        }
+        debouncer.self_send_with_cooldown(
+            ctx,
+            DebouncedPruneShardsRequest {
+                request: Some(metastore_request),
+                execute_now: true,
+            },
+        );
         Ok(Ok(EmptyResponse {}))
     }
 }
