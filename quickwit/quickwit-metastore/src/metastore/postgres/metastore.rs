@@ -59,7 +59,9 @@ use tracing::{debug, info, instrument, warn};
 
 use super::error::convert_sqlx_err;
 use super::migrator::run_migrations;
-use super::model::{PgDeleteTask, PgIndex, PgIndexTemplate, PgShard, PgSplit, Splits};
+use super::model::{
+    PgDeleteTask, PgIndex, PgIndexTemplate, PgShard, PgSplit, Splits, SPLIT_COLUMNS_TO_SELECT,
+};
 use super::pool::TrackedPool;
 use super::split_stream::SplitStream;
 use super::utils::{append_query_filters, establish_connection};
@@ -870,7 +872,9 @@ impl MetastoreService for PostgresqlMetastore {
     ) -> MetastoreResult<MetastoreServiceStream<ListSplitsResponse>> {
         let list_splits_query = request.deserialize_list_splits_query()?;
         let mut sql_query_builder = Query::select();
-        sql_query_builder.column(Asterisk).from(Splits::Table);
+        sql_query_builder
+            .columns(SPLIT_COLUMNS_TO_SELECT)
+            .from(Splits::Table);
         append_query_filters(&mut sql_query_builder, &list_splits_query);
 
         let (sql_query, values) = sql_query_builder.build_sqlx(PostgresQueryBuilder);
