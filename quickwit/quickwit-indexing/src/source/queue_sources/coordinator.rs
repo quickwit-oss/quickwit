@@ -271,9 +271,7 @@ impl QueueCoordinator {
                 .send_message(batch_builder.build())
                 .await?;
             if in_progress_ref.batch_reader.is_eof() {
-                self.local_state
-                    .drop_currently_read(self.visibility_settings.deadline_for_last_extension)
-                    .await?;
+                self.local_state.drop_currently_read().await?;
                 self.observable_state.num_messages_processed += 1;
             }
         } else if let Some(ready_message) = self.local_state.get_ready_for_read() {
