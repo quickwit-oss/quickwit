@@ -21,9 +21,7 @@ use std::fmt;
 
 use async_trait::async_trait;
 use quickwit_common::uri::Uri;
-use quickwit_proto::control_plane::{
-    ControlPlaneService, ControlPlaneServiceClient, DebouncedPruneShardsRequest,
-};
+use quickwit_proto::control_plane::{ControlPlaneService, ControlPlaneServiceClient};
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsResponse, AddSourceRequest, CreateIndexRequest,
     CreateIndexResponse, CreateIndexTemplateRequest, DeleteIndexRequest,
@@ -122,12 +120,10 @@ impl MetastoreService for ControlPlaneMetastore {
         Ok(response)
     }
 
+    // Proxy through the control plane to debounce queries
     async fn prune_shards(&self, request: PruneShardsRequest) -> MetastoreResult<EmptyResponse> {
-        let debounced_request = DebouncedPruneShardsRequest {
-            request: Some(request),
-        };
-        let response = self.control_plane.prune_shards(debounced_request).await?;
-        Ok(response)
+        self.control_plane.prune_shards(request).await?;
+        Ok(EmptyResponse {})
     }
 
     // Other metastore API calls.
