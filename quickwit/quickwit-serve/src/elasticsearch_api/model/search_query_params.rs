@@ -287,6 +287,11 @@ impl SearchQueryParams {
         })?;
         Ok(Some(duration))
     }
+
+    pub fn allow_partial_search_results(&self) -> bool {
+        // By default, elastic search allows partial results.
+        self.allow_partial_search_results.unwrap_or(true)
+    }
 }
 
 #[doc = "Whether to expand wildcard expression to concrete indices that are open, closed or both."]

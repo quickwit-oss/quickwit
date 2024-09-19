@@ -436,6 +436,8 @@ pub(crate) async fn scroll(
         scroll_id: Some(next_scroll_id.to_string()),
         errors: Vec::new(),
         aggregation: None,
+        failed_splits: scroll_context.failed_splits,
+        num_successful_splits: scroll_context.num_successful_splits,
     })
 }
 /// [`SearcherContext`] provides a common set of variables

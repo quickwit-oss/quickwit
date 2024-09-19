@@ -239,6 +239,10 @@ pub struct SearchRequestQueryString {
     #[serde(with = "count_hits_from_bool")]
     #[serde(default = "count_hits_from_bool::default")]
     pub count_all: CountHits,
+    #[param(value_type = bool)]
+    #[schema(value_type = bool)]
+    #[serde(default)]
+    pub allow_failed_splits: bool,
 }
 
 mod count_hits_from_bool {
@@ -302,8 +306,23 @@ async fn search_endpoint(
     search_request: SearchRequestQueryString,
     search_service: &dyn SearchService,
 ) -> Result<SearchResponseRest, SearchError> {
+    let allow_failed_splits = search_request.allow_failed_splits;
     let search_request = search_request_from_api_request(index_id_patterns, search_request)?;
-    let search_response = search_service.root_search(search_request).await?;
+    let search_response =
+        search_service
+            .root_search(search_request)
+            .await
+            .and_then(|search_response| {
+                // We consider case where
+                if allow_failed_splits {
+                    if let Some(search_error) =
+                        SearchError::from_split_errors(&search_response.failed_splits[..])
+                    {
+                        return Err(search_error);
+                    }
+                }
+                Ok(search_response)
+            })?;
     let search_response_rest = SearchResponseRest::try_from(search_response)?;
     Ok(search_response_rest)
 }
