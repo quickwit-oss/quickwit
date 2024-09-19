@@ -417,13 +417,13 @@ pub struct PruneShardsRequest {
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
     /// The maximum age of the shards to keep, in seconds.
-    #[prost(uint32, optional, tag = "3")]
+    #[prost(uint32, optional, tag = "5")]
     pub max_age_secs: ::core::option::Option<u32>,
     /// The maximum number of the shards to keep. Delete older shards first.
-    #[prost(uint32, optional, tag = "4")]
+    #[prost(uint32, optional, tag = "6")]
     pub max_count: ::core::option::Option<u32>,
     /// The interval between two pruning operations, in seconds.
-    #[prost(uint32, optional, tag = "5")]
+    #[prost(uint32, optional, tag = "7")]
     pub interval: ::core::option::Option<u32>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
