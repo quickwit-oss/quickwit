@@ -17,16 +17,17 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::hash_map::Entry;
 use std::collections::{BTreeSet, HashMap};
 use std::fmt;
 use std::fmt::Formatter;
+use std::num::NonZeroUsize;
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
 use futures::{Future, StreamExt};
+use lru::LruCache;
 use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, DeferableReplyHandler, Handler, Mailbox,
     Supervisor, Universe, WeakMailbox,
@@ -98,7 +99,7 @@ pub struct ControlPlane {
     ingest_controller: IngestController,
     metastore: MetastoreServiceClient,
     model: ControlPlaneModel,
-    next_prune_shard_requests: HashMap<(IndexId, SourceId), Instant>,
+    next_prune_shard_requests: LruCache<(IndexId, SourceId), Instant>,
     rebuild_plan_debouncer: Debouncer,
     readiness_tx: watch::Sender<bool>,
     // Disables the control loop. This is useful for unit testing.
@@ -182,7 +183,7 @@ impl ControlPlane {
                     ingest_controller,
                     metastore: metastore.clone(),
                     model: Default::default(),
-                    next_prune_shard_requests: HashMap::new(),
+                    next_prune_shard_requests: LruCache::new(NonZeroUsize::new(1024).unwrap()),
                     rebuild_plan_debouncer: Debouncer::new(REBUILD_PLAN_COOLDOWN_PERIOD),
                     readiness_tx,
                     disable_control_loop,
@@ -788,7 +789,7 @@ impl Handler<PruneShardsRequest> for ControlPlane {
         _ctx: &ActorContext<Self>,
     ) -> Result<ControlPlaneResult<EmptyResponse>, ActorExitStatus> {
         // A very basic debounce is enough here, missing one call to the pruning API is fine
-        let next_prune_shard_request = self.next_prune_shard_requests.entry((
+        let next_prune_shard_request = self.next_prune_shard_requests.get_mut(&(
             request.index_uid().index_id.clone(),
             request.source_id.clone(),
         ));
@@ -796,21 +797,33 @@ impl Handler<PruneShardsRequest> for ControlPlane {
             .interval
             .map(|interval| Duration::from_secs(interval as u64))
             .unwrap_or_else(|| PRUNE_SHARDS_DEFAULT_COOLDOWN_PERIOD);
-        let should_call = match next_prune_shard_request {
-            Entry::Vacant(entry) => {
-                entry.insert(Instant::now() + interval);
+        let should_call = if let Some(deadline) = next_prune_shard_request {
+            let now = Instant::now();
+            if now >= *deadline {
+                *deadline = now + interval;
                 true
+            } else {
+                false
             }
-            Entry::Occupied(mut entry) => {
-                let deadline = entry.get_mut();
-                let now = Instant::now();
-                if now >= *deadline {
-                    *deadline = now + interval;
-                    true
-                } else {
-                    false
+        } else {
+            let capacity: usize = self.next_prune_shard_requests.cap().into();
+            if self.next_prune_shard_requests.len() == capacity {
+                if let Some((_, deadline)) = self.next_prune_shard_requests.peek_lru() {
+                    if *deadline > Instant::now() {
+                        // the oldest is not outdated, grow the LRU
+                        self.next_prune_shard_requests
+                            .resize(NonZeroUsize::new(capacity * 2).unwrap());
+                    }
                 }
             }
+            self.next_prune_shard_requests.push(
+                (
+                    request.index_uid().index_id.clone(),
+                    request.source_id.clone(),
+                ),
+                Instant::now() + interval,
+            );
+            true
         };
         if should_call {
             if let Err(metastore_error) = self.metastore.prune_shards(request).await {

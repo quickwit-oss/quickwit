@@ -5865,6 +5865,7 @@ dependencies = [
  "fnv",
  "futures",
  "itertools 0.13.0",
+ "lru",
  "mockall",
  "once_cell",
  "proptest",
