@@ -25,7 +25,7 @@ use serde_json::json;
 
 use super::assert_hits_unordered;
 use crate::ingest_json;
-use crate::test_utils::{ingest_with_retry, ClusterSandboxBuilder};
+use crate::test_utils::{ingest, ClusterSandboxBuilder};
 
 #[tokio::test]
 async fn test_update_search_settings_on_multi_nodes_cluster() {
@@ -86,7 +86,7 @@ async fn test_update_search_settings_on_multi_nodes_cluster() {
     // Wait until indexing pipelines are started
     sandbox.wait_for_indexing_pipelines(1).await.unwrap();
 
-    ingest_with_retry(
+    ingest(
         &sandbox.indexer_rest_client,
         "my-updatable-index",
         ingest_json!({"title": "first", "body": "first record"}),
