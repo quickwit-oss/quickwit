@@ -34,7 +34,7 @@ use aws_sdk_s3::operation::get_object::{GetObjectError, GetObjectOutput};
 use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::types::builders::ObjectIdentifierBuilder;
 use aws_sdk_s3::types::{
-    CompletedMultipartUpload, CompletedPart, Delete, ObjectIdentifier, ServerSideEncryption
+    CompletedMultipartUpload, CompletedPart, Delete, ObjectIdentifier, ServerSideEncryption,
 };
 use aws_sdk_s3::Client as S3Client;
 use base64::prelude::{Engine, BASE64_STANDARD};
@@ -307,7 +307,7 @@ impl S3CompatibleObjectStorage {
         };
         (server_side_encryption, kms_key_id)
     }
-    
+
     async fn put_single_part_single_try<'a>(
         &'a self,
         bucket: &'a str,
