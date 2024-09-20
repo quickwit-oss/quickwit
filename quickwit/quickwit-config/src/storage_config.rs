@@ -395,7 +395,9 @@ impl S3StorageConfig {
 impl fmt::Debug for S3StorageConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let display_sse_kms_key_id = match &self.server_side_encryption {
-            Some(S3ServerSideEncryption::AwsKms) | Some(S3ServerSideEncryption::AwsKmsDsse) => &self.sse_kms_key_id,
+            Some(S3ServerSideEncryption::AwsKms) | Some(S3ServerSideEncryption::AwsKmsDsse) => {
+                &self.sse_kms_key_id
+            }
             _ => &None,
         };
         f.debug_struct("S3StorageConfig")
