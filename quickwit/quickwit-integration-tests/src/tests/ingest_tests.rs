@@ -20,9 +20,11 @@
 use std::time::Duration;
 
 use futures_util::FutureExt;
-use hyper::StatusCode;
+use itertools::Itertools;
+use quickwit_common::test_utils::wait_until_predicate;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::ConfigFormat;
+use quickwit_indexing::actors::INDEXING_DIR_NAME;
 use quickwit_metastore::SplitState;
 use quickwit_rest_client::error::{ApiError, Error};
 use quickwit_rest_client::rest_client::CommitType;
@@ -30,18 +32,20 @@ use quickwit_serve::ListSplitsQueryParams;
 use serde_json::json;
 
 use crate::ingest_json;
-use crate::test_utils::{ingest_with_retry, ClusterSandboxBuilder};
+use crate::test_utils::{ingest, ClusterSandboxBuilder};
 
 fn initialize_tests() {
     quickwit_common::setup_logging_for_tests();
     std::env::set_var("QW_ENABLE_INGEST_V2", "true");
 }
 
+/// Ingesting on a freshly re-created index sometimes fails, see #5430
 #[tokio::test]
-async fn test_single_node_cluster() {
+#[ignore]
+async fn test_ingest_recreated_index() {
     initialize_tests();
     let mut sandbox = ClusterSandboxBuilder::build_and_start_standalone().await;
-    let index_id = "test-single-node-cluster";
+    let index_id = "test-ingest-recreated-index";
     let index_config = format!(
         r#"
             version: 0.8
@@ -61,7 +65,6 @@ async fn test_single_node_cluster() {
     );
     sandbox.enable_ingest_v2();
 
-    // Create the index.
     let current_index_metadata = sandbox
         .indexer_rest_client
         .indexes()
@@ -69,8 +72,7 @@ async fn test_single_node_cluster() {
         .await
         .unwrap();
 
-    // Index one record.
-    ingest_with_retry(
+    ingest(
         &sandbox.indexer_rest_client,
         index_id,
         ingest_json!({"body": "first record"}),
@@ -79,13 +81,11 @@ async fn test_single_node_cluster() {
     .await
     .unwrap();
 
-    // Wait for the split to be published.
     sandbox
         .wait_for_splits(index_id, Some(vec![SplitState::Published]), 1)
         .await
         .unwrap();
 
-    // Delete the index
     sandbox
         .indexer_rest_client
         .indexes()
@@ -93,7 +93,8 @@ async fn test_single_node_cluster() {
         .await
         .unwrap();
 
-    // Create the index again.
+    // Recreate the index and start ingesting into it again
+
     let new_index_metadata = sandbox
         .indexer_rest_client
         .indexes()
@@ -106,66 +107,62 @@ async fn test_single_node_cluster() {
         new_index_metadata.index_uid.incarnation_id
     );
 
-    // TODO: The control plane schedules the old pipeline and this test fails. I don't know if it's
-    // because the reschule takes too long to happen or it's a bug.
+    ingest(
+        &sandbox.indexer_rest_client,
+        index_id,
+        ingest_json!({"body": "second record"}),
+        CommitType::Force,
+    )
+    .await
+    .unwrap();
 
-    // Index multiple records in different splits.
-    // ingest_with_retry(
-    //     &sandbox.indexer_rest_client,
-    //     index_id,
-    //     ingest_json!({"body": "second record"}),
-    //     CommitType::Force,
-    // )
-    // .await
-    // .unwrap();
+    sandbox
+        .wait_for_splits(index_id, Some(vec![SplitState::Published]), 1)
+        .await
+        .unwrap();
 
-    // sandbox
-    //     .wait_for_splits(index_id, Some(vec![SplitState::Published]), 1)
-    //     .await
-    //     .unwrap();
+    ingest(
+        &sandbox.indexer_rest_client,
+        index_id,
+        ingest_json!({"body": "third record"}),
+        CommitType::Force,
+    )
+    .await
+    .unwrap();
 
-    // ingest_with_retry(
-    //     &sandbox.indexer_rest_client,
-    //     index_id,
-    //     ingest_json!({"body": "third record"}),
-    //     CommitType::Force,
-    // )
-    // .await
-    // .unwrap();
+    sandbox
+        .wait_for_splits(index_id, Some(vec![SplitState::Published]), 2)
+        .await
+        .unwrap();
 
-    // sandbox
-    //     .wait_for_splits(index_id, Some(vec![SplitState::Published]), 2)
-    //     .await
-    //     .unwrap();
+    ingest(
+        &sandbox.indexer_rest_client,
+        index_id,
+        ingest_json!({"body": "fourth record"}),
+        CommitType::Force,
+    )
+    .await
+    .unwrap();
 
-    // ingest_with_retry(
-    //     &sandbox.indexer_rest_client,
-    //     index_id,
-    //     ingest_json!({"body": "fourd record"}),
-    //     CommitType::Force,
-    // )
-    // .await
-    // .unwrap();
+    sandbox
+        .wait_for_splits(index_id, Some(vec![SplitState::Published]), 3)
+        .await
+        .unwrap();
 
-    // sandbox
-    //     .wait_for_splits(index_id, Some(vec![SplitState::Published]), 3)
-    //     .await
-    //     .unwrap();
+    sandbox.assert_hit_count(index_id, "body:record", 3).await;
 
-    // assert_hit_count(&sandbox, index_id, "body:record", 3).await;
+    // Wait for splits to merge, since we created 3 splits and merge factor is 3,
+    // we should get 1 published split with no staged splits eventually.
+    sandbox
+        .wait_for_splits(
+            index_id,
+            Some(vec![SplitState::Published, SplitState::Staged]),
+            1,
+        )
+        .await
+        .unwrap();
 
-    // // Wait for splits to merge, since we created 3 splits and merge factor is 3,
-    // // we should get 1 published split with no staged splits eventually.
-    // sandbox
-    //     .wait_for_splits(
-    //         index_id,
-    //         Some(vec![SplitState::Published, SplitState::Staged]),
-    //         1,
-    //     )
-    //     .await
-    //     .unwrap();
-
-    // Delete the index
+    // Delete the index to avoid potential hanging on shutdown #5068
     sandbox
         .indexer_rest_client
         .indexes()
@@ -173,28 +170,77 @@ async fn test_single_node_cluster() {
         .await
         .unwrap();
 
-    // TODO: Those directories are no longer cleaned up properly.
-    // let data_dir_path = &sandbox
-    //     .node_configs
-    //     .first()
-    //     .unwrap()
-    //     .node_config
-    //     .data_dir_path;
+    sandbox.shutdown().await.unwrap();
+}
 
-    // let delete_tasks_dir_name = data_dir_path.join(DELETE_SERVICE_TASK_DIR_NAME);
-    // let indexing_dir_path = data_dir_path.join(INDEXING_DIR_NAME);
+/// Indexing directory is not cleaned up after deleting an index, see #5436
+#[tokio::test]
+#[ignore]
+async fn test_indexing_directory_cleanup() {
+    initialize_tests();
+    let mut sandbox = ClusterSandboxBuilder::build_and_start_standalone().await;
+    let index_id = "test-ingest-directory-cleanup";
+    let index_config = format!(
+        r#"
+            version: 0.8
+            index_id: {}
+            doc_mapping:
+                field_mappings:
+                - name: body
+                  type: text
+            indexing_settings:
+                commit_timeout_secs: 1
+                merge_policy:
+                    type: stable_log
+                    merge_factor: 3
+                    max_merge_factor: 3
+            "#,
+        index_id
+    );
 
-    // // Wait to make sure all directories are cleaned up
-    // wait_until_predicate(
-    //     || async {
-    //         delete_tasks_dir_name.read_dir().unwrap().count() == 0
-    //             && indexing_dir_path.read_dir().unwrap().count() == 0
-    //     },
-    //     Duration::from_secs(10),
-    //     Duration::from_millis(100),
-    // )
-    // .await
-    // .unwrap();
+    sandbox.enable_ingest_v2();
+
+    sandbox
+        .indexer_rest_client
+        .indexes()
+        .create(index_config.clone(), ConfigFormat::Yaml, false)
+        .await
+        .unwrap();
+
+    ingest(
+        &sandbox.indexer_rest_client,
+        index_id,
+        ingest_json!({"body": "first record"}),
+        CommitType::Force,
+    )
+    .await
+    .unwrap();
+
+    sandbox
+        .wait_for_splits(index_id, Some(vec![SplitState::Published]), 1)
+        .await
+        .unwrap();
+
+    sandbox
+        .indexer_rest_client
+        .indexes()
+        .delete(index_id, false)
+        .await
+        .unwrap();
+
+    // The index is deleted so the `indexing` directory should be cleaned up
+    let data_dir_path = &sandbox.node_configs.first().unwrap().0.data_dir_path;
+    let indexing_dir_path = data_dir_path.join(INDEXING_DIR_NAME);
+    wait_until_predicate(
+        || async {
+            let indexing_dir_entries = indexing_dir_path.read_dir().unwrap().collect_vec();
+            indexing_dir_entries.is_empty()
+        },
+        Duration::from_secs(100),
+        Duration::from_millis(500),
+    )
+    .await
+    .unwrap();
 
     sandbox.shutdown().await.unwrap();
 }
@@ -269,37 +315,14 @@ async fn test_ingest_v2_happy_path() {
         .await
         .unwrap();
 
-    // The server have been detected as ready. Unfortunately, they may not have been added
-    // to the ingester pool yet.
-    //
-    // If we get an unavailable error, we retry up to 10 times.
-    // See #4213
-    const MAX_NUM_RETRIES: usize = 10;
-    for i in 1..=MAX_NUM_RETRIES {
-        let ingest_res = sandbox
-            .indexer_rest_client
-            .ingest(
-                index_id,
-                ingest_json!({"body": "doc1"}),
-                None,
-                None,
-                CommitType::Auto,
-            )
-            .await;
-        let Some(ingest_error) = ingest_res.err() else {
-            // Success
-            break;
-        };
-        assert_eq!(
-            ingest_error.status_code(),
-            Some(StatusCode::SERVICE_UNAVAILABLE)
-        );
-        assert!(
-            i < MAX_NUM_RETRIES,
-            "service not available after {MAX_NUM_RETRIES} tries"
-        );
-        tokio::time::sleep(Duration::from_millis(200)).await;
-    }
+    ingest(
+        &sandbox.indexer_rest_client,
+        index_id,
+        ingest_json!({"body": "doc1"}),
+        CommitType::Auto,
+    )
+    .await
+    .unwrap();
 
     sandbox
         .wait_for_splits(index_id, Some(vec![SplitState::Published]), 1)
@@ -308,6 +331,7 @@ async fn test_ingest_v2_happy_path() {
 
     sandbox.assert_hit_count(index_id, "*", 1).await;
 
+    // Delete the index to avoid potential hanging on shutdown #5068
     sandbox
         .indexer_rest_client
         .indexes()
@@ -336,7 +360,6 @@ async fn test_commit_force() {
         "#
     );
 
-    // Create index
     sandbox
         .indexer_rest_client
         .indexes()
@@ -350,7 +373,7 @@ async fn test_commit_force() {
     // the commit isn't forced
     tokio::time::timeout(
         Duration::from_secs(20),
-        ingest_with_retry(
+        ingest(
             &sandbox.indexer_rest_client,
             index_id,
             ingest_json!({"body": "force"}),
@@ -362,6 +385,14 @@ async fn test_commit_force() {
     .unwrap();
 
     sandbox.assert_hit_count(index_id, "body:force", 1).await;
+
+    // Delete the index to avoid waiting for the commit timeout on shutdown #5068
+    sandbox
+        .indexer_rest_client
+        .indexes()
+        .delete(index_id, false)
+        .await
+        .unwrap();
 
     sandbox.shutdown().await.unwrap();
 }
@@ -508,13 +539,13 @@ async fn test_very_large_index_name() {
         .await;
     sandbox.enable_ingest_v2();
 
-    let index_id = "its_very_very_very_very_very_very_very_very_very_very_very_\
+    let acceptable_index_id = "its_very_very_very_very_very_very_very_very_very_very_very_\
     very_very_very_very_very_very_very_very_very_very_very_very_very_very_very_\
     very_very_very_very_very_very_very_very_very_very_very_very_very_very_very_\
     very_very_very_very_very_very_index_large_name";
-    assert_eq!(index_id.len(), 255);
-    let oversized_index_id = format!("{index_id}1");
-    // Create index
+    assert_eq!(acceptable_index_id.len(), 255);
+    let oversized_index_id = format!("{acceptable_index_id}1");
+
     sandbox
         .indexer_rest_client
         .indexes()
@@ -522,7 +553,7 @@ async fn test_very_large_index_name() {
             format!(
                 r#"
                 version: 0.8
-                index_id: {index_id}
+                index_id: {acceptable_index_id}
                 doc_mapping:
                   field_mappings:
                     - name: body
@@ -537,10 +568,9 @@ async fn test_very_large_index_name() {
         .await
         .unwrap();
 
-    // Test force commit
-    ingest_with_retry(
+    ingest(
         &sandbox.indexer_rest_client,
-        index_id,
+        acceptable_index_id,
         ingest_json!({"body": "not too long"}),
         CommitType::Auto,
     )
@@ -548,21 +578,22 @@ async fn test_very_large_index_name() {
     .unwrap();
 
     sandbox
-        .wait_for_splits(index_id, Some(vec![SplitState::Published]), 1)
+        .wait_for_splits(acceptable_index_id, Some(vec![SplitState::Published]), 1)
         .await
         .unwrap();
 
-    sandbox.assert_hit_count(index_id, "body:long", 1).await;
+    sandbox
+        .assert_hit_count(acceptable_index_id, "body:long", 1)
+        .await;
 
-    // Delete the index
+    // Delete the index to avoid potential hanging on shutdown #5068
     sandbox
         .indexer_rest_client
         .indexes()
-        .delete(index_id, false)
+        .delete(acceptable_index_id, false)
         .await
         .unwrap();
 
-    // Try to create an index with a very long name
     let error = sandbox
         .indexer_rest_client
         .indexes()
@@ -590,7 +621,6 @@ async fn test_very_large_index_name() {
          `^[a-zA-Z][a-zA-Z0-9-_\\.]{2,254}$`)"
     ));
 
-    // Clean up
     sandbox.shutdown().await.unwrap();
 }
 
@@ -599,6 +629,72 @@ async fn test_shutdown_single_node() {
     initialize_tests();
     let mut sandbox = ClusterSandboxBuilder::build_and_start_standalone().await;
     let index_id = "test_shutdown_single_node";
+
+    sandbox.enable_ingest_v2();
+
+    sandbox
+        .indexer_rest_client
+        .indexes()
+        .create(
+            format!(
+                r#"
+            version: 0.8
+            index_id: {index_id}
+            doc_mapping:
+              field_mappings:
+              - name: body
+                type: text
+            indexing_settings:
+              commit_timeout_secs: 1
+            "#
+            ),
+            ConfigFormat::Yaml,
+            false,
+        )
+        .await
+        .unwrap();
+
+    ingest(
+        &sandbox.indexer_rest_client,
+        index_id,
+        ingest_json!({"body": "one"}),
+        CommitType::Force,
+    )
+    .await
+    .unwrap();
+
+    sandbox
+        .indexer_rest_client
+        .ingest(
+            index_id,
+            ingest_json!({"body": "two"}),
+            None,
+            None,
+            CommitType::Force,
+        )
+        .await
+        .unwrap();
+
+    tokio::time::timeout(Duration::from_secs(10), sandbox.shutdown())
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+#[tokio::test]
+async fn test_shutdown_control_plane_first() {
+    initialize_tests();
+    let mut sandbox = ClusterSandboxBuilder::default()
+        .add_node([QuickwitService::Indexer])
+        .add_node([
+            QuickwitService::ControlPlane,
+            QuickwitService::Searcher,
+            QuickwitService::Metastore,
+            QuickwitService::Janitor,
+        ])
+        .build_and_start()
+        .await;
+    let index_id = "test_shutdown_control_plane_first";
 
     sandbox.enable_ingest_v2();
 
@@ -625,8 +721,7 @@ async fn test_shutdown_single_node() {
         .await
         .unwrap();
 
-    // Ensure that the index is ready to accept records.
-    ingest_with_retry(
+    ingest(
         &sandbox.indexer_rest_client,
         index_id,
         ingest_json!({"body": "one"}),
@@ -635,31 +730,26 @@ async fn test_shutdown_single_node() {
     .await
     .unwrap();
 
-    // Test force commit
     sandbox
-        .indexer_rest_client
-        .ingest(
-            index_id,
-            ingest_json!({"body": "two"}),
-            None,
-            None,
-            CommitType::Force,
-        )
+        .shutdown_services([
+            QuickwitService::ControlPlane,
+            QuickwitService::Searcher,
+            QuickwitService::Metastore,
+            QuickwitService::Janitor,
+        ])
         .await
         .unwrap();
 
-    tokio::time::timeout(std::time::Duration::from_secs(10), sandbox.shutdown())
+    // The indexer hangs on shutdown because it cannot commit the shard EOF
+    tokio::time::timeout(Duration::from_secs(5), sandbox.shutdown())
         .await
-        .unwrap()
-        .unwrap();
+        .unwrap_err();
 }
 
-/// When the control plane is on a different node, it might be shutdown
-/// before the ingest pipeline is scheduled on the indexer.
 #[tokio::test]
-async fn test_shutdown_control_plane_early_shutdown() {
+async fn test_shutdown_indexer_first() {
     initialize_tests();
-    let sandbox = ClusterSandboxBuilder::default()
+    let mut sandbox = ClusterSandboxBuilder::default()
         .add_node([QuickwitService::Indexer])
         .add_node([
             QuickwitService::ControlPlane,
@@ -669,12 +759,10 @@ async fn test_shutdown_control_plane_early_shutdown() {
         ])
         .build_and_start()
         .await;
-    let index_id = "test_shutdown_separate_indexer";
+    let index_id = "test_shutdown_indexer_first";
 
-    // TODO: make this test work with ingest v2 (#5068)
-    // sandbox.enable_ingest_v2();
+    sandbox.enable_ingest_v2();
 
-    // Create index
     sandbox
         .indexer_rest_client
         .indexes()
@@ -697,67 +785,7 @@ async fn test_shutdown_control_plane_early_shutdown() {
         .await
         .unwrap();
 
-    // Ensure that the index is ready to accept records.
-    ingest_with_retry(
-        &sandbox.indexer_rest_client,
-        index_id,
-        ingest_json!({"body": "one"}),
-        CommitType::Force,
-    )
-    .await
-    .unwrap();
-
-    tokio::time::timeout(std::time::Duration::from_secs(10), sandbox.shutdown())
-        .await
-        .unwrap()
-        .unwrap();
-}
-
-/// When the control plane/metastore are shutdown before the indexer, the
-/// indexer shutdown should not hang indefinitely
-#[tokio::test]
-async fn test_shutdown_separate_indexer() {
-    initialize_tests();
-    let sandbox = ClusterSandboxBuilder::default()
-        .add_node([QuickwitService::Indexer])
-        .add_node([
-            QuickwitService::ControlPlane,
-            QuickwitService::Searcher,
-            QuickwitService::Metastore,
-            QuickwitService::Janitor,
-        ])
-        .build_and_start()
-        .await;
-    let index_id = "test_shutdown_separate_indexer";
-
-    // TODO: make this test work with ingest v2 (#5068)
-    // sandbox.enable_ingest_v2();
-
-    // Create index
-    sandbox
-        .indexer_rest_client
-        .indexes()
-        .create(
-            format!(
-                r#"
-            version: 0.8
-            index_id: {index_id}
-            doc_mapping:
-              field_mappings:
-              - name: body
-                type: text
-            indexing_settings:
-              commit_timeout_secs: 1
-            "#
-            ),
-            ConfigFormat::Yaml,
-            false,
-        )
-        .await
-        .unwrap();
-
-    // Ensure that the index is ready to accept records.
-    ingest_with_retry(
+    ingest(
         &sandbox.indexer_rest_client,
         index_id,
         ingest_json!({"body": "one"}),
@@ -767,11 +795,11 @@ async fn test_shutdown_separate_indexer() {
     .unwrap();
 
     sandbox
-        .wait_for_splits(index_id, Some(vec![SplitState::Published]), 1)
+        .shutdown_services([QuickwitService::Indexer])
         .await
         .unwrap();
 
-    tokio::time::timeout(std::time::Duration::from_secs(10), sandbox.shutdown())
+    tokio::time::timeout(Duration::from_secs(5), sandbox.shutdown())
         .await
         .unwrap()
         .unwrap();

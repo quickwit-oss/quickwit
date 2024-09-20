@@ -58,6 +58,7 @@ impl RetryPolicy<LeafSearchRequest, LeafSearchResponse, SearchError> for LeafSea
                     .retain(|request| !request.split_offsets.is_empty());
                 Some(request)
             }
+            Err(SearchError::Timeout(_)) => None, // Don't retry on timeout
             Err(_) => Some(request),
         }
     }

@@ -74,7 +74,7 @@ use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::tower::{
     BalanceChannel, BoxFutureInfaillible, BufferLayer, Change, CircuitBreakerEvaluator,
     ConstantRate, EstimateRateLayer, EventListenerLayer, GrpcMetricsLayer, LoadShedLayer,
-    RateLimitLayer, RetryLayer, RetryPolicy, SmaRateEstimator,
+    RateLimitLayer, RetryLayer, RetryPolicy, SmaRateEstimator, TimeoutLayer,
 };
 use quickwit_common::uri::Uri;
 use quickwit_common::{get_bool_from_env, spawn_named_task};
@@ -173,6 +173,9 @@ static METASTORE_GRPC_CLIENT_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
     Lazy::new(|| GrpcMetricsLayer::new("metastore", "client"));
 static METASTORE_GRPC_SERVER_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
     Lazy::new(|| GrpcMetricsLayer::new("metastore", "server"));
+
+static GRPC_TIMEOUT_LAYER: Lazy<TimeoutLayer> =
+    Lazy::new(|| TimeoutLayer::new(Duration::from_secs(30)));
 
 struct QuickwitServices {
     pub node_config: Arc<NodeConfig>,
@@ -946,6 +949,7 @@ async fn setup_ingest_v2(
                     } else {
                         let ingester_service = IngesterServiceClient::tower()
                             .stack_layer(INGEST_GRPC_CLIENT_METRICS_LAYER.clone())
+                            .stack_layer(GRPC_TIMEOUT_LAYER.clone())
                             .build_from_channel(
                                 node.grpc_advertise_addr(),
                                 node.channel(),
@@ -990,6 +994,7 @@ async fn setup_searcher(
     .await?;
     let search_service_clone = search_service.clone();
     let max_message_size = node_config.grpc_config.max_message_size;
+    let request_timeout = node_config.searcher_config.request_timeout();
     let searcher_change_stream = cluster_change_stream.filter_map(move |cluster_change| {
         let search_service_clone = search_service_clone.clone();
         Box::pin(async move {
@@ -1009,7 +1014,7 @@ async fn setup_searcher(
                             SearchServiceClient::from_service(search_service_clone, grpc_addr);
                         Some(Change::Insert(grpc_addr, search_client))
                     } else {
-                        let timeout_channel = Timeout::new(node.channel(), Duration::from_secs(30));
+                        let timeout_channel = Timeout::new(node.channel(), request_timeout);
                         let search_client = create_search_client_from_channel(
                             grpc_addr,
                             timeout_channel,
@@ -1145,6 +1150,7 @@ fn setup_indexer_pool(
                     } else {
                         let client = IndexingServiceClient::tower()
                             .stack_layer(INDEXING_GRPC_CLIENT_METRICS_LAYER.clone())
+                            .stack_layer(GRPC_TIMEOUT_LAYER.clone())
                             .build_from_channel(
                                 node.grpc_advertise_addr(),
                                 node.channel(),

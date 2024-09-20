@@ -58,9 +58,9 @@ use quickwit_proto::metastore::{
     ListShardsRequest, ListShardsResponse, ListSplitsRequest, ListSplitsResponse,
     ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError, MetastoreResult,
     MetastoreService, MetastoreServiceStream, OpenShardSubrequest, OpenShardsRequest,
-    OpenShardsResponse, PruneShardsRequest, PruneShardsResponse, PublishSplitsRequest,
-    ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest,
-    UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
+    OpenShardsResponse, PruneShardsRequest, PublishSplitsRequest, ResetSourceCheckpointRequest,
+    StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest, UpdateSplitsDeleteOpstampRequest,
+    UpdateSplitsDeleteOpstampResponse,
 };
 use quickwit_proto::types::{IndexId, IndexUid};
 use quickwit_storage::Storage;
@@ -892,15 +892,11 @@ impl MetastoreService for FileBackedMetastore {
         Ok(response)
     }
 
-    async fn prune_shards(
-        &self,
-        request: PruneShardsRequest,
-    ) -> MetastoreResult<PruneShardsResponse> {
+    async fn prune_shards(&self, request: PruneShardsRequest) -> MetastoreResult<EmptyResponse> {
         let index_uid = request.index_uid().clone();
-        let response = self
-            .mutate(&index_uid, |index| index.prune_shards(request))
+        self.mutate(&index_uid, |index| index.prune_shards(request))
             .await?;
-        Ok(response)
+        Ok(EmptyResponse {})
     }
 
     async fn list_shards(&self, request: ListShardsRequest) -> MetastoreResult<ListShardsResponse> {
