@@ -1,7 +1,9 @@
 ndjson:
-  - index: { "_index": "test-index-not-found", "_id": "1" }
-  - message: Hello, World!"
   - index: { "_index": "test-index-not-found" }
+  - message: Hello, World!"
+  - index: { "_index": "test-index" }
+  - message: Hola, Mundo!
+  - index: { "_index": "test-index-pattern-777" }
   - message: Hola, Mundo!
 status_code: 200
 expected:
@@ -9,7 +11,6 @@ expected:
   items:
     - index:
         _index: test-index-not-found
-        _id: "1"
         status: 404
         error:
           index: test-index-not-found
@@ -17,12 +18,8 @@ expected:
           reason:
             $expect: val.startswith('no such index [test-index-not-found]')
     - index:
-        _index: test-index-not-found
-        _id: null
-        status: 404
-        error:
-          index: test-index-not-found
-          type: index_not_found_exception
-          reason:
-            $expect: val.startswith('no such index [test-index-not-found]')
-
+        _index: test-index
+        status: 201
+    - index:
+        _index: test-index-pattern-777
+        status: 201

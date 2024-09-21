@@ -40,6 +40,7 @@ pub struct IndexerNodeInfo {
 
 pub type IndexerPool = Pool<NodeId, IndexerNodeInfo>;
 
+mod cooldown_map;
 mod debouncer;
 #[cfg(test)]
 mod tests;

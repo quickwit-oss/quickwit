@@ -18,7 +18,6 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
-use std::time::Duration;
 
 use anyhow::bail;
 use quickwit_metastore::checkpoint::PartitionId;
@@ -95,10 +94,7 @@ impl QueueLocalState {
         self.read_in_progress.as_mut()
     }
 
-    pub async fn drop_currently_read(
-        &mut self,
-        deadline_for_last_extension: Duration,
-    ) -> anyhow::Result<()> {
+    pub async fn drop_currently_read(&mut self) -> anyhow::Result<()> {
         if let Some(in_progress) = self.read_in_progress.take() {
             self.awaiting_commit.insert(
                 in_progress.partition_id.clone(),
@@ -106,7 +102,7 @@ impl QueueLocalState {
             );
             in_progress
                 .visibility_handle
-                .request_last_extension(deadline_for_last_extension)
+                .request_last_extension()
                 .await?;
         }
         Ok(())

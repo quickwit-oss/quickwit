@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use futures_util::StreamExt;
 use quickwit_config::service::QuickwitService;
@@ -131,7 +131,7 @@ async fn test_ingest_traces_with_otlp_grpc_api() {
     }
 
     sandbox
-        .shutdown_services(&HashSet::from_iter([QuickwitService::Indexer]))
+        .shutdown_services([QuickwitService::Indexer])
         .await
         .unwrap();
     sandbox.shutdown().await.unwrap();
@@ -205,7 +205,7 @@ async fn test_ingest_logs_with_otlp_grpc_api() {
     }
 
     sandbox
-        .shutdown_services(&HashSet::from_iter([QuickwitService::Indexer]))
+        .shutdown_services([QuickwitService::Indexer])
         .await
         .unwrap();
     sandbox.shutdown().await.unwrap();
@@ -240,7 +240,7 @@ async fn test_jaeger_api() {
         .unwrap();
 
     sandbox
-        .shutdown_services(&HashSet::from_iter([QuickwitService::Indexer]))
+        .shutdown_services([QuickwitService::Indexer])
         .await
         .unwrap();
 
