@@ -326,10 +326,8 @@ impl S3CompatibleObjectStorage {
             .key(key)
             .body(body)
             .content_length(len as i64);
-        let (s3_sse, kms_key_id) = self.apply_server_side_encryption(
-            self.server_side_encryption,
-            self.sse_kms_key_id.clone(),
-        );
+        let (s3_sse, kms_key_id) = self
+            .apply_server_side_encryption(self.server_side_encryption, self.sse_kms_key_id.clone());
         if let Some(encryption) = s3_sse {
             put_object_request = put_object_request.server_side_encryption(encryption);
             if let Some(kms_key_id) = kms_key_id {
