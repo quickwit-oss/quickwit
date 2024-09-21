@@ -181,7 +181,7 @@ impl S3CompatibleObjectStorage {
         let retry_params = RetryParams::aggressive();
         let disable_multi_object_delete = s3_storage_config.disable_multi_object_delete;
         let disable_multipart_upload = s3_storage_config.disable_multipart_upload;
-        let server_side_encryption = s3_storage_config.server_side_encryption.clone();
+        let server_side_encryption = s3_storage_config.server_side_encryption;
         let sse_kms_key_id = s3_storage_config.sse_kms_key_id.clone();
         Ok(Self {
             s3_client,
@@ -288,8 +288,8 @@ impl S3CompatibleObjectStorage {
             .to_path_buf()
     }
 
-    fn apply_server_side_encryption<'a>(
-        &'a self,
+    fn apply_server_side_encryption(
+        &self,
         encryption: Option<S3ServerSideEncryption>,
         kms_key_id: Option<String>,
     ) -> (Option<ServerSideEncryption>, Option<String>) {
@@ -327,7 +327,7 @@ impl S3CompatibleObjectStorage {
             .body(body)
             .content_length(len as i64);
         let (s3_sse, kms_key_id) = self.apply_server_side_encryption(
-            self.server_side_encryption.clone(),
+            self.server_side_encryption,
             self.sse_kms_key_id.clone(),
         );
         if let Some(encryption) = s3_sse {
@@ -375,7 +375,7 @@ impl S3CompatibleObjectStorage {
                 .bucket(self.bucket.clone())
                 .key(key);
             let (s3_sse, kms_key_id) = self.apply_server_side_encryption(
-                self.server_side_encryption.clone(),
+                self.server_side_encryption,
                 self.sse_kms_key_id.clone(),
             );
             if let Some(encryption) = s3_sse {
