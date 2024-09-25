@@ -1210,7 +1210,13 @@ pub async fn leaf_search(
     doc_mapper: Arc<dyn DocMapper>,
     aggregations_limits: AggregationLimitsGuard,
 ) -> Result<LeafSearchResponse, SearchError> {
-    info!(splits_num = splits.len(), split_offsets = ?PrettySample::new(&splits, 5));
+    let num_docs: u64 = splits.iter().map(|split| split.num_docs).sum();
+    let num_splits = splits.len();
+    let current_span = tracing::Span::current();
+    current_span.record("num_docs", num_docs);
+    current_span.record("num_splits", num_splits);
+
+    info!(num_docs, num_splits, split_offsets = ?PrettySample::new(&splits, 5));
 
     let split_filter = CanSplitDoBetter::from_request(&request, doc_mapper.timestamp_field_name());
     let split_with_req = split_filter.optimize(request.clone(), splits)?;
@@ -1307,7 +1313,7 @@ pub async fn leaf_search(
 }
 
 #[allow(clippy::too_many_arguments)]
-#[instrument(skip_all, fields(split_id = split.split_id))]
+#[instrument(skip_all, fields(split_id = split.split_id, num_docs = split.num_docs))]
 async fn leaf_search_single_split_wrapper(
     request: SearchRequest,
     searcher_context: Arc<SearcherContext>,

@@ -1120,6 +1120,12 @@ pub async fn root_search(
     )
     .await?;
 
+    let num_docs: usize = split_metadatas.iter().map(|split| split.num_docs).sum();
+    let num_splits = split_metadatas.len();
+    let current_span = tracing::Span::current();
+    current_span.record("num_docs", num_docs);
+    current_span.record("num_splits", num_splits);
+
     let mut search_response = root_search_aux(
         searcher_context,
         &request_metadata.indexes_meta_for_leaf_search,
