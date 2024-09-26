@@ -441,6 +441,12 @@ async fn es_compat_index_search(
     search_body: SearchBody,
     search_service: Arc<dyn SearchService>,
 ) -> Result<ElasticsearchResponse, ElasticsearchError> {
+    if search_params.scroll.is_some() && !search_params.allow_partial_search_results() {
+        return Err(ElasticsearchError::from(SearchError::InvalidArgument(
+            "Quickwit only supports scroll API with allow_partial_search_results set to true"
+                .to_string(),
+        )));
+    }
     let _source_excludes = search_params._source_excludes.clone();
     let _source_includes = search_params._source_includes.clone();
     let start_instant = Instant::now();
@@ -859,9 +865,8 @@ async fn es_scroll(
     // TODO append_shard_doc depends on the initial request, but we don't have access to it
 
     // Ideally, we would have wanted to reuse the setting from the initial search request.
-    // However, passing that parameter is cumbersome and not necessary:
-    // if we have a valid `scroll_id` it means that the search request was successful.
-    // We can therefore allow failed splits, it won't make any difference.
+    // However, passing that parameter is cumbersome, so we cut some corner and forbid the
+    // use of scroll requests in combination with allow_partial_results set to false.
     let allow_failed_splits = true;
     let mut search_response_rest: ElasticsearchResponse =
         convert_to_es_search_response(search_response, false, None, None, allow_failed_splits)?;

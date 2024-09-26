@@ -47,7 +47,7 @@ use serde::{Deserialize, Serialize};
 use tantivy::aggregation::agg_result::AggregationResults;
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tantivy::collector::Collector;
-use tantivy::schema::{FieldEntry, FieldType, Schema};
+use tantivy::schema::{Field, FieldEntry, FieldType, Schema};
 use tantivy::TantivyError;
 use tracing::{debug, info, info_span, instrument};
 
@@ -473,6 +473,27 @@ fn validate_sort_by_field_type(
     Ok(())
 }
 
+fn check_is_fast_field(
+    schema: &Schema,
+    fast_field_name: &str,
+    dynamic_fast_field: Option<Field>,
+) -> crate::Result<()> {
+    let Some((field, _path)): Option<(Field, &str)> =
+        schema.find_field_with_default(fast_field_name, dynamic_fast_field)
+    else {
+        return Err(SearchError::InvalidArgument(format!(
+            "Field \"{fast_field_name}\" does not exist"
+        )));
+    };
+    let field_entry: &FieldEntry = schema.get_field_entry(field);
+    if !field_entry.is_fast() {
+        return Err(SearchError::InvalidArgument(format!(
+            "Field \"{fast_field_name}\" is not configured as a fast field"
+        )));
+    }
+    Ok(())
+}
+
 fn validate_request(
     schema: &Schema,
     timestamp_field_name: &Option<&str>,
@@ -491,11 +512,18 @@ fn validate_request(
     validate_requested_snippet_fields(schema, &search_request.snippet_fields)?;
 
     if let Some(agg) = search_request.aggregation_request.as_ref() {
-        let _aggs: QuickwitAggregations = serde_json::from_str(agg).map_err(|_err| {
+        let aggs: QuickwitAggregations = serde_json::from_str(agg).map_err(|_err| {
             let err = serde_json::from_str::<tantivy::aggregation::agg_req::Aggregations>(agg)
                 .unwrap_err();
             SearchError::InvalidAggregationRequest(err.to_string())
         })?;
+
+        // ensure that the required fast fields are indeed configured as fast fields.
+        let fast_field_names = aggs.fast_field_names();
+        let dynamic_field = schema.get_field(DYNAMIC_FIELD_NAME).ok();
+        for fast_field_name in &fast_field_names {
+            check_is_fast_field(schema, fast_field_name, dynamic_field)?;
+        }
     };
 
     if search_request.start_offset > 10_000 {

@@ -609,7 +609,8 @@ pub enum QuickwitAggregations {
 }
 
 impl QuickwitAggregations {
-    fn fast_field_names(&self) -> HashSet<String> {
+    /// Returns the list of fast fields that should be loaded for the aggregation.
+    pub fn fast_field_names(&self) -> HashSet<String> {
         match self {
             QuickwitAggregations::FindTraceIdsAggregation(collector) => {
                 collector.fast_field_names()
