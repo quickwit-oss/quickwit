@@ -313,8 +313,7 @@ async fn search_endpoint(
             .root_search(search_request)
             .await
             .and_then(|search_response| {
-                // We consider case where
-                if allow_failed_splits {
+                if !allow_failed_splits || search_response.num_successful_splits == 0 {
                     if let Some(search_error) =
                         SearchError::from_split_errors(&search_response.failed_splits[..])
                     {

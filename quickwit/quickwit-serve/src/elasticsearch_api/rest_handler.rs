@@ -857,8 +857,14 @@ async fn es_scroll(
     };
     let search_response: SearchResponse = search_service.scroll(scroll_request).await?;
     // TODO append_shard_doc depends on the initial request, but we don't have access to it
+
+    // Ideally, we would have wanted to reuse the setting from the initial search request.
+    // However, passing that parameter is cumbersome and not necessary:
+    // if we have a valid `scroll_id` it means that the search request was successful.
+    // We can therefore allow failed splits, it won't make any difference.
+    let allow_failed_splits = true;
     let mut search_response_rest: ElasticsearchResponse =
-        convert_to_es_search_response(search_response, false, None, None, true)?;
+        convert_to_es_search_response(search_response, false, None, None, allow_failed_splits)?;
     search_response_rest.took = start_instant.elapsed().as_millis() as u32;
     Ok(search_response_rest)
 }
@@ -941,6 +947,8 @@ fn convert_to_es_search_response(
         None
     };
     let num_failed_splits = resp.failed_splits.len() as u32;
+    let num_successful_splits = resp.num_successful_splits as u32;
+    let num_total_splits = num_successful_splits + num_failed_splits;
     Ok(ElasticsearchResponse {
         timed_out: false,
         hits: HitsMetadata {
@@ -955,8 +963,8 @@ fn convert_to_es_search_response(
         scroll_id: resp.scroll_id,
         // There is not concept of shards here, but use this to convey split search failures.
         shards: ShardStatistics {
-            total: 0u32,
-            successful: 0u32,
+            total: num_total_splits,
+            successful: num_successful_splits,
             skipped: 0u32,
             failed: num_failed_splits,
             failures: Vec::new(),
@@ -1188,7 +1196,7 @@ mod tests {
                 failed_splits: vec![split_error.clone()],
                 ..Default::default()
             };
-            // Event if we allow partial search results, with a single successful fail, we have a
+            // Event if we allow partial search results, with a fail and no success, we have a
             // failure.
             convert_to_es_search_response(search_response, false, None, None, true).unwrap_err();
         }

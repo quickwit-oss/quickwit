@@ -1931,7 +1931,7 @@ mod tests {
                     retryable_error: true,
                 }],
                 num_attempted_splits: 5,
-                num_successful_splits: 6,
+                num_successful_splits: 4,
                 intermediate_aggregation_result: None
             }
         );
