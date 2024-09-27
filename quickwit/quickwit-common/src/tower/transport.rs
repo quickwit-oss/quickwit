@@ -209,7 +209,6 @@ pub async fn make_channel(socket_addr: SocketAddr) -> Channel {
         .expect("provided arguments should be valid");
     Endpoint::from(uri)
         .connect_timeout(Duration::from_secs(5))
-        .timeout(Duration::from_secs(30))
         .connect_lazy()
 }
 

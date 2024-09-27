@@ -22,8 +22,10 @@ jobs:
         include:
           - os: ubuntu-latest
             platform: linux/amd64
+            platform_suffix: amd64
           - os: gh-ubuntu-arm64
             platform: linux/arm64
+            platform_suffix: arm64
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
@@ -79,9 +81,9 @@ jobs:
           touch "/tmp/digests/${digest#sha256:}"
 
       - name: Upload digest
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4.4.0
         with:
-          name: digest
+          name: digest-${{ matrix.platform_suffix }}
           path: /tmp/digests/*
           if-no-files-found: error
           retention-days: 1
@@ -93,8 +95,9 @@ jobs:
       - name: Download digests
         uses: actions/download-artifact@v4.1.8
         with:
-          name: digest
+          pattern: digest-*
           path: /tmp/digests
+          merge-multiple: true
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3

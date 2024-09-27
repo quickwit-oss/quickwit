@@ -25,6 +25,7 @@ use quickwit_config::{ConfigFormat, SourceConfig};
 use quickwit_indexing::actors::IndexingServiceCounters;
 pub use quickwit_ingest::CommitType;
 use quickwit_metastore::{IndexMetadata, Split, SplitInfo};
+use quickwit_proto::ingest::Shard;
 use quickwit_search::SearchResponseRest;
 use quickwit_serve::{ListSplitsQueryParams, ListSplitsResponse, SearchRequestQueryString};
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
@@ -580,6 +581,16 @@ impl<'a> SourceClient<'a> {
             .await?;
         response.check().await?;
         Ok(())
+    }
+
+    pub async fn get_shards(&self, source_id: &str) -> Result<Vec<Shard>, Error> {
+        let path = format!("{}/{source_id}/shards", self.sources_root_url());
+        let response = self
+            .transport
+            .send::<()>(Method::GET, &path, None, None, None, self.timeout)
+            .await?;
+        let source_config = response.deserialize().await?;
+        Ok(source_config)
     }
 }
 

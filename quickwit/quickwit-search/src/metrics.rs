@@ -21,11 +21,15 @@
 
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
-    exponential_buckets, new_counter, new_counter_vec, new_histogram, Histogram, IntCounter,
-    IntCounterVec,
+    exponential_buckets, new_counter, new_counter_vec, new_histogram, new_histogram_vec, Histogram,
+    HistogramVec, IntCounter, IntCounterVec,
 };
 
 pub struct SearchMetrics {
+    pub root_search_requests_total: IntCounterVec<1>,
+    pub root_search_request_duration_seconds: HistogramVec<1>,
+    pub leaf_search_requests_total: IntCounterVec<1>,
+    pub leaf_search_request_duration_seconds: HistogramVec<1>,
     pub leaf_searches_splits_total: IntCounter,
     pub leaf_search_split_duration_secs: Histogram,
     pub job_assigned_total: IntCounterVec<1>,
@@ -34,6 +38,36 @@ pub struct SearchMetrics {
 impl Default for SearchMetrics {
     fn default() -> Self {
         SearchMetrics {
+            root_search_requests_total: new_counter_vec(
+                "root_search_requests_total",
+                "Total number of root search gRPC requests processed.",
+                "search",
+                &[("kind", "server")],
+                ["status"],
+            ),
+            root_search_request_duration_seconds: new_histogram_vec(
+                "root_search_request_duration_seconds",
+                "Duration of request in seconds.",
+                "search",
+                &[("kind", "server")],
+                ["status"],
+                exponential_buckets(0.001, 2.0, 15).unwrap(),
+            ),
+            leaf_search_requests_total: new_counter_vec(
+                "leaf_search_requests_total",
+                "Total number of gRPC requests processed.",
+                "search",
+                &[("kind", "server")],
+                ["status"],
+            ),
+            leaf_search_request_duration_seconds: new_histogram_vec(
+                "leaf_search_request_duration_seconds",
+                "Duration of request in seconds.",
+                "search",
+                &[("kind", "server")],
+                ["status"],
+                exponential_buckets(0.001, 2.0, 15).unwrap(),
+            ),
             leaf_searches_splits_total: new_counter(
                 "leaf_searches_splits_total",
                 "Number of leaf searches (count of splits) started.",
@@ -45,7 +79,7 @@ impl Default for SearchMetrics {
                 "Number of seconds required to run a leaf search over a single split. The timer \
                  starts after the semaphore is obtained.",
                 "search",
-                exponential_buckets(0.005, 2.0, 10).unwrap(),
+                exponential_buckets(0.001, 2.0, 15).unwrap(),
             ),
             job_assigned_total: new_counter_vec(
                 "job_assigned_total",

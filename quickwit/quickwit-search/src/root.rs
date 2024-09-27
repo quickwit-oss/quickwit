@@ -963,7 +963,7 @@ fn finalize_aggregation(
                     Default::default()
                 };
             let final_aggregation_results: AggregationResults = intermediate_aggregation_results
-                .into_final_result(aggregations, &searcher_context.get_aggregation_limits())?;
+                .into_final_result(aggregations, searcher_context.get_aggregation_limits())?;
             serde_json::to_string(&final_aggregation_results)?
         }
     };
@@ -1119,6 +1119,12 @@ pub async fn root_search(
         request_metadata.timestamp_field_opt,
     )
     .await?;
+
+    let num_docs: usize = split_metadatas.iter().map(|split| split.num_docs).sum();
+    let num_splits = split_metadatas.len();
+    let current_span = tracing::Span::current();
+    current_span.record("num_docs", num_docs);
+    current_span.record("num_splits", num_splits);
 
     let mut search_response = root_search_aux(
         searcher_context,

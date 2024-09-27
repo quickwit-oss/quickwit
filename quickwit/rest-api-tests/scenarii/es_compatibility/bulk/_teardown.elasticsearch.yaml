@@ -1,0 +1,10 @@
+# Reconfigure with the default settings
+method: PUT
+endpoint: _cluster/settings
+json:
+  transient:
+    action.auto_create_index: "true"
+---
+method: DELETE
+endpoint: test-index*
+status_code: null
