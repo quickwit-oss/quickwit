@@ -26,11 +26,7 @@ See example 3 for clarification.
 
 ## Reversibility
 
-Quickwit doesn't store old doc mappings, it can't revert an update all by itself. However it also does not modify existing data when
-receiving a new doc mapping. If you realize you updated the mapping in a way that's very wrong, you can re-update using the previous
-mapping. Documents indexed while the mapping was wrong will be impacted, but any document that was commited before the change will be
-back to its original state.
-
+Quickwit does not modify existing data when receiving a new doc mapping. If you realize that you updated the mapping in a wrong way, you can re-update your index using the previous mapping. Documents indexed while the mapping was wrong will be impacted, but any document that was committed before the change will be queryable as if nothing happened.
 
 ## Type update reference
 
