@@ -338,6 +338,7 @@ fn get_leaf_resp_from_count(count: u64) -> LeafSearchResponse {
         partial_hits: Vec::new(),
         failed_splits: Vec::new(),
         num_attempted_splits: 1,
+        num_successful_splits: 1,
         intermediate_aggregation_result: None,
     }
 }
