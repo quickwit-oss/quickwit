@@ -19,6 +19,7 @@
 
 use std::collections::HashMap;
 use std::fmt::Display;
+use std::num::NonZeroU8;
 use std::str::FromStr;
 use std::sync::OnceLock;
 
@@ -36,7 +37,45 @@ use time::parsing::Parsed;
 use time::{Month, OffsetDateTime, PrimitiveDateTime, UtcOffset};
 use time_fmt::parse::time_format_item::parse_to_format_item;
 
-use crate::{RegexTokenizer, TantivyDateTime};
+use crate::TantivyDateTime;
+
+const JAVA_DATE_FORMAT_TOKENS: &[&str] = &[
+    "yyyy",
+    "xxxx",
+    "xx[xx]",
+    "SSSSSSSSS", // For nanoseconds
+    "SSSSSSS",   // For microseconds
+    "SSSSSS",    // For fractional seconds up to six digits
+    "SSSSS",
+    "SSSS",
+    "SSS",
+    "SS",
+    "ZZ",
+    "xx",
+    "ww",
+    "w[w]",
+    "yy",
+    "MM",
+    "dd",
+    "HH",
+    "hh",
+    "kk",
+    "mm",
+    "ss",
+    "aa",
+    "a",
+    "w",
+    "M",
+    "d",
+    "H",
+    "h",
+    "k",
+    "m",
+    "s",
+    "S",
+    "Z",
+    "e",
+];
 
 fn literal(s: &[u8]) -> OwnedFormatItem {
     // builds a boxed slice from a slice
@@ -51,16 +90,6 @@ fn get_padding(ptn: &str) -> Padding {
     } else {
         Padding::None
     }
-}
-
-fn build_optional_item(java_datetime_format: &str) -> Option<OwnedFormatItem> {
-    assert!(java_datetime_format.len() >= 2);
-    let optional_date_format = &java_datetime_format[1..java_datetime_format.len() - 1];
-    let format_items: Box<[OwnedFormatItem]> =
-        parse_java_datetime_format_items(optional_date_format).ok()?;
-    Some(OwnedFormatItem::Optional(Box::new(
-        OwnedFormatItem::Compound(format_items),
-    )))
 }
 
 fn build_zone_offset(_: &str) -> Option<OwnedFormatItem> {
@@ -90,17 +119,26 @@ fn build_zone_offset(_: &str) -> Option<OwnedFormatItem> {
 }
 
 fn build_year_item(ptn: &str) -> Option<OwnedFormatItem> {
-    let mut year = Year::default();
-    let year_repr = if ptn.len() == 4 {
-        YearRepr::Full
+    let mut full_year = Year::default();
+    full_year.repr = YearRepr::Full;
+    let full_year_component = OwnedFormatItem::Component(Component::Year(full_year));
+
+    let mut short_year = Year::default();
+    short_year.repr = YearRepr::LastTwo;
+    let short_year_component = OwnedFormatItem::Component(Component::Year(short_year));
+
+    if ptn.len() == 4 {
+        Some(full_year_component)
+    } else if ptn.len() == 2 {
+        Some(short_year_component)
     } else {
-        YearRepr::LastTwo
-    };
-    year.repr = year_repr;
-    Some(OwnedFormatItem::Component(Component::Year(year)))
+        Some(OwnedFormatItem::First(
+            vec![full_year_component, short_year_component].into_boxed_slice(),
+        ))
+    }
 }
 
-fn build_week_year_item(ptn: &str) -> Option<OwnedFormatItem> {
+fn build_week_based_year_item(ptn: &str) -> Option<OwnedFormatItem> {
     // TODO no `Component` for that
     build_year_item(ptn)
 }
@@ -117,14 +155,14 @@ fn build_day_item(ptn: &str) -> Option<OwnedFormatItem> {
     Some(OwnedFormatItem::Component(Component::Day(day)))
 }
 
-fn build_weekday_item(_: &str) -> Option<OwnedFormatItem> {
+fn build_day_of_week_item(_: &str) -> Option<OwnedFormatItem> {
     let mut weekday = Weekday::default();
     weekday.repr = WeekdayRepr::Monday;
     weekday.one_indexed = false;
     Some(OwnedFormatItem::Component(Component::Weekday(weekday)))
 }
 
-fn build_week_number_item(ptn: &str) -> Option<OwnedFormatItem> {
+fn build_week_of_year_item(ptn: &str) -> Option<OwnedFormatItem> {
     let mut week_number = WeekNumber::default();
     week_number.repr = WeekNumberRepr::Monday;
     week_number.padding = get_padding(ptn);
@@ -158,32 +196,92 @@ fn build_fraction_of_second_item(_ptn: &str) -> Option<OwnedFormatItem> {
     Some(OwnedFormatItem::Component(Component::Subsecond(subsecond)))
 }
 
+fn parse_java_datetime_format_items_recursive(
+    chars: &mut std::iter::Peekable<std::str::Chars>,
+) -> Result<Vec<OwnedFormatItem>, String> {
+    let mut items = Vec::new();
+
+    while let Some(&c) = chars.peek() {
+        match c {
+            '[' => {
+                chars.next();
+                let optional_items = parse_java_datetime_format_items_recursive(chars)?;
+                items.push(OwnedFormatItem::Optional(Box::new(
+                    OwnedFormatItem::Compound(optional_items.into_boxed_slice()),
+                )));
+            }
+            ']' => {
+                chars.next();
+                break;
+            }
+            '\'' => {
+                chars.next();
+                let mut literal_str = String::new();
+                while let Some(&next_c) = chars.peek() {
+                    if next_c == '\'' {
+                        chars.next();
+                        break;
+                    } else {
+                        literal_str.push(next_c);
+                        chars.next();
+                    }
+                }
+                items.push(literal(literal_str.as_bytes()));
+            }
+            _ => {
+                if let Some(format_item) = match_java_date_format_token(chars)? {
+                    items.push(format_item);
+                } else {
+                    // Treat as a literal character
+                    items.push(literal(c.to_string().as_bytes()));
+                    chars.next();
+                }
+            }
+        }
+    }
+
+    Ok(items)
+}
+
 // Elasticsearch/OpenSearch uses a set of preconfigured formats, more information could be found
 // here https://www.elastic.co/guide/en/elasticsearch/reference/current/mapping-date-format.html
-fn java_date_format_tokenizer() -> &'static RegexTokenizer<OwnedFormatItem> {
-    static JAVA_DATE_FORMAT_TOKENIZER: OnceLock<RegexTokenizer<OwnedFormatItem>> = OnceLock::new();
-    JAVA_DATE_FORMAT_TOKENIZER.get_or_init(|| {
-        RegexTokenizer::new(vec![
-            (r#"yy(yy)?"#, build_year_item),
-            (r#"MM?"#, build_month_item),
-            (r#"dd?"#, build_day_item),
-            (r#"HH?"#, build_hour_item),
-            (r#"mm?"#, build_minute_item),
-            (r#"ss?"#, build_second_item),
-            (r#"S+"#, build_fraction_of_second_item),
-            (r#"Z"#, build_zone_offset),
-            (r#"''"#, |_| Some(literal(b"'"))),
-            (r#"'[^']+'"#, |s| {
-                Some(literal(s[1..s.len() - 1].as_bytes()))
-            }),
-            (r#"[^\w\[\]{}]"#, |s| Some(literal(s.as_bytes()))),
-            (r#"\[.*\]"#, build_optional_item),
-            (r#"xx(xx)?"#, build_week_year_item),
-            (r#"ww?"#, build_week_number_item),
-            (r#"e?"#, build_weekday_item),
-        ])
-        .unwrap()
-    })
+fn match_java_date_format_token(
+    chars: &mut std::iter::Peekable<std::str::Chars>,
+) -> Result<Option<OwnedFormatItem>, String> {
+    if chars.peek().is_none() {
+        return Ok(None);
+    }
+
+    let remaining: String = chars.clone().collect();
+
+    // Try to match the longest possible token
+    for token in JAVA_DATE_FORMAT_TOKENS {
+        if remaining.starts_with(token) {
+            for _ in 0..token.len() {
+                chars.next();
+            }
+
+            let format_item = match *token {
+                "yyyy" | "yy" => build_year_item(token),
+                "xxxx" | "xx[xx]" | "xx" => build_week_based_year_item(token),
+                "MM" | "M" => build_month_item(token),
+                "dd" | "d" => build_day_item(token),
+                "HH" | "H" => build_hour_item(token),
+                "mm" | "m" => build_minute_item(token),
+                "ss" | "s" => build_second_item(token),
+                "SSSSSSSSS" | "SSSSSSS" | "SSSSSS" | "SSSSS" | "SSSS" | "SSS" | "SS" | "S" => {
+                    build_fraction_of_second_item(token)
+                }
+                "Z" => build_zone_offset(token),
+                "ww" | "w[w]" | "w" => build_week_of_year_item(token),
+                "e" => build_day_of_week_item(token),
+                _ => return Err(format!("Unrecognized token '{}'", token)),
+            };
+            return Ok(format_item);
+        }
+    }
+
+    Ok(None)
 }
 
 // Check if the given date time format is a common alias and replace it with the
@@ -195,8 +293,11 @@ fn resolve_java_datetime_format_alias(java_datetime_format: &str) -> &str {
         OnceLock::new();
     let java_datetime_format_map = JAVA_DATE_FORMAT_ALIASES.get_or_init(|| {
         let mut m = HashMap::new();
-        m.insert("date_optional_time", "yyyy-MM-dd['T'HH:mm:ss.SSSZ]");        
-        m.insert("strict_date_optional_time", "yyyy-MM-dd['T'HH:mm:ss.SSSZ]");
+        m.insert("date_optional_time", "yyyy-MM-dd['T'HH:mm:ss.SSSZ]");
+        m.insert(
+            "strict_date_optional_time",
+            "yyyy[-MM[-dd['T'HH[:mm[:ss[.SSS[Z]]]]]]]",
+        );
         m.insert(
             "strict_date_optional_time_nanos",
             "yyyy-MM-dd['T'HH:mm:ss.SSSSSSZ]",
@@ -235,17 +336,9 @@ pub struct StrptimeParser {
 fn parse_java_datetime_format_items(
     java_datetime_format: &str,
 ) -> Result<Box<[OwnedFormatItem]>, String> {
-    let java_datetime_format_resolved = resolve_java_datetime_format_alias(java_datetime_format);
-    let items = java_date_format_tokenizer()
-        .tokenize(java_datetime_format_resolved)
-        .map_err(|pos| {
-            format!(
-                "failed to parse date format `{java_datetime_format}`. Pattern at pos {pos} is \
-                 not recognized."
-            )
-        })?
-        .into_boxed_slice();
-    Ok(items)
+    let mut chars = java_datetime_format.chars().peekable();
+    let items = parse_java_datetime_format_items_recursive(&mut chars)?;
+    Ok(items.into_boxed_slice())
 }
 
 impl StrptimeParser {
@@ -288,6 +381,14 @@ impl StrptimeParser {
             let now = OffsetDateTime::now_utc();
             let year = infer_year(parsed.month(), now.month(), now.year());
             parsed.set_year(year);
+        }
+
+        if parsed.day().is_none() && parsed.monday_week_number().is_none() {
+            parsed.set_day(NonZeroU8::try_from(1u8).unwrap());
+        }
+
+        if parsed.month().is_none() && parsed.monday_week_number().is_none() {
+            parsed.set_month(Month::January);
         }
 
         if parsed.offset_hour().is_some() {
@@ -558,7 +659,6 @@ pub(super) fn infer_year(
 
 #[cfg(test)]
 mod tests {
-
     use time::macros::datetime;
     use time::Month;
 
@@ -721,6 +821,7 @@ mod tests {
 
     #[test]
     fn test_parse_java_datetime_format() {
+        test_parse_java_datetime_aux("yyyyMMdd", "20210101", datetime!(2021-01-01 00:00:00 UTC));
         test_parse_java_datetime_aux(
             "yyyy MM dd",
             "2021 01 01",
@@ -737,12 +838,17 @@ mod tests {
             datetime!(2021-01-01 13:00:00 UTC),
         );
         test_parse_java_datetime_aux(
-            "yyyy!MM?dd['T'HH:]",
+            "yyyy!MM?dd['T'[HH:]]",
             "2021!01?01",
             datetime!(2021-01-01 00:00:00 UTC),
         );
         test_parse_java_datetime_aux(
-            "yyyy!MM?dd['T'HH:]",
+            "yyyy!MM?dd['T'[HH:]",
+            "2021!01?01T",
+            datetime!(2021-01-01 00:00:00 UTC),
+        );
+        test_parse_java_datetime_aux(
+            "yyyy!MM?dd['T'[HH:]]",
             "2021!01?01T13:",
             datetime!(2021-01-01 13:00:00 UTC),
         );
@@ -780,7 +886,7 @@ mod tests {
         );
         test_parse_java_datetime_aux(
             "date_optional_time",
-            "2021W313",
+            "2021-01-21T03:01:22.312+01:00",
             datetime!(2021-01-21 03:01:22.312 +1),
         );
     }
@@ -880,6 +986,40 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_strict_date_optional_time() {
+        let parser =
+            StrptimeParser::from_java_datetime_format("strict_date_optional_time").unwrap();
+        let dates = [
+            "2019",
+            "2019-03",
+            "2019-03-23",
+            "2019-03-23T21:34",
+            "2019-03-23T21:34:46",
+            "2019-03-23T21:34:46.123Z",
+            "2019-03-23T21:35:46.123+00:00",
+            "2019-03-23T21:36:46.123+03:00",
+            "2019-03-23T21:37:46.123+0300",
+        ];
+        let expected = [
+            datetime!(2019-01-01 00:00:00 UTC),
+            datetime!(2019-03-01 00:00:00 UTC),
+            datetime!(2019-03-23 00:00:00 UTC),
+            datetime!(2019-03-23 21:34 UTC),
+            datetime!(2019-03-23 21:34:46 UTC),
+            datetime!(2019-03-23 21:34:46.123 UTC),
+            datetime!(2019-03-23 21:35:46.123 UTC),
+            datetime!(2019-03-23 21:36:46.123 +03:00:00),
+            datetime!(2019-03-23 21:37:46.123 +03:00:00),
+        ];
+        for (date_str, &expected_dt) in dates.iter().zip(expected.iter()) {
+            let parsed_dt = parser
+                .parse_date_time(date_str)
+                .unwrap_or_else(|e| panic!("Failed to parse {}: {}", date_str, e));
+            assert_eq!(parsed_dt, expected_dt);
+        }
+    }
+
+    #[test]
     fn test_infer_year() {
         let inferred_year = infer_year(None, Month::January, 2024);
         assert_eq!(inferred_year, 2024);
@@ -901,5 +1041,40 @@ mod tests {
 
         let inferred_year = infer_year(Some(Month::May), Month::January, 2024);
         assert_eq!(inferred_year, 2023);
+    }
+
+    #[test]
+    fn test_parse_java_datetime_format_items() {
+        let format_str = "xx[xx]'W'wwe";
+        let result = parse_java_datetime_format_items(format_str).unwrap();
+
+        // We expect the tokens to be parsed as:
+        // - 'xx[xx]' (week-based year)
+        // - 'W' (literal)
+        // - 'ww' (week of year)
+        // - 'e' (day of week)
+
+        assert_eq!(result.len(), 4);
+
+        // Verify each token
+        match &result[0] {
+            OwnedFormatItem::Component(Component::Year(_)) => {}
+            _ => panic!("Expected WeekBasedYear component"),
+        }
+
+        match &result[1] {
+            OwnedFormatItem::Literal(lit) => assert_eq!(lit.as_ref(), b"W"),
+            _ => panic!("Expected literal 'W'"),
+        }
+
+        match &result[2] {
+            OwnedFormatItem::Component(Component::WeekNumber(_)) => {}
+            _ => panic!("Expected WeekNumber component"),
+        }
+
+        match &result[3] {
+            OwnedFormatItem::Component(Component::Weekday(_)) => {}
+            _ => panic!("Expected Weekday component"),
+        }
     }
 }

@@ -13,7 +13,6 @@ license.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 itertools = { workspace = true }
-regex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tantivy = { workspace = true }
