@@ -162,6 +162,8 @@ pub enum DateTimeInputFormat {
     Rfc3339,
     Strptime(StrptimeParser),
     Timestamp,
+    ESStrictDateOptionalTime,
+    ESStrictDateTimeNoMillis,
 }
 
 impl DateTimeInputFormat {
@@ -172,6 +174,8 @@ impl DateTimeInputFormat {
             DateTimeInputFormat::Rfc3339 => "rfc3339",
             DateTimeInputFormat::Strptime(parser) => parser.borrow_strptime_format(),
             DateTimeInputFormat::Timestamp => "unix_timestamp",
+            DateTimeInputFormat::ESStrictDateOptionalTime => "strict_date_optional_time",
+            DateTimeInputFormat::ESStrictDateTimeNoMillis => "strict_date_time_no_millis",
         }
     }
 }
@@ -191,6 +195,8 @@ impl FromStr for DateTimeInputFormat {
             "rfc2822" => DateTimeInputFormat::Rfc2822,
             "rfc3339" => DateTimeInputFormat::Rfc3339,
             "unix_timestamp" => DateTimeInputFormat::Timestamp,
+            "strict_date_optional_time" => DateTimeInputFormat::ESStrictDateOptionalTime,
+            "strict_date_time_no_millis" => DateTimeInputFormat::ESStrictDateTimeNoMillis,
             _ => {
                 if !is_strftime_formatting(date_time_format_str) {
                     return Err(format!(

@@ -21,7 +21,9 @@ use std::time::Duration;
 
 use itertools::Itertools;
 use time::format_description::well_known::{Iso8601, Rfc2822, Rfc3339};
-use time::OffsetDateTime;
+use time::format_description::FormatItem;
+use time::macros::format_description;
+use time::{Date, Month, OffsetDateTime, PrimitiveDateTime, Time};
 
 use super::date_time_format::DateTimeInputFormat;
 use crate::TantivyDateTime;
@@ -52,6 +54,16 @@ pub fn parse_date_time_str(
                 .map(TantivyDateTime::from_utc)
                 .ok(),
             DateTimeInputFormat::Timestamp => parse_timestamp_str(date_time_str),
+            DateTimeInputFormat::ESStrictDateTimeNoMillis => {
+                parse_es_strict_date_time_no_millis(date_time_str)
+                    .map(TantivyDateTime::from_utc)
+                    .ok()
+            }
+            DateTimeInputFormat::ESStrictDateOptionalTime => {
+                parse_es_strict_date_optional_time(date_time_str)
+                    .map(TantivyDateTime::from_utc)
+                    .ok()
+            }
         };
         if let Some(date_time) = date_time_opt {
             return Ok(date_time);
@@ -139,6 +151,99 @@ fn parse_rfc2822(value: &str) -> Result<OffsetDateTime, String> {
 /// Parses a RFC3339 date.
 fn parse_rfc3339(value: &str) -> Result<OffsetDateTime, String> {
     OffsetDateTime::parse(value, &Rfc3339).map_err(|error| error.to_string())
+}
+
+/// Parses a date in the ElasticSearch strict_date_time_no_millis format (yyyy-MM-dd'T'HH:mm:ssZ).
+fn parse_es_strict_date_time_no_millis(value: &str) -> Result<OffsetDateTime, String> {
+    static FORMAT_WITH_OFFSET: &[FormatItem<'_>] = format_description!("[year]-[month]-[day]T[hour]:[minute]:[second][offset_hour sign:mandatory][optional [:[offset_minute]]]");
+    static FORMAT_UTC: &[FormatItem<'_>] =
+        format_description!("[year]-[month]-[day]T[hour]:[minute]:[second]Z");
+
+    if value.ends_with('Z') {
+        PrimitiveDateTime::parse(value, FORMAT_UTC)
+            .map(|pdt| pdt.assume_utc())
+            .map_err(|error| error.to_string())
+    } else {
+        OffsetDateTime::parse(value, FORMAT_WITH_OFFSET).map_err(|error| error.to_string())
+    }
+}
+
+/// Parses a date in the ElasticSearch strict_date_optional_time format.
+/// This format allows for a flexible date-time string where only the year is required.
+fn parse_es_strict_date_optional_time(value: &str) -> Result<OffsetDateTime, String> {
+    // Define format descriptions for various possible inputs
+
+    // Formats with 'Z' at the end (indicating UTC)
+    static FORMAT_DATE_TIME_MILLIS_Z: &[FormatItem<'_>] =
+        format_description!("[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond]Z");
+    static FORMAT_DATE_TIME_SECONDS_Z: &[FormatItem<'_>] =
+        format_description!("[year]-[month]-[day]T[hour]:[minute]:[second]Z");
+
+    // Formats with time zone at the end
+    static FORMAT_DATE_TIME_MILLIS_ZONE: &[FormatItem<'_>] = format_description!(
+        "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond][offset_hour sign:mandatory][optional [:[offset_minute]]]"
+    );
+    static FORMAT_DATE_TIME_SECONDS_ZONE: &[FormatItem<'_>] = format_description!(
+        "[year]-[month]-[day]T[hour]:[minute]:[second][offset_hour sign:mandatory][optional [:[offset_minute]]]"
+    );
+
+    // Formats without 'Z'
+    static FORMAT_DATE_TIME_MILLIS: &[FormatItem<'_>] =
+        format_description!("[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond]");
+    static FORMAT_DATE_TIME_SECONDS: &[FormatItem<'_>] =
+        format_description!("[year]-[month]-[day]T[hour]:[minute]:[second]");
+    static FORMAT_DATE_TIME: &[FormatItem<'_>] =
+        format_description!("[year]-[month]-[day]T[hour]:[minute]");
+
+    // Date-only format
+    static FORMAT_DATE: &[FormatItem<'_>] = format_description!("[year]-[month]-[day]");
+
+    // Try parsing with different formats, from most specific to least specific
+    let result = OffsetDateTime::parse(value, FORMAT_DATE_TIME_MILLIS_ZONE)
+        .or_else(|_| OffsetDateTime::parse(value, FORMAT_DATE_TIME_SECONDS_ZONE))
+        .or_else(|_| {
+            PrimitiveDateTime::parse(value, FORMAT_DATE_TIME_MILLIS_Z).map(|dt| dt.assume_utc())
+        })
+        .or_else(|_| {
+            PrimitiveDateTime::parse(value, FORMAT_DATE_TIME_SECONDS_Z).map(|dt| dt.assume_utc())
+        })
+        .or_else(|_| {
+            PrimitiveDateTime::parse(value, FORMAT_DATE_TIME_MILLIS).map(|dt| dt.assume_utc())
+        })
+        .or_else(|_| {
+            PrimitiveDateTime::parse(value, FORMAT_DATE_TIME_SECONDS).map(|dt| dt.assume_utc())
+        })
+        .or_else(|_| PrimitiveDateTime::parse(value, FORMAT_DATE_TIME).map(|dt| dt.assume_utc()))
+        .or_else(|_| {
+            // Handle date-only string
+            Date::parse(value, FORMAT_DATE).map(|date| date.with_time(Time::MIDNIGHT).assume_utc())
+        })
+        .or_else(|_| {
+            // Handle 'year-month' and 'year' cases
+            if let Some((year_str, month_str)) = value.split_once('-') {
+                if let (Ok(year), Ok(month)) = (year_str.parse::<i32>(), month_str.parse::<u8>()) {
+                    if let Ok(month_enum) = Month::try_from(month) {
+                        let date = Date::from_calendar_date(year, month_enum, 1)
+                            .map_err(|e| e.to_string())?;
+                        let dt = date.with_time(Time::MIDNIGHT).assume_utc();
+                        return Ok(dt);
+                    }
+                }
+            } else if let Ok(year) = value.parse::<i32>() {
+                let date =
+                    Date::from_calendar_date(year, Month::January, 1).map_err(|e| e.to_string())?;
+                let dt = date.with_time(Time::MIDNIGHT).assume_utc();
+                return Ok(dt);
+            }
+            Err("Failed to parse date".to_string())
+        });
+
+    result.map_err(|_| {
+        format!(
+            "Failed to parse date string '{}' as strict_date_optional_time",
+            value
+        )
+    })
 }
 
 /// Returns the appropriate [`TantivyDateTime`] for the specified Unix timestamp.
@@ -566,6 +671,79 @@ mod tests {
             let max_ts_micros = MAX_TIMESTAMP_SECONDS * 1_000_000;
             let date_time = parse_timestamp(max_ts_micros).unwrap();
             assert_eq!(date_time.into_timestamp_micros(), max_ts_micros);
+        }
+    }
+
+    #[test]
+    fn test_parse_es_strict_date_time_no_millis() {
+        let test_cases = [
+            (
+                "2019-03-23T21:34:46-04:00",
+                datetime!(2019-03-24 01:34:46 UTC),
+            ),
+            (
+                "2019-03-23T21:34:46+05:30",
+                datetime!(2019-03-23 16:04:46 UTC),
+            ),
+            ("2019-03-23T21:34:46+01", datetime!(2019-03-23 20:34:46 UTC)),
+            (
+                "2019-03-23T21:34:46+00:00",
+                datetime!(2019-03-23 21:34:46 UTC),
+            ),
+            ("2019-03-23T21:34:46Z", datetime!(2019-03-23 21:34:46 UTC)),
+        ];
+
+        for (input, expected) in test_cases {
+            let date_time =
+                parse_date_time_str(input, &[DateTimeInputFormat::ESStrictDateTimeNoMillis])
+                    .unwrap_or_else(|e| panic!("Failed to parse {}: {}", input, e));
+
+            assert_eq!(
+                date_time.into_timestamp_secs(),
+                expected.unix_timestamp(),
+                "Failed for input: {}",
+                input
+            );
+        }
+    }
+    #[test]
+    fn test_parse_es_strict_date_optional_time() {
+        let test_cases = [
+            ("2019", datetime!(2019-01-01 00:00:00 UTC)),
+            ("2019-03", datetime!(2019-03-01 00:00:00 UTC)),
+            ("2019-03-23", datetime!(2019-03-23 00:00:00 UTC)),
+            ("2019-03-23T21:34", datetime!(2019-03-23 21:34:00 UTC)),
+            ("2019-03-23T21:34:46", datetime!(2019-03-23 21:34:46 UTC)),
+            ("2019-03-23T21:34:46Z", datetime!(2019-03-23 21:34:46 UTC)),
+            (
+                "2019-03-23T21:34:46+01:00",
+                datetime!(2019-03-23 20:34:46 UTC),
+            ),
+            (
+                "2019-03-23T21:34:46.123",
+                datetime!(2019-03-23 21:34:46.123 UTC),
+            ),
+            (
+                "2019-03-23T21:34:46.123Z",
+                datetime!(2019-03-23 21:34:46.123 UTC),
+            ),
+            (
+                "2019-03-23T21:34:46.123+01:00",
+                datetime!(2019-03-23 20:34:46.123 UTC),
+            ),
+        ];
+
+        for (input, expected) in test_cases {
+            let date_time =
+                parse_date_time_str(input, &[DateTimeInputFormat::ESStrictDateOptionalTime])
+                    .unwrap_or_else(|e| panic!("Failed to parse {}: {}", input, e));
+
+            assert_eq!(
+                date_time.into_timestamp_nanos(),
+                expected.unix_timestamp_nanos() as i64,
+                "Failed for input: {}",
+                input
+            );
         }
     }
 }
