@@ -64,13 +64,29 @@ fn build_optional_item(java_datetime_format: &str) -> Option<OwnedFormatItem> {
 }
 
 fn build_zone_offset(_: &str) -> Option<OwnedFormatItem> {
-    let items: Box<[OwnedFormatItem]> = vec![
+    // 'Z' literal to represent UTC offset
+    let z_literal = OwnedFormatItem::Literal(Box::from(b"Z".as_ref()));
+
+    // Offset in '+/-HH:MM' format
+    let offset_with_delimiter_items: Box<[OwnedFormatItem]> = vec![
         OwnedFormatItem::Component(Component::OffsetHour(Default::default())),
-        OwnedFormatItem::Literal(b":".to_vec().into_boxed_slice()),
+        OwnedFormatItem::Literal(Box::from(b":".as_ref())),
         OwnedFormatItem::Component(Component::OffsetMinute(Default::default())),
     ]
     .into_boxed_slice();
-    Some(OwnedFormatItem::Compound(items))
+    let offset_with_delimiter_compound = OwnedFormatItem::Compound(offset_with_delimiter_items);
+
+    // Offset in '+/-HHMM' format
+    let offset_items: Box<[OwnedFormatItem]> = vec![
+        OwnedFormatItem::Component(Component::OffsetHour(Default::default())),
+        OwnedFormatItem::Component(Component::OffsetMinute(Default::default())),
+    ]
+    .into_boxed_slice();
+    let offset_compound = OwnedFormatItem::Compound(offset_items);
+
+    Some(OwnedFormatItem::First(
+        vec![z_literal, offset_with_delimiter_compound, offset_compound].into_boxed_slice(),
+    ))
 }
 
 fn build_year_item(ptn: &str) -> Option<OwnedFormatItem> {
@@ -787,51 +803,40 @@ mod tests {
         //     "1W313",
         //     datetime!(2018-08-02 0:00:00.0 +00:00:00),
         // );
-        // // ❌ 'the 'offset hour' component could not be parsed'
-        // test_parse_java_datetime_aux(
-        //     "basic_week_date_time",
-        //     "2018W313T121212.1Z",
-        //     datetime!(2024-08-01 0:00:00.0 +00:00:00),
-        // );
-        // // ❌ 'the 'offset hour' component could not be parsed'
-        // test_parse_java_datetime_aux(
-        //     "basic_week_date_time",
-        //     "2018W313T121212.123Z",
-        //     datetime!(2024-08-01 0:00:00.0 +00:00:00),
-        // );
-        // // ❌ 'the 'offset hour' component could not be parsed'
-        // test_parse_java_datetime_aux(
-        //     "basic_week_date_time",
-        //     "2018W313T121212.123456789Z",
-        //     datetime!(2024-08-01 0:00:00.0 +00:00:00),
-        // );
-        // // ❌ 'a character literal was not valid'
-        // test_parse_java_datetime_aux(
-        //     "basic_week_date_time",
-        //     "2018W313T121212.123+0100",
-        //     datetime!(2024-08-01 0:00:00.0 +00:00:00),
-        // );
-        // test_parse_java_datetime_aux(
-        //     "basic_week_date_time",
-        //     "2018W313T121212.123+01:00",
-        //     datetime!(2024-08-01 12:12:12.123 +01:00:00),
-        // );
-        // // ❌ 'the 'offset hour' component could not be parsed'
-        // test_parse_java_datetime_aux(
-        //     "basic_week_date_time_no_millis",
-        //     "2018W313T121212Z",
-        //     datetime!(2024-08-01 12:12:12.123 +01:00:00),
-        // );
-        // // ❌ 'a character literal was not valid'
-        // test_parse_java_datetime_aux(
-        //     "basic_week_date_time_no_millis",
-        //     "2018W313T121212+0100",
-        //     datetime!(2024-08-01 12:12:12.123 +01:00:00),
-        // );
+        test_parse_java_datetime_aux(
+            "basic_week_date_time",
+            "2018W313T121212.1Z",
+            datetime!(2018-08-02 12:12:12.1 +00:00:00),
+        );
+        test_parse_java_datetime_aux(
+            "basic_week_date_time",
+            "2018W313T121212.123Z",
+            datetime!(2018-08-02 12:12:12.123 +00:00:00),
+        );
+        test_parse_java_datetime_aux(
+            "basic_week_date_time",
+            "2018W313T121212.123456789Z",
+            datetime!(2018-08-02 12:12:12.123456789 +00:00:00),
+        );
+        test_parse_java_datetime_aux(
+            "basic_week_date_time",
+            "2018W313T121212.123+0100",
+            datetime!(2018-08-02 12:12:12.123 +01:00:00),
+        );
+        test_parse_java_datetime_aux(
+            "basic_week_date_time_no_millis",
+            "2018W313T121212Z",
+            datetime!(2018-08-02 12:12:12.0 +00:00:00),
+        );
+        test_parse_java_datetime_aux(
+            "basic_week_date_time_no_millis",
+            "2018W313T121212+0100",
+            datetime!(2018-08-02 12:12:12.0 +01:00:00),
+        );
         test_parse_java_datetime_aux(
             "basic_week_date_time_no_millis",
             "2018W313T121212+01:00",
-            datetime!(2024-08-01 12:12:12.0 +01:00:00),
+            datetime!(2018-08-02 12:12:12.0 +01:00:00),
         );
 
         test_parse_java_datetime_aux(
