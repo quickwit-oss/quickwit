@@ -242,7 +242,8 @@ mod tests {
         let result = LeafSearchResponse {
             failed_splits: Vec::new(),
             intermediate_aggregation_result: None,
-            num_attempted_splits: 0,
+            num_attempted_splits: 1,
+            num_successful_splits: 1,
             num_hits: 1234,
             partial_hits: vec![PartialHit {
                 doc_id: 1,
@@ -331,7 +332,8 @@ mod tests {
         let result = LeafSearchResponse {
             failed_splits: Vec::new(),
             intermediate_aggregation_result: None,
-            num_attempted_splits: 0,
+            num_attempted_splits: 1,
+            num_successful_splits: 1,
             num_hits: 1234,
             partial_hits: vec![PartialHit {
                 doc_id: 1,
