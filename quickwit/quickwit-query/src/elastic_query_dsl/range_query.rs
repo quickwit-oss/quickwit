@@ -142,4 +142,30 @@ mod tests {
             if field == "date" && lower_bound == JsonLiteral::String("2021-01-03T13:32:43Z".to_string())
         ));
     }
+
+    #[test]
+    fn test_date_range_query_with_strict_date_optional_time_format() {
+        let range_query_params = ElasticRangeQueryParams {
+            gt: None,
+            gte: None,
+            lt: None,
+            lte: Some(JsonLiteral::String("2024-09-28T10:22:55.797Z".to_string())),
+            boost: None,
+            format: JsonLiteral::String("strict_date_optional_time".to_string()).into(),
+        };
+        let range_query: ElasticRangeQuery = ElasticRangeQuery {
+            field: "timestamp".to_string(),
+            value: range_query_params,
+        };
+        let range_query_ast = range_query.convert_to_query_ast().unwrap();
+        assert!(matches!(
+            range_query_ast,
+            QueryAst::Range(RangeQuery {
+                field,
+                lower_bound: Bound::Unbounded,
+                upper_bound: Bound::Included(upper_bound),
+            })
+            if field == "timestamp" && upper_bound == JsonLiteral::String("2024-09-28T10:22:55.797Z".to_string())
+        ));
+    }
 }
