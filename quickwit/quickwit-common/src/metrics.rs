@@ -28,13 +28,17 @@ pub use prometheus::{
 };
 use prometheus::{Gauge, HistogramOpts, Opts, TextEncoder};
 
+pub trait Vector<const N: usize, T> {
+    fn with_label_values(&self, label_values: [&str; N]) -> T;
+}
+
 #[derive(Clone)]
 pub struct HistogramVec<const N: usize> {
     underlying: PrometheusHistogramVec,
 }
 
-impl<const N: usize> HistogramVec<N> {
-    pub fn with_label_values(&self, label_values: [&str; N]) -> Histogram {
+impl<const N: usize> Vector<N, Histogram> for HistogramVec<N> {
+    fn with_label_values(&self, label_values: [&str; N]) -> Histogram {
         self.underlying.with_label_values(&label_values)
     }
 }
@@ -44,8 +48,8 @@ pub struct IntCounterVec<const N: usize> {
     underlying: PrometheusIntCounterVec,
 }
 
-impl<const N: usize> IntCounterVec<N> {
-    pub fn with_label_values(&self, label_values: [&str; N]) -> IntCounter {
+impl<const N: usize> Vector<N, IntCounter> for IntCounterVec<N> {
+    fn with_label_values(&self, label_values: [&str; N]) -> IntCounter {
         self.underlying.with_label_values(&label_values)
     }
 }
@@ -55,8 +59,8 @@ pub struct IntGaugeVec<const N: usize> {
     underlying: PrometheusIntGaugeVec,
 }
 
-impl<const N: usize> IntGaugeVec<N> {
-    pub fn with_label_values(&self, label_values: [&str; N]) -> IntGauge {
+impl<const N: usize> Vector<N, IntGauge> for IntGaugeVec<N> {
+    fn with_label_values(&self, label_values: [&str; N]) -> IntGauge {
         self.underlying.with_label_values(&label_values)
     }
 }
@@ -464,5 +468,12 @@ pub fn index_label(index_name: &str) -> &str {
         "__any__"
     }
 }
+
+// TODO wants: macro to generate static metric vectors
+// could be used to simplify
+// - quickwit-ingest/src/ingest_v2/metrics.rs 15 labels
+// - quickwit-ingest/src/ingest_v2/metrics.rs 12 labels
+// - quickwit-common/src/metrics.rs 10 labels
+// and encourage using that pattern in more places
 
 pub static MEMORY_METRICS: Lazy<MemoryMetrics> = Lazy::new(MemoryMetrics::default);

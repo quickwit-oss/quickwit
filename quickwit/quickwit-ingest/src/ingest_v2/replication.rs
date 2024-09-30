@@ -454,7 +454,7 @@ impl ReplicationTask {
         };
         let queue_id = replica_shard.queue_id();
 
-        let mut state_guard = with_lock_metrics!(self.state.lock_fully(), "init_replica", "write")?;
+        let mut state_guard = with_lock_metrics!(self.state.lock_fully(), init_replica, write)?;
 
         match state_guard.mrecordlog.create_queue(&queue_id).await {
             Ok(_) => {}
@@ -526,7 +526,7 @@ impl ReplicationTask {
         // queue in the WAL and should be deleted.
         let mut shards_to_delete: HashSet<QueueId> = HashSet::new();
 
-        let mut state_guard = with_lock_metrics!(self.state.lock_fully(), "replicate", "write")?;
+        let mut state_guard = with_lock_metrics!(self.state.lock_fully(), replicate, write)?;
 
         if state_guard.status() != IngesterStatus::Ready {
             replicate_failures.reserve_exact(replicate_request.subrequests.len());

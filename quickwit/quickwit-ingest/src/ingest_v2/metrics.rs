@@ -21,7 +21,7 @@ use mrecordlog::ResourceUsage;
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
     exponential_buckets, linear_buckets, new_counter_vec, new_gauge, new_gauge_vec, new_histogram,
-    new_histogram_vec, Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec,
+    new_histogram_vec, Histogram, IntCounter, IntCounterVec, IntGauge, Vector,
 };
 
 // Counter vec counting the different outcomes of ingest requests as
@@ -82,12 +82,81 @@ pub(crate) struct IngestV2Metrics {
     pub closed_shards: IntGauge,
     pub shard_lt_throughput_mib: Histogram,
     pub shard_st_throughput_mib: Histogram,
-    pub wal_acquire_lock_requests_in_flight: IntGaugeVec<2>,
-    pub wal_acquire_lock_request_duration_secs: HistogramVec<2>,
-    pub wal_hold_lock_duration_secs: HistogramVec<2>,
+    pub wal_acquire_lock_requests_in_flight: LockMetric<IntGauge>,
+    pub wal_acquire_lock_request_duration_secs: LockMetric<Histogram>,
+    pub wal_hold_lock_duration_secs: LockMetric<Histogram>,
     pub wal_disk_used_bytes: IntGauge,
     pub wal_memory_used_bytes: IntGauge,
     pub ingest_results: IngestResultMetrics,
+}
+
+pub(crate) struct ReadMetric<T> {
+    pub read: T,
+}
+
+pub(crate) struct WriteMetric<T> {
+    pub write: T,
+}
+
+pub(crate) struct RWMetric<T> {
+    pub read: T,
+    pub write: T,
+}
+
+pub(crate) struct LockMetric<T> {
+    pub reset_shards: RWMetric<T>,
+    pub fetch: ReadMetric<T>,
+    pub persist: WriteMetric<T>,
+    pub init_shards: WriteMetric<T>,
+    pub truncate_shards: WriteMetric<T>,
+    pub close_shards: WriteMetric<T>,
+    pub retain_shards: WriteMetric<T>,
+    pub gc_shards: WriteMetric<T>,
+    pub init_replica: WriteMetric<T>,
+    pub replicate: WriteMetric<T>,
+    pub close_idle_shards: WriteMetric<T>,
+}
+
+impl<T> LockMetric<T> {
+    fn new<V>(dynamic_vector: V) -> Self
+    where V: Vector<2, T> {
+        LockMetric {
+            reset_shards: RWMetric {
+                read: dynamic_vector.with_label_values(["reset_shards", "read"]),
+                write: dynamic_vector.with_label_values(["reset_shards", "write"]),
+            },
+            fetch: ReadMetric {
+                read: dynamic_vector.with_label_values(["fetch", "read"]),
+            },
+            persist: WriteMetric {
+                write: dynamic_vector.with_label_values(["persit", "read"]),
+            },
+            init_shards: WriteMetric {
+                write: dynamic_vector.with_label_values(["init_shards", "read"]),
+            },
+            truncate_shards: WriteMetric {
+                write: dynamic_vector.with_label_values(["truncate_shards", "read"]),
+            },
+            close_shards: WriteMetric {
+                write: dynamic_vector.with_label_values(["close_shards", "read"]),
+            },
+            retain_shards: WriteMetric {
+                write: dynamic_vector.with_label_values(["retain_shards", "read"]),
+            },
+            gc_shards: WriteMetric {
+                write: dynamic_vector.with_label_values(["gc_shards", "read"]),
+            },
+            init_replica: WriteMetric {
+                write: dynamic_vector.with_label_values(["init_replica", "read"]),
+            },
+            replicate: WriteMetric {
+                write: dynamic_vector.with_label_values(["replicate", "read"]),
+            },
+            close_idle_shards: WriteMetric {
+                write: dynamic_vector.with_label_values(["close_idle_shards", "read"]),
+            },
+        }
+    }
 }
 
 impl Default for IngestV2Metrics {
@@ -125,29 +194,29 @@ impl Default for IngestV2Metrics {
                 "ingest",
                 linear_buckets(0.0f64, 1.0f64, 15).unwrap(),
             ),
-            wal_acquire_lock_requests_in_flight: new_gauge_vec(
+            wal_acquire_lock_requests_in_flight: LockMetric::new(new_gauge_vec(
                 "wal_acquire_lock_requests_in_flight",
                 "Number of acquire lock requests in-flight.",
                 "ingest",
                 &[],
                 ["operation", "type"],
-            ),
-            wal_acquire_lock_request_duration_secs: new_histogram_vec(
+            )),
+            wal_acquire_lock_request_duration_secs: LockMetric::new(new_histogram_vec(
                 "wal_acquire_lock_request_duration_secs",
                 "Duration of acquire lock requests in seconds.",
                 "ingest",
                 &[],
                 ["operation", "type"],
                 exponential_buckets(0.001, 2.0, 12).unwrap(),
-            ),
-            wal_hold_lock_duration_secs: new_histogram_vec(
+            )),
+            wal_hold_lock_duration_secs: LockMetric::new(new_histogram_vec(
                 "wal_hold_lock_duration_secs",
                 "Duration for which a lock was held in seconds.",
                 "ingest",
                 &[],
                 ["operation", "type"],
                 exponential_buckets(0.001, 2.0, 12).unwrap(),
-            ),
+            )),
             wal_disk_used_bytes: new_gauge(
                 "wal_disk_used_bytes",
                 "WAL disk space used in bytes.",

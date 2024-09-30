@@ -22,6 +22,7 @@ use std::collections::{btree_set, BTreeSet, HashMap};
 
 use async_trait::async_trait;
 use prost::Message;
+use quickwit_common::metrics::Vector;
 use quickwit_common::rate_limited_error;
 use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_common::uri::Uri;

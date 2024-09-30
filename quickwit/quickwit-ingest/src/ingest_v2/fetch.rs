@@ -134,7 +134,7 @@ impl FetchStreamTask {
             let mut mrecord_lengths = Vec::new();
 
             let Some(mrecordlog_guard) =
-                with_lock_metrics!(self.mrecordlog.read().map(Some), "fetch", "read")
+                with_lock_metrics!(self.mrecordlog.read().map(Some), fetch, read)
             else {
                 // we always get a Some, that layer is just added to satisfly with_lock_metrics
                 // needs for a Future<Item = Result | Option>
