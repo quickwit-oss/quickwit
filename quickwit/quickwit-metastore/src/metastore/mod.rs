@@ -87,7 +87,7 @@ impl MetastoreServiceStreamSplitsExt for MetastoreServiceStream<ListSplitsRespon
     async fn collect_splits(mut self) -> MetastoreResult<Vec<Split>> {
         let mut all_splits = Vec::new();
         while let Some(list_splits_response) = self.try_next().await? {
-            let splits = list_splits_response.deserialize_splits()?;
+            let splits = list_splits_response.deserialize_splits().await?;
             all_splits.extend(splits);
         }
         Ok(all_splits)
@@ -96,7 +96,7 @@ impl MetastoreServiceStreamSplitsExt for MetastoreServiceStream<ListSplitsRespon
     async fn collect_splits_metadata(mut self) -> MetastoreResult<Vec<SplitMetadata>> {
         let mut all_splits_metadata = Vec::new();
         while let Some(list_splits_response) = self.try_next().await? {
-            let splits_metadata = list_splits_response.deserialize_splits_metadata()?;
+            let splits_metadata = list_splits_response.deserialize_splits_metadata().await?;
             all_splits_metadata.extend(splits_metadata);
         }
         Ok(all_splits_metadata)
@@ -105,7 +105,7 @@ impl MetastoreServiceStreamSplitsExt for MetastoreServiceStream<ListSplitsRespon
     async fn collect_split_ids(mut self) -> MetastoreResult<Vec<SplitId>> {
         let mut all_splits = Vec::new();
         while let Some(list_splits_response) = self.try_next().await? {
-            let splits = list_splits_response.deserialize_split_ids()?;
+            let splits = list_splits_response.deserialize_split_ids().await?;
             all_splits.extend(splits);
         }
         Ok(all_splits)
@@ -414,7 +414,7 @@ impl AddSourceRequestExt for AddSourceRequest {
     ) -> MetastoreResult<AddSourceRequest> {
         let source_config_json = serde_utils::to_json_str(&source_config)?;
         let request = Self {
-            index_uid: index_uid.into().into(),
+            index_uid: Some(index_uid.into()),
             source_config_json,
         };
         Ok(request)
@@ -451,7 +451,7 @@ impl StageSplitsRequestExt for StageSplitsRequest {
     ) -> MetastoreResult<StageSplitsRequest> {
         let split_metadata_list_serialized_json = serde_utils::to_json_str(&[split_metadata])?;
         let request = Self {
-            index_uid: index_uid.into().into(),
+            index_uid: Some(index_uid.into()),
             split_metadata_list_serialized_json,
         };
         Ok(request)
@@ -464,7 +464,7 @@ impl StageSplitsRequestExt for StageSplitsRequest {
         let splits_metadata: Vec<SplitMetadata> = splits_metadata.into_iter().collect();
         let split_metadata_list_serialized_json = serde_utils::to_json_str(&splits_metadata)?;
         let request = Self {
-            index_uid: index_uid.into().into(),
+            index_uid: Some(index_uid.into()),
             split_metadata_list_serialized_json,
         };
         Ok(request)
@@ -510,6 +510,7 @@ impl ListSplitsRequestExt for ListSplitsRequest {
 }
 
 /// Helper trait to build a [`ListSplitsResponse`] and deserialize its payload.
+#[async_trait]
 pub trait ListSplitsResponseExt {
     /// Creates a new [`ListSplitsResponse`] from a list of [`Split`].
     fn try_from_splits(
@@ -518,27 +519,15 @@ pub trait ListSplitsResponseExt {
 
     /// Deserializes the `splits_serialized_json` field of a [`ListSplitsResponse`] into a list of
     /// [`Split`].
-    fn deserialize_splits(&self) -> MetastoreResult<Vec<Split>>;
+    async fn deserialize_splits(self) -> MetastoreResult<Vec<Split>>;
 
     /// Deserializes the `splits_serialized_json` field of a [`ListSplitsResponse`] into a list of
     /// [`SplitMetadata`].
-    fn deserialize_splits_metadata(&self) -> MetastoreResult<Vec<SplitMetadata>> {
-        let splits = self.deserialize_splits()?;
-        Ok(splits
-            .into_iter()
-            .map(|split| split.split_metadata)
-            .collect())
-    }
+    async fn deserialize_splits_metadata(self) -> MetastoreResult<Vec<SplitMetadata>>;
 
     /// Deserializes the `splits_serialized_json` field of a [`ListSplitsResponse`] into a list of
     /// [`SplitId`].
-    fn deserialize_split_ids(&self) -> MetastoreResult<Vec<SplitId>> {
-        let splits = self.deserialize_splits()?;
-        Ok(splits
-            .into_iter()
-            .map(|split| split.split_metadata.split_id)
-            .collect())
-    }
+    async fn deserialize_split_ids(self) -> MetastoreResult<Vec<SplitId>>;
 
     /// Creates an empty [`ListSplitsResponse`].
     fn empty() -> Self;
@@ -560,6 +549,7 @@ impl PublishSplitsRequestExt for PublishSplitsRequest {
     }
 }
 
+#[async_trait]
 impl ListSplitsResponseExt for ListSplitsResponse {
     fn empty() -> Self {
         Self {
@@ -575,8 +565,31 @@ impl ListSplitsResponseExt for ListSplitsResponse {
         Ok(request)
     }
 
-    fn deserialize_splits(&self) -> MetastoreResult<Vec<Split>> {
-        serde_utils::from_json_str(&self.splits_serialized_json)
+    async fn deserialize_splits(self) -> MetastoreResult<Vec<Split>> {
+        run_cpu_intensive(move || serde_utils::from_json_str(&self.splits_serialized_json))
+            .await
+            .map_err(|join_error| MetastoreError::Internal {
+                message: "failed to deserialize splits".to_string(),
+                cause: join_error.to_string(),
+            })?
+    }
+
+    async fn deserialize_splits_metadata(self) -> MetastoreResult<Vec<SplitMetadata>> {
+        let splits = self.deserialize_splits().await?;
+        let splits_metadata = splits
+            .into_iter()
+            .map(|split| split.split_metadata)
+            .collect();
+        Ok(splits_metadata)
+    }
+
+    async fn deserialize_split_ids(self) -> MetastoreResult<Vec<SplitId>> {
+        let splits = self.deserialize_splits().await?;
+        let split_ids = splits
+            .into_iter()
+            .map(|split| split.split_metadata.split_id)
+            .collect();
+        Ok(split_ids)
     }
 }
 
@@ -618,7 +631,14 @@ pub struct ListSplitsQuery {
 
     /// Sorts the splits by staleness, i.e. by delete opstamp and publish timestamp in ascending
     /// order.
-    pub sort_by_staleness: bool,
+    pub sort_by: SortBy,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum SortBy {
+    None,
+    Staleness,
+    IndexUid,
 }
 
 #[allow(unused_attributes)]
@@ -637,20 +657,17 @@ impl ListSplitsQuery {
             update_timestamp: Default::default(),
             create_timestamp: Default::default(),
             mature: Bound::Unbounded,
-            sort_by_staleness: false,
+            sort_by: SortBy::None,
         }
     }
 
     /// Creates a new [`ListSplitsQuery`] from a non-empty list of index UIDs.
-    /// Returns an error if the list is empty.
-    pub fn try_from_index_uids(index_uids: Vec<IndexUid>) -> MetastoreResult<Self> {
+    /// Returns None if the list is empty.
+    pub fn try_from_index_uids(index_uids: Vec<IndexUid>) -> Option<Self> {
         if index_uids.is_empty() {
-            return Err(MetastoreError::Internal {
-                message: "ListSplitQuery should define at least one index uid".to_string(),
-                cause: "".to_string(),
-            });
+            return None;
         }
-        Ok(Self {
+        Some(Self {
             index_uids,
             node_id: None,
             limit: None,
@@ -662,7 +679,7 @@ impl ListSplitsQuery {
             update_timestamp: Default::default(),
             create_timestamp: Default::default(),
             mature: Bound::Unbounded,
-            sort_by_staleness: false,
+            sort_by: SortBy::None,
         })
     }
 
@@ -829,7 +846,13 @@ impl ListSplitsQuery {
     /// Sorts the splits by staleness, i.e. by delete opstamp and publish timestamp in ascending
     /// order.
     pub fn sort_by_staleness(mut self) -> Self {
-        self.sort_by_staleness = true;
+        self.sort_by = SortBy::Staleness;
+        self
+    }
+
+    /// Sorts the splits by index_uid.
+    pub fn sort_by_index_uid(mut self) -> Self {
+        self.sort_by = SortBy::IndexUid;
         self
     }
 }
@@ -1014,10 +1037,11 @@ mod tests {
         assert!(!filter.overlaps_with(75..=124));
     }
 
-    #[test]
-    fn test_list_splits_response_empty() {
+    #[tokio::test]
+    async fn test_list_splits_response_empty() {
         let response = ListSplitsResponse::empty();
-        assert_eq!(response.deserialize_splits().unwrap(), Vec::new());
+        let splits = response.deserialize_splits().await.unwrap();
+        assert!(splits.is_empty());
     }
 
     #[tokio::test]

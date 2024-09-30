@@ -242,3 +242,10 @@ impl search::SortOrder {
 }
 
 impl quickwit_common::pubsub::Event for ReportSplitsRequest {}
+
+/// Shard update_timestamp to use when reading file metastores <v0.9
+pub fn compatibility_shard_update_timestamp() -> i64 {
+    // We prefer a fix value here because it makes backward compatibility tests
+    // simpler. Very few users use the shard API in versions <0.9 anyway.
+    1704067200 // 2024-00-00T00:00:00Z
+}

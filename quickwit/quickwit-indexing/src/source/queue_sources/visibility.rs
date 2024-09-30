@@ -40,7 +40,7 @@ pub(super) struct VisibilitySettings {
     pub deadline_for_default_extension: Duration,
     /// Rhe timeout for the visibility extension request
     pub request_timeout: Duration,
-    /// an extra margin that is substracted from the expected deadline when
+    /// an extra margin that is subtracted from the expected deadline when
     /// asserting whether we are still in time to extend the visibility
     pub request_margin: Duration,
 }
@@ -145,9 +145,9 @@ impl VisibilityTaskHandle {
         &self.ack_id
     }
 
-    pub async fn request_last_extension(self, extension: Duration) -> anyhow::Result<()> {
+    pub async fn request_last_extension(self) -> anyhow::Result<()> {
         self.mailbox
-            .ask_for_res(RequestLastExtension { extension })
+            .ask_for_res(RequestLastExtension)
             .await
             .map_err(|e| anyhow!(e))?;
         Ok(())
@@ -208,12 +208,10 @@ impl Handler<Loop> for VisibilityTask {
     }
 }
 
-/// Ensures that the visibility of the message is extended until the given
-/// deadline and then stops the extension loop.
+/// Ensures that the visibility of the message is extended using
+/// deadline_for_last_extension and then stops the extension loop.
 #[derive(Debug)]
-struct RequestLastExtension {
-    extension: Duration,
-}
+struct RequestLastExtension;
 
 #[async_trait]
 impl Handler<RequestLastExtension> for VisibilityTask {
@@ -221,13 +219,16 @@ impl Handler<RequestLastExtension> for VisibilityTask {
 
     async fn handle(
         &mut self,
-        message: RequestLastExtension,
+        _message: RequestLastExtension,
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
-        let last_deadline = Instant::now() + message.extension;
+        let deadline_for_last_extension = self.visibility_settings.deadline_for_last_extension;
+        let last_deadline = Instant::now() + deadline_for_last_extension;
         self.last_extension_requested = true;
         if last_deadline > self.current_deadline {
-            Ok(self.extend_visibility(ctx, message.extension).await)
+            Ok(self
+                .extend_visibility(ctx, deadline_for_last_extension)
+                .await)
         } else {
             Ok(Ok(()))
         }
@@ -264,7 +265,7 @@ mod tests {
         // spawn task
         let visibility_settings = VisibilitySettings {
             deadline_for_default_extension: Duration::from_secs(1),
-            deadline_for_last_extension: Duration::from_secs(20),
+            deadline_for_last_extension: Duration::from_secs(5),
             deadline_for_receive: Duration::from_secs(1),
             request_timeout: Duration::from_millis(100),
             request_margin: Duration::from_millis(100),
@@ -282,11 +283,7 @@ mod tests {
         let next_deadline = queue.next_visibility_deadline(&ack_id).unwrap();
         assert!(initial_deadline < next_deadline);
         assert!(!handle.extension_failed());
-        // request last extension
-        handle
-            .request_last_extension(Duration::from_secs(5))
-            .await
-            .unwrap();
+        handle.request_last_extension().await.unwrap();
         assert!(
             Instant::now() + Duration::from_secs(4)
                 < queue.next_visibility_deadline(&ack_id).unwrap()

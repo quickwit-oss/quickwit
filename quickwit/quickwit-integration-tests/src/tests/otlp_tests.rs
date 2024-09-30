@@ -18,99 +18,237 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashMap;
-use std::path::Path;
-use std::sync::Arc;
-use std::time::Duration;
 
-use quickwit_actors::{ActorHandle, Mailbox, Universe};
-use quickwit_cluster::{create_cluster_for_test, ChannelTransport, Cluster};
-use quickwit_common::pubsub::EventBroker;
-use quickwit_common::uri::Uri;
-use quickwit_config::{IndexerConfig, IngestApiConfig, JaegerConfig, SearcherConfig, SourceConfig};
-use quickwit_indexing::actors::MergeSchedulerService;
-use quickwit_indexing::models::SpawnPipeline;
-use quickwit_indexing::IndexingService;
-use quickwit_ingest::{
-    init_ingest_api, CommitType, CreateQueueRequest, IngestApiService, IngestServiceClient,
-    IngesterPool, QUEUES_DIR_NAME,
+use futures_util::StreamExt;
+use quickwit_config::service::QuickwitService;
+use quickwit_metastore::SplitState;
+use quickwit_opentelemetry::otlp::{
+    make_resource_spans_for_test, OTEL_LOGS_INDEX_ID, OTEL_TRACES_INDEX_ID,
 };
-use quickwit_metastore::{AddSourceRequestExt, CreateIndexRequestExt, FileBackedMetastore};
-use quickwit_opentelemetry::otlp::{make_resource_spans_for_test, OtlpGrpcTracesService};
-use quickwit_proto::jaeger::storage::v1::span_reader_plugin_server::SpanReaderPlugin;
 use quickwit_proto::jaeger::storage::v1::{
     FindTraceIDsRequest, GetOperationsRequest, GetServicesRequest, GetTraceRequest, Operation,
     SpansResponseChunk, TraceQueryParameters,
 };
-use quickwit_proto::metastore::{
-    AddSourceRequest, CreateIndexRequest, MetastoreService, MetastoreServiceClient,
-};
-use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_server::TraceService;
+use quickwit_proto::opentelemetry::proto::collector::logs::v1::ExportLogsServiceRequest;
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::ExportTraceServiceRequest;
-use quickwit_proto::types::{IndexUid, NodeId, PipelineUid};
-use quickwit_search::{
-    start_searcher_service, SearchJobPlacer, SearchService, SearchServiceClient, SearcherContext,
-    SearcherPool,
-};
-use quickwit_storage::StorageResolver;
-use tempfile::TempDir;
-use tokio_stream::StreamExt;
+use quickwit_proto::opentelemetry::proto::common::v1::any_value::Value;
+use quickwit_proto::opentelemetry::proto::common::v1::AnyValue;
+use quickwit_proto::opentelemetry::proto::logs::v1::{LogRecord, ResourceLogs, ScopeLogs};
+use quickwit_proto::opentelemetry::proto::trace::v1::{ResourceSpans, ScopeSpans, Span};
+use tonic::codec::CompressionEncoding;
 
-use crate::JaegerService;
+use crate::test_utils::ClusterSandboxBuilder;
+
+fn initialize_tests() {
+    quickwit_common::setup_logging_for_tests();
+    std::env::set_var("QW_ENABLE_INGEST_V2", "true");
+}
 
 #[tokio::test]
-async fn test_otel_jaeger_integration() {
-    let cluster = cluster_for_test().await;
-    let universe = Universe::with_accelerated_time();
-    let temp_dir = tempfile::tempdir().unwrap();
+async fn test_ingest_traces_with_otlp_grpc_api() {
+    initialize_tests();
+    let mut sandbox = ClusterSandboxBuilder::default()
+        .add_node([QuickwitService::Searcher])
+        .add_node([QuickwitService::Metastore])
+        .add_node_with_otlp([QuickwitService::Indexer])
+        .add_node([QuickwitService::ControlPlane])
+        .add_node([QuickwitService::Janitor])
+        .build_and_start()
+        .await;
+    // Wait for the pipelines to start (one for logs and one for traces)
+    sandbox.wait_for_indexing_pipelines(2).await.unwrap();
 
-    let (ingester_service, ingester_client) = ingester_for_test(&universe, temp_dir.path()).await;
-    let ingester_pool = IngesterPool::default();
-    let traces_service = OtlpGrpcTracesService::new(ingester_client, Some(CommitType::Force));
+    fn build_span(span_name: String) -> Vec<ResourceSpans> {
+        let scope_spans = vec![ScopeSpans {
+            spans: vec![Span {
+                name: span_name,
+                trace_id: vec![1; 16],
+                span_id: vec![2; 8],
+                start_time_unix_nano: 1724060143000000001,
+                end_time_unix_nano: 1724060144000000000,
+                ..Default::default()
+            }],
+            ..Default::default()
+        }];
+        vec![ResourceSpans {
+            scope_spans,
+            ..Default::default()
+        }]
+    }
 
-    let storage_resolver = StorageResolver::unconfigured();
-    let metastore = metastore_for_test(&storage_resolver).await;
-    let (indexer_service, _indexer_handle) = indexer_for_test(
-        &universe,
-        temp_dir.path(),
-        cluster.clone(),
-        metastore.clone(),
-        storage_resolver.clone(),
-        ingester_service.clone(),
-        ingester_pool.clone(),
-    )
-    .await;
+    // Send the spans on the default index
+    let tested_clients = vec![
+        sandbox.trace_client.clone(),
+        sandbox
+            .trace_client
+            .clone()
+            .send_compressed(CompressionEncoding::Gzip),
+    ];
+    for (idx, mut tested_client) in tested_clients.into_iter().enumerate() {
+        let body = format!("hello{}", idx);
+        let request = ExportTraceServiceRequest {
+            resource_spans: build_span(body.clone()),
+        };
+        let response = tested_client.export(request).await.unwrap();
+        assert_eq!(
+            response
+                .into_inner()
+                .partial_success
+                .unwrap()
+                .rejected_spans,
+            0
+        );
+        sandbox
+            .wait_for_splits(
+                OTEL_TRACES_INDEX_ID,
+                Some(vec![SplitState::Published]),
+                idx + 1,
+            )
+            .await
+            .unwrap();
+        sandbox
+            .assert_hit_count(OTEL_TRACES_INDEX_ID, &format!("span_name:{}", body), 1)
+            .await;
+    }
 
-    setup_traces_index(
-        &temp_dir,
-        metastore.clone(),
-        &ingester_service,
-        &indexer_service,
-    )
-    .await;
+    // Send the spans on a non existing index, should return an error.
+    {
+        let request = ExportTraceServiceRequest {
+            resource_spans: build_span("hello".to_string()),
+        };
+        let mut tonic_request = tonic::Request::new(request);
+        tonic_request.metadata_mut().insert(
+            "qw-otel-traces-index",
+            tonic::metadata::MetadataValue::try_from("non-existing-index").unwrap(),
+        );
+        let status = sandbox
+            .trace_client
+            .clone()
+            .export(tonic_request)
+            .await
+            .unwrap_err();
+        assert_eq!(status.code(), tonic::Code::NotFound);
+    }
 
-    let search_service =
-        searcher_for_test(&cluster, metastore.clone(), storage_resolver.clone()).await;
-    let jaeger_service = JaegerService::new(JaegerConfig::default(), search_service);
+    sandbox
+        .shutdown_services([QuickwitService::Indexer])
+        .await
+        .unwrap();
+    sandbox.shutdown().await.unwrap();
+}
 
-    cluster
-        .wait_for_ready_members(|members| members.len() == 1, Duration::from_secs(5))
+#[tokio::test]
+async fn test_ingest_logs_with_otlp_grpc_api() {
+    initialize_tests();
+    let mut sandbox = ClusterSandboxBuilder::default()
+        .add_node([QuickwitService::Searcher])
+        .add_node([QuickwitService::Metastore])
+        .add_node_with_otlp([QuickwitService::Indexer])
+        .add_node([QuickwitService::ControlPlane])
+        .add_node([QuickwitService::Janitor])
+        .build_and_start()
+        .await;
+    // Wait fo the pipelines to start (one for logs and one for traces)
+    sandbox.wait_for_indexing_pipelines(2).await.unwrap();
+
+    fn build_log(body: String) -> Vec<ResourceLogs> {
+        let log_record = LogRecord {
+            time_unix_nano: 1724060143000000001,
+            body: Some(AnyValue {
+                value: Some(Value::StringValue(body)),
+            }),
+            ..Default::default()
+        };
+        let scope_logs = ScopeLogs {
+            log_records: vec![log_record],
+            ..Default::default()
+        };
+        vec![ResourceLogs {
+            scope_logs: vec![scope_logs],
+            ..Default::default()
+        }]
+    }
+
+    // Send the logs on the default index
+    let tested_clients = vec![
+        sandbox.logs_client.clone(),
+        sandbox
+            .logs_client
+            .clone()
+            .send_compressed(CompressionEncoding::Gzip),
+    ];
+    for (idx, mut tested_client) in tested_clients.into_iter().enumerate() {
+        let body: String = format!("hello{}", idx);
+        let request = ExportLogsServiceRequest {
+            resource_logs: build_log(body.clone()),
+        };
+        let response = tested_client.export(request).await.unwrap();
+        assert_eq!(
+            response
+                .into_inner()
+                .partial_success
+                .unwrap()
+                .rejected_log_records,
+            0
+        );
+        sandbox
+            .wait_for_splits(
+                OTEL_LOGS_INDEX_ID,
+                Some(vec![SplitState::Published]),
+                idx + 1,
+            )
+            .await
+            .unwrap();
+        sandbox
+            .assert_hit_count(OTEL_LOGS_INDEX_ID, &format!("body.message:{}", body), 1)
+            .await;
+    }
+
+    sandbox
+        .shutdown_services([QuickwitService::Indexer])
+        .await
+        .unwrap();
+    sandbox.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn test_jaeger_api() {
+    initialize_tests();
+    let mut sandbox = ClusterSandboxBuilder::default()
+        .add_node([QuickwitService::Searcher])
+        .add_node([QuickwitService::Metastore])
+        .add_node_with_otlp([QuickwitService::Indexer])
+        .add_node([QuickwitService::ControlPlane])
+        .add_node([QuickwitService::Janitor])
+        .build_and_start()
+        .await;
+    // Wait fo the pipelines to start (one for logs and one for traces)
+    sandbox.wait_for_indexing_pipelines(2).await.unwrap();
+
+    let export_trace_request = ExportTraceServiceRequest {
+        resource_spans: make_resource_spans_for_test(),
+    };
+    sandbox
+        .trace_client
+        .export(export_trace_request)
+        .await
+        .unwrap();
+
+    sandbox
+        .wait_for_splits(OTEL_TRACES_INDEX_ID, Some(vec![SplitState::Published]), 1)
+        .await
+        .unwrap();
+
+    sandbox
+        .shutdown_services([QuickwitService::Indexer])
         .await
         .unwrap();
 
     {
-        // Export traces.
-        let export_trace_request = ExportTraceServiceRequest {
-            resource_spans: make_resource_spans_for_test(),
-        };
-        traces_service
-            .export(tonic::Request::new(export_trace_request))
-            .await
-            .unwrap();
-    }
-    {
         // Test `GetServices`
         let get_services_request = GetServicesRequest {};
-        let get_services_response = jaeger_service
+        let get_services_response = sandbox
+            .jaeger_client
             .get_services(tonic::Request::new(get_services_request))
             .await
             .unwrap()
@@ -123,7 +261,8 @@ async fn test_otel_jaeger_integration() {
             service: "quickwit".to_string(),
             span_kind: "".to_string(),
         };
-        let get_operations_response = jaeger_service
+        let get_operations_response = sandbox
+            .jaeger_client
             .get_operations(tonic::Request::new(get_operations_request))
             .await
             .unwrap()
@@ -155,7 +294,8 @@ async fn test_otel_jaeger_integration() {
             service: "quickwit".to_string(),
             span_kind: "server".to_string(),
         };
-        let get_operations_response = jaeger_service
+        let get_operations_response = sandbox
+            .jaeger_client
             .get_operations(tonic::Request::new(get_operations_request))
             .await
             .unwrap()
@@ -184,7 +324,8 @@ async fn test_otel_jaeger_integration() {
             num_traces: 10,
         };
         let find_trace_ids_request = FindTraceIDsRequest { query: Some(query) };
-        let find_trace_ids_response = jaeger_service
+        let find_trace_ids_response = sandbox
+            .jaeger_client
             .find_trace_i_ds(tonic::Request::new(find_trace_ids_request))
             .await
             .unwrap()
@@ -204,7 +345,8 @@ async fn test_otel_jaeger_integration() {
             num_traces: 10,
         };
         let find_trace_ids_request = FindTraceIDsRequest { query: Some(query) };
-        let find_trace_ids_response = jaeger_service
+        let find_trace_ids_response = sandbox
+            .jaeger_client
             .find_trace_i_ds(tonic::Request::new(find_trace_ids_request))
             .await
             .unwrap()
@@ -224,7 +366,8 @@ async fn test_otel_jaeger_integration() {
             num_traces: 10,
         };
         let find_trace_ids_request = FindTraceIDsRequest { query: Some(query) };
-        let find_trace_ids_response = jaeger_service
+        let find_trace_ids_response = sandbox
+            .jaeger_client
             .find_trace_i_ds(tonic::Request::new(find_trace_ids_request))
             .await
             .unwrap()
@@ -244,7 +387,8 @@ async fn test_otel_jaeger_integration() {
             num_traces: 10,
         };
         let find_trace_ids_request = FindTraceIDsRequest { query: Some(query) };
-        let find_trace_ids_response = jaeger_service
+        let find_trace_ids_response = sandbox
+            .jaeger_client
             .find_trace_i_ds(tonic::Request::new(find_trace_ids_request))
             .await
             .unwrap()
@@ -264,7 +408,8 @@ async fn test_otel_jaeger_integration() {
             num_traces: 10,
         };
         let find_trace_ids_request = FindTraceIDsRequest { query: Some(query) };
-        let find_trace_ids_response = jaeger_service
+        let find_trace_ids_response = sandbox
+            .jaeger_client
             .find_trace_i_ds(tonic::Request::new(find_trace_ids_request))
             .await
             .unwrap()
@@ -277,7 +422,8 @@ async fn test_otel_jaeger_integration() {
         let get_trace_request = GetTraceRequest {
             trace_id: [1; 16].to_vec(),
         };
-        let mut span_stream = jaeger_service
+        let mut span_stream = sandbox
+            .jaeger_client
             .get_trace(tonic::Request::new(get_trace_request))
             .await
             .unwrap()
@@ -293,136 +439,5 @@ async fn test_otel_jaeger_integration() {
         assert_eq!(process.tags[0].key, "tags");
         assert_eq!(process.tags[0].v_str, r#"["foo"]"#);
     }
-    _indexer_handle.quit().await;
-    universe.assert_quit().await;
-}
-
-async fn cluster_for_test() -> Cluster {
-    let transport = ChannelTransport::default();
-    create_cluster_for_test(
-        Vec::new(),
-        &["metastore", "indexer", "searcher"],
-        &transport,
-        true,
-    )
-    .await
-    .unwrap()
-}
-
-async fn ingester_for_test(
-    universe: &Universe,
-    data_dir_path: &Path,
-) -> (Mailbox<IngestApiService>, IngestServiceClient) {
-    let queues_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
-    let ingester_service = init_ingest_api(universe, &queues_dir_path, &IngestApiConfig::default())
-        .await
-        .unwrap();
-    let ingester_client = IngestServiceClient::from_mailbox(ingester_service.clone());
-    (ingester_service, ingester_client)
-}
-
-async fn metastore_for_test(storage_resolver: &StorageResolver) -> MetastoreServiceClient {
-    let storage = storage_resolver
-        .resolve(&Uri::for_test("ram:///metastore"))
-        .await
-        .unwrap();
-    MetastoreServiceClient::new(FileBackedMetastore::for_test(storage))
-}
-
-async fn indexer_for_test(
-    universe: &Universe,
-    data_dir_path: &Path,
-    cluster: Cluster,
-    metastore: MetastoreServiceClient,
-    storage_resolver: StorageResolver,
-    ingester_service: Mailbox<IngestApiService>,
-    ingester_pool: IngesterPool,
-) -> (Mailbox<IndexingService>, ActorHandle<IndexingService>) {
-    let indexer_config = IndexerConfig::for_test().unwrap();
-    let indexing_service = IndexingService::new(
-        NodeId::from("test-node"),
-        data_dir_path.to_path_buf(),
-        indexer_config,
-        1,
-        cluster,
-        metastore,
-        Some(ingester_service),
-        universe.get_or_spawn_one::<MergeSchedulerService>(),
-        ingester_pool,
-        storage_resolver,
-        EventBroker::default(),
-    )
-    .await
-    .unwrap();
-    universe.spawn_builder().spawn(indexing_service)
-}
-
-async fn searcher_for_test(
-    cluster: &Cluster,
-    metastore: MetastoreServiceClient,
-    storage_resolver: StorageResolver,
-) -> Arc<dyn SearchService> {
-    let searcher_config = SearcherConfig::default();
-    let searcher_pool = SearcherPool::default();
-    let search_job_placer = SearchJobPlacer::new(searcher_pool.clone());
-    let searcher_context = Arc::new(SearcherContext::new(searcher_config, None));
-    let searcher_service = start_searcher_service(
-        metastore,
-        storage_resolver,
-        search_job_placer,
-        searcher_context,
-    )
-    .await
-    .unwrap();
-    let grpc_advertise_addr = cluster
-        .ready_members()
-        .await
-        .first()
-        .unwrap()
-        .grpc_advertise_addr;
-    let searcher_client =
-        SearchServiceClient::from_service(searcher_service.clone(), grpc_advertise_addr);
-    searcher_pool.insert(grpc_advertise_addr, searcher_client);
-    searcher_service
-}
-
-async fn setup_traces_index(
-    temp_dir: &TempDir,
-    metastore: MetastoreServiceClient,
-    ingester_service: &Mailbox<IngestApiService>,
-    indexer_service: &Mailbox<IndexingService>,
-) {
-    let index_root_uri: Uri = format!("{}", temp_dir.path().join("indexes").display())
-        .parse()
-        .unwrap();
-    let index_config = OtlpGrpcTracesService::index_config(&index_root_uri).unwrap();
-    let index_id = index_config.index_id.clone();
-    let create_index_request = CreateIndexRequest::try_from_index_config(&index_config).unwrap();
-    let index_uid: IndexUid = metastore
-        .create_index(create_index_request)
-        .await
-        .unwrap()
-        .index_uid()
-        .clone();
-    let source_config = SourceConfig::ingest_api_default();
-    let add_source_request =
-        AddSourceRequest::try_from_source_config(index_uid.clone(), &source_config).unwrap();
-    metastore.add_source(add_source_request).await.unwrap();
-
-    let create_queue_request = CreateQueueRequest {
-        queue_id: index_id.clone(),
-    };
-    ingester_service
-        .ask_for_res(create_queue_request)
-        .await
-        .unwrap();
-    let spawn_pipeline_request = SpawnPipeline {
-        index_id: index_id.clone(),
-        source_config,
-        pipeline_uid: PipelineUid::default(),
-    };
-    indexer_service
-        .ask_for_res(spawn_pipeline_request)
-        .await
-        .unwrap();
+    sandbox.shutdown().await.unwrap();
 }

@@ -43,6 +43,7 @@ mod rest;
 mod rest_api_response;
 mod search_api;
 pub(crate) mod simple_list;
+pub mod tcp_listener;
 mod template_api;
 mod ui_handler;
 
@@ -73,7 +74,7 @@ use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::tower::{
     BalanceChannel, BoxFutureInfaillible, BufferLayer, Change, CircuitBreakerEvaluator,
     ConstantRate, EstimateRateLayer, EventListenerLayer, GrpcMetricsLayer, LoadShedLayer,
-    RateLimitLayer, RetryLayer, RetryPolicy, SmaRateEstimator,
+    RateLimitLayer, RetryLayer, RetryPolicy, SmaRateEstimator, TimeoutLayer,
 };
 use quickwit_common::uri::Uri;
 use quickwit_common::{get_bool_from_env, spawn_named_task};
@@ -115,6 +116,7 @@ use quickwit_search::{
     SearchServiceClient, SearcherContext, SearcherPool,
 };
 use quickwit_storage::{SplitCache, StorageResolver};
+use tcp_listener::TcpListenerResolver;
 use tokio::sync::oneshot;
 use tower::timeout::Timeout;
 use tower::ServiceBuilder;
@@ -171,6 +173,9 @@ static METASTORE_GRPC_CLIENT_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
     Lazy::new(|| GrpcMetricsLayer::new("metastore", "client"));
 static METASTORE_GRPC_SERVER_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
     Lazy::new(|| GrpcMetricsLayer::new("metastore", "server"));
+
+static GRPC_TIMEOUT_LAYER: Lazy<TimeoutLayer> =
+    Lazy::new(|| TimeoutLayer::new(Duration::from_secs(30)));
 
 struct QuickwitServices {
     pub node_config: Arc<NodeConfig>,
@@ -338,7 +343,10 @@ async fn start_control_plane_if_needed(
             balance_channel_for_service(cluster, QuickwitService::ControlPlane).await;
 
         // If the node is a metastore, we skip this check in order to avoid a deadlock.
-        if !node_config.is_service_enabled(QuickwitService::Metastore) {
+        // If the node is a searcher, we skip this check because the searcher does not need to.
+        if !(node_config.is_service_enabled(QuickwitService::Metastore)
+            || node_config.is_service_enabled(QuickwitService::Searcher))
+        {
             info!("connecting to control plane");
 
             if !balance_channel
@@ -384,6 +392,7 @@ pub async fn serve_quickwit(
     runtimes_config: RuntimesConfig,
     metastore_resolver: MetastoreResolver,
     storage_resolver: StorageResolver,
+    tcp_listener_resolver: impl TcpListenerResolver,
     shutdown_signal: BoxFutureInfaillible<()>,
     env_filter_reload_fn: EnvFilterReloadFn,
 ) -> anyhow::Result<HashMap<String, ActorExitStatus>> {
@@ -655,7 +664,7 @@ pub async fn serve_quickwit(
     let otlp_logs_service_opt = if node_config.is_service_enabled(QuickwitService::Indexer)
         && node_config.indexer_config.enable_otlp_endpoint
     {
-        Some(OtlpGrpcLogsService::new(ingest_service.clone()))
+        Some(OtlpGrpcLogsService::new(ingest_router_service.clone()))
     } else {
         None
     };
@@ -663,7 +672,10 @@ pub async fn serve_quickwit(
     let otlp_traces_service_opt = if node_config.is_service_enabled(QuickwitService::Indexer)
         && node_config.indexer_config.enable_otlp_endpoint
     {
-        Some(OtlpGrpcTracesService::new(ingest_service.clone(), None))
+        Some(OtlpGrpcTracesService::new(
+            ingest_router_service.clone(),
+            None,
+        ))
     } else {
         None
     };
@@ -706,7 +718,7 @@ pub async fn serve_quickwit(
         }
     });
     let grpc_server = grpc::start_grpc_server(
-        grpc_listen_addr,
+        tcp_listener_resolver.resolve(grpc_listen_addr).await?,
         grpc_config.max_message_size,
         quickwit_services.clone(),
         grpc_readiness_trigger,
@@ -726,7 +738,7 @@ pub async fn serve_quickwit(
         }
     });
     let rest_server = rest::start_rest_server(
-        rest_listen_addr,
+        tcp_listener_resolver.resolve(rest_listen_addr).await?,
         quickwit_services,
         rest_readiness_trigger,
         rest_shutdown_signal,
@@ -855,8 +867,9 @@ async fn setup_ingest_v2(
         control_plane.clone(),
         ingester_pool.clone(),
         replication_factor,
+        event_broker.clone(),
     );
-    ingest_router.subscribe(event_broker);
+    ingest_router.subscribe();
 
     let ingest_router_service = IngestRouterServiceClient::tower()
         .stack_layer(INGEST_GRPC_SERVER_METRICS_LAYER.clone())
@@ -936,6 +949,7 @@ async fn setup_ingest_v2(
                     } else {
                         let ingester_service = IngesterServiceClient::tower()
                             .stack_layer(INGEST_GRPC_CLIENT_METRICS_LAYER.clone())
+                            .stack_layer(GRPC_TIMEOUT_LAYER.clone())
                             .build_from_channel(
                                 node.grpc_advertise_addr(),
                                 node.channel(),
@@ -980,6 +994,7 @@ async fn setup_searcher(
     .await?;
     let search_service_clone = search_service.clone();
     let max_message_size = node_config.grpc_config.max_message_size;
+    let request_timeout = node_config.searcher_config.request_timeout();
     let searcher_change_stream = cluster_change_stream.filter_map(move |cluster_change| {
         let search_service_clone = search_service_clone.clone();
         Box::pin(async move {
@@ -999,7 +1014,7 @@ async fn setup_searcher(
                             SearchServiceClient::from_service(search_service_clone, grpc_addr);
                         Some(Change::Insert(grpc_addr, search_client))
                     } else {
-                        let timeout_channel = Timeout::new(node.channel(), Duration::from_secs(30));
+                        let timeout_channel = Timeout::new(node.channel(), request_timeout);
                         let search_client = create_search_client_from_channel(
                             grpc_addr,
                             timeout_channel,
@@ -1135,6 +1150,7 @@ fn setup_indexer_pool(
                     } else {
                         let client = IndexingServiceClient::tower()
                             .stack_layer(INDEXING_GRPC_CLIENT_METRICS_LAYER.clone())
+                            .stack_layer(GRPC_TIMEOUT_LAYER.clone())
                             .build_from_channel(
                                 node.grpc_advertise_addr(),
                                 node.channel(),
@@ -1427,6 +1443,7 @@ mod tests {
             index_uid: Some(IndexUid::for_test("test-index", 0)),
             source_id: "test-source".to_string(),
             shard_ids: Vec::new(),
+            params_fingerprint: 0,
         };
         let updated_indexer_node = ClusterNode::for_test(
             "test-indexer-node",

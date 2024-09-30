@@ -361,6 +361,7 @@ mod tests {
             user_text: "json_field.toto.titi:hello".to_string(),
             default_fields: None,
             default_operator: BooleanOperand::And,
+            lenient: false,
         }
         .parse_user_query(&[])
         .unwrap();
@@ -462,35 +463,187 @@ mod tests {
         }"#;
         let doc_mapper = serde_json::from_str::<DefaultDocMapper>(JSON_CONFIG_VALUE).unwrap();
         {
-            assert!(test_validate_doc_aux(&doc_mapper, r#"{ "body": "toto"}"#).is_ok());
+            assert!(test_validate_doc_aux(
+                &doc_mapper,
+                r#"{ "body": "toto", "timestamp": "2024-01-01T01:01:01Z"}"#
+            )
+            .is_ok());
         }
         {
             assert!(matches!(
-                test_validate_doc_aux(&doc_mapper, r#"{ "response_time": "toto"}"#).unwrap_err(),
+                test_validate_doc_aux(
+                    &doc_mapper,
+                    r#"{ "response_time": "toto", "timestamp": "2024-01-01T01:01:01Z"}"#
+                )
+                .unwrap_err(),
                 DocParsingError::ValueError(_, _)
             ));
         }
         {
-            assert!(test_validate_doc_aux(&doc_mapper, r#"{ "response_time": "2.3"}"#).is_ok(),);
+            assert!(test_validate_doc_aux(
+                &doc_mapper,
+                r#"{ "response_time": "2.3", "timestamp": "2024-01-01T01:01:01Z"}"#
+            )
+            .is_ok(),);
         }
         {
             // coercion disabled
             assert!(matches!(
-                test_validate_doc_aux(&doc_mapper, r#"{"response_time_no_coercion": "2.3"}"#)
-                    .unwrap_err(),
+                test_validate_doc_aux(
+                    &doc_mapper,
+                    r#"{"response_time_no_coercion": "2.3", "timestamp": "2024-01-01T01:01:01Z"}"#
+                )
+                .unwrap_err(),
                 DocParsingError::ValueError(_, _)
             ));
         }
         {
             assert!(matches!(
-                test_validate_doc_aux(&doc_mapper, r#"{"response_time": [2.3]}"#).unwrap_err(),
+                test_validate_doc_aux(
+                    &doc_mapper,
+                    r#"{"response_time": [2.3], "timestamp": "2024-01-01T01:01:01Z"}"#
+                )
+                .unwrap_err(),
                 DocParsingError::MultiValuesNotSupported(_)
             ));
         }
         {
-            assert!(
-                test_validate_doc_aux(&doc_mapper, r#"{"attributes": {"numbers": [-2]}}"#).is_ok()
-            );
+            assert!(test_validate_doc_aux(
+                &doc_mapper,
+                r#"{"attributes": {"numbers": [-2]}, "timestamp": "2024-01-01T01:01:01Z"}"#
+            )
+            .is_ok());
+        }
+    }
+
+    #[test]
+    fn test_validate_doc_timestamp() {
+        const JSON_CONFIG_TS_AT_ROOT: &str = r#"{
+            "timestamp_field": "timestamp",
+            "field_mappings": [
+            {
+                "name": "timestamp",
+                "type": "datetime",
+                "fast": true
+            },
+            {
+                "name": "body",
+                "type": "text"
+            }
+            ]
+        }"#;
+        const JSON_CONFIG_TS_WITH_DOT: &str = r#"{
+            "timestamp_field": "timestamp\\.now",
+            "field_mappings": [
+            {
+                "name": "timestamp.now",
+                "type": "datetime",
+                "fast": true
+            },
+            {
+                "name": "body",
+                "type": "text"
+            }
+            ]
+        }"#;
+        const JSON_CONFIG_TS_NESTED: &str = r#"{
+            "timestamp_field": "doc.timestamp",
+            "field_mappings": [
+            {
+                "name": "doc",
+                "type": "object",
+                "field_mappings": [
+                    {
+                        "name": "timestamp",
+                        "type": "datetime",
+                        "fast": true
+                    }
+                ]
+            },
+            {
+                "name": "body",
+                "type": "text"
+            }
+            ]
+        }"#;
+        let doc_mapper = serde_json::from_str::<DefaultDocMapper>(JSON_CONFIG_TS_AT_ROOT).unwrap();
+        {
+            assert!(test_validate_doc_aux(
+                &doc_mapper,
+                r#"{ "body": "toto", "timestamp": "2024-01-01T01:01:01Z"}"#
+            )
+            .is_ok());
+        }
+        {
+            assert!(matches!(
+                test_validate_doc_aux(
+                    &doc_mapper,
+                    r#"{ "body": "toto", "timestamp": "invalid timestamp"}"#
+                )
+                .unwrap_err(),
+                DocParsingError::ValueError(_, _),
+            ));
+        }
+        {
+            assert!(matches!(
+                test_validate_doc_aux(&doc_mapper, r#"{ "body": "toto", "timestamp": null}"#)
+                    .unwrap_err(),
+                DocParsingError::RequiredField(_),
+            ));
+        }
+        {
+            assert!(matches!(
+                test_validate_doc_aux(&doc_mapper, r#"{ "body": "toto"}"#).unwrap_err(),
+                DocParsingError::RequiredField(_),
+            ));
+        }
+
+        let doc_mapper = serde_json::from_str::<DefaultDocMapper>(JSON_CONFIG_TS_WITH_DOT).unwrap();
+        {
+            assert!(test_validate_doc_aux(
+                &doc_mapper,
+                r#"{ "body": "toto", "timestamp.now": "2024-01-01T01:01:01Z"}"#
+            )
+            .is_ok());
+        }
+        {
+            assert!(matches!(
+                test_validate_doc_aux(
+                    &doc_mapper,
+                    r#"{ "body": "toto", "timestamp.now": "invalid timestamp"}"#
+                )
+                .unwrap_err(),
+                DocParsingError::ValueError(_, _),
+            ));
+        }
+        {
+            assert!(matches!(
+                test_validate_doc_aux(
+                    &doc_mapper,
+                    r#"{ "body": "toto", "timestamp": {"now": "2024-01-01T01:01:01Z"}}"#
+                )
+                .unwrap_err(),
+                DocParsingError::RequiredField(_),
+            ));
+        }
+
+        let doc_mapper = serde_json::from_str::<DefaultDocMapper>(JSON_CONFIG_TS_NESTED).unwrap();
+        {
+            assert!(test_validate_doc_aux(
+                &doc_mapper,
+                r#"{ "body": "toto", "doc":{"timestamp": "2024-01-01T01:01:01Z"}}"#
+            )
+            .is_ok());
+        }
+        {
+            assert!(matches!(
+                test_validate_doc_aux(
+                    &doc_mapper,
+                    r#"{ "body": "toto", "doc.timestamp": "2024-01-01T01:01:01Z"}"#
+                )
+                .unwrap_err(),
+                DocParsingError::RequiredField(_),
+            ));
         }
     }
 

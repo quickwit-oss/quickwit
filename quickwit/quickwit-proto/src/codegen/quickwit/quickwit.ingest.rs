@@ -67,6 +67,10 @@ pub struct Shard {
     /// The UID of the index doc mapping when the shard was created.
     #[prost(message, optional, tag = "11")]
     pub doc_mapping_uid: ::core::option::Option<crate::types::DocMappingUid>,
+    /// Time when the shard was last updated
+    #[prost(int64, tag = "12")]
+    #[serde(default = "super::compatibility_shard_update_timestamp")]
+    pub update_timestamp: i64,
 }
 /// A group of shards belonging to the same index and source.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
@@ -118,7 +122,7 @@ pub struct ParseFailure {
 pub enum CommitTypeV2 {
     Unspecified = 0,
     Auto = 1,
-    Wait = 2,
+    WaitFor = 2,
     Force = 3,
 }
 impl CommitTypeV2 {
@@ -130,7 +134,7 @@ impl CommitTypeV2 {
         match self {
             CommitTypeV2::Unspecified => "COMMIT_TYPE_V2_UNSPECIFIED",
             CommitTypeV2::Auto => "COMMIT_TYPE_V2_AUTO",
-            CommitTypeV2::Wait => "COMMIT_TYPE_V2_WAIT",
+            CommitTypeV2::WaitFor => "COMMIT_TYPE_V2_WAIT_FOR",
             CommitTypeV2::Force => "COMMIT_TYPE_V2_FORCE",
         }
     }
@@ -139,7 +143,7 @@ impl CommitTypeV2 {
         match value {
             "COMMIT_TYPE_V2_UNSPECIFIED" => Some(Self::Unspecified),
             "COMMIT_TYPE_V2_AUTO" => Some(Self::Auto),
-            "COMMIT_TYPE_V2_WAIT" => Some(Self::Wait),
+            "COMMIT_TYPE_V2_WAIT_FOR" => Some(Self::WaitFor),
             "COMMIT_TYPE_V2_FORCE" => Some(Self::Force),
             _ => None,
         }

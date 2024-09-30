@@ -282,7 +282,10 @@ impl LeafType {
                 let val = u64::from_json_to_self(&json_val, numeric_options.coerce)?;
                 Ok(OneOrIter::one((val).into()))
             }
-            LeafType::F64(_) => Err("unsupported concat type: f64".to_string()),
+            LeafType::F64(numeric_options) => {
+                let val = f64::from_json_to_self(&json_val, numeric_options.coerce)?;
+                Ok(OneOrIter::one((val).into()))
+            }
             LeafType::Bool(_) => {
                 if let JsonValue::Bool(val) = json_val {
                     Ok(OneOrIter::one((val).into()))
@@ -294,9 +297,7 @@ impl LeafType {
             LeafType::DateTime(_date_time_options) => {
                 Err("unsupported concat type: DateTime".to_string())
             }
-            LeafType::Bytes(_binary_options) => {
-                Err("unsupported concat type: DateTime".to_string())
-            }
+            LeafType::Bytes(_binary_options) => Err("unsupported concat type: Bytes".to_string()),
             LeafType::Json(_) => {
                 if let JsonValue::Object(json_obj) = json_val {
                     Ok(OneOrIter::Iter(
@@ -314,14 +315,13 @@ impl LeafType {
 
     fn supported_for_concat(&self) -> bool {
         use LeafType::*;
-        matches!(self, Text(_) | U64(_) | I64(_) | Bool(_) | Json(_))
+        matches!(self, Text(_) | U64(_) | I64(_) | F64(_) | Bool(_) | Json(_))
         /*
-            // will be supported if possible
-            DateTime(_),
+            // Since concat is a JSON field, anything that JSON supports can be supported
+            DateTime(_), // Could be supported if the date is converted to Rfc3339
             IpAddr(_),
             // won't be supported
             Bytes(_),
-            F64(_),
         */
     }
 }
@@ -1410,7 +1410,7 @@ fn field_name_for_field_path(field_path: &[&str]) -> String {
 /// starting from the root of the document.
 /// Dots '.' define the boundaries between field names.
 /// If a dot is part of a field name, it must be escaped with '\'.
-fn build_field_path_from_str(field_path_as_str: &str) -> Vec<String> {
+pub(crate) fn build_field_path_from_str(field_path_as_str: &str) -> Vec<String> {
     let mut field_path = Vec::new();
     let mut current_path_fragment = String::new();
     let mut escaped = false;
@@ -1735,7 +1735,7 @@ mod tests {
     #[test]
     fn test_parse_i64_too_large() {
         let leaf = LeafType::I64(QuickwitNumericOptions::default());
-        let err = leaf.value_from_json(json!(u64::max_value())).err().unwrap();
+        let err = leaf.value_from_json(json!(u64::MAX)).err().unwrap();
         assert_eq!(
             err,
             "expected i64, got inconvertible JSON number `18446744073709551615`"

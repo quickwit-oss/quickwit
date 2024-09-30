@@ -4,41 +4,41 @@ engines:
 endpoint: _elastic/sortorder/_search
 json:
   query:
-    match_all: {}
+    bool:
+      must_not:
+        match:
+          count: 10
   sort:
-    - count: {"order" : "desc"}
+    - id: {"order" : "desc"}
 expected:
   hits:
     total:
-      value: 7
+      value: 4
       relation: "eq"
     hits:
-      - _source: { "count": 15, "id": 2 }
-      - _source: { "count": 10, "id": 0 }
-      - _source: { "count": 10, "id": 2 }
-      - _source: { "count": 10, "id": 1 }
-      - _source: {"count": -2.5, "id": 4}
       - _source: { "id": 5 }
+      - _source: { "count": -2.5, "id": 4 }
       - _source: { "id": 3 }
+      - _source: { "count": 15, "id": 2 }
 ---
 endpoint: _elastic/sortorder/_search
 json:
   query:
-    match_all: {}
+    bool:
+      must_not:
+        match:
+          count: 10
   sort:
-    - count: {"order" : "asc"}
+    - id: {"order" : "asc"}
 expected:
   hits:
     total:
-      value: 7
+      value: 4
       relation: "eq"
     hits:
-      - _source: {"count": -2.5, "id": 4}
-      - _source: {"count": 10, "id": 1 }
-      - _source: {"count": 10, "id": 2 }
-      - _source: {"count": 10, "id": 0 }
       - _source: {"count": 15, "id": 2 }
       - _source: {"id": 3}
+      - _source: {"count": -2.5, "id": 4}
       - _source: {"id": 5}
 ---
 endpoint: _elastic/sortorder/_search

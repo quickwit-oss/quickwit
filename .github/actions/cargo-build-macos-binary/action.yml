@@ -30,9 +30,8 @@ runs:
     - name: Install rustup
       shell: bash
       run: curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain none -y
-    - name: Add target aarch64-apple-darwin
-      if: "${{ inputs.target == 'aarch64-apple-darwin' }}"
-      run: rustup target add aarch64-apple-darwin
+    - name: Add target ${{ inputs.target }}
+      run: rustup target add ${{ inputs.target }}
       shell: bash
       working-directory: ./quickwit
     - name: Retrieve and export commit date, hash, and tags
@@ -55,7 +54,7 @@ runs:
           BINARY_VERSION=${{ inputs.version }} ARCHIVE_NAME=${{ env.ASSET_FULL_NAME }}
       shell: bash
     - name: Save binary archive for three days
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4.4.0
       with:
         name: ${{ env.ASSET_FULL_NAME }}.tar.gz
         path: ./${{ env.ASSET_FULL_NAME }}.tar.gz

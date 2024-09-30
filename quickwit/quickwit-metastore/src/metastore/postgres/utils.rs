@@ -33,7 +33,7 @@ use tracing::log::LevelFilter;
 use super::model::{Splits, ToTimestampFunc};
 use super::pool::TrackedPool;
 use super::tags::generate_sql_condition;
-use crate::metastore::FilterRange;
+use crate::metastore::{FilterRange, SortBy};
 use crate::{ListSplitsQuery, SplitMaturity, SplitMetadata};
 
 /// Establishes a connection to the given database URI.
@@ -44,6 +44,7 @@ pub(super) async fn establish_connection(
     acquire_timeout: Duration,
     idle_timeout_opt: Option<Duration>,
     max_lifetime_opt: Option<Duration>,
+    read_only: bool,
 ) -> MetastoreResult<TrackedPool<Postgres>> {
     let pool_options = PgPoolOptions::new()
         .min_connections(min_connections as u32)
@@ -51,9 +52,16 @@ pub(super) async fn establish_connection(
         .acquire_timeout(acquire_timeout)
         .idle_timeout(idle_timeout_opt)
         .max_lifetime(max_lifetime_opt);
-    let connect_options: PgConnectOptions = PgConnectOptions::from_str(connection_uri.as_str())?
-        .application_name("quickwit-metastore")
-        .log_statements(LevelFilter::Info);
+
+    let mut connect_options: PgConnectOptions =
+        PgConnectOptions::from_str(connection_uri.as_str())?
+            .application_name("quickwit-metastore")
+            .log_statements(LevelFilter::Info);
+
+    if read_only {
+        // this isn't a security mechanism, only a safeguard against involontary missuse
+        connect_options = connect_options.options([("default_transaction_read_only", "on")]);
+    }
     let sqlx_pool = pool_options
         .connect_with(connect_options)
         .await
@@ -178,6 +186,19 @@ pub(super) fn append_query_filters(sql: &mut SelectStatement, query: &ListSplits
     append_range_filters(sql, Splits::DeleteOpstamp, &query.delete_opstamp, |&val| {
         Expr::expr(val)
     });
+
+    match query.sort_by {
+        SortBy::Staleness => {
+            sql.order_by(
+                (Splits::DeleteOpstamp, Splits::PublishTimestamp),
+                Order::Asc,
+            );
+        }
+        SortBy::IndexUid => {
+            sql.order_by(Splits::IndexUid, Order::Asc);
+        }
+        SortBy::None => (),
+    }
 
     if let Some(limit) = query.limit {
         sql.limit(limit as u64);

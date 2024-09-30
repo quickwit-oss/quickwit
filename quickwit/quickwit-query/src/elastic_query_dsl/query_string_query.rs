@@ -43,8 +43,8 @@ pub(crate) struct QueryStringQuery {
     // Regardless of this option Quickwit behaves in elasticsearch definition of
     // lenient. We include this property here just to accept user queries containing
     // this option.
-    #[serde(default, rename = "lenient")]
-    _lenient: bool,
+    #[serde(default)]
+    lenient: bool,
 }
 
 impl ConvertibleToQueryAst for QueryStringQuery {
@@ -60,6 +60,7 @@ impl ConvertibleToQueryAst for QueryStringQuery {
             user_text: self.query,
             default_fields,
             default_operator: self.default_operator,
+            lenient: self.lenient,
         };
         Ok(user_text_query.into())
     }
@@ -79,7 +80,7 @@ mod tests {
             default_operator: crate::BooleanOperand::Or,
             default_field: None,
             boost: None,
-            _lenient: false,
+            lenient: false,
         };
         let QueryAst::UserInput(user_input_query) =
             query_string_query.convert_to_query_ast().unwrap()
@@ -101,7 +102,7 @@ mod tests {
             default_operator: crate::BooleanOperand::Or,
             default_field: Some("hello".to_string()),
             boost: None,
-            _lenient: false,
+            lenient: false,
         };
         let QueryAst::UserInput(user_input_query) =
             query_string_query.convert_to_query_ast().unwrap()
@@ -123,7 +124,7 @@ mod tests {
             default_operator: crate::BooleanOperand::Or,
             default_field: Some("hello".to_string()),
             boost: None,
-            _lenient: false,
+            lenient: false,
         };
         let err_msg = query_string_query
             .convert_to_query_ast()
@@ -140,7 +141,7 @@ mod tests {
             default_field: None,
             default_operator: crate::BooleanOperand::And,
             boost: None,
-            _lenient: false,
+            lenient: false,
         };
         let QueryAst::UserInput(user_input_query) =
             query_string_query.convert_to_query_ast().unwrap()
@@ -158,7 +159,7 @@ mod tests {
             default_field: None,
             default_operator: crate::BooleanOperand::Or,
             boost: None,
-            _lenient: false,
+            lenient: false,
         };
         let QueryAst::UserInput(user_input_query) =
             query_string_query.convert_to_query_ast().unwrap()
@@ -177,7 +178,7 @@ mod tests {
             default_field: None,
             default_operator: crate::BooleanOperand::Or,
             boost: None,
-            _lenient: false,
+            lenient: false,
         };
         let QueryAst::UserInput(user_input_query) =
             query_string_query.convert_to_query_ast().unwrap()
@@ -200,7 +201,8 @@ mod tests {
         assert!(matches!(query_ast, QueryAst::UserInput(UserInputQuery {
             user_text,
             default_fields,
-            default_operator
+            default_operator,
+            lenient: _,
         }) if user_text == "hello world"
             && default_operator == BooleanOperand::Or
             && default_fields == Some(vec!["text".to_string()])));

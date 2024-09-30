@@ -470,8 +470,7 @@ impl Source for IngestSource {
         let mut batch_builder = BatchBuilder::new(SourceType::IngestV2);
 
         let now = time::Instant::now();
-        let deadline = now + EMIT_BATCHES_TIMEOUT;
-
+        let deadline = now + *EMIT_BATCHES_TIMEOUT;
         loop {
             match time::timeout_at(deadline, self.fetch_stream.next()).await {
                 Ok(Ok(fetch_message)) => match fetch_message.message {
@@ -729,6 +728,7 @@ mod tests {
                         doc_mapping_uid: Some(DocMappingUid::default()),
                         publish_position_inclusive: Some(Position::offset(10u64)),
                         publish_token: Some(publish_token.to_string()),
+                        update_timestamp: 1724158996,
                     }],
                 };
                 Ok(response)
@@ -752,6 +752,7 @@ mod tests {
                         doc_mapping_uid: Some(DocMappingUid::default()),
                         publish_position_inclusive: Some(Position::offset(11u64)),
                         publish_token: Some(publish_token.to_string()),
+                        update_timestamp: 1724158996,
                     }],
                 };
                 Ok(response)
@@ -776,6 +777,7 @@ mod tests {
                             doc_mapping_uid: Some(DocMappingUid::default()),
                             publish_position_inclusive: Some(Position::offset(11u64)),
                             publish_token: Some(publish_token.to_string()),
+                            update_timestamp: 1724158996,
                         },
                         Shard {
                             leader_id: "test-ingester-0".to_string(),
@@ -787,6 +789,7 @@ mod tests {
                             doc_mapping_uid: Some(DocMappingUid::default()),
                             publish_position_inclusive: Some(Position::offset(12u64)),
                             publish_token: Some(publish_token.to_string()),
+                            update_timestamp: 1724158996,
                         },
                     ],
                 };
@@ -1078,6 +1081,7 @@ mod tests {
                             doc_mapping_uid: Some(DocMappingUid::default()),
                             publish_position_inclusive: Some(Position::eof(11u64)),
                             publish_token: Some(publish_token.to_string()),
+                            update_timestamp: 1724158996,
                         },
                         Shard {
                             leader_id: "test-ingester-0".to_string(),
@@ -1089,6 +1093,7 @@ mod tests {
                             doc_mapping_uid: Some(DocMappingUid::default()),
                             publish_position_inclusive: Some(Position::Beginning.as_eof()),
                             publish_token: Some(publish_token.to_string()),
+                            update_timestamp: 1724158996,
                         },
                     ],
                 };
@@ -1221,6 +1226,7 @@ mod tests {
                             doc_mapping_uid: Some(DocMappingUid::default()),
                             publish_position_inclusive: Some(Position::offset(11u64)),
                             publish_token: Some(publish_token.to_string()),
+                            update_timestamp: 1724158996,
                         },
                         Shard {
                             leader_id: "test-ingester-0".to_string(),
@@ -1232,6 +1238,7 @@ mod tests {
                             doc_mapping_uid: Some(DocMappingUid::default()),
                             publish_position_inclusive: Some(Position::eof(22u64)),
                             publish_token: Some(publish_token.to_string()),
+                            update_timestamp: 1724158996,
                         },
                     ],
                 };
@@ -1575,6 +1582,7 @@ mod tests {
                         doc_mapping_uid: Some(DocMappingUid::default()),
                         publish_position_inclusive: Some(Position::Beginning),
                         publish_token: Some(publish_token.to_string()),
+                        update_timestamp: 1724158996,
                     }],
                 };
                 Ok(response)

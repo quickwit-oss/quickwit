@@ -24,10 +24,10 @@ use quickwit_ingest::{
     IngestService, IngestServiceClient, IngestServiceError, TailRequest,
 };
 use quickwit_proto::ingest::router::{
-    IngestFailureReason, IngestRequestV2, IngestResponseV2, IngestRouterService,
-    IngestRouterServiceClient, IngestSubrequest,
+    IngestRequestV2, IngestResponseV2, IngestRouterService, IngestRouterServiceClient,
+    IngestSubrequest,
 };
-use quickwit_proto::ingest::RateLimitingCause;
+use quickwit_proto::ingest::CommitTypeV2;
 use quickwit_proto::types::{DocUidGenerator, IndexId};
 use serde::Deserialize;
 use warp::{Filter, Rejection};
@@ -55,6 +55,13 @@ struct IngestOptions {
     #[serde(alias = "commit")]
     #[serde(default)]
     commit_type: CommitType,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+struct IngestV2Options {
+    #[serde(alias = "commit")]
+    #[serde(default)]
+    commit_type: CommitTypeV2,
 }
 
 pub(crate) fn ingest_api_handlers(
@@ -93,14 +100,14 @@ fn ingest_handler(
 
 fn ingest_v2_filter(
     config: IngestApiConfig,
-) -> impl Filter<Extract = (String, Body, IngestOptions), Error = Rejection> + Clone {
+) -> impl Filter<Extract = (String, Body, IngestV2Options), Error = Rejection> + Clone {
     warp::path!(String / "ingest-v2")
         .and(warp::post())
         .and(warp::body::content_length_limit(
             config.content_length_limit.as_u64(),
         ))
         .and(get_body_bytes())
-        .and(serde_qs::warp::query::<IngestOptions>(
+        .and(serde_qs::warp::query::<IngestV2Options>(
             serde_qs::Config::default(),
         ))
 }
@@ -119,7 +126,7 @@ fn ingest_v2_handler(
 async fn ingest_v2(
     index_id: IndexId,
     body: Body,
-    ingest_options: IngestOptions,
+    ingest_options: IngestV2Options,
     ingest_router: IngestRouterServiceClient,
 ) -> Result<IngestResponse, IngestServiceError> {
     let mut doc_batch_builder = DocBatchV2Builder::default();
@@ -167,39 +174,7 @@ fn convert_ingest_response_v2(
         });
     }
     let ingest_failure = response.failures.pop().unwrap();
-    let reason = ingest_failure.reason();
-    Err(match reason {
-        IngestFailureReason::Unspecified => {
-            IngestServiceError::Internal("unknown error".to_string())
-        }
-        IngestFailureReason::IndexNotFound => IngestServiceError::IndexNotFound {
-            index_id: ingest_failure.index_id,
-        },
-        IngestFailureReason::SourceNotFound => IngestServiceError::Internal(format!(
-            "Ingest v2 source not found for index {}",
-            ingest_failure.index_id
-        )),
-        IngestFailureReason::Internal => IngestServiceError::Internal("internal error".to_string()),
-        IngestFailureReason::NoShardsAvailable => {
-            IngestServiceError::Unavailable("no shards available".to_string())
-        }
-        IngestFailureReason::ShardRateLimited => {
-            IngestServiceError::RateLimited(RateLimitingCause::ShardRateLimiting)
-        }
-        IngestFailureReason::WalFull => IngestServiceError::RateLimited(RateLimitingCause::WalFull),
-        IngestFailureReason::Timeout => {
-            IngestServiceError::Internal("request timed out".to_string())
-        }
-        IngestFailureReason::RouterLoadShedding => {
-            IngestServiceError::RateLimited(RateLimitingCause::RouterLoadShedding)
-        }
-        IngestFailureReason::LoadShedding => {
-            IngestServiceError::RateLimited(RateLimitingCause::LoadShedding)
-        }
-        IngestFailureReason::CircuitBreaker => {
-            IngestServiceError::RateLimited(RateLimitingCause::CircuitBreaker)
-        }
-    })
+    Err(ingest_failure.into())
 }
 
 #[utoipa::path(

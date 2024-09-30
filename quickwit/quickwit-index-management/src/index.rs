@@ -309,7 +309,7 @@ impl IndexService {
         }
         let mut delete_responses: HashMap<String, Vec<SplitInfo>> = HashMap::new();
         let mut delete_errors: HashMap<String, IndexServiceError> = HashMap::new();
-        let mut stream = futures::stream::iter(delete_index_tasks).buffer_unordered(100);
+        let mut stream = futures::stream::iter(delete_index_tasks).buffer_unordered(5);
         while let Some((index_id, delete_response)) = stream.next().await {
             match delete_response {
                 Ok(split_infos) => {
@@ -365,8 +365,7 @@ impl IndexService {
             .await?;
 
         let deleted_entries = run_garbage_collect(
-            index_uid,
-            storage,
+            [(index_uid, storage)].into_iter().collect(),
             self.metastore.clone(),
             grace_period,
             // deletion_grace_period of zero, so that a cli call directly deletes splits after

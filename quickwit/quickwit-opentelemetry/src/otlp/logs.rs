@@ -23,32 +23,32 @@ use std::collections::{btree_set, BTreeSet, HashMap};
 use async_trait::async_trait;
 use prost::Message;
 use quickwit_common::metrics::Vector;
-use quickwit_common::rate_limited_error;
 use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_common::uri::Uri;
 use quickwit_config::{load_index_config_from_user_config, ConfigFormat, IndexConfig};
-use quickwit_ingest::{
-    CommitType, DocBatch, DocBatchBuilder, IngestRequest, IngestService, IngestServiceClient,
-};
+use quickwit_ingest::{CommitType, JsonDocBatchV2Builder};
+use quickwit_proto::ingest::router::IngestRouterServiceClient;
+use quickwit_proto::ingest::DocBatchV2;
 use quickwit_proto::opentelemetry::proto::collector::logs::v1::logs_service_server::LogsService;
 use quickwit_proto::opentelemetry::proto::collector::logs::v1::{
     ExportLogsPartialSuccess, ExportLogsServiceRequest, ExportLogsServiceResponse,
 };
-use quickwit_proto::types::IndexId;
+use quickwit_proto::types::{DocUidGenerator, IndexId};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+use time::OffsetDateTime;
 use tonic::{Request, Response, Status};
 use tracing::field::Empty;
 use tracing::{error, instrument, warn, Span as RuntimeSpan};
 
 use super::{
-    extract_otel_index_id_from_metadata, is_zero, parse_log_record_body, OtelSignal, SpanId,
-    TraceId, TryFromSpanIdError, TryFromTraceIdError,
+    extract_otel_index_id_from_metadata, ingest_doc_batch_v2, is_zero, parse_log_record_body,
+    OtelSignal, SpanId, TraceId, TryFromSpanIdError, TryFromTraceIdError,
 };
 use crate::otlp::extract_attributes;
 use crate::otlp::metrics::OTLP_SERVICE_METRICS;
 
-pub const OTEL_LOGS_INDEX_ID: &str = "otel-logs-v0_7";
+pub const OTEL_LOGS_INDEX_ID: &str = "otel-logs-v0_9";
 
 const OTEL_LOGS_INDEX_CONFIG: &str = r#"
 version: 0.8
@@ -148,9 +148,7 @@ pub enum OtlpLogsError {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LogRecord {
     pub timestamp_nanos: u64,
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub observed_timestamp_nanos: Option<u64>,
+    pub observed_timestamp_nanos: u64,
     #[serde(default)]
     #[serde(skip_serializing_if = "String::is_empty")]
     pub service_name: String,
@@ -227,7 +225,7 @@ impl PartialEq for OrdLogRecord {
 impl Eq for OrdLogRecord {}
 
 struct ParsedLogRecords {
-    doc_batch: DocBatch,
+    doc_batch: DocBatchV2,
     num_log_records: u64,
     num_parse_errors: u64,
     error_message: String,
@@ -235,12 +233,12 @@ struct ParsedLogRecords {
 
 #[derive(Clone)]
 pub struct OtlpGrpcLogsService {
-    ingest_service: IngestServiceClient,
+    ingest_router: IngestRouterServiceClient,
 }
 
 impl OtlpGrpcLogsService {
-    pub fn new(ingest_service: IngestServiceClient) -> Self {
-        Self { ingest_service }
+    pub fn new(ingest_router: IngestRouterServiceClient) -> Self {
+        Self { ingest_router }
     }
 
     pub fn index_config(default_index_root_uri: &Uri) -> anyhow::Result<IndexConfig> {
@@ -266,7 +264,7 @@ impl OtlpGrpcLogsService {
             error_message,
         } = run_cpu_intensive({
             let parent_span = RuntimeSpan::current();
-            || Self::parse_logs(request, parent_span, index_id)
+            || Self::parse_logs(request, parent_span)
         })
         .await
         .map_err(|join_error| {
@@ -277,7 +275,7 @@ impl OtlpGrpcLogsService {
             return Err(tonic::Status::internal(error_message));
         }
         let num_bytes = doc_batch.num_bytes() as u64;
-        self.store_logs(doc_batch).await?;
+        self.store_logs(index_id, doc_batch).await?;
 
         OTLP_SERVICE_METRICS
             .ingested_log_records_total
@@ -302,21 +300,23 @@ impl OtlpGrpcLogsService {
     fn parse_logs(
         request: ExportLogsServiceRequest,
         parent_span: RuntimeSpan,
-        index_id: IndexId,
     ) -> Result<ParsedLogRecords, Status> {
-        let (log_records, mut num_parse_errors) = parse_otlp_logs(request)?;
+        let log_records = parse_otlp_logs(request)?;
+        let mut num_parse_errors = 0;
         let num_log_records = log_records.len() as u64;
         let mut error_message = String::new();
 
-        let mut doc_batch = DocBatchBuilder::new(index_id).json_writer();
+        let mut doc_batch_builder = JsonDocBatchV2Builder::default();
+        let mut doc_uid_generator = DocUidGenerator::default();
         for log_record in log_records {
-            if let Err(error) = doc_batch.ingest_doc(&log_record.0) {
+            let doc_uid = doc_uid_generator.next_doc_uid();
+            if let Err(error) = doc_batch_builder.add_doc(doc_uid, log_record.0) {
                 error!(error=?error, "failed to JSON serialize span");
                 error_message = format!("failed to JSON serialize span: {error:?}");
                 num_parse_errors += 1;
             }
         }
-        let doc_batch = doc_batch.build();
+        let doc_batch = doc_batch_builder.build();
         let current_span = RuntimeSpan::current();
         current_span.record("num_log_records", num_log_records);
         current_span.record("num_bytes", doc_batch.num_bytes());
@@ -332,12 +332,18 @@ impl OtlpGrpcLogsService {
     }
 
     #[instrument(skip_all, fields(num_bytes = doc_batch.num_bytes()))]
-    async fn store_logs(&mut self, doc_batch: DocBatch) -> Result<(), tonic::Status> {
-        let ingest_request = IngestRequest {
-            doc_batches: vec![doc_batch],
-            commit: CommitType::Auto.into(),
-        };
-        self.ingest_service.ingest(ingest_request).await?;
+    async fn store_logs(
+        &mut self,
+        index_id: String,
+        doc_batch: DocBatchV2,
+    ) -> Result<(), tonic::Status> {
+        ingest_doc_batch_v2(
+            self.ingest_router.clone(),
+            index_id,
+            doc_batch,
+            CommitType::Auto,
+        )
+        .await?;
         Ok(())
     }
 
@@ -394,10 +400,8 @@ impl LogsService for OtlpGrpcLogsService {
 
 fn parse_otlp_logs(
     request: ExportLogsServiceRequest,
-) -> Result<(BTreeSet<OrdLogRecord>, u64), OtlpLogsError> {
+) -> Result<BTreeSet<OrdLogRecord>, OtlpLogsError> {
     let mut log_records = BTreeSet::new();
-    let mut num_parse_errors = 0;
-
     for resource_log in request.resource_logs {
         let mut resource_attributes = extract_attributes(
             resource_log
@@ -440,16 +444,27 @@ fn parse_otlp_logs(
                 .unwrap_or(0);
 
             for log_record in scope_log.log_records {
-                if log_record.time_unix_nano == 0 {
-                    rate_limited_error!(limit_per_min = 10, "skipping record");
-                    num_parse_errors += 1;
-                    continue;
-                }
-                let observed_timestamp_nanos = if log_record.observed_time_unix_nano != 0 {
-                    Some(log_record.observed_time_unix_nano)
+                let observed_timestamp_nanos = if log_record.observed_time_unix_nano == 0 {
+                    // As per OTEL model spec, this field SHOULD be set once the
+                    // event is observed by OpenTelemetry. If it's not set, we
+                    // consider ourselves as the first OTEL observers.
+                    OffsetDateTime::now_utc().unix_timestamp_nanos() as u64
                 } else {
-                    None
+                    log_record.observed_time_unix_nano
                 };
+
+                let timestamp_nanos = if log_record.time_unix_nano == 0 {
+                    observed_timestamp_nanos
+                } else {
+                    // When only one timestamp is supported by a recipients, the
+                    // OTEL spec recommends using the `Timestamp` field if
+                    // present, otherwise `ObservedTimestamp`. Even though our
+                    // model supports multiple timestamps, we have only one
+                    // field that that can be our `timestamp_field` and it
+                    // should be the one that is commonly used for queries.
+                    log_record.time_unix_nano
+                };
+
                 let trace_id = if log_record.trace_id.iter().any(|&byte| byte != 0) {
                     let trace_id = TraceId::try_from(log_record.trace_id)?;
                     Some(trace_id)
@@ -475,7 +490,7 @@ fn parse_otlp_logs(
                 let dropped_attributes_count = log_record.dropped_attributes_count;
 
                 let log_record = LogRecord {
-                    timestamp_nanos: log_record.time_unix_nano,
+                    timestamp_nanos,
                     observed_timestamp_nanos,
                     service_name: service_name.clone(),
                     severity_text,
@@ -497,7 +512,7 @@ fn parse_otlp_logs(
             }
         }
     }
-    Ok((log_records, num_parse_errors))
+    Ok(log_records)
 }
 
 /// An iterator of JSON OTLP log records for use in the doc processor.
@@ -545,13 +560,13 @@ impl Iterator for JsonLogIterator {
 
 pub fn parse_otlp_logs_json(payload_json: &[u8]) -> Result<JsonLogIterator, OtlpLogsError> {
     let request: ExportLogsServiceRequest = serde_json::from_slice(payload_json)?;
-    let (log_records, _num_parse_errors) = parse_otlp_logs(request)?;
+    let log_records = parse_otlp_logs(request)?;
     Ok(JsonLogIterator::new(log_records, payload_json.len()))
 }
 
 pub fn parse_otlp_logs_protobuf(payload_proto: &[u8]) -> Result<JsonLogIterator, OtlpLogsError> {
     let request = ExportLogsServiceRequest::decode(payload_proto)?;
-    let (log_records, _num_parse_errors) = parse_otlp_logs(request)?;
+    let log_records = parse_otlp_logs(request)?;
     Ok(JsonLogIterator::new(log_records, payload_proto.len()))
 }
 

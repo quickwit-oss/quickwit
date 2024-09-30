@@ -32,7 +32,7 @@ use quickwit_proto::types::SplitId;
 use serde::Deserialize;
 use tantivy::aggregation::agg_req::{get_fast_field_names, Aggregations};
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
-use tantivy::aggregation::{AggregationLimits, AggregationSegmentCollector};
+use tantivy::aggregation::{AggregationLimitsGuard, AggregationSegmentCollector};
 use tantivy::collector::{Collector, SegmentCollector};
 use tantivy::columnar::{ColumnType, MonotonicallyMappableToU64};
 use tantivy::fastfield::Column;
@@ -343,7 +343,7 @@ impl SortingFieldExtractorComponent {
                             return None;
                         }
                         // clamp value for comparison
-                        val = val.min(1).max(0);
+                        val = val.clamp(0, 1);
                         (val == 1).to_u64()
                     }
                     (SortValue::I64(mut val), SortFieldType::Bool) => {
@@ -353,7 +353,7 @@ impl SortingFieldExtractorComponent {
                             return None;
                         }
                         // clamp value for comparison
-                        val = val.min(1).max(0);
+                        val = val.clamp(0, 1);
                         (val == 1).to_u64()
                     }
                     (SortValue::F64(mut val), SortFieldType::Bool) => {
@@ -362,7 +362,7 @@ impl SortingFieldExtractorComponent {
                         if all_values_ahead1 || all_values_ahead2 {
                             return None;
                         }
-                        val = val.min(1.0).max(0.0);
+                        val = val.clamp(0.0, 1.0);
                         (val >= 0.5).to_u64() // Is this correct?
                     }
                 };
@@ -592,6 +592,7 @@ impl SegmentCollector for QuickwitSegmentCollector {
             partial_hits,
             failed_splits: Vec::new(),
             num_attempted_splits: 1,
+            num_successful_splits: 1,
         })
     }
 }
@@ -608,7 +609,8 @@ pub enum QuickwitAggregations {
 }
 
 impl QuickwitAggregations {
-    fn fast_field_names(&self) -> HashSet<String> {
+    /// Returns the list of fast fields that should be loaded for the aggregation.
+    pub fn fast_field_names(&self) -> HashSet<String> {
         match self {
             QuickwitAggregations::FindTraceIdsAggregation(collector) => {
                 collector.fast_field_names()
@@ -717,7 +719,7 @@ pub(crate) struct QuickwitCollector {
     pub max_hits: usize,
     pub sort_by: SortByPair,
     pub aggregation: Option<QuickwitAggregations>,
-    pub aggregation_limits: AggregationLimits,
+    pub aggregation_limits: AggregationLimitsGuard,
     search_after: Option<PartialHit>,
 }
 
@@ -927,6 +929,10 @@ fn merge_leaf_responses(
         .iter()
         .map(|leaf_response| leaf_response.num_attempted_splits)
         .sum();
+    let num_successful_splits = leaf_responses
+        .iter()
+        .map(|leaf_response| leaf_response.num_successful_splits)
+        .sum::<u64>();
     let num_hits: u64 = leaf_responses
         .iter()
         .map(|leaf_response| leaf_response.num_hits)
@@ -952,6 +958,7 @@ fn merge_leaf_responses(
         partial_hits: top_k_partial_hits,
         failed_splits,
         num_attempted_splits,
+        num_successful_splits,
     })
 }
 
@@ -1015,7 +1022,7 @@ pub(crate) fn sort_by_from_request(search_request: &SearchRequest) -> SortByPair
 pub(crate) fn make_collector_for_split(
     split_id: SplitId,
     search_request: &SearchRequest,
-    aggregation_limits: AggregationLimits,
+    aggregation_limits: AggregationLimitsGuard,
 ) -> crate::Result<QuickwitCollector> {
     let aggregation = match &search_request.aggregation_request {
         Some(aggregation) => Some(serde_json::from_str(aggregation)?),
@@ -1036,7 +1043,7 @@ pub(crate) fn make_collector_for_split(
 /// Builds a QuickwitCollector that's only useful for merging fruits.
 pub(crate) fn make_merge_collector(
     search_request: &SearchRequest,
-    aggregation_limits: &AggregationLimits,
+    aggregation_limits: &AggregationLimitsGuard,
 ) -> crate::Result<QuickwitCollector> {
     let aggregation = match &search_request.aggregation_request {
         Some(aggregation) => Some(serde_json::from_str(aggregation)?),
@@ -1173,6 +1180,7 @@ pub(crate) struct IncrementalCollector {
     num_hits: u64,
     failed_splits: Vec<SplitSearchError>,
     num_attempted_splits: u64,
+    num_successful_splits: u64,
     start_offset: usize,
 }
 
@@ -1193,6 +1201,7 @@ impl IncrementalCollector {
             num_hits: 0,
             failed_splits: Vec::new(),
             num_attempted_splits: 0,
+            num_successful_splits: 0,
         }
     }
 
@@ -1204,12 +1213,14 @@ impl IncrementalCollector {
             failed_splits,
             num_attempted_splits,
             intermediate_aggregation_result,
+            num_successful_splits,
         } = leaf_response;
 
         self.num_hits += num_hits;
         self.top_k_hits.add_entries(partial_hits.into_iter());
         self.failed_splits.extend(failed_splits);
         self.num_attempted_splits += num_attempted_splits;
+        self.num_successful_splits += num_successful_splits;
         if let Some(intermediate_aggregation_result) = intermediate_aggregation_result {
             self.incremental_aggregation
                 .add(intermediate_aggregation_result)?;
@@ -1252,6 +1263,7 @@ impl IncrementalCollector {
             partial_hits,
             failed_splits: self.failed_splits,
             num_attempted_splits: self.num_attempted_splits,
+            num_successful_splits: self.num_successful_splits,
             intermediate_aggregation_result,
         })
     }
@@ -1814,6 +1826,7 @@ mod tests {
                 }],
                 failed_splits: Vec::new(),
                 num_attempted_splits: 3,
+                num_successful_splits: 3,
                 intermediate_aggregation_result: None,
             }],
         );
@@ -1831,6 +1844,7 @@ mod tests {
                 }],
                 failed_splits: Vec::new(),
                 num_attempted_splits: 3,
+                num_successful_splits: 3,
                 intermediate_aggregation_result: None
             }
         );
@@ -1868,6 +1882,7 @@ mod tests {
                     ],
                     failed_splits: Vec::new(),
                     num_attempted_splits: 3,
+                    num_successful_splits: 3,
                     intermediate_aggregation_result: None,
                 },
                 LeafSearchResponse {
@@ -1885,6 +1900,7 @@ mod tests {
                         retryable_error: true,
                     }],
                     num_attempted_splits: 2,
+                    num_successful_splits: 1,
                     intermediate_aggregation_result: None,
                 },
             ],
@@ -1916,6 +1932,7 @@ mod tests {
                     retryable_error: true,
                 }],
                 num_attempted_splits: 5,
+                num_successful_splits: 4,
                 intermediate_aggregation_result: None
             }
         );
@@ -1954,6 +1971,7 @@ mod tests {
                     ],
                     failed_splits: Vec::new(),
                     num_attempted_splits: 3,
+                    num_successful_splits: 3,
                     intermediate_aggregation_result: None,
                 },
                 LeafSearchResponse {
@@ -1971,6 +1989,7 @@ mod tests {
                         retryable_error: true,
                     }],
                     num_attempted_splits: 2,
+                    num_successful_splits: 1,
                     intermediate_aggregation_result: None,
                 },
             ],
@@ -2002,6 +2021,7 @@ mod tests {
                     retryable_error: true,
                 }],
                 num_attempted_splits: 5,
+                num_successful_splits: 4,
                 intermediate_aggregation_result: None
             }
         );

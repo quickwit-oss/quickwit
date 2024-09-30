@@ -18,20 +18,24 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashSet;
+use std::pin::pin;
 use std::str::FromStr;
 
 use clap::{arg, ArgAction, ArgMatches, Command};
+use colored::Colorize;
 use futures::future::select;
 use itertools::Itertools;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::{Protocol, Uri};
 use quickwit_config::service::QuickwitService;
 use quickwit_config::NodeConfig;
+use quickwit_serve::tcp_listener::DefaultTcpListenerResolver;
 use quickwit_serve::{serve_quickwit, BuildInfo, EnvFilterReloadFn};
 use quickwit_telemetry::payload::{QuickwitFeature, QuickwitTelemetryInfo, TelemetryEvent};
 use tokio::signal;
 use tracing::{debug, info};
 
+use crate::checklist::{BLUE_COLOR, RED_COLOR};
 use crate::{config_cli_arg, get_resolvers, load_node_config, start_actor_runtimes};
 
 pub fn build_run_command() -> Command {
@@ -50,6 +54,38 @@ pub fn build_run_command() -> Command {
 pub struct RunCliCommand {
     pub config_uri: Uri,
     pub services: Option<HashSet<QuickwitService>>,
+}
+
+async fn listen_interrupt() {
+    async fn ctrl_c() {
+        signal::ctrl_c()
+            .await
+            .expect("registering a signal handler for SIGINT should not fail");
+        // carriage return to hide the ^C echo from the terminal
+        print!("\r");
+    }
+    ctrl_c().await;
+    println!(
+        "{} Graceful shutdown initiated. Waiting for ingested data to be indexed. This may take a \
+         few minutes. Press Ctrl+C again to force shutdown.",
+        "❢".color(BLUE_COLOR)
+    );
+    tokio::spawn(async {
+        ctrl_c().await;
+        println!(
+            "{} Quickwit was forcefully shut down. Some data might not have been indexed.",
+            "✘".color(RED_COLOR)
+        );
+        std::process::exit(1);
+    });
+}
+
+async fn listen_sigterm() {
+    signal::unix::signal(signal::unix::SignalKind::terminate())
+        .expect("registering a signal handler for SIGTERM should not fail")
+        .recv()
+        .await;
+    info!("SIGTERM received");
 }
 
 impl RunCliCommand {
@@ -94,26 +130,14 @@ impl RunCliCommand {
         let runtimes_config = RuntimesConfig::default();
         start_actor_runtimes(runtimes_config, &node_config.enabled_services)?;
         let shutdown_signal = Box::pin(async {
-            select(
-                Box::pin(async {
-                    signal::ctrl_c()
-                        .await
-                        .expect("registering a signal handler for SIGINT should not fail");
-                }),
-                Box::pin(async {
-                    signal::unix::signal(signal::unix::SignalKind::terminate())
-                        .expect("registering a signal handler for SIGTERM should not fail")
-                        .recv()
-                        .await;
-                }),
-            )
-            .await;
+            select(pin!(listen_interrupt()), pin!(listen_sigterm())).await;
         });
         let serve_result = serve_quickwit(
             node_config,
             runtimes_config,
             metastore_resolver,
             storage_resolver,
+            DefaultTcpListenerResolver,
             shutdown_signal,
             env_filter_reload_fn,
         )
@@ -127,6 +151,7 @@ impl RunCliCommand {
             telemetry_handle.terminate_telemetry().await;
         }
         serve_result?;
+        info!("quickwit successfully terminated");
         Ok(())
     }
 }

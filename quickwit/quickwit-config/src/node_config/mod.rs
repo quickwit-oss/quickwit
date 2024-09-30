@@ -221,6 +221,8 @@ pub struct SearcherConfig {
     // TODO document and fix if necessary.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub split_cache: Option<SplitCacheLimits>,
+    #[serde(default = "SearcherConfig::default_request_timeout_secs")]
+    request_timeout_secs: NonZeroU64,
 }
 
 impl Default for SearcherConfig {
@@ -234,11 +236,19 @@ impl Default for SearcherConfig {
             aggregation_memory_limit: ByteSize::mb(500),
             aggregation_bucket_limit: 65000,
             split_cache: None,
+            request_timeout_secs: Self::default_request_timeout_secs(),
         }
     }
 }
 
 impl SearcherConfig {
+    /// The timeout after which a search should be cancelled
+    pub fn request_timeout(&self) -> Duration {
+        Duration::from_secs(self.request_timeout_secs.get())
+    }
+    fn default_request_timeout_secs() -> NonZeroU64 {
+        NonZeroU64::new(30).unwrap()
+    }
     fn validate(&self) -> anyhow::Result<()> {
         if let Some(split_cache_limits) = self.split_cache {
             if self.max_num_concurrent_split_searches
@@ -480,9 +490,17 @@ impl NodeConfig {
         self.storage_configs.redact();
     }
 
+    /// Creates a config with defaults suitable for testing.
+    ///
+    /// Uses the default ports without ensuring that they are available.
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test() -> Self {
-        serialize::node_config_for_test()
+        serialize::node_config_for_tests_from_ports(7280, 7281)
+    }
+
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn for_test_from_ports(rest_listen_port: u16, grpc_listen_port: u16) -> Self {
+        serialize::node_config_for_tests_from_ports(rest_listen_port, grpc_listen_port)
     }
 }
 

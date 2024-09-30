@@ -18,5 +18,6 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 mod cluster_sandbox;
+mod shutdown;
 
-pub(crate) use cluster_sandbox::{ingest_with_retry, ClusterSandbox};
+pub(crate) use cluster_sandbox::{ingest, ClusterSandbox, ClusterSandboxBuilder};

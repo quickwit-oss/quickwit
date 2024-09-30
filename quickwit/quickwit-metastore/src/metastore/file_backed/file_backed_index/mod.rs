@@ -36,7 +36,7 @@ use quickwit_config::{
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsResponse, DeleteQuery, DeleteShardsRequest,
     DeleteShardsResponse, DeleteTask, EntityKind, ListShardsSubrequest, ListShardsSubresponse,
-    MetastoreError, MetastoreResult, OpenShardSubrequest, OpenShardSubresponse,
+    MetastoreError, MetastoreResult, OpenShardSubrequest, OpenShardSubresponse, PruneShardsRequest,
 };
 use quickwit_proto::types::{IndexUid, PublishToken, SourceId, SplitId};
 use serde::{Deserialize, Serialize};
@@ -47,7 +47,7 @@ use tracing::{info, warn};
 
 use super::MutationOccurred;
 use crate::checkpoint::IndexCheckpointDelta;
-use crate::metastore::use_shard_api;
+use crate::metastore::{use_shard_api, SortBy};
 use crate::{split_tag_filter, IndexMetadata, ListSplitsQuery, Split, SplitMetadata, SplitState};
 
 /// A `FileBackedIndex` object carries an index metadata and its split metadata.
@@ -108,6 +108,7 @@ impl quickwit_config::TestableForRegression for FileBackedIndex {
             follower_id: Some("follower-ingester".to_string()),
             doc_mapping_uid: Some(DocMappingUid::for_test(1)),
             publish_position_inclusive: Some(Position::Beginning),
+            update_timestamp: 1724240908,
             ..Default::default()
         };
         let shards = Shards::from_shards_vec(index_uid.clone(), source_id.clone(), vec![shard]);
@@ -426,8 +427,9 @@ impl FileBackedIndex {
         let limit = query.limit.unwrap_or(usize::MAX);
         let offset = query.offset.unwrap_or_default();
 
-        let splits: Vec<Split> = if query.sort_by_staleness {
-            self.splits
+        let splits: Vec<Split> = match query.sort_by {
+            SortBy::Staleness => self
+                .splits
                 .values()
                 .filter(|split| split_query_predicate(split, query))
                 .sorted_unstable_by(|left_split, right_split| {
@@ -444,15 +446,24 @@ impl FileBackedIndex {
                 .skip(offset)
                 .take(limit)
                 .cloned()
-                .collect()
-        } else {
-            self.splits
+                .collect(),
+            SortBy::IndexUid => self
+                .splits
+                .values()
+                .filter(|split| split_query_predicate(split, query))
+                .sorted_unstable_by_key(|split| &split.split_metadata.index_uid)
+                .skip(offset)
+                .take(limit)
+                .cloned()
+                .collect(),
+            SortBy::None => self
+                .splits
                 .values()
                 .filter(|split| split_query_predicate(split, query))
                 .skip(offset)
                 .take(limit)
                 .cloned()
-                .collect()
+                .collect(),
         };
         Ok(splits)
     }
@@ -650,6 +661,14 @@ impl FileBackedIndex {
     ) -> MetastoreResult<MutationOccurred<DeleteShardsResponse>> {
         self.get_shards_for_source_mut(&request.source_id)?
             .delete_shards(request)
+    }
+
+    pub(crate) fn prune_shards(
+        &mut self,
+        request: PruneShardsRequest,
+    ) -> MetastoreResult<MutationOccurred<()>> {
+        self.get_shards_for_source_mut(&request.source_id)?
+            .prune_shards(request)
     }
 
     pub(crate) fn list_shards(

@@ -60,3 +60,4 @@ quickwit-storage = { workspace = true, features = ["testsuite"] }
 
 [features]
 testsuite = []
+ci-test = []

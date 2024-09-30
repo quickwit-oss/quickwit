@@ -36,11 +36,10 @@ pub enum ActorExitStatus {
     /// The actor successfully exited.
     ///
     /// It happens either because:
-    /// - all of the existing mailboxes were dropped and the actor message queue was exhausted.
-    /// No new message could ever arrive to the actor. (This exit is triggered by the framework.)
-    /// or
-    /// - the actor `process_message` method returned `Err(ExitStatusCode::Success)`.
-    /// (This exit is triggered by the actor implementer.)
+    /// - all of the existing mailboxes were dropped and the actor message queue was exhausted. No
+    ///   new message could ever arrive to the actor. (This exit is triggered by the framework.) or
+    /// - the actor `process_message` method returned `Err(ExitStatusCode::Success)`. (This exit is
+    ///   triggered by the actor implementer.)
     ///
     /// (This is equivalent to exit status code 0.)
     /// Note that this is not really an error.

@@ -127,7 +127,7 @@ fn get_region(s3_storage_config: &S3StorageConfig) -> Option<Region> {
     })
 }
 
-async fn create_s3_client(s3_storage_config: &S3StorageConfig) -> S3Client {
+pub async fn create_s3_client(s3_storage_config: &S3StorageConfig) -> S3Client {
     let aws_config = get_aws_config().await;
     let credentials_provider =
         get_credentials_provider(s3_storage_config).or(aws_config.credentials_provider());
@@ -144,6 +144,7 @@ async fn create_s3_client(s3_storage_config: &S3StorageConfig) -> S3Client {
     s3_config.set_http_client(aws_config.http_client());
     s3_config.set_retry_config(aws_config.retry_config().cloned());
     s3_config.set_sleep_impl(aws_config.sleep_impl());
+    s3_config.set_stalled_stream_protection(aws_config.stalled_stream_protection());
     s3_config.set_timeout_config(aws_config.timeout_config().cloned());
 
     if let Some(endpoint) = s3_storage_config.endpoint() {
@@ -154,39 +155,38 @@ async fn create_s3_client(s3_storage_config: &S3StorageConfig) -> S3Client {
 }
 
 impl S3CompatibleObjectStorage {
-    /// Creates an object storage given a region and a bucket name.
-    pub async fn new(
-        s3_storage_config: &S3StorageConfig,
-        uri: Uri,
-        bucket: String,
-    ) -> Result<Self, StorageResolverError> {
-        let s3_client = create_s3_client(s3_storage_config).await;
-        let retry_params = RetryParams::aggressive();
-        let disable_multi_object_delete = s3_storage_config.disable_multi_object_delete;
-        let disable_multipart_upload = s3_storage_config.disable_multipart_upload;
-        Ok(Self {
-            s3_client,
-            uri,
-            bucket,
-            prefix: PathBuf::new(),
-            multipart_policy: MultiPartPolicy::default(),
-            retry_params,
-            disable_multi_object_delete,
-            disable_multipart_upload,
-        })
-    }
-
     /// Creates an object storage given a region and an uri.
     pub async fn from_uri(
         s3_storage_config: &S3StorageConfig,
         uri: &Uri,
     ) -> Result<Self, StorageResolverError> {
+        let s3_client = create_s3_client(s3_storage_config).await;
+        Self::from_uri_and_client(s3_storage_config, uri, s3_client).await
+    }
+
+    /// Creates an object storage given a region, an uri and an S3 client.
+    pub async fn from_uri_and_client(
+        s3_storage_config: &S3StorageConfig,
+        uri: &Uri,
+        s3_client: S3Client,
+    ) -> Result<Self, StorageResolverError> {
         let (bucket, prefix) = parse_s3_uri(uri).ok_or_else(|| {
             let message = format!("failed to extract bucket name from S3 URI: {uri}");
             StorageResolverError::InvalidUri(message)
         })?;
-        let storage = Self::new(s3_storage_config, uri.clone(), bucket).await?;
-        Ok(storage.with_prefix(prefix))
+        let retry_params = RetryParams::aggressive();
+        let disable_multi_object_delete = s3_storage_config.disable_multi_object_delete;
+        let disable_multipart_upload = s3_storage_config.disable_multipart_upload;
+        Ok(Self {
+            s3_client,
+            uri: uri.clone(),
+            bucket,
+            prefix,
+            multipart_policy: MultiPartPolicy::default(),
+            retry_params,
+            disable_multi_object_delete,
+            disable_multipart_upload,
+        })
     }
 
     /// Sets a specific for all buckets.
@@ -1168,5 +1168,69 @@ mod tests {
         );
         let delete_objects_error = bulk_delete_error.error.unwrap();
         assert!(delete_objects_error.to_string().contains("MalformedXML"));
+    }
+
+    #[tokio::test]
+    async fn test_s3_compatible_storage_retry_put() {
+        let client = StaticReplayClient::new(vec![
+            ReplayEvent::new(
+                // This is quite fragile, currently this is *not* validated by the SDK
+                // but may in future, that being said, there is no way to know what the
+                // request should look like until it raises an error in reality as this
+                // is up to how the validation is implemented.
+                http::Request::builder().body(SdkBody::empty()).unwrap(),
+                http::Response::builder()
+                    .status(429)
+                    .body(SdkBody::from_body_0_4(Body::from(Bytes::from(
+                        r#"<?xml version="1.0" encoding="UTF-8"?>
+                        <Error>
+                          <Code>SlowDown</Code>
+                          <Message>message</Message>
+                          <Resource>/my-path</Resource>
+                          <RequestId>4442587FB7D0A2F9</RequestId>
+                        </Error>"#,
+                    ))))
+                    .unwrap(),
+            ),
+            ReplayEvent::new(
+                // This is quite fragile, currently this is *not* validated by the SDK
+                // but may in future, that being said, there is no way to know what the
+                // request should look like until it raises an error in reality as this
+                // is up to how the validation is implemented.
+                http::Request::builder()
+                    .body(SdkBody::from_body_0_4(Body::empty()))
+                    .unwrap(),
+                http::Response::builder()
+                    .status(200)
+                    .body(SdkBody::from_body_0_4(Body::empty()))
+                    .unwrap(),
+            ),
+        ]);
+        let credentials = Credentials::new("mock_key", "mock_secret", None, None, "mock_provider");
+        let config = aws_sdk_s3::Config::builder()
+            .behavior_version(BehaviorVersion::v2024_03_28())
+            .region(Some(Region::new("Foo")))
+            .http_client(client)
+            .credentials_provider(credentials)
+            .build();
+        let s3_client = S3Client::from_conf(config);
+        let uri = Uri::for_test("s3://bucket/indexes");
+        let bucket = "bucket".to_string();
+        let prefix = PathBuf::new();
+
+        let s3_storage = S3CompatibleObjectStorage {
+            s3_client,
+            uri,
+            bucket,
+            prefix,
+            multipart_policy: MultiPartPolicy::default(),
+            retry_params: RetryParams::for_test(),
+            disable_multi_object_delete: false,
+            disable_multipart_upload: false,
+        };
+        s3_storage
+            .put(Path::new("my-path"), Box::new(vec![1, 2, 3]))
+            .await
+            .unwrap();
     }
 }

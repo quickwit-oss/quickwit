@@ -230,6 +230,17 @@ pub struct SearchResponse {
     /// Scroll Id (only set if scroll_secs was set in the request)
     #[prost(string, optional, tag = "6")]
     pub scroll_id: ::core::option::Option<::prost::alloc::string::String>,
+    /// Returns the list of splits for which search failed.
+    /// For the moment, the cause is unknown.
+    ///
+    /// It is up to the caller to decide whether to interpret
+    /// this as an overall failure or to present the partial results
+    /// to the end user.
+    #[prost(message, repeated, tag = "7")]
+    pub failed_splits: ::prost::alloc::vec::Vec<SplitSearchError>,
+    /// Total number of successful splits searched.
+    #[prost(uint64, tag = "8")]
+    pub num_successful_splits: u64,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -258,8 +269,9 @@ pub struct SplitSearchError {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeafSearchRequest {
-    /// Search request. This is a perfect copy of the original search request,
-    /// that was sent to root apart from the start_offset & max_hits params.
+    /// Search request. This is a perfect copy of the original search request
+    /// that was sent to root apart from the start_offset, max_hits params and index_id_patterns.
+    /// index_id_patterns contains the actual index ids queried on that leaf.
     #[prost(message, optional, tag = "1")]
     pub search_request: ::core::option::Option<SearchRequest>,
     /// List of leaf requests, one per index.
@@ -322,9 +334,9 @@ pub struct SplitIdAndFooterOffsets {
 /// For instance:
 /// - it may contain a _source and a _dynamic field.
 /// - since tantivy has no notion of cardinality,
-/// all fields is  are arrays.
+///    all fields are arrays.
 /// - since tantivy has no notion of object, the object is
-/// flattened by concatenating the path to the root.
+///    flattened by concatenating the path to the root.
 ///
 /// See  `quickwit_search::convert_leaf_hit`
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
@@ -430,10 +442,16 @@ pub struct LeafSearchResponse {
     /// The list of splits that failed. LeafSearchResponse can be an aggregation of results, so there may be multiple.
     #[prost(message, repeated, tag = "3")]
     pub failed_splits: ::prost::alloc::vec::Vec<SplitSearchError>,
-    /// Total number of splits the leaf(s) were in charge of.
-    /// num_attempted_splits = num_successful_splits + num_failed_splits.
+    /// Total number of attempt to search into splits.
+    /// We do have:
+    /// `num_splits_requested == num_successful_splits + num_failed_splits.len()`
+    /// But we do not necessarily have:
+    /// `num_splits_requested = num_attempted_splits because of retries.`
     #[prost(uint64, tag = "4")]
     pub num_attempted_splits: u64,
+    /// Total number of successful splits searched.
+    #[prost(uint64, tag = "7")]
+    pub num_successful_splits: u64,
     /// postcard serialized intermediate aggregation_result.
     #[prost(bytes = "vec", optional, tag = "6")]
     pub intermediate_aggregation_result: ::core::option::Option<
@@ -550,8 +568,7 @@ pub struct LeafListTermsResponse {
     /// The list of splits that failed. LeafSearchResponse can be an aggregation of results, so there may be multiple.
     #[prost(message, repeated, tag = "3")]
     pub failed_splits: ::prost::alloc::vec::Vec<SplitSearchError>,
-    /// Total number of splits the leaf(s) were in charge of.
-    /// num_attempted_splits = num_successful_splits + num_failed_splits.
+    /// Total number of single split search attempted.
     #[prost(uint64, tag = "4")]
     pub num_attempted_splits: u64,
 }
@@ -910,7 +927,7 @@ pub mod search_service_client {
         ///
         /// It is like a regular search except that:
         /// - the node should perform the search locally instead of dispatching
-        /// it to other nodes.
+        ///   it to other nodes.
         /// - it should be applied on the given subset of splits
         /// - Hit content is not fetched, and we instead return so called `PartialHit`.
         pub async fn leaf_search(
@@ -1029,7 +1046,7 @@ pub mod search_service_client {
         ///
         /// It is like a regular list term except that:
         /// - the node should perform the listing locally instead of dispatching
-        /// it to other nodes.
+        ///   it to other nodes.
         /// - it should be applied on the given subset of splits
         pub async fn leaf_list_terms(
             &mut self,
@@ -1256,7 +1273,7 @@ pub mod search_service_server {
         ///
         /// It is like a regular search except that:
         /// - the node should perform the search locally instead of dispatching
-        /// it to other nodes.
+        ///   it to other nodes.
         /// - it should be applied on the given subset of splits
         /// - Hit content is not fetched, and we instead return so called `PartialHit`.
         async fn leaf_search(
@@ -1308,7 +1325,7 @@ pub mod search_service_server {
         ///
         /// It is like a regular list term except that:
         /// - the node should perform the listing locally instead of dispatching
-        /// it to other nodes.
+        ///   it to other nodes.
         /// - it should be applied on the given subset of splits
         async fn leaf_list_terms(
             &self,

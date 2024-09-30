@@ -39,7 +39,7 @@ use quickwit_proto::search::{
 use quickwit_storage::{
     MemorySizedCache, QuickwitCache, SplitCache, StorageCache, StorageResolver,
 };
-use tantivy::aggregation::AggregationLimits;
+use tantivy::aggregation::AggregationLimitsGuard;
 use tokio::sync::Semaphore;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
@@ -436,6 +436,8 @@ pub(crate) async fn scroll(
         scroll_id: Some(next_scroll_id.to_string()),
         errors: Vec::new(),
         aggregation: None,
+        failed_splits: scroll_context.failed_splits,
+        num_successful_splits: scroll_context.num_successful_splits,
     })
 }
 /// [`SearcherContext`] provides a common set of variables
@@ -458,6 +460,8 @@ pub struct SearcherContext {
     pub split_cache_opt: Option<Arc<SplitCache>>,
     /// List fields cache. Caches the list fields response for a given split.
     pub list_fields_cache: ListFieldsCache,
+    /// The aggregation limits are passed to limit the memory usage.
+    pub aggregation_limit: AggregationLimitsGuard,
 }
 
 impl std::fmt::Debug for SearcherContext {
@@ -498,6 +502,10 @@ impl SearcherContext {
             LeafSearchCache::new(searcher_config.partial_request_cache_capacity.as_u64() as usize);
         let list_fields_cache =
             ListFieldsCache::new(searcher_config.partial_request_cache_capacity.as_u64() as usize);
+        let aggregation_limit = AggregationLimitsGuard::new(
+            Some(searcher_config.aggregation_memory_limit.as_u64()),
+            Some(searcher_config.aggregation_bucket_limit),
+        );
 
         Self {
             searcher_config,
@@ -508,14 +516,12 @@ impl SearcherContext {
             leaf_search_cache,
             list_fields_cache,
             split_cache_opt,
+            aggregation_limit,
         }
     }
 
-    /// Returns a new instance to track the aggregation memory usage.
-    pub fn create_new_aggregation_limits(&self) -> AggregationLimits {
-        AggregationLimits::new(
-            Some(self.searcher_config.aggregation_memory_limit.as_u64()),
-            Some(self.searcher_config.aggregation_bucket_limit),
-        )
+    /// Returns the shared instance to track the aggregation memory usage.
+    pub fn get_aggregation_limits(&self) -> AggregationLimitsGuard {
+        self.aggregation_limit.clone()
     }
 }

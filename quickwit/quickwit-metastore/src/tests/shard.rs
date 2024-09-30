@@ -18,15 +18,18 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use async_trait::async_trait;
+use itertools::Itertools;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_config::{IndexConfig, SourceConfig};
+use quickwit_proto::compatibility_shard_update_timestamp;
 use quickwit_proto::ingest::{Shard, ShardState};
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AddSourceRequest, CreateIndexRequest, DeleteShardsRequest, EntityKind,
     ListShardsRequest, ListShardsSubrequest, MetastoreError, MetastoreService, OpenShardSubrequest,
-    OpenShardsRequest, PublishSplitsRequest,
+    OpenShardsRequest, PruneShardsRequest, PublishSplitsRequest,
 };
 use quickwit_proto::types::{DocMappingUid, IndexUid, Position, ShardId, SourceId};
+use time::OffsetDateTime;
 
 use super::DefaultForTest;
 use crate::checkpoint::{IndexCheckpointDelta, PartitionId, SourceCheckpointDelta};
@@ -152,6 +155,9 @@ pub async fn test_metastore_open_shards<
     assert_eq!(shard.follower_id(), "test-ingester-bar");
     assert_eq!(shard.doc_mapping_uid(), DocMappingUid::default(),);
     assert_eq!(shard.publish_position_inclusive(), Position::Beginning);
+    let shard_ts = shard.update_timestamp;
+    assert_ne!(shard_ts, compatibility_shard_update_timestamp());
+    assert_ne!(shard_ts, 0);
     assert!(shard.publish_token.is_none());
 
     // Test open shard #1 is idempotent.
@@ -181,6 +187,7 @@ pub async fn test_metastore_open_shards<
     assert_eq!(shard.leader_id, "test-ingester-foo");
     assert_eq!(shard.follower_id(), "test-ingester-bar");
     assert_eq!(shard.publish_position_inclusive(), Position::Beginning);
+    assert_eq!(shard.update_timestamp, shard_ts);
     assert!(shard.publish_token.is_none());
 
     // Test open shard #2.
@@ -238,6 +245,7 @@ pub async fn test_metastore_acquire_shards<
             doc_mapping_uid: Some(DocMappingUid::default()),
             publish_position_inclusive: Some(Position::Beginning),
             publish_token: Some("test-publish-token-foo".to_string()),
+            update_timestamp: 1724158996,
         },
         Shard {
             index_uid: Some(test_index.index_uid.clone()),
@@ -249,6 +257,7 @@ pub async fn test_metastore_acquire_shards<
             doc_mapping_uid: Some(DocMappingUid::default()),
             publish_position_inclusive: Some(Position::Beginning),
             publish_token: Some("test-publish-token-bar".to_string()),
+            update_timestamp: 1724158996,
         },
         Shard {
             index_uid: Some(test_index.index_uid.clone()),
@@ -260,6 +269,7 @@ pub async fn test_metastore_acquire_shards<
             doc_mapping_uid: Some(DocMappingUid::default()),
             publish_position_inclusive: Some(Position::Beginning),
             publish_token: None,
+            update_timestamp: 1724158996,
         },
         Shard {
             index_uid: Some(test_index.index_uid.clone()),
@@ -271,6 +281,7 @@ pub async fn test_metastore_acquire_shards<
             doc_mapping_uid: Some(DocMappingUid::default()),
             publish_position_inclusive: Some(Position::Beginning),
             publish_token: None,
+            update_timestamp: 1724158996,
         },
     ];
     metastore
@@ -362,6 +373,7 @@ pub async fn test_metastore_list_shards<
                 doc_mapping_uid: Some(DocMappingUid::default()),
                 publish_position_inclusive: Some(Position::Beginning),
                 publish_token: Some("test-publish-token-foo".to_string()),
+                update_timestamp: 1724158996,
             },
             Shard {
                 index_uid: Some(test_index.index_uid.clone()),
@@ -373,6 +385,7 @@ pub async fn test_metastore_list_shards<
                 doc_mapping_uid: Some(DocMappingUid::default()),
                 publish_position_inclusive: Some(Position::Beginning),
                 publish_token: Some("test-publish-token-bar".to_string()),
+                update_timestamp: 1724158997,
             },
         ];
         metastore
@@ -421,6 +434,7 @@ pub async fn test_metastore_list_shards<
         assert_eq!(shard.follower_id(), "test-ingester-bar");
         assert_eq!(shard.publish_position_inclusive(), Position::Beginning);
         assert_eq!(shard.publish_token(), "test-publish-token-foo");
+        assert_eq!(shard.update_timestamp, 1724158996);
 
         let shard = &subresponse.shards[1];
         assert_eq!(shard.index_uid(), &test_index.index_uid);
@@ -431,6 +445,7 @@ pub async fn test_metastore_list_shards<
         assert_eq!(shard.follower_id(), "test-ingester-qux");
         assert_eq!(shard.publish_position_inclusive(), Position::Beginning);
         assert_eq!(shard.publish_token(), "test-publish-token-bar");
+        assert_eq!(shard.update_timestamp, 1724158997);
     }
 
     // Test list shards with shard state filter.
@@ -598,6 +613,126 @@ pub async fn test_metastore_delete_shards<
     cleanup_index(&mut metastore, test_index.index_uid).await;
 }
 
+pub async fn test_metastore_prune_shards<
+    MetastoreUnderTest: MetastoreService + MetastoreServiceExt + DefaultForTest + ReadWriteShardsForTest,
+>() {
+    let mut metastore = MetastoreUnderTest::default_for_test().await;
+
+    let test_index = TestIndex::create_index_with_source(
+        &mut metastore,
+        "test-prune-shards",
+        SourceConfig::ingest_v2(),
+    )
+    .await;
+
+    let now_timestamp = OffsetDateTime::now_utc().unix_timestamp();
+    let oldest_shard_age = 10000u32;
+
+    // Create shards with timestamp intervals of 100s starting from
+    // now_timestamp - oldest_shard_age
+    let shards = (0..100)
+        .map(|shard_id| Shard {
+            index_uid: Some(test_index.index_uid.clone()),
+            source_id: test_index.source_id.clone(),
+            shard_id: Some(ShardId::from(shard_id)),
+            shard_state: ShardState::Closed as i32,
+            doc_mapping_uid: Some(DocMappingUid::default()),
+            publish_position_inclusive: Some(Position::Beginning),
+            update_timestamp: now_timestamp - oldest_shard_age as i64 + shard_id as i64 * 100,
+            ..Default::default()
+        })
+        .collect_vec();
+
+    metastore
+        .insert_shards(&test_index.index_uid, &test_index.source_id, shards)
+        .await;
+
+    // noop prune request
+    {
+        let prune_index_request = PruneShardsRequest {
+            index_uid: Some(test_index.index_uid.clone()),
+            source_id: test_index.source_id.clone(),
+            max_age_secs: None,
+            max_count: None,
+            interval_secs: None,
+        };
+        metastore.prune_shards(prune_index_request).await.unwrap();
+        let all_shards = metastore
+            .list_all_shards(&test_index.index_uid, &test_index.source_id)
+            .await;
+        assert_eq!(all_shards.len(), 100);
+    }
+
+    // delete shards 4 last shards with age limit
+    {
+        let prune_index_request = PruneShardsRequest {
+            index_uid: Some(test_index.index_uid.clone()),
+            source_id: test_index.source_id.clone(),
+            max_age_secs: Some(oldest_shard_age - 350),
+            max_count: None,
+            interval_secs: None,
+        };
+        metastore.prune_shards(prune_index_request).await.unwrap();
+
+        let mut all_shards = metastore
+            .list_all_shards(&test_index.index_uid, &test_index.source_id)
+            .await;
+        assert_eq!(all_shards.len(), 96);
+        all_shards.sort_unstable_by_key(|shard| shard.update_timestamp);
+        assert_eq!(all_shards[0].shard_id(), ShardId::from(4));
+        assert_eq!(all_shards[95].shard_id(), ShardId::from(99));
+    }
+
+    // delete 6 more shards with count limit
+    {
+        let prune_index_request = PruneShardsRequest {
+            index_uid: Some(test_index.index_uid.clone()),
+            source_id: test_index.source_id.clone(),
+            max_age_secs: None,
+            max_count: Some(90),
+            interval_secs: None,
+        };
+        metastore.prune_shards(prune_index_request).await.unwrap();
+        let mut all_shards = metastore
+            .list_all_shards(&test_index.index_uid, &test_index.source_id)
+            .await;
+        assert_eq!(all_shards.len(), 90);
+        all_shards.sort_unstable_by_key(|shard| shard.update_timestamp);
+        assert_eq!(all_shards[0].shard_id(), ShardId::from(10));
+        assert_eq!(all_shards[89].shard_id(), ShardId::from(99));
+    }
+
+    // age limit is the limiting factor, delete 10 more shards
+    let prune_index_request = PruneShardsRequest {
+        index_uid: Some(test_index.index_uid.clone()),
+        source_id: test_index.source_id.clone(),
+        max_age_secs: Some(oldest_shard_age - 2950),
+        max_count: Some(80),
+        interval_secs: None,
+    };
+    metastore.prune_shards(prune_index_request).await.unwrap();
+    let all_shards = metastore
+        .list_all_shards(&test_index.index_uid, &test_index.source_id)
+        .await;
+    assert_eq!(all_shards.len(), 70);
+
+    // count limit is the limiting factor, delete 20 more shards
+    let prune_index_request = PruneShardsRequest {
+        index_uid: Some(test_index.index_uid.clone()),
+        source_id: test_index.source_id.clone(),
+        max_age_secs: Some(oldest_shard_age - 4000),
+        max_count: Some(50),
+        interval_secs: None,
+    };
+    metastore.prune_shards(prune_index_request).await.unwrap();
+    let all_shards = metastore
+        .list_all_shards(&test_index.index_uid, &test_index.source_id)
+        .await;
+    assert_eq!(all_shards.len(), 50);
+
+    cleanup_index(&mut metastore, test_index.index_uid).await;
+}
+
 pub async fn test_metastore_apply_checkpoint_delta_v2_single_shard<
     MetastoreUnderTest: MetastoreService + MetastoreServiceExt + DefaultForTest + ReadWriteShardsForTest,
 >() {
@@ -639,6 +774,7 @@ pub async fn test_metastore_apply_checkpoint_delta_v2_single_shard<
         MetastoreError::NotFound(EntityKind::Shard { .. })
     ));
 
+    let dummy_create_timestamp = 1;
     let shards = vec![Shard {
         index_uid: Some(test_index.index_uid.clone()),
         source_id: test_index.source_id.clone(),
@@ -647,6 +783,7 @@ pub async fn test_metastore_apply_checkpoint_delta_v2_single_shard<
         doc_mapping_uid: Some(DocMappingUid::default()),
         publish_position_inclusive: Some(Position::Beginning),
         publish_token: Some("test-publish-token-bar".to_string()),
+        update_timestamp: dummy_create_timestamp,
         ..Default::default()
     }];
     metastore
@@ -690,6 +827,10 @@ pub async fn test_metastore_apply_checkpoint_delta_v2_single_shard<
     assert_eq!(
         shards[0].publish_position_inclusive(),
         Position::offset(0u64)
+    );
+    assert!(
+        shards[0].update_timestamp > dummy_create_timestamp,
+        "shard timestamp was not updated"
     );
 
     let index_checkpoint_delta_json = serde_json::to_string(&index_checkpoint_delta).unwrap();
@@ -754,6 +895,7 @@ pub async fn test_metastore_apply_checkpoint_delta_v2_multi_shards<
     )
     .await;
 
+    let dummy_create_timestamp = 1;
     let shards = vec![
         Shard {
             index_uid: Some(test_index.index_uid.clone()),
@@ -763,6 +905,7 @@ pub async fn test_metastore_apply_checkpoint_delta_v2_multi_shards<
             doc_mapping_uid: Some(DocMappingUid::default()),
             publish_position_inclusive: Some(Position::offset(0u64)),
             publish_token: Some("test-publish-token-foo".to_string()),
+            update_timestamp: dummy_create_timestamp,
             ..Default::default()
         },
         Shard {
@@ -773,6 +916,7 @@ pub async fn test_metastore_apply_checkpoint_delta_v2_multi_shards<
             doc_mapping_uid: Some(DocMappingUid::default()),
             publish_position_inclusive: Some(Position::offset(1u64)),
             publish_token: Some("test-publish-token-foo".to_string()),
+            update_timestamp: dummy_create_timestamp,
             ..Default::default()
         },
         Shard {
@@ -783,6 +927,7 @@ pub async fn test_metastore_apply_checkpoint_delta_v2_multi_shards<
             doc_mapping_uid: Some(DocMappingUid::default()),
             publish_position_inclusive: Some(Position::offset(2u64)),
             publish_token: Some("test-publish-token-foo".to_string()),
+            update_timestamp: dummy_create_timestamp,
             ..Default::default()
         },
         Shard {
@@ -793,6 +938,7 @@ pub async fn test_metastore_apply_checkpoint_delta_v2_multi_shards<
             doc_mapping_uid: Some(DocMappingUid::default()),
             publish_position_inclusive: Some(Position::offset(3u64)),
             publish_token: Some("test-publish-token-bar".to_string()),
+            update_timestamp: dummy_create_timestamp,
             ..Default::default()
         },
     ];
@@ -850,21 +996,25 @@ pub async fn test_metastore_apply_checkpoint_delta_v2_multi_shards<
     assert_eq!(shard.shard_id(), ShardId::from(0));
     assert_eq!(shard.shard_state(), ShardState::Open);
     assert_eq!(shard.publish_position_inclusive(), Position::offset(10u64));
+    assert!(shard.update_timestamp > dummy_create_timestamp);
 
     let shard = &shards[1];
     assert_eq!(shard.shard_id(), ShardId::from(1));
     assert_eq!(shard.shard_state(), ShardState::Open);
     assert_eq!(shard.publish_position_inclusive(), Position::offset(11u64));
+    assert!(shard.update_timestamp > dummy_create_timestamp);
 
     let shard = &shards[2];
     assert_eq!(shard.shard_id(), ShardId::from(2));
     assert_eq!(shard.shard_state(), ShardState::Closed);
     assert_eq!(shard.publish_position_inclusive(), Position::eof(12u64));
+    assert!(shard.update_timestamp > dummy_create_timestamp);
 
     let shard = &shards[3];
     assert_eq!(shard.shard_id(), ShardId::from(3));
     assert_eq!(shard.shard_state(), ShardState::Open);
     assert_eq!(shard.publish_position_inclusive(), Position::offset(3u64));
+    assert_eq!(shard.update_timestamp, dummy_create_timestamp);
 
     cleanup_index(&mut metastore, test_index.index_uid).await;
 }

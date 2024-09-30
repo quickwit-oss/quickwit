@@ -58,8 +58,8 @@ use quickwit_proto::metastore::{
     ListShardsRequest, ListShardsResponse, ListSplitsRequest, ListSplitsResponse,
     ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError, MetastoreResult,
     MetastoreService, MetastoreServiceStream, OpenShardSubrequest, OpenShardsRequest,
-    OpenShardsResponse, PublishSplitsRequest, ResetSourceCheckpointRequest, StageSplitsRequest,
-    ToggleSourceRequest, UpdateIndexRequest, UpdateSplitsDeleteOpstampRequest,
+    OpenShardsResponse, PruneShardsRequest, PublishSplitsRequest, ResetSourceCheckpointRequest,
+    StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest, UpdateSplitsDeleteOpstampRequest,
     UpdateSplitsDeleteOpstampResponse,
 };
 use quickwit_proto::types::{IndexId, IndexUid};
@@ -582,10 +582,10 @@ impl MetastoreService for FileBackedMetastore {
     /// Mutations over a single index
 
     async fn stage_splits(&self, request: StageSplitsRequest) -> MetastoreResult<EmptyResponse> {
+        let index_uid = request.index_uid().clone();
         let splits_metadata = request.deserialize_splits_metadata()?;
-        let index_uid = request.index_uid();
 
-        self.mutate(index_uid, |index| {
+        self.mutate(&index_uid, |index| {
             let mut failed_split_ids = Vec::new();
 
             for split_metadata in splits_metadata {
@@ -890,6 +890,13 @@ impl MetastoreService for FileBackedMetastore {
             .mutate(&index_uid, |index| index.delete_shards(request))
             .await?;
         Ok(response)
+    }
+
+    async fn prune_shards(&self, request: PruneShardsRequest) -> MetastoreResult<EmptyResponse> {
+        let index_uid = request.index_uid().clone();
+        self.mutate(&index_uid, |index| index.prune_shards(request))
+            .await?;
+        Ok(EmptyResponse {})
     }
 
     async fn list_shards(&self, request: ListShardsRequest) -> MetastoreResult<ListShardsResponse> {

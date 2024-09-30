@@ -403,9 +403,9 @@ dependencies = [
 
 [[package]]
 name = "aws-sdk-kinesis"
-version = "1.36.0"
+version = "1.37.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9eb6e80dd9b470523e0917a9a56302347fb464c46718c215d243638d52ea834b"
+checksum = "65b4929e7c3bcb3a453129c74e116d0d5fec37d10bc019499ad8bcb8191a7f48"
 dependencies = [
  "aws-credential-types",
  "aws-runtime",
@@ -2487,6 +2487,16 @@ checksum = "f7e180ac76c23b45e767bd7ae9579bc0bb458618c4bc71835926e098e61d15f8"
 dependencies = [
  "rustix",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "fslock"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "04412b8935272e3a9bae6f48c7bfff74c2911f60525404edfdd28e49884c3bfb"
+dependencies = [
+ "libc",
+ "winapi 0.3.9",
 ]
 
 [[package]]
@@ -4733,7 +4743,7 @@ checksum = "b15813163c1d831bf4a13c3610c05c0d03b39feb07f7e09fa234dac9b15aaf39"
 [[package]]
 name = "ownedbytes"
 version = "0.7.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=9f81d59#9f81d59ecd283a4ce1b6527a447c705b5fba0b1a"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=55b0b52#55b0b52457c87df45250243c3310b4ffad85b088"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -5641,6 +5651,7 @@ name = "quickwit-aws"
 version = "0.8.0"
 dependencies = [
  "aws-config",
+ "aws-runtime",
  "aws-sdk-kinesis",
  "aws-sdk-s3",
  "aws-sdk-sqs",
@@ -5836,6 +5847,7 @@ dependencies = [
  "serde_json",
  "serde_with 3.9.0",
  "serde_yaml",
+ "siphasher",
  "tokio",
  "toml",
  "tracing",
@@ -5853,6 +5865,7 @@ dependencies = [
  "fnv",
  "futures",
  "itertools 0.13.0",
+ "lru",
  "mockall",
  "once_cell",
  "proptest",
@@ -6074,6 +6087,7 @@ dependencies = [
  "quickwit-config",
  "quickwit-indexing",
  "quickwit-metastore",
+ "quickwit-opentelemetry",
  "quickwit-proto",
  "quickwit-rest-client",
  "quickwit-serve",
@@ -6157,6 +6171,7 @@ version = "0.8.0"
 dependencies = [
  "anyhow",
  "aws_lambda_events 0.15.1",
+ "bytesize",
  "chitchat",
  "chrono",
  "flate2",
@@ -6186,6 +6201,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "serial_test",
  "time",
  "tokio",
  "tracing",
@@ -6341,6 +6357,7 @@ dependencies = [
  "quickwit-indexing",
  "quickwit-ingest",
  "quickwit-metastore",
+ "quickwit-proto",
  "quickwit-search",
  "quickwit-serve",
  "reqwest",
@@ -7172,8 +7189,8 @@ dependencies = [
 
 [[package]]
 name = "sasl2-sys"
-version = "0.1.20+2.1.28"
-source = "git+https://github.com/quickwit-oss/rust-sasl/?rev=daca921#daca9216beca2f2d8c9ce5d803906918a316021a"
+version = "0.1.22+2.1.28"
+source = "git+https://github.com/quickwit-oss/rust-sasl/?rev=085a4c7#085a4c7fdd9558da26a38317ebf6f6f602b0ddc4"
 dependencies = [
  "cc",
  "duct",
@@ -7375,9 +7392,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json_borrow"
-version = "0.5.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a256097ff1654ce1975402cb5a2bfa2cad3cc3199e1d704bf303b386fc971f3c"
+checksum = "0a60291362be3646d15fb0b5a5bddfd8003ebf013b2186a3c60a534fd35d6a26"
 dependencies = [
  "serde",
  "serde_json",
@@ -7519,6 +7536,7 @@ version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4b4b487fe2acf240a021cf57c6b2b4903b1e78ca0ecd862a71b71d2a51fed77d"
 dependencies = [
+ "fslock",
  "futures",
  "log",
  "once_cell",
@@ -8159,7 +8177,7 @@ dependencies = [
 [[package]]
 name = "tantivy"
 version = "0.23.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=9f81d59#9f81d59ecd283a4ce1b6527a447c705b5fba0b1a"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=55b0b52#55b0b52457c87df45250243c3310b4ffad85b088"
 dependencies = [
  "aho-corasick",
  "arc-swap",
@@ -8212,7 +8230,7 @@ dependencies = [
 [[package]]
 name = "tantivy-bitpacker"
 version = "0.6.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=9f81d59#9f81d59ecd283a4ce1b6527a447c705b5fba0b1a"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=55b0b52#55b0b52457c87df45250243c3310b4ffad85b088"
 dependencies = [
  "bitpacking",
 ]
@@ -8220,7 +8238,7 @@ dependencies = [
 [[package]]
 name = "tantivy-columnar"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=9f81d59#9f81d59ecd283a4ce1b6527a447c705b5fba0b1a"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=55b0b52#55b0b52457c87df45250243c3310b4ffad85b088"
 dependencies = [
  "downcast-rs",
  "fastdivide",
@@ -8235,7 +8253,7 @@ dependencies = [
 [[package]]
 name = "tantivy-common"
 version = "0.7.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=9f81d59#9f81d59ecd283a4ce1b6527a447c705b5fba0b1a"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=55b0b52#55b0b52457c87df45250243c3310b4ffad85b088"
 dependencies = [
  "async-trait",
  "byteorder",
@@ -8258,7 +8276,7 @@ dependencies = [
 [[package]]
 name = "tantivy-query-grammar"
 version = "0.22.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=9f81d59#9f81d59ecd283a4ce1b6527a447c705b5fba0b1a"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=55b0b52#55b0b52457c87df45250243c3310b4ffad85b088"
 dependencies = [
  "nom",
 ]
@@ -8266,7 +8284,7 @@ dependencies = [
 [[package]]
 name = "tantivy-sstable"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=9f81d59#9f81d59ecd283a4ce1b6527a447c705b5fba0b1a"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=55b0b52#55b0b52457c87df45250243c3310b4ffad85b088"
 dependencies = [
  "tantivy-bitpacker",
  "tantivy-common",
@@ -8277,7 +8295,7 @@ dependencies = [
 [[package]]
 name = "tantivy-stacker"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=9f81d59#9f81d59ecd283a4ce1b6527a447c705b5fba0b1a"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=55b0b52#55b0b52457c87df45250243c3310b4ffad85b088"
 dependencies = [
  "murmurhash32",
  "rand_distr",
@@ -8287,7 +8305,7 @@ dependencies = [
 [[package]]
 name = "tantivy-tokenizer-api"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=9f81d59#9f81d59ecd283a4ce1b6527a447c705b5fba0b1a"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=55b0b52#55b0b52457c87df45250243c3310b4ffad85b088"
 dependencies = [
  "serde",
 ]
@@ -8311,12 +8329,13 @@ dependencies = [
 
 [[package]]
 name = "tempfile"
-version = "3.10.1"
+version = "3.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "85b77fafb263dd9d05cbeac119526425676db3784113aa9295c88498cbf8bff1"
+checksum = "b8fcd239983515c23a32fb82099f97d0b11b8c72f654ed659363a95c3dad7a53"
 dependencies = [
  "cfg-if",
  "fastrand 2.1.0",
+ "once_cell",
  "rustix",
  "windows-sys 0.52.0",
 ]
@@ -8493,9 +8512,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.39.2"
+version = "1.40.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "daa4fb1bc778bd6f04cbfc4bb2d06a7396a8f299dc33ea1900cedaa316f467b1"
+checksum = "e2b070231665d27ad9ec9b8df639893f46727666c6767db40317fbe920a5d998"
 dependencies = [
  "backtrace",
  "bytes",

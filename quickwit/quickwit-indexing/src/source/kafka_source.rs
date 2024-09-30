@@ -125,7 +125,7 @@ macro_rules! return_if_err {
 /// The rebalance protocol at a very high level:
 /// - A consumer joins or leaves a consumer group.
 /// - Consumers receive a revoke partitions notification, which gives them the opportunity to commit
-/// the work in progress.
+///   the work in progress.
 /// - Broker waits for ALL the consumers to ack the revoke notification (synchronization barrier).
 /// - Consumers receive new partition assignmennts.
 ///
@@ -465,7 +465,7 @@ impl Source for KafkaSource {
     ) -> Result<Duration, ActorExitStatus> {
         let now = Instant::now();
         let mut batch_builder = BatchBuilder::new(SourceType::Kafka);
-        let deadline = time::sleep(EMIT_BATCHES_TIMEOUT);
+        let deadline = time::sleep(*EMIT_BATCHES_TIMEOUT);
         tokio::pin!(deadline);
 
         loop {

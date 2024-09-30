@@ -223,7 +223,7 @@ mod tests {
         assert_eq!(created_delete_query.index_uid(), &test_sandbox.index_uid());
         assert_eq!(
             created_delete_query.query_ast,
-            r#"{"type":"full_text","field":"body","text":"myterm","params":{"mode":{"type":"phrase_fallback_to_intersection"}}}"#
+            r#"{"type":"full_text","field":"body","text":"myterm","params":{"mode":{"type":"phrase_fallback_to_intersection"}},"lenient":false}"#
         );
         assert_eq!(created_delete_query.start_timestamp, Some(1));
         assert_eq!(created_delete_query.end_timestamp, Some(10));

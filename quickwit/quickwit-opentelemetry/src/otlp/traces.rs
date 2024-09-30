@@ -27,9 +27,9 @@ use quickwit_common::metrics::Vector;
 use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_common::uri::Uri;
 use quickwit_config::{load_index_config_from_user_config, ConfigFormat, IndexConfig};
-use quickwit_ingest::{
-    CommitType, DocBatch, DocBatchBuilder, IngestRequest, IngestService, IngestServiceClient,
-};
+use quickwit_ingest::{CommitType, JsonDocBatchV2Builder};
+use quickwit_proto::ingest::router::IngestRouterServiceClient;
+use quickwit_proto::ingest::DocBatchV2;
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_server::TraceService;
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::{
     ExportTracePartialSuccess, ExportTraceServiceRequest, ExportTraceServiceResponse,
@@ -39,7 +39,7 @@ use quickwit_proto::opentelemetry::proto::resource::v1::Resource as OtlpResource
 use quickwit_proto::opentelemetry::proto::trace::v1::span::Link as OtlpLink;
 use quickwit_proto::opentelemetry::proto::trace::v1::status::StatusCode as OtlpStatusCode;
 use quickwit_proto::opentelemetry::proto::trace::v1::{Span as OtlpSpan, Status as OtlpStatus};
-use quickwit_proto::types::IndexId;
+use quickwit_proto::types::{DocUidGenerator, IndexId};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use tonic::{Request, Response, Status};
@@ -47,13 +47,13 @@ use tracing::field::Empty;
 use tracing::{error, instrument, warn, Span as RuntimeSpan};
 
 use super::{
-    extract_otel_index_id_from_metadata, is_zero, OtelSignal, TryFromSpanIdError,
-    TryFromTraceIdError,
+    extract_otel_index_id_from_metadata, ingest_doc_batch_v2, is_zero, OtelSignal,
+    TryFromSpanIdError, TryFromTraceIdError,
 };
 use crate::otlp::metrics::OTLP_SERVICE_METRICS;
 use crate::otlp::{extract_attributes, SpanId, TraceId};
 
-pub const OTEL_TRACES_INDEX_ID: &str = "otel-traces-v0_7";
+pub const OTEL_TRACES_INDEX_ID: &str = "otel-traces-v0_9";
 pub const OTEL_TRACES_INDEX_ID_PATTERN: &str = "otel-traces-v0_*";
 
 const OTEL_TRACES_INDEX_CONFIG: &str = r#"
@@ -145,6 +145,10 @@ doc_mapping:
       input_format: hex
       output_format: hex
       indexed: false
+    - name: is_root
+      type: bool
+      indexed: true
+      stored: false
     - name: events
       type: array<json>
       tokenizer: raw
@@ -232,6 +236,8 @@ pub struct Span {
     pub span_status: SpanStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent_span_id: Option<SpanId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_root: Option<bool>,
     #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub events: Vec<Event>,
@@ -313,6 +319,7 @@ impl Span {
             span_dropped_events_count: span.dropped_events_count,
             span_dropped_links_count: span.dropped_links_count,
             span_status: span.status.map(SpanStatus::from_otlp).unwrap_or_default(),
+            is_root: Some(parent_span_id.is_none()),
             parent_span_id,
             events,
             event_names,
@@ -671,7 +678,7 @@ fn parse_otlp_spans(
 }
 
 struct ParsedSpans {
-    doc_batch: DocBatch,
+    doc_batch: DocBatchV2,
     num_spans: u64,
     num_parse_errors: u64,
     error_message: String,
@@ -679,14 +686,17 @@ struct ParsedSpans {
 
 #[derive(Debug, Clone)]
 pub struct OtlpGrpcTracesService {
-    ingest_service: IngestServiceClient,
+    ingest_router: IngestRouterServiceClient,
     commit_type: CommitType,
 }
 
 impl OtlpGrpcTracesService {
-    pub fn new(ingest_service: IngestServiceClient, commit_type_opt: Option<CommitType>) -> Self {
+    pub fn new(
+        ingest_router: IngestRouterServiceClient,
+        commit_type_opt: Option<CommitType>,
+    ) -> Self {
         Self {
-            ingest_service,
+            ingest_router,
             commit_type: commit_type_opt.unwrap_or_default(),
         }
     }
@@ -715,7 +725,7 @@ impl OtlpGrpcTracesService {
             error_message,
         } = run_cpu_intensive({
             let parent_span = RuntimeSpan::current();
-            || Self::parse_spans(request, parent_span, index_id)
+            || Self::parse_spans(request, parent_span)
         })
         .await
         .map_err(|join_error| {
@@ -729,7 +739,7 @@ impl OtlpGrpcTracesService {
             return Err(tonic::Status::internal(error_message));
         }
         let num_bytes = doc_batch.num_bytes() as u64;
-        self.store_spans(doc_batch).await?;
+        self.store_spans(index_id, doc_batch).await?;
 
         OTLP_SERVICE_METRICS
             .ingested_spans_total
@@ -754,16 +764,17 @@ impl OtlpGrpcTracesService {
     fn parse_spans(
         request: ExportTraceServiceRequest,
         parent_span: RuntimeSpan,
-        index_id: IndexId,
     ) -> tonic::Result<ParsedSpans> {
         let spans = parse_otlp_spans(request)?;
         let num_spans = spans.len() as u64;
         let mut num_parse_errors = 0;
         let mut error_message = String::new();
 
-        let mut doc_batch_builder = DocBatchBuilder::new(index_id).json_writer();
+        let mut doc_batch_builder = JsonDocBatchV2Builder::default();
+        let mut doc_uid_generator = DocUidGenerator::default();
         for span in spans {
-            if let Err(error) = doc_batch_builder.ingest_doc(&span.0) {
+            let doc_uid = doc_uid_generator.next_doc_uid();
+            if let Err(error) = doc_batch_builder.add_doc(doc_uid, span.0) {
                 error!(error=?error, "failed to JSON serialize span");
                 error_message = format!("failed to JSON serialize span: {error:?}");
                 num_parse_errors += 1;
@@ -785,12 +796,18 @@ impl OtlpGrpcTracesService {
     }
 
     #[instrument(skip_all, fields(num_bytes = doc_batch.num_bytes()))]
-    async fn store_spans(&mut self, doc_batch: DocBatch) -> Result<(), tonic::Status> {
-        let ingest_request = IngestRequest {
-            doc_batches: vec![doc_batch],
-            commit: self.commit_type.into(),
-        };
-        self.ingest_service.ingest(ingest_request).await?;
+    async fn store_spans(
+        &mut self,
+        index_id: String,
+        doc_batch: DocBatchV2,
+    ) -> Result<(), tonic::Status> {
+        ingest_doc_batch_v2(
+            self.ingest_router.clone(),
+            index_id,
+            doc_batch,
+            self.commit_type,
+        )
+        .await?;
         Ok(())
     }
 
@@ -1269,6 +1286,7 @@ mod tests {
                 span_dropped_links_count: 0,
                 span_status: SpanStatus::default(),
                 parent_span_id: None,
+                is_root: Some(true),
                 events: Vec::new(),
                 event_names: Vec::new(),
                 links: Vec::new(),
@@ -1311,6 +1329,7 @@ mod tests {
                     message: None,
                 },
                 parent_span_id: Some(SpanId::new([3; 8])),
+                is_root: Some(false),
                 events: vec![Event {
                     event_timestamp_nanos: 1,
                     event_name: "event_name".to_string(),
@@ -1364,6 +1383,7 @@ mod tests {
             span_dropped_links_count: 0,
             span_status: SpanStatus::default(),
             parent_span_id: None,
+            is_root: Some(true),
             events: Vec::new(),
             event_names: Vec::new(),
             links: Vec::new(),

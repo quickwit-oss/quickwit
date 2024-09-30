@@ -150,7 +150,7 @@ impl TestSandbox {
         })
     }
 
-    /// Adds documents.
+    /// Adds documents and waits for them to be indexed (creating a separate split).
     ///
     /// The documents are expected to be `JsonValue`.
     /// They can be created using the `serde_json::json!` macro.

@@ -26,9 +26,10 @@ use quickwit_proto::ingest::{Shard, ShardState};
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsResponse, DeleteShardsRequest, DeleteShardsResponse,
     EntityKind, ListShardsSubrequest, ListShardsSubresponse, MetastoreError, MetastoreResult,
-    OpenShardSubrequest, OpenShardSubresponse,
+    OpenShardSubrequest, OpenShardSubresponse, PruneShardsRequest,
 };
 use quickwit_proto::types::{queue_id, IndexUid, Position, PublishToken, ShardId, SourceId};
+use time::OffsetDateTime;
 use tracing::{info, warn};
 
 use crate::checkpoint::{PartitionId, SourceCheckpoint, SourceCheckpointDelta};
@@ -132,6 +133,7 @@ impl Shards {
                     doc_mapping_uid: subrequest.doc_mapping_uid,
                     publish_position_inclusive: Some(Position::Beginning),
                     publish_token: subrequest.publish_token.clone(),
+                    update_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
                 };
                 mutation_occurred = true;
                 entry.insert(shard.clone());
@@ -237,6 +239,42 @@ impl Shards {
         }
     }
 
+    pub(super) fn prune_shards(
+        &mut self,
+        request: PruneShardsRequest,
+    ) -> MetastoreResult<MutationOccurred<()>> {
+        let initial_shard_count = self.shards.len();
+
+        if let Some(max_age_secs) = request.max_age_secs {
+            self.shards.retain(|_, shard| {
+                let gc_deadline = shard.update_timestamp + max_age_secs as i64;
+                let now = OffsetDateTime::now_utc().unix_timestamp();
+                gc_deadline >= now
+            });
+        };
+        if let Some(max_count) = request.max_count {
+            let max_count = max_count as usize;
+            if max_count < self.shards.len() {
+                let num_to_remove = self.shards.len() - max_count;
+                let shard_ids_to_delete = self
+                    .shards
+                    .values()
+                    .sorted_by_key(|shard| shard.update_timestamp)
+                    .take(num_to_remove)
+                    .map(|shard| shard.shard_id().clone())
+                    .collect_vec();
+                for shard_id in shard_ids_to_delete {
+                    self.shards.remove(&shard_id);
+                }
+            }
+        }
+        if initial_shard_count > self.shards.len() {
+            Ok(MutationOccurred::Yes(()))
+        } else {
+            Ok(MutationOccurred::No(()))
+        }
+    }
+
     pub(super) fn list_shards(
         &self,
         subrequest: ListShardsSubrequest,
@@ -288,6 +326,7 @@ impl Shards {
                 shard.shard_state = ShardState::Closed as i32;
             }
             shard.publish_position_inclusive = Some(publish_position_inclusive);
+            shard.update_timestamp = OffsetDateTime::now_utc().unix_timestamp();
         }
         Ok(MutationOccurred::Yes(()))
     }
@@ -590,5 +629,82 @@ mod tests {
         assert!(response.failures.is_empty());
 
         assert!(shards.shards.is_empty());
+    }
+
+    #[test]
+    fn test_prune_shards() {
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = "test-source".to_string();
+        let mut shards = Shards::empty(index_uid.clone(), source_id.clone());
+
+        let request = PruneShardsRequest {
+            index_uid: Some(index_uid.clone()),
+            source_id: source_id.clone(),
+            max_age_secs: None,
+            max_count: None,
+            interval_secs: None,
+        };
+        let MutationOccurred::No(()) = shards.prune_shards(request).unwrap() else {
+            panic!("expected `MutationOccurred::No`");
+        };
+
+        let request = PruneShardsRequest {
+            index_uid: Some(index_uid.clone()),
+            source_id: source_id.clone(),
+            max_age_secs: Some(50),
+            max_count: None,
+            interval_secs: None,
+        };
+        let MutationOccurred::No(()) = shards.prune_shards(request).unwrap() else {
+            panic!("expected `MutationOccurred::No`");
+        };
+
+        let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
+        shards.shards.insert(
+            ShardId::from(0),
+            Shard {
+                index_uid: Some(index_uid.clone()),
+                source_id: source_id.clone(),
+                shard_id: Some(ShardId::from(0)),
+                shard_state: ShardState::Open as i32,
+                publish_position_inclusive: Some(Position::eof(0u64)),
+                update_timestamp: current_timestamp - 200,
+                ..Default::default()
+            },
+        );
+        shards.shards.insert(
+            ShardId::from(1),
+            Shard {
+                index_uid: Some(index_uid.clone()),
+                source_id: source_id.clone(),
+                shard_id: Some(ShardId::from(1)),
+                shard_state: ShardState::Open as i32,
+                publish_position_inclusive: Some(Position::offset(0u64)),
+                update_timestamp: current_timestamp - 100,
+                ..Default::default()
+            },
+        );
+
+        let request = PruneShardsRequest {
+            index_uid: Some(index_uid.clone()),
+            source_id: source_id.clone(),
+            max_age_secs: Some(150),
+            max_count: None,
+            interval_secs: None,
+        };
+        let MutationOccurred::Yes(()) = shards.prune_shards(request).unwrap() else {
+            panic!("expected `MutationOccurred::Yes`");
+        };
+
+        let request = PruneShardsRequest {
+            index_uid: Some(index_uid.clone()),
+            source_id: source_id.clone(),
+            max_age_secs: Some(150),
+            max_count: None,
+            interval_secs: None,
+        };
+        let MutationOccurred::No(()) = shards.prune_shards(request).unwrap() else {
+            panic!("expected `MutationOccurred::No`");
+        };
     }
 }

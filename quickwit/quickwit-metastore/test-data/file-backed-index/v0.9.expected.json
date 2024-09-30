@@ -179,7 +179,8 @@
         "follower_id": "follower-ingester",
         "shard_state": 1,
         "publish_position_inclusive": "",
-        "doc_mapping_uid": "00000000000000000000000001"
+        "doc_mapping_uid": "00000000000000000000000001",
+        "update_timestamp": 1724240908
       }
     ]
   },
@@ -189,7 +190,7 @@
       "opstamp": 10,
       "delete_query": {
         "index_uid": "my-index:00000000000000000000000001",
-        "query_ast": "{\"type\":\"bool\",\"must\":[{\"type\":\"full_text\",\"field\":\"body\",\"text\":\"Harry\",\"params\":{\"mode\":{\"type\":\"phrase_fallback_to_intersection\"}}},{\"type\":\"full_text\",\"field\":\"body\",\"text\":\"Potter\",\"params\":{\"mode\":{\"type\":\"phrase_fallback_to_intersection\"}}}]}"
+        "query_ast": "{\"type\":\"bool\",\"must\":[{\"type\":\"full_text\",\"field\":\"body\",\"text\":\"Harry\",\"params\":{\"mode\":{\"type\":\"phrase_fallback_to_intersection\"}},\"lenient\":false},{\"type\":\"full_text\",\"field\":\"body\",\"text\":\"Potter\",\"params\":{\"mode\":{\"type\":\"phrase_fallback_to_intersection\"}},\"lenient\":false}]}"
       }
     }
   ]

@@ -40,7 +40,7 @@ use crate::merge_policy::{splits_short_debug, MergeOperation, MergePolicy};
 ///
 /// The policy first builds the merge operations
 ///
-/// 1. Build merge operations
+/// ### Build merge operations
 /// We start by sorting the splits by reverse date so that the most recent splits are
 /// coming first.
 /// We iterate through the splits and assign them to increasing levels.
@@ -157,8 +157,8 @@ enum MergeCandidateSize {
     /// We should not add an extra split in this candidate.
     /// This can happen for any of the two following reasons:
     /// - the number of splits involved already reached `merge_factor_max`.
-    /// - the overall number of docs that will end up in the merged segment already
-    /// exceeds `max_merge_docs`.
+    /// - the overall number of docs that will end up in the merged segment already exceeds
+    ///   `max_merge_docs`.
     OneMoreSplitWouldBeTooBig,
 }
 

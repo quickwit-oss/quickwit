@@ -416,6 +416,7 @@ impl Cluster {
     /// Tasks are grouped by (index_id, source_id), each group is stored in a key as follows:
     /// - key: `{INDEXING_TASK_PREFIX}{index_id}{INDEXING_TASK_SEPARATOR}{source_id}`
     /// - value: Number of indexing tasks in the group.
+    ///
     /// Keys present in chitchat state but not in the given `indexing_tasks` are marked for
     /// deletion.
     pub async fn update_self_node_indexing_tasks(&self, indexing_tasks: &[IndexingTask]) {
@@ -515,6 +516,7 @@ fn indexing_task_to_chitchat_kv(indexing_task: &IndexingTask) -> (String, String
         source_id,
         shard_ids,
         pipeline_uid: _,
+        params_fingerprint: _,
     } = indexing_task;
     let index_uid = indexing_task.index_uid();
     let key = format!("{INDEXING_TASK_PREFIX}{}", indexing_task.pipeline_uid());
@@ -543,6 +545,7 @@ fn chitchat_kv_to_indexing_task(key: &str, value: &str) -> Option<IndexingTask> 
         source_id: source_id.to_string(),
         pipeline_uid: Some(pipeline_uid),
         shard_ids,
+        params_fingerprint: 0,
     })
 }
 
@@ -945,12 +948,14 @@ mod tests {
             index_uid: Some(index_uid.clone()),
             source_id: "source-1".to_string(),
             shard_ids: Vec::new(),
+            params_fingerprint: 0,
         };
         let indexing_task2 = IndexingTask {
             pipeline_uid: Some(PipelineUid::for_test(2u128)),
             index_uid: Some(index_uid.clone()),
             source_id: "source-1".to_string(),
             shard_ids: Vec::new(),
+            params_fingerprint: 0,
         };
         cluster2
             .set_self_key_value(GRPC_ADVERTISE_ADDR_KEY, "127.0.0.1:1001")
@@ -1032,6 +1037,7 @@ mod tests {
                     ),
                     source_id: format!("source-{source_id}"),
                     shard_ids: Vec::new(),
+                    params_fingerprint: 0,
                 }
             })
             .collect_vec();
@@ -1259,6 +1265,7 @@ mod tests {
                 index_uid: Some(index_uid.clone()),
                 source_id: "my-source1".to_string(),
                 shard_ids: vec![ShardId::from(1), ShardId::from(2)],
+                params_fingerprint: 0,
             }],
             &mut node_state,
         );
@@ -1269,6 +1276,7 @@ mod tests {
                 index_uid: Some(index_uid.clone()),
                 source_id: "my-source1".to_string(),
                 shard_ids: vec![ShardId::from(1), ShardId::from(2), ShardId::from(3)],
+                params_fingerprint: 0,
             }],
             &mut node_state,
         );
@@ -1279,12 +1287,14 @@ mod tests {
                     index_uid: Some(index_uid.clone()),
                     source_id: "my-source1".to_string(),
                     shard_ids: vec![ShardId::from(1), ShardId::from(2)],
+                    params_fingerprint: 0,
                 },
                 IndexingTask {
                     pipeline_uid: Some(PipelineUid::for_test(2u128)),
                     index_uid: Some(index_uid.clone()),
                     source_id: "my-source1".to_string(),
                     shard_ids: vec![ShardId::from(3), ShardId::from(4)],
+                    params_fingerprint: 0,
                 },
             ],
             &mut node_state,
@@ -1297,12 +1307,14 @@ mod tests {
                     index_uid: Some(index_uid.clone()),
                     source_id: "my-source1".to_string(),
                     shard_ids: vec![ShardId::from(1), ShardId::from(2)],
+                    params_fingerprint: 0,
                 },
                 IndexingTask {
                     pipeline_uid: Some(PipelineUid::for_test(2u128)),
                     index_uid: Some(IndexUid::for_test("test-index2", 0)),
                     source_id: "my-source1".to_string(),
                     shard_ids: vec![ShardId::from(3), ShardId::from(4)],
+                    params_fingerprint: 0,
                 },
             ],
             &mut node_state,
@@ -1315,12 +1327,14 @@ mod tests {
                     index_uid: Some(index_uid.clone()),
                     source_id: "my-source1".to_string(),
                     shard_ids: vec![ShardId::from(1), ShardId::from(2)],
+                    params_fingerprint: 0,
                 },
                 IndexingTask {
                     pipeline_uid: Some(PipelineUid::for_test(2u128)),
                     index_uid: Some(index_uid.clone()),
                     source_id: "my-source2".to_string(),
                     shard_ids: vec![ShardId::from(3), ShardId::from(4)],
+                    params_fingerprint: 0,
                 },
             ],
             &mut node_state,

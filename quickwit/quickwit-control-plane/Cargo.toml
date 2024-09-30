@@ -17,6 +17,7 @@ bytesize = { workspace = true }
 fnv = { workspace = true }
 futures = { workspace = true }
 itertools = { workspace = true }
+lru = { workspace = true }
 mockall = { workspace = true, optional = true }
 once_cell = { workspace = true }
 rand = { workspace = true }

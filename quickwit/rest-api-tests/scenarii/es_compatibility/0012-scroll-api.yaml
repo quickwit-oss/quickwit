@@ -1,3 +1,17 @@
+---
+engines: ["quickwit"]
+params:
+    size: 1
+    scroll: 30m
+    allow_partial_search_results: "false"
+json:
+    query:
+        match_all: {}
+status_code: 400
+expected:
+    error:
+        reason: "Invalid argument: Quickwit only supports scroll API with allow_partial_search_results set to true"
+---
 params:
   size: 1
   scroll: 30m
