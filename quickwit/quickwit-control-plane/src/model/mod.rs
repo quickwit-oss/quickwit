@@ -378,10 +378,9 @@ impl ControlPlaneModel {
         &mut self,
         source_uid: &SourceUid,
         scaling_mode: ScalingMode,
-        num_permits: u64,
     ) -> Option<bool> {
         self.shard_table
-            .acquire_scaling_permits(source_uid, scaling_mode, num_permits)
+            .acquire_scaling_permits(source_uid, scaling_mode)
     }
 
     pub fn drain_scaling_permits(&mut self, source_uid: &SourceUid, scaling_mode: ScalingMode) {
@@ -389,14 +388,9 @@ impl ControlPlaneModel {
             .drain_scaling_permits(source_uid, scaling_mode)
     }
 
-    pub fn release_scaling_permits(
-        &mut self,
-        source_uid: &SourceUid,
-        scaling_mode: ScalingMode,
-        num_permits: u64,
-    ) {
+    pub fn release_scaling_permits(&mut self, source_uid: &SourceUid, scaling_mode: ScalingMode) {
         self.shard_table
-            .release_scaling_permits(source_uid, scaling_mode, num_permits)
+            .release_scaling_permits(source_uid, scaling_mode)
     }
 }
 
