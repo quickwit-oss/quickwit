@@ -26,7 +26,7 @@ pub struct JanitorMetrics {
     pub ongoing_num_delete_operations_total: IntGaugeVec<1>,
     pub gc_deleted_splits: IntCounterVec<1>,
     pub gc_deleted_bytes: IntCounter,
-    pub gc_run_count: IntCounterVec<1>,
+    pub gc_runs: IntCounterVec<1>,
     pub gc_seconds_total: IntCounter,
     // TODO having a current run duration which is 0|undefined out of run, and returns `now -
     // start_time` during a run would be nice
@@ -43,7 +43,7 @@ impl Default for JanitorMetrics {
                 ["index"],
             ),
             gc_deleted_splits: new_counter_vec(
-                "gc_deleted_splits_count",
+                "gc_deleted_splits_total",
                 "Total number of splits deleted by the garbage collector.",
                 "quickwit_janitor",
                 &[],
@@ -55,8 +55,8 @@ impl Default for JanitorMetrics {
                 "quickwit_janitor",
                 &[],
             ),
-            gc_run_count: new_counter_vec(
-                "gc_run_total",
+            gc_runs: new_counter_vec(
+                "gc_runs_total",
                 "Total number of garbage collector execition.",
                 "quickwit_janitor",
                 &[],

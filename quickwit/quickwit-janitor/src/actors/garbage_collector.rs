@@ -161,19 +161,13 @@ impl GarbageCollector {
         let deleted_file_entries = match gc_res {
             Ok(removal_info) => {
                 self.counters.num_successful_gc_run += 1;
-                JANITOR_METRICS
-                    .gc_run_count
-                    .with_label_values(["success"])
-                    .inc();
+                JANITOR_METRICS.gc_runs.with_label_values(["success"]).inc();
                 self.counters.num_failed_splits += removal_info.failed_splits.len();
                 removal_info.removed_split_entries
             }
             Err(error) => {
                 self.counters.num_failed_gc_run += 1;
-                JANITOR_METRICS
-                    .gc_run_count
-                    .with_label_values(["error"])
-                    .inc();
+                JANITOR_METRICS.gc_runs.with_label_values(["error"]).inc();
                 error!(error=?error, "failed to run garbage collection");
                 return;
             }
