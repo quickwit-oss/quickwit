@@ -187,6 +187,16 @@ pub(super) fn append_query_filters(sql: &mut SelectStatement, query: &ListSplits
         Expr::expr(val)
     });
 
+    if let Some((index_uid, split_id)) = &query.after_split {
+        sql.cond_where(
+            Expr::tuple([
+                Expr::col(Splits::IndexUid).into(),
+                Expr::col(Splits::SplitId).into(),
+            ])
+            .gt(Expr::tuple([Expr::value(index_uid), Expr::value(split_id)])),
+        );
+    }
+
     match query.sort_by {
         SortBy::Staleness => {
             sql.order_by(
@@ -195,7 +205,8 @@ pub(super) fn append_query_filters(sql: &mut SelectStatement, query: &ListSplits
             );
         }
         SortBy::IndexUid => {
-            sql.order_by(Splits::IndexUid, Order::Asc);
+            sql.order_by(Splits::IndexUid, Order::Asc)
+                .order_by(Splits::SplitId, Order::Asc);
         }
         SortBy::None => (),
     }

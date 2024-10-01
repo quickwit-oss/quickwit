@@ -451,7 +451,18 @@ impl FileBackedIndex {
                 .splits
                 .values()
                 .filter(|split| split_query_predicate(split, query))
-                .sorted_unstable_by_key(|split| &split.split_metadata.index_uid)
+                .sorted_unstable_by(|left_split, right_split| {
+                    left_split
+                        .split_metadata
+                        .index_uid
+                        .cmp(&right_split.split_metadata.index_uid)
+                        .then_with(|| {
+                            left_split
+                                .split_metadata
+                                .split_id
+                                .cmp(&right_split.split_metadata.split_id)
+                        })
+                })
                 .skip(offset)
                 .take(limit)
                 .cloned()
@@ -758,6 +769,17 @@ fn split_query_predicate(split: &&Split, query: &ListSplitsQuery) -> bool {
 
     if let Some(node_id) = &query.node_id {
         if split.split_metadata.node_id != *node_id {
+            return false;
+        }
+    }
+
+    if let Some((index_uid, split_id)) = &query.after_split {
+        if *index_uid > split.split_metadata.index_uid {
+            return false;
+        }
+        if *index_uid == split.split_metadata.index_uid
+            && *split_id >= split.split_metadata.split_id
+        {
             return false;
         }
     }

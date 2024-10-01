@@ -44,6 +44,16 @@ use tracing::{error, instrument};
 /// The maximum number of splits that the GC should delete per attempt.
 const DELETE_SPLITS_BATCH_SIZE: usize = 10_000;
 
+pub trait RecordGcMetrics: Sync {
+    fn record(&self, num_delete_splits: usize, num_deleted_bytes: u64, num_failed_splits: usize);
+}
+
+pub(crate) struct DoNotRecordGcMetrics;
+
+impl RecordGcMetrics for DoNotRecordGcMetrics {
+    fn record(&self, _num_deleted_splits: usize, _num_deleted_bytes: u64, _num_failed_splits: usize) {}
+}
+
 /// [`DeleteSplitsError`] describes the errors that occurred during the deletion of splits from
 /// storage and metastore.
 #[derive(Error, Debug)]
@@ -94,6 +104,7 @@ pub async fn run_garbage_collect(
     deletion_grace_period: Duration,
     dry_run: bool,
     progress_opt: Option<&Progress>,
+    metrics: &dyn RecordGcMetrics,
 ) -> anyhow::Result<SplitRemovalInfo> {
     let grace_period_timestamp =
         OffsetDateTime::now_utc().unix_timestamp() - staged_grace_period.as_secs() as i64;
@@ -170,6 +181,7 @@ pub async fn run_garbage_collect(
         metastore,
         indexes,
         progress_opt,
+        metrics,
     )
     .await)
 }
@@ -179,6 +191,7 @@ async fn delete_splits(
     storages: &HashMap<IndexUid, Arc<dyn Storage>>,
     metastore: MetastoreServiceClient,
     progress_opt: Option<&Progress>,
+    metrics: &dyn RecordGcMetrics,
     split_removal_info: &mut SplitRemovalInfo,
 ) -> Result<(), ()> {
     let mut delete_split_from_index_res_stream =
@@ -219,9 +232,26 @@ async fn delete_splits(
     while let Some(delete_split_result) = delete_split_from_index_res_stream.next().await {
         match delete_split_result {
             Ok(entries) => {
+                let deleted_bytes = entries
+                    .iter()
+                    .map(|entry| entry.file_size_bytes.as_u64())
+                    .sum::<u64>();
+                let deleted_splits_count = entries.len();
+
+                metrics.record(deleted_splits_count, deleted_bytes, 0);
                 split_removal_info.removed_split_entries.extend(entries);
             }
             Err(delete_split_error) => {
+                let deleted_bytes = delete_split_error
+                    .successes
+                    .iter()
+                    .map(|entry| entry.file_size_bytes.as_u64())
+                    .sum::<u64>();
+                let deleted_splits_count = delete_split_error.successes.len();
+                let failed_splits_count = delete_split_error.storage_failures.len()
+                    + delete_split_error.metastore_failures.len();
+
+                metrics.record(deleted_splits_count, deleted_bytes, failed_splits_count);
                 split_removal_info
                     .removed_split_entries
                     .extend(delete_split_error.successes);
@@ -265,13 +295,14 @@ async fn list_splits_metadata(
 ///
 /// The aim of this is to spread the load out across a longer period
 /// rather than short, heavy bursts on the metastore and storage system itself.
-#[instrument(skip(index_uids, storages, metastore, progress_opt), fields(num_indexes=%index_uids.len()))]
+#[instrument(skip(index_uids, storages, metastore, progress_opt, metrics), fields(num_indexes=%index_uids.len()))]
 async fn delete_splits_marked_for_deletion_several_indexes(
     index_uids: Vec<IndexUid>,
     updated_before_timestamp: i64,
     metastore: MetastoreServiceClient,
     storages: HashMap<IndexUid, Arc<dyn Storage>>,
     progress_opt: Option<&Progress>,
+    metrics: &dyn RecordGcMetrics,
 ) -> SplitRemovalInfo {
     let mut split_removal_info = SplitRemovalInfo::default();
 
@@ -280,7 +311,7 @@ async fn delete_splits_marked_for_deletion_several_indexes(
         return split_removal_info;
     };
 
-    let list_splits_query = list_splits_query
+    let mut list_splits_query = list_splits_query
         .with_split_state(SplitState::MarkedForDeletion)
         .with_update_timestamp_lte(updated_before_timestamp)
         .with_limit(DELETE_SPLITS_BATCH_SIZE)
@@ -300,11 +331,13 @@ async fn delete_splits_marked_for_deletion_several_indexes(
             }
         };
 
-        let num_splits_to_delete = splits_metadata_to_delete.len();
-
-        if num_splits_to_delete == 0 {
+        // set split after which to search for the next loop
+        let Some(last_split_metadata) = splits_metadata_to_delete.last() else {
             break;
-        }
+        };
+        list_splits_query = list_splits_query.after_split(last_split_metadata);
+
+        let num_splits_to_delete = splits_metadata_to_delete.len();
 
         let splits_metadata_to_delete_per_index: HashMap<IndexUid, Vec<SplitMetadata>> =
             splits_metadata_to_delete
@@ -312,18 +345,20 @@ async fn delete_splits_marked_for_deletion_several_indexes(
                 .map(|meta| (meta.index_uid.clone(), meta))
                 .into_group_map();
 
-        let delete_split_res = delete_splits(
+        // ignore return we continue either way
+        let _: Result<(), ()> = delete_splits(
             splits_metadata_to_delete_per_index,
             &storages,
             metastore.clone(),
             progress_opt,
+            metrics,
             &mut split_removal_info,
         )
         .await;
 
-        if num_splits_to_delete < DELETE_SPLITS_BATCH_SIZE || delete_split_res.is_err() {
-            // stop the gc if this was the last batch or we encountered an error
-            // (otherwise we might try deleting the same splits in an endless loop)
+        if num_splits_to_delete < DELETE_SPLITS_BATCH_SIZE {
+            // stop the gc if this was the last batch
+            // we are guaranteed to make progress due to .after_split()
             break;
         }
     }
@@ -345,7 +380,7 @@ pub async fn delete_splits_from_storage_and_metastore(
     metastore: MetastoreServiceClient,
     splits: Vec<SplitMetadata>,
     progress_opt: Option<&Progress>,
-) -> anyhow::Result<Vec<SplitInfo>, DeleteSplitsError> {
+) -> Result<Vec<SplitInfo>, DeleteSplitsError> {
     let mut split_infos: HashMap<PathBuf, SplitInfo> = HashMap::with_capacity(splits.len());
 
     for split in splits {
@@ -511,6 +546,7 @@ mod tests {
             Duration::from_secs(30),
             false,
             None,
+            &DoNotRecordGcMetrics,
         )
         .await
         .unwrap();
@@ -538,6 +574,7 @@ mod tests {
             Duration::from_secs(30),
             false,
             None,
+            &DoNotRecordGcMetrics,
         )
         .await
         .unwrap();
@@ -615,6 +652,7 @@ mod tests {
             Duration::from_secs(30),
             false,
             None,
+            &DoNotRecordGcMetrics,
         )
         .await
         .unwrap();
@@ -641,6 +679,7 @@ mod tests {
             Duration::from_secs(30),
             Duration::from_secs(0),
             false,
+            None,
             None,
         )
         .await
@@ -679,6 +718,7 @@ mod tests {
             Duration::from_secs(30),
             Duration::from_secs(30),
             false,
+            None,
             None,
         )
         .await
