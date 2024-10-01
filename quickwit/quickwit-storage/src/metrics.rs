@@ -21,7 +21,7 @@
 
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
-    new_counter, new_counter_with_labels, new_gauge, IntCounter, IntGauge,
+    new_counter, new_counter_vec, new_counter_with_labels, new_gauge, IntCounter, IntGauge,
 };
 
 /// Counters associated to storage operations.
@@ -32,6 +32,7 @@ pub struct StorageMetrics {
     pub fast_field_cache: CacheMetrics,
     pub split_footer_cache: CacheMetrics,
     pub searcher_split_cache: CacheMetrics,
+    pub get_slice_timeout_total_by_attempts: [IntCounter; 5],
     pub object_storage_get_total: IntCounter,
     pub object_storage_put_total: IntCounter,
     pub object_storage_put_parts: IntCounter,
@@ -41,6 +42,20 @@ pub struct StorageMetrics {
 
 impl Default for StorageMetrics {
     fn default() -> Self {
+        let get_slice_timeout_total = new_counter_vec(
+            "get_slice_timeout_total",
+            "Number of `get_slice` operations that timed out",
+            "storage",
+            &[],
+            ["attempt"],
+        );
+        let get_slice_timeout_total_by_attempts = [
+            get_slice_timeout_total.with_label_values(["0"]),
+            get_slice_timeout_total.with_label_values(["1"]),
+            get_slice_timeout_total.with_label_values(["2"]),
+            get_slice_timeout_total.with_label_values(["3"]),
+            get_slice_timeout_total.with_label_values(["4"]),
+        ];
         StorageMetrics {
             fast_field_cache: CacheMetrics::for_component("fastfields"),
             fd_cache_metrics: CacheMetrics::for_component("fd"),
@@ -48,7 +63,7 @@ impl Default for StorageMetrics {
             searcher_split_cache: CacheMetrics::for_component("searcher_split"),
             shortlived_cache: CacheMetrics::for_component("shortlived"),
             split_footer_cache: CacheMetrics::for_component("splitfooter"),
-
+            get_slice_timeout_total_by_attempts,
             object_storage_get_total: new_counter(
                 "object_storage_gets_total",
                 "Number of objects fetched.",

@@ -36,7 +36,7 @@ use quickwit_query::query_ast::{BoolQuery, QueryAst, QueryAstTransformer, RangeQ
 use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_storage::{
     wrap_storage_with_cache, BundleStorage, MemorySizedCache, OwnedBytes, SplitCache, Storage,
-    StorageResolver,
+    StorageResolver, TimeoutAndRetryStorage,
 };
 use tantivy::aggregation::agg_req::{AggregationVariants, Aggregations};
 use tantivy::aggregation::AggregationLimitsGuard;
@@ -134,13 +134,34 @@ pub(crate) async fn open_index_with_caches(
     tokenizer_manager: Option<&TokenizerManager>,
     ephemeral_unbounded_cache: bool,
 ) -> anyhow::Result<Index> {
-    let (hotcache_bytes, bundle_storage) =
-        open_split_bundle(searcher_context, index_storage, split_and_footer_offsets).await?;
+    // Let's a layer to retry `get_slice` requests if they are taking too long,
+    // if configured in the searcher config.
+    //
+    // The goal here is too ensure a low latency.
+
+    let index_storage_with_retry_on_timeout = if let Some(storage_timeout_policy) =
+        &searcher_context.searcher_config.storage_timeout_policy
+    {
+        Arc::new(TimeoutAndRetryStorage::new(
+            index_storage,
+            storage_timeout_policy.clone(),
+        ))
+    } else {
+        index_storage
+    };
+
+    let (hotcache_bytes, bundle_storage) = open_split_bundle(
+        searcher_context,
+        index_storage_with_retry_on_timeout,
+        split_and_footer_offsets,
+    )
+    .await?;
 
     let bundle_storage_with_cache = wrap_storage_with_cache(
         searcher_context.fast_fields_cache.clone(),
         Arc::new(bundle_storage),
     );
+
     let directory = StorageDirectory::new(bundle_storage_with_cache);
 
     let hot_directory = if ephemeral_unbounded_cache {
