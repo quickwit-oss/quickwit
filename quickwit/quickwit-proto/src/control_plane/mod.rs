@@ -19,7 +19,7 @@
 
 use quickwit_actors::AskError;
 use quickwit_common::rate_limited_error;
-use quickwit_common::tower::{MakeLoadShedError, RpcName};
+use quickwit_common::tower::{MakeLoadShedError, RpcName, TimeoutExceeded};
 use thiserror;
 
 use crate::metastore::{MetastoreError, OpenShardSubrequest};
@@ -42,6 +42,12 @@ pub enum ControlPlaneError {
     TooManyRequests,
     #[error("service unavailable: {0}")]
     Unavailable(String),
+}
+
+impl From<TimeoutExceeded> for ControlPlaneError {
+    fn from(_timeout_exceeded: TimeoutExceeded) -> Self {
+        Self::Timeout("tower layer timeout".to_string())
+    }
 }
 
 impl From<quickwit_common::tower::TaskCancelled> for ControlPlaneError {

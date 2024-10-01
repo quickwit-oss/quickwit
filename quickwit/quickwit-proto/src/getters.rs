@@ -135,7 +135,6 @@ generate_getters! {
     MarkSplitsForDeletionRequest,
     OpenShardSubrequest,
     PruneShardsRequest,
-    PruneShardsResponse,
     PublishSplitsRequest,
     ResetSourceCheckpointRequest,
     StageSplitsRequest,

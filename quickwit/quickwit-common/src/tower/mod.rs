@@ -33,6 +33,7 @@ mod rate;
 mod rate_estimator;
 mod rate_limit;
 mod retry;
+mod timeout;
 mod transport;
 
 use std::error;
@@ -55,6 +56,7 @@ pub use rate::{ConstantRate, Rate};
 pub use rate_estimator::{RateEstimator, SmaRateEstimator};
 pub use rate_limit::{RateLimit, RateLimitLayer};
 pub use retry::{RetryLayer, RetryPolicy};
+pub use timeout::{Timeout, TimeoutExceeded, TimeoutLayer};
 pub use transport::{make_channel, warmup_channel, BalanceChannel};
 
 pub type BoxError = Box<dyn error::Error + Send + Sync + 'static>;

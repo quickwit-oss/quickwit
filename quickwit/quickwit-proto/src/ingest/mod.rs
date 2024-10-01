@@ -67,6 +67,12 @@ pub enum IngestV2Error {
     Unavailable(String),
 }
 
+impl From<quickwit_common::tower::TimeoutExceeded> for IngestV2Error {
+    fn from(_: quickwit_common::tower::TimeoutExceeded) -> IngestV2Error {
+        IngestV2Error::Timeout("tower layer timeout".to_string())
+    }
+}
+
 impl From<quickwit_common::tower::TaskCancelled> for IngestV2Error {
     fn from(task_cancelled: quickwit_common::tower::TaskCancelled) -> IngestV2Error {
         IngestV2Error::Internal(task_cancelled.to_string())

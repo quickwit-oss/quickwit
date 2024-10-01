@@ -35,8 +35,8 @@ use quickwit_proto::metastore::{
     ListShardsRequest, ListShardsResponse, ListSplitsRequest, ListSplitsResponse,
     ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreResult, MetastoreService,
     MetastoreServiceClient, MetastoreServiceStream, OpenShardsRequest, OpenShardsResponse,
-    PruneShardsRequest, PruneShardsResponse, PublishSplitsRequest, ResetSourceCheckpointRequest,
-    StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest, UpdateSplitsDeleteOpstampRequest,
+    PruneShardsRequest, PublishSplitsRequest, ResetSourceCheckpointRequest, StageSplitsRequest,
+    ToggleSourceRequest, UpdateIndexRequest, UpdateSplitsDeleteOpstampRequest,
     UpdateSplitsDeleteOpstampResponse,
 };
 
@@ -118,6 +118,12 @@ impl MetastoreService for ControlPlaneMetastore {
     async fn delete_source(&self, request: DeleteSourceRequest) -> MetastoreResult<EmptyResponse> {
         let response = self.control_plane.delete_source(request).await?;
         Ok(response)
+    }
+
+    // Proxy through the control plane to debounce queries
+    async fn prune_shards(&self, request: PruneShardsRequest) -> MetastoreResult<EmptyResponse> {
+        self.control_plane.prune_shards(request).await?;
+        Ok(EmptyResponse {})
     }
 
     // Other metastore API calls.
@@ -235,14 +241,6 @@ impl MetastoreService for ControlPlaneMetastore {
         request: DeleteShardsRequest,
     ) -> MetastoreResult<DeleteShardsResponse> {
         self.metastore.delete_shards(request).await
-    }
-
-    async fn prune_shards(
-        &self,
-        request: PruneShardsRequest,
-    ) -> MetastoreResult<PruneShardsResponse> {
-        // TODO this call should go through the control plane which should apply debounce
-        self.metastore.prune_shards(request).await
     }
 
     // Index Template API

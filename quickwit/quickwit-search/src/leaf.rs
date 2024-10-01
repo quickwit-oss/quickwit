@@ -39,7 +39,7 @@ use quickwit_storage::{
     StorageResolver,
 };
 use tantivy::aggregation::agg_req::{AggregationVariants, Aggregations};
-use tantivy::aggregation::AggregationLimits;
+use tantivy::aggregation::AggregationLimitsGuard;
 use tantivy::directory::FileSlice;
 use tantivy::fastfield::FastFieldReaders;
 use tantivy::schema::Field;
@@ -338,6 +338,7 @@ fn get_leaf_resp_from_count(count: u64) -> LeafSearchResponse {
         partial_hits: Vec::new(),
         failed_splits: Vec::new(),
         num_attempted_splits: 1,
+        num_successful_splits: 1,
         intermediate_aggregation_result: None,
     }
 }
@@ -350,7 +351,7 @@ async fn leaf_search_single_split(
     split: SplitIdAndFooterOffsets,
     doc_mapper: Arc<dyn DocMapper>,
     split_filter: Arc<RwLock<CanSplitDoBetter>>,
-    aggregations_limits: AggregationLimits,
+    aggregations_limits: AggregationLimitsGuard,
 ) -> crate::Result<LeafSearchResponse> {
     rewrite_request(
         &mut search_request,
@@ -1119,7 +1120,11 @@ pub async fn multi_leaf_search(
         leaf_request_tasks.push(leaf_request_future);
     }
 
-    let leaf_responses = try_join_all(leaf_request_tasks).await?;
+    let leaf_responses: Vec<crate::Result<LeafSearchResponse>> = tokio::time::timeout(
+        searcher_context.searcher_config.request_timeout(),
+        try_join_all(leaf_request_tasks),
+    )
+    .await??;
     let merge_collector = make_merge_collector(&search_request, &aggregation_limits)?;
     let mut incremental_merge_collector = IncrementalCollector::new(merge_collector);
     for result in leaf_responses {
@@ -1145,6 +1150,7 @@ pub async fn multi_leaf_search(
 }
 
 /// Resolves storage and calls leaf_search
+#[allow(clippy::too_many_arguments)]
 async fn resolve_storage_and_leaf_search(
     searcher_context: Arc<SearcherContext>,
     search_request: Arc<SearchRequest>,
@@ -1152,7 +1158,7 @@ async fn resolve_storage_and_leaf_search(
     storage_resolver: StorageResolver,
     splits: Vec<SplitIdAndFooterOffsets>,
     doc_mapper: Arc<dyn DocMapper>,
-    aggregations_limits: AggregationLimits,
+    aggregations_limits: AggregationLimitsGuard,
 ) -> crate::Result<LeafSearchResponse> {
     let storage = storage_resolver.resolve(&index_uri).await?;
 
@@ -1203,9 +1209,15 @@ pub async fn leaf_search(
     index_storage: Arc<dyn Storage>,
     splits: Vec<SplitIdAndFooterOffsets>,
     doc_mapper: Arc<dyn DocMapper>,
-    aggregations_limits: AggregationLimits,
+    aggregations_limits: AggregationLimitsGuard,
 ) -> Result<LeafSearchResponse, SearchError> {
-    info!(splits_num = splits.len(), split_offsets = ?PrettySample::new(&splits, 5));
+    let num_docs: u64 = splits.iter().map(|split| split.num_docs).sum();
+    let num_splits = splits.len();
+    let current_span = tracing::Span::current();
+    current_span.record("num_docs", num_docs);
+    current_span.record("num_splits", num_splits);
+
+    info!(num_docs, num_splits, split_offsets = ?PrettySample::new(&splits, 5));
 
     let split_filter = CanSplitDoBetter::from_request(&request, doc_mapper.timestamp_field_name());
     let split_with_req = split_filter.optimize(request.clone(), splits)?;
@@ -1302,7 +1314,7 @@ pub async fn leaf_search(
 }
 
 #[allow(clippy::too_many_arguments)]
-#[instrument(skip_all, fields(split_id = split.split_id))]
+#[instrument(skip_all, fields(split_id = split.split_id, num_docs = split.num_docs))]
 async fn leaf_search_single_split_wrapper(
     request: SearchRequest,
     searcher_context: Arc<SearcherContext>,
@@ -1312,7 +1324,7 @@ async fn leaf_search_single_split_wrapper(
     split_filter: Arc<RwLock<CanSplitDoBetter>>,
     incremental_merge_collector: Arc<Mutex<IncrementalCollector>>,
     leaf_split_search_permit: tokio::sync::OwnedSemaphorePermit,
-    aggregations_limits: AggregationLimits,
+    aggregations_limits: AggregationLimitsGuard,
 ) {
     crate::SEARCH_METRICS.leaf_searches_splits_total.inc();
     let timer = crate::SEARCH_METRICS

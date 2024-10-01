@@ -17,10 +17,12 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use itertools::Itertools;
 use quickwit_common::rate_limited_error;
 use quickwit_doc_mapper::QueryParserError;
 use quickwit_proto::error::grpc_error_to_grpc_status;
 use quickwit_proto::metastore::{EntityKind, MetastoreError};
+use quickwit_proto::search::SplitSearchError;
 use quickwit_proto::{tonic, GrpcServiceError, ServiceError, ServiceErrorCode};
 use quickwit_storage::StorageResolverError;
 use serde::{Deserialize, Serialize};
@@ -51,6 +53,23 @@ pub enum SearchError {
     TooManyRequests,
     #[error("service unavailable: {0}")]
     Unavailable(String),
+}
+
+impl SearchError {
+    /// Creates an internal `SearchError` from a list of split search errors.
+    pub fn from_split_errors(failed_splits: &[SplitSearchError]) -> Option<SearchError> {
+        let first_failing_split = failed_splits.first()?;
+        let failed_splits = failed_splits
+            .iter()
+            .map(|failed_split| &failed_split.split_id)
+            .join(", ");
+        let error_msg = format!(
+            "search failed for the following splits: {failed_splits:}. For instance, split {} \
+             failed with the following error message: {}",
+            first_failing_split.split_id, first_failing_split.error,
+        );
+        Some(SearchError::Internal(error_msg))
+    }
 }
 
 impl ServiceError for SearchError {
@@ -112,6 +131,12 @@ pub fn parse_grpc_error(grpc_error: &tonic::Status) -> SearchError {
 impl From<TantivyError> for SearchError {
     fn from(tantivy_error: TantivyError) -> Self {
         SearchError::Internal(format!("tantivy error: {tantivy_error}"))
+    }
+}
+
+impl From<tokio::time::error::Elapsed> for SearchError {
+    fn from(_elapsed: tokio::time::error::Elapsed) -> Self {
+        SearchError::Timeout("timeout exceeded".to_string())
     }
 }
 

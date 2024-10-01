@@ -230,6 +230,17 @@ pub struct SearchResponse {
     /// Scroll Id (only set if scroll_secs was set in the request)
     #[prost(string, optional, tag = "6")]
     pub scroll_id: ::core::option::Option<::prost::alloc::string::String>,
+    /// Returns the list of splits for which search failed.
+    /// For the moment, the cause is unknown.
+    ///
+    /// It is up to the caller to decide whether to interpret
+    /// this as an overall failure or to present the partial results
+    /// to the end user.
+    #[prost(message, repeated, tag = "7")]
+    pub failed_splits: ::prost::alloc::vec::Vec<SplitSearchError>,
+    /// Total number of successful splits searched.
+    #[prost(uint64, tag = "8")]
+    pub num_successful_splits: u64,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -431,10 +442,16 @@ pub struct LeafSearchResponse {
     /// The list of splits that failed. LeafSearchResponse can be an aggregation of results, so there may be multiple.
     #[prost(message, repeated, tag = "3")]
     pub failed_splits: ::prost::alloc::vec::Vec<SplitSearchError>,
-    /// Total number of splits the leaf(s) were in charge of.
-    /// num_attempted_splits = num_successful_splits + num_failed_splits.
+    /// Total number of attempt to search into splits.
+    /// We do have:
+    /// `num_splits_requested == num_successful_splits + num_failed_splits.len()`
+    /// But we do not necessarily have:
+    /// `num_splits_requested = num_attempted_splits because of retries.`
     #[prost(uint64, tag = "4")]
     pub num_attempted_splits: u64,
+    /// Total number of successful splits searched.
+    #[prost(uint64, tag = "7")]
+    pub num_successful_splits: u64,
     /// postcard serialized intermediate aggregation_result.
     #[prost(bytes = "vec", optional, tag = "6")]
     pub intermediate_aggregation_result: ::core::option::Option<
@@ -551,8 +568,7 @@ pub struct LeafListTermsResponse {
     /// The list of splits that failed. LeafSearchResponse can be an aggregation of results, so there may be multiple.
     #[prost(message, repeated, tag = "3")]
     pub failed_splits: ::prost::alloc::vec::Vec<SplitSearchError>,
-    /// Total number of splits the leaf(s) were in charge of.
-    /// num_attempted_splits = num_successful_splits + num_failed_splits.
+    /// Total number of single split search attempted.
     #[prost(uint64, tag = "4")]
     pub num_attempted_splits: u64,
 }

@@ -20,7 +20,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use quickwit_actors::{Actor, ActorContext, DeferableReplyHandler, Handler};
+use quickwit_actors::{Actor, ActorContext, Handler};
 
 /// A debouncer is a helper to debounce events.
 ///
@@ -93,7 +93,7 @@ impl Debouncer {
 
     fn emit_message<A, M>(&self, ctx: &ActorContext<A>)
     where
-        A: Actor + Handler<M> + DeferableReplyHandler<M>,
+        A: Actor + Handler<M>,
         M: Default + std::fmt::Debug + Send + Sync + 'static,
     {
         let _ = ctx.mailbox().send_message_with_high_priority(M::default());
@@ -101,7 +101,7 @@ impl Debouncer {
 
     fn schedule_post_cooldown_callback<A, M>(&self, ctx: &ActorContext<A>)
     where
-        A: Actor + Handler<M> + DeferableReplyHandler<M>,
+        A: Actor + Handler<M>,
         M: Default + std::fmt::Debug + Send + Sync + 'static,
     {
         let ctx_clone = ctx.clone();
@@ -116,12 +116,8 @@ impl Debouncer {
             .schedule_event(callback, self.cooldown_period);
     }
 
-    pub fn self_send_with_cooldown<M>(
-        &self,
-        ctx: &ActorContext<impl Handler<M> + DeferableReplyHandler<M>>,
-    ) where
-        M: Default + std::fmt::Debug + Send + Sync + 'static,
-    {
+    pub fn self_send_with_cooldown<M>(&self, ctx: &ActorContext<impl Handler<M>>)
+    where M: Default + std::fmt::Debug + Send + Sync + 'static {
         let cooldown_state = self.accept_transition(Transition::Emit);
         match cooldown_state {
             DebouncerState::NoCooldown => {

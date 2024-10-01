@@ -544,14 +544,13 @@ impl ShardTable {
         &mut self,
         source_uid: &SourceUid,
         scaling_mode: ScalingMode,
-        num_permits: u64,
     ) -> Option<bool> {
         let table_entry = self.table_entries.get_mut(source_uid)?;
         let scaling_rate_limiter = match scaling_mode {
             ScalingMode::Up => &mut table_entry.scaling_up_rate_limiter,
             ScalingMode::Down => &mut table_entry.scaling_down_rate_limiter,
         };
-        Some(scaling_rate_limiter.acquire(num_permits))
+        Some(scaling_rate_limiter.acquire(1))
     }
 
     pub fn drain_scaling_permits(&mut self, source_uid: &SourceUid, scaling_mode: ScalingMode) {
@@ -564,18 +563,13 @@ impl ShardTable {
         }
     }
 
-    pub fn release_scaling_permits(
-        &mut self,
-        source_uid: &SourceUid,
-        scaling_mode: ScalingMode,
-        num_permits: u64,
-    ) {
+    pub fn release_scaling_permits(&mut self, source_uid: &SourceUid, scaling_mode: ScalingMode) {
         if let Some(table_entry) = self.table_entries.get_mut(source_uid) {
             let scaling_rate_limiter = match scaling_mode {
                 ScalingMode::Up => &mut table_entry.scaling_up_rate_limiter,
                 ScalingMode::Down => &mut table_entry.scaling_down_rate_limiter,
             };
-            scaling_rate_limiter.release(num_permits);
+            scaling_rate_limiter.release(1);
         }
     }
 }
@@ -1058,7 +1052,7 @@ mod tests {
             source_id: source_id.clone(),
         };
         assert!(shard_table
-            .acquire_scaling_permits(&source_uid, ScalingMode::Up, 1)
+            .acquire_scaling_permits(&source_uid, ScalingMode::Up)
             .is_none());
 
         shard_table.add_source(&index_uid, &source_id);
@@ -1071,7 +1065,7 @@ mod tests {
             .available_permits();
 
         assert!(shard_table
-            .acquire_scaling_permits(&source_uid, ScalingMode::Up, 1)
+            .acquire_scaling_permits(&source_uid, ScalingMode::Up)
             .unwrap());
 
         let new_available_permits = shard_table
@@ -1096,7 +1090,7 @@ mod tests {
             source_id: source_id.clone(),
         };
         assert!(shard_table
-            .acquire_scaling_permits(&source_uid, ScalingMode::Down, 1)
+            .acquire_scaling_permits(&source_uid, ScalingMode::Down)
             .is_none());
 
         shard_table.add_source(&index_uid, &source_id);
@@ -1109,7 +1103,7 @@ mod tests {
             .available_permits();
 
         assert!(shard_table
-            .acquire_scaling_permits(&source_uid, ScalingMode::Down, 1)
+            .acquire_scaling_permits(&source_uid, ScalingMode::Down)
             .unwrap());
 
         let new_available_permits = shard_table
@@ -1143,10 +1137,10 @@ mod tests {
             .available_permits();
 
         assert!(shard_table
-            .acquire_scaling_permits(&source_uid, ScalingMode::Up, 1)
+            .acquire_scaling_permits(&source_uid, ScalingMode::Up)
             .unwrap());
 
-        shard_table.release_scaling_permits(&source_uid, ScalingMode::Up, 1);
+        shard_table.release_scaling_permits(&source_uid, ScalingMode::Up);
 
         let new_available_permits = shard_table
             .table_entries
@@ -1179,10 +1173,10 @@ mod tests {
             .available_permits();
 
         assert!(shard_table
-            .acquire_scaling_permits(&source_uid, ScalingMode::Down, 1)
+            .acquire_scaling_permits(&source_uid, ScalingMode::Down)
             .unwrap());
 
-        shard_table.release_scaling_permits(&source_uid, ScalingMode::Down, 1);
+        shard_table.release_scaling_permits(&source_uid, ScalingMode::Down);
 
         let new_available_permits = shard_table
             .table_entries

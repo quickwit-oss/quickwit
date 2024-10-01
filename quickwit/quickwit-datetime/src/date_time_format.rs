@@ -20,138 +20,14 @@
 use std::fmt::Display;
 use std::str::FromStr;
 
-use ouroboros::self_referencing;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value as JsonValue;
-use time::error::Format;
 use time::format_description::well_known::{Iso8601, Rfc2822, Rfc3339};
-use time::format_description::FormatItem;
-use time::parsing::Parsed;
-use time::{Month, OffsetDateTime, PrimitiveDateTime};
-use time_fmt::parse::time_format_item::parse_to_format_item;
+use time::Month;
 
-use crate::TantivyDateTime;
-
-/// A date time parser that holds the format specification `Vec<FormatItem>`.
-#[self_referencing]
-pub struct StrptimeParser {
-    strptime_format: String,
-    with_timezone: bool,
-    #[borrows(strptime_format)]
-    #[covariant]
-    items: Vec<FormatItem<'this>>,
-}
-
-impl FromStr for StrptimeParser {
-    type Err = String;
-
-    fn from_str(strptime_format: &str) -> Result<Self, Self::Err> {
-        StrptimeParser::try_new(
-            strptime_format.to_string(),
-            strptime_format.to_lowercase().contains("%z"),
-            |strptime_format: &String| {
-                parse_to_format_item(strptime_format).map_err(|error| {
-                    format!("invalid strptime format `{strptime_format}`: {error}")
-                })
-            },
-        )
-    }
-}
-
-impl StrptimeParser {
-    /// Parse a given date according to the datetime format specified during the StrptimeParser
-    /// creation. If the date format does not provide a specific a time, the time will be set to
-    /// 00:00:00.
-    fn parse_primitive_date_time(&self, date_time_str: &str) -> anyhow::Result<PrimitiveDateTime> {
-        let mut parsed = Parsed::new();
-        if !parsed
-            .parse_items(date_time_str.as_bytes(), self.borrow_items())?
-            .is_empty()
-        {
-            anyhow::bail!(
-                "datetime string `{}` does not match strptime format `{}`",
-                date_time_str,
-                self.borrow_strptime_format()
-            );
-        }
-        // The parsed datetime contains a date but seems to be missing "time".
-        // We complete it artificially with 00:00:00.
-        if parsed.hour_24().is_none()
-            && !(parsed.hour_12().is_some() && parsed.hour_12_is_pm().is_some())
-        {
-            parsed.set_hour_24(0u8);
-            parsed.set_minute(0u8);
-            parsed.set_second(0u8);
-        }
-        if parsed.year().is_none() {
-            let now = OffsetDateTime::now_utc();
-            let year = infer_year(parsed.month(), now.month(), now.year());
-            parsed.set_year(year);
-        }
-        let date_time = parsed.try_into()?;
-        Ok(date_time)
-    }
-
-    pub fn parse_date_time(&self, date_time_str: &str) -> Result<OffsetDateTime, String> {
-        if *self.borrow_with_timezone() {
-            OffsetDateTime::parse(date_time_str, self.borrow_items()).map_err(|err| err.to_string())
-        } else {
-            self.parse_primitive_date_time(date_time_str)
-                .map(|date_time| date_time.assume_utc())
-                .map_err(|err| err.to_string())
-        }
-    }
-
-    pub fn format_date_time(&self, date_time: &OffsetDateTime) -> Result<String, Format> {
-        date_time.format(self.borrow_items())
-    }
-}
-
-impl Clone for StrptimeParser {
-    fn clone(&self) -> Self {
-        // `self.format` is already known to be a valid format.
-        Self::from_str(self.borrow_strptime_format().as_str()).unwrap()
-    }
-}
-
-impl PartialEq for StrptimeParser {
-    fn eq(&self, other: &Self) -> bool {
-        self.borrow_strptime_format() == other.borrow_strptime_format()
-    }
-}
-
-impl Eq for StrptimeParser {}
-
-impl std::fmt::Debug for StrptimeParser {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("StrptimeParser")
-            .field("format", &self.borrow_strptime_format())
-            .finish()
-    }
-}
-
-impl std::hash::Hash for StrptimeParser {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.borrow_strptime_format().hash(state);
-    }
-}
-
-// `Strftime` format special characters.
-// These characters are taken from the parsing crate we use for compatibility.
-const STRFTIME_FORMAT_MARKERS: [&str; 36] = [
-    "%a", "%A", "%b", "%B", "%c", "%C", "%d", "%D", "%e", "%f", "%F", "%h", "%H", "%I", "%j", "%k",
-    "%l", "%m", "%M", "%n", "%p", "%P", "%r", "%R", "%S", "%t", "%T", "%U", "%w", "%W", "%x", "%X",
-    "%y", "%Y", "%z", "%Z",
-];
-
-// Checks if a format contains `strftime` special characters.
-fn is_strftime_formatting(format_str: &str) -> bool {
-    STRFTIME_FORMAT_MARKERS
-        .iter()
-        .any(|marker| format_str.contains(marker))
-}
+use crate::java_date_time_format::is_strftime_formatting;
+use crate::{StrptimeParser, TantivyDateTime};
 
 /// Specifies the datetime and unix timestamp formats to use when parsing date strings.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Default)]
@@ -170,7 +46,7 @@ impl DateTimeInputFormat {
             DateTimeInputFormat::Iso8601 => "iso8601",
             DateTimeInputFormat::Rfc2822 => "rfc2822",
             DateTimeInputFormat::Rfc3339 => "rfc3339",
-            DateTimeInputFormat::Strptime(parser) => parser.borrow_strptime_format(),
+            DateTimeInputFormat::Strptime(parser) => parser.strptime_format.as_str(),
             DateTimeInputFormat::Timestamp => "unix_timestamp",
         }
     }
@@ -198,7 +74,7 @@ impl FromStr for DateTimeInputFormat {
                          format must contain at least one `strftime` special characters"
                     ));
                 }
-                DateTimeInputFormat::Strptime(StrptimeParser::from_str(date_time_format_str)?)
+                DateTimeInputFormat::Strptime(StrptimeParser::from_strptime(date_time_format_str)?)
             }
         };
         Ok(date_time_format)
@@ -241,7 +117,7 @@ impl DateTimeOutputFormat {
             DateTimeOutputFormat::Iso8601 => "iso8601",
             DateTimeOutputFormat::Rfc2822 => "rfc2822",
             DateTimeOutputFormat::Rfc3339 => "rfc3339",
-            DateTimeOutputFormat::Strptime(parser) => parser.borrow_strptime_format(),
+            DateTimeOutputFormat::Strptime(parser) => parser.strptime_format.as_str(),
             DateTimeOutputFormat::TimestampSecs => "unix_timestamp_secs",
             DateTimeOutputFormat::TimestampMillis => "unix_timestamp_millis",
             DateTimeOutputFormat::TimestampMicros => "unix_timestamp_micros",
@@ -300,7 +176,7 @@ impl FromStr for DateTimeOutputFormat {
                          format must contain at least one `strftime` special characters"
                     ));
                 }
-                DateTimeOutputFormat::Strptime(StrptimeParser::from_str(date_time_format_str)?)
+                DateTimeOutputFormat::Strptime(StrptimeParser::from_strptime(date_time_format_str)?)
             }
         };
         Ok(date_time_format)
@@ -341,7 +217,6 @@ pub(super) fn infer_year(
 
 #[cfg(test)]
 mod tests {
-    use time::macros::datetime;
     use time::Month;
 
     use super::*;
@@ -460,20 +335,6 @@ mod tests {
                 .to_string();
             assert!(error_str.contains(&format!("unknown output format: `{format}`")));
         }
-    }
-
-    #[test]
-    fn test_strictly_parse_datetime_format() {
-        let parser = StrptimeParser::from_str("%Y-%m-%d").unwrap();
-        assert_eq!(
-            parser.parse_date_time("2021-01-01").unwrap(),
-            datetime!(2021-01-01 00:00:00 UTC)
-        );
-        let error = parser.parse_date_time("2021-01-01TABC").unwrap_err();
-        assert_eq!(
-            error,
-            "datetime string `2021-01-01TABC` does not match strptime format `%Y-%m-%d`"
-        );
     }
 
     #[test]
