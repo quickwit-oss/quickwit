@@ -380,7 +380,7 @@ impl FileBackedMetastore {
     /// No error is returned if any of the requested `index_uid` does not exist.
     async fn list_splits_inner(&self, request: ListSplitsRequest) -> MetastoreResult<Vec<Split>> {
         let list_splits_query = request.deserialize_list_splits_query()?;
-        let mut all_splits = Vec::new();
+        let mut splits_per_index = Vec::with_capacity(list_splits_query.index_uids.len());
         for index_uid in &list_splits_query.index_uids {
             let splits = match self
                 .read(index_uid, |index| index.list_splits(&list_splits_query))
@@ -393,9 +393,19 @@ impl FileBackedMetastore {
                 }
                 Err(error) => return Err(error),
             };
-            all_splits.extend(splits);
+            splits_per_index.push(splits);
         }
-        Ok(all_splits)
+
+        let limit = list_splits_query.limit.unwrap_or(usize::MAX);
+        let offset = list_splits_query.offset.unwrap_or_default();
+
+        let merged_results = splits_per_index
+            .into_iter()
+            .kmerge_by(|lhs, rhs| list_splits_query.sort_by.compare(lhs, rhs).is_lt())
+            .skip(offset)
+            .take(limit)
+            .collect();
+        Ok(merged_results)
     }
 
     /// Helper used for testing to obtain the data associated with the given index.

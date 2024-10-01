@@ -20,13 +20,13 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use futures::{stream, StreamExt};
 use quickwit_actors::{Actor, ActorContext, Handler};
 use quickwit_common::shared_consts::split_deletion_grace_period;
-use quickwit_index_management::run_garbage_collect;
+use quickwit_index_management::{run_garbage_collect, GcMetrics};
 use quickwit_metastore::ListIndexesMetadataResponseExt;
 use quickwit_proto::metastore::{
     ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
@@ -35,6 +35,8 @@ use quickwit_proto::types::IndexUid;
 use quickwit_storage::{Storage, StorageResolver};
 use serde::Serialize;
 use tracing::{debug, error, info};
+
+use crate::metrics::JANITOR_METRICS;
 
 const RUN_INTERVAL: Duration = Duration::from_secs(10 * 60); // 10 minutes
 
@@ -51,10 +53,10 @@ pub struct GarbageCollectorCounters {
     pub num_deleted_files: usize,
     /// The number of bytes deleted.
     pub num_deleted_bytes: usize,
-    /// The number of failed garbage collection run on an index.
-    pub num_failed_gc_run_on_index: usize,
-    /// The number of successful garbage collection run on an index.
-    pub num_successful_gc_run_on_index: usize,
+    /// The number of failed garbage collection run.
+    pub num_failed_gc_run: usize,
+    /// The number of successful garbage collection run.
+    pub num_successful_gc_run: usize,
     /// The number or failed storage resolution.
     pub num_failed_storage_resolution: usize,
     /// The number of splits that were unable to be removed.
@@ -85,6 +87,8 @@ impl GarbageCollector {
     async fn handle_inner(&mut self, ctx: &ActorContext<Self>) {
         debug!("loading indexes from the metastore");
         self.counters.num_passes += 1;
+
+        let start = Instant::now();
 
         let response = match self
             .metastore
@@ -137,23 +141,43 @@ impl GarbageCollector {
             split_deletion_grace_period(),
             false,
             Some(ctx.progress()),
+            Some(GcMetrics {
+                deleted_splits: JANITOR_METRICS
+                    .gc_deleted_splits
+                    .with_label_values(["success"])
+                    .clone(),
+                deleted_bytes: JANITOR_METRICS.gc_deleted_bytes.clone(),
+                failed_splits: JANITOR_METRICS
+                    .gc_deleted_splits
+                    .with_label_values(["error"])
+                    .clone(),
+            }),
         )
         .await;
 
+        let run_duration = start.elapsed().as_secs();
+        JANITOR_METRICS.gc_seconds_total.inc_by(run_duration);
+
         let deleted_file_entries = match gc_res {
             Ok(removal_info) => {
-                self.counters.num_successful_gc_run_on_index += 1;
+                self.counters.num_successful_gc_run += 1;
+                JANITOR_METRICS.gc_runs.with_label_values(["success"]).inc();
                 self.counters.num_failed_splits += removal_info.failed_splits.len();
                 removal_info.removed_split_entries
             }
             Err(error) => {
-                self.counters.num_failed_gc_run_on_index += 1;
+                self.counters.num_failed_gc_run += 1;
+                JANITOR_METRICS.gc_runs.with_label_values(["error"]).inc();
                 error!(error=?error, "failed to run garbage collection");
                 return;
             }
         };
         if !deleted_file_entries.is_empty() {
             let num_deleted_splits = deleted_file_entries.len();
+            let num_deleted_bytes = deleted_file_entries
+                .iter()
+                .map(|entry| entry.file_size_bytes.as_u64() as usize)
+                .sum::<usize>();
             let deleted_files: HashSet<&Path> = deleted_file_entries
                 .iter()
                 .map(|deleted_entry| deleted_entry.file_name.as_path())
@@ -163,11 +187,8 @@ impl GarbageCollector {
                 num_deleted_splits = num_deleted_splits,
                 "Janitor deleted {:?} and {} other splits.", deleted_files, num_deleted_splits,
             );
-            self.counters.num_deleted_files += deleted_file_entries.len();
-            self.counters.num_deleted_bytes += deleted_file_entries
-                .iter()
-                .map(|entry| entry.file_size_bytes.as_u64() as usize)
-                .sum::<usize>();
+            self.counters.num_deleted_files += num_deleted_splits;
+            self.counters.num_deleted_bytes += num_deleted_bytes;
         }
     }
 }
@@ -348,6 +369,7 @@ mod tests {
             split_deletion_grace_period(),
             false,
             None,
+            None,
         )
         .await;
         assert!(result.is_ok());
@@ -497,9 +519,9 @@ mod tests {
         assert_eq!(counters.num_passes, 1);
         assert_eq!(counters.num_deleted_files, 2);
         assert_eq!(counters.num_deleted_bytes, 40);
-        assert_eq!(counters.num_successful_gc_run_on_index, 1);
+        assert_eq!(counters.num_successful_gc_run, 1);
         assert_eq!(counters.num_failed_storage_resolution, 0);
-        assert_eq!(counters.num_failed_gc_run_on_index, 0);
+        assert_eq!(counters.num_failed_gc_run, 0);
         assert_eq!(counters.num_failed_splits, 0);
 
         // 30 secs later
@@ -508,9 +530,9 @@ mod tests {
         assert_eq!(counters.num_passes, 1);
         assert_eq!(counters.num_deleted_files, 2);
         assert_eq!(counters.num_deleted_bytes, 40);
-        assert_eq!(counters.num_successful_gc_run_on_index, 1);
+        assert_eq!(counters.num_successful_gc_run, 1);
         assert_eq!(counters.num_failed_storage_resolution, 0);
-        assert_eq!(counters.num_failed_gc_run_on_index, 0);
+        assert_eq!(counters.num_failed_gc_run, 0);
         assert_eq!(counters.num_failed_splits, 0);
 
         // 60 secs later
@@ -519,9 +541,9 @@ mod tests {
         assert_eq!(counters.num_passes, 2);
         assert_eq!(counters.num_deleted_files, 4);
         assert_eq!(counters.num_deleted_bytes, 80);
-        assert_eq!(counters.num_successful_gc_run_on_index, 2);
+        assert_eq!(counters.num_successful_gc_run, 2);
         assert_eq!(counters.num_failed_storage_resolution, 0);
-        assert_eq!(counters.num_failed_gc_run_on_index, 0);
+        assert_eq!(counters.num_failed_gc_run, 0);
         assert_eq!(counters.num_failed_splits, 0);
         universe.assert_quit().await;
     }
@@ -585,9 +607,9 @@ mod tests {
         assert_eq!(counters.num_passes, 1);
         assert_eq!(counters.num_deleted_files, 0);
         assert_eq!(counters.num_deleted_bytes, 0);
-        assert_eq!(counters.num_successful_gc_run_on_index, 0);
+        assert_eq!(counters.num_successful_gc_run, 0);
         assert_eq!(counters.num_failed_storage_resolution, 1);
-        assert_eq!(counters.num_failed_gc_run_on_index, 0);
+        assert_eq!(counters.num_failed_gc_run, 0);
         assert_eq!(counters.num_failed_splits, 0);
         universe.assert_quit().await;
     }
@@ -608,7 +630,7 @@ mod tests {
             });
         mock_metastore
             .expect_list_splits()
-            .times(2)
+            .times(3)
             .returning(|list_splits_request| {
                 let query = list_splits_request.deserialize_list_splits_query().unwrap();
                 assert_eq!(query.index_uids.len(), 2);
@@ -616,24 +638,40 @@ mod tests {
                     .contains(&query.index_uids[0].index_id.as_ref()));
                 assert!(["test-index-1", "test-index-2"]
                     .contains(&query.index_uids[1].index_id.as_ref()));
-                let splits = match query.split_states[0] {
+                let splits_ids_string: Vec<String> =
+                    (0..8000).map(|seq| format!("split-{seq:04}")).collect();
+                let splits_ids: Vec<&str> = splits_ids_string
+                    .iter()
+                    .map(|string| string.as_str())
+                    .collect();
+                let mut splits = match query.split_states[0] {
                     SplitState::Staged => {
                         let mut splits = make_splits("test-index-1", &["a"], SplitState::Staged);
                         splits.append(&mut make_splits("test-index-2", &["a"], SplitState::Staged));
                         splits
                     }
                     SplitState::MarkedForDeletion => {
+                        assert_eq!(query.limit, Some(10_000));
                         let mut splits =
-                            make_splits("test-index-1", &["a", "b"], SplitState::MarkedForDeletion);
+                            make_splits("test-index-1", &splits_ids, SplitState::MarkedForDeletion);
                         splits.append(&mut make_splits(
                             "test-index-2",
-                            &["a", "b"],
+                            &splits_ids,
                             SplitState::MarkedForDeletion,
                         ));
                         splits
                     }
                     _ => panic!("only Staged and MarkedForDeletion expected."),
                 };
+                if let Some((index_uid, split_id)) = query.after_split {
+                    splits.retain(|split| {
+                        (
+                            &split.split_metadata.index_uid,
+                            &split.split_metadata.split_id,
+                        ) > (&index_uid, &split_id)
+                    });
+                }
+                splits.truncate(10_000);
                 let splits = ListSplitsResponse::try_from_splits(splits).unwrap();
                 Ok(ServiceStream::from(vec![Ok(splits)]))
             });
@@ -648,7 +686,7 @@ mod tests {
             });
         mock_metastore
             .expect_delete_splits()
-            .times(2)
+            .times(3)
             .returning(|delete_splits_request| {
                 let index_uid: IndexUid = delete_splits_request.index_uid().clone();
                 let split_ids = HashSet::<&str>::from_iter(
@@ -657,14 +695,30 @@ mod tests {
                         .iter()
                         .map(|split_id| split_id.as_str()),
                 );
-                let expected_split_ids = HashSet::<&str>::from_iter(["a", "b"]);
-
-                assert_eq!(split_ids, expected_split_ids);
+                if index_uid.index_id == "test-index-1" {
+                    assert_eq!(split_ids.len(), 8000);
+                    for seq in 0..8000 {
+                        let split_id = format!("split-{seq:04}");
+                        assert!(split_ids.contains(&*split_id));
+                    }
+                } else if split_ids.len() == 2000 {
+                    for seq in 0..2000 {
+                        let split_id = format!("split-{seq:04}");
+                        assert!(split_ids.contains(&*split_id));
+                    }
+                } else if split_ids.len() == 6000 {
+                    for seq in 2000..8000 {
+                        let split_id = format!("split-{seq:04}");
+                        assert!(split_ids.contains(&*split_id));
+                    }
+                } else {
+                    panic!();
+                }
 
                 // This should not cause the whole run to fail and return an error,
                 // instead this should simply get logged and return the list of splits
                 // which have successfully been deleted.
-                if index_uid.index_id == "test-index-2" {
+                if index_uid.index_id == "test-index-2" && split_ids.len() == 2000 {
                     Err(MetastoreError::Db {
                         message: "fail to delete".to_string(),
                     })
@@ -682,12 +736,12 @@ mod tests {
 
         let counters = handle.process_pending_and_observe().await.state;
         assert_eq!(counters.num_passes, 1);
-        assert_eq!(counters.num_deleted_files, 2);
-        assert_eq!(counters.num_deleted_bytes, 40);
-        assert_eq!(counters.num_successful_gc_run_on_index, 1);
+        assert_eq!(counters.num_deleted_files, 14000);
+        assert_eq!(counters.num_deleted_bytes, 20 * 14000);
+        assert_eq!(counters.num_successful_gc_run, 1);
         assert_eq!(counters.num_failed_storage_resolution, 0);
-        assert_eq!(counters.num_failed_gc_run_on_index, 0);
-        assert_eq!(counters.num_failed_splits, 2);
+        assert_eq!(counters.num_failed_gc_run, 0);
+        assert_eq!(counters.num_failed_splits, 2000);
         universe.assert_quit().await;
     }
 }

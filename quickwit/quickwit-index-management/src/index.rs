@@ -373,6 +373,7 @@ impl IndexService {
             Duration::ZERO,
             dry_run,
             None,
+            None,
         )
         .await?;
 
