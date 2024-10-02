@@ -22,8 +22,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use quickwit_common::rate_limited_info;
 use quickwit_common::uri::Uri;
+use quickwit_common::{rate_limited_info, rate_limited_warn};
 use quickwit_config::StorageTimeoutPolicy;
 use tantivy::directory::OwnedBytes;
 use tokio::io::AsyncRead;
@@ -34,7 +34,7 @@ use crate::{BulkDeleteError, PutPayload, Storage, StorageErrorKind, StorageResul
 /// Storage proxy that implements a retry operation if the underlying storage
 /// takes too long.
 ///
-/// This is useful in order to unsure a low latency on S3.
+/// This is useful in order to ensure a low latency on S3.
 /// Retrying agressively is recommended for S3.
 
 /// <https://docs.aws.amazon.com/whitepapers/latest/s3-optimizing-performance-best-practices/timeouts-and-retries-for-latency-sensitive-applications.html>
@@ -99,20 +99,25 @@ impl Storage for TimeoutAndRetryStorage {
             .enumerate()
         {
             let get_slice_fut = self.underlying.get_slice(path, range.clone());
+            // TODO test avoid aborting timed out requests. #5468
             match tokio::time::timeout(timeout_duration, get_slice_fut).await {
-                Ok(result) => return result,
-                Err(_elapsed) => {
-                    if let Some(get_slice_timeout_count) = crate::STORAGE_METRICS
-                        .get_slice_timeout_total_by_attempts
+                Ok(result) => {
+                    crate::STORAGE_METRICS
+                        .get_slice_timeout_successes
                         .get(attempt_id)
-                    {
-                        get_slice_timeout_count.inc();
-                    }
+                        .or(crate::STORAGE_METRICS.get_slice_timeout_successes.last())
+                        .unwrap()
+                        .inc();
+                    return result;
+                }
+                Err(_elapsed) => {
                     rate_limited_info!(limit_per_min=60, num_bytes=num_bytes, path=%path.display(), timeout_secs=timeout_duration.as_secs_f32(), "get timeout elapsed");
                     continue;
                 }
             }
         }
+        rate_limited_warn!(limit_per_min=60, num_bytes=num_bytes, path=%path.display(), "all get_slice attempts timeouted");
+        crate::STORAGE_METRICS.get_slice_timeout_all_timeouts.inc();
         return Err(
             StorageErrorKind::Timeout.with_error(anyhow::anyhow!("internal timeout on get_slice"))
         );
@@ -156,6 +161,8 @@ mod tests {
 
     use std::sync::Mutex;
     use std::time::Duration;
+
+    use tokio::time::Instant;
 
     use super::*;
 
@@ -244,14 +251,16 @@ mod tests {
     async fn test_timeout_and_retry_storage() {
         tokio::time::pause();
 
-        let path = Path::new("foo/bar");
         let timeout_policy = StorageTimeoutPolicy {
             min_throughtput_bytes_per_secs: 100_000,
             timeout_millis: 2_000,
-            repeat: 2,
+            max_num_retries: 1,
         };
 
+        let path = Path::new("foo/bar");
+
         {
+            let now = Instant::now();
             let storage_with_delay =
                 StorageWithDelay::new(vec![Duration::from_secs(5), Duration::from_secs(3)]);
             let storage =
@@ -260,12 +269,17 @@ mod tests {
                 storage.get_slice(path, 10..100).await.unwrap_err().kind,
                 StorageErrorKind::Timeout
             );
+            let elapsed = now.elapsed().as_millis();
+            assert!(elapsed.abs_diff(2 * 2_000) < 100);
         }
         {
+            let now = Instant::now();
             let storage_with_delay =
                 StorageWithDelay::new(vec![Duration::from_secs(5), Duration::from_secs(1)]);
             let storage = TimeoutAndRetryStorage::new(Arc::new(storage_with_delay), timeout_policy);
             assert!(storage.get_slice(path, 10..100).await.is_ok(),);
+            let elapsed = now.elapsed().as_millis();
+            assert!(elapsed.abs_diff(2_000 + 1_000) < 100);
         }
     }
 }

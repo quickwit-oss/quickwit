@@ -134,7 +134,7 @@ pub(crate) async fn open_index_with_caches(
     tokenizer_manager: Option<&TokenizerManager>,
     ephemeral_unbounded_cache: bool,
 ) -> anyhow::Result<Index> {
-    // Let's a layer to retry `get_slice` requests if they are taking too long,
+    // Let's add a storage proxy to retry `get_slice` requests if they are taking too long,
     // if configured in the searcher config.
     //
     // The goal here is too ensure a low latency.

@@ -615,7 +615,7 @@ mod tests {
                 storage_timeout_policy: Some(crate::StorageTimeoutPolicy {
                     min_throughtput_bytes_per_secs: 100_000,
                     timeout_millis: 2_000,
-                    repeat: 2
+                    max_num_retries: 2
                 })
             }
         );

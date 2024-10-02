@@ -32,7 +32,8 @@ pub struct StorageMetrics {
     pub fast_field_cache: CacheMetrics,
     pub split_footer_cache: CacheMetrics,
     pub searcher_split_cache: CacheMetrics,
-    pub get_slice_timeout_total_by_attempts: [IntCounter; 5],
+    pub get_slice_timeout_successes: [IntCounter; 3],
+    pub get_slice_timeout_all_timeouts: IntCounter,
     pub object_storage_get_total: IntCounter,
     pub object_storage_put_total: IntCounter,
     pub object_storage_put_parts: IntCounter,
@@ -42,20 +43,21 @@ pub struct StorageMetrics {
 
 impl Default for StorageMetrics {
     fn default() -> Self {
-        let get_slice_timeout_total = new_counter_vec(
-            "get_slice_timeout_total",
-            "Number of `get_slice` operations that timed out",
+        let get_slice_timeout_outcome_total_vec = new_counter_vec(
+            "get_slice_timeout_outcome",
+            "Outcome of get_slice operations. success_after_1_timeout means the operation \
+             succeeded after a retry caused by a timeout.",
             "storage",
             &[],
-            ["attempt"],
+            ["outcome"],
         );
-        let get_slice_timeout_total_by_attempts = [
-            get_slice_timeout_total.with_label_values(["0"]),
-            get_slice_timeout_total.with_label_values(["1"]),
-            get_slice_timeout_total.with_label_values(["2"]),
-            get_slice_timeout_total.with_label_values(["3"]),
-            get_slice_timeout_total.with_label_values(["4"]),
+        let get_slice_timeout_successes = [
+            get_slice_timeout_outcome_total_vec.with_label_values(["success_after_0_timeout"]),
+            get_slice_timeout_outcome_total_vec.with_label_values(["success_after_1_timeout"]),
+            get_slice_timeout_outcome_total_vec.with_label_values(["success_after_2+_timeout"]),
         ];
+        let get_slice_timeout_all_timeouts =
+            get_slice_timeout_outcome_total_vec.with_label_values(["all_timeouts"]);
         StorageMetrics {
             fast_field_cache: CacheMetrics::for_component("fastfields"),
             fd_cache_metrics: CacheMetrics::for_component("fd"),
@@ -63,7 +65,8 @@ impl Default for StorageMetrics {
             searcher_split_cache: CacheMetrics::for_component("searcher_split"),
             shortlived_cache: CacheMetrics::for_component("shortlived"),
             split_footer_cache: CacheMetrics::for_component("splitfooter"),
-            get_slice_timeout_total_by_attempts,
+            get_slice_timeout_successes,
+            get_slice_timeout_all_timeouts,
             object_storage_get_total: new_counter(
                 "object_storage_gets_total",
                 "Number of objects fetched.",

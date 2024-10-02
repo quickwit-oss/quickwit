@@ -243,7 +243,9 @@ pub struct SearcherConfig {
 pub struct StorageTimeoutPolicy {
     pub min_throughtput_bytes_per_secs: u64,
     pub timeout_millis: u64,
-    pub repeat: usize,
+    // Disclaimer: this is a number of retry, so the overall max number of
+    // attempts is `max_num_retries + 1``.
+    pub max_num_retries: usize,
 }
 
 impl StorageTimeoutPolicy {
@@ -255,7 +257,7 @@ impl StorageTimeoutPolicy {
         };
         let timeout = Duration::from_millis(self.timeout_millis)
             + Duration::from_secs_f64(min_download_time_secs);
-        std::iter::repeat(timeout).take(self.repeat)
+        std::iter::repeat(timeout).take(self.max_num_retries + 1)
     }
 }
 

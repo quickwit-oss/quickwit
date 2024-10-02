@@ -59,7 +59,7 @@ max_num_concurrent_split_searches = 150
 [searcher.storage_timeout_policy]
 min_throughtput_bytes_per_secs = 100000
 timeout_millis = 2000
-repeat = 2
+max_num_retries = 2
 
 [jaeger]
 enable_endpoint = true
