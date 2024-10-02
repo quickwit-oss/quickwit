@@ -251,7 +251,7 @@ impl MergePipeline {
             Some(self.merge_planner_mailbox.clone()),
             None,
         );
-        let (merge_publisher_mailbox, merge_publisher_handler) = ctx
+        let (merge_publisher_mailbox, merge_publisher_handle) = ctx
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
             .set_backpressure_micros_counter(
@@ -271,7 +271,7 @@ impl MergePipeline {
             self.params.max_concurrent_split_uploads,
             self.params.event_broker.clone(),
         );
-        let (merge_uploader_mailbox, merge_uploader_handler) = ctx
+        let (merge_uploader_mailbox, merge_uploader_handle) = ctx
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
             .spawn(merge_uploader);
@@ -279,7 +279,7 @@ impl MergePipeline {
         // Merge Packager
         let tag_fields = self.params.doc_mapper.tag_named_fields()?;
         let merge_packager = Packager::new("MergePackager", tag_fields, merge_uploader_mailbox);
-        let (merge_packager_mailbox, merge_packager_handler) = ctx
+        let (merge_packager_mailbox, merge_packager_handle) = ctx
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
             .spawn(merge_packager);
@@ -300,7 +300,7 @@ impl MergePipeline {
             merge_executor_io_controls,
             merge_packager_mailbox,
         );
-        let (merge_executor_mailbox, merge_executor_handler) = ctx
+        let (merge_executor_mailbox, merge_executor_handle) = ctx
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
             .set_backpressure_micros_counter(
@@ -316,7 +316,7 @@ impl MergePipeline {
             executor_mailbox: merge_executor_mailbox,
             io_controls: split_downloader_io_controls,
         };
-        let (merge_split_downloader_mailbox, merge_split_downloader_handler) = ctx
+        let (merge_split_downloader_mailbox, merge_split_downloader_handle) = ctx
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
             .set_backpressure_micros_counter(
@@ -334,7 +334,7 @@ impl MergePipeline {
             merge_split_downloader_mailbox,
             self.params.merge_scheduler_service.clone(),
         );
-        let (_, merge_planner_handler) = ctx
+        let (_, merge_planner_handle) = ctx
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
             .set_mailboxes(
@@ -346,12 +346,12 @@ impl MergePipeline {
         self.previous_generations_statistics = self.statistics.clone();
         self.statistics.generation += 1;
         self.handles_opt = Some(MergePipelineHandles {
-            merge_planner: merge_planner_handler,
-            merge_split_downloader: merge_split_downloader_handler,
-            merge_executor: merge_executor_handler,
-            merge_packager: merge_packager_handler,
-            merge_uploader: merge_uploader_handler,
-            merge_publisher: merge_publisher_handler,
+            merge_planner: merge_planner_handle,
+            merge_split_downloader: merge_split_downloader_handle,
+            merge_executor: merge_executor_handle,
+            merge_packager: merge_packager_handle,
+            merge_uploader: merge_uploader_handle,
+            merge_publisher: merge_publisher_handle,
             next_check_for_progress: Instant::now() + *HEARTBEAT,
         });
         Ok(())
@@ -359,14 +359,14 @@ impl MergePipeline {
 
     async fn terminate(&mut self) {
         self.kill_switch.kill();
-        if let Some(handlers) = self.handles_opt.take() {
+        if let Some(handles) = self.handles_opt.take() {
             tokio::join!(
-                handlers.merge_planner.kill(),
-                handlers.merge_split_downloader.kill(),
-                handlers.merge_executor.kill(),
-                handlers.merge_packager.kill(),
-                handlers.merge_uploader.kill(),
-                handlers.merge_publisher.kill(),
+                handles.merge_planner.kill(),
+                handles.merge_split_downloader.kill(),
+                handles.merge_executor.kill(),
+                handles.merge_packager.kill(),
+                handles.merge_uploader.kill(),
+                handles.merge_publisher.kill(),
             );
         }
     }
@@ -576,8 +576,8 @@ mod tests {
             event_broker: Default::default(),
         };
         let pipeline = MergePipeline::new(pipeline_params, None, universe.spawn_ctx());
-        let (_pipeline_mailbox, pipeline_handler) = universe.spawn_builder().spawn(pipeline);
-        let (pipeline_exit_status, pipeline_statistics) = pipeline_handler.quit().await;
+        let (_pipeline_mailbox, pipeline_handle) = universe.spawn_builder().spawn(pipeline);
+        let (pipeline_exit_status, pipeline_statistics) = pipeline_handle.quit().await;
         assert_eq!(pipeline_statistics.generation, 1);
         assert_eq!(pipeline_statistics.num_spawn_attempts, 1);
         assert_eq!(pipeline_statistics.num_published_splits, 0);
