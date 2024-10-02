@@ -2076,7 +2076,25 @@ mod tests {
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
-                r#"SELECT * FROM "splits" WHERE "index_uid" IN ('{index_uid}') ORDER BY "index_uid" ASC"#
+                r#"SELECT * FROM "splits" WHERE "index_uid" IN ('{index_uid}') ORDER BY "index_uid" ASC, "split_id" ASC"#
+            )
+        );
+
+        let mut select_statement = Query::select();
+        let sql = select_statement.column(Asterisk).from(Splits::Table);
+
+        let query =
+            ListSplitsQuery::for_index(index_uid.clone()).after_split(&crate::SplitMetadata {
+                index_uid: index_uid.clone(),
+                split_id: "my_split".to_string(),
+                ..Default::default()
+            });
+        append_query_filters(sql, &query);
+
+        assert_eq!(
+            sql.to_string(PostgresQueryBuilder),
+            format!(
+                r#"SELECT * FROM "splits" WHERE "index_uid" IN ('{index_uid}') AND ("index_uid", "split_id") > ('{index_uid}', 'my_split')"#
             )
         );
     }

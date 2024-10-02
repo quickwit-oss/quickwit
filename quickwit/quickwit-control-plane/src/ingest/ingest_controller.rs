@@ -676,10 +676,8 @@ impl IngestController {
         model: &mut ControlPlaneModel,
         progress: &Progress,
     ) -> MetastoreResult<()> {
-        const NUM_PERMITS: u64 = 1;
-
         if !model
-            .acquire_scaling_permits(&source_uid, ScalingMode::Up, NUM_PERMITS)
+            .acquire_scaling_permits(&source_uid, ScalingMode::Up)
             .unwrap_or(false)
         {
             return Ok(());
@@ -698,7 +696,7 @@ impl IngestController {
                 if successful_source_uids.is_empty() {
                     // We did not manage to create the shard.
                     // We can release our permit.
-                    model.release_scaling_permits(&source_uid, ScalingMode::Up, NUM_PERMITS);
+                    model.release_scaling_permits(&source_uid, ScalingMode::Up);
                     warn!(
                         index_uid=%source_uid.index_uid,
                         source_id=%source_uid.source_id,
@@ -722,7 +720,7 @@ impl IngestController {
                     source_id=%source_uid.source_id,
                     "scaling up number of shards to {new_num_open_shards} failed: {metastore_error:?}"
                 );
-                model.release_scaling_permits(&source_uid, ScalingMode::Up, NUM_PERMITS);
+                model.release_scaling_permits(&source_uid, ScalingMode::Up);
                 Err(metastore_error)
             }
         }
@@ -860,10 +858,12 @@ impl IngestController {
         model: &mut ControlPlaneModel,
         progress: &Progress,
     ) -> MetastoreResult<()> {
-        const NUM_PERMITS: u64 = 1;
+        if shard_stats.num_open_shards == 0 {
+            return Ok(());
+        }
 
         if !model
-            .acquire_scaling_permits(&source_uid, ScalingMode::Down, NUM_PERMITS)
+            .acquire_scaling_permits(&source_uid, ScalingMode::Down)
             .unwrap_or(false)
         {
             return Ok(());
@@ -876,12 +876,12 @@ impl IngestController {
             "scaling down number of shards to {new_num_open_shards}"
         );
         let Some((leader_id, shard_id)) = find_scale_down_candidate(&source_uid, model) else {
-            model.release_scaling_permits(&source_uid, ScalingMode::Down, NUM_PERMITS);
+            model.release_scaling_permits(&source_uid, ScalingMode::Down);
             return Ok(());
         };
         info!("scaling down shard {shard_id} from {leader_id}");
         let Some(ingester) = self.ingester_pool.get(&leader_id) else {
-            model.release_scaling_permits(&source_uid, ScalingMode::Down, NUM_PERMITS);
+            model.release_scaling_permits(&source_uid, ScalingMode::Down);
             return Ok(());
         };
         let shard_pkeys = vec![ShardPKey {
@@ -896,7 +896,7 @@ impl IngestController {
             .await
         {
             warn!("failed to scale down number of shards: {error}");
-            model.release_scaling_permits(&source_uid, ScalingMode::Down, NUM_PERMITS);
+            model.release_scaling_permits(&source_uid, ScalingMode::Down);
             return Ok(());
         }
         model.close_shards(&source_uid, &[shard_id]);

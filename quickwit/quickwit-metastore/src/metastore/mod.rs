@@ -24,6 +24,7 @@ pub mod postgres;
 
 pub mod control_plane_metastore;
 
+use std::cmp::Ordering;
 use std::ops::{Bound, RangeInclusive};
 
 use async_trait::async_trait;
@@ -632,6 +633,9 @@ pub struct ListSplitsQuery {
     /// Sorts the splits by staleness, i.e. by delete opstamp and publish timestamp in ascending
     /// order.
     pub sort_by: SortBy,
+
+    /// Only return splits whose (index_uid, split_id) are lexicographically after this split
+    pub after_split: Option<(IndexUid, SplitId)>,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -639,6 +643,33 @@ pub enum SortBy {
     None,
     Staleness,
     IndexUid,
+}
+
+impl SortBy {
+    fn compare(&self, left_split: &Split, right_split: &Split) -> Ordering {
+        match self {
+            SortBy::None => Ordering::Equal,
+            SortBy::Staleness => left_split
+                .split_metadata
+                .delete_opstamp
+                .cmp(&right_split.split_metadata.delete_opstamp)
+                .then_with(|| {
+                    left_split
+                        .publish_timestamp
+                        .cmp(&right_split.publish_timestamp)
+                }),
+            SortBy::IndexUid => left_split
+                .split_metadata
+                .index_uid
+                .cmp(&right_split.split_metadata.index_uid)
+                .then_with(|| {
+                    left_split
+                        .split_metadata
+                        .split_id
+                        .cmp(&right_split.split_metadata.split_id)
+                }),
+        }
+    }
 }
 
 #[allow(unused_attributes)]
@@ -658,6 +689,7 @@ impl ListSplitsQuery {
             create_timestamp: Default::default(),
             mature: Bound::Unbounded,
             sort_by: SortBy::None,
+            after_split: None,
         }
     }
 
@@ -680,6 +712,7 @@ impl ListSplitsQuery {
             create_timestamp: Default::default(),
             mature: Bound::Unbounded,
             sort_by: SortBy::None,
+            after_split: None,
         })
     }
 
@@ -850,9 +883,16 @@ impl ListSplitsQuery {
         self
     }
 
-    /// Sorts the splits by index_uid.
+    /// Sorts the splits by index_uid and split_id.
     pub fn sort_by_index_uid(mut self) -> Self {
         self.sort_by = SortBy::IndexUid;
+        self
+    }
+
+    /// Only return splits whose (index_uid, split_id) are lexicographically after this split.
+    /// This is only useful if results are sorted by index_uid and split_id.
+    pub fn after_split(mut self, split_meta: &SplitMetadata) -> Self {
+        self.after_split = Some((split_meta.index_uid.clone(), split_meta.split_id.clone()));
         self
     }
 }

@@ -28,7 +28,7 @@ use anyhow::Context;
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
 use quickwit_metastore::SplitMetadata;
-use quickwit_proto::search::{LeafSearchResponse, PartialHit, SearchRequest};
+use quickwit_proto::search::{LeafSearchResponse, PartialHit, SearchRequest, SplitSearchError};
 use quickwit_proto::types::IndexUid;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
@@ -57,6 +57,8 @@ pub(crate) struct ScrollContext {
     pub max_hits_per_page: u64,
     pub cached_partial_hits_start_offset: u64,
     pub cached_partial_hits: Vec<PartialHit>,
+    pub failed_splits: Vec<SplitSearchError>,
+    pub num_successful_splits: u64,
 }
 
 impl ScrollContext {
