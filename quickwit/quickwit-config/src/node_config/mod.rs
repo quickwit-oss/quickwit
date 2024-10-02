@@ -206,14 +206,25 @@ impl SplitCacheLimits {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Default)]
+pub enum CacheKind {
+    // we make this the default to keep old behavior, it's tbd if lfu is a definitive improvement
+    #[default]
+    Lru,
+    Lfu,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct SearcherConfig {
     pub aggregation_memory_limit: ByteSize,
     pub aggregation_bucket_limit: u32,
     pub fast_field_cache_capacity: ByteSize,
+    pub fast_field_cache_kind: CacheKind,
     pub split_footer_cache_capacity: ByteSize,
+    pub split_footer_cache_kind: CacheKind,
     pub partial_request_cache_capacity: ByteSize,
+    pub partial_request_cache_kind: CacheKind,
     pub max_num_concurrent_split_searches: usize,
     pub max_num_concurrent_split_streams: usize,
     // Strangely, if None, this will also have the effect of not forwarding
@@ -229,8 +240,11 @@ impl Default for SearcherConfig {
     fn default() -> Self {
         Self {
             fast_field_cache_capacity: ByteSize::gb(1),
+            fast_field_cache_kind: CacheKind::default(),
             split_footer_cache_capacity: ByteSize::mb(500),
+            split_footer_cache_kind: CacheKind::default(),
             partial_request_cache_capacity: ByteSize::mb(64),
+            partial_request_cache_kind: CacheKind::default(),
             max_num_concurrent_split_streams: 100,
             max_num_concurrent_split_searches: 100,
             aggregation_memory_limit: ByteSize::mb(500),

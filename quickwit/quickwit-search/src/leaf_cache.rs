@@ -20,6 +20,7 @@
 use std::ops::Bound;
 
 use prost::Message;
+use quickwit_config::CacheKind;
 use quickwit_proto::search::{
     CountHits, LeafSearchResponse, SearchRequest, SplitIdAndFooterOffsets,
 };
@@ -47,11 +48,12 @@ pub struct LeafSearchCache {
 // queries which vary only by search_after.
 
 impl LeafSearchCache {
-    pub fn new(capacity: usize) -> LeafSearchCache {
+    pub fn new(capacity: usize, cache_kind: CacheKind) -> LeafSearchCache {
         LeafSearchCache {
             content: MemorySizedCache::with_capacity_in_bytes(
                 capacity,
                 &quickwit_storage::STORAGE_METRICS.partial_request_cache,
+                cache_kind,
             ),
         }
     }
@@ -191,6 +193,7 @@ impl std::ops::RangeBounds<i64> for Range {
 
 #[cfg(test)]
 mod tests {
+    use quickwit_config::CacheKind;
     use quickwit_proto::search::{
         LeafSearchResponse, PartialHit, SearchRequest, SortValue, SplitIdAndFooterOffsets,
     };
@@ -199,7 +202,7 @@ mod tests {
 
     #[test]
     fn test_leaf_search_cache_no_timestamp() {
-        let cache = LeafSearchCache::new(64_000_000);
+        let cache = LeafSearchCache::new(64_000_000, CacheKind::default());
 
         let split_1 = SplitIdAndFooterOffsets {
             split_id: "split_1".to_string(),
@@ -264,7 +267,7 @@ mod tests {
 
     #[test]
     fn test_leaf_search_cache_timestamp() {
-        let cache = LeafSearchCache::new(64_000_000);
+        let cache = LeafSearchCache::new(64_000_000, CacheKind::default());
 
         let split_1 = SplitIdAndFooterOffsets {
             split_id: "split_1".to_string(),

@@ -22,6 +22,7 @@ hyper = { workspace = true }
 lru = { workspace = true }
 md5 = { workspace = true }
 mockall = { workspace = true, optional = true }
+moka = { workspace = true }
 once_cell = { workspace = true }
 pin-project = { workspace = true }
 rand = { workspace = true }

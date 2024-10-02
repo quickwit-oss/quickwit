@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use quickwit_config::CacheKind;
 use quickwit_proto::search::{
     deserialize_split_fields, serialize_split_fields, ListFields, SplitIdAndFooterOffsets,
 };
@@ -31,11 +32,12 @@ pub struct ListFieldsCache {
 // TODO For now this simply caches the whole ListFieldsEntryResponse. We could
 // be more clever and cache aggregates instead.
 impl ListFieldsCache {
-    pub fn new(capacity: usize) -> ListFieldsCache {
+    pub fn new(capacity: usize, cache_kind: CacheKind) -> ListFieldsCache {
         ListFieldsCache {
             content: MemorySizedCache::with_capacity_in_bytes(
                 capacity,
                 &quickwit_storage::STORAGE_METRICS.partial_request_cache,
+                cache_kind,
             ),
         }
     }
@@ -71,6 +73,7 @@ impl CacheKey {
 
 #[cfg(test)]
 mod tests {
+    use quickwit_config::CacheKind;
     use quickwit_proto::search::{
         ListFieldType, ListFields, ListFieldsEntryResponse, SplitIdAndFooterOffsets,
     };
@@ -79,7 +82,7 @@ mod tests {
 
     #[test]
     fn test_list_fields_cache() {
-        let cache = ListFieldsCache::new(64_000_000);
+        let cache = ListFieldsCache::new(64_000_000, CacheKind::default());
 
         let split_1 = SplitIdAndFooterOffsets {
             split_id: "split_1".to_string(),

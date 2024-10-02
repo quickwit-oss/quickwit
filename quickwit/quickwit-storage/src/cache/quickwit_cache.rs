@@ -22,6 +22,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use quickwit_config::CacheKind;
 
 use crate::cache::{MemorySizedCache, StorageCache};
 use crate::metrics::CacheMetrics;
@@ -44,7 +45,7 @@ impl From<Vec<(&'static str, Arc<dyn StorageCache>)>> for QuickwitCache {
 impl QuickwitCache {
     /// Creates a [`QuickwitCache`] with a cache on fast fields
     /// with a capacity of `fast_field_cache_capacity`.
-    pub fn new(fast_field_cache_capacity: usize) -> Self {
+    pub fn new(fast_field_cache_capacity: usize, cache_kind: CacheKind) -> Self {
         let mut quickwit_cache = QuickwitCache::empty();
         let fast_field_cache_counters: &'static CacheMetrics =
             &crate::STORAGE_METRICS.fast_field_cache;
@@ -53,6 +54,7 @@ impl QuickwitCache {
             Arc::new(SimpleCache::with_capacity_in_bytes(
                 fast_field_cache_capacity,
                 fast_field_cache_counters,
+                cache_kind,
             )),
         );
         quickwit_cache
@@ -125,11 +127,13 @@ impl SimpleCache {
     fn with_capacity_in_bytes(
         capacity_in_bytes: usize,
         cache_counters: &'static CacheMetrics,
+        cache_kind: CacheKind,
     ) -> Self {
         SimpleCache {
             slice_cache: MemorySizedCache::with_capacity_in_bytes(
                 capacity_in_bytes,
                 cache_counters,
+                cache_kind,
             ),
         }
     }

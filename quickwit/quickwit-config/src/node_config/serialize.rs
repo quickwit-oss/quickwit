@@ -479,6 +479,7 @@ mod tests {
 
     use super::*;
     use crate::storage_config::StorageBackendFlavor;
+    use crate::CacheKind;
 
     fn get_config_filepath(config_filename: &str) -> String {
         format!(
@@ -606,8 +607,11 @@ mod tests {
                 aggregation_memory_limit: ByteSize::gb(1),
                 aggregation_bucket_limit: 500_000,
                 fast_field_cache_capacity: ByteSize::gb(10),
+                fast_field_cache_kind: CacheKind::Lru,
                 split_footer_cache_capacity: ByteSize::gb(1),
+                split_footer_cache_kind: CacheKind::Lru,
                 partial_request_cache_capacity: ByteSize::mb(64),
+                partial_request_cache_kind: CacheKind::Lru,
                 max_num_concurrent_split_searches: 150,
                 max_num_concurrent_split_streams: 120,
                 split_cache: None,
