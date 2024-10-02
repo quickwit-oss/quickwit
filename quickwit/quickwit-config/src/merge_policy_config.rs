@@ -21,6 +21,10 @@ use std::time::Duration;
 
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
+fn is_zero(value: &usize) -> bool {
+    *value == 0
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ConstWriteAmplificationMergePolicyConfig {
@@ -42,6 +46,15 @@ pub struct ConstWriteAmplificationMergePolicyConfig {
     #[serde(deserialize_with = "parse_human_duration")]
     #[serde(serialize_with = "serialize_duration")]
     pub maturation_period: Duration,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "is_zero")]
+    pub max_finalize_merge_operations: usize,
+    /// Splits with a number of docs higher than
+    /// `max_finalize_split_num_docs` will not be considered
+    /// for finalize split merge operations.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_finalize_split_num_docs: Option<usize>,
 }
 
 impl Default for ConstWriteAmplificationMergePolicyConfig {
@@ -51,6 +64,8 @@ impl Default for ConstWriteAmplificationMergePolicyConfig {
             merge_factor: default_merge_factor(),
             max_merge_factor: default_max_merge_factor(),
             maturation_period: default_maturation_period(),
+            max_finalize_merge_operations: 0,
+            max_finalize_split_num_docs: None,
         }
     }
 }
@@ -146,6 +161,10 @@ impl Default for MergePolicyConfig {
 }
 
 impl MergePolicyConfig {
+    pub fn noop() -> Self {
+        MergePolicyConfig::Nop
+    }
+
     pub fn validate(&self) -> anyhow::Result<()> {
         let (merge_factor, max_merge_factor) = match self {
             MergePolicyConfig::Nop => {
