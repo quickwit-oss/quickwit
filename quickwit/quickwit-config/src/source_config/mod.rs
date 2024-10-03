@@ -28,6 +28,7 @@ use quickwit_common::is_false;
 use quickwit_common::uri::Uri;
 use quickwit_proto::metastore::SourceType;
 use quickwit_proto::types::SourceId;
+use regex::Regex;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value as JsonValue;
@@ -498,8 +499,9 @@ pub enum PulsarSourceAuth {
 fn pulsar_uri<'de, D>(deserializer: D) -> Result<String, D::Error>
 where D: Deserializer<'de> {
     let uri: String = Deserialize::deserialize(deserializer)?;
+    let re: Regex = Regex::new(r"pulsar(\+ssl)?://.*").expect("regular expression should compile");
 
-    if uri.strip_prefix("pulsar://").is_none() {
+    if !re.is_match(uri.as_str()) {
         return Err(Error::custom(format!(
             "invalid Pulsar uri provided, must be in the format of `pulsar://host:port/path`. \
              got: `{uri}`"
