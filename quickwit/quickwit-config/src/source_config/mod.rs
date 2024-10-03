@@ -24,7 +24,6 @@ use std::num::NonZeroUsize;
 use std::str::FromStr;
 
 use bytes::Bytes;
-use regex::Regex;
 use quickwit_common::is_false;
 use quickwit_common::uri::Uri;
 use quickwit_proto::metastore::SourceType;
