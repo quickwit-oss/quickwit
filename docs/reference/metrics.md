@@ -3,7 +3,7 @@ title: Metrics
 sidebar_position: 70
 ---
 
-Quickwit exposes some key metrics via [Prometheus](https://prometheus.io/). You can use any front-end that supports Prometheus to examine the behavior of Quickwit visually.
+Quickwit exposes key metrics in the [Prometheus](https://prometheus.io/) format on the `/metrics` endpoint. You can use any front-end that supports Prometheus to examine the behavior of Quickwit visually.
 
 ## Cache Metrics
 

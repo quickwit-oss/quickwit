@@ -433,6 +433,20 @@ macro_rules! metastore_test_suite {
 
             #[tokio::test]
             #[serial_test::file_serial]
+            async fn test_metastore_list_sorted_splits() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::list_splits::test_metastore_list_sorted_splits::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::file_serial]
+            async fn test_metastore_list_after_split() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::list_splits::test_metastore_list_after_split::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::file_serial]
             async fn test_metastore_update_splits_delete_opstamp() {
                 let _ = tracing_subscriber::fmt::try_init();
                 $crate::tests::split::test_metastore_update_splits_delete_opstamp::<$metastore_type>()
