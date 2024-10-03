@@ -21,15 +21,17 @@
 
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
-    exponential_buckets, new_counter, new_counter_vec, new_histogram, new_histogram_vec, Histogram,
-    HistogramVec, IntCounter, IntCounterVec,
+    exponential_buckets, linear_buckets, new_counter, new_counter_vec, new_histogram,
+    new_histogram_vec, Histogram, HistogramVec, IntCounter, IntCounterVec,
 };
 
 pub struct SearchMetrics {
     pub root_search_requests_total: IntCounterVec<1>,
     pub root_search_request_duration_seconds: HistogramVec<1>,
+    pub root_search_targeted_splits: HistogramVec<1>,
     pub leaf_search_requests_total: IntCounterVec<1>,
     pub leaf_search_request_duration_seconds: HistogramVec<1>,
+    pub leaf_search_targeted_splits: HistogramVec<1>,
     pub leaf_searches_splits_total: IntCounter,
     pub leaf_search_split_duration_secs: Histogram,
     pub job_assigned_total: IntCounterVec<1>,
@@ -37,6 +39,17 @@ pub struct SearchMetrics {
 
 impl Default for SearchMetrics {
     fn default() -> Self {
+        let targeted_splits_buckets: Vec<f64> = [
+            linear_buckets(0.0, 10.0, 10).unwrap(),
+            linear_buckets(100.0, 100.0, 9).unwrap(),
+            linear_buckets(1000.0, 1000.0, 9).unwrap(),
+            linear_buckets(10000.0, 10000.0, 10).unwrap(),
+        ]
+        .iter()
+        .flatten()
+        .copied()
+        .collect();
+
         SearchMetrics {
             root_search_requests_total: new_counter_vec(
                 "root_search_requests_total",
@@ -47,26 +60,42 @@ impl Default for SearchMetrics {
             ),
             root_search_request_duration_seconds: new_histogram_vec(
                 "root_search_request_duration_seconds",
-                "Duration of request in seconds.",
+                "Duration of root search gRPC request in seconds.",
                 "search",
                 &[("kind", "server")],
                 ["status"],
                 exponential_buckets(0.001, 2.0, 15).unwrap(),
             ),
+            root_search_targeted_splits: new_histogram_vec(
+                "root_search_targeted_splits",
+                "Number of splits targeted per root search GRPC request.",
+                "search",
+                &[],
+                ["status"],
+                targeted_splits_buckets.clone(),
+            ),
             leaf_search_requests_total: new_counter_vec(
                 "leaf_search_requests_total",
-                "Total number of gRPC requests processed.",
+                "Total number of leaf search gRPC requests processed.",
                 "search",
                 &[("kind", "server")],
                 ["status"],
             ),
             leaf_search_request_duration_seconds: new_histogram_vec(
                 "leaf_search_request_duration_seconds",
-                "Duration of request in seconds.",
+                "Duration of leaf search gRPC request in seconds.",
                 "search",
                 &[("kind", "server")],
                 ["status"],
                 exponential_buckets(0.001, 2.0, 15).unwrap(),
+            ),
+            leaf_search_targeted_splits: new_histogram_vec(
+                "leaf_search_targeted_splits",
+                "Number of splits targeted per leaf search GRPC request.",
+                "search",
+                &[],
+                ["status"],
+                targeted_splits_buckets,
             ),
             leaf_searches_splits_total: new_counter(
                 "leaf_searches_splits_total",
