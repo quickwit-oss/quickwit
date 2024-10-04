@@ -490,6 +490,7 @@ impl SearcherContext {
         let global_split_footer_cache = MemorySizedCache::with_capacity_in_bytes(
             capacity_in_bytes,
             &quickwit_storage::STORAGE_METRICS.split_footer_cache,
+            searcher_config.split_footer_cache_kind.clone(),
         );
         let leaf_search_split_semaphore = Arc::new(Semaphore::new(
             searcher_config.max_num_concurrent_split_searches,
@@ -497,11 +498,18 @@ impl SearcherContext {
         let split_stream_semaphore =
             Semaphore::new(searcher_config.max_num_concurrent_split_streams);
         let fast_field_cache_capacity = searcher_config.fast_field_cache_capacity.as_u64() as usize;
-        let storage_long_term_cache = Arc::new(QuickwitCache::new(fast_field_cache_capacity));
-        let leaf_search_cache =
-            LeafSearchCache::new(searcher_config.partial_request_cache_capacity.as_u64() as usize);
-        let list_fields_cache =
-            ListFieldsCache::new(searcher_config.partial_request_cache_capacity.as_u64() as usize);
+        let storage_long_term_cache = Arc::new(QuickwitCache::new(
+            fast_field_cache_capacity,
+            searcher_config.fast_field_cache_kind.clone(),
+        ));
+        let leaf_search_cache = LeafSearchCache::new(
+            searcher_config.partial_request_cache_capacity.as_u64() as usize,
+            searcher_config.partial_request_cache_kind.clone(),
+        );
+        let list_fields_cache = ListFieldsCache::new(
+            searcher_config.partial_request_cache_capacity.as_u64() as usize,
+            searcher_config.partial_request_cache_kind.clone(),
+        );
         let aggregation_limit = AggregationLimitsGuard::new(
             Some(searcher_config.aggregation_memory_limit.as_u64()),
             Some(searcher_config.aggregation_bucket_limit),

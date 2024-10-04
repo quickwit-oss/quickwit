@@ -22,32 +22,14 @@ use std::hash::Hash;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::Duration;
 
-use lru::LruCache;
-use tokio::time::Instant;
-use tracing::{error, warn};
+use moka::sync::Cache;
+use quickwit_config::CacheKind;
+use tracing::warn;
 
 use crate::cache::slice_address::{SliceAddress, SliceAddressKey, SliceAddressRef};
-use crate::cache::stored_item::StoredItem;
 use crate::metrics::CacheMetrics;
 use crate::OwnedBytes;
-
-/// We do not evict anything that has been accessed in the last 60s.
-///
-/// The goal is to behave better on scan access patterns, without being as aggressive as
-/// using a MRU strategy.
-///
-/// TLDR is:
-///
-/// If two items have been access in the last 60s it is not really worth considering the
-/// latter too be more recent than the previous and do an eviction.
-/// The difference is not significant enough to raise the probability of its future access.
-///
-/// On the other hand, for very large queries involving enough data to saturate the cache,
-/// we are facing a scanning pattern. If variations of this  query is repeated over and over
-/// a regular LRU eviction policy would yield a hit rate of 0.
-const MIN_TIME_SINCE_LAST_ACCESS: Duration = Duration::from_secs(60);
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Capacity {
@@ -64,64 +46,71 @@ impl Capacity {
     }
 }
 
-struct NeedMutMemorySizedCache<K: Hash + Eq> {
-    lru_cache: LruCache<K, StoredItem>,
-    num_items: usize,
-    num_bytes: u64,
+// TODO this actually doesn't need mut access, we should remove the mutext and related complexity
+// eventually
+struct NeedMutMemorySizedCache<K: Hash + Eq + Send + Sync + 'static> {
+    cache: Cache<K, OwnedBytes>,
     capacity: Capacity,
     cache_counters: &'static CacheMetrics,
 }
 
-impl<K: Hash + Eq> Drop for NeedMutMemorySizedCache<K> {
+impl<K: Hash + Eq + Send + Sync + 'static> Drop for NeedMutMemorySizedCache<K> {
     fn drop(&mut self) {
+        self.cache.run_pending_tasks();
         self.cache_counters
             .in_cache_count
-            .sub(self.num_items as i64);
+            .sub(self.cache.entry_count() as i64);
         self.cache_counters
             .in_cache_num_bytes
-            .sub(self.num_bytes as i64);
+            .sub(self.cache.weighted_size() as i64);
     }
 }
 
-impl<K: Hash + Eq> NeedMutMemorySizedCache<K> {
+impl<K: Hash + Eq + Send + Sync + 'static> NeedMutMemorySizedCache<K> {
     /// Creates a new NeedMutSliceCache with the given capacity.
-    fn with_capacity(capacity: Capacity, cache_counters: &'static CacheMetrics) -> Self {
+    fn with_capacity(
+        capacity: Capacity,
+        cache_counters: &'static CacheMetrics,
+        cache_kind: CacheKind,
+    ) -> Self {
+        let mut cache_builder = Cache::<K, OwnedBytes>::builder()
+            .eviction_policy(match cache_kind {
+                CacheKind::Lfu => moka::policy::EvictionPolicy::tiny_lfu(),
+                CacheKind::Lru => moka::policy::EvictionPolicy::lru(),
+            })
+            .weigher(|_k, v| v.len().try_into().unwrap_or(u32::MAX))
+            .eviction_listener(|_k, v, _cause| {
+                cache_counters.in_cache_count.dec();
+                cache_counters.in_cache_num_bytes.sub(v.len() as i64);
+            });
+        cache_builder = match capacity {
+            Capacity::InBytes(capacity) if capacity > 0 => {
+                cache_builder.max_capacity(capacity as u64)
+            }
+            _ => cache_builder,
+        };
         NeedMutMemorySizedCache {
-            // The limit will be decided by the amount of memory in the cache,
-            // not the number of items in the cache.
-            // Enforcing this limit is done in the `NeedMutCache` impl.
-            lru_cache: LruCache::unbounded(),
-            num_items: 0,
-            num_bytes: 0,
+            cache: cache_builder.build(),
             capacity,
             cache_counters,
         }
     }
 
-    pub fn record_item(&mut self, num_bytes: u64) {
-        self.num_items += 1;
-        self.num_bytes += num_bytes;
+    pub fn record_item(&self, num_bytes: u64) {
         self.cache_counters.in_cache_count.inc();
         self.cache_counters.in_cache_num_bytes.add(num_bytes as i64);
     }
 
-    pub fn drop_item(&mut self, num_bytes: u64) {
-        self.num_items -= 1;
-        self.num_bytes -= num_bytes;
-        self.cache_counters.in_cache_count.dec();
-        self.cache_counters.in_cache_num_bytes.sub(num_bytes as i64);
-    }
-
-    pub fn get<Q>(&mut self, cache_key: &Q) -> Option<OwnedBytes>
+    pub fn get<Q>(&self, cache_key: &Q) -> Option<OwnedBytes>
     where
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
-        let item_opt = self.lru_cache.get_mut(cache_key);
+        let item_opt = self.cache.get(cache_key);
         if let Some(item) = item_opt {
             self.cache_counters.hits_num_items.inc();
             self.cache_counters.hits_num_bytes.inc_by(item.len() as u64);
-            Some(item.payload())
+            Some(item)
         } else {
             self.cache_counters.misses_num_items.inc();
             None
@@ -131,9 +120,11 @@ impl<K: Hash + Eq> NeedMutMemorySizedCache<K> {
     /// Attempt to put the given amount of data in the cache.
     /// This may fail silently if the owned_bytes slice is larger than the cache
     /// capacity.
-    fn put(&mut self, key: K, bytes: OwnedBytes) {
+    fn put(&self, key: K, bytes: OwnedBytes) {
         if self.capacity.exceeds_capacity(bytes.len()) {
             // The value does not fit in the cache. We simply don't store it.
+            // We do this so we can log, as the underlying cache should already reject this value
+            // anyway
             if self.capacity != Capacity::InBytes(0) {
                 warn!(
                     capacity_in_bytes = ?self.capacity,
@@ -143,56 +134,29 @@ impl<K: Hash + Eq> NeedMutMemorySizedCache<K> {
             }
             return;
         }
-        if let Some(previous_data) = self.lru_cache.pop(&key) {
-            self.drop_item(previous_data.len() as u64);
-        }
 
-        let now = Instant::now();
-        while self
-            .capacity
-            .exceeds_capacity(self.num_bytes as usize + bytes.len())
-        {
-            if let Some((_, candidate_for_eviction)) = self.lru_cache.peek_lru() {
-                let time_since_last_access =
-                    now.duration_since(candidate_for_eviction.last_access_time());
-                if time_since_last_access < MIN_TIME_SINCE_LAST_ACCESS {
-                    // It is not worth doing an eviction.
-                    // TODO: It is sub-optimal that we might have needlessly evicted items in this
-                    // loop before just returning.
-                    return;
-                }
-            }
-            if let Some((_, bytes)) = self.lru_cache.pop_lru() {
-                self.drop_item(bytes.len() as u64);
-            } else {
-                error!(
-                    "Logical error. Even after removing all of the items in the cache the \
-                     capacity is insufficient. This case is guarded against and should never \
-                     happen."
-                );
-                return;
-            }
-        }
         self.record_item(bytes.len() as u64);
-        self.lru_cache.put(key, StoredItem::new(bytes, now));
+        self.cache.insert(key, bytes);
     }
 }
 
 /// A simple in-resident memory slice cache.
-pub struct MemorySizedCache<K: Hash + Eq = SliceAddress> {
+pub struct MemorySizedCache<K: Hash + Eq + Send + Sync + 'static = SliceAddress> {
     inner: Mutex<NeedMutMemorySizedCache<K>>,
 }
 
-impl<K: Hash + Eq> MemorySizedCache<K> {
+impl<K: Hash + Eq + Send + Sync + 'static> MemorySizedCache<K> {
     /// Creates an slice cache with the given capacity.
     pub fn with_capacity_in_bytes(
         capacity_in_bytes: usize,
         cache_counters: &'static CacheMetrics,
+        cache_kind: CacheKind,
     ) -> Self {
         MemorySizedCache {
             inner: Mutex::new(NeedMutMemorySizedCache::with_capacity(
                 Capacity::InBytes(capacity_in_bytes),
                 cache_counters,
+                cache_kind,
             )),
         }
     }
@@ -203,6 +167,7 @@ impl<K: Hash + Eq> MemorySizedCache<K> {
             inner: Mutex::new(NeedMutMemorySizedCache::with_capacity(
                 Capacity::Unlimited,
                 cache_counters,
+                CacheKind::Lru, // this doesn't matter on unbounded cache
             )),
         }
     }
@@ -221,6 +186,11 @@ impl<K: Hash + Eq> MemorySizedCache<K> {
     /// capacity.
     pub fn put(&self, val: K, bytes: OwnedBytes) {
         self.inner.lock().unwrap().put(val, bytes);
+    }
+
+    #[cfg(test)]
+    fn force_sync(&self) {
+        self.inner.lock().unwrap().cache.run_pending_tasks();
     }
 }
 
@@ -249,7 +219,11 @@ mod tests {
     #[tokio::test]
     async fn test_cache_edge_condition() {
         tokio::time::pause();
-        let cache = MemorySizedCache::<String>::with_capacity_in_bytes(5, &CACHE_METRICS_FOR_TESTS);
+        let cache = MemorySizedCache::<String>::with_capacity_in_bytes(
+            5,
+            &CACHE_METRICS_FOR_TESTS,
+            CacheKind::Lfu,
+        );
         {
             let data = OwnedBytes::new(&b"abc"[..]);
             cache.put("3".to_string(), data);
@@ -265,26 +239,26 @@ mod tests {
         {
             let data = OwnedBytes::new(&b"fghij"[..]);
             cache.put("5".to_string(), data);
-            // Eviction should not happen, because all items in cache are too young.
+            cache.force_sync();
+            // based on previous acces patterns, this key isn't as good as the others, so it's not
+            // even inserted
             assert!(cache.get(&"5".to_string()).is_none());
+            // our two first entries should have been removed from the cache
+            assert!(cache.get(&"2".to_string()).is_some());
+            assert!(cache.get(&"3".to_string()).is_some());
         }
-        tokio::time::advance(super::MIN_TIME_SINCE_LAST_ACCESS.mul_f32(1.1f32)).await;
         {
+            for _ in 0..5 {
+                assert!(cache.get(&"5".to_string()).is_none());
+            }
             let data = OwnedBytes::new(&b"fghij"[..]);
             cache.put("5".to_string(), data);
-            assert_eq!(cache.get(&"5".to_string()).unwrap(), &b"fghij"[..]);
-            // our two first entries should have be removed from the cache
+            cache.force_sync();
+            // now that it has some popularity, it should be preferred over the other keys
+            assert!(cache.get(&"5".to_string()).is_some());
+            // our two first entries should have been removed from the cache
             assert!(cache.get(&"2".to_string()).is_none());
             assert!(cache.get(&"3".to_string()).is_none());
-        }
-        tokio::time::advance(super::MIN_TIME_SINCE_LAST_ACCESS.mul_f32(1.1f32)).await;
-        {
-            let data = OwnedBytes::new(&b"klmnop"[..]);
-            cache.put("6".to_string(), data);
-            // The entry put should have been dismissed as it is too large for the cache
-            assert!(cache.get(&"6".to_string()).is_none());
-            // The previous entry should however be remaining.
-            assert_eq!(cache.get(&"5".to_string()).unwrap(), &b"fghij"[..]);
         }
     }
 
@@ -306,7 +280,11 @@ mod tests {
 
     #[test]
     fn test_cache() {
-        let cache = MemorySizedCache::with_capacity_in_bytes(10_000, &CACHE_METRICS_FOR_TESTS);
+        let cache = MemorySizedCache::with_capacity_in_bytes(
+            10_000,
+            &CACHE_METRICS_FOR_TESTS,
+            CacheKind::default(),
+        );
         assert!(cache.get(&"hello.seg").is_none());
         let data = OwnedBytes::new(&b"werwer"[..]);
         cache.put("hello.seg", data);
