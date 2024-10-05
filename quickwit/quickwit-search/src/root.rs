@@ -54,6 +54,7 @@ use tracing::{debug, info, info_span, instrument};
 use crate::cluster_client::ClusterClient;
 use crate::collector::{make_merge_collector, QuickwitAggregations};
 use crate::find_trace_ids_collector::Span;
+use crate::metrics::SEARCH_METRICS;
 use crate::scroll_context::{ScrollContext, ScrollKeyAndStartOffset};
 use crate::search_job_placer::{group_by, group_jobs_by_index_id, Job};
 use crate::search_response_rest::StorageRequestCount;
@@ -1159,17 +1160,29 @@ pub async fn root_search(
     current_span.record("num_docs", num_docs);
     current_span.record("num_splits", num_splits);
 
-    let mut search_response = root_search_aux(
+    let mut search_response_result = root_search_aux(
         searcher_context,
         &request_metadata.indexes_meta_for_leaf_search,
         search_request,
         split_metadatas,
         cluster_client,
     )
-    .await?;
+    .await;
 
-    search_response.elapsed_time_micros = start_instant.elapsed().as_micros() as u64;
-    Ok(search_response)
+    if let Ok(search_response) = &mut search_response_result {
+        search_response.elapsed_time_micros = start_instant.elapsed().as_micros() as u64;
+    }
+    let label_values = if search_response_result.is_ok() {
+        ["success"]
+    } else {
+        ["error"]
+    };
+    SEARCH_METRICS
+        .root_search_targeted_splits
+        .with_label_values(label_values)
+        .observe(num_splits as f64);
+
+    search_response_result
 }
 
 /// Returns details on how a query would be executed

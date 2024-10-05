@@ -48,6 +48,7 @@ use tokio::task::JoinError;
 use tracing::*;
 
 use crate::collector::{make_collector_for_split, make_merge_collector, IncrementalCollector};
+use crate::metrics::SEARCH_METRICS;
 use crate::root::is_metadata_count_request_with_ast;
 use crate::service::{deserialize_doc_mapper, SearcherContext};
 use crate::{QuickwitAggregations, SearchError};
@@ -1304,13 +1305,23 @@ pub async fn leaf_search(
         });
     }
 
-    let result = crate::search_thread_pool()
-        .run_cpu_intensive(|| incremental_merge_collector.finalize())
-        .instrument(info_span!("incremental_merge_intermediate"))
-        .await
-        .context("failed to merge split search responses")??;
+    let leaf_search_response_reresult: Result<Result<LeafSearchResponse, _>, _> =
+        crate::search_thread_pool()
+            .run_cpu_intensive(|| incremental_merge_collector.finalize())
+            .instrument(info_span!("incremental_merge_intermediate"))
+            .await
+            .context("failed to merge split search responses");
 
-    Ok(result)
+    let label_values = match leaf_search_response_reresult {
+        Ok(Ok(_)) => ["success"],
+        _ => ["error"],
+    };
+    SEARCH_METRICS
+        .leaf_search_targeted_splits
+        .with_label_values(label_values)
+        .observe(num_splits as f64);
+
+    Ok(leaf_search_response_reresult??)
 }
 
 #[allow(clippy::too_many_arguments)]
