@@ -274,6 +274,15 @@ impl Source for PulsarSource {
         format!("{:?}", self)
     }
 
+    async fn finalize(
+        &mut self,
+        _exit_status: &ActorExitStatus,
+        _ctx: &SourceContext,
+    ) -> anyhow::Result<()> {
+        self.pulsar_consumer.close().await?;
+        Ok(())
+    }
+
     fn observable_state(&self) -> JsonValue {
         json!({
             "index_id": self.source_runtime.index_id(),
