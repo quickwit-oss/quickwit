@@ -75,7 +75,7 @@ pub use crate::metastore_config::{
 };
 pub use crate::node_config::{
     IndexerConfig, IngestApiConfig, JaegerConfig, NodeConfig, SearcherConfig, SplitCacheLimits,
-    DEFAULT_QW_CONFIG_PATH,
+    StorageTimeoutPolicy, DEFAULT_QW_CONFIG_PATH,
 };
 use crate::source_config::serialize::{SourceConfigV0_7, SourceConfigV0_8, VersionedSourceConfig};
 pub use crate::storage_config::{
