@@ -57,8 +57,8 @@ use crate::split_store::IndexingSplitStore;
 /// concurrently.
 static SPAWN_PIPELINE_SEMAPHORE: Semaphore = Semaphore::const_new(10);
 
-/// Instructs the merge pipeline that it should stops itself.
-/// Merge that have already been scheduled are not aborted.
+/// Instructs the merge pipeline that it should stop itself.
+/// Merges that have already been scheduled are not aborted.
 ///
 /// In addition, the finalizer merge policy will be executed to schedule a few
 /// additional merges.
