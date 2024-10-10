@@ -151,6 +151,17 @@ pub trait MergePolicy: Send + Sync + fmt::Debug {
     /// Returns the list of merge operations that should be performed.
     fn operations(&self, splits: &mut Vec<SplitMetadata>) -> Vec<MergeOperation>;
 
+    /// After the last indexing pipeline has been shutdown, quickwit
+    /// finishes the ongoing merge operations, and eventually needs to shut it down.
+    ///
+    /// This method makes it possible to offer a last list of merge operations before
+    /// really shutting down the merge policy.
+    ///
+    /// This is especially useful for users relying on a one-index-per-day scheme.
+    fn finalize_operations(&self, _splits: &mut Vec<SplitMetadata>) -> Vec<MergeOperation> {
+        Vec::new()
+    }
+
     /// Returns split maturity.
     /// A split is either:
     /// - `Mature` if it does not undergo new merge operations.
@@ -167,8 +178,7 @@ pub trait MergePolicy: Send + Sync + fmt::Debug {
 }
 
 pub fn merge_policy_from_settings(settings: &IndexingSettings) -> Arc<dyn MergePolicy> {
-    let merge_policy_config = settings.merge_policy.clone();
-    match merge_policy_config {
+    match settings.merge_policy.clone() {
         MergePolicyConfig::Nop => Arc::new(NopMergePolicy),
         MergePolicyConfig::ConstWriteAmplification(config) => {
             let merge_policy =
@@ -183,7 +193,12 @@ pub fn merge_policy_from_settings(settings: &IndexingSettings) -> Arc<dyn MergeP
 }
 
 pub fn default_merge_policy() -> Arc<dyn MergePolicy> {
-    merge_policy_from_settings(&IndexingSettings::default())
+    let indexing_settings = IndexingSettings::default();
+    merge_policy_from_settings(&indexing_settings)
+}
+
+pub fn nop_merge_policy() -> Arc<dyn MergePolicy> {
+    Arc::new(NopMergePolicy)
 }
 
 struct SplitShortDebug<'a>(&'a SplitMetadata);
@@ -219,6 +234,7 @@ pub mod tests {
     use super::*;
     use crate::actors::{
         merge_split_attrs, MergePlanner, MergeSchedulerService, MergeSplitDownloader,
+        RunFinalizeMergePolicyAndQuit,
     };
     use crate::models::{create_split_metadata, NewSplits};
 
@@ -396,10 +412,10 @@ pub mod tests {
         merged_split
     }
 
-    pub async fn aux_test_simulate_merge_planner<CheckFn: Fn(&[SplitMetadata])>(
+    async fn aux_test_simulate_merge_planner(
         merge_policy: Arc<dyn MergePolicy>,
         incoming_splits: Vec<SplitMetadata>,
-        check_final_configuration: CheckFn,
+        check_final_configuration: &dyn Fn(&[SplitMetadata]),
     ) -> anyhow::Result<Vec<SplitMetadata>> {
         let universe = Universe::new();
         let (merge_task_mailbox, merge_task_inbox) =
@@ -420,7 +436,7 @@ pub mod tests {
         let mut split_index: HashMap<String, SplitMetadata> = HashMap::default();
         let (merge_planner_mailbox, merge_planner_handler) =
             universe.spawn_builder().spawn(merge_planner);
-        let mut split_metadatas: Vec<SplitMetadata> = Vec::new();
+
         for split in incoming_splits {
             split_index.insert(split.split_id().to_string(), split.clone());
             merge_planner_mailbox
@@ -443,9 +459,25 @@ pub mod tests {
                     .send_message(NewSplits { new_splits })
                     .await?;
             }
-            split_metadatas = split_index.values().cloned().collect();
+            let split_metadatas: Vec<SplitMetadata> = split_index.values().cloned().collect();
             check_final_configuration(&split_metadatas);
         }
+
+        merge_planner_mailbox
+            .send_message(RunFinalizeMergePolicyAndQuit)
+            .await
+            .unwrap();
+
+        let obs = merge_planner_handler.process_pending_and_observe().await;
+        assert_eq!(obs.obs_type, quickwit_actors::ObservationType::PostMortem);
+
+        let merge_tasks = merge_task_inbox.drain_for_test_typed::<MergeTask>();
+        for merge_task in merge_tasks {
+            apply_merge(&merge_policy, &mut split_index, &merge_task);
+        }
+
+        let split_metadatas: Vec<SplitMetadata> = split_index.values().cloned().collect();
+
         universe.assert_quit().await;
         Ok(split_metadatas)
     }
@@ -473,10 +505,10 @@ pub mod tests {
         }
     }
 
-    pub async fn aux_test_simulate_merge_planner_num_docs<CheckFn: Fn(&[SplitMetadata])>(
+    pub async fn aux_test_simulate_merge_planner_num_docs(
         merge_policy: Arc<dyn MergePolicy>,
         batch_num_docs: &[usize],
-        check_final_configuration: CheckFn,
+        check_final_configuration: &dyn Fn(&[SplitMetadata]),
     ) -> anyhow::Result<Vec<SplitMetadata>> {
         let split_metadatas: Vec<SplitMetadata> = batch_num_docs
             .iter()

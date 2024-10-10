@@ -38,6 +38,9 @@ use crate::merge_policy::MergeOperation;
 use crate::models::NewSplits;
 use crate::MergePolicy;
 
+#[derive(Debug)]
+pub(crate) struct RunFinalizeMergePolicyAndQuit;
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct MergePartition {
     partition_id: u64,
@@ -78,6 +81,7 @@ pub struct MergePlanner {
     known_split_ids_recompute_attempt_id: usize,
 
     merge_policy: Arc<dyn MergePolicy>,
+
     merge_split_downloader_mailbox: Mailbox<MergeSplitDownloader>,
     merge_scheduler_service: Mailbox<MergeSchedulerService>,
 
@@ -127,6 +131,22 @@ impl Actor for MergePlanner {
 }
 
 #[async_trait]
+impl Handler<RunFinalizeMergePolicyAndQuit> for MergePlanner {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        _plan_merge: RunFinalizeMergePolicyAndQuit,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        // Note we ignore messages that could be coming from a different incarnation.
+        // (See comment on `Self::incarnation_start_at`.)
+        self.send_merge_ops(true, ctx).await?;
+        Err(ActorExitStatus::Success)
+    }
+}
+
+#[async_trait]
 impl Handler<PlanMerge> for MergePlanner {
     type Reply = ();
 
@@ -138,7 +158,7 @@ impl Handler<PlanMerge> for MergePlanner {
         if plan_merge.incarnation_started_at == self.incarnation_started_at {
             // Note we ignore messages that could be coming from a different incarnation.
             // (See comment on `Self::incarnation_start_at`.)
-            self.send_merge_ops(ctx).await?;
+            self.send_merge_ops(false, ctx).await?;
         }
         self.recompute_known_splits_if_necessary();
         Ok(())
@@ -155,7 +175,7 @@ impl Handler<NewSplits> for MergePlanner {
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         self.record_splits_if_necessary(new_splits.new_splits);
-        self.send_merge_ops(ctx).await?;
+        self.send_merge_ops(false, ctx).await?;
         self.recompute_known_splits_if_necessary();
         Ok(())
     }
@@ -273,12 +293,18 @@ impl MergePlanner {
     }
     async fn compute_merge_ops(
         &mut self,
+        is_finalize: bool,
         ctx: &ActorContext<Self>,
     ) -> Result<Vec<MergeOperation>, ActorExitStatus> {
         let mut merge_operations = Vec::new();
         for young_splits in self.partitioned_young_splits.values_mut() {
             if !young_splits.is_empty() {
-                merge_operations.extend(self.merge_policy.operations(young_splits));
+                let operations = if is_finalize {
+                    self.merge_policy.finalize_operations(young_splits)
+                } else {
+                    self.merge_policy.operations(young_splits)
+                };
+                merge_operations.extend(operations);
             }
             ctx.record_progress();
             ctx.yield_now().await;
@@ -289,13 +315,17 @@ impl MergePlanner {
         Ok(merge_operations)
     }
 
-    async fn send_merge_ops(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
+    async fn send_merge_ops(
+        &mut self,
+        is_finalize: bool,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
         // We identify all of the merge operations we want to run and leave it
         // to the merge scheduler to decide in which order these should be scheduled.
         //
         // The merge scheduler has the merit of knowing about merge operations from other
         // index as well.
-        let merge_ops = self.compute_merge_ops(ctx).await?;
+        let merge_ops = self.compute_merge_ops(is_finalize, ctx).await?;
         for merge_operation in merge_ops {
             info!(merge_operation=?merge_operation, "schedule merge operation");
             let tracked_merge_operation = self
