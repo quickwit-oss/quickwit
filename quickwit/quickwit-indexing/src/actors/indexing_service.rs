@@ -27,8 +27,8 @@ use async_trait::async_trait;
 use futures::TryStreamExt;
 use itertools::Itertools;
 use quickwit_actors::{
-    Actor, ActorContext, ActorExitStatus, ActorHandle, ActorState, Command, Handler, Healthz,
-    Mailbox, Observation,
+    Actor, ActorContext, ActorExitStatus, ActorHandle, ActorState, Handler, Healthz, Mailbox,
+    Observation,
 };
 use quickwit_cluster::Cluster;
 use quickwit_common::fs::get_cache_directory_path;
@@ -65,6 +65,7 @@ use tracing::{debug, error, info, warn};
 
 use super::merge_pipeline::{MergePipeline, MergePipelineParams};
 use super::{MergePlanner, MergeSchedulerService};
+use crate::actors::merge_pipeline::FinishPendingMergesAndShutdownPipeline;
 use crate::models::{DetachIndexingPipeline, DetachMergePipeline, ObservePipeline, SpawnPipeline};
 use crate::source::{AssignShards, Assignment};
 use crate::split_store::{LocalSplitStore, SplitStoreQuota};
@@ -517,7 +518,7 @@ impl IndexingService {
                 merge_pipeline_handle
                     .handle
                     .mailbox()
-                    .send_message(Command::Quit)
+                    .send_message(FinishPendingMergesAndShutdownPipeline)
                     .await
                     .expect("merge pipeline mailbox should not be full");
             }
