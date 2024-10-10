@@ -32,6 +32,7 @@ quickwit-proto = { workspace = true }
 [dev-dependencies]
 quickwit-common = { workspace = true, features = ["testsuite"] }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }
+quickwit-proto = { workspace = true, features = ["testsuite"] }
 
 [features]
 testsuite = []
