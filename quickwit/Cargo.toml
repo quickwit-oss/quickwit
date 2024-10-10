@@ -76,7 +76,7 @@ homepage = "https://quickwit.io/"
 documentation = "https://quickwit.io/docs/"
 repository = "https://github.com/quickwit-oss/quickwit"
 authors = ["Quickwit, Inc. <hello@quickwit.io>"]
-license = "AGPL-3.0-or-later"
+license = "AGPL-3.0"
 
 [workspace.dependencies]
 anyhow = "1"
