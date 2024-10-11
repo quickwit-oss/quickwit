@@ -434,6 +434,7 @@ The following query types are supported.
 | `should`   | `JsonObject[]` (Optional) | Sub-queries that should match the documents.                      | []            |
 | `filter`   | `JsonObject[]`            | Like must queries, but the match does not influence the `_score`. | []            |
 | `boost`    | `Number`                  | Multiplier boost for score computation.                           | 1.0           |
+| `minimum_should_match`    | `Number` or `Str` | If present, quickwit will only match documents for which at least `minimum_should_match` should clauses are matching. `2`, `-1`, `"10%"` are supported. |  |
 
 ### `range`
 

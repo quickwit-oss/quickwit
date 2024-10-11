@@ -25,6 +25,17 @@ json: {
 method: PUT
 endpoint: gharchive
 json: {
+  "settings": {
+    "analysis": {
+    "normalizer": {
+      "keyword_lowercase": {
+        "type": "custom",
+        "filter": ["lowercase"]
+      },
+      "keyword_keepcase": { "type": "custom" }
+    }
+  }
+  },
   "mappings": {
     "properties": {
       "id": {
@@ -47,7 +58,8 @@ json: {
             "store": true
           },
           "login": {
-            "type": "text",
+            "type": "keyword",
+            "normalizer": "keyword_lowercase",
             "store": true,
             "norms": false,
             "index_options": "docs"
@@ -79,7 +91,8 @@ json: {
             "store": true
           },
           "name": {
-            "type": "text",
+            "type": "keyword",
+            "normalizer": "keyword_keepcase",
             "store": true
           },
           "url": {

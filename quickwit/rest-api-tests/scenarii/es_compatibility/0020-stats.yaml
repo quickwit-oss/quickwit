@@ -59,7 +59,6 @@ expected:
 method: [GET]
 engines:
   - quickwit
-  - elasticsearch
 endpoint: "_stats"
 expected:
   _all:

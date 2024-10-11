@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use tantivy::query::{
-    AllQuery as TantivyAllQuery, ConstScoreQuery as TantivyConstScoreQuery,
+    AllQuery as TantivyAllQuery, BooleanQuery, ConstScoreQuery as TantivyConstScoreQuery,
     EmptyQuery as TantivyEmptyQuery,
 };
 use tantivy::query_grammar::Occur;
@@ -160,6 +160,7 @@ pub(crate) struct TantivyBoolQuery {
     pub must_not: Vec<TantivyQueryAst>,
     pub should: Vec<TantivyQueryAst>,
     pub filter: Vec<TantivyQueryAst>,
+    pub minimum_should_match: Option<usize>,
 }
 
 fn simplify_asts(asts: Vec<TantivyQueryAst>) -> Vec<TantivyQueryAst> {
@@ -186,6 +187,7 @@ impl TantivyBoolQuery {
         self.should = simplify_asts(self.should);
         self.must_not = simplify_asts(self.must_not);
         self.filter = simplify_asts(self.filter);
+
         for must_children in [&mut self.must, &mut self.filter] {
             for child in must_children {
                 if child.const_predicate() == Some(MatchAllOrNone::MatchNone) {
@@ -197,6 +199,7 @@ impl TantivyBoolQuery {
             && self.must.is_empty()
             && self.filter.is_empty()
             && self.must_not.is_empty()
+            && self.minimum_should_match.unwrap_or(0) == 0
         {
             // This is just a convention mimicking Elastic/Commonsearch's behavior.
             return TantivyQueryAst::match_all();
@@ -211,7 +214,7 @@ impl TantivyBoolQuery {
                     continue;
                 }
             };
-            if must_bool.should.is_empty() {
+            if must_bool.should.is_empty() && must_bool.minimum_should_match.is_none() {
                 new_must.append(&mut must_bool.must);
                 self.filter.append(&mut must_bool.filter);
                 self.must_not.append(&mut must_bool.must_not);
@@ -230,10 +233,10 @@ impl TantivyBoolQuery {
                     continue;
                 }
             };
-            if filter_bool.should.is_empty() {
+            if filter_bool.should.is_empty() && filter_bool.minimum_should_match.is_none() {
                 new_filter.append(&mut filter_bool.must);
                 new_filter.append(&mut filter_bool.filter);
-                // must_not doeen't contribute to score, no need to move it to some filter_not kind
+                // must_not doesn't contribute to score, no need to move it to some filter_not kind
                 // of thing
                 self.must_not.append(&mut filter_bool.must_not);
             } else {
@@ -243,24 +246,27 @@ impl TantivyBoolQuery {
         self.filter = new_filter;
 
         let mut new_should = Vec::with_capacity(self.should.len());
-        for should in self.should {
-            let mut should_bool = match should {
-                TantivyQueryAst::Bool(bool_query) => bool_query,
-                _ => {
-                    new_should.push(should);
-                    continue;
+        if self.minimum_should_match.is_none() {
+            for should in self.should {
+                let mut should_bool = match should {
+                    TantivyQueryAst::Bool(bool_query) => bool_query,
+                    _ => {
+                        new_should.push(should);
+                        continue;
+                    }
+                };
+                if should_bool.must.is_empty()
+                    && should_bool.filter.is_empty()
+                    && should_bool.must_not.is_empty()
+                    && should_bool.minimum_should_match.is_none()
+                {
+                    new_should.append(&mut should_bool.should);
+                } else {
+                    new_should.push(TantivyQueryAst::Bool(should_bool));
                 }
-            };
-            if should_bool.must.is_empty()
-                && should_bool.filter.is_empty()
-                && should_bool.must_not.is_empty()
-            {
-                new_should.append(&mut should_bool.should);
-            } else {
-                new_should.push(TantivyQueryAst::Bool(should_bool));
             }
+            self.should = new_should;
         }
-        self.should = new_should;
 
         // TODO we could turn must_not(must_not(abc, def)) into should(filter(abc), filter(def)),
         // we can't simply have should(abc, def) because of scoring, and should(filter(abc, def))
@@ -317,7 +323,7 @@ impl TantivyBoolQuery {
         } else {
             let num_children =
                 self.must.len() + self.should.len() + self.must_not.len() + self.filter.len();
-            if num_children == 1 {
+            if num_children == 1 && self.minimum_should_match.is_none() {
                 if let Some(ast) = self.must.pop().or(self.should.pop()) {
                     return ast;
                 }
@@ -325,6 +331,7 @@ impl TantivyBoolQuery {
                 // We do need a mechanism to make sure we keep the boost of 0.
             }
         }
+
         TantivyQueryAst::Bool(self)
     }
 }
@@ -360,7 +367,13 @@ impl From<TantivyBoolQuery> for Box<dyn TantivyQuery> {
                 Box::new(TantivyConstScoreQuery::new(filter_query, 0.0f32)),
             ));
         }
-        Box::new(tantivy::query::BooleanQuery::from(clause))
+        let tantivy_bool_query = if let Some(minimum_should_match) = bool_query.minimum_should_match
+        {
+            BooleanQuery::with_minimum_required_clauses(clause, minimum_should_match)
+        } else {
+            BooleanQuery::from(clause)
+        };
+        Box::new(tantivy::query::BooleanQuery::from(tantivy_bool_query))
     }
 }
 
@@ -518,6 +531,49 @@ mod tests {
         );
         assert_eq!(simplified_ast_bool.must.len(), 1);
         assert!(simplified_ast_bool.must[0].const_predicate().is_none(),);
+    }
+
+    #[test]
+    fn test_should_lift_simplification() {
+        let test_leaf = TantivyQueryAst::Leaf(Box::new(tantivy::query::AllQuery));
+        let ast = TantivyQueryAst::Bool(TantivyBoolQuery {
+            should: vec![
+                test_leaf.clone(),
+                TantivyQueryAst::Bool(TantivyBoolQuery {
+                    should: vec![test_leaf.clone(), test_leaf],
+                    ..Default::default()
+                }),
+            ],
+            ..Default::default()
+        });
+        let simplified_ast = ast.clone().simplify();
+        assert_ne!(simplified_ast, ast);
+        let TantivyQueryAst::Bool(bool_query) = simplified_ast else {
+            panic!();
+        };
+        assert_eq!(bool_query.should.len(), 3);
+        assert!(bool_query.must.is_empty());
+        assert!(bool_query.filter.is_empty());
+        assert!(bool_query.must_not.is_empty());
+        assert!(bool_query.minimum_should_match.is_none());
+    }
+
+    #[test]
+    fn test_minimum_should_match_prevent_lift_simplification() {
+        let test_leaf = TantivyQueryAst::Leaf(Box::new(tantivy::query::AllQuery));
+        let ast = TantivyQueryAst::Bool(TantivyBoolQuery {
+            should: vec![
+                test_leaf.clone(),
+                TantivyQueryAst::Bool(TantivyBoolQuery {
+                    should: vec![test_leaf.clone(), test_leaf],
+                    ..Default::default()
+                }),
+            ],
+            minimum_should_match: Some(2),
+            ..Default::default()
+        });
+        let simplified_ast = ast.clone().simplify();
+        assert_eq!(simplified_ast, ast);
     }
 
     #[test]
@@ -881,14 +937,18 @@ mod tests {
             let filter = proptest::collection::vec(element.clone(), 0..4);
             let should = proptest::collection::vec(element.clone(), 0..4);
             let must_not = proptest::collection::vec(element.clone(), 0..4);
-            (must, filter, should, must_not).prop_map(|(must, filter, should, must_not)| {
-                TantivyQueryAst::Bool(TantivyBoolQuery {
-                    must,
-                    filter,
-                    should,
-                    must_not,
-                })
-            })
+            let minimum_should_match = (0usize..2).prop_map(|n: usize| n.checked_sub(1));
+            (must, filter, should, must_not, minimum_should_match).prop_map(
+                |(must, filter, should, must_not, minimum_should_match)| {
+                    TantivyQueryAst::Bool(TantivyBoolQuery {
+                        must,
+                        filter,
+                        should,
+                        must_not,
+                        minimum_should_match,
+                    })
+                },
+            )
         })
     }
 
