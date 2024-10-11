@@ -28,6 +28,7 @@ use tower::{Layer, Service};
 
 use crate::metrics::{
     new_counter_vec, new_gauge_vec, new_histogram_vec, HistogramVec, IntCounterVec, IntGaugeVec,
+    Vector,
 };
 
 pub trait RpcName {

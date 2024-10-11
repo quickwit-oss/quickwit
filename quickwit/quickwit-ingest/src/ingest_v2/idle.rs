@@ -64,7 +64,7 @@ impl CloseIdleShardsTask {
                 return;
             };
             let Ok(mut state_guard) =
-                with_lock_metrics!(state.lock_partially(), "close_idle_shards", "write").await
+                with_lock_metrics!(state.lock_partially(), close_idle_shards, write)
             else {
                 return;
             };

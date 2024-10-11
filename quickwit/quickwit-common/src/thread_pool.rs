@@ -26,7 +26,7 @@ use prometheus::IntGauge;
 use tokio::sync::oneshot;
 use tracing::error;
 
-use crate::metrics::{new_gauge_vec, GaugeGuard, IntGaugeVec, OwnedGaugeGuard};
+use crate::metrics::{new_gauge_vec, GaugeGuard, IntGaugeVec, OwnedGaugeGuard, Vector};
 
 /// An executor backed by a thread pool to run CPU-intensive tasks.
 ///

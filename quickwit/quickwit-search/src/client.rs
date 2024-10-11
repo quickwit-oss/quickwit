@@ -25,6 +25,7 @@ use std::time::{Duration, Instant};
 use bytesize::ByteSize;
 use futures::{StreamExt, TryStreamExt};
 use http::Uri;
+use quickwit_common::metrics::Vector;
 use quickwit_proto::search::{
     GetKvRequest, LeafSearchStreamResponse, PutKvRequest, ReportSplitsRequest,
 };

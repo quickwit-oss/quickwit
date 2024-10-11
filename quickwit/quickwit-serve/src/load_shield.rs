@@ -19,7 +19,7 @@
 
 use std::time::Duration;
 
-use quickwit_common::metrics::{GaugeGuard, IntGauge};
+use quickwit_common::metrics::{GaugeGuard, IntGauge, Vector};
 use tokio::sync::{Semaphore, SemaphorePermit};
 
 use crate::rest::TooManyRequests;
