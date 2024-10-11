@@ -180,7 +180,7 @@ prost = { version = "0.11.6", default-features = false, features = [
 ] }
 prost-build = "0.11.6"
 prost-types = "0.11.6"
-pulsar = { git = "https://github.com/quickwit-oss/pulsar-rs.git", rev = "f9eff04", default-features = false, features = [
+pulsar = { version = "5.1.1", default-features = false, features = [
   "auth-oauth2",
   "compression",
   "tokio-runtime",
