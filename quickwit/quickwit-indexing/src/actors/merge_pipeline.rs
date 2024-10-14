@@ -613,7 +613,7 @@ mod tests {
             .times(1)
             .withf(move |list_splits_request| {
                 let list_split_query = list_splits_request.deserialize_list_splits_query().unwrap();
-                assert_eq!(list_split_query.index_uids, &[index_uid.clone()]);
+                assert_eq!(list_split_query.index_uids, Some(vec![index_uid.clone()]));
                 assert_eq!(
                     list_split_query.split_states,
                     vec![quickwit_metastore::SplitState::Published]

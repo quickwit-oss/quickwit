@@ -1764,14 +1764,14 @@ mod tests {
             .expect_list_splits()
             .withf(|request| {
                 let list_splits_query = request.deserialize_list_splits_query().unwrap();
-                list_splits_query.index_uids == [("test-index-0", 0)]
+                list_splits_query.index_uids.unwrap() == [("test-index-0", 0)]
             })
             .return_once(|_request| Ok(ServiceStream::empty()));
         mock_metastore
             .expect_list_splits()
             .withf(|request| {
                 let list_splits_query = request.deserialize_list_splits_query().unwrap();
-                list_splits_query.index_uids == [("test-index-1", 0), ("test-index-2", 0)]
+                list_splits_query.index_uids.unwrap() == [("test-index-1", 0), ("test-index-2", 0)]
             })
             .return_once(|_request| {
                 let splits = vec![Split {

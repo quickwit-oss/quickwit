@@ -379,22 +379,54 @@ impl FileBackedMetastore {
     /// Returns the list of splits for the given request.
     /// No error is returned if any of the requested `index_uid` does not exist.
     async fn list_splits_inner(&self, request: ListSplitsRequest) -> MetastoreResult<Vec<Split>> {
-        let list_splits_query = request.deserialize_list_splits_query()?;
-        let mut splits_per_index = Vec::with_capacity(list_splits_query.index_uids.len());
-        for index_uid in &list_splits_query.index_uids {
-            let splits = match self
-                .read(index_uid, |index| index.list_splits(&list_splits_query))
-                .await
-            {
-                Ok(splits) => splits,
-                Err(MetastoreError::NotFound(_)) => {
-                    // If the index does not exist, we just skip it.
-                    continue;
-                }
-                Err(error) => return Err(error),
-            };
-            splits_per_index.push(splits);
-        }
+        let mut list_splits_query = request.deserialize_list_splits_query()?;
+
+        let splits_per_index = if let Some(index_uids) = list_splits_query.index_uids.take() {
+            let mut splits_per_index = Vec::with_capacity(index_uids.len());
+            for index_uid in &index_uids {
+                let splits = match self
+                    .read(index_uid, |index| index.list_splits(&list_splits_query))
+                    .await
+                {
+                    Ok(splits) => splits,
+                    Err(MetastoreError::NotFound(_)) => {
+                        // If the index does not exist, we just skip it.
+                        continue;
+                    }
+                    Err(error) => return Err(error),
+                };
+                splits_per_index.push(splits);
+            }
+            splits_per_index
+        } else {
+            let inner_rlock_guard = self.state.read().await;
+            let index_ids: Vec<IndexId> = inner_rlock_guard
+                .indexes
+                .iter()
+                .filter_map(|(index_id, index_state)| match index_state {
+                    LazyIndexStatus::Active(_) => Some(index_id),
+                    _ => None,
+                })
+                .cloned()
+                .collect();
+            let mut splits_per_index = Vec::with_capacity(index_ids.len());
+
+            for index_id in &index_ids {
+                let splits = match self
+                    .read_any(index_id, |index| index.list_splits(&list_splits_query))
+                    .await
+                {
+                    Ok(splits) => splits,
+                    Err(MetastoreError::NotFound(_)) => {
+                        // If the index does not exist, we just skip it.
+                        continue;
+                    }
+                    Err(error) => return Err(error),
+                };
+                splits_per_index.push(splits);
+            }
+            splits_per_index
+        };
 
         let limit = list_splits_query.limit.unwrap_or(usize::MAX);
         let offset = list_splits_query.offset.unwrap_or_default();

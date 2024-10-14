@@ -102,9 +102,12 @@ pub(super) fn append_range_filters<V: Display>(
 }
 
 pub(super) fn append_query_filters(sql: &mut SelectStatement, query: &ListSplitsQuery) {
-    // Note: `ListSplitsQuery` builder enforces a non empty `index_uids` list.
-
-    sql.cond_where(Expr::col(Splits::IndexUid).is_in(&query.index_uids));
+    if let Some(index_uids) = &query.index_uids {
+        // Note: `ListSplitsQuery` builder enforces a non empty `index_uids` list.
+        // TODO we should explore IN VALUES, = ANY and similar constructs in case they perform
+        // better.
+        sql.cond_where(Expr::col(Splits::IndexUid).is_in(index_uids));
+    }
 
     if let Some(node_id) = &query.node_id {
         sql.cond_where(Expr::col(Splits::NodeId).eq(node_id));

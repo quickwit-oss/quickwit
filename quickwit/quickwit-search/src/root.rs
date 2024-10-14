@@ -4768,11 +4768,11 @@ mod tests {
                     list_splits_request.deserialize_list_splits_query().unwrap();
                 assert!(
                     list_splits_query.index_uids
-                        == vec![
+                        == Some(vec![
                             index_uid_1.clone(),
                             index_uid_2.clone(),
                             index_uid_3.clone()
-                        ]
+                        ])
                 );
                 let splits = vec![
                     MockSplitBuilder::new("index-1-split-1")
@@ -4888,7 +4888,7 @@ mod tests {
             .return_once(move |list_splits_request| {
                 let list_splits_query =
                     list_splits_request.deserialize_list_splits_query().unwrap();
-                assert!(list_splits_query.index_uids == vec![index_uid_1.clone(),]);
+                assert!(list_splits_query.index_uids == Some(vec![index_uid_1.clone()]));
                 let splits = vec![
                     MockSplitBuilder::new("index-1-split-1")
                         .with_index_uid(&index_uid_1)

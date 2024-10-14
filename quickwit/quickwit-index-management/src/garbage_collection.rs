@@ -122,6 +122,7 @@ pub async fn run_garbage_collect(
 
     let index_uids: Vec<IndexUid> = indexes.keys().cloned().collect();
 
+    // TODO maybe we want to do a ListSplitsQuery::for_all_indexes and post-filter ourselves here
     let Some(list_splits_query_for_index_uids) =
         ListSplitsQuery::try_from_index_uids(index_uids.clone())
     else {
@@ -221,20 +222,15 @@ async fn delete_splits(
                         )
                         .await
                     } else {
-                        error!(
-                            "we are trying to GC without knowing the storage, this shouldn't \
-                             happen"
+                        // in practice this can happen if the index was created between the start of
+                        // the run and now, and one of its splits has already expired, which likely
+                        // means a very long gc run, or if we run gc on a single index from the cli.
+                        quickwit_common::rate_limited_warn!(
+                            limit_per_min = 2,
+                            index_uid=%index_uid,
+                            "we are trying to GC without knowing the storage",
                         );
-                        Err(DeleteSplitsError {
-                            successes: Vec::new(),
-                            storage_error: None,
-                            storage_failures: splits_metadata_to_delete
-                                .into_iter()
-                                .map(|split| split.as_split_info())
-                                .collect(),
-                            metastore_error: None,
-                            metastore_failures: Vec::new(),
-                        })
+                        Ok(Vec::new())
                     }
                 }
             })
@@ -317,10 +313,12 @@ async fn delete_splits_marked_for_deletion_several_indexes(
 ) -> SplitRemovalInfo {
     let mut split_removal_info = SplitRemovalInfo::default();
 
-    let Some(list_splits_query) = ListSplitsQuery::try_from_index_uids(index_uids) else {
-        error!("failed to create list splits query. this should never happen");
-        return split_removal_info;
-    };
+    // we ask for all indexes because the query is more efficient and we almost always want all
+    // indexes anyway. The exception is when garbage collecting a single index from the commandline.
+    // In this case, we will log a bunch of warn. i (trinity) consider it worth the more generic
+    // code which needs fewer special case while testing, but we could check index_uids len if we
+    // think it's a better idea.
+    let list_splits_query = ListSplitsQuery::for_all_indexes();
 
     let mut list_splits_query = list_splits_query
         .with_split_state(SplitState::MarkedForDeletion)
