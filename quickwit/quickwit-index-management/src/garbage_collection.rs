@@ -187,8 +187,10 @@ pub async fn run_garbage_collect(
     let updated_before_timestamp =
         OffsetDateTime::now_utc().unix_timestamp() - deletion_grace_period.as_secs() as i64;
 
+    let index_uid_set = index_uids.into_iter().collect();
+
     Ok(delete_splits_marked_for_deletion_several_indexes(
-        index_uids,
+        index_uid_set,
         updated_before_timestamp,
         metastore,
         indexes,
@@ -304,7 +306,7 @@ async fn list_splits_metadata(
 /// rather than short, heavy bursts on the metastore and storage system itself.
 #[instrument(skip(index_uids, storages, metastore, progress_opt, metrics), fields(num_indexes=%index_uids.len()))]
 async fn delete_splits_marked_for_deletion_several_indexes(
-    index_uids: Vec<IndexUid>,
+    index_uids: HashSet<IndexUid>,
     updated_before_timestamp: i64,
     metastore: MetastoreServiceClient,
     storages: HashMap<IndexUid, Arc<dyn Storage>>,
@@ -351,6 +353,7 @@ async fn delete_splits_marked_for_deletion_several_indexes(
         let splits_metadata_to_delete_per_index: HashMap<IndexUid, Vec<SplitMetadata>> =
             splits_metadata_to_delete
                 .into_iter()
+                .filter(|meta| index_uids.contains(&meta.index_uid))
                 .map(|meta| (meta.index_uid.clone(), meta))
                 .into_group_map();
 

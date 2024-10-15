@@ -395,7 +395,7 @@ impl FileBackedMetastore {
         let mut splits_per_index = Vec::with_capacity(index_id_with_incarnation_id_opts.len());
         for (index_id, incarnation_id_opt) in index_id_with_incarnation_id_opts {
             match self
-                .read_any(index_id, incarnation_id_opt.clone(), |index| {
+                .read_any(index_id, *incarnation_id_opt, |index| {
                     index.list_splits(&list_splits_query)
                 })
                 .await
