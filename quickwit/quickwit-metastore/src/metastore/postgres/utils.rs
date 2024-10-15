@@ -101,7 +101,10 @@ pub(super) fn append_range_filters<V: Display>(
     };
 }
 
-pub(super) fn append_query_filters(sql: &mut SelectStatement, query: &ListSplitsQuery) {
+pub(super) fn append_query_filters_and_order_by(
+    sql: &mut SelectStatement,
+    query: &ListSplitsQuery,
+) {
     if let Some(index_uids) = &query.index_uids {
         // Note: `ListSplitsQuery` builder enforces a non empty `index_uids` list.
         // TODO we should explore IN VALUES, = ANY and similar constructs in case they perform

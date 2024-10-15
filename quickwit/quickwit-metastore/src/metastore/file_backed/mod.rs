@@ -66,6 +66,7 @@ use quickwit_proto::types::{IndexId, IndexUid};
 use quickwit_storage::Storage;
 use time::OffsetDateTime;
 use tokio::sync::{Mutex, OwnedMutexGuard, RwLock};
+use ulid::Ulid;
 
 use self::file_backed_index::FileBackedIndex;
 pub use self::file_backed_metastore_factory::FileBackedMetastoreFactory;
@@ -253,20 +254,30 @@ impl FileBackedMetastore {
 
     async fn read<T, F>(&self, index_uid: &IndexUid, view: F) -> MetastoreResult<T>
     where F: FnOnce(&FileBackedIndex) -> MetastoreResult<T> {
-        let index_id = &index_uid.index_id;
-        let locked_index = self.get_locked_index(index_id).await?;
-        if locked_index.index_uid() == index_uid {
-            view(&locked_index)
-        } else {
-            Err(MetastoreError::NotFound(EntityKind::Index {
-                index_id: index_id.to_string(),
-            }))
-        }
+        self.read_any(
+            index_uid.index_id.as_str(),
+            Some(index_uid.incarnation_id),
+            view,
+        )
+        .await
     }
 
-    async fn read_any<T, F>(&self, index_id: &str, view: F) -> MetastoreResult<T>
-    where F: FnOnce(&FileBackedIndex) -> MetastoreResult<T> {
+    /// Reads the index metadata given an `index_id`. The difference with `read` it that
+    /// this function does necessarily take a incarnation id, so that it is less strict.
+    async fn read_any<T>(
+        &self,
+        index_id: &str,
+        incarnation_id_opt: Option<Ulid>,
+        view: impl FnOnce(&FileBackedIndex) -> MetastoreResult<T>,
+    ) -> MetastoreResult<T> {
         let locked_index = self.get_locked_index(index_id).await?;
+        if let Some(incarnation_id) = incarnation_id_opt {
+            if locked_index.index_uid().incarnation_id != incarnation_id {
+                return Err(MetastoreError::NotFound(EntityKind::Index {
+                    index_id: index_id.to_string(),
+                }));
+            }
+        }
         view(&locked_index)
     }
 
@@ -357,7 +368,7 @@ impl FileBackedMetastore {
             return Err((metastore_error, index_id_opt, index_uid_opt));
         };
         let index_metadata = match self
-            .read_any(index_id, |index| Ok(index.metadata().clone()))
+            .read_any(index_id, None, |index| Ok(index.metadata().clone()))
             .await
         {
             Ok(index_metadata) => index_metadata,
@@ -376,57 +387,29 @@ impl FileBackedMetastore {
         Ok(index_metadata)
     }
 
-    /// Returns the list of splits for the given request.
-    /// No error is returned if any of the requested `index_uid` does not exist.
-    async fn list_splits_inner(&self, request: ListSplitsRequest) -> MetastoreResult<Vec<Split>> {
-        let mut list_splits_query = request.deserialize_list_splits_query()?;
-
-        let splits_per_index = if let Some(index_uids) = list_splits_query.index_uids.take() {
-            let mut splits_per_index = Vec::with_capacity(index_uids.len());
-            for index_uid in &index_uids {
-                let splits = match self
-                    .read(index_uid, |index| index.list_splits(&list_splits_query))
-                    .await
-                {
-                    Ok(splits) => splits,
-                    Err(MetastoreError::NotFound(_)) => {
-                        // If the index does not exist, we just skip it.
-                        continue;
-                    }
-                    Err(error) => return Err(error),
-                };
-                splits_per_index.push(splits);
-            }
-            splits_per_index
-        } else {
-            let inner_rlock_guard = self.state.read().await;
-            let index_ids: Vec<IndexId> = inner_rlock_guard
-                .indexes
-                .iter()
-                .filter_map(|(index_id, index_state)| match index_state {
-                    LazyIndexStatus::Active(_) => Some(index_id),
-                    _ => None,
+    async fn list_splits_aux(
+        &self,
+        index_id_with_incarnation_id_opts: &[(IndexId, Option<Ulid>)],
+        list_splits_query: ListSplitsQuery,
+    ) -> MetastoreResult<Vec<Split>> {
+        let mut splits_per_index = Vec::with_capacity(index_id_with_incarnation_id_opts.len());
+        for (index_id, incarnation_id_opt) in index_id_with_incarnation_id_opts {
+            match self
+                .read_any(index_id, incarnation_id_opt.clone(), |index| {
+                    index.list_splits(&list_splits_query)
                 })
-                .cloned()
-                .collect();
-            let mut splits_per_index = Vec::with_capacity(index_ids.len());
-
-            for index_id in &index_ids {
-                let splits = match self
-                    .read_any(index_id, |index| index.list_splits(&list_splits_query))
-                    .await
-                {
-                    Ok(splits) => splits,
-                    Err(MetastoreError::NotFound(_)) => {
-                        // If the index does not exist, we just skip it.
-                        continue;
-                    }
-                    Err(error) => return Err(error),
-                };
-                splits_per_index.push(splits);
+                .await
+            {
+                Ok(splits) => {
+                    splits_per_index.push(splits);
+                }
+                Err(MetastoreError::NotFound(_)) => {
+                    // If the index does not exist, we just skip it.
+                    continue;
+                }
+                Err(error) => return Err(error),
             }
-            splits_per_index
-        };
+        }
 
         let limit = list_splits_query.limit.unwrap_or(usize::MAX);
         let offset = list_splits_query.offset.unwrap_or_default();
@@ -437,7 +420,38 @@ impl FileBackedMetastore {
             .skip(offset)
             .take(limit)
             .collect();
+
         Ok(merged_results)
+    }
+
+    /// Returns the list of splits for the given request.
+    /// No error is returned if any of the requested `index_uid` does not exist.
+    async fn list_splits_inner(&self, request: ListSplitsRequest) -> MetastoreResult<Vec<Split>> {
+        let mut list_splits_query = request.deserialize_list_splits_query()?;
+
+        let index_id_incarnation_id_opts: Vec<(IndexId, Option<Ulid>)> =
+            if let Some(index_uids) = list_splits_query.index_uids.take() {
+                index_uids
+                    .into_iter()
+                    .map(|index_uid| (index_uid.index_id, Some(index_uid.incarnation_id)))
+                    .collect()
+            } else {
+                // We do not have an explicit list of index_uids with the query, so we search for
+                // all indexes.
+                let inner_rlock_guard = self.state.read().await;
+                inner_rlock_guard
+                    .indexes
+                    .iter()
+                    .filter_map(|(index_id, index_state)| match index_state {
+                        LazyIndexStatus::Active(_) => Some(index_id),
+                        _ => None,
+                    })
+                    .map(|index_id| (index_id.clone(), None))
+                    .collect()
+            };
+
+        self.list_splits_aux(&index_id_incarnation_id_opts, list_splits_query)
+            .await
     }
 
     /// Helper used for testing to obtain the data associated with the given index.
