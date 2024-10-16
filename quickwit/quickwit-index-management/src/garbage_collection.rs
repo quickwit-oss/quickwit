@@ -19,7 +19,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use anyhow::Context;
@@ -299,6 +299,12 @@ async fn list_splits_metadata(
     Ok(splits)
 }
 
+fn maximum_split_deletion_rate_per_sec() -> usize {
+    static MAXIMUM_SPLIT_DELETION_RATE_PER_SEC: std::sync::OnceLock<usize> = OnceLock::new();
+    *MAXIMUM_SPLIT_DELETION_RATE_PER_SEC
+        .get_or_init(|| quickwit_common::get_from_env("MAXIMUM_SPLIT_DELETION_RATE_PER_SEC", 300))
+}
+
 /// Removes any splits marked for deletion which haven't been
 /// updated after `updated_before_timestamp` in batches of 1000 splits.
 ///
@@ -329,6 +335,9 @@ async fn delete_splits_marked_for_deletion_several_indexes(
         .sort_by_index_uid();
 
     loop {
+        let sleep_duration_secs: u64 =
+            DELETE_SPLITS_BATCH_SIZE.div_ceil(maximum_split_deletion_rate_per_sec()) as u64;
+        let sleep_future = tokio::time::sleep(Duration::from_secs(sleep_duration_secs));
         let splits_metadata_to_delete: Vec<SplitMetadata> = match protect_future(
             progress_opt,
             list_splits_metadata(&metastore, &list_splits_query),
@@ -372,6 +381,8 @@ async fn delete_splits_marked_for_deletion_several_indexes(
             // stop the gc if this was the last batch
             // we are guaranteed to make progress due to .after_split()
             break;
+        } else {
+            sleep_future.await;
         }
     }
 
