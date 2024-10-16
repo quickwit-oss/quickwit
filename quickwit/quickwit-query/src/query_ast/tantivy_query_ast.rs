@@ -245,8 +245,8 @@ impl TantivyBoolQuery {
         }
         self.filter = new_filter;
 
-        let mut new_should = Vec::with_capacity(self.should.len());
         if self.minimum_should_match.is_none() {
+            let mut new_should = Vec::with_capacity(self.should.len());
             for should in self.should {
                 let mut should_bool = match should {
                     TantivyQueryAst::Bool(bool_query) => bool_query,
@@ -311,7 +311,11 @@ impl TantivyBoolQuery {
         }
         let has_positive_children =
             !(self.must.is_empty() && self.should.is_empty() && self.filter.is_empty());
+
         if !has_positive_children {
+            if self.minimum_should_match.unwrap_or(0) > 0 {
+                return MatchAllOrNone::MatchNone.into();
+            }
             if self
                 .must_not
                 .iter()
@@ -373,7 +377,7 @@ impl From<TantivyBoolQuery> for Box<dyn TantivyQuery> {
         } else {
             BooleanQuery::from(clause)
         };
-        Box::new(tantivy::query::BooleanQuery::from(tantivy_bool_query))
+        Box::new(tantivy_bool_query)
     }
 }
 
@@ -886,11 +890,22 @@ mod tests {
             {
                 return None;
             }
-            let should_score: u32 = self
-                .should
-                .iter()
-                .filter_map(|should| should.evaluate_test())
-                .sum();
+
+            let mut should_score = 0u32;
+            let mut matching_should_count = 0;
+            for should in &self.should {
+                if let Some(score) = should.evaluate_test() {
+                    should_score += score;
+                    matching_should_count += 1;
+                }
+            }
+
+            if let Some(minimum_should_match) = self.minimum_should_match {
+                if minimum_should_match > matching_should_count {
+                    return None;
+                }
+            }
+
             if self.must.len() + self.filter.len() > 0 {
                 if self
                     .must
@@ -937,7 +952,7 @@ mod tests {
             let filter = proptest::collection::vec(element.clone(), 0..4);
             let should = proptest::collection::vec(element.clone(), 0..4);
             let must_not = proptest::collection::vec(element.clone(), 0..4);
-            let minimum_should_match = (0usize..2).prop_map(|n: usize| n.checked_sub(1));
+            let minimum_should_match = (0usize..=2).prop_map(|n: usize| n.checked_sub(1));
             (must, filter, should, must_not, minimum_should_match).prop_map(
                 |(must, filter, should, must_not, minimum_should_match)| {
                     TantivyQueryAst::Bool(TantivyBoolQuery {
@@ -952,14 +967,28 @@ mod tests {
         })
     }
 
+    #[track_caller]
+    fn test_aux_simplify_never_change_result(ast: TantivyQueryAst) {
+        let simplified_ast = ast.clone().simplify();
+        assert_eq!(dbg!(simplified_ast).evaluate_test(), ast.evaluate_test());
+    }
+
     proptest::proptest! {
         #![proptest_config(ProptestConfig {
-          cases: 10000, .. ProptestConfig::default()
+          cases: 100000, .. ProptestConfig::default()
         })]
         #[test]
         fn test_proptest_simplify_never_change_result(ast in ast_strategy()) {
-            let simplified_ast = ast.clone().simplify();
-            assert_eq!(dbg!(simplified_ast).evaluate_test(), ast.evaluate_test());
+            test_aux_simplify_never_change_result(ast);
         }
+    }
+
+    #[test]
+    fn test_simplify_never_change_result_simple_corner_case() {
+        let ast = TantivyQueryAst::Bool(TantivyBoolQuery {
+            minimum_should_match: Some(1),
+            ..Default::default()
+        });
+        test_aux_simplify_never_change_result(ast);
     }
 }

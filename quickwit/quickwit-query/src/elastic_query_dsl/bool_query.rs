@@ -64,12 +64,12 @@ impl MinimumShouldMatch {
                 let Some(percentage) = parse_percentage(minimum_should_match_dsl) else {
                     anyhow::bail!(
                         "Unsupported minimum should match dsl {}. quickwit currently only \
-                         supports the format '35%'",
+                         supports the format '35%' and `-35%`",
                         minimum_should_match_dsl
                     );
                 };
-                let min_should_match = num_should_clauses * percentage as usize / 100;
-                Ok(MinimumShouldMatchResolved::Min(min_should_match))
+                let min_should_match = percentage * num_should_clauses as isize / 100;
+                MinimumShouldMatch::Int(min_should_match).resolve(num_should_clauses)
             }
             MinimumShouldMatch::Int(neg_num_missing_should_clauses)
                 if *neg_num_missing_should_clauses < 0 =>
@@ -88,9 +88,7 @@ impl MinimumShouldMatch {
                 if num_required_should_clauses > num_should_clauses {
                     Ok(MinimumShouldMatchResolved::NoMatch)
                 } else {
-                    Ok(MinimumShouldMatchResolved::Min(
-                        num_required_should_clauses as usize,
-                    ))
+                    Ok(MinimumShouldMatchResolved::Min(num_required_should_clauses))
                 }
             }
         }
@@ -104,13 +102,13 @@ enum MinimumShouldMatchResolved {
     NoMatch,
 }
 
-fn parse_percentage(s: &str) -> Option<u32> {
-    let percentage_u32_str = s.strip_suffix('%')?;
-    let percentage_u32: u32 = percentage_u32_str.parse::<u32>().ok()?;
-    if percentage_u32 > 100 {
+fn parse_percentage(s: &str) -> Option<isize> {
+    let percentage_str = s.strip_suffix('%')?;
+    let percentage_isize = percentage_str.parse::<isize>().ok()?;
+    if percentage_isize.abs() > 100 {
         return None;
     }
-    Some(percentage_u32)
+    Some(percentage_isize)
 }
 
 impl BoolQuery {
@@ -301,7 +299,7 @@ mod tests {
         assert_eq!(parse_percentage("101%"), None);
         assert_eq!(parse_percentage("0%"), Some(0));
         assert_eq!(parse_percentage("100%"), Some(100));
-        assert_eq!(parse_percentage("-20%"), None);
+        assert_eq!(parse_percentage("-20%"), Some(-20));
         assert_eq!(parse_percentage("20"), None);
         assert_eq!(parse_percentage("20a%"), None);
     }
@@ -315,9 +313,12 @@ mod tests {
             MinimumShouldMatchResolved::Min(3)
         );
         // not supported yet
-        assert!(MinimumShouldMatch::Str("-30%".to_string())
-            .resolve(10)
-            .is_err());
+        assert_eq!(
+            MinimumShouldMatch::Str("-30%".to_string())
+                .resolve(10)
+                .unwrap(),
+            MinimumShouldMatchResolved::Min(7)
+        );
         assert!(MinimumShouldMatch::Str("-30!".to_string())
             .resolve(10)
             .is_err());

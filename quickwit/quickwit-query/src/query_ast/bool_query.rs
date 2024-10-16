@@ -66,8 +66,10 @@ impl BuildTantivyAst for BoolQuery {
         search_fields: &[String],
         with_validation: bool,
     ) -> Result<TantivyQueryAst, InvalidQuery> {
-        let mut boolean_query = super::tantivy_query_ast::TantivyBoolQuery::default();
-        boolean_query.minimum_should_match = self.minimum_should_match;
+        let mut boolean_query = super::tantivy_query_ast::TantivyBoolQuery {
+            minimum_should_match: self.minimum_should_match,
+            ..Default::default()
+        };
         for must in &self.must {
             let must_leaf = must.build_tantivy_ast_call(
                 schema,
