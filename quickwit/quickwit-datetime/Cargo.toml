@@ -13,7 +13,6 @@ license.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 itertools = { workspace = true }
-ouroboros = "0.18.0"
 serde = { workspace = true }
 serde_json = { workspace = true }
 tantivy = { workspace = true }

@@ -37,7 +37,6 @@ use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsResponse, DeleteQuery, DeleteShardsRequest,
     DeleteShardsResponse, DeleteTask, EntityKind, ListShardsSubrequest, ListShardsSubresponse,
     MetastoreError, MetastoreResult, OpenShardSubrequest, OpenShardSubresponse, PruneShardsRequest,
-    PruneShardsResponse,
 };
 use quickwit_proto::types::{IndexUid, PublishToken, SourceId, SplitId};
 use serde::{Deserialize, Serialize};
@@ -425,48 +424,32 @@ impl FileBackedIndex {
 
     /// Lists splits.
     pub(crate) fn list_splits(&self, query: &ListSplitsQuery) -> MetastoreResult<Vec<Split>> {
-        let limit = query.limit.unwrap_or(usize::MAX);
-        let offset = query.offset.unwrap_or_default();
+        let limit = query
+            .limit
+            .map(|limit| limit + query.offset.unwrap_or_default())
+            .unwrap_or(usize::MAX);
+        // skip is done at a higher layer in case other indexes give spltis that would go before
+        // ours
 
-        let splits: Vec<Split> = match query.sort_by {
-            SortBy::Staleness => self
-                .splits
+        let results = if query.sort_by == SortBy::None {
+            // internally sorted_unstable_by collect everything to an intermediary vec. When not
+            // sorting at all, skip that.
+            self.splits
                 .values()
                 .filter(|split| split_query_predicate(split, query))
-                .sorted_unstable_by(|left_split, right_split| {
-                    left_split
-                        .split_metadata
-                        .delete_opstamp
-                        .cmp(&right_split.split_metadata.delete_opstamp)
-                        .then_with(|| {
-                            left_split
-                                .publish_timestamp
-                                .cmp(&right_split.publish_timestamp)
-                        })
-                })
-                .skip(offset)
                 .take(limit)
                 .cloned()
-                .collect(),
-            SortBy::IndexUid => self
-                .splits
+                .collect()
+        } else {
+            self.splits
                 .values()
                 .filter(|split| split_query_predicate(split, query))
-                .sorted_unstable_by_key(|split| &split.split_metadata.index_uid)
-                .skip(offset)
+                .sorted_unstable_by(|lhs, rhs| query.sort_by.compare(lhs, rhs))
                 .take(limit)
                 .cloned()
-                .collect(),
-            SortBy::None => self
-                .splits
-                .values()
-                .filter(|split| split_query_predicate(split, query))
-                .skip(offset)
-                .take(limit)
-                .cloned()
-                .collect(),
+                .collect()
         };
-        Ok(splits)
+        Ok(results)
     }
 
     /// Deletes a split.
@@ -667,7 +650,7 @@ impl FileBackedIndex {
     pub(crate) fn prune_shards(
         &mut self,
         request: PruneShardsRequest,
-    ) -> MetastoreResult<MutationOccurred<PruneShardsResponse>> {
+    ) -> MetastoreResult<MutationOccurred<()>> {
         self.get_shards_for_source_mut(&request.source_id)?
             .prune_shards(request)
     }
@@ -759,6 +742,17 @@ fn split_query_predicate(split: &&Split, query: &ListSplitsQuery) -> bool {
 
     if let Some(node_id) = &query.node_id {
         if split.split_metadata.node_id != *node_id {
+            return false;
+        }
+    }
+
+    if let Some((index_uid, split_id)) = &query.after_split {
+        if *index_uid > split.split_metadata.index_uid {
+            return false;
+        }
+        if *index_uid == split.split_metadata.index_uid
+            && *split_id >= split.split_metadata.split_id
+        {
             return false;
         }
     }

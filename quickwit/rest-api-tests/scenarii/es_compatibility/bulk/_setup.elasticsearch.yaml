@@ -3,6 +3,10 @@ method: DELETE
 endpoint: test-index
 status_code: null
 ---
+method: DELETE
+endpoint: test-index-pattern-777
+status_code: null
+---
 method: PUT
 endpoint: test-index
 json: {
@@ -19,3 +23,10 @@ json: {
     }
   }
 }
+---
+# Only create indexes automatically for specific pattern
+method: PUT
+endpoint: _cluster/settings
+json:
+  transient:
+    action.auto_create_index: "test-index-pattern-*"

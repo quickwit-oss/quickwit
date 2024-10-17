@@ -76,7 +76,7 @@ homepage = "https://quickwit.io/"
 documentation = "https://quickwit.io/docs/"
 repository = "https://github.com/quickwit-oss/quickwit"
 authors = ["Quickwit, Inc. <hello@quickwit.io>"]
-license = "AGPL-3.0-or-later"
+license = "AGPL-3.0"
 
 [workspace.dependencies]
 anyhow = "1"
@@ -180,7 +180,7 @@ prost = { version = "0.11.6", default-features = false, features = [
 ] }
 prost-build = "0.11.6"
 prost-types = "0.11.6"
-pulsar = { git = "https://github.com/quickwit-oss/pulsar-rs.git", rev = "f9eff04", default-features = false, features = [
+pulsar = { version = "5.1.1", default-features = false, features = [
   "auth-oauth2",
   "compression",
   "tokio-runtime",
@@ -327,7 +327,7 @@ quickwit-serve = { path = "quickwit-serve" }
 quickwit-storage = { path = "quickwit-storage" }
 quickwit-telemetry = { path = "quickwit-telemetry" }
 
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "9f81d59", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "55b0b52", default-features = false, features = [
   "lz4-compression",
   "mmap",
   "quickwit",
@@ -339,7 +339,7 @@ tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "9f81d59", d
 encoding_rs = "=0.8.32"
 
 [patch.crates-io]
-sasl2-sys = { git = "https://github.com/quickwit-oss/rust-sasl/", rev = "daca921" }
+sasl2-sys = { git = "https://github.com/quickwit-oss/rust-sasl/", rev = "085a4c7" }
 
 ## this patched version of tracing helps better understand what happens inside futures (when are
 ## they polled, how long does poll take...)

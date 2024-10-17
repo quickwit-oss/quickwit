@@ -27,11 +27,11 @@ services:
     command: ["run"]
 
   jaeger-query:
-    image: jaegertracing/jaeger-query:1.52
+    image: jaegertracing/jaeger-query:1.60
     ports:
       - 16686:16686
     environment:
-      - SPAN_STORAGE_TYPE=grpc-plugin
+      - SPAN_STORAGE_TYPE=grpc
       - GRPC_STORAGE_SERVER=quickwit:7281
       - GRPC_STORAGE_TLS=false
 ```

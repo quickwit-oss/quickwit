@@ -221,6 +221,44 @@ pub struct SearcherConfig {
     // TODO document and fix if necessary.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub split_cache: Option<SplitCacheLimits>,
+    #[serde(default = "SearcherConfig::default_request_timeout_secs")]
+    request_timeout_secs: NonZeroU64,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub storage_timeout_policy: Option<StorageTimeoutPolicy>,
+}
+
+/// Configuration controlling how fast a searcher should timeout a `get_slice`
+/// request to retry it.
+///
+/// [Amazon's best practise](https://docs.aws.amazon.com/whitepapers/latest/s3-optimizing-performance-best-practices/timeouts-and-retries-for-latency-sensitive-applications.html)
+/// suggests that to ensure low latency, it is best to:
+/// - retry small GET request after 2s
+/// - retry large GET request when the throughput is below some percentile.
+///
+/// This policy is inspired by this guidance. It does not track instanteneous throughput, but
+/// computes an overall timeout using the following formula:
+/// `timeout_offset + num_bytes_get_request / min_throughtput`
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct StorageTimeoutPolicy {
+    pub min_throughtput_bytes_per_secs: u64,
+    pub timeout_millis: u64,
+    // Disclaimer: this is a number of retry, so the overall max number of
+    // attempts is `max_num_retries + 1``.
+    pub max_num_retries: usize,
+}
+
+impl StorageTimeoutPolicy {
+    pub fn compute_timeout(&self, num_bytes: usize) -> impl Iterator<Item = Duration> {
+        let min_download_time_secs: f64 = if self.min_throughtput_bytes_per_secs == 0 {
+            0.0f64
+        } else {
+            num_bytes as f64 / self.min_throughtput_bytes_per_secs as f64
+        };
+        let timeout = Duration::from_millis(self.timeout_millis)
+            + Duration::from_secs_f64(min_download_time_secs);
+        std::iter::repeat(timeout).take(self.max_num_retries + 1)
+    }
 }
 
 impl Default for SearcherConfig {
@@ -234,11 +272,20 @@ impl Default for SearcherConfig {
             aggregation_memory_limit: ByteSize::mb(500),
             aggregation_bucket_limit: 65000,
             split_cache: None,
+            request_timeout_secs: Self::default_request_timeout_secs(),
+            storage_timeout_policy: None,
         }
     }
 }
 
 impl SearcherConfig {
+    /// The timeout after which a search should be cancelled
+    pub fn request_timeout(&self) -> Duration {
+        Duration::from_secs(self.request_timeout_secs.get())
+    }
+    fn default_request_timeout_secs() -> NonZeroU64 {
+        NonZeroU64::new(30).unwrap()
+    }
     fn validate(&self) -> anyhow::Result<()> {
         if let Some(split_cache_limits) = self.split_cache {
             if self.max_num_concurrent_split_searches

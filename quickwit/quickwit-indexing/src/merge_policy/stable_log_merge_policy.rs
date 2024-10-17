@@ -662,7 +662,7 @@ mod tests {
         aux_test_simulate_merge_planner_num_docs(
             Arc::new(merge_policy.clone()),
             &vec![10_000; 100_000],
-            |splits| {
+            &|splits| {
                 let num_docs = splits.iter().map(|split| split.num_docs as u64).sum();
                 assert!(splits.len() <= merge_policy.max_num_splits_ideal_case(num_docs))
             },
@@ -691,7 +691,7 @@ mod tests {
             aux_test_simulate_merge_planner_num_docs(
                 Arc::new(merge_policy.clone()),
                 &batch_num_docs,
-                |splits| {
+                &|splits| {
                     let num_docs = splits.iter().map(|split| split.num_docs as u64).sum();
                     assert!(splits.len() <= merge_policy.max_num_splits_worst_case(num_docs));
                 },
@@ -708,7 +708,7 @@ mod tests {
         aux_test_simulate_merge_planner_num_docs(
             Arc::new(merge_policy.clone()),
             &batch_num_docs,
-            |splits| {
+            &|splits| {
                 let num_docs = splits.iter().map(|split| split.num_docs as u64).sum();
                 assert!(splits.len() <= merge_policy.max_num_splits_worst_case(num_docs));
             },
@@ -723,7 +723,7 @@ mod tests {
         aux_test_simulate_merge_planner_num_docs(
             Arc::new(merge_policy.clone()),
             &vec![10_000; 1_000],
-            |splits| {
+            &|splits| {
                 let num_docs = splits.iter().map(|split| split.num_docs as u64).sum();
                 assert!(splits.len() <= merge_policy.max_num_splits_ideal_case(num_docs));
             },
@@ -739,7 +739,7 @@ mod tests {
         aux_test_simulate_merge_planner_num_docs(
             Arc::new(merge_policy.clone()),
             &vals[..],
-            |splits| {
+            &|splits| {
                 let num_docs = splits.iter().map(|split| split.num_docs as u64).sum();
                 assert!(splits.len() <= merge_policy.max_num_splits_worst_case(num_docs));
             },

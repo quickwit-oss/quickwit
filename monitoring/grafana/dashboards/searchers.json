@@ -853,6 +853,10 @@
           "text": "All",
           "value": "$__all"
         },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
         "definition": "label_values(quickwit_search_leaf_searches_splits_total,instance)",
         "hide": 0,
         "includeAll": true,
@@ -861,9 +865,8 @@
         "name": "instance",
         "options": [],
         "query": {
-          "qryType": 1,
           "query": "label_values(quickwit_search_leaf_searches_splits_total,instance)",
-          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+          "refId": "StandardVariableQuery"
         },
         "refresh": 1,
         "regex": "",
@@ -871,6 +874,7 @@
         "sort": 0,
         "type": "query"
       }
+
     ]
   },
   "time": {

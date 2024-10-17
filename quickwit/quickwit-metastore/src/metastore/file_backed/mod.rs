@@ -58,9 +58,9 @@ use quickwit_proto::metastore::{
     ListShardsRequest, ListShardsResponse, ListSplitsRequest, ListSplitsResponse,
     ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError, MetastoreResult,
     MetastoreService, MetastoreServiceStream, OpenShardSubrequest, OpenShardsRequest,
-    OpenShardsResponse, PruneShardsRequest, PruneShardsResponse, PublishSplitsRequest,
-    ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest,
-    UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
+    OpenShardsResponse, PruneShardsRequest, PublishSplitsRequest, ResetSourceCheckpointRequest,
+    StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest, UpdateSplitsDeleteOpstampRequest,
+    UpdateSplitsDeleteOpstampResponse,
 };
 use quickwit_proto::types::{IndexId, IndexUid};
 use quickwit_storage::Storage;
@@ -380,7 +380,7 @@ impl FileBackedMetastore {
     /// No error is returned if any of the requested `index_uid` does not exist.
     async fn list_splits_inner(&self, request: ListSplitsRequest) -> MetastoreResult<Vec<Split>> {
         let list_splits_query = request.deserialize_list_splits_query()?;
-        let mut all_splits = Vec::new();
+        let mut splits_per_index = Vec::with_capacity(list_splits_query.index_uids.len());
         for index_uid in &list_splits_query.index_uids {
             let splits = match self
                 .read(index_uid, |index| index.list_splits(&list_splits_query))
@@ -393,9 +393,19 @@ impl FileBackedMetastore {
                 }
                 Err(error) => return Err(error),
             };
-            all_splits.extend(splits);
+            splits_per_index.push(splits);
         }
-        Ok(all_splits)
+
+        let limit = list_splits_query.limit.unwrap_or(usize::MAX);
+        let offset = list_splits_query.offset.unwrap_or_default();
+
+        let merged_results = splits_per_index
+            .into_iter()
+            .kmerge_by(|lhs, rhs| list_splits_query.sort_by.compare(lhs, rhs).is_lt())
+            .skip(offset)
+            .take(limit)
+            .collect();
+        Ok(merged_results)
     }
 
     /// Helper used for testing to obtain the data associated with the given index.
@@ -892,15 +902,11 @@ impl MetastoreService for FileBackedMetastore {
         Ok(response)
     }
 
-    async fn prune_shards(
-        &self,
-        request: PruneShardsRequest,
-    ) -> MetastoreResult<PruneShardsResponse> {
+    async fn prune_shards(&self, request: PruneShardsRequest) -> MetastoreResult<EmptyResponse> {
         let index_uid = request.index_uid().clone();
-        let response = self
-            .mutate(&index_uid, |index| index.prune_shards(request))
+        self.mutate(&index_uid, |index| index.prune_shards(request))
             .await?;
-        Ok(response)
+        Ok(EmptyResponse {})
     }
 
     async fn list_shards(&self, request: ListShardsRequest) -> MetastoreResult<ListShardsResponse> {

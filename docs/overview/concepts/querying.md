@@ -105,3 +105,7 @@ Quickwit does caching in many places to deliver a highly performing query engine
 ### Scoring
 
 Quickwit supports sorting docs by their BM25 scores. In order to query by score, [fieldnorms](../../configuration/index-config.md#text-type) must be enabled for the field. By default, BM25 scoring is disabled to improve query latencies but it can be opt-in by setting the `sort_by` option to `_score` in queries.
+
+### Document ID
+
+Each document in Quickwit is assigned a unique document ID, which is a combination of the split ID and the Tantivy DocId within the split. This implies that you cannot assign a custom ID and that the ID changes when splits undergo merges. This ID is used for every search query as sort order (after the explicitly specified sort values) to make the results deterministic.

@@ -56,6 +56,7 @@ pub struct IndexingStatistics {
     // List of shard ids.
     #[schema(value_type = Vec<u64>)]
     pub shard_ids: BTreeSet<ShardId>,
+    pub params_fingerprint: u64,
 }
 
 impl IndexingStatistics {

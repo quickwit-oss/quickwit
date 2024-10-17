@@ -1,0 +1,37 @@
+accepted = [
+    "0BSD",
+    "AGPL-3.0",
+    "LicenseRef-AGPL-3.0-or-later",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+"CC0-1.0",
+    "ISC",
+    "MIT",
+    "MPL-2.0",
+    "OpenSSL",
+    "Unicode-DFS-2016",
+    "Unlicense",
+    "Zlib",
+    "zlib-acknowledgement"
+]
+
+workarounds = [
+    "ring",
+    "rustls",
+]
+
+[whichlang.clarify]
+license = "MIT"
+
+
+[plotters.clarify]
+license = "MIT"
+
+
+[plotters-svg.clarify]
+license = "MIT"
+
+
+[advapi32-sys.clarify]
+license = "MIT"

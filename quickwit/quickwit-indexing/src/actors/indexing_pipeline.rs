@@ -120,6 +120,7 @@ pub struct IndexingPipeline {
     handles_opt: Option<IndexingPipelineHandles>,
     // Killswitch used for the actors in the pipeline. This is not the supervisor killswitch.
     kill_switch: KillSwitch,
+
     // The set of shard is something that can change dynamically without necessarily
     // requiring a respawn of the pipeline.
     // We keep the list of shards here however, to reassign them after a respawn.
@@ -158,12 +159,16 @@ impl Actor for IndexingPipeline {
 
 impl IndexingPipeline {
     pub fn new(params: IndexingPipelineParams) -> Self {
+        let params_fingerprint = params.params_fingerprint;
         IndexingPipeline {
             params,
             previous_generations_statistics: Default::default(),
             handles_opt: None,
             kill_switch: KillSwitch::default(),
-            statistics: IndexingStatistics::default(),
+            statistics: IndexingStatistics {
+                params_fingerprint,
+                ..Default::default()
+            },
             shard_ids: Default::default(),
         }
     }
@@ -264,6 +269,7 @@ impl IndexingPipeline {
             .set_num_spawn_attempts(self.statistics.num_spawn_attempts);
         let pipeline_metrics_opt = handles.indexer.last_observation().pipeline_metrics_opt;
         self.statistics.pipeline_metrics_opt = pipeline_metrics_opt;
+        self.statistics.params_fingerprint = self.params.params_fingerprint;
         self.statistics.shard_ids.clone_from(&self.shard_ids);
         ctx.observe(self);
     }
@@ -587,6 +593,7 @@ pub struct IndexingPipelineParams {
     pub source_storage_resolver: StorageResolver,
     pub ingester_pool: IngesterPool,
     pub queues_dir_path: PathBuf,
+    pub params_fingerprint: u64,
 
     pub event_broker: EventBroker,
 }
@@ -716,6 +723,7 @@ mod tests {
             cooperative_indexing_permits: None,
             merge_planner_mailbox,
             event_broker: EventBroker::default(),
+            params_fingerprint: 42u64,
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
         let (_pipeline_mailbox, pipeline_handle) = universe.spawn_builder().spawn(pipeline);
@@ -828,6 +836,7 @@ mod tests {
             cooperative_indexing_permits: None,
             merge_planner_mailbox,
             event_broker: Default::default(),
+            params_fingerprint: 42u64,
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
         let (_pipeline_mailbox, pipeline_handler) = universe.spawn_builder().spawn(pipeline);
@@ -926,6 +935,7 @@ mod tests {
             cooperative_indexing_permits: None,
             merge_planner_mailbox: merge_planner_mailbox.clone(),
             event_broker: Default::default(),
+            params_fingerprint: 42u64,
         };
         let indexing_pipeline = IndexingPipeline::new(indexing_pipeline_params);
         let (_indexing_pipeline_mailbox, indexing_pipeline_handler) =
@@ -1051,6 +1061,7 @@ mod tests {
             max_concurrent_split_uploads_merge: 5,
             cooperative_indexing_permits: None,
             merge_planner_mailbox,
+            params_fingerprint: 42u64,
             event_broker: Default::default(),
         };
         let pipeline = IndexingPipeline::new(pipeline_params);

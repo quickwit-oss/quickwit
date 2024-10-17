@@ -65,6 +65,7 @@ use tracing::{debug, error, info, warn};
 
 use super::merge_pipeline::{MergePipeline, MergePipelineParams};
 use super::{MergePlanner, MergeSchedulerService};
+use crate::actors::merge_pipeline::FinishPendingMergesAndShutdownPipeline;
 use crate::models::{DetachIndexingPipeline, DetachMergePipeline, ObservePipeline, SpawnPipeline};
 use crate::source::{AssignShards, Assignment};
 use crate::split_store::{LocalSplitStore, SplitStoreQuota};
@@ -312,10 +313,12 @@ impl IndexingService {
         let max_concurrent_split_uploads_merge =
             (self.max_concurrent_split_uploads - max_concurrent_split_uploads_index).max(1);
 
+        let params_fingerprint = index_config.indexing_params_fingerprint();
         let pipeline_params = IndexingPipelineParams {
             pipeline_id: indexing_pipeline_id.clone(),
             metastore: self.metastore.clone(),
             storage,
+
             // Indexing-related parameters
             doc_mapper,
             indexing_directory,
@@ -323,6 +326,7 @@ impl IndexingService {
             split_store,
             max_concurrent_split_uploads_index,
             cooperative_indexing_permits: self.cooperative_indexing_permits.clone(),
+
             // Merge-related parameters
             merge_policy,
             max_concurrent_split_uploads_merge,
@@ -333,6 +337,7 @@ impl IndexingService {
             ingester_pool: self.ingester_pool.clone(),
             queues_dir_path: self.queue_dir_path.clone(),
             source_storage_resolver: self.storage_resolver.clone(),
+            params_fingerprint,
 
             event_broker: self.event_broker.clone(),
         };
@@ -500,21 +505,27 @@ impl IndexingService {
                 .merge_pipeline_handles
                 .remove_entry(&merge_pipeline_to_shutdown)
             {
-                // We kill the merge pipeline to avoid waiting a merge operation to finish as it can
-                // be long.
+                // We gracefully shutdown the merge pipeline, so we can complete the in-flight
+                // merges.
                 info!(
                     index_uid=%merge_pipeline_to_shutdown.index_uid,
                     source_id=%merge_pipeline_to_shutdown.source_id,
-                    "no more indexing pipeline on this index and source, killing merge pipeline"
+                    "shutting down orphan merge pipeline"
                 );
-                merge_pipeline_handle.handle.kill().await;
+                // The queue capacity of the merge pipeline is unbounded, so `.send_message(...)`
+                // should not block.
+                // We avoid using `.quit()` here because it waits for the actor to exit.
+                merge_pipeline_handle
+                    .handle
+                    .mailbox()
+                    .send_message(FinishPendingMergesAndShutdownPipeline)
+                    .await
+                    .expect("merge pipeline mailbox should not be full");
             }
         }
-        // Finally remove the merge pipeline with an exit status.
+        // Finally, we remove the completed or failed merge pipelines.
         self.merge_pipeline_handles
-            .retain(|_, merge_pipeline_mailbox_handle| {
-                merge_pipeline_mailbox_handle.handle.state().is_running()
-            });
+            .retain(|_, merge_pipeline_handle| merge_pipeline_handle.handle.state().is_running());
         self.counters.num_running_merge_pipelines = self.merge_pipeline_handles.len();
         self.update_chitchat_running_plan().await;
 
@@ -539,23 +550,23 @@ impl IndexingService {
         immature_splits_opt: Option<Vec<SplitMetadata>>,
         ctx: &ActorContext<Self>,
     ) -> Result<Mailbox<MergePlanner>, IndexingError> {
-        if let Some(merge_pipeline_mailbox_handle) = self
+        if let Some(merge_pipeline_handle) = self
             .merge_pipeline_handles
             .get(&merge_pipeline_params.pipeline_id)
         {
-            return Ok(merge_pipeline_mailbox_handle.mailbox.clone());
+            return Ok(merge_pipeline_handle.mailbox.clone());
         }
         let merge_pipeline_id = merge_pipeline_params.pipeline_id.clone();
         let merge_pipeline =
             MergePipeline::new(merge_pipeline_params, immature_splits_opt, ctx.spawn_ctx());
         let merge_planner_mailbox = merge_pipeline.merge_planner_mailbox().clone();
         let (_pipeline_mailbox, pipeline_handle) = ctx.spawn_actor().spawn(merge_pipeline);
-        let merge_pipeline_mailbox_handle = MergePipelineHandle {
+        let merge_pipeline_handle = MergePipelineHandle {
             mailbox: merge_planner_mailbox.clone(),
             handle: pipeline_handle,
         };
         self.merge_pipeline_handles
-            .insert(merge_pipeline_id, merge_pipeline_mailbox_handle);
+            .insert(merge_pipeline_id, merge_pipeline_handle);
         self.counters.num_running_merge_pipelines += 1;
         Ok(merge_planner_mailbox)
     }
@@ -755,20 +766,14 @@ impl IndexingService {
             .indexing_pipelines
             .values()
             .map(|pipeline_handle| {
-                let shard_ids: Vec<ShardId> = pipeline_handle
-                    .handle
-                    .last_observation()
-                    .shard_ids
-                    .iter()
-                    .cloned()
-                    .collect();
-
+                let assignment = pipeline_handle.handle.last_observation();
+                let shard_ids: Vec<ShardId> = assignment.shard_ids.iter().cloned().collect();
                 IndexingTask {
                     index_uid: Some(pipeline_handle.indexing_pipeline_id.index_uid.clone()),
                     source_id: pipeline_handle.indexing_pipeline_id.source_id.clone(),
                     pipeline_uid: Some(pipeline_handle.indexing_pipeline_id.pipeline_uid),
                     shard_ids,
-                    params_fingerprint: 0,
+                    params_fingerprint: assignment.params_fingerprint,
                 }
             })
             .collect();
@@ -1192,6 +1197,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_indexing_service_apply_plan() {
+        const PARAMS_FINGERPRINT: u64 = 3865067856550546352;
+
         quickwit_common::setup_logging_for_tests();
         let transport = ChannelTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
@@ -1251,14 +1258,14 @@ mod tests {
                 source_id: "test-indexing-service--source-1".to_string(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::for_test(0u128)),
-                params_fingerprint: 0,
+                params_fingerprint: PARAMS_FINGERPRINT,
             },
             IndexingTask {
                 index_uid: Some(metadata.index_uid.clone()),
                 source_id: "test-indexing-service--source-1".to_string(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::for_test(1u128)),
-                params_fingerprint: 0,
+                params_fingerprint: PARAMS_FINGERPRINT,
             },
         ];
         indexing_service
@@ -1297,28 +1304,28 @@ mod tests {
                 source_id: INGEST_API_SOURCE_ID.to_string(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::for_test(3u128)),
-                params_fingerprint: 0,
+                params_fingerprint: PARAMS_FINGERPRINT,
             },
             IndexingTask {
                 index_uid: Some(metadata.index_uid.clone()),
                 source_id: "test-indexing-service--source-1".to_string(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::for_test(1u128)),
-                params_fingerprint: 0,
+                params_fingerprint: PARAMS_FINGERPRINT,
             },
             IndexingTask {
                 index_uid: Some(metadata.index_uid.clone()),
                 source_id: "test-indexing-service--source-1".to_string(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::for_test(2u128)),
-                params_fingerprint: 0,
+                params_fingerprint: PARAMS_FINGERPRINT,
             },
             IndexingTask {
                 index_uid: Some(metadata.index_uid.clone()),
                 source_id: source_config_2.source_id.clone(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::for_test(4u128)),
-                params_fingerprint: 0,
+                params_fingerprint: PARAMS_FINGERPRINT,
             },
         ];
         indexing_service
@@ -1359,21 +1366,21 @@ mod tests {
                 source_id: INGEST_API_SOURCE_ID.to_string(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::for_test(3u128)),
-                params_fingerprint: 0,
+                params_fingerprint: PARAMS_FINGERPRINT,
             },
             IndexingTask {
                 index_uid: Some(metadata.index_uid.clone()),
                 source_id: "test-indexing-service--source-1".to_string(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::for_test(1u128)),
-                params_fingerprint: 0,
+                params_fingerprint: PARAMS_FINGERPRINT,
             },
             IndexingTask {
                 index_uid: Some(metadata.index_uid.clone()),
                 source_id: source_config_2.source_id.clone(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::for_test(4u128)),
-                params_fingerprint: 0,
+                params_fingerprint: PARAMS_FINGERPRINT,
             },
         ];
         indexing_service
