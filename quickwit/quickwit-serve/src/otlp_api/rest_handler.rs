@@ -83,6 +83,7 @@ pub(crate) fn otlp_default_logs_handler(
         .and(warp::post())
         .and(get_body_bytes())
         .then(|otlp_logs_service, body| async move {
+            // TODO get index id from header if available
             otlp_ingest_logs(otlp_logs_service, OTEL_LOGS_INDEX_ID.to_string(), body).await
         })
         .and(with_arg(BodyFormat::default()))
@@ -136,6 +137,7 @@ pub(crate) fn otlp_default_traces_handler(
         .and(warp::post())
         .and(get_body_bytes())
         .then(|otlp_traces_service, body| async move {
+            // TODO get index id from header if available
             otlp_ingest_traces(otlp_traces_service, OTEL_TRACES_INDEX_ID.to_string(), body).await
         })
         .and(with_arg(BodyFormat::default()))
