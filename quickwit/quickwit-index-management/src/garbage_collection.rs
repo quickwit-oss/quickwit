@@ -27,7 +27,7 @@ use futures::{Future, StreamExt};
 use itertools::Itertools;
 use quickwit_common::metrics::IntCounter;
 use quickwit_common::pretty::PrettySample;
-use quickwit_common::Progress;
+use quickwit_common::{rate_limited_info, Progress};
 use quickwit_metastore::{
     ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitInfo,
     SplitMetadata, SplitState,
@@ -40,7 +40,7 @@ use quickwit_proto::types::{IndexUid, SplitId};
 use quickwit_storage::{BulkDeleteError, Storage};
 use thiserror::Error;
 use time::OffsetDateTime;
-use tracing::{error, info, instrument};
+use tracing::{error, instrument};
 
 /// The maximum number of splits that the GC should delete per attempt.
 const DELETE_SPLITS_BATCH_SIZE: usize = 10_000;
@@ -359,14 +359,13 @@ async fn delete_splits_marked_for_deletion_several_indexes(
 
         for meta in splits_metadata_to_delete {
             if !storages.contains_key(&meta.index_uid) {
-                info!(index_uid=?meta.index_uid, "split not listed in storage map: skipping");
+                rate_limited_info!(limit_per_min=6, index_uid=?meta.index_uid, "split not listed in storage map: skipping");
                 continue;
             }
-            if let Some(splits) = splits_metadata_to_delete_per_index.get_mut(&meta.index_uid) {
-                splits.push(meta);
-            } else {
-                splits_metadata_to_delete_per_index.insert(meta.index_uid.clone(), vec![meta]);
-            }
+            splits_metadata_to_delete_per_index
+                .entry(meta.index_uid.clone())
+                .or_default()
+                .push(meta);
         }
 
         // ignore return we continue either way
