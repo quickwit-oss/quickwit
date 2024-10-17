@@ -40,7 +40,7 @@ pub use default_doc_mapper::{
     FieldMappingType, QuickwitBytesOptions, QuickwitJsonOptions, TokenizerConfig, TokenizerEntry,
 };
 use default_doc_mapper::{
-    FastFieldOptions, FieldMappingEntryForSerialization, IndexRecordOptionSchema,
+    FastFieldOptions, FieldMappingEntryForSerialization, IndexRecordOptionUtoipaSchema,
     NgramTokenizerOption, QuickwitTextNormalizer, QuickwitTextTokenizer, RegexTokenizerOption,
     TokenFilterType, TokenizerType,
 };
@@ -82,7 +82,7 @@ pub enum Cardinality {
     DocMappingUid,
     FastFieldOptions,
     FieldMappingEntryForSerialization,
-    IndexRecordOptionSchema,
+    IndexRecordOptionUtoipaSchema,
     ModeType,
     NgramTokenizerOption,
     QuickwitJsonOptions,

@@ -24,12 +24,14 @@ use bytes::{Bytes, BytesMut};
 use bytestring::ByteString;
 use prost::{self, DecodeError};
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 const BEGINNING: &str = "";
 
 const EOF_PREFIX: &str = "~";
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Hash, Ord, PartialOrd, ToSchema)]
+#[schema(value_type = String)]
 pub struct Offset(ByteString);
 
 impl Offset {
@@ -93,7 +95,7 @@ impl From<&str> for Offset {
 ///
 /// The empty string can be used to represent the beginning of the source,
 /// if no position makes sense. It can be built via `Position::default()`.
-#[derive(Clone, Default, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Clone, Default, Eq, PartialEq, Hash, Ord, PartialOrd, ToSchema)]
 pub enum Position {
     #[default]
     Beginning,

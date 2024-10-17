@@ -35,7 +35,7 @@ pub use field_mapping_entry::{
     QuickwitTextNormalizer,
 };
 pub(crate) use field_mapping_entry::{
-    FieldMappingEntryForSerialization, IndexRecordOptionSchema, QuickwitTextTokenizer,
+    FieldMappingEntryForSerialization, IndexRecordOptionUtoipaSchema, QuickwitTextTokenizer,
 };
 #[cfg(test)]
 pub(crate) use field_mapping_entry::{QuickwitNumericOptions, QuickwitTextOptions};

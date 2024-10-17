@@ -40,7 +40,7 @@ pub enum ModeType {
 }
 
 /// Defines how unmapped fields should be handled.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
 pub enum Mode {
     /// Lenient mode: ignores unmapped fields.
     Lenient,
@@ -123,7 +123,7 @@ pub struct DocMapping {
     /// Defines the schema of ingested documents and describes how each field value should be
     /// parsed, tokenized, indexed, and stored.
     #[serde(default)]
-    #[schema(value_type = Vec<FieldMappingEntryForSerialization>)]
+    #[schema(value_type = Vec<crate::FieldMappingEntryForSerialization>)]
     pub field_mappings: Vec<FieldMappingEntry>,
 
     /// Declares the field which contains the date or timestamp at which the document

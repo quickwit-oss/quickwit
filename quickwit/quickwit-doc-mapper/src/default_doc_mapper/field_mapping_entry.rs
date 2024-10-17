@@ -178,7 +178,9 @@ impl Default for QuickwitBytesOptions {
 }
 
 /// Available binary formats.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Default, Serialize, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, Eq, PartialEq, Hash, Default, Serialize, Deserialize, utoipa::ToSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum BinaryFormat {
     /// Base64 format.
@@ -235,7 +237,9 @@ impl BinaryFormat {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Default, Serialize, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, Eq, PartialEq, Hash, Default, Serialize, Deserialize, utoipa::ToSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum NumericOutputFormat {
     #[default]
@@ -309,9 +313,10 @@ impl QuickwitTextNormalizer {
     }
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, utoipa::ToSchema)]
 pub struct TextIndexingOptions {
     pub tokenizer: QuickwitTextTokenizer,
+    #[schema(value_type = IndexRecordOptionUtoipaSchema)]
     pub record: IndexRecordOption,
     pub fieldnorms: bool,
 }
@@ -429,7 +434,6 @@ impl Default for TextIndexingOptions {
 #[derive(Clone, PartialEq, Serialize, Deserialize, Debug, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct QuickwitTextOptions {
-    #[schema(value_type = String)]
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
@@ -442,7 +446,7 @@ pub struct QuickwitTextOptions {
             #[serde(default)]
             #[serde(skip_serializing_if = "Option::is_none")]
             pub tokenizer: Option<QuickwitTextTokenizer>,
-            #[schema(value_type = IndexRecordOptionSchema)]
+            #[schema(value_type = IndexRecordOptionUtoipaSchema)]
             #[serde(default)]
             #[serde(skip_serializing_if = "Option::is_none")]
             pub record: Option<IndexRecordOption>,
@@ -550,7 +554,7 @@ impl From<QuickwitTextOptions> for TextOptions {
 
 #[allow(unused)]
 #[derive(utoipa::ToSchema)]
-pub enum IndexRecordOptionSchema {
+pub enum IndexRecordOptionUtoipaSchema {
     /// records only the `DocId`s
     #[schema(rename = "basic")]
     Basic,
@@ -592,7 +596,7 @@ pub struct QuickwitJsonOptions {
             /// with each token.
             ///
             /// Setting `record` is only allowed if indexed == true.
-            #[schema(value_type = IndexRecordOptionSchema)]
+            #[schema(value_type = IndexRecordOptionUtoipaSchema)]
             #[serde(default)]
             #[serde(skip_serializing_if = "Option::is_none")]
             pub record: Option<IndexRecordOption>,
@@ -683,7 +687,7 @@ pub struct QuickwitConcatenateOptions {
             pub tokenizer: Option<QuickwitTextTokenizer>,
             /// Sets how much information should be added in the index
             /// with each token.
-            #[schema(value_type = IndexRecordOptionSchema)]
+            #[schema(value_type = IndexRecordOptionUtoipaSchema)]
             #[serde(default)]
             #[serde(skip_serializing_if = "Option::is_none")]
             pub record: Option<IndexRecordOption>,

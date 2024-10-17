@@ -25,6 +25,7 @@ use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 pub use ulid::Ulid;
+use utoipa::ToSchema;
 
 use super::ULID_SIZE;
 use crate::types::IndexId;
@@ -32,7 +33,7 @@ use crate::types::IndexId;
 /// Index identifiers that uniquely identify not only the index, but also
 /// its incarnation allowing to distinguish between deleted and recreated indexes.
 /// It is represented as a string in index_id:incarnation_id format.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Ord, PartialOrd, Hash)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Ord, PartialOrd, Hash, ToSchema)]
 pub struct IndexUid {
     pub index_id: IndexId,
     pub incarnation_id: Ulid,

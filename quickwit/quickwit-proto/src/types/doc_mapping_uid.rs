@@ -25,11 +25,12 @@ use anyhow::Context;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 pub use ulid::Ulid;
+use utoipa::ToSchema;
 
 use super::ULID_SIZE;
 
 /// Unique identifier for a document mapping.
-#[derive(Clone, Copy, Default, Hash, Eq, PartialEq, Ord, PartialOrd, utoipa::ToSchema)]
+#[derive(Clone, Copy, Default, Hash, Eq, PartialEq, Ord, PartialOrd, ToSchema)]
 pub struct DocMappingUid(Ulid);
 
 impl fmt::Debug for DocMappingUid {

@@ -57,7 +57,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Developer service.
     let mut prost_config = prost_build::Config::default();
-    prost_config.bytes(["GetDebugInfoResponse.debug_info_json"]);
+    prost_config
+        .bytes(["GetDebugInfoResponse.debug_info_json"])
+        .field_attribute(
+            "GetDebugInfoResponse.debug_info_json",
+            "#[schema(value_type = String)]",
+        );
 
     Codegen::builder()
         .with_prost_config(prost_config)
@@ -112,6 +117,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .field_attribute(
             "DeleteQuery.end_timestamp",
             "#[serde(skip_serializing_if = \"Option::is_none\")]",
+        )
+        .field_attribute(
+            "IndexesMetadataResponse.indexes_metadata_json_zstd",
+            "#[schema(value_type = String, format = Binary)]",
+        )
+        .field_attribute(
+            "ListIndexesMetadataResponse.indexes_metadata_json_zstd",
+            "#[schema(value_type = String, format = Binary)]",
         );
 
     Codegen::builder()
@@ -144,6 +157,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .extern_path(".quickwit.ingest.ShardId", "crate::types::ShardId")
         .type_attribute("Shard", "#[derive(Eq)]")
         .field_attribute(
+            "DocBatchV2.doc_buffer",
+            "#[schema(value_type = String, format = Binary)]",
+        )
+        .field_attribute(
+            "MRecordBatch.mrecord_buffer",
+            "#[schema(value_type = String, format = Binary)]",
+        )
+        .field_attribute(
             "Shard.follower_id",
             "#[serde(default, skip_serializing_if = \"Option::is_none\")]",
         )
@@ -162,6 +183,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .field_attribute(
             "Shard.update_timestamp",
             "#[serde(default = \"super::compatibility_shard_update_timestamp\")]",
+        )
+        .field_attribute(
+            "Position.position",
+            "#[schema(value_type = String, format = Binary)]",
         );
 
     Codegen::builder()
@@ -216,6 +241,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     tonic_build::configure()
         .type_attribute(".", "#[derive(Serialize, Deserialize)]")
         .type_attribute("StatusCode", r#"#[serde(rename_all = "snake_case")]"#)
+        .type_attribute("ExportLogsPartialSuccess", r#"#[derive(utoipa::ToSchema)]"#)
         .type_attribute(
             "ExportLogsServiceResponse",
             r#"#[derive(utoipa::ToSchema)]"#,

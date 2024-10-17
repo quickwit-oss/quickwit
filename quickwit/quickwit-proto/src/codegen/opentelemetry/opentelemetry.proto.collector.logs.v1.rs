@@ -36,6 +36,7 @@ pub struct ExportLogsServiceResponse {
     pub partial_success: ::core::option::Option<ExportLogsPartialSuccess>,
 }
 #[derive(Serialize, Deserialize)]
+#[derive(utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ExportLogsPartialSuccess {

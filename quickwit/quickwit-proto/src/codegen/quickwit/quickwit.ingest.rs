@@ -15,6 +15,7 @@ pub struct ShardPKey {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DocBatchV2 {
     #[prost(bytes = "bytes", tag = "1")]
+    #[schema(value_type = String, format = Binary)]
     pub doc_buffer: ::prost::bytes::Bytes,
     #[prost(uint32, repeated, tag = "2")]
     pub doc_lengths: ::prost::alloc::vec::Vec<u32>,
@@ -27,6 +28,7 @@ pub struct DocBatchV2 {
 pub struct MRecordBatch {
     /// Buffer of encoded and then concatenated mrecords.
     #[prost(bytes = "bytes", tag = "1")]
+    #[schema(value_type = String, format = Binary)]
     pub mrecord_buffer: ::prost::bytes::Bytes,
     /// Lengths of the mrecords in the buffer.
     #[prost(uint32, repeated, tag = "2")]

@@ -11,6 +11,7 @@ pub struct GetDebugInfoRequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetDebugInfoResponse {
     #[prost(bytes = "bytes", tag = "1")]
+    #[schema(value_type = String)]
     pub debug_info_json: ::prost::bytes::Bytes,
 }
 /// BEGIN quickwit-codegen

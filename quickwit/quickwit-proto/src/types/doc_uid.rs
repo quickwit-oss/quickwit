@@ -23,11 +23,12 @@ use std::fmt;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 pub use ulid::Ulid;
+use utoipa::ToSchema;
 
 use super::ULID_SIZE;
 
 /// A doc UID identifies a document across segments, splits, and indexes.
-#[derive(Clone, Copy, Default, Hash, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Copy, Default, Hash, Eq, PartialEq, Ord, PartialOrd, ToSchema)]
 pub struct DocUid(Ulid);
 
 impl fmt::Debug for DocUid {
