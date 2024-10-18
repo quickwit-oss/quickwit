@@ -15,6 +15,21 @@ expected:
           actor:
             id: 10791502
 ---
+# Checking that passing the sort params as a query string works.
+params:
+    sort: "actor.id:desc"
+    q: "*"
+    size: 1
+expected:
+    hits:
+        total:
+            value: 100
+            relation: eq
+        hits:
+            - _source:
+                actor:
+                    id: 10791502
+---
 json:
   size: 1
   query:
@@ -113,4 +128,3 @@ expected:
       - _source:
           actor:
             id: 1762355
-

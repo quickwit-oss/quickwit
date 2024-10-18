@@ -21,7 +21,8 @@
 
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
-    new_counter, new_counter_vec, new_counter_with_labels, new_gauge, IntCounter, IntGauge,
+    new_counter, new_counter_vec, new_counter_with_labels, new_gauge, IntCounter, IntCounterVec,
+    IntGauge,
 };
 
 /// Counters associated to storage operations.
@@ -35,6 +36,7 @@ pub struct StorageMetrics {
     pub get_slice_timeout_successes: [IntCounter; 3],
     pub get_slice_timeout_all_timeouts: IntCounter,
     pub object_storage_get_total: IntCounter,
+    pub object_storage_get_errors_total: IntCounterVec<1>,
     pub object_storage_put_total: IntCounter,
     pub object_storage_put_parts: IntCounter,
     pub object_storage_download_num_bytes: IntCounter,
@@ -72,6 +74,13 @@ impl Default for StorageMetrics {
                 "Number of objects fetched.",
                 "storage",
                 &[],
+            ),
+            object_storage_get_errors_total: new_counter_vec::<1>(
+                "object_storage_get_errors_total",
+                "Number of GetObject errors.",
+                "storage",
+                &[],
+                ["code"],
             ),
             object_storage_put_total: new_counter(
                 "object_storage_puts_total",
