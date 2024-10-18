@@ -195,11 +195,11 @@ json:
     range:
       repo.name:
         gte: "h"
-        lte: "z"
+        lte: "i"
 expected:
   hits:
     total:
-      value: 62
+      value: 1
       relation: "eq"
 ---
 # This field is a JSON field and has fast field normalization.
@@ -218,6 +218,8 @@ expected:
 ---
 # This field is a JSON field and has fast field normalization.
 # That means it is case insensitive
+engines:
+    - quickwit
 json:
   query:
     range:

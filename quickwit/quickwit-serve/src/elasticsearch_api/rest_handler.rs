@@ -284,6 +284,7 @@ fn build_request_for_es_api(
             must_not: Vec::new(),
             should: Vec::new(),
             filter: queries,
+            minimum_should_match: None,
         });
     }
 
