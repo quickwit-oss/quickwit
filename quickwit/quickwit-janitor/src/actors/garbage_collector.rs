@@ -302,10 +302,13 @@ mod tests {
             .times(2)
             .returning(move |list_splits_request| {
                 let query = list_splits_request.deserialize_list_splits_query().unwrap();
-                assert_eq!(query.index_uids[0], index_uid_clone,);
                 let splits = match query.split_states[0] {
-                    SplitState::Staged => make_splits("test-index", &["a"], SplitState::Staged),
+                    SplitState::Staged => {
+                        assert_eq!(query.index_uids.unwrap()[0], index_uid_clone);
+                        make_splits("test-index", &["a"], SplitState::Staged)
+                    }
                     SplitState::MarkedForDeletion => {
+                        assert!(query.index_uids.is_none());
                         let expected_deletion_timestamp = OffsetDateTime::now_utc()
                             .unix_timestamp()
                             - split_deletion_grace_period().as_secs() as i64;
@@ -394,14 +397,19 @@ mod tests {
             .times(2)
             .returning(|list_splits_request| {
                 let query = list_splits_request.deserialize_list_splits_query().unwrap();
-                assert_eq!(&query.index_uids[0].index_id, "test-index");
                 let splits = match query.split_states[0] {
-                    SplitState::Staged => make_splits("test-index", &["a"], SplitState::Staged),
-                    SplitState::MarkedForDeletion => make_splits(
-                        "test-index",
-                        &["a", "b", "c"],
-                        SplitState::MarkedForDeletion,
-                    ),
+                    SplitState::Staged => {
+                        assert_eq!(&query.index_uids.unwrap()[0].index_id, "test-index");
+                        make_splits("test-index", &["a"], SplitState::Staged)
+                    }
+                    SplitState::MarkedForDeletion => {
+                        assert!(query.index_uids.is_none());
+                        make_splits(
+                            "test-index",
+                            &["a", "b", "c"],
+                            SplitState::MarkedForDeletion,
+                        )
+                    }
                     _ => panic!("only Staged and MarkedForDeletion expected."),
                 };
                 let splits = ListSplitsResponse::try_from_splits(splits).unwrap();
@@ -469,10 +477,13 @@ mod tests {
             .times(6)
             .returning(|list_splits_request| {
                 let query = list_splits_request.deserialize_list_splits_query().unwrap();
-                assert_eq!(&query.index_uids[0].index_id, "test-index");
                 let splits = match query.split_states[0] {
-                    SplitState::Staged => make_splits("test-index", &["a"], SplitState::Staged),
+                    SplitState::Staged => {
+                        assert_eq!(&query.index_uids.unwrap()[0].index_id, "test-index");
+                        make_splits("test-index", &["a"], SplitState::Staged)
+                    }
                     SplitState::MarkedForDeletion => {
+                        assert!(&query.index_uids.is_none());
                         make_splits("test-index", &["a", "b"], SplitState::MarkedForDeletion)
                     }
                     _ => panic!("only Staged and MarkedForDeletion expected."),
@@ -633,11 +644,6 @@ mod tests {
             .times(3)
             .returning(|list_splits_request| {
                 let query = list_splits_request.deserialize_list_splits_query().unwrap();
-                assert_eq!(query.index_uids.len(), 2);
-                assert!(["test-index-1", "test-index-2"]
-                    .contains(&query.index_uids[0].index_id.as_ref()));
-                assert!(["test-index-1", "test-index-2"]
-                    .contains(&query.index_uids[1].index_id.as_ref()));
                 let splits_ids_string: Vec<String> =
                     (0..8000).map(|seq| format!("split-{seq:04}")).collect();
                 let splits_ids: Vec<&str> = splits_ids_string
@@ -646,11 +652,18 @@ mod tests {
                     .collect();
                 let mut splits = match query.split_states[0] {
                     SplitState::Staged => {
+                        let index_uids = query.index_uids.unwrap();
+                        assert_eq!(index_uids.len(), 2);
+                        assert!(["test-index-1", "test-index-2"]
+                            .contains(&index_uids[0].index_id.as_ref()));
+                        assert!(["test-index-1", "test-index-2"]
+                            .contains(&index_uids[1].index_id.as_ref()));
                         let mut splits = make_splits("test-index-1", &["a"], SplitState::Staged);
                         splits.append(&mut make_splits("test-index-2", &["a"], SplitState::Staged));
                         splits
                     }
                     SplitState::MarkedForDeletion => {
+                        assert!(query.index_uids.is_none());
                         assert_eq!(query.limit, Some(10_000));
                         let mut splits =
                             make_splits("test-index-1", &splits_ids, SplitState::MarkedForDeletion);

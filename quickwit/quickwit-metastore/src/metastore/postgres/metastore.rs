@@ -61,7 +61,7 @@ use super::migrator::run_migrations;
 use super::model::{PgDeleteTask, PgIndex, PgIndexTemplate, PgShard, PgSplit, Splits};
 use super::pool::TrackedPool;
 use super::split_stream::SplitStream;
-use super::utils::{append_query_filters, establish_connection};
+use super::utils::{append_query_filters_and_order_by, establish_connection};
 use super::{
     QW_POSTGRES_READ_ONLY_ENV_KEY, QW_POSTGRES_SKIP_MIGRATIONS_ENV_KEY,
     QW_POSTGRES_SKIP_MIGRATION_LOCKING_ENV_KEY,
@@ -869,7 +869,7 @@ impl MetastoreService for PostgresqlMetastore {
         let list_splits_query = request.deserialize_list_splits_query()?;
         let mut sql_query_builder = Query::select();
         sql_query_builder.column(Asterisk).from(Splits::Table);
-        append_query_filters(&mut sql_query_builder, &list_splits_query);
+        append_query_filters_and_order_by(&mut sql_query_builder, &list_splits_query);
 
         let (sql_query, values) = sql_query_builder.build_sqlx(PostgresQueryBuilder);
         let pg_split_stream = SplitStream::new(
@@ -1913,7 +1913,7 @@ mod tests {
         let index_uid = IndexUid::new_with_random_ulid("test-index");
         let query =
             ListSplitsQuery::for_index(index_uid.clone()).with_split_state(SplitState::Staged);
-        append_query_filters(sql, &query);
+        append_query_filters_and_order_by(sql, &query);
 
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
@@ -1927,7 +1927,7 @@ mod tests {
 
         let query =
             ListSplitsQuery::for_index(index_uid.clone()).with_split_state(SplitState::Published);
-        append_query_filters(sql, &query);
+        append_query_filters_and_order_by(sql, &query);
 
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
@@ -1941,7 +1941,7 @@ mod tests {
 
         let query = ListSplitsQuery::for_index(index_uid.clone())
             .with_split_states([SplitState::Published, SplitState::MarkedForDeletion]);
-        append_query_filters(sql, &query);
+        append_query_filters_and_order_by(sql, &query);
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
@@ -1953,7 +1953,7 @@ mod tests {
         let sql = select_statement.column(Asterisk).from(Splits::Table);
 
         let query = ListSplitsQuery::for_index(index_uid.clone()).with_update_timestamp_lt(51);
-        append_query_filters(sql, &query);
+        append_query_filters_and_order_by(sql, &query);
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
@@ -1965,7 +1965,7 @@ mod tests {
         let sql = select_statement.column(Asterisk).from(Splits::Table);
 
         let query = ListSplitsQuery::for_index(index_uid.clone()).with_create_timestamp_lte(55);
-        append_query_filters(sql, &query);
+        append_query_filters_and_order_by(sql, &query);
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
@@ -1979,7 +1979,7 @@ mod tests {
         let maturity_evaluation_datetime = OffsetDateTime::from_unix_timestamp(55).unwrap();
         let query = ListSplitsQuery::for_index(index_uid.clone())
             .retain_mature(maturity_evaluation_datetime);
-        append_query_filters(sql, &query);
+        append_query_filters_and_order_by(sql, &query);
 
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
@@ -1993,7 +1993,7 @@ mod tests {
 
         let query = ListSplitsQuery::for_index(index_uid.clone())
             .retain_immature(maturity_evaluation_datetime);
-        append_query_filters(sql, &query);
+        append_query_filters_and_order_by(sql, &query);
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
@@ -2005,7 +2005,7 @@ mod tests {
         let sql = select_statement.column(Asterisk).from(Splits::Table);
 
         let query = ListSplitsQuery::for_index(index_uid.clone()).with_delete_opstamp_gte(4);
-        append_query_filters(sql, &query);
+        append_query_filters_and_order_by(sql, &query);
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
@@ -2017,7 +2017,7 @@ mod tests {
         let sql = select_statement.column(Asterisk).from(Splits::Table);
 
         let query = ListSplitsQuery::for_index(index_uid.clone()).with_time_range_start_gt(45);
-        append_query_filters(sql, &query);
+        append_query_filters_and_order_by(sql, &query);
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
@@ -2029,7 +2029,7 @@ mod tests {
         let sql = select_statement.column(Asterisk).from(Splits::Table);
 
         let query = ListSplitsQuery::for_index(index_uid.clone()).with_time_range_end_lt(45);
-        append_query_filters(sql, &query);
+        append_query_filters_and_order_by(sql, &query);
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
@@ -2045,7 +2045,7 @@ mod tests {
                 is_present: false,
                 tag: "tag-2".to_string(),
             });
-        append_query_filters(sql, &query);
+        append_query_filters_and_order_by(sql, &query);
 
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
@@ -2058,7 +2058,7 @@ mod tests {
         let sql = select_statement.column(Asterisk).from(Splits::Table);
 
         let query = ListSplitsQuery::for_index(index_uid.clone()).with_offset(4);
-        append_query_filters(sql, &query);
+        append_query_filters_and_order_by(sql, &query);
 
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
@@ -2071,7 +2071,7 @@ mod tests {
         let sql = select_statement.column(Asterisk).from(Splits::Table);
 
         let query = ListSplitsQuery::for_index(index_uid.clone()).sort_by_index_uid();
-        append_query_filters(sql, &query);
+        append_query_filters_and_order_by(sql, &query);
 
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
@@ -2089,13 +2089,24 @@ mod tests {
                 split_id: "my_split".to_string(),
                 ..Default::default()
             });
-        append_query_filters(sql, &query);
+        append_query_filters_and_order_by(sql, &query);
 
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
                 r#"SELECT * FROM "splits" WHERE "index_uid" IN ('{index_uid}') AND ("index_uid", "split_id") > ('{index_uid}', 'my_split')"#
             )
+        );
+
+        let mut select_statement = Query::select();
+        let sql = select_statement.column(Asterisk).from(Splits::Table);
+
+        let query = ListSplitsQuery::for_all_indexes().with_split_state(SplitState::Staged);
+        append_query_filters_and_order_by(sql, &query);
+
+        assert_eq!(
+            sql.to_string(PostgresQueryBuilder),
+            r#"SELECT * FROM "splits" WHERE "split_state" IN ('Staged')"#
         );
     }
 
@@ -2108,7 +2119,7 @@ mod tests {
         let query = ListSplitsQuery::for_index(index_uid.clone())
             .with_time_range_start_gt(0)
             .with_time_range_end_lt(40);
-        append_query_filters(sql, &query);
+        append_query_filters_and_order_by(sql, &query);
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
@@ -2122,7 +2133,7 @@ mod tests {
         let query = ListSplitsQuery::for_index(index_uid.clone())
             .with_time_range_start_gt(45)
             .with_delete_opstamp_gt(0);
-        append_query_filters(sql, &query);
+        append_query_filters_and_order_by(sql, &query);
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
@@ -2136,7 +2147,7 @@ mod tests {
         let query = ListSplitsQuery::for_index(index_uid.clone())
             .with_update_timestamp_lt(51)
             .with_create_timestamp_lte(63);
-        append_query_filters(sql, &query);
+        append_query_filters_and_order_by(sql, &query);
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
@@ -2153,7 +2164,7 @@ mod tests {
                 is_present: true,
                 tag: "tag-1".to_string(),
             });
-        append_query_filters(sql, &query);
+        append_query_filters_and_order_by(sql, &query);
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
@@ -2168,7 +2179,7 @@ mod tests {
         let query =
             ListSplitsQuery::try_from_index_uids(vec![index_uid.clone(), index_uid_2.clone()])
                 .unwrap();
-        append_query_filters(sql, &query);
+        append_query_filters_and_order_by(sql, &query);
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(

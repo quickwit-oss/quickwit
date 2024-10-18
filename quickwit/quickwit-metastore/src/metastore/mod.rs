@@ -597,8 +597,9 @@ impl ListSplitsResponseExt for ListSplitsResponse {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 /// A query builder for listing splits within the metastore.
 pub struct ListSplitsQuery {
-    /// A non-empty list of index UIDs for which to fetch the splits.
-    pub index_uids: Vec<IndexUid>,
+    /// A non-empty list of index UIDs for which to fetch the splits, or
+    /// None if we want splits from all indexes.
+    pub index_uids: Option<Vec<IndexUid>>,
 
     /// A specific node ID to filter by.
     pub node_id: Option<NodeId>,
@@ -677,7 +678,7 @@ impl ListSplitsQuery {
     /// Creates a new [`ListSplitsQuery`] for the designated index.
     pub fn for_index(index_uid: IndexUid) -> Self {
         Self {
-            index_uids: vec![index_uid],
+            index_uids: Some(vec![index_uid]),
             node_id: None,
             limit: None,
             offset: None,
@@ -700,7 +701,7 @@ impl ListSplitsQuery {
             return None;
         }
         Some(Self {
-            index_uids,
+            index_uids: Some(index_uids),
             node_id: None,
             limit: None,
             offset: None,
@@ -714,6 +715,25 @@ impl ListSplitsQuery {
             sort_by: SortBy::None,
             after_split: None,
         })
+    }
+
+    /// Creates a new [`ListSplitsQuery`] for all indexes.
+    pub fn for_all_indexes() -> Self {
+        Self {
+            index_uids: None,
+            node_id: None,
+            limit: None,
+            offset: None,
+            split_states: Vec::new(),
+            tags: None,
+            time_range: Default::default(),
+            delete_opstamp: Default::default(),
+            update_timestamp: Default::default(),
+            create_timestamp: Default::default(),
+            mature: Bound::Unbounded,
+            sort_by: SortBy::None,
+            after_split: None,
+        }
     }
 
     /// Selects splits produced by the specified node.

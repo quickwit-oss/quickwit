@@ -1132,7 +1132,7 @@ mod tests {
             .expect_list_splits()
             .returning(move |list_splits_request: ListSplitsRequest| {
                 let list_split_query = list_splits_request.deserialize_list_splits_query().unwrap();
-                if list_split_query.index_uids.contains(&index_uid)
+                if list_split_query.index_uids.unwrap().contains(&index_uid)
                     && list_split_query.split_states
                         == vec![SplitState::Published, SplitState::Staged]
                     && list_split_query.time_range.start == Bound::Included(10)
@@ -1219,7 +1219,7 @@ mod tests {
             .expect_list_splits()
             .withf(move |list_split_request| -> bool {
                 let list_split_query = list_split_request.deserialize_list_splits_query().unwrap();
-                list_split_query.index_uids.contains(&index_uid)
+                list_split_query.index_uids.unwrap().contains(&index_uid)
             })
             .return_once(move |_| {
                 let splits = vec![split_1, split_2];
@@ -1271,7 +1271,7 @@ mod tests {
         mock_metastore.expect_list_splits().return_once(
             move |list_split_request: ListSplitsRequest| {
                 let list_split_query = list_split_request.deserialize_list_splits_query().unwrap();
-                if list_split_query.index_uids.contains(&index_uid)
+                if list_split_query.index_uids.unwrap().contains(&index_uid)
                     && list_split_query.split_states.is_empty()
                     && list_split_query.time_range.is_unbounded()
                     && list_split_query.create_timestamp.is_unbounded()
