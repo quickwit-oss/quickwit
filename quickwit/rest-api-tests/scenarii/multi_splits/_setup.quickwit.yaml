@@ -36,7 +36,7 @@ shuffle_ndjson:
   - {"timestamp": "2015-01-10T13:00:00Z"}
   - {"timestamp": "2015-01-11T12:00:00Z"}
   - {"timestamp": "2015-01-10T10:00:00Z"}
-  - {"timestamp": "2015-01-10T14:00:00Z"} # 1h later than 2.doc
+  - {"timestamp": "2015-01-10T14:00:00.000000001Z"} # 1h later than 2.doc
   - {"timestamp": "2015-01-11T12:00:00Z"}
   - {"timestamp": "2015-01-10T10:00:00Z"}
   - {"timestamp": "2015-01-10T12:00:00Z"} # 1h earlier than 2. doc
