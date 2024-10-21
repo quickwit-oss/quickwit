@@ -115,7 +115,7 @@ cat > s3-role.json << EOF
       "Condition": {
         "StringEquals": {
           "oidc.eks.${REGION}.amazonaws.com/id/${CLUSTER_ID}:aud": "sts.amazonaws.com",
-          "oidc.eks.${REGION}.amazonaws.com/id/${CLUSTER_ID}:sub": "system:serviceaccount:${S3_BUCKET}:${SERVICE_ACCOUNT_NAME}"
+          "oidc.eks.${REGION}.amazonaws.com/id/${CLUSTER_ID}:sub": "system:serviceaccount:${NAMESPACE}:${SERVICE_ACCOUNT_NAME}"
         }
       }
     }
