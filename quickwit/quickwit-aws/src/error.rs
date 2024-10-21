@@ -50,7 +50,10 @@ where E: AwsRetryable
 
 fn is_retryable(meta: &aws_sdk_s3::error::ErrorMetadata) -> bool {
     if let Some(code) = meta.code() {
-        THROTTLING_ERRORS.contains(&code) || TRANSIENT_ERRORS.contains(&code)
+        THROTTLING_ERRORS.contains(&code)
+            || TRANSIENT_ERRORS.contains(&code)
+            || code == "InternalError" // this is somehow not considered transient, despite the
+                                       // associated error message containing "Please try again."
     } else {
         false
     }
