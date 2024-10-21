@@ -779,10 +779,9 @@ mod tests {
 
         let self_node_state = cluster_snapshot
             .chitchat_state_snapshot
-            .node_state_snapshots
+            .node_states
             .into_iter()
-            .find(|node_state_snapshot| node_state_snapshot.chitchat_id == node.self_chitchat_id)
-            .map(|node_state_snapshot| node_state_snapshot.node_state)
+            .find(|node_state| node_state.chitchat_id() == &node.self_chitchat_id)
             .unwrap();
         assert_eq!(
             self_node_state.get(READINESS_KEY).unwrap(),
@@ -800,10 +799,9 @@ mod tests {
 
         let self_node_state = cluster_snapshot
             .chitchat_state_snapshot
-            .node_state_snapshots
+            .node_states
             .into_iter()
-            .find(|node_state_snapshot| node_state_snapshot.chitchat_id == node.self_chitchat_id)
-            .map(|node_state_snapshot| node_state_snapshot.node_state)
+            .find(|node_state| node_state.chitchat_id() == &node.self_chitchat_id)
             .unwrap();
         assert_eq!(
             self_node_state.get(READINESS_KEY).unwrap(),
@@ -821,10 +819,9 @@ mod tests {
 
         let self_node_state = cluster_snapshot
             .chitchat_state_snapshot
-            .node_state_snapshots
+            .node_states
             .into_iter()
-            .find(|node_state_snapshot| node_state_snapshot.chitchat_id == node.self_chitchat_id)
-            .map(|node_state_snapshot| node_state_snapshot.node_state)
+            .find(|node_state| node_state.chitchat_id() == &node.self_chitchat_id)
             .unwrap();
         assert_eq!(
             self_node_state.get(READINESS_KEY).unwrap(),
