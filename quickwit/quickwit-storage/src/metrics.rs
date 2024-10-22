@@ -21,7 +21,8 @@
 
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
-    new_counter, new_counter_with_labels, new_gauge, IntCounter, IntGauge,
+    new_counter, new_counter_vec, new_counter_with_labels, new_gauge, IntCounter, IntCounterVec,
+    IntGauge,
 };
 
 /// Counters associated to storage operations.
@@ -32,7 +33,10 @@ pub struct StorageMetrics {
     pub fast_field_cache: CacheMetrics,
     pub split_footer_cache: CacheMetrics,
     pub searcher_split_cache: CacheMetrics,
+    pub get_slice_timeout_successes: [IntCounter; 3],
+    pub get_slice_timeout_all_timeouts: IntCounter,
     pub object_storage_get_total: IntCounter,
+    pub object_storage_get_errors_total: IntCounterVec<1>,
     pub object_storage_put_total: IntCounter,
     pub object_storage_put_parts: IntCounter,
     pub object_storage_download_num_bytes: IntCounter,
@@ -41,6 +45,21 @@ pub struct StorageMetrics {
 
 impl Default for StorageMetrics {
     fn default() -> Self {
+        let get_slice_timeout_outcome_total_vec = new_counter_vec(
+            "get_slice_timeout_outcome",
+            "Outcome of get_slice operations. success_after_1_timeout means the operation \
+             succeeded after a retry caused by a timeout.",
+            "storage",
+            &[],
+            ["outcome"],
+        );
+        let get_slice_timeout_successes = [
+            get_slice_timeout_outcome_total_vec.with_label_values(["success_after_0_timeout"]),
+            get_slice_timeout_outcome_total_vec.with_label_values(["success_after_1_timeout"]),
+            get_slice_timeout_outcome_total_vec.with_label_values(["success_after_2+_timeout"]),
+        ];
+        let get_slice_timeout_all_timeouts =
+            get_slice_timeout_outcome_total_vec.with_label_values(["all_timeouts"]);
         StorageMetrics {
             fast_field_cache: CacheMetrics::for_component("fastfields"),
             fd_cache_metrics: CacheMetrics::for_component("fd"),
@@ -48,12 +67,20 @@ impl Default for StorageMetrics {
             searcher_split_cache: CacheMetrics::for_component("searcher_split"),
             shortlived_cache: CacheMetrics::for_component("shortlived"),
             split_footer_cache: CacheMetrics::for_component("splitfooter"),
-
+            get_slice_timeout_successes,
+            get_slice_timeout_all_timeouts,
             object_storage_get_total: new_counter(
                 "object_storage_gets_total",
                 "Number of objects fetched.",
                 "storage",
                 &[],
+            ),
+            object_storage_get_errors_total: new_counter_vec::<1>(
+                "object_storage_get_errors_total",
+                "Number of GetObject errors.",
+                "storage",
+                &[],
+                ["code"],
             ),
             object_storage_put_total: new_counter(
                 "object_storage_puts_total",

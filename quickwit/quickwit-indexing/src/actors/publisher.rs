@@ -51,6 +51,11 @@ impl PublisherType {
     }
 }
 
+/// Disconnect the merge planner loop back.
+/// This message is used to cut the merge pipeline loop, and let it terminate.
+#[derive(Debug)]
+pub(crate) struct DisconnectMergePlanner;
+
 #[derive(Clone)]
 pub struct Publisher {
     publisher_type: PublisherType,
@@ -94,6 +99,21 @@ impl Actor for Publisher {
             PublisherType::MainPublisher => QueueCapacity::Bounded(1),
             PublisherType::MergePublisher => QueueCapacity::Unbounded,
         }
+    }
+}
+
+#[async_trait]
+impl Handler<DisconnectMergePlanner> for Publisher {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        _: DisconnectMergePlanner,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<(), quickwit_actors::ActorExitStatus> {
+        info!("disconnecting merge planner mailbox");
+        self.merge_planner_mailbox_opt = None;
+        Ok(())
     }
 }
 

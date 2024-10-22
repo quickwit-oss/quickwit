@@ -18,9 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use quickwit_common::rate_limited_error;
-use quickwit_opentelemetry::otlp::{
-    OtlpGrpcLogsService, OtlpGrpcTracesService, OTEL_LOGS_INDEX_ID, OTEL_TRACES_INDEX_ID,
-};
+use quickwit_opentelemetry::otlp::{OtelSignal, OtlpGrpcLogsService, OtlpGrpcTracesService};
 use quickwit_proto::opentelemetry::proto::collector::logs::v1::logs_service_server::LogsService;
 use quickwit_proto::opentelemetry::proto::collector::logs::v1::{
     ExportLogsServiceRequest, ExportLogsServiceResponse,
@@ -41,7 +39,12 @@ use crate::rest_api_response::into_rest_api_response;
 use crate::{require, with_arg, Body, BodyFormat};
 
 #[derive(utoipa::OpenApi)]
-#[openapi(paths(otlp_default_logs_handler, otlp_default_traces_handler))]
+#[openapi(paths(
+    otlp_default_logs_handler,
+    otlp_logs_handler,
+    otlp_default_traces_handler,
+    otlp_ingest_traces_handler
+))]
 pub struct OtlpApi;
 
 /// Setup OpenTelemetry API handlers.
@@ -74,15 +77,31 @@ pub(crate) fn otlp_default_logs_handler(
             "content-type",
             "application/x-protobuf",
         ))
+        .and(warp::header::optional::<String>(
+            OtelSignal::Logs.header_name(),
+        ))
         .and(warp::post())
         .and(get_body_bytes())
-        .then(|otlp_logs_service, body| async move {
-            otlp_ingest_logs(otlp_logs_service, OTEL_LOGS_INDEX_ID.to_string(), body).await
-        })
+        .then(
+            |otlp_logs_service, index_id: Option<String>, body| async move {
+                let index_id =
+                    index_id.unwrap_or_else(|| OtelSignal::Logs.default_index_id().to_string());
+                otlp_ingest_logs(otlp_logs_service, index_id, body).await
+            },
+        )
         .and(with_arg(BodyFormat::default()))
         .map(into_rest_api_response)
 }
-
+/// Open Telemetry REST/Protobuf logs ingest endpoint.
+#[utoipa::path(
+    post,
+    tag = "Open Telemetry",
+    path = "/{index}/otlp/v1/logs",
+    request_body(content = String, description = "`ExportLogsServiceRequest` protobuf message", content_type = "application/x-protobuf"),
+    responses(
+        (status = 200, description = "Successfully exported logs.", body = ExportLogsServiceResponse)
+    ),
+)]
 pub(crate) fn otlp_logs_handler(
     otlp_log_service: Option<OtlpGrpcLogsService>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
@@ -118,15 +137,31 @@ pub(crate) fn otlp_default_traces_handler(
             "content-type",
             "application/x-protobuf",
         ))
+        .and(warp::header::optional::<String>(
+            OtelSignal::Traces.header_name(),
+        ))
         .and(warp::post())
         .and(get_body_bytes())
-        .then(|otlp_traces_service, body| async move {
-            otlp_ingest_traces(otlp_traces_service, OTEL_TRACES_INDEX_ID.to_string(), body).await
-        })
+        .then(
+            |otlp_traces_service, index_id: Option<String>, body| async move {
+                let index_id =
+                    index_id.unwrap_or_else(|| OtelSignal::Traces.default_index_id().to_string());
+                otlp_ingest_traces(otlp_traces_service, index_id, body).await
+            },
+        )
         .and(with_arg(BodyFormat::default()))
         .map(into_rest_api_response)
 }
-
+/// Open Telemetry REST/Protobuf traces ingest endpoint.
+#[utoipa::path(
+    post,
+    tag = "Open Telemetry",
+    path = "/{index}/otlp/v1/traces",
+    request_body(content = String, description = "`ExportTraceServiceRequest` protobuf message", content_type = "application/x-protobuf"),
+    responses(
+        (status = 200, description = "Successfully exported traces.", body = ExportTracesServiceResponse)
+    ),
+)]
 pub(crate) fn otlp_ingest_traces_handler(
     otlp_traces_service: Option<OtlpGrpcTracesService>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
@@ -165,15 +200,21 @@ impl ServiceError for OtlpApiError {
 
 async fn otlp_ingest_logs(
     otlp_logs_service: OtlpGrpcLogsService,
-    _index_id: IndexId, // <- TODO: use index ID when gRPC service supports it.
+    index_id: IndexId,
     body: Body,
 ) -> Result<ExportLogsServiceResponse, OtlpApiError> {
-    // TODO: use index ID.
     let export_logs_request: ExportLogsServiceRequest =
         prost::Message::decode(&body.content[..])
             .map_err(|err| OtlpApiError::InvalidPayload(err.to_string()))?;
+    let mut request = tonic::Request::new(export_logs_request);
+    let index = index_id
+        .try_into()
+        .map_err(|_| OtlpApiError::InvalidPayload("invalid index id".to_string()))?;
+    request
+        .metadata_mut()
+        .insert(OtelSignal::Logs.header_name(), index);
     let result = otlp_logs_service
-        .export(tonic::Request::new(export_logs_request))
+        .export(request)
         .await
         .map_err(|err| OtlpApiError::Ingest(err.to_string()))?;
     Ok(result.into_inner())
@@ -181,14 +222,21 @@ async fn otlp_ingest_logs(
 
 async fn otlp_ingest_traces(
     otlp_traces_service: OtlpGrpcTracesService,
-    _index_id: IndexId, // <- TODO: use index ID when gRPC service supports it.
+    index_id: IndexId,
     body: Body,
 ) -> Result<ExportTraceServiceResponse, OtlpApiError> {
     let export_traces_request: ExportTraceServiceRequest =
         prost::Message::decode(&body.content[..])
             .map_err(|err| OtlpApiError::InvalidPayload(err.to_string()))?;
+    let mut request = tonic::Request::new(export_traces_request);
+    let index = index_id
+        .try_into()
+        .map_err(|_| OtlpApiError::InvalidPayload("invalid index id".to_string()))?;
+    request
+        .metadata_mut()
+        .insert(OtelSignal::Traces.header_name(), index);
     let response = otlp_traces_service
-        .export(tonic::Request::new(export_traces_request))
+        .export(request)
         .await
         .map_err(|err| OtlpApiError::Ingest(err.to_string()))?;
     Ok(response.into_inner())
@@ -232,11 +280,40 @@ mod tests {
         let mut mock_ingest_router = MockIngestRouterService::new();
         mock_ingest_router
             .expect_ingest()
+            .times(2)
             .withf(|request| {
-                request.subrequests.len() == 1
-                    && request.subrequests[0].doc_batch.is_some()
+                if request.subrequests.len() == 1 {
+                    let subrequest = &request.subrequests[0];
+                    subrequest.doc_batch.is_some()
                     // && request.commit == CommitType::Auto as i32
-                    && request.subrequests[0].doc_batch.as_ref().unwrap().doc_lengths.len() == 1
+                    && subrequest.doc_batch.as_ref().unwrap().doc_lengths.len() == 1
+                    && subrequest.index_id == quickwit_opentelemetry::otlp::OTEL_LOGS_INDEX_ID
+                } else {
+                    false
+                }
+            })
+            .returning(|_| {
+                Ok(IngestResponseV2 {
+                    successes: vec![IngestSuccess {
+                        num_ingested_docs: 1,
+                        ..Default::default()
+                    }],
+                    failures: Vec::new(),
+                })
+            });
+        mock_ingest_router
+            .expect_ingest()
+            .times(2)
+            .withf(|request| {
+                if request.subrequests.len() == 1 {
+                    let subrequest = &request.subrequests[0];
+                    subrequest.doc_batch.is_some()
+                    // && request.commit == CommitType::Auto as i32
+                    && subrequest.doc_batch.as_ref().unwrap().doc_lengths.len() == 1
+                    && subrequest.index_id == "otel-logs-v0_6"
+                } else {
+                    false
+                }
             })
             .returning(|_| {
                 Ok(IngestResponseV2 {
@@ -322,9 +399,31 @@ mod tests {
             );
         }
         {
-            // Test endpoint with given index ID.
+            // Test endpoint with index ID through header
             let resp = warp::test::request()
-                .path("/otel-traces-v0_6/otlp/v1/logs")
+                .path("/otlp/v1/logs")
+                .method("POST")
+                .header("content-type", "application/x-protobuf")
+                .header("qw-otel-logs-index", "otel-logs-v0_6")
+                .body(body.clone())
+                .reply(&otlp_traces_api_handler)
+                .await;
+            assert_eq!(resp.status(), 200);
+            let actual_response: ExportLogsServiceResponse =
+                serde_json::from_slice(resp.body()).unwrap();
+            assert!(actual_response.partial_success.is_some());
+            assert_eq!(
+                actual_response
+                    .partial_success
+                    .unwrap()
+                    .rejected_log_records,
+                0
+            );
+        }
+        {
+            // Test endpoint with given index ID through path.
+            let resp = warp::test::request()
+                .path("/otel-logs-v0_6/otlp/v1/logs")
                 .method("POST")
                 .header("content-type", "application/x-protobuf")
                 .body(body.clone())
@@ -349,11 +448,40 @@ mod tests {
         let mut mock_ingest_router = MockIngestRouterService::new();
         mock_ingest_router
             .expect_ingest()
+            .times(2)
             .withf(|request| {
-                request.subrequests.len() == 1
-                        && request.subrequests[0].doc_batch.is_some()
-                        // && request.commit == CommitType::Auto as i32
-                        && request.subrequests[0].doc_batch.as_ref().unwrap().doc_lengths.len() == 5
+                if request.subrequests.len() == 1 {
+                    let subrequest = &request.subrequests[0];
+                    subrequest.doc_batch.is_some()
+                    // && request.commit == CommitType::Auto as i32
+                    && subrequest.doc_batch.as_ref().unwrap().doc_lengths.len() == 5
+                    && subrequest.index_id == quickwit_opentelemetry::otlp::OTEL_TRACES_INDEX_ID
+                } else {
+                    false
+                }
+            })
+            .returning(|_| {
+                Ok(IngestResponseV2 {
+                    successes: vec![IngestSuccess {
+                        num_ingested_docs: 1,
+                        ..Default::default()
+                    }],
+                    failures: Vec::new(),
+                })
+            });
+        mock_ingest_router
+            .expect_ingest()
+            .times(2)
+            .withf(|request| {
+                if request.subrequests.len() == 1 {
+                    let subrequest = &request.subrequests[0];
+                    subrequest.doc_batch.is_some()
+                    // && request.commit == CommitType::Auto as i32
+                    && subrequest.doc_batch.as_ref().unwrap().doc_lengths.len() == 5
+                    && subrequest.index_id == "otel-traces-v0_6"
+                } else {
+                    false
+                }
             })
             .returning(|_| {
                 Ok(IngestResponseV2 {
@@ -405,7 +533,23 @@ mod tests {
             assert_eq!(actual_response.partial_success.unwrap().rejected_spans, 0);
         }
         {
-            // Test endpoint with given index ID.
+            // Test endpoint with given index ID through header.
+            let resp = warp::test::request()
+                .path("/otlp/v1/traces")
+                .method("POST")
+                .header("content-type", "application/x-protobuf")
+                .header("qw-otel-traces-index", "otel-traces-v0_6")
+                .body(body.clone())
+                .reply(&otlp_traces_api_handler)
+                .await;
+            assert_eq!(resp.status(), 200);
+            let actual_response: ExportTraceServiceResponse =
+                serde_json::from_slice(resp.body()).unwrap();
+            assert!(actual_response.partial_success.is_some());
+            assert_eq!(actual_response.partial_success.unwrap().rejected_spans, 0);
+        }
+        {
+            // Test endpoint with given index ID through path.
             let resp = warp::test::request()
                 .path("/otel-traces-v0_6/otlp/v1/traces")
                 .method("POST")

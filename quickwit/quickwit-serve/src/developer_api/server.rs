@@ -89,7 +89,7 @@ impl DeveloperService for DeveloperApiServer {
                 "ready_nodes": cluster_snapshot.ready_nodes,
                 "live_nodes": cluster_snapshot.live_nodes,
                 "dead_nodes": cluster_snapshot.dead_nodes,
-                "chitchat_state": cluster_snapshot.chitchat_state_snapshot.node_state_snapshots,
+                "chitchat_state": cluster_snapshot.chitchat_state_snapshot.node_states,
             })
         });
         if let Some(control_plane_mailbox) = &self.control_plane_mailbox_opt {

@@ -58,7 +58,7 @@ use crate::models::{IndexedSplit, IndexedSplitBatch, MergeScratch, PublishLock, 
 pub struct MergeExecutor {
     pipeline_id: MergePipelineId,
     metastore: MetastoreServiceClient,
-    doc_mapper: Arc<dyn DocMapper>,
+    doc_mapper: Arc<DocMapper>,
     io_controls: IoControls,
     merge_packager_mailbox: Mailbox<Packager>,
 }
@@ -288,7 +288,7 @@ impl MergeExecutor {
     pub fn new(
         pipeline_id: MergePipelineId,
         metastore: MetastoreServiceClient,
-        doc_mapper: Arc<dyn DocMapper>,
+        doc_mapper: Arc<DocMapper>,
         io_controls: IoControls,
         merge_packager_mailbox: Mailbox<Packager>,
     ) -> Self {
@@ -469,7 +469,7 @@ impl MergeExecutor {
         union_index_meta: IndexMeta,
         split_directories: Vec<Box<dyn Directory>>,
         delete_tasks: Vec<DeleteTask>,
-        doc_mapper_opt: Option<Arc<dyn DocMapper>>,
+        doc_mapper_opt: Option<Arc<DocMapper>>,
         output_path: &Path,
         ctx: &ActorContext<MergeExecutor>,
     ) -> anyhow::Result<ControlledDirectory> {

@@ -24,7 +24,7 @@ use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use elasticsearch_dsl::search::{Hit as ElasticHit, SearchResponse as ElasticsearchResponse};
-use elasticsearch_dsl::{HitsMetadata, Source, TotalHits, TotalHitsRelation};
+use elasticsearch_dsl::{HitsMetadata, ShardStatistics, Source, TotalHits, TotalHitsRelation};
 use futures_util::StreamExt;
 use hyper::StatusCode;
 use itertools::Itertools;
@@ -284,6 +284,7 @@ fn build_request_for_es_api(
             must_not: Vec::new(),
             should: Vec::new(),
             filter: queries,
+            minimum_should_match: None,
         });
     }
 
@@ -441,9 +442,16 @@ async fn es_compat_index_search(
     search_body: SearchBody,
     search_service: Arc<dyn SearchService>,
 ) -> Result<ElasticsearchResponse, ElasticsearchError> {
+    if search_params.scroll.is_some() && !search_params.allow_partial_search_results() {
+        return Err(ElasticsearchError::from(SearchError::InvalidArgument(
+            "Quickwit only supports scroll API with allow_partial_search_results set to true"
+                .to_string(),
+        )));
+    }
     let _source_excludes = search_params._source_excludes.clone();
     let _source_includes = search_params._source_includes.clone();
     let start_instant = Instant::now();
+    let allow_partial_search_results = search_params.allow_partial_search_results();
     let (search_request, append_shard_doc) =
         build_request_for_es_api(index_id_patterns, search_params, search_body)?;
     let search_response: SearchResponse = search_service.root_search(search_request).await?;
@@ -453,7 +461,8 @@ async fn es_compat_index_search(
         append_shard_doc,
         _source_excludes,
         _source_includes,
-    );
+        allow_partial_search_results,
+    )?;
     search_response_rest.took = elapsed.as_millis() as u32;
     Ok(search_response_rest)
 }
@@ -791,6 +800,7 @@ async fn es_compat_index_multi_search(
             build_request_for_es_api(index_ids_patterns, search_query_params, search_body)?;
         search_requests.push(es_request);
     }
+
     // TODO: forced to do weird referencing to work around https://github.com/rust-lang/rust/issues/100905
     // otherwise append_shard_doc is captured by ref, and we get lifetime issues
     let futures = search_requests
@@ -804,12 +814,14 @@ async fn es_compat_index_multi_search(
                 let search_response: SearchResponse =
                     search_service.clone().root_search(search_request).await?;
                 let elapsed = start_instant.elapsed();
-                let mut search_response_rest: ElasticsearchResponse = convert_to_es_search_response(
-                    search_response,
-                    append_shard_doc,
-                    _source_excludes,
-                    _source_includes,
-                );
+                let mut search_response_rest: ElasticsearchResponse =
+                    convert_to_es_search_response(
+                        search_response,
+                        append_shard_doc,
+                        _source_excludes,
+                        _source_includes,
+                        true, //< allow_partial_results. Set to to true to match ES's behavior.
+                    )?;
                 search_response_rest.took = elapsed.as_millis() as u32;
                 Ok::<_, ElasticsearchError>(search_response_rest)
             }
@@ -852,8 +864,13 @@ async fn es_scroll(
     };
     let search_response: SearchResponse = search_service.scroll(scroll_request).await?;
     // TODO append_shard_doc depends on the initial request, but we don't have access to it
+
+    // Ideally, we would have wanted to reuse the setting from the initial search request.
+    // However, passing that parameter is cumbersome, so we cut some corner and forbid the
+    // use of scroll requests in combination with allow_partial_results set to false.
+    let allow_failed_splits = true;
     let mut search_response_rest: ElasticsearchResponse =
-        convert_to_es_search_response(search_response, false, None, None);
+        convert_to_es_search_response(search_response, false, None, None, allow_failed_splits)?;
     search_response_rest.took = start_instant.elapsed().as_millis() as u32;
     Ok(search_response_rest)
 }
@@ -918,7 +935,13 @@ fn convert_to_es_search_response(
     append_shard_doc: bool,
     _source_excludes: Option<Vec<String>>,
     _source_includes: Option<Vec<String>>,
-) -> ElasticsearchResponse {
+    allow_partial_results: bool,
+) -> Result<ElasticsearchResponse, ElasticsearchError> {
+    if !allow_partial_results || resp.num_successful_splits == 0 {
+        if let Some(search_error) = SearchError::from_split_errors(&resp.failed_splits) {
+            return Err(ElasticsearchError::from(search_error));
+        }
+    }
     let hits: Vec<ElasticHit> = resp
         .hits
         .into_iter()
@@ -929,7 +952,10 @@ fn convert_to_es_search_response(
     } else {
         None
     };
-    ElasticsearchResponse {
+    let num_failed_splits = resp.failed_splits.len() as u32;
+    let num_successful_splits = resp.num_successful_splits as u32;
+    let num_total_splits = num_successful_splits + num_failed_splits;
+    Ok(ElasticsearchResponse {
         timed_out: false,
         hits: HitsMetadata {
             total: Some(TotalHits {
@@ -941,8 +967,16 @@ fn convert_to_es_search_response(
         },
         aggregations,
         scroll_id: resp.scroll_id,
+        // There is not concept of shards here, but use this to convey split search failures.
+        shards: ShardStatistics {
+            total: num_total_splits,
+            successful: num_successful_splits,
+            skipped: 0u32,
+            failed: num_failed_splits,
+            failures: Vec::new(),
+        },
         ..Default::default()
-    }
+    })
 }
 
 pub(crate) fn str_lines(body: &str) -> impl Iterator<Item = &str> {
@@ -954,6 +988,7 @@ pub(crate) fn str_lines(body: &str) -> impl Iterator<Item = &str> {
 #[cfg(test)]
 mod tests {
     use hyper::StatusCode;
+    use quickwit_proto::search::SplitSearchError;
 
     use super::{partial_hit_from_search_after_param, *};
 
@@ -1132,5 +1167,59 @@ mod tests {
         });
 
         assert_eq!(fields, expected);
+    }
+
+    // We test that the behavior of allow partial search results.
+    #[test]
+    fn test_convert_to_es_search_response_allow_partial() {
+        let split_error = SplitSearchError {
+            error: "some-error".to_string(),
+            split_id: "some-split-id".to_string(),
+            retryable_error: true,
+        };
+        {
+            let search_response = SearchResponse {
+                num_successful_splits: 1,
+                failed_splits: vec![split_error.clone()],
+                ..Default::default()
+            };
+            convert_to_es_search_response(search_response, false, None, None, false).unwrap_err();
+        }
+        {
+            let search_response = SearchResponse {
+                num_successful_splits: 1,
+                failed_splits: vec![split_error.clone()],
+                ..Default::default()
+            };
+            // if we allow partial search results, this should not fail, but we report the presence
+            // of failed splits in the fail shard response.
+            let es_search_resp =
+                convert_to_es_search_response(search_response, false, None, None, true).unwrap();
+            assert_eq!(es_search_resp.shards.failed, 1);
+        }
+        {
+            let search_response = SearchResponse {
+                failed_splits: vec![split_error.clone()],
+                ..Default::default()
+            };
+            // Event if we allow partial search results, with a fail and no success, we have a
+            // failure.
+            convert_to_es_search_response(search_response, false, None, None, true).unwrap_err();
+        }
+        {
+            // Not having any splits (no failure + no success) is not considered a failure.
+            for allow_partial in [true, false] {
+                let search_response = SearchResponse::default();
+                let es_search_resp = convert_to_es_search_response(
+                    search_response,
+                    false,
+                    None,
+                    None,
+                    allow_partial,
+                )
+                .unwrap();
+                assert_eq!(es_search_resp.shards.failed, 0);
+            }
+        }
     }
 }

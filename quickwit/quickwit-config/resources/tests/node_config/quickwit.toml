@@ -56,6 +56,11 @@ split_footer_cache_capacity = "1G"
 max_num_concurrent_split_streams = 120
 max_num_concurrent_split_searches = 150
 
+[searcher.storage_timeout_policy]
+min_throughtput_bytes_per_secs = 100000
+timeout_millis = 2000
+max_num_retries = 2
+
 [jaeger]
 enable_endpoint = true
 lookback_period_hours = 24

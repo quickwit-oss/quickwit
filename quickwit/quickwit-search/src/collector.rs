@@ -592,6 +592,7 @@ impl SegmentCollector for QuickwitSegmentCollector {
             partial_hits,
             failed_splits: Vec::new(),
             num_attempted_splits: 1,
+            num_successful_splits: 1,
         })
     }
 }
@@ -608,7 +609,8 @@ pub enum QuickwitAggregations {
 }
 
 impl QuickwitAggregations {
-    fn fast_field_names(&self) -> HashSet<String> {
+    /// Returns the list of fast fields that should be loaded for the aggregation.
+    pub fn fast_field_names(&self) -> HashSet<String> {
         match self {
             QuickwitAggregations::FindTraceIdsAggregation(collector) => {
                 collector.fast_field_names()
@@ -927,6 +929,10 @@ fn merge_leaf_responses(
         .iter()
         .map(|leaf_response| leaf_response.num_attempted_splits)
         .sum();
+    let num_successful_splits = leaf_responses
+        .iter()
+        .map(|leaf_response| leaf_response.num_successful_splits)
+        .sum::<u64>();
     let num_hits: u64 = leaf_responses
         .iter()
         .map(|leaf_response| leaf_response.num_hits)
@@ -952,6 +958,7 @@ fn merge_leaf_responses(
         partial_hits: top_k_partial_hits,
         failed_splits,
         num_attempted_splits,
+        num_successful_splits,
     })
 }
 
@@ -1173,6 +1180,7 @@ pub(crate) struct IncrementalCollector {
     num_hits: u64,
     failed_splits: Vec<SplitSearchError>,
     num_attempted_splits: u64,
+    num_successful_splits: u64,
     start_offset: usize,
 }
 
@@ -1193,6 +1201,7 @@ impl IncrementalCollector {
             num_hits: 0,
             failed_splits: Vec::new(),
             num_attempted_splits: 0,
+            num_successful_splits: 0,
         }
     }
 
@@ -1204,12 +1213,14 @@ impl IncrementalCollector {
             failed_splits,
             num_attempted_splits,
             intermediate_aggregation_result,
+            num_successful_splits,
         } = leaf_response;
 
         self.num_hits += num_hits;
         self.top_k_hits.add_entries(partial_hits.into_iter());
         self.failed_splits.extend(failed_splits);
         self.num_attempted_splits += num_attempted_splits;
+        self.num_successful_splits += num_successful_splits;
         if let Some(intermediate_aggregation_result) = intermediate_aggregation_result {
             self.incremental_aggregation
                 .add(intermediate_aggregation_result)?;
@@ -1252,6 +1263,7 @@ impl IncrementalCollector {
             partial_hits,
             failed_splits: self.failed_splits,
             num_attempted_splits: self.num_attempted_splits,
+            num_successful_splits: self.num_successful_splits,
             intermediate_aggregation_result,
         })
     }
@@ -1265,7 +1277,6 @@ mod tests {
         LeafSearchResponse, PartialHit, SearchRequest, SortByValue, SortField, SortOrder,
         SortValue, SplitSearchError,
     };
-    use quickwit_proto::types::DocMappingUid;
     use tantivy::collector::Collector;
     use tantivy::TantivyDocument;
 
@@ -1329,62 +1340,6 @@ mod tests {
             ),
             &[make_hit_given_split_id(1), make_hit_given_split_id(2)]
         );
-    }
-
-    // TODO figure out a way to remove this boilerplate and use mockall
-    #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-    struct MockDocMapper;
-
-    #[typetag::serde(name = "mock")]
-    impl quickwit_doc_mapper::DocMapper for MockDocMapper {
-        fn doc_mapping_uid(&self) -> DocMappingUid {
-            DocMappingUid::default()
-        }
-
-        // Required methods
-        fn doc_from_json_obj(
-            &self,
-            _json_obj: quickwit_doc_mapper::JsonObject,
-            _doc_len: u64,
-        ) -> Result<(u64, TantivyDocument), quickwit_doc_mapper::DocParsingError> {
-            unimplemented!()
-        }
-        fn doc_to_json(
-            &self,
-            _named_doc: std::collections::BTreeMap<String, Vec<tantivy::schema::OwnedValue>>,
-        ) -> anyhow::Result<quickwit_doc_mapper::JsonObject> {
-            unimplemented!()
-        }
-        fn schema(&self) -> tantivy::schema::Schema {
-            unimplemented!()
-        }
-        fn query(
-            &self,
-            _split_schema: tantivy::schema::Schema,
-            _query_ast: &quickwit_query::query_ast::QueryAst,
-            _with_validation: bool,
-        ) -> Result<
-            (
-                Box<dyn tantivy::query::Query>,
-                quickwit_doc_mapper::WarmupInfo,
-            ),
-            quickwit_doc_mapper::QueryParserError,
-        > {
-            unimplemented!()
-        }
-        fn default_search_fields(&self) -> &[String] {
-            unimplemented!()
-        }
-        fn max_num_partitions(&self) -> std::num::NonZeroU32 {
-            unimplemented!()
-        }
-        fn tokenizer_manager(&self) -> &quickwit_query::tokenizers::TokenizerManager {
-            unimplemented!()
-        }
-
-        fn timestamp_field_name(&self) -> Option<&str> {
-            None
-        }
     }
 
     fn sort_dataset() -> Vec<(Option<u64>, Option<u64>)> {
@@ -1814,6 +1769,7 @@ mod tests {
                 }],
                 failed_splits: Vec::new(),
                 num_attempted_splits: 3,
+                num_successful_splits: 3,
                 intermediate_aggregation_result: None,
             }],
         );
@@ -1831,6 +1787,7 @@ mod tests {
                 }],
                 failed_splits: Vec::new(),
                 num_attempted_splits: 3,
+                num_successful_splits: 3,
                 intermediate_aggregation_result: None
             }
         );
@@ -1868,6 +1825,7 @@ mod tests {
                     ],
                     failed_splits: Vec::new(),
                     num_attempted_splits: 3,
+                    num_successful_splits: 3,
                     intermediate_aggregation_result: None,
                 },
                 LeafSearchResponse {
@@ -1885,6 +1843,7 @@ mod tests {
                         retryable_error: true,
                     }],
                     num_attempted_splits: 2,
+                    num_successful_splits: 1,
                     intermediate_aggregation_result: None,
                 },
             ],
@@ -1916,6 +1875,7 @@ mod tests {
                     retryable_error: true,
                 }],
                 num_attempted_splits: 5,
+                num_successful_splits: 4,
                 intermediate_aggregation_result: None
             }
         );
@@ -1954,6 +1914,7 @@ mod tests {
                     ],
                     failed_splits: Vec::new(),
                     num_attempted_splits: 3,
+                    num_successful_splits: 3,
                     intermediate_aggregation_result: None,
                 },
                 LeafSearchResponse {
@@ -1971,6 +1932,7 @@ mod tests {
                         retryable_error: true,
                     }],
                     num_attempted_splits: 2,
+                    num_successful_splits: 1,
                     intermediate_aggregation_result: None,
                 },
             ],
@@ -2002,6 +1964,7 @@ mod tests {
                     retryable_error: true,
                 }],
                 num_attempted_splits: 5,
+                num_successful_splits: 4,
                 intermediate_aggregation_result: None
             }
         );

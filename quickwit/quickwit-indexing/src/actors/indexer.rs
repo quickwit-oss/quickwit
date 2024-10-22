@@ -540,7 +540,7 @@ impl Handler<NewPublishToken> for Indexer {
 impl Indexer {
     pub fn new(
         pipeline_id: IndexingPipelineId,
-        doc_mapper: Arc<dyn DocMapper>,
+        doc_mapper: Arc<DocMapper>,
         metastore: MetastoreServiceClient,
         indexing_directory: TempDirectory,
         indexing_settings: IndexingSettings,
@@ -712,7 +712,7 @@ mod tests {
     use std::time::Duration;
 
     use quickwit_actors::Universe;
-    use quickwit_doc_mapper::{default_doc_mapper_for_test, DefaultDocMapper};
+    use quickwit_doc_mapper::{default_doc_mapper_for_test, DocMapper};
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
     use quickwit_proto::metastore::{
         EmptyResponse, LastDeleteOpstampResponse, MockMetastoreService,
@@ -1227,9 +1227,8 @@ mod tests {
             node_id: NodeId::from("test-node"),
             pipeline_uid: PipelineUid::default(),
         };
-        let doc_mapper: Arc<dyn DocMapper> = Arc::new(
-            serde_json::from_str::<DefaultDocMapper>(DOCMAPPER_WITH_PARTITION_JSON).unwrap(),
-        );
+        let doc_mapper: Arc<DocMapper> =
+            Arc::new(serde_json::from_str::<DocMapper>(DOCMAPPER_WITH_PARTITION_JSON).unwrap());
         let schema = doc_mapper.schema();
         let tenant_field = schema.get_field("tenant").unwrap();
         let body_field = schema.get_field("body").unwrap();
@@ -1328,8 +1327,8 @@ mod tests {
             node_id: NodeId::from("test-node"),
             pipeline_uid: PipelineUid::default(),
         };
-        let doc_mapper: Arc<dyn DocMapper> =
-            Arc::new(serde_json::from_str::<DefaultDocMapper>(DOCMAPPER_SIMPLE_JSON).unwrap());
+        let doc_mapper: Arc<DocMapper> =
+            Arc::new(serde_json::from_str::<DocMapper>(DOCMAPPER_SIMPLE_JSON).unwrap());
         let body_field = doc_mapper.schema().get_field("body").unwrap();
         let indexing_directory = TempDirectory::for_test();
         let mut indexing_settings = IndexingSettings::for_test();
@@ -1399,8 +1398,8 @@ mod tests {
             node_id: NodeId::from("test-node"),
             pipeline_uid: PipelineUid::default(),
         };
-        let doc_mapper: Arc<dyn DocMapper> =
-            Arc::new(serde_json::from_str::<DefaultDocMapper>(DOCMAPPER_SIMPLE_JSON).unwrap());
+        let doc_mapper: Arc<DocMapper> =
+            Arc::new(serde_json::from_str::<DocMapper>(DOCMAPPER_SIMPLE_JSON).unwrap());
         let body_field = doc_mapper.schema().get_field("body").unwrap();
         let indexing_directory = TempDirectory::for_test();
         let mut indexing_settings = IndexingSettings::for_test();
@@ -1471,8 +1470,8 @@ mod tests {
             node_id: NodeId::from("test-node"),
             pipeline_uid: PipelineUid::default(),
         };
-        let doc_mapper: Arc<dyn DocMapper> =
-            Arc::new(serde_json::from_str::<DefaultDocMapper>(DOCMAPPER_SIMPLE_JSON).unwrap());
+        let doc_mapper: Arc<DocMapper> =
+            Arc::new(serde_json::from_str::<DocMapper>(DOCMAPPER_SIMPLE_JSON).unwrap());
         let body_field = doc_mapper.schema().get_field("body").unwrap();
         let indexing_directory = TempDirectory::for_test();
         let mut indexing_settings = IndexingSettings::for_test();
@@ -1536,8 +1535,8 @@ mod tests {
             node_id: NodeId::from("test-node"),
             pipeline_uid: PipelineUid::default(),
         };
-        let doc_mapper: Arc<dyn DocMapper> =
-            Arc::new(serde_json::from_str::<DefaultDocMapper>(DOCMAPPER_SIMPLE_JSON).unwrap());
+        let doc_mapper: Arc<DocMapper> =
+            Arc::new(serde_json::from_str::<DocMapper>(DOCMAPPER_SIMPLE_JSON).unwrap());
         let body_field = doc_mapper.schema().get_field("body").unwrap();
         let indexing_directory = TempDirectory::for_test();
         let indexing_settings = IndexingSettings::for_test();

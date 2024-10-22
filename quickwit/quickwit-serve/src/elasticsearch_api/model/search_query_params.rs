@@ -21,7 +21,6 @@ use std::fmt;
 use std::str::FromStr;
 use std::time::Duration;
 
-use quickwit_proto::search::SortOrder;
 use quickwit_query::BooleanOperand;
 use quickwit_search::SearchError;
 use serde::{Deserialize, Serialize};
@@ -232,10 +231,16 @@ pub struct DeleteQueryParams {
     pub timeout: Option<String>,
 }
 
+/// Parses a string as if it was a json value string.
+fn parse_str_like_json<T: serde::de::DeserializeOwned>(s: &str) -> Option<T> {
+    let json_value = serde_json::Value::String(s.to_string());
+    serde_json::from_value::<T>(json_value).ok()
+}
+
 // Parse a single sort field parameter from ES sort query string parameter.
 fn parse_sort_field_str(sort_field_str: &str) -> Result<SortField, SearchError> {
     if let Some((field, order_str)) = sort_field_str.split_once(':') {
-        let order = SortOrder::from_str_name(order_str).ok_or_else(|| {
+        let order = parse_str_like_json(order_str).ok_or_else(|| {
             SearchError::InvalidArgument(format!(
                 "invalid sort order `{}`. expected `asc` or `desc`",
                 field
@@ -286,6 +291,11 @@ impl SearchQueryParams {
             SearchError::InvalidArgument(format!("invalid scroll duration: `{scroll_str}`"))
         })?;
         Ok(Some(duration))
+    }
+
+    pub fn allow_partial_search_results(&self) -> bool {
+        // By default, elastic search allows partial results.
+        self.allow_partial_search_results.unwrap_or(true)
     }
 }
 
@@ -368,5 +378,51 @@ impl fmt::Display for SuggestMode {
             Self::Popular => write!(formatter, "popular"),
             Self::Always => write!(formatter, "always"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use quickwit_proto::search::SortOrder;
+
+    use super::*;
+
+    #[derive(Deserialize, PartialEq, Eq, Debug)]
+    #[serde(rename_all = "snake_case")]
+    enum TestEnum {
+        FirstItem,
+        SecondItem,
+    }
+
+    #[test]
+    fn test_parse_str_like_json() {
+        assert_eq!(
+            parse_str_like_json::<TestEnum>("first_item").unwrap(),
+            TestEnum::FirstItem
+        );
+        assert!(parse_str_like_json::<TestEnum>("FirstItem").is_none());
+    }
+
+    #[test]
+    fn test_sort_order_qs() {
+        let sort_order_qs = parse_sort_field_str("timestamp:desc").unwrap();
+        assert_eq!(
+            sort_order_qs,
+            SortField {
+                field: "timestamp".to_string(),
+                order: SortOrder::Desc,
+                date_format: None
+            }
+        );
+        let sort_order_qs = parse_sort_field_str("timestamp:asc").unwrap();
+        assert_eq!(
+            sort_order_qs,
+            SortField {
+                field: "timestamp".to_string(),
+                order: SortOrder::Asc,
+                date_format: None
+            }
+        );
     }
 }

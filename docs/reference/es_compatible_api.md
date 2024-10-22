@@ -135,6 +135,7 @@ If a parameter appears both as a query string parameter and in the JSON payload,
 | `size`             | `Integer`     | Number of hits to return.                                                        | 10            |
 | `sort`             | `String`      | Describes how documents should be ranked. See [Sort order](#sort-order)          | (Optional)    |
 | `scroll`           | `Duration`    | Creates a scroll context for "time to live". See [Scroll](#_scroll--scroll-api). | (Optional)    |
+| `allow_partial_search_results` | `Boolean` | Returns a partial response if some (but not all) of the split searches were unsuccessful. | `true` |
 
 #### Supported Request Body parameters
 
@@ -301,7 +302,7 @@ GET api/v1/_elastic/_cat/indices
 
 Use the [cat indices API](https://www.elastic.co/guide/en/elasticsearch/reference/current/cat-indices.html) to get the following information for each index in a cluster:
 * Shard count
-* Document count 
+* Document count
 * Deleted document count
 * Primary store size
 * Total store size
@@ -433,6 +434,7 @@ The following query types are supported.
 | `should`   | `JsonObject[]` (Optional) | Sub-queries that should match the documents.                      | []            |
 | `filter`   | `JsonObject[]`            | Like must queries, but the match does not influence the `_score`. | []            |
 | `boost`    | `Number`                  | Multiplier boost for score computation.                           | 1.0           |
+| `minimum_should_match`    | `Number` or `Str` | If present, quickwit will only match documents for which at least `minimum_should_match` should clauses are matching. `2`, `-1`, `"10%"` and `"-10%"` are supported. |  |
 
 ### `range`
 

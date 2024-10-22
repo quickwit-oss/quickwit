@@ -233,6 +233,9 @@ expected:
     total:
       value: 100
 ---
+# elasticsearch accepts this query
+engines:
+  - quickwit
 json:
   query:
     query_string:

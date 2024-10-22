@@ -459,7 +459,7 @@ mod tests {
             .returning(|list_splits_request| {
                 let query = list_splits_request.deserialize_list_splits_query().unwrap();
                 assert_eq!(query.split_states, &[SplitState::Published]);
-                let splits = match query.index_uids[0].index_id.as_ref() {
+                let splits = match query.index_uids.unwrap()[0].index_id.as_ref() {
                     "index-1" => {
                         vec![
                             make_split("split-1", Some(1000..=5000)),

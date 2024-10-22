@@ -173,8 +173,8 @@ impl SearchServiceImpl {
     }
 }
 
-pub fn deserialize_doc_mapper(doc_mapper_str: &str) -> crate::Result<Arc<dyn DocMapper>> {
-    let doc_mapper = serde_json::from_str::<Arc<dyn DocMapper>>(doc_mapper_str).map_err(|err| {
+pub fn deserialize_doc_mapper(doc_mapper_str: &str) -> crate::Result<Arc<DocMapper>> {
+    let doc_mapper = serde_json::from_str::<Arc<DocMapper>>(doc_mapper_str).map_err(|err| {
         SearchError::Internal(format!("failed to deserialize doc mapper: `{err}`"))
     })?;
     Ok(doc_mapper)
@@ -436,6 +436,8 @@ pub(crate) async fn scroll(
         scroll_id: Some(next_scroll_id.to_string()),
         errors: Vec::new(),
         aggregation: None,
+        failed_splits: scroll_context.failed_splits,
+        num_successful_splits: scroll_context.num_successful_splits,
     })
 }
 /// [`SearcherContext`] provides a common set of variables

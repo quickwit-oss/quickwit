@@ -121,5 +121,160 @@ expected:
   hits:
     total:
       value: 100
-
-
+---
+json:
+    query:
+        bool:
+            should:
+                - {"query_string": {"query": "type:PushEvent"}}
+                - {"query_string": {"query": "actor.login:jadonk"}}
+                - {"query_string": {"query": "actor.login:teozfrank"}}
+                - {"query_string": {"query": "type:IssueCommentEvent"}}
+            minimum_should_match: 1
+expected:
+    hits:
+        total:
+            value: 69
+---
+json:
+  query:
+      bool:
+        should:
+          - {"query_string": {"query": "type:PushEvent"}}
+          - {"query_string": {"query": "actor.login:jadonk"}}
+          - {"query_string": {"query": "actor.login:teozfrank"}}
+          - {"query_string": {"query": "type:IssueCommentEvent"}}
+        minimum_should_match: 2
+expected:
+  hits:
+    total:
+      value: 3
+---
+json:
+    query:
+        bool:
+            should:
+                - {"query_string": {"query": "type:PushEvent"}}
+                - {"query_string": {"query": "actor.login:jadonk"}}
+                - {"query_string": {"query": "actor.login:teozfrank"}}
+                - {"query_string": {"query": "type:IssueCommentEvent"}}
+            minimum_should_match: 3
+expected:
+    hits:
+        total:
+            value: 0
+---
+json:
+  query:
+      bool:
+        must:
+          - {"query_string": {"query": "type:PushEvent"}}
+        should:
+          - {"query_string": {"query": "actor.login:jadonk"}}
+          - {"query_string": {"query": "actor.login:teozfrank"}}
+          - {"query_string": {"query": "type:IssueCommentEvent"}}
+        minimum_should_match: 1
+expected:
+  hits:
+    total:
+      value: 2
+---
+json:
+  query:
+      bool:
+        must:
+          - {"query_string": {"query": "type:PushEvent"}}
+        should:
+          - {"query_string": {"query": "actor.login:jadonk"}}
+        minimum_should_match: 2 # that's one too many'
+expected:
+  hits:
+    total:
+      value: 0
+---
+json:
+    query:
+        bool:
+            should:
+            - {"query_string": {"query": "type:PushEvent"}}
+            - {"query_string": {"query": "actor.login:jadonk"}}
+            - {"query_string": {"query": "actor.login:teozfrank"}}
+            - {"query_string": {"query": "type:IssueCommentEvent"}}
+            minimum_should_match: 50%
+expected:
+    hits:
+        total:
+            value: 3
+---
+json:
+    query:
+        bool:
+            should:
+            - {"query_string": {"query": "type:PushEvent"}}
+            - {"query_string": {"query": "actor.login:jadonk"}}
+            - {"query_string": {"query": "actor.login:teozfrank"}}
+            - {"query_string": {"query": "type:IssueCommentEvent"}}
+            minimum_should_match: -2
+expected:
+    hits:
+        total:
+            value: 3
+---
+json:
+    query:
+        bool:
+            should:
+            - {"query_string": {"query": "type:PushEvent"}}
+            - {"query_string": {"query": "actor.login:jadonk"}}
+            - {"query_string": {"query": "actor.login:teozfrank"}}
+            - {"query_string": {"query": "type:IssueCommentEvent"}}
+            minimum_should_match: -3
+expected:
+    hits:
+        total:
+            value: 69
+---
+# corner case: a minimum should match that is too negative is just discarded.
+json:
+    query:
+        bool:
+            should:
+            - {"query_string": {"query": "type:PushEvent"}}
+            - {"query_string": {"query": "actor.login:jadonk"}}
+            - {"query_string": {"query": "actor.login:teozfrank"}}
+            - {"query_string": {"query": "type:IssueCommentEvent"}}
+            minimum_should_match: -10
+expected:
+    hits:
+        total:
+            value: 69
+---
+# corner case: a minimum should match that is too negative is just discarded.
+json:
+    query:
+        bool:
+            must:
+                - {"query_string": {"query": "type:PushEvent"}}
+            should:
+                - {"query_string": {"query": "actor.login:jadonk"}}
+                - {"query_string": {"query": "actor.login:teozfrank"}}
+                - {"query_string": {"query": "type:IssueCommentEvent"}}
+            minimum_should_match: -10
+expected:
+    hits:
+        total:
+            value: 60
+---
+json:
+    query:
+        bool:
+            should:
+            - {"query_string": {"query": "type:PushEvent"}}
+            - {"query_string": {"query": "actor.login:jadonk"}}
+            - {"query_string": {"query": "actor.login:teozfrank"}}
+            - {"query_string": {"query": "type:IssueCommentEvent"}}
+            minimum_should_match: 0
+expected:
+    hits:
+        total:
+            value: 69

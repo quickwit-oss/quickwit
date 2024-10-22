@@ -4,7 +4,7 @@ use bytes::Bytes;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use quickwit_actors::{ActorHandle, Mailbox, Universe};
 use quickwit_config::{SourceInputFormat, TransformConfig};
-use quickwit_doc_mapper::DefaultDocMapper;
+use quickwit_doc_mapper::DocMapper;
 use quickwit_indexing::actors::DocProcessor;
 use quickwit_indexing::models::RawDocBatch;
 use quickwit_metastore::checkpoint::SourceCheckpointDelta;
@@ -45,7 +45,7 @@ macro_rules! bench_func {
     }};
 }
 
-pub fn default_doc_mapper_for_bench() -> DefaultDocMapper {
+pub fn default_doc_mapper_for_bench() -> DocMapper {
     const JSON_CONFIG_VALUE: &str = r#"
         {
             "store_source": true,
@@ -87,7 +87,7 @@ pub fn default_doc_mapper_for_bench() -> DefaultDocMapper {
                 }
             ]
         }"#;
-    serde_json::from_str::<DefaultDocMapper>(JSON_CONFIG_VALUE).unwrap()
+    serde_json::from_str::<DocMapper>(JSON_CONFIG_VALUE).unwrap()
 }
 
 fn doc_processor_no_transform() -> (Mailbox<DocProcessor>, ActorHandle<DocProcessor>, Universe) {

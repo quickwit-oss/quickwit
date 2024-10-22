@@ -521,7 +521,8 @@ fn indexing_task_to_chitchat_kv(indexing_task: &IndexingTask) -> (String, String
     let index_uid = indexing_task.index_uid();
     let key = format!("{INDEXING_TASK_PREFIX}{}", indexing_task.pipeline_uid());
     let shard_ids_str = shard_ids.iter().sorted().join(",");
-    let value = format!("{index_uid}:{source_id}:{shard_ids_str}");
+    let fingerprint = indexing_task.params_fingerprint;
+    let value = format!("{index_uid}:{source_id}:{fingerprint}:{shard_ids_str}");
     (key, value)
 }
 
@@ -536,8 +537,12 @@ fn parse_shard_ids_str(shard_ids_str: &str) -> Vec<ShardId> {
 fn chitchat_kv_to_indexing_task(key: &str, value: &str) -> Option<IndexingTask> {
     let pipeline_uid_str = key.strip_prefix(INDEXING_TASK_PREFIX)?;
     let pipeline_uid = PipelineUid::from_str(pipeline_uid_str).ok()?;
-    let (source_uid, shards_str) = value.rsplit_once(':')?;
-    let (index_uid, source_id) = source_uid.rsplit_once(':')?;
+    let mut field_iterator = value.rsplitn(4, ':');
+    let shards_str = field_iterator.next()?;
+    let fingerprint_str = field_iterator.next()?;
+    let source_id = field_iterator.next()?;
+    let index_uid = field_iterator.next()?;
+    let params_fingerprint: u64 = fingerprint_str.parse().ok()?;
     let index_uid = index_uid.parse().ok()?;
     let shard_ids = parse_shard_ids_str(shards_str);
     Some(IndexingTask {
@@ -545,7 +550,7 @@ fn chitchat_kv_to_indexing_task(key: &str, value: &str) -> Option<IndexingTask> 
         source_id: source_id.to_string(),
         pipeline_uid: Some(pipeline_uid),
         shard_ids,
-        params_fingerprint: 0,
+        params_fingerprint,
     })
 }
 
@@ -774,10 +779,9 @@ mod tests {
 
         let self_node_state = cluster_snapshot
             .chitchat_state_snapshot
-            .node_state_snapshots
+            .node_states
             .into_iter()
-            .find(|node_state_snapshot| node_state_snapshot.chitchat_id == node.self_chitchat_id)
-            .map(|node_state_snapshot| node_state_snapshot.node_state)
+            .find(|node_state| node_state.chitchat_id() == &node.self_chitchat_id)
             .unwrap();
         assert_eq!(
             self_node_state.get(READINESS_KEY).unwrap(),
@@ -795,10 +799,9 @@ mod tests {
 
         let self_node_state = cluster_snapshot
             .chitchat_state_snapshot
-            .node_state_snapshots
+            .node_states
             .into_iter()
-            .find(|node_state_snapshot| node_state_snapshot.chitchat_id == node.self_chitchat_id)
-            .map(|node_state_snapshot| node_state_snapshot.node_state)
+            .find(|node_state| node_state.chitchat_id() == &node.self_chitchat_id)
             .unwrap();
         assert_eq!(
             self_node_state.get(READINESS_KEY).unwrap(),
@@ -816,10 +819,9 @@ mod tests {
 
         let self_node_state = cluster_snapshot
             .chitchat_state_snapshot
-            .node_state_snapshots
+            .node_states
             .into_iter()
-            .find(|node_state_snapshot| node_state_snapshot.chitchat_id == node.self_chitchat_id)
-            .map(|node_state_snapshot| node_state_snapshot.node_state)
+            .find(|node_state| node_state.chitchat_id() == &node.self_chitchat_id)
             .unwrap();
         assert_eq!(
             self_node_state.get(READINESS_KEY).unwrap(),
@@ -1143,11 +1145,11 @@ mod tests {
             let mut chitchat_guard = chitchat_handle.lock().await;
             chitchat_guard.self_node_state().set(
                 format!("{INDEXING_TASK_PREFIX}01BX5ZZKBKACTAV9WEVGEMMVS0"),
-                "my_index:00000000000000000000000000:my_source:1,3".to_string(),
+                "my_index:00000000000000000000000000:my_source:41:1,3".to_string(),
             );
             chitchat_guard.self_node_state().set(
                 format!("{INDEXING_TASK_PREFIX}01BX5ZZKBKACTAV9WEVGEMMVS1"),
-                "my_index-00000000000000000000000000-my_source:3,5".to_string(),
+                "my_index-00000000000000000000000000-my_source:53:3,5".to_string(),
             );
         }
         node.wait_for_ready_members(|members| members.len() == 1, Duration::from_secs(5))
@@ -1358,14 +1360,15 @@ mod tests {
     #[test]
     fn test_parse_chitchat_kv() {
         assert!(
-            chitchat_kv_to_indexing_task("invalidulid", "my_index:uid:my_source:1,3").is_none()
+            chitchat_kv_to_indexing_task("invalidulid", "my_index:uid:my_source:42:1,3").is_none()
         );
         let task = super::chitchat_kv_to_indexing_task(
             "indexer.task:01BX5ZZKBKACTAV9WEVGEMMVS0",
-            "my_index:00000000000000000000000000:my_source:00000000000000000001,\
+            "my_index:00000000000000000000000000:my_source:42:00000000000000000001,\
              00000000000000000003",
         )
         .unwrap();
+        assert_eq!(task.params_fingerprint, 42);
         assert_eq!(
             task.pipeline_uid(),
             PipelineUid::from_str("01BX5ZZKBKACTAV9WEVGEMMVS0").unwrap()

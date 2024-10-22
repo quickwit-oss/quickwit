@@ -72,7 +72,7 @@ expected:
     hits:
       - _source: {"timestamp": "2015-01-10T12:00:00Z"}
       - _source: {"timestamp": "2015-01-10T13:00:00Z"}
-      - _source: {"timestamp": "2015-01-10T14:00:00Z"}
+      - _source: {"timestamp": "2015-01-10T14:00:00.000000001Z"}
       - _source: {"timestamp": "2015-01-11T12:00:00Z"}
       - _source: {"timestamp": "2015-01-11T12:00:00Z"}
 --- # ASC + TIMESTAMP filter
@@ -129,5 +129,5 @@ expected:
       - _source: {"timestamp": "2015-01-11T12:00:00Z"}
       - _source: {"timestamp": "2015-01-11T12:00:00Z"}
       - _source: {"timestamp": "2015-01-11T12:00:00Z"}
-      - _source: {"timestamp": "2015-01-10T14:00:00Z"}
+      - _source: {"timestamp": "2015-01-10T14:00:00.000000001Z"}
 

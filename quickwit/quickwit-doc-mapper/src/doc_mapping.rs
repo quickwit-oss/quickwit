@@ -190,7 +190,7 @@ impl DocMapping {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::default_doc_mapper::{QuickwitNumericOptions, QuickwitTextOptions};
+    use crate::doc_mapper::{QuickwitNumericOptions, QuickwitTextOptions};
     use crate::{
         Cardinality, FieldMappingType, RegexTokenizerOption, TokenFilterType, TokenizerConfig,
         TokenizerType,

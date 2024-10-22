@@ -36,7 +36,7 @@ use quickwit_query::query_ast::{BoolQuery, QueryAst, QueryAstTransformer, RangeQ
 use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_storage::{
     wrap_storage_with_cache, BundleStorage, MemorySizedCache, OwnedBytes, SplitCache, Storage,
-    StorageResolver,
+    StorageResolver, TimeoutAndRetryStorage,
 };
 use tantivy::aggregation::agg_req::{AggregationVariants, Aggregations};
 use tantivy::aggregation::AggregationLimitsGuard;
@@ -48,6 +48,7 @@ use tokio::task::JoinError;
 use tracing::*;
 
 use crate::collector::{make_collector_for_split, make_merge_collector, IncrementalCollector};
+use crate::metrics::SEARCH_METRICS;
 use crate::root::is_metadata_count_request_with_ast;
 use crate::service::{deserialize_doc_mapper, SearcherContext};
 use crate::{QuickwitAggregations, SearchError};
@@ -134,13 +135,34 @@ pub(crate) async fn open_index_with_caches(
     tokenizer_manager: Option<&TokenizerManager>,
     ephemeral_unbounded_cache: bool,
 ) -> anyhow::Result<Index> {
-    let (hotcache_bytes, bundle_storage) =
-        open_split_bundle(searcher_context, index_storage, split_and_footer_offsets).await?;
+    // Let's add a storage proxy to retry `get_slice` requests if they are taking too long,
+    // if configured in the searcher config.
+    //
+    // The goal here is too ensure a low latency.
+
+    let index_storage_with_retry_on_timeout = if let Some(storage_timeout_policy) =
+        &searcher_context.searcher_config.storage_timeout_policy
+    {
+        Arc::new(TimeoutAndRetryStorage::new(
+            index_storage,
+            storage_timeout_policy.clone(),
+        ))
+    } else {
+        index_storage
+    };
+
+    let (hotcache_bytes, bundle_storage) = open_split_bundle(
+        searcher_context,
+        index_storage_with_retry_on_timeout,
+        split_and_footer_offsets,
+    )
+    .await?;
 
     let bundle_storage_with_cache = wrap_storage_with_cache(
         searcher_context.fast_fields_cache.clone(),
         Arc::new(bundle_storage),
     );
+
     let directory = StorageDirectory::new(bundle_storage_with_cache);
 
     let hot_directory = if ephemeral_unbounded_cache {
@@ -338,6 +360,7 @@ fn get_leaf_resp_from_count(count: u64) -> LeafSearchResponse {
         partial_hits: Vec::new(),
         failed_splits: Vec::new(),
         num_attempted_splits: 1,
+        num_successful_splits: 1,
         intermediate_aggregation_result: None,
     }
 }
@@ -348,7 +371,7 @@ async fn leaf_search_single_split(
     mut search_request: SearchRequest,
     storage: Arc<dyn Storage>,
     split: SplitIdAndFooterOffsets,
-    doc_mapper: Arc<dyn DocMapper>,
+    doc_mapper: Arc<DocMapper>,
     split_filter: Arc<RwLock<CanSplitDoBetter>>,
     aggregations_limits: AggregationLimitsGuard,
 ) -> crate::Result<LeafSearchResponse> {
@@ -1066,7 +1089,7 @@ pub async fn multi_leaf_search(
         .ok_or_else(|| SearchError::Internal("no search request".to_string()))?
         .into();
 
-    let doc_mappers: Vec<Arc<dyn DocMapper>> = leaf_search_request
+    let doc_mappers: Vec<Arc<DocMapper>> = leaf_search_request
         .doc_mappers
         .iter()
         .map(|doc_mapper| deserialize_doc_mapper(doc_mapper))
@@ -1156,7 +1179,7 @@ async fn resolve_storage_and_leaf_search(
     index_uri: quickwit_common::uri::Uri,
     storage_resolver: StorageResolver,
     splits: Vec<SplitIdAndFooterOffsets>,
-    doc_mapper: Arc<dyn DocMapper>,
+    doc_mapper: Arc<DocMapper>,
     aggregations_limits: AggregationLimitsGuard,
 ) -> crate::Result<LeafSearchResponse> {
     let storage = storage_resolver.resolve(&index_uri).await?;
@@ -1207,7 +1230,7 @@ pub async fn leaf_search(
     request: Arc<SearchRequest>,
     index_storage: Arc<dyn Storage>,
     splits: Vec<SplitIdAndFooterOffsets>,
-    doc_mapper: Arc<dyn DocMapper>,
+    doc_mapper: Arc<DocMapper>,
     aggregations_limits: AggregationLimitsGuard,
 ) -> Result<LeafSearchResponse, SearchError> {
     let num_docs: u64 = splits.iter().map(|split| split.num_docs).sum();
@@ -1303,13 +1326,23 @@ pub async fn leaf_search(
         });
     }
 
-    let result = crate::search_thread_pool()
-        .run_cpu_intensive(|| incremental_merge_collector.finalize())
-        .instrument(info_span!("incremental_merge_intermediate"))
-        .await
-        .context("failed to merge split search responses")??;
+    let leaf_search_response_reresult: Result<Result<LeafSearchResponse, _>, _> =
+        crate::search_thread_pool()
+            .run_cpu_intensive(|| incremental_merge_collector.finalize())
+            .instrument(info_span!("incremental_merge_intermediate"))
+            .await
+            .context("failed to merge split search responses");
 
-    Ok(result)
+    let label_values = match leaf_search_response_reresult {
+        Ok(Ok(_)) => ["success"],
+        _ => ["error"],
+    };
+    SEARCH_METRICS
+        .leaf_search_targeted_splits
+        .with_label_values(label_values)
+        .observe(num_splits as f64);
+
+    Ok(leaf_search_response_reresult??)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1318,7 +1351,7 @@ async fn leaf_search_single_split_wrapper(
     request: SearchRequest,
     searcher_context: Arc<SearcherContext>,
     index_storage: Arc<dyn Storage>,
-    doc_mapper: Arc<dyn DocMapper>,
+    doc_mapper: Arc<DocMapper>,
     split: SplitIdAndFooterOffsets,
     split_filter: Arc<RwLock<CanSplitDoBetter>>,
     incremental_merge_collector: Arc<Mutex<IncrementalCollector>>,

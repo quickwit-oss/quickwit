@@ -151,7 +151,7 @@ pub struct RegexTokenizerOption {
 #[cfg(test)]
 mod tests {
     use super::{NgramTokenizerOption, TokenizerType};
-    use crate::default_doc_mapper::RegexTokenizerOption;
+    use crate::doc_mapper::RegexTokenizerOption;
     use crate::TokenizerEntry;
 
     #[test]

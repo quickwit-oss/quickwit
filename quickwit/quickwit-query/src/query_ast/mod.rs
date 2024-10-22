@@ -82,6 +82,7 @@ impl QueryAst {
                 must_not,
                 should,
                 filter,
+                minimum_should_match,
             }) => {
                 let must = parse_user_query_in_asts(must, default_search_fields)?;
                 let must_not = parse_user_query_in_asts(must_not, default_search_fields)?;
@@ -92,6 +93,7 @@ impl QueryAst {
                     must_not,
                     should,
                     filter,
+                    minimum_should_match,
                 }
                 .into())
             }

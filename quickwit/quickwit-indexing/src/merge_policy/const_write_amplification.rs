@@ -18,14 +18,19 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashMap;
+use std::ops::RangeInclusive;
 
 use quickwit_config::merge_policy_config::ConstWriteAmplificationMergePolicyConfig;
 use quickwit_config::IndexingSettings;
 use quickwit_metastore::{SplitMaturity, SplitMetadata};
 use time::OffsetDateTime;
+use tracing::info;
 
 use super::MergeOperation;
 use crate::merge_policy::MergePolicy;
+
+// Smallest number of splits in a finalize merge.
+const FINALIZE_MIN_MERGE_FACTOR: usize = 3;
 
 /// The `ConstWriteAmplificationMergePolicy` has been designed for a use
 /// case where there are a several index partitions with different sizes,
@@ -82,6 +87,8 @@ impl ConstWriteAmplificationMergePolicy {
             merge_factor: 3,
             max_merge_factor: 5,
             maturation_period: Duration::from_secs(3600),
+            max_finalize_merge_operations: 0,
+            max_finalize_split_num_docs: None,
         };
         Self::new(config, 10_000_000)
     }
@@ -92,10 +99,11 @@ impl ConstWriteAmplificationMergePolicy {
     fn single_merge_operation_within_num_merge_op_level(
         &self,
         splits: &mut Vec<SplitMetadata>,
+        merge_factor_range: RangeInclusive<usize>,
     ) -> Option<MergeOperation> {
         let mut num_splits_in_merge = 0;
         let mut num_docs_in_merge = 0;
-        for split in splits.iter().take(self.config.max_merge_factor) {
+        for split in splits.iter().take(*merge_factor_range.end()) {
             num_docs_in_merge += split.num_docs;
             num_splits_in_merge += 1;
             if num_docs_in_merge >= self.split_num_docs_target {
@@ -103,7 +111,7 @@ impl ConstWriteAmplificationMergePolicy {
             }
         }
         if (num_docs_in_merge < self.split_num_docs_target)
-            && (num_splits_in_merge < self.config.merge_factor)
+            && (num_splits_in_merge < *merge_factor_range.start())
         {
             return None;
         }
@@ -123,10 +131,16 @@ impl ConstWriteAmplificationMergePolicy {
                 .then_with(|| left.split_id().cmp(right.split_id()))
         });
         let mut merge_operations = Vec::new();
-        while let Some(merge_op) = self.single_merge_operation_within_num_merge_op_level(splits) {
+        while let Some(merge_op) =
+            self.single_merge_operation_within_num_merge_op_level(splits, self.merge_factor_range())
+        {
             merge_operations.push(merge_op);
         }
         merge_operations
+    }
+
+    fn merge_factor_range(&self) -> RangeInclusive<usize> {
+        self.config.merge_factor..=self.config.max_merge_factor
     }
 }
 
@@ -134,8 +148,9 @@ impl MergePolicy for ConstWriteAmplificationMergePolicy {
     fn operations(&self, splits: &mut Vec<SplitMetadata>) -> Vec<MergeOperation> {
         let mut group_by_num_merge_ops: HashMap<usize, Vec<SplitMetadata>> = HashMap::default();
         let mut mature_splits = Vec::new();
+        let now = OffsetDateTime::now_utc();
         for split in splits.drain(..) {
-            if split.is_mature(OffsetDateTime::now_utc()) {
+            if split.is_mature(now) {
                 mature_splits.push(split);
             } else {
                 group_by_num_merge_ops
@@ -149,8 +164,72 @@ impl MergePolicy for ConstWriteAmplificationMergePolicy {
         for splits_in_group in group_by_num_merge_ops.values_mut() {
             let merge_ops = self.merge_operations_within_num_merge_op_level(splits_in_group);
             merge_operations.extend(merge_ops);
+            // we readd the splits that are not used in a merge operation into the splits vector.
             splits.append(splits_in_group);
         }
+        merge_operations
+    }
+
+    fn finalize_operations(&self, splits: &mut Vec<SplitMetadata>) -> Vec<MergeOperation> {
+        if self.config.max_finalize_merge_operations == 0 {
+            return Vec::new();
+        }
+
+        let now = OffsetDateTime::now_utc();
+
+        // We first isolate mature splits. Let's not touch them.
+        let (mature_splits, mut young_splits): (Vec<SplitMetadata>, Vec<SplitMetadata>) =
+            splits.drain(..).partition(|split: &SplitMetadata| {
+                if let Some(max_finalize_split_num_docs) = self.config.max_finalize_split_num_docs {
+                    if split.num_docs > max_finalize_split_num_docs {
+                        return true;
+                    }
+                }
+                split.is_mature(now)
+            });
+        splits.extend(mature_splits);
+
+        // We then sort the split by reverse creation date and split id.
+        // You may notice that reverse is the opposite of the rest of the policy.
+        //
+        // This is because these are the youngest splits. If we limit ourselves in the number of
+        // merge we will operate, we might as well focus on the young == smaller ones for that
+        // last merge.
+        young_splits.sort_by(|left, right| {
+            left.create_timestamp
+                .cmp(&right.create_timestamp)
+                .reverse()
+                .then_with(|| left.split_id().cmp(right.split_id()))
+        });
+        let mut merge_operations = Vec::new();
+        while merge_operations.len() < self.config.max_finalize_merge_operations {
+            let min_merge_factor = FINALIZE_MIN_MERGE_FACTOR.min(self.config.max_merge_factor);
+            let merge_factor_range = min_merge_factor..=self.config.max_merge_factor;
+            if let Some(merge_op) = self.single_merge_operation_within_num_merge_op_level(
+                &mut young_splits,
+                merge_factor_range,
+            ) {
+                merge_operations.push(merge_op);
+            } else {
+                break;
+            }
+        }
+
+        // We readd the young splits that are not used in any merge operation.
+        splits.extend(young_splits);
+
+        assert!(merge_operations.len() <= self.config.max_finalize_merge_operations);
+
+        let num_splits_per_merge_op: Vec<usize> =
+            merge_operations.iter().map(|op| op.splits.len()).collect();
+        let num_docs_per_merge_op: Vec<usize> = merge_operations
+            .iter()
+            .map(|op| op.splits.iter().map(|split| split.num_docs).sum::<usize>())
+            .collect();
+        info!(
+            num_splits_per_merge_op=?num_splits_per_merge_op,
+            num_docs_per_merge_op=?num_docs_per_merge_op,
+            "finalize merge operation");
         merge_operations
     }
 
@@ -372,7 +451,7 @@ mod tests {
         let final_splits = crate::merge_policy::tests::aux_test_simulate_merge_planner_num_docs(
             Arc::new(merge_policy.clone()),
             &vals[..],
-            |splits| {
+            &|splits| {
                 let mut num_merge_ops_counts: HashMap<usize, usize> = HashMap::default();
                 for split in splits {
                     *num_merge_ops_counts.entry(split.num_merge_ops).or_default() += 1;
@@ -391,5 +470,117 @@ mod tests {
         .await?;
         assert_eq!(final_splits.len(), 49);
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_simulate_const_write_amplification_merge_policy_with_finalize() {
+        let mut merge_policy = ConstWriteAmplificationMergePolicy::for_test();
+        merge_policy.config.max_merge_factor = 10;
+        merge_policy.config.merge_factor = 10;
+        merge_policy.split_num_docs_target = 10_000_000;
+
+        let vals: Vec<usize> = vec![1; 9 + 90 + 900]; //< 1_211 splits with a single doc each.
+
+        let num_final_splits_given_max_finalize_merge_operations =
+            |split_num_docs: Vec<usize>, max_finalize_merge_operations: usize| {
+                let mut merge_policy_clone = merge_policy.clone();
+                merge_policy_clone.config.max_finalize_merge_operations =
+                    max_finalize_merge_operations;
+                async move {
+                    crate::merge_policy::tests::aux_test_simulate_merge_planner_num_docs(
+                        Arc::new(merge_policy_clone),
+                        &split_num_docs[..],
+                        &|_splits| {},
+                    )
+                    .await
+                    .unwrap()
+                }
+            };
+
+        assert_eq!(
+            num_final_splits_given_max_finalize_merge_operations(vals.clone(), 0)
+                .await
+                .len(),
+            27
+        );
+        assert_eq!(
+            num_final_splits_given_max_finalize_merge_operations(vals.clone(), 1)
+                .await
+                .len(),
+            18
+        );
+        assert_eq!(
+            num_final_splits_given_max_finalize_merge_operations(vals.clone(), 2)
+                .await
+                .len(),
+            9
+        );
+        assert_eq!(
+            num_final_splits_given_max_finalize_merge_operations(vals.clone(), 3)
+                .await
+                .len(),
+            3
+        );
+        assert_eq!(
+            num_final_splits_given_max_finalize_merge_operations(vec![1; 6], 1)
+                .await
+                .len(),
+            1
+        );
+        assert_eq!(
+            num_final_splits_given_max_finalize_merge_operations(vec![1; 3], 1)
+                .await
+                .len(),
+            1
+        );
+        assert_eq!(
+            num_final_splits_given_max_finalize_merge_operations(vec![1; 2], 1)
+                .await
+                .len(),
+            2
+        );
+
+        // We check that the youngest splits are merged in priority.
+        let final_splits = num_final_splits_given_max_finalize_merge_operations(
+            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+            1,
+        )
+        .await;
+        assert_eq!(final_splits.len(), 2);
+
+        let mut split_num_docs: Vec<usize> = final_splits
+            .iter()
+            .map(|split| split.num_docs)
+            .collect::<Vec<_>>();
+        split_num_docs.sort();
+        assert_eq!(split_num_docs[0], 11);
+        assert_eq!(split_num_docs[1], 55);
+    }
+
+    #[tokio::test]
+    async fn test_simulate_const_write_amplification_merge_policy_with_finalize_max_num_docs() {
+        let mut merge_policy = ConstWriteAmplificationMergePolicy::for_test();
+        merge_policy.config.max_merge_factor = 10;
+        merge_policy.config.merge_factor = 10;
+        merge_policy.split_num_docs_target = 10_000_000;
+        merge_policy.config.max_finalize_split_num_docs = Some(999_999);
+        merge_policy.config.max_finalize_merge_operations = 3;
+
+        let split_num_docs: Vec<usize> = vec![999_999, 1_000_000, 999_999, 999_999];
+
+        let final_splits = crate::merge_policy::tests::aux_test_simulate_merge_planner_num_docs(
+            Arc::new(merge_policy),
+            &split_num_docs[..],
+            &|_splits| {},
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(final_splits.len(), 2);
+        let mut split_num_docs: Vec<usize> =
+            final_splits.iter().map(|split| split.num_docs).collect();
+        split_num_docs.sort();
+        assert_eq!(split_num_docs[0], 1_000_000);
+        assert_eq!(split_num_docs[1], 999_999 * 3);
     }
 }
