@@ -44,6 +44,7 @@ mod service;
 pub(crate) mod top_k_collector;
 
 mod metrics;
+mod search_permits;
 
 #[cfg(test)]
 mod tests;

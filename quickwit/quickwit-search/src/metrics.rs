@@ -21,8 +21,8 @@
 
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
-    exponential_buckets, linear_buckets, new_counter, new_counter_vec, new_histogram,
-    new_histogram_vec, Histogram, HistogramVec, IntCounter, IntCounterVec,
+    exponential_buckets, linear_buckets, new_counter, new_counter_vec, new_gauge_vec,
+    new_histogram, new_histogram_vec, Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge,
 };
 
 pub struct SearchMetrics {
@@ -35,6 +35,8 @@ pub struct SearchMetrics {
     pub leaf_searches_splits_total: IntCounter,
     pub leaf_search_split_duration_secs: Histogram,
     pub job_assigned_total: IntCounterVec<1>,
+    pub leaf_search_single_split_tasks_pending: IntGauge,
+    pub leaf_search_single_split_tasks_ongoing: IntGauge,
 }
 
 impl Default for SearchMetrics {
@@ -49,6 +51,14 @@ impl Default for SearchMetrics {
         .flatten()
         .copied()
         .collect();
+
+        let leaf_search_single_split_tasks = new_gauge_vec::<1>(
+            "leaf_search_single_split_tasks",
+            "Number of single split search tasks pending or ongoing",
+            "search",
+            &[],
+            ["status"], // takes values "ongoing" or "pending"
+        );
 
         SearchMetrics {
             root_search_requests_total: new_counter_vec(
@@ -110,6 +120,10 @@ impl Default for SearchMetrics {
                 "search",
                 exponential_buckets(0.001, 2.0, 15).unwrap(),
             ),
+            leaf_search_single_split_tasks_ongoing: leaf_search_single_split_tasks
+                .with_label_values(["ongoing"]),
+            leaf_search_single_split_tasks_pending: leaf_search_single_split_tasks
+                .with_label_values(["pending"]),
             job_assigned_total: new_counter_vec(
                 "job_assigned_total",
                 "Number of job assigned to searchers, per affinity rank.",

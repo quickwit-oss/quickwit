@@ -331,10 +331,12 @@ pub async fn leaf_list_terms(
             let index_storage_clone = index_storage.clone();
             let searcher_context_clone = searcher_context.clone();
             async move {
-                let _leaf_split_search_permit = searcher_context_clone.leaf_search_split_semaphore.clone()
-                    .acquire_owned()
+                let _leaf_split_search_permit = searcher_context_clone
+                    .leaf_search_split_semaphore
+                    .get_one_permit()
                     .await
                     .expect("Failed to acquire permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
+
                 // TODO dedicated counter and timer?
                 crate::SEARCH_METRICS.leaf_searches_splits_total.inc();
                 let timer = crate::SEARCH_METRICS

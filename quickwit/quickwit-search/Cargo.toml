@@ -50,6 +50,7 @@ quickwit-storage = { workspace = true }
 [dev-dependencies]
 assert-json-diff = { workspace = true }
 proptest = { workspace = true }
+rand = { workspace = true }
 serde_json = { workspace = true }
 typetag = { workspace = true }
 
