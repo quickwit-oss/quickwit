@@ -17,148 +17,49 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+mod date_time_type;
+mod doc_mapper_builder;
+mod doc_mapper_impl;
+mod field_mapping_entry;
+mod field_mapping_type;
+mod mapping_tree;
+mod tokenizer_entry;
+
+use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
-use std::num::NonZeroU32;
 use std::ops::Bound;
 
-use anyhow::Context;
-use dyn_clone::{clone_trait_object, DynClone};
-use quickwit_proto::types::DocMappingUid;
-use quickwit_query::query_ast::QueryAst;
-use quickwit_query::tokenizers::TokenizerManager;
+pub use doc_mapper_builder::DocMapperBuilder;
+pub use doc_mapper_impl::DocMapper;
+#[cfg(all(test, feature = "multilang"))]
+pub(crate) use field_mapping_entry::TextIndexingOptions;
+pub use field_mapping_entry::{
+    BinaryFormat, FastFieldOptions, FieldMappingEntry, QuickwitBytesOptions, QuickwitJsonOptions,
+    QuickwitTextNormalizer,
+};
+pub(crate) use field_mapping_entry::{
+    FieldMappingEntryForSerialization, IndexRecordOptionSchema, QuickwitTextTokenizer,
+};
+#[cfg(test)]
+pub(crate) use field_mapping_entry::{QuickwitNumericOptions, QuickwitTextOptions};
+pub use field_mapping_type::FieldMappingType;
 use serde_json::Value as JsonValue;
-use serde_json_borrow::Map as BorrowedJsonMap;
-use tantivy::query::Query;
-use tantivy::schema::{Field, FieldType, OwnedValue as Value, Schema};
-use tantivy::{TantivyDocument as Document, Term};
+use tantivy::schema::{Field, FieldType};
+use tantivy::Term;
+pub use tokenizer_entry::{analyze_text, TokenizerConfig, TokenizerEntry};
+pub(crate) use tokenizer_entry::{
+    NgramTokenizerOption, RegexTokenizerOption, TokenFilterType, TokenizerType,
+};
+
+/// Function used with serde to initialize boolean value at true if there is no value in json.
+fn default_as_true() -> bool {
+    true
+}
 
 pub type Partition = u64;
 
 /// An alias for serde_json's object type.
 pub type JsonObject = serde_json::Map<String, JsonValue>;
-
-use crate::{DocParsingError, QueryParserError};
-
-/// The `DocMapper` trait defines the way of defining how a (json) document,
-/// and the fields it contains, are stored and indexed.
-///
-/// The `DocMapper` trait is in charge of :
-/// - building a tantivy [`Document`] from a JSON payload
-/// - building a tantivy [`Query`] from a [`QueryAst`]
-/// - supplying a tantivy [`Schema`]
-#[typetag::serde(tag = "type")]
-pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
-    /// Returns the unique identifier of the doc mapping.
-    fn doc_mapping_uid(&self) -> DocMappingUid;
-
-    /// Validates a JSON object according to the doc mapper.
-    fn validate_json_obj(&self, _json_obj: &BorrowedJsonMap) -> Result<(), DocParsingError> {
-        Ok(())
-    }
-
-    /// Transforms a JSON object into a tantivy [`Document`] according to the rules
-    /// defined for the `DocMapper`.
-    fn doc_from_json_obj(
-        &self,
-        json_obj: JsonObject,
-        document_len: u64,
-    ) -> Result<(Partition, Document), DocParsingError>;
-
-    /// Parses a JSON byte slice into a tantivy [`Document`].
-    fn doc_from_json_bytes(
-        &self,
-        json_doc: &[u8],
-    ) -> Result<(Partition, Document), DocParsingError> {
-        let json_obj: JsonObject = serde_json::from_slice(json_doc).map_err(|_| {
-            let json_doc_sample: String = std::str::from_utf8(json_doc)
-                .map(|doc_str| doc_str.chars().take(20).chain("...".chars()).collect())
-                .unwrap_or_else(|_| "document contains some invalid UTF-8 characters".to_string());
-            DocParsingError::NotJsonObject(json_doc_sample)
-        })?;
-        self.doc_from_json_obj(json_obj, json_doc.len() as u64)
-    }
-
-    /// Parses a JSON string into a tantivy [`Document`].
-    fn doc_from_json_str(&self, json_doc: &str) -> Result<(Partition, Document), DocParsingError> {
-        let json_obj: JsonObject = serde_json::from_str(json_doc).map_err(|_| {
-            let json_doc_sample: String = json_doc.chars().take(20).chain("...".chars()).collect();
-            DocParsingError::NotJsonObject(json_doc_sample)
-        })?;
-        self.doc_from_json_obj(json_obj, json_doc.len() as u64)
-    }
-
-    /// Converts a tantivy named Document to the json format.
-    ///
-    /// Tantivy does not have any notion of cardinality nor object.
-    /// It is therefore up to the `DocMapper` to pick a tantivy named document
-    /// and convert it into a final quickwit document.
-    ///
-    /// Because this operation is dependent on the `DocMapper`, this
-    /// method is meant to be called on the root node using the most recent
-    /// `DocMapper`. This ensures that the different hits are formatted according
-    /// to the same schema.
-    fn doc_to_json(
-        &self,
-        named_doc: BTreeMap<String, Vec<Value>>,
-    ) -> anyhow::Result<serde_json::Map<String, JsonValue>>;
-
-    /// Returns the schema.
-    ///
-    /// Considering schema evolution, splits within an index can have different schema
-    /// over time. The schema returned here represents the most up-to-date schema of the index.
-    fn schema(&self) -> Schema;
-
-    /// Returns the query.
-    ///
-    /// Considering schema evolution, splits within an index can have different schema
-    /// over time. So `split_schema` is the schema of the split the query is targeting.
-    fn query(
-        &self,
-        split_schema: Schema,
-        query_ast: &QueryAst,
-        with_validation: bool,
-    ) -> Result<(Box<dyn Query>, WarmupInfo), QueryParserError>;
-
-    /// Returns the timestamp field name.
-    fn timestamp_field_name(&self) -> Option<&str> {
-        None
-    }
-
-    /// Returns the list of search fields to search into, when no field is specified.
-    /// (See `UserInputQuery`).
-    fn default_search_fields(&self) -> &[String];
-
-    /// Returns the tag field names
-    fn tag_field_names(&self) -> BTreeSet<String> {
-        Default::default()
-    }
-
-    /// Returns the tag `NameField`s on the current schema.
-    /// Returns an error if a tag field is not found in this schema.
-    fn tag_named_fields(&self) -> anyhow::Result<Vec<NamedField>> {
-        let index_schema = self.schema();
-        self.tag_field_names()
-            .iter()
-            .map(|field_name| {
-                index_schema
-                    .get_field(field_name)
-                    .context(format!("field `{field_name}` must exist in the schema"))
-                    .map(|field| NamedField {
-                        name: field_name.clone(),
-                        field,
-                        field_type: index_schema.get_field_entry(field).field_type().clone(),
-                    })
-            })
-            .collect::<Result<Vec<_>, _>>()
-    }
-
-    /// Returns the maximum number of partitions.
-    fn max_num_partitions(&self) -> NonZeroU32;
-
-    /// Returns the tokenizer manager.
-    fn tokenizer_manager(&self) -> &TokenizerManager;
-}
 
 /// A struct to wrap a tantivy field with its name.
 #[derive(Clone, Debug)]
@@ -170,8 +71,6 @@ pub struct NamedField {
     /// Tantivy schema field type.
     pub field_type: FieldType,
 }
-
-clone_trait_object!(DocMapper);
 
 /// Bounds for a range of terms, with an optional max count of terms being matched.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -257,10 +156,10 @@ mod tests {
     use quickwit_query::BooleanOperand;
     use tantivy::schema::{Field, FieldType, Term};
 
-    use crate::default_doc_mapper::{FieldMappingType, QuickwitJsonOptions};
+    use super::*;
     use crate::{
-        Cardinality, DefaultDocMapper, DefaultDocMapperBuilder, DocMapper, DocParsingError,
-        FieldMappingEntry, TermRange, WarmupInfo, DYNAMIC_FIELD_NAME,
+        Cardinality, DocMapper, DocMapperBuilder, DocParsingError, FieldMappingEntry, TermRange,
+        WarmupInfo, DYNAMIC_FIELD_NAME,
     };
 
     const JSON_DEFAULT_DOC_MAPPER: &str = r#"
@@ -273,7 +172,7 @@ mod tests {
 
     #[test]
     fn test_doc_from_json_bytes() {
-        let doc_mapper = DefaultDocMapperBuilder::default().try_build().unwrap();
+        let doc_mapper = DocMapperBuilder::default().try_build().unwrap();
         let json_doc = br#"{"title": "hello", "body": "world"}"#;
         doc_mapper.doc_from_json_bytes(json_doc).unwrap();
 
@@ -288,7 +187,7 @@ mod tests {
 
     #[test]
     fn test_doc_from_json_str() {
-        let doc_mapper = DefaultDocMapperBuilder::default().try_build().unwrap();
+        let doc_mapper = DocMapperBuilder::default().try_build().unwrap();
         let json_doc = r#"{"title": "hello", "body": "world"}"#;
         doc_mapper.doc_from_json_str(json_doc).unwrap();
 
@@ -304,8 +203,8 @@ mod tests {
     #[test]
     fn test_deserialize_doc_mapper() -> anyhow::Result<()> {
         let deserialized_default_doc_mapper =
-            serde_json::from_str::<Box<dyn DocMapper>>(JSON_DEFAULT_DOC_MAPPER)?;
-        let expected_default_doc_mapper = DefaultDocMapperBuilder::default().try_build()?;
+            serde_json::from_str::<Box<DocMapper>>(JSON_DEFAULT_DOC_MAPPER)?;
+        let expected_default_doc_mapper = DocMapperBuilder::default().try_build()?;
         assert_eq!(
             format!("{deserialized_default_doc_mapper:?}"),
             format!("{expected_default_doc_mapper:?}"),
@@ -316,8 +215,8 @@ mod tests {
     #[test]
     fn test_deserialize_minimal_doc_mapper() -> anyhow::Result<()> {
         let deserialized_default_doc_mapper =
-            serde_json::from_str::<Box<dyn DocMapper>>(r#"{"type": "default"}"#)?;
-        let expected_default_doc_mapper = DefaultDocMapperBuilder::default().try_build()?;
+            serde_json::from_str::<Box<DocMapper>>(r#"{"type": "default"}"#)?;
+        let expected_default_doc_mapper = DocMapperBuilder::default().try_build()?;
         assert_eq!(
             format!("{deserialized_default_doc_mapper:?}"),
             format!("{expected_default_doc_mapper:?}"),
@@ -328,7 +227,7 @@ mod tests {
     #[test]
     fn test_deserialize_doc_mapper_default_dynamic_tokenizer() {
         let doc_mapper =
-            serde_json::from_str::<Box<dyn DocMapper>>(r#"{"type": "default", "mode": "dynamic"}"#)
+            serde_json::from_str::<Box<DocMapper>>(r#"{"type": "default", "mode": "dynamic"}"#)
                 .unwrap();
         let tantivy_schema = doc_mapper.schema();
         let dynamic_field = tantivy_schema.get_field(DYNAMIC_FIELD_NAME).unwrap();
@@ -344,7 +243,7 @@ mod tests {
 
     #[test]
     fn test_doc_mapper_query_with_json_field() {
-        let mut doc_mapper_builder = DefaultDocMapperBuilder::default();
+        let mut doc_mapper_builder = DocMapperBuilder::default();
         doc_mapper_builder
             .doc_mapping
             .field_mappings
@@ -374,7 +273,7 @@ mod tests {
 
     #[test]
     fn test_doc_mapper_query_with_json_field_default_search_fields() {
-        let doc_mapper = DefaultDocMapperBuilder::default().try_build().unwrap();
+        let doc_mapper = DocMapperBuilder::default().try_build().unwrap();
         let schema = doc_mapper.schema();
         let query_ast = query_ast_from_user_text("toto.titi:hello", None)
             .parse_user_query(doc_mapper.default_search_fields())
@@ -388,7 +287,7 @@ mod tests {
 
     #[test]
     fn test_doc_mapper_query_with_json_field_ambiguous_term() {
-        let doc_mapper = DefaultDocMapperBuilder::default().try_build().unwrap();
+        let doc_mapper = DocMapperBuilder::default().try_build().unwrap();
         let schema = doc_mapper.schema();
         let query_ast = query_ast_from_user_text("toto:5", None)
             .parse_user_query(&[])
@@ -402,7 +301,7 @@ mod tests {
 
     #[track_caller]
     fn test_validate_doc_aux(
-        doc_mapper: &dyn DocMapper,
+        doc_mapper: &DocMapper,
         doc_json: &str,
     ) -> Result<(), DocParsingError> {
         let json_val: serde_json_borrow::Value = serde_json::from_str(doc_json).unwrap();
@@ -461,7 +360,7 @@ mod tests {
                 ]
             }]
         }"#;
-        let doc_mapper = serde_json::from_str::<DefaultDocMapper>(JSON_CONFIG_VALUE).unwrap();
+        let doc_mapper = serde_json::from_str::<DocMapper>(JSON_CONFIG_VALUE).unwrap();
         {
             assert!(test_validate_doc_aux(
                 &doc_mapper,
@@ -566,7 +465,7 @@ mod tests {
             }
             ]
         }"#;
-        let doc_mapper = serde_json::from_str::<DefaultDocMapper>(JSON_CONFIG_TS_AT_ROOT).unwrap();
+        let doc_mapper = serde_json::from_str::<DocMapper>(JSON_CONFIG_TS_AT_ROOT).unwrap();
         {
             assert!(test_validate_doc_aux(
                 &doc_mapper,
@@ -598,7 +497,7 @@ mod tests {
             ));
         }
 
-        let doc_mapper = serde_json::from_str::<DefaultDocMapper>(JSON_CONFIG_TS_WITH_DOT).unwrap();
+        let doc_mapper = serde_json::from_str::<DocMapper>(JSON_CONFIG_TS_WITH_DOT).unwrap();
         {
             assert!(test_validate_doc_aux(
                 &doc_mapper,
@@ -627,7 +526,7 @@ mod tests {
             ));
         }
 
-        let doc_mapper = serde_json::from_str::<DefaultDocMapper>(JSON_CONFIG_TS_NESTED).unwrap();
+        let doc_mapper = serde_json::from_str::<DocMapper>(JSON_CONFIG_TS_NESTED).unwrap();
         {
             assert!(test_validate_doc_aux(
                 &doc_mapper,
@@ -652,7 +551,7 @@ mod tests {
         const DOC: &str = r#"{ "whatever": "blop" }"#;
         {
             const JSON_CONFIG_VALUE: &str = r#"{ "mode": "strict", "field_mappings": [] }"#;
-            let doc_mapper = serde_json::from_str::<DefaultDocMapper>(JSON_CONFIG_VALUE).unwrap();
+            let doc_mapper = serde_json::from_str::<DocMapper>(JSON_CONFIG_VALUE).unwrap();
             assert!(matches!(
                 test_validate_doc_aux(&doc_mapper, DOC).unwrap_err(),
                 DocParsingError::NoSuchFieldInSchema(_)
@@ -660,12 +559,12 @@ mod tests {
         }
         {
             const JSON_CONFIG_VALUE: &str = r#"{ "mode": "lenient", "field_mappings": [] }"#;
-            let doc_mapper = serde_json::from_str::<DefaultDocMapper>(JSON_CONFIG_VALUE).unwrap();
+            let doc_mapper = serde_json::from_str::<DocMapper>(JSON_CONFIG_VALUE).unwrap();
             assert!(test_validate_doc_aux(&doc_mapper, DOC).is_ok());
         }
         {
             const JSON_CONFIG_VALUE: &str = r#"{ "mode": "dynamic", "field_mappings": [] }"#;
-            let doc_mapper = serde_json::from_str::<DefaultDocMapper>(JSON_CONFIG_VALUE).unwrap();
+            let doc_mapper = serde_json::from_str::<DocMapper>(JSON_CONFIG_VALUE).unwrap();
             assert!(test_validate_doc_aux(&doc_mapper, DOC).is_ok());
         }
     }
@@ -831,11 +730,11 @@ mod tests {
         use quickwit_query::query_ast::TermQuery;
         use tantivy::schema::IndexRecordOption;
 
-        use crate::default_doc_mapper::{
+        use crate::doc_mapper::{
             QuickwitTextOptions, QuickwitTextTokenizer, TextIndexingOptions, TokenizerType,
         };
         use crate::{TokenizerConfig, TokenizerEntry};
-        let mut doc_mapper_builder = DefaultDocMapperBuilder::default();
+        let mut doc_mapper_builder = DocMapperBuilder::default();
         doc_mapper_builder
             .doc_mapping
             .field_mappings

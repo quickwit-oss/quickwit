@@ -409,7 +409,7 @@ impl DocProcessorCounters {
 }
 
 pub struct DocProcessor {
-    doc_mapper: Arc<dyn DocMapper>,
+    doc_mapper: Arc<DocMapper>,
     indexer_mailbox: Mailbox<Indexer>,
     timestamp_field_opt: Option<Field>,
     counters: Arc<DocProcessorCounters>,
@@ -423,12 +423,12 @@ impl DocProcessor {
     pub fn try_new(
         index_id: IndexId,
         source_id: SourceId,
-        doc_mapper: Arc<dyn DocMapper>,
+        doc_mapper: Arc<DocMapper>,
         indexer_mailbox: Mailbox<Indexer>,
         transform_config_opt: Option<TransformConfig>,
         input_format: SourceInputFormat,
     ) -> anyhow::Result<Self> {
-        let timestamp_field_opt = extract_timestamp_field(&*doc_mapper)?;
+        let timestamp_field_opt = extract_timestamp_field(&doc_mapper)?;
         if cfg!(not(feature = "vrl")) && transform_config_opt.is_some() {
             bail!("VRL is not enabled: please recompile with the `vrl` feature")
         }
@@ -512,7 +512,7 @@ impl DocProcessor {
     }
 }
 
-fn extract_timestamp_field(doc_mapper: &dyn DocMapper) -> anyhow::Result<Option<Field>> {
+fn extract_timestamp_field(doc_mapper: &DocMapper) -> anyhow::Result<Option<Field>> {
     let schema = doc_mapper.schema();
     let Some(timestamp_field_name) = doc_mapper.timestamp_field_name() else {
         return Ok(None);
@@ -633,7 +633,7 @@ mod tests {
     use quickwit_actors::Universe;
     use quickwit_common::uri::Uri;
     use quickwit_config::{build_doc_mapper, SearchSettings};
-    use quickwit_doc_mapper::{default_doc_mapper_for_test, DefaultDocMapper};
+    use quickwit_doc_mapper::{default_doc_mapper_for_test, DocMapper};
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
     use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
     use quickwit_proto::opentelemetry::proto::collector::logs::v1::ExportLogsServiceRequest;
@@ -739,9 +739,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_doc_processor_partitioning() {
-        let doc_mapper: Arc<dyn DocMapper> = Arc::new(
-            serde_json::from_str::<DefaultDocMapper>(DOCMAPPER_WITH_PARTITION_JSON).unwrap(),
-        );
+        let doc_mapper: Arc<DocMapper> =
+            Arc::new(serde_json::from_str::<DocMapper>(DOCMAPPER_WITH_PARTITION_JSON).unwrap());
         let universe = Universe::with_accelerated_time();
         let (indexer_mailbox, indexer_inbox) = universe.create_test_mailbox();
         let doc_processor = DocProcessor::try_new(

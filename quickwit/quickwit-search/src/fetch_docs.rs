@@ -48,7 +48,7 @@ async fn fetch_docs_to_map(
     mut global_doc_addrs: Vec<GlobalDocAddress>,
     index_storage: Arc<dyn Storage>,
     splits: &[SplitIdAndFooterOffsets],
-    doc_mapper: Arc<dyn DocMapper>,
+    doc_mapper: Arc<DocMapper>,
     snippet_request_opt: Option<&SnippetRequest>,
 ) -> anyhow::Result<HashMap<GlobalDocAddress, Document>> {
     let mut split_fetch_docs_futures = Vec::new();
@@ -115,7 +115,7 @@ pub async fn fetch_docs(
     partial_hits: Vec<PartialHit>,
     index_storage: Arc<dyn Storage>,
     splits: &[SplitIdAndFooterOffsets],
-    doc_mapper: Arc<dyn DocMapper>,
+    doc_mapper: Arc<DocMapper>,
     snippet_request_opt: Option<&SnippetRequest>,
 ) -> anyhow::Result<FetchDocsResponse> {
     let global_doc_addrs: Vec<GlobalDocAddress> = partial_hits
@@ -168,7 +168,7 @@ async fn fetch_docs_in_split(
     mut global_doc_addrs: Vec<GlobalDocAddress>,
     index_storage: Arc<dyn Storage>,
     split: &SplitIdAndFooterOffsets,
-    doc_mapper: Arc<dyn DocMapper>,
+    doc_mapper: Arc<DocMapper>,
     snippet_request_opt: Option<&SnippetRequest>,
 ) -> anyhow::Result<Vec<(GlobalDocAddress, Document)>> {
     global_doc_addrs.sort_by_key(|doc| doc.doc_addr);
@@ -213,8 +213,7 @@ async fn fetch_docs_in_split(
                 .context("searcher-doc-async")?;
 
             let named_field_doc = doc.to_named_doc(moved_searcher.schema());
-            let content_json =
-                convert_document_to_json_string(named_field_doc, &*moved_doc_mapper)?;
+            let content_json = convert_document_to_json_string(named_field_doc, &moved_doc_mapper)?;
             if fields_snippet_generator_opt_clone.is_none() {
                 return Ok((
                     global_doc_addr,
@@ -304,7 +303,7 @@ impl FieldsSnippetGenerator {
 // Creates FieldsSnippetGenerator.
 async fn create_fields_snippet_generator(
     searcher: &Searcher,
-    doc_mapper: Arc<dyn DocMapper>,
+    doc_mapper: Arc<DocMapper>,
     snippet_request: &SnippetRequest,
 ) -> anyhow::Result<FieldsSnippetGenerator> {
     let schema = searcher.schema();

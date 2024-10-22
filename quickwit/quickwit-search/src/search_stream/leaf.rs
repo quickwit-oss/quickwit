@@ -58,7 +58,7 @@ pub async fn leaf_search_stream(
     request: SearchStreamRequest,
     storage: Arc<dyn Storage>,
     splits: Vec<SplitIdAndFooterOffsets>,
-    doc_mapper: Arc<dyn DocMapper>,
+    doc_mapper: Arc<DocMapper>,
 ) -> UnboundedReceiverStream<crate::Result<LeafSearchStreamResponse>> {
     info!(split_offsets = ?PrettySample::new(&splits, 5));
     let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
@@ -88,7 +88,7 @@ async fn leaf_search_results_stream(
     request: SearchStreamRequest,
     storage: Arc<dyn Storage>,
     splits: Vec<SplitIdAndFooterOffsets>,
-    doc_mapper: Arc<dyn DocMapper>,
+    doc_mapper: Arc<DocMapper>,
 ) -> impl futures::Stream<Item = crate::Result<LeafSearchStreamResponse>> + Sync + Send + 'static {
     let max_num_concurrent_split_streams = searcher_context
         .searcher_config
@@ -112,7 +112,7 @@ async fn leaf_search_results_stream(
 async fn leaf_search_stream_single_split(
     searcher_context: Arc<SearcherContext>,
     split: SplitIdAndFooterOffsets,
-    doc_mapper: Arc<dyn DocMapper>,
+    doc_mapper: Arc<DocMapper>,
     mut stream_request: SearchStreamRequest,
     storage: Arc<dyn Storage>,
 ) -> crate::Result<LeafSearchStreamResponse> {
@@ -366,7 +366,7 @@ impl<'a> SearchStreamRequestFields {
     pub fn from_request(
         stream_request: &SearchStreamRequest,
         schema: &'a Schema,
-        doc_mapper: &dyn DocMapper,
+        doc_mapper: &DocMapper,
     ) -> crate::Result<SearchStreamRequestFields> {
         let fast_field = schema.get_field(&stream_request.fast_field)?;
 

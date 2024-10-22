@@ -371,7 +371,7 @@ async fn leaf_search_single_split(
     mut search_request: SearchRequest,
     storage: Arc<dyn Storage>,
     split: SplitIdAndFooterOffsets,
-    doc_mapper: Arc<dyn DocMapper>,
+    doc_mapper: Arc<DocMapper>,
     split_filter: Arc<RwLock<CanSplitDoBetter>>,
     aggregations_limits: AggregationLimitsGuard,
 ) -> crate::Result<LeafSearchResponse> {
@@ -1089,7 +1089,7 @@ pub async fn multi_leaf_search(
         .ok_or_else(|| SearchError::Internal("no search request".to_string()))?
         .into();
 
-    let doc_mappers: Vec<Arc<dyn DocMapper>> = leaf_search_request
+    let doc_mappers: Vec<Arc<DocMapper>> = leaf_search_request
         .doc_mappers
         .iter()
         .map(|doc_mapper| deserialize_doc_mapper(doc_mapper))
@@ -1179,7 +1179,7 @@ async fn resolve_storage_and_leaf_search(
     index_uri: quickwit_common::uri::Uri,
     storage_resolver: StorageResolver,
     splits: Vec<SplitIdAndFooterOffsets>,
-    doc_mapper: Arc<dyn DocMapper>,
+    doc_mapper: Arc<DocMapper>,
     aggregations_limits: AggregationLimitsGuard,
 ) -> crate::Result<LeafSearchResponse> {
     let storage = storage_resolver.resolve(&index_uri).await?;
@@ -1230,7 +1230,7 @@ pub async fn leaf_search(
     request: Arc<SearchRequest>,
     index_storage: Arc<dyn Storage>,
     splits: Vec<SplitIdAndFooterOffsets>,
-    doc_mapper: Arc<dyn DocMapper>,
+    doc_mapper: Arc<DocMapper>,
     aggregations_limits: AggregationLimitsGuard,
 ) -> Result<LeafSearchResponse, SearchError> {
     let num_docs: u64 = splits.iter().map(|split| split.num_docs).sum();
@@ -1351,7 +1351,7 @@ async fn leaf_search_single_split_wrapper(
     request: SearchRequest,
     searcher_context: Arc<SearcherContext>,
     index_storage: Arc<dyn Storage>,
-    doc_mapper: Arc<dyn DocMapper>,
+    doc_mapper: Arc<DocMapper>,
     split: SplitIdAndFooterOffsets,
     split_filter: Arc<RwLock<CanSplitDoBetter>>,
     incremental_merge_collector: Arc<Mutex<IncrementalCollector>>,

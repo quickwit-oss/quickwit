@@ -22,7 +22,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use assert_json_diff::{assert_json_eq, assert_json_include};
 use quickwit_config::SearcherConfig;
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
-use quickwit_doc_mapper::DefaultDocMapper;
+use quickwit_doc_mapper::DocMapper;
 use quickwit_indexing::TestSandbox;
 use quickwit_opentelemetry::otlp::TraceId;
 use quickwit_proto::search::{
@@ -1202,8 +1202,7 @@ fn test_convert_leaf_hit_aux(
     document_json: JsonValue,
     expected_hit_json: JsonValue,
 ) {
-    let default_doc_mapper: DefaultDocMapper =
-        serde_json::from_value(default_doc_mapper_json).unwrap();
+    let default_doc_mapper: DocMapper = serde_json::from_value(default_doc_mapper_json).unwrap();
     let named_field_doc = json_to_named_field_doc(document_json);
     let hit_json_str =
         convert_document_to_json_string(named_field_doc, &default_doc_mapper).unwrap();

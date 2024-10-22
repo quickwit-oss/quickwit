@@ -30,7 +30,7 @@ use chrono::Utc;
 use cron::Schedule;
 use humantime::parse_duration;
 use quickwit_common::uri::Uri;
-use quickwit_doc_mapper::{DefaultDocMapperBuilder, DocMapper, DocMapping};
+use quickwit_doc_mapper::{DocMapper, DocMapperBuilder, DocMapping};
 use quickwit_proto::types::IndexId;
 use serde::{Deserialize, Serialize};
 pub use serialize::{load_index_config_from_user_config, load_index_config_update};
@@ -473,10 +473,11 @@ impl crate::TestableForRegression for IndexConfig {
 pub fn build_doc_mapper(
     doc_mapping: &DocMapping,
     search_settings: &SearchSettings,
-) -> anyhow::Result<Arc<dyn DocMapper>> {
-    let builder = DefaultDocMapperBuilder {
+) -> anyhow::Result<Arc<DocMapper>> {
+    let builder = DocMapperBuilder {
         doc_mapping: doc_mapping.clone(),
         default_search_fields: search_settings.default_search_fields.clone(),
+        legacy_type_tag: None,
     };
     Ok(Arc::new(builder.try_build()?))
 }

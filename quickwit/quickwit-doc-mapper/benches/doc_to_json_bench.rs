@@ -36,7 +36,7 @@ const DOC_MAPPER_CONF: &str = r#"{
 }"#;
 
 pub fn simple_json_to_doc_benchmark(c: &mut Criterion) {
-    let doc_mapper: Box<dyn DocMapper> = serde_json::from_str(DOC_MAPPER_CONF).unwrap();
+    let doc_mapper: Box<DocMapper> = serde_json::from_str(DOC_MAPPER_CONF).unwrap();
     let lines: Vec<&str> = JSON_TEST_DATA.lines().map(|line| line.trim()).collect();
 
     let mut group = c.benchmark_group("simple-json-to-doc");

@@ -22,6 +22,8 @@ use std::convert::TryFrom;
 
 use anyhow::bail;
 use base64::prelude::{Engine, BASE64_STANDARD};
+use once_cell::sync::Lazy;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use tantivy::schema::{
@@ -31,9 +33,8 @@ use tantivy::schema::{
 
 use super::date_time_type::QuickwitDateTimeOptions;
 use super::{default_as_true, FieldMappingType};
-use crate::default_doc_mapper::field_mapping_type::QuickwitFieldType;
-use crate::default_doc_mapper::validate_field_mapping_name;
-use crate::Cardinality;
+use crate::doc_mapper::field_mapping_type::QuickwitFieldType;
+use crate::{Cardinality, QW_RESERVED_FIELD_NAMES};
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq)]
 pub struct QuickwitObjectOptions {
@@ -859,6 +860,63 @@ impl From<FieldMappingEntry> for FieldMappingEntryForSerialization {
     }
 }
 
+/// Regular expression validating a field mapping name.
+pub const FIELD_MAPPING_NAME_PATTERN: &str = r"^[@$_\-a-zA-Z][@$_/\.\-a-zA-Z0-9]{0,254}$";
+
+/// Validates a field mapping name.
+/// Returns `Ok(())` if the name can be used for a field mapping.
+///
+/// A field mapping name:
+/// - can only contain uppercase and lowercase ASCII letters `[a-zA-Z]`, digits `[0-9]`, `.`,
+///   hyphens `-`, underscores `_`, at `@` and dollar `$` signs;
+/// - must not start with a dot or a digit;
+/// - must be different from Quickwit's reserved field mapping names `_source`, `_dynamic`,
+///   `_field_presence`;
+/// - must not be longer than 255 characters.
+pub fn validate_field_mapping_name(field_mapping_name: &str) -> anyhow::Result<()> {
+    static FIELD_MAPPING_NAME_PTN: Lazy<Regex> =
+        Lazy::new(|| Regex::new(FIELD_MAPPING_NAME_PATTERN).unwrap());
+
+    if QW_RESERVED_FIELD_NAMES.contains(&field_mapping_name) {
+        bail!(
+            "field name `{field_mapping_name}` is reserved. the following fields are reserved for \
+             Quickwit internal usage: {}",
+            QW_RESERVED_FIELD_NAMES.join(", "),
+        );
+    }
+    if FIELD_MAPPING_NAME_PTN.is_match(field_mapping_name) {
+        return Ok(());
+    }
+    if field_mapping_name.is_empty() {
+        bail!("field name is empty");
+    }
+    if field_mapping_name.starts_with('.') {
+        bail!(
+            "field name `{}` must not start with a dot `.`",
+            field_mapping_name
+        );
+    }
+    if field_mapping_name.len() > 255 {
+        bail!(
+            "field name `{}` is too long. field names must not be longer than 255 characters",
+            field_mapping_name
+        )
+    }
+    let first_char = field_mapping_name.chars().next().unwrap();
+    if !first_char.is_ascii_alphabetic() {
+        bail!(
+            "field name `{}` is invalid. field names must start with an uppercase or lowercase \
+             ASCII letter, or an underscore `_`",
+            field_mapping_name
+        )
+    }
+    bail!(
+        "field name `{}` contains illegal characters. field names must only contain uppercase and \
+         lowercase ASCII letters, digits, hyphens `-`, periods `.`, and underscores `_`",
+        field_mapping_name
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use anyhow::bail;
@@ -866,12 +924,49 @@ mod tests {
     use serde_json::json;
     use tantivy::schema::{IndexRecordOption, JsonObjectOptions, TextOptions};
 
-    use super::FieldMappingEntry;
-    use crate::default_doc_mapper::field_mapping_entry::{
-        QuickwitJsonOptions, QuickwitTextOptions, TextIndexingOptions,
-    };
-    use crate::default_doc_mapper::{FastFieldOptions, FieldMappingType};
+    use super::*;
+    use crate::doc_mapper::{FastFieldOptions, FieldMappingType};
     use crate::Cardinality;
+
+    #[test]
+    fn test_validate_field_mapping_name() {
+        assert!(validate_field_mapping_name("")
+            .unwrap_err()
+            .to_string()
+            .contains("is empty"));
+        assert!(validate_field_mapping_name(&"a".repeat(256))
+            .unwrap_err()
+            .to_string()
+            .contains("is too long"));
+        assert!(validate_field_mapping_name("0")
+            .unwrap_err()
+            .to_string()
+            .contains("must start with"));
+        assert!(validate_field_mapping_name(".my-field")
+            .unwrap_err()
+            .to_string()
+            .contains("must not start with"));
+        assert!(validate_field_mapping_name("_source")
+            .unwrap_err()
+            .to_string()
+            .contains("are reserved for Quickwit"));
+        assert!(validate_field_mapping_name("_dynamic")
+            .unwrap_err()
+            .to_string()
+            .contains("are reserved for Quickwit"));
+        assert!(validate_field_mapping_name("my-field!")
+            .unwrap_err()
+            .to_string()
+            .contains("illegal characters"));
+        assert!(validate_field_mapping_name("_my_field").is_ok());
+        assert!(validate_field_mapping_name("-my-field").is_ok());
+        assert!(validate_field_mapping_name("my-field").is_ok());
+        assert!(validate_field_mapping_name("my.field").is_ok());
+        assert!(validate_field_mapping_name("my_field").is_ok());
+        assert!(validate_field_mapping_name("$my_field@").is_ok());
+        assert!(validate_field_mapping_name("my/field").is_ok());
+        assert!(validate_field_mapping_name(&"a".repeat(255)).is_ok());
+    }
 
     #[test]
     fn test_quickwit_json_options_default() {

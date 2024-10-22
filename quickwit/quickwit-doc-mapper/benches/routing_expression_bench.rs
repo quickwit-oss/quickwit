@@ -45,7 +45,7 @@ const DOC_MAPPER_CONF: &str = r#"{
 }"#;
 
 pub fn simple_routing_expression_benchmark(c: &mut Criterion) {
-    let doc_mapper: Box<dyn DocMapper> = serde_json::from_str(DOC_MAPPER_CONF).unwrap();
+    let doc_mapper: Box<DocMapper> = serde_json::from_str(DOC_MAPPER_CONF).unwrap();
     let lines: Vec<&str> = JSON_TEST_DATA.lines().map(|line| line.trim()).collect();
 
     let json_lines: Vec<serde_json::Map<String, JsonValue>> = lines

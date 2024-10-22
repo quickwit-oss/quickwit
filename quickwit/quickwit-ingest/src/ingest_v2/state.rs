@@ -58,7 +58,7 @@ pub(super) struct IngesterState {
 
 pub(super) struct InnerIngesterState {
     pub shards: HashMap<QueueId, IngesterShard>,
-    pub doc_mappers: HashMap<DocMappingUid, Weak<dyn DocMapper>>,
+    pub doc_mappers: HashMap<DocMappingUid, Weak<DocMapper>>,
     pub rate_trackers: HashMap<QueueId, (RateLimiter, RateMeter)>,
     // Replication stream opened with followers.
     pub replication_streams: HashMap<FollowerId, ReplicationStreamTaskHandle>,

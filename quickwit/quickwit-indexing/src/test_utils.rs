@@ -55,7 +55,7 @@ pub struct TestSandbox {
     index_uid: IndexUid,
     source_id: SourceId,
     indexing_service: Mailbox<IndexingService>,
-    doc_mapper: Arc<dyn DocMapper>,
+    doc_mapper: Arc<DocMapper>,
     metastore: MetastoreServiceClient,
     storage_resolver: StorageResolver,
     storage: Arc<dyn Storage>,
@@ -214,7 +214,7 @@ impl TestSandbox {
     }
 
     /// Returns the doc mapper of the TestSandbox.
-    pub fn doc_mapper(&self) -> Arc<dyn DocMapper> {
+    pub fn doc_mapper(&self) -> Arc<DocMapper> {
         self.doc_mapper.clone()
     }
 
