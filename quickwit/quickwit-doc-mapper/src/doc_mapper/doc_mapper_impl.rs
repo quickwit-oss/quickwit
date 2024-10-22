@@ -38,13 +38,12 @@ use tantivy::schema::{
 use tantivy::TantivyDocument as Document;
 
 use super::field_mapping_entry::RAW_TOKENIZER_NAME;
-use super::DefaultDocMapperBuilder;
-use crate::default_doc_mapper::mapping_tree::{
+use super::DocMapperBuilder;
+use crate::doc_mapper::mapping_tree::{
     build_field_path_from_str, build_mapping_tree, map_primitive_json_to_tantivy,
     JsonValueIterator, MappingNode, MappingNodeRoot,
 };
-use crate::default_doc_mapper::FieldMappingType;
-use crate::doc_mapper::{JsonObject, Partition};
+use crate::doc_mapper::{FieldMappingType, JsonObject, Partition};
 use crate::query_builder::build_query;
 use crate::routing_expression::RoutingExpr;
 use crate::{
@@ -60,7 +59,7 @@ const FIELD_PRESENCE_FIELD: Field = Field::from_field_id(0u32);
 ///
 /// The mains rules are defined by the field mappings.
 #[derive(Clone, Serialize, Deserialize)]
-#[serde(into = "DefaultDocMapperBuilder", try_from = "DefaultDocMapperBuilder")]
+#[serde(into = "DocMapperBuilder", try_from = "DocMapperBuilder")]
 pub struct DocMapper {
     /// The UID of the doc mapping.
     doc_mapping_uid: DocMappingUid,
@@ -133,7 +132,7 @@ fn validate_timestamp_field(
     Ok(())
 }
 
-impl From<DocMapper> for DefaultDocMapperBuilder {
+impl From<DocMapper> for DocMapperBuilder {
     fn from(default_doc_mapper: DocMapper) -> Self {
         let partition_key_str = default_doc_mapper.partition_key.to_string();
         let partition_key_opt: Option<String> = if !partition_key_str.is_empty() {
@@ -162,10 +161,10 @@ impl From<DocMapper> for DefaultDocMapperBuilder {
     }
 }
 
-impl TryFrom<DefaultDocMapperBuilder> for DocMapper {
+impl TryFrom<DocMapperBuilder> for DocMapper {
     type Error = anyhow::Error;
 
-    fn try_from(builder: DefaultDocMapperBuilder) -> anyhow::Result<DocMapper> {
+    fn try_from(builder: DocMapperBuilder) -> anyhow::Result<DocMapper> {
         let mut schema_builder = Schema::builder();
 
         // We want the field ID of the field presence field to be 0, so we add it to the schema
@@ -391,7 +390,7 @@ fn validate_fields_tokenizers(
 impl std::fmt::Debug for DocMapper {
     fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
         formatter
-            .debug_struct("DefaultDocMapper")
+            .debug_struct("DocMapper")
             .field("store_source", &self.source_field.is_some())
             .field(
                 "default_search_field_names",
@@ -831,9 +830,9 @@ mod tests {
     };
 
     use super::DocMapper;
-    use crate::default_doc_mapper::field_mapping_entry::DEFAULT_TOKENIZER_NAME;
+    use crate::doc_mapper::field_mapping_entry::{DEFAULT_TOKENIZER_NAME, RAW_TOKENIZER_NAME};
     use crate::{
-        DefaultDocMapperBuilder, DocParsingError, DOCUMENT_SIZE_FIELD_NAME, DYNAMIC_FIELD_NAME,
+        DocMapperBuilder, DocParsingError, DOCUMENT_SIZE_FIELD_NAME, DYNAMIC_FIELD_NAME,
         FIELD_PRESENCE_FIELD_NAME, SOURCE_FIELD_NAME,
     };
 
@@ -1205,7 +1204,7 @@ mod tests {
                 }
             ]
         }"#;
-        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper).unwrap();
+        let builder = serde_json::from_str::<DocMapperBuilder>(doc_mapper).unwrap();
         let expected_msg = "timestamp field `timestamp` should be a datetime field";
         assert_eq!(&builder.try_build().unwrap_err().to_string(), &expected_msg);
     }
@@ -1224,7 +1223,7 @@ mod tests {
                 }
             ]
         }"#;
-        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper).unwrap();
+        let builder = serde_json::from_str::<DocMapperBuilder>(doc_mapper).unwrap();
         let expected_msg = "timestamp field `timestamp` should be a fast field";
         assert_eq!(&builder.try_build().unwrap_err().to_string(), &expected_msg);
     }
@@ -1238,7 +1237,7 @@ mod tests {
                     {"name": "body","type": "bytes"}
                 ]
             }"#;
-            let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper).unwrap();
+            let builder = serde_json::from_str::<DocMapperBuilder>(doc_mapper).unwrap();
             let expected_msg = "duplicated field definition `body`";
             assert_eq!(&builder.try_build().unwrap_err().to_string(), expected_msg);
         }
@@ -1257,7 +1256,7 @@ mod tests {
                     {"type": "text", "name": "body"}
                 ]
             }"#;
-            let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper).unwrap();
+            let builder = serde_json::from_str::<DocMapperBuilder>(doc_mapper).unwrap();
             let expected_msg = "duplicated field definition `username`";
             assert_eq!(&builder.try_build().unwrap_err().to_string(), expected_msg);
         }
@@ -1278,7 +1277,7 @@ mod tests {
                 {"type": "text", "name": "body"}
             ]
         }"#;
-        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper).unwrap();
+        let builder = serde_json::from_str::<DocMapperBuilder>(doc_mapper).unwrap();
         assert!(builder.try_build().is_ok());
     }
 
@@ -1297,7 +1296,7 @@ mod tests {
             ]
         }"#;
 
-        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper).unwrap();
+        let builder = serde_json::from_str::<DocMapperBuilder>(doc_mapper).unwrap();
         let expected_msg = "timestamp field `timestamp` should be single-valued";
         assert_eq!(&builder.try_build().unwrap_err().to_string(), expected_msg);
     }
@@ -1314,7 +1313,7 @@ mod tests {
                 }
             ]
         }"#;
-        let deser_err = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper)
+        let deser_err = serde_json::from_str::<DocMapperBuilder>(doc_mapper)
             .err()
             .unwrap();
         assert!(deser_err
@@ -1336,7 +1335,7 @@ mod tests {
                 }
             ]
         }"#;
-        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper)?;
+        let builder = serde_json::from_str::<DocMapperBuilder>(doc_mapper)?;
         let doc_mapper = builder.try_build()?;
         let result = doc_mapper.doc_from_json_str(
             r#"{
@@ -1372,7 +1371,7 @@ mod tests {
             ]
         }"#;
 
-        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper).unwrap();
+        let builder = serde_json::from_str::<DocMapperBuilder>(doc_mapper).unwrap();
         let doc_mapper = builder.try_build().unwrap();
         let schema = doc_mapper.schema();
         let json_doc_value: JsonValue = serde_json::json!({
@@ -1462,7 +1461,7 @@ mod tests {
             ]
         }"#;
 
-        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper).unwrap();
+        let builder = serde_json::from_str::<DocMapperBuilder>(doc_mapper).unwrap();
         let doc_mapper = builder.try_build().unwrap();
         let tag_fields: Vec<_> = doc_mapper.tag_field_names.into_iter().collect();
         assert_eq!(tag_fields, vec!["city", "division", "service",]);
@@ -1497,7 +1496,7 @@ mod tests {
             ]
         }"#;
 
-        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper).unwrap();
+        let builder = serde_json::from_str::<DocMapperBuilder>(doc_mapper).unwrap();
         let doc_mapper = builder.try_build().unwrap();
         let tag_fields: Vec<_> = doc_mapper.tag_field_names.into_iter().collect();
         assert_eq!(tag_fields, vec!["city", "division", "service",]);
@@ -1552,7 +1551,7 @@ mod tests {
             ]
         }"#;
         assert_eq!(
-            serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper_one)?
+            serde_json::from_str::<DocMapperBuilder>(doc_mapper_one)?
                 .try_build()
                 .unwrap_err()
                 .to_string(),
@@ -1570,7 +1569,7 @@ mod tests {
             ]
         }"#;
         assert_eq!(
-            serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper_two)?
+            serde_json::from_str::<DocMapperBuilder>(doc_mapper_two)?
                 .try_build()
                 .unwrap_err()
                 .to_string(),
@@ -1592,7 +1591,7 @@ mod tests {
                 }
             ]
         }"#;
-        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper).unwrap();
+        let builder = serde_json::from_str::<DocMapperBuilder>(doc_mapper).unwrap();
         let default_doc_mapper = builder.try_build().unwrap();
         assert!(default_doc_mapper.source_field.is_none());
         let schema = default_doc_mapper.schema();
@@ -2279,7 +2278,7 @@ mod tests {
                 panic!()
             };
             let text_indexing_options = json_options.get_text_indexing_options().unwrap();
-            assert_eq!(text_indexing_options.tokenizer(), super::RAW_TOKENIZER_NAME);
+            assert_eq!(text_indexing_options.tokenizer(), RAW_TOKENIZER_NAME);
             assert_eq!(
                 text_indexing_options.index_option(),
                 IndexRecordOption::Basic
@@ -2403,7 +2402,7 @@ mod tests {
 
     #[test]
     fn test_build_doc_mapper_should_fail_with_unknown_tokenizer() {
-        let mapper_builder = serde_json::from_str::<DefaultDocMapperBuilder>(
+        let mapper_builder = serde_json::from_str::<DocMapperBuilder>(
             r#"{
             "field_mappings": [
                 {
@@ -2455,7 +2454,7 @@ mod tests {
 
     #[test]
     fn test_build_doc_mapper_with_custom_invalid_regex_tokenizer() {
-        let mapper_builder = serde_json::from_str::<DefaultDocMapperBuilder>(
+        let mapper_builder = serde_json::from_str::<DocMapperBuilder>(
             r#"{
             "tokenizers": [
                 {
@@ -2530,7 +2529,7 @@ mod tests {
             ]
         });
 
-        let builder = DefaultDocMapperBuilder::deserialize(old_mapper.clone()).unwrap();
+        let builder = DocMapperBuilder::deserialize(old_mapper.clone()).unwrap();
         let old_mapper = builder.try_build().unwrap();
 
         let JsonValue::Object(doc) = json!({
@@ -2561,7 +2560,7 @@ mod tests {
                 }
             ]
         });
-        let builder = DefaultDocMapperBuilder::deserialize(new_mapper).unwrap();
+        let builder = DocMapperBuilder::deserialize(new_mapper).unwrap();
         let new_mapper = builder.try_build().unwrap();
 
         assert_eq!(new_mapper.doc_to_json(named_doc.0).unwrap(), doc);
@@ -2586,7 +2585,7 @@ mod tests {
             ]
         });
 
-        let builder = DefaultDocMapperBuilder::deserialize(old_mapper.clone()).unwrap();
+        let builder = DocMapperBuilder::deserialize(old_mapper.clone()).unwrap();
         let old_mapper = builder.try_build().unwrap();
 
         let JsonValue::Object(doc) = json!({
@@ -2609,7 +2608,7 @@ mod tests {
                 {"name": "body", "type": "json"}
             ]
         });
-        let builder = DefaultDocMapperBuilder::deserialize(new_mapper).unwrap();
+        let builder = DocMapperBuilder::deserialize(new_mapper).unwrap();
         let new_mapper = builder.try_build().unwrap();
 
         assert_eq!(new_mapper.doc_to_json(named_doc.0).unwrap(), doc);

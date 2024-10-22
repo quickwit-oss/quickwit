@@ -17,13 +17,44 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+mod date_time_type;
+mod doc_mapper_builder;
+mod doc_mapper_impl;
+mod field_mapping_entry;
+mod field_mapping_type;
+mod mapping_tree;
+mod tokenizer_entry;
+
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::ops::Bound;
 
+pub use doc_mapper_builder::DocMapperBuilder;
+pub use doc_mapper_impl::DocMapper;
+#[cfg(all(test, feature = "multilang"))]
+pub(crate) use field_mapping_entry::TextIndexingOptions;
+pub use field_mapping_entry::{
+    BinaryFormat, FastFieldOptions, FieldMappingEntry, QuickwitBytesOptions, QuickwitJsonOptions,
+    QuickwitTextNormalizer,
+};
+pub(crate) use field_mapping_entry::{
+    FieldMappingEntryForSerialization, IndexRecordOptionSchema, QuickwitTextTokenizer,
+};
+#[cfg(test)]
+pub(crate) use field_mapping_entry::{QuickwitNumericOptions, QuickwitTextOptions};
+pub use field_mapping_type::FieldMappingType;
 use serde_json::Value as JsonValue;
 use tantivy::schema::{Field, FieldType};
 use tantivy::Term;
+pub use tokenizer_entry::{analyze_text, TokenizerConfig, TokenizerEntry};
+pub(crate) use tokenizer_entry::{
+    NgramTokenizerOption, RegexTokenizerOption, TokenFilterType, TokenizerType,
+};
+
+/// Function used with serde to initialize boolean value at true if there is no value in json.
+fn default_as_true() -> bool {
+    true
+}
 
 pub type Partition = u64;
 
@@ -125,10 +156,10 @@ mod tests {
     use quickwit_query::BooleanOperand;
     use tantivy::schema::{Field, FieldType, Term};
 
-    use crate::default_doc_mapper::{FieldMappingType, QuickwitJsonOptions};
+    use super::*;
     use crate::{
-        Cardinality, DefaultDocMapperBuilder, DocMapper, DocParsingError, FieldMappingEntry,
-        TermRange, WarmupInfo, DYNAMIC_FIELD_NAME,
+        Cardinality, DocMapper, DocMapperBuilder, DocParsingError, FieldMappingEntry, TermRange,
+        WarmupInfo, DYNAMIC_FIELD_NAME,
     };
 
     const JSON_DEFAULT_DOC_MAPPER: &str = r#"
@@ -141,7 +172,7 @@ mod tests {
 
     #[test]
     fn test_doc_from_json_bytes() {
-        let doc_mapper = DefaultDocMapperBuilder::default().try_build().unwrap();
+        let doc_mapper = DocMapperBuilder::default().try_build().unwrap();
         let json_doc = br#"{"title": "hello", "body": "world"}"#;
         doc_mapper.doc_from_json_bytes(json_doc).unwrap();
 
@@ -156,7 +187,7 @@ mod tests {
 
     #[test]
     fn test_doc_from_json_str() {
-        let doc_mapper = DefaultDocMapperBuilder::default().try_build().unwrap();
+        let doc_mapper = DocMapperBuilder::default().try_build().unwrap();
         let json_doc = r#"{"title": "hello", "body": "world"}"#;
         doc_mapper.doc_from_json_str(json_doc).unwrap();
 
@@ -173,7 +204,7 @@ mod tests {
     fn test_deserialize_doc_mapper() -> anyhow::Result<()> {
         let deserialized_default_doc_mapper =
             serde_json::from_str::<Box<DocMapper>>(JSON_DEFAULT_DOC_MAPPER)?;
-        let expected_default_doc_mapper = DefaultDocMapperBuilder::default().try_build()?;
+        let expected_default_doc_mapper = DocMapperBuilder::default().try_build()?;
         assert_eq!(
             format!("{deserialized_default_doc_mapper:?}"),
             format!("{expected_default_doc_mapper:?}"),
@@ -185,7 +216,7 @@ mod tests {
     fn test_deserialize_minimal_doc_mapper() -> anyhow::Result<()> {
         let deserialized_default_doc_mapper =
             serde_json::from_str::<Box<DocMapper>>(r#"{"type": "default"}"#)?;
-        let expected_default_doc_mapper = DefaultDocMapperBuilder::default().try_build()?;
+        let expected_default_doc_mapper = DocMapperBuilder::default().try_build()?;
         assert_eq!(
             format!("{deserialized_default_doc_mapper:?}"),
             format!("{expected_default_doc_mapper:?}"),
@@ -212,7 +243,7 @@ mod tests {
 
     #[test]
     fn test_doc_mapper_query_with_json_field() {
-        let mut doc_mapper_builder = DefaultDocMapperBuilder::default();
+        let mut doc_mapper_builder = DocMapperBuilder::default();
         doc_mapper_builder
             .doc_mapping
             .field_mappings
@@ -242,7 +273,7 @@ mod tests {
 
     #[test]
     fn test_doc_mapper_query_with_json_field_default_search_fields() {
-        let doc_mapper = DefaultDocMapperBuilder::default().try_build().unwrap();
+        let doc_mapper = DocMapperBuilder::default().try_build().unwrap();
         let schema = doc_mapper.schema();
         let query_ast = query_ast_from_user_text("toto.titi:hello", None)
             .parse_user_query(doc_mapper.default_search_fields())
@@ -256,7 +287,7 @@ mod tests {
 
     #[test]
     fn test_doc_mapper_query_with_json_field_ambiguous_term() {
-        let doc_mapper = DefaultDocMapperBuilder::default().try_build().unwrap();
+        let doc_mapper = DocMapperBuilder::default().try_build().unwrap();
         let schema = doc_mapper.schema();
         let query_ast = query_ast_from_user_text("toto:5", None)
             .parse_user_query(&[])
@@ -699,11 +730,11 @@ mod tests {
         use quickwit_query::query_ast::TermQuery;
         use tantivy::schema::IndexRecordOption;
 
-        use crate::default_doc_mapper::{
+        use crate::doc_mapper::{
             QuickwitTextOptions, QuickwitTextTokenizer, TextIndexingOptions, TokenizerType,
         };
         use crate::{TokenizerConfig, TokenizerEntry};
-        let mut doc_mapper_builder = DefaultDocMapperBuilder::default();
+        let mut doc_mapper_builder = DocMapperBuilder::default();
         doc_mapper_builder
             .doc_mapping
             .field_mappings

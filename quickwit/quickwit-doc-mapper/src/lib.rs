@@ -25,7 +25,6 @@
 //! to convert a json like documents to a document indexable by tantivy
 //! engine, aka tantivy::Document.
 
-mod default_doc_mapper;
 mod doc_mapper;
 mod doc_mapping;
 mod error;
@@ -35,16 +34,16 @@ mod routing_expression;
 /// Pruning tags manipulation.
 pub mod tag_pruning;
 
-pub use default_doc_mapper::{
-    analyze_text, BinaryFormat, DefaultDocMapperBuilder, DocMapper, FieldMappingEntry,
-    FieldMappingType, QuickwitBytesOptions, QuickwitJsonOptions, TokenizerConfig, TokenizerEntry,
+pub use doc_mapper::{
+    analyze_text, BinaryFormat, DocMapper, DocMapperBuilder, FieldMappingEntry, FieldMappingType,
+    JsonObject, NamedField, QuickwitBytesOptions, QuickwitJsonOptions, TermRange, TokenizerConfig,
+    TokenizerEntry, WarmupInfo,
 };
-use default_doc_mapper::{
+use doc_mapper::{
     FastFieldOptions, FieldMappingEntryForSerialization, IndexRecordOptionSchema,
     NgramTokenizerOption, QuickwitTextNormalizer, QuickwitTextTokenizer, RegexTokenizerOption,
     TokenFilterType, TokenizerType,
 };
-pub use doc_mapper::{JsonObject, NamedField, TermRange, WarmupInfo};
 pub use doc_mapping::{DocMapping, Mode, ModeType};
 pub use error::{DocParsingError, QueryParserError};
 use quickwit_common::shared_consts::FIELD_PRESENCE_FIELD_NAME;

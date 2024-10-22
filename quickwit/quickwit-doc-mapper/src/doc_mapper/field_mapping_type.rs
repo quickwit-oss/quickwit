@@ -21,7 +21,7 @@ use tantivy::schema::Type;
 
 use super::date_time_type::QuickwitDateTimeOptions;
 use super::field_mapping_entry::QuickwitBoolOptions;
-use crate::default_doc_mapper::field_mapping_entry::{
+use crate::doc_mapper::field_mapping_entry::{
     QuickwitBytesOptions, QuickwitConcatenateOptions, QuickwitIpAddrOptions, QuickwitJsonOptions,
     QuickwitNumericOptions, QuickwitObjectOptions, QuickwitTextOptions,
 };

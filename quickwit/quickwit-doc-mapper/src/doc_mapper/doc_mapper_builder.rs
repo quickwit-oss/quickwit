@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{DocMapper, DocMapping};
 
-/// DefaultDocMapperBuilder is here
+/// DocMapperBuilder is here
 /// to create a valid DocMapper.
 ///
 /// It is also used to serialize/deserialize a DocMapper.
@@ -29,7 +29,7 @@ use crate::{DocMapper, DocMapping};
 /// from the configuration.
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct DefaultDocMapperBuilder {
+pub struct DocMapperBuilder {
     /// Doc mapping.
     #[serde(flatten)]
     pub doc_mapping: DocMapping,
@@ -44,15 +44,15 @@ pub struct DefaultDocMapperBuilder {
 }
 
 #[cfg(test)]
-impl Default for DefaultDocMapperBuilder {
+impl Default for DocMapperBuilder {
     fn default() -> Self {
         serde_json::from_str("{}").unwrap()
     }
 }
 
-impl DefaultDocMapperBuilder {
-    /// Build a valid `DefaultDocMapper`.
-    /// This will consume your `DefaultDocMapperBuilder`.
+impl DocMapperBuilder {
+    /// Build a valid `DocMapper`.
+    /// This will consume your `DocMapperBuilder`.
     pub fn try_build(self) -> anyhow::Result<DocMapper> {
         self.try_into()
     }
@@ -65,8 +65,7 @@ mod tests {
 
     #[test]
     fn test_default_mapper_builder_deserialize_from_empty_object() {
-        let default_doc_mapper_builder: DefaultDocMapperBuilder =
-            serde_json::from_str("{}").unwrap();
+        let default_doc_mapper_builder: DocMapperBuilder = serde_json::from_str("{}").unwrap();
         assert_eq!(
             default_doc_mapper_builder.doc_mapping.mode.mode_type(),
             ModeType::Dynamic
@@ -86,8 +85,6 @@ mod tests {
 
     #[test]
     fn test_default_mapper_builder_extra_field() {
-        assert!(
-            serde_json::from_str::<DefaultDocMapperBuilder>(r#"{"unknownfield": "blop"}"#).is_err()
-        );
+        assert!(serde_json::from_str::<DocMapperBuilder>(r#"{"unknownfield": "blop"}"#).is_err());
     }
 }

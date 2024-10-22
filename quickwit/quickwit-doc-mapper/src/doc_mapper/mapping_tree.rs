@@ -34,11 +34,11 @@ use tantivy::TantivyDocument as Document;
 
 use super::date_time_type::QuickwitDateTimeOptions;
 use super::field_mapping_entry::{NumericOutputFormat, QuickwitBoolOptions};
-use crate::default_doc_mapper::field_mapping_entry::{
+use crate::doc_mapper::field_mapping_entry::{
     QuickwitBytesOptions, QuickwitIpAddrOptions, QuickwitNumericOptions, QuickwitObjectOptions,
     QuickwitTextOptions,
 };
-use crate::default_doc_mapper::{FieldMappingType, QuickwitJsonOptions};
+use crate::doc_mapper::{FieldMappingType, QuickwitJsonOptions};
 use crate::{Cardinality, DocParsingError, FieldMappingEntry, ModeType};
 
 #[derive(Clone, Debug)]
@@ -1587,8 +1587,8 @@ mod tests {
         add_key_to_vec_map, extract_val_from_tantivy_val, value_to_json, JsonValueIterator,
         LeafType, MapOrArrayIter, MappingLeaf,
     };
-    use crate::default_doc_mapper::date_time_type::QuickwitDateTimeOptions;
-    use crate::default_doc_mapper::field_mapping_entry::{
+    use crate::doc_mapper::date_time_type::QuickwitDateTimeOptions;
+    use crate::doc_mapper::field_mapping_entry::{
         BinaryFormat, NumericOutputFormat, QuickwitBoolOptions, QuickwitBytesOptions,
         QuickwitIpAddrOptions, QuickwitNumericOptions, QuickwitTextOptions,
     };

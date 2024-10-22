@@ -21,7 +21,7 @@ use std::collections::HashSet;
 
 use anyhow::{ensure, Context};
 use quickwit_common::uri::Uri;
-use quickwit_doc_mapper::DefaultDocMapperBuilder;
+use quickwit_doc_mapper::DocMapperBuilder;
 use quickwit_proto::types::{DocMappingUid, IndexId};
 use serde::{Deserialize, Serialize};
 use tracing::info;
@@ -103,7 +103,7 @@ pub fn load_index_config_update(
     );
 
     // verify the new mapping is coherent
-    let doc_mapper_builder = DefaultDocMapperBuilder {
+    let doc_mapper_builder = DocMapperBuilder {
         doc_mapping: new_index_config.doc_mapping.clone(),
         default_search_fields: new_index_config
             .search_settings
