@@ -473,10 +473,11 @@ impl crate::TestableForRegression for IndexConfig {
 pub fn build_doc_mapper(
     doc_mapping: &DocMapping,
     search_settings: &SearchSettings,
-) -> anyhow::Result<Arc<dyn DocMapper>> {
+) -> anyhow::Result<Arc<DocMapper>> {
     let builder = DefaultDocMapperBuilder {
         doc_mapping: doc_mapping.clone(),
         default_search_fields: search_settings.default_search_fields.clone(),
+        legacy_type_tag: None,
     };
     Ok(Arc::new(builder.try_build()?))
 }

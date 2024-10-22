@@ -19,7 +19,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{DefaultDocMapper, DocMapping};
+use crate::{DocMapper, DocMapping};
 
 /// DefaultDocMapperBuilder is here
 /// to create a valid DocMapper.
@@ -36,6 +36,11 @@ pub struct DefaultDocMapperBuilder {
     /// Default search field names.
     #[serde(default)]
     pub default_search_fields: Vec<String>,
+
+    /// Allow the "type" field separately.
+    /// This is a residue from when the DocMapper was a trait.
+    #[serde(rename = "type", default)]
+    pub legacy_type_tag: Option<String>,
 }
 
 #[cfg(test)]
@@ -48,7 +53,7 @@ impl Default for DefaultDocMapperBuilder {
 impl DefaultDocMapperBuilder {
     /// Build a valid `DefaultDocMapper`.
     /// This will consume your `DefaultDocMapperBuilder`.
-    pub fn try_build(self) -> anyhow::Result<DefaultDocMapper> {
+    pub fn try_build(self) -> anyhow::Result<DocMapper> {
         self.try_into()
     }
 }

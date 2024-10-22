@@ -109,6 +109,7 @@ pub fn load_index_config_update(
             .search_settings
             .default_search_fields
             .clone(),
+        legacy_type_tag: None,
     };
     doc_mapper_builder
         .try_build()

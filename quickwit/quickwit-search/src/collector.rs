@@ -1277,7 +1277,6 @@ mod tests {
         LeafSearchResponse, PartialHit, SearchRequest, SortByValue, SortField, SortOrder,
         SortValue, SplitSearchError,
     };
-    use quickwit_proto::types::DocMappingUid;
     use tantivy::collector::Collector;
     use tantivy::TantivyDocument;
 
@@ -1341,62 +1340,6 @@ mod tests {
             ),
             &[make_hit_given_split_id(1), make_hit_given_split_id(2)]
         );
-    }
-
-    // TODO figure out a way to remove this boilerplate and use mockall
-    #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-    struct MockDocMapper;
-
-    #[typetag::serde(name = "mock")]
-    impl quickwit_doc_mapper::DocMapper for MockDocMapper {
-        fn doc_mapping_uid(&self) -> DocMappingUid {
-            DocMappingUid::default()
-        }
-
-        // Required methods
-        fn doc_from_json_obj(
-            &self,
-            _json_obj: quickwit_doc_mapper::JsonObject,
-            _doc_len: u64,
-        ) -> Result<(u64, TantivyDocument), quickwit_doc_mapper::DocParsingError> {
-            unimplemented!()
-        }
-        fn doc_to_json(
-            &self,
-            _named_doc: std::collections::BTreeMap<String, Vec<tantivy::schema::OwnedValue>>,
-        ) -> anyhow::Result<quickwit_doc_mapper::JsonObject> {
-            unimplemented!()
-        }
-        fn schema(&self) -> tantivy::schema::Schema {
-            unimplemented!()
-        }
-        fn query(
-            &self,
-            _split_schema: tantivy::schema::Schema,
-            _query_ast: &quickwit_query::query_ast::QueryAst,
-            _with_validation: bool,
-        ) -> Result<
-            (
-                Box<dyn tantivy::query::Query>,
-                quickwit_doc_mapper::WarmupInfo,
-            ),
-            quickwit_doc_mapper::QueryParserError,
-        > {
-            unimplemented!()
-        }
-        fn default_search_fields(&self) -> &[String] {
-            unimplemented!()
-        }
-        fn max_num_partitions(&self) -> std::num::NonZeroU32 {
-            unimplemented!()
-        }
-        fn tokenizer_manager(&self) -> &quickwit_query::tokenizers::TokenizerManager {
-            unimplemented!()
-        }
-
-        fn timestamp_field_name(&self) -> Option<&str> {
-            None
-        }
     }
 
     fn sort_dataset() -> Vec<(Option<u64>, Option<u64>)> {

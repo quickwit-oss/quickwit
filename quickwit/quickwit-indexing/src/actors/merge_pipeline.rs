@@ -566,7 +566,7 @@ impl Handler<Spawn> for MergePipeline {
 #[derive(Clone)]
 pub struct MergePipelineParams {
     pub pipeline_id: MergePipelineId,
-    pub doc_mapper: Arc<dyn DocMapper>,
+    pub doc_mapper: Arc<DocMapper>,
     pub indexing_directory: TempDirectory,
     pub metastore: MetastoreServiceClient,
     pub merge_scheduler_service: Mailbox<MergeSchedulerService>,

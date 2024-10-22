@@ -576,7 +576,7 @@ pub struct IndexingPipelineParams {
     pub storage: Arc<dyn Storage>,
 
     // Indexing-related parameters
-    pub doc_mapper: Arc<dyn DocMapper>,
+    pub doc_mapper: Arc<DocMapper>,
     pub indexing_directory: TempDirectory,
     pub indexing_settings: IndexingSettings,
     pub split_store: IndexingSplitStore,
@@ -607,7 +607,7 @@ mod tests {
     use quickwit_actors::{Command, Universe};
     use quickwit_common::ServiceStream;
     use quickwit_config::{IndexingSettings, SourceInputFormat, SourceParams};
-    use quickwit_doc_mapper::{default_doc_mapper_for_test, DefaultDocMapper};
+    use quickwit_doc_mapper::{default_doc_mapper_for_test, DocMapper};
     use quickwit_metastore::checkpoint::IndexCheckpointDelta;
     use quickwit_metastore::{IndexMetadata, IndexMetadataResponseExt, PublishSplitsRequestExt};
     use quickwit_proto::metastore::{
@@ -1027,7 +1027,7 @@ mod tests {
         let split_store = IndexingSplitStore::create_without_local_store_for_test(storage.clone());
         let (merge_planner_mailbox, _) = universe.create_test_mailbox();
         // Create a minimal mapper with wrong date format to ensure that all documents will fail
-        let broken_mapper = serde_json::from_str::<DefaultDocMapper>(
+        let broken_mapper = serde_json::from_str::<DocMapper>(
             r#"
                 {
                     "store_source": true,

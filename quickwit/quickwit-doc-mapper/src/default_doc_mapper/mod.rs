@@ -26,7 +26,7 @@ mod mapping_tree;
 mod tokenizer_entry;
 
 use anyhow::bail;
-pub use default_mapper::DefaultDocMapper;
+pub use default_mapper::DocMapper;
 pub use default_mapper_builder::DefaultDocMapperBuilder;
 #[cfg(all(test, feature = "multilang"))]
 pub(crate) use field_mapping_entry::TextIndexingOptions;

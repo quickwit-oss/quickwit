@@ -2324,16 +2324,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5443807d6dff69373d433ab9ef5378ad8df50ca6298caf15de6e52e24aaf54d5"
 
 [[package]]
-name = "erased-serde"
-version = "0.4.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "24e2389d65ab4fab27dc2a5de7b191e1f6617d1f1c8855c0dc569c94a4cbb18d"
-dependencies = [
- "serde",
- "typeid",
-]
-
-[[package]]
 name = "errno"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3371,12 +3361,6 @@ dependencies = [
  "wasm-bindgen",
  "web-sys",
 ]
-
-[[package]]
-name = "inventory"
-version = "0.3.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f958d3d68f4167080a18141e10381e7634563984a537f2a49a30fd8e53ac5767"
 
 [[package]]
 name = "ipnet"
@@ -6001,7 +5985,6 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "criterion",
- "dyn-clone",
  "fnv",
  "hex",
  "indexmap 2.1.0",
@@ -6024,7 +6007,6 @@ dependencies = [
  "thiserror",
  "time",
  "tracing",
- "typetag",
  "utoipa",
 ]
 
@@ -6483,7 +6465,6 @@ dependencies = [
  "tower",
  "tracing",
  "ttl_cache",
- "typetag",
  "ulid",
  "utoipa",
 ]
@@ -8993,40 +8974,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "typeid"
-version = "1.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e13db2e0ccd5e14a544e8a246ba2312cd25223f616442d7f2cb0e3db614236e"
-
-[[package]]
 name = "typenum"
 version = "1.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42ff0bf0c66b8238c6f3b578df37d0b7848e55df8577b3f74f92a69acceeb825"
-
-[[package]]
-name = "typetag"
-version = "0.2.18"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52ba3b6e86ffe0054b2c44f2d86407388b933b16cb0a70eea3929420db1d9bbe"
-dependencies = [
- "erased-serde",
- "inventory",
- "once_cell",
- "serde",
- "typetag-impl",
-]
-
-[[package]]
-name = "typetag-impl"
-version = "0.2.18"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "70b20a22c42c8f1cd23ce5e34f165d4d37038f5b663ad20fb6adbdf029172483"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.79",
-]
 
 [[package]]
 name = "uaparser"

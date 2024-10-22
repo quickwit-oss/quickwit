@@ -36,7 +36,7 @@ mod routing_expression;
 pub mod tag_pruning;
 
 pub use default_doc_mapper::{
-    analyze_text, BinaryFormat, DefaultDocMapper, DefaultDocMapperBuilder, FieldMappingEntry,
+    analyze_text, BinaryFormat, DefaultDocMapperBuilder, DocMapper, FieldMappingEntry,
     FieldMappingType, QuickwitBytesOptions, QuickwitJsonOptions, TokenizerConfig, TokenizerEntry,
 };
 use default_doc_mapper::{
@@ -44,7 +44,7 @@ use default_doc_mapper::{
     NgramTokenizerOption, QuickwitTextNormalizer, QuickwitTextTokenizer, RegexTokenizerOption,
     TokenFilterType, TokenizerType,
 };
-pub use doc_mapper::{DocMapper, JsonObject, NamedField, TermRange, WarmupInfo};
+pub use doc_mapper::{JsonObject, NamedField, TermRange, WarmupInfo};
 pub use doc_mapping::{DocMapping, Mode, ModeType};
 pub use error::{DocParsingError, QueryParserError};
 use quickwit_common::shared_consts::FIELD_PRESENCE_FIELD_NAME;
@@ -99,7 +99,7 @@ pub struct DocMapperApiSchemas;
 
 /// Returns a default `DefaultIndexConfig` for unit tests.
 #[cfg(any(test, feature = "testsuite"))]
-pub fn default_doc_mapper_for_test() -> DefaultDocMapper {
+pub fn default_doc_mapper_for_test() -> DocMapper {
     const JSON_CONFIG_VALUE: &str = r#"
         {
             "store_source": true,
@@ -178,5 +178,5 @@ pub fn default_doc_mapper_for_test() -> DefaultDocMapper {
                 }
             ]
         }"#;
-    serde_json::from_str::<DefaultDocMapper>(JSON_CONFIG_VALUE).unwrap()
+    serde_json::from_str::<DocMapper>(JSON_CONFIG_VALUE).unwrap()
 }

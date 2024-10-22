@@ -38,10 +38,10 @@ use crate::DocBatchV2Builder;
 /// the `doc_mappers` cache. If it is not found, it is built from the specified JSON doc mapping
 /// `doc_mapping_json` and inserted into the cache before being returned.
 pub(super) fn get_or_try_build_doc_mapper(
-    doc_mappers: &mut HashMap<DocMappingUid, Weak<dyn DocMapper>>,
+    doc_mappers: &mut HashMap<DocMappingUid, Weak<DocMapper>>,
     doc_mapping_uid: DocMappingUid,
     doc_mapping_json: &str,
-) -> IngestV2Result<Arc<dyn DocMapper>> {
+) -> IngestV2Result<Arc<DocMapper>> {
     if let Entry::Occupied(occupied) = doc_mappers.entry(doc_mapping_uid) {
         if let Some(doc_mapper) = occupied.get().upgrade() {
             return Ok(doc_mapper);
@@ -64,7 +64,7 @@ pub(super) fn get_or_try_build_doc_mapper(
 }
 
 /// Attempts to build a doc mapper from the specified JSON doc mapping `doc_mapping_json`.
-pub(super) fn try_build_doc_mapper(doc_mapping_json: &str) -> IngestV2Result<Arc<dyn DocMapper>> {
+pub(super) fn try_build_doc_mapper(doc_mapping_json: &str) -> IngestV2Result<Arc<DocMapper>> {
     let doc_mapping: DocMapping = serde_json::from_str(doc_mapping_json).map_err(|error| {
         IngestV2Error::Internal(format!("failed to parse doc mapping: {error}"))
     })?;
@@ -75,7 +75,7 @@ pub(super) fn try_build_doc_mapper(doc_mapping_json: &str) -> IngestV2Result<Arc
 }
 
 fn validate_document(
-    doc_mapper: &dyn DocMapper,
+    doc_mapper: &DocMapper,
     doc_bytes: &[u8],
 ) -> Result<(), (ParseFailureReason, String)> {
     let Ok(json_doc) = serde_json::from_slice::<serde_json_borrow::Value>(doc_bytes) else {
@@ -101,7 +101,7 @@ fn validate_document(
 /// Returns a batch of valid docs and the list of errors.
 fn validate_doc_batch_impl(
     doc_batch: DocBatchV2,
-    doc_mapper: &dyn DocMapper,
+    doc_mapper: &DocMapper,
 ) -> (DocBatchV2, Vec<ParseFailure>) {
     let mut parse_failures: Vec<ParseFailure> = Vec::new();
     let mut invalid_doc_ids: HashSet<DocUid> = HashSet::default();
@@ -145,10 +145,10 @@ fn is_document_validation_enabled() -> bool {
 /// original batch and a list of parse failures.
 pub(super) async fn validate_doc_batch(
     doc_batch: DocBatchV2,
-    doc_mapper: Arc<dyn DocMapper>,
+    doc_mapper: Arc<DocMapper>,
 ) -> IngestV2Result<(DocBatchV2, Vec<ParseFailure>)> {
     if is_document_validation_enabled() {
-        run_cpu_intensive(move || validate_doc_batch_impl(doc_batch, &*doc_mapper))
+        run_cpu_intensive(move || validate_doc_batch_impl(doc_batch, &doc_mapper))
             .await
             .map_err(|error| {
                 let message = format!("failed to validate documents: {error}");
@@ -167,7 +167,7 @@ mod tests {
 
     #[test]
     fn test_get_or_try_build_doc_mapper() {
-        let mut doc_mappers: HashMap<DocMappingUid, Weak<dyn DocMapper>> = HashMap::new();
+        let mut doc_mappers: HashMap<DocMappingUid, Weak<DocMapper>> = HashMap::new();
 
         let doc_mapping_uid = DocMappingUid::random();
         let doc_mapping_json = r#"{
@@ -256,12 +256,12 @@ mod tests {
         let doc_mapper = try_build_doc_mapper(doc_mapping_json).unwrap();
         let doc_batch = DocBatchV2::default();
 
-        let (_, parse_failures) = validate_doc_batch_impl(doc_batch, &*doc_mapper);
+        let (_, parse_failures) = validate_doc_batch_impl(doc_batch, &doc_mapper);
         assert_eq!(parse_failures.len(), 0);
 
         let doc_batch =
             DocBatchV2::for_test(["", "[]", r#"{"foo": "bar"}"#, r#"{"doc": "test-doc-000"}"#]);
-        let (doc_batch, parse_failures) = validate_doc_batch_impl(doc_batch, &*doc_mapper);
+        let (doc_batch, parse_failures) = validate_doc_batch_impl(doc_batch, &doc_mapper);
         assert_eq!(parse_failures.len(), 3);
 
         let parse_failure_0 = &parse_failures[0];

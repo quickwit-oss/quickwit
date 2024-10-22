@@ -247,7 +247,7 @@ pub async fn resolve_index_patterns(
 /// another intermediate json format between the leaves and the root.
 fn convert_document_to_json_string(
     named_field_doc: NamedFieldDocument,
-    doc_mapper: &dyn DocMapper,
+    doc_mapper: &DocMapper,
 ) -> anyhow::Result<String> {
     let NamedFieldDocument(named_field_doc_map) = named_field_doc;
     let doc_json_map = doc_mapper.doc_to_json(named_field_doc_map)?;

@@ -54,7 +54,7 @@ pub(super) struct IngesterShard {
     /// form of `PersistRequest` or `FetchRequest`.
     pub is_advertisable: bool,
     /// Document mapper for the shard. Replica shards and closed solo shards do not have one.
-    pub doc_mapper_opt: Option<Arc<dyn DocMapper>>,
+    pub doc_mapper_opt: Option<Arc<DocMapper>>,
     /// Whether to validate documents in this shard. True if no preprocessing (VRL) will happen
     /// before indexing.
     pub validate: bool,
@@ -70,7 +70,7 @@ impl IngesterShard {
         shard_state: ShardState,
         replication_position_inclusive: Position,
         truncation_position_inclusive: Position,
-        doc_mapper: Arc<dyn DocMapper>,
+        doc_mapper: Arc<DocMapper>,
         now: Instant,
         validate: bool,
     ) -> Self {
@@ -119,7 +119,7 @@ impl IngesterShard {
         shard_state: ShardState,
         replication_position_inclusive: Position,
         truncation_position_inclusive: Position,
-        doc_mapper_opt: Option<Arc<dyn DocMapper>>,
+        doc_mapper_opt: Option<Arc<DocMapper>>,
         now: Instant,
         validate: bool,
     ) -> Self {
