@@ -48,7 +48,7 @@ services:
 ### Explanation of Services
 
 - **Quickwit**: Runs the Quickwit service on port `7280`.
-- **Grafana**: Used to visualize data from Prometheus.
+- **Grafana**: Queries and displays data from Prometheus.
 - **Prometheus**: Collects metrics from Quickwit using the `/metrics` endpoint.
 
 ## Step 2: Configure Prometheus
