@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use serde::de::IgnoredAny;
 use serde::{Deserialize, Serialize};
 
 use crate::{DocMapper, DocMapping};
@@ -40,7 +41,8 @@ pub struct DocMapperBuilder {
     /// Allow the "type" field separately.
     /// This is a residue from when the DocMapper was a trait.
     #[serde(rename = "type", default)]
-    pub legacy_type_tag: Option<String>,
+    #[serde(skip_serializing)]
+    pub legacy_type_tag: Option<IgnoredAny>,
 }
 
 #[cfg(test)]
