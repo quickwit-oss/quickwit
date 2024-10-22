@@ -70,7 +70,7 @@ impl Default for SearchMetrics {
             ),
             root_search_request_duration_seconds: new_histogram_vec(
                 "root_search_request_duration_seconds",
-                "Duration of root search gRPC request in seconds.",
+                "Duration of root search gRPC requests in seconds.",
                 "search",
                 &[("kind", "server")],
                 ["status"],
@@ -93,7 +93,7 @@ impl Default for SearchMetrics {
             ),
             leaf_search_request_duration_seconds: new_histogram_vec(
                 "leaf_search_request_duration_seconds",
-                "Duration of leaf search gRPC request in seconds.",
+                "Duration of leaf search gRPC requests in seconds.",
                 "search",
                 &[("kind", "server")],
                 ["status"],
