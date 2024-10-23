@@ -35,7 +35,6 @@ Some of those parameters can be omitted. The following PostgreSQL URIs are for i
 postgres://localhost/mydb
 postgres://user@localhost
 postgres://user:secret@localhost
-postgres://host1:123,host2:456/mydb
 ```
 
 The database has to be created in advance.
