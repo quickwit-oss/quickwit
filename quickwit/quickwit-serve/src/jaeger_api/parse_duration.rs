@@ -30,8 +30,8 @@ pub(crate) fn parse_duration_with_units(duration_string: String) -> anyhow::Resu
 }
 
 pub(crate) fn to_well_known_timestamp(timestamp_nanos: i64) -> ProstTimestamp {
-    let seconds = timestamp_nanos / 1_000_000;
-    let nanos = (timestamp_nanos % 1_000_000) as i32;
+    let seconds = timestamp_nanos / 1_000_000_000;
+    let nanos = (timestamp_nanos % 1_000_000_000) as i32;
     ProstTimestamp { seconds, nanos }
 }
 
