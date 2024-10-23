@@ -248,8 +248,12 @@ async fn jaeger_traces_search(
         service_name: search_params.service.unwrap_or_default(),
         operation_name: search_params.operation.unwrap_or_default(),
         tags,
-        start_time_min: search_params.start.map(to_well_known_timestamp),
-        start_time_max: search_params.end.map(to_well_known_timestamp),
+        start_time_min: search_params
+            .start
+            .map(|ts| to_well_known_timestamp(ts * 1000)),
+        start_time_max: search_params
+            .end
+            .map(|ts| to_well_known_timestamp(ts * 1000)),
         duration_min,
         duration_max,
         num_traces: search_params.limit.unwrap_or(DEFAULT_NUMBER_OF_TRACES),
@@ -449,6 +453,18 @@ mod tests {
                     "{\"type\":\"term\",\"field\":\"resource_attributes.tag.second\",\"value\":\"\
                      true\"}"
                 ));
+                assert!(req.query_ast.contains(
+                    "{\"type\":\"term\",\"field\":\"resource_attributes.tag.second\",\"value\":\"\
+                     true\"}"
+                ));
+                // no lowerbound because minDuration < 1ms,
+                assert!(req.query_ast.contains(
+                    "{\"type\":\"range\",\"field\":\"span_duration_millis\",\"lower_bound\":\"\
+                     Unbounded\",\"upper_bound\":{\"Included\":1200}}"
+                ));
+                assert_eq!(req.start_timestamp, Some(1702352106));
+                // TODO(trinity) i think we have an off by 1 here, imo this should be rounded up
+                assert_eq!(req.end_timestamp, Some(1702373706));
                 assert_eq!(
                     req.index_id_patterns,
                     vec![OTEL_TRACES_INDEX_ID.to_string()]
