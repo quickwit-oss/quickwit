@@ -55,9 +55,11 @@ pub struct TracesSearchQueryParams {
     pub service: Option<String>,
     #[serde(default)]
     pub operation: Option<String>,
+    // these are microsecond precision
     pub start: Option<i64>,
     pub end: Option<i64>,
     pub tags: Option<String>,
+    // these are unit-suffixed numbers. in practice we only support precision up to the ms
     pub min_duration: Option<String>,
     pub max_duration: Option<String>,
     pub lookback: Option<String>,
