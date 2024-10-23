@@ -1027,9 +1027,9 @@ dependencies = [
 
 [[package]]
 name = "binggan"
-version = "0.13.0"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "012a2b0aae162c298472025aa0662323c157e63897e32146a6a1bdd286108d6f"
+checksum = "b16cf7e26155ca336ba3a7220c817cdfe73a10f867fa352349fd425b43814bd9"
 dependencies = [
  "alloca",
  "bpu_trasher",
@@ -1137,9 +1137,9 @@ dependencies = [
 
 [[package]]
 name = "bpu_trasher"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b12b1a01c908052583934ce0bdcd738a394a11df7c41d8fd042a588a4231725a"
+checksum = "c1da7e5e16c1949a2ba90dd1d9c8330af4b72a3b18cc6bcc738c5fe81bf4be61"
 dependencies = [
  "rand 0.8.5",
 ]

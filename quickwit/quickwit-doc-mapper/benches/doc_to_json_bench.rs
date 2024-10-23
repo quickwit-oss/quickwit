@@ -105,14 +105,12 @@ fn run_bench() {
             for line in lines {
                 black_box(doc_mapper.doc_from_json_str(line).unwrap());
             }
-            Some(())
         });
 
         group.register_with_input("doc_mapper_dynamic", data, |lines| {
             for line in lines {
                 black_box(dynamic_doc_mapper.doc_from_json_str(line).unwrap());
             }
-            Some(())
         });
 
         group.register_with_input("tantivy parse json", data, |lines| {
@@ -120,7 +118,6 @@ fn run_bench() {
             for line in lines {
                 let _doc = black_box(TantivyDocument::parse_json(&schema, line).unwrap());
             }
-            Some(())
         });
         group.run();
     }

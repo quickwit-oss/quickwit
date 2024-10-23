@@ -49,7 +49,6 @@ fn run_bench() {
             for json in lines.iter() {
                 routing_expr.eval_hash(json);
             }
-            Some(())
         });
 
         group.run();
