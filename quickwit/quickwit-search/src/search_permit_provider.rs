@@ -18,57 +18,71 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::VecDeque;
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Mutex};
 
 use quickwit_common::metrics::GaugeGuard;
 use tokio::sync::oneshot;
 
-/// `SearchPermits` is a distributor of permits to perform single split
+/// `SearchPermitProvider` is a distributor of permits to perform single split
 /// search operation.
 ///
 /// Requests are served in order.
 #[derive(Clone)]
-pub struct SearchPermits {
-    inner: Arc<Mutex<InnerSearchPermits>>,
+pub struct SearchPermitProvider {
+    inner_arc: Arc<Mutex<InnerSearchPermitProvider>>,
 }
 
-impl SearchPermits {
-    pub fn new(num_permits: usize) -> SearchPermits {
-        SearchPermits {
-            inner: Arc::new(Mutex::new(InnerSearchPermits {
+impl SearchPermitProvider {
+    pub fn new(num_permits: usize) -> SearchPermitProvider {
+        SearchPermitProvider {
+            inner_arc: Arc::new(Mutex::new(InnerSearchPermitProvider {
                 num_permits_available: num_permits,
                 permits_requests: VecDeque::new(),
             })),
         }
     }
 
-    /// Returns a list of future permits in the form of a Receiver channel.
-    pub fn get_one_permit(&self) -> oneshot::Receiver<SearchPermit> {
-        let mut permits_lock = self.inner.lock().unwrap();
-        permits_lock.get_permit(&self.inner)
+    /// Returns a future permit in the form of a oneshot Receiver channel.
+    ///
+    /// At this point the permit is not acquired yet.
+    #[must_use]
+    pub fn get_permit(&self) -> oneshot::Receiver<SearchPermit> {
+        let mut permits_lock = self.inner_arc.lock().unwrap();
+        permits_lock.get_permit(&self.inner_arc)
     }
 
-    /// Returns a list of future permits in the form of a Receiver channel.
+    /// Returns a list of future permits in the form of oneshot Receiver channels.
     ///
     /// The permits returned are guaranteed to be resolved in order.
     /// In addition, the permits are guaranteed to be resolved before permits returned by
-    /// subsequent calls to this function (or get_permit).
-    pub fn get_permits_futures(&self, num_permits: usize) -> Vec<oneshot::Receiver<SearchPermit>> {
-        let mut permits_lock = self.inner.lock().unwrap();
-        permits_lock.get_permits(num_permits, &self.inner)
+    /// subsequent calls to this function (or `get_permit`).
+    #[must_use]
+    pub fn get_permits(&self, num_permits: usize) -> Vec<oneshot::Receiver<SearchPermit>> {
+        let mut permits_lock = self.inner_arc.lock().unwrap();
+        permits_lock.get_permits(num_permits, &self.inner_arc)
     }
 }
 
-struct InnerSearchPermits {
+struct InnerSearchPermitProvider {
     num_permits_available: usize,
     permits_requests: VecDeque<oneshot::Sender<SearchPermit>>,
 }
 
-impl InnerSearchPermits {
+impl InnerSearchPermitProvider {
+    fn get_permit(
+        &mut self,
+        inner_arc: &Arc<Mutex<InnerSearchPermitProvider>>,
+    ) -> oneshot::Receiver<SearchPermit> {
+        let (tx, rx) = oneshot::channel();
+        self.permits_requests.push_back(tx);
+        self.assign_available_permits(inner_arc);
+        rx
+    }
+
     fn get_permits(
         &mut self,
         num_permits: usize,
-        inner: &Arc<Mutex<InnerSearchPermits>>,
+        inner_arc: &Arc<Mutex<InnerSearchPermitProvider>>,
     ) -> Vec<oneshot::Receiver<SearchPermit>> {
         let mut permits = Vec::with_capacity(num_permits);
         for _ in 0..num_permits {
@@ -76,43 +90,35 @@ impl InnerSearchPermits {
             self.permits_requests.push_back(tx);
             permits.push(rx);
         }
-        self.assign_available_permits(inner);
+        self.assign_available_permits(inner_arc);
         permits
     }
 
-    fn get_permit(
-        &mut self,
-        inner: &Arc<Mutex<InnerSearchPermits>>,
-    ) -> oneshot::Receiver<SearchPermit> {
-        let (tx, rx) = oneshot::channel();
-        self.permits_requests.push_back(tx);
-        self.assign_available_permits(inner);
-        rx
-    }
-
-    fn recycle_permit(&mut self, inner: &Arc<Mutex<InnerSearchPermits>>) {
+    fn recycle_permit(&mut self, inner_arc: &Arc<Mutex<InnerSearchPermitProvider>>) {
         self.num_permits_available += 1;
-        self.assign_available_permits(inner);
+        self.assign_available_permits(inner_arc);
     }
 
-    fn assign_available_permits(&mut self, inner: &Arc<Mutex<InnerSearchPermits>>) {
+    fn assign_available_permits(&mut self, inner_arc: &Arc<Mutex<InnerSearchPermitProvider>>) {
         while self.num_permits_available > 0 {
             let Some(sender) = self.permits_requests.pop_front() else {
                 break;
             };
+            let mut ongoing_gauge_guard = GaugeGuard::from_gauge(
+                &crate::SEARCH_METRICS.leaf_search_single_split_tasks_ongoing,
+            );
+            ongoing_gauge_guard.add(1);
             let send_res = sender.send(SearchPermit {
-                _ongoing_gauge_guard: GaugeGuard::from_gauge(
-                    &crate::SEARCH_METRICS.leaf_search_single_split_tasks_ongoing,
-                ),
-                inner_opt: Some(Arc::downgrade(inner)),
+                _ongoing_gauge_guard: ongoing_gauge_guard,
+                inner_arc: inner_arc.clone(),
+                recycle_on_drop: true,
             });
             match send_res {
                 Ok(()) => {
                     self.num_permits_available -= 1;
                 }
-                Err(mut search_permit) => {
-                    search_permit.disable_drop();
-                    drop(search_permit);
+                Err(search_permit) => {
+                    search_permit.drop_without_recycling_permit();
                 }
             }
         }
@@ -124,25 +130,24 @@ impl InnerSearchPermits {
 
 pub struct SearchPermit {
     _ongoing_gauge_guard: GaugeGuard<'static>,
-    inner_opt: Option<Weak<Mutex<InnerSearchPermits>>>,
+    inner_arc: Arc<Mutex<InnerSearchPermitProvider>>,
+    recycle_on_drop: bool,
 }
 
 impl SearchPermit {
-    fn disable_drop(&mut self) {
-        self.inner_opt = None;
+    fn drop_without_recycling_permit(mut self) {
+        self.recycle_on_drop = false;
+        drop(self);
     }
 }
 
 impl Drop for SearchPermit {
     fn drop(&mut self) {
-        let Some(inner) = self.inner_opt.take() else {
+        if !self.recycle_on_drop {
             return;
-        };
-        let Some(inner) = inner.upgrade() else {
-            return;
-        };
-        let mut inner_guard = inner.lock().unwrap();
-        inner_guard.recycle_permit(&inner);
+        }
+        let mut inner_guard = self.inner_arc.lock().unwrap();
+        inner_guard.recycle_permit(&self.inner_arc.clone());
     }
 }
 
@@ -150,12 +155,14 @@ impl Drop for SearchPermit {
 mod tests {
     use tokio::task::JoinSet;
 
+    use super::*;
+
     #[tokio::test]
     async fn test_search_permits_get_permits_future() {
         // We test here that `get_permits_futures` does not interleave
-        let search_permits = super::SearchPermits::new(1);
+        let search_permits = SearchPermitProvider::new(1);
         let mut all_futures = Vec::new();
-        let first_batch_of_permits = search_permits.get_permits_futures(10);
+        let first_batch_of_permits = search_permits.get_permits(10);
         assert_eq!(first_batch_of_permits.len(), 10);
         all_futures.extend(
             first_batch_of_permits
@@ -164,7 +171,7 @@ mod tests {
                 .map(move |(i, fut)| ((1, i), fut)),
         );
 
-        let second_batch_of_permits = search_permits.get_permits_futures(10);
+        let second_batch_of_permits = search_permits.get_permits(10);
         assert_eq!(second_batch_of_permits.len(), 10);
         all_futures.extend(
             second_batch_of_permits
@@ -203,11 +210,11 @@ mod tests {
         // Here we test that we don't have a problem if the Receiver is dropped.
         // In particular, we want to check that there is not a race condition where drop attempts to
         // lock the mutex.
-        let search_permits = super::SearchPermits::new(1);
-        let permit_rx = search_permits.get_one_permit();
-        let permit_rx2 = search_permits.get_one_permit();
+        let search_permits = SearchPermitProvider::new(1);
+        let permit_rx = search_permits.get_permit();
+        let permit_rx2 = search_permits.get_permit();
         drop(permit_rx2);
         drop(permit_rx);
-        let _permit_rx = search_permits.get_one_permit();
+        let _permit_rx = search_permits.get_permit();
     }
 }

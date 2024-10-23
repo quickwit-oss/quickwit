@@ -50,7 +50,7 @@ use crate::list_fields_cache::ListFieldsCache;
 use crate::list_terms::{leaf_list_terms, root_list_terms};
 use crate::root::fetch_docs_phase;
 use crate::scroll_context::{MiniKV, ScrollContext, ScrollKeyAndStartOffset};
-use crate::search_permits::SearchPermits;
+use crate::search_permit_provider::SearchPermitProvider;
 use crate::search_stream::{leaf_search_stream, root_search_stream};
 use crate::{fetch_docs, root_search, search_plan, ClusterClient, SearchError};
 
@@ -450,7 +450,7 @@ pub struct SearcherContext {
     /// Fast fields cache.
     pub fast_fields_cache: Arc<dyn StorageCache>,
     /// Counting semaphore to limit concurrent leaf search split requests.
-    pub leaf_search_split_semaphore: SearchPermits,
+    pub search_permit_provider: SearchPermitProvider,
     /// Split footer cache.
     pub split_footer_cache: MemorySizedCache<String>,
     /// Counting semaphore to limit concurrent split stream requests.
@@ -489,7 +489,7 @@ impl SearcherContext {
             &quickwit_storage::STORAGE_METRICS.split_footer_cache,
         );
         let leaf_search_split_semaphore =
-            SearchPermits::new(searcher_config.max_num_concurrent_split_searches);
+            SearchPermitProvider::new(searcher_config.max_num_concurrent_split_searches);
         let split_stream_semaphore =
             Semaphore::new(searcher_config.max_num_concurrent_split_streams);
         let fast_field_cache_capacity = searcher_config.fast_field_cache_capacity.as_u64() as usize;
@@ -506,7 +506,7 @@ impl SearcherContext {
         Self {
             searcher_config,
             fast_fields_cache: storage_long_term_cache,
-            leaf_search_split_semaphore,
+            search_permit_provider: leaf_search_split_semaphore,
             split_footer_cache: global_split_footer_cache,
             split_stream_semaphore,
             leaf_search_cache,

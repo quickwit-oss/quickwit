@@ -50,7 +50,7 @@ use tracing::*;
 use crate::collector::{make_collector_for_split, make_merge_collector, IncrementalCollector};
 use crate::metrics::SEARCH_METRICS;
 use crate::root::is_metadata_count_request_with_ast;
-use crate::search_permits::SearchPermit;
+use crate::search_permit_provider::SearchPermit;
 use crate::service::{deserialize_doc_mapper, SearcherContext};
 use crate::{QuickwitAggregations, SearchError};
 
@@ -1262,8 +1262,8 @@ pub async fn leaf_search(
     // We acquire all of the leaf search permits to make sure our single split search tasks
     // do no interleave with other leaf search requests.
     let permit_futures = searcher_context
-        .leaf_search_split_semaphore
-        .get_permits_futures(split_with_req.len());
+        .search_permit_provider
+        .get_permits(split_with_req.len());
 
     for ((split, mut request), permit_fut) in
         split_with_req.into_iter().zip(permit_futures.into_iter())
@@ -1361,7 +1361,7 @@ async fn leaf_search_single_split_wrapper(
     split: SplitIdAndFooterOffsets,
     split_filter: Arc<RwLock<CanSplitDoBetter>>,
     incremental_merge_collector: Arc<Mutex<IncrementalCollector>>,
-    leaf_split_search_permit: SearchPermit,
+    search_permit: SearchPermit,
     aggregations_limits: AggregationLimitsGuard,
 ) {
     crate::SEARCH_METRICS.leaf_searches_splits_total.inc();
@@ -1380,7 +1380,7 @@ async fn leaf_search_single_split_wrapper(
     .await;
 
     // We explicitly drop it, to highlight it to the reader
-    std::mem::drop(leaf_split_search_permit);
+    std::mem::drop(search_permit);
 
     if leaf_search_single_split_res.is_ok() {
         timer.observe_duration();

@@ -332,8 +332,8 @@ pub async fn leaf_list_terms(
             let searcher_context_clone = searcher_context.clone();
             async move {
                 let _leaf_split_search_permit = searcher_context_clone
-                    .leaf_search_split_semaphore
-                    .get_one_permit()
+                    .search_permit_provider
+                    .get_permit()
                     .await
                     .expect("Failed to acquire permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
 
