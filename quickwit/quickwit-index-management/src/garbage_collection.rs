@@ -19,7 +19,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use anyhow::Context;
@@ -295,6 +295,16 @@ async fn list_splits_metadata(
     Ok(splits)
 }
 
+/// In order to avoid hammering the load on the metastore, we can throttle the rate of split
+/// deletion by setting this environment variable.
+fn get_maximum_split_deletion_rate_per_sec() -> Option<usize> {
+    static MAXIMUM_SPLIT_DELETION_RATE_PER_SEC: std::sync::OnceLock<Option<usize>> =
+        OnceLock::new();
+    *MAXIMUM_SPLIT_DELETION_RATE_PER_SEC.get_or_init(|| {
+        quickwit_common::get_from_env_opt::<usize>("QW_MAX_SPLIT_DELETION_RATE_PER_SEC")
+    })
+}
+
 /// Removes any splits marked for deletion which haven't been
 /// updated after `updated_before_timestamp` in batches of 1000 splits.
 ///
@@ -325,9 +335,18 @@ async fn delete_splits_marked_for_deletion_several_indexes(
         .with_limit(DELETE_SPLITS_BATCH_SIZE)
         .sort_by_index_uid();
 
-    let mut splits_to_delete_possibly_remaining = true;
+    loop {
+        let sleep_duration: Duration = if let Some(maximum_split_deletion_per_sec) =
+            get_maximum_split_deletion_rate_per_sec()
+        {
+            Duration::from_secs(
+                DELETE_SPLITS_BATCH_SIZE.div_ceil(maximum_split_deletion_per_sec) as u64,
+            )
+        } else {
+            Duration::default()
+        };
+        let sleep_future = tokio::time::sleep(sleep_duration);
 
-    while splits_to_delete_possibly_remaining {
         let splits_metadata_to_delete: Vec<SplitMetadata> = match protect_future(
             progress_opt,
             list_splits_metadata(&metastore, &list_splits_query),
@@ -345,7 +364,7 @@ async fn delete_splits_marked_for_deletion_several_indexes(
         // To detect if this is the last page, we check if the number of splits is less than the
         // limit.
         assert!(splits_metadata_to_delete.len() <= DELETE_SPLITS_BATCH_SIZE);
-        splits_to_delete_possibly_remaining =
+        let splits_to_delete_possibly_remaining =
             splits_metadata_to_delete.len() == DELETE_SPLITS_BATCH_SIZE;
 
         // set split after which to search for the next loop
@@ -378,6 +397,14 @@ async fn delete_splits_marked_for_deletion_several_indexes(
             &mut split_removal_info,
         )
         .await;
+
+        if splits_to_delete_possibly_remaining {
+            sleep_future.await;
+        } else {
+            // stop the gc if this was the last batch
+            // we are guaranteed to make progress due to .after_split()
+            break;
+        }
     }
 
     split_removal_info
