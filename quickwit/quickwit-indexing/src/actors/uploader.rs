@@ -68,6 +68,7 @@ pub enum UploaderType {
 }
 
 /// [`SplitsUpdateMailbox`] wraps either a [`Mailbox<Sequencer>`] or [`Mailbox<Publisher>`].
+///
 /// It makes it possible to send a [`SplitsUpdate`] either to the [`Sequencer`] or directly
 /// to [`Publisher`]. It is used in combination with `SplitsUpdateSender` that will do the send.
 ///

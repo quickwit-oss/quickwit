@@ -356,7 +356,7 @@ impl StableLogMergePolicy {
             head + (self.config.merge_factor - 2)
         };
         if tail.is_empty() || num_docs <= first_level_min_saturation_docs as u64 {
-            return (num_docs as usize + head - 1) / head;
+            return (num_docs as usize).div_ceil(head);
         }
         num_docs -= first_level_min_saturation_docs as u64;
         self.config.merge_factor - 1 + self.max_num_splits_knowning_levels(num_docs, tail, sorted)

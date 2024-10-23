@@ -106,10 +106,10 @@ impl<T> SortedIterator for T where T: Iterator + Sorted {}
 
 impl<K, V> Sorted for btree_map::IntoKeys<K, V> {}
 impl<K, V> Sorted for btree_map::IntoValues<K, V> {}
-impl<'a, K, V> Sorted for btree_map::Keys<'a, K, V> {}
-impl<'a, K, V> Sorted for btree_map::Values<'a, K, V> {}
+impl<K, V> Sorted for btree_map::Keys<'_, K, V> {}
+impl<K, V> Sorted for btree_map::Values<'_, K, V> {}
 impl<K> Sorted for btree_set::IntoIter<K> {}
-impl<'a, K> Sorted for btree_set::Iter<'a, K> {}
+impl<K> Sorted for btree_set::Iter<'_, K> {}
 
 /// Same as [`SortedIterator`] but for (key, value) pairs sorted by key.
 pub trait SortedByKeyIterator<K, V>: Iterator + Sized {
@@ -194,7 +194,7 @@ where
 impl<T, K, V> SortedByKeyIterator<K, V> for T where T: Iterator<Item = (K, V)> + Sorted {}
 
 impl<K, V> Sorted for btree_map::IntoIter<K, V> {}
-impl<'a, K, V> Sorted for btree_map::Iter<'a, K, V> {}
+impl<K, V> Sorted for btree_map::Iter<'_, K, V> {}
 
 #[cfg(test)]
 mod tests {

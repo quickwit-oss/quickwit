@@ -79,7 +79,7 @@ fn char_grouping(c: char) -> Grouping {
     }
 }
 
-impl<'a> TokenStream for ChineseTokenStream<'a> {
+impl TokenStream for ChineseTokenStream<'_> {
     fn advance(&mut self) -> bool {
         self.token.text.clear();
         self.token.position = self.token.position.wrapping_add(1);

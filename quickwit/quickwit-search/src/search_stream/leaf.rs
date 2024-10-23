@@ -362,10 +362,10 @@ impl std::fmt::Display for SearchStreamRequestFields {
     }
 }
 
-impl<'a> SearchStreamRequestFields {
+impl SearchStreamRequestFields {
     pub fn from_request(
         stream_request: &SearchStreamRequest,
-        schema: &'a Schema,
+        schema: &Schema,
         doc_mapper: &DocMapper,
     ) -> crate::Result<SearchStreamRequestFields> {
         let fast_field = schema.get_field(&stream_request.fast_field)?;

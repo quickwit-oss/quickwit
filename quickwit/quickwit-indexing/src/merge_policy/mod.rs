@@ -203,7 +203,7 @@ pub fn nop_merge_policy() -> Arc<dyn MergePolicy> {
 
 struct SplitShortDebug<'a>(&'a SplitMetadata);
 
-impl<'a> fmt::Debug for SplitShortDebug<'a> {
+impl fmt::Debug for SplitShortDebug<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("Split")
             .field("split_id", &self.0.split_id())

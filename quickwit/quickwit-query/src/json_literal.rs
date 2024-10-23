@@ -129,7 +129,7 @@ impl<'a> InterpretUserInput<'a> for f64 {
     }
 }
 
-impl<'a> InterpretUserInput<'a> for bool {
+impl InterpretUserInput<'_> for bool {
     fn interpret_bool(b: bool) -> Option<Self> {
         Some(b)
     }
@@ -139,14 +139,14 @@ impl<'a> InterpretUserInput<'a> for bool {
     }
 }
 
-impl<'a> InterpretUserInput<'a> for Ipv6Addr {
+impl InterpretUserInput<'_> for Ipv6Addr {
     fn interpret_str(text: &str) -> Option<Self> {
         let ip_addr: IpAddr = text.parse().ok()?;
         Some(ip_addr.into_ipv6_addr())
     }
 }
 
-impl<'a> InterpretUserInput<'a> for tantivy::DateTime {
+impl InterpretUserInput<'_> for tantivy::DateTime {
     fn interpret_str(text: &str) -> Option<Self> {
         let date_time_formats = get_default_date_time_format();
         if let Ok(datetime) = parse_date_time_str(text, date_time_formats) {
@@ -171,7 +171,7 @@ const LENIENT_BASE64_ENGINE: base64::engine::GeneralPurpose = base64::engine::Ge
         .with_decode_padding_mode(base64::engine::DecodePaddingMode::Indifferent),
 );
 
-impl<'a> InterpretUserInput<'a> for Vec<u8> {
+impl InterpretUserInput<'_> for Vec<u8> {
     fn interpret_str(mut text: &str) -> Option<Vec<u8>> {
         let Some(first_byte) = text.as_bytes().first().copied() else {
             return Some(Vec::new());

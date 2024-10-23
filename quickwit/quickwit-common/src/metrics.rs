@@ -236,7 +236,7 @@ pub struct GaugeGuard<'a> {
     delta: i64,
 }
 
-impl<'a> std::fmt::Debug for GaugeGuard<'a> {
+impl std::fmt::Debug for GaugeGuard<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         self.delta.fmt(f)
     }
@@ -262,7 +262,7 @@ impl<'a> GaugeGuard<'a> {
     }
 }
 
-impl<'a> Drop for GaugeGuard<'a> {
+impl Drop for GaugeGuard<'_> {
     fn drop(&mut self) {
         self.gauge.sub(self.delta)
     }

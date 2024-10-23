@@ -508,8 +508,7 @@ where
     }
 }
 
-impl<'a, V1, V2, const REVERSE_DOCID: bool> Iterator
-    for SpecSortingFieldIter<'a, V1, V2, REVERSE_DOCID>
+impl<V1, V2, const REVERSE_DOCID: bool> Iterator for SpecSortingFieldIter<'_, V1, V2, REVERSE_DOCID>
 where
     V1: Copy + PartialEq + Eq + PartialOrd + Ord + IntoOptionU64 + Debug,
     V2: Copy + PartialEq + Eq + PartialOrd + Ord + IntoOptionU64 + Debug,
