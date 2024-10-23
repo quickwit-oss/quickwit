@@ -6537,6 +6537,7 @@ dependencies = [
  "quickwit-proto",
  "quickwit-query",
  "quickwit-storage",
+ "rand 0.8.5",
  "rayon",
  "serde",
  "serde_json",
