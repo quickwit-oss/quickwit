@@ -53,7 +53,7 @@ impl SliceAddressKey for SliceAddress {
     }
 }
 
-impl<'a> SliceAddressKey for SliceAddressRef<'a> {
+impl SliceAddressKey for SliceAddressRef<'_> {
     fn key(&self) -> SliceAddressRef {
         self.clone()
     }
@@ -64,15 +64,15 @@ impl<'a> Borrow<dyn SliceAddressKey + 'a> for SliceAddress {
         self
     }
 }
-impl<'a> PartialEq for (dyn SliceAddressKey + 'a) {
+impl PartialEq for (dyn SliceAddressKey + '_) {
     fn eq(&self, other: &Self) -> bool {
         self.key().eq(&other.key())
     }
 }
 
-impl<'a> Eq for (dyn SliceAddressKey + 'a) {}
+impl Eq for (dyn SliceAddressKey + '_) {}
 
-impl<'a> Hash for (dyn SliceAddressKey + 'a) {
+impl Hash for (dyn SliceAddressKey + '_) {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.key().hash(state)
     }

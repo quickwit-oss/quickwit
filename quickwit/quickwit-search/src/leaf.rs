@@ -717,7 +717,7 @@ struct RemoveTimestampRange<'a> {
     end_timestamp: Bound<DateTime>,
 }
 
-impl<'a> RemoveTimestampRange<'a> {
+impl RemoveTimestampRange<'_> {
     fn update_start_timestamp(
         &mut self,
         lower_bound: &quickwit_query::JsonLiteral,
@@ -755,7 +755,7 @@ impl<'a> RemoveTimestampRange<'a> {
     }
 }
 
-impl<'a> QueryAstTransformer for RemoveTimestampRange<'a> {
+impl QueryAstTransformer for RemoveTimestampRange<'_> {
     type Err = std::convert::Infallible;
 
     fn transform_bool(&mut self, mut bool_query: BoolQuery) -> Result<Option<QueryAst>, Self::Err> {

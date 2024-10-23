@@ -49,6 +49,7 @@ impl Debug for BundleDirectory {
 }
 
 /// Loads the split footer from a storage and path.
+///
 /// Returns (SplitFooter, BundleFooter)
 /// SplitFooter [BundleMetadata, BundleMetadata Len, Hotcache, Hotcache len]
 /// BundleFooter [BundleMetadata, BundleMetadata Len]

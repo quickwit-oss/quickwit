@@ -1915,7 +1915,7 @@ mod tests {
                     }
                     indexes_json_valid_put -= 1;
                 }
-                return block_on(ram_storage_clone.put(path, put_payload));
+                block_on(ram_storage_clone.put(path, put_payload))
             });
         let metastore = FileBackedMetastore::for_test(Arc::new(mock_storage));
         let index_config = IndexConfig::for_test(index_id, "ram:///indexes/test-index");
@@ -1967,9 +1967,7 @@ mod tests {
         mock_storage
             .expect_put()
             .times(1)
-            .returning(move |path, put_payload| {
-                return block_on(ram_storage_clone.put(path, put_payload));
-            });
+            .returning(move |path, put_payload| block_on(ram_storage_clone.put(path, put_payload)));
         let metastore = FileBackedMetastore::for_test(Arc::new(mock_storage));
 
         // Delete index
@@ -2024,7 +2022,7 @@ mod tests {
                     }
                     indexes_json_valid_put -= 1;
                 }
-                return block_on(ram_storage_clone.put(path, put_payload));
+                block_on(ram_storage_clone.put(path, put_payload))
             });
         let metastore = FileBackedMetastore::for_test(Arc::new(mock_storage));
 

@@ -294,6 +294,7 @@ fn api_v1_routes(
 }
 
 /// This function returns a formatted error based on the given rejection reason.
+///
 /// The ordering of rejection processing is very important, we need to start
 /// with the most specific rejections and end with the most generic. If not, Quickwit
 /// will return useless errors to the user.

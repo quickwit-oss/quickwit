@@ -1238,7 +1238,7 @@ struct Printer<'a> {
     pub stdout: &'a mut Stdout,
 }
 
-impl<'a> Printer<'a> {
+impl Printer<'_> {
     pub fn print_header(&mut self, header: &str) -> io::Result<()> {
         write!(&mut self.stdout, " {}", header.bright_blue())?;
         Ok(())

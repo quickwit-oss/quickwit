@@ -146,7 +146,7 @@ impl<'a> ExtractTermSetFields<'a> {
     }
 }
 
-impl<'a, 'b> QueryAstVisitor<'a> for ExtractTermSetFields<'b> {
+impl<'a> QueryAstVisitor<'a> for ExtractTermSetFields<'_> {
     type Err = anyhow::Error;
 
     fn visit_term_set(&mut self, term_set_query: &'a TermSetQuery) -> anyhow::Result<()> {

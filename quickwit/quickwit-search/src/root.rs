@@ -1448,7 +1448,7 @@ struct ExtractTimestampRange<'a> {
     end_timestamp: Option<i64>,
 }
 
-impl<'a> ExtractTimestampRange<'a> {
+impl ExtractTimestampRange<'_> {
     fn update_start_timestamp(
         &mut self,
         lower_bound: &quickwit_query::JsonLiteral,
@@ -1489,7 +1489,7 @@ impl<'a> ExtractTimestampRange<'a> {
     }
 }
 
-impl<'a, 'b> QueryAstVisitor<'b> for ExtractTimestampRange<'a> {
+impl<'b> QueryAstVisitor<'b> for ExtractTimestampRange<'_> {
     type Err = std::convert::Infallible;
 
     fn visit_bool(&mut self, bool_query: &'b BoolQuery) -> Result<(), Self::Err> {
