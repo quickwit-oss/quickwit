@@ -312,7 +312,13 @@ impl fmt::Debug for AzureStorageConfig {
             .finish()
     }
 }
-
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum S3ServerSideEncryption {
+    Aes256,
+    AwsKms,
+    AwsKmsDsse,
+}
 #[derive(Clone, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct S3StorageConfig {
@@ -334,6 +340,10 @@ pub struct S3StorageConfig {
     pub disable_multi_object_delete: bool,
     #[serde(default)]
     pub disable_multipart_upload: bool,
+    #[serde(default)]
+    pub server_side_encryption: Option<S3ServerSideEncryption>,
+    #[serde(default)]
+    pub sse_kms_key_id: Option<String>,
 }
 
 impl S3StorageConfig {
@@ -384,6 +394,12 @@ impl S3StorageConfig {
 
 impl fmt::Debug for S3StorageConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let display_sse_kms_key_id = match &self.server_side_encryption {
+            Some(S3ServerSideEncryption::AwsKms) | Some(S3ServerSideEncryption::AwsKmsDsse) => {
+                &self.sse_kms_key_id
+            }
+            _ => &None,
+        };
         f.debug_struct("S3StorageConfig")
             .field("access_key_id", &self.access_key_id)
             .field(
@@ -397,6 +413,8 @@ impl fmt::Debug for S3StorageConfig {
                 "disable_multi_object_delete",
                 &self.disable_multi_object_delete,
             )
+            .field("server_side_encryption", &self.server_side_encryption)
+            .field("sse_kms_key_id", &display_sse_kms_key_id)
             .finish()
     }
 }
