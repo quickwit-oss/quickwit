@@ -119,6 +119,9 @@ impl FileDescriptorCache {
         self.fd_cache_metrics
             .in_cache_count
             .set(fd_cache_lock.len() as i64);
+        self.fd_cache_metrics
+            .evict_num_items
+            .inc_by(split_ids.len() as u64);
     }
 
     pub async fn get_or_open_split_file(

@@ -120,6 +120,8 @@ pub struct CacheMetrics {
     pub hits_num_items: IntCounter,
     pub hits_num_bytes: IntCounter,
     pub misses_num_items: IntCounter,
+    pub evict_num_items: IntCounter,
+    pub evict_num_bytes: IntCounter,
 }
 
 impl CacheMetrics {
@@ -154,6 +156,18 @@ impl CacheMetrics {
             misses_num_items: new_counter_with_labels(
                 "cache_misses_total",
                 "Number of cache misses by component",
+                CACHE_METRICS_NAMESPACE,
+                &[("component_name", component_name)],
+            ),
+            evict_num_items: new_counter_with_labels(
+                "cache_evict_total",
+                "Number of cache entry evicted by component",
+                CACHE_METRICS_NAMESPACE,
+                &[("component_name", component_name)],
+            ),
+            evict_num_bytes: new_counter_with_labels(
+                "cache_evict_bytes",
+                "Number of cache entry evicted in bytes by component",
                 CACHE_METRICS_NAMESPACE,
                 &[("component_name", component_name)],
             ),

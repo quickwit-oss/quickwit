@@ -74,6 +74,7 @@ struct NeedMutMemorySizedCache<K: Hash + Eq> {
 
 impl<K: Hash + Eq> Drop for NeedMutMemorySizedCache<K> {
     fn drop(&mut self) {
+        // we don't count this toward evicted entries, as we are clearing the whole cache
         self.cache_counters
             .in_cache_count
             .sub(self.num_items as i64);
@@ -110,6 +111,8 @@ impl<K: Hash + Eq> NeedMutMemorySizedCache<K> {
         self.num_bytes -= num_bytes;
         self.cache_counters.in_cache_count.dec();
         self.cache_counters.in_cache_num_bytes.sub(num_bytes as i64);
+        self.cache_counters.evict_num_items.inc();
+        self.cache_counters.evict_num_bytes.inc_by(num_bytes);
     }
 
     pub fn get<Q>(&mut self, cache_key: &Q) -> Option<OwnedBytes>
