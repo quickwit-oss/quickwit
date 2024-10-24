@@ -22,6 +22,7 @@ use tantivy::schema::OwnedValue as TantivyValue;
 
 use super::field_mapping_entry::{NumericOutputFormat, QuickwitNumericOptions};
 use super::mapping_tree::LeafType;
+use super::BinaryFormat;
 
 pub(crate) trait NumToJson {
     fn to_json(&self, output_format: NumericOutputFormat) -> Option<JsonValue>;
@@ -210,8 +211,7 @@ pub fn tantivy_value_to_json(value: TantivyValue) -> JsonValue {
             .format_to_json(date)
             .expect("Invalid datetime is not allowed."),
         TantivyValue::Facet(facet) => JsonValue::String(facet.to_string()),
-        // tantivy would do b64 here
-        TantivyValue::Bytes(val) => JsonValue::String(format!("{:?}", val)),
+        TantivyValue::Bytes(bytes) => BinaryFormat::Base64.format_to_json(&bytes),
         TantivyValue::IpAddr(ip_v6) => {
             let ip_str = if let Some(ip_v4) = ip_v6.to_ipv4_mapped() {
                 ip_v4.to_string()
