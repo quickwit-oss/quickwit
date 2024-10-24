@@ -314,6 +314,8 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
         self.num_bytes -= num_bytes as u64;
         self.cache_counters.in_cache_count.dec();
         self.cache_counters.in_cache_num_bytes.sub(num_bytes as i64);
+        self.cache_counters.evict_num_items.inc();
+        self.cache_counters.evict_num_bytes.inc_by(num_bytes as u64);
     }
 }
 
