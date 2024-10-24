@@ -26,6 +26,7 @@ use quickwit_actors::{
     SpawnContext, Supervisable, HEARTBEAT,
 };
 use quickwit_common::io::{IoControls, Limiter};
+use quickwit_common::metrics::Vector;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_common::KillSwitch;

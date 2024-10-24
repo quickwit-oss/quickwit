@@ -27,6 +27,7 @@ use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Mailbox, QueueCapacity,
     Supervisable, HEARTBEAT,
 };
+use quickwit_common::metrics::Vector;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_common::KillSwitch;

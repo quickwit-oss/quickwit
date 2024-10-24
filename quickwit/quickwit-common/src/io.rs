@@ -42,7 +42,7 @@ use pin_project::pin_project;
 use prometheus::IntCounter;
 use tokio::io::AsyncWrite;
 
-use crate::metrics::{new_counter_vec, IntCounterVec};
+use crate::metrics::{new_counter_vec, IntCounterVec, Vector};
 use crate::{KillSwitch, Progress, ProtectedZoneGuard};
 
 // Max 1MB at a time.
