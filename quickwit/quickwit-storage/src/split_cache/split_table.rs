@@ -165,6 +165,14 @@ impl SplitTable {
                     .searcher_split_cache
                     .in_cache_num_bytes
                     .sub(num_bytes as i64);
+                crate::metrics::STORAGE_METRICS
+                    .searcher_split_cache
+                    .evict_num_items
+                    .inc();
+                crate::metrics::STORAGE_METRICS
+                    .searcher_split_cache
+                    .evict_num_bytes
+                    .inc_by(num_bytes);
                 &mut self.on_disk_splits
             }
         };
