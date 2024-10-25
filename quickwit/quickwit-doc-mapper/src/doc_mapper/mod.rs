@@ -22,7 +22,9 @@ mod doc_mapper_builder;
 mod doc_mapper_impl;
 mod field_mapping_entry;
 mod field_mapping_type;
+mod field_presence;
 mod mapping_tree;
+mod tantivy_val_to_json;
 mod tokenizer_entry;
 
 use std::collections::{HashMap, HashSet};

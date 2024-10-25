@@ -22,7 +22,6 @@ use std::num::NonZeroU32;
 
 use anyhow::{bail, Context};
 use fnv::FnvHashSet;
-use quickwit_common::PathHasher;
 use quickwit_proto::types::DocMappingUid;
 use quickwit_query::create_default_quickwit_tokenizer_manager;
 use quickwit_query::query_ast::QueryAst;
@@ -31,13 +30,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
 use serde_json_borrow::Map as BorrowedJsonMap;
 use tantivy::query::Query;
-use tantivy::schema::document::{ReferenceValue, ReferenceValueLeaf};
-use tantivy::schema::{
-    Field, FieldType, OwnedValue as TantivyValue, Schema, Value, INDEXED, STORED,
-};
+use tantivy::schema::{Field, FieldType, OwnedValue as TantivyValue, Schema, INDEXED, STORED};
 use tantivy::TantivyDocument as Document;
 
 use super::field_mapping_entry::RAW_TOKENIZER_NAME;
+use super::field_presence::populate_field_presence;
+use super::tantivy_val_to_json::tantivy_value_to_json;
 use super::DocMapperBuilder;
 use crate::doc_mapper::mapping_tree::{
     build_field_path_from_str, build_mapping_tree, map_primitive_json_to_tantivy,
@@ -430,85 +428,6 @@ fn extract_single_obj(
     }
 }
 
-// TODO: Formatting according to mapper if applicable
-fn tantivy_value_to_json(val: TantivyValue) -> JsonValue {
-    match val {
-        TantivyValue::Null => JsonValue::Null,
-        TantivyValue::Str(val) => JsonValue::String(val),
-        TantivyValue::PreTokStr(val) => JsonValue::String(val.text),
-        TantivyValue::U64(val) => JsonValue::Number(val.into()),
-        TantivyValue::I64(val) => JsonValue::Number(val.into()),
-        TantivyValue::F64(val) => serde_json::json!(val),
-        TantivyValue::Bool(val) => JsonValue::Bool(val),
-        TantivyValue::Date(val) => JsonValue::String(format!("{:?}", val)),
-        TantivyValue::Facet(val) => JsonValue::String(val.to_string()),
-        TantivyValue::Bytes(val) => JsonValue::String(format!("{:?}", val)),
-        TantivyValue::Array(val) => val.into_iter().map(tantivy_value_to_json).collect(),
-        TantivyValue::Object(val) => val
-            .into_iter()
-            .map(|(key, val)| (key, tantivy_value_to_json(val)))
-            .collect(),
-        TantivyValue::IpAddr(val) => JsonValue::String(format!("{:?}", val)),
-    }
-}
-
-#[inline]
-fn populate_field_presence_for_json_value<'a>(
-    json_value: impl Value<'a>,
-    path_hasher: &PathHasher,
-    is_expand_dots_enabled: bool,
-    output: &mut FnvHashSet<u64>,
-) {
-    match json_value.as_value() {
-        ReferenceValue::Leaf(ReferenceValueLeaf::Null) => {}
-        ReferenceValue::Leaf(_) => {
-            output.insert(path_hasher.finish());
-        }
-        ReferenceValue::Array(items) => {
-            for item in items {
-                populate_field_presence_for_json_value(
-                    item,
-                    path_hasher,
-                    is_expand_dots_enabled,
-                    output,
-                );
-            }
-        }
-        ReferenceValue::Object(json_obj) => {
-            populate_field_presence_for_json_obj(
-                json_obj,
-                path_hasher.clone(),
-                is_expand_dots_enabled,
-                output,
-            );
-        }
-    }
-}
-
-fn populate_field_presence_for_json_obj<'a, Iter: Iterator<Item = (&'a str, impl Value<'a>)>>(
-    json_obj: Iter,
-    path_hasher: PathHasher,
-    is_expand_dots_enabled: bool,
-    output: &mut FnvHashSet<u64>,
-) {
-    for (field_key, field_value) in json_obj {
-        let mut child_path_hasher = path_hasher.clone();
-        if is_expand_dots_enabled {
-            for segment in field_key.split('.') {
-                child_path_hasher.append(segment.as_bytes());
-            }
-        } else {
-            child_path_hasher.append(field_key.as_bytes());
-        };
-        populate_field_presence_for_json_value(
-            field_value,
-            &child_path_hasher,
-            is_expand_dots_enabled,
-            output,
-        );
-    }
-}
-
 impl DocMapper {
     /// Returns the unique identifier of the doc mapping.
     pub fn doc_mapping_uid(&self) -> DocMappingUid {
@@ -636,36 +555,9 @@ impl DocMapper {
             document.add_u64(document_size_field, document_len);
         }
 
-        // The capacity is inexact here.
-
         if self.index_field_presence {
-            let mut field_presence_hashes: FnvHashSet<u64> =
-                FnvHashSet::with_capacity_and_hasher(document.len(), Default::default());
-            for (field, value) in document.field_values() {
-                let field_entry = self.schema.get_field_entry(field);
-                if !field_entry.is_indexed() || field_entry.is_fast() {
-                    // We are using an tantivy's ExistsQuery for fast fields.
-                    continue;
-                }
-                let mut path_hasher: PathHasher = PathHasher::default();
-                path_hasher.append(&field.field_id().to_le_bytes()[..]);
-                if let Some(json_obj) = value.as_object() {
-                    let is_expand_dots_enabled: bool =
-                        if let FieldType::JsonObject(json_options) = field_entry.field_type() {
-                            json_options.is_expand_dots_enabled()
-                        } else {
-                            false
-                        };
-                    populate_field_presence_for_json_obj(
-                        json_obj,
-                        path_hasher,
-                        is_expand_dots_enabled,
-                        &mut field_presence_hashes,
-                    );
-                } else {
-                    field_presence_hashes.insert(path_hasher.finish());
-                }
-            }
+            let field_presence_hashes: FnvHashSet<u64> =
+                populate_field_presence(&document, &self.schema);
             for field_presence_hash in field_presence_hashes {
                 document.add_field_value(FIELD_PRESENCE_FIELD, &field_presence_hash);
             }
