@@ -1,10 +1,10 @@
 ---
-title: Install Quickwit on AWS EKS
-sidebar_label: AWS EKS
-sidebar_position: 3
+title: AWS Marketplace Install
+sidebar_label: AWS Markeplace
+sidebar_position: 5
 ---
 
-This guide will help you set up a Quickwit cluster on EKS with the correct S3 permissions.
+This guide will help you install Quickwit on EKS from the AWS marketplace.
 
 ## Prerequisites
 - Running Elastic Kubernetes cluster (EKS)
@@ -12,6 +12,9 @@ This guide will help you set up a Quickwit cluster on EKS with the correct S3 pe
 - Permission to create the IAM role and Policies
 - AWS CLI
 - `eksctl` if you don't have an IAM OIDC provider for your cluster.
+
+## Target platforms
+Quickwit containers can be run in ECS (including Fargate), or EKS.
 
 ## Set up
 
@@ -156,8 +159,6 @@ helm repo update quickwit
 Let's set Quickwit `values.yaml`:
 
 ```yaml
-# We use the edge version here as we recently fixed
-# a bug which prevents the metastore from running on GCS.
 image:
     repository: quickwit/quickwit
     pullPolicy: Always

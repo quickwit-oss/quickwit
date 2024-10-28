@@ -65,15 +65,8 @@ image:
     tag: edge
 
 serviceAccount:
-<<<<<<< HEAD
   create: false
   name: quickwit-sa
-=======
-  create: true
-  name: ${GKE_SERVICE_ACCOUNT}
-  annotations:
-    iam.gke.io/gcp-service-account: ${GCP_SERVICE_ACCOUNT}@${PROJECT_ID}.iam.gserviceaccount.com
->>>>>>> 99c372cec (Add EKS tutorial with service account setup.)
 
 config:
   default_index_root_uri: gs://${BUCKET}/qw-indexes
