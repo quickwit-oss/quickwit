@@ -92,7 +92,6 @@ pub mod trace {
     }
 }
 /// Note that both Span and Batch may contain a Process.
-///
 /// This is different from the Thrift model which was only used
 /// for transport, because Proto model is also used by the backend
 /// as the domain model, where once a batch is received it is split

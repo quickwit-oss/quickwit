@@ -213,6 +213,8 @@ struct NodeConfigBuilder {
     #[serde(rename = "jaeger")]
     #[serde(default)]
     jaeger_config: JaegerConfig,
+    #[serde(default)]
+    license: Option<String>,
 }
 
 impl NodeConfigBuilder {
@@ -305,6 +307,15 @@ impl NodeConfigBuilder {
             .map(|gossip_interval_ms| Duration::from_millis(gossip_interval_ms as u64))
             .unwrap_or(DEFAULT_GOSSIP_INTERVAL);
 
+        // Environment variable takes precedence for license too.
+        #[cfg(feature = "enterprise")]
+        if let Some(license_str) = env_vars.get("QW_LICENSE").or(self.license.as_ref()) {
+            if let Err(error) = quickwit_license::set_license(license_str) {
+                tracing::error!(error=?error, "invalid license");
+                std::process::exit(1);
+            }
+        }
+
         let node_config = NodeConfig {
             cluster_id: self.cluster_id.resolve(env_vars)?,
             node_id,
@@ -347,8 +358,23 @@ fn validate(node_config: &NodeConfig) -> anyhow::Result<()> {
 }
 
 #[cfg(test)]
+#[cfg(not(feature = "enterprise"))]
+fn get_default_license_opt() -> Option<String> {
+    None
+}
+
+#[cfg(test)]
+#[cfg(feature = "enterprise")]
+fn get_default_license_opt() -> Option<String> {
+    Some(quickwit_license::get_fake_license_for_tests())
+}
+
+#[cfg(test)]
 impl Default for NodeConfigBuilder {
     fn default() -> Self {
+        // This license is only valid for tests:
+        // it is signed by a different private key that is only used in tests.
+        let license_opt: Option<String> = get_default_license_opt();
         Self {
             cluster_id: default_cluster_id(),
             node_id: default_node_id(),
@@ -371,6 +397,7 @@ impl Default for NodeConfigBuilder {
             searcher_config: SearcherConfig::default(),
             ingest_api_config: IngestApiConfig::default(),
             jaeger_config: JaegerConfig::default(),
+            license: license_opt,
         }
     }
 }
@@ -1261,5 +1288,17 @@ mod tests {
         .unwrap_err()
         .to_string();
         assert!(error_message.contains("replication factor"));
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "enterprise")]
+    async fn test_license() {
+        let _node_config: NodeConfig = NodeConfigBuilder::default()
+            .build_and_validate(&HashMap::default())
+            .await
+            .unwrap();
+        // The license is set silently upon building the node config.
+        let license_level = quickwit_license::get_license_level();
+        assert_eq!(license_level, quickwit_license::LicenseLevel::Gold);
     }
 }
