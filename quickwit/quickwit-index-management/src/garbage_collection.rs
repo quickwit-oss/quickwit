@@ -127,59 +127,59 @@ pub async fn run_garbage_collect(
     else {
         return Ok(SplitRemovalInfo::default());
     };
-    let list_splits_query = list_splits_query_for_index_uids
-        .clone()
-        .with_split_state(SplitState::Staged)
-        .with_update_timestamp_lte(grace_period_timestamp);
+    // let list_splits_query = list_splits_query_for_index_uids
+    //     .clone()
+    //     .with_split_state(SplitState::Staged)
+    //     .with_update_timestamp_lte(grace_period_timestamp);
 
-    let list_deletable_staged_request =
-        ListSplitsRequest::try_from_list_splits_query(&list_splits_query)?;
-    let deletable_staged_splits: Vec<SplitMetadata> = protect_future(
-        progress_opt,
-        metastore.list_splits(list_deletable_staged_request),
-    )
-    .await?
-    .collect_splits_metadata()
-    .await?;
+    // let list_deletable_staged_request =
+    //     ListSplitsRequest::try_from_list_splits_query(&list_splits_query)?;
+    // let deletable_staged_splits: Vec<SplitMetadata> = protect_future(
+    //     progress_opt,
+    //     metastore.list_splits(list_deletable_staged_request),
+    // )
+    // .await?
+    // .collect_splits_metadata()
+    // .await?;
 
-    if dry_run {
-        let marked_for_deletion_query =
-            list_splits_query_for_index_uids.with_split_state(SplitState::MarkedForDeletion);
-        let marked_for_deletion_request =
-            ListSplitsRequest::try_from_list_splits_query(&marked_for_deletion_query)?;
-        let mut splits_marked_for_deletion: Vec<SplitMetadata> = protect_future(
-            progress_opt,
-            metastore.list_splits(marked_for_deletion_request),
-        )
-        .await?
-        .collect_splits_metadata()
-        .await?;
-        splits_marked_for_deletion.extend(deletable_staged_splits);
+    // if dry_run {
+    //     let marked_for_deletion_query =
+    //         list_splits_query_for_index_uids.with_split_state(SplitState::MarkedForDeletion);
+    //     let marked_for_deletion_request =
+    //         ListSplitsRequest::try_from_list_splits_query(&marked_for_deletion_query)?;
+    //     let mut splits_marked_for_deletion: Vec<SplitMetadata> = protect_future(
+    //         progress_opt,
+    //         metastore.list_splits(marked_for_deletion_request),
+    //     )
+    //     .await?
+    //     .collect_splits_metadata()
+    //     .await?;
+    //     splits_marked_for_deletion.extend(deletable_staged_splits);
 
-        let candidate_entries: Vec<SplitInfo> = splits_marked_for_deletion
-            .into_iter()
-            .map(|split| split.as_split_info())
-            .collect();
-        return Ok(SplitRemovalInfo {
-            removed_split_entries: candidate_entries,
-            failed_splits: Vec::new(),
-        });
-    }
+    //     let candidate_entries: Vec<SplitInfo> = splits_marked_for_deletion
+    //         .into_iter()
+    //         .map(|split| split.as_split_info())
+    //         .collect();
+    //     return Ok(SplitRemovalInfo {
+    //         removed_split_entries: candidate_entries,
+    //         failed_splits: Vec::new(),
+    //     });
+    // }
 
-    // Schedule all eligible staged splits for delete
-    let split_ids: HashMap<IndexUid, Vec<SplitId>> = deletable_staged_splits
-        .into_iter()
-        .map(|split| (split.index_uid, split.split_id))
-        .into_group_map();
-    for (index_uid, split_ids) in split_ids {
-        let mark_splits_for_deletion_request =
-            MarkSplitsForDeletionRequest::new(index_uid, split_ids);
-        protect_future(
-            progress_opt,
-            metastore.mark_splits_for_deletion(mark_splits_for_deletion_request),
-        )
-        .await?;
-    }
+    // // Schedule all eligible staged splits for delete
+    // let split_ids: HashMap<IndexUid, Vec<SplitId>> = deletable_staged_splits
+    //     .into_iter()
+    //     .map(|split| (split.index_uid, split.split_id))
+    //     .into_group_map();
+    // for (index_uid, split_ids) in split_ids {
+    //     let mark_splits_for_deletion_request =
+    //         MarkSplitsForDeletionRequest::new(index_uid, split_ids);
+    //     protect_future(
+    //         progress_opt,
+    //         metastore.mark_splits_for_deletion(mark_splits_for_deletion_request),
+    //     )
+    //     .await?;
+    // }
 
     // We delete splits marked for deletion that have an update timestamp anterior
     // to `now - deletion_grace_period`.
