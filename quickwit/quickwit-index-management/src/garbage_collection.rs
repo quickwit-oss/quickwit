@@ -232,7 +232,8 @@ async fn delete_splits(
                     }
                 }
             })
-            .buffer_unordered(10);
+            .buffer_unordered(get_index_gc_concurrency().unwrap_or(10));
+
     let mut error_encountered = false;
     while let Some(delete_split_result) = delete_split_from_index_res_stream.next().await {
         match delete_split_result {
@@ -298,15 +299,20 @@ async fn list_splits_metadata(
 /// In order to avoid hammering the load on the metastore, we can throttle the rate of split
 /// deletion by setting this environment variable.
 fn get_maximum_split_deletion_rate_per_sec() -> Option<usize> {
-    static MAXIMUM_SPLIT_DELETION_RATE_PER_SEC: std::sync::OnceLock<Option<usize>> =
-        OnceLock::new();
-    *MAXIMUM_SPLIT_DELETION_RATE_PER_SEC.get_or_init(|| {
+    static MAX_SPLIT_DELETION_RATE_PER_SEC: OnceLock<Option<usize>> = OnceLock::new();
+    *MAX_SPLIT_DELETION_RATE_PER_SEC.get_or_init(|| {
         quickwit_common::get_from_env_opt::<usize>("QW_MAX_SPLIT_DELETION_RATE_PER_SEC")
     })
 }
 
+fn get_index_gc_concurrency() -> Option<usize> {
+    static INDEX_GC_CONCURRENCY: OnceLock<Option<usize>> = OnceLock::new();
+    *INDEX_GC_CONCURRENCY
+        .get_or_init(|| quickwit_common::get_from_env_opt::<usize>("QW_INDEX_GC_CONCURRENCY"))
+}
+
 /// Removes any splits marked for deletion which haven't been
-/// updated after `updated_before_timestamp` in batches of 1000 splits.
+/// updated after `updated_before_timestamp` in batches of 1,000 splits.
 ///
 /// Only splits from index_uids in the `storages` map will be deleted.
 ///
@@ -463,7 +469,7 @@ pub async fn delete_splits_from_storage_and_metastore(
             error!(
                 error=?bulk_delete_error.error,
                 index_id=index_uid.index_id,
-                "Failed to delete split file(s) {:?} from storage.",
+                "failed to delete split file(s) {:?} from storage",
                 PrettySample::new(&failed_split_paths, 5),
             );
             storage_error = Some(bulk_delete_error);
