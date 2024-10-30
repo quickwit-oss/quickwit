@@ -26,7 +26,7 @@ mod tokenizer_manager;
 use once_cell::sync::Lazy;
 use tantivy::tokenizer::{
     AsciiFoldingFilter, Language, LowerCaser, RawTokenizer, RemoveLongFilter, SimpleTokenizer,
-    Stemmer, TextAnalyzer, WhitespaceTokenizer,
+    Stemmer, TextAnalyzer, Token, TokenStream, Tokenizer, WhitespaceTokenizer,
 };
 
 use self::chinese_compatible::ChineseTokenizer;
@@ -58,29 +58,33 @@ pub fn create_default_quickwit_tokenizer_manager() -> TokenizerManager {
         .build();
     tokenizer_manager.register("lowercase", lower_case_tokenizer, true);
 
-    let default_tokenizer = TextAnalyzer::builder(SimpleTokenizer::default())
+    let default_tokenizer = TextAnalyzer::builder(EmitEmptyTokenizer(SimpleTokenizer::default()))
         .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
         .filter(LowerCaser)
         .build();
     tokenizer_manager.register("default", default_tokenizer, true);
 
-    let en_stem_tokenizer = TextAnalyzer::builder(SimpleTokenizer::default())
+    let en_stem_tokenizer = TextAnalyzer::builder(EmitEmptyTokenizer(SimpleTokenizer::default()))
         .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
         .filter(LowerCaser)
         .filter(Stemmer::new(Language::English))
         .build();
     tokenizer_manager.register("en_stem", en_stem_tokenizer, true);
 
-    tokenizer_manager.register("whitespace", WhitespaceTokenizer::default(), false);
+    tokenizer_manager.register(
+        "whitespace",
+        EmitEmptyTokenizer(WhitespaceTokenizer::default()),
+        false,
+    );
 
-    let chinese_tokenizer = TextAnalyzer::builder(ChineseTokenizer)
+    let chinese_tokenizer = TextAnalyzer::builder(EmitEmptyTokenizer(ChineseTokenizer))
         .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
         .filter(LowerCaser)
         .build();
     tokenizer_manager.register("chinese_compatible", chinese_tokenizer, true);
     tokenizer_manager.register(
         "source_code_default",
-        TextAnalyzer::builder(CodeTokenizer::default())
+        TextAnalyzer::builder(EmitEmptyTokenizer(CodeTokenizer::default()))
             .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
             .filter(LowerCaser)
             .filter(AsciiFoldingFilter)
@@ -89,7 +93,7 @@ pub fn create_default_quickwit_tokenizer_manager() -> TokenizerManager {
     );
     tokenizer_manager.register(
         "source_code_with_hex",
-        TextAnalyzer::builder(CodeTokenizer::with_hex_support())
+        TextAnalyzer::builder(EmitEmptyTokenizer(CodeTokenizer::with_hex_support()))
             .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
             .filter(LowerCaser)
             .filter(AsciiFoldingFilter)
@@ -99,7 +103,7 @@ pub fn create_default_quickwit_tokenizer_manager() -> TokenizerManager {
     #[cfg(feature = "multilang")]
     tokenizer_manager.register(
         "multilang_default",
-        TextAnalyzer::builder(MultiLangTokenizer::default())
+        TextAnalyzer::builder(EmitEmptyTokenizer(MultiLangTokenizer::default()))
             .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
             .filter(LowerCaser)
             .build(),
@@ -126,6 +130,69 @@ pub fn get_quickwit_fastfield_normalizer_manager() -> &'static TokenizerManager 
     static QUICKWIT_FAST_FIELD_NORMALIZER_MANAGER: Lazy<TokenizerManager> =
         Lazy::new(create_quickwit_fastfield_normalizer_manager);
     &QUICKWIT_FAST_FIELD_NORMALIZER_MANAGER
+}
+
+#[derive(Debug, Clone)]
+struct EmitEmptyTokenizer<T>(T);
+
+impl<T> Tokenizer for EmitEmptyTokenizer<T>
+where T: Tokenizer
+{
+    type TokenStream<'a> = EmitEmptyStream<T::TokenStream<'a>>;
+
+    // Required method
+    fn token_stream<'a>(&'a mut self, text: &'a str) -> Self::TokenStream<'a> {
+        EmitEmptyStream {
+            inner: self.0.token_stream(text),
+            state: EmitEmptyState::Start,
+        }
+    }
+}
+
+struct EmitEmptyStream<S> {
+    inner: S,
+    state: EmitEmptyState,
+}
+
+enum EmitEmptyState {
+    Start,
+    UsingInner,
+    EmitEmpty(Token),
+}
+
+impl<S> TokenStream for EmitEmptyStream<S>
+where S: TokenStream
+{
+    fn advance(&mut self) -> bool {
+        match self.state {
+            EmitEmptyState::Start => {
+                if self.inner.advance() {
+                    self.state = EmitEmptyState::UsingInner;
+                } else {
+                    self.state = EmitEmptyState::EmitEmpty(Token::default());
+                }
+                true
+            }
+            EmitEmptyState::UsingInner => self.inner.advance(),
+            EmitEmptyState::EmitEmpty(_) => false,
+        }
+    }
+
+    fn token(&self) -> &Token {
+        match self.state {
+            EmitEmptyState::Start => unreachable!(),
+            EmitEmptyState::UsingInner => self.inner.token(),
+            EmitEmptyState::EmitEmpty(ref token) => token,
+        }
+    }
+
+    fn token_mut(&mut self) -> &mut Token {
+        match self.state {
+            EmitEmptyState::Start => unreachable!(),
+            EmitEmptyState::UsingInner => self.inner.token_mut(),
+            EmitEmptyState::EmitEmpty(ref mut token) => token,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -174,6 +241,31 @@ mod tests {
             tokens.push(token.text.to_string());
         }
         assert_eq!(tokens, vec!["pig", "cafe", "factory", "2"])
+    }
+
+    #[test]
+    fn test_tokenizer_emit_empty() {
+        let mut default_tokenizer = super::create_default_quickwit_tokenizer_manager()
+            .get_tokenizer("default")
+            .unwrap();
+        {
+            let mut token_stream = default_tokenizer.token_stream("");
+            let mut tokens = Vec::new();
+            while let Some(token) = token_stream.next() {
+                tokens.push(token.text.to_string());
+            }
+            assert_eq!(tokens, vec![""]);
+        }
+
+        {
+            // this tokenizer as nothing, but we still want to emit one empty token
+            let mut token_stream = default_tokenizer.token_stream(" : : ");
+            let mut tokens = Vec::new();
+            while let Some(token) = token_stream.next() {
+                tokens.push(token.text.to_string());
+            }
+            assert_eq!(tokens, vec![""])
+        }
     }
 
     #[test]
