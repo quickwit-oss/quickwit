@@ -90,25 +90,6 @@ pub fn new_counter(
     counter
 }
 
-pub fn new_counter_with_labels(
-    name: &str,
-    help: &str,
-    subsystem: &str,
-    const_labels: &[(&str, &str)],
-) -> IntCounter {
-    let owned_const_labels: HashMap<String, String> = const_labels
-        .iter()
-        .map(|(label_name, label_value)| (label_name.to_string(), label_value.to_string()))
-        .collect();
-    let counter_opts = Opts::new(name, help)
-        .namespace("quickwit")
-        .subsystem(subsystem)
-        .const_labels(owned_const_labels);
-    let counter = IntCounter::with_opts(counter_opts).expect("failed to create counter");
-    prometheus::register(Box::new(counter.clone())).expect("failed to register counter");
-    counter
-}
-
 pub fn new_counter_vec<const N: usize>(
     name: &str,
     help: &str,
