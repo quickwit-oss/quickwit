@@ -5948,6 +5948,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "quickwit-auth"
+version = "0.8.0"
+dependencies = [
+ "biscuit-auth",
+ "http 0.2.12",
+ "serde",
+ "thiserror",
+ "tokio",
+ "tonic",
+ "tracing",
+]
+
+[[package]]
 name = "quickwit-aws"
 version = "0.8.0"
 dependencies = [
@@ -6072,6 +6085,7 @@ dependencies = [
  "mockall",
  "prost 0.11.9",
  "quickwit-actors",
+ "quickwit-auth",
  "quickwit-codegen",
  "quickwit-common",
  "quickwit-proto",
@@ -6350,6 +6364,7 @@ dependencies = [
  "once_cell",
  "prost 0.11.9",
  "quickwit-actors",
+ "quickwit-auth",
  "quickwit-cluster",
  "quickwit-codegen",
  "quickwit-common",
@@ -6601,6 +6616,7 @@ version = "0.8.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "biscuit-auth",
  "bytes",
  "bytesize",
  "bytestring",
@@ -6613,6 +6629,7 @@ dependencies = [
  "prost-build",
  "prost-types 0.11.9",
  "quickwit-actors",
+ "quickwit-auth",
  "quickwit-codegen",
  "quickwit-common",
  "sea-query",

@@ -2209,9 +2209,14 @@ for IngesterServiceGrpcServerAdapter {
         &self,
         request: tonic::Request<PersistRequest>,
     ) -> Result<tonic::Response<PersistResponse>, tonic::Status> {
-        self.inner
-            .0
-            .persist(request.into_inner())
+        let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
+        let req = {
+            let req = request.into_inner();
+            req
+        };
+        quickwit_auth::authorize(&req, &auth_token)?;
+        quickwit_auth::AUTHORIZATION_TOKEN
+            .scope(auth_token, self.inner.0.persist(req))
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -2223,12 +2228,14 @@ for IngesterServiceGrpcServerAdapter {
         &self,
         request: tonic::Request<tonic::Streaming<SynReplicationMessage>>,
     ) -> Result<tonic::Response<Self::OpenReplicationStreamStream>, tonic::Status> {
-        self.inner
-            .0
-            .open_replication_stream({
-                let streaming: tonic::Streaming<_> = request.into_inner();
-                quickwit_common::ServiceStream::from(streaming)
-            })
+        let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
+        let req = {
+            let streaming: tonic::Streaming<_> = request.into_inner();
+            quickwit_common::ServiceStream::from(streaming)
+        };
+        quickwit_auth::authorize_stream::<SynReplicationMessage>(&auth_token)?;
+        quickwit_auth::AUTHORIZATION_TOKEN
+            .scope(auth_token, self.inner.0.open_replication_stream(req))
             .await
             .map(|stream| tonic::Response::new(
                 stream.map_err(crate::error::grpc_error_to_grpc_status),
@@ -2242,9 +2249,14 @@ for IngesterServiceGrpcServerAdapter {
         &self,
         request: tonic::Request<OpenFetchStreamRequest>,
     ) -> Result<tonic::Response<Self::OpenFetchStreamStream>, tonic::Status> {
-        self.inner
-            .0
-            .open_fetch_stream(request.into_inner())
+        let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
+        let req = {
+            let req = request.into_inner();
+            req
+        };
+        quickwit_auth::authorize(&req, &auth_token)?;
+        quickwit_auth::AUTHORIZATION_TOKEN
+            .scope(auth_token, self.inner.0.open_fetch_stream(req))
             .await
             .map(|stream| tonic::Response::new(
                 stream.map_err(crate::error::grpc_error_to_grpc_status),
@@ -2258,9 +2270,14 @@ for IngesterServiceGrpcServerAdapter {
         &self,
         request: tonic::Request<OpenObservationStreamRequest>,
     ) -> Result<tonic::Response<Self::OpenObservationStreamStream>, tonic::Status> {
-        self.inner
-            .0
-            .open_observation_stream(request.into_inner())
+        let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
+        let req = {
+            let req = request.into_inner();
+            req
+        };
+        quickwit_auth::authorize(&req, &auth_token)?;
+        quickwit_auth::AUTHORIZATION_TOKEN
+            .scope(auth_token, self.inner.0.open_observation_stream(req))
             .await
             .map(|stream| tonic::Response::new(
                 stream.map_err(crate::error::grpc_error_to_grpc_status),
@@ -2271,9 +2288,14 @@ for IngesterServiceGrpcServerAdapter {
         &self,
         request: tonic::Request<InitShardsRequest>,
     ) -> Result<tonic::Response<InitShardsResponse>, tonic::Status> {
-        self.inner
-            .0
-            .init_shards(request.into_inner())
+        let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
+        let req = {
+            let req = request.into_inner();
+            req
+        };
+        quickwit_auth::authorize(&req, &auth_token)?;
+        quickwit_auth::AUTHORIZATION_TOKEN
+            .scope(auth_token, self.inner.0.init_shards(req))
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -2282,9 +2304,14 @@ for IngesterServiceGrpcServerAdapter {
         &self,
         request: tonic::Request<RetainShardsRequest>,
     ) -> Result<tonic::Response<RetainShardsResponse>, tonic::Status> {
-        self.inner
-            .0
-            .retain_shards(request.into_inner())
+        let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
+        let req = {
+            let req = request.into_inner();
+            req
+        };
+        quickwit_auth::authorize(&req, &auth_token)?;
+        quickwit_auth::AUTHORIZATION_TOKEN
+            .scope(auth_token, self.inner.0.retain_shards(req))
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -2293,9 +2320,14 @@ for IngesterServiceGrpcServerAdapter {
         &self,
         request: tonic::Request<TruncateShardsRequest>,
     ) -> Result<tonic::Response<TruncateShardsResponse>, tonic::Status> {
-        self.inner
-            .0
-            .truncate_shards(request.into_inner())
+        let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
+        let req = {
+            let req = request.into_inner();
+            req
+        };
+        quickwit_auth::authorize(&req, &auth_token)?;
+        quickwit_auth::AUTHORIZATION_TOKEN
+            .scope(auth_token, self.inner.0.truncate_shards(req))
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -2304,9 +2336,14 @@ for IngesterServiceGrpcServerAdapter {
         &self,
         request: tonic::Request<CloseShardsRequest>,
     ) -> Result<tonic::Response<CloseShardsResponse>, tonic::Status> {
-        self.inner
-            .0
-            .close_shards(request.into_inner())
+        let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
+        let req = {
+            let req = request.into_inner();
+            req
+        };
+        quickwit_auth::authorize(&req, &auth_token)?;
+        quickwit_auth::AUTHORIZATION_TOKEN
+            .scope(auth_token, self.inner.0.close_shards(req))
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -2315,9 +2352,14 @@ for IngesterServiceGrpcServerAdapter {
         &self,
         request: tonic::Request<DecommissionRequest>,
     ) -> Result<tonic::Response<DecommissionResponse>, tonic::Status> {
-        self.inner
-            .0
-            .decommission(request.into_inner())
+        let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
+        let req = {
+            let req = request.into_inner();
+            req
+        };
+        quickwit_auth::authorize(&req, &auth_token)?;
+        quickwit_auth::AUTHORIZATION_TOKEN
+            .scope(auth_token, self.inner.0.decommission(req))
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)

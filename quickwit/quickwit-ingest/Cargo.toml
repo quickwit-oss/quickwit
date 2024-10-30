@@ -36,6 +36,7 @@ ulid = { workspace = true }
 utoipa = { workspace = true }
 
 quickwit-actors = { workspace = true }
+quickwit-auth = { workspace = true }
 quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true, features = ["testsuite"] }
 quickwit-config = { workspace = true }

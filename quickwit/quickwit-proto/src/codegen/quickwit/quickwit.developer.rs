@@ -478,9 +478,14 @@ for DeveloperServiceGrpcServerAdapter {
         &self,
         request: tonic::Request<GetDebugInfoRequest>,
     ) -> Result<tonic::Response<GetDebugInfoResponse>, tonic::Status> {
-        self.inner
-            .0
-            .get_debug_info(request.into_inner())
+        let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
+        let req = {
+            let req = request.into_inner();
+            req
+        };
+        quickwit_auth::authorize(&req, &auth_token)?;
+        quickwit_auth::AUTHORIZATION_TOKEN
+            .scope(auth_token, self.inner.0.get_debug_info(req))
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)

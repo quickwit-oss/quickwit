@@ -21,6 +21,7 @@ mod error;
 
 #[path = "codegen/hello.rs"]
 mod hello;
+mod authorization;
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;

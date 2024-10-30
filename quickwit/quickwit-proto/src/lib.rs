@@ -32,6 +32,7 @@ use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 pub mod cluster;
 pub mod control_plane;
+mod authorization;
 pub use {bytes, tonic};
 pub mod developer;
 pub mod error;
