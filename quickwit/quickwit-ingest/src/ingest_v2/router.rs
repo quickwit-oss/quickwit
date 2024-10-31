@@ -542,6 +542,7 @@ fn update_ingest_metrics(ingest_result: &IngestV2Result<IngestResponseV2>, num_s
                         ingest_results_metrics.router_load_shedding.inc()
                     }
                     IngestFailureReason::LoadShedding => ingest_results_metrics.load_shedding.inc(),
+                    IngestFailureReason::Unauthorized => ingest_results_metrics.unauthorized.inc(),
                 }
             }
         }
@@ -587,6 +588,9 @@ fn update_ingest_metrics(ingest_result: &IngestV2Result<IngestResponseV2>, num_s
             }
             IngestV2Error::Internal(_) => {
                 ingest_results_metrics.internal.inc_by(num_subrequests);
+            }
+            IngestV2Error::Unauthorized(_) => {
+                ingest_results_metrics.unauthorized.inc_by(num_subrequests);
             }
         },
     }

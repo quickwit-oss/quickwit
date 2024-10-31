@@ -1,5 +1,5 @@
 // The Quickwit Enterprise Edition (EE) license
-// Copyright (c) {\d+}-present Quickwit Inc.
+// Copyright (c) 2024-present Quickwit Inc.
 //
 // With regard to the Quickwit Software:
 //
@@ -14,7 +14,3 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
-
-// For all third party components incorporated into the Quickwit Software, those
-// components are licensed under the original license provided by the owner of the
-// applicable component.

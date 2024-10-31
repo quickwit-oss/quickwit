@@ -224,6 +224,12 @@ impl IngestWorkbench {
                     self.record_too_many_requests(subrequest_id, rate_limiting_cause);
                 }
             }
+            IngestV2Error::Unauthorized(_) => {
+                for subrequest_id in persist_summary.subrequest_ids {
+                    let failure = SubworkbenchFailure::Persist(PersistFailureReason::Unauthorized);
+                    self.record_failure(subrequest_id, failure);
+                }
+            }
         }
     }
 

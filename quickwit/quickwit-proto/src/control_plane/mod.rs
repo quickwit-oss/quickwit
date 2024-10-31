@@ -42,6 +42,8 @@ pub enum ControlPlaneError {
     TooManyRequests,
     #[error("service unavailable: {0}")]
     Unavailable(String),
+    #[error("unauthorized: {0}")]
+    Unauthorized(#[from] quickwit_auth::AuthorizationError),
 }
 
 impl From<TimeoutExceeded> for ControlPlaneError {
@@ -70,6 +72,7 @@ impl ServiceError for ControlPlaneError {
             Self::Timeout(_) => ServiceErrorCode::Timeout,
             Self::TooManyRequests => ServiceErrorCode::TooManyRequests,
             Self::Unavailable(_) => ServiceErrorCode::Unavailable,
+            Self::Unauthorized(authorization_error) => (*authorization_error).into(),
         }
     }
 }
@@ -109,6 +112,7 @@ impl From<ControlPlaneError> for MetastoreError {
             ControlPlaneError::Timeout(message) => MetastoreError::Timeout(message),
             ControlPlaneError::TooManyRequests => MetastoreError::TooManyRequests,
             ControlPlaneError::Unavailable(message) => MetastoreError::Unavailable(message),
+            ControlPlaneError::Unauthorized(authorization_error) => authorization_error.into(),
         }
     }
 }

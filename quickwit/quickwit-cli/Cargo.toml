@@ -79,7 +79,7 @@ quickwit-metastore = { workspace = true, features = ["testsuite"] }
 quickwit-storage = { workspace = true, features = ["testsuite"] }
 
 [features]
-enterprise = ["quickwit-config/enterprise"]
+enterprise = ["quickwit-config/enterprise", "quickwit-ingest/enterprise", "quickwit-proto/enterprise"]
 jemalloc = ["dep:tikv-jemalloc-ctl", "dep:tikv-jemallocator"]
 ci-test = []
 pprof = ["quickwit-serve/pprof"]

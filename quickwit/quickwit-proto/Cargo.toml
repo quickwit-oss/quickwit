@@ -54,3 +54,4 @@ quickwit-codegen = { workspace = true }
 [features]
 postgres = ["sea-query", "sqlx"]
 testsuite = ["mockall", "futures"]
+enterprise = [ "quickwit-auth/enterprise"]

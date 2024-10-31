@@ -44,6 +44,7 @@ pub(crate) struct IngestResultMetrics {
     pub load_shedding: IntCounter,
     pub shard_not_found: IntCounter,
     pub unavailable: IntCounter,
+    pub unauthorized: IntCounter,
 }
 
 impl Default for IngestResultMetrics {
@@ -72,6 +73,7 @@ impl Default for IngestResultMetrics {
             load_shedding: ingest_result_total_vec.with_label_values(["load_shedding"]),
             unavailable: ingest_result_total_vec.with_label_values(["unavailable"]),
             shard_not_found: ingest_result_total_vec.with_label_values(["shard_not_found"]),
+            unauthorized: ingest_result_total_vec.with_label_values(["unauthorized"]),
         }
     }
 }

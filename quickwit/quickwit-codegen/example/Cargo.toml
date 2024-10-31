@@ -41,3 +41,4 @@ quickwit-codegen = { workspace = true }
 
 [features]
 testsuite = ["mockall"]
+enterprise = [ "quickwit-auth/enterprise" ]

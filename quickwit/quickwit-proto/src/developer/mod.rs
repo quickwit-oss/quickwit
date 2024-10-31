@@ -38,6 +38,8 @@ pub enum DeveloperError {
     TooManyRequests,
     #[error("service unavailable: {0}")]
     Unavailable(String),
+    #[error("unauthorized: {0}")]
+    Unauthorized(#[from] quickwit_auth::AuthorizationError),
 }
 
 impl ServiceError for DeveloperError {
@@ -48,6 +50,7 @@ impl ServiceError for DeveloperError {
             Self::Timeout(_) => ServiceErrorCode::Timeout,
             Self::TooManyRequests => ServiceErrorCode::TooManyRequests,
             Self::Unavailable(_) => ServiceErrorCode::Unavailable,
+            Self::Unauthorized(authorization_error) => (*authorization_error).into(),
         }
     }
 }

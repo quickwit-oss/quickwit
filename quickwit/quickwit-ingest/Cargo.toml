@@ -63,3 +63,4 @@ quickwit-codegen = { workspace = true }
 failpoints = ["fail/failpoints"]
 no-failpoints = []
 testsuite = ["mockall"]
+enterprise = ["quickwit-auth/enterprise"]

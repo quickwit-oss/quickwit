@@ -15,7 +15,7 @@ do
     # echo "Checking $file";
     diff <(sed 's/{\\d+}/2024/' "${SCRIPT_DIR}/.agpl.license_header.txt") <(head -n 18 $file) > /dev/null
     HAS_AGPL_LICENSE=$?
-    diff <(sed 's/{\\d+}/2024/' "${SCRIPT_DIR}/.ee.license_header.txt") <(head -n 20 $file) > /dev/null
+    diff <(sed 's/{\\d+}/2024/' "${SCRIPT_DIR}/.ee.license_header.txt") <(head -n 16 $file) > /dev/null
     HAS_EE_LICENSE=$?
     HAS_LICENSE_HEADER=$(( $HAS_AGPL_LICENSE ^ $HAS_EE_LICENSE ))
     if [ $HAS_LICENSE_HEADER -ne 1 ]; then

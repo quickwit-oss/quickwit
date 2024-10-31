@@ -19,9 +19,11 @@
 
 mod error;
 
+#[cfg(feature = "enterprise")]
+mod authorization;
+
 #[path = "codegen/hello.rs"]
 mod hello;
-mod authorization;
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;

@@ -6559,6 +6559,7 @@ dependencies = [
  "mockall",
  "once_cell",
  "ouroboros",
+ "quickwit-auth",
  "quickwit-common",
  "quickwit-config",
  "quickwit-doc-mapper",

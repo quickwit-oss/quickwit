@@ -819,9 +819,10 @@ where
     T::Future: Send,
 {
     async fn ingest(&self, request: IngestRequest) -> crate::Result<IngestResponse> {
+        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
         self.inner
             .clone()
-            .ingest(request)
+            .ingest(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -830,9 +831,10 @@ where
             ))
     }
     async fn fetch(&self, request: FetchRequest) -> crate::Result<FetchResponse> {
+        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
         self.inner
             .clone()
-            .fetch(request)
+            .fetch(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -841,9 +843,10 @@ where
             ))
     }
     async fn tail(&self, request: TailRequest) -> crate::Result<FetchResponse> {
+        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
         self.inner
             .clone()
-            .tail(request)
+            .tail(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -873,13 +876,9 @@ impl ingest_service_grpc_server::IngestServiceGrpc for IngestServiceGrpcServerAd
         request: tonic::Request<IngestRequest>,
     ) -> Result<tonic::Response<IngestResponse>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = {
-            let req = request.into_inner();
-            req
-        };
+        let req = request.into_inner();
         quickwit_auth::authorize(&req, &auth_token)?;
-        quickwit_auth::AUTHORIZATION_TOKEN
-            .scope(auth_token, self.inner.0.ingest(req))
+        quickwit_auth::execute_with_authorization(auth_token, self.inner.0.ingest(req))
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -889,13 +888,9 @@ impl ingest_service_grpc_server::IngestServiceGrpc for IngestServiceGrpcServerAd
         request: tonic::Request<FetchRequest>,
     ) -> Result<tonic::Response<FetchResponse>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = {
-            let req = request.into_inner();
-            req
-        };
+        let req = request.into_inner();
         quickwit_auth::authorize(&req, &auth_token)?;
-        quickwit_auth::AUTHORIZATION_TOKEN
-            .scope(auth_token, self.inner.0.fetch(req))
+        quickwit_auth::execute_with_authorization(auth_token, self.inner.0.fetch(req))
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -905,13 +900,9 @@ impl ingest_service_grpc_server::IngestServiceGrpc for IngestServiceGrpcServerAd
         request: tonic::Request<TailRequest>,
     ) -> Result<tonic::Response<FetchResponse>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = {
-            let req = request.into_inner();
-            req
-        };
+        let req = request.into_inner();
         quickwit_auth::authorize(&req, &auth_token)?;
-        quickwit_auth::AUTHORIZATION_TOKEN
-            .scope(auth_token, self.inner.0.tail(req))
+        quickwit_auth::execute_with_authorization(auth_token, self.inner.0.tail(req))
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)

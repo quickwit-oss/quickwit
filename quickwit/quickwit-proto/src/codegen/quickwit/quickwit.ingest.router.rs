@@ -81,6 +81,7 @@ pub enum IngestFailureReason {
     RouterLoadShedding = 8,
     LoadShedding = 9,
     CircuitBreaker = 10,
+    Unauthorized = 11,
 }
 impl IngestFailureReason {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -110,6 +111,7 @@ impl IngestFailureReason {
             IngestFailureReason::CircuitBreaker => {
                 "INGEST_FAILURE_REASON_CIRCUIT_BREAKER"
             }
+            IngestFailureReason::Unauthorized => "INGEST_FAILURE_REASON_UNAUTHORIZED",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -128,6 +130,7 @@ impl IngestFailureReason {
             }
             "INGEST_FAILURE_REASON_LOAD_SHEDDING" => Some(Self::LoadShedding),
             "INGEST_FAILURE_REASON_CIRCUIT_BREAKER" => Some(Self::CircuitBreaker),
+            "INGEST_FAILURE_REASON_UNAUTHORIZED" => Some(Self::Unauthorized),
             _ => None,
         }
     }
@@ -569,9 +572,10 @@ where
         &self,
         request: IngestRequestV2,
     ) -> crate::ingest::IngestV2Result<IngestResponseV2> {
+        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
         self.inner
             .clone()
-            .ingest(request)
+            .ingest(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -602,13 +606,9 @@ for IngestRouterServiceGrpcServerAdapter {
         request: tonic::Request<IngestRequestV2>,
     ) -> Result<tonic::Response<IngestResponseV2>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = {
-            let req = request.into_inner();
-            req
-        };
+        let req = request.into_inner();
         quickwit_auth::authorize(&req, &auth_token)?;
-        quickwit_auth::AUTHORIZATION_TOKEN
-            .scope(auth_token, self.inner.0.ingest(req))
+        quickwit_auth::execute_with_authorization(auth_token, self.inner.0.ingest(req))
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)

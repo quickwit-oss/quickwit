@@ -21,6 +21,7 @@ use std::io;
 
 use mrecordlog::error::*;
 use quickwit_actors::AskError;
+use quickwit_auth::AuthorizationError;
 use quickwit_common::rate_limited_error;
 use quickwit_common::tower::BufferError;
 pub(crate) use quickwit_proto::error::{grpc_error_to_grpc_status, grpc_status_to_service_error};
@@ -48,6 +49,8 @@ pub enum IngestServiceError {
     RateLimited(RateLimitingCause),
     #[error("ingest service is unavailable ({0})")]
     Unavailable(String),
+    #[error("unauthorized: {0}")]
+    Unauthorized(#[from] AuthorizationError),
 }
 
 impl From<AskError<IngestServiceError>> for IngestServiceError {
@@ -93,6 +96,9 @@ impl From<IngestV2Error> for IngestServiceError {
             IngestV2Error::TooManyRequests(rate_limiting_cause) => {
                 IngestServiceError::RateLimited(rate_limiting_cause)
             }
+            IngestV2Error::Unauthorized(authorization_error) => {
+                IngestServiceError::Unauthorized(authorization_error)
+            }
         }
     }
 }
@@ -134,6 +140,9 @@ impl From<IngestFailure> for IngestServiceError {
             IngestFailureReason::CircuitBreaker => {
                 IngestServiceError::RateLimited(RateLimitingCause::CircuitBreaker)
             }
+            IngestFailureReason::Unauthorized => {
+                IngestServiceError::Unauthorized(AuthorizationError::PermissionDenied)
+            }
         }
     }
 }
@@ -161,6 +170,7 @@ impl ServiceError for IngestServiceError {
             }
             Self::RateLimited(_) => ServiceErrorCode::TooManyRequests,
             Self::Unavailable(_) => ServiceErrorCode::Unavailable,
+            Self::Unauthorized(_) => ServiceErrorCode::Unauthorized,
         }
     }
 }
@@ -204,6 +214,9 @@ impl From<IngestServiceError> for tonic::Status {
             IngestServiceError::IoError { .. } => tonic::Code::Internal,
             IngestServiceError::RateLimited(_) => tonic::Code::ResourceExhausted,
             IngestServiceError::Unavailable(_) => tonic::Code::Unavailable,
+            IngestServiceError::Unauthorized(authorized_error) => {
+                return (*authorized_error).into();
+            }
         };
         let message = error.to_string();
         tonic::Status::new(code, message)

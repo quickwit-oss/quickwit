@@ -23,6 +23,7 @@ use std::fmt::Debug;
 
 use anyhow::Context;
 use quickwit_actors::AskError;
+use quickwit_auth::AuthorizationError;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tonic::metadata::BinaryMetadataValue;
@@ -47,6 +48,13 @@ pub enum ServiceErrorCode {
     TooManyRequests,
     Unauthenticated,
     Unavailable,
+    Unauthorized,
+}
+
+impl From<AuthorizationError> for ServiceErrorCode {
+    fn from(_: AuthorizationError) -> Self {
+        ServiceErrorCode::Unauthorized
+    }
 }
 
 impl ServiceErrorCode {
@@ -61,6 +69,7 @@ impl ServiceErrorCode {
             Self::TooManyRequests => tonic::Code::ResourceExhausted,
             Self::Unauthenticated => tonic::Code::Unauthenticated,
             Self::Unavailable => tonic::Code::Unavailable,
+            Self::Unauthorized => tonic::Code::PermissionDenied,
         }
     }
 
@@ -75,6 +84,7 @@ impl ServiceErrorCode {
             Self::TooManyRequests => http::StatusCode::TOO_MANY_REQUESTS,
             Self::Unauthenticated => http::StatusCode::UNAUTHORIZED,
             Self::Unavailable => http::StatusCode::SERVICE_UNAVAILABLE,
+            Self::Unauthorized => http::StatusCode::UNAUTHORIZED,
         }
     }
 }

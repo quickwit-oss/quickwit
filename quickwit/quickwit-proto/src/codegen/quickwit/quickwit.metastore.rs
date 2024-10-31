@@ -4866,9 +4866,10 @@ where
         &self,
         request: CreateIndexRequest,
     ) -> crate::metastore::MetastoreResult<CreateIndexResponse> {
+        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
         self.inner
             .clone()
-            .create_index(request)
+            .create_index(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -4880,9 +4881,10 @@ where
         &self,
         request: UpdateIndexRequest,
     ) -> crate::metastore::MetastoreResult<IndexMetadataResponse> {
+        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
         self.inner
             .clone()
-            .update_index(request)
+            .update_index(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -4894,9 +4896,10 @@ where
         &self,
         request: IndexMetadataRequest,
     ) -> crate::metastore::MetastoreResult<IndexMetadataResponse> {
+        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
         self.inner
             .clone()
-            .index_metadata(request)
+            .index_metadata(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -4908,9 +4911,10 @@ where
         &self,
         request: IndexesMetadataRequest,
     ) -> crate::metastore::MetastoreResult<IndexesMetadataResponse> {
+        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
         self.inner
             .clone()
-            .indexes_metadata(request)
+            .indexes_metadata(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -4922,9 +4926,10 @@ where
         &self,
         request: ListIndexesMetadataRequest,
     ) -> crate::metastore::MetastoreResult<ListIndexesMetadataResponse> {
+        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
         self.inner
             .clone()
-            .list_indexes_metadata(request)
+            .list_indexes_metadata(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -4936,9 +4941,10 @@ where
         &self,
         request: DeleteIndexRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
         self.inner
             .clone()
-            .delete_index(request)
+            .delete_index(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -4950,9 +4956,10 @@ where
         &self,
         request: ListSplitsRequest,
     ) -> crate::metastore::MetastoreResult<MetastoreServiceStream<ListSplitsResponse>> {
+        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
         self.inner
             .clone()
-            .list_splits(request)
+            .list_splits(tonic_request)
             .await
             .map(|response| {
                 let streaming: tonic::Streaming<_> = response.into_inner();
@@ -4972,9 +4979,10 @@ where
         &self,
         request: StageSplitsRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
         self.inner
             .clone()
-            .stage_splits(request)
+            .stage_splits(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -4986,9 +4994,10 @@ where
         &self,
         request: PublishSplitsRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
         self.inner
             .clone()
-            .publish_splits(request)
+            .publish_splits(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -5000,9 +5009,10 @@ where
         &self,
         request: MarkSplitsForDeletionRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
         self.inner
             .clone()
-            .mark_splits_for_deletion(request)
+            .mark_splits_for_deletion(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -5014,9 +5024,10 @@ where
         &self,
         request: DeleteSplitsRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
         self.inner
             .clone()
-            .delete_splits(request)
+            .delete_splits(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -5028,9 +5039,10 @@ where
         &self,
         request: AddSourceRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
         self.inner
             .clone()
-            .add_source(request)
+            .add_source(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -5042,9 +5054,10 @@ where
         &self,
         request: ToggleSourceRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
         self.inner
             .clone()
-            .toggle_source(request)
+            .toggle_source(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -5056,9 +5069,10 @@ where
         &self,
         request: DeleteSourceRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
         self.inner
             .clone()
-            .delete_source(request)
+            .delete_source(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -5070,9 +5084,10 @@ where
         &self,
         request: ResetSourceCheckpointRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
         self.inner
             .clone()
-            .reset_source_checkpoint(request)
+            .reset_source_checkpoint(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -5084,9 +5099,10 @@ where
         &self,
         request: LastDeleteOpstampRequest,
     ) -> crate::metastore::MetastoreResult<LastDeleteOpstampResponse> {
+        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
         self.inner
             .clone()
-            .last_delete_opstamp(request)
+            .last_delete_opstamp(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -5098,9 +5114,10 @@ where
         &self,
         request: DeleteQuery,
     ) -> crate::metastore::MetastoreResult<DeleteTask> {
+        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
         self.inner
             .clone()
-            .create_delete_task(request)
+            .create_delete_task(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -5112,9 +5129,10 @@ where
         &self,
         request: UpdateSplitsDeleteOpstampRequest,
     ) -> crate::metastore::MetastoreResult<UpdateSplitsDeleteOpstampResponse> {
+        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
         self.inner
             .clone()
-            .update_splits_delete_opstamp(request)
+            .update_splits_delete_opstamp(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -5126,9 +5144,10 @@ where
         &self,
         request: ListDeleteTasksRequest,
     ) -> crate::metastore::MetastoreResult<ListDeleteTasksResponse> {
+        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
         self.inner
             .clone()
-            .list_delete_tasks(request)
+            .list_delete_tasks(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -5140,9 +5159,10 @@ where
         &self,
         request: ListStaleSplitsRequest,
     ) -> crate::metastore::MetastoreResult<ListSplitsResponse> {
+        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
         self.inner
             .clone()
-            .list_stale_splits(request)
+            .list_stale_splits(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -5154,9 +5174,10 @@ where
         &self,
         request: OpenShardsRequest,
     ) -> crate::metastore::MetastoreResult<OpenShardsResponse> {
+        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
         self.inner
             .clone()
-            .open_shards(request)
+            .open_shards(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -5168,9 +5189,10 @@ where
         &self,
         request: AcquireShardsRequest,
     ) -> crate::metastore::MetastoreResult<AcquireShardsResponse> {
+        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
         self.inner
             .clone()
-            .acquire_shards(request)
+            .acquire_shards(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -5182,9 +5204,10 @@ where
         &self,
         request: DeleteShardsRequest,
     ) -> crate::metastore::MetastoreResult<DeleteShardsResponse> {
+        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
         self.inner
             .clone()
-            .delete_shards(request)
+            .delete_shards(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -5196,9 +5219,10 @@ where
         &self,
         request: PruneShardsRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
         self.inner
             .clone()
-            .prune_shards(request)
+            .prune_shards(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -5210,9 +5234,10 @@ where
         &self,
         request: ListShardsRequest,
     ) -> crate::metastore::MetastoreResult<ListShardsResponse> {
+        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
         self.inner
             .clone()
-            .list_shards(request)
+            .list_shards(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -5224,9 +5249,10 @@ where
         &self,
         request: CreateIndexTemplateRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
         self.inner
             .clone()
-            .create_index_template(request)
+            .create_index_template(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -5238,9 +5264,10 @@ where
         &self,
         request: GetIndexTemplateRequest,
     ) -> crate::metastore::MetastoreResult<GetIndexTemplateResponse> {
+        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
         self.inner
             .clone()
-            .get_index_template(request)
+            .get_index_template(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -5252,9 +5279,10 @@ where
         &self,
         request: FindIndexTemplateMatchesRequest,
     ) -> crate::metastore::MetastoreResult<FindIndexTemplateMatchesResponse> {
+        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
         self.inner
             .clone()
-            .find_index_template_matches(request)
+            .find_index_template_matches(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -5266,9 +5294,10 @@ where
         &self,
         request: ListIndexTemplatesRequest,
     ) -> crate::metastore::MetastoreResult<ListIndexTemplatesResponse> {
+        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
         self.inner
             .clone()
-            .list_index_templates(request)
+            .list_index_templates(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -5280,9 +5309,10 @@ where
         &self,
         request: DeleteIndexTemplatesRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
         self.inner
             .clone()
-            .delete_index_templates(request)
+            .delete_index_templates(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -5328,13 +5358,12 @@ for MetastoreServiceGrpcServerAdapter {
         request: tonic::Request<CreateIndexRequest>,
     ) -> Result<tonic::Response<CreateIndexResponse>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = {
-            let req = request.into_inner();
-            req
-        };
+        let req = request.into_inner();
         quickwit_auth::authorize(&req, &auth_token)?;
-        quickwit_auth::AUTHORIZATION_TOKEN
-            .scope(auth_token, self.inner.0.create_index(req))
+        quickwit_auth::execute_with_authorization(
+                auth_token,
+                self.inner.0.create_index(req),
+            )
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -5344,13 +5373,12 @@ for MetastoreServiceGrpcServerAdapter {
         request: tonic::Request<UpdateIndexRequest>,
     ) -> Result<tonic::Response<IndexMetadataResponse>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = {
-            let req = request.into_inner();
-            req
-        };
+        let req = request.into_inner();
         quickwit_auth::authorize(&req, &auth_token)?;
-        quickwit_auth::AUTHORIZATION_TOKEN
-            .scope(auth_token, self.inner.0.update_index(req))
+        quickwit_auth::execute_with_authorization(
+                auth_token,
+                self.inner.0.update_index(req),
+            )
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -5360,13 +5388,12 @@ for MetastoreServiceGrpcServerAdapter {
         request: tonic::Request<IndexMetadataRequest>,
     ) -> Result<tonic::Response<IndexMetadataResponse>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = {
-            let req = request.into_inner();
-            req
-        };
+        let req = request.into_inner();
         quickwit_auth::authorize(&req, &auth_token)?;
-        quickwit_auth::AUTHORIZATION_TOKEN
-            .scope(auth_token, self.inner.0.index_metadata(req))
+        quickwit_auth::execute_with_authorization(
+                auth_token,
+                self.inner.0.index_metadata(req),
+            )
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -5376,13 +5403,12 @@ for MetastoreServiceGrpcServerAdapter {
         request: tonic::Request<IndexesMetadataRequest>,
     ) -> Result<tonic::Response<IndexesMetadataResponse>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = {
-            let req = request.into_inner();
-            req
-        };
+        let req = request.into_inner();
         quickwit_auth::authorize(&req, &auth_token)?;
-        quickwit_auth::AUTHORIZATION_TOKEN
-            .scope(auth_token, self.inner.0.indexes_metadata(req))
+        quickwit_auth::execute_with_authorization(
+                auth_token,
+                self.inner.0.indexes_metadata(req),
+            )
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -5392,13 +5418,12 @@ for MetastoreServiceGrpcServerAdapter {
         request: tonic::Request<ListIndexesMetadataRequest>,
     ) -> Result<tonic::Response<ListIndexesMetadataResponse>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = {
-            let req = request.into_inner();
-            req
-        };
+        let req = request.into_inner();
         quickwit_auth::authorize(&req, &auth_token)?;
-        quickwit_auth::AUTHORIZATION_TOKEN
-            .scope(auth_token, self.inner.0.list_indexes_metadata(req))
+        quickwit_auth::execute_with_authorization(
+                auth_token,
+                self.inner.0.list_indexes_metadata(req),
+            )
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -5408,13 +5433,12 @@ for MetastoreServiceGrpcServerAdapter {
         request: tonic::Request<DeleteIndexRequest>,
     ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = {
-            let req = request.into_inner();
-            req
-        };
+        let req = request.into_inner();
         quickwit_auth::authorize(&req, &auth_token)?;
-        quickwit_auth::AUTHORIZATION_TOKEN
-            .scope(auth_token, self.inner.0.delete_index(req))
+        quickwit_auth::execute_with_authorization(
+                auth_token,
+                self.inner.0.delete_index(req),
+            )
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -5427,13 +5451,12 @@ for MetastoreServiceGrpcServerAdapter {
         request: tonic::Request<ListSplitsRequest>,
     ) -> Result<tonic::Response<Self::ListSplitsStream>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = {
-            let req = request.into_inner();
-            req
-        };
+        let req = request.into_inner();
         quickwit_auth::authorize(&req, &auth_token)?;
-        quickwit_auth::AUTHORIZATION_TOKEN
-            .scope(auth_token, self.inner.0.list_splits(req))
+        quickwit_auth::execute_with_authorization(
+                auth_token,
+                self.inner.0.list_splits(req),
+            )
             .await
             .map(|stream| tonic::Response::new(
                 stream.map_err(crate::error::grpc_error_to_grpc_status),
@@ -5445,13 +5468,12 @@ for MetastoreServiceGrpcServerAdapter {
         request: tonic::Request<StageSplitsRequest>,
     ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = {
-            let req = request.into_inner();
-            req
-        };
+        let req = request.into_inner();
         quickwit_auth::authorize(&req, &auth_token)?;
-        quickwit_auth::AUTHORIZATION_TOKEN
-            .scope(auth_token, self.inner.0.stage_splits(req))
+        quickwit_auth::execute_with_authorization(
+                auth_token,
+                self.inner.0.stage_splits(req),
+            )
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -5461,13 +5483,12 @@ for MetastoreServiceGrpcServerAdapter {
         request: tonic::Request<PublishSplitsRequest>,
     ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = {
-            let req = request.into_inner();
-            req
-        };
+        let req = request.into_inner();
         quickwit_auth::authorize(&req, &auth_token)?;
-        quickwit_auth::AUTHORIZATION_TOKEN
-            .scope(auth_token, self.inner.0.publish_splits(req))
+        quickwit_auth::execute_with_authorization(
+                auth_token,
+                self.inner.0.publish_splits(req),
+            )
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -5477,13 +5498,12 @@ for MetastoreServiceGrpcServerAdapter {
         request: tonic::Request<MarkSplitsForDeletionRequest>,
     ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = {
-            let req = request.into_inner();
-            req
-        };
+        let req = request.into_inner();
         quickwit_auth::authorize(&req, &auth_token)?;
-        quickwit_auth::AUTHORIZATION_TOKEN
-            .scope(auth_token, self.inner.0.mark_splits_for_deletion(req))
+        quickwit_auth::execute_with_authorization(
+                auth_token,
+                self.inner.0.mark_splits_for_deletion(req),
+            )
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -5493,13 +5513,12 @@ for MetastoreServiceGrpcServerAdapter {
         request: tonic::Request<DeleteSplitsRequest>,
     ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = {
-            let req = request.into_inner();
-            req
-        };
+        let req = request.into_inner();
         quickwit_auth::authorize(&req, &auth_token)?;
-        quickwit_auth::AUTHORIZATION_TOKEN
-            .scope(auth_token, self.inner.0.delete_splits(req))
+        quickwit_auth::execute_with_authorization(
+                auth_token,
+                self.inner.0.delete_splits(req),
+            )
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -5509,13 +5528,12 @@ for MetastoreServiceGrpcServerAdapter {
         request: tonic::Request<AddSourceRequest>,
     ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = {
-            let req = request.into_inner();
-            req
-        };
+        let req = request.into_inner();
         quickwit_auth::authorize(&req, &auth_token)?;
-        quickwit_auth::AUTHORIZATION_TOKEN
-            .scope(auth_token, self.inner.0.add_source(req))
+        quickwit_auth::execute_with_authorization(
+                auth_token,
+                self.inner.0.add_source(req),
+            )
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -5525,13 +5543,12 @@ for MetastoreServiceGrpcServerAdapter {
         request: tonic::Request<ToggleSourceRequest>,
     ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = {
-            let req = request.into_inner();
-            req
-        };
+        let req = request.into_inner();
         quickwit_auth::authorize(&req, &auth_token)?;
-        quickwit_auth::AUTHORIZATION_TOKEN
-            .scope(auth_token, self.inner.0.toggle_source(req))
+        quickwit_auth::execute_with_authorization(
+                auth_token,
+                self.inner.0.toggle_source(req),
+            )
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -5541,13 +5558,12 @@ for MetastoreServiceGrpcServerAdapter {
         request: tonic::Request<DeleteSourceRequest>,
     ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = {
-            let req = request.into_inner();
-            req
-        };
+        let req = request.into_inner();
         quickwit_auth::authorize(&req, &auth_token)?;
-        quickwit_auth::AUTHORIZATION_TOKEN
-            .scope(auth_token, self.inner.0.delete_source(req))
+        quickwit_auth::execute_with_authorization(
+                auth_token,
+                self.inner.0.delete_source(req),
+            )
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -5557,13 +5573,12 @@ for MetastoreServiceGrpcServerAdapter {
         request: tonic::Request<ResetSourceCheckpointRequest>,
     ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = {
-            let req = request.into_inner();
-            req
-        };
+        let req = request.into_inner();
         quickwit_auth::authorize(&req, &auth_token)?;
-        quickwit_auth::AUTHORIZATION_TOKEN
-            .scope(auth_token, self.inner.0.reset_source_checkpoint(req))
+        quickwit_auth::execute_with_authorization(
+                auth_token,
+                self.inner.0.reset_source_checkpoint(req),
+            )
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -5573,13 +5588,12 @@ for MetastoreServiceGrpcServerAdapter {
         request: tonic::Request<LastDeleteOpstampRequest>,
     ) -> Result<tonic::Response<LastDeleteOpstampResponse>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = {
-            let req = request.into_inner();
-            req
-        };
+        let req = request.into_inner();
         quickwit_auth::authorize(&req, &auth_token)?;
-        quickwit_auth::AUTHORIZATION_TOKEN
-            .scope(auth_token, self.inner.0.last_delete_opstamp(req))
+        quickwit_auth::execute_with_authorization(
+                auth_token,
+                self.inner.0.last_delete_opstamp(req),
+            )
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -5589,13 +5603,12 @@ for MetastoreServiceGrpcServerAdapter {
         request: tonic::Request<DeleteQuery>,
     ) -> Result<tonic::Response<DeleteTask>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = {
-            let req = request.into_inner();
-            req
-        };
+        let req = request.into_inner();
         quickwit_auth::authorize(&req, &auth_token)?;
-        quickwit_auth::AUTHORIZATION_TOKEN
-            .scope(auth_token, self.inner.0.create_delete_task(req))
+        quickwit_auth::execute_with_authorization(
+                auth_token,
+                self.inner.0.create_delete_task(req),
+            )
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -5605,13 +5618,12 @@ for MetastoreServiceGrpcServerAdapter {
         request: tonic::Request<UpdateSplitsDeleteOpstampRequest>,
     ) -> Result<tonic::Response<UpdateSplitsDeleteOpstampResponse>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = {
-            let req = request.into_inner();
-            req
-        };
+        let req = request.into_inner();
         quickwit_auth::authorize(&req, &auth_token)?;
-        quickwit_auth::AUTHORIZATION_TOKEN
-            .scope(auth_token, self.inner.0.update_splits_delete_opstamp(req))
+        quickwit_auth::execute_with_authorization(
+                auth_token,
+                self.inner.0.update_splits_delete_opstamp(req),
+            )
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -5621,13 +5633,12 @@ for MetastoreServiceGrpcServerAdapter {
         request: tonic::Request<ListDeleteTasksRequest>,
     ) -> Result<tonic::Response<ListDeleteTasksResponse>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = {
-            let req = request.into_inner();
-            req
-        };
+        let req = request.into_inner();
         quickwit_auth::authorize(&req, &auth_token)?;
-        quickwit_auth::AUTHORIZATION_TOKEN
-            .scope(auth_token, self.inner.0.list_delete_tasks(req))
+        quickwit_auth::execute_with_authorization(
+                auth_token,
+                self.inner.0.list_delete_tasks(req),
+            )
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -5637,13 +5648,12 @@ for MetastoreServiceGrpcServerAdapter {
         request: tonic::Request<ListStaleSplitsRequest>,
     ) -> Result<tonic::Response<ListSplitsResponse>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = {
-            let req = request.into_inner();
-            req
-        };
+        let req = request.into_inner();
         quickwit_auth::authorize(&req, &auth_token)?;
-        quickwit_auth::AUTHORIZATION_TOKEN
-            .scope(auth_token, self.inner.0.list_stale_splits(req))
+        quickwit_auth::execute_with_authorization(
+                auth_token,
+                self.inner.0.list_stale_splits(req),
+            )
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -5653,13 +5663,12 @@ for MetastoreServiceGrpcServerAdapter {
         request: tonic::Request<OpenShardsRequest>,
     ) -> Result<tonic::Response<OpenShardsResponse>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = {
-            let req = request.into_inner();
-            req
-        };
+        let req = request.into_inner();
         quickwit_auth::authorize(&req, &auth_token)?;
-        quickwit_auth::AUTHORIZATION_TOKEN
-            .scope(auth_token, self.inner.0.open_shards(req))
+        quickwit_auth::execute_with_authorization(
+                auth_token,
+                self.inner.0.open_shards(req),
+            )
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -5669,13 +5678,12 @@ for MetastoreServiceGrpcServerAdapter {
         request: tonic::Request<AcquireShardsRequest>,
     ) -> Result<tonic::Response<AcquireShardsResponse>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = {
-            let req = request.into_inner();
-            req
-        };
+        let req = request.into_inner();
         quickwit_auth::authorize(&req, &auth_token)?;
-        quickwit_auth::AUTHORIZATION_TOKEN
-            .scope(auth_token, self.inner.0.acquire_shards(req))
+        quickwit_auth::execute_with_authorization(
+                auth_token,
+                self.inner.0.acquire_shards(req),
+            )
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -5685,13 +5693,12 @@ for MetastoreServiceGrpcServerAdapter {
         request: tonic::Request<DeleteShardsRequest>,
     ) -> Result<tonic::Response<DeleteShardsResponse>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = {
-            let req = request.into_inner();
-            req
-        };
+        let req = request.into_inner();
         quickwit_auth::authorize(&req, &auth_token)?;
-        quickwit_auth::AUTHORIZATION_TOKEN
-            .scope(auth_token, self.inner.0.delete_shards(req))
+        quickwit_auth::execute_with_authorization(
+                auth_token,
+                self.inner.0.delete_shards(req),
+            )
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -5701,13 +5708,12 @@ for MetastoreServiceGrpcServerAdapter {
         request: tonic::Request<PruneShardsRequest>,
     ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = {
-            let req = request.into_inner();
-            req
-        };
+        let req = request.into_inner();
         quickwit_auth::authorize(&req, &auth_token)?;
-        quickwit_auth::AUTHORIZATION_TOKEN
-            .scope(auth_token, self.inner.0.prune_shards(req))
+        quickwit_auth::execute_with_authorization(
+                auth_token,
+                self.inner.0.prune_shards(req),
+            )
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -5717,13 +5723,12 @@ for MetastoreServiceGrpcServerAdapter {
         request: tonic::Request<ListShardsRequest>,
     ) -> Result<tonic::Response<ListShardsResponse>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = {
-            let req = request.into_inner();
-            req
-        };
+        let req = request.into_inner();
         quickwit_auth::authorize(&req, &auth_token)?;
-        quickwit_auth::AUTHORIZATION_TOKEN
-            .scope(auth_token, self.inner.0.list_shards(req))
+        quickwit_auth::execute_with_authorization(
+                auth_token,
+                self.inner.0.list_shards(req),
+            )
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -5733,13 +5738,12 @@ for MetastoreServiceGrpcServerAdapter {
         request: tonic::Request<CreateIndexTemplateRequest>,
     ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = {
-            let req = request.into_inner();
-            req
-        };
+        let req = request.into_inner();
         quickwit_auth::authorize(&req, &auth_token)?;
-        quickwit_auth::AUTHORIZATION_TOKEN
-            .scope(auth_token, self.inner.0.create_index_template(req))
+        quickwit_auth::execute_with_authorization(
+                auth_token,
+                self.inner.0.create_index_template(req),
+            )
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -5749,13 +5753,12 @@ for MetastoreServiceGrpcServerAdapter {
         request: tonic::Request<GetIndexTemplateRequest>,
     ) -> Result<tonic::Response<GetIndexTemplateResponse>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = {
-            let req = request.into_inner();
-            req
-        };
+        let req = request.into_inner();
         quickwit_auth::authorize(&req, &auth_token)?;
-        quickwit_auth::AUTHORIZATION_TOKEN
-            .scope(auth_token, self.inner.0.get_index_template(req))
+        quickwit_auth::execute_with_authorization(
+                auth_token,
+                self.inner.0.get_index_template(req),
+            )
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -5765,13 +5768,12 @@ for MetastoreServiceGrpcServerAdapter {
         request: tonic::Request<FindIndexTemplateMatchesRequest>,
     ) -> Result<tonic::Response<FindIndexTemplateMatchesResponse>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = {
-            let req = request.into_inner();
-            req
-        };
+        let req = request.into_inner();
         quickwit_auth::authorize(&req, &auth_token)?;
-        quickwit_auth::AUTHORIZATION_TOKEN
-            .scope(auth_token, self.inner.0.find_index_template_matches(req))
+        quickwit_auth::execute_with_authorization(
+                auth_token,
+                self.inner.0.find_index_template_matches(req),
+            )
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -5781,13 +5783,12 @@ for MetastoreServiceGrpcServerAdapter {
         request: tonic::Request<ListIndexTemplatesRequest>,
     ) -> Result<tonic::Response<ListIndexTemplatesResponse>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = {
-            let req = request.into_inner();
-            req
-        };
+        let req = request.into_inner();
         quickwit_auth::authorize(&req, &auth_token)?;
-        quickwit_auth::AUTHORIZATION_TOKEN
-            .scope(auth_token, self.inner.0.list_index_templates(req))
+        quickwit_auth::execute_with_authorization(
+                auth_token,
+                self.inner.0.list_index_templates(req),
+            )
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -5797,13 +5798,12 @@ for MetastoreServiceGrpcServerAdapter {
         request: tonic::Request<DeleteIndexTemplatesRequest>,
     ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = {
-            let req = request.into_inner();
-            req
-        };
+        let req = request.into_inner();
         quickwit_auth::authorize(&req, &auth_token)?;
-        quickwit_auth::AUTHORIZATION_TOKEN
-            .scope(auth_token, self.inner.0.delete_index_templates(req))
+        quickwit_auth::execute_with_authorization(
+                auth_token,
+                self.inner.0.delete_index_templates(req),
+            )
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)

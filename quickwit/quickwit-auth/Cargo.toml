@@ -1,0 +1,21 @@
+[package]
+name = "quickwit-auth"
+version.workspace = true
+edition.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+repository.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+biscuit-auth = { workspace = true, optional=true }
+http = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tonic = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[features]
+enterprise = ["biscuit-auth"]

@@ -19,6 +19,9 @@
 
 #![deny(clippy::disallowed_methods)]
 
+#[cfg(feature = "enterprise")]
+mod authorize;
+
 mod doc_batch;
 pub mod error;
 mod ingest_api_service;
@@ -31,7 +34,6 @@ mod mrecordlog_async;
 mod notifications;
 mod position;
 mod queue;
-mod authorize;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
