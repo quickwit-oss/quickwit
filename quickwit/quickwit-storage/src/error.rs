@@ -193,7 +193,7 @@ impl fmt::Display for BulkDeleteError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "bulk delete error ({} success(es),  {} failure(s), {} unattempted)",
+            "bulk delete error ({} success(es), {} failure(s), {} unattempted)",
             self.successes.len(),
             self.failures.len(),
             self.unattempted.len()
