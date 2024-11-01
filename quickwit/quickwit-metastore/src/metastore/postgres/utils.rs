@@ -24,7 +24,7 @@ use std::time::Duration;
 
 use quickwit_common::uri::Uri;
 use quickwit_proto::metastore::{MetastoreError, MetastoreResult};
-use sea_query::{any, Expr, Func, Order, SelectStatement};
+use sea_query::{any, Alias, Asterisk, Expr, Func, Order, Query, SelectStatement};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{ConnectOptions, Postgres};
 use tracing::error;
@@ -107,9 +107,15 @@ pub(super) fn append_query_filters_and_order_by(
 ) {
     if let Some(index_uids) = &query.index_uids {
         // Note: `ListSplitsQuery` builder enforces a non empty `index_uids` list.
-        // TODO we should explore IN VALUES, = ANY and similar constructs in case they perform
-        // better.
-        sql.cond_where(Expr::col(Splits::IndexUid).is_in(index_uids));
+        // We could do `IN`, but it generate a worst query plan when there are multiple index_uids,
+        // and it really feels when there are a lot of them. We'd like to do `IN (VALUES ...)`,
+        // which is a shortand for what we're doing here, but sea_query doesn't provide us with a
+        // way to do that, so instead we do a subqueries with values.
+        let index_uids = Query::select()
+            .column(Asterisk)
+            .from_values(index_uids, Alias::new("index_uid"))
+            .take();
+        sql.cond_where(Expr::col(Splits::IndexUid).eq(Expr::any(index_uids)));
     }
 
     if let Some(node_id) = &query.node_id {
