@@ -1246,9 +1246,7 @@ fn generate_grpc_server_adapter_methods(context: &CodegenContext) -> TokenStream
                 }
             }
         } else {
-            quote! {
-                request.into_inner()
-            }
+            quote! { request.into_inner() }
         };
         let response_type = if syn_method.server_streaming {
             let associated_type_name = quote::format_ident!("{}Stream", syn_method.proto_name);
@@ -1271,24 +1269,12 @@ fn generate_grpc_server_adapter_methods(context: &CodegenContext) -> TokenStream
             quote! { tonic::Response::new }
         };
 
-        let authorize_block = if syn_method.client_streaming {
-            let stream_item = &syn_method.request_type;
-            quote! {
-                quickwit_auth::authorize_stream::<#stream_item>(&auth_token)?;
-            }
-        } else {
-            quote! {
-                quickwit_auth::authorize(&req, &auth_token)?;
-            }
-        };
         let method = quote! {
             #associated_type
 
             async fn #method_name(&self, request: tonic::Request<#request_type>) -> Result<tonic::Response<#response_type>, tonic::Status> {
                 let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-                let req = #method_arg;
-                #authorize_block;
-                quickwit_auth::execute_with_authorization(auth_token, self.inner.0.#method_name(req)).await
+                quickwit_auth::execute_with_authorization(auth_token, self.inner.0.#method_name(#method_arg)).await
                     .map(#into_response_type)
                     .map_err(crate::error::grpc_error_to_grpc_status)
             }

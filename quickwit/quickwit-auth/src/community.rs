@@ -85,3 +85,7 @@ pub fn execute_with_authorization<F, O>(_: AuthorizationToken, f: F) -> impl Fut
 where F: Future<Output = O> {
     f
 }
+
+pub fn authorize_request<R: Authorization>(_req: &R) -> Result<(), AuthorizationError> {
+    Ok(())
+}

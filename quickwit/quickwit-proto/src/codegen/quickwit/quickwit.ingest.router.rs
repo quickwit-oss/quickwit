@@ -606,9 +606,10 @@ for IngestRouterServiceGrpcServerAdapter {
         request: tonic::Request<IngestRequestV2>,
     ) -> Result<tonic::Response<IngestResponseV2>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = request.into_inner();
-        quickwit_auth::authorize(&req, &auth_token)?;
-        quickwit_auth::execute_with_authorization(auth_token, self.inner.0.ingest(req))
+        quickwit_auth::execute_with_authorization(
+                auth_token,
+                self.inner.0.ingest(request.into_inner()),
+            )
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)

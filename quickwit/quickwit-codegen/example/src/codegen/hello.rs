@@ -811,9 +811,10 @@ impl hello_grpc_server::HelloGrpc for HelloGrpcServerAdapter {
         request: tonic::Request<HelloRequest>,
     ) -> Result<tonic::Response<HelloResponse>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = request.into_inner();
-        quickwit_auth::authorize(&req, &auth_token)?;
-        quickwit_auth::execute_with_authorization(auth_token, self.inner.0.hello(req))
+        quickwit_auth::execute_with_authorization(
+                auth_token,
+                self.inner.0.hello(request.into_inner()),
+            )
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -823,9 +824,10 @@ impl hello_grpc_server::HelloGrpc for HelloGrpcServerAdapter {
         request: tonic::Request<GoodbyeRequest>,
     ) -> Result<tonic::Response<GoodbyeResponse>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = request.into_inner();
-        quickwit_auth::authorize(&req, &auth_token)?;
-        quickwit_auth::execute_with_authorization(auth_token, self.inner.0.goodbye(req))
+        quickwit_auth::execute_with_authorization(
+                auth_token,
+                self.inner.0.goodbye(request.into_inner()),
+            )
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -836,12 +838,16 @@ impl hello_grpc_server::HelloGrpc for HelloGrpcServerAdapter {
         request: tonic::Request<tonic::Streaming<PingRequest>>,
     ) -> Result<tonic::Response<Self::PingStream>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = {
-            let streaming: tonic::Streaming<_> = request.into_inner();
-            quickwit_common::ServiceStream::from(streaming)
-        };
-        quickwit_auth::authorize_stream::<PingRequest>(&auth_token)?;
-        quickwit_auth::execute_with_authorization(auth_token, self.inner.0.ping(req))
+        quickwit_auth::execute_with_authorization(
+                auth_token,
+                self
+                    .inner
+                    .0
+                    .ping({
+                        let streaming: tonic::Streaming<_> = request.into_inner();
+                        quickwit_common::ServiceStream::from(streaming)
+                    }),
+            )
             .await
             .map(|stream| tonic::Response::new(
                 stream.map_err(crate::error::grpc_error_to_grpc_status),

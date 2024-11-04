@@ -12,7 +12,6 @@ license.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
-biscuit-auth = { workspace = true }
 bytes = { workspace = true }
 bytesize = { workspace = true }
 bytestring = { workspace = true }

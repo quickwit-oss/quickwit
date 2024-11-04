@@ -5952,11 +5952,15 @@ name = "quickwit-auth"
 version = "0.8.0"
 dependencies = [
  "biscuit-auth",
+ "futures",
  "http 0.2.12",
+ "pin-project",
+ "quickwit-common",
  "serde",
  "thiserror",
  "tokio",
  "tonic",
+ "tower",
  "tracing",
 ]
 
@@ -6617,7 +6621,6 @@ version = "0.8.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "biscuit-auth",
  "bytes",
  "bytesize",
  "bytestring",

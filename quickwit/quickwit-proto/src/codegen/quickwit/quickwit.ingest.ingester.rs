@@ -2224,9 +2224,10 @@ for IngesterServiceGrpcServerAdapter {
         request: tonic::Request<PersistRequest>,
     ) -> Result<tonic::Response<PersistResponse>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = request.into_inner();
-        quickwit_auth::authorize(&req, &auth_token)?;
-        quickwit_auth::execute_with_authorization(auth_token, self.inner.0.persist(req))
+        quickwit_auth::execute_with_authorization(
+                auth_token,
+                self.inner.0.persist(request.into_inner()),
+            )
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -2239,14 +2240,15 @@ for IngesterServiceGrpcServerAdapter {
         request: tonic::Request<tonic::Streaming<SynReplicationMessage>>,
     ) -> Result<tonic::Response<Self::OpenReplicationStreamStream>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = {
-            let streaming: tonic::Streaming<_> = request.into_inner();
-            quickwit_common::ServiceStream::from(streaming)
-        };
-        quickwit_auth::authorize_stream::<SynReplicationMessage>(&auth_token)?;
         quickwit_auth::execute_with_authorization(
                 auth_token,
-                self.inner.0.open_replication_stream(req),
+                self
+                    .inner
+                    .0
+                    .open_replication_stream({
+                        let streaming: tonic::Streaming<_> = request.into_inner();
+                        quickwit_common::ServiceStream::from(streaming)
+                    }),
             )
             .await
             .map(|stream| tonic::Response::new(
@@ -2262,11 +2264,9 @@ for IngesterServiceGrpcServerAdapter {
         request: tonic::Request<OpenFetchStreamRequest>,
     ) -> Result<tonic::Response<Self::OpenFetchStreamStream>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = request.into_inner();
-        quickwit_auth::authorize(&req, &auth_token)?;
         quickwit_auth::execute_with_authorization(
                 auth_token,
-                self.inner.0.open_fetch_stream(req),
+                self.inner.0.open_fetch_stream(request.into_inner()),
             )
             .await
             .map(|stream| tonic::Response::new(
@@ -2282,11 +2282,9 @@ for IngesterServiceGrpcServerAdapter {
         request: tonic::Request<OpenObservationStreamRequest>,
     ) -> Result<tonic::Response<Self::OpenObservationStreamStream>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = request.into_inner();
-        quickwit_auth::authorize(&req, &auth_token)?;
         quickwit_auth::execute_with_authorization(
                 auth_token,
-                self.inner.0.open_observation_stream(req),
+                self.inner.0.open_observation_stream(request.into_inner()),
             )
             .await
             .map(|stream| tonic::Response::new(
@@ -2299,11 +2297,9 @@ for IngesterServiceGrpcServerAdapter {
         request: tonic::Request<InitShardsRequest>,
     ) -> Result<tonic::Response<InitShardsResponse>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = request.into_inner();
-        quickwit_auth::authorize(&req, &auth_token)?;
         quickwit_auth::execute_with_authorization(
                 auth_token,
-                self.inner.0.init_shards(req),
+                self.inner.0.init_shards(request.into_inner()),
             )
             .await
             .map(tonic::Response::new)
@@ -2314,11 +2310,9 @@ for IngesterServiceGrpcServerAdapter {
         request: tonic::Request<RetainShardsRequest>,
     ) -> Result<tonic::Response<RetainShardsResponse>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = request.into_inner();
-        quickwit_auth::authorize(&req, &auth_token)?;
         quickwit_auth::execute_with_authorization(
                 auth_token,
-                self.inner.0.retain_shards(req),
+                self.inner.0.retain_shards(request.into_inner()),
             )
             .await
             .map(tonic::Response::new)
@@ -2329,11 +2323,9 @@ for IngesterServiceGrpcServerAdapter {
         request: tonic::Request<TruncateShardsRequest>,
     ) -> Result<tonic::Response<TruncateShardsResponse>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = request.into_inner();
-        quickwit_auth::authorize(&req, &auth_token)?;
         quickwit_auth::execute_with_authorization(
                 auth_token,
-                self.inner.0.truncate_shards(req),
+                self.inner.0.truncate_shards(request.into_inner()),
             )
             .await
             .map(tonic::Response::new)
@@ -2344,11 +2336,9 @@ for IngesterServiceGrpcServerAdapter {
         request: tonic::Request<CloseShardsRequest>,
     ) -> Result<tonic::Response<CloseShardsResponse>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = request.into_inner();
-        quickwit_auth::authorize(&req, &auth_token)?;
         quickwit_auth::execute_with_authorization(
                 auth_token,
-                self.inner.0.close_shards(req),
+                self.inner.0.close_shards(request.into_inner()),
             )
             .await
             .map(tonic::Response::new)
@@ -2359,11 +2349,9 @@ for IngesterServiceGrpcServerAdapter {
         request: tonic::Request<DecommissionRequest>,
     ) -> Result<tonic::Response<DecommissionResponse>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = request.into_inner();
-        quickwit_auth::authorize(&req, &auth_token)?;
         quickwit_auth::execute_with_authorization(
                 auth_token,
-                self.inner.0.decommission(req),
+                self.inner.0.decommission(request.into_inner()),
             )
             .await
             .map(tonic::Response::new)

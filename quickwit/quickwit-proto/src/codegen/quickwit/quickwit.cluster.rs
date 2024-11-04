@@ -544,11 +544,9 @@ for ClusterServiceGrpcServerAdapter {
         request: tonic::Request<FetchClusterStateRequest>,
     ) -> Result<tonic::Response<FetchClusterStateResponse>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = request.into_inner();
-        quickwit_auth::authorize(&req, &auth_token)?;
         quickwit_auth::execute_with_authorization(
                 auth_token,
-                self.inner.0.fetch_cluster_state(req),
+                self.inner.0.fetch_cluster_state(request.into_inner()),
             )
             .await
             .map(tonic::Response::new)

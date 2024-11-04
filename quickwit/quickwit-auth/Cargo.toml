@@ -9,13 +9,18 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
+tower = { workspace = true}
 biscuit-auth = { workspace = true, optional=true }
+futures = { workspace = true }
 http = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 tonic = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+pin-project = { workspace = true }
+
+quickwit-common = { workspace = true }
 
 [features]
 enterprise = ["biscuit-auth"]

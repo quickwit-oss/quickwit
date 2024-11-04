@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use serde::{Deserialize, Serialize};
+mod authorization_layer;
 
 #[cfg(not(feature = "enterprise"))]
 #[path = "community.rs"]
@@ -28,6 +28,7 @@ mod implementation;
 mod implementation;
 
 pub use implementation::*;
+use serde::{Deserialize, Serialize};
 
 #[derive(thiserror::Error, Debug, Clone, Copy, Serialize, Deserialize, Eq, PartialEq)]
 pub enum AuthorizationError {

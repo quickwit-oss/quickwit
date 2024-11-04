@@ -215,6 +215,12 @@ pub fn authorize_stream<R: StreamAuthorization>(
     Ok(())
 }
 
+pub fn authorize_request<R: Authorization>(req: &R) -> Result<(), AuthorizationError> {
+    AUTHORIZATION_TOKEN
+        .try_with(|auth_token| authorize(req, auth_token))
+        .unwrap_or(Err(AuthorizationError::AuthorizationTokenMissing))
+}
+
 pub fn execute_with_authorization<F, O>(
     token: AuthorizationToken,
     f: F,

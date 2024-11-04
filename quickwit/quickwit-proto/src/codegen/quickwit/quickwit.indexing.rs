@@ -493,11 +493,9 @@ for IndexingServiceGrpcServerAdapter {
         request: tonic::Request<ApplyIndexingPlanRequest>,
     ) -> Result<tonic::Response<ApplyIndexingPlanResponse>, tonic::Status> {
         let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        let req = request.into_inner();
-        quickwit_auth::authorize(&req, &auth_token)?;
         quickwit_auth::execute_with_authorization(
                 auth_token,
-                self.inner.0.apply_indexing_plan(req),
+                self.inner.0.apply_indexing_plan(request.into_inner()),
             )
             .await
             .map(tonic::Response::new)
