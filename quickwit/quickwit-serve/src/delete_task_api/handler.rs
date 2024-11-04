@@ -65,6 +65,7 @@ pub fn delete_task_api_handlers(
     get_delete_tasks_handler(metastore.clone())
         .or(post_delete_tasks_handler(metastore.clone()))
         .recover(recover_fn)
+        .boxed()
 }
 
 pub fn get_delete_tasks_handler(

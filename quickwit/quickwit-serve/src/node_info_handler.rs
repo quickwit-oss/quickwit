@@ -38,6 +38,7 @@ pub fn node_info_handler(
     node_version_handler(build_info, runtime_info)
         .or(node_config_handler(config))
         .recover(recover_fn)
+        .boxed()
 }
 
 #[utoipa::path(get, tag = "Node Info", path = "/version")]

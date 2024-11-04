@@ -72,6 +72,7 @@ pub(crate) fn ingest_api_handlers(
     ingest_handler(ingest_service.clone(), config.clone())
         .or(tail_handler(ingest_service))
         .or(ingest_v2_handler(ingest_router, config))
+        .boxed()
 }
 
 fn ingest_filter(
@@ -96,6 +97,7 @@ fn ingest_handler(
         .and(with_arg(ingest_service))
         .then(ingest)
         .map(|result| into_rest_api_response(result, BodyFormat::default()))
+        .boxed()
 }
 
 fn ingest_v2_filter(
@@ -121,6 +123,7 @@ fn ingest_v2_handler(
         .then(ingest_v2)
         .and(with_arg(BodyFormat::default()))
         .map(into_rest_api_response)
+        .boxed()
 }
 
 async fn ingest_v2(
@@ -223,6 +226,7 @@ pub fn tail_handler(
         .then(tail_endpoint)
         .and(extract_format_from_qs())
         .map(into_rest_api_response)
+        .boxed()
 }
 
 fn tail_filter() -> impl Filter<Extract = (String,), Error = Rejection> + Clone {

@@ -56,6 +56,7 @@ pub(crate) fn otlp_ingest_api_handlers(
         .or(otlp_default_traces_handler(otlp_traces_service.clone()).recover(recover_fn))
         .or(otlp_logs_handler(otlp_logs_service).recover(recover_fn))
         .or(otlp_ingest_traces_handler(otlp_traces_service).recover(recover_fn))
+        .boxed()
 }
 
 /// Open Telemetry REST/Protobuf logs ingest endpoint.
@@ -91,6 +92,7 @@ pub(crate) fn otlp_default_logs_handler(
         )
         .and(with_arg(BodyFormat::default()))
         .map(into_rest_api_response)
+        .boxed()
 }
 /// Open Telemetry REST/Protobuf logs ingest endpoint.
 #[utoipa::path(
@@ -116,6 +118,7 @@ pub(crate) fn otlp_logs_handler(
         .then(otlp_ingest_logs)
         .and(with_arg(BodyFormat::default()))
         .map(into_rest_api_response)
+        .boxed()
 }
 
 /// Open Telemetry REST/Protobuf traces ingest endpoint.
@@ -151,6 +154,7 @@ pub(crate) fn otlp_default_traces_handler(
         )
         .and(with_arg(BodyFormat::default()))
         .map(into_rest_api_response)
+        .boxed()
 }
 /// Open Telemetry REST/Protobuf traces ingest endpoint.
 #[utoipa::path(
@@ -176,6 +180,7 @@ pub(crate) fn otlp_ingest_traces_handler(
         .then(otlp_ingest_traces)
         .and(with_arg(BodyFormat::default()))
         .map(into_rest_api_response)
+        .boxed()
 }
 
 #[derive(Debug, Clone, thiserror::Error, Serialize)]

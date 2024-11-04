@@ -76,6 +76,7 @@ pub fn es_compat_index_bulk_handler(
         .and(extract_format_from_qs())
         .map(make_elastic_api_response)
         .recover(recover_fn)
+        .boxed()
 }
 
 async fn elastic_ingest_bulk(
