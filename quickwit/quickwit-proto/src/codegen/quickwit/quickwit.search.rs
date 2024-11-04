@@ -371,7 +371,6 @@ pub struct Hit {
     pub index_id: ::prost::alloc::string::String,
 }
 /// A partial hit, is a hit for which we have not fetch the content yet.
-///
 /// Instead, it holds a document_uri which is enough information to
 /// go and fetch the actual document data, by performing a `get_doc(...)`
 /// request.
