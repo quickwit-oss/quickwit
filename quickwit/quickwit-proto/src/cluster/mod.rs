@@ -40,7 +40,7 @@ pub enum ClusterError {
     #[error("service unavailable: {0}")]
     Unavailable(String),
     #[error("unauthorized: {0}")]
-    Unauthorized(#[from] quickwit_auth::AuthorizationError),
+    Unauthorized(#[from] quickwit_authorize::AuthorizationError),
 }
 
 impl ServiceError for ClusterError {

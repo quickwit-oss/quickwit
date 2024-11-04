@@ -36,7 +36,7 @@ ulid = { workspace = true }
 utoipa = { workspace = true }
 
 quickwit-actors = { workspace = true }
-quickwit-auth = { workspace = true }
+quickwit-authorize = { workspace = true }
 quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true, features = ["testsuite"] }
 quickwit-config = { workspace = true }
@@ -63,4 +63,4 @@ quickwit-codegen = { workspace = true }
 failpoints = ["fail/failpoints"]
 no-failpoints = []
 testsuite = ["mockall"]
-enterprise = ["quickwit-auth/enterprise"]
+enterprise = ["quickwit-authorize/enterprise"]

@@ -15,7 +15,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-use quickwit_auth::{Authorization, AuthorizationError, AuthorizationToken};
+use quickwit_authorize::::{Authorization, AuthorizationError, AuthorizationToken};
 
 use crate::{FetchRequest, IngestRequest, TailRequest};
 

@@ -5948,7 +5948,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "quickwit-auth"
+name = "quickwit-authorize"
 version = "0.8.0"
 dependencies = [
  "biscuit-auth",
@@ -6089,7 +6089,7 @@ dependencies = [
  "mockall",
  "prost 0.11.9",
  "quickwit-actors",
- "quickwit-auth",
+ "quickwit-authorize",
  "quickwit-codegen",
  "quickwit-common",
  "quickwit-proto",
@@ -6368,7 +6368,7 @@ dependencies = [
  "once_cell",
  "prost 0.11.9",
  "quickwit-actors",
- "quickwit-auth",
+ "quickwit-authorize",
  "quickwit-cluster",
  "quickwit-codegen",
  "quickwit-common",
@@ -6563,7 +6563,7 @@ dependencies = [
  "mockall",
  "once_cell",
  "ouroboros",
- "quickwit-auth",
+ "quickwit-authorize",
  "quickwit-common",
  "quickwit-config",
  "quickwit-doc-mapper",
@@ -6633,7 +6633,7 @@ dependencies = [
  "prost-build",
  "prost-types 0.11.9",
  "quickwit-actors",
- "quickwit-auth",
+ "quickwit-authorize",
  "quickwit-codegen",
  "quickwit-common",
  "sea-query",

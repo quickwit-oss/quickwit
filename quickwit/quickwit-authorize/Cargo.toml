@@ -1,5 +1,5 @@
 [package]
-name = "quickwit-auth"
+name = "quickwit-authorize"
 version.workspace = true
 edition.workspace = true
 homepage.workspace = true

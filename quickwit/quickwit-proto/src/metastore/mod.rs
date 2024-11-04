@@ -157,7 +157,7 @@ pub enum MetastoreError {
     Unavailable(String),
 
     #[error("unauthorized: {0}")]
-    Unauthorized(#[from] quickwit_auth::AuthorizationError),
+    Unauthorized(#[from] quickwit_authorize::AuthorizationError),
 }
 
 impl MetastoreError {

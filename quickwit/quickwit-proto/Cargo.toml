@@ -36,7 +36,7 @@ utoipa = { workspace = true }
 zstd = { workspace = true }
 
 quickwit-actors = { workspace = true }
-quickwit-auth = { workspace = true }
+quickwit-authorize = { workspace = true }
 quickwit-common = { workspace = true }
 
 [dev-dependencies]
@@ -53,4 +53,4 @@ quickwit-codegen = { workspace = true }
 [features]
 postgres = ["sea-query", "sqlx"]
 testsuite = ["mockall", "futures"]
-enterprise = [ "quickwit-auth/enterprise"]
+enterprise = [ "quickwit-authorize/enterprise"]

@@ -15,15 +15,15 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-use quickwit_auth::{Authorization, AuthorizationError, AuthorizationToken, StreamAuthorization};
+use quickwit_authorize::{Authorization, AuthorizationError, AuthorizationToken, StreamAuthorization};
 
 use crate::{GoodbyeRequest, HelloRequest, PingRequest};
 
 impl Authorization for HelloRequest {
     fn attenuate(
         &self,
-        auth_token: quickwit_auth::AuthorizationToken,
-    ) -> Result<quickwit_auth::AuthorizationToken, AuthorizationError> {
+        auth_token: AuthorizationToken,
+    ) -> Result<AuthorizationToken, AuthorizationError> {
         Ok(auth_token)
     }
 }
@@ -31,7 +31,7 @@ impl Authorization for HelloRequest {
 impl Authorization for GoodbyeRequest {
     fn attenuate(
         &self,
-        auth_token: quickwit_auth::AuthorizationToken,
+        auth_token: AuthorizationToken,
     ) -> Result<AuthorizationToken, AuthorizationError> {
         Ok(auth_token)
     }
@@ -39,7 +39,7 @@ impl Authorization for GoodbyeRequest {
 
 impl StreamAuthorization for PingRequest {
     fn attenuate(
-        auth_token: quickwit_auth::AuthorizationToken,
+        auth_token: AuthorizationToken,
     ) -> Result<AuthorizationToken, AuthorizationError> {
         Ok(auth_token)
     }

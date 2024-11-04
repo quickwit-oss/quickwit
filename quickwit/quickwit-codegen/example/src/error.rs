@@ -20,7 +20,7 @@
 use std::fmt;
 
 use quickwit_actors::AskError;
-use quickwit_auth::AuthorizationError;
+use quickwit_authorize::AuthorizationError;
 use quickwit_proto::error::GrpcServiceError;
 pub use quickwit_proto::error::{grpc_error_to_grpc_status, grpc_status_to_service_error};
 use quickwit_proto::{ServiceError, ServiceErrorCode};

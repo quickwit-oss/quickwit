@@ -23,7 +23,7 @@ use std::fmt::Debug;
 
 use anyhow::Context;
 use quickwit_actors::AskError;
-use quickwit_auth::AuthorizationError;
+use quickwit_authorize::AuthorizationError;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tonic::metadata::BinaryMetadataValue;

@@ -2,7 +2,7 @@ use std::time::{Duration, SystemTime};
 
 use biscuit_auth::builder_ext::BuilderExt;
 use biscuit_auth::macros::*;
-use quickwit_auth::{Authorization, AuthorizationError, AuthorizationToken, StreamAuthorization};
+use quickwit_authorize::::{Authorization, AuthorizationError, AuthorizationToken, StreamAuthorization};
 
 use crate::cluster::FetchClusterStateRequest;
 use crate::control_plane::{AdviseResetShardsRequest, GetOrCreateOpenShardsRequest};

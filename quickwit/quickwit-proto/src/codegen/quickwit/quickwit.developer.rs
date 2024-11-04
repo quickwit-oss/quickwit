@@ -446,7 +446,9 @@ where
         &self,
         request: GetDebugInfoRequest,
     ) -> crate::developer::DeveloperResult<GetDebugInfoResponse> {
-        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
+        let tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(
+            request,
+        )?;
         self.inner
             .clone()
             .get_debug_info(tonic_request)
@@ -479,8 +481,8 @@ for DeveloperServiceGrpcServerAdapter {
         &self,
         request: tonic::Request<GetDebugInfoRequest>,
     ) -> Result<tonic::Response<GetDebugInfoResponse>, tonic::Status> {
-        let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        quickwit_auth::execute_with_authorization(
+        let auth_token = quickwit_authorize::get_auth_token(request.metadata())?;
+        quickwit_authorize::execute_with_authorization(
                 auth_token,
                 self.inner.0.get_debug_info(request.into_inner()),
             )

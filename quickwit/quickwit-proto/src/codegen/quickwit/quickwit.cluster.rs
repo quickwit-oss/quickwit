@@ -510,7 +510,9 @@ where
         &self,
         request: FetchClusterStateRequest,
     ) -> crate::cluster::ClusterResult<FetchClusterStateResponse> {
-        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
+        let tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(
+            request,
+        )?;
         self.inner
             .clone()
             .fetch_cluster_state(tonic_request)
@@ -543,8 +545,8 @@ for ClusterServiceGrpcServerAdapter {
         &self,
         request: tonic::Request<FetchClusterStateRequest>,
     ) -> Result<tonic::Response<FetchClusterStateResponse>, tonic::Status> {
-        let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        quickwit_auth::execute_with_authorization(
+        let auth_token = quickwit_authorize::get_auth_token(request.metadata())?;
+        quickwit_authorize::execute_with_authorization(
                 auth_token,
                 self.inner.0.fetch_cluster_state(request.into_inner()),
             )

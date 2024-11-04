@@ -572,7 +572,9 @@ where
         &self,
         request: IngestRequestV2,
     ) -> crate::ingest::IngestV2Result<IngestResponseV2> {
-        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
+        let tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(
+            request,
+        )?;
         self.inner
             .clone()
             .ingest(tonic_request)
@@ -605,8 +607,8 @@ for IngestRouterServiceGrpcServerAdapter {
         &self,
         request: tonic::Request<IngestRequestV2>,
     ) -> Result<tonic::Response<IngestResponseV2>, tonic::Status> {
-        let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        quickwit_auth::execute_with_authorization(
+        let auth_token = quickwit_authorize::get_auth_token(request.metadata())?;
+        quickwit_authorize::execute_with_authorization(
                 auth_token,
                 self.inner.0.ingest(request.into_inner()),
             )

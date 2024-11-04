@@ -42,5 +42,5 @@ pub enum MetastoreResolverError {
 
     /// The requested operation is not authorized.
     #[error("unauthorized: `{0}`")]
-    Unauthorized(#[from] quickwit_auth::AuthorizationError),
+    Unauthorized(#[from] quickwit_authorize::AuthorizationError),
 }

@@ -2044,7 +2044,9 @@ where
         &self,
         request: PersistRequest,
     ) -> crate::ingest::IngestV2Result<PersistResponse> {
-        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
+        let tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(
+            request,
+        )?;
         self.inner
             .clone()
             .persist(tonic_request)
@@ -2059,7 +2061,7 @@ where
         &self,
         request: quickwit_common::ServiceStream<SynReplicationMessage>,
     ) -> crate::ingest::IngestV2Result<IngesterServiceStream<AckReplicationMessage>> {
-        let tonic_request = quickwit_auth::build_tonic_stream_request_with_auth_token(
+        let tonic_request = quickwit_authorize::build_tonic_stream_request_with_auth_token(
             request,
         )?;
         self.inner
@@ -2084,7 +2086,9 @@ where
         &self,
         request: OpenFetchStreamRequest,
     ) -> crate::ingest::IngestV2Result<IngesterServiceStream<FetchMessage>> {
-        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
+        let tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(
+            request,
+        )?;
         self.inner
             .clone()
             .open_fetch_stream(tonic_request)
@@ -2107,7 +2111,9 @@ where
         &self,
         request: OpenObservationStreamRequest,
     ) -> crate::ingest::IngestV2Result<IngesterServiceStream<ObservationMessage>> {
-        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
+        let tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(
+            request,
+        )?;
         self.inner
             .clone()
             .open_observation_stream(tonic_request)
@@ -2130,7 +2136,9 @@ where
         &self,
         request: InitShardsRequest,
     ) -> crate::ingest::IngestV2Result<InitShardsResponse> {
-        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
+        let tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(
+            request,
+        )?;
         self.inner
             .clone()
             .init_shards(tonic_request)
@@ -2145,7 +2153,9 @@ where
         &self,
         request: RetainShardsRequest,
     ) -> crate::ingest::IngestV2Result<RetainShardsResponse> {
-        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
+        let tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(
+            request,
+        )?;
         self.inner
             .clone()
             .retain_shards(tonic_request)
@@ -2160,7 +2170,9 @@ where
         &self,
         request: TruncateShardsRequest,
     ) -> crate::ingest::IngestV2Result<TruncateShardsResponse> {
-        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
+        let tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(
+            request,
+        )?;
         self.inner
             .clone()
             .truncate_shards(tonic_request)
@@ -2175,7 +2187,9 @@ where
         &self,
         request: CloseShardsRequest,
     ) -> crate::ingest::IngestV2Result<CloseShardsResponse> {
-        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
+        let tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(
+            request,
+        )?;
         self.inner
             .clone()
             .close_shards(tonic_request)
@@ -2190,7 +2204,9 @@ where
         &self,
         request: DecommissionRequest,
     ) -> crate::ingest::IngestV2Result<DecommissionResponse> {
-        let tonic_request = quickwit_auth::build_tonic_request_with_auth_token(request)?;
+        let tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(
+            request,
+        )?;
         self.inner
             .clone()
             .decommission(tonic_request)
@@ -2223,8 +2239,8 @@ for IngesterServiceGrpcServerAdapter {
         &self,
         request: tonic::Request<PersistRequest>,
     ) -> Result<tonic::Response<PersistResponse>, tonic::Status> {
-        let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        quickwit_auth::execute_with_authorization(
+        let auth_token = quickwit_authorize::get_auth_token(request.metadata())?;
+        quickwit_authorize::execute_with_authorization(
                 auth_token,
                 self.inner.0.persist(request.into_inner()),
             )
@@ -2239,8 +2255,8 @@ for IngesterServiceGrpcServerAdapter {
         &self,
         request: tonic::Request<tonic::Streaming<SynReplicationMessage>>,
     ) -> Result<tonic::Response<Self::OpenReplicationStreamStream>, tonic::Status> {
-        let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        quickwit_auth::execute_with_authorization(
+        let auth_token = quickwit_authorize::get_auth_token(request.metadata())?;
+        quickwit_authorize::execute_with_authorization(
                 auth_token,
                 self
                     .inner
@@ -2263,8 +2279,8 @@ for IngesterServiceGrpcServerAdapter {
         &self,
         request: tonic::Request<OpenFetchStreamRequest>,
     ) -> Result<tonic::Response<Self::OpenFetchStreamStream>, tonic::Status> {
-        let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        quickwit_auth::execute_with_authorization(
+        let auth_token = quickwit_authorize::get_auth_token(request.metadata())?;
+        quickwit_authorize::execute_with_authorization(
                 auth_token,
                 self.inner.0.open_fetch_stream(request.into_inner()),
             )
@@ -2281,8 +2297,8 @@ for IngesterServiceGrpcServerAdapter {
         &self,
         request: tonic::Request<OpenObservationStreamRequest>,
     ) -> Result<tonic::Response<Self::OpenObservationStreamStream>, tonic::Status> {
-        let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        quickwit_auth::execute_with_authorization(
+        let auth_token = quickwit_authorize::get_auth_token(request.metadata())?;
+        quickwit_authorize::execute_with_authorization(
                 auth_token,
                 self.inner.0.open_observation_stream(request.into_inner()),
             )
@@ -2296,8 +2312,8 @@ for IngesterServiceGrpcServerAdapter {
         &self,
         request: tonic::Request<InitShardsRequest>,
     ) -> Result<tonic::Response<InitShardsResponse>, tonic::Status> {
-        let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        quickwit_auth::execute_with_authorization(
+        let auth_token = quickwit_authorize::get_auth_token(request.metadata())?;
+        quickwit_authorize::execute_with_authorization(
                 auth_token,
                 self.inner.0.init_shards(request.into_inner()),
             )
@@ -2309,8 +2325,8 @@ for IngesterServiceGrpcServerAdapter {
         &self,
         request: tonic::Request<RetainShardsRequest>,
     ) -> Result<tonic::Response<RetainShardsResponse>, tonic::Status> {
-        let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        quickwit_auth::execute_with_authorization(
+        let auth_token = quickwit_authorize::get_auth_token(request.metadata())?;
+        quickwit_authorize::execute_with_authorization(
                 auth_token,
                 self.inner.0.retain_shards(request.into_inner()),
             )
@@ -2322,8 +2338,8 @@ for IngesterServiceGrpcServerAdapter {
         &self,
         request: tonic::Request<TruncateShardsRequest>,
     ) -> Result<tonic::Response<TruncateShardsResponse>, tonic::Status> {
-        let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        quickwit_auth::execute_with_authorization(
+        let auth_token = quickwit_authorize::get_auth_token(request.metadata())?;
+        quickwit_authorize::execute_with_authorization(
                 auth_token,
                 self.inner.0.truncate_shards(request.into_inner()),
             )
@@ -2335,8 +2351,8 @@ for IngesterServiceGrpcServerAdapter {
         &self,
         request: tonic::Request<CloseShardsRequest>,
     ) -> Result<tonic::Response<CloseShardsResponse>, tonic::Status> {
-        let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        quickwit_auth::execute_with_authorization(
+        let auth_token = quickwit_authorize::get_auth_token(request.metadata())?;
+        quickwit_authorize::execute_with_authorization(
                 auth_token,
                 self.inner.0.close_shards(request.into_inner()),
             )
@@ -2348,8 +2364,8 @@ for IngesterServiceGrpcServerAdapter {
         &self,
         request: tonic::Request<DecommissionRequest>,
     ) -> Result<tonic::Response<DecommissionResponse>, tonic::Status> {
-        let auth_token = quickwit_auth::get_auth_token(request.metadata())?;
-        quickwit_auth::execute_with_authorization(
+        let auth_token = quickwit_authorize::get_auth_token(request.metadata())?;
+        quickwit_authorize::execute_with_authorization(
                 auth_token,
                 self.inner.0.decommission(request.into_inner()),
             )

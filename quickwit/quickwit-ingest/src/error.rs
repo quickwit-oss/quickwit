@@ -21,7 +21,7 @@ use std::io;
 
 use mrecordlog::error::*;
 use quickwit_actors::AskError;
-use quickwit_auth::AuthorizationError;
+use quickwit_authorize::AuthorizationError;
 use quickwit_common::rate_limited_error;
 use quickwit_common::tower::BufferError;
 pub(crate) use quickwit_proto::error::{grpc_error_to_grpc_status, grpc_status_to_service_error};

@@ -2,7 +2,7 @@
 resolver = "2"
 members = [
   "quickwit-actors",
-  "quickwit-auth",
+  "quickwit-authorize",
   "quickwit-aws",
   "quickwit-cli",
   "quickwit-cluster",
@@ -42,7 +42,7 @@ members = [
 # from the default member to ease build/deps.
 default-members = [
   "quickwit-actors",
-  "quickwit-auth",
+  "quickwit-authorize",
   "quickwit-aws",
   "quickwit-cli",
   "quickwit-cluster",
@@ -305,7 +305,7 @@ opendal = { version = "0.44", default-features = false }
 reqsign = { version = "0.14", default-features = false }
 
 quickwit-actors = { path = "quickwit-actors" }
-quickwit-auth = { path = "quickwit-auth" }
+quickwit-authorize = { path = "quickwit-authorize" }
 quickwit-aws = { path = "quickwit-aws" }
 quickwit-cli = { path = "quickwit-cli" }
 quickwit-cluster = { path = "quickwit-cluster" }
