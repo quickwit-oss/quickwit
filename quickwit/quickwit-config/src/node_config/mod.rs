@@ -314,6 +314,13 @@ impl SearcherConfig {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AuthorizationConfigBuilder {
+    pub root_key: String,
+    pub node_token: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct IngestApiConfig {
     pub max_queue_memory_usage: ByteSize,

@@ -9,10 +9,12 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
+anyhow = { workspace = true, optional = true }
 tower = { workspace = true}
 biscuit-auth = { workspace = true, optional=true }
 futures = { workspace = true }
 http = { workspace = true }
+tokio-inherit-task-local = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 tonic = { workspace = true }
@@ -23,4 +25,4 @@ pin-project = { workspace = true }
 quickwit-common = { workspace = true }
 
 [features]
-enterprise = ["biscuit-auth"]
+enterprise = ["dep:biscuit-auth", "dep:anyhow"]

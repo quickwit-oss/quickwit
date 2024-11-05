@@ -757,7 +757,7 @@ where
         &self,
         request: quickwit_common::ServiceStream<PingRequest>,
     ) -> crate::HelloResult<HelloStream<PingResponse>> {
-        let tonic_request = quickwit_authorize::build_tonic_stream_request_with_auth_token(
+        let tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(
             request,
         )?;
         self.inner
@@ -814,7 +814,7 @@ impl hello_grpc_server::HelloGrpc for HelloGrpcServerAdapter {
         &self,
         request: tonic::Request<HelloRequest>,
     ) -> Result<tonic::Response<HelloResponse>, tonic::Status> {
-        let auth_token = quickwit_authorize::get_auth_token(request.metadata())?;
+        let auth_token = quickwit_authorize::extract_auth_token(request.metadata())?;
         quickwit_authorize::execute_with_authorization(
                 auth_token,
                 self.inner.0.hello(request.into_inner()),
@@ -827,7 +827,7 @@ impl hello_grpc_server::HelloGrpc for HelloGrpcServerAdapter {
         &self,
         request: tonic::Request<GoodbyeRequest>,
     ) -> Result<tonic::Response<GoodbyeResponse>, tonic::Status> {
-        let auth_token = quickwit_authorize::get_auth_token(request.metadata())?;
+        let auth_token = quickwit_authorize::extract_auth_token(request.metadata())?;
         quickwit_authorize::execute_with_authorization(
                 auth_token,
                 self.inner.0.goodbye(request.into_inner()),
@@ -841,7 +841,7 @@ impl hello_grpc_server::HelloGrpc for HelloGrpcServerAdapter {
         &self,
         request: tonic::Request<tonic::Streaming<PingRequest>>,
     ) -> Result<tonic::Response<Self::PingStream>, tonic::Status> {
-        let auth_token = quickwit_authorize::get_auth_token(request.metadata())?;
+        let auth_token = quickwit_authorize::extract_auth_token(request.metadata())?;
         quickwit_authorize::execute_with_authorization(
                 auth_token,
                 self

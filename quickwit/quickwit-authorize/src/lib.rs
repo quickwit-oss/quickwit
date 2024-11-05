@@ -17,14 +17,12 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-mod authorization_layer;
-
 #[cfg(not(feature = "enterprise"))]
-#[path = "community.rs"]
+#[path = "community/mod.rs"]
 mod implementation;
 
 #[cfg(feature = "enterprise")]
-#[path = "enterprise.rs"]
+#[path = "enterprise/mod.rs"]
 mod implementation;
 
 pub use implementation::*;

@@ -35,6 +35,7 @@ tracing = { workspace = true }
 utoipa = { workspace = true }
 vrl = { workspace = true, optional = true }
 
+quickwit-authorize = { workspace = true, optional = true }
 quickwit-common = { workspace = true }
 quickwit-doc-mapper = { workspace = true }
 quickwit-license = { workspace = true, optional = true }
@@ -49,4 +50,4 @@ quickwit-proto = { workspace = true, features = ["testsuite"] }
 [features]
 testsuite = []
 vrl = ["dep:vrl"]
-enterprise = ["quickwit-license"]
+enterprise = ["dep:quickwit-authorize", "dep:quickwit-license", ]

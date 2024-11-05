@@ -481,7 +481,7 @@ for DeveloperServiceGrpcServerAdapter {
         &self,
         request: tonic::Request<GetDebugInfoRequest>,
     ) -> Result<tonic::Response<GetDebugInfoResponse>, tonic::Status> {
-        let auth_token = quickwit_authorize::get_auth_token(request.metadata())?;
+        let auth_token = quickwit_authorize::extract_auth_token(request.metadata())?;
         quickwit_authorize::execute_with_authorization(
                 auth_token,
                 self.inner.0.get_debug_info(request.into_inner()),

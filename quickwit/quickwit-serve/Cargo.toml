@@ -50,6 +50,7 @@ warp = { workspace = true }
 zstd = { workspace = true }
 
 quickwit-actors = { workspace = true }
+quickwit-authorize = { workspace = true, features = ["enterprise"], optional = true }
 quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
@@ -97,4 +98,5 @@ quickwit-storage = { workspace = true, features = ["testsuite"] }
 pprof = [
   "dep:pprof"
 ]
+enterprise = ["dep:quickwit-authorize"]
 testsuite = []

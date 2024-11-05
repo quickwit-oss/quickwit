@@ -213,6 +213,15 @@ pub fn num_cpus() -> usize {
     }
 }
 
+pub fn spawn_inherit_task_local<F>(future: F) -> tokio::task::JoinHandle<F::Output>
+where
+    F: Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    use tokio_inherit_task_local::FutureInheritTaskLocal;
+    tokio::task::spawn(future.inherit_task_local())
+}
+
 // The following are helpers to build named tasks.
 //
 // Named tasks require the tokio feature `tracing` to be enabled.

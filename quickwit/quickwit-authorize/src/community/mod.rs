@@ -44,7 +44,7 @@ pub trait StreamAuthorization {
 
 impl<T> StreamAuthorization for T {}
 
-pub fn get_auth_token(
+pub fn extract_auth_token(
     _req_metadata: &tonic::metadata::MetadataMap,
 ) -> Result<AuthorizationToken, AuthorizationError> {
     Ok(())
@@ -61,12 +61,6 @@ pub fn authorize<R: Authorization>(
     _auth_token: &AuthorizationToken,
 ) -> Result<(), AuthorizationError> {
     Ok(())
-}
-
-pub fn build_tonic_stream_request_with_auth_token<R>(
-    req: R,
-) -> Result<tonic::Request<R>, AuthorizationError> {
-    Ok(tonic::Request::new(req))
 }
 
 pub fn build_tonic_request_with_auth_token<R: Authorization>(

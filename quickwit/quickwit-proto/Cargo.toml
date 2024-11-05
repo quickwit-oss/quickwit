@@ -12,6 +12,7 @@ license.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
+biscuit-auth = { workspace = true, optional = true }
 bytes = { workspace = true }
 bytesize = { workspace = true }
 bytestring = { workspace = true }
@@ -53,4 +54,4 @@ quickwit-codegen = { workspace = true }
 [features]
 postgres = ["sea-query", "sqlx"]
 testsuite = ["mockall", "futures"]
-enterprise = [ "quickwit-authorize/enterprise"]
+enterprise = [ "quickwit-authorize/enterprise", "dep:biscuit-auth"]

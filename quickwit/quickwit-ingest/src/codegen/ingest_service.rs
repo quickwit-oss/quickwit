@@ -881,7 +881,7 @@ impl ingest_service_grpc_server::IngestServiceGrpc for IngestServiceGrpcServerAd
         &self,
         request: tonic::Request<IngestRequest>,
     ) -> Result<tonic::Response<IngestResponse>, tonic::Status> {
-        let auth_token = quickwit_authorize::get_auth_token(request.metadata())?;
+        let auth_token = quickwit_authorize::extract_auth_token(request.metadata())?;
         quickwit_authorize::execute_with_authorization(
                 auth_token,
                 self.inner.0.ingest(request.into_inner()),
@@ -894,7 +894,7 @@ impl ingest_service_grpc_server::IngestServiceGrpc for IngestServiceGrpcServerAd
         &self,
         request: tonic::Request<FetchRequest>,
     ) -> Result<tonic::Response<FetchResponse>, tonic::Status> {
-        let auth_token = quickwit_authorize::get_auth_token(request.metadata())?;
+        let auth_token = quickwit_authorize::extract_auth_token(request.metadata())?;
         quickwit_authorize::execute_with_authorization(
                 auth_token,
                 self.inner.0.fetch(request.into_inner()),
@@ -907,7 +907,7 @@ impl ingest_service_grpc_server::IngestServiceGrpc for IngestServiceGrpcServerAd
         &self,
         request: tonic::Request<TailRequest>,
     ) -> Result<tonic::Response<FetchResponse>, tonic::Status> {
-        let auth_token = quickwit_authorize::get_auth_token(request.metadata())?;
+        let auth_token = quickwit_authorize::extract_auth_token(request.metadata())?;
         quickwit_authorize::execute_with_authorization(
                 auth_token,
                 self.inner.0.tail(request.into_inner()),

@@ -19,26 +19,43 @@
 // components are licensed under the original license provided by the owner of the
 // applicable component.
 
+mod authorization_layer;
+mod authorization_token_extraction_layer;
+
 use std::future::Future;
 use std::str::FromStr;
 use std::sync::{Arc, OnceLock};
 
+use anyhow::Context;
+pub use authorization_layer::AuthorizationLayer;
+pub use authorization_token_extraction_layer::AuthorizationTokenExtractionLayer;
 use biscuit_auth::macros::authorizer;
 use biscuit_auth::{Authorizer, Biscuit, RootKeyProvider};
+use tokio::task::futures::TaskLocalFuture;
+use tokio_inherit_task_local::TaskLocalInheritableTable;
+use tracing::info;
 
 use crate::AuthorizationError;
 
-pub struct AuthorizationToken(Biscuit);
+tokio_inherit_task_local::inheritable_task_local! {
+    pub static AUTHORIZATION_TOKEN: AuthorizationToken;
+}
+
+static ROOT_KEY_PROVIDER: OnceLock<Arc<dyn RootKeyProvider + Sync + Send>> = OnceLock::new();
+static NODE_TOKEN: OnceLock<AuthorizationToken> = OnceLock::new();
+
+#[derive(Clone)]
+pub struct AuthorizationToken(Arc<Biscuit>);
 
 impl AuthorizationToken {
-    pub fn into_biscuit(self) -> Biscuit {
-        self.0
+    pub fn into_biscuit(self) -> Arc<Biscuit> {
+        self.0.clone()
     }
 }
 
 impl From<Biscuit> for AuthorizationToken {
     fn from(biscuit: Biscuit) -> Self {
-        AuthorizationToken(biscuit)
+        AuthorizationToken(Arc::new(biscuit))
     }
 }
 
@@ -54,7 +71,22 @@ impl std::fmt::Debug for AuthorizationToken {
     }
 }
 
-static ROOT_KEY_PROVIDER: OnceLock<Arc<dyn RootKeyProvider + Sync + Send>> = OnceLock::new();
+pub fn set_node_token_hex(node_token_hex: &str) -> anyhow::Result<()> {
+    let node_token =
+        AuthorizationToken::from_str(node_token_hex).context("failed to set node token")?;
+    if NODE_TOKEN.set(node_token).is_err() {
+        tracing::error!("node token was already initialized");
+    }
+    Ok(())
+}
+
+pub fn set_root_public_key(root_key_hex: &str) -> anyhow::Result<()> {
+    let public_key = biscuit_auth::PublicKey::from_bytes_hex(root_key_hex)
+        .context("failed to parse root public key")?;
+    let key_provider: Arc<dyn RootKeyProvider + Sync + Send> = Arc::new(public_key);
+    set_root_key_provider(key_provider);
+    Ok(())
+}
 
 pub fn set_root_key_provider(key_provider: Arc<dyn RootKeyProvider + Sync + Send>) {
     if ROOT_KEY_PROVIDER.set(key_provider).is_err() {
@@ -75,12 +107,8 @@ impl FromStr for AuthorizationToken {
     fn from_str(token_base64: &str) -> Result<Self, AuthorizationError> {
         let root_key_provider = get_root_key_provider();
         let biscuit = Biscuit::from_base64(token_base64, root_key_provider)?;
-        Ok(AuthorizationToken(biscuit))
+        Ok(AuthorizationToken::from(biscuit))
     }
-}
-
-tokio::task_local! {
-    pub static AUTHORIZATION_TOKEN: AuthorizationToken;
 }
 
 const AUTHORIZATION_VALUE_PREFIX: &str = "Bearer ";
@@ -146,7 +174,17 @@ impl From<biscuit_auth::error::Token> for AuthorizationError {
     }
 }
 
-pub fn get_auth_token(
+pub fn get_auth_token_from_str(
+    authorization_header_value: &str,
+) -> Result<AuthorizationToken, AuthorizationError> {
+    let authorization_token_str: &str = authorization_header_value
+        .strip_prefix(AUTHORIZATION_VALUE_PREFIX)
+        .ok_or(AuthorizationError::InvalidToken)?;
+    let biscuit: Biscuit = Biscuit::from_base64(authorization_token_str, get_root_key_provider())?;
+    Ok(AuthorizationToken::from(biscuit))
+}
+
+pub fn extract_auth_token(
     req_metadata: &tonic::metadata::MetadataMap,
 ) -> Result<AuthorizationToken, AuthorizationError> {
     let authorization_header_value: &str = req_metadata
@@ -154,11 +192,7 @@ pub fn get_auth_token(
         .ok_or(AuthorizationError::AuthorizationTokenMissing)?
         .to_str()
         .map_err(|_| AuthorizationError::InvalidToken)?;
-    let authorization_token_str: &str = authorization_header_value
-        .strip_prefix(AUTHORIZATION_VALUE_PREFIX)
-        .ok_or(AuthorizationError::InvalidToken)?;
-    let biscuit: Biscuit = Biscuit::from_base64(authorization_token_str, get_root_key_provider())?;
-    Ok(AuthorizationToken(biscuit))
+    get_auth_token_from_str(authorization_header_value)
 }
 
 pub fn set_auth_token(
@@ -182,28 +216,22 @@ pub fn authorize<R: Authorization>(
     Ok(())
 }
 
-pub fn build_tonic_stream_request_with_auth_token<R>(
-    req: R,
-) -> Result<tonic::Request<R>, AuthorizationError> {
+fn get_auth_token() -> Option<AuthorizationToken> {
     AUTHORIZATION_TOKEN
-        .try_with(|token| {
-            let mut request = tonic::Request::new(req);
-            set_auth_token(token, request.metadata_mut());
-            Ok(request)
-        })
-        .unwrap_or(Err(AuthorizationError::AuthorizationTokenMissing))
+        .try_with(|auth_token| auth_token.clone())
+        .ok()
+        .or_else(|| NODE_TOKEN.get().cloned())
 }
 
-pub fn build_tonic_request_with_auth_token<R: Authorization>(
+pub fn build_tonic_request_with_auth_token<R>(
     req: R,
 ) -> Result<tonic::Request<R>, AuthorizationError> {
-    AUTHORIZATION_TOKEN
-        .try_with(|token| {
-            let mut request = tonic::Request::new(req);
-            set_auth_token(token, request.metadata_mut());
-            Ok(request)
-        })
-        .unwrap_or(Err(AuthorizationError::AuthorizationTokenMissing))
+    let Some(authorization_token) = get_auth_token() else {
+        return Err(AuthorizationError::AuthorizationTokenMissing);
+    };
+    let mut tonic_request = tonic::Request::new(req);
+    set_auth_token(&authorization_token, tonic_request.metadata_mut());
+    Ok(tonic_request)
 }
 
 pub fn authorize_stream<R: StreamAuthorization>(
@@ -216,15 +244,17 @@ pub fn authorize_stream<R: StreamAuthorization>(
 }
 
 pub fn authorize_request<R: Authorization>(req: &R) -> Result<(), AuthorizationError> {
-    AUTHORIZATION_TOKEN
+    let res = AUTHORIZATION_TOKEN
         .try_with(|auth_token| authorize(req, auth_token))
-        .unwrap_or(Err(AuthorizationError::AuthorizationTokenMissing))
+        .unwrap_or(Err(AuthorizationError::AuthorizationTokenMissing));
+    info!("request authorization");
+    res
 }
 
 pub fn execute_with_authorization<F, O>(
     token: AuthorizationToken,
     f: F,
-) -> impl Future<Output = O>
+) -> TaskLocalFuture<TaskLocalInheritableTable, F>
 where
     F: Future<Output = O>,
 {
@@ -248,7 +278,7 @@ mod tests {
     #[test]
     fn test_auth_token_missing() {
         let req_metadata = tonic::metadata::MetadataMap::new();
-        let missing_error = get_auth_token(&req_metadata).unwrap_err();
+        let missing_error = extract_auth_token(&req_metadata).unwrap_err();
         assert!(matches!(
             missing_error,
             AuthorizationError::AuthorizationTokenMissing
@@ -262,7 +292,7 @@ mod tests {
             http::header::AUTHORIZATION.as_str(),
             "some_token".parse().unwrap(),
         );
-        let missing_error = get_auth_token(&req_metadata).unwrap_err();
+        let missing_error = extract_auth_token(&req_metadata).unwrap_err();
         assert!(matches!(missing_error, AuthorizationError::InvalidToken));
     }
 }
