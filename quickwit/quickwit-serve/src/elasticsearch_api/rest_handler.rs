@@ -90,6 +90,7 @@ pub fn es_compat_cluster_info_handler(
                 }))
             },
         )
+        .boxed()
 }
 
 /// GET or POST _elastic/_search
@@ -135,6 +136,7 @@ pub fn es_compat_delete_index_handler(
         .and(with_arg(index_service))
         .then(es_compat_delete_index)
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
+        .boxed()
 }
 
 /// GET _elastic/_stats
@@ -146,6 +148,7 @@ pub fn es_compat_stats_handler(
         .then(es_compat_stats)
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
         .recover(recover_fn)
+        .boxed()
 }
 
 /// GET _elastic/{index}/_stats
@@ -157,6 +160,7 @@ pub fn es_compat_index_stats_handler(
         .then(es_compat_index_stats)
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
         .recover(recover_fn)
+        .boxed()
 }
 
 /// GET _elastic/_cat/indices
@@ -168,6 +172,7 @@ pub fn es_compat_cat_indices_handler(
         .then(es_compat_cat_indices)
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
         .recover(recover_fn)
+        .boxed()
 }
 
 /// GET _elastic/_cat/indices/{index}
@@ -179,6 +184,7 @@ pub fn es_compat_index_cat_indices_handler(
         .then(es_compat_index_cat_indices)
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
         .recover(recover_fn)
+        .boxed()
 }
 
 /// GET  _elastic/_resolve/index/{index}
@@ -189,6 +195,7 @@ pub fn es_compat_resolve_index_handler(
         .and(with_arg(metastore_service))
         .then(es_compat_resolve_index)
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
+        .boxed()
 }
 
 /// GET or POST _elastic/{index}/_search
@@ -200,6 +207,7 @@ pub fn es_compat_index_search_handler(
         .then(es_compat_index_search)
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
         .recover(recover_fn)
+        .boxed()
 }
 
 /// GET or POST _elastic/{index}/_count
@@ -211,6 +219,7 @@ pub fn es_compat_index_count_handler(
         .then(es_compat_index_count)
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
         .recover(recover_fn)
+        .boxed()
 }
 
 /// POST _elastic/_msearch
@@ -228,6 +237,7 @@ pub fn es_compat_index_multi_search_handler(
             RestApiResponse::new(&result, status_code, BodyFormat::default())
         })
         .recover(recover_fn)
+        .boxed()
 }
 
 /// GET or POST _elastic/_search/scroll
@@ -239,6 +249,7 @@ pub fn es_compat_scroll_handler(
         .then(es_scroll)
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
         .recover(recover_fn)
+        .boxed()
 }
 
 fn build_request_for_es_api(

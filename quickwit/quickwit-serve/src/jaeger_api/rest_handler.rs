@@ -68,6 +68,7 @@ pub(crate) fn jaeger_api_handlers(
         .or(jaeger_traces_search_handler(jaeger_service_opt.clone()))
         .or(jaeger_traces_handler(jaeger_service_opt.clone()))
         .recover(recover_fn)
+        .boxed()
 }
 
 fn jaeger_api_path_filter() -> impl Filter<Extract = (Vec<String>,), Error = Rejection> + Clone {

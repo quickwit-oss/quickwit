@@ -62,6 +62,7 @@ where S: Service<R>
 }
 
 #[derive(Debug, Clone, Default)]
+#[allow(dead_code)]
 struct CounterLayer {
     counter: Arc<AtomicUsize>,
 }
@@ -77,6 +78,7 @@ impl<S> Layer<S> for CounterLayer {
     }
 }
 
+#[allow(dead_code)]
 fn spawn_ping_response_stream(
     mut request_stream: ServiceStream<PingRequest>,
 ) -> ServiceStream<HelloResult<PingResponse>> {
@@ -114,6 +116,7 @@ fn spawn_ping_response_stream(
 }
 
 #[derive(Debug, Clone, Default)]
+#[allow(dead_code)]
 struct HelloImpl {
     delay: Duration,
 }
