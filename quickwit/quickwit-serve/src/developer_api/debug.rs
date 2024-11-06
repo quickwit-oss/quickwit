@@ -25,7 +25,7 @@ use futures::StreamExt;
 use glob::{MatchOptions, Pattern as GlobPattern};
 use hyper::StatusCode;
 use quickwit_cluster::Cluster;
-use quickwit_config::service::QuickwitService;
+use quickwit_common::QuickwitService;
 use quickwit_proto::developer::{DeveloperService, DeveloperServiceClient, GetDebugInfoRequest};
 use quickwit_proto::types::{NodeId, NodeIdRef};
 use serde::Deserialize;

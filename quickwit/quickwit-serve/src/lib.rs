@@ -77,8 +77,7 @@ use quickwit_common::tower::{
     RateLimitLayer, RetryLayer, RetryPolicy, SmaRateEstimator, TimeoutLayer,
 };
 use quickwit_common::uri::Uri;
-use quickwit_common::{get_bool_from_env, spawn_named_task};
-use quickwit_config::service::QuickwitService;
+use quickwit_common::{get_bool_from_env, spawn_named_task, QuickwitService};
 use quickwit_config::{ClusterConfig, IngestApiConfig, NodeConfig};
 use quickwit_control_plane::control_plane::{ControlPlane, ControlPlaneEventSubscriber};
 use quickwit_control_plane::{IndexerNodeInfo, IndexerPool};

@@ -27,6 +27,7 @@ use std::str::FromStr;
 use std::sync::{Arc, OnceLock};
 
 use anyhow::Context;
+pub mod cli;
 pub use authorization_layer::AuthorizationLayer;
 pub use authorization_token_extraction_layer::AuthorizationTokenExtractionLayer;
 use biscuit_auth::macros::authorizer;
@@ -51,6 +52,16 @@ impl AuthorizationToken {
     pub fn into_biscuit(self) -> Arc<Biscuit> {
         self.0.clone()
     }
+
+    pub fn print(&self) -> anyhow::Result<()> {
+        let biscuit = &self.0;
+        for i in 0..biscuit.block_count() {
+            let block = biscuit.print_block_source(i)?;
+            println!("--- Block #{} ---", i + 1);
+            println!("{block}\n");
+        }
+        Ok(())
+    }
 }
 
 impl From<Biscuit> for AuthorizationToken {
@@ -61,7 +72,8 @@ impl From<Biscuit> for AuthorizationToken {
 
 impl std::fmt::Display for AuthorizationToken {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        self.0.fmt(f)
+        let token_base_64 = self.0.to_base64().map_err(|_err| std::fmt::Error)?;
+        token_base_64.fmt(f)
     }
 }
 
@@ -71,17 +83,19 @@ impl std::fmt::Debug for AuthorizationToken {
     }
 }
 
-pub fn set_node_token_hex(node_token_hex: &str) -> anyhow::Result<()> {
+pub fn set_node_token_base64(node_token_base64: &str) -> anyhow::Result<()> {
+    info!("set node token hex: {node_token_base64}");
     let node_token =
-        AuthorizationToken::from_str(node_token_hex).context("failed to set node token")?;
+        AuthorizationToken::from_str(node_token_base64).context("failed to set node token")?;
     if NODE_TOKEN.set(node_token).is_err() {
         tracing::error!("node token was already initialized");
     }
     Ok(())
 }
 
-pub fn set_root_public_key(root_key_hex: &str) -> anyhow::Result<()> {
-    let public_key = biscuit_auth::PublicKey::from_bytes_hex(root_key_hex)
+pub fn set_root_public_key(root_key_base64: &str) -> anyhow::Result<()> {
+    info!(root_key = root_key_base64, "setting root public key");
+    let public_key = biscuit_auth::PublicKey::from_bytes_hex(root_key_base64)
         .context("failed to parse root public key")?;
     let key_provider: Arc<dyn RootKeyProvider + Sync + Send> = Arc::new(public_key);
     set_root_key_provider(key_provider);
@@ -106,37 +120,82 @@ impl FromStr for AuthorizationToken {
 
     fn from_str(token_base64: &str) -> Result<Self, AuthorizationError> {
         let root_key_provider = get_root_key_provider();
-        let biscuit = Biscuit::from_base64(token_base64, root_key_provider)?;
+        let biscuit = Biscuit::from_base64(token_base64, root_key_provider)
+            .map_err(|_| AuthorizationError::InvalidToken)?;
         Ok(AuthorizationToken::from(biscuit))
     }
 }
 
 const AUTHORIZATION_VALUE_PREFIX: &str = "Bearer ";
 
-fn default_operation_authorizer<T: ?Sized>(
+fn default_authorizer(
+    request_family: RequestFamily,
     auth_token: &AuthorizationToken,
 ) -> Result<Authorizer, AuthorizationError> {
-    let request_type = std::any::type_name::<T>();
-    let operation: &str = request_type.strip_suffix("Request").unwrap();
+    let request_family_str = request_family.as_str();
+    info!(request = request_family_str, "authorize");
     let mut authorizer: Authorizer = authorizer!(
         r#"
-        operation({operation});
+        request({request_family_str});
+
+        right($request) <- role($role), role_right($role, $request);
+        right($request) <- service($service), service_right($service, $request);
+
+        service_right("control_plane", "index:read");
+        service_right("control_plane", "index:write");
+        service_right("control_plane", "index:admin");
+        service_right("control_plane", "cluster");
+
+        service_right("indexer", "index:write");
+        service_right("indexer", "index:read");
+        service_right("indexer", "cluster");
+
+        service_right("searcher", "cluster");
+
+        service_right("janitor", "index:read");
+        service_right("janitor", "cluster");
+        service_right("janitor", "index:write");
 
         // We generate the actual user role, by doing an union of the rights granted via roles.
-        user_right($operation) <- role($role), right($role, $operation);
-        user_right($operation, $resource) <- role($role), right($role, $operation, $resource);
-        user_right($operation) <- role("root"), operation($operation);
-        user_right($operation, $resource) <- role("root"), operation($operation), resource($resource);
+        // right($request) <- role($role), role_right($role, $request);
+        // right($operation, $resource) <- role($role), role_right($role, $operation, $resource);
+        // right($operation) <- role("root"), operation($operation);
+        // right($operation, $resource) <- role("root"), operation($operation), resource($resource);
+
 
         // Finally we check that we have access to index1 and index2.
-        check all operation($operation), right($operation);
+        check all request($operation), right($operation);
 
         allow if true;
     "#
     );
     authorizer.set_time();
-    authorizer.add_token(&auth_token.0)?;
+    auth_token.print().unwrap();
+    println!("{}", authorizer.print_world());
+    authorizer
+        .add_token(&auth_token.0)
+        .map_err(|_| AuthorizationError::PermissionDenied)?;
     Ok(authorizer)
+}
+
+#[derive(Default, Debug, Copy, Clone)]
+pub enum RequestFamily {
+    #[default]
+    IndexRead,
+    IndexWrite,
+    IndexAdmin,
+    Cluster,
+}
+
+impl RequestFamily {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::IndexRead => "index:read",
+            Self::IndexWrite => "index:write",
+            Self::IndexAdmin => "index:admin",
+            Self::Cluster => "cluster",
+        }
+    }
 }
 
 pub trait Authorization {
@@ -151,7 +210,11 @@ pub trait Authorization {
         &self,
         auth_token: &AuthorizationToken,
     ) -> Result<Authorizer, AuthorizationError> {
-        default_operation_authorizer::<Self>(auth_token)
+        default_authorizer(Self::request_family(), auth_token)
+    }
+
+    fn request_family() -> RequestFamily {
+        RequestFamily::default()
     }
 }
 
@@ -164,15 +227,20 @@ pub trait StreamAuthorization {
     fn authorizer(
         auth_token: &AuthorizationToken,
     ) -> std::result::Result<Authorizer, AuthorizationError> {
-        default_operation_authorizer::<Self>(&auth_token)
+        default_authorizer(Self::request_family(), &auth_token)
+    }
+
+    fn request_family() -> RequestFamily {
+        RequestFamily::IndexRead
     }
 }
 
-impl From<biscuit_auth::error::Token> for AuthorizationError {
-    fn from(_token_error: biscuit_auth::error::Token) -> AuthorizationError {
-        AuthorizationError::InvalidToken
-    }
-}
+// impl From<biscuit_auth::error::Token> for AuthorizationError {
+//     fn from(token_error: biscuit_auth::error::Token) -> AuthorizationError {
+//         error!(token_error=?token_error);
+//         AuthorizationError::InvalidToken
+//     }
+// }
 
 pub fn get_auth_token_from_str(
     authorization_header_value: &str,
@@ -180,7 +248,8 @@ pub fn get_auth_token_from_str(
     let authorization_token_str: &str = authorization_header_value
         .strip_prefix(AUTHORIZATION_VALUE_PREFIX)
         .ok_or(AuthorizationError::InvalidToken)?;
-    let biscuit: Biscuit = Biscuit::from_base64(authorization_token_str, get_root_key_provider())?;
+    let biscuit: Biscuit = Biscuit::from_base64(authorization_token_str, get_root_key_provider())
+        .map_err(|_| AuthorizationError::InvalidToken)?;
     Ok(AuthorizationToken::from(biscuit))
 }
 
@@ -211,8 +280,11 @@ pub fn authorize<R: Authorization>(
     auth_token: &AuthorizationToken,
 ) -> Result<(), AuthorizationError> {
     let mut authorizer = req.authorizer(auth_token)?;
-    authorizer.add_token(&auth_token.0)?;
-    authorizer.authorize()?;
+    info!("authorizer");
+    authorizer
+        .authorize()
+        .map_err(|_err| AuthorizationError::PermissionDenied)?;
+    info!("authorize done");
     Ok(())
 }
 
@@ -238,17 +310,24 @@ pub fn authorize_stream<R: StreamAuthorization>(
     auth_token: &AuthorizationToken,
 ) -> Result<(), AuthorizationError> {
     let mut authorizer = R::authorizer(auth_token)?;
-    authorizer.add_token(&auth_token.0)?;
-    authorizer.authorize()?;
+    authorizer
+        .add_token(&auth_token.0)
+        .map_err(|_| AuthorizationError::PermissionDenied)?;
+    authorizer
+        .authorize()
+        .map_err(|_| AuthorizationError::PermissionDenied)?;
     Ok(())
 }
 
 pub fn authorize_request<R: Authorization>(req: &R) -> Result<(), AuthorizationError> {
-    let res = AUTHORIZATION_TOKEN
-        .try_with(|auth_token| authorize(req, auth_token))
-        .unwrap_or(Err(AuthorizationError::AuthorizationTokenMissing));
     info!("request authorization");
-    res
+    let auth_token: AuthorizationToken = AUTHORIZATION_TOKEN
+        .try_with(|auth_token| auth_token.clone())
+        .ok()
+        .or_else(|| NODE_TOKEN.get().cloned())
+        .ok_or(AuthorizationError::AuthorizationTokenMissing)?;
+    info!(token=%auth_token, "auth token");
+    authorize(req, &auth_token)
 }
 
 pub fn execute_with_authorization<F, O>(

@@ -25,8 +25,8 @@ use std::time::Duration;
 use anyhow::{bail, Context};
 use http::HeaderMap;
 use quickwit_common::net::{find_private_ip, get_short_hostname, Host};
-use quickwit_common::new_coolid;
 use quickwit_common::uri::Uri;
+use quickwit_common::{new_coolid, QuickwitService};
 use quickwit_proto::types::NodeId;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
@@ -34,7 +34,6 @@ use tracing::{info, warn};
 use super::{GrpcConfig, RestConfig};
 use crate::config_value::ConfigValue;
 use crate::qw_env_vars::*;
-use crate::service::QuickwitService;
 use crate::storage_config::StorageConfigs;
 use crate::templating::render_config;
 use crate::{
@@ -372,11 +371,11 @@ impl NodeConfigBuilder {
             .or(self.authorization.root_public_key.as_ref())
             .context("root key undefined")?;
         quickwit_authorize::set_root_public_key(root_public_key)?;
-        let node_token_hex = env_vars
+        let node_token_base64 = env_vars
             .get("QW_AUTH_NODE_TOKEN")
             .or(self.authorization.node_token.as_ref())
             .context("root key undefined")?;
-        quickwit_authorize::set_node_token_hex(node_token_hex)?;
+        quickwit_authorize::set_node_token_base64(node_token_base64)?;
         Ok(())
     }
 }
@@ -435,6 +434,7 @@ impl Default for NodeConfigBuilder {
             ingest_api_config: IngestApiConfig::default(),
             jaeger_config: JaegerConfig::default(),
             license: license_opt,
+            authorization: AuthorizationConfigBuilder::default(),
         }
     }
 }

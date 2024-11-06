@@ -26,7 +26,7 @@ use bytes::Bytes;
 use bytesize::ByteSize;
 use quickwit_actors::Mailbox;
 use quickwit_cluster::Cluster;
-use quickwit_config::service::QuickwitService;
+use quickwit_common::QuickwitService;
 use quickwit_config::NodeConfig;
 use quickwit_control_plane::control_plane::{ControlPlane, GetDebugInfo};
 use quickwit_ingest::{IngestRouter, Ingester};

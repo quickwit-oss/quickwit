@@ -27,7 +27,7 @@ use futures::future::select;
 use itertools::Itertools;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::{Protocol, Uri};
-use quickwit_config::service::QuickwitService;
+use quickwit_common::QuickwitService;
 use quickwit_config::NodeConfig;
 use quickwit_serve::tcp_listener::DefaultTcpListenerResolver;
 use quickwit_serve::{serve_quickwit, BuildInfo, EnvFilterReloadFn};

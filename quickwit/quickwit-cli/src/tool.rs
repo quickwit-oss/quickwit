@@ -34,7 +34,7 @@ use quickwit_cluster::{ChannelTransport, Cluster, ClusterMember, FailureDetector
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::Uri;
-use quickwit_config::service::QuickwitService;
+use quickwit_common::QuickwitService;
 use quickwit_config::{
     IndexerConfig, NodeConfig, SourceConfig, SourceInputFormat, SourceParams, TransformConfig,
     VecSourceParams, CLI_SOURCE_ID,
@@ -66,7 +66,7 @@ use crate::{
 };
 
 pub fn build_tool_command() -> Command {
-    Command::new("tool")
+    let command = Command::new("tool")
         .about("Performs utility operations. Requires a node config.")
         .arg(config_cli_arg())
         .subcommand(
@@ -165,8 +165,24 @@ pub fn build_tool_command() -> Command {
                         .display_order(2)
                         .required(true),
                 ])
-            )
+            );
+    if cfg!(feature = "enterprise") {
+        command.subcommand(
+            Command::new("generate-auth-tokens")
+                .display_order(11)
+                .about("Generate authorization keys/tokens")
+                .args(&[
+                    arg!(--root <ROOT_PRIVATE_KEY> "Root private key. If absent, a key pair will generated")
+                        .display_order(1), //                       .required(false),
+                    arg!(--services <SERVICES> "Comma-separated list of services for which to generate authorization tokens")
+                        .num_args(0..)
+                        .display_order(2)
+                ])
+        )
         .arg_required_else_help(true)
+    } else {
+        command.arg_required_else_help(true)
+    }
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -225,6 +241,8 @@ pub enum ToolCliCommand {
     LocalSearch(LocalSearchArgs),
     Merge(MergeArgs),
     ExtractSplit(ExtractSplitArgs),
+    #[cfg(feature = "enterprise")]
+    GenerateAuthTokens(quickwit_authorize::cli::GenerateAuthTokensArgs),
 }
 
 impl ToolCliCommand {
@@ -238,6 +256,8 @@ impl ToolCliCommand {
             "local-search" => Self::parse_local_search_args(submatches),
             "merge" => Self::parse_merge_args(submatches),
             "extract-split" => Self::parse_extract_split_args(submatches),
+            #[cfg(feature = "enterprise")]
+            "generate-auth-tokens" => Self::parse_generate_auth_tokens_args(submatches),
             _ => bail!("unknown tool subcommand `{subcommand}`"),
         }
     }
@@ -388,6 +408,24 @@ impl ToolCliCommand {
         }))
     }
 
+    #[cfg(feature = "enterprise")]
+    fn parse_generate_auth_tokens_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
+        let root_private_key = matches.remove_one::<String>("root");
+        let services_opt = matches.remove_many::<String>("services");
+        let services = if let Some(services) = services_opt {
+            services.collect()
+        } else {
+            Vec::new()
+        };
+
+        Ok(Self::GenerateAuthTokens(
+            quickwit_authorize::cli::GenerateAuthTokensArgs {
+                root_private_key,
+                services,
+            },
+        ))
+    }
+
     pub async fn execute(self) -> anyhow::Result<()> {
         match self {
             Self::GarbageCollect(args) => garbage_collect_index_cli(args).await,
@@ -395,6 +433,10 @@ impl ToolCliCommand {
             Self::LocalSearch(args) => local_search_cli(args).await,
             Self::Merge(args) => merge_cli(args).await,
             Self::ExtractSplit(args) => extract_split_cli(args).await,
+            #[cfg(feature = "enterprise")]
+            Self::GenerateAuthTokens(args) => {
+                quickwit_authorize::cli::generate_auth_tokens_cli(args).await
+            }
         }
     }
 }

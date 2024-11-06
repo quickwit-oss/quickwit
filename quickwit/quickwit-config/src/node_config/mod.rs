@@ -32,13 +32,13 @@ use http::HeaderMap;
 use quickwit_common::net::HostAddr;
 use quickwit_common::shared_consts::DEFAULT_SHARD_THROUGHPUT_LIMIT;
 use quickwit_common::uri::Uri;
+use quickwit_common::QuickwitService;
 use quickwit_proto::indexing::CpuCapacity;
 use quickwit_proto::types::NodeId;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
 use crate::node_config::serialize::load_node_config_with_env;
-use crate::service::QuickwitService;
 use crate::storage_config::StorageConfigs;
 use crate::{ConfigFormat, MetastoreConfigs};
 

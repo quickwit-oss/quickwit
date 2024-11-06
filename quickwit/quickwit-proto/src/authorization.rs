@@ -4,7 +4,7 @@ pub use biscuit_auth;
 pub use biscuit_auth::builder_ext::BuilderExt;
 pub use biscuit_auth::macros::*;
 use quickwit_authorize::{
-    Authorization, AuthorizationError, AuthorizationToken, StreamAuthorization,
+    Authorization, AuthorizationError, AuthorizationToken, RequestFamily, StreamAuthorization,
 };
 
 use crate::cluster::FetchClusterStateRequest;
@@ -24,9 +24,17 @@ use crate::metastore::{
     PruneShardsRequest, PublishSplitsRequest, StageSplitsRequest, UpdateSplitsDeleteOpstampRequest,
 };
 
-impl Authorization for crate::metastore::AcquireShardsRequest {}
+impl Authorization for crate::metastore::AcquireShardsRequest {
+    fn request_family() -> RequestFamily {
+        RequestFamily::IndexWrite
+    }
+}
 
-impl Authorization for crate::metastore::AddSourceRequest {}
+impl Authorization for crate::metastore::AddSourceRequest {
+    fn request_family() -> RequestFamily {
+        RequestFamily::IndexAdmin
+    }
+}
 
 impl Authorization for crate::metastore::CreateIndexRequest {
     fn attenuate(
@@ -36,50 +44,136 @@ impl Authorization for crate::metastore::CreateIndexRequest {
         let mut builder = block!(r#"check if operation("create_index");"#);
         builder.check_expiration_date(SystemTime::now() + Duration::from_secs(60));
         let biscuit = auth_token.into_biscuit();
-        let new_auth_token = biscuit.append(builder)?;
+        let new_auth_token = biscuit
+            .append(builder)
+            .map_err(|_| AuthorizationError::PermissionDenied)?;
         Ok(AuthorizationToken::from(new_auth_token))
+    }
+
+    fn request_family() -> RequestFamily {
+        RequestFamily::IndexAdmin
     }
 }
 
-impl Authorization for crate::metastore::CreateIndexTemplateRequest {}
+impl Authorization for crate::metastore::CreateIndexTemplateRequest {
+    fn request_family() -> RequestFamily {
+        RequestFamily::IndexAdmin
+    }
+}
 
-impl Authorization for crate::metastore::DeleteIndexRequest {}
+impl Authorization for crate::metastore::DeleteIndexRequest {
+    fn request_family() -> RequestFamily {
+        RequestFamily::IndexAdmin
+    }
+}
 
-impl Authorization for crate::metastore::DeleteIndexTemplatesRequest {}
+impl Authorization for crate::metastore::DeleteIndexTemplatesRequest {
+    fn request_family() -> RequestFamily {
+        RequestFamily::IndexAdmin
+    }
+}
 
-impl Authorization for crate::metastore::DeleteShardsRequest {}
+impl Authorization for crate::metastore::DeleteShardsRequest {
+    fn request_family() -> RequestFamily {
+        RequestFamily::IndexAdmin
+    }
+}
 
-impl Authorization for crate::metastore::DeleteSourceRequest {}
+impl Authorization for crate::metastore::DeleteSourceRequest {
+    fn request_family() -> RequestFamily {
+        RequestFamily::IndexAdmin
+    }
+}
 
-impl Authorization for crate::metastore::DeleteSplitsRequest {}
+impl Authorization for crate::metastore::DeleteSplitsRequest {
+    fn request_family() -> RequestFamily {
+        RequestFamily::IndexAdmin
+    }
+}
 
-impl Authorization for crate::metastore::FindIndexTemplateMatchesRequest {}
+impl Authorization for crate::metastore::FindIndexTemplateMatchesRequest {
+    fn request_family() -> RequestFamily {
+        RequestFamily::IndexRead
+    }
+}
 
-impl Authorization for crate::metastore::IndexesMetadataRequest {}
+impl Authorization for crate::metastore::IndexesMetadataRequest {
+    fn request_family() -> RequestFamily {
+        RequestFamily::IndexRead
+    }
+}
 
-impl Authorization for crate::metastore::ToggleSourceRequest {}
+impl Authorization for crate::metastore::ToggleSourceRequest {
+    fn request_family() -> RequestFamily {
+        RequestFamily::IndexAdmin
+    }
+}
 
-impl Authorization for crate::metastore::MarkSplitsForDeletionRequest {}
+impl Authorization for crate::metastore::MarkSplitsForDeletionRequest {
+    fn request_family() -> RequestFamily {
+        RequestFamily::IndexWrite
+    }
+}
 
-impl Authorization for crate::metastore::ResetSourceCheckpointRequest {}
+impl Authorization for crate::metastore::ResetSourceCheckpointRequest {
+    fn request_family() -> RequestFamily {
+        RequestFamily::IndexAdmin
+    }
+}
 
-impl Authorization for crate::metastore::UpdateIndexRequest {}
+impl Authorization for crate::metastore::UpdateIndexRequest {
+    fn request_family() -> RequestFamily {
+        RequestFamily::IndexAdmin
+    }
+}
 
-impl Authorization for OpenObservationStreamRequest {}
+impl Authorization for OpenObservationStreamRequest {
+    fn request_family() -> RequestFamily {
+        RequestFamily::IndexWrite
+    }
+}
 
-impl Authorization for InitShardsRequest {}
+impl Authorization for InitShardsRequest {
+    fn request_family() -> RequestFamily {
+        RequestFamily::IndexWrite
+    }
+}
 
-impl Authorization for OpenShardsRequest {}
+impl Authorization for OpenShardsRequest {
+    fn request_family() -> RequestFamily {
+        RequestFamily::IndexWrite
+    }
+}
 
-impl Authorization for FetchClusterStateRequest {}
+impl Authorization for FetchClusterStateRequest {
+    fn request_family() -> RequestFamily {
+        RequestFamily::Cluster
+    }
+}
 
-impl Authorization for GetIndexTemplateRequest {}
+impl Authorization for GetIndexTemplateRequest {
+    fn request_family() -> RequestFamily {
+        RequestFamily::IndexRead
+    }
+}
 
-impl Authorization for ListIndexTemplatesRequest {}
+impl Authorization for ListIndexTemplatesRequest {
+    fn request_family() -> RequestFamily {
+        RequestFamily::IndexRead
+    }
+}
 
-impl Authorization for PruneShardsRequest {}
+impl Authorization for PruneShardsRequest {
+    fn request_family() -> RequestFamily {
+        RequestFamily::IndexRead
+    }
+}
 
-impl Authorization for ListShardsRequest {}
+impl Authorization for ListShardsRequest {
+    fn request_family() -> RequestFamily {
+        RequestFamily::IndexWrite
+    }
+}
 
 impl Authorization for ListStaleSplitsRequest {}
 

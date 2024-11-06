@@ -2460,26 +2460,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "enum-iterator"
-version = "1.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9fd242f399be1da0a5354aa462d57b4ab2b4ee0683cc552f7c007d2d12d36e94"
-dependencies = [
- "enum-iterator-derive",
-]
-
-[[package]]
-name = "enum-iterator-derive"
-version = "1.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a1ab991c1362ac86c61ab6f556cff143daa22e5a15e4e189df818b2fd19fe65b"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.86",
-]
-
-[[package]]
 name = "env_logger"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5975,6 +5955,7 @@ dependencies = [
  "biscuit-auth",
  "futures",
  "http 0.2.12",
+ "itertools 0.13.0",
  "pin-project",
  "quickwit-common",
  "serde",
@@ -6027,6 +6008,7 @@ dependencies = [
  "opentelemetry-otlp",
  "predicates 3.1.2",
  "quickwit-actors",
+ "quickwit-authorize",
  "quickwit-cluster",
  "quickwit-common",
  "quickwit-config",
@@ -6173,7 +6155,6 @@ dependencies = [
  "bytesize",
  "chrono",
  "cron",
- "enum-iterator",
  "http 0.2.12",
  "http-serde 1.1.3",
  "humantime",

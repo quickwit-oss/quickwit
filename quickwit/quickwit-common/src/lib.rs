@@ -21,6 +21,9 @@
 
 mod coolid;
 
+mod service;
+
+pub use service::QuickwitService;
 pub mod binary_heap;
 pub mod fs;
 pub mod io;

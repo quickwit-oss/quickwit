@@ -37,7 +37,7 @@ use chitchat::{ChitchatMessage, Serializable};
 pub use chitchat::{FailureDetectorConfig, KeyChangeEvent, ListenerHandle};
 pub use grpc_service::cluster_grpc_server;
 use quickwit_common::metrics::IntCounter;
-use quickwit_config::service::QuickwitService;
+use quickwit_common::QuickwitService;
 use quickwit_config::NodeConfig;
 use quickwit_proto::indexing::CpuCapacity;
 use time::OffsetDateTime;

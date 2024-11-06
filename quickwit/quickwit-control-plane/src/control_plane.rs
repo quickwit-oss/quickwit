@@ -36,8 +36,7 @@ use quickwit_cluster::{
 };
 use quickwit_common::pubsub::EventSubscriber;
 use quickwit_common::uri::Uri;
-use quickwit_common::{shared_consts, Progress};
-use quickwit_config::service::QuickwitService;
+use quickwit_common::{shared_consts, Progress, QuickwitService};
 use quickwit_config::{ClusterConfig, IndexConfig, IndexTemplate, SourceConfig};
 use quickwit_ingest::{IngesterPool, LocalShardsUpdate};
 use quickwit_metastore::{CreateIndexRequestExt, CreateIndexResponseExt, IndexMetadataResponseExt};
