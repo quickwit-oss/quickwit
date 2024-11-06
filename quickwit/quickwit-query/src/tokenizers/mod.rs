@@ -142,55 +142,40 @@ where T: Tokenizer
 
     // Required method
     fn token_stream<'a>(&'a mut self, text: &'a str) -> Self::TokenStream<'a> {
-        EmitEmptyStream {
-            inner: self.0.token_stream(text),
-            state: EmitEmptyState::Start,
+        if text.is_empty() {
+            EmitEmptyStream::Empty(true, Token::default())
+        } else {
+            EmitEmptyStream::Tokenizer(self.0.token_stream(text))
         }
     }
 }
 
-struct EmitEmptyStream<S> {
-    inner: S,
-    state: EmitEmptyState,
-}
-
-enum EmitEmptyState {
-    Start,
-    UsingInner,
-    EmitEmpty(Token),
+enum EmitEmptyStream<S> {
+    Empty(bool, Token),
+    Tokenizer(S),
 }
 
 impl<S> TokenStream for EmitEmptyStream<S>
 where S: TokenStream
 {
     fn advance(&mut self) -> bool {
-        match self.state {
-            EmitEmptyState::Start => {
-                if self.inner.advance() {
-                    self.state = EmitEmptyState::UsingInner;
-                } else {
-                    self.state = EmitEmptyState::EmitEmpty(Token::default());
-                }
-                true
-            }
-            EmitEmptyState::UsingInner => self.inner.advance(),
-            EmitEmptyState::EmitEmpty(_) => false,
+        match self {
+            EmitEmptyStream::Empty(ref mut should_emit, _) => std::mem::replace(should_emit, false),
+            EmitEmptyStream::Tokenizer(t) => t.advance(),
         }
     }
 
     fn token(&self) -> &Token {
-        match self.state {
-            EmitEmptyState::Start => unreachable!(),
-            EmitEmptyState::UsingInner => self.inner.token(),
-            EmitEmptyState::EmitEmpty(ref token) => token,
+        match self {
+            EmitEmptyStream::Empty(_, token) => token,
+            EmitEmptyStream::Tokenizer(t) => t.token(),
         }
     }
 
     fn token_mut(&mut self) -> &mut Token {
-        match self.state {
-            EmitEmptyState::Start => unreachable!(),
-            EmitEmptyState::UsingInner => self.inner.token_mut(),
-            EmitEmptyState::EmitEmpty(ref mut token) => token,
+        match self {
+            EmitEmptyStream::Empty(_, token) => token,
+            EmitEmptyStream::Tokenizer(t) => t.token_mut(),
         }
     }
 }
@@ -258,13 +243,9 @@ mod tests {
         }
 
         {
-            // this tokenizer as nothing, but we still want to emit one empty token
+            // this tokenizer as nothing, but isn't a strictly empty string
             let mut token_stream = default_tokenizer.token_stream(" : : ");
-            let mut tokens = Vec::new();
-            while let Some(token) = token_stream.next() {
-                tokens.push(token.text.to_string());
-            }
-            assert_eq!(tokens, vec![""])
+            assert!(token_stream.next().is_none())
         }
     }
 
