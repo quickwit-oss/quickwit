@@ -31,6 +31,7 @@ use once_cell::sync::OnceCell;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::spawn_named_task;
+use quickwit_config::RetentionPolicy;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_metastore::{SplitMetadata, StageSplitsRequestExt};
 use quickwit_proto::metastore::{MetastoreService, MetastoreServiceClient, StageSplitsRequest};
@@ -166,6 +167,7 @@ pub struct Uploader {
     uploader_type: UploaderType,
     metastore: MetastoreServiceClient,
     merge_policy: Arc<dyn MergePolicy>,
+    retention_policy: Option<RetentionPolicy>,
     split_store: IndexingSplitStore,
     split_update_mailbox: SplitsUpdateMailbox,
     max_concurrent_split_uploads: usize,
@@ -178,6 +180,7 @@ impl Uploader {
         uploader_type: UploaderType,
         metastore: MetastoreServiceClient,
         merge_policy: Arc<dyn MergePolicy>,
+        retention_policy: Option<RetentionPolicy>,
         split_store: IndexingSplitStore,
         split_update_mailbox: SplitsUpdateMailbox,
         max_concurrent_split_uploads: usize,
@@ -187,6 +190,7 @@ impl Uploader {
             uploader_type,
             metastore,
             merge_policy,
+            retention_policy,
             split_store,
             split_update_mailbox,
             max_concurrent_split_uploads,
@@ -300,6 +304,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
         let index_uid = batch.index_uid();
         let ctx_clone = ctx.clone();
         let merge_policy = self.merge_policy.clone();
+        let retention_policy = self.retention_policy.clone();
         debug!(split_ids=?split_ids, "start-stage-and-store-splits");
         let event_broker = self.event_broker.clone();
         spawn_named_task(
@@ -324,6 +329,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
                     )?;
                     let split_metadata = create_split_metadata(
                         &merge_policy,
+                        retention_policy.as_ref(),
                         &packaged_split.split_attrs,
                         packaged_split.tags.clone(),
                         split_streamer.footer_range.start..split_streamer.footer_range.end,
@@ -535,6 +541,7 @@ mod tests {
             UploaderType::IndexUploader,
             MetastoreServiceClient::from_mock(mock_metastore),
             merge_policy,
+            None,
             split_store,
             SplitsUpdateMailbox::Sequencer(sequencer_mailbox),
             4,
@@ -650,6 +657,7 @@ mod tests {
             UploaderType::IndexUploader,
             MetastoreServiceClient::from_mock(mock_metastore),
             merge_policy,
+            None,
             split_store,
             SplitsUpdateMailbox::Sequencer(sequencer_mailbox),
             4,
@@ -797,6 +805,7 @@ mod tests {
             UploaderType::IndexUploader,
             MetastoreServiceClient::from_mock(mock_metastore),
             merge_policy,
+            None,
             split_store,
             SplitsUpdateMailbox::Publisher(publisher_mailbox),
             4,
@@ -870,6 +879,7 @@ mod tests {
             UploaderType::IndexUploader,
             MetastoreServiceClient::from_mock(mock_metastore),
             default_merge_policy(),
+            None,
             split_store,
             SplitsUpdateMailbox::Sequencer(sequencer_mailbox),
             4,
@@ -974,6 +984,7 @@ mod tests {
             UploaderType::IndexUploader,
             MetastoreServiceClient::from_mock(mock_metastore),
             merge_policy,
+            None,
             split_store,
             SplitsUpdateMailbox::Publisher(publisher_mailbox),
             4,

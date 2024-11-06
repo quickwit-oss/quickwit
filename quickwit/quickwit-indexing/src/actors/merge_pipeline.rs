@@ -29,6 +29,7 @@ use quickwit_common::io::{IoControls, Limiter};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_common::KillSwitch;
+use quickwit_config::RetentionPolicy;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::{
     ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitMetadata,
@@ -286,6 +287,7 @@ impl MergePipeline {
             UploaderType::MergeUploader,
             self.params.metastore.clone(),
             self.params.merge_policy.clone(),
+            self.params.retention_policy.clone(),
             self.params.split_store.clone(),
             merge_publisher_mailbox.into(),
             self.params.max_concurrent_split_uploads,
@@ -572,6 +574,7 @@ pub struct MergePipelineParams {
     pub merge_scheduler_service: Mailbox<MergeSchedulerService>,
     pub split_store: IndexingSplitStore,
     pub merge_policy: Arc<dyn MergePolicy>,
+    pub retention_policy: Option<RetentionPolicy>,
     pub max_concurrent_split_uploads: usize, //< TODO share with the indexing pipeline.
     pub merge_io_throughput_limiter_opt: Option<Limiter>,
     pub event_broker: EventBroker,
@@ -635,6 +638,7 @@ mod tests {
             merge_scheduler_service: universe.get_or_spawn_one(),
             split_store,
             merge_policy: default_merge_policy(),
+            retention_policy: None,
             max_concurrent_split_uploads: 2,
             merge_io_throughput_limiter_opt: None,
             event_broker: Default::default(),
