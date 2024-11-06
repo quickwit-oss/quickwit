@@ -176,6 +176,7 @@ pub struct Uploader {
 }
 
 impl Uploader {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         uploader_type: UploaderType,
         metastore: MetastoreServiceClient,
