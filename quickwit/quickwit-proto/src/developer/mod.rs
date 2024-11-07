@@ -25,7 +25,7 @@ include!("../codegen/quickwit/quickwit.developer.rs");
 
 pub type DeveloperResult<T> = std::result::Result<T, DeveloperError>;
 
-#[derive(Debug, thiserror::Error, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, thiserror::Error, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DeveloperError {
     #[error("internal error: {0}")]

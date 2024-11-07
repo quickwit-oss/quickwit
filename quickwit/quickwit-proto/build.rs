@@ -184,7 +184,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tonic_build::configure()
         .enum_attribute(".", "#[serde(rename_all=\"snake_case\")]")
-        .type_attribute(".", "#[derive(Serialize, Deserialize, utoipa::ToSchema)]")
+        .type_attribute(
+            ".",
+            "#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]",
+        )
         .type_attribute("PartialHit", "#[derive(Eq, Hash)]")
         .type_attribute("PartialHit.sort_value", "#[derive(Copy)]")
         .type_attribute("SearchRequest", "#[derive(Eq, Hash)]")
@@ -214,7 +217,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let protos = find_protos("protos/third-party/opentelemetry");
     tonic_build::configure()
-        .type_attribute(".", "#[derive(Serialize, Deserialize)]")
+        .type_attribute(".", "#[derive(serde::Serialize, serde::Deserialize)]")
         .type_attribute("StatusCode", r#"#[serde(rename_all = "snake_case")]"#)
         .type_attribute(
             "ExportLogsServiceResponse",
