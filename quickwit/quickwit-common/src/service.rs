@@ -22,11 +22,11 @@ use std::fmt::Display;
 use std::str::FromStr;
 
 use anyhow::bail;
-use enum_iterator::{all, Sequence};
+// use enum_iterator::{all, Sequence};
 use itertools::Itertools;
 use serde::Serialize;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Sequence)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize)]
 #[serde(into = "&'static str")]
 pub enum QuickwitService {
     ControlPlane,
@@ -55,12 +55,20 @@ impl QuickwitService {
     }
 
     pub fn supported_services() -> HashSet<QuickwitService> {
-        all::<QuickwitService>().collect()
+        [
+            QuickwitService::ControlPlane,
+            QuickwitService::Indexer,
+            QuickwitService::Searcher,
+            QuickwitService::Janitor,
+            QuickwitService::Metastore,
+        ]
+        .into_iter()
+        .collect()
     }
 }
 
 impl Display for QuickwitService {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{}", self.as_str())
     }
 }

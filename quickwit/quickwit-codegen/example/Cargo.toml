@@ -27,6 +27,7 @@ tower = { workspace = true }
 utoipa = { workspace = true }
 
 quickwit-actors = { workspace = true }
+quickwit-authorize = { workspace = true }
 quickwit-common = { workspace = true }
 quickwit-proto = { workspace = true }
 
@@ -40,3 +41,4 @@ quickwit-codegen = { workspace = true }
 
 [features]
 testsuite = ["mockall"]
+enterprise = [ "quickwit-authorize/enterprise" ]

@@ -459,9 +459,12 @@ where
         &self,
         request: ApplyIndexingPlanRequest,
     ) -> crate::indexing::IndexingResult<ApplyIndexingPlanResponse> {
+        let tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(
+            request,
+        )?;
         self.inner
             .clone()
-            .apply_indexing_plan(request)
+            .apply_indexing_plan(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -491,9 +494,11 @@ for IndexingServiceGrpcServerAdapter {
         &self,
         request: tonic::Request<ApplyIndexingPlanRequest>,
     ) -> Result<tonic::Response<ApplyIndexingPlanResponse>, tonic::Status> {
-        self.inner
-            .0
-            .apply_indexing_plan(request.into_inner())
+        let auth_token = quickwit_authorize::extract_auth_token(request.metadata())?;
+        quickwit_authorize::execute_with_authorization(
+                auth_token,
+                self.inner.0.apply_indexing_plan(request.into_inner()),
+            )
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)

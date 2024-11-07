@@ -1685,6 +1685,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2459377285ad874054d797f3ccebf984978aa39129f6eafde5cdc8315b612f8"
 
 [[package]]
+name = "const-random"
+version = "0.1.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "87e00182fe74b066627d63b85fd550ac2998d4b0bd86bfed477a0ae4c7c71359"
+dependencies = [
+ "const-random-macro",
+]
+
+[[package]]
+name = "const-random-macro"
+version = "0.1.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f9d839f2a20b0aee515dc581a6172f2321f96cab76c1a38a4c584a194955390e"
+dependencies = [
+ "getrandom 0.2.15",
+ "once_cell",
+ "tiny-keccak",
+]
+
+[[package]]
 name = "constant_time_eq"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2437,26 +2457,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1cc3c5651fb62ab8aa3103998dade57efdd028544bd300516baa31840c252a83"
 dependencies = [
  "encoding_rs",
-]
-
-[[package]]
-name = "enum-iterator"
-version = "1.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9fd242f399be1da0a5354aa462d57b4ab2b4ee0683cc552f7c007d2d12d36e94"
-dependencies = [
- "enum-iterator-derive",
-]
-
-[[package]]
-name = "enum-iterator-derive"
-version = "1.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a1ab991c1362ac86c61ab6f556cff143daa22e5a15e4e189df818b2fd19fe65b"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.86",
 ]
 
 [[package]]
@@ -5948,6 +5948,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "quickwit-authorize"
+version = "0.8.0"
+dependencies = [
+ "anyhow",
+ "biscuit-auth",
+ "futures",
+ "http 0.2.12",
+ "itertools 0.13.0",
+ "pin-project",
+ "quickwit-common",
+ "serde",
+ "thiserror",
+ "tokio",
+ "tokio-inherit-task-local",
+ "tonic",
+ "tower",
+ "tracing",
+]
+
+[[package]]
 name = "quickwit-aws"
 version = "0.8.0"
 dependencies = [
@@ -5988,6 +6008,7 @@ dependencies = [
  "opentelemetry-otlp",
  "predicates 3.1.2",
  "quickwit-actors",
+ "quickwit-authorize",
  "quickwit-cluster",
  "quickwit-common",
  "quickwit-config",
@@ -6072,6 +6093,7 @@ dependencies = [
  "mockall",
  "prost 0.11.9",
  "quickwit-actors",
+ "quickwit-authorize",
  "quickwit-codegen",
  "quickwit-common",
  "quickwit-proto",
@@ -6116,6 +6138,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "tokio-inherit-task-local",
  "tokio-metrics",
  "tokio-stream",
  "tonic",
@@ -6132,7 +6155,6 @@ dependencies = [
  "bytesize",
  "chrono",
  "cron",
- "enum-iterator",
  "http 0.2.12",
  "http-serde 1.1.3",
  "humantime",
@@ -6140,6 +6162,7 @@ dependencies = [
  "json_comments",
  "new_string_template",
  "once_cell",
+ "quickwit-authorize",
  "quickwit-common",
  "quickwit-doc-mapper",
  "quickwit-license",
@@ -6350,6 +6373,7 @@ dependencies = [
  "once_cell",
  "prost 0.11.9",
  "quickwit-actors",
+ "quickwit-authorize",
  "quickwit-cluster",
  "quickwit-codegen",
  "quickwit-common",
@@ -6544,6 +6568,7 @@ dependencies = [
  "mockall",
  "once_cell",
  "ouroboros",
+ "quickwit-authorize",
  "quickwit-common",
  "quickwit-config",
  "quickwit-doc-mapper",
@@ -6601,6 +6626,7 @@ version = "0.8.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "biscuit-auth",
  "bytes",
  "bytesize",
  "bytestring",
@@ -6613,6 +6639,7 @@ dependencies = [
  "prost-build",
  "prost-types 0.11.9",
  "quickwit-actors",
+ "quickwit-authorize",
  "quickwit-codegen",
  "quickwit-common",
  "sea-query",
@@ -6751,6 +6778,7 @@ dependencies = [
  "prost 0.11.9",
  "prost-types 0.11.9",
  "quickwit-actors",
+ "quickwit-authorize",
  "quickwit-cluster",
  "quickwit-common",
  "quickwit-config",
@@ -8865,6 +8893,16 @@ dependencies = [
  "tokio-macros",
  "tracing",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "tokio-inherit-task-local"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d42db185acdff44279cff7f8765608129ae4a01a2f955008a4f96054c75e77ac"
+dependencies = [
+ "const-random",
+ "tokio",
 ]
 
 [[package]]

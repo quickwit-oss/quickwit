@@ -1633,9 +1633,12 @@ where
     ) -> crate::control_plane::ControlPlaneResult<
         super::metastore::CreateIndexResponse,
     > {
+        let tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(
+            request,
+        )?;
         self.inner
             .clone()
-            .create_index(request)
+            .create_index(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -1649,9 +1652,12 @@ where
     ) -> crate::control_plane::ControlPlaneResult<
         super::metastore::IndexMetadataResponse,
     > {
+        let tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(
+            request,
+        )?;
         self.inner
             .clone()
-            .update_index(request)
+            .update_index(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -1663,9 +1669,12 @@ where
         &self,
         request: super::metastore::DeleteIndexRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
+        let tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(
+            request,
+        )?;
         self.inner
             .clone()
-            .delete_index(request)
+            .delete_index(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -1677,9 +1686,12 @@ where
         &self,
         request: super::metastore::AddSourceRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
+        let tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(
+            request,
+        )?;
         self.inner
             .clone()
-            .add_source(request)
+            .add_source(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -1691,9 +1703,12 @@ where
         &self,
         request: super::metastore::ToggleSourceRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
+        let tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(
+            request,
+        )?;
         self.inner
             .clone()
-            .toggle_source(request)
+            .toggle_source(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -1705,9 +1720,12 @@ where
         &self,
         request: super::metastore::DeleteSourceRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
+        let tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(
+            request,
+        )?;
         self.inner
             .clone()
-            .delete_source(request)
+            .delete_source(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -1719,9 +1737,12 @@ where
         &self,
         request: GetOrCreateOpenShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<GetOrCreateOpenShardsResponse> {
+        let tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(
+            request,
+        )?;
         self.inner
             .clone()
-            .get_or_create_open_shards(request)
+            .get_or_create_open_shards(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -1733,9 +1754,12 @@ where
         &self,
         request: AdviseResetShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<AdviseResetShardsResponse> {
+        let tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(
+            request,
+        )?;
         self.inner
             .clone()
-            .advise_reset_shards(request)
+            .advise_reset_shards(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -1747,9 +1771,12 @@ where
         &self,
         request: super::metastore::PruneShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
+        let tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(
+            request,
+        )?;
         self.inner
             .clone()
-            .prune_shards(request)
+            .prune_shards(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -1779,9 +1806,11 @@ for ControlPlaneServiceGrpcServerAdapter {
         &self,
         request: tonic::Request<super::metastore::CreateIndexRequest>,
     ) -> Result<tonic::Response<super::metastore::CreateIndexResponse>, tonic::Status> {
-        self.inner
-            .0
-            .create_index(request.into_inner())
+        let auth_token = quickwit_authorize::extract_auth_token(request.metadata())?;
+        quickwit_authorize::execute_with_authorization(
+                auth_token,
+                self.inner.0.create_index(request.into_inner()),
+            )
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -1793,9 +1822,11 @@ for ControlPlaneServiceGrpcServerAdapter {
         tonic::Response<super::metastore::IndexMetadataResponse>,
         tonic::Status,
     > {
-        self.inner
-            .0
-            .update_index(request.into_inner())
+        let auth_token = quickwit_authorize::extract_auth_token(request.metadata())?;
+        quickwit_authorize::execute_with_authorization(
+                auth_token,
+                self.inner.0.update_index(request.into_inner()),
+            )
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -1804,9 +1835,11 @@ for ControlPlaneServiceGrpcServerAdapter {
         &self,
         request: tonic::Request<super::metastore::DeleteIndexRequest>,
     ) -> Result<tonic::Response<super::metastore::EmptyResponse>, tonic::Status> {
-        self.inner
-            .0
-            .delete_index(request.into_inner())
+        let auth_token = quickwit_authorize::extract_auth_token(request.metadata())?;
+        quickwit_authorize::execute_with_authorization(
+                auth_token,
+                self.inner.0.delete_index(request.into_inner()),
+            )
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -1815,9 +1848,11 @@ for ControlPlaneServiceGrpcServerAdapter {
         &self,
         request: tonic::Request<super::metastore::AddSourceRequest>,
     ) -> Result<tonic::Response<super::metastore::EmptyResponse>, tonic::Status> {
-        self.inner
-            .0
-            .add_source(request.into_inner())
+        let auth_token = quickwit_authorize::extract_auth_token(request.metadata())?;
+        quickwit_authorize::execute_with_authorization(
+                auth_token,
+                self.inner.0.add_source(request.into_inner()),
+            )
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -1826,9 +1861,11 @@ for ControlPlaneServiceGrpcServerAdapter {
         &self,
         request: tonic::Request<super::metastore::ToggleSourceRequest>,
     ) -> Result<tonic::Response<super::metastore::EmptyResponse>, tonic::Status> {
-        self.inner
-            .0
-            .toggle_source(request.into_inner())
+        let auth_token = quickwit_authorize::extract_auth_token(request.metadata())?;
+        quickwit_authorize::execute_with_authorization(
+                auth_token,
+                self.inner.0.toggle_source(request.into_inner()),
+            )
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -1837,9 +1874,11 @@ for ControlPlaneServiceGrpcServerAdapter {
         &self,
         request: tonic::Request<super::metastore::DeleteSourceRequest>,
     ) -> Result<tonic::Response<super::metastore::EmptyResponse>, tonic::Status> {
-        self.inner
-            .0
-            .delete_source(request.into_inner())
+        let auth_token = quickwit_authorize::extract_auth_token(request.metadata())?;
+        quickwit_authorize::execute_with_authorization(
+                auth_token,
+                self.inner.0.delete_source(request.into_inner()),
+            )
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -1848,9 +1887,11 @@ for ControlPlaneServiceGrpcServerAdapter {
         &self,
         request: tonic::Request<GetOrCreateOpenShardsRequest>,
     ) -> Result<tonic::Response<GetOrCreateOpenShardsResponse>, tonic::Status> {
-        self.inner
-            .0
-            .get_or_create_open_shards(request.into_inner())
+        let auth_token = quickwit_authorize::extract_auth_token(request.metadata())?;
+        quickwit_authorize::execute_with_authorization(
+                auth_token,
+                self.inner.0.get_or_create_open_shards(request.into_inner()),
+            )
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -1859,9 +1900,11 @@ for ControlPlaneServiceGrpcServerAdapter {
         &self,
         request: tonic::Request<AdviseResetShardsRequest>,
     ) -> Result<tonic::Response<AdviseResetShardsResponse>, tonic::Status> {
-        self.inner
-            .0
-            .advise_reset_shards(request.into_inner())
+        let auth_token = quickwit_authorize::extract_auth_token(request.metadata())?;
+        quickwit_authorize::execute_with_authorization(
+                auth_token,
+                self.inner.0.advise_reset_shards(request.into_inner()),
+            )
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -1870,9 +1913,11 @@ for ControlPlaneServiceGrpcServerAdapter {
         &self,
         request: tonic::Request<super::metastore::PruneShardsRequest>,
     ) -> Result<tonic::Response<super::metastore::EmptyResponse>, tonic::Status> {
-        self.inner
-            .0
-            .prune_shards(request.into_inner())
+        let auth_token = quickwit_authorize::extract_auth_token(request.metadata())?;
+        quickwit_authorize::execute_with_authorization(
+                auth_token,
+                self.inner.0.prune_shards(request.into_inner()),
+            )
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)

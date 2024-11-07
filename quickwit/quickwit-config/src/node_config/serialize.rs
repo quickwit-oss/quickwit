@@ -25,8 +25,8 @@ use std::time::Duration;
 use anyhow::{bail, Context};
 use http::HeaderMap;
 use quickwit_common::net::{find_private_ip, get_short_hostname, Host};
-use quickwit_common::new_coolid;
 use quickwit_common::uri::Uri;
+use quickwit_common::{new_coolid, QuickwitService};
 use quickwit_proto::types::NodeId;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
@@ -34,7 +34,6 @@ use tracing::{info, warn};
 use super::{GrpcConfig, RestConfig};
 use crate::config_value::ConfigValue;
 use crate::qw_env_vars::*;
-use crate::service::QuickwitService;
 use crate::storage_config::StorageConfigs;
 use crate::templating::render_config;
 use crate::{
@@ -164,6 +163,15 @@ impl From<VersionedNodeConfig> for NodeConfigBuilder {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct AuthorizationConfigBuilder {
+    #[serde(default)]
+    pub root_public_key: Option<String>,
+    #[serde(default)]
+    pub node_token: Option<String>,
+}
+
 #[serde_with::serde_as]
 #[derive(Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -215,6 +223,8 @@ struct NodeConfigBuilder {
     jaeger_config: JaegerConfig,
     #[serde(default)]
     license: Option<String>,
+    #[serde(default)]
+    authorization: AuthorizationConfigBuilder,
 }
 
 impl NodeConfigBuilder {
@@ -222,6 +232,12 @@ impl NodeConfigBuilder {
         mut self,
         env_vars: &HashMap<String, String>,
     ) -> anyhow::Result<NodeConfig> {
+        #[cfg(feature = "enterprise")]
+        {
+            self.set_license(env_vars)?;
+            self.set_authorization_keys(env_vars)?;
+        }
+
         let node_id = self.node_id.resolve(env_vars).map(NodeId::new)?;
 
         let enabled_services = self
@@ -307,15 +323,6 @@ impl NodeConfigBuilder {
             .map(|gossip_interval_ms| Duration::from_millis(gossip_interval_ms as u64))
             .unwrap_or(DEFAULT_GOSSIP_INTERVAL);
 
-        // Environment variable takes precedence for license too.
-        #[cfg(feature = "enterprise")]
-        if let Some(license_str) = env_vars.get("QW_LICENSE").or(self.license.as_ref()) {
-            if let Err(error) = quickwit_license::set_license(license_str) {
-                tracing::error!(error=?error, "invalid license");
-                std::process::exit(1);
-            }
-        }
-
         let node_config = NodeConfig {
             cluster_id: self.cluster_id.resolve(env_vars)?,
             node_id,
@@ -341,6 +348,35 @@ impl NodeConfigBuilder {
 
         validate(&node_config)?;
         Ok(node_config)
+    }
+}
+
+#[cfg(feature = "enterprise")]
+impl NodeConfigBuilder {
+    fn set_license(&self, env_vars: &HashMap<String, String>) -> anyhow::Result<()> {
+        // Environment variable takes precedence for license too.
+        let Some(license_str) = env_vars.get("QW_LICENSE").or(self.license.as_ref()) else {
+            return Ok(());
+        };
+        if let Err(error) = quickwit_license::set_license(license_str) {
+            tracing::error!(error=?error, "invalid license");
+            std::process::exit(1);
+        }
+        Ok(())
+    }
+
+    fn set_authorization_keys(&self, env_vars: &HashMap<String, String>) -> anyhow::Result<()> {
+        let root_public_key = env_vars
+            .get("QW_AUTH_ROOT_PUBLIC_KEY")
+            .or(self.authorization.root_public_key.as_ref())
+            .context("root key undefined")?;
+        quickwit_authorize::set_root_public_key(root_public_key)?;
+        let node_token_base64 = env_vars
+            .get("QW_AUTH_NODE_TOKEN")
+            .or(self.authorization.node_token.as_ref())
+            .context("root key undefined")?;
+        quickwit_authorize::set_node_token_base64(node_token_base64)?;
+        Ok(())
     }
 }
 
@@ -398,6 +434,7 @@ impl Default for NodeConfigBuilder {
             ingest_api_config: IngestApiConfig::default(),
             jaeger_config: JaegerConfig::default(),
             license: license_opt,
+            authorization: AuthorizationConfigBuilder::default(),
         }
     }
 }

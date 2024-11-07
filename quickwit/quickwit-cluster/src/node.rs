@@ -23,7 +23,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use chitchat::{ChitchatId, NodeState};
-use quickwit_config::service::QuickwitService;
+use quickwit_common::QuickwitService;
 use quickwit_proto::indexing::{CpuCapacity, IndexingTask};
 use quickwit_proto::types::NodeIdRef;
 use tonic::transport::Channel;

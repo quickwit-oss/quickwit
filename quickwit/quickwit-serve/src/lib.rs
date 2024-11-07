@@ -77,8 +77,7 @@ use quickwit_common::tower::{
     RateLimitLayer, RetryLayer, RetryPolicy, SmaRateEstimator, TimeoutLayer,
 };
 use quickwit_common::uri::Uri;
-use quickwit_common::{get_bool_from_env, spawn_named_task};
-use quickwit_config::service::QuickwitService;
+use quickwit_common::{get_bool_from_env, spawn_named_task, QuickwitService};
 use quickwit_config::{ClusterConfig, IngestApiConfig, NodeConfig};
 use quickwit_control_plane::control_plane::{ControlPlane, ControlPlaneEventSubscriber};
 use quickwit_control_plane::{IndexerNodeInfo, IndexerPool};
@@ -429,10 +428,23 @@ pub async fn serve_quickwit(
                 100
             };
             // These layers apply to all the RPCs of the metastore.
-            let shared_layer = ServiceBuilder::new()
+            let shared_layer_builder = ServiceBuilder::new()
                 .layer(METASTORE_GRPC_SERVER_METRICS_LAYER.clone())
-                .layer(LoadShedLayer::new(max_in_flight_requests))
-                .into_inner();
+                .layer(LoadShedLayer::new(max_in_flight_requests));
+
+            let shared_layer;
+
+            #[cfg(feature = "enterprise")]
+            {
+                use quickwit_authorize::AuthorizationLayer;
+                shared_layer = shared_layer_builder.layer(AuthorizationLayer).into_inner();
+            }
+
+            #[cfg(not(feature = "enterprise"))]
+            {
+                shared_layer = shared_layer_builder.into_inner();
+            }
+
             let broker_layer = EventListenerLayer::new(event_broker.clone());
             let metastore = MetastoreServiceClient::tower()
                 .stack_layer(shared_layer)

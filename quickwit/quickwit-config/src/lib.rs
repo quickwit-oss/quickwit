@@ -38,7 +38,6 @@ pub mod merge_policy_config;
 mod metastore_config;
 mod node_config;
 mod qw_env_vars;
-pub mod service;
 mod source_config;
 mod storage_config;
 mod templating;

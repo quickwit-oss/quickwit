@@ -14,3 +14,34 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
+
+use quickwit_authorize::{Authorization, AuthorizationError, AuthorizationToken};
+
+use crate::{FetchRequest, IngestRequest, TailRequest};
+
+impl Authorization for TailRequest {
+    fn attenuate(
+        &self,
+        auth_token: AuthorizationToken,
+    ) -> Result<AuthorizationToken, AuthorizationError> {
+        Ok(auth_token)
+    }
+}
+
+impl Authorization for IngestRequest {
+    fn attenuate(
+        &self,
+        auth_token: AuthorizationToken,
+    ) -> Result<AuthorizationToken, AuthorizationError> {
+        Ok(auth_token)
+    }
+}
+
+impl Authorization for FetchRequest {
+    fn attenuate(
+        &self,
+        auth_token: AuthorizationToken,
+    ) -> Result<AuthorizationToken, AuthorizationError> {
+        Ok(auth_token)
+    }
+}

@@ -53,6 +53,7 @@ tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true }
 
 quickwit-actors = { workspace = true }
+quickwit-authorize = { workspace = true, optional = true, features = ["enterprise"] }
 quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
@@ -79,7 +80,7 @@ quickwit-metastore = { workspace = true, features = ["testsuite"] }
 quickwit-storage = { workspace = true, features = ["testsuite"] }
 
 [features]
-enterprise = ["quickwit-config/enterprise"]
+enterprise = ["quickwit-config/enterprise", "quickwit-ingest/enterprise", "quickwit-proto/enterprise", "quickwit-serve/enterprise", "dep:quickwit-authorize"]
 jemalloc = ["dep:tikv-jemalloc-ctl", "dep:tikv-jemallocator"]
 ci-test = []
 pprof = ["quickwit-serve/pprof"]

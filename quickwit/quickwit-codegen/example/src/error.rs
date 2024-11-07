@@ -20,6 +20,7 @@
 use std::fmt;
 
 use quickwit_actors::AskError;
+use quickwit_authorize::AuthorizationError;
 use quickwit_proto::error::GrpcServiceError;
 pub use quickwit_proto::error::{grpc_error_to_grpc_status, grpc_status_to_service_error};
 use quickwit_proto::{ServiceError, ServiceErrorCode};
@@ -38,6 +39,8 @@ pub enum HelloError {
     TooManyRequests,
     #[error("service unavailable: {0}")]
     Unavailable(String),
+    #[error("unauthorized: {0}")]
+    Unauthorized(#[from] AuthorizationError),
 }
 
 impl ServiceError for HelloError {
@@ -48,6 +51,7 @@ impl ServiceError for HelloError {
             Self::Timeout(_) => ServiceErrorCode::Timeout,
             Self::TooManyRequests => ServiceErrorCode::TooManyRequests,
             Self::Unavailable(_) => ServiceErrorCode::Unavailable,
+            Self::Unauthorized(_) => ServiceErrorCode::Unauthorized,
         }
     }
 }

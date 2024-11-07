@@ -150,3 +150,9 @@ indexer:
 
 jaeger:
   enable_endpoint: ${QW_ENABLE_JAEGER_ENDPOINT:-true}
+
+license: ${QW_LICENSE}
+
+# authorization:
+#     root_key: ${QW_ROOT_KEY}
+#     node_token: ${QW_NODE_TOKEN}

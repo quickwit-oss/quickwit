@@ -1167,14 +1167,29 @@ fn generate_grpc_client_adapter_methods(context: &CodegenContext) -> TokenStream
         } else {
             quote! { |response| response.into_inner() }
         };
-        let method = quote! {
-            async fn #method_name(&self, request: #request_type) -> #result_type<#response_type> {
-                self.inner
+        let method = if syn_method.client_streaming {
+            quote! {
+                async fn #method_name(&self, request: #request_type) -> #result_type<#response_type> {
+                    let tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(request)?;
+                    self.inner
                     .clone()
-                    .#method_name(request)
+                    .#method_name(tonic_request)
                     .await
                     .map(#into_response_type)
                     .map_err(|status| crate::error::grpc_status_to_service_error(status, #rpc_name))
+                }
+            }
+        } else {
+            quote! {
+                async fn #method_name(&self, request: #request_type) -> #result_type<#response_type> {
+                    let tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(request)?;
+                    self.inner
+                        .clone()
+                        .#method_name(tonic_request)
+                        .await
+                        .map(#into_response_type)
+                        .map_err(|status| crate::error::grpc_status_to_service_error(status, #rpc_name))
+                }
             }
         };
         stream.extend(method);
@@ -1253,14 +1268,13 @@ fn generate_grpc_server_adapter_methods(context: &CodegenContext) -> TokenStream
         } else {
             quote! { tonic::Response::new }
         };
+
         let method = quote! {
             #associated_type
 
             async fn #method_name(&self, request: tonic::Request<#request_type>) -> Result<tonic::Response<#response_type>, tonic::Status> {
-                self.inner
-                    .0
-                    .#method_name(#method_arg)
-                    .await
+                let auth_token = quickwit_authorize::extract_auth_token(request.metadata())?;
+                quickwit_authorize::execute_with_authorization(auth_token, self.inner.0.#method_name(#method_arg)).await
                     .map(#into_response_type)
                     .map_err(crate::error::grpc_error_to_grpc_status)
             }

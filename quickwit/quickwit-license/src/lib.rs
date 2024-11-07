@@ -15,10 +15,6 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-// For all third party components incorporated into the Quickwit Software, those
-// components are licensed under the original license provided by the owner of the
-// applicable component.
-
 use std::str::FromStr;
 use std::sync::OnceLock;
 use std::time::SystemTime;

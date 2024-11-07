@@ -21,6 +21,9 @@
 
 mod coolid;
 
+mod service;
+
+pub use service::QuickwitService;
 pub mod binary_heap;
 pub mod fs;
 pub mod io;
@@ -211,6 +214,15 @@ pub fn num_cpus() -> usize {
             2
         }
     }
+}
+
+pub fn spawn_inherit_task_local<F>(future: F) -> tokio::task::JoinHandle<F::Output>
+where
+    F: Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    use tokio_inherit_task_local::FutureInheritTaskLocal;
+    tokio::task::spawn(future.inherit_task_local())
 }
 
 // The following are helpers to build named tasks.

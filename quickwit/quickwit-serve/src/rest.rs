@@ -198,7 +198,7 @@ pub(crate) async fn start_rest_server(
     let compression_predicate = CompressionPredicate::from_env().and(NotForContentType::IMAGES);
     let cors = build_cors(&quickwit_services.node_config.rest_config.cors_allow_origins);
 
-    let service = ServiceBuilder::new()
+    let service_builder = ServiceBuilder::new()
         .layer(
             CompressionLayer::new()
                 .zstd(true)
@@ -206,8 +206,21 @@ pub(crate) async fn start_rest_server(
                 .quality(tower_http::CompressionLevel::Fastest)
                 .compress_when(compression_predicate),
         )
-        .layer(cors)
-        .service(warp_service);
+        .layer(cors);
+
+    let service;
+
+    #[cfg(feature = "enterprise")]
+    {
+        service = service_builder
+            .layer(quickwit_authorize::AuthorizationTokenExtractionLayer)
+            .service(warp_service);
+    }
+
+    #[cfg(not(feature = "enterprise"))]
+    {
+        service = service_builder.service(warp_service);
+    }
 
     let rest_listen_addr = tcp_listener.local_addr()?;
     info!(

@@ -24,7 +24,7 @@ use std::sync::Arc;
 use bytesize::ByteSize;
 use quickwit_cluster::cluster_grpc_server;
 use quickwit_common::tower::BoxFutureInfaillible;
-use quickwit_config::service::QuickwitService;
+use quickwit_common::QuickwitService;
 use quickwit_proto::developer::DeveloperServiceClient;
 use quickwit_proto::indexing::IndexingServiceClient;
 use quickwit_proto::jaeger::storage::v1::span_reader_plugin_server::SpanReaderPluginServer;

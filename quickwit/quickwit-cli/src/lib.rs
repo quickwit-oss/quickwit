@@ -28,7 +28,7 @@ use dialoguer::theme::ColorfulTheme;
 use dialoguer::Confirm;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::Uri;
-use quickwit_config::service::QuickwitService;
+use quickwit_common::QuickwitService;
 use quickwit_config::{
     ConfigFormat, MetastoreConfigs, NodeConfig, SourceConfig, StorageConfigs,
     DEFAULT_QW_CONFIG_PATH,

@@ -65,6 +65,8 @@ pub enum IngestV2Error {
     TooManyRequests(RateLimitingCause),
     #[error("service unavailable: {0}")]
     Unavailable(String),
+    #[error("unauthorized: {0}")]
+    Unauthorized(#[from] quickwit_authorize::AuthorizationError),
 }
 
 impl From<quickwit_common::tower::TimeoutExceeded> for IngestV2Error {
@@ -90,6 +92,7 @@ impl ServiceError for IngestV2Error {
             Self::Timeout(_) => ServiceErrorCode::Timeout,
             Self::TooManyRequests(_) => ServiceErrorCode::TooManyRequests,
             Self::Unavailable(_) => ServiceErrorCode::Unavailable,
+            Self::Unauthorized(authorization_error) => (*authorization_error).into(),
         }
     }
 }
@@ -318,6 +321,7 @@ impl From<PersistFailureReason> for IngestFailureReason {
             PersistFailureReason::WalFull => IngestFailureReason::WalFull,
             PersistFailureReason::ShardRateLimited => IngestFailureReason::ShardRateLimited,
             PersistFailureReason::Timeout => IngestFailureReason::Timeout,
+            PersistFailureReason::Unauthorized => IngestFailureReason::Unauthorized,
         }
     }
 }

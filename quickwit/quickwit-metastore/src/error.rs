@@ -39,4 +39,8 @@ pub enum MetastoreResolverError {
     /// error, incompatible version, internal error in a third party, etc.
     #[error("failed to connect to metastore: `{0}`")]
     Initialization(#[from] MetastoreError),
+
+    /// The requested operation is not authorized.
+    #[error("unauthorized: `{0}`")]
+    Unauthorized(#[from] quickwit_authorize::AuthorizationError),
 }

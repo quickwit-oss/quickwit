@@ -51,7 +51,10 @@ pub enum IndexingError {
     TooManyRequests,
     #[error("service unavailable: {0}")]
     Unavailable(String),
+    #[error("unauthorized: {0}")]
+    Unauthorized(#[from] quickwit_authorize::AuthorizationError),
 }
+
 impl From<TimeoutExceeded> for IndexingError {
     fn from(_timeout_exceeded: TimeoutExceeded) -> Self {
         Self::Timeout("tower layer timeout".to_string())
@@ -69,6 +72,7 @@ impl ServiceError for IndexingError {
             Self::Timeout(_) => ServiceErrorCode::Timeout,
             Self::TooManyRequests => ServiceErrorCode::TooManyRequests,
             Self::Unavailable(_) => ServiceErrorCode::Unavailable,
+            Self::Unauthorized(authorization_error) => (*authorization_error).into(),
         }
     }
 }

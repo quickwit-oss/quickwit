@@ -77,7 +77,7 @@ where
     fn call(&mut self, request: Request) -> Self::Future {
         let request_name: &'static str = Request::rpc_name();
         let future = self.service.call(request);
-        let join_handle = tokio::spawn(future);
+        let join_handle = crate::spawn_inherit_task_local(future);
         UnwrapOrElseFuture {
             request_name,
             join_handle,

@@ -30,6 +30,9 @@ use tonic::Status;
 use tracing::Span;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
+#[cfg(feature = "enterprise")]
+mod authorization;
+
 pub mod cluster;
 pub mod control_plane;
 pub use {bytes, tonic};

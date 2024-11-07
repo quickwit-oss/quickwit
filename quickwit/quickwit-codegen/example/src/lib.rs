@@ -19,6 +19,9 @@
 
 mod error;
 
+#[cfg(feature = "enterprise")]
+mod authorization;
+
 #[path = "codegen/hello.rs"]
 mod hello;
 
