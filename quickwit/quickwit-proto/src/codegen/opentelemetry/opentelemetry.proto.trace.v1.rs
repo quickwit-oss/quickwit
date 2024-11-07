@@ -8,7 +8,7 @@
 ///
 /// When new fields are added into this message, the OTLP request MUST be updated
 /// as well.
-#[derive(Serialize, Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TracesData {
@@ -21,7 +21,7 @@ pub struct TracesData {
     pub resource_spans: ::prost::alloc::vec::Vec<ResourceSpans>,
 }
 /// A collection of ScopeSpans from a Resource.
-#[derive(Serialize, Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ResourceSpans {
@@ -38,7 +38,7 @@ pub struct ResourceSpans {
     pub schema_url: ::prost::alloc::string::String,
 }
 /// A collection of Spans produced by an InstrumentationScope.
-#[derive(Serialize, Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ScopeSpans {
@@ -57,7 +57,7 @@ pub struct ScopeSpans {
 /// A Span represents a single operation performed by a single component of the system.
 ///
 /// The next available field id is 17.
-#[derive(Serialize, Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Span {
@@ -167,7 +167,7 @@ pub struct Span {
 pub mod span {
     /// Event is a time-stamped annotation of the span, consisting of user-supplied
     /// text description and key-value pairs.
-    #[derive(Serialize, Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Event {
@@ -194,7 +194,7 @@ pub mod span {
     /// different trace. For example, this can be used in batching operations,
     /// where a single batch handler processes multiple requests from different
     /// traces or when the handler receives a request from a different project.
-    #[derive(Serialize, Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Link {
@@ -222,7 +222,7 @@ pub mod span {
     }
     /// SpanKind is the type of span. Can be used to specify additional relationships between spans
     /// in addition to a parent/child relationship.
-    #[derive(Serialize, Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(
         Clone,
         Copy,
@@ -288,7 +288,7 @@ pub mod span {
 }
 /// The Status type defines a logical error model that is suitable for different
 /// programming environments, including REST APIs and RPC APIs.
-#[derive(Serialize, Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Status {
@@ -303,7 +303,7 @@ pub struct Status {
 pub mod status {
     /// For the semantics of status codes see
     /// <https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/trace/api.md#set-status>
-    #[derive(Serialize, Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
     #[derive(
         Clone,
