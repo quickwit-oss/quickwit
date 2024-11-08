@@ -111,9 +111,8 @@ pub fn create_split_metadata(
         retention_policy,
         create_timestamp,
         time_range.as_ref().map(|time_range| *time_range.end()),
-        &maturity,
     ) {
-        maturity = max_maturity;
+        maturity = maturity.min(max_maturity);
     }
     SplitMetadata {
         node_id: split_attrs.node_id.to_string(),
@@ -140,18 +139,9 @@ fn max_maturity_before_end_of_retention(
     retention_policy: Option<&quickwit_config::RetentionPolicy>,
     create_timestamp: i64,
     time_range_end: Option<i64>,
-    maturity: &SplitMaturity,
 ) -> Option<SplitMaturity> {
     let time_range_end = time_range_end? as u64;
     let retention_period_s = retention_policy?.retention_period().ok()?.as_secs();
-    let SplitMaturity::Immature { maturation_period } = maturity else {
-        return None;
-    };
-
-    if time_range_end + retention_period_s > create_timestamp as u64 + maturation_period.as_secs() {
-        // retention ends after end of proposed maturation, do nothing
-        return None;
-    }
 
     let maturity = if let Some(maturation_period_s) =
         (time_range_end + retention_period_s).checked_sub(create_timestamp as u64)
@@ -182,9 +172,6 @@ mod tests {
             retention_period: "300 sec".to_string(),
         };
         let create_timestamp = 1000;
-        let maturity_before = SplitMaturity::Immature {
-            maturation_period: Duration::from_secs(100),
-        };
 
         // this should be deleted asap, not subject to merge
         assert_eq!(
@@ -192,33 +179,33 @@ mod tests {
                 Some(&retention_policy),
                 create_timestamp,
                 Some(200),
-                &maturity_before,
             ),
             Some(SplitMaturity::Mature)
         );
 
-        // retention ends after now, but before end of maturation
+        // retention ends at 750 + 300 = 1050, which is 50s from now
         assert_eq!(
             max_maturity_before_end_of_retention(
                 Some(&retention_policy),
                 create_timestamp,
                 Some(750),
-                &maturity_before,
             ),
             Some(SplitMaturity::Immature {
                 maturation_period: Duration::from_secs(50)
             })
         );
 
-        // retention ends after end of maturation, change nothing
+        // no retention policy
         assert_eq!(
-            max_maturity_before_end_of_retention(
-                Some(&retention_policy),
-                create_timestamp,
-                Some(850),
-                &maturity_before,
-            ),
-            None
+            max_maturity_before_end_of_retention(None, create_timestamp, Some(850),),
+            None,
+        );
+
+        // no timestamp_range.end but a retention policy, that's odd, don't change anything about
+        // the maturity period
+        assert_eq!(
+            max_maturity_before_end_of_retention(Some(&retention_policy), create_timestamp, None,),
+            None,
         );
     }
 }
