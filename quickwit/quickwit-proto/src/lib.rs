@@ -109,9 +109,6 @@ pub mod opentelemetry {
     }
 }
 
-#[macro_use]
-extern crate serde;
-
 impl TryFrom<search::SearchStreamRequest> for search::SearchRequest {
     type Error = anyhow::Error;
 
