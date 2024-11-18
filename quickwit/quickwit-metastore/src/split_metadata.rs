@@ -344,7 +344,7 @@ impl FromStr for SplitState {
 /// or `Immature` with a given maturation period.
 /// The maturity is determined by the `MergePolicy`.
 #[serde_as]
-#[derive(Clone, Copy, Debug, Default, Eq, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, Serialize, Deserialize, PartialEq, PartialOrd, Ord)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
 pub enum SplitMaturity {
@@ -438,5 +438,22 @@ mod tests {
                                footer_offsets: 0..1024, delete_opstamp: 0, num_merge_ops: 0 }";
 
         assert_eq!(format!("{:?}", split_metadata), expected_output);
+    }
+
+    #[test]
+    fn test_spit_maturity_order() {
+        assert!(
+            SplitMaturity::Mature
+                < SplitMaturity::Immature {
+                    maturation_period: Duration::from_secs(0)
+                }
+        );
+        assert!(
+            SplitMaturity::Immature {
+                maturation_period: Duration::from_secs(0)
+            } < SplitMaturity::Immature {
+                maturation_period: Duration::from_secs(1)
+            }
+        );
     }
 }

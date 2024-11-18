@@ -43,6 +43,7 @@ pub fn ui_handler() -> impl Filter<Extract = (impl warp::Reply,), Error = Reject
         .and(warp::path::tail())
         .and_then(serve_file)
         .recover(recover_fn)
+        .boxed()
 }
 
 async fn serve_file(path: Tail) -> Result<impl warp::Reply, Rejection> {

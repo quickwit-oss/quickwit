@@ -30,7 +30,7 @@ use quickwit_actors::{
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_common::KillSwitch;
-use quickwit_config::{IndexingSettings, SourceConfig};
+use quickwit_config::{IndexingSettings, RetentionPolicy, SourceConfig};
 use quickwit_doc_mapper::DocMapper;
 use quickwit_ingest::IngesterPool;
 use quickwit_proto::indexing::IndexingPipelineId;
@@ -367,6 +367,7 @@ impl IndexingPipeline {
             UploaderType::IndexUploader,
             self.params.metastore.clone(),
             self.params.merge_policy.clone(),
+            self.params.retention_policy.clone(),
             self.params.split_store.clone(),
             SplitsUpdateMailbox::Sequencer(sequencer_mailbox),
             self.params.max_concurrent_split_uploads_index,
@@ -585,6 +586,7 @@ pub struct IndexingPipelineParams {
 
     // Merge-related parameters
     pub merge_policy: Arc<dyn MergePolicy>,
+    pub retention_policy: Option<RetentionPolicy>,
     pub merge_planner_mailbox: Mailbox<MergePlanner>,
     pub max_concurrent_split_uploads_merge: usize,
 
@@ -717,6 +719,7 @@ mod tests {
             storage,
             split_store,
             merge_policy: default_merge_policy(),
+            retention_policy: None,
             queues_dir_path: PathBuf::from("./queues"),
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
@@ -831,6 +834,7 @@ mod tests {
             storage,
             split_store,
             merge_policy: default_merge_policy(),
+            retention_policy: None,
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
             cooperative_indexing_permits: None,
@@ -908,6 +912,7 @@ mod tests {
             metastore: metastore.clone(),
             split_store: split_store.clone(),
             merge_policy: default_merge_policy(),
+            retention_policy: None,
             max_concurrent_split_uploads: 2,
             merge_io_throughput_limiter_opt: None,
             merge_scheduler_service: universe.get_or_spawn_one(),
@@ -930,6 +935,7 @@ mod tests {
             storage,
             split_store,
             merge_policy: default_merge_policy(),
+            retention_policy: None,
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
             cooperative_indexing_permits: None,
@@ -1057,6 +1063,7 @@ mod tests {
             storage,
             split_store,
             merge_policy: default_merge_policy(),
+            retention_policy: None,
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
             cooperative_indexing_permits: None,

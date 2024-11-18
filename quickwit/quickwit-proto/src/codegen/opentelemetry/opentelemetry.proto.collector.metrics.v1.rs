@@ -1,4 +1,4 @@
-#[derive(Serialize, Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ExportMetricsServiceRequest {
@@ -12,7 +12,7 @@ pub struct ExportMetricsServiceRequest {
         super::super::super::metrics::v1::ResourceMetrics,
     >,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ExportMetricsServiceResponse {
@@ -34,7 +34,7 @@ pub struct ExportMetricsServiceResponse {
     #[prost(message, optional, tag = "1")]
     pub partial_success: ::core::option::Option<ExportMetricsPartialSuccess>,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ExportMetricsPartialSuccess {

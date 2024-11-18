@@ -20,6 +20,7 @@
 use quickwit_actors::AskError;
 use quickwit_common::rate_limited_error;
 use quickwit_common::tower::{MakeLoadShedError, RpcName, TimeoutExceeded};
+use serde::{Deserialize, Serialize};
 use thiserror;
 
 use crate::metastore::{MetastoreError, OpenShardSubrequest};

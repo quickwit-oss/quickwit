@@ -396,7 +396,7 @@ pub mod tests {
             source_id: "test_source".to_string(),
         };
         let split_attrs = merge_split_attrs(pipeline_id, merged_split_id, splits).unwrap();
-        create_split_metadata(merge_policy, &split_attrs, tags, 0..0)
+        create_split_metadata(merge_policy, None, &split_attrs, tags, 0..0)
     }
 
     fn apply_merge(

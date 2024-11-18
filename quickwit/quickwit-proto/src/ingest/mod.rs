@@ -23,6 +23,7 @@ use bytes::Bytes;
 use bytesize::ByteSize;
 use quickwit_common::rate_limited_error;
 use quickwit_common::tower::MakeLoadShedError;
+use serde::{Deserialize, Serialize};
 
 use self::ingester::{PersistFailureReason, ReplicateFailureReason};
 use self::router::IngestFailureReason;
