@@ -1,0 +1,18 @@
+[package]
+name = "quickwit-license"
+version.workspace = true
+edition.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+repository.workspace = true
+authors.workspace = true
+license = "LicenseRef-quickwit-enterprise-license"
+
+[dependencies]
+biscuit-auth = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[features]
+testsuite = []

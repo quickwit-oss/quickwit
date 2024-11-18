@@ -4,9 +4,12 @@
 **/proptest-regressions
 **/perf.data*
 **/flamegraph.svg
+**/venv
+**/esdata
 local/**
 quickwit/quickwit-ui/package-lock.json
 **/.DS_Store
+**/.zed
 
 TODO.md
 QUESTIONS.txt

@@ -32,6 +32,7 @@ pub struct BuildInfo {
     pub commit_short_hash: &'static str,
     pub commit_tags: Vec<String>,
     pub version: String,
+    pub edition: &'static str,
 }
 
 impl BuildInfo {
@@ -68,7 +69,15 @@ impl BuildInfo {
                 .cloned()
                 .unwrap_or_else(|| concat!(env!("CARGO_PKG_VERSION"), "-nightly").to_string());
 
-            Self {
+            let edition = {
+                if cfg!(feature = "enterprise") {
+                    "enterprise"
+                } else {
+                    "community"
+                }
+            };
+
+            BuildInfo {
                 build_date: env!("BUILD_DATE"),
                 build_profile: env!("BUILD_PROFILE"),
                 build_target: env!("BUILD_TARGET"),
@@ -78,6 +87,7 @@ impl BuildInfo {
                 commit_short_hash,
                 commit_tags,
                 version,
+                edition,
             }
         })
     }
@@ -85,7 +95,8 @@ impl BuildInfo {
     pub fn get_version_text() -> String {
         let build_info = Self::get();
         format!(
-            "{} ({} {} {})",
+            "{} {} ({} {} {})",
+            build_info.edition,
             build_info.cargo_pkg_version,
             build_info.build_target,
             build_info.commit_date,
