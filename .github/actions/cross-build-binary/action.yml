@@ -43,10 +43,6 @@ runs:
         QW_COMMIT_DATE: ${{ env.QW_COMMIT_DATE }}
         QW_COMMIT_HASH: ${{ env.QW_COMMIT_HASH }}
         QW_COMMIT_TAGS: ${{ env.QW_COMMIT_TAGS }}
-        # Fix build for transitive dependency rdkafka -> rdkafka-sys -> sasl2-sys -> krb5-src
-        KRB5_CV_ATTR_CONSTRUCTOR_DESTRUCTOR: yes
-        AC_CV_FUNC_REGCOMP: yes
-        AC_CV_PRINTF_POSITIONAL: yes
       working-directory: ./quickwit
     - name: Bundle archive
       run: |
