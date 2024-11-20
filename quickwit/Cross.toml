@@ -10,7 +10,6 @@ image = "quickwit/cross:x86_64-unknown-linux-gnu"
 
 [target.x86_64-unknown-linux-musl]
 image = "quickwit/cross:x86_64-unknown-linux-musl"
-RUSTFLAGS="LIB_LDFLAGS=-L/usr/lib/x86_64-linux-gnu CFLAGS=-I/usr/local/musl/include CC=musl-gcc"
 
 [target.aarch64-unknown-linux-gnu]
 image = "quickwit/cross:aarch64-unknown-linux-gnu"
@@ -22,4 +21,3 @@ passthrough = ["KRB5_CV_ATTR_CONSTRUCTOR_DESTRUCTOR=yes", "AC_CV_FUNC_REGCOMP=ye
 
 [target.aarch64-unknown-linux-musl]
 image = "quickwit/cross:aarch64-unknown-linux-musl"
-linker = "aarch64-linux-musl-gcc"
