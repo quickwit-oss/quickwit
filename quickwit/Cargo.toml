@@ -266,7 +266,7 @@ ulid = "1.1"
 username = "0.2"
 utoipa = { version = "4.2", features = ["time", "ulid"] }
 uuid = { version = "1.10", features = ["v4", "serde"] }
-vrl = { version = "0.8.1", default-features = false, features = [
+vrl = { version = "0.19", default-features = false, features = [
   "compiler",
   "diagnostic",
   "stdlib",
