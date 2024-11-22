@@ -471,6 +471,7 @@ fn get_score_extractor(
     })
 }
 
+#[allow(clippy::large_enum_variant)]
 enum AggregationSegmentCollectors {
     FindTraceIdsSegmentCollector(Box<FindTraceIdsSegmentCollector>),
     TantivyAggregationSegmentCollector(AggregationSegmentCollector),
