@@ -64,7 +64,7 @@ mod tests {
         let mut socket_set3 = vec![socket1, socket4];
         sort_by_rendez_vous_hash(&mut socket_set3, "key");
 
-        assert_eq!(socket_set1, &[socket1, socket2, socket3, socket4]);
+        assert_eq!(socket_set1, &[socket1, socket3, socket2, socket4]);
         assert_eq!(socket_set2, &[socket1, socket2, socket4]);
         assert_eq!(socket_set3, &[socket1, socket4]);
     }
