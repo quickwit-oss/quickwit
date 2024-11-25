@@ -427,21 +427,22 @@ mod tests {
 
             let expected_searcher_addr_1: SocketAddr = ([127, 0, 0, 1], 1001).into();
             let expected_searcher_addr_2: SocketAddr = ([127, 0, 0, 1], 1002).into();
+            // on a small number of splits, we may be unbalanced
             let expected_assigned_jobs = vec![
                 (
                     expected_searcher_addr_1,
                     vec![
-                        SearchJob::for_test("split5", 5),
-                        SearchJob::for_test("split4", 4),
                         SearchJob::for_test("split3", 3),
+                        SearchJob::for_test("split2", 2),
+                        SearchJob::for_test("split1", 1),
                     ],
                 ),
                 (
                     expected_searcher_addr_2,
                     vec![
                         SearchJob::for_test("split6", 6),
-                        SearchJob::for_test("split2", 2),
-                        SearchJob::for_test("split1", 1),
+                        SearchJob::for_test("split5", 5),
+                        SearchJob::for_test("split4", 4),
                     ],
                 ),
             ];
