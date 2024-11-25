@@ -168,6 +168,8 @@ The formatting is based on the specified output format.
 On error, an "X-Stream-Error" header will be sent via the trailers channel with information about the error, and the stream will be closed via [`sender.abort()`](https://docs.rs/hyper/0.14.16/hyper/body/struct.Sender.html#method.abort).
 Depending on the client, the trailer header with error details may not be shown. The error will also be logged in quickwit ("Error when streaming search results").
 
+## Ingest API
+
 ### Ingest data into an index
 
 ```
