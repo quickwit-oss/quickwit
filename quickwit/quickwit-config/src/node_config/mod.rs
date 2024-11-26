@@ -226,11 +226,7 @@ pub struct SearcherConfig {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub storage_timeout_policy: Option<StorageTimeoutPolicy>,
-
-    // TODO validate that `warmup_memory_budget` is greater than `warmup_single_split_initial_allocation`
-    // TODO set serde default
     pub warmup_memory_budget: ByteSize,
-    // TODO set serde default
     pub warmup_single_split_initial_allocation: ByteSize,
 }
 
@@ -280,9 +276,7 @@ impl Default for SearcherConfig {
             split_cache: None,
             request_timeout_secs: Self::default_request_timeout_secs(),
             storage_timeout_policy: None,
-            // TODO change this to the method used for serde default.
             warmup_memory_budget: ByteSize::gb(1),
-            // TODO change this to the method used for serde default.
             warmup_single_split_initial_allocation: ByteSize::mb(50),
         }
     }
@@ -316,6 +310,14 @@ impl SearcherConfig {
                      split_cache.max_file_descriptors ({})",
                     self.max_num_concurrent_split_streams,
                     split_cache_limits.max_file_descriptors
+                );
+            }
+            if self.warmup_single_split_initial_allocation > self.warmup_memory_budget {
+                anyhow::bail!(
+                    "warmup_single_split_initial_allocation ({}) must be lower or equal to \
+                     warmup_memory_budget ({})",
+                    self.warmup_single_split_initial_allocation,
+                    self.warmup_memory_budget
                 );
             }
         }

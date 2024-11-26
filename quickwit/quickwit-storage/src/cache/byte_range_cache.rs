@@ -21,7 +21,6 @@ use std::borrow::{Borrow, Cow};
 use std::collections::BTreeMap;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use tantivy::directory::OwnedBytes;
@@ -345,54 +344,69 @@ impl<T: 'static + ToOwned + ?Sized> Drop for NeedMutByteRangeCache<T> {
 /// cached data, the changes may or may not get recorded.
 ///
 /// At the moment this is hardly a cache as it features no eviction policy.
-#[derive(Clone)]
-pub struct ByteRangeCache {
-    inner_arc: Arc<Inner>,
+pub struct ByteRangeCache<T = ()> {
+    inner_arc: Arc<Mutex<Inner<T>>>,
 }
 
-struct Inner {
-    num_stored_bytes: AtomicU64,
-    need_mut_byte_range_cache: Mutex<NeedMutByteRangeCache<Path>>,
+struct Inner<T> {
+    need_mut_byte_range_cache: NeedMutByteRangeCache<Path>,
+    tracker: T,
 }
 
-impl ByteRangeCache {
+impl<T> Clone for ByteRangeCache<T> {
+    fn clone(&self) -> Self {
+        ByteRangeCache {
+            inner_arc: self.inner_arc.clone(),
+        }
+    }
+}
+
+impl<T> ByteRangeCache<T> {
     /// Creates a slice cache that never removes any entry.
-    pub fn with_infinite_capacity(cache_counters: &'static CacheMetrics) -> Self {
+    pub fn with_infinite_capacity(cache_counters: &'static CacheMetrics, tracker: T) -> Self {
         let need_mut_byte_range_cache =
             NeedMutByteRangeCache::with_infinite_capacity(cache_counters);
         let inner = Inner {
-            num_stored_bytes: AtomicU64::default(),
-            need_mut_byte_range_cache: Mutex::new(need_mut_byte_range_cache),
+            need_mut_byte_range_cache,
+            tracker,
         };
         ByteRangeCache {
-            inner_arc: Arc::new(inner),
+            inner_arc: Arc::new(Mutex::new(inner)),
         }
     }
 
     /// Overall amount of bytes stored in the cache.
     pub fn get_num_bytes(&self) -> u64 {
-        self.inner_arc.num_stored_bytes.load(Ordering::Relaxed)
+        self.inner_arc
+            .lock()
+            .unwrap()
+            .need_mut_byte_range_cache
+            .num_bytes
     }
 
     /// If available, returns the cached view of the slice.
     pub fn get_slice(&self, path: &Path, byte_range: Range<usize>) -> Option<OwnedBytes> {
         self.inner_arc
-            .need_mut_byte_range_cache
             .lock()
             .unwrap()
+            .need_mut_byte_range_cache
             .get_slice(path, byte_range)
     }
 
     /// Put the given amount of data in the cache.
     pub fn put_slice(&self, path: PathBuf, byte_range: Range<usize>, bytes: OwnedBytes) {
-        let mut need_mut_byte_range_cache_locked =
-            self.inner_arc.need_mut_byte_range_cache.lock().unwrap();
-        need_mut_byte_range_cache_locked.put_slice(path, byte_range, bytes);
-        let num_bytes = need_mut_byte_range_cache_locked.num_bytes;
-        drop(need_mut_byte_range_cache_locked);
-        self.inner_arc
-            .num_stored_bytes
-            .store(num_bytes as u64, Ordering::Relaxed);
+        let mut inner = self.inner_arc.lock().unwrap();
+        inner
+            .need_mut_byte_range_cache
+            .put_slice(path, byte_range, bytes);
+    }
+
+    /// Apply the provided action on the tracker.
+    ///
+    /// The action should not block for long.
+    pub fn track(&self, action: impl FnOnce(&mut T)) {
+        let mut inner = self.inner_arc.lock().unwrap();
+        action(&mut inner.tracker);
     }
 }
 
@@ -449,7 +463,7 @@ mod tests {
             state.insert("path1", vec![false; 12]);
             state.insert("path2", vec![false; 12]);
 
-            let cache = ByteRangeCache::with_infinite_capacity(&CACHE_METRICS_FOR_TESTS);
+            let cache = ByteRangeCache::with_infinite_capacity(&CACHE_METRICS_FOR_TESTS, ());
 
             for op in ops {
                 match op {
@@ -470,13 +484,13 @@ mod tests {
                             .sum();
                         // in some case we have ranges touching each other, count_items count them
                         // as only one, but cache count them as 2.
-                        assert!(cache.inner_arc.need_mut_byte_range_cache.lock().unwrap().num_items >= expected_item_count as u64);
+                        assert!(cache.inner_arc.lock().unwrap().need_mut_byte_range_cache.num_items >= expected_item_count as u64);
 
                         let expected_byte_count = state.values()
                             .flatten()
                             .filter(|stored| **stored)
                             .count();
-                        assert_eq!(cache.inner_arc.need_mut_byte_range_cache.lock().unwrap().num_bytes, expected_byte_count as u64);
+                        assert_eq!(cache.inner_arc.lock().unwrap().need_mut_byte_range_cache.num_bytes, expected_byte_count as u64);
                     }
                     Operation::Get {
                         range,
@@ -517,7 +531,7 @@ mod tests {
         static METRICS: Lazy<CacheMetrics> =
             Lazy::new(|| CacheMetrics::for_component("byterange_cache_test"));
 
-        let cache = ByteRangeCache::with_infinite_capacity(&METRICS);
+        let cache = ByteRangeCache::with_infinite_capacity(&METRICS, ());
 
         let key: std::path::PathBuf = "key".into();
 
@@ -543,7 +557,7 @@ mod tests {
         );
 
         {
-            let mutable_cache = cache.inner_arc.need_mut_byte_range_cache.lock().unwrap();
+            let mutable_cache = &cache.inner_arc.lock().unwrap().need_mut_byte_range_cache;
             assert_eq!(mutable_cache.cache.len(), 4);
             assert_eq!(mutable_cache.num_items, 4);
             assert_eq!(mutable_cache.cache_counters.in_cache_count.get(), 4);
@@ -555,7 +569,7 @@ mod tests {
 
         {
             // now they should've been merged, except the last one
-            let mutable_cache = cache.inner_arc.need_mut_byte_range_cache.lock().unwrap();
+            let mutable_cache = &cache.inner_arc.lock().unwrap().need_mut_byte_range_cache;
             assert_eq!(mutable_cache.cache.len(), 2);
             assert_eq!(mutable_cache.num_items, 2);
             assert_eq!(mutable_cache.cache_counters.in_cache_count.get(), 2);

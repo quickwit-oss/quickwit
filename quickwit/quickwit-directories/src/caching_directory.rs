@@ -29,11 +29,19 @@ use tantivy::directory::{FileHandle, OwnedBytes};
 use tantivy::{Directory, HasLen};
 
 /// The caching directory is a simple cache that wraps another directory.
-#[derive(Clone)]
-pub struct CachingDirectory {
+pub struct CachingDirectory<T = ()> {
     underlying: Arc<dyn Directory>,
     // TODO fixme: that's a pretty ugly cache we have here.
-    cache: ByteRangeCache,
+    cache: ByteRangeCache<T>,
+}
+
+impl<T> Clone for CachingDirectory<T> {
+    fn clone(&self) -> Self {
+        CachingDirectory {
+            underlying: self.underlying.clone(),
+            cache: self.cache.clone(),
+        }
+    }
 }
 
 impl CachingDirectory {
@@ -44,32 +52,35 @@ impl CachingDirectory {
     pub fn new_unbounded(underlying: Arc<dyn Directory>) -> CachingDirectory {
         let byte_range_cache = ByteRangeCache::with_infinite_capacity(
             &quickwit_storage::STORAGE_METRICS.shortlived_cache,
+            (),
         );
         CachingDirectory::new(underlying, byte_range_cache)
     }
+}
 
+impl<T> CachingDirectory<T> {
     /// Creates a new CachingDirectory.
     ///
     /// Warming: The resulting CacheDirectory will cache all information without ever
     /// removing any item from the cache.
-    pub fn new(underlying: Arc<dyn Directory>, cache: ByteRangeCache) -> CachingDirectory {
+    pub fn new(underlying: Arc<dyn Directory>, cache: ByteRangeCache<T>) -> CachingDirectory<T> {
         CachingDirectory { underlying, cache }
     }
 }
 
-impl fmt::Debug for CachingDirectory {
+impl<T> fmt::Debug for CachingDirectory<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "CachingDirectory({:?})", self.underlying)
     }
 }
 
-struct CachingFileHandle {
+struct CachingFileHandle<T> {
     path: PathBuf,
-    cache: ByteRangeCache,
+    cache: ByteRangeCache<T>,
     underlying_filehandle: Arc<dyn FileHandle>,
 }
 
-impl fmt::Debug for CachingFileHandle {
+impl<T> fmt::Debug for CachingFileHandle<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
@@ -81,7 +92,7 @@ impl fmt::Debug for CachingFileHandle {
 }
 
 #[async_trait]
-impl FileHandle for CachingFileHandle {
+impl<T: Send + 'static> FileHandle for CachingFileHandle<T> {
     fn read_bytes(&self, byte_range: Range<usize>) -> io::Result<OwnedBytes> {
         if let Some(bytes) = self.cache.get_slice(&self.path, byte_range.clone()) {
             return Ok(bytes);
@@ -106,13 +117,13 @@ impl FileHandle for CachingFileHandle {
     }
 }
 
-impl HasLen for CachingFileHandle {
+impl<T> HasLen for CachingFileHandle<T> {
     fn len(&self) -> usize {
         self.underlying_filehandle.len()
     }
 }
 
-impl Directory for CachingDirectory {
+impl<T: Send + 'static> Directory for CachingDirectory<T> {
     fn exists(&self, path: &Path) -> std::result::Result<bool, OpenReadError> {
         self.underlying.exists(path)
     }

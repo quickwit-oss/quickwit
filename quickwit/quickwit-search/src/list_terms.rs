@@ -40,6 +40,7 @@ use tracing::{debug, error, info, instrument};
 
 use crate::leaf::open_index_with_caches;
 use crate::search_job_placer::group_jobs_by_index_id;
+use crate::search_permit_provider::SearchPermit;
 use crate::{resolve_index_patterns, ClusterClient, SearchError, SearchJob, SearcherContext};
 
 /// Performs a distributed list terms.
@@ -215,9 +216,12 @@ async fn leaf_list_terms_single_split(
     search_request: &ListTermsRequest,
     storage: Arc<dyn Storage>,
     split: SplitIdAndFooterOffsets,
+    search_permit: SearchPermit,
 ) -> crate::Result<LeafListTermsResponse> {
-    let cache =
-        ByteRangeCache::with_infinite_capacity(&quickwit_storage::STORAGE_METRICS.shortlived_cache);
+    let cache = ByteRangeCache::with_infinite_capacity(
+        &quickwit_storage::STORAGE_METRICS.shortlived_cache,
+        search_permit,
+    );
     let index =
         open_index_with_caches(searcher_context, storage, &split, None, Some(cache)).await?;
     let split_schema = index.schema();
@@ -330,7 +334,8 @@ pub async fn leaf_list_terms(
     info!(split_offsets = ?PrettySample::new(splits, 5));
     let permits = searcher_context
         .search_permit_provider
-        .get_permits(splits.len());
+        .get_permits(splits.len())
+        .await;
     let leaf_search_single_split_futures: Vec<_> = splits
         .iter()
         .zip(permits.into_iter())
@@ -338,7 +343,7 @@ pub async fn leaf_list_terms(
             let index_storage_clone = index_storage.clone();
             let searcher_context_clone = searcher_context.clone();
             async move {
-                let _leaf_split_search_permit = search_permit_recv.await;
+                let leaf_split_search_permit = search_permit_recv.await;
                 // TODO dedicated counter and timer?
                 crate::SEARCH_METRICS.leaf_searches_splits_total.inc();
                 let timer = crate::SEARCH_METRICS
@@ -349,6 +354,7 @@ pub async fn leaf_list_terms(
                     request,
                     index_storage_clone,
                     split.clone(),
+                    leaf_split_search_permit,
                 )
                 .await;
                 timer.observe_duration();

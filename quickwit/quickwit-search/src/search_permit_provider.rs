@@ -20,22 +20,37 @@
 use std::collections::VecDeque;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 
 use bytesize::ByteSize;
 use quickwit_common::metrics::GaugeGuard;
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc, oneshot};
 use tracing::warn;
 
-/// `SearchPermitProvider` is a distributor of permits to perform single split
-/// search operation.
+/// Distributor of permits to perform split search operation.
 ///
-/// - Two types of resources are managed: memory allocations and download slots.
-/// - Requests are served in order.
+/// Requests are served in order. Each permit initially reserves a slot for the
+/// warmup (limit concurrent downloads) and a pessimistic amount of memory. Once
+/// the warmup is completed, the actual memory usage is set and the warmup slot
+/// is released. Once the search is completed and the permit is dropped, the
+/// remaining memory is also released.
 #[derive(Clone)]
 pub struct SearchPermitProvider {
-    inner_arc: Arc<Mutex<InnerSearchPermitProvider>>,
+    sender: mpsc::UnboundedSender<SearchPermitMessage>,
+}
+
+pub enum SearchPermitMessage {
+    Request {
+        permit_sender: oneshot::Sender<Vec<SearchPermitFuture>>,
+        num_permits: usize,
+    },
+    WarmupCompleted {
+        memory_delta: i64,
+    },
+    Drop {
+        memory_size: u64,
+        warmup_permit_held: bool,
+    },
 }
 
 impl SearchPermitProvider {
@@ -43,66 +58,110 @@ impl SearchPermitProvider {
         num_download_slots: usize,
         memory_budget: ByteSize,
         initial_allocation: ByteSize,
-    ) -> SearchPermitProvider {
-        SearchPermitProvider {
-            inner_arc: Arc::new(Mutex::new(InnerSearchPermitProvider {
-                num_download_slots_available: num_download_slots,
-                memory_budget: memory_budget.as_u64(),
-                permits_requests: VecDeque::new(),
-                memory_allocated: 0u64,
-                initial_allocation: initial_allocation.as_u64(),
-            })),
-        }
+    ) -> Self {
+        let (sender, receiver) = mpsc::unbounded_channel();
+        let mut actor = SearchPermitActor {
+            msg_receiver: receiver,
+            msg_sender: sender.downgrade(),
+            num_warmup_slots_available: num_download_slots,
+            total_memory_budget: memory_budget.as_u64(),
+            permits_requests: VecDeque::new(),
+            total_memory_allocated: 0u64,
+            per_permit_initial_memory_allocation: initial_allocation.as_u64(),
+        };
+        tokio::spawn(async move { actor.run().await });
+        Self { sender }
     }
 
-    /// Returns a list of future permits in the form of awaitable futures.
+    /// Returns `num_permits` futures that complete once enough resources are
+    /// available.
     ///
-    /// The permits returned are guaranteed to be resolved in order.
-    /// In addition, the permits are guaranteed to be resolved before permits returned by
-    /// subsequent calls to this function (or `get_permit`).
-    #[must_use]
-    pub fn get_permits(&self, num_permits: usize) -> Vec<SearchPermitFuture> {
-        let mut permits_lock = self.inner_arc.lock().unwrap();
-        permits_lock.get_permits(num_permits, &self.inner_arc)
+    /// The permits returned are guaranteed to be resolved in order. In
+    /// addition, the permits are guaranteed to be resolved before permits
+    /// returned by subsequent calls to this function.
+    pub async fn get_permits(&self, num_permits: usize) -> Vec<SearchPermitFuture> {
+        let (permit_sender, permit_receiver) = oneshot::channel();
+        self.sender
+            .send(SearchPermitMessage::Request {
+                permit_sender,
+                num_permits,
+            })
+            .expect("Receiver lives longer than sender");
+        permit_receiver
+            .await
+            .expect("Receiver lives longer than sender")
     }
 }
 
-struct InnerSearchPermitProvider {
-    num_download_slots_available: usize,
-
-    // Note it is possible for memory_allocated to exceed memory_budget temporarily,
-    // if and only if a split leaf search task ended up using more than `initial_allocation`.
-    //
-    // When it happens, new permits will not be assigned until the memory is freed.
-    memory_budget: u64,
-    memory_allocated: u64,
-    initial_allocation: u64,
+struct SearchPermitActor {
+    msg_receiver: mpsc::UnboundedReceiver<SearchPermitMessage>,
+    msg_sender: mpsc::WeakUnboundedSender<SearchPermitMessage>,
+    num_warmup_slots_available: usize,
+    /// Note it is possible for memory_allocated to exceed memory_budget temporarily,
+    /// if and only if a split leaf search task ended up using more than `initial_allocation`.
+    /// When it happens, new permits will not be assigned until the memory is freed.
+    total_memory_budget: u64,
+    total_memory_allocated: u64,
+    per_permit_initial_memory_allocation: u64,
     permits_requests: VecDeque<oneshot::Sender<SearchPermit>>,
 }
 
-impl InnerSearchPermitProvider {
-    fn get_permits(
-        &mut self,
-        num_permits: usize,
-        inner_arc: &Arc<Mutex<InnerSearchPermitProvider>>,
-    ) -> Vec<SearchPermitFuture> {
-        let mut permits = Vec::with_capacity(num_permits);
-        for _ in 0..num_permits {
-            let (tx, rx) = oneshot::channel();
-            self.permits_requests.push_back(tx);
-            permits.push(SearchPermitFuture(rx));
+impl SearchPermitActor {
+    async fn run(&mut self) {
+        // Stops when the last clone of SearchPermitProvider is dropped.
+        while let Some(msg) = self.msg_receiver.recv().await {
+            self.handle_message(msg);
         }
-        self.assign_available_permits(inner_arc);
-        permits
     }
 
-    /// Called each time a permit is requested or released
-    ///
-    /// Calling lock on `inner_arc` inside this method will cause a deadlock as
-    /// `&mut self` and `inner_arc` reference the same instance.
-    fn assign_available_permits(&mut self, inner_arc: &Arc<Mutex<InnerSearchPermitProvider>>) {
-        while self.num_download_slots_available > 0
-            && self.memory_allocated + self.initial_allocation <= self.memory_budget
+    fn handle_message(&mut self, msg: SearchPermitMessage) {
+        match msg {
+            SearchPermitMessage::Request {
+                num_permits,
+                permit_sender,
+            } => {
+                let mut permits = Vec::with_capacity(num_permits);
+                for _ in 0..num_permits {
+                    let (tx, rx) = oneshot::channel();
+                    self.permits_requests.push_back(tx);
+                    permits.push(SearchPermitFuture(rx));
+                }
+                self.assign_available_permits();
+                permit_sender
+                    .send(permits)
+                    .ok()
+                    // This is a request response pattern, so we can safely ignore the error.
+                    .expect("Receiver lives longer than sender");
+            }
+            SearchPermitMessage::WarmupCompleted { memory_delta } => {
+                self.num_warmup_slots_available += 1;
+                if self.total_memory_allocated as i64 + memory_delta < 0 {
+                    panic!("More memory released than allocated, should never happen.")
+                }
+                self.total_memory_allocated =
+                    (self.total_memory_allocated as i64 + memory_delta) as u64;
+                self.assign_available_permits();
+            }
+            SearchPermitMessage::Drop {
+                memory_size,
+                warmup_permit_held,
+            } => {
+                if warmup_permit_held {
+                    self.num_warmup_slots_available += 1;
+                }
+                self.total_memory_allocated = self
+                    .total_memory_allocated
+                    .checked_sub(memory_size)
+                    .expect("More memory released than allocated, should never happen.");
+                self.assign_available_permits();
+            }
+        }
+    }
+
+    fn assign_available_permits(&mut self) {
+        while self.num_warmup_slots_available > 0
+            && self.total_memory_allocated + self.per_permit_initial_memory_allocation
+                <= self.total_memory_budget
         {
             let Some(permit_requester_tx) = self.permits_requests.pop_front() else {
                 break;
@@ -111,23 +170,17 @@ impl InnerSearchPermitProvider {
                 &crate::SEARCH_METRICS.leaf_search_single_split_tasks_ongoing,
             );
             ongoing_gauge_guard.add(1);
-            let send_res = permit_requester_tx.send(SearchPermit {
-                _ongoing_gauge_guard: ongoing_gauge_guard,
-                inner_arc: inner_arc.clone(),
-                warmup_permit_held: true,
-                memory_allocation: self.initial_allocation,
-            });
-            match send_res {
-                Ok(()) => {
-                    self.num_download_slots_available -= 1;
-                    self.memory_allocated += self.initial_allocation;
-                }
-                Err(search_permit) => {
-                    // We cannot just decrease the num_permits_available in all case and rely on
-                    // the drop logic here: it would cause a dead lock on the inner_arc Mutex.
-                    search_permit.drop_without_recycling_permit();
-                }
-            }
+            self.total_memory_allocated += self.per_permit_initial_memory_allocation;
+            permit_requester_tx
+                .send(SearchPermit {
+                    _ongoing_gauge_guard: ongoing_gauge_guard,
+                    msg_sender: self.msg_sender.clone(),
+                    memory_allocation: self.per_permit_initial_memory_allocation,
+                    warmup_permit_held: true,
+                })
+                // if the requester dropped its receiver, we drop the newly
+                // created SearchPermit which releases the resources
+                .ok();
         }
         crate::SEARCH_METRICS
             .leaf_search_single_split_tasks_pending
@@ -137,16 +190,16 @@ impl InnerSearchPermitProvider {
 
 pub struct SearchPermit {
     _ongoing_gauge_guard: GaugeGuard<'static>,
-    inner_arc: Arc<Mutex<InnerSearchPermitProvider>>,
-    warmup_permit_held: bool,
+    msg_sender: mpsc::WeakUnboundedSender<SearchPermitMessage>,
     memory_allocation: u64,
+    warmup_permit_held: bool,
 }
 
 impl SearchPermit {
-    /// After warm up, we have a proper estimate of the memory usage of a single split leaf search.
-    ///
-    /// We can then set the actual memory usage.
-    pub fn set_actual_memory_usage_and_release_permit_after(&mut self, new_memory_usage: u64) {
+    /// After warm up, we have a proper estimate of the memory usage of a single
+    /// split leaf search. We can thus set the actual memory usage and release
+    /// the warmup slot.
+    pub fn warmup_completed(&mut self, new_memory_usage: u64) {
         if new_memory_usage > self.memory_allocation {
             warn!(
                 memory_usage = new_memory_usage,
@@ -154,53 +207,40 @@ impl SearchPermit {
                 "current leaf search is consuming more memory than the initial allocation"
             );
         }
-        let mut inner_guard = self.inner_arc.lock().unwrap();
-        let delta = new_memory_usage as i64 - inner_guard.initial_allocation as i64;
-        inner_guard.memory_allocated += delta as u64;
-        inner_guard.num_download_slots_available += 1;
-        if inner_guard.memory_allocated > inner_guard.memory_budget {
-            warn!(
-                memory_allocated = inner_guard.memory_allocated,
-                memory_budget = inner_guard.memory_budget,
-                "memory allocated exceeds memory budget"
-            );
-        }
-        self.memory_allocation = new_memory_usage;
-        inner_guard.assign_available_permits(&self.inner_arc);
+        let memory_delta = new_memory_usage as i64 - self.memory_allocation as i64;
+        self.warmup_permit_held = false;
+        self.send_if_still_running(SearchPermitMessage::WarmupCompleted { memory_delta });
     }
 
-    fn drop_without_recycling_permit(mut self) {
-        self.warmup_permit_held = false;
-        self.memory_allocation = 0u64;
-        drop(self);
+    fn send_if_still_running(&self, msg: SearchPermitMessage) {
+        if let Some(sender) = self.msg_sender.upgrade() {
+            sender
+                .send(msg)
+                // Receiver instance in the event loop is never dropped or
+                // closed as long as there is a strong sender reference.
+                .expect("Receiver should live longer than sender");
+        }
     }
 }
 
 impl Drop for SearchPermit {
     fn drop(&mut self) {
-        // This is not just an optimization. This is necessary to avoid a dead lock when the
-        // permit requester dropped its receiver channel.
-        if !self.warmup_permit_held && self.memory_allocation == 0 {
-            return;
-        }
-        let mut inner_guard = self.inner_arc.lock().unwrap();
-        if self.warmup_permit_held {
-            inner_guard.num_download_slots_available += 1;
-        }
-        inner_guard.memory_allocated -= self.memory_allocation;
-        inner_guard.assign_available_permits(&self.inner_arc);
+        self.send_if_still_running(SearchPermitMessage::Drop {
+            memory_size: self.memory_allocation,
+            warmup_permit_held: self.warmup_permit_held,
+        });
     }
 }
 
 pub struct SearchPermitFuture(oneshot::Receiver<SearchPermit>);
 
 impl Future for SearchPermitFuture {
-    type Output = Option<SearchPermit>;
+    type Output = SearchPermit;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let receiver = Pin::new(&mut self.get_mut().0);
         match receiver.poll(cx) {
-            Poll::Ready(Ok(search_permit)) => Poll::Ready(Some(search_permit)),
+            Poll::Ready(Ok(search_permit)) => Poll::Ready(search_permit),
             Poll::Ready(Err(_)) => panic!("Failed to acquire permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues."),
             Poll::Pending => Poll::Pending,
         }
