@@ -72,7 +72,9 @@ use quickwit_metastore::{
     IndexMetadata, ListIndexesMetadataResponseExt, ListSplitsQuery, ListSplitsRequestExt,
     MetastoreServiceStreamSplitsExt, SplitMetadata, SplitState,
 };
-use quickwit_proto::search::{PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets};
+use quickwit_proto::search::{
+    PartialHit, ResourceStats, SearchRequest, SearchResponse, SplitIdAndFooterOffsets,
+};
 use quickwit_proto::types::IndexUid;
 use quickwit_storage::StorageResolver;
 pub use service::SearcherContext;
@@ -339,4 +341,22 @@ pub fn searcher_pool_for_test(
                 (grpc_addr, client)
             }),
     )
+}
+
+pub(crate) fn merge_resource_stats_it(
+    stats_it: &mut dyn Iterator<Item = &ResourceStats>,
+) -> Option<ResourceStats> {
+    let mut acc_stats: ResourceStats = stats_it.next()?.clone();
+    for new_stats in stats_it {
+        merge_resource_stats(new_stats, &mut acc_stats);
+    }
+    Some(acc_stats)
+}
+
+fn merge_resource_stats(new_stats: &ResourceStats, stat_accs: &mut ResourceStats) {
+    stat_accs.short_lived_cache_num_bytes += new_stats.short_lived_cache_num_bytes;
+    stat_accs.split_num_docs += new_stats.split_num_docs;
+    stat_accs.warmup_microsecs += new_stats.warmup_microsecs;
+    stat_accs.cpu_thread_pool_wait_microsecs += new_stats.cpu_thread_pool_wait_microsecs;
+    stat_accs.cpu_microsecs += new_stats.cpu_microsecs;
 }

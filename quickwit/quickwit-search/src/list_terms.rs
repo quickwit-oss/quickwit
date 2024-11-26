@@ -33,7 +33,7 @@ use quickwit_proto::search::{
     SplitIdAndFooterOffsets, SplitSearchError,
 };
 use quickwit_proto::types::IndexUid;
-use quickwit_storage::Storage;
+use quickwit_storage::{ByteRangeCache, Storage};
 use tantivy::schema::{Field, FieldType};
 use tantivy::{ReloadPolicy, Term};
 use tracing::{debug, error, info, instrument};
@@ -216,7 +216,10 @@ async fn leaf_list_terms_single_split(
     storage: Arc<dyn Storage>,
     split: SplitIdAndFooterOffsets,
 ) -> crate::Result<LeafListTermsResponse> {
-    let index = open_index_with_caches(searcher_context, storage, &split, None, true).await?;
+    let cache =
+        ByteRangeCache::with_infinite_capacity(&quickwit_storage::STORAGE_METRICS.shortlived_cache);
+    let index =
+        open_index_with_caches(searcher_context, storage, &split, None, Some(cache)).await?;
     let split_schema = index.schema();
     let reader = index
         .reader_builder()

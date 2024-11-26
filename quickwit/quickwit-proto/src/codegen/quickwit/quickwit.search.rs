@@ -286,6 +286,21 @@ pub struct LeafSearchRequest {
     #[prost(string, repeated, tag = "9")]
     pub index_uris: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ResourceStats {
+    #[prost(uint64, tag = "1")]
+    pub short_lived_cache_num_bytes: u64,
+    #[prost(uint64, tag = "2")]
+    pub split_num_docs: u64,
+    #[prost(uint64, tag = "3")]
+    pub warmup_microsecs: u64,
+    #[prost(uint64, tag = "4")]
+    pub cpu_thread_pool_wait_microsecs: u64,
+    #[prost(uint64, tag = "5")]
+    pub cpu_microsecs: u64,
+}
 /// / LeafRequestRef references data in LeafSearchRequest to deduplicate data.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -457,6 +472,8 @@ pub struct LeafSearchResponse {
     pub intermediate_aggregation_result: ::core::option::Option<
         ::prost::alloc::vec::Vec<u8>,
     >,
+    #[prost(message, optional, tag = "8")]
+    pub resource_stats: ::core::option::Option<ResourceStats>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]

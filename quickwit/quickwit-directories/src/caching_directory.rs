@@ -33,7 +33,7 @@ use tantivy::{Directory, HasLen};
 pub struct CachingDirectory {
     underlying: Arc<dyn Directory>,
     // TODO fixme: that's a pretty ugly cache we have here.
-    cache: Arc<ByteRangeCache>,
+    cache: ByteRangeCache,
 }
 
 impl CachingDirectory {
@@ -42,12 +42,18 @@ impl CachingDirectory {
     /// Warming: The resulting CacheDirectory will cache all information without ever
     /// removing any item from the cache.
     pub fn new_unbounded(underlying: Arc<dyn Directory>) -> CachingDirectory {
-        CachingDirectory {
-            underlying,
-            cache: Arc::new(ByteRangeCache::with_infinite_capacity(
-                &quickwit_storage::STORAGE_METRICS.shortlived_cache,
-            )),
-        }
+        let byte_range_cache = ByteRangeCache::with_infinite_capacity(
+            &quickwit_storage::STORAGE_METRICS.shortlived_cache,
+        );
+        CachingDirectory::new(underlying, byte_range_cache)
+    }
+
+    /// Creates a new CachingDirectory.
+    ///
+    /// Warming: The resulting CacheDirectory will cache all information without ever
+    /// removing any item from the cache.
+    pub fn new(underlying: Arc<dyn Directory>, cache: ByteRangeCache) -> CachingDirectory {
+        CachingDirectory { underlying, cache }
     }
 }
 
@@ -59,7 +65,7 @@ impl fmt::Debug for CachingDirectory {
 
 struct CachingFileHandle {
     path: PathBuf,
-    cache: Arc<ByteRangeCache>,
+    cache: ByteRangeCache,
     underlying_filehandle: Arc<dyn FileHandle>,
 }
 
