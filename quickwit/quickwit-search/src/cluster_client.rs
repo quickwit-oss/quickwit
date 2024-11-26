@@ -322,7 +322,7 @@ fn merge_original_with_retry_leaf_search_response(
         retry_response.resource_stats.as_ref(),
     ]
     .into_iter()
-    .flat_map(|el_opt| el_opt);
+    .flatten();
     let resource_stats = merge_resource_stats_it(&mut stats);
     Ok(LeafSearchResponse {
         intermediate_aggregation_result,

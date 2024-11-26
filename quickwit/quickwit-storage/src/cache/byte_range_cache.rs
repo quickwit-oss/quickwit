@@ -377,8 +377,7 @@ impl ByteRangeCache {
         need_mut_byte_range_cache_locked.put_slice(path, byte_range, bytes);
         let num_bytes = need_mut_byte_range_cache_locked.num_bytes;
         drop(need_mut_byte_range_cache_locked);
-        self.num_stored_bytes
-            .store(num_bytes as u64, Ordering::Relaxed);
+        self.num_stored_bytes.store(num_bytes, Ordering::Relaxed);
     }
 }
 
