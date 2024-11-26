@@ -27,7 +27,7 @@ use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::search::{
     FetchDocsResponse, PartialHit, SnippetRequest, SplitIdAndFooterOffsets,
 };
-use quickwit_storage::Storage;
+use quickwit_storage::{ByteRangeCache, Storage};
 use tantivy::query::Query;
 use tantivy::schema::document::CompactDocValue;
 use tantivy::schema::{Document as DocumentTrait, Field, TantivyDocument, Value};
@@ -174,12 +174,12 @@ async fn fetch_docs_in_split(
     global_doc_addrs.sort_by_key(|doc| doc.doc_addr);
     // Opens the index without the ephemeral unbounded cache, this cache is indeed not useful
     // when fetching docs as we will fetch them only once.
-    let mut index = open_index_with_caches::<()>(
+    let mut index = open_index_with_caches(
         &searcher_context,
         index_storage,
         split,
         Some(doc_mapper.tokenizer_manager()),
-        None,
+        Option::<Arc<ByteRangeCache>>::None,
     )
     .await
     .context("open-index-for-split")?;

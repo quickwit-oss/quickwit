@@ -41,6 +41,7 @@ use tracing::{debug, error, info, instrument};
 use crate::leaf::open_index_with_caches;
 use crate::search_job_placer::group_jobs_by_index_id;
 use crate::search_permit_provider::SearchPermit;
+use crate::tracked_cache::TrackedByteRangeCache;
 use crate::{resolve_index_patterns, ClusterClient, SearchError, SearchJob, SearcherContext};
 
 /// Performs a distributed list terms.
@@ -218,12 +219,12 @@ async fn leaf_list_terms_single_split(
     split: SplitIdAndFooterOffsets,
     search_permit: SearchPermit,
 ) -> crate::Result<LeafListTermsResponse> {
-    let cache = ByteRangeCache::with_infinite_capacity(
-        &quickwit_storage::STORAGE_METRICS.shortlived_cache,
-        search_permit,
-    );
+    let cache =
+        ByteRangeCache::with_infinite_capacity(&quickwit_storage::STORAGE_METRICS.shortlived_cache);
+    let tracked_cache = TrackedByteRangeCache::new(cache, search_permit);
     let index =
-        open_index_with_caches(searcher_context, storage, &split, None, Some(cache)).await?;
+        open_index_with_caches(searcher_context, storage, &split, None, Some(tracked_cache))
+            .await?;
     let split_schema = index.schema();
     let reader = index
         .reader_builder()
