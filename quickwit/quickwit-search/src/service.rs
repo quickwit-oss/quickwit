@@ -489,7 +489,7 @@ impl SearcherContext {
             &quickwit_storage::STORAGE_METRICS.split_footer_cache,
         );
         let leaf_search_split_semaphore =
-            SearchPermitProvider::new(searcher_config.max_num_concurrent_split_searches);
+            SearchPermitProvider::new(searcher_config.max_num_concurrent_split_searches, searcher_config.warmup_memory_budget, searcher_config.warmup_single_split_initial_allocation);
         let split_stream_semaphore =
             Semaphore::new(searcher_config.max_num_concurrent_split_streams);
         let fast_field_cache_capacity = searcher_config.fast_field_cache_capacity.as_u64() as usize;
