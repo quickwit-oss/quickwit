@@ -24,6 +24,8 @@ use std::task::{Context, Poll};
 
 use bytesize::ByteSize;
 use quickwit_common::metrics::GaugeGuard;
+#[cfg(test)]
+use tokio::sync::watch;
 use tokio::sync::{mpsc, oneshot};
 use tracing::warn;
 
@@ -36,7 +38,9 @@ use tracing::warn;
 /// remaining memory is also released.
 #[derive(Clone)]
 pub struct SearchPermitProvider {
-    sender: mpsc::UnboundedSender<SearchPermitMessage>,
+    message_sender: mpsc::UnboundedSender<SearchPermitMessage>,
+    #[cfg(test)]
+    actor_stopped: watch::Receiver<bool>,
 }
 
 pub enum SearchPermitMessage {
@@ -59,18 +63,26 @@ impl SearchPermitProvider {
         memory_budget: ByteSize,
         initial_allocation: ByteSize,
     ) -> Self {
-        let (sender, receiver) = mpsc::unbounded_channel();
-        let mut actor = SearchPermitActor {
-            msg_receiver: receiver,
-            msg_sender: sender.downgrade(),
+        let (message_sender, message_receiver) = mpsc::unbounded_channel();
+        #[cfg(test)]
+        let (state_sender, state_receiver) = watch::channel(false);
+        let actor = SearchPermitActor {
+            msg_receiver: message_receiver,
+            msg_sender: message_sender.downgrade(),
             num_warmup_slots_available: num_download_slots,
             total_memory_budget: memory_budget.as_u64(),
             permits_requests: VecDeque::new(),
             total_memory_allocated: 0u64,
             per_permit_initial_memory_allocation: initial_allocation.as_u64(),
+            #[cfg(test)]
+            stopped: state_sender,
         };
-        tokio::spawn(async move { actor.run().await });
-        Self { sender }
+        tokio::spawn(actor.run());
+        Self {
+            message_sender,
+            #[cfg(test)]
+            actor_stopped: state_receiver,
+        }
     }
 
     /// Returns `num_permits` futures that complete once enough resources are
@@ -81,7 +93,7 @@ impl SearchPermitProvider {
     /// returned by subsequent calls to this function.
     pub async fn get_permits(&self, num_permits: usize) -> Vec<SearchPermitFuture> {
         let (permit_sender, permit_receiver) = oneshot::channel();
-        self.sender
+        self.message_sender
             .send(SearchPermitMessage::Request {
                 permit_sender,
                 num_permits,
@@ -104,14 +116,18 @@ struct SearchPermitActor {
     total_memory_allocated: u64,
     per_permit_initial_memory_allocation: u64,
     permits_requests: VecDeque<oneshot::Sender<SearchPermit>>,
+    #[cfg(test)]
+    stopped: watch::Sender<bool>,
 }
 
 impl SearchPermitActor {
-    async fn run(&mut self) {
+    async fn run(mut self) {
         // Stops when the last clone of SearchPermitProvider is dropped.
         while let Some(msg) = self.msg_receiver.recv().await {
             self.handle_message(msg);
         }
+        #[cfg(test)]
+        self.stopped.send(true).ok();
     }
 
     fn handle_message(&mut self, msg: SearchPermitMessage) {
@@ -171,6 +187,7 @@ impl SearchPermitActor {
             );
             ongoing_gauge_guard.add(1);
             self.total_memory_allocated += self.per_permit_initial_memory_allocation;
+            self.num_warmup_slots_available -= 1;
             permit_requester_tx
                 .send(SearchPermit {
                     _ongoing_gauge_guard: ongoing_gauge_guard,
@@ -188,6 +205,7 @@ impl SearchPermitActor {
     }
 }
 
+#[derive(Debug)]
 pub struct SearchPermit {
     _ongoing_gauge_guard: GaugeGuard<'static>,
     msg_sender: mpsc::WeakUnboundedSender<SearchPermitMessage>,
@@ -248,70 +266,113 @@ impl Future for SearchPermitFuture {
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use tokio::task::JoinSet;
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
 
-//     use super::*;
+    use futures::StreamExt;
+    use rand::seq::SliceRandom;
+    use tokio::task::JoinSet;
 
-//     #[tokio::test]
-//     async fn test_search_permits_get_permits_future() {
-//         // We test here that `get_permits_futures` does not interleave
-//         let search_permits = SearchPermitProvider::new(1);
-//         let mut all_futures = Vec::new();
-//         let first_batch_of_permits = search_permits.get_permits(10);
-//         assert_eq!(first_batch_of_permits.len(), 10);
-//         all_futures.extend(
-//             first_batch_of_permits
-//                 .into_iter()
-//                 .enumerate()
-//                 .map(move |(i, fut)| ((1, i), fut)),
-//         );
+    use super::*;
 
-//         let second_batch_of_permits = search_permits.get_permits(10);
-//         assert_eq!(second_batch_of_permits.len(), 10);
-//         all_futures.extend(
-//             second_batch_of_permits
-//                 .into_iter()
-//                 .enumerate()
-//                 .map(move |(i, fut)| ((2, i), fut)),
-//         );
+    #[tokio::test]
+    async fn test_search_permit_order() {
+        let permit_provider = SearchPermitProvider::new(1, ByteSize::mb(100), ByteSize::mb(10));
+        let mut all_futures = Vec::new();
+        let first_batch_of_permits = permit_provider.get_permits(10).await;
+        assert_eq!(first_batch_of_permits.len(), 10);
+        all_futures.extend(
+            first_batch_of_permits
+                .into_iter()
+                .enumerate()
+                .map(move |(i, fut)| ((1, i), fut)),
+        );
 
-//         use rand::seq::SliceRandom;
-//         // not super useful, considering what join set does, but still a tiny bit more sound.
-//         all_futures.shuffle(&mut rand::thread_rng());
+        let second_batch_of_permits = permit_provider.get_permits(10).await;
+        assert_eq!(second_batch_of_permits.len(), 10);
+        all_futures.extend(
+            second_batch_of_permits
+                .into_iter()
+                .enumerate()
+                .map(move |(i, fut)| ((2, i), fut)),
+        );
 
-//         let mut join_set = JoinSet::new();
-//         for (res, fut) in all_futures {
-//             join_set.spawn(async move {
-//                 let permit = fut.await;
-//                 (res, permit)
-//             });
-//         }
-//         let mut ordered_result: Vec<(usize, usize)> = Vec::with_capacity(20);
-//         while let Some(Ok(((batch_id, order), _permit))) = join_set.join_next().await {
-//             ordered_result.push((batch_id, order));
-//         }
+        // not super useful, considering what join set does, but still a tiny bit more sound.
+        all_futures.shuffle(&mut rand::thread_rng());
 
-//         assert_eq!(ordered_result.len(), 20);
-//         for (i, res) in ordered_result[0..10].iter().enumerate() {
-//             assert_eq!(res, &(1, i));
-//         }
-//         for (i, res) in ordered_result[10..20].iter().enumerate() {
-//             assert_eq!(res, &(2, i));
-//         }
-//     }
+        let mut join_set = JoinSet::new();
+        for (res, fut) in all_futures {
+            join_set.spawn(async move {
+                let permit = fut.await;
+                (res, permit)
+            });
+        }
+        let mut ordered_result: Vec<(usize, usize)> = Vec::with_capacity(20);
+        while let Some(Ok(((batch_id, order), _permit))) = join_set.join_next().await {
+            ordered_result.push((batch_id, order));
+        }
 
-//     #[tokio::test]
-//     async fn test_search_permits_receiver_race_condition() {
-//         // Here we test that we don't have a problem if the Receiver is dropped.
-//         // In particular, we want to check that there is not a race condition where drop attempts
-// to         // lock the mutex.
-//         let search_permits = SearchPermitProvider::new(1);
-//         let permit_rx = search_permits.get_permit();
-//         let permit_rx2 = search_permits.get_permit();
-//         drop(permit_rx2);
-//         drop(permit_rx);
-//         let _permit_rx = search_permits.get_permit();
-//     }
-// }
+        assert_eq!(ordered_result.len(), 20);
+        for (i, res) in ordered_result[0..10].iter().enumerate() {
+            assert_eq!(res, &(1, i));
+        }
+        for (i, res) in ordered_result[10..20].iter().enumerate() {
+            assert_eq!(res, &(2, i));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_search_permit_early_drops() {
+        let permit_provider = SearchPermitProvider::new(1, ByteSize::mb(100), ByteSize::mb(10));
+        let permit_fut1 = permit_provider
+            .get_permits(1)
+            .await
+            .into_iter()
+            .next()
+            .unwrap();
+        let permit_fut2 = permit_provider
+            .get_permits(1)
+            .await
+            .into_iter()
+            .next()
+            .unwrap();
+        drop(permit_fut1);
+        let permit = permit_fut2.await;
+        assert_eq!(permit.memory_allocation, ByteSize::mb(10).as_u64());
+        assert_eq!(*permit_provider.actor_stopped.borrow(), false);
+
+        let _permit_fut3 = permit_provider
+            .get_permits(1)
+            .await
+            .into_iter()
+            .next()
+            .unwrap();
+        let mut actor_stopped = permit_provider.actor_stopped.clone();
+        drop(permit_provider);
+        {
+            actor_stopped.changed().await.unwrap();
+            assert!(*actor_stopped.borrow());
+        }
+    }
+
+    #[tokio::test]
+    async fn test_memory_permit() {
+        let permit_provider = SearchPermitProvider::new(100, ByteSize::mb(100), ByteSize::mb(10));
+        let mut permit_futs = permit_provider.get_permits(12).await;
+        let mut blocked_permits = permit_futs.split_off(10).into_iter();
+        let mut permits: Vec<SearchPermit> = futures::stream::iter(permit_futs.into_iter())
+            .buffered(1)
+            .collect()
+            .await;
+        let next_blocked_permit = blocked_permits.next().unwrap();
+        tokio::time::timeout(Duration::from_millis(20), next_blocked_permit)
+            .await
+            .unwrap_err();
+        permits.drain(0..1);
+        let next_blocked_permit = blocked_permits.next().unwrap();
+        tokio::time::timeout(Duration::from_millis(20), next_blocked_permit)
+            .await
+            .unwrap();
+    }
+}
