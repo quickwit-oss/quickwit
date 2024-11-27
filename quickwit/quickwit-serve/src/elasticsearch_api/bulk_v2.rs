@@ -273,6 +273,11 @@ fn make_elastic_bulk_response_v2(
                 format!("shard rate limiting [{}]", failure.index_id),
                 StatusCode::TOO_MANY_REQUESTS,
             ),
+            IngestFailureReason::NoShardsAvailable => (
+                ElasticException::RateLimited,
+                format!("no shards available [{}]", failure.index_id),
+                StatusCode::TOO_MANY_REQUESTS,
+            ),
             reason => {
                 let pretty_reason = reason
                     .as_str_name()
