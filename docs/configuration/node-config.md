@@ -84,7 +84,7 @@ grpc:
 
 :::warning
 We advise changing the default value of 20 MiB only if you encounter the following error:
-`Error, message length too large: found 24732228 bytes, the limit is: 20971520 bytes.` In that case, increase `max_message_size` by increments of 10 MiB until the issue disappears. This is a temporary fix: the next version of Quickwit, 0.8, will rely exclusively on gRPC streaming endpoints and handle messages of any length.
+`Error, message length too large: found 24732228 bytes, the limit is: 20971520 bytes.` In that case, increase `max_message_size` by increments of 10 MiB until the issue disappears. This is a temporary fix: the next version of Quickwit will rely exclusively on gRPC streaming endpoints and handle messages of any length.
 :::
 
 ## Storage configuration
