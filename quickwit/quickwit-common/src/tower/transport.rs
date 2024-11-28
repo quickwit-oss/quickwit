@@ -26,7 +26,7 @@ use futures::{Stream, StreamExt};
 use http::Uri;
 use tokio::sync::{mpsc, watch};
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tonic::transport::{Channel, Endpoint};
+use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
 use tower::balance::p2c::Balance;
 use tower::buffer::Buffer;
 use tower::discover::Change as TowerChange;
@@ -195,16 +195,23 @@ where K: Hash + Eq + Clone + Send + Sync + 'static
 /// Creates a channel from a socket address.
 ///
 /// The function is marked as `async` because it requires an executor (`connect_lazy`).
-pub async fn make_channel(socket_addr: SocketAddr) -> Channel {
+pub async fn make_channel(socket_addr: SocketAddr, tls_config: Option<ClientTlsConfig>) -> Channel {
+    let scheme = if tls_config.is_some() {
+        "https"
+    } else {
+        "http"
+    };
     let uri = Uri::builder()
-        .scheme("http")
+        .scheme(scheme)
         .authority(socket_addr.to_string())
         .path_and_query("/")
         .build()
         .expect("provided arguments should be valid");
-    Endpoint::from(uri)
-        .connect_timeout(Duration::from_secs(5))
-        .connect_lazy()
+    let mut endpoint = Endpoint::from(uri).connect_timeout(Duration::from_secs(5));
+    if let Some(tls_config) = tls_config {
+        endpoint = endpoint.tls_config(tls_config).expect("sadness TODO");
+    }
+    endpoint.connect_lazy()
 }
 
 /// Forces a channel to initiate the underlying HTTP connection. Calling this function only makes
