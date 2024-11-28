@@ -715,7 +715,7 @@ pub async fn serve_quickwit(
     });
     let grpc_server = grpc::start_grpc_server(
         tcp_listener_resolver.resolve(grpc_listen_addr).await?,
-        grpc_config.max_message_size,
+        grpc_config,
         quickwit_services.clone(),
         grpc_readiness_trigger,
         grpc_shutdown_signal,

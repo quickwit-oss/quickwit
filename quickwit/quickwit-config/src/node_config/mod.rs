@@ -53,6 +53,8 @@ pub struct RestConfig {
 pub struct GrpcConfig {
     #[serde(default = "GrpcConfig::default_max_message_size")]
     pub max_message_size: ByteSize,
+    #[serde(default)]
+    pub tls: Option<TlsConfig>,
 }
 
 impl GrpcConfig {
@@ -74,8 +76,19 @@ impl Default for GrpcConfig {
     fn default() -> Self {
         Self {
             max_message_size: Self::default_max_message_size(),
+            tls: None,
         }
     }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TlsConfig {
+    pub cert_path: String,
+    pub key_path: String,
+    pub ca_path: String,
+    #[serde(default)]
+    pub validate_client: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -686,11 +699,13 @@ mod tests {
     fn test_grpc_config_validate() {
         let grpc_config = GrpcConfig {
             max_message_size: ByteSize::mb(1),
+            tls: None,
         };
         assert!(grpc_config.validate().is_ok());
 
         let grpc_config = GrpcConfig {
             max_message_size: ByteSize::kb(1),
+            tls: None,
         };
         assert!(grpc_config.validate().is_err());
     }
