@@ -344,20 +344,125 @@ pub fn searcher_pool_for_test(
     )
 }
 
-pub(crate) fn merge_resource_stats_it(
-    stats_it: &mut dyn Iterator<Item = &ResourceStats>,
+pub(crate) fn merge_resource_stats_it<'a>(
+    stats_it: impl IntoIterator<Item = &'a Option<ResourceStats>>,
 ) -> Option<ResourceStats> {
-    let mut acc_stats: ResourceStats = stats_it.next()?.clone();
+    let mut acc_stats: Option<ResourceStats> = None;
     for new_stats in stats_it {
         merge_resource_stats(new_stats, &mut acc_stats);
     }
-    Some(acc_stats)
+    acc_stats
 }
 
-fn merge_resource_stats(new_stats: &ResourceStats, stat_accs: &mut ResourceStats) {
-    stat_accs.short_lived_cache_num_bytes += new_stats.short_lived_cache_num_bytes;
-    stat_accs.split_num_docs += new_stats.split_num_docs;
-    stat_accs.warmup_microsecs += new_stats.warmup_microsecs;
-    stat_accs.cpu_thread_pool_wait_microsecs += new_stats.cpu_thread_pool_wait_microsecs;
-    stat_accs.cpu_microsecs += new_stats.cpu_microsecs;
+fn merge_resource_stats(
+    new_stats_opt: &Option<ResourceStats>,
+    stat_accs_opt: &mut Option<ResourceStats>,
+) {
+    if let Some(new_stats) = new_stats_opt {
+        if let Some(stat_accs) = stat_accs_opt {
+            stat_accs.short_lived_cache_num_bytes += new_stats.short_lived_cache_num_bytes;
+            stat_accs.split_num_docs += new_stats.split_num_docs;
+            stat_accs.warmup_microsecs += new_stats.warmup_microsecs;
+            stat_accs.cpu_thread_pool_wait_microsecs += new_stats.cpu_thread_pool_wait_microsecs;
+            stat_accs.cpu_microsecs += new_stats.cpu_microsecs;
+        } else {
+            *stat_accs_opt = Some(new_stats.clone());
+        }
+    }
+}
+#[cfg(test)]
+mod stats_merge_tests {
+    use super::*;
+
+    #[test]
+    fn test_merge_resource_stats() {
+        let mut acc_stats = None;
+
+        merge_resource_stats(&None, &mut acc_stats);
+
+        assert_eq!(acc_stats, None);
+
+        let stats = Some(ResourceStats {
+            short_lived_cache_num_bytes: 100,
+            split_num_docs: 200,
+            warmup_microsecs: 300,
+            cpu_thread_pool_wait_microsecs: 400,
+            cpu_microsecs: 500,
+        });
+
+        merge_resource_stats(&stats, &mut acc_stats);
+
+        assert_eq!(acc_stats, stats);
+
+        let new_stats = Some(ResourceStats {
+            short_lived_cache_num_bytes: 50,
+            split_num_docs: 100,
+            warmup_microsecs: 150,
+            cpu_thread_pool_wait_microsecs: 200,
+            cpu_microsecs: 250,
+        });
+
+        merge_resource_stats(&new_stats, &mut acc_stats);
+
+        let stats_plus_new_stats = Some(ResourceStats {
+            short_lived_cache_num_bytes: 150,
+            split_num_docs: 300,
+            warmup_microsecs: 450,
+            cpu_thread_pool_wait_microsecs: 600,
+            cpu_microsecs: 750,
+        });
+
+        assert_eq!(acc_stats, stats_plus_new_stats);
+
+        merge_resource_stats(&None, &mut acc_stats);
+
+        assert_eq!(acc_stats, stats_plus_new_stats);
+    }
+
+    #[test]
+    fn test_merge_resource_stats_it() {
+        let merged_stats = merge_resource_stats_it(Vec::<&Option<ResourceStats>>::new());
+        assert_eq!(merged_stats, None);
+
+        let stats1 = Some(ResourceStats {
+            short_lived_cache_num_bytes: 100,
+            split_num_docs: 200,
+            warmup_microsecs: 300,
+            cpu_thread_pool_wait_microsecs: 400,
+            cpu_microsecs: 500,
+        });
+
+        let merged_stats = merge_resource_stats_it(vec![&None, &stats1, &None]);
+
+        assert_eq!(merged_stats, stats1);
+
+        let stats2 = Some(ResourceStats {
+            short_lived_cache_num_bytes: 50,
+            split_num_docs: 100,
+            warmup_microsecs: 150,
+            cpu_thread_pool_wait_microsecs: 200,
+            cpu_microsecs: 250,
+        });
+
+        let stats3 = Some(ResourceStats {
+            short_lived_cache_num_bytes: 25,
+            split_num_docs: 50,
+            warmup_microsecs: 75,
+            cpu_thread_pool_wait_microsecs: 100,
+            cpu_microsecs: 125,
+        });
+
+        let merged_stats = merge_resource_stats_it(vec![&stats1, &stats2, &stats3]);
+
+        assert_eq!(
+            merged_stats,
+            Some(ResourceStats {
+                short_lived_cache_num_bytes: 175,
+                split_num_docs: 350,
+                warmup_microsecs: 525,
+                cpu_thread_pool_wait_microsecs: 700,
+                cpu_microsecs: 875,
+            })
+        );
+    }
 }

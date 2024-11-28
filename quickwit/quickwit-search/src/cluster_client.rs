@@ -317,13 +317,10 @@ fn merge_original_with_retry_leaf_search_response(
         (Some(left), None) => Some(left),
         (None, None) => None,
     };
-    let mut stats = [
-        original_response.resource_stats.as_ref(),
-        retry_response.resource_stats.as_ref(),
-    ]
-    .into_iter()
-    .flatten();
-    let resource_stats = merge_resource_stats_it(&mut stats);
+    let resource_stats = merge_resource_stats_it([
+        &original_response.resource_stats,
+        &retry_response.resource_stats,
+    ]);
     Ok(LeafSearchResponse {
         intermediate_aggregation_result,
         num_hits: original_response.num_hits + retry_response.num_hits,

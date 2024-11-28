@@ -921,10 +921,10 @@ fn merge_leaf_responses(
         return Ok(leaf_responses.pop().unwrap());
     }
 
-    let mut resource_stats_it = leaf_responses
+    let resource_stats_it = leaf_responses
         .iter()
-        .flat_map(|leaf_response| leaf_response.resource_stats.as_ref());
-    let merged_resource_stats = merge_resource_stats_it(&mut resource_stats_it);
+        .map(|leaf_response| &leaf_response.resource_stats);
+    let merged_resource_stats = merge_resource_stats_it(resource_stats_it);
 
     let merged_intermediate_aggregation_result: Option<Vec<u8>> =
         merge_intermediate_aggregation_result(
@@ -1228,13 +1228,7 @@ impl IncrementalCollector {
             resource_stats,
         } = leaf_response;
 
-        if let Some(leaf_resource_stats) = resource_stats {
-            if let Some(current_stats) = self.resource_stats.as_mut() {
-                merge_resource_stats(&leaf_resource_stats, current_stats);
-            } else {
-                self.resource_stats = Some(leaf_resource_stats);
-            }
-        }
+        merge_resource_stats(&resource_stats, &mut self.resource_stats);
 
         self.num_hits += num_hits;
         self.top_k_hits.add_entries(partial_hits.into_iter());
@@ -1295,8 +1289,8 @@ mod tests {
     use std::cmp::Ordering;
 
     use quickwit_proto::search::{
-        LeafSearchResponse, PartialHit, SearchRequest, SortByValue, SortField, SortOrder,
-        SortValue, SplitSearchError,
+        LeafSearchResponse, PartialHit, ResourceStats, SearchRequest, SortByValue, SortField,
+        SortOrder, SortValue, SplitSearchError,
     };
     use tantivy::collector::Collector;
     use tantivy::TantivyDocument;
@@ -1942,7 +1936,10 @@ mod tests {
                     num_attempted_splits: 3,
                     num_successful_splits: 3,
                     intermediate_aggregation_result: None,
-                    resource_stats: None,
+                    resource_stats: Some(ResourceStats {
+                        cpu_microsecs: 100,
+                        ..Default::default()
+                    }),
                 },
                 LeafSearchResponse {
                     num_hits: 10,
@@ -1961,7 +1958,10 @@ mod tests {
                     num_attempted_splits: 2,
                     num_successful_splits: 1,
                     intermediate_aggregation_result: None,
-                    resource_stats: None,
+                    resource_stats: Some(ResourceStats {
+                        cpu_microsecs: 50,
+                        ..Default::default()
+                    }),
                 },
             ],
         );
@@ -1994,7 +1994,10 @@ mod tests {
                 num_attempted_splits: 5,
                 num_successful_splits: 4,
                 intermediate_aggregation_result: None,
-                resource_stats: None,
+                resource_stats: Some(ResourceStats {
+                    cpu_microsecs: 150,
+                    ..Default::default()
+                }),
             }
         );
         // TODO would be nice to test aggregation too.
