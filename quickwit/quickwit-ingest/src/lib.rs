@@ -46,6 +46,7 @@ use once_cell::sync::OnceCell;
 pub use position::Position;
 pub use queue::Queues;
 use quickwit_actors::{Mailbox, Universe};
+use quickwit_common::metrics::Histogram;
 use quickwit_config::IngestApiConfig;
 use tokio::sync::Mutex;
 
@@ -125,37 +126,93 @@ impl CommitType {
     }
 }
 
+struct TimedMutexGuard<T> {
+    guard: T,
+    acquired_at: std::time::Instant,
+    purpose: &'static [&'static str; 2],
+    histogram: &'static Histogram,
+}
+
+use std::ops::{Deref, DerefMut};
+
+impl<T> Deref for TimedMutexGuard<T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        &self.guard
+    }
+}
+
+impl<T> DerefMut for TimedMutexGuard<T> {
+    fn deref_mut(&mut self) -> &mut T {
+        &mut self.guard
+    }
+}
+
+impl<T> Drop for TimedMutexGuard<T> {
+    fn drop(&mut self) {
+        let elapsed = self.acquired_at.elapsed();
+
+        self.histogram.observe(elapsed.as_secs_f64());
+
+        if elapsed > std::time::Duration::from_secs(1) {
+            let purpose = self.purpose.join("::");
+            quickwit_common::rate_limited_warn!(
+                limit_per_min = 6,
+                "hold mutext for {}ms for {}",
+                elapsed.as_millis(),
+                purpose,
+            );
+        }
+    }
+}
+
 #[macro_export]
 macro_rules! with_lock_metrics {
     ($future:expr, $($label:tt),*) => {
         {
             $crate::ingest_v2::metrics::INGEST_V2_METRICS
                 .wal_acquire_lock_requests_in_flight
-                .with_label_values([$($label),*])
+                $(.$label)*
                 .inc();
 
-            let now = std::time::Instant::now();
-            let guard = $future;
 
-            let elapsed = now.elapsed();
+            let now = std::time::Instant::now();
+            let guard = $future.await;
+
+            let now_after = std::time::Instant::now();
+            let elapsed = now_after.duration_since(now);
             if elapsed > std::time::Duration::from_secs(1) {
+                let text_label = with_lock_metrics!(@concat $($label,)*);
                 quickwit_common::rate_limited_warn!(
                     limit_per_min=6,
-                    "lock acquisition took {}ms", elapsed.as_millis()
+                    "lock acquisition took {}ms for {}",
+                    elapsed.as_millis(),
+                    text_label,
                 );
             }
             $crate::ingest_v2::metrics::INGEST_V2_METRICS
                 .wal_acquire_lock_requests_in_flight
-                .with_label_values([$($label),*])
+                $(.$label)*
                 .dec();
             $crate::ingest_v2::metrics::INGEST_V2_METRICS
                 .wal_acquire_lock_request_duration_secs
-                .with_label_values([$($label),*])
+                $(.$label)*
                 .observe(elapsed.as_secs_f64());
-
-            guard
+            let histogram = &$crate::ingest_v2::metrics::INGEST_V2_METRICS
+                .wal_hold_lock_duration_secs
+                $(.$label)*;
+            guard.map(|guard| $crate::TimedMutexGuard {
+                guard,
+                acquired_at: now_after,
+                purpose: &[$(stringify!($label)),*],
+                histogram,
+            })
         }
-    }
+    };
+    (@concat $label1:tt, $($label:tt,)*) => {
+        concat!(stringify!($label1), $("::", stringify!($label)),*)
+    };
 }
 
 #[cfg(test)]

@@ -29,6 +29,7 @@ use fail::fail_point;
 use itertools::Itertools;
 use once_cell::sync::OnceCell;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
+use quickwit_common::metrics::Vector;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::spawn_named_task;
 use quickwit_config::RetentionPolicy;
