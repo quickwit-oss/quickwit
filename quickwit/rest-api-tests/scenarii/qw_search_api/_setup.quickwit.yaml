@@ -82,3 +82,32 @@ params:
   commit: force
 ndjson:
   - {"seq": 4, "tag": 1}
+---
+method: DELETE
+endpoint: indexes/empty-string
+status_code: null
+---
+# Create index
+method: POST
+endpoint: indexes/
+json:
+  version: "0.7"
+  index_id: empty-string
+  doc_mapping:
+    mode: dynamic
+    field_mappings:
+      - name: str
+        type: text
+      - name: str_array
+        type: array<text>
+---
+# Ingest documents
+method: POST
+endpoint: empty-string/ingest
+params:
+  commit: force
+ndjson:
+  - {"str": "abc", "str_array": ["abc", "def"], "dyn_str": "abc", "dyn_str_array": ["abc", "def"]}
+  - {"str": "", "str_array": [""], "dyn_str": "", "dyn_str_array": [""]}
+  - {"str": "", "str_array": ["ghi", ""], "dyn_str": "", "dyn_str_array": ["ghi", ""]}
+  - {"str_array": [], "dyn_str_array": []}
