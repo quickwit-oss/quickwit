@@ -546,6 +546,38 @@ async fn test_update_doc_mapping_dynamic_to_strict() {
 }
 
 #[tokio::test]
+async fn test_update_doc_mapping_dynamic_to_strict_with_nested() {
+    let index_id = "update_dynamic_to_strict_with_nested";
+    let original_doc_mappings = json!({
+        "mode": "dynamic",
+        "field_mappings": [],
+    });
+    let ingest_before_update = &[json!({"body": {"inner_body": "hello"}})];
+    let updated_doc_mappings = json!({
+        "mode": "dynamic",
+        "field_mappings": [
+            {
+                "name": "body",
+                "type": "text",
+            }
+        ],
+    });
+    let ingest_after_update = &[json!({"body": "world"})];
+    validate_search_across_doc_mapping_updates(
+        index_id,
+        original_doc_mappings,
+        ingest_before_update,
+        updated_doc_mappings,
+        ingest_after_update,
+        &[(
+            "body.inner_body:hello",
+            Ok(&[json!({"body": {"inner_body": "hello"}})]),
+        )],
+    )
+    .await;
+}
+
+#[tokio::test]
 async fn test_update_doc_mapping_add_field_on_strict() {
     let index_id = "update-add-field-on-strict";
     let original_doc_mappings = json!({
