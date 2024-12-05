@@ -61,14 +61,20 @@ pub fn elastic_api_handlers(
     metastore: MetastoreServiceClient,
     index_service: IndexService,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    let ingest_content_length_limit = node_config.ingest_api_config.content_length_limit;
     es_compat_cluster_info_handler(node_config, BuildInfo::get())
         .or(es_compat_search_handler(search_service.clone()))
         .or(es_compat_bulk_handler(
             ingest_service.clone(),
             ingest_router.clone(),
+            ingest_content_length_limit,
         ))
         .boxed()
-        .or(es_compat_index_bulk_handler(ingest_service, ingest_router))
+        .or(es_compat_index_bulk_handler(
+            ingest_service,
+            ingest_router,
+            ingest_content_length_limit,
+        ))
         .or(es_compat_index_search_handler(search_service.clone()))
         .or(es_compat_index_count_handler(search_service.clone()))
         .or(es_compat_scroll_handler(search_service.clone()))
