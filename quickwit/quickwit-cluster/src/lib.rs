@@ -185,6 +185,9 @@ pub fn make_client_tls_config(tls_config: &TlsConfig) -> anyhow::Result<ClientTl
         let identity = Identity::from_pem(cert, key);
         tls = tls.identity(identity);
     }
+    if let Some(expected_name) = &tls_config.expected_name {
+        tls = tls.domain_name(expected_name);
+    }
 
     Ok(tls)
 }

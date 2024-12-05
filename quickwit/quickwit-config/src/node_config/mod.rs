@@ -46,6 +46,8 @@ pub struct RestConfig {
     pub cors_allow_origins: Vec<String>,
     #[serde(with = "http_serde::header_map")]
     pub extra_headers: HeaderMap,
+    #[serde(default)]
+    pub tls: Option<TlsConfig>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -86,7 +88,10 @@ impl Default for GrpcConfig {
 pub struct TlsConfig {
     pub cert_path: String,
     pub key_path: String,
+    #[serde(default)]
     pub ca_path: String,
+    #[serde(default)]
+    pub expected_name: Option<String>,
     #[serde(default)]
     pub validate_client: bool,
 }

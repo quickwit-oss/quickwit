@@ -25,6 +25,7 @@ hex = { workspace = true }
 http-serde = { workspace = true }
 humantime = { workspace = true }
 hyper = { workspace = true }
+hyper-rustls = { workspace = true }
 itertools = { workspace = true }
 mime_guess = { workspace = true }
 once_cell = { workspace = true }
@@ -35,13 +36,17 @@ prost = { workspace = true }
 prost-types = { workspace = true }
 regex = { workspace = true }
 rust-embed = { workspace = true }
+rustls = { workspace = true }
+rustls-pemfile = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_qs = { workspace = true }
 serde_with = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+tokio-rustls = { workspace = true }
 tokio-stream = { workspace = true }
+tokio-util = { workspace = true }
 tower = { workspace = true }
 tower-http = { workspace = true }
 tracing = { workspace = true }
