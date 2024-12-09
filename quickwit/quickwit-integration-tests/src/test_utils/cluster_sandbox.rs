@@ -105,7 +105,7 @@ impl ClusterSandboxBuilder {
     /// - `metastore_uri` defined by `root_data_dir/metastore`.
     /// - `default_index_root_uri` defined by `root_data_dir/indexes`.
     /// - `peers` defined by others nodes `gossip_advertise_addr`.
-    async fn build_config(self) -> ResolvedClusterConfig {
+    pub async fn build_config(self) -> ResolvedClusterConfig {
         let root_data_dir = self.temp_dir.path().to_path_buf();
         let cluster_id = new_coolid("test-cluster");
         let mut resolved_node_configs = Vec::new();
@@ -166,9 +166,9 @@ impl ClusterSandboxBuilder {
 
 /// Intermediate state where the ports of all the the test cluster nodes have
 /// been reserved and the configurations have been generated.
-struct ResolvedClusterConfig {
+pub struct ResolvedClusterConfig {
     temp_dir: TempDir,
-    node_configs: Vec<(NodeConfig, HashSet<QuickwitService>)>,
+    pub node_configs: Vec<(NodeConfig, HashSet<QuickwitService>)>,
     tcp_listener_resolver: TestTcpListenerResolver,
 }
 
@@ -224,10 +224,13 @@ impl ResolvedClusterConfig {
     }
 }
 
-fn transport_url(addr: SocketAddr) -> Url {
+fn transport_url(addr: SocketAddr, tls: bool) -> Url {
     let mut url = Url::parse(DEFAULT_BASE_URL).unwrap();
     url.set_ip_host(addr.ip()).unwrap();
     url.set_port(Some(addr.port())).unwrap();
+    if tls {
+        url.set_scheme("https").unwrap();
+    }
     url
 }
 
@@ -280,25 +283,59 @@ impl ClusterSandbox {
     pub fn rest_client(&self, service: QuickwitService) -> QuickwitClient {
         let node_config = self.find_node_for_service(service);
 
-        QuickwitClientBuilder::new(transport_url(node_config.rest_config.listen_addr)).build()
+        let certificate = if let Some(tls_conf) = &node_config.rest_config.tls {
+            let cert_bytes = std::fs::read(&tls_conf.ca_path).unwrap();
+            Some(reqwest::tls::Certificate::from_pem(&cert_bytes).unwrap())
+        } else {
+            None
+        };
+
+        QuickwitClientBuilder::new(transport_url(
+            node_config.rest_config.listen_addr,
+            certificate.is_some(),
+        ))
+        .set_tls_ca(certificate)
+        .build()
     }
 
     /// A client configured to ingest documents and return detailed parse failures.
     pub fn detailed_ingest_client(&self) -> QuickwitClient {
         let node_config = self.find_node_for_service(QuickwitService::Indexer);
 
-        QuickwitClientBuilder::new(transport_url(node_config.rest_config.listen_addr))
-            .detailed_response(true)
-            .build()
+        let certificate = if let Some(tls_conf) = &node_config.rest_config.tls {
+            let cert_bytes = std::fs::read(&tls_conf.ca_path).unwrap();
+            Some(reqwest::tls::Certificate::from_pem(&cert_bytes).unwrap())
+        } else {
+            None
+        };
+
+        QuickwitClientBuilder::new(transport_url(
+            node_config.rest_config.listen_addr,
+            certificate.is_some(),
+        ))
+        .set_tls_ca(certificate)
+        .detailed_response(true)
+        .build()
     }
 
     // TODO(#5604)
     pub fn rest_client_legacy_indexer(&self) -> QuickwitClient {
         let node_config = self.find_node_for_service(QuickwitService::Indexer);
 
-        QuickwitClientBuilder::new(transport_url(node_config.rest_config.listen_addr))
-            .use_legacy_ingest(true)
-            .build()
+        let certificate = if let Some(tls_conf) = &node_config.rest_config.tls {
+            let cert_bytes = std::fs::read(&tls_conf.ca_path).unwrap();
+            Some(reqwest::tls::Certificate::from_pem(&cert_bytes).unwrap())
+        } else {
+            None
+        };
+
+        QuickwitClientBuilder::new(transport_url(
+            node_config.rest_config.listen_addr,
+            certificate.is_some(),
+        ))
+        .set_tls_ca(certificate)
+        .use_legacy_ingest(true)
+        .build()
     }
 
     pub fn jaeger_client(&self) -> SpanReaderPluginClient<tonic::transport::Channel> {
