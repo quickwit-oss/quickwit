@@ -69,7 +69,7 @@ fn unescape_with_final_wildcard(phrase: &str) -> anyhow::Result<String> {
         .scan(State::Normal, |state, c| {
             if *saw_wildcard {
                 return Some(Some(Err(anyhow!(
-                    "Wildcard iquery contains wildcard in non final position"
+                    "Wildcard query contains wildcard in non final position"
                 ))));
             }
             match state {
@@ -185,7 +185,7 @@ impl BuildTantivyAst for WildcardQuery {
         let (_, term) = match self.extract_prefix_term(schema, tokenizer_manager) {
             Ok(res) => res,
             Err(InvalidQuery::FieldDoesNotExist { .. }) if self.lenient => {
-                return Ok(crate::MatchAllOrNone::MatchNone.into())
+                return Ok(TantivyQueryAst::match_none())
             }
             Err(e) => return Err(e),
         };
