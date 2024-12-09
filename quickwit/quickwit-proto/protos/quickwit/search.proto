@@ -347,6 +347,14 @@ message LeafSearchRequest {
   repeated string index_uris = 9;
 }
 
+message ResourceStats {
+    uint64 short_lived_cache_num_bytes = 1;
+    uint64 split_num_docs = 2;
+    uint64 warmup_microsecs = 3;
+    uint64 cpu_thread_pool_wait_microsecs = 4;
+    uint64 cpu_microsecs = 5;
+}
+
 /// LeafRequestRef references data in LeafSearchRequest to deduplicate data.
 message LeafRequestRef {
   // The ordinal of the doc_mapper in `LeafSearchRequest.doc_mappers`
@@ -479,6 +487,8 @@ message LeafSearchResponse {
 
   // postcard serialized intermediate aggregation_result.
   optional bytes intermediate_aggregation_result = 6;
+
+  ResourceStats resource_stats = 8;
 }
 
 message SnippetRequest {
