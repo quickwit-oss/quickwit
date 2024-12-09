@@ -38,6 +38,7 @@ pub struct PhrasePrefixQuery {
     pub phrase: String,
     pub max_expansions: u32,
     pub params: FullTextParams,
+    pub lenient: bool,
 }
 
 impl PhrasePrefixQuery {
@@ -117,7 +118,13 @@ impl BuildTantivyAst for PhrasePrefixQuery {
         _search_fields: &[String],
         _with_validation: bool,
     ) -> Result<TantivyQueryAst, InvalidQuery> {
-        let (_, terms) = self.get_terms(schema, tokenizer_manager)?;
+        let (_, terms) = match self.get_terms(schema, tokenizer_manager) {
+            Ok(res) => res,
+            Err(InvalidQuery::FieldDoesNotExist { .. }) if self.lenient => {
+                return Ok(crate::MatchAllOrNone::MatchNone.into())
+            }
+            Err(e) => return Err(e),
+        };
 
         if terms.is_empty() {
             if self.params.zero_terms_query.is_none() {

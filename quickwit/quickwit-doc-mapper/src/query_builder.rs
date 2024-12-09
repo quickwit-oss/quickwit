@@ -248,7 +248,9 @@ impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRanges<'b> {
     ) -> Result<(), Self::Err> {
         let terms = match phrase_prefix.get_terms(self.schema, self.tokenizer_manager) {
             Ok((_, terms)) => terms,
-            Err(InvalidQuery::SchemaError(_)) => return Ok(()), /* the query will be nullified when casting to a tantivy ast */
+            Err(InvalidQuery::SchemaError(_)) | Err(InvalidQuery::FieldDoesNotExist { .. }) => {
+                return Ok(())
+            } /* the query will be nullified when casting to a tantivy ast */
             Err(e) => return Err(e),
         };
         if let Some((_, term)) = terms.last() {
@@ -258,7 +260,12 @@ impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRanges<'b> {
     }
 
     fn visit_wildcard(&mut self, wildcard_query: &'a WildcardQuery) -> Result<(), Self::Err> {
-        let (_, term) = wildcard_query.extract_prefix_term(self.schema, self.tokenizer_manager)?;
+        let term = match wildcard_query.extract_prefix_term(self.schema, self.tokenizer_manager) {
+            Ok((_, term)) => term,
+            /* the query will be nullified when casting to a tantivy ast */
+            Err(InvalidQuery::FieldDoesNotExist { .. }) => return Ok(()),
+            Err(e) => return Err(e),
+        };
         self.add_prefix_term(term, u32::MAX, false);
         Ok(())
     }
