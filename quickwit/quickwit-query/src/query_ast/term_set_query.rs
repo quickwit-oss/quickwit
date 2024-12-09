@@ -34,6 +34,7 @@ use crate::InvalidQuery;
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct TermSetQuery {
     pub terms_per_field: HashMap<String, BTreeSet<String>>,
+    pub lenient: bool,
 }
 
 impl TermSetQuery {
@@ -56,8 +57,13 @@ impl TermSetQuery {
                     field: full_path.to_string(),
                     value: value.to_string(),
                 };
-                let ast =
-                    term_query.build_tantivy_ast_call(schema, tokenizer_manager, &[], false)?;
+                let ast = term_query.build_tantivy_ast_call(
+                    schema,
+                    tokenizer_manager,
+                    &[],
+                    // disable term query validation when doing a lenient set query
+                    !self.lenient,
+                )?;
                 let tantivy_query: Box<dyn crate::TantivyQuery> = ast.simplify().into();
                 tantivy_query.query_terms(&mut |term, _| {
                     terms.insert(term.clone());
@@ -76,9 +82,13 @@ impl BuildTantivyAst for TermSetQuery {
         _search_fields: &[String],
         _with_validation: bool,
     ) -> Result<TantivyQueryAst, InvalidQuery> {
-        let terms_it = self.make_term_iterator(schema, tokenizer_manager)?;
-        let term_set_query = tantivy::query::TermSetQuery::new(terms_it);
-        Ok(term_set_query.into())
+        let terms = self.make_term_iterator(schema, tokenizer_manager)?;
+        if terms.is_empty() {
+            Ok(TantivyQueryAst::match_none())
+        } else {
+            let term_set_query = tantivy::query::TermSetQuery::new(terms);
+            Ok(term_set_query.into())
+        }
     }
 }
 

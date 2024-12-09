@@ -23,6 +23,7 @@ use quickwit_datetime::StrptimeParser;
 use serde::Deserialize;
 use time::format_description::well_known::Rfc3339;
 
+use super::LeniencyBool;
 use crate::elastic_query_dsl::one_field_map::OneFieldMap;
 use crate::elastic_query_dsl::ConvertibleToQueryAst;
 use crate::not_nan_f32::NotNaNf32;
@@ -44,6 +45,8 @@ pub struct RangeQueryParams {
     boost: Option<NotNaNf32>,
     #[serde(default)]
     format: Option<JsonLiteral>,
+    #[serde(default)]
+    lenient: LeniencyBool,
 }
 
 pub type RangeQuery = OneFieldMap<RangeQueryParams>;
@@ -58,6 +61,7 @@ impl ConvertibleToQueryAst for RangeQuery {
             lte,
             boost,
             format,
+            lenient,
         } = self.value;
         let (gt, gte, lt, lte) = if let Some(JsonLiteral::String(java_date_format)) = format {
             let parser = StrptimeParser::from_java_datetime_format(&java_date_format)
@@ -90,6 +94,7 @@ impl ConvertibleToQueryAst for RangeQuery {
                 (None, Some(lte)) => Bound::Included(lte),
                 (None, None) => Bound::Unbounded,
             },
+            lenient,
         };
         let ast: QueryAst = range_query_ast.into();
         Ok(ast.boost(boost))
@@ -126,6 +131,7 @@ mod tests {
             lte: None,
             boost: None,
             format: JsonLiteral::String("yyyy-MM-dd['T'HH:mm:ss]".to_string()).into(),
+            lenient: true,
         };
         let range_query: ElasticRangeQuery = ElasticRangeQuery {
             field: "date".to_string(),
@@ -138,6 +144,7 @@ mod tests {
                 field,
                 lower_bound: Bound::Excluded(lower_bound),
                 upper_bound: Bound::Unbounded,
+                lenient: true,
             })
             if field == "date" && lower_bound == JsonLiteral::String("2021-01-03T13:32:43Z".to_string())
         ));
@@ -152,6 +159,7 @@ mod tests {
             lte: Some(JsonLiteral::String("2024-09-28T10:22:55.797Z".to_string())),
             boost: None,
             format: JsonLiteral::String("strict_date_optional_time".to_string()).into(),
+            lenient: false,
         };
         let range_query: ElasticRangeQuery = ElasticRangeQuery {
             field: "timestamp".to_string(),
@@ -164,6 +172,7 @@ mod tests {
                 field,
                 lower_bound: Bound::Unbounded,
                 upper_bound: Bound::Included(upper_bound),
+                lenient: false,
             })
             if field == "timestamp" && upper_bound == JsonLiteral::String("2024-09-28T10:22:55.797Z".to_string())
         ));

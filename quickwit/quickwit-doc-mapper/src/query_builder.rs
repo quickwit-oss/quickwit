@@ -151,12 +151,11 @@ impl<'a> QueryAstVisitor<'a> for ExtractTermSetFields<'_> {
 
     fn visit_term_set(&mut self, term_set_query: &'a TermSetQuery) -> anyhow::Result<()> {
         for field in term_set_query.terms_per_field.keys() {
-            if let Ok((field, _field_entry, _path)) = find_field_or_hit_dynamic(field, self.schema)
-            {
-                self.term_dict_fields_to_warm_up.insert(field);
-            } else {
-                anyhow::bail!("field does not exist: {}", field);
-            }
+            match find_field_or_hit_dynamic(field, self.schema) {
+                Ok((field, _field_entry, _path)) => self.term_dict_fields_to_warm_up.insert(field),
+                Err(InvalidQuery::FieldDoesNotExist { .. }) => continue,
+                Err(_) => anyhow::bail!("field does not exist: `{}`", field),
+            };
         }
         Ok(())
     }
@@ -528,6 +527,10 @@ mod test {
             Vec::new(),
             TestExpectation::Ok("TermQuery"),
         );
+    }
+
+    #[test]
+    fn test_term_set_query() {
         check_build_query_static_mode(
             "title: IN [hello]",
             Vec::new(),
@@ -537,6 +540,16 @@ mod test {
             "IN [hello]",
             Vec::new(),
             TestExpectation::Err("set query need to target a specific field"),
+        );
+        check_build_query_static_mode(
+            "foo: IN [hello]",
+            Vec::new(),
+            TestExpectation::Err("field does not exist: `foo`"),
+        );
+        check_build_query_static_lenient_mode(
+            "foo: IN [hello]",
+            Vec::new(),
+            TestExpectation::Ok("EmptyQuery"),
         );
     }
 
@@ -590,6 +603,16 @@ mod test {
                 &format!("dt:<{end_date_time_str}"),
                 Vec::new(),
                 TestExpectation::Ok("2023-01-10T08:38:51.16Z"),
+            );
+            check_build_query_static_mode(
+                &format!("foo:<{end_date_time_str}"),
+                Vec::new(),
+                TestExpectation::Err("invalid query: field does not exist: `foo`"),
+            );
+            check_build_query_static_lenient_mode(
+                &format!("foo:<{end_date_time_str}"),
+                Vec::new(),
+                TestExpectation::Ok("EmptyQuery"),
             );
         }
 

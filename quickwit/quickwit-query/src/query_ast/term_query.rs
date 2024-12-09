@@ -41,16 +41,6 @@ impl From<TermQuery> for QueryAst {
     }
 }
 
-impl TermQuery {
-    #[cfg(test)]
-    pub fn from_field_value(field: impl ToString, value: impl ToString) -> Self {
-        Self {
-            field: field.to_string(),
-            value: value.to_string(),
-        }
-    }
-}
-
 impl BuildTantivyAst for TermQuery {
     fn build_tantivy_ast_impl(
         &self,

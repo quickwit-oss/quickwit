@@ -702,6 +702,7 @@ fn build_search_query(
             field: "span_start_timestamp_nanos".to_string(),
             lower_bound: Bound::Unbounded,
             upper_bound: Bound::Unbounded,
+            lenient: false,
         };
 
         if let Some(min_span_start_timestamp_secs) = min_span_start_timestamp_secs_opt {
@@ -731,6 +732,7 @@ fn build_search_query(
             field: "span_duration_millis".to_string(),
             lower_bound: Bound::Unbounded,
             upper_bound: Bound::Unbounded,
+            lenient: false,
         };
 
         if let Some(min_span_duration_millis) = min_span_duration_millis_opt {
@@ -1521,7 +1523,8 @@ mod tests {
                 vec![RangeQuery {
                     field: "span_start_timestamp_nanos".to_string(),
                     lower_bound: Bound::Included("1970-01-01T00:00:03Z".to_string().into()),
-                    upper_bound: Bound::Unbounded
+                    upper_bound: Bound::Unbounded,
+                    lenient: false,
                 }
                 .into()]
             );
@@ -1550,6 +1553,7 @@ mod tests {
                     field: "span_start_timestamp_nanos".to_string(),
                     lower_bound: Bound::Unbounded,
                     upper_bound: Bound::Included("1970-01-01T00:00:33Z".to_string().into()),
+                    lenient: false,
                 }
                 .into()]
             );
@@ -1578,6 +1582,7 @@ mod tests {
                     field: "span_start_timestamp_nanos".to_string(),
                     lower_bound: Bound::Included("1970-01-01T00:00:03Z".to_string().into()),
                     upper_bound: Bound::Included("1970-01-01T00:00:33Z".to_string().into()),
+                    lenient: false,
                 }
                 .into()]
             );
@@ -1605,7 +1610,8 @@ mod tests {
                 vec![RangeQuery {
                     field: "span_duration_millis".to_string(),
                     lower_bound: Bound::Included(7u64.into()),
-                    upper_bound: Bound::Unbounded
+                    upper_bound: Bound::Unbounded,
+                    lenient: false,
                 }
                 .into()]
             );
@@ -1634,6 +1640,7 @@ mod tests {
                     field: "span_duration_millis".to_string(),
                     lower_bound: Bound::Unbounded,
                     upper_bound: Bound::Included(77u64.into()),
+                    lenient: false,
                 }
                 .into()]
             );
@@ -1662,6 +1669,7 @@ mod tests {
                     field: "span_duration_millis".to_string(),
                     lower_bound: Bound::Included(7u64.into()),
                     upper_bound: Bound::Included(77u64.into()),
+                    lenient: false,
                 }
                 .into()]
             );
@@ -1896,12 +1904,14 @@ mod tests {
                         field: "span_start_timestamp_nanos".to_string(),
                         lower_bound: Bound::Included("1970-01-01T00:00:03Z".to_string().into()),
                         upper_bound: Bound::Included("1970-01-01T00:00:33Z".to_string().into()),
+                        lenient: false,
                     }
                     .into(),
                     RangeQuery {
                         field: "span_duration_millis".to_string(),
                         lower_bound: Bound::Included(7u64.into()),
                         upper_bound: Bound::Included(77u64.into()),
+                        lenient: false,
                     }
                     .into(),
                 ]
