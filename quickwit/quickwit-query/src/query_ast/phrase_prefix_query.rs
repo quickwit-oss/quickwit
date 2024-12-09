@@ -122,7 +122,7 @@ impl BuildTantivyAst for PhrasePrefixQuery {
         let (_, terms) = match self.get_terms(schema, tokenizer_manager) {
             Ok(res) => res,
             Err(InvalidQuery::FieldDoesNotExist { .. }) if self.lenient => {
-                return Ok(crate::MatchAllOrNone::MatchNone.into())
+                return Ok(TantivyQueryAst::match_none())
             }
             Err(e) => return Err(e),
         };

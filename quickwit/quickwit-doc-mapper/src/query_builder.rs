@@ -287,8 +287,11 @@ mod test {
 
     use quickwit_query::query_ast::{
         query_ast_from_user_text, FullTextMode, FullTextParams, PhrasePrefixQuery, QueryAstVisitor,
+        UserInputQuery,
     };
-    use quickwit_query::{create_default_quickwit_tokenizer_manager, MatchAllOrNone};
+    use quickwit_query::{
+        create_default_quickwit_tokenizer_manager, BooleanOperand, MatchAllOrNone,
+    };
     use tantivy::schema::{DateOptions, DateTimePrecision, Schema, FAST, INDEXED, STORED, TEXT};
     use tantivy::Term;
 
@@ -330,7 +333,7 @@ mod test {
         search_fields: Vec<String>,
         expected: TestExpectation,
     ) {
-        check_build_query(user_query, search_fields, expected, true);
+        check_build_query(user_query, search_fields, expected, true, false);
     }
 
     #[track_caller]
@@ -339,15 +342,31 @@ mod test {
         search_fields: Vec<String>,
         expected: TestExpectation,
     ) {
-        check_build_query(user_query, search_fields, expected, false);
+        check_build_query(user_query, search_fields, expected, false, false);
+    }
+
+    #[track_caller]
+    fn check_build_query_static_lenient_mode(
+        user_query: &str,
+        search_fields: Vec<String>,
+        expected: TestExpectation,
+    ) {
+        check_build_query(user_query, search_fields, expected, false, true);
     }
 
     fn test_build_query(
         user_query: &str,
         search_fields: Vec<String>,
         dynamic_mode: bool,
+        lenient: bool,
     ) -> Result<String, String> {
-        let query_ast = query_ast_from_user_text(user_query, Some(search_fields))
+        let user_input_query = UserInputQuery {
+            user_text: user_query.to_string(),
+            default_fields: Some(search_fields),
+            default_operator: BooleanOperand::And,
+            lenient,
+        };
+        let query_ast = user_input_query
             .parse_user_query(&[])
             .map_err(|err| err.to_string())?;
         let schema = make_schema(dynamic_mode);
@@ -369,8 +388,9 @@ mod test {
         search_fields: Vec<String>,
         expected: TestExpectation,
         dynamic_mode: bool,
+        lenient: bool,
     ) {
-        let query_result = test_build_query(user_query, search_fields, dynamic_mode);
+        let query_result = test_build_query(user_query, search_fields, dynamic_mode, lenient);
         match (query_result, expected) {
             (Err(query_err_msg), TestExpectation::Err(sub_str)) => {
                 assert!(
@@ -432,6 +452,11 @@ mod test {
             Vec::new(),
             TestExpectation::Err("invalid query: field does not exist: `foo`"),
         );
+        check_build_query_static_lenient_mode(
+            "foo:bar",
+            Vec::new(),
+            TestExpectation::Ok("EmptyQuery"),
+        );
         check_build_query_static_mode(
             "title:bar",
             Vec::new(),
@@ -441,6 +466,11 @@ mod test {
             "bar",
             vec!["fieldnotinschema".to_string()],
             TestExpectation::Err("invalid query: field does not exist: `fieldnotinschema`"),
+        );
+        check_build_query_static_lenient_mode(
+            "bar",
+            vec!["fieldnotinschema".to_string()],
+            TestExpectation::Ok("EmptyQuery"),
         );
         check_build_query_static_mode(
             "title:[a TO b]",
@@ -507,6 +537,25 @@ mod test {
             "IN [hello]",
             Vec::new(),
             TestExpectation::Err("set query need to target a specific field"),
+        );
+    }
+
+    #[test]
+    fn test_wildcard_query() {
+        check_build_query_static_mode(
+            "title:hello*",
+            Vec::new(),
+            TestExpectation::Ok("PhrasePrefixQuery"),
+        );
+        check_build_query_static_mode(
+            "foo:bar*",
+            Vec::new(),
+            TestExpectation::Err("invalid query: field does not exist: `foo`"),
+        );
+        check_build_query_static_mode(
+            "title:hello*yo",
+            Vec::new(),
+            TestExpectation::Err("Wildcard query contains wildcard in non final position"),
         );
     }
 
