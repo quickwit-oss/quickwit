@@ -34,6 +34,7 @@ use crate::{find_field_or_hit_dynamic, InvalidQuery};
 pub struct WildcardQuery {
     pub field: String,
     pub value: String,
+    pub lenient: bool,
 }
 
 impl From<WildcardQuery> for QueryAst {
@@ -190,7 +191,13 @@ impl BuildTantivyAst for WildcardQuery {
         _search_fields: &[String],
         _with_validation: bool,
     ) -> Result<TantivyQueryAst, InvalidQuery> {
-        let (_, term) = self.extract_prefix_term(schema, tokenizer_manager)?;
+        let (_, term) = match self.extract_prefix_term(schema, tokenizer_manager) {
+            Ok(res) => res,
+            Err(InvalidQuery::FieldDoesNotExist { .. }) if self.lenient => {
+                return Ok(crate::MatchAllOrNone::MatchNone.into())
+            }
+            Err(e) => return Err(e),
+        };
 
         let mut phrase_prefix_query =
             tantivy::query::PhrasePrefixQuery::new_with_offset(vec![(0, term)]);

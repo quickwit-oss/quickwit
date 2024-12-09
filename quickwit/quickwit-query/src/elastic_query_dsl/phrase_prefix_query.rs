@@ -67,6 +67,7 @@ impl ConvertibleToQueryAst for MatchPhrasePrefixQuery {
             phrase: query,
             params: analyzer,
             max_expansions,
+            lenient: false,
         };
         Ok(phrase_prefix_query_ast.into())
     }

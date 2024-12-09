@@ -273,12 +273,14 @@ fn convert_user_input_literal(
                     phrase: phrase.clone(),
                     params: full_text_params.clone(),
                     max_expansions: DEFAULT_PHRASE_QUERY_MAX_EXPANSION,
+                    lenient,
                 }
                 .into()
             } else if wildcard {
                 query_ast::WildcardQuery {
                     field: field_name,
                     value: phrase.clone(),
+                    lenient,
                 }
                 .into()
             } else {
