@@ -34,22 +34,13 @@ use crate::{find_field_or_hit_dynamic, InvalidQuery};
 pub struct WildcardQuery {
     pub field: String,
     pub value: String,
+    /// Support missing fields
     pub lenient: bool,
 }
 
 impl From<WildcardQuery> for QueryAst {
     fn from(wildcard_query: WildcardQuery) -> Self {
         Self::Wildcard(wildcard_query)
-    }
-}
-
-impl WildcardQuery {
-    #[cfg(test)]
-    pub fn from_field_value(field: impl ToString, value: impl ToString) -> Self {
-        Self {
-            field: field.to_string(),
-            value: value.to_string(),
-        }
     }
 }
 
@@ -218,6 +209,7 @@ mod tests {
         let query = WildcardQuery {
             field: "my_field".to_string(),
             value: "MyString Wh1ch a nOrMal Tokenizer would cut*".to_string(),
+            lenient: false,
         };
         let tokenizer_manager = create_default_quickwit_tokenizer_manager();
         for tokenizer in ["raw", "whitespace"] {

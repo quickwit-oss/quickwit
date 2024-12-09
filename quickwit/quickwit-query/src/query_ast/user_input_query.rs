@@ -49,6 +49,7 @@ pub struct UserInputQuery {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_fields: Option<Vec<String>>,
     pub default_operator: BooleanOperand,
+    /// Support missing fields
     pub lenient: bool,
 }
 

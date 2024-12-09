@@ -38,6 +38,7 @@ pub struct PhrasePrefixQuery {
     pub phrase: String,
     pub max_expansions: u32,
     pub params: FullTextParams,
+    /// Support missing fields
     pub lenient: bool,
 }
 
