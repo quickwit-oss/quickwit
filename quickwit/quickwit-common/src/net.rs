@@ -171,10 +171,7 @@ impl HostAddr {
             (host_addr, default_port)
         };
         if !is_valid_hostname(hostname) {
-            bail!(
-                "failed to parse address `{}`: hostname is invalid",
-                host_addr
-            )
+            bail!("failed to parse address `{host_addr}`: hostname is invalid")
         }
         Ok(Self {
             host: Host::Hostname(hostname.to_string()),
