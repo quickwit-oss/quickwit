@@ -394,6 +394,7 @@ The following query types are supported.
 | `fields`           | `String[]` (Optional) | Default search target fields.                                                                                               | -             |
 | `default_operator` | `"AND"` or `"OR"`     | In the absence of boolean operator defines whether terms should be combined as a conjunction (`AND`) or disjunction (`OR`). | `OR`          |
 | `boost`            | `Number`              | Multiplier boost for score computation.                                                                                     | 1.0           |
+| `lenient`          | `Boolean`             | [See note](#about-the-lenient-argument).                                                                                    | false         |
 
 
 ### `bool`
@@ -494,7 +495,7 @@ The following query types are supported.
 | `operator`         | `"AND"` or `"OR"` | Defines whether all terms should be present (`AND`) or if at least one term is sufficient to match (`OR`).                     | OR      |
 | `zero_terms_query` | `all` or `none`   | Defines if all (`all`) or no documents (`none`) should be returned if the query does not contain any terms after tokenization. | `none`  |
 | `boost`            | `Number`          | Multiplier boost for score computation                                                                                         | 1.0     |
-
+| `lenient`          | `Boolean`         | [See note](#about-the-lenient-argument).                                                                                       | false   |
 
 
 
@@ -637,8 +638,17 @@ Contrary to ES/Opensearch, in Quickwit, at most 50 terms will be considered when
 }
 ```
 
-#### Supported Multi-match Queries
-| Type            | Description                                                                                 |
+#### Supported parameters
+
+| Variable           | Type                  | Description                                  | Default value |
+| ------------------ | --------------------- | ---------------------------------------------| ------------- |
+| `type`             | `String`              | See supported types below                    | `most_fields` |
+| `fields`           | `String[]` (Optional) | Default search target fields.                | -             |
+| `lenient`          | `Boolean`             | [See note](#about-the-lenient-argument).     | false         |
+
+Supported types:
+
+| `type` value    | Description                                                                                 |
 | --------------- | ------------------------------------------------------------------------------------------- |
 | `most_fields`   | Finds documents matching any field and combines the `_score` from each field (default).  |
 | `phrase`        | Runs a `match_phrase` query on each field.       |
@@ -720,6 +730,12 @@ Query matching only documents containing a non-null value for a given field.
 | -------- | ------ | ------------------------------------------------------- | ------- |
 | `field`  | String | Only documents with a value for field will be returned. | -       |
 
+
+### About the `lenient` argument
+
+Quickwit and Elasticsearch have different interpretations of the `lenient` setting:
+- In Quickwit, lenient mode allows ignoring parts of the query that reference non-existing columns. This is a behavior that Elasticsearch supports by default.
+- In Elasticsearch, lenient mode primarily addresses type errors (such as searching for text in an integer field). Quickwit always supports this behavior, regardless of the `lenient` setting.
 
 ## Search multiple indices
 

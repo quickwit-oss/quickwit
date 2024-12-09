@@ -702,12 +702,14 @@ mod test {
             phrase: "short".to_string(),
             max_expansions: 50,
             params: params.clone(),
+            lenient: false,
         };
         let long = PhrasePrefixQuery {
             field: "title".to_string(),
             phrase: "not so short".to_string(),
             max_expansions: 50,
             params: params.clone(),
+            lenient: false,
         };
         let mut extractor1 = ExtractPrefixTermRanges::with_schema(&schema, &tokenizer_manager);
         extractor1.visit_phrase_prefix(&short).unwrap();
