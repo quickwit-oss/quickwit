@@ -39,6 +39,8 @@ pub struct RangeQuery {
     pub field: String,
     pub lower_bound: Bound<JsonLiteral>,
     pub upper_bound: Bound<JsonLiteral>,
+    /// Support missing fields
+    pub lenient: bool,
 }
 
 /// Converts a given bound JsonLiteral bound into a bound of type T.
@@ -121,7 +123,14 @@ impl BuildTantivyAst for RangeQuery {
         _with_validation: bool,
     ) -> Result<TantivyQueryAst, InvalidQuery> {
         let (field, field_entry, json_path) =
-            super::utils::find_field_or_hit_dynamic(&self.field, schema)?;
+            match super::utils::find_field_or_hit_dynamic(&self.field, schema) {
+                Ok(res) => res,
+                Err(InvalidQuery::FieldDoesNotExist { .. }) if self.lenient => {
+                    return Ok(TantivyQueryAst::match_none());
+                }
+                Err(e) => return Err(e),
+            };
+
         if !field_entry.is_fast() {
             return Err(InvalidQuery::SchemaError(format!(
                 "range queries are only supported for fast fields. (`{}` is not a fast field)",
@@ -322,6 +331,7 @@ mod tests {
             field: field.to_string(),
             lower_bound: Bound::Included(lower_value),
             upper_bound: Bound::Included(upper_value),
+            lenient: false,
         };
         let tantivy_ast = range_query
             .build_tantivy_ast_call(
@@ -369,6 +379,7 @@ mod tests {
             field: "missing_field.toto".to_string(),
             lower_bound: Bound::Included(JsonLiteral::String("1980".to_string())),
             upper_bound: Bound::Included(JsonLiteral::String("1989".to_string())),
+            lenient: false,
         };
         // with validation
         let invalid_query: InvalidQuery = range_query
@@ -395,6 +406,24 @@ mod tests {
                 .const_predicate(),
             Some(MatchAllOrNone::MatchNone)
         );
+        let range_query = RangeQuery {
+            field: "missing_field.toto".to_string(),
+            lower_bound: Bound::Included(JsonLiteral::String("1980".to_string())),
+            upper_bound: Bound::Included(JsonLiteral::String("1989".to_string())),
+            lenient: true,
+        };
+        assert_eq!(
+            range_query
+                .build_tantivy_ast_call(
+                    &schema,
+                    &create_default_quickwit_tokenizer_manager(),
+                    &[],
+                    true
+                )
+                .unwrap()
+                .const_predicate(),
+            Some(MatchAllOrNone::MatchNone)
+        );
     }
 
     #[test]
@@ -403,6 +432,7 @@ mod tests {
             field: "hello".to_string(),
             lower_bound: Bound::Included(JsonLiteral::String("1980".to_string())),
             upper_bound: Bound::Included(JsonLiteral::String("1989".to_string())),
+            lenient: false,
         };
         let schema = make_schema(true);
         let tantivy_ast = range_query
@@ -431,6 +461,7 @@ mod tests {
             field: "my_u64_not_fastfield".to_string(),
             lower_bound: Bound::Included(JsonLiteral::String("1980".to_string())),
             upper_bound: Bound::Included(JsonLiteral::String("1989".to_string())),
+            lenient: false,
         };
         let schema = make_schema(false);
         let err = range_query
