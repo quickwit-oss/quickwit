@@ -278,6 +278,7 @@ fn extract_prefix_term_ranges(
 mod test {
     use std::ops::Bound;
 
+    use quickwit_common::shared_consts::FIELD_PRESENCE_FIELD_NAME;
     use quickwit_query::query_ast::{
         query_ast_from_user_text, FullTextMode, FullTextParams, PhrasePrefixQuery, QueryAstVisitor,
     };
@@ -295,6 +296,7 @@ mod test {
 
     fn make_schema(dynamic_mode: bool) -> Schema {
         let mut schema_builder = Schema::builder();
+        schema_builder.add_i64_field(FIELD_PRESENCE_FIELD_NAME, INDEXED);
         schema_builder.add_text_field("title", TEXT);
         schema_builder.add_text_field("desc", TEXT | STORED);
         schema_builder.add_text_field("server.name", TEXT | STORED);
@@ -311,6 +313,8 @@ mod test {
         schema_builder.add_u64_field("u64_fast", FAST | STORED);
         schema_builder.add_i64_field("i64_fast", FAST | STORED);
         schema_builder.add_f64_field("f64_fast", FAST | STORED);
+        schema_builder.add_json_field("json_fast", FAST);
+        schema_builder.add_json_field("json_text", TEXT);
         if dynamic_mode {
             schema_builder.add_json_field(DYNAMIC_FIELD_NAME, TEXT);
         }
@@ -500,6 +504,33 @@ mod test {
             "IN [hello]",
             Vec::new(),
             TestExpectation::Err("set query need to target a specific field"),
+        );
+    }
+
+    #[test]
+    fn test_existence_query() {
+        check_build_query_static_mode(
+            "title:*",
+            Vec::new(),
+            TestExpectation::Ok("TermQuery(Term(field=0, type=U64"),
+        );
+
+        check_build_query_static_mode(
+            "ip:*",
+            Vec::new(),
+            TestExpectation::Ok("ExistsQuery { field_name: \"ip\" }"),
+        );
+
+        check_build_query_static_mode(
+            "json_text:*",
+            Vec::new(),
+            TestExpectation::Ok("TermQuery(Term(field=0, type=U64"),
+        );
+
+        check_build_query_static_mode(
+            "json_fast:*",
+            Vec::new(),
+            TestExpectation::Ok("ExistsQuery { field_name: \"json_fast\" }"),
         );
     }
 
