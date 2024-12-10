@@ -27,6 +27,7 @@ use anyhow::bail;
 use async_trait::async_trait;
 use quickwit_common::pubsub::EventSubscriber;
 use quickwit_common::rendezvous_hasher::{node_affinity, sort_by_rendez_vous_hash};
+use quickwit_common::SocketAddrLegacyHash;
 use quickwit_proto::search::{ReportSplit, ReportSplitsRequest};
 use tracing::{info, warn};
 
@@ -77,7 +78,9 @@ impl EventSubscriber<ReportSplitsRequest> for SearchJobPlacer {
         for report_split in evt.report_splits {
             let node_addr = nodes
                 .keys()
-                .max_by_key(|node_addr| node_affinity(*node_addr, &report_split.split_id))
+                .max_by_key(|node_addr| {
+                    node_affinity(SocketAddrLegacyHash(node_addr), &report_split.split_id)
+                })
                 // This actually never happens thanks to the if-condition at the
                 // top of this function.
                 .expect("`nodes` should not be empty");
@@ -115,7 +118,7 @@ struct SocketAddrAndClient {
 
 impl Hash for SocketAddrAndClient {
     fn hash<H: Hasher>(&self, hasher: &mut H) {
-        self.socket_addr.hash(hasher);
+        SocketAddrLegacyHash(&self.socket_addr).hash(hasher);
     }
 }
 
@@ -174,7 +177,7 @@ impl SearchJobPlacer {
                 all_nodes.len()
             );
         }
-        let mut candidate_nodes: Vec<_> = all_nodes
+        let mut candidate_nodes: Vec<CandidateNode> = all_nodes
             .into_iter()
             .map(|(grpc_addr, client)| CandidateNode {
                 grpc_addr,
@@ -259,7 +262,7 @@ struct CandidateNode {
 
 impl Hash for CandidateNode {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.grpc_addr.hash(state);
+        SocketAddrLegacyHash(&self.grpc_addr).hash(state);
     }
 }
 
