@@ -91,7 +91,7 @@ pub(crate) async fn compute_cluster_change_events(
                     chitchat_id,
                     node_state,
                     previous_nodes,
-                    tls_config.clone(),
+                    tls_config,
                 )
                 .await;
 

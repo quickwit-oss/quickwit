@@ -104,6 +104,7 @@ impl Cluster {
         self.self_chitchat_id.gossip_advertise_addr
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn join(
         cluster_id: String,
         self_node: ClusterMember,
