@@ -1,10 +1,11 @@
-name: Code coverage
+name: Unit tests with all features and failpoints
 
 on:
   workflow_dispatch:
   push:
     branches:
       - main
+      - dd-main
       - trigger-coverage-workflow
     paths:
       - quickwit/Cargo.toml
@@ -26,7 +27,7 @@ env:
 jobs:
   test:
     name: Coverage
-    runs-on: gh-ubuntu-arm64
+    runs-on: ubuntu-16-core-latest
     timeout-minutes: 40
     # Setting a containing will require to fix the QW_S3_ENDPOINT to http://localstack:4566
     services:
@@ -158,38 +159,3 @@ jobs:
           RUST_MIN_STACK=67108864 CARGO_BUILD_JOBS=4 cargo llvm-cov nextest --no-report --all-features --retries 4
           cargo llvm-cov report --lcov --output-path lcov.info
         working-directory: ./quickwit
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }} # not required for public repos
-          files: ./quickwit/lcov.info
-
-  on-failure:
-    if: ${{ github.repository_owner == 'quickwit-oss' && failure() }}
-    name: On Failure
-    needs: [test]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Send Message
-        uses: sarisia/actions-status-discord@v1
-        with:
-          webhook: ${{ secrets.DISCORD_WEBHOOK }}
-          nodetail: true
-          color: "#FF0000"
-          title: ""
-          description: |
-            ### ❌ [${{ github.event.pull_request.title }}](${{ github.event.pull_request.html_url }})
-
-            @${{ github.actor }} quickwit coverage CI failed on your PR.
-
-            Coverage CI contains tests that are not running in the regular CI because they are too lengthy.
-            For this reason it is possible for it to break even if the tests were passing on your PR.
-            This is not a catastrophy, but you are responsible for fixing it!
-
-            You can run the full test suite locally with `make test-all`.
-
-            Please report in this channel that you are working on it/fixed it/or if it is a flaky test/
-            or if you need help.
-
-            **[View logs](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})**
