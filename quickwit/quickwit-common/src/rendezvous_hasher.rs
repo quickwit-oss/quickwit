@@ -43,6 +43,7 @@ mod tests {
     use std::net::SocketAddr;
 
     use super::*;
+    use crate::SocketAddrLegacyHash;
 
     fn test_socket_addr(last_byte: u8) -> SocketAddr {
         ([127, 0, 0, last_byte], 10_000u16).into()
@@ -55,17 +56,38 @@ mod tests {
         let socket3 = test_socket_addr(3);
         let socket4 = test_socket_addr(4);
 
-        let mut socket_set1 = vec![socket4, socket3, socket1, socket2];
+        let legacy_socket1 = SocketAddrLegacyHash(&socket1);
+        let legacy_socket2 = SocketAddrLegacyHash(&socket2);
+        let legacy_socket3 = SocketAddrLegacyHash(&socket3);
+        let legacy_socket4 = SocketAddrLegacyHash(&socket4);
+
+        let mut socket_set1 = vec![
+            legacy_socket4,
+            legacy_socket3,
+            legacy_socket1,
+            legacy_socket2,
+        ];
         sort_by_rendez_vous_hash(&mut socket_set1, "key");
 
-        let mut socket_set2 = vec![socket1, socket2, socket4];
+        let mut socket_set2 = vec![legacy_socket1, legacy_socket2, legacy_socket4];
         sort_by_rendez_vous_hash(&mut socket_set2, "key");
 
-        let mut socket_set3 = vec![socket1, socket4];
+        let mut socket_set3 = vec![legacy_socket1, legacy_socket4];
         sort_by_rendez_vous_hash(&mut socket_set3, "key");
 
-        assert_eq!(socket_set1, &[socket1, socket3, socket2, socket4]);
-        assert_eq!(socket_set2, &[socket1, socket2, socket4]);
-        assert_eq!(socket_set3, &[socket1, socket4]);
+        assert_eq!(
+            socket_set1,
+            &[
+                legacy_socket1,
+                legacy_socket2,
+                legacy_socket3,
+                legacy_socket4
+            ]
+        );
+        assert_eq!(
+            socket_set2,
+            &[legacy_socket1, legacy_socket2, legacy_socket4]
+        );
+        assert_eq!(socket_set3, &[legacy_socket1, legacy_socket4]);
     }
 }

@@ -48,6 +48,8 @@ pub mod tower;
 pub mod type_map;
 pub mod uri;
 
+mod socket_addr_legacy_hash;
+
 use std::env;
 use std::fmt::{Debug, Display};
 use std::future::Future;
@@ -58,6 +60,7 @@ pub use coolid::new_coolid;
 pub use kill_switch::KillSwitch;
 pub use path_hasher::PathHasher;
 pub use progress::{Progress, ProtectedZoneGuard};
+pub use socket_addr_legacy_hash::SocketAddrLegacyHash;
 pub use stream_utils::{BoxStream, ServiceStream};
 use tracing::{error, info};
 
