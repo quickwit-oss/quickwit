@@ -227,6 +227,7 @@ pub struct FullTextQuery {
     pub field: String,
     pub text: String,
     pub params: FullTextParams,
+    /// Support missing fields
     pub lenient: bool,
 }
 

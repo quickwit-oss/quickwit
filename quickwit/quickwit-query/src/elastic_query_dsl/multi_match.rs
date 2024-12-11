@@ -21,6 +21,7 @@ use serde::Deserialize;
 use serde_with::formats::PreferMany;
 use serde_with::{serde_as, OneOrMany};
 
+use super::LeniencyBool;
 use crate::elastic_query_dsl::bool_query::BoolQuery;
 use crate::elastic_query_dsl::match_bool_prefix::MatchBoolPrefixQuery;
 use crate::elastic_query_dsl::match_phrase_query::{MatchPhraseQuery, MatchPhraseQueryParams};
@@ -48,11 +49,8 @@ struct MultiMatchQueryForDeserialization {
     #[serde_as(deserialize_as = "OneOrMany<_, PreferMany>")]
     #[serde(default)]
     fields: Vec<String>,
-    // Quickwit and Elastic have different notions of lenient. For us, it means it's okay to
-    // disregard part of the query where which uses non-existing collumn (which Elastic does by
-    // default). For Elastic, it covers type errors (searching text in an integer field).
     #[serde(default)]
-    lenient: bool,
+    lenient: LeniencyBool,
 }
 
 fn deserialize_match_query_for_one_field(

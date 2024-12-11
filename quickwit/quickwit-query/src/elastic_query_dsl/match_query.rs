@@ -19,6 +19,7 @@
 
 use serde::Deserialize;
 
+use super::LeniencyBool;
 use crate::elastic_query_dsl::{
     ConvertibleToQueryAst, ElasticQueryDslInner, StringOrStructForSerialization,
 };
@@ -42,11 +43,8 @@ pub(crate) struct MatchQueryParams {
     pub(crate) operator: BooleanOperand,
     #[serde(default)]
     pub(crate) zero_terms_query: MatchAllOrNone,
-    // Quickwit and Elastic have different notions of lenient. For us, it means it's okay to
-    // disregard part of the query where which uses non-existing collumn (which Elastic does by
-    // default). For Elastic, it covers type errors (searching text in an integer field).
     #[serde(default)]
-    pub(crate) lenient: bool,
+    pub(crate) lenient: LeniencyBool,
 }
 
 impl ConvertibleToQueryAst for MatchQuery {
