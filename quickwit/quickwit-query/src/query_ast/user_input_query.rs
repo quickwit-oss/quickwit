@@ -162,6 +162,7 @@ fn convert_user_input_ast_to_query_ast(
                     field,
                     lower_bound: convert_bound(lower),
                     upper_bound: convert_bound(upper),
+                    lenient,
                 };
                 Ok(range_query.into())
             }
@@ -179,7 +180,10 @@ fn convert_user_input_ast_to_query_ast(
                 for field in field_names {
                     terms_per_field.insert(field.to_string(), terms.clone());
                 }
-                let term_set_query = query_ast::TermSetQuery { terms_per_field };
+                let term_set_query = query_ast::TermSetQuery {
+                    terms_per_field,
+                    lenient,
+                };
                 Ok(term_set_query.into())
             }
             UserInputLeaf::Exists { field } => Ok(FieldPresenceQuery { field }.into()),
