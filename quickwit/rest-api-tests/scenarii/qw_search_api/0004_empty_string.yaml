@@ -1,0 +1,49 @@
+# This tests a simple request with no queries.
+endpoint: empty-string/search
+params:
+  query: "str:''"
+expected:
+  num_hits: 2
+---
+endpoint: empty-string/search
+params:
+  query: "str_array:''"
+expected:
+  num_hits: 2
+---
+endpoint: empty-string/search
+params:
+  query: "dyn_str:''"
+expected:
+  num_hits: 2
+---
+endpoint: empty-string/search
+params:
+  query: "dyn_str_array:''"
+expected:
+  num_hits: 2
+---
+endpoint: empty-string/search
+params:
+  query: "str:'' AND str_array:ghi"
+expected:
+  num_hits: 1
+---
+endpoint: empty-string/search
+params:
+  query: "str_array:'' AND str_array:ghi"
+expected:
+  num_hits: 1
+---
+endpoint: empty-string/search
+params:
+  query: "dyn_str:'' AND str_array:ghi"
+expected:
+  num_hits: 1
+---
+endpoint: empty-string/search
+params:
+  query: "dyn_str_array:'' AND str_array:ghi"
+expected:
+  num_hits: 1
+---
