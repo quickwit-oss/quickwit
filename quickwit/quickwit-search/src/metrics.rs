@@ -19,6 +19,7 @@
 
 // See https://prometheus.io/docs/practices/naming/
 
+use bytesize::ByteSize;
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
     exponential_buckets, linear_buckets, new_counter, new_counter_vec, new_gauge_vec,
@@ -37,6 +38,7 @@ pub struct SearchMetrics {
     pub job_assigned_total: IntCounterVec<1>,
     pub leaf_search_single_split_tasks_pending: IntGauge,
     pub leaf_search_single_split_tasks_ongoing: IntGauge,
+    pub leaf_search_single_split_warmup_num_bytes: Histogram,
 }
 
 impl Default for SearchMetrics {
@@ -51,6 +53,18 @@ impl Default for SearchMetrics {
         .flatten()
         .copied()
         .collect();
+
+        let pseudo_exponential_bytes_buckets = vec![
+            ByteSize::mb(10).as_u64() as f64,
+            ByteSize::mb(20).as_u64() as f64,
+            ByteSize::mb(50).as_u64() as f64,
+            ByteSize::mb(100).as_u64() as f64,
+            ByteSize::mb(200).as_u64() as f64,
+            ByteSize::mb(500).as_u64() as f64,
+            ByteSize::gb(1).as_u64() as f64,
+            ByteSize::gb(2).as_u64() as f64,
+            ByteSize::gb(5).as_u64() as f64,
+        ];
 
         let leaf_search_single_split_tasks = new_gauge_vec::<1>(
             "leaf_search_single_split_tasks",
@@ -124,6 +138,12 @@ impl Default for SearchMetrics {
                 .with_label_values(["ongoing"]),
             leaf_search_single_split_tasks_pending: leaf_search_single_split_tasks
                 .with_label_values(["pending"]),
+            leaf_search_single_split_warmup_num_bytes: new_histogram(
+                "leaf_search_single_split_warmup_num_bytes",
+                "Size of the short lived cache for a single split once the warmup is done.",
+                "search",
+                pseudo_exponential_bytes_buckets,
+            ),
             job_assigned_total: new_counter_vec(
                 "job_assigned_total",
                 "Number of job assigned to searchers, per affinity rank.",

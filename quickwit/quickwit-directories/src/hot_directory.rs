@@ -205,14 +205,12 @@ impl StaticDirectoryCache {
         self.file_lengths.get(path).copied()
     }
 
-    /// return the files and their cached lengths
-    pub fn get_stats(&self) -> Vec<(PathBuf, usize)> {
+    pub fn get_file_lengths(&self) -> Vec<(PathBuf, u64)> {
         let mut entries = self
-            .slices
+            .file_lengths
             .iter()
-            .map(|(path, cache)| (path.to_owned(), cache.len()))
+            .map(|(path, len)| (path.clone(), *len))
             .collect::<Vec<_>>();
-
         entries.sort_by_key(|el| el.0.to_owned());
         entries
     }
@@ -264,10 +262,6 @@ impl StaticSliceCache {
             return Some(self.bytes.slice(start..start + byte_range.len()));
         }
         None
-    }
-
-    pub fn len(&self) -> usize {
-        self.bytes.len()
     }
 }
 
@@ -376,12 +370,12 @@ impl HotDirectory {
             }),
         })
     }
-    /// Get files and their cached sizes.
-    pub fn get_stats_per_file(
-        hot_cache_bytes: OwnedBytes,
-    ) -> anyhow::Result<Vec<(PathBuf, usize)>> {
-        let static_cache = StaticDirectoryCache::open(hot_cache_bytes)?;
-        Ok(static_cache.get_stats())
+
+    /// Get all the files in the directory and their sizes.
+    ///
+    /// The actual cached data is a very small fraction of this length.
+    pub fn get_file_lengths(&self) -> Vec<(PathBuf, u64)> {
+        self.inner.cache.get_file_lengths()
     }
 }
 
@@ -704,10 +698,10 @@ mod tests {
         assert_eq!(directory_cache.get_file_length(three_path), Some(300));
         assert_eq!(directory_cache.get_file_length(four_path), None);
 
-        let stats = directory_cache.get_stats();
-        assert_eq!(stats[0], (one_path.to_owned(), 8));
-        assert_eq!(stats[1], (three_path.to_owned(), 0));
-        assert_eq!(stats[2], (two_path.to_owned(), 7));
+        let file_lengths = directory_cache.get_file_lengths();
+        assert_eq!(file_lengths[0], (one_path.to_owned(), 100));
+        assert_eq!(file_lengths[1], (three_path.to_owned(), 300));
+        assert_eq!(file_lengths[2], (two_path.to_owned(), 200));
 
         assert_eq!(
             directory_cache
