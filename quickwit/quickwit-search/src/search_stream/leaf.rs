@@ -129,7 +129,7 @@ async fn leaf_search_stream_single_split(
 
     let cache =
         ByteRangeCache::with_infinite_capacity(&quickwit_storage::STORAGE_METRICS.shortlived_cache);
-    // TODO should create a SearchPermit we wrap with TrackedByteRangeCache here?
+    // TODO should create a SearchPermit and wrap ByteRangeCache with TrackedByteRangeCache here?
     let index = open_index_with_caches(
         &searcher_context,
         storage,

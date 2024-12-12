@@ -192,7 +192,8 @@ impl std::ops::RangeBounds<i64> for Range {
 #[cfg(test)]
 mod tests {
     use quickwit_proto::search::{
-        LeafSearchResponse, PartialHit, SearchRequest, SortValue, SplitIdAndFooterOffsets,
+        LeafSearchResponse, PartialHit, ResourceStats, SearchRequest, SortValue,
+        SplitIdAndFooterOffsets,
     };
 
     use super::LeafSearchCache;
@@ -343,7 +344,7 @@ mod tests {
                 sort_value2: None,
                 split_id: "split_1".to_string(),
             }],
-            resource_stats: None,
+            resource_stats: Some(ResourceStats::default()),
         };
 
         // for split_1, 1 and 1bis cover different timestamp ranges

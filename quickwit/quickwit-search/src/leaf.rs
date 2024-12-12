@@ -30,8 +30,8 @@ use quickwit_common::pretty::PrettySample;
 use quickwit_directories::{CachingDirectory, DirectoryCache, HotDirectory, StorageDirectory};
 use quickwit_doc_mapper::{DocMapper, TermRange, WarmupInfo};
 use quickwit_proto::search::{
-    CountHits, LeafSearchRequest, LeafSearchResponse, PartialHit, SearchRequest, SortOrder,
-    SortValue, SplitIdAndFooterOffsets, SplitSearchError,
+    CountHits, LeafSearchRequest, LeafSearchResponse, PartialHit, ResourceStats, SearchRequest,
+    SortOrder, SortValue, SplitIdAndFooterOffsets, SplitSearchError,
 };
 use quickwit_query::query_ast::{BoolQuery, QueryAst, QueryAstTransformer, RangeQuery, TermQuery};
 use quickwit_query::tokenizers::TokenizerManager;
@@ -468,7 +468,7 @@ async fn leaf_search_single_split(
                     } else {
                         searcher.search(&query, &collector)?
                     };
-                leaf_search_response.resource_stats = Some(quickwit_proto::search::ResourceStats {
+                leaf_search_response.resource_stats = Some(ResourceStats {
                     cpu_microsecs: cpu_start.elapsed().as_micros() as u64,
                     short_lived_cache_num_bytes,
                     split_num_docs,

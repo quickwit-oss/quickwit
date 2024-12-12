@@ -698,7 +698,7 @@ pub fn get_count_from_metadata(split_metadatas: &[SplitMetadata]) -> Vec<LeafSea
 /// bytes per document.
 ///
 /// The threshold is computed dynamically using gradient descent.
-fn is_top_1pct_memory_intensive(num_bytes: u64, split_num_docs: u64) -> bool {
+fn is_top_5pct_memory_intensive(num_bytes: u64, split_num_docs: u64) -> bool {
     // It is not worth considering small splits for this.
     if split_num_docs < 100_000 {
         return false;
@@ -783,7 +783,7 @@ pub(crate) async fn search_partial_hits_phase(
     );
 
     if let Some(resource_stats) = &leaf_search_response.resource_stats {
-        if is_top_1pct_memory_intensive(
+        if is_top_5pct_memory_intensive(
             resource_stats.short_lived_cache_num_bytes,
             resource_stats.split_num_docs,
         ) {
