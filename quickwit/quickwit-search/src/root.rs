@@ -694,7 +694,8 @@ pub fn get_count_from_metadata(split_metadatas: &[SplitMetadata]) -> Vec<LeafSea
 /// This function only considers the memory usage associated to the input data
 /// and does not take in account aggregations (intermediary or not) results for instance.
 ///
-/// Since its point is to log memory intensive queries, it focuses on the metric of the number of bytes per document.
+/// Since its point is to log memory intensive queries, it focuses on the metric of the number of
+/// bytes per document.
 ///
 /// The threshold is computed dynamically using gradient descent.
 fn is_top_1pct_memory_intensive(num_bytes: u64, split_num_docs: u64) -> bool {
@@ -705,10 +706,11 @@ fn is_top_1pct_memory_intensive(num_bytes: u64, split_num_docs: u64) -> bool {
     // We multiply those figure by 1_000 for accuracy.
     const PERCENTILE: u64 = 95;
     const PRIOR_NUM_BYTES_PER_DOC: u64 = 3 * 1_000;
-    static NUM_BYTES_PER_DOC_95_PERCENTILE_ESTIMATOR: AtomicU64 = AtomicU64::new(PRIOR_NUM_BYTES_PER_DOC);
+    static NUM_BYTES_PER_DOC_95_PERCENTILE_ESTIMATOR: AtomicU64 =
+        AtomicU64::new(PRIOR_NUM_BYTES_PER_DOC);
     let num_bits_per_docs = num_bytes * 1_000 / split_num_docs;
     let current_estimator = NUM_BYTES_PER_DOC_95_PERCENTILE_ESTIMATOR.load(Ordering::Relaxed);
-    let is_memory_intensive =  num_bits_per_docs > current_estimator;
+    let is_memory_intensive = num_bits_per_docs > current_estimator;
     let new_estimator: u64 = if is_memory_intensive {
         current_estimator.saturating_add(PRIOR_NUM_BYTES_PER_DOC * PERCENTILE / 100)
     } else {
@@ -781,7 +783,10 @@ pub(crate) async fn search_partial_hits_phase(
     );
 
     if let Some(resource_stats) = &leaf_search_response.resource_stats {
-        if is_top_1pct_memory_intensive(resource_stats.short_lived_cache_num_bytes, resource_stats.split_num_docs) {
+        if is_top_1pct_memory_intensive(
+            resource_stats.short_lived_cache_num_bytes,
+            resource_stats.split_num_docs,
+        ) {
             // We log at most 5 times per minute.
             quickwit_common::rate_limited_info!(limit_per_min=5, split_num_docs=resource_stats.split_num_docs, %search_request.query_ast, short_lived_cached_num_bytes=resource_stats.short_lived_cache_num_bytes, query=%search_request.query_ast, "memory intensive query");
         }
