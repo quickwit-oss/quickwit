@@ -376,6 +376,7 @@ async fn leaf_search_single_split(
     doc_mapper: Arc<DocMapper>,
     split_filter: Arc<RwLock<CanSplitDoBetter>>,
     aggregations_limits: AggregationLimitsGuard,
+    search_permit: &mut SearchPermit,
 ) -> crate::Result<LeafSearchResponse> {
     rewrite_request(
         &mut search_request,
@@ -434,8 +435,8 @@ async fn leaf_search_single_split(
     let warmup_duration: Duration = warmup_end.duration_since(warmup_start);
 
     let short_lived_cache_num_bytes: u64 = byte_range_cache.get_num_bytes();
+    search_permit.set_actual_memory_usage_and_release_permit_after(short_lived_cache_num_bytes);
     let split_num_docs = split.num_docs;
-
 
     let span = info_span!("tantivy_search");
 
@@ -1378,7 +1379,7 @@ async fn leaf_search_single_split_wrapper(
     split: SplitIdAndFooterOffsets,
     split_filter: Arc<RwLock<CanSplitDoBetter>>,
     incremental_merge_collector: Arc<Mutex<IncrementalCollector>>,
-    search_permit: SearchPermit,
+    mut search_permit: SearchPermit,
     aggregations_limits: AggregationLimitsGuard,
 ) {
     crate::SEARCH_METRICS.leaf_searches_splits_total.inc();
@@ -1393,6 +1394,7 @@ async fn leaf_search_single_split_wrapper(
         doc_mapper,
         split_filter.clone(),
         aggregations_limits,
+        &mut search_permit,
     )
     .await;
 

@@ -20,8 +20,10 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
+use bytesize::ByteSize;
 use quickwit_common::metrics::GaugeGuard;
 use tokio::sync::oneshot;
+use tracing::warn;
 
 /// `SearchPermitProvider` is a distributor of permits to perform single split
 /// search operation.
@@ -33,11 +35,14 @@ pub struct SearchPermitProvider {
 }
 
 impl SearchPermitProvider {
-    pub fn new(num_permits: usize) -> SearchPermitProvider {
+    pub fn new(num_permits: usize, memory_budget: ByteSize, initial_allocation: ByteSize) -> SearchPermitProvider {
         SearchPermitProvider {
             inner_arc: Arc::new(Mutex::new(InnerSearchPermitProvider {
                 num_permits_available: num_permits,
+                memory_budget: memory_budget.as_u64(),
                 permits_requests: VecDeque::new(),
+                memory_allocated: 0u64,
+                initial_allocation: initial_allocation.as_u64(),
             })),
         }
     }
@@ -65,6 +70,14 @@ impl SearchPermitProvider {
 
 struct InnerSearchPermitProvider {
     num_permits_available: usize,
+
+    // Note it is possible for memory_allocated to exceed memory_budget temporarily,
+    // if and only if a split leaf search task ended up using more than `initial_allocation`.
+    //
+    // When it happens, new permits will not be assigned until the memory is freed.
+    memory_budget: u64,
+    memory_allocated: u64,
+    initial_allocation: u64,
     permits_requests: VecDeque<oneshot::Sender<SearchPermit>>,
 }
 
@@ -94,30 +107,29 @@ impl InnerSearchPermitProvider {
         permits
     }
 
-    fn recycle_permit(&mut self, inner_arc: &Arc<Mutex<InnerSearchPermitProvider>>) {
-        self.num_permits_available += 1;
-        self.assign_available_permits(inner_arc);
-    }
-
     fn assign_available_permits(&mut self, inner_arc: &Arc<Mutex<InnerSearchPermitProvider>>) {
-        while self.num_permits_available > 0 {
-            let Some(sender) = self.permits_requests.pop_front() else {
+        while self.num_permits_available > 0 && self.memory_allocated + self.initial_allocation <= self.memory_budget {
+            let Some(permit_requester_tx) = self.permits_requests.pop_front() else {
                 break;
             };
             let mut ongoing_gauge_guard = GaugeGuard::from_gauge(
                 &crate::SEARCH_METRICS.leaf_search_single_split_tasks_ongoing,
             );
             ongoing_gauge_guard.add(1);
-            let send_res = sender.send(SearchPermit {
+            let send_res = permit_requester_tx.send(SearchPermit {
                 _ongoing_gauge_guard: ongoing_gauge_guard,
                 inner_arc: inner_arc.clone(),
-                recycle_on_drop: true,
+                warmup_permit_held: true,
+                memory_allocation: self.initial_allocation,
             });
             match send_res {
                 Ok(()) => {
                     self.num_permits_available -= 1;
+                    self.memory_allocated += self.initial_allocation;
                 }
                 Err(search_permit) => {
+                    // We cannot just decrease the num_permits_available in all case and rely on
+                    // the drop logic here: it would cause a dead lock on the inner_arc Mutex.
                     search_permit.drop_without_recycling_permit();
                 }
             }
@@ -131,23 +143,49 @@ impl InnerSearchPermitProvider {
 pub struct SearchPermit {
     _ongoing_gauge_guard: GaugeGuard<'static>,
     inner_arc: Arc<Mutex<InnerSearchPermitProvider>>,
-    recycle_on_drop: bool,
+    warmup_permit_held: bool,
+    memory_allocation: u64,
 }
 
 impl SearchPermit {
+    /// After warm up, we have a proper estimate of the memory usage of a single split leaf search.
+    ///
+    /// We can then set the actual memory usage.
+    pub fn set_actual_memory_usage_and_release_permit_after(&mut self, new_memory_usage: u64) {
+        if new_memory_usage > self.memory_allocation {
+            warn!(memory_usage=new_memory_usage, memory_allocation=self.memory_allocation, "current leaf search is consuming more memory than the initial allocation");
+        }
+        let mut inner_guard = self.inner_arc.lock().unwrap();
+        let delta = new_memory_usage as i64 - inner_guard.initial_allocation as i64;
+        inner_guard.memory_allocated += delta as u64;
+        inner_guard.num_permits_available += 1;
+        if inner_guard.memory_allocated > inner_guard.memory_budget {
+            warn!(memory_allocated=inner_guard.memory_allocated, memory_budget=inner_guard.memory_budget, "memory allocated exceeds memory budget");
+        }
+        self.memory_allocation = new_memory_usage;
+        inner_guard.assign_available_permits(&self.inner_arc);
+    }
+
     fn drop_without_recycling_permit(mut self) {
-        self.recycle_on_drop = false;
+        self.warmup_permit_held = false;
+        self.memory_allocation = 0u64;
         drop(self);
     }
 }
 
 impl Drop for SearchPermit {
     fn drop(&mut self) {
-        if !self.recycle_on_drop {
+        // This is not just an optimization. This is necessary to avoid a dead lock when the
+        // permit requester dropped its receiver channel.
+        if !self.warmup_permit_held && self.memory_allocation == 0 {
             return;
         }
         let mut inner_guard = self.inner_arc.lock().unwrap();
-        inner_guard.recycle_permit(&self.inner_arc.clone());
+        if self.warmup_permit_held {
+            inner_guard.num_permits_available += 1;
+        }
+        inner_guard.memory_allocated -= self.memory_allocation;
+        inner_guard.assign_available_permits(&self.inner_arc);
     }
 }
 
