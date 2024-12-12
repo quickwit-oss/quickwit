@@ -19,6 +19,7 @@
 
 use std::sync::{Arc, Mutex};
 
+use bytesize::ByteSize;
 use quickwit_directories::DirectoryCache;
 use quickwit_storage::ByteRangeCache;
 
@@ -50,7 +51,7 @@ impl TrackedByteRangeCache {
             .search_permit
             .lock()
             .unwrap()
-            .warmup_completed(self.get_num_bytes());
+            .warmup_completed(ByteSize(self.get_num_bytes()));
     }
 
     pub fn get_num_bytes(&self) -> u64 {

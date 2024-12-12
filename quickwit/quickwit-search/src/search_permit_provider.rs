@@ -43,6 +43,7 @@ pub struct SearchPermitProvider {
     actor_stopped: watch::Receiver<bool>,
 }
 
+#[derive(Debug)]
 pub enum SearchPermitMessage {
     Request {
         permit_sender: oneshot::Sender<Vec<SearchPermitFuture>>,
@@ -217,17 +218,18 @@ impl SearchPermit {
     /// After warm up, we have a proper estimate of the memory usage of a single
     /// split leaf search. We can thus set the actual memory usage and release
     /// the warmup slot.
-    pub fn warmup_completed(&mut self, new_memory_usage: u64) {
-        if new_memory_usage > self.memory_allocation {
+    pub fn warmup_completed(&mut self, new_memory_usage: ByteSize) {
+        let new_usage_bytes = new_memory_usage.as_u64();
+        if new_usage_bytes > self.memory_allocation {
             warn!(
-                memory_usage = new_memory_usage,
+                memory_usage = new_usage_bytes,
                 memory_allocation = self.memory_allocation,
                 "current leaf search is consuming more memory than the initial allocation"
             );
         }
-        let memory_delta = new_memory_usage as i64 - self.memory_allocation as i64;
+        let memory_delta = new_usage_bytes as i64 - self.memory_allocation as i64;
         self.warmup_permit_held = false;
-        self.memory_allocation = new_memory_usage;
+        self.memory_allocation = new_usage_bytes;
         self.send_if_still_running(SearchPermitMessage::WarmupCompleted { memory_delta });
     }
 
@@ -251,6 +253,7 @@ impl Drop for SearchPermit {
     }
 }
 
+#[derive(Debug)]
 pub struct SearchPermitFuture(oneshot::Receiver<SearchPermit>);
 
 impl Future for SearchPermitFuture {
@@ -356,23 +359,38 @@ mod tests {
         }
     }
 
+    /// Tries to wait for a permit
+    async fn try_get(permit_fut: SearchPermitFuture) -> anyhow::Result<SearchPermit> {
+        // using a short timeout is a bit flaky, but it should be enough for these tests
+        let permit = tokio::time::timeout(Duration::from_millis(20), permit_fut).await?;
+        Ok(permit)
+    }
+
     #[tokio::test]
     async fn test_memory_permit() {
         let permit_provider = SearchPermitProvider::new(100, ByteSize::mb(100), ByteSize::mb(10));
-        let mut permit_futs = permit_provider.get_permits(12).await;
-        let mut blocked_permits = permit_futs.split_off(10).into_iter();
+        let mut permit_futs = permit_provider.get_permits(14).await;
+        let mut remaining_permit_futs = permit_futs.split_off(10).into_iter();
+        assert_eq!(remaining_permit_futs.len(), 4);
+        // we should be able to obtain 10 permits right away (100MB / 10MB)
         let mut permits: Vec<SearchPermit> = futures::stream::iter(permit_futs.into_iter())
             .buffered(1)
             .collect()
             .await;
-        let next_blocked_permit = blocked_permits.next().unwrap();
-        tokio::time::timeout(Duration::from_millis(20), next_blocked_permit)
-            .await
-            .unwrap_err();
+        // the next permit is blocked by the memory budget
+        let next_blocked_permit_fut = remaining_permit_futs.next().unwrap();
+        try_get(next_blocked_permit_fut).await.unwrap_err();
+        // if we drop one of the permits, we can get a new one
         permits.drain(0..1);
-        let next_blocked_permit = blocked_permits.next().unwrap();
-        tokio::time::timeout(Duration::from_millis(20), next_blocked_permit)
-            .await
-            .unwrap();
+        let next_permit_fut = remaining_permit_futs.next().unwrap();
+        let _new_permit = try_get(next_permit_fut).await.unwrap();
+        // the next permit is blocked again by the memory budget
+        let next_blocked_permit_fut = remaining_permit_futs.next().unwrap();
+        try_get(next_blocked_permit_fut).await.unwrap_err();
+        // by setting a more accurate memory usage after a completed warmup, we can get more permits
+        permits[0].warmup_completed(ByteSize::mb(4));
+        permits[1].warmup_completed(ByteSize::mb(6));
+        let next_permit_fut = remaining_permit_futs.next().unwrap();
+        try_get(next_permit_fut).await.unwrap();
     }
 }
