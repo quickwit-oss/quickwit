@@ -146,7 +146,6 @@ impl SearchPermitActor {
                 self.assign_available_permits();
                 permit_sender
                     .send(permits)
-                    .ok()
                     // This is a request response pattern, so we can safely ignore the error.
                     .expect("Receiver lives longer than sender");
             }

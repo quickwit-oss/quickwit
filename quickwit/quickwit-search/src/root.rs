@@ -1156,7 +1156,7 @@ async fn refine_and_list_matches(
 /// 2. Merges the search results.
 /// 3. Sends fetch docs requests to multiple leaf nodes.
 /// 4. Builds the response with docs and returns.
-#[instrument(skip_all, fields(request_id))]
+#[instrument(skip_all)]
 pub async fn root_search(
     searcher_context: &SearcherContext,
     mut search_request: SearchRequest,

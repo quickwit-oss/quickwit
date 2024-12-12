@@ -276,8 +276,8 @@ impl Default for SearcherConfig {
             split_cache: None,
             request_timeout_secs: Self::default_request_timeout_secs(),
             storage_timeout_policy: None,
-            warmup_memory_budget: ByteSize::gb(1),
-            warmup_single_split_initial_allocation: ByteSize::mb(50),
+            warmup_memory_budget: ByteSize::gb(10),
+            warmup_single_split_initial_allocation: ByteSize::gb(1),
         }
     }
 }
