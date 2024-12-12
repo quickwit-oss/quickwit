@@ -378,7 +378,7 @@ fn get_leaf_resp_from_count(count: u64) -> LeafSearchResponse {
 /// Compute the size of the index, store excluded.
 fn compute_index_size(hot_directory: &HotDirectory) -> ByteSize {
     let size_bytes = hot_directory
-        .get_file_sizes()
+        .get_file_lengths()
         .iter()
         .filter(|(path, _)| !path.to_string_lossy().ends_with("store"))
         .map(|(_, size)| *size)
