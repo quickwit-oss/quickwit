@@ -209,7 +209,7 @@ impl StaticDirectoryCache {
         let mut entries = self
             .file_lengths
             .iter()
-            .map(|(k, v)| (k.clone(), *v))
+            .map(|(path, len)| (path.clone(), *len))
             .collect::<Vec<_>>();
         entries.sort_by_key(|el| el.0.to_owned());
         entries
