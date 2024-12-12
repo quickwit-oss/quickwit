@@ -67,8 +67,10 @@ pub fn compute_initial_memory_allocation(
     warmup_single_split_initial_allocation: ByteSize,
 ) -> ByteSize {
     let split_size = split.split_footer_start;
+    // we consider the configured initial allocation to be set for a large split with 10M docs
+    const LARGE_SPLIT_NUM_DOCS: u64 = 10_000_000;
     let proportional_allocation =
-        warmup_single_split_initial_allocation.as_u64() * split.num_docs / 10_000_000;
+        warmup_single_split_initial_allocation.as_u64() * split.num_docs / LARGE_SPLIT_NUM_DOCS;
     let size_bytes = [
         split_size,
         proportional_allocation,
@@ -77,7 +79,8 @@ pub fn compute_initial_memory_allocation(
     .into_iter()
     .min()
     .unwrap();
-    ByteSize(size_bytes)
+    const MINIMUM_ALLOCATION_BYTES: u64 = 10_000_000;
+    ByteSize(size_bytes.max(MINIMUM_ALLOCATION_BYTES))
 }
 
 impl SearchPermitProvider {
