@@ -617,7 +617,7 @@ mod tests {
                     timeout_millis: 2_000,
                     max_num_retries: 2
                 }),
-                warmup_memory_budget: ByteSize::gb(10),
+                warmup_memory_budget: ByteSize::gb(100),
                 warmup_single_split_initial_allocation: ByteSize::gb(1),
             }
         );
