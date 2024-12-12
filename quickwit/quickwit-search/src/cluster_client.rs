@@ -36,7 +36,7 @@ use tracing::{debug, error, info, warn};
 use crate::retry::search::LeafSearchRetryPolicy;
 use crate::retry::search_stream::{LeafSearchStreamRetryPolicy, SuccessfulSplitIds};
 use crate::retry::{retry_client, DefaultRetryPolicy, RetryPolicy};
-use crate::{SearchError, SearchJobPlacer, SearchServiceClient};
+use crate::{merge_resource_stats_it, SearchError, SearchJobPlacer, SearchServiceClient};
 
 /// Maximum number of put requests emitted to perform a replicated given PUT KV.
 const MAX_PUT_KV_ATTEMPTS: usize = 6;
@@ -317,6 +317,13 @@ fn merge_original_with_retry_leaf_search_response(
         (Some(left), None) => Some(left),
         (None, None) => None,
     };
+    let mut stats = [
+        original_response.resource_stats.as_ref(),
+        retry_response.resource_stats.as_ref(),
+    ]
+    .into_iter()
+    .flat_map(|el_opt| el_opt);
+    let resource_stats = merge_resource_stats_it(&mut stats);
     Ok(LeafSearchResponse {
         intermediate_aggregation_result,
         num_hits: original_response.num_hits + retry_response.num_hits,
@@ -326,6 +333,7 @@ fn merge_original_with_retry_leaf_search_response(
         partial_hits: original_response.partial_hits,
         num_successful_splits: original_response.num_successful_splits
             + retry_response.num_successful_splits,
+        resource_stats,
     })
 }
 

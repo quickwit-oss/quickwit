@@ -22,6 +22,7 @@ use std::ops::Bound;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex, RwLock};
+use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use futures::future::try_join_all;
@@ -29,21 +30,20 @@ use quickwit_common::pretty::PrettySample;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_doc_mapper::{DocMapper, TermRange, WarmupInfo};
 use quickwit_proto::search::{
-    CountHits, LeafSearchRequest, LeafSearchResponse, PartialHit, SearchRequest, SortOrder,
-    SortValue, SplitIdAndFooterOffsets, SplitSearchError,
+    CountHits, LeafSearchRequest, LeafSearchResponse, PartialHit, SearchRequest, SortOrder, SortValue, SplitIdAndFooterOffsets, SplitSearchError
 };
 use quickwit_query::query_ast::{BoolQuery, QueryAst, QueryAstTransformer, RangeQuery, TermQuery};
 use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_storage::{
-    wrap_storage_with_cache, BundleStorage, MemorySizedCache, OwnedBytes, SplitCache, Storage,
-    StorageResolver, TimeoutAndRetryStorage,
+    wrap_storage_with_cache, BundleStorage, ByteRangeCache, MemorySizedCache, OwnedBytes,
+    SplitCache, Storage, StorageResolver, TimeoutAndRetryStorage,
 };
 use tantivy::aggregation::agg_req::{AggregationVariants, Aggregations};
 use tantivy::aggregation::AggregationLimitsGuard;
 use tantivy::directory::FileSlice;
 use tantivy::fastfield::FastFieldReaders;
 use tantivy::schema::Field;
-use tantivy::{DateTime, Index, ReloadPolicy, Searcher, Term};
+use tantivy::{DateTime, Index, ReloadPolicy, Searcher, TantivyError, Term};
 use tokio::task::JoinError;
 use tracing::*;
 
@@ -134,7 +134,7 @@ pub(crate) async fn open_index_with_caches(
     index_storage: Arc<dyn Storage>,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
     tokenizer_manager: Option<&TokenizerManager>,
-    ephemeral_unbounded_cache: bool,
+    ephemeral_unbounded_cache: Option<ByteRangeCache>,
 ) -> anyhow::Result<Index> {
     // Let's add a storage proxy to retry `get_slice` requests if they are taking too long,
     // if configured in the searcher config.
@@ -166,8 +166,8 @@ pub(crate) async fn open_index_with_caches(
 
     let directory = StorageDirectory::new(bundle_storage_with_cache);
 
-    let hot_directory = if ephemeral_unbounded_cache {
-        let caching_directory = CachingDirectory::new_unbounded(Arc::new(directory));
+    let hot_directory = if let Some(cache) = ephemeral_unbounded_cache {
+        let caching_directory = CachingDirectory::new(Arc::new(directory), cache);
         HotDirectory::open(caching_directory, hotcache_bytes.read_bytes()?)?
     } else {
         HotDirectory::open(directory, hotcache_bytes.read_bytes()?)?
@@ -363,6 +363,7 @@ fn get_leaf_resp_from_count(count: u64) -> LeafSearchResponse {
         num_attempted_splits: 1,
         num_successful_splits: 1,
         intermediate_aggregation_result: None,
+        resource_stats: None,
     }
 }
 
@@ -400,12 +401,14 @@ async fn leaf_search_single_split(
     }
 
     let split_id = split.split_id.to_string();
+    let byte_range_cache =
+        ByteRangeCache::with_infinite_capacity(&quickwit_storage::STORAGE_METRICS.shortlived_cache);
     let index = open_index_with_caches(
         searcher_context,
         storage,
         &split,
         Some(doc_mapper.tokenizer_manager()),
-        true,
+        Some(byte_range_cache.clone()),
     )
     .await?;
     let split_schema = index.schema();
@@ -425,7 +428,15 @@ async fn leaf_search_single_split(
     warmup_info.merge(collector_warmup_info);
     warmup_info.simplify();
 
+    let warmup_start = Instant::now();
     warmup(&searcher, &warmup_info).await?;
+    let warmup_end = Instant::now();
+    let warmup_duration: Duration = warmup_end.duration_since(warmup_start);
+
+    let short_lived_cache_num_bytes: u64 = byte_range_cache.get_num_bytes();
+    let split_num_docs = split.num_docs;
+
+
     let span = info_span!("tantivy_search");
 
     let (search_request, leaf_search_response) = {
@@ -433,25 +444,31 @@ async fn leaf_search_single_split(
 
         crate::search_thread_pool()
             .run_cpu_intensive(move || {
+                let cpu_start = Instant::now();
+                let cpu_thread_pool_wait_microsecs = cpu_start.duration_since(warmup_end);
                 let _span_guard = span.enter();
                 // Our search execution has been scheduled, let's check if we can improve the
                 // request based on the results of the preceding searches
                 check_optimize_search_request(&mut search_request, &split, &split_filter);
                 collector.update_search_param(&search_request);
-                if is_metadata_count_request_with_ast(&query_ast, &search_request) {
-                    return Ok((
-                        search_request,
-                        get_leaf_resp_from_count(searcher.num_docs() as u64),
-                    ));
-                }
-                if collector.is_count_only() {
-                    let count = query.count(&searcher)? as u64;
-                    Ok((search_request, get_leaf_resp_from_count(count)))
-                } else {
-                    searcher
-                        .search(&query, &collector)
-                        .map(|resp| (search_request, resp))
-                }
+                let mut leaf_search_response: LeafSearchResponse =
+                    if is_metadata_count_request_with_ast(&query_ast, &search_request) {
+                        get_leaf_resp_from_count(searcher.num_docs() as u64)
+                    } else if collector.is_count_only() {
+                        let count = query.count(&searcher)? as u64;
+                        get_leaf_resp_from_count(count)
+                    } else {
+                        searcher.search(&query, &collector)?
+                    };
+                leaf_search_response.resource_stats = Some(quickwit_proto::search::ResourceStats {
+                    cpu_microsecs: cpu_start.elapsed().as_micros() as u64,
+                    short_lived_cache_num_bytes,
+                    split_num_docs,
+                    warmup_microsecs: warmup_duration.as_micros() as u64,
+                    cpu_thread_pool_wait_microsecs: cpu_thread_pool_wait_microsecs.as_micros()
+                        as u64,
+                });
+                Result::<_, TantivyError>::Ok((search_request, leaf_search_response))
             })
             .await
             .map_err(|_| {

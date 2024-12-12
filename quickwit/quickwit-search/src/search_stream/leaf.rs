@@ -29,7 +29,7 @@ use quickwit_proto::search::{
     LeafSearchStreamResponse, OutputFormat, SearchRequest, SearchStreamRequest,
     SplitIdAndFooterOffsets,
 };
-use quickwit_storage::Storage;
+use quickwit_storage::{ByteRangeCache, Storage};
 use tantivy::columnar::{DynamicColumn, HasAssociatedColumnType};
 use tantivy::fastfield::Column;
 use tantivy::query::Query;
@@ -127,12 +127,15 @@ async fn leaf_search_stream_single_split(
         &split,
     );
 
+    let cache =
+        ByteRangeCache::with_infinite_capacity(&quickwit_storage::STORAGE_METRICS.shortlived_cache);
+
     let index = open_index_with_caches(
         &searcher_context,
         storage,
         &split,
         Some(doc_mapper.tokenizer_manager()),
-        true,
+        Some(cache),
     )
     .await?;
     let split_schema = index.schema();
