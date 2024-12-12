@@ -328,18 +328,17 @@ pub async fn leaf_list_terms(
     splits: &[SplitIdAndFooterOffsets],
 ) -> Result<LeafListTermsResponse, SearchError> {
     info!(split_offsets = ?PrettySample::new(splits, 5));
+    let permits = searcher_context
+        .search_permit_provider
+        .get_permits(splits.len());
     let leaf_search_single_split_futures: Vec<_> = splits
         .iter()
-        .map(|split| {
+        .zip(permits.into_iter())
+        .map(|(split, search_permit_recv)| {
             let index_storage_clone = index_storage.clone();
             let searcher_context_clone = searcher_context.clone();
             async move {
-                let _leaf_split_search_permit = searcher_context_clone
-                    .search_permit_provider
-                    .get_permit()
-                    .await
-                    .expect("Failed to acquire permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
-
+                let _leaf_split_search_permit = search_permit_recv.await;
                 // TODO dedicated counter and timer?
                 crate::SEARCH_METRICS.leaf_searches_splits_total.inc();
                 let timer = crate::SEARCH_METRICS
