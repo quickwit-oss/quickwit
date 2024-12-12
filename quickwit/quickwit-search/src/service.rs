@@ -491,7 +491,6 @@ impl SearcherContext {
         let leaf_search_split_semaphore = SearchPermitProvider::new(
             searcher_config.max_num_concurrent_split_searches,
             searcher_config.warmup_memory_budget,
-            searcher_config.warmup_single_split_initial_allocation,
         );
         let split_stream_semaphore =
             Semaphore::new(searcher_config.max_num_concurrent_split_streams);

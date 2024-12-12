@@ -24,6 +24,7 @@ use std::task::{Context, Poll};
 
 use bytesize::ByteSize;
 use quickwit_common::metrics::GaugeGuard;
+use quickwit_proto::search::SplitIdAndFooterOffsets;
 #[cfg(test)]
 use tokio::sync::watch;
 use tokio::sync::{mpsc, oneshot};
@@ -40,7 +41,6 @@ pub struct SearchPermitProvider {
     message_sender: mpsc::UnboundedSender<SearchPermitMessage>,
     #[cfg(test)]
     actor_stopped: watch::Receiver<bool>,
-    per_permit_initial_memory_allocation: u64,
 }
 
 #[derive(Debug)]
@@ -59,12 +59,29 @@ pub enum SearchPermitMessage {
     },
 }
 
+/// Makes very pessimistic estimate of the memory allocation required for a split search
+///
+/// This is refined later on when more data is available about the split.
+pub fn compute_initial_memory_allocation(
+    split: &SplitIdAndFooterOffsets,
+    warmup_single_split_initial_allocation: ByteSize,
+) -> ByteSize {
+    let split_size = split.split_footer_start;
+    let proportional_allocation =
+        warmup_single_split_initial_allocation.as_u64() * split.num_docs / 10_000_000;
+    let size_bytes = [
+        split_size,
+        proportional_allocation,
+        warmup_single_split_initial_allocation.as_u64(),
+    ]
+    .into_iter()
+    .min()
+    .unwrap();
+    ByteSize(size_bytes)
+}
+
 impl SearchPermitProvider {
-    pub fn new(
-        num_download_slots: usize,
-        memory_budget: ByteSize,
-        initial_allocation: ByteSize,
-    ) -> Self {
+    pub fn new(num_download_slots: usize, memory_budget: ByteSize) -> Self {
         let (message_sender, message_receiver) = mpsc::unbounded_channel();
         #[cfg(test)]
         let (state_sender, state_receiver) = watch::channel(false);
@@ -83,11 +100,10 @@ impl SearchPermitProvider {
             message_sender,
             #[cfg(test)]
             actor_stopped: state_receiver,
-            per_permit_initial_memory_allocation: initial_allocation.as_u64(),
         }
     }
 
-    /// Returns one permit future for each provided split size.
+    /// Returns one permit future for each provided split metadata.
     ///
     /// The permits returned are guaranteed to be resolved in order. In
     /// addition, the permits are guaranteed to be resolved before permits
@@ -96,18 +112,14 @@ impl SearchPermitProvider {
     /// The permit memory size is capped by per_permit_initial_memory_allocation.
     pub async fn get_permits(
         &self,
-        split_sizes: impl IntoIterator<Item = ByteSize>,
+        splits: impl IntoIterator<Item = ByteSize>,
     ) -> Vec<SearchPermitFuture> {
         let (permit_sender, permit_receiver) = oneshot::channel();
+        let permit_sizes = splits.into_iter().map(|size| size.as_u64()).collect();
         self.message_sender
             .send(SearchPermitMessage::Request {
                 permit_sender,
-                permit_sizes: split_sizes
-                    .into_iter()
-                    .map(|size| {
-                        std::cmp::min(size.as_u64(), self.per_permit_initial_memory_allocation)
-                    })
-                    .collect(),
+                permit_sizes,
             })
             .expect("Receiver lives longer than sender");
         permit_receiver
@@ -191,7 +203,7 @@ impl SearchPermitActor {
             return None;
         }
         if let Some((_, next_permit_size)) = self.permits_requests.front() {
-            if self.total_memory_allocated + next_permit_size < self.total_memory_budget {
+            if self.total_memory_allocated + next_permit_size <= self.total_memory_budget {
                 return self.permits_requests.pop_front();
             }
         }
@@ -307,7 +319,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_search_permit_order() {
-        let permit_provider = SearchPermitProvider::new(1, ByteSize::mb(100), ByteSize::mb(10));
+        let permit_provider = SearchPermitProvider::new(1, ByteSize::mb(100));
         let mut all_futures = Vec::new();
         let first_batch_of_permits = permit_provider
             .get_permits(repeat(ByteSize::mb(10)).take(10))
@@ -357,7 +369,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_search_permit_early_drops() {
-        let permit_provider = SearchPermitProvider::new(1, ByteSize::mb(100), ByteSize::mb(10));
+        let permit_provider = SearchPermitProvider::new(1, ByteSize::mb(100));
         let permit_fut1 = permit_provider
             .get_permits(vec![ByteSize::mb(10)])
             .await
@@ -398,7 +410,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_memory_budget() {
-        let permit_provider = SearchPermitProvider::new(100, ByteSize::mb(100), ByteSize::mb(10));
+        let permit_provider = SearchPermitProvider::new(100, ByteSize::mb(100));
         let mut permit_futs = permit_provider
             .get_permits(repeat(ByteSize::mb(10)).take(14))
             .await;
@@ -428,10 +440,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_warmup_slot() {
-        let permit_provider = SearchPermitProvider::new(10, ByteSize::mb(100), ByteSize::mb(1));
+        let permit_provider = SearchPermitProvider::new(10, ByteSize::mb(100));
         let mut permit_futs = permit_provider
-            // permit sizes are capped by per_permit_initial_memory_allocation
-            .get_permits(repeat(ByteSize::mb(100)).take(16))
+            .get_permits(repeat(ByteSize::mb(1)).take(16))
             .await;
         let mut remaining_permit_futs = permit_futs.split_off(10).into_iter();
         assert_eq!(remaining_permit_futs.len(), 6);

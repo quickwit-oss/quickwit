@@ -22,7 +22,6 @@ use std::ops::Bound;
 use std::sync::Arc;
 
 use anyhow::Context;
-use bytesize::ByteSize;
 use futures::future::try_join_all;
 use itertools::{Either, Itertools};
 use quickwit_common::pretty::PrettySample;
@@ -41,6 +40,7 @@ use tracing::{debug, error, info, instrument};
 
 use crate::leaf::open_index_with_caches;
 use crate::search_job_placer::group_jobs_by_index_id;
+use crate::search_permit_provider::compute_initial_memory_allocation;
 use crate::{resolve_index_patterns, ClusterClient, SearchError, SearchJob, SearcherContext};
 
 /// Performs a distributed list terms.
@@ -329,13 +329,17 @@ pub async fn leaf_list_terms(
     splits: &[SplitIdAndFooterOffsets],
 ) -> Result<LeafListTermsResponse, SearchError> {
     info!(split_offsets = ?PrettySample::new(splits, 5));
+    let permit_sizes = splits.iter().map(|split| {
+        compute_initial_memory_allocation(
+            split,
+            searcher_context
+                .searcher_config
+                .warmup_single_split_initial_allocation,
+        )
+    });
     let permits = searcher_context
         .search_permit_provider
-        .get_permits(
-            splits
-                .iter()
-                .map(|split| ByteSize(split.split_footer_start)),
-        )
+        .get_permits(permit_sizes)
         .await;
     let leaf_search_single_split_futures: Vec<_> = splits
         .iter()

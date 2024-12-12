@@ -52,7 +52,7 @@ use tracing::*;
 use crate::collector::{make_collector_for_split, make_merge_collector, IncrementalCollector};
 use crate::metrics::SEARCH_METRICS;
 use crate::root::is_metadata_count_request_with_ast;
-use crate::search_permit_provider::SearchPermit;
+use crate::search_permit_provider::{compute_initial_memory_allocation, SearchPermit};
 use crate::service::{deserialize_doc_mapper, SearcherContext};
 use crate::{QuickwitAggregations, SearchError};
 
@@ -1315,13 +1315,17 @@ pub async fn leaf_search(
 
     // We acquire all of the leaf search permits to make sure our single split search tasks
     // do no interleave with other leaf search requests.
+    let permit_sizes = split_with_req.iter().map(|(split, _)| {
+        compute_initial_memory_allocation(
+            split,
+            searcher_context
+                .searcher_config
+                .warmup_single_split_initial_allocation,
+        )
+    });
     let permit_futures = searcher_context
         .search_permit_provider
-        .get_permits(
-            split_with_req
-                .iter()
-                .map(|(split, _)| ByteSize(split.split_footer_start)),
-        )
+        .get_permits(permit_sizes)
         .await;
 
     for ((split, mut request), permit_fut) in
