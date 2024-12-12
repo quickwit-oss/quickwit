@@ -22,6 +22,7 @@ use std::ops::Bound;
 use std::sync::Arc;
 
 use anyhow::Context;
+use bytesize::ByteSize;
 use futures::future::try_join_all;
 use itertools::{Either, Itertools};
 use quickwit_common::pretty::PrettySample;
@@ -218,7 +219,7 @@ async fn leaf_list_terms_single_split(
 ) -> crate::Result<LeafListTermsResponse> {
     let cache =
         ByteRangeCache::with_infinite_capacity(&quickwit_storage::STORAGE_METRICS.shortlived_cache);
-    let index =
+    let (index, _) =
         open_index_with_caches(searcher_context, storage, &split, None, Some(cache)).await?;
     let split_schema = index.schema();
     let reader = index
@@ -330,7 +331,11 @@ pub async fn leaf_list_terms(
     info!(split_offsets = ?PrettySample::new(splits, 5));
     let permits = searcher_context
         .search_permit_provider
-        .get_permits(splits.len())
+        .get_permits(
+            splits
+                .iter()
+                .map(|split| ByteSize(split.split_footer_start)),
+        )
         .await;
     let leaf_search_single_split_futures: Vec<_> = splits
         .iter()

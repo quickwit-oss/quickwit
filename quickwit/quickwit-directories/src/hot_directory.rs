@@ -204,18 +204,6 @@ impl StaticDirectoryCache {
     pub fn get_file_length(&self, path: &Path) -> Option<u64> {
         self.file_lengths.get(path).copied()
     }
-
-    /// return the files and their cached lengths
-    pub fn get_stats(&self) -> Vec<(PathBuf, usize)> {
-        let mut entries = self
-            .slices
-            .iter()
-            .map(|(path, cache)| (path.to_owned(), cache.len()))
-            .collect::<Vec<_>>();
-
-        entries.sort_by_key(|el| el.0.to_owned());
-        entries
-    }
 }
 
 /// A SliceCache is a static toring
@@ -264,10 +252,6 @@ impl StaticSliceCache {
             return Some(self.bytes.slice(start..start + byte_range.len()));
         }
         None
-    }
-
-    pub fn len(&self) -> usize {
-        self.bytes.len()
     }
 }
 
@@ -376,12 +360,14 @@ impl HotDirectory {
             }),
         })
     }
-    /// Get files and their cached sizes.
-    pub fn get_stats_per_file(
-        hot_cache_bytes: OwnedBytes,
-    ) -> anyhow::Result<Vec<(PathBuf, usize)>> {
-        let static_cache = StaticDirectoryCache::open(hot_cache_bytes)?;
-        Ok(static_cache.get_stats())
+    /// Get all the directory files and their sizes.
+    pub fn get_file_sizes(&self) -> Vec<(PathBuf, u64)> {
+        self.inner
+            .cache
+            .file_lengths
+            .iter()
+            .map(|(k, v)| (k.clone(), *v))
+            .collect()
     }
 }
 
@@ -703,11 +689,6 @@ mod tests {
         assert_eq!(directory_cache.get_file_length(two_path), Some(200));
         assert_eq!(directory_cache.get_file_length(three_path), Some(300));
         assert_eq!(directory_cache.get_file_length(four_path), None);
-
-        let stats = directory_cache.get_stats();
-        assert_eq!(stats[0], (one_path.to_owned(), 8));
-        assert_eq!(stats[1], (three_path.to_owned(), 0));
-        assert_eq!(stats[2], (two_path.to_owned(), 7));
 
         assert_eq!(
             directory_cache

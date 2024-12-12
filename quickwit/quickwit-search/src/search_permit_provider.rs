@@ -27,7 +27,6 @@ use quickwit_common::metrics::GaugeGuard;
 #[cfg(test)]
 use tokio::sync::watch;
 use tokio::sync::{mpsc, oneshot};
-use tracing::warn;
 
 /// Distributor of permits to perform split search operation.
 ///
@@ -41,20 +40,22 @@ pub struct SearchPermitProvider {
     message_sender: mpsc::UnboundedSender<SearchPermitMessage>,
     #[cfg(test)]
     actor_stopped: watch::Receiver<bool>,
+    per_permit_initial_memory_allocation: u64,
 }
 
 #[derive(Debug)]
 pub enum SearchPermitMessage {
     Request {
         permit_sender: oneshot::Sender<Vec<SearchPermitFuture>>,
-        num_permits: usize,
+        permit_sizes: Vec<u64>,
     },
-    WarmupCompleted {
+    UpdateMemory {
         memory_delta: i64,
     },
+    FreeWarmupSlot,
     Drop {
         memory_size: u64,
-        warmup_permit_held: bool,
+        warmup_slot_freed: bool,
     },
 }
 
@@ -74,7 +75,6 @@ impl SearchPermitProvider {
             total_memory_budget: memory_budget.as_u64(),
             permits_requests: VecDeque::new(),
             total_memory_allocated: 0u64,
-            per_permit_initial_memory_allocation: initial_allocation.as_u64(),
             #[cfg(test)]
             stopped: state_sender,
         };
@@ -83,21 +83,31 @@ impl SearchPermitProvider {
             message_sender,
             #[cfg(test)]
             actor_stopped: state_receiver,
+            per_permit_initial_memory_allocation: initial_allocation.as_u64(),
         }
     }
 
-    /// Returns `num_permits` futures that complete once enough resources are
-    /// available.
+    /// Returns one permit future for each provided split size.
     ///
     /// The permits returned are guaranteed to be resolved in order. In
     /// addition, the permits are guaranteed to be resolved before permits
     /// returned by subsequent calls to this function.
-    pub async fn get_permits(&self, num_permits: usize) -> Vec<SearchPermitFuture> {
+    ///
+    /// The permit memory size is capped by per_permit_initial_memory_allocation.
+    pub async fn get_permits(
+        &self,
+        split_sizes: impl IntoIterator<Item = ByteSize>,
+    ) -> Vec<SearchPermitFuture> {
         let (permit_sender, permit_receiver) = oneshot::channel();
         self.message_sender
             .send(SearchPermitMessage::Request {
                 permit_sender,
-                num_permits,
+                permit_sizes: split_sizes
+                    .into_iter()
+                    .map(|size| {
+                        std::cmp::min(size.as_u64(), self.per_permit_initial_memory_allocation)
+                    })
+                    .collect(),
             })
             .expect("Receiver lives longer than sender");
         permit_receiver
@@ -115,8 +125,7 @@ struct SearchPermitActor {
     /// When it happens, new permits will not be assigned until the memory is freed.
     total_memory_budget: u64,
     total_memory_allocated: u64,
-    per_permit_initial_memory_allocation: u64,
-    permits_requests: VecDeque<oneshot::Sender<SearchPermit>>,
+    permits_requests: VecDeque<(oneshot::Sender<SearchPermit>, u64)>,
     #[cfg(test)]
     stopped: watch::Sender<bool>,
 }
@@ -134,13 +143,13 @@ impl SearchPermitActor {
     fn handle_message(&mut self, msg: SearchPermitMessage) {
         match msg {
             SearchPermitMessage::Request {
-                num_permits,
+                permit_sizes,
                 permit_sender,
             } => {
-                let mut permits = Vec::with_capacity(num_permits);
-                for _ in 0..num_permits {
+                let mut permits = Vec::with_capacity(permit_sizes.len());
+                for permit_size in permit_sizes {
                     let (tx, rx) = oneshot::channel();
-                    self.permits_requests.push_back(tx);
+                    self.permits_requests.push_back((tx, permit_size));
                     permits.push(SearchPermitFuture(rx));
                 }
                 self.assign_available_permits();
@@ -149,8 +158,7 @@ impl SearchPermitActor {
                     // This is a request response pattern, so we can safely ignore the error.
                     .expect("Receiver lives longer than sender");
             }
-            SearchPermitMessage::WarmupCompleted { memory_delta } => {
-                self.num_warmup_slots_available += 1;
+            SearchPermitMessage::UpdateMemory { memory_delta } => {
                 if self.total_memory_allocated as i64 + memory_delta < 0 {
                     panic!("More memory released than allocated, should never happen.")
                 }
@@ -158,11 +166,15 @@ impl SearchPermitActor {
                     (self.total_memory_allocated as i64 + memory_delta) as u64;
                 self.assign_available_permits();
             }
+            SearchPermitMessage::FreeWarmupSlot => {
+                self.num_warmup_slots_available += 1;
+                self.assign_available_permits();
+            }
             SearchPermitMessage::Drop {
                 memory_size,
-                warmup_permit_held,
+                warmup_slot_freed,
             } => {
-                if warmup_permit_held {
+                if !warmup_slot_freed {
                     self.num_warmup_slots_available += 1;
                 }
                 self.total_memory_allocated = self
@@ -174,26 +186,34 @@ impl SearchPermitActor {
         }
     }
 
+    fn pop_next_request_if_serviceable(&mut self) -> Option<(oneshot::Sender<SearchPermit>, u64)> {
+        if self.num_warmup_slots_available == 0 {
+            return None;
+        }
+        if let Some((_, next_permit_size)) = self.permits_requests.front() {
+            if self.total_memory_allocated + next_permit_size < self.total_memory_budget {
+                return self.permits_requests.pop_front();
+            }
+        }
+        None
+    }
+
     fn assign_available_permits(&mut self) {
-        while self.num_warmup_slots_available > 0
-            && self.total_memory_allocated + self.per_permit_initial_memory_allocation
-                <= self.total_memory_budget
+        while let Some((permit_requester_tx, next_permit_size)) =
+            self.pop_next_request_if_serviceable()
         {
-            let Some(permit_requester_tx) = self.permits_requests.pop_front() else {
-                break;
-            };
             let mut ongoing_gauge_guard = GaugeGuard::from_gauge(
                 &crate::SEARCH_METRICS.leaf_search_single_split_tasks_ongoing,
             );
             ongoing_gauge_guard.add(1);
-            self.total_memory_allocated += self.per_permit_initial_memory_allocation;
+            self.total_memory_allocated += next_permit_size;
             self.num_warmup_slots_available -= 1;
             permit_requester_tx
                 .send(SearchPermit {
                     _ongoing_gauge_guard: ongoing_gauge_guard,
                     msg_sender: self.msg_sender.clone(),
-                    memory_allocation: self.per_permit_initial_memory_allocation,
-                    warmup_permit_held: true,
+                    memory_allocation: next_permit_size,
+                    warmup_slot_freed: false,
                 })
                 // if the requester dropped its receiver, we drop the newly
                 // created SearchPermit which releases the resources
@@ -210,29 +230,32 @@ pub struct SearchPermit {
     _ongoing_gauge_guard: GaugeGuard<'static>,
     msg_sender: mpsc::WeakUnboundedSender<SearchPermitMessage>,
     memory_allocation: u64,
-    warmup_permit_held: bool,
+    warmup_slot_freed: bool,
 }
 
 impl SearchPermit {
-    /// After warm up, we have a proper estimate of the memory usage of a single
-    /// split leaf search. We can thus set the actual memory usage and release
-    /// the warmup slot.
-    pub fn warmup_completed(&mut self, new_memory_usage: ByteSize) {
+    /// Update the memory usage attached to this permit.
+    ///
+    /// This will increase or decrease the available memory in the [`SearchPermitProvider`].
+    pub fn update_memory_usage(&mut self, new_memory_usage: ByteSize) {
         let new_usage_bytes = new_memory_usage.as_u64();
-        crate::SEARCH_METRICS
-            .leaf_search_single_split_warmup_num_bytes
-            .observe(new_usage_bytes as f64);
-        if new_usage_bytes > self.memory_allocation {
-            warn!(
-                memory_usage = new_usage_bytes,
-                memory_allocation = self.memory_allocation,
-                "current leaf search is consuming more memory than the initial allocation"
-            );
-        }
         let memory_delta = new_usage_bytes as i64 - self.memory_allocation as i64;
-        self.warmup_permit_held = false;
         self.memory_allocation = new_usage_bytes;
-        self.send_if_still_running(SearchPermitMessage::WarmupCompleted { memory_delta });
+        self.send_if_still_running(SearchPermitMessage::UpdateMemory { memory_delta });
+    }
+
+    /// Drop the warmup permit, allowing more downloads to be started. Only one
+    /// slot is attached to each permit so calling this again has no effect.
+    pub fn free_warmup_slot(&mut self) {
+        if self.warmup_slot_freed {
+            return;
+        }
+        self.warmup_slot_freed = true;
+        self.send_if_still_running(SearchPermitMessage::FreeWarmupSlot);
+    }
+
+    pub fn memory_allocation(&self) -> ByteSize {
+        ByteSize(self.memory_allocation)
     }
 
     fn send_if_still_running(&self, msg: SearchPermitMessage) {
@@ -250,7 +273,7 @@ impl Drop for SearchPermit {
     fn drop(&mut self) {
         self.send_if_still_running(SearchPermitMessage::Drop {
             memory_size: self.memory_allocation,
-            warmup_permit_held: self.warmup_permit_held,
+            warmup_slot_freed: self.warmup_slot_freed,
         });
     }
 }
@@ -273,6 +296,7 @@ impl Future for SearchPermitFuture {
 
 #[cfg(test)]
 mod tests {
+    use std::iter::repeat;
     use std::time::Duration;
 
     use futures::StreamExt;
@@ -285,7 +309,9 @@ mod tests {
     async fn test_search_permit_order() {
         let permit_provider = SearchPermitProvider::new(1, ByteSize::mb(100), ByteSize::mb(10));
         let mut all_futures = Vec::new();
-        let first_batch_of_permits = permit_provider.get_permits(10).await;
+        let first_batch_of_permits = permit_provider
+            .get_permits(repeat(ByteSize::mb(10)).take(10))
+            .await;
         assert_eq!(first_batch_of_permits.len(), 10);
         all_futures.extend(
             first_batch_of_permits
@@ -294,7 +320,9 @@ mod tests {
                 .map(move |(i, fut)| ((1, i), fut)),
         );
 
-        let second_batch_of_permits = permit_provider.get_permits(10).await;
+        let second_batch_of_permits = permit_provider
+            .get_permits(repeat(ByteSize::mb(10)).take(10))
+            .await;
         assert_eq!(second_batch_of_permits.len(), 10);
         all_futures.extend(
             second_batch_of_permits
@@ -331,13 +359,13 @@ mod tests {
     async fn test_search_permit_early_drops() {
         let permit_provider = SearchPermitProvider::new(1, ByteSize::mb(100), ByteSize::mb(10));
         let permit_fut1 = permit_provider
-            .get_permits(1)
+            .get_permits(vec![ByteSize::mb(10)])
             .await
             .into_iter()
             .next()
             .unwrap();
         let permit_fut2 = permit_provider
-            .get_permits(1)
+            .get_permits([ByteSize::mb(10)])
             .await
             .into_iter()
             .next()
@@ -348,7 +376,7 @@ mod tests {
         assert_eq!(*permit_provider.actor_stopped.borrow(), false);
 
         let _permit_fut3 = permit_provider
-            .get_permits(1)
+            .get_permits([ByteSize::mb(10)])
             .await
             .into_iter()
             .next()
@@ -369,9 +397,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_memory_permit() {
+    async fn test_memory_budget() {
         let permit_provider = SearchPermitProvider::new(100, ByteSize::mb(100), ByteSize::mb(10));
-        let mut permit_futs = permit_provider.get_permits(14).await;
+        let mut permit_futs = permit_provider
+            .get_permits(repeat(ByteSize::mb(10)).take(14))
+            .await;
         let mut remaining_permit_futs = permit_futs.split_off(10).into_iter();
         assert_eq!(remaining_permit_futs.len(), 4);
         // we should be able to obtain 10 permits right away (100MB / 10MB)
@@ -390,9 +420,47 @@ mod tests {
         let next_blocked_permit_fut = remaining_permit_futs.next().unwrap();
         try_get(next_blocked_permit_fut).await.unwrap_err();
         // by setting a more accurate memory usage after a completed warmup, we can get more permits
-        permits[0].warmup_completed(ByteSize::mb(4));
-        permits[1].warmup_completed(ByteSize::mb(6));
+        permits[0].update_memory_usage(ByteSize::mb(4));
+        permits[1].update_memory_usage(ByteSize::mb(6));
         let next_permit_fut = remaining_permit_futs.next().unwrap();
         try_get(next_permit_fut).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_warmup_slot() {
+        let permit_provider = SearchPermitProvider::new(10, ByteSize::mb(100), ByteSize::mb(1));
+        let mut permit_futs = permit_provider
+            // permit sizes are capped by per_permit_initial_memory_allocation
+            .get_permits(repeat(ByteSize::mb(100)).take(16))
+            .await;
+        let mut remaining_permit_futs = permit_futs.split_off(10).into_iter();
+        assert_eq!(remaining_permit_futs.len(), 6);
+        // we should be able to obtain 10 permits right away
+        let mut permits: Vec<SearchPermit> = futures::stream::iter(permit_futs.into_iter())
+            .buffered(1)
+            .collect()
+            .await;
+        // the next permit is blocked by the warmup slots
+        let next_blocked_permit_fut = remaining_permit_futs.next().unwrap();
+        try_get(next_blocked_permit_fut).await.unwrap_err();
+        // if we drop one of the permits, we can get a new one
+        permits.drain(0..1);
+        let next_permit_fut = remaining_permit_futs.next().unwrap();
+        permits.push(try_get(next_permit_fut).await.unwrap());
+        // the next permit is blocked again by the warmup slots
+        let next_blocked_permit_fut = remaining_permit_futs.next().unwrap();
+        try_get(next_blocked_permit_fut).await.unwrap_err();
+        // we can explicitly free the warmup slot on a permit
+        permits[0].free_warmup_slot();
+        let next_permit_fut = remaining_permit_futs.next().unwrap();
+        permits.push(try_get(next_permit_fut).await.unwrap());
+        // dropping that same permit does not free up another slot
+        permits.drain(0..1);
+        let next_blocked_permit_fut = remaining_permit_futs.next().unwrap();
+        try_get(next_blocked_permit_fut).await.unwrap_err();
+        // but dropping a permit for which the slot wasn't explicitly free does free up a slot
+        permits.drain(0..1);
+        let next_blocked_permit_fut = remaining_permit_futs.next().unwrap();
+        permits.push(try_get(next_blocked_permit_fut).await.unwrap());
     }
 }
