@@ -1806,7 +1806,8 @@ mod tests {
                 failed_splits: Vec::new(),
                 num_attempted_splits: 3,
                 num_successful_splits: 3,
-                intermediate_aggregation_result: None
+                intermediate_aggregation_result: None,
+                resource_stats: None,
             }
         );
 
@@ -1845,6 +1846,7 @@ mod tests {
                     num_attempted_splits: 3,
                     num_successful_splits: 3,
                     intermediate_aggregation_result: None,
+                    resource_stats: None,
                 },
                 LeafSearchResponse {
                     num_hits: 10,
@@ -1863,6 +1865,7 @@ mod tests {
                     num_attempted_splits: 2,
                     num_successful_splits: 1,
                     intermediate_aggregation_result: None,
+                    resource_stats: None,
                 },
             ],
         );
@@ -1894,7 +1897,8 @@ mod tests {
                 }],
                 num_attempted_splits: 5,
                 num_successful_splits: 4,
-                intermediate_aggregation_result: None
+                intermediate_aggregation_result: None,
+                resource_stats: None,
             }
         );
 
@@ -1934,6 +1938,7 @@ mod tests {
                     num_attempted_splits: 3,
                     num_successful_splits: 3,
                     intermediate_aggregation_result: None,
+                    resource_stats: None,
                 },
                 LeafSearchResponse {
                     num_hits: 10,
@@ -1952,6 +1957,7 @@ mod tests {
                     num_attempted_splits: 2,
                     num_successful_splits: 1,
                     intermediate_aggregation_result: None,
+                    resource_stats: None,
                 },
             ],
         );
@@ -1983,7 +1989,8 @@ mod tests {
                 }],
                 num_attempted_splits: 5,
                 num_successful_splits: 4,
-                intermediate_aggregation_result: None
+                intermediate_aggregation_result: None,
+                resource_stats: None,
             }
         );
         // TODO would be nice to test aggregation too.
