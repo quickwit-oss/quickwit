@@ -116,6 +116,7 @@ async fn leaf_search_stream_single_split(
     mut stream_request: SearchStreamRequest,
     storage: Arc<dyn Storage>,
 ) -> crate::Result<LeafSearchStreamResponse> {
+    // TODO: Should we track the memory here using the SearchPermitProvider?
     let _leaf_split_stream_permit = searcher_context
         .split_stream_semaphore
         .acquire()
@@ -129,13 +130,12 @@ async fn leaf_search_stream_single_split(
 
     let cache =
         ByteRangeCache::with_infinite_capacity(&quickwit_storage::STORAGE_METRICS.shortlived_cache);
-    // TODO should create a SearchPermit and wrap ByteRangeCache with TrackedByteRangeCache here?
     let index = open_index_with_caches(
         &searcher_context,
         storage,
         &split,
         Some(doc_mapper.tokenizer_manager()),
-        Some(Arc::new(cache)),
+        Some(cache),
     )
     .await?;
     let split_schema = index.schema();

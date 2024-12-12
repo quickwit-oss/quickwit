@@ -40,8 +40,6 @@ use tracing::{debug, error, info, instrument};
 
 use crate::leaf::open_index_with_caches;
 use crate::search_job_placer::group_jobs_by_index_id;
-use crate::search_permit_provider::SearchPermit;
-use crate::tracked_cache::TrackedByteRangeCache;
 use crate::{resolve_index_patterns, ClusterClient, SearchError, SearchJob, SearcherContext};
 
 /// Performs a distributed list terms.
@@ -217,14 +215,11 @@ async fn leaf_list_terms_single_split(
     search_request: &ListTermsRequest,
     storage: Arc<dyn Storage>,
     split: SplitIdAndFooterOffsets,
-    search_permit: SearchPermit,
 ) -> crate::Result<LeafListTermsResponse> {
     let cache =
         ByteRangeCache::with_infinite_capacity(&quickwit_storage::STORAGE_METRICS.shortlived_cache);
-    let tracked_cache = TrackedByteRangeCache::new(cache, search_permit);
     let index =
-        open_index_with_caches(searcher_context, storage, &split, None, Some(tracked_cache))
-            .await?;
+        open_index_with_caches(searcher_context, storage, &split, None, Some(cache)).await?;
     let split_schema = index.schema();
     let reader = index
         .reader_builder()
@@ -355,10 +350,14 @@ pub async fn leaf_list_terms(
                     request,
                     index_storage_clone,
                     split.clone(),
-                    leaf_split_search_permit,
                 )
                 .await;
                 timer.observe_duration();
+
+                // Explicitly drop the permit for readability.
+                // This should always happen after the ephemeral search cache is dropped.
+                std::mem::drop(leaf_split_search_permit);
+
                 leaf_search_single_split_res.map_err(|err| (split.split_id.clone(), err))
             }
         })

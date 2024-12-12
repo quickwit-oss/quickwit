@@ -618,7 +618,7 @@ mod tests {
                     max_num_retries: 2
                 }),
                 warmup_memory_budget: ByteSize::gb(10),
-                warmup_single_split_initial_allocation: ByteSize::gb(50),
+                warmup_single_split_initial_allocation: ByteSize::gb(1),
             }
         );
         assert_eq!(

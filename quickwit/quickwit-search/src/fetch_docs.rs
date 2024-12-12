@@ -27,7 +27,7 @@ use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::search::{
     FetchDocsResponse, PartialHit, SnippetRequest, SplitIdAndFooterOffsets,
 };
-use quickwit_storage::{ByteRangeCache, Storage};
+use quickwit_storage::Storage;
 use tantivy::query::Query;
 use tantivy::schema::document::CompactDocValue;
 use tantivy::schema::{Document as DocumentTrait, Field, TantivyDocument, Value};
@@ -179,7 +179,7 @@ async fn fetch_docs_in_split(
         index_storage,
         split,
         Some(doc_mapper.tokenizer_manager()),
-        Option::<Arc<ByteRangeCache>>::None,
+        None,
     )
     .await
     .context("open-index-for-split")?;

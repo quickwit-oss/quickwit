@@ -25,9 +25,10 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
+use bytesize::ByteSize;
 use futures::future::try_join_all;
 use quickwit_common::pretty::PrettySample;
-use quickwit_directories::{CachingDirectory, DirectoryCache, HotDirectory, StorageDirectory};
+use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_doc_mapper::{DocMapper, TermRange, WarmupInfo};
 use quickwit_proto::search::{
     CountHits, LeafSearchRequest, LeafSearchResponse, PartialHit, ResourceStats, SearchRequest,
@@ -53,7 +54,6 @@ use crate::metrics::SEARCH_METRICS;
 use crate::root::is_metadata_count_request_with_ast;
 use crate::search_permit_provider::SearchPermit;
 use crate::service::{deserialize_doc_mapper, SearcherContext};
-use crate::tracked_cache::TrackedByteRangeCache;
 use crate::{QuickwitAggregations, SearchError};
 
 #[instrument(skip_all)]
@@ -131,16 +131,13 @@ pub(crate) async fn open_split_bundle(
 /// - A fast fields cache given by `SearcherContext.storage_long_term_cache`.
 /// - An ephemeral unbounded cache directory whose lifetime is tied to the
 /// returned `Index`.
-///
-/// TODO: generic T should be forced to SearcherPermit, but this requires the
-/// search stream to also request permits.
 #[instrument(skip_all, fields(split_footer_start=split_and_footer_offsets.split_footer_start, split_footer_end=split_and_footer_offsets.split_footer_end))]
-pub(crate) async fn open_index_with_caches<C: DirectoryCache>(
+pub(crate) async fn open_index_with_caches(
     searcher_context: &SearcherContext,
     index_storage: Arc<dyn Storage>,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
     tokenizer_manager: Option<&TokenizerManager>,
-    ephemeral_unbounded_cache: Option<C>,
+    ephemeral_unbounded_cache: Option<ByteRangeCache>,
 ) -> anyhow::Result<Index> {
     // Let's add a storage proxy to retry `get_slice` requests if they are taking too long,
     // if configured in the searcher config.
@@ -383,7 +380,7 @@ async fn leaf_search_single_split(
     doc_mapper: Arc<DocMapper>,
     split_filter: Arc<RwLock<CanSplitDoBetter>>,
     aggregations_limits: AggregationLimitsGuard,
-    search_permit: SearchPermit,
+    search_permit: &mut SearchPermit,
 ) -> crate::Result<LeafSearchResponse> {
     rewrite_request(
         &mut search_request,
@@ -411,13 +408,12 @@ async fn leaf_search_single_split(
     let split_id = split.split_id.to_string();
     let byte_range_cache =
         ByteRangeCache::with_infinite_capacity(&quickwit_storage::STORAGE_METRICS.shortlived_cache);
-    let tracked_cache = TrackedByteRangeCache::new(byte_range_cache, search_permit);
     let index = open_index_with_caches(
         searcher_context,
         storage,
         &split,
         Some(doc_mapper.tokenizer_manager()),
-        Some(tracked_cache.clone()),
+        Some(byte_range_cache.clone()),
     )
     .await?;
     let split_schema = index.schema();
@@ -441,8 +437,9 @@ async fn leaf_search_single_split(
     warmup(&searcher, &warmup_info).await?;
     let warmup_end = Instant::now();
     let warmup_duration: Duration = warmup_end.duration_since(warmup_start);
-    tracked_cache.warmup_completed();
-    let short_lived_cache_num_bytes = tracked_cache.get_num_bytes();
+    let warmup_size = byte_range_cache.get_num_bytes();
+    search_permit.warmup_completed(ByteSize(warmup_size));
+    let short_lived_cache_num_bytes = byte_range_cache.get_num_bytes();
     let split_num_docs = split.num_docs;
 
     let span = info_span!("tantivy_search");
@@ -1386,7 +1383,7 @@ async fn leaf_search_single_split_wrapper(
     split: SplitIdAndFooterOffsets,
     split_filter: Arc<RwLock<CanSplitDoBetter>>,
     incremental_merge_collector: Arc<Mutex<IncrementalCollector>>,
-    search_permit: SearchPermit,
+    mut search_permit: SearchPermit,
     aggregations_limits: AggregationLimitsGuard,
 ) {
     crate::SEARCH_METRICS.leaf_searches_splits_total.inc();
@@ -1401,9 +1398,13 @@ async fn leaf_search_single_split_wrapper(
         doc_mapper,
         split_filter.clone(),
         aggregations_limits,
-        search_permit,
+        &mut search_permit,
     )
     .await;
+
+    // Explicitly drop the permit for readability.
+    // This should always happen after the ephemeral search cache is dropped.
+    std::mem::drop(search_permit);
 
     if leaf_search_single_split_res.is_ok() {
         timer.observe_duration();

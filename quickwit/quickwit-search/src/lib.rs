@@ -42,7 +42,6 @@ mod search_response_rest;
 mod search_stream;
 mod service;
 pub(crate) mod top_k_collector;
-mod tracked_cache;
 
 mod metrics;
 mod search_permit_provider;

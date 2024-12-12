@@ -30,44 +30,46 @@ use tantivy::{Directory, HasLen};
 
 /// The caching directory is a simple cache that wraps another directory.
 #[derive(Clone)]
-pub struct CachingDirectory<C> {
+pub struct CachingDirectory {
     underlying: Arc<dyn Directory>,
-    cache: C,
+    // TODO fixme: that's a pretty ugly cache we have here.
+    cache: ByteRangeCache,
 }
 
-impl CachingDirectory<Arc<ByteRangeCache>> {
-    /// Creates a new CachingDirectory with a default cache.
+impl CachingDirectory {
+    /// Creates a new CachingDirectory.
     ///
-    /// Warming: The resulting CacheDirectory will cache all information without ever
+    /// Warning: The resulting CacheDirectory will cache all information without ever
     /// removing any item from the cache.
-    pub fn new_unbounded(underlying: Arc<dyn Directory>) -> CachingDirectory<Arc<ByteRangeCache>> {
+    pub fn new_unbounded(underlying: Arc<dyn Directory>) -> CachingDirectory {
         let byte_range_cache = ByteRangeCache::with_infinite_capacity(
             &quickwit_storage::STORAGE_METRICS.shortlived_cache,
         );
-        CachingDirectory::new(underlying, Arc::new(byte_range_cache))
+        CachingDirectory::new(underlying, byte_range_cache)
     }
-}
 
-impl<C: DirectoryCache> CachingDirectory<C> {
-    /// Creates a new CachingDirectory with an existing cache.
-    pub fn new(underlying: Arc<dyn Directory>, cache: C) -> CachingDirectory<C> {
+    /// Creates a new CachingDirectory.
+    ///
+    /// Warning: The resulting CacheDirectory will cache all information without ever
+    /// removing any item from the cache.
+    pub fn new(underlying: Arc<dyn Directory>, cache: ByteRangeCache) -> CachingDirectory {
         CachingDirectory { underlying, cache }
     }
 }
 
-impl<T> fmt::Debug for CachingDirectory<T> {
+impl fmt::Debug for CachingDirectory {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "CachingDirectory({:?})", self.underlying)
     }
 }
 
-struct CachingFileHandle<C> {
+struct CachingFileHandle {
     path: PathBuf,
-    cache: C,
+    cache: ByteRangeCache,
     underlying_filehandle: Arc<dyn FileHandle>,
 }
 
-impl<T> fmt::Debug for CachingFileHandle<T> {
+impl fmt::Debug for CachingFileHandle {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
@@ -79,7 +81,7 @@ impl<T> fmt::Debug for CachingFileHandle<T> {
 }
 
 #[async_trait]
-impl<C: DirectoryCache> FileHandle for CachingFileHandle<C> {
+impl FileHandle for CachingFileHandle {
     fn read_bytes(&self, byte_range: Range<usize>) -> io::Result<OwnedBytes> {
         if let Some(bytes) = self.cache.get_slice(&self.path, byte_range.clone()) {
             return Ok(bytes);
@@ -104,13 +106,13 @@ impl<C: DirectoryCache> FileHandle for CachingFileHandle<C> {
     }
 }
 
-impl<C> HasLen for CachingFileHandle<C> {
+impl HasLen for CachingFileHandle {
     fn len(&self) -> usize {
         self.underlying_filehandle.len()
     }
 }
 
-impl<C: DirectoryCache> Directory for CachingDirectory<C> {
+impl Directory for CachingDirectory {
     fn exists(&self, path: &Path) -> std::result::Result<bool, OpenReadError> {
         self.underlying.exists(path)
     }
@@ -138,25 +140,6 @@ impl<C: DirectoryCache> Directory for CachingDirectory<C> {
     }
 
     crate::read_only_directory!();
-}
-
-/// A byte range cache that to be used in front of the directory.
-pub trait DirectoryCache: Clone + Send + Sync + 'static {
-    /// If available, returns the cached view of the slice.
-    fn get_slice(&self, path: &Path, byte_range: Range<usize>) -> Option<OwnedBytes>;
-
-    /// Put the given amount of data in the cache.
-    fn put_slice(&self, path: PathBuf, byte_range: Range<usize>, bytes: OwnedBytes);
-}
-
-impl DirectoryCache for Arc<ByteRangeCache> {
-    fn get_slice(&self, path: &Path, byte_range: Range<usize>) -> Option<OwnedBytes> {
-        ByteRangeCache::get_slice(self, path, byte_range)
-    }
-
-    fn put_slice(&self, path: PathBuf, byte_range: Range<usize>, bytes: OwnedBytes) {
-        ByteRangeCache::put_slice(self, path, byte_range, bytes)
-    }
 }
 
 #[cfg(test)]
