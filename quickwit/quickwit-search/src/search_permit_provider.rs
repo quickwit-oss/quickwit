@@ -219,6 +219,9 @@ impl SearchPermit {
     /// the warmup slot.
     pub fn warmup_completed(&mut self, new_memory_usage: ByteSize) {
         let new_usage_bytes = new_memory_usage.as_u64();
+        crate::SEARCH_METRICS
+            .leaf_search_single_split_warmup_num_bytes
+            .observe(new_usage_bytes as f64);
         if new_usage_bytes > self.memory_allocation {
             warn!(
                 memory_usage = new_usage_bytes,
