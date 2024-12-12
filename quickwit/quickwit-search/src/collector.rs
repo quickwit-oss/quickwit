@@ -1191,7 +1191,7 @@ pub(crate) struct IncrementalCollector {
     num_attempted_splits: u64,
     num_successful_splits: u64,
     start_offset: usize,
-    resource_stats: ResourceStats,
+    resource_stats: Option<ResourceStats>,
 }
 
 impl IncrementalCollector {
@@ -1212,7 +1212,7 @@ impl IncrementalCollector {
             failed_splits: Vec::new(),
             num_attempted_splits: 0,
             num_successful_splits: 0,
-            resource_stats: ResourceStats::default(),
+            resource_stats: None,
         }
     }
 
@@ -1228,8 +1228,12 @@ impl IncrementalCollector {
             resource_stats,
         } = leaf_response;
 
-        if let Some(leaf_resource_stats) = &resource_stats {
-            merge_resource_stats(leaf_resource_stats, &mut self.resource_stats);
+        if let Some(leaf_resource_stats) = resource_stats {
+            if let Some(current_stats) = self.resource_stats.as_mut() {
+                merge_resource_stats(&leaf_resource_stats, current_stats);
+            } else {
+                self.resource_stats = Some(leaf_resource_stats);
+            }
         }
 
         self.num_hits += num_hits;
@@ -1281,7 +1285,7 @@ impl IncrementalCollector {
             num_attempted_splits: self.num_attempted_splits,
             num_successful_splits: self.num_successful_splits,
             intermediate_aggregation_result,
-            resource_stats: Some(self.resource_stats),
+            resource_stats: self.resource_stats,
         })
     }
 }
