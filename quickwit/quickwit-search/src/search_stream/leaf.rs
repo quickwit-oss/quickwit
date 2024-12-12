@@ -127,18 +127,15 @@ async fn leaf_search_stream_single_split(
         &split,
     );
 
-    let cache = ByteRangeCache::with_infinite_capacity(
-        &quickwit_storage::STORAGE_METRICS.shortlived_cache,
-        // should we not track the memory with a SearcherPermit?
-        (),
-    );
-
+    let cache =
+        ByteRangeCache::with_infinite_capacity(&quickwit_storage::STORAGE_METRICS.shortlived_cache);
+    // TODO should create a SearchPermit we wrap with TrackedByteRangeCache here?
     let index = open_index_with_caches(
         &searcher_context,
         storage,
         &split,
         Some(doc_mapper.tokenizer_manager()),
-        Some(cache),
+        Some(Arc::new(cache)),
     )
     .await?;
     let split_schema = index.schema();

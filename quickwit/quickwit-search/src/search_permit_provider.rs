@@ -209,6 +209,7 @@ impl SearchPermit {
         }
         let memory_delta = new_memory_usage as i64 - self.memory_allocation as i64;
         self.warmup_permit_held = false;
+        self.memory_allocation = new_memory_usage;
         self.send_if_still_running(SearchPermitMessage::WarmupCompleted { memory_delta });
     }
 
