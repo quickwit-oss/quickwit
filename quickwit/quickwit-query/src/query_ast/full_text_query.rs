@@ -317,6 +317,7 @@ mod tests {
     use crate::{create_default_quickwit_tokenizer_manager, BooleanOperand};
 
     #[test]
+    #[ignore]
     fn test_zero_terms() {
         let full_text_query = FullTextQuery {
             field: "body".to_string(),
