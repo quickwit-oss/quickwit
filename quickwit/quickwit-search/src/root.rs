@@ -4107,6 +4107,7 @@ mod tests {
             field: timestamp_field.to_string(),
             lower_bound: Bound::Included(JsonLiteral::String("2021-04-13T22:45:41Z".to_owned())),
             upper_bound: Bound::Excluded(JsonLiteral::String("2021-05-06T06:51:19Z".to_owned())),
+            lenient: false,
         }
         .into();
 
@@ -4165,6 +4166,7 @@ mod tests {
             field: timestamp_field.to_string(),
             lower_bound: Bound::Excluded(JsonLiteral::String("2021-04-13T22:45:41Z".to_owned())),
             upper_bound: Bound::Included(JsonLiteral::String("2021-05-06T06:51:19Z".to_owned())),
+            lenient: false,
         }
         .into();
         timestamp_range_extractor.start_timestamp = None;
@@ -4177,6 +4179,7 @@ mod tests {
             field: "other_field".to_string(),
             lower_bound: Bound::Included(JsonLiteral::String("2021-04-13T22:45:41Z".to_owned())),
             upper_bound: Bound::Excluded(JsonLiteral::String("2021-05-06T06:51:19Z".to_owned())),
+            lenient: false,
         }
         .into();
         timestamp_range_extractor.start_timestamp = None;
@@ -4193,6 +4196,7 @@ mod tests {
             upper_bound: Bound::Excluded(JsonLiteral::String(
                 "2021-05-06T06:51:19.001Z".to_owned(),
             )),
+            lenient: false,
         }
         .into();
 
