@@ -7,7 +7,7 @@ dd_helm_cnab(
     registry = REGISTRY,
     repository = "pomsky-cnab",
     tags = [
-        "service:cnab_tutorial"
+        "service:pomsky"
     ],
     visibility = ["//visibility:public"],
     with_datacenter_helm_files = False,
