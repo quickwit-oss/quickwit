@@ -271,8 +271,7 @@ impl FullTextQuery {
             return None;
         };
 
-        let (field, field_entry, json_path) =
-            find_field_or_hit_dynamic(&self.field, schema).ok()?;
+        let (field, field_entry, json_path) = find_field_or_hit_dynamic(&self.field, schema)?;
         let field_type: &FieldType = field_entry.field_type();
         match field_type {
             FieldType::Str(text_options) => {

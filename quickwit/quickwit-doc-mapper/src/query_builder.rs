@@ -30,7 +30,9 @@ use quickwit_query::{find_field_or_hit_dynamic, InvalidQuery};
 use tantivy::query::Query;
 use tantivy::schema::{Field, Schema};
 use tantivy::Term;
+use tracing::error;
 
+use crate::doc_mapper::FastFieldWarmupInfo;
 use crate::{QueryParserError, TermRange, WarmupInfo};
 
 #[derive(Default)]
@@ -48,22 +50,37 @@ impl<'a> QueryAstVisitor<'a> for RangeQueryFields {
     }
 }
 
-#[derive(Default)]
-struct ExistsQueryFields {
-    exists_query_field_names: HashSet<String>,
+struct ExistsQueryFastFields {
+    fields: HashSet<FastFieldWarmupInfo>,
+    schema: Schema,
 }
 
-impl<'a> QueryAstVisitor<'a> for ExistsQueryFields {
+impl<'a> QueryAstVisitor<'a> for ExistsQueryFastFields {
     type Err = Infallible;
 
     fn visit_exists(&mut self, exists_query: &'a FieldPresenceQuery) -> Result<(), Infallible> {
-        // If the field is a fast field, we will rely on the `ColumnIndex`.
-        // If the field is not a fast, we will rely on the field presence field.
-        //
-        // After all field names are collected they are checked against schema and
-        // non-fast fields are removed from warmup operation.
-        self.exists_query_field_names
-            .insert(exists_query.field.to_string());
+        let fields = exists_query.find_field_and_subfields(&self.schema);
+        for (_, field_entry, path) in fields {
+            if field_entry.is_fast() {
+                if field_entry.field_type().is_json() {
+                    let full_path = format!("{}.{}", field_entry.name(), path);
+                    self.fields.insert(FastFieldWarmupInfo {
+                        name: full_path,
+                        with_subfields: true,
+                    });
+                } else if path.is_empty() {
+                    self.fields.insert(FastFieldWarmupInfo {
+                        name: field_entry.name().to_string(),
+                        with_subfields: false,
+                    });
+                } else {
+                    error!(
+                        field_entry = field_entry.name(),
+                        path, "only JSON type supports subfields"
+                    );
+                }
+            }
+        }
         Ok(())
     }
 }
@@ -80,18 +97,24 @@ pub(crate) fn build_query(
     // This cannot fail. The error type is Infallible.
     let _: Result<(), Infallible> = range_query_fields.visit(query_ast);
 
-    let mut exists_query_fields = ExistsQueryFields::default();
+    let mut exists_query_fields = ExistsQueryFastFields {
+        fields: HashSet::new(),
+        schema: schema.clone(),
+    };
     // This cannot fail. The error type is Infallible.
     let _: Result<(), Infallible> = exists_query_fields.visit(query_ast);
 
     let mut fast_field_names = HashSet::new();
-    fast_field_names.extend(range_query_fields.range_query_field_names);
-    fast_field_names.extend(
-        exists_query_fields
-            .exists_query_field_names
+    let range_query_fast_fields =
+        range_query_fields
+            .range_query_field_names
             .into_iter()
-            .filter(|field| is_fast_field(&schema, field)),
-    );
+            .map(|name| FastFieldWarmupInfo {
+                name,
+                with_subfields: false,
+            });
+    fast_field_names.extend(range_query_fast_fields);
+    fast_field_names.extend(exists_query_fields.fields.into_iter());
 
     let query = query_ast.build_tantivy_query(
         &schema,
@@ -118,18 +141,11 @@ pub(crate) fn build_query(
         term_dict_fields: term_set_query_fields,
         terms_grouped_by_field,
         term_ranges_grouped_by_field,
-        fast_field_names,
+        fast_fields: fast_field_names,
         ..WarmupInfo::default()
     };
 
     Ok((query, warmup_info))
-}
-
-fn is_fast_field(schema: &Schema, field_name: &str) -> bool {
-    if let Ok((_field, field_entry, _path)) = find_field_or_hit_dynamic(field_name, schema) {
-        return field_entry.is_fast();
-    }
-    false
 }
 
 struct ExtractTermSetFields<'a> {
@@ -151,7 +167,8 @@ impl<'a> QueryAstVisitor<'a> for ExtractTermSetFields<'_> {
 
     fn visit_term_set(&mut self, term_set_query: &'a TermSetQuery) -> anyhow::Result<()> {
         for field in term_set_query.terms_per_field.keys() {
-            if let Ok((field, _field_entry, _path)) = find_field_or_hit_dynamic(field, self.schema)
+            if let Some((field, _field_entry, _path)) =
+                find_field_or_hit_dynamic(field, self.schema)
             {
                 self.term_dict_fields_to_warm_up.insert(field);
             } else {
@@ -574,20 +591,41 @@ mod test {
         check_build_query_static_mode(
             "ip:*",
             Vec::new(),
-            TestExpectation::Ok("ExistsQuery { field_name: \"ip\" }"),
+            TestExpectation::Ok("ExistsQuery { field_name: \"ip\", json_subpaths: true }"),
         );
-
         check_build_query_static_mode(
             "json_text:*",
             Vec::new(),
             TestExpectation::Ok("TermQuery(Term(field=0, type=U64"),
         );
-
         check_build_query_static_mode(
             "json_fast:*",
             Vec::new(),
-            TestExpectation::Ok("ExistsQuery { field_name: \"json_fast\" }"),
+            TestExpectation::Ok("ExistsQuery { field_name: \"json_fast\", json_subpaths: true }"),
         );
+        check_build_query_static_mode(
+            "foo:*",
+            Vec::new(),
+            TestExpectation::Err("invalid query: field does not exist: `foo`"),
+        );
+        check_build_query_static_mode(
+            "server:*",
+            Vec::new(),
+            TestExpectation::Ok("?????????????????"),
+        );
+
+        // V currently working V
+        // check_build_query_static_mode(
+        //     "server:*",
+        //     Vec::new(),
+        //     TestExpectation::Err("invalid query: field does not exist: `server`"),
+        // );
+        // check_build_query_dynamic_mode(
+        //     "server:*",
+        //     Vec::new(),
+        //     // dynamic_mapping is set to TEXT here, this would be an ExistsQuery if it was FAST
+        //     TestExpectation::Ok("TermQuery(Term(field=0, type=U64"),
+        // );
     }
 
     #[test]

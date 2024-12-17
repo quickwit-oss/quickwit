@@ -20,13 +20,15 @@
 use quickwit_common::shared_consts::FIELD_PRESENCE_FIELD_NAME;
 use quickwit_common::PathHasher;
 use serde::{Deserialize, Serialize};
-use tantivy::schema::{Field, IndexRecordOption, Schema as TantivySchema};
+use tantivy::schema::{Field, FieldEntry, IndexRecordOption, Schema as TantivySchema};
 use tantivy::Term;
 
+use super::tantivy_query_ast::TantivyBoolQuery;
+use super::utils::{find_subfields, DYNAMIC_FIELD_NAME};
 use crate::query_ast::tantivy_query_ast::TantivyQueryAst;
 use crate::query_ast::{BuildTantivyAst, QueryAst};
 use crate::tokenizers::TokenizerManager;
-use crate::{find_field_or_hit_dynamic, InvalidQuery};
+use crate::{find_field_or_hit_dynamic, BooleanOperand, InvalidQuery};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct FieldPresenceQuery {
@@ -69,6 +71,51 @@ fn compute_field_presence_hash(field: Field, field_path: &str) -> u64 {
     path_hasher.finish()
 }
 
+fn build_leaf_existence_query(
+    field_presence_field: Field,
+    leaf_field: Field,
+    field_entry: &FieldEntry,
+    path: &str,
+) -> TantivyQueryAst {
+    if field_entry.is_fast() {
+        let full_path = if path.is_empty() {
+            field_entry.name().to_string()
+        } else {
+            format!("{}.{}", field_entry.name(), path)
+        };
+        let exists_query = tantivy::query::ExistsQuery::new(full_path, true);
+        TantivyQueryAst::from(exists_query)
+    } else {
+        // fallback to the presence field
+        let field_presence_hash = compute_field_presence_hash(leaf_field, path);
+        let field_presence_term: Term =
+            Term::from_field_u64(field_presence_field, field_presence_hash);
+        let field_presence_term_query =
+            tantivy::query::TermQuery::new(field_presence_term, IndexRecordOption::Basic);
+        TantivyQueryAst::from(field_presence_term_query)
+    }
+}
+
+impl FieldPresenceQuery {
+    /// Identify the field and potential subfields that are required for this query.
+    pub fn find_field_and_subfields<'a>(
+        &'a self,
+        schema: &'a TantivySchema,
+    ) -> Vec<(Field, &'a FieldEntry, &'a str)> {
+        let mut fields = Vec::new();
+        if let Some((field, entry, path)) = find_field_or_hit_dynamic(&self.field, schema) {
+            fields.push((field, entry, path));
+        };
+        // if `self.field` was not found, it might still be an `object` field
+        if fields.is_empty() || fields[0].1.name() == DYNAMIC_FIELD_NAME {
+            for (field, entry) in find_subfields(&self.field, schema) {
+                fields.push((field, entry, &""));
+            }
+        }
+        fields
+    }
+}
+
 impl BuildTantivyAst for FieldPresenceQuery {
     fn build_tantivy_ast_impl(
         &self,
@@ -80,24 +127,23 @@ impl BuildTantivyAst for FieldPresenceQuery {
         let field_presence_field = schema.get_field(FIELD_PRESENCE_FIELD_NAME).map_err(|_| {
             InvalidQuery::SchemaError("field presence is not available for this split".to_string())
         })?;
-        let (field, field_entry, path) = find_field_or_hit_dynamic(&self.field, schema)?;
-        if field_entry.is_fast() {
-            let full_path = if path.is_empty() {
-                field_entry.name().to_string()
-            } else {
-                format!("{}.{}", field_entry.name(), path)
-            };
-            let exists_query = tantivy::query::ExistsQuery::new_exists_query(full_path);
-            Ok(TantivyQueryAst::from(exists_query))
-        } else {
-            // fallback to the presence field
-            let field_presence_hash = compute_field_presence_hash(field, path);
-            let field_presence_term: Term =
-                Term::from_field_u64(field_presence_field, field_presence_hash);
-            let field_presence_term_query =
-                tantivy::query::TermQuery::new(field_presence_term, IndexRecordOption::Basic);
-            Ok(TantivyQueryAst::from(field_presence_term_query))
+        let fields = self.find_field_and_subfields(schema);
+        if fields.is_empty() {
+            // the schema is not dynamic and no subfields are defined
+            return Err(InvalidQuery::FieldDoesNotExist {
+                full_path: self.field.clone(),
+            });
         }
+        let queries = fields
+            .into_iter()
+            .map(|(field, entry, path)| {
+                build_leaf_existence_query(field_presence_field, field, entry, path)
+            })
+            .collect();
+        Ok(TantivyQueryAst::Bool(TantivyBoolQuery::build_clause(
+            BooleanOperand::Or,
+            queries,
+        )))
     }
 }
 
