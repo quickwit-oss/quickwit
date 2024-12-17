@@ -41,7 +41,7 @@ impl From<FieldPresenceQuery> for QueryAst {
     }
 }
 
-fn compute_field_presence_hash(field: Field, field_path: &str) -> u64 {
+fn compute_field_presence_hash(field: Field, field_path: &str) -> PathHasher {
     let mut path_hasher: PathHasher = PathHasher::default();
     path_hasher.append(&field.field_id().to_le_bytes()[..]);
     let mut escaped = false;
@@ -68,12 +68,12 @@ fn compute_field_presence_hash(field: Field, field_path: &str) -> u64 {
     if !current_segment.is_empty() {
         path_hasher.append(current_segment.as_bytes());
     }
-    path_hasher.finish()
+    path_hasher
 }
 
-fn build_leaf_existence_query(
+fn build_existence_query(
     field_presence_field: Field,
-    leaf_field: Field,
+    field: Field,
     field_entry: &FieldEntry,
     path: &str,
 ) -> TantivyQueryAst {
@@ -87,17 +87,24 @@ fn build_leaf_existence_query(
         TantivyQueryAst::from(exists_query)
     } else {
         // fallback to the presence field
-        let field_presence_hash = compute_field_presence_hash(leaf_field, path);
-        let field_presence_term: Term =
-            Term::from_field_u64(field_presence_field, field_presence_hash);
-        let field_presence_term_query =
-            tantivy::query::TermQuery::new(field_presence_term, IndexRecordOption::Basic);
-        TantivyQueryAst::from(field_presence_term_query)
+        let presence_hasher = compute_field_presence_hash(field, path);
+        let leaf_term = Term::from_field_u64(field_presence_field, presence_hasher.finish_leaf());
+        if field_entry.field_type().is_json() {
+            let intermediate_term =
+                Term::from_field_u64(field_presence_field, presence_hasher.finish_intermediate());
+            let query = tantivy::query::TermSetQuery::new([leaf_term, intermediate_term]);
+            TantivyQueryAst::from(query)
+        } else {
+            let query = tantivy::query::TermQuery::new(leaf_term, IndexRecordOption::Basic);
+            TantivyQueryAst::from(query)
+        }
     }
 }
 
 impl FieldPresenceQuery {
     /// Identify the field and potential subfields that are required for this query.
+    ///
+    /// This is only based on the schema and cannot now about dynamic fields.
     pub fn find_field_and_subfields<'a>(
         &'a self,
         schema: &'a TantivySchema,
@@ -137,7 +144,7 @@ impl BuildTantivyAst for FieldPresenceQuery {
         let queries = fields
             .into_iter()
             .map(|(field, entry, path)| {
-                build_leaf_existence_query(field_presence_field, field, entry, path)
+                build_existence_query(field_presence_field, field, entry, path)
             })
             .collect();
         Ok(TantivyQueryAst::Bool(TantivyBoolQuery::build_clause(
@@ -155,7 +162,7 @@ mod tests {
     #[test]
     fn test_field_presence_single() {
         let field_presence_term: u64 =
-            compute_field_presence_hash(Field::from_field_id(17u32), "attributes");
+            compute_field_presence_hash(Field::from_field_id(17u32), "attributes").finish_leaf();
         assert_eq!(
             field_presence_term,
             PathHasher::hash_path(&[&17u32.to_le_bytes()[..], b"attributes"])
@@ -165,7 +172,8 @@ mod tests {
     #[test]
     fn test_field_presence_hash_simple() {
         let field_presence_term: u64 =
-            compute_field_presence_hash(Field::from_field_id(17u32), "attributes.color");
+            compute_field_presence_hash(Field::from_field_id(17u32), "attributes.color")
+                .finish_leaf();
         assert_eq!(
             field_presence_term,
             PathHasher::hash_path(&[&17u32.to_le_bytes()[..], b"attributes", b"color"])
@@ -175,7 +183,8 @@ mod tests {
     #[test]
     fn test_field_presence_hash_escaped_dot() {
         let field_presence_term: u64 =
-            compute_field_presence_hash(Field::from_field_id(17u32), r"attributes\.color.hello");
+            compute_field_presence_hash(Field::from_field_id(17u32), r"attributes\.color.hello")
+                .finish_leaf();
         assert_eq!(
             field_presence_term,
             PathHasher::hash_path(&[&17u32.to_le_bytes()[..], b"attributes.color", b"hello"])
