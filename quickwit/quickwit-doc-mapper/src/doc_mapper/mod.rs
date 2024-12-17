@@ -85,6 +85,13 @@ pub struct TermRange {
     pub limit: Option<u64>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// Supported automaton types to warmup
+pub enum Automaton {
+    /// A regex in it's str representation as tantivy_fst::Regex isn't PartialEq
+    Regex(String),
+}
+
 /// Information about what a DocMapper think should be warmed up before
 /// running the query.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -100,6 +107,8 @@ pub struct WarmupInfo {
     pub terms_grouped_by_field: HashMap<Field, HashMap<Term, bool>>,
     /// Term ranges to warmup, and whether their position is needed too.
     pub term_ranges_grouped_by_field: HashMap<Field, HashMap<TermRange, bool>>,
+    /// Automatons to warmup
+    pub automatons_grouped_by_field: HashMap<Field, HashSet<Automaton>>,
 }
 
 impl WarmupInfo {
@@ -124,6 +133,11 @@ impl WarmupInfo {
             for (term_range, include_position) in term_range_and_pos.into_iter() {
                 *sub_map.entry(term_range).or_default() |= include_position;
             }
+        }
+
+        for (field, automatons) in other.automatons_grouped_by_field.into_iter() {
+            let sub_map = self.automatons_grouped_by_field.entry(field).or_default();
+            sub_map.extend(automatons);
         }
     }
 
@@ -624,6 +638,7 @@ mod tests {
                 (2, "term1", false),
                 (2, "term2", false),
             ]),
+            automatons_grouped_by_field: HashMap::new(), // TODO complete tests
         };
 
         // merging with default has no impact
@@ -641,6 +656,7 @@ mod tests {
                 (3, "term1", false),
                 (2, "term2", true),
             ]),
+            automatons_grouped_by_field: HashMap::new(), // TODO complete tests
         };
         wi_base.merge(wi_2.clone());
 
@@ -710,6 +726,7 @@ mod tests {
                 (1, "term2", true),
                 (2, "term3", false),
             ]),
+            automatons_grouped_by_field: HashMap::new(), // TODO complete tests
         };
         let expected = WarmupInfo {
             term_dict_fields: hashset_field(&[1]),
@@ -720,6 +737,7 @@ mod tests {
                 (1, "term2", true),
                 (2, "term3", false),
             ]),
+            automatons_grouped_by_field: HashMap::new(), // TODO complete tests
         };
 
         warmup_info.simplify();

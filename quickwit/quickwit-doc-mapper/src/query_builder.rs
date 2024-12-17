@@ -31,7 +31,7 @@ use tantivy::query::Query;
 use tantivy::schema::{Field, Schema};
 use tantivy::Term;
 
-use crate::{QueryParserError, TermRange, WarmupInfo};
+use crate::{Automaton, QueryParserError, TermRange, WarmupInfo};
 
 #[derive(Default)]
 struct RangeQueryFields {
@@ -101,7 +101,7 @@ pub(crate) fn build_query(
     )?;
 
     let term_set_query_fields = extract_term_set_query_fields(query_ast, &schema)?;
-    let term_ranges_grouped_by_field =
+    let (term_ranges_grouped_by_field, automatons_grouped_by_field) =
         extract_prefix_term_ranges(query_ast, &schema, tokenizer_manager)?;
 
     let mut terms_grouped_by_field: HashMap<Field, HashMap<_, bool>> = Default::default();
@@ -119,6 +119,7 @@ pub(crate) fn build_query(
         terms_grouped_by_field,
         term_ranges_grouped_by_field,
         fast_field_names,
+        automatons_grouped_by_field,
         ..WarmupInfo::default()
     };
 
@@ -194,6 +195,7 @@ struct ExtractPrefixTermRanges<'a> {
     schema: &'a Schema,
     tokenizer_manager: &'a TokenizerManager,
     term_ranges_to_warm_up: HashMap<Field, HashMap<TermRange, PositionNeeded>>,
+    automatons_to_warm_up: HashMap<Field, HashSet<Automaton>>,
 }
 
 impl<'a> ExtractPrefixTermRanges<'a> {
@@ -202,6 +204,7 @@ impl<'a> ExtractPrefixTermRanges<'a> {
             schema,
             tokenizer_manager,
             term_ranges_to_warm_up: HashMap::new(),
+            automatons_to_warm_up: HashMap::new(),
         }
     }
 
@@ -224,6 +227,13 @@ impl<'a> ExtractPrefixTermRanges<'a> {
             .or_default()
             .entry(term_range)
             .or_default() |= position_needed;
+    }
+
+    fn add_automaton(&mut self, field: Field, automaton: Automaton) {
+        self.automatons_to_warm_up
+            .entry(field)
+            .or_default()
+            .insert(automaton);
     }
 }
 
@@ -258,8 +268,8 @@ impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRanges<'b> {
     }
 
     fn visit_wildcard(&mut self, wildcard_query: &'a WildcardQuery) -> Result<(), Self::Err> {
-        let (_, term) = wildcard_query.extract_prefix_term(self.schema, self.tokenizer_manager)?;
-        self.add_prefix_term(term, u32::MAX, false);
+        let (field, regex) = wildcard_query.to_regex(self.schema, self.tokenizer_manager)?;
+        self.add_automaton(field, Automaton::Regex(regex));
         Ok(())
     }
 }
@@ -268,10 +278,16 @@ fn extract_prefix_term_ranges(
     query_ast: &QueryAst,
     schema: &Schema,
     tokenizer_manager: &TokenizerManager,
-) -> anyhow::Result<HashMap<Field, HashMap<TermRange, PositionNeeded>>> {
+) -> anyhow::Result<(
+    HashMap<Field, HashMap<TermRange, PositionNeeded>>,
+    HashMap<Field, HashSet<Automaton>>,
+)> {
     let mut visitor = ExtractPrefixTermRanges::with_schema(schema, tokenizer_manager);
     visitor.visit(query_ast)?;
-    Ok(visitor.term_ranges_to_warm_up)
+    Ok((
+        visitor.term_ranges_to_warm_up,
+        visitor.automatons_to_warm_up,
+    ))
 }
 
 #[cfg(test)]

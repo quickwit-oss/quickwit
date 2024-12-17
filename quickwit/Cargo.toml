@@ -328,12 +328,13 @@ quickwit-serve = { path = "quickwit-serve" }
 quickwit-storage = { path = "quickwit-storage" }
 quickwit-telemetry = { path = "quickwit-telemetry" }
 
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "2f2db16", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", branch = "trinity/sstable-partial-automaton", default-features = false, features = [
   "lz4-compression",
   "mmap",
   "quickwit",
   "zstd-compression",
 ] }
+tantivy-fst = "0.5"
 
 # This is actually not used directly the goal is to fix the version
 # used by reqwest.

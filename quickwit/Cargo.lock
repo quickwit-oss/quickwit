@@ -679,7 +679,7 @@ dependencies = [
  "regex-lite",
  "roxmltree 0.14.1",
  "serde_json",
- "thiserror",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -1046,7 +1046,7 @@ dependencies = [
  "miniserde",
  "peakmem-alloc",
  "perf-event",
- "rustc-hash 2.0.0",
+ "rustc-hash",
  "rustop",
  "unicode-width 0.1.14",
  "yansi",
@@ -2833,7 +2833,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "thiserror",
+ "thiserror 1.0.69",
  "time",
  "tokio",
  "tracing",
@@ -2848,7 +2848,7 @@ checksum = "f8bdaaa4bc036e8318274d1b25f0f2265b3e95418b765fd1ea1c7ef938fd69bd"
 dependencies = [
  "google-cloud-token",
  "http 0.2.12",
- "thiserror",
+ "thiserror 1.0.69",
  "tokio",
  "tokio-retry",
  "tonic",
@@ -2874,7 +2874,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "96e4ad0802d3f416f62e7ce01ac1460898ee0efc98f8b45cd4aab7611607012f"
 dependencies = [
  "reqwest",
- "thiserror",
+ "thiserror 1.0.69",
  "tokio",
 ]
 
@@ -2891,7 +2891,7 @@ dependencies = [
  "google-cloud-googleapis",
  "google-cloud-token",
  "prost-types 0.11.9",
- "thiserror",
+ "thiserror 1.0.69",
  "tokio",
  "tokio-util",
  "tracing",
@@ -3637,9 +3637,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e0242819d153cba4b4b05a5a8f2a7e9bbf97b6055b2a002b395c96b5ff3c0222"
 dependencies = [
  "cfg-if",
- "js-sys",
- "wasm-bindgen",
- "web-sys",
 ]
 
 [[package]]
@@ -4053,7 +4050,7 @@ dependencies = [
  "log",
  "once_cell",
  "serde",
- "thiserror",
+ "thiserror 1.0.69",
  "yada",
 ]
 
@@ -4333,11 +4330,10 @@ checksum = "490cc448043f947bae3cbee9c203358d62dbee0db12107a74be5c30ccfd09771"
 
 [[package]]
 name = "measure_time"
-version = "0.8.3"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dbefd235b0aadd181626f281e1d684e116972988c14c264e42069d5e8a5775cc"
+checksum = "51c55d61e72fc3ab704396c5fa16f4c184db37978ae4e94ca8959693a235fc0e"
 dependencies = [
- "instant",
  "log",
 ]
 
@@ -4467,7 +4463,7 @@ dependencies = [
  "rustc_version",
  "smallvec",
  "tagptr",
- "thiserror",
+ "thiserror 1.0.69",
  "triomphe",
  "uuid",
 ]
@@ -4481,7 +4477,7 @@ dependencies = [
  "crc32fast",
  "serde",
  "serde_json",
- "thiserror",
+ "thiserror 1.0.69",
  "tracing",
 ]
 
@@ -4777,7 +4773,7 @@ dependencies = [
  "serde_json",
  "serde_path_to_error",
  "sha2",
- "thiserror",
+ "thiserror 1.0.69",
  "url",
 ]
 
@@ -4908,7 +4904,7 @@ dependencies = [
  "serde_plain",
  "serde_with 1.14.0",
  "subtle",
- "thiserror",
+ "thiserror 1.0.69",
  "url",
 ]
 
@@ -5005,7 +5001,7 @@ dependencies = [
  "opentelemetry_sdk",
  "prost 0.11.9",
  "reqwest",
- "thiserror",
+ "thiserror 1.0.69",
  "tokio",
  "tonic",
 ]
@@ -5043,7 +5039,7 @@ dependencies = [
  "js-sys",
  "once_cell",
  "pin-project-lite",
- "thiserror",
+ "thiserror 1.0.69",
  "urlencoding",
 ]
 
@@ -5065,7 +5061,7 @@ dependencies = [
  "rand 0.8.5",
  "regex",
  "serde_json",
- "thiserror",
+ "thiserror 1.0.69",
  "tokio",
  "tokio-stream",
 ]
@@ -5147,7 +5143,7 @@ checksum = "b15813163c1d831bf4a13c3610c05c0d03b39feb07f7e09fa234dac9b15aaf39"
 [[package]]
 name = "ownedbytes"
 version = "0.7.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=2f2db16#2f2db16ec10656f9a7ef37018d38e0c6fb5edbe5"
+source = "git+https://github.com/quickwit-oss/tantivy/?branch=trinity/sstable-partial-automaton#24c5dc2398024de68c09a54e21f37ab2f844b30b"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -5325,7 +5321,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "879952a81a83930934cbf1786752d6dedc3b1f29e8f8fb2ad1d0a36f377cf442"
 dependencies = [
  "memchr",
- "thiserror",
+ "thiserror 1.0.69",
  "ucd-trie",
 ]
 
@@ -5678,7 +5674,7 @@ dependencies = [
  "smallvec",
  "symbolic-demangle",
  "tempfile",
- "thiserror",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -5872,7 +5868,7 @@ dependencies = [
  "parking_lot",
  "procfs",
  "protobuf",
- "thiserror",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -6158,7 +6154,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sync_wrapper",
- "thiserror",
+ "thiserror 1.0.69",
  "tokio",
  "tracing",
 ]
@@ -6222,7 +6218,7 @@ dependencies = [
  "serde_json",
  "tabled",
  "tempfile",
- "thiserror",
+ "thiserror 1.0.69",
  "thousands",
  "tikv-jemalloc-ctl",
  "tikv-jemallocator",
@@ -6292,7 +6288,7 @@ dependencies = [
  "quickwit-common",
  "quickwit-proto",
  "serde",
- "thiserror",
+ "thiserror 1.0.69",
  "tokio",
  "tokio-stream",
  "tonic",
@@ -6330,7 +6326,7 @@ dependencies = [
  "serde_json",
  "siphasher",
  "tempfile",
- "thiserror",
+ "thiserror 1.0.69",
  "tokio",
  "tokio-metrics",
  "tokio-stream",
@@ -6461,7 +6457,7 @@ dependencies = [
  "serde_yaml",
  "siphasher",
  "tantivy",
- "thiserror",
+ "thiserror 1.0.69",
  "time",
  "tracing",
  "utoipa",
@@ -6481,7 +6477,7 @@ dependencies = [
  "quickwit-metastore",
  "quickwit-proto",
  "quickwit-storage",
- "thiserror",
+ "thiserror 1.0.69",
  "time",
  "tokio",
  "tracing",
@@ -6539,7 +6535,7 @@ dependencies = [
  "serde_json",
  "tantivy",
  "tempfile",
- "thiserror",
+ "thiserror 1.0.69",
  "time",
  "tokio",
  "tracing",
@@ -6577,7 +6573,7 @@ dependencies = [
  "serde_json",
  "serde_json_borrow",
  "tempfile",
- "thiserror",
+ "thiserror 1.0.69",
  "tokio",
  "tonic",
  "tower",
@@ -6672,7 +6668,7 @@ dependencies = [
  "serde_json",
  "tantivy",
  "tempfile",
- "thiserror",
+ "thiserror 1.0.69",
  "time",
  "tokio",
  "tracing",
@@ -6766,7 +6762,7 @@ dependencies = [
  "serial_test",
  "sqlx",
  "tempfile",
- "thiserror",
+ "thiserror 1.0.69",
  "time",
  "tokio",
  "tokio-stream",
@@ -6793,7 +6789,7 @@ dependencies = [
  "quickwit-proto",
  "serde",
  "serde_json",
- "thiserror",
+ "thiserror 1.0.69",
  "time",
  "tokio",
  "tonic",
@@ -6824,7 +6820,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
- "thiserror",
+ "thiserror 1.0.69",
  "tokio",
  "tonic",
  "tonic-build",
@@ -6851,11 +6847,12 @@ dependencies = [
  "proptest",
  "quickwit-common",
  "quickwit-datetime",
+ "regex",
  "serde",
  "serde_json",
  "serde_with 3.11.0",
  "tantivy",
- "thiserror",
+ "thiserror 1.0.69",
  "time",
  "whichlang",
 ]
@@ -6877,7 +6874,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "thiserror",
+ "thiserror 1.0.69",
  "tokio",
  "tracing",
  "wiremock",
@@ -6917,7 +6914,8 @@ dependencies = [
  "serde",
  "serde_json",
  "tantivy",
- "thiserror",
+ "tantivy-fst",
+ "thiserror 1.0.69",
  "tokio",
  "tokio-stream",
  "tower",
@@ -6980,7 +6978,7 @@ dependencies = [
  "serde_qs 0.12.0",
  "serde_with 3.11.0",
  "tempfile",
- "thiserror",
+ "thiserror 1.0.69",
  "time",
  "tokio",
  "tokio-stream",
@@ -7032,7 +7030,7 @@ dependencies = [
  "serde_json",
  "tantivy",
  "tempfile",
- "thiserror",
+ "thiserror 1.0.69",
  "tokio",
  "tokio-stream",
  "tokio-util",
@@ -7251,7 +7249,7 @@ checksum = "ba009ff324d1fc1b900bd1fdb31564febe58a8ccc8a6fdbb93b543d33b13ca43"
 dependencies = [
  "getrandom 0.2.15",
  "libredox",
- "thiserror",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -7577,12 +7575,6 @@ checksum = "719b953e2095829ee67db738b3bfa9fa368c94900df327b3f07fe6e794d2fe1f"
 
 [[package]]
 name = "rustc-hash"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08d43f7aa6b08d49f382cde6a7982047c3426db949b1424bc4b7ec9ae12c6ce2"
-
-[[package]]
-name = "rustc-hash"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "583034fd73374156e66797ed8e5b0d5690409c9226b22d87cb7f19821c05d152"
@@ -7810,7 +7802,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.89",
- "thiserror",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -7958,7 +7950,7 @@ checksum = "c7715380eec75f029a4ef7de39a9200e0a63823176b759d055b613f5a87df6a6"
 dependencies = [
  "percent-encoding",
  "serde",
- "thiserror",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -7970,7 +7962,7 @@ dependencies = [
  "futures",
  "percent-encoding",
  "serde",
- "thiserror",
+ "thiserror 1.0.69",
  "tracing",
  "warp",
 ]
@@ -8204,7 +8196,7 @@ checksum = "adc4e5204eb1910f40f9cfa375f6f05b68c3abac4b6fd879c8ff5e7ae8a0a085"
 dependencies = [
  "num-bigint",
  "num-traits",
- "thiserror",
+ "thiserror 1.0.69",
  "time",
 ]
 
@@ -8389,7 +8381,7 @@ dependencies = [
  "sha2",
  "smallvec",
  "sqlformat",
- "thiserror",
+ "thiserror 1.0.69",
  "time",
  "tokio",
  "tokio-stream",
@@ -8474,7 +8466,7 @@ dependencies = [
  "smallvec",
  "sqlx-core",
  "stringprep",
- "thiserror",
+ "thiserror 1.0.69",
  "time",
  "tracing",
  "whoami",
@@ -8513,7 +8505,7 @@ dependencies = [
  "smallvec",
  "sqlx-core",
  "stringprep",
- "thiserror",
+ "thiserror 1.0.69",
  "time",
  "tracing",
  "whoami",
@@ -8740,7 +8732,7 @@ checksum = "7b2093cf4c8eb1e67749a6762251bc9cd836b6fc171623bd0a9d324d37af2417"
 [[package]]
 name = "tantivy"
 version = "0.23.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=2f2db16#2f2db16ec10656f9a7ef37018d38e0c6fb5edbe5"
+source = "git+https://github.com/quickwit-oss/tantivy/?branch=trinity/sstable-partial-automaton#24c5dc2398024de68c09a54e21f37ab2f844b30b"
 dependencies = [
  "aho-corasick",
  "arc-swap",
@@ -8769,7 +8761,7 @@ dependencies = [
  "rayon",
  "regex",
  "rust-stemmers",
- "rustc-hash 1.1.0",
+ "rustc-hash",
  "serde",
  "serde_json",
  "sketches-ddsketch",
@@ -8783,7 +8775,7 @@ dependencies = [
  "tantivy-stacker",
  "tantivy-tokenizer-api",
  "tempfile",
- "thiserror",
+ "thiserror 2.0.7",
  "time",
  "uuid",
  "winapi 0.3.9",
@@ -8793,7 +8785,7 @@ dependencies = [
 [[package]]
 name = "tantivy-bitpacker"
 version = "0.6.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=2f2db16#2f2db16ec10656f9a7ef37018d38e0c6fb5edbe5"
+source = "git+https://github.com/quickwit-oss/tantivy/?branch=trinity/sstable-partial-automaton#24c5dc2398024de68c09a54e21f37ab2f844b30b"
 dependencies = [
  "bitpacking",
 ]
@@ -8801,7 +8793,7 @@ dependencies = [
 [[package]]
 name = "tantivy-columnar"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=2f2db16#2f2db16ec10656f9a7ef37018d38e0c6fb5edbe5"
+source = "git+https://github.com/quickwit-oss/tantivy/?branch=trinity/sstable-partial-automaton#24c5dc2398024de68c09a54e21f37ab2f844b30b"
 dependencies = [
  "downcast-rs",
  "fastdivide",
@@ -8816,7 +8808,7 @@ dependencies = [
 [[package]]
 name = "tantivy-common"
 version = "0.7.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=2f2db16#2f2db16ec10656f9a7ef37018d38e0c6fb5edbe5"
+source = "git+https://github.com/quickwit-oss/tantivy/?branch=trinity/sstable-partial-automaton#24c5dc2398024de68c09a54e21f37ab2f844b30b"
 dependencies = [
  "async-trait",
  "byteorder",
@@ -8839,7 +8831,7 @@ dependencies = [
 [[package]]
 name = "tantivy-query-grammar"
 version = "0.22.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=2f2db16#2f2db16ec10656f9a7ef37018d38e0c6fb5edbe5"
+source = "git+https://github.com/quickwit-oss/tantivy/?branch=trinity/sstable-partial-automaton#24c5dc2398024de68c09a54e21f37ab2f844b30b"
 dependencies = [
  "nom",
 ]
@@ -8847,8 +8839,10 @@ dependencies = [
 [[package]]
 name = "tantivy-sstable"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=2f2db16#2f2db16ec10656f9a7ef37018d38e0c6fb5edbe5"
+source = "git+https://github.com/quickwit-oss/tantivy/?branch=trinity/sstable-partial-automaton#24c5dc2398024de68c09a54e21f37ab2f844b30b"
 dependencies = [
+ "futures-util",
+ "itertools 0.13.0",
  "tantivy-bitpacker",
  "tantivy-common",
  "tantivy-fst",
@@ -8858,7 +8852,7 @@ dependencies = [
 [[package]]
 name = "tantivy-stacker"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=2f2db16#2f2db16ec10656f9a7ef37018d38e0c6fb5edbe5"
+source = "git+https://github.com/quickwit-oss/tantivy/?branch=trinity/sstable-partial-automaton#24c5dc2398024de68c09a54e21f37ab2f844b30b"
 dependencies = [
  "murmurhash32",
  "rand_distr",
@@ -8868,7 +8862,7 @@ dependencies = [
 [[package]]
 name = "tantivy-tokenizer-api"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=2f2db16#2f2db16ec10656f9a7ef37018d38e0c6fb5edbe5"
+source = "git+https://github.com/quickwit-oss/tantivy/?branch=trinity/sstable-partial-automaton#24c5dc2398024de68c09a54e21f37ab2f844b30b"
 dependencies = [
  "serde",
 ]
@@ -8935,7 +8929,16 @@ version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6aaf5339b578ea85b50e080feb250a3e8ae8cfcdff9a461c9ec2904bc923f52"
 dependencies = [
- "thiserror-impl",
+ "thiserror-impl 1.0.69",
+]
+
+[[package]]
+name = "thiserror"
+version = "2.0.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "93605438cbd668185516ab499d589afb7ee1859ea3d5fc8f6b0755e1c7443767"
+dependencies = [
+ "thiserror-impl 2.0.7",
 ]
 
 [[package]]
@@ -8943,6 +8946,17 @@ name = "thiserror-impl"
 version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4fee6c4efc90059e10f81e6d42c60a18f76588c3d74cb83a0b242a2b6c7504c1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.89",
+]
+
+[[package]]
+name = "thiserror-impl"
+version = "2.0.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e1d8749b4531af2117677a5fcd12b1348a3fe2b81e36e61ffeac5c4aa3273e36"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -9025,7 +9039,7 @@ version = "0.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "78bfd61bca99323ce96911bd2c443259115460615e44f1d449cee8cb3831a1dd"
 dependencies = [
- "thiserror",
+ "thiserror 1.0.69",
  "time",
 ]
 
@@ -9487,7 +9501,7 @@ dependencies = [
  "log",
  "rand 0.8.5",
  "sha1",
- "thiserror",
+ "thiserror 1.0.69",
  "url",
  "utf-8",
 ]
@@ -9822,7 +9836,7 @@ dependencies = [
  "strip-ansi-escapes",
  "syslog_loose",
  "termcolor",
- "thiserror",
+ "thiserror 1.0.69",
  "tokio",
  "tracing",
  "uaparser",

@@ -27,7 +27,7 @@ use anyhow::Context;
 use futures::future::try_join_all;
 use quickwit_common::pretty::PrettySample;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
-use quickwit_doc_mapper::{DocMapper, TermRange, WarmupInfo};
+use quickwit_doc_mapper::{Automaton, DocMapper, TermRange, WarmupInfo};
 use quickwit_proto::search::{
     CountHits, LeafSearchRequest, LeafSearchResponse, PartialHit, SearchRequest, SortOrder,
     SortValue, SplitIdAndFooterOffsets, SplitSearchError,
@@ -218,6 +218,9 @@ pub(crate) async fn warmup(searcher: &Searcher, warmup_info: &WarmupInfo) -> any
     // TODO merge warm_up_postings into warm_up_term_dict_fields
     let warm_up_postings_future = warm_up_postings(searcher, &warmup_info.term_dict_fields)
         .instrument(debug_span!("warm_up_postings"));
+    let warm_up_automatons_future =
+        warm_up_automatons(searcher, &warmup_info.automatons_grouped_by_field)
+            .instrument(debug_span!("warm_up_automatons"));
 
     tokio::try_join!(
         warm_up_terms_future,
@@ -226,6 +229,7 @@ pub(crate) async fn warmup(searcher: &Searcher, warmup_info: &WarmupInfo) -> any
         warm_up_term_dict_future,
         warm_up_fieldnorms_future,
         warm_up_postings_future,
+        warm_up_automatons_future,
     )?;
 
     Ok(())
@@ -329,6 +333,35 @@ async fn warm_up_term_ranges(
                     inv_idx_clone
                         .warm_postings_range(range, term_range.limit, *position_needed)
                         .await
+                });
+            }
+        }
+    }
+    try_join_all(warm_up_futures).await?;
+    Ok(())
+}
+
+async fn warm_up_automatons(
+    searcher: &Searcher,
+    terms_grouped_by_field: &HashMap<Field, HashSet<Automaton>>,
+) -> anyhow::Result<()> {
+    let mut warm_up_futures = Vec::new();
+    for (field, automatons) in terms_grouped_by_field {
+        for segment_reader in searcher.segment_readers() {
+            let inv_idx = segment_reader.inverted_index(*field)?;
+            for automaton in automatons {
+                let inv_idx_clone = inv_idx.clone();
+                warm_up_futures.push(async move {
+                    match automaton {
+                        Automaton::Regex(regex_str) => {
+                            let regex = tantivy_fst::Regex::new(regex_str)
+                                .context("failed parsing regex during warmup")?;
+                            inv_idx_clone
+                                .warm_postings_automaton(&regex)
+                                .await
+                                .context("failed loading automaton")
+                        }
+                    }
                 });
             }
         }
