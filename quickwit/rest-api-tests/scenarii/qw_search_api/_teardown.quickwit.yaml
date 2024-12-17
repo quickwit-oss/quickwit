@@ -4,3 +4,6 @@ endpoint: indexes/simple
 ---
 method: DELETE
 endpoint: indexes/tagged
+---
+method: DELETE
+endpoint: indexes/json

@@ -68,7 +68,8 @@ params:
 ndjson:
   - {"seq": 1, "tag": 1}
   - {"seq": 2, "tag": 2}
----method: POST
+---
+method: POST
 endpoint: tagged/ingest
 params:
   commit: force
@@ -82,3 +83,37 @@ params:
   commit: force
 ndjson:
   - {"seq": 4, "tag": 1}
+---
+method: POST
+endpoint: indexes/
+json:
+  version: "0.7"
+  index_id: json
+  doc_mapping:
+    field_mappings:
+      - name: json_text
+        type: json
+      - name: json_fast
+        type: json
+        fast: true
+      - name: object_multi
+        type: object
+        field_mappings:
+          - name: object_text_field
+            type: text
+          - name: object_fast_field
+            type: u64
+            fast: true
+            
+---
+method: POST
+endpoint: tagged/ingest
+params:
+  commit: force
+ndjson:
+  - {"json_text": {"field_a": "hello", "field_b": "world"}}
+  - {"json_text": {"field_a": "hi"}}
+  - {"json_fast": {"field_c": 1}}
+  - {"object_multi": {"object_text_field": "multi hello"}}
+  - {"object_multi": {"object_fast_field": 1}}
+  - {"object_multi": {"object_fast_field": 2}}
