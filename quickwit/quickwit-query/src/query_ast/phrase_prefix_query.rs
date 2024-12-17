@@ -48,7 +48,10 @@ impl PhrasePrefixQuery {
         schema: &TantivySchema,
         tokenizer_manager: &TokenizerManager,
     ) -> Result<(Field, Vec<(usize, Term)>), InvalidQuery> {
-        let (field, field_entry, json_path) = find_field_or_hit_dynamic(&self.field, schema)?;
+        let (field, field_entry, json_path) = find_field_or_hit_dynamic(&self.field, schema)
+            .ok_or_else(|| InvalidQuery::FieldDoesNotExist {
+                full_path: self.field.clone(),
+            })?;
         let field_type = field_entry.field_type();
 
         match field_type {

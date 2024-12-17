@@ -23,7 +23,7 @@ use std::collections::HashSet;
 
 use itertools::Itertools;
 use quickwit_common::binary_heap::{SortKeyMapper, TopK};
-use quickwit_doc_mapper::WarmupInfo;
+use quickwit_doc_mapper::{FastFieldWarmupInfo, WarmupInfo};
 use quickwit_proto::search::{
     LeafSearchResponse, PartialHit, ResourceStats, SearchRequest, SortByValue, SortOrder,
     SortValue, SplitSearchError,
@@ -753,7 +753,14 @@ impl QuickwitCollector {
 
     pub fn warmup_info(&self) -> WarmupInfo {
         WarmupInfo {
-            fast_field_names: self.fast_field_names(),
+            fast_fields: self
+                .fast_field_names()
+                .into_iter()
+                .map(|name| FastFieldWarmupInfo {
+                    name,
+                    with_subfields: false,
+                })
+                .collect(),
             field_norms: self.requires_scoring(),
             ..WarmupInfo::default()
         }
