@@ -116,7 +116,7 @@ impl FieldPresenceQuery {
         // if `self.field` was not found, it might still be an `object` field
         if fields.is_empty() || fields[0].1.name() == DYNAMIC_FIELD_NAME {
             for (field, entry) in find_subfields(&self.field, schema) {
-                fields.push((field, entry, &""));
+                fields.push((field, entry, ""));
             }
         }
         fields

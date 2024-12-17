@@ -104,7 +104,7 @@ pub(crate) fn build_query(
     // This cannot fail. The error type is Infallible.
     let _: Result<(), Infallible> = exists_query_fields.visit(query_ast);
 
-    let mut fast_field_names = HashSet::new();
+    let mut fast_fields = HashSet::new();
     let range_query_fast_fields =
         range_query_fields
             .range_query_field_names
@@ -113,8 +113,8 @@ pub(crate) fn build_query(
                 name,
                 with_subfields: false,
             });
-    fast_field_names.extend(range_query_fast_fields);
-    fast_field_names.extend(exists_query_fields.fields.into_iter());
+    fast_fields.extend(range_query_fast_fields);
+    fast_fields.extend(exists_query_fields.fields);
 
     let query = query_ast.build_tantivy_query(
         &schema,
@@ -141,7 +141,7 @@ pub(crate) fn build_query(
         term_dict_fields: term_set_query_fields,
         terms_grouped_by_field,
         term_ranges_grouped_by_field,
-        fast_fields: fast_field_names,
+        fast_fields,
         ..WarmupInfo::default()
     };
 
@@ -441,7 +441,7 @@ mod test {
             "foo:bar",
             Vec::new(),
             TestExpectation::Ok(
-                r#"TermQuery(Term(field=13, type=Json, path=foo, type=Str, "bar"))"#,
+                r#"TermQuery(Term(field=16, type=Json, path=foo, type=Str, "bar"))"#,
             ),
         );
         check_build_query_dynamic_mode(
@@ -481,7 +481,7 @@ mod test {
         check_build_query_static_mode(
             "title:bar",
             Vec::new(),
-            TestExpectation::Ok(r#"TermQuery(Term(field=0, type=Str, "bar"))"#),
+            TestExpectation::Ok(r#"TermQuery(Term(field=1, type=Str, "bar"))"#),
         );
         check_build_query_static_mode(
             "bar",
@@ -596,7 +596,7 @@ mod test {
         check_build_query_static_mode(
             "json_text:*",
             Vec::new(),
-            TestExpectation::Ok("TermQuery(Term(field=0, type=U64"),
+            TestExpectation::Ok("TermSetQuery"),
         );
         check_build_query_static_mode(
             "json_fast:*",
@@ -611,21 +611,8 @@ mod test {
         check_build_query_static_mode(
             "server:*",
             Vec::new(),
-            TestExpectation::Ok("?????????????????"),
+            TestExpectation::Ok("BooleanQuery { subqueries: [(Should, TermQuery(Term"),
         );
-
-        // V currently working V
-        // check_build_query_static_mode(
-        //     "server:*",
-        //     Vec::new(),
-        //     TestExpectation::Err("invalid query: field does not exist: `server`"),
-        // );
-        // check_build_query_dynamic_mode(
-        //     "server:*",
-        //     Vec::new(),
-        //     // dynamic_mapping is set to TEXT here, this would be an ExistsQuery if it was FAST
-        //     TestExpectation::Ok("TermQuery(Term(field=0, type=U64"),
-        // );
     }
 
     #[test]
@@ -680,8 +667,8 @@ mod test {
             "ip:[127.0.0.1 TO 127.1.1.1]",
             Vec::new(),
             TestExpectation::Ok(
-                "RangeQuery { bounds: BoundsRange { lower_bound: Included(Term(field=6, \
-                 type=IpAddr, ::ffff:127.0.0.1)), upper_bound: Included(Term(field=6, \
+                "RangeQuery { bounds: BoundsRange { lower_bound: Included(Term(field=7, \
+                 type=IpAddr, ::ffff:127.0.0.1)), upper_bound: Included(Term(field=7, \
                  type=IpAddr, ::ffff:127.1.1.1)) } }",
             ),
         );
@@ -689,7 +676,7 @@ mod test {
             "ip:>127.0.0.1",
             Vec::new(),
             TestExpectation::Ok(
-                "RangeQuery { bounds: BoundsRange { lower_bound: Excluded(Term(field=6, \
+                "RangeQuery { bounds: BoundsRange { lower_bound: Excluded(Term(field=7, \
                  type=IpAddr, ::ffff:127.0.0.1)), upper_bound: Unbounded } }",
             ),
         );
@@ -701,14 +688,14 @@ mod test {
             "f64_fast:[7.7 TO 77.7]",
             Vec::new(),
             TestExpectation::Ok(
-                r#"RangeQuery { bounds: BoundsRange { lower_bound: Included(Term(field=12, type=F64, 7.7)), upper_bound: Included(Term(field=12, type=F64, 77.7)) } }"#,
+                r#"RangeQuery { bounds: BoundsRange { lower_bound: Included(Term(field=13, type=F64, 7.7)), upper_bound: Included(Term(field=13, type=F64, 77.7)) } }"#,
             ),
         );
         check_build_query_static_mode(
             "f64_fast:>7",
             Vec::new(),
             TestExpectation::Ok(
-                r#"RangeQuery { bounds: BoundsRange { lower_bound: Excluded(Term(field=12, type=F64, 7.0)), upper_bound: Unbounded } }"#,
+                r#"RangeQuery { bounds: BoundsRange { lower_bound: Excluded(Term(field=13, type=F64, 7.0)), upper_bound: Unbounded } }"#,
             ),
         );
     }
@@ -718,12 +705,12 @@ mod test {
         check_build_query_static_mode(
             "i64_fast:[-7 TO 77]",
             Vec::new(),
-            TestExpectation::Ok(r#"field=11"#),
+            TestExpectation::Ok(r#"field=12"#),
         );
         check_build_query_static_mode(
             "i64_fast:>7",
             Vec::new(),
-            TestExpectation::Ok(r#"field=11"#),
+            TestExpectation::Ok(r#"field=12"#),
         );
     }
 
@@ -732,12 +719,12 @@ mod test {
         check_build_query_static_mode(
             "u64_fast:[7 TO 77]",
             Vec::new(),
-            TestExpectation::Ok(r#"field=10,"#),
+            TestExpectation::Ok(r#"field=11,"#),
         );
         check_build_query_static_mode(
             "u64_fast:>7",
             Vec::new(),
-            TestExpectation::Ok(r#"field=10,"#),
+            TestExpectation::Ok(r#"field=11,"#),
         );
     }
 
@@ -747,8 +734,8 @@ mod test {
             "ips:[127.0.0.1 TO 127.1.1.1]",
             Vec::new(),
             TestExpectation::Ok(
-                "RangeQuery { bounds: BoundsRange { lower_bound: Included(Term(field=7, \
-                 type=IpAddr, ::ffff:127.0.0.1)), upper_bound: Included(Term(field=7, \
+                "RangeQuery { bounds: BoundsRange { lower_bound: Included(Term(field=8, \
+                 type=IpAddr, ::ffff:127.0.0.1)), upper_bound: Included(Term(field=8, \
                  type=IpAddr, ::ffff:127.1.1.1)) } }",
             ),
         );
@@ -792,7 +779,7 @@ mod test {
         assert_eq!(warmup_info.term_dict_fields.len(), 1);
         assert!(warmup_info
             .term_dict_fields
-            .contains(&tantivy::schema::Field::from_field_id(1)));
+            .contains(&tantivy::schema::Field::from_field_id(2)));
 
         let (_, warmup_info) = build_query(
             &query_without_set,
@@ -842,7 +829,7 @@ mod test {
             extractor2.term_ranges_to_warm_up
         );
 
-        let field = tantivy::schema::Field::from_field_id(0);
+        let field = tantivy::schema::Field::from_field_id(1);
         let mut expected_inner = std::collections::HashMap::new();
         expected_inner.insert(
             TermRange {

@@ -68,7 +68,6 @@ pub fn find_subfields<'a>(
     let prefix = format!("{}.", path);
     schema
         .fields()
-        .into_iter()
         .filter(|(_, field_entry)| field_entry.name().starts_with(&prefix))
         .collect()
 }

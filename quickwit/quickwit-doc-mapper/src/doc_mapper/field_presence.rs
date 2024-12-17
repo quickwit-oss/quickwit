@@ -95,7 +95,6 @@ impl SubfieldsPopulator {
         }
     }
 
-    #[inline]
     fn populate_field_presence_for_json_obj<'a, I, V>(
         &mut self,
         path_hasher: PathHasher,
