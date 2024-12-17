@@ -6,4 +6,4 @@ method: DELETE
 endpoint: indexes/tagged
 ---
 method: DELETE
-endpoint: indexes/json
+endpoint: indexes/nested

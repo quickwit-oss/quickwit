@@ -94,6 +94,7 @@ json:
   version: "0.7"
   index_id: nested
   doc_mapping:
+    index_field_presence: true
     # default mode is dynamic
     field_mappings:
       - name: json_text

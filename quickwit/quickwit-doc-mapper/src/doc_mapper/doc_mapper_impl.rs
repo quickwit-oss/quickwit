@@ -557,7 +557,7 @@ impl DocMapper {
 
         if self.index_field_presence {
             let field_presence_hashes: FnvHashSet<u64> =
-                populate_field_presence(&document, &self.schema);
+                populate_field_presence(&document, &self.schema, true);
             for field_presence_hash in field_presence_hashes {
                 document.add_field_value(FIELD_PRESENCE_FIELD, &field_presence_hash);
             }
