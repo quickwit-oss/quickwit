@@ -25,6 +25,16 @@ expected:
     total:
       value: 60
 ---
+json:
+  query:
+    exists:
+      field: payload
+expected:
+  hits:
+    total:
+      # one of the docs contains `"payload":{}`
+      value: 99
+---
 # Fortunately, ES does not accept this quirky syntax in the
 # case of exists query.
 json:
