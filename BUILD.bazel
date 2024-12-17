@@ -1,0 +1,14 @@
+load("@com_datadoghq_cnab_tools//rules:cli_defaults.bzl", "REGISTRY")
+load("@com_datadoghq_datacenter_config//rules:helm.bzl", "dd_helm_cnab")
+
+dd_helm_cnab(
+    name = "pomsky-cnab",
+    chart = "@pomsky_helm_charts//charts/quickwit:chart",
+    registry = REGISTRY,
+    repository = "pomsky-cnab",
+    tags = [
+        "service:cnab_tutorial"
+    ],
+    visibility = ["//visibility:public"],
+    with_datacenter_helm_files = False,
+)
