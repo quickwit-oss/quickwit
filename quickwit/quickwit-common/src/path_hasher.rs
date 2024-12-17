@@ -31,9 +31,8 @@ const SEPARATOR: &[u8] = &[255];
 /// in a tree.
 ///
 /// Its purpose is to:
-/// - propose a secondary hash space if intermediate object paths should be indexed
 /// - work around the lack of Clone in the fnv Hasher
-/// - enforce a 0 byte separator between segments
+/// - enforce a 1 byte separator between segments
 #[derive(Default)]
 pub struct PathHasher {
     hasher: fnv::FnvHasher,
