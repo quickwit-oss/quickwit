@@ -1,0 +1,6 @@
+schema-version: v2.2
+dd-service: pomsky
+team: logs-cloudprem
+contacts:
+  - type: slack
+    contact: https://dd.slack.com/archives/C080CR58077
