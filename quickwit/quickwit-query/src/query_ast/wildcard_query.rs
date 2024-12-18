@@ -21,7 +21,7 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use anyhow::{bail, Context};
-pub use prefix::JsonPathPrefix;
+pub use prefix::{AutomatonQuery, JsonPathPrefix};
 use serde::{Deserialize, Serialize};
 use tantivy::schema::{Field, FieldType, Schema as TantivySchema};
 use tantivy::Term;

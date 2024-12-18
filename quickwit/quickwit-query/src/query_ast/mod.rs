@@ -28,6 +28,7 @@ mod field_presence;
 mod full_text_query;
 mod phrase_prefix_query;
 mod range_query;
+mod regex_query;
 mod tantivy_query_ast;
 mod term_query;
 mod term_set_query;
@@ -41,12 +42,13 @@ pub use field_presence::FieldPresenceQuery;
 pub use full_text_query::{FullTextMode, FullTextParams, FullTextQuery};
 pub use phrase_prefix_query::PhrasePrefixQuery;
 pub use range_query::RangeQuery;
+pub use regex_query::RegexQuery;
 use tantivy_query_ast::TantivyQueryAst;
 pub use term_query::TermQuery;
 pub use term_set_query::TermSetQuery;
 pub use user_input_query::UserInputQuery;
 pub use visitor::{QueryAstTransformer, QueryAstVisitor};
-pub use wildcard_query::{JsonPathPrefix, WildcardQuery};
+pub use wildcard_query::{AutomatonQuery, JsonPathPrefix, WildcardQuery};
 
 use crate::{BooleanOperand, InvalidQuery, NotNaNf32};
 
@@ -63,6 +65,7 @@ pub enum QueryAst {
     Range(RangeQuery),
     UserInput(UserInputQuery),
     Wildcard(WildcardQuery),
+    Regex(RegexQuery),
     MatchAll,
     MatchNone,
     Boost {
@@ -105,7 +108,8 @@ impl QueryAst {
             | ast @ QueryAst::MatchNone
             | ast @ QueryAst::FieldPresence(_)
             | ast @ QueryAst::Range(_)
-            | ast @ QueryAst::Wildcard(_) => Ok(ast),
+            | ast @ QueryAst::Wildcard(_)
+            | ast @ QueryAst::Regex(_) => Ok(ast),
             QueryAst::UserInput(user_text_query) => {
                 user_text_query.parse_user_query(default_search_fields)
             }
@@ -244,6 +248,12 @@ impl BuildTantivyAst for QueryAst {
                 with_validation,
             ),
             QueryAst::Wildcard(wildcard) => wildcard.build_tantivy_ast_call(
+                schema,
+                tokenizer_manager,
+                search_fields,
+                with_validation,
+            ),
+            QueryAst::Regex(regex) => regex.build_tantivy_ast_call(
                 schema,
                 tokenizer_manager,
                 search_fields,

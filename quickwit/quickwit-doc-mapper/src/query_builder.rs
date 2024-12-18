@@ -23,7 +23,7 @@ use std::ops::Bound;
 
 use quickwit_query::query_ast::{
     FieldPresenceQuery, FullTextQuery, PhrasePrefixQuery, QueryAst, QueryAstVisitor, RangeQuery,
-    TermSetQuery, WildcardQuery,
+    RegexQuery, TermSetQuery, WildcardQuery,
 };
 use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_query::{find_field_or_hit_dynamic, InvalidQuery};
@@ -269,6 +269,12 @@ impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRanges<'b> {
 
     fn visit_wildcard(&mut self, wildcard_query: &'a WildcardQuery) -> Result<(), Self::Err> {
         let (field, path, regex) = wildcard_query.to_regex(self.schema, self.tokenizer_manager)?;
+        self.add_automaton(field, Automaton::Regex(path, regex));
+        Ok(())
+    }
+
+    fn visit_regex(&mut self, regex_query: &'a RegexQuery) -> Result<(), Self::Err> {
+        let (field, path, regex) = regex_query.to_regex(self.schema)?;
         self.add_automaton(field, Automaton::Regex(path, regex));
         Ok(())
     }
