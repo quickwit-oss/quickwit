@@ -1,0 +1,15 @@
+variables:
+  BAZEL_CI_IMAGE: registry.ddbuild.io/bazel@sha256:eb5263e5f41cd634a1863fd56b2bff750b825ad95f2da97db8ebd967093defdb
+
+stages:
+  - publish
+
+publish-workflow:
+  image: $BAZEL_CI_IMAGE
+  stage: publish
+  tags: ["runner:main"]
+  before_script:
+    - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "https://github.com/DataDog/"
+  script:
+    - echo "Hello world!"
+    - bzl run //k8s/cnab-tutorial:tutorial-workflow.publish

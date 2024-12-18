@@ -1,0 +1,14 @@
+# Print all `.bazelrc` option at startup
+--announce_rc
+
+# Show Build timestamps
+--show_timestamps
+
+# Enable Temporal as workflow engine for CNAB deployments
+build --define cnab_workflow_driver=temporal
+
+# Keep color, reduce frequency of "in progress" log lines
+build:ci --show_progress_rate_limit=5 --curses=yes --color=yes
+
+# Show full error context
+build:ci --verbose_failures
