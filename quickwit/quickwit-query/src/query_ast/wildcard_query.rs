@@ -99,7 +99,6 @@ impl WildcardQuery {
         let field_type = field_entry.field_type();
 
         let sub_query_parts = parse_wildcard_query(&self.value);
-        // TODO handle json_path
 
         match field_type {
             FieldType::Str(ref text_options) => {
@@ -191,76 +190,6 @@ impl WildcardQuery {
             )),
         }
     }
-
-    /*
-        pub fn extract_prefix_term(
-            &self,
-            schema: &TantivySchema,
-            tokenizer_manager: &TokenizerManager,
-        ) -> Result<(Field, Term), InvalidQuery> {
-            let (field, field_entry, json_path) = find_field_or_hit_dynamic(&self.field, schema)?;
-            let field_type = field_entry.field_type();
-
-            let prefix = unescape_with_final_wildcard(&self.value)?;
-
-            match field_type {
-                FieldType::Str(ref text_options) => {
-                    let text_field_indexing = text_options.get_indexing_options().ok_or_else(|| {
-                        InvalidQuery::SchemaError(format!(
-                            "field {} is not full-text searchable",
-                            field_entry.name()
-                        ))
-                    })?;
-                    let tokenizer_name = text_field_indexing.tokenizer();
-                    let mut normalizer = tokenizer_manager
-                        .get_normalizer(tokenizer_name)
-                        .with_context(|| {
-                            format!("no tokenizer named `{}` is registered", tokenizer_name)
-                        })?;
-                    let mut token_stream = normalizer.token_stream(&prefix);
-                    let mut tokens = Vec::new();
-                    token_stream.process(&mut |token| {
-                        let term: Term = Term::from_field_text(field, &token.text);
-                        tokens.push(term);
-                    });
-                    let term = extract_unique_token(tokens)?;
-                    Ok((field, term))
-                }
-                FieldType::JsonObject(json_options) => {
-                    let text_field_indexing =
-                        json_options.get_text_indexing_options().ok_or_else(|| {
-                            InvalidQuery::SchemaError(format!(
-                                "field {} is not full-text searchable",
-                                field_entry.name()
-                            ))
-                        })?;
-                    let tokenizer_name = text_field_indexing.tokenizer();
-                    let mut normalizer = tokenizer_manager
-                        .get_normalizer(tokenizer_name)
-                        .with_context(|| {
-                            format!("no tokenizer named `{}` is registered", tokenizer_name)
-                        })?;
-                    let mut token_stream = normalizer.token_stream(&prefix);
-                    let mut tokens = Vec::new();
-
-                    token_stream.process(&mut |token| {
-                        let mut term = Term::from_field_json_path(
-                            field,
-                            json_path,
-                            json_options.is_expand_dots_enabled(),
-                        );
-                        term.append_type_and_str(&token.text);
-                        tokens.push(term);
-                    });
-                    let term = extract_unique_token(tokens)?;
-                    Ok((field, term))
-                }
-                _ => Err(InvalidQuery::SchemaError(
-                    "trying to run a Wildcard query on a non-text field".to_string(),
-                )),
-            }
-        }
-    */
 }
 
 impl BuildTantivyAst for WildcardQuery {
@@ -271,14 +200,6 @@ impl BuildTantivyAst for WildcardQuery {
         _search_fields: &[String],
         _with_validation: bool,
     ) -> Result<TantivyQueryAst, InvalidQuery> {
-        /*
-                let (_, term) = self.extract_prefix_term(schema, tokenizer_manager)?;
-
-                let mut phrase_prefix_query =
-                    tantivy::query::PhrasePrefixQuery::new_with_offset(vec![(0, term)]);
-                phrase_prefix_query.set_max_expansions(u32::MAX);
-                Ok(phrase_prefix_query.into())
-        */
         let (field, regex) = self.to_regex(schema, tokenizer_manager)?;
         let regex_query = tantivy::query::RegexQuery::from_pattern(&regex, field)
             .context("failed to build regex from wildcard")?;
@@ -288,5 +209,96 @@ impl BuildTantivyAst for WildcardQuery {
 
 #[cfg(test)]
 mod tests {
-    // TODO add test
+    use tantivy::schema::{TextFieldIndexing, TextOptions};
+
+    use super::*;
+    use crate::create_default_quickwit_tokenizer_manager;
+
+    #[test]
+    fn test_wildcard_query_to_regex_on_text() {
+        let query = WildcardQuery {
+            field: "text_field".to_string(),
+            value: "MyString Wh1ch?a.nOrMal Tokenizer would*cut".to_string(),
+        };
+
+        let tokenizer_manager = create_default_quickwit_tokenizer_manager();
+        for tokenizer in ["raw", "whitespace"] {
+            let mut schema_builder = TantivySchema::builder();
+            let text_options = TextOptions::default()
+                .set_indexing_options(TextFieldIndexing::default().set_tokenizer(tokenizer));
+            schema_builder.add_text_field("text_field", text_options);
+            let schema = schema_builder.build();
+
+            let (_field, regex) = query.to_regex(&schema, &tokenizer_manager).unwrap();
+            assert_eq!(regex, "MyString Wh1ch.a\\.nOrMal Tokenizer would.*cut");
+        }
+
+        for tokenizer in [
+            "raw_lowercase",
+            "lowercase",
+            "default",
+            "en_stem",
+            "chinese_compatible",
+            "source_code_default",
+            "source_code_with_hex",
+        ] {
+            let mut schema_builder = TantivySchema::builder();
+            let text_options = TextOptions::default()
+                .set_indexing_options(TextFieldIndexing::default().set_tokenizer(tokenizer));
+            schema_builder.add_text_field("text_field", text_options);
+            let schema = schema_builder.build();
+
+            let (_field, regex) = query.to_regex(&schema, &tokenizer_manager).unwrap();
+
+            assert_eq!(regex, "mystring wh1ch.a\\.normal tokenizer would.*cut");
+        }
+    }
+
+    #[test]
+    fn test_wildcard_query_to_regex_on_json() {
+        let query = WildcardQuery {
+            // this volontarily contains uppercase and regex-unsafe char to make sure we properly
+            // keep the case, but sanitize special chars
+            field: "json_field.Inner.Fie*ld".to_string(),
+            value: "MyString Wh1ch?a.nOrMal Tokenizer would*cut".to_string(),
+        };
+
+        let tokenizer_manager = create_default_quickwit_tokenizer_manager();
+        for tokenizer in ["raw", "whitespace"] {
+            let mut schema_builder = TantivySchema::builder();
+            let text_options = TextOptions::default()
+                .set_indexing_options(TextFieldIndexing::default().set_tokenizer(tokenizer));
+            schema_builder.add_json_field("json_field", text_options);
+            let schema = schema_builder.build();
+
+            let (_field, regex) = query.to_regex(&schema, &tokenizer_manager).unwrap();
+            assert_eq!(
+                regex,
+                "Inner\u{1}Fie\\*ld\0sMyString Wh1ch.a\\.nOrMal Tokenizer would.*cut"
+            );
+        }
+
+        for tokenizer in [
+            "raw_lowercase",
+            "lowercase",
+            "default",
+            "en_stem",
+            "chinese_compatible",
+            "source_code_default",
+            "source_code_with_hex",
+        ] {
+            let mut schema_builder = TantivySchema::builder();
+            let text_options = TextOptions::default()
+                .set_indexing_options(TextFieldIndexing::default().set_tokenizer(tokenizer));
+            schema_builder.add_json_field("json_field", text_options);
+            let schema = schema_builder.build();
+
+            let (_field, regex) = query.to_regex(&schema, &tokenizer_manager).unwrap();
+
+            assert_eq!(
+                regex,
+                "Inner\u{1}Fie\\*ld\0smystring wh1ch.a\\.normal tokenizer would.*cut"
+            );
+        }
+    }
 }

@@ -158,7 +158,7 @@ json:
     query_string:
       default_field: payload.description
       lenient: true
-      query: "Jour* AND unix"
+      query: "Jou*al AND unix"
 expected:
   hits:
     total:
@@ -170,7 +170,7 @@ json:
     query_string:
       default_field: payload.description
       lenient: true
-      query: "jour* AND unix"
+      query: "jou*al AND unix"
 expected:
   hits:
     total:

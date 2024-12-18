@@ -102,7 +102,7 @@ pub(crate) fn build_query(
 
     let term_set_query_fields = extract_term_set_query_fields(query_ast, &schema)?;
     let (term_ranges_grouped_by_field, automatons_grouped_by_field) =
-        extract_prefix_term_ranges(query_ast, &schema, tokenizer_manager)?;
+        extract_prefix_term_ranges_and_automaton(query_ast, &schema, tokenizer_manager)?;
 
     let mut terms_grouped_by_field: HashMap<Field, HashMap<_, bool>> = Default::default();
     query.query_terms(&mut |term, need_position| {
@@ -274,14 +274,14 @@ impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRanges<'b> {
     }
 }
 
-fn extract_prefix_term_ranges(
+type TermRangeWarmupInfo = HashMap<Field, HashMap<TermRange, PositionNeeded>>;
+type AutomatonWarmupInfo = HashMap<Field, HashSet<Automaton>>;
+
+fn extract_prefix_term_ranges_and_automaton(
     query_ast: &QueryAst,
     schema: &Schema,
     tokenizer_manager: &TokenizerManager,
-) -> anyhow::Result<(
-    HashMap<Field, HashMap<TermRange, PositionNeeded>>,
-    HashMap<Field, HashSet<Automaton>>,
-)> {
+) -> anyhow::Result<(TermRangeWarmupInfo, AutomatonWarmupInfo)> {
     let mut visitor = ExtractPrefixTermRanges::with_schema(schema, tokenizer_manager);
     visitor.visit(query_ast)?;
     Ok((

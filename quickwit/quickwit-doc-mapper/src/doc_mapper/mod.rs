@@ -589,6 +589,13 @@ mod tests {
         elements.iter().map(|elem| elem.to_string()).collect()
     }
 
+    fn automaton_hashset(elements: &[&str]) -> HashSet<Automaton> {
+        elements
+            .iter()
+            .map(|elem| Automaton::Regex(elem.to_string()))
+            .collect()
+    }
+
     fn hashset_field(elements: &[u32]) -> HashSet<Field> {
         elements
             .iter()
@@ -638,7 +645,12 @@ mod tests {
                 (2, "term1", false),
                 (2, "term2", false),
             ]),
-            automatons_grouped_by_field: HashMap::new(), // TODO complete tests
+            automatons_grouped_by_field: [(
+                Field::from_field_id(1),
+                automaton_hashset(&["my_reg.*ex"]),
+            )]
+            .into_iter()
+            .collect(),
         };
 
         // merging with default has no impact
@@ -656,7 +668,12 @@ mod tests {
                 (3, "term1", false),
                 (2, "term2", true),
             ]),
-            automatons_grouped_by_field: HashMap::new(), // TODO complete tests
+            automatons_grouped_by_field: [
+                (Field::from_field_id(1), automaton_hashset(&["other-re.ex"])),
+                (Field::from_field_id(2), automaton_hashset(&["my_reg.*ex"])),
+            ]
+            .into_iter()
+            .collect(),
         };
         wi_base.merge(wi_2.clone());
 
@@ -704,6 +721,17 @@ mod tests {
             );
         }
 
+        let expected_automatons = [(1, "my_reg.*ex"), (1, "other-re.ex"), (2, "my_reg.*ex")];
+        for (field, regex) in expected_automatons {
+            let field = Field::from_field_id(field);
+            let automaton = Automaton::Regex(regex.to_string());
+            assert!(wi_base
+                .automatons_grouped_by_field
+                .get(&field)
+                .unwrap()
+                .contains(&automaton));
+        }
+
         // merge is idempotent
         let mut wi_cloned = wi_base.clone();
         wi_cloned.merge(wi_2);
@@ -726,7 +754,13 @@ mod tests {
                 (1, "term2", true),
                 (2, "term3", false),
             ]),
-            automatons_grouped_by_field: HashMap::new(), // TODO complete tests
+            automatons_grouped_by_field: [
+                (Field::from_field_id(1), automaton_hashset(&["other-re.ex"])),
+                (Field::from_field_id(1), automaton_hashset(&["other-re.ex"])),
+                (Field::from_field_id(2), automaton_hashset(&["my_reg.ex"])),
+            ]
+            .into_iter()
+            .collect(),
         };
         let expected = WarmupInfo {
             term_dict_fields: hashset_field(&[1]),
@@ -737,7 +771,12 @@ mod tests {
                 (1, "term2", true),
                 (2, "term3", false),
             ]),
-            automatons_grouped_by_field: HashMap::new(), // TODO complete tests
+            automatons_grouped_by_field: [
+                (Field::from_field_id(1), automaton_hashset(&["other-re.ex"])),
+                (Field::from_field_id(2), automaton_hashset(&["my_reg.ex"])),
+            ]
+            .into_iter()
+            .collect(),
         };
 
         warmup_info.simplify();
