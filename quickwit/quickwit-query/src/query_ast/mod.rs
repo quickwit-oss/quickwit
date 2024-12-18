@@ -46,7 +46,7 @@ pub use term_query::TermQuery;
 pub use term_set_query::TermSetQuery;
 pub use user_input_query::UserInputQuery;
 pub use visitor::{QueryAstTransformer, QueryAstVisitor};
-pub use wildcard_query::WildcardQuery;
+pub use wildcard_query::{JsonPathPrefix, WildcardQuery};
 
 use crate::{BooleanOperand, InvalidQuery, NotNaNf32};
 

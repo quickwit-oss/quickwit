@@ -18,8 +18,10 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::borrow::Cow;
+use std::sync::Arc;
 
 use anyhow::{bail, Context};
+pub use prefix::JsonPathPrefix;
 use serde::{Deserialize, Serialize};
 use tantivy::schema::{Field, FieldType, Schema as TantivySchema};
 use tantivy::Term;
@@ -94,7 +96,7 @@ impl WildcardQuery {
         &self,
         schema: &TantivySchema,
         tokenizer_manager: &TokenizerManager,
-    ) -> Result<(Field, String), InvalidQuery> {
+    ) -> Result<(Field, Option<Vec<u8>>, String), InvalidQuery> {
         let (field, field_entry, json_path) = find_field_or_hit_dynamic(&self.field, schema)?;
         let field_type = field_entry.field_type();
 
@@ -135,7 +137,7 @@ impl WildcardQuery {
                     })
                     .collect::<Result<String, _>>()?;
 
-                Ok((field, regex))
+                Ok((field, None, regex))
             }
             FieldType::JsonObject(json_options) => {
                 let text_field_indexing =
@@ -160,13 +162,12 @@ impl WildcardQuery {
                 term_for_path.append_type_and_str("");
 
                 let value = term_for_path.value();
-                // this shouldn't error: json path was a string, and all things added while encoding
-                // the path are valid ascii (and valid utf-8). We also skip the 1st byte which is a
-                // marker to tell this is json. This isn't present in the dictionary
-                let path_prefix = std::str::from_utf8(&value.as_serialized()[1..])
-                    .context("failed to extract json path from term")?;
-                let regex = std::iter::once(Ok(Cow::Owned(regex::escape(path_prefix))))
-                    .chain(sub_query_parts.into_iter().map(|part| match part {
+                // We skip the 1st byte which is a marker to tell this is json. This isn't present
+                // in the dictionary
+                let byte_path_prefix = value.as_serialized()[1..].to_owned();
+                let regex = sub_query_parts
+                    .into_iter()
+                    .map(|part| match part {
                         SubQuery::Text(text) => {
                             let mut token_stream = normalizer.token_stream(&text);
                             let expected_token = token_stream
@@ -181,9 +182,9 @@ impl WildcardQuery {
                         }
                         SubQuery::Wildcard => Ok(Cow::Borrowed(".*")),
                         SubQuery::QuestionMark => Ok(Cow::Borrowed(".")),
-                    }))
+                    })
                     .collect::<Result<String, _>>()?;
-                Ok((field, regex))
+                Ok((field, Some(byte_path_prefix), regex))
             }
             _ => Err(InvalidQuery::SchemaError(
                 "trying to run a Wildcard query on a non-text field".to_string(),
@@ -200,10 +201,129 @@ impl BuildTantivyAst for WildcardQuery {
         _search_fields: &[String],
         _with_validation: bool,
     ) -> Result<TantivyQueryAst, InvalidQuery> {
-        let (field, regex) = self.to_regex(schema, tokenizer_manager)?;
-        let regex_query = tantivy::query::RegexQuery::from_pattern(&regex, field)
-            .context("failed to build regex from wildcard")?;
-        Ok(regex_query.into())
+        let (field, path, regex) = self.to_regex(schema, tokenizer_manager)?;
+        let regex =
+            tantivy_fst::Regex::new(&regex).context("failed to parse regex built from wildcard")?;
+        let regex_automaton_with_path = prefix::JsonPathPrefix {
+            prefix: path.unwrap_or_default(),
+            automaton: regex,
+        };
+        let regex_query_with_path = prefix::AutomatonQuery {
+            field,
+            automaton: Arc::new(regex_automaton_with_path),
+        };
+        Ok(regex_query_with_path.into())
+    }
+}
+
+mod prefix {
+    use std::sync::Arc;
+
+    use tantivy::query::{AutomatonWeight, EnableScoring, Query, Weight};
+    use tantivy::schema::Field;
+    use tantivy_fst::Automaton;
+    pub struct JsonPathPrefix<A> {
+        pub prefix: Vec<u8>,
+        pub automaton: A,
+    }
+
+    #[derive(Clone)]
+    pub enum JsonPathPrefixState<A> {
+        Prefix(usize),
+        Inner(A),
+        PrefixFailed,
+    }
+
+    impl<A: Automaton> Automaton for JsonPathPrefix<A> {
+        type State = JsonPathPrefixState<A::State>;
+
+        fn start(&self) -> Self::State {
+            if self.prefix.is_empty() {
+                JsonPathPrefixState::Inner(self.automaton.start())
+            } else {
+                JsonPathPrefixState::Prefix(0)
+            }
+        }
+
+        fn is_match(&self, state: &Self::State) -> bool {
+            match state {
+                JsonPathPrefixState::Prefix(_) => false,
+                JsonPathPrefixState::Inner(inner_state) => self.automaton.is_match(inner_state),
+                JsonPathPrefixState::PrefixFailed => false,
+            }
+        }
+
+        fn accept(&self, state: &Self::State, byte: u8) -> Self::State {
+            match state {
+                JsonPathPrefixState::Prefix(i) => {
+                    if self.prefix.get(*i) != Some(&byte) {
+                        return JsonPathPrefixState::PrefixFailed;
+                    }
+                    let next_pos = i + 1;
+                    if next_pos == self.prefix.len() {
+                        JsonPathPrefixState::Inner(self.automaton.start())
+                    } else {
+                        JsonPathPrefixState::Prefix(next_pos)
+                    }
+                }
+                JsonPathPrefixState::Inner(inner_state) => {
+                    JsonPathPrefixState::Inner(self.automaton.accept(inner_state, byte))
+                }
+                JsonPathPrefixState::PrefixFailed => JsonPathPrefixState::PrefixFailed,
+            }
+        }
+
+        fn can_match(&self, state: &Self::State) -> bool {
+            match state {
+                JsonPathPrefixState::Prefix(_) => true,
+                JsonPathPrefixState::Inner(inner_state) => self.automaton.can_match(inner_state),
+                JsonPathPrefixState::PrefixFailed => false,
+            }
+        }
+
+        fn will_always_match(&self, state: &Self::State) -> bool {
+            match state {
+                JsonPathPrefixState::Prefix(_) => false,
+                JsonPathPrefixState::Inner(inner_state) => {
+                    self.automaton.will_always_match(inner_state)
+                }
+                JsonPathPrefixState::PrefixFailed => false,
+            }
+        }
+    }
+
+    pub struct AutomatonQuery<A> {
+        pub automaton: Arc<A>,
+        pub field: Field,
+    }
+
+    impl<A> std::fmt::Debug for AutomatonQuery<A> {
+        fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.debug_struct("AutomatonQuery")
+                .field("field", &self.field)
+                .field("automaton", &std::any::type_name::<A>())
+                .finish()
+        }
+    }
+
+    impl<A> Clone for AutomatonQuery<A> {
+        fn clone(&self) -> Self {
+            AutomatonQuery {
+                automaton: self.automaton.clone(),
+                field: self.field,
+            }
+        }
+    }
+
+    impl<A: Automaton + Send + Sync + 'static> Query for AutomatonQuery<A>
+    where A::State: Clone
+    {
+        fn weight(&self, _enabled_scoring: EnableScoring<'_>) -> tantivy::Result<Box<dyn Weight>> {
+            Ok(Box::new(AutomatonWeight::<A>::new(
+                self.field,
+                self.automaton.clone(),
+            )))
+        }
     }
 }
 
@@ -229,8 +349,9 @@ mod tests {
             schema_builder.add_text_field("text_field", text_options);
             let schema = schema_builder.build();
 
-            let (_field, regex) = query.to_regex(&schema, &tokenizer_manager).unwrap();
+            let (_field, path, regex) = query.to_regex(&schema, &tokenizer_manager).unwrap();
             assert_eq!(regex, "MyString Wh1ch.a\\.nOrMal Tokenizer would.*cut");
+            assert!(path.is_none());
         }
 
         for tokenizer in [
@@ -248,9 +369,9 @@ mod tests {
             schema_builder.add_text_field("text_field", text_options);
             let schema = schema_builder.build();
 
-            let (_field, regex) = query.to_regex(&schema, &tokenizer_manager).unwrap();
-
+            let (_field, path, regex) = query.to_regex(&schema, &tokenizer_manager).unwrap();
             assert_eq!(regex, "mystring wh1ch.a\\.normal tokenizer would.*cut");
+            assert!(path.is_none());
         }
     }
 
@@ -271,11 +392,9 @@ mod tests {
             schema_builder.add_json_field("json_field", text_options);
             let schema = schema_builder.build();
 
-            let (_field, regex) = query.to_regex(&schema, &tokenizer_manager).unwrap();
-            assert_eq!(
-                regex,
-                "Inner\u{1}Fie\\*ld\0sMyString Wh1ch.a\\.nOrMal Tokenizer would.*cut"
-            );
+            let (_field, path, regex) = query.to_regex(&schema, &tokenizer_manager).unwrap();
+            assert_eq!(regex, "MyString Wh1ch.a\\.nOrMal Tokenizer would.*cut");
+            assert_eq!(path.unwrap(), "Inner\u{1}Fie*ld\0s".as_bytes());
         }
 
         for tokenizer in [
@@ -293,12 +412,9 @@ mod tests {
             schema_builder.add_json_field("json_field", text_options);
             let schema = schema_builder.build();
 
-            let (_field, regex) = query.to_regex(&schema, &tokenizer_manager).unwrap();
-
-            assert_eq!(
-                regex,
-                "Inner\u{1}Fie\\*ld\0smystring wh1ch.a\\.normal tokenizer would.*cut"
-            );
+            let (_field, path, regex) = query.to_regex(&schema, &tokenizer_manager).unwrap();
+            assert_eq!(regex, "mystring wh1ch.a\\.normal tokenizer would.*cut");
+            assert_eq!(path.unwrap(), "Inner\u{1}Fie*ld\0s".as_bytes());
         }
     }
 }

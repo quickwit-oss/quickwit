@@ -6852,6 +6852,7 @@ dependencies = [
  "serde_json",
  "serde_with 3.11.0",
  "tantivy",
+ "tantivy-fst",
  "thiserror 1.0.69",
  "time",
  "whichlang",

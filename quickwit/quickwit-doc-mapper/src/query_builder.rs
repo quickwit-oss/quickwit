@@ -268,8 +268,8 @@ impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRanges<'b> {
     }
 
     fn visit_wildcard(&mut self, wildcard_query: &'a WildcardQuery) -> Result<(), Self::Err> {
-        let (field, regex) = wildcard_query.to_regex(self.schema, self.tokenizer_manager)?;
-        self.add_automaton(field, Automaton::Regex(regex));
+        let (field, path, regex) = wildcard_query.to_regex(self.schema, self.tokenizer_manager)?;
+        self.add_automaton(field, Automaton::Regex(path, regex));
         Ok(())
     }
 }
