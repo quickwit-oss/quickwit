@@ -1,5 +1,5 @@
 variables:
-  BAZEL_CI_IMAGE: registry.ddbuild.io/bazel@sha256:eb5263e5f41cd634a1863fd56b2bff750b825ad95f2da97db8ebd967093defdb
+  BAZEL_CI_IMAGE: registry.ddbuild.io/bazel:5
 
 stages:
   - publish

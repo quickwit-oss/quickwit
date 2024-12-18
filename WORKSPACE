@@ -9,6 +9,7 @@ git_repository(
     commit = "bd0ca9ffe7c7706b0979a131cc48a7d24f4bfbbd",
 )
 
+
 load("@rules_oci_bootstrap//:defs.bzl", "oci_blob_pull")
 
 oci_blob_pull(
@@ -23,11 +24,11 @@ oci_blob_pull(
 load("@com_datadoghq_cnab_tools//rules:deps.bzl", "cnab_tools_dependencies")
 cnab_tools_dependencies()
 
-load("@com_datadoghq_cnab_tools//rules/setup:cnab_tools.bzl", "cnab_tools_setup")
-cnab_tools_setup()
-
 load("@com_datadoghq_cnab_tools//rules/setup:rules_go.bzl", "rules_go_setup")
 rules_go_setup()
+
+load("@com_datadoghq_cnab_tools//rules/setup:cnab_tools.bzl", "cnab_tools_setup")
+cnab_tools_setup()
 
 
 git_repository(
@@ -42,9 +43,9 @@ datacenter_config_dependencies()
 load("@com_datadoghq_datacenter_config//rules/setup:rules_docker.bzl", "rules_docker_setup")
 rules_docker_setup()
 
-
 git_repository(
     name = "pomsky_helm_charts",
     remote = "https://github.com/DataDog/pomsky-helm-charts.git",
     commit = "94baa597ce280e3e155a8e07c95dc3628ec52d31",
 )
+

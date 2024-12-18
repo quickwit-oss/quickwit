@@ -16,7 +16,7 @@ dd_helm_cnab(
 )
 
 default_params = {
-    "manualJudgementSlackChannel": "release-ops",
+    "manualJudgementSlackChannel": "logs-cloudprem-ops",
 }
 
 dd_helm_cnab_installation(
