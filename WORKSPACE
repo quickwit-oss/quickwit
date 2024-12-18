@@ -24,11 +24,11 @@ oci_blob_pull(
 load("@com_datadoghq_cnab_tools//rules:deps.bzl", "cnab_tools_dependencies")
 cnab_tools_dependencies()
 
-load("@com_datadoghq_cnab_tools//rules/setup:rules_go.bzl", "rules_go_setup")
-rules_go_setup()
-
 load("@com_datadoghq_cnab_tools//rules/setup:cnab_tools.bzl", "cnab_tools_setup")
 cnab_tools_setup()
+
+load("@com_datadoghq_cnab_tools//rules/setup:rules_go.bzl", "rules_go_setup")
+rules_go_setup()
 
 
 git_repository(
