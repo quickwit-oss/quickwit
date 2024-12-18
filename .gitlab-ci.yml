@@ -12,4 +12,4 @@ publish-workflow:
     - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "https://github.com/DataDog/"
   script:
     - echo "Hello world!"
-    - bzl run //k8s/cnab-tutorial:tutorial-workflow.publish
+    - bzl run pomsky-workflow.publish
