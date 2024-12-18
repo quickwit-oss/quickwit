@@ -8,7 +8,8 @@ dd_helm_cnab(
     registry = REGISTRY,
     repository = "pomsky-cnab",
     tags = [
-        "service:pomsky"
+        "service:pomsky",
+        "team:logs-cloudprem",
     ],
     visibility = ["//visibility:public"],
     with_datacenter_helm_files = False,
@@ -28,10 +29,15 @@ dd_helm_cnab_installation(
 
 cnab_workflow(
     name = "pomsky-workflow",
-    description = "Deploy Pomsky",
+    description = "Deploy Pomsky to staging",
     parallel = True,
     tasks = [
         ":pomsky.logs-cloudprem.vaporeon-b.us1.staging.dog",
+    ],
+    tags = [
+        "env:staging",
+        "service:pomsky",
+        "team:logs-cloudprem",
     ],
     visibility = ["//visibility:public"],
 )

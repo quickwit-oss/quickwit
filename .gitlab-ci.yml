@@ -11,5 +11,4 @@ publish-workflow:
   before_script:
     - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "https://github.com/DataDog/"
   script:
-    - echo "Hello world!"
     - bzl run pomsky-workflow.publish
