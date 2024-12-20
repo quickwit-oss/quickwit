@@ -24,7 +24,9 @@ dd_helm_cnab_installation(
     bundle = ":pomsky-cnab",
     description = "Pomsky Staging",
     parameters = default_params,
-    value_files = [],
+    value_files = [
+        "k8s/values/staging.yaml"
+    ],
 )
 
 cnab_workflow(

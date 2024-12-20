@@ -1,14 +1,25 @@
 variables:
   BAZEL_CI_IMAGE: registry.ddbuild.io/bazel:5
 
+default:
+  before_script:
+    - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "https://github.com/DataDog/"
+
 stages:
+  - build
   - publish
+
+build-image:
+  image: $BAZEL_CI_IMAGE
+  stage: publish
+  tags:
+    - arch:arm64
+  script:
+    - scripts/build_push_sign_image.sh
+
 
 publish-workflow:
   image: $BAZEL_CI_IMAGE
   stage: publish
-  tags: ["runner:main"]
-  before_script:
-    - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "https://github.com/DataDog/"
   script:
     - bzl run pomsky-workflow.publish
