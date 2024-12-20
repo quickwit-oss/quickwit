@@ -14,7 +14,6 @@ build-image:
   stage: publish
   tags:
     - arch:arm64
-    - size:large
   script:
     - docker buildx build --help
     - scripts/build_push_sign_image.sh
