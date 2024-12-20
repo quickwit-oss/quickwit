@@ -4,3 +4,7 @@ image:
 
 podAnnotations:
   emissary.datadoghq.com/inject-lifecycle: "inject"
+
+config:
+  metastore_uri: s3://logs-cloudprem-staging/indexes
+  default_index_root_uri: s3://logs-cloudprem-staging/metastore
