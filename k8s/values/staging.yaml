@@ -1,0 +1,6 @@
+image:
+  repository: registry.ddbuild.io/logs-clouprem/pomsky
+  tag: edge
+
+podAnnotations:
+  emissary.datadoghq.com/inject-lifecycle: "inject"
