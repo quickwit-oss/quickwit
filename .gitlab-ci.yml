@@ -21,5 +21,7 @@ build-image:
 publish-workflow:
   image: $BAZEL_CI_IMAGE
   stage: publish
+  tags:
+    - runner:main
   script:
     - bzl run pomsky-workflow.publish

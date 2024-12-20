@@ -7,7 +7,6 @@ DOCKER_PLATFORM="linux/arm64"
 DOCKER_METADATA_FILE="metadata.json"
 
 # Build and push the Docker image
-ls -la
 docker buildx build \
   --platform "$DOCKER_PLATFORM" \
   -t "$DOCKER_IMAGE" \
