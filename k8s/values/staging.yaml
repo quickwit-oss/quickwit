@@ -8,3 +8,77 @@ podAnnotations:
 config:
   metastore_uri: s3://logs-cloudprem-staging/indexes
   default_index_root_uri: s3://logs-cloudprem-staging/metastore
+
+tolerations:
+  - key: node
+    operator: Equal
+    effect: NoSchedule
+    value: nodeless
+
+  - key: cpu_arch
+    operator: Equal
+    effect: NoSchedule
+    value: arm64
+
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+          - key: "node-role.kubernetes.io/nodeless"
+            operator: Exists
+          - key: "node.datadoghq.com/cpu_arch"
+            operator: In
+            values:
+              - amd64
+
+metastore:
+  replicaCount: 1
+
+  resources:
+    limits:
+      cpu: "500m"
+      memory: "128Mi"
+    requests:
+      cpu: "500m"
+      memory: "128Mi"
+
+control_plane:
+  resources:
+    limits:
+      cpu: "500m"
+      memory: "128Mi"
+    requests:
+      cpu: "500m"
+      memory: "128Mi"
+
+indexer:
+  replicaCount: 1
+
+  resources:
+    limits:
+      cpu: "1"
+      memory: "1Gi"
+    requests:
+      cpu: "1"
+      memory: "1Gi"
+
+searcher:
+  replicaCount: 1
+
+  resources:
+    limits:
+      cpu: "1"
+      memory: "1Gi"
+    requests:
+      cpu: "1"
+      memory: "1Gi"
+
+janitor:
+  resources:
+    limits:
+      cpu: "500m"
+      memory: "128Mi"
+    requests:
+      cpu: "500m"
+      memory: "128Mi"
