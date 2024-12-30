@@ -292,11 +292,6 @@ pub struct ClusterSandbox {
 }
 
 impl ClusterSandbox {
-    pub fn enable_ingest_v2(&mut self) {
-        self.indexer_rest_client.enable_ingest_v2();
-        self.searcher_rest_client.enable_ingest_v2();
-    }
-
     async fn wait_for_cluster_num_ready_nodes(
         &self,
         expected_num_ready_nodes: usize,

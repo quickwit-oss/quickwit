@@ -717,7 +717,10 @@ impl Handler<ToggleSourceRequest> for ControlPlane {
         };
         info!(%index_uid, source_id, enabled=enable, "toggled source");
 
-        let mutation_occurred = self.model.toggle_source(&index_uid, &source_id, enable)?;
+        let mutation_occurred = self
+            .model
+            .toggle_source(&index_uid, &source_id, enable)
+            .context("failed to toggle source")?;
 
         if mutation_occurred {
             let _rebuild_plan_waiter = self.rebuild_plan_debounced(ctx);

@@ -242,7 +242,6 @@ mod tests {
                 && client_args.connect_timeout.is_none()
                 && client_args.commit_timeout.is_none()
                 && client_args.cluster_endpoint == Url::from_str("http://127.0.0.1:7280").unwrap()
-                && client_args.ingest_v2
 
         ));
     }
@@ -273,7 +272,6 @@ mod tests {
                 && client_args.connect_timeout.is_none()
                 && client_args.commit_timeout.is_none()
                 && client_args.cluster_endpoint == Url::from_str("http://127.0.0.1:8000").unwrap()
-                && !client_args.ingest_v2
         ));
 
         let app = build_cli().no_binary_name(true);
@@ -301,7 +299,6 @@ mod tests {
                         && client_args.timeout.is_none()
                         && client_args.connect_timeout.is_none()
                         && client_args.commit_timeout.is_none()
-                        && !client_args.ingest_v2
                         && batch_size_limit == ByteSize::mb(8)
         ));
 
@@ -330,7 +327,6 @@ mod tests {
                     && client_args.timeout.is_none()
                     && client_args.connect_timeout.is_none()
                     && client_args.commit_timeout.is_none()
-                    && !client_args.ingest_v2
                     && batch_size_limit == ByteSize::kb(4)
         ));
 

@@ -1,3 +1,1 @@
 api_root: http://localhost:7280/api/v1/_elastic
-params:
-  enable_ingest_v2: 'true'

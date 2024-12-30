@@ -34,17 +34,11 @@ use serde_json::json;
 use crate::ingest_json;
 use crate::test_utils::{ingest, ClusterSandboxBuilder};
 
-fn initialize_tests() {
-    quickwit_common::setup_logging_for_tests();
-    std::env::set_var("QW_ENABLE_INGEST_V2", "true");
-}
-
 /// Ingesting on a freshly re-created index sometimes fails, see #5430
 #[tokio::test]
 #[ignore]
 async fn test_ingest_recreated_index() {
-    initialize_tests();
-    let mut sandbox = ClusterSandboxBuilder::build_and_start_standalone().await;
+    let sandbox = ClusterSandboxBuilder::build_and_start_standalone().await;
     let index_id = "test-ingest-recreated-index";
     let index_config = format!(
         r#"
@@ -63,8 +57,6 @@ async fn test_ingest_recreated_index() {
             "#,
         index_id
     );
-    sandbox.enable_ingest_v2();
-
     let current_index_metadata = sandbox
         .indexer_rest_client
         .indexes()
@@ -177,8 +169,7 @@ async fn test_ingest_recreated_index() {
 #[tokio::test]
 #[ignore]
 async fn test_indexing_directory_cleanup() {
-    initialize_tests();
-    let mut sandbox = ClusterSandboxBuilder::build_and_start_standalone().await;
+    let sandbox = ClusterSandboxBuilder::build_and_start_standalone().await;
     let index_id = "test-ingest-directory-cleanup";
     let index_config = format!(
         r#"
@@ -197,9 +188,6 @@ async fn test_indexing_directory_cleanup() {
             "#,
         index_id
     );
-
-    sandbox.enable_ingest_v2();
-
     sandbox
         .indexer_rest_client
         .indexes()
@@ -248,8 +236,7 @@ async fn test_indexing_directory_cleanup() {
 /// This tests checks what happens when we try to ingest into a non-existing index.
 #[tokio::test]
 async fn test_ingest_v2_index_not_found() {
-    initialize_tests();
-    let mut sandbox = ClusterSandboxBuilder::default()
+    let sandbox = ClusterSandboxBuilder::default()
         .add_node([QuickwitService::Indexer, QuickwitService::Janitor])
         .add_node([QuickwitService::Indexer, QuickwitService::Janitor])
         .add_node([
@@ -259,7 +246,6 @@ async fn test_ingest_v2_index_not_found() {
         ])
         .build_and_start()
         .await;
-    sandbox.enable_ingest_v2();
     let missing_index_err: Error = sandbox
         .indexer_rest_client
         .ingest(
@@ -283,8 +269,7 @@ async fn test_ingest_v2_index_not_found() {
 /// This tests checks our happy path for ingesting one doc.
 #[tokio::test]
 async fn test_ingest_v2_happy_path() {
-    initialize_tests();
-    let mut sandbox = ClusterSandboxBuilder::default()
+    let sandbox = ClusterSandboxBuilder::default()
         .add_node([QuickwitService::Indexer, QuickwitService::Janitor])
         .add_node([QuickwitService::Indexer, QuickwitService::Janitor])
         .add_node([
@@ -294,7 +279,6 @@ async fn test_ingest_v2_happy_path() {
         ])
         .build_and_start()
         .await;
-    sandbox.enable_ingest_v2();
     let index_id = "test_happy_path";
     let index_config = format!(
         r#"
@@ -344,8 +328,7 @@ async fn test_ingest_v2_happy_path() {
 
 #[tokio::test]
 async fn test_commit_force() {
-    initialize_tests();
-    let mut sandbox = ClusterSandboxBuilder::build_and_start_standalone().await;
+    let sandbox = ClusterSandboxBuilder::build_and_start_standalone().await;
     let index_id = "test_commit_force";
     let index_config = format!(
         r#"
@@ -366,8 +349,6 @@ async fn test_commit_force() {
         .create(index_config, ConfigFormat::Yaml, false)
         .await
         .unwrap();
-
-    sandbox.enable_ingest_v2();
 
     // commit_timeout_secs is set to a large value, so this would timeout if
     // the commit isn't forced
@@ -399,8 +380,7 @@ async fn test_commit_force() {
 
 #[tokio::test]
 async fn test_commit_wait_for() {
-    initialize_tests();
-    let mut sandbox = ClusterSandboxBuilder::build_and_start_standalone().await;
+    let sandbox = ClusterSandboxBuilder::build_and_start_standalone().await;
     let index_id = "test_commit_wait_for";
     let index_config = format!(
         r#"
@@ -422,8 +402,6 @@ async fn test_commit_wait_for() {
         .create(index_config, ConfigFormat::Yaml, false)
         .await
         .unwrap();
-
-    sandbox.enable_ingest_v2();
 
     // run 2 ingest requests at the same time on the same index
     // wait_for shouldn't force the commit so expect only 1 published split
@@ -477,8 +455,7 @@ async fn test_commit_wait_for() {
 
 #[tokio::test]
 async fn test_commit_auto() {
-    initialize_tests();
-    let mut sandbox = ClusterSandboxBuilder::build_and_start_standalone().await;
+    let sandbox = ClusterSandboxBuilder::build_and_start_standalone().await;
     let index_id = "test_commit_auto";
     let index_config = format!(
         r#"
@@ -499,8 +476,6 @@ async fn test_commit_auto() {
         .create(index_config, ConfigFormat::Yaml, false)
         .await
         .unwrap();
-
-    sandbox.enable_ingest_v2();
 
     sandbox
         .indexer_rest_client
@@ -528,8 +503,7 @@ async fn test_commit_auto() {
 
 #[tokio::test]
 async fn test_very_large_index_name() {
-    initialize_tests();
-    let mut sandbox = ClusterSandboxBuilder::default()
+    let sandbox = ClusterSandboxBuilder::default()
         .add_node([QuickwitService::Searcher])
         .add_node([QuickwitService::Metastore])
         .add_node([QuickwitService::Indexer])
@@ -537,7 +511,6 @@ async fn test_very_large_index_name() {
         .add_node([QuickwitService::Janitor])
         .build_and_start()
         .await;
-    sandbox.enable_ingest_v2();
 
     let acceptable_index_id = "its_very_very_very_very_very_very_very_very_very_very_very_\
     very_very_very_very_very_very_very_very_very_very_very_very_very_very_very_\
@@ -626,11 +599,8 @@ async fn test_very_large_index_name() {
 
 #[tokio::test]
 async fn test_shutdown_single_node() {
-    initialize_tests();
-    let mut sandbox = ClusterSandboxBuilder::build_and_start_standalone().await;
+    let sandbox = ClusterSandboxBuilder::build_and_start_standalone().await;
     let index_id = "test_shutdown_single_node";
-
-    sandbox.enable_ingest_v2();
 
     sandbox
         .indexer_rest_client
@@ -683,7 +653,6 @@ async fn test_shutdown_single_node() {
 
 #[tokio::test]
 async fn test_shutdown_control_plane_first() {
-    initialize_tests();
     let mut sandbox = ClusterSandboxBuilder::default()
         .add_node([QuickwitService::Indexer])
         .add_node([
@@ -695,8 +664,6 @@ async fn test_shutdown_control_plane_first() {
         .build_and_start()
         .await;
     let index_id = "test_shutdown_control_plane_first";
-
-    sandbox.enable_ingest_v2();
 
     // Create index
     sandbox
@@ -748,7 +715,6 @@ async fn test_shutdown_control_plane_first() {
 
 #[tokio::test]
 async fn test_shutdown_indexer_first() {
-    initialize_tests();
     let mut sandbox = ClusterSandboxBuilder::default()
         .add_node([QuickwitService::Indexer])
         .add_node([
@@ -760,8 +726,6 @@ async fn test_shutdown_indexer_first() {
         .build_and_start()
         .await;
     let index_id = "test_shutdown_indexer_first";
-
-    sandbox.enable_ingest_v2();
 
     sandbox
         .indexer_rest_client

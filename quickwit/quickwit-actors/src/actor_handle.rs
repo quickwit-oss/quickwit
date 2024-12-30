@@ -105,7 +105,7 @@ impl<A: Actor> Supervisable for ActorHandle<A> {
         {
             Health::Healthy
         } else {
-            error!(actor = self.name(), "actor-timeout");
+            error!(actor = self.name(), "actor timed out");
             Health::FailureOrUnhealthy
         }
     }

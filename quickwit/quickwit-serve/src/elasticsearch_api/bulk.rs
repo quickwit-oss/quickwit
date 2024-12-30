@@ -89,7 +89,7 @@ async fn elastic_ingest_bulk(
     ingest_service: IngestServiceClient,
     ingest_router: IngestRouterServiceClient,
 ) -> Result<ElasticBulkResponse, ElasticsearchError> {
-    if enable_ingest_v2() || bulk_options.enable_ingest_v2 {
+    if enable_ingest_v2() {
         return elastic_bulk_ingest_v2(default_index_id, body, bulk_options, ingest_router).await;
     }
     if disable_ingest_v1() {
