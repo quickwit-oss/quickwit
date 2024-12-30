@@ -86,7 +86,7 @@ pub use crate::storage_config::{
 /// Returns true if the ingest API v2 is enabled.
 pub fn enable_ingest_v2() -> bool {
     static ENABLE_INGEST_V2: Lazy<bool> =
-        Lazy::new(|| get_bool_from_env("QW_ENABLE_INGEST_V2", false));
+        Lazy::new(|| get_bool_from_env("QW_ENABLE_INGEST_V2", true));
     *ENABLE_INGEST_V2
 }
 
