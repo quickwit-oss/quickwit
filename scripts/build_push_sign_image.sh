@@ -4,7 +4,7 @@ set -euo pipefail
 # Variables
 DOCKER_IMAGE="registry.ddbuild.io/pomsky:edge"
 DOCKER_PLATFORM="linux/arm64"
-DOCKER_METADATA_FILE="metadata.json"
+DOCKER_METADATA_FILE=$(mktemp)
 
 # Build and push the Docker image
 docker buildx build \
