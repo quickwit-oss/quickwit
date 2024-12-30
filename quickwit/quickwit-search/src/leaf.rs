@@ -731,6 +731,7 @@ fn remove_redundant_timestamp_range(
             upper_bound: map_bound(final_end_timestamp, |bound| {
                 bound.into_timestamp_nanos().into()
             }),
+            lenient: false,
         };
         new_ast = if let QueryAst::Bool(mut bool_query) = new_ast {
             if bool_query.must.is_empty()
@@ -1550,6 +1551,7 @@ mod tests {
                 lower_bound: Bound::Included(time1.into()),
                 // *1000 has no impact, we detect timestamp in ms instead of s
                 upper_bound: Bound::Included((time4 * 1000).into()),
+                lenient: false,
             }))
             .unwrap(),
             ..SearchRequest::default()
@@ -1561,6 +1563,7 @@ mod tests {
                 field: timestamp_field.to_string(),
                 lower_bound: Bound::Included(time1.into()),
                 upper_bound: Bound::Included(time3.into()),
+                lenient: false,
             }))
             .unwrap(),
             ..SearchRequest::default()
@@ -1580,12 +1583,14 @@ mod tests {
             field: timestamp_field.to_string(),
             lower_bound: Bound::Unbounded,
             upper_bound: Bound::Excluded((time3 * S_TO_NS).into()),
+            lenient: false,
         };
         let search_request = SearchRequest {
             query_ast: serde_json::to_string(&QueryAst::Range(RangeQuery {
                 field: timestamp_field.to_string(),
                 lower_bound: Bound::Included(time1.into()),
                 upper_bound: Bound::Excluded(time3.into()),
+                lenient: false,
             }))
             .unwrap(),
             ..SearchRequest::default()
@@ -1612,12 +1617,14 @@ mod tests {
             field: timestamp_field.to_string(),
             lower_bound: Bound::Excluded((time2 * S_TO_NS).into()),
             upper_bound: Bound::Unbounded,
+            lenient: false,
         };
         let search_request = SearchRequest {
             query_ast: serde_json::to_string(&QueryAst::Range(RangeQuery {
                 field: timestamp_field.to_string(),
                 lower_bound: Bound::Excluded(time2.into()),
                 upper_bound: Bound::Included(time3.into()),
+                lenient: false,
             }))
             .unwrap(),
             ..SearchRequest::default()
@@ -1639,12 +1646,14 @@ mod tests {
             field: timestamp_field.to_string(),
             lower_bound: Bound::Unbounded,
             upper_bound: Bound::Excluded((time2 * S_TO_NS).into()),
+            lenient: false,
         };
         let search_request = SearchRequest {
             query_ast: serde_json::to_string(&QueryAst::Range(RangeQuery {
                 field: timestamp_field.to_string(),
                 lower_bound: Bound::Included(time1.into()),
                 upper_bound: Bound::Included(time3.into()),
+                lenient: false,
             }))
             .unwrap(),
             start_timestamp: Some(time1),
@@ -1657,12 +1666,14 @@ mod tests {
             field: timestamp_field.to_string(),
             lower_bound: Bound::Unbounded,
             upper_bound: Bound::Included((time2 * S_TO_NS).into()),
+            lenient: false,
         };
         let search_request = SearchRequest {
             query_ast: serde_json::to_string(&QueryAst::Range(RangeQuery {
                 field: timestamp_field.to_string(),
                 lower_bound: Bound::Included(time1.into()),
                 upper_bound: Bound::Included(time2.into()),
+                lenient: false,
             }))
             .unwrap(),
             start_timestamp: Some(time1),
@@ -1675,6 +1686,7 @@ mod tests {
             field: timestamp_field.to_string(),
             lower_bound: Bound::Included((time3 * S_TO_NS).into()),
             upper_bound: Bound::Unbounded,
+            lenient: false,
         };
 
         let search_request = SearchRequest {
@@ -1682,6 +1694,7 @@ mod tests {
                 field: timestamp_field.to_string(),
                 lower_bound: Bound::Included(time2.into()),
                 upper_bound: Bound::Included(time4.into()),
+                lenient: false,
             }))
             .unwrap(),
             start_timestamp: Some(time3),
@@ -1695,6 +1708,7 @@ mod tests {
                 field: timestamp_field.to_string(),
                 lower_bound: Bound::Included(time3.into()),
                 upper_bound: Bound::Included(time4.into()),
+                lenient: false,
             }))
             .unwrap(),
             start_timestamp: Some(time2),
@@ -1758,6 +1772,7 @@ mod tests {
                     field: "timestamp".to_string(),
                     lower_bound: Bound::Included(1_700_002_000_000_000_000u64.into()),
                     upper_bound: Bound::Unbounded,
+                    lenient: false,
                 }
                 .into()],
                 ..BoolQuery::default()
