@@ -6,10 +6,6 @@ image:
 podAnnotations:
   emissary.datadoghq.com/inject-lifecycle: "inject"
 
-config:
-  metastore_uri: s3://logs-cloudprem-staging/indexes
-  default_index_root_uri: s3://logs-cloudprem-staging/metastore
-
 tolerations:
   - key: node
     operator: Equal
@@ -31,7 +27,7 @@ affinity:
           - key: "node.datadoghq.com/cpu_arch"
             operator: In
             values:
-              - amd64
+              - arm64
 
 metastore:
   replicaCount: 1
@@ -83,3 +79,7 @@ janitor:
     requests:
       cpu: "500m"
       memory: "128Mi"
+
+config:
+  metastore_uri: s3://logs-cloudprem-staging/indexes
+  default_index_root_uri: s3://logs-cloudprem-staging/metastore

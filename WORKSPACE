@@ -46,6 +46,6 @@ rules_docker_setup()
 git_repository(
     name = "pomsky_helm_charts",
     remote = "https://github.com/DataDog/pomsky-helm-charts.git",
-    commit = "74655fc26d99f8b115ff65396e4a383e2578b3cf",
+    commit = "48748de73607035f1ce4fc2875b9b15ec5dc1086",
 )
 
