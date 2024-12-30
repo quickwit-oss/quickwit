@@ -18,6 +18,9 @@ build-image:
   rules:
     - changes:
         - quickwit/**
+  id_tokens:
+    DDSIGN_ID_TOKEN:
+      aud: image-integrity
   script:
     - scripts/build_push_sign_image.sh
 

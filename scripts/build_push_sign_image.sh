@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Variables
-DOCKER_IMAGE="registry.ddbuild.io/logs-clouprem/pomsky:edge"
+DOCKER_IMAGE="registry.ddbuild.io/pomsky:edge"
 DOCKER_PLATFORM="linux/arm64"
 DOCKER_METADATA_FILE="metadata.json"
 
@@ -11,6 +11,7 @@ docker buildx build \
   --platform "$DOCKER_PLATFORM" \
   -t "$DOCKER_IMAGE" \
   -f Dockerfile \
+  --label target=staging \
   --metadata-file "$DOCKER_METADATA_FILE" \
   --push .
 

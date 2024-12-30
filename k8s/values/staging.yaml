@@ -1,6 +1,7 @@
 image:
-  repository: registry.ddbuild.io/logs-clouprem/pomsky
+  repository: 727006795293.dkr.ecr.us-east-1.amazonaws.com/pomsky
   tag: edge
+  pullPolicy: Always
 
 podAnnotations:
   emissary.datadoghq.com/inject-lifecycle: "inject"
