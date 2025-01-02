@@ -590,11 +590,13 @@ mod tests {
             "2024W313",
             datetime!(2024-08-01 0:00:00.0 +00:00:00),
         );
-        test_parse_java_datetime_aux(
-            "basic_week_date",
-            "24W313",
-            datetime!(2024-08-01 0:00:00.0 +00:00:00),
-        );
+        // // ❌ this uses the current year, not the (partial) year provided
+        // https://github.com/time-rs/time/issues/649
+        // test_parse_java_datetime_aux(
+        //     "basic_week_date",
+        //     "24W313",
+        //     datetime!(2024-08-01 0:00:00.0 +00:00:00),
+        // );
         // // ❌ 'the 'year' component could not be parsed'
         // test_parse_java_datetime_aux(
         //     "basic_week_date",

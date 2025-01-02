@@ -258,7 +258,7 @@ doc_mapping:
   timestamp_field: Timestamp
   
 search_settings:
-  default_search_fields: [SeverityText, Body, Attributes, Resource]
+  default_search_fields: [SeverityText, Body]
 
 indexing_settings:
   commit_timeout_secs: 10
