@@ -1,7 +1,6 @@
 # Updating the doc mapping of an index
 
-Quickwit allows updating the mapping it uses, to add more fields to an existing index, or change how they are indexed. In doing so,
-it does not reindex existing data, still lets you search through older documents where possible.
+Quickwit allows updating the mapping it uses to add more fields to an existing index or change how they are indexed. In doing so, it does not reindex existing data but still lets you search through older documents where possible.
 
 ## Indexing
 
@@ -9,18 +8,18 @@ When you update a doc mapping for an index, Quickwit will restart indexing pipel
 
 ## Querying
 
-When receiving a query, Quickwit always validate it against the most recent mapping.
+Quickwit always validate queries against the most recent mapping.
 If a query was valid under a previous mapping but is not compatible with the newer mapping, that query will be rejected.
 For instance if a field which was indexed no longer is, any query that uses it will become invalid.
 On the other hand, if a query was not valid for a previous doc mapping, but is valid under the new doc mapping, Quickwit will process the query.
-When querying newer splits, it will behave normally, when querying older splits, it will try ot execute the query as correctly as possible.
-If you find a situation where older splits causes a valid request to return an error, please open a bug report.
-See example 1 and 2 below for clarification.
+When querying newer splits, it will behave normally, when querying older splits, it will try to execute the query as correctly as possible.
+If you find yourself in a situation where older splits causes a valid request to return an error, please open a bug report.
+See examples 1 and 2 below for clarification.
 
 Change in tokenizer affect only newer splits, older splits keep using the tokenizers they were created with.
 
 Document retrieved are mapped from Quickwit internal format to JSON based on the latest doc mapping. This means if fields are deleted,
-they will stop appearing (see also Reversibility below) unless mapper mode is Dynamic. If the type of some field changed, it will be converted on a best effort basis:
+they will stop appearing (see also Reversibility below) unless mapper mode is Dynamic. If the type of some field changed, it will be converted on a best-effort basis:
 integers will get turned into text, text will get turned into string when it is possible, otherwise, the field is omited.
 See example 3 for clarification.
 
@@ -30,7 +29,7 @@ Quickwit does not modify existing data when receiving a new doc mapping. If you 
 
 ## Type update reference
 
-Conversion from a type to itself is omited. Conversion which never succeed and always omit the field are omited too.
+Conversion from a type to itself is omitted. Conversions that never succeed and always omit the field are omitted, too.
 
 <!-- this is extracted from `quickwit_doc_mapper::::default_doc_mapper::value_to_json()` -->
 | type before | type after | behavior |
@@ -64,7 +63,7 @@ Conversion from a type to itself is omited. Conversion which never succeed and a
 
 ## Examples
 
-In all exemples, fields which are not relevant are removed for conciseness, you will not be able to use these index config as is.
+In the below examples, fields which are not relevant are removed for conciseness, you will not be able to use these index config as is.
 
 ### Example 1
 

@@ -318,10 +318,10 @@ Updates the configurations of an index. This endpoint follows PUT semantics, whi
 
 - The retention policy update is automatically picked up by the janitor service on its next state refresh.
 - The search settings update is automatically picked up by searcher nodes when the next query is executed.
-- The indexing settings update is automatically picked up by the indexer nodes once the control plane emit a new indexing plan.
+- The indexing settings update is automatically picked up by the indexer nodes once the control plane emits a new indexing plan.
 - The doc mapping update is automatically picked up by the indexer nodes once the control plane emit a new indexing plan.
 
-Updating the doc mapping doesn't reindex existing data. Queries and answers are mapped on a best effort basis when querying older splits. For more details, check [the reference](updating-mapper.md)
+Updating the doc mapping doesn't reindex existing data. Queries and results are mapped on a best-effort basis when querying older splits. For more details, check [the reference](updating-mapper.md) out.
 
 #### PUT payload
 
