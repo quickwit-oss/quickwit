@@ -90,6 +90,11 @@ fn value_to_bool(value: TantivyValue) -> Result<JsonValue, TantivyValue> {
             1 => Some(true),
             _ => None,
         },
+        TantivyValue::F64(number) => match number {
+            0.0 => Some(false),
+            1.0 => Some(true),
+            _ => None,
+        },
         TantivyValue::Bool(b) => Some(*b),
         _ => None,
     }
