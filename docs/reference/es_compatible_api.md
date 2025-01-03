@@ -135,6 +135,7 @@ If a parameter appears both as a query string parameter and in the JSON payload,
 | `size`             | `Integer`     | Number of hits to return.                                                        | 10            |
 | `sort`             | `String`      | Describes how documents should be ranked. See [Sort order](#sort-order)          | (Optional)    |
 | `scroll`           | `Duration`    | Creates a scroll context for "time to live". See [Scroll](#_scroll--scroll-api). | (Optional)    |
+| `allow_partial_search_results` | `Boolean` | Returns a partial response if some (but not all) of the split searches were unsuccessful. | `true` |
 
 #### Supported Request Body parameters
 
@@ -301,7 +302,7 @@ GET api/v1/_elastic/_cat/indices
 
 Use the [cat indices API](https://www.elastic.co/guide/en/elasticsearch/reference/current/cat-indices.html) to get the following information for each index in a cluster:
 * Shard count
-* Document count 
+* Document count
 * Deleted document count
 * Primary store size
 * Total store size
@@ -393,6 +394,7 @@ The following query types are supported.
 | `fields`           | `String[]` (Optional) | Default search target fields.                                                                                               | -             |
 | `default_operator` | `"AND"` or `"OR"`     | In the absence of boolean operator defines whether terms should be combined as a conjunction (`AND`) or disjunction (`OR`). | `OR`          |
 | `boost`            | `Number`              | Multiplier boost for score computation.                                                                                     | 1.0           |
+| `lenient`          | `Boolean`             | [See note](#about-the-lenient-argument).                                                                                    | false         |
 
 
 ### `bool`
@@ -433,6 +435,7 @@ The following query types are supported.
 | `should`   | `JsonObject[]` (Optional) | Sub-queries that should match the documents.                      | []            |
 | `filter`   | `JsonObject[]`            | Like must queries, but the match does not influence the `_score`. | []            |
 | `boost`    | `Number`                  | Multiplier boost for score computation.                           | 1.0           |
+| `minimum_should_match`    | `Number` or `Str` | If present, quickwit will only match documents for which at least `minimum_should_match` should clauses are matching. `2`, `-1`, `"10%"` and `"-10%"` are supported. |  |
 
 ### `range`
 
@@ -492,7 +495,7 @@ The following query types are supported.
 | `operator`         | `"AND"` or `"OR"` | Defines whether all terms should be present (`AND`) or if at least one term is sufficient to match (`OR`).                     | OR      |
 | `zero_terms_query` | `all` or `none`   | Defines if all (`all`) or no documents (`none`) should be returned if the query does not contain any terms after tokenization. | `none`  |
 | `boost`            | `Number`          | Multiplier boost for score computation                                                                                         | 1.0     |
-
+| `lenient`          | `Boolean`         | [See note](#about-the-lenient-argument).                                                                                       | false   |
 
 
 
@@ -635,8 +638,17 @@ Contrary to ES/Opensearch, in Quickwit, at most 50 terms will be considered when
 }
 ```
 
-#### Supported Multi-match Queries
-| Type            | Description                                                                                 |
+#### Supported parameters
+
+| Variable           | Type                  | Description                                  | Default value |
+| ------------------ | --------------------- | ---------------------------------------------| ------------- |
+| `type`             | `String`              | See supported types below                    | `most_fields` |
+| `fields`           | `String[]` (Optional) | Default search target fields.                | -             |
+| `lenient`          | `Boolean`             | [See note](#about-the-lenient-argument).     | false         |
+
+Supported types:
+
+| `type` value    | Description                                                                                 |
 | --------------- | ------------------------------------------------------------------------------------------- |
 | `most_fields`   | Finds documents matching any field and combines the `_score` from each field (default).  |
 | `phrase`        | Runs a `match_phrase` query on each field.       |
@@ -718,6 +730,12 @@ Query matching only documents containing a non-null value for a given field.
 | -------- | ------ | ------------------------------------------------------- | ------- |
 | `field`  | String | Only documents with a value for field will be returned. | -       |
 
+
+### About the `lenient` argument
+
+Quickwit and Elasticsearch have different interpretations of the `lenient` setting:
+- In Quickwit, lenient mode allows ignoring parts of the query that reference non-existing columns. This is a behavior that Elasticsearch supports by default.
+- In Elasticsearch, lenient mode primarily addresses type errors (such as searching for text in an integer field). Quickwit always supports this behavior, regardless of the `lenient` setting.
 
 ## Search multiple indices
 

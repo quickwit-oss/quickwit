@@ -35,6 +35,7 @@ mod debouncer;
 mod file_descriptor_cache;
 mod metrics;
 mod storage;
+mod timeout_and_retry_storage;
 pub use debouncer::AsyncDebouncer;
 pub(crate) use debouncer::DebouncedStorage;
 
@@ -92,6 +93,7 @@ pub use self::test_suite::{
     storage_test_multi_part_upload, storage_test_single_part_upload, storage_test_suite,
     test_write_and_bulk_delete,
 };
+pub use self::timeout_and_retry_storage::TimeoutAndRetryStorage;
 pub use crate::error::{
     BulkDeleteError, DeleteFailure, StorageError, StorageErrorKind, StorageResolverError,
     StorageResult,

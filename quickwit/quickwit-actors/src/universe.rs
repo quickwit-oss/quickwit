@@ -28,6 +28,7 @@ use crate::spawn_builder::{SpawnBuilder, SpawnContext};
 use crate::{Actor, ActorExitStatus, Command, Inbox, Mailbox, QueueCapacity};
 
 /// Universe serves as the top-level context in which Actor can be spawned.
+///
 /// It is *not* a singleton. A typical application will usually have only one universe hosting all
 /// of the actors but it is not a requirement.
 ///

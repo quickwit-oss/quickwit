@@ -55,7 +55,7 @@ impl<Request, Response, Error> RetryPolicy<Request, Response, Error> for Default
     }
 }
 
-impl<'a> Job for &'a str {
+impl Job for &str {
     fn split_id(&self) -> &str {
         self
     }

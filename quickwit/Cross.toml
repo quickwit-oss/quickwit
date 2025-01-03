@@ -10,11 +10,18 @@ image = "quickwit/cross:x86_64-unknown-linux-gnu"
 
 [target.x86_64-unknown-linux-musl]
 image = "quickwit/cross:x86_64-unknown-linux-musl"
-RUSTFLAGS="LIB_LDFLAGS=-L/usr/lib/x86_64-linux-gnu CFLAGS=-I/usr/local/musl/include CC=musl-gcc"
 
 [target.aarch64-unknown-linux-gnu]
 image = "quickwit/cross:aarch64-unknown-linux-gnu"
 
+[target.aarch64-unknown-linux-gnu.env]
+# Fix build for transitive dependency rdkafka -> rdkafka-sys -> sasl2-sys -> krb5-src
+# Introduced by https://github.com/MaterializeInc/rust-krb5-src/pull/27
+passthrough = [
+    "krb5_cv_attr_constructor_destructor=yes",
+    "ac_cv_func_regcomp=yes",
+    "ac_cv_printf_positional=yes",
+]
+
 [target.aarch64-unknown-linux-musl]
 image = "quickwit/cross:aarch64-unknown-linux-musl"
-linker = "aarch64-linux-musl-gcc"

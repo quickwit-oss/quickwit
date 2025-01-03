@@ -192,7 +192,8 @@ impl std::ops::RangeBounds<i64> for Range {
 #[cfg(test)]
 mod tests {
     use quickwit_proto::search::{
-        LeafSearchResponse, PartialHit, SearchRequest, SortValue, SplitIdAndFooterOffsets,
+        LeafSearchResponse, PartialHit, ResourceStats, SearchRequest, SortValue,
+        SplitIdAndFooterOffsets,
     };
 
     use super::LeafSearchCache;
@@ -242,7 +243,8 @@ mod tests {
         let result = LeafSearchResponse {
             failed_splits: Vec::new(),
             intermediate_aggregation_result: None,
-            num_attempted_splits: 0,
+            num_attempted_splits: 1,
+            num_successful_splits: 1,
             num_hits: 1234,
             partial_hits: vec![PartialHit {
                 doc_id: 1,
@@ -251,6 +253,7 @@ mod tests {
                 sort_value2: None,
                 split_id: "split_1".to_string(),
             }],
+            resource_stats: None,
         };
 
         assert!(cache.get(split_1.clone(), query_1.clone()).is_none());
@@ -331,7 +334,8 @@ mod tests {
         let result = LeafSearchResponse {
             failed_splits: Vec::new(),
             intermediate_aggregation_result: None,
-            num_attempted_splits: 0,
+            num_attempted_splits: 1,
+            num_successful_splits: 1,
             num_hits: 1234,
             partial_hits: vec![PartialHit {
                 doc_id: 1,
@@ -340,6 +344,7 @@ mod tests {
                 sort_value2: None,
                 split_id: "split_1".to_string(),
             }],
+            resource_stats: Some(ResourceStats::default()),
         };
 
         // for split_1, 1 and 1bis cover different timestamp ranges

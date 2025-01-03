@@ -21,7 +21,8 @@
 
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
-    new_counter, new_counter_with_labels, new_gauge, IntCounter, IntGauge,
+    new_counter, new_counter_vec, new_gauge, new_histogram_vec, Histogram, IntCounter,
+    IntCounterVec, IntGauge,
 };
 
 /// Counters associated to storage operations.
@@ -32,15 +33,64 @@ pub struct StorageMetrics {
     pub fast_field_cache: CacheMetrics,
     pub split_footer_cache: CacheMetrics,
     pub searcher_split_cache: CacheMetrics,
+    pub get_slice_timeout_successes: [IntCounter; 3],
+    pub get_slice_timeout_all_timeouts: IntCounter,
     pub object_storage_get_total: IntCounter,
+    pub object_storage_get_errors_total: IntCounterVec<1>,
     pub object_storage_put_total: IntCounter,
     pub object_storage_put_parts: IntCounter,
     pub object_storage_download_num_bytes: IntCounter,
     pub object_storage_upload_num_bytes: IntCounter,
+
+    pub object_storage_delete_requests_total: IntCounter,
+    pub object_storage_bulk_delete_requests_total: IntCounter,
+    pub object_storage_delete_request_duration: Histogram,
+    pub object_storage_bulk_delete_request_duration: Histogram,
 }
 
 impl Default for StorageMetrics {
     fn default() -> Self {
+        let get_slice_timeout_outcome_total_vec = new_counter_vec(
+            "get_slice_timeout_outcome",
+            "Outcome of get_slice operations. success_after_1_timeout means the operation \
+             succeeded after a retry caused by a timeout.",
+            "storage",
+            &[],
+            ["outcome"],
+        );
+        let get_slice_timeout_successes = [
+            get_slice_timeout_outcome_total_vec.with_label_values(["success_after_0_timeout"]),
+            get_slice_timeout_outcome_total_vec.with_label_values(["success_after_1_timeout"]),
+            get_slice_timeout_outcome_total_vec.with_label_values(["success_after_2+_timeout"]),
+        ];
+        let get_slice_timeout_all_timeouts =
+            get_slice_timeout_outcome_total_vec.with_label_values(["all_timeouts"]);
+
+        let object_storage_requests_total = new_counter_vec(
+            "object_storage_requests_total",
+            "Total number of object storage requests performed.",
+            "storage",
+            &[],
+            ["action"],
+        );
+        let object_storage_delete_requests_total =
+            object_storage_requests_total.with_label_values(["delete_object"]);
+        let object_storage_bulk_delete_requests_total =
+            object_storage_requests_total.with_label_values(["delete_objects"]);
+
+        let object_storage_request_duration = new_histogram_vec(
+            "object_storage_request_duration_seconds",
+            "Duration of object storage requests in seconds.",
+            "storage",
+            &[],
+            ["action"],
+            vec![0.1, 0.5, 1.0, 5.0, 10.0, 30.0, 60.0],
+        );
+        let object_storage_delete_request_duration =
+            object_storage_request_duration.with_label_values(["delete_object"]);
+        let object_storage_bulk_delete_request_duration =
+            object_storage_request_duration.with_label_values(["delete_objects"]);
+
         StorageMetrics {
             fast_field_cache: CacheMetrics::for_component("fastfields"),
             fd_cache_metrics: CacheMetrics::for_component("fd"),
@@ -48,12 +98,20 @@ impl Default for StorageMetrics {
             searcher_split_cache: CacheMetrics::for_component("searcher_split"),
             shortlived_cache: CacheMetrics::for_component("shortlived"),
             split_footer_cache: CacheMetrics::for_component("splitfooter"),
-
+            get_slice_timeout_successes,
+            get_slice_timeout_all_timeouts,
             object_storage_get_total: new_counter(
                 "object_storage_gets_total",
                 "Number of objects fetched.",
                 "storage",
                 &[],
+            ),
+            object_storage_get_errors_total: new_counter_vec::<1>(
+                "object_storage_get_errors_total",
+                "Number of GetObject errors.",
+                "storage",
+                &[],
+                ["code"],
             ),
             object_storage_put_total: new_counter(
                 "object_storage_puts_total",
@@ -80,6 +138,10 @@ impl Default for StorageMetrics {
                 "storage",
                 &[],
             ),
+            object_storage_delete_requests_total,
+            object_storage_bulk_delete_requests_total,
+            object_storage_delete_request_duration,
+            object_storage_bulk_delete_request_duration,
         }
     }
 }
@@ -93,6 +155,8 @@ pub struct CacheMetrics {
     pub hits_num_items: IntCounter,
     pub hits_num_bytes: IntCounter,
     pub misses_num_items: IntCounter,
+    pub evict_num_items: IntCounter,
+    pub evict_num_bytes: IntCounter,
 }
 
 impl CacheMetrics {
@@ -112,21 +176,33 @@ impl CacheMetrics {
                 CACHE_METRICS_NAMESPACE,
                 &[("component_name", component_name)],
             ),
-            hits_num_items: new_counter_with_labels(
+            hits_num_items: new_counter(
                 "cache_hits_total",
                 "Number of cache hits by component",
                 CACHE_METRICS_NAMESPACE,
                 &[("component_name", component_name)],
             ),
-            hits_num_bytes: new_counter_with_labels(
+            hits_num_bytes: new_counter(
                 "cache_hits_bytes",
                 "Number of cache hits in bytes by component",
                 CACHE_METRICS_NAMESPACE,
                 &[("component_name", component_name)],
             ),
-            misses_num_items: new_counter_with_labels(
+            misses_num_items: new_counter(
                 "cache_misses_total",
                 "Number of cache misses by component",
+                CACHE_METRICS_NAMESPACE,
+                &[("component_name", component_name)],
+            ),
+            evict_num_items: new_counter(
+                "cache_evict_total",
+                "Number of cache entry evicted by component",
+                CACHE_METRICS_NAMESPACE,
+                &[("component_name", component_name)],
+            ),
+            evict_num_bytes: new_counter(
+                "cache_evict_bytes",
+                "Number of cache entry evicted in bytes by component",
                 CACHE_METRICS_NAMESPACE,
                 &[("component_name", component_name)],
             ),

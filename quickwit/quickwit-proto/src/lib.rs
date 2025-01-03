@@ -109,9 +109,6 @@ pub mod opentelemetry {
     }
 }
 
-#[macro_use]
-extern crate serde;
-
 impl TryFrom<search::SearchStreamRequest> for search::SearchRequest {
     type Error = anyhow::Error;
 
@@ -144,7 +141,7 @@ impl TryFrom<metastore::DeleteQuery> for search::SearchRequest {
 /// `MutMetadataMap` used to extract [`tonic::metadata::MetadataMap`] from a request.
 pub struct MutMetadataMap<'a>(&'a mut tonic::metadata::MetadataMap);
 
-impl<'a> Injector for MutMetadataMap<'a> {
+impl Injector for MutMetadataMap<'_> {
     /// Sets a key-value pair in the [`MetadataMap`]. No-op if the key or value is invalid.
     fn set(&mut self, key: &str, value: String) {
         if let Ok(metadata_key) = tonic::metadata::MetadataKey::from_bytes(key.as_bytes()) {
@@ -155,7 +152,7 @@ impl<'a> Injector for MutMetadataMap<'a> {
     }
 }
 
-impl<'a> Extractor for MutMetadataMap<'a> {
+impl Extractor for MutMetadataMap<'_> {
     /// Gets a value for a key from the MetadataMap.  If the value can't be converted to &str,
     /// returns None.
     fn get(&self, key: &str) -> Option<&str> {
@@ -195,7 +192,7 @@ impl Interceptor for SpanContextInterceptor {
 /// tracing keys from request's headers.
 struct MetadataMap<'a>(&'a tonic::metadata::MetadataMap);
 
-impl<'a> Extractor for MetadataMap<'a> {
+impl Extractor for MetadataMap<'_> {
     /// Gets a value for a key from the MetadataMap.  If the value can't be converted to &str,
     /// returns None.
     fn get(&self, key: &str) -> Option<&str> {

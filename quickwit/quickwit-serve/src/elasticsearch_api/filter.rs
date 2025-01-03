@@ -35,7 +35,6 @@ use crate::search_api::{extract_index_id_patterns, extract_index_id_patterns_def
 use crate::Body;
 
 const BODY_LENGTH_LIMIT: ByteSize = ByteSize::mib(1);
-const CONTENT_LENGTH_LIMIT: ByteSize = ByteSize::mib(10);
 
 // TODO: Make all elastic endpoint models `utoipa` compatible
 // and register them here.
@@ -72,11 +71,12 @@ pub(crate) fn elasticsearch_filter(
     )
 )]
 pub(crate) fn elastic_bulk_filter(
+    content_length_limit: ByteSize,
 ) -> impl Filter<Extract = (Body, ElasticBulkOptions), Error = Rejection> + Clone {
     warp::path!("_elastic" / "_bulk")
         .and(warp::post().or(warp::put()).unify())
         .and(warp::body::content_length_limit(
-            CONTENT_LENGTH_LIMIT.as_u64(),
+            content_length_limit.as_u64(),
         ))
         .and(get_body_bytes())
         .and(serde_qs::warp::query(serde_qs::Config::default()))
@@ -95,11 +95,12 @@ pub(crate) fn elastic_bulk_filter(
     )
 )]
 pub(crate) fn elastic_index_bulk_filter(
+    content_length_limit: ByteSize,
 ) -> impl Filter<Extract = (String, Body, ElasticBulkOptions), Error = Rejection> + Clone {
     warp::path!("_elastic" / String / "_bulk")
         .and(warp::post().or(warp::put()).unify())
         .and(warp::body::content_length_limit(
-            CONTENT_LENGTH_LIMIT.as_u64(),
+            content_length_limit.as_u64(),
         ))
         .and(get_body_bytes())
         .and(serde_qs::warp::query::<ElasticBulkOptions>(

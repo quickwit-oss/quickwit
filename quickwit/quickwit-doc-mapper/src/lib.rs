@@ -25,7 +25,6 @@
 //! to convert a json like documents to a document indexable by tantivy
 //! engine, aka tantivy::Document.
 
-mod default_doc_mapper;
 mod doc_mapper;
 mod doc_mapping;
 mod error;
@@ -35,16 +34,16 @@ mod routing_expression;
 /// Pruning tags manipulation.
 pub mod tag_pruning;
 
-pub use default_doc_mapper::{
-    analyze_text, BinaryFormat, DefaultDocMapper, DefaultDocMapperBuilder, FieldMappingEntry,
-    FieldMappingType, QuickwitBytesOptions, QuickwitJsonOptions, TokenizerConfig, TokenizerEntry,
+pub use doc_mapper::{
+    analyze_text, BinaryFormat, DocMapper, DocMapperBuilder, FieldMappingEntry, FieldMappingType,
+    JsonObject, NamedField, QuickwitBytesOptions, QuickwitJsonOptions, TermRange, TokenizerConfig,
+    TokenizerEntry, WarmupInfo,
 };
-use default_doc_mapper::{
+use doc_mapper::{
     FastFieldOptions, FieldMappingEntryForSerialization, IndexRecordOptionSchema,
     NgramTokenizerOption, QuickwitTextNormalizer, QuickwitTextTokenizer, RegexTokenizerOption,
     TokenFilterType, TokenizerType,
 };
-pub use doc_mapper::{DocMapper, JsonObject, NamedField, TermRange, WarmupInfo};
 pub use doc_mapping::{DocMapping, Mode, ModeType};
 pub use error::{DocParsingError, QueryParserError};
 use quickwit_common::shared_consts::FIELD_PRESENCE_FIELD_NAME;
@@ -99,7 +98,7 @@ pub struct DocMapperApiSchemas;
 
 /// Returns a default `DefaultIndexConfig` for unit tests.
 #[cfg(any(test, feature = "testsuite"))]
-pub fn default_doc_mapper_for_test() -> DefaultDocMapper {
+pub fn default_doc_mapper_for_test() -> DocMapper {
     const JSON_CONFIG_VALUE: &str = r#"
         {
             "store_source": true,
@@ -178,5 +177,5 @@ pub fn default_doc_mapper_for_test() -> DefaultDocMapper {
                 }
             ]
         }"#;
-    serde_json::from_str::<DefaultDocMapper>(JSON_CONFIG_VALUE).unwrap()
+    serde_json::from_str::<DocMapper>(JSON_CONFIG_VALUE).unwrap()
 }

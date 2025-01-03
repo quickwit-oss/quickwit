@@ -22,33 +22,37 @@ use std::ops::Bound;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex, RwLock};
+use std::time::{Duration, Instant};
 
 use anyhow::Context;
+use bytesize::ByteSize;
 use futures::future::try_join_all;
 use quickwit_common::pretty::PrettySample;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_doc_mapper::{DocMapper, TermRange, WarmupInfo};
 use quickwit_proto::search::{
-    CountHits, LeafSearchRequest, LeafSearchResponse, PartialHit, SearchRequest, SortOrder,
-    SortValue, SplitIdAndFooterOffsets, SplitSearchError,
+    CountHits, LeafSearchRequest, LeafSearchResponse, PartialHit, ResourceStats, SearchRequest,
+    SortOrder, SortValue, SplitIdAndFooterOffsets, SplitSearchError,
 };
 use quickwit_query::query_ast::{BoolQuery, QueryAst, QueryAstTransformer, RangeQuery, TermQuery};
 use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_storage::{
-    wrap_storage_with_cache, BundleStorage, MemorySizedCache, OwnedBytes, SplitCache, Storage,
-    StorageResolver,
+    wrap_storage_with_cache, BundleStorage, ByteRangeCache, MemorySizedCache, OwnedBytes,
+    SplitCache, Storage, StorageResolver, TimeoutAndRetryStorage,
 };
 use tantivy::aggregation::agg_req::{AggregationVariants, Aggregations};
 use tantivy::aggregation::AggregationLimitsGuard;
 use tantivy::directory::FileSlice;
 use tantivy::fastfield::FastFieldReaders;
 use tantivy::schema::Field;
-use tantivy::{DateTime, Index, ReloadPolicy, Searcher, Term};
+use tantivy::{DateTime, Index, ReloadPolicy, Searcher, TantivyError, Term};
 use tokio::task::JoinError;
 use tracing::*;
 
 use crate::collector::{make_collector_for_split, make_merge_collector, IncrementalCollector};
+use crate::metrics::SEARCH_METRICS;
 use crate::root::is_metadata_count_request_with_ast;
+use crate::search_permit_provider::{compute_initial_memory_allocation, SearchPermit};
 use crate::service::{deserialize_doc_mapper, SearcherContext};
 use crate::{QuickwitAggregations, SearchError};
 
@@ -122,35 +126,62 @@ pub(crate) async fn open_split_bundle(
     Ok((hotcache_bytes, bundle_storage))
 }
 
+/// Add a storage proxy to retry `get_slice` requests if they are taking too long,
+/// if configured in the searcher config.
+///
+/// The goal here is too ensure a low latency.
+fn configure_storage_retries(
+    searcher_context: &SearcherContext,
+    index_storage: Arc<dyn Storage>,
+) -> Arc<dyn Storage> {
+    if let Some(storage_timeout_policy) = &searcher_context.searcher_config.storage_timeout_policy {
+        Arc::new(TimeoutAndRetryStorage::new(
+            index_storage,
+            storage_timeout_policy.clone(),
+        ))
+    } else {
+        index_storage
+    }
+}
+
 /// Opens a `tantivy::Index` for the given split with several cache layers:
 /// - A split footer cache given by `SearcherContext.split_footer_cache`.
 /// - A fast fields cache given by `SearcherContext.storage_long_term_cache`.
-/// - An ephemeral unbounded cache directory whose lifetime is tied to the returned `Index`.
+/// - An ephemeral unbounded cache directory (whose lifetime is tied to the
+/// returned `Index` if no `ByteRangeCache` is provided).
 #[instrument(skip_all, fields(split_footer_start=split_and_footer_offsets.split_footer_start, split_footer_end=split_and_footer_offsets.split_footer_end))]
 pub(crate) async fn open_index_with_caches(
     searcher_context: &SearcherContext,
     index_storage: Arc<dyn Storage>,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
     tokenizer_manager: Option<&TokenizerManager>,
-    ephemeral_unbounded_cache: bool,
-) -> anyhow::Result<Index> {
-    let (hotcache_bytes, bundle_storage) =
-        open_split_bundle(searcher_context, index_storage, split_and_footer_offsets).await?;
+    ephemeral_unbounded_cache: Option<ByteRangeCache>,
+) -> anyhow::Result<(Index, HotDirectory)> {
+    let index_storage_with_retry_on_timeout =
+        configure_storage_retries(searcher_context, index_storage);
+
+    let (hotcache_bytes, bundle_storage) = open_split_bundle(
+        searcher_context,
+        index_storage_with_retry_on_timeout,
+        split_and_footer_offsets,
+    )
+    .await?;
 
     let bundle_storage_with_cache = wrap_storage_with_cache(
         searcher_context.fast_fields_cache.clone(),
         Arc::new(bundle_storage),
     );
+
     let directory = StorageDirectory::new(bundle_storage_with_cache);
 
-    let hot_directory = if ephemeral_unbounded_cache {
-        let caching_directory = CachingDirectory::new_unbounded(Arc::new(directory));
+    let hot_directory = if let Some(cache) = ephemeral_unbounded_cache {
+        let caching_directory = CachingDirectory::new(Arc::new(directory), cache);
         HotDirectory::open(caching_directory, hotcache_bytes.read_bytes()?)?
     } else {
         HotDirectory::open(directory, hotcache_bytes.read_bytes()?)?
     };
 
-    let mut index = Index::open(hot_directory)?;
+    let mut index = Index::open(hot_directory.clone())?;
     if let Some(tokenizer_manager) = tokenizer_manager {
         index.set_tokenizers(tokenizer_manager.tantivy_manager().clone());
     }
@@ -159,7 +190,7 @@ pub(crate) async fn open_index_with_caches(
             .tantivy_manager()
             .clone(),
     );
-    Ok(index)
+    Ok((index, hot_directory))
 }
 
 /// Tantivy search does not make it possible to fetch data asynchronously during
@@ -338,19 +369,34 @@ fn get_leaf_resp_from_count(count: u64) -> LeafSearchResponse {
         partial_hits: Vec::new(),
         failed_splits: Vec::new(),
         num_attempted_splits: 1,
+        num_successful_splits: 1,
         intermediate_aggregation_result: None,
+        resource_stats: None,
     }
 }
 
+/// Compute the size of the index, store excluded.
+fn compute_index_size(hot_directory: &HotDirectory) -> ByteSize {
+    let size_bytes = hot_directory
+        .get_file_lengths()
+        .iter()
+        .filter(|(path, _)| !path.to_string_lossy().ends_with("store"))
+        .map(|(_, size)| *size)
+        .sum();
+    ByteSize(size_bytes)
+}
+
 /// Apply a leaf search on a single split.
+#[allow(clippy::too_many_arguments)]
 async fn leaf_search_single_split(
     searcher_context: &SearcherContext,
     mut search_request: SearchRequest,
     storage: Arc<dyn Storage>,
     split: SplitIdAndFooterOffsets,
-    doc_mapper: Arc<dyn DocMapper>,
+    doc_mapper: Arc<DocMapper>,
     split_filter: Arc<RwLock<CanSplitDoBetter>>,
     aggregations_limits: AggregationLimitsGuard,
+    search_permit: &mut SearchPermit,
 ) -> crate::Result<LeafSearchResponse> {
     rewrite_request(
         &mut search_request,
@@ -376,15 +422,21 @@ async fn leaf_search_single_split(
     }
 
     let split_id = split.split_id.to_string();
-    let index = open_index_with_caches(
+    let byte_range_cache =
+        ByteRangeCache::with_infinite_capacity(&quickwit_storage::STORAGE_METRICS.shortlived_cache);
+    let (index, hot_directory) = open_index_with_caches(
         searcher_context,
         storage,
         &split,
         Some(doc_mapper.tokenizer_manager()),
-        true,
+        Some(byte_range_cache.clone()),
     )
     .await?;
-    let split_schema = index.schema();
+
+    let index_size = compute_index_size(&hot_directory);
+    if index_size < search_permit.memory_allocation() {
+        search_permit.update_memory_usage(index_size);
+    }
 
     let reader = index
         .reader_builder()
@@ -395,13 +447,33 @@ async fn leaf_search_single_split(
     let mut collector =
         make_collector_for_split(split_id.clone(), &search_request, aggregations_limits)?;
 
+    let split_schema = index.schema();
     let (query, mut warmup_info) = doc_mapper.query(split_schema.clone(), &query_ast, false)?;
 
     let collector_warmup_info = collector.warmup_info();
     warmup_info.merge(collector_warmup_info);
     warmup_info.simplify();
 
+    let warmup_start = Instant::now();
     warmup(&searcher, &warmup_info).await?;
+    let warmup_end = Instant::now();
+    let warmup_duration: Duration = warmup_end.duration_since(warmup_start);
+    let warmup_size = ByteSize(byte_range_cache.get_num_bytes());
+    if warmup_size > search_permit.memory_allocation() {
+        warn!(
+            memory_usage = ?warmup_size,
+            memory_allocation = ?search_permit.memory_allocation(),
+            "current leaf search is consuming more memory than the initial allocation"
+        );
+    }
+    crate::SEARCH_METRICS
+        .leaf_search_single_split_warmup_num_bytes
+        .observe(warmup_size.as_u64() as f64);
+    search_permit.update_memory_usage(warmup_size);
+    search_permit.free_warmup_slot();
+
+    let split_num_docs = split.num_docs;
+
     let span = info_span!("tantivy_search");
 
     let (search_request, leaf_search_response) = {
@@ -409,25 +481,31 @@ async fn leaf_search_single_split(
 
         crate::search_thread_pool()
             .run_cpu_intensive(move || {
+                let cpu_start = Instant::now();
+                let cpu_thread_pool_wait_microsecs = cpu_start.duration_since(warmup_end);
                 let _span_guard = span.enter();
                 // Our search execution has been scheduled, let's check if we can improve the
                 // request based on the results of the preceding searches
                 check_optimize_search_request(&mut search_request, &split, &split_filter);
                 collector.update_search_param(&search_request);
-                if is_metadata_count_request_with_ast(&query_ast, &search_request) {
-                    return Ok((
-                        search_request,
-                        get_leaf_resp_from_count(searcher.num_docs() as u64),
-                    ));
-                }
-                if collector.is_count_only() {
-                    let count = query.count(&searcher)? as u64;
-                    Ok((search_request, get_leaf_resp_from_count(count)))
-                } else {
-                    searcher
-                        .search(&query, &collector)
-                        .map(|resp| (search_request, resp))
-                }
+                let mut leaf_search_response: LeafSearchResponse =
+                    if is_metadata_count_request_with_ast(&query_ast, &search_request) {
+                        get_leaf_resp_from_count(searcher.num_docs())
+                    } else if collector.is_count_only() {
+                        let count = query.count(&searcher)? as u64;
+                        get_leaf_resp_from_count(count)
+                    } else {
+                        searcher.search(&query, &collector)?
+                    };
+                leaf_search_response.resource_stats = Some(ResourceStats {
+                    cpu_microsecs: cpu_start.elapsed().as_micros() as u64,
+                    short_lived_cache_num_bytes: warmup_size.as_u64(),
+                    split_num_docs,
+                    warmup_microsecs: warmup_duration.as_micros() as u64,
+                    cpu_thread_pool_wait_microsecs: cpu_thread_pool_wait_microsecs.as_micros()
+                        as u64,
+                });
+                Result::<_, TantivyError>::Ok((search_request, leaf_search_response))
             })
             .await
             .map_err(|_| {
@@ -694,7 +772,7 @@ struct RemoveTimestampRange<'a> {
     end_timestamp: Bound<DateTime>,
 }
 
-impl<'a> RemoveTimestampRange<'a> {
+impl RemoveTimestampRange<'_> {
     fn update_start_timestamp(
         &mut self,
         lower_bound: &quickwit_query::JsonLiteral,
@@ -732,7 +810,7 @@ impl<'a> RemoveTimestampRange<'a> {
     }
 }
 
-impl<'a> QueryAstTransformer for RemoveTimestampRange<'a> {
+impl QueryAstTransformer for RemoveTimestampRange<'_> {
     type Err = std::convert::Infallible;
 
     fn transform_bool(&mut self, mut bool_query: BoolQuery) -> Result<Option<QueryAst>, Self::Err> {
@@ -1066,7 +1144,7 @@ pub async fn multi_leaf_search(
         .ok_or_else(|| SearchError::Internal("no search request".to_string()))?
         .into();
 
-    let doc_mappers: Vec<Arc<dyn DocMapper>> = leaf_search_request
+    let doc_mappers: Vec<Arc<DocMapper>> = leaf_search_request
         .doc_mappers
         .iter()
         .map(|doc_mapper| deserialize_doc_mapper(doc_mapper))
@@ -1156,11 +1234,10 @@ async fn resolve_storage_and_leaf_search(
     index_uri: quickwit_common::uri::Uri,
     storage_resolver: StorageResolver,
     splits: Vec<SplitIdAndFooterOffsets>,
-    doc_mapper: Arc<dyn DocMapper>,
+    doc_mapper: Arc<DocMapper>,
     aggregations_limits: AggregationLimitsGuard,
 ) -> crate::Result<LeafSearchResponse> {
     let storage = storage_resolver.resolve(&index_uri).await?;
-
     leaf_search(
         searcher_context.clone(),
         search_request.clone(),
@@ -1207,7 +1284,7 @@ pub async fn leaf_search(
     request: Arc<SearchRequest>,
     index_storage: Arc<dyn Storage>,
     splits: Vec<SplitIdAndFooterOffsets>,
-    doc_mapper: Arc<dyn DocMapper>,
+    doc_mapper: Arc<DocMapper>,
     aggregations_limits: AggregationLimitsGuard,
 ) -> Result<LeafSearchResponse, SearchError> {
     let num_docs: u64 = splits.iter().map(|split| split.num_docs).sum();
@@ -1236,13 +1313,27 @@ pub async fn leaf_search(
     let incremental_merge_collector = IncrementalCollector::new(merge_collector);
     let incremental_merge_collector = Arc::new(Mutex::new(incremental_merge_collector));
 
-    for (split, mut request) in split_with_req {
-        let leaf_split_search_permit = searcher_context.leaf_search_split_semaphore
-            .clone()
-            .acquire_owned()
+    // We acquire all of the leaf search permits to make sure our single split search tasks
+    // do no interleave with other leaf search requests.
+    let permit_sizes = split_with_req.iter().map(|(split, _)| {
+        compute_initial_memory_allocation(
+            split,
+            searcher_context
+                .searcher_config
+                .warmup_single_split_initial_allocation,
+        )
+    });
+    let permit_futures = searcher_context
+        .search_permit_provider
+        .get_permits(permit_sizes)
+        .await;
+
+    for ((split, mut request), permit_fut) in
+        split_with_req.into_iter().zip(permit_futures.into_iter())
+    {
+        let leaf_split_search_permit = permit_fut
             .instrument(info_span!("waiting_for_leaf_search_split_semaphore"))
-            .await
-            .expect("Failed to acquire permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
+            .await;
 
         let can_be_better = check_optimize_search_request(&mut request, &split, &split_filter);
         if !can_be_better && !run_all_splits {
@@ -1303,13 +1394,23 @@ pub async fn leaf_search(
         });
     }
 
-    let result = crate::search_thread_pool()
-        .run_cpu_intensive(|| incremental_merge_collector.finalize())
-        .instrument(info_span!("incremental_merge_intermediate"))
-        .await
-        .context("failed to merge split search responses")??;
+    let leaf_search_response_reresult: Result<Result<LeafSearchResponse, _>, _> =
+        crate::search_thread_pool()
+            .run_cpu_intensive(|| incremental_merge_collector.finalize())
+            .instrument(info_span!("incremental_merge_intermediate"))
+            .await
+            .context("failed to merge split search responses");
 
-    Ok(result)
+    let label_values = match leaf_search_response_reresult {
+        Ok(Ok(_)) => ["success"],
+        _ => ["error"],
+    };
+    SEARCH_METRICS
+        .leaf_search_targeted_splits
+        .with_label_values(label_values)
+        .observe(num_splits as f64);
+
+    Ok(leaf_search_response_reresult??)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1318,11 +1419,11 @@ async fn leaf_search_single_split_wrapper(
     request: SearchRequest,
     searcher_context: Arc<SearcherContext>,
     index_storage: Arc<dyn Storage>,
-    doc_mapper: Arc<dyn DocMapper>,
+    doc_mapper: Arc<DocMapper>,
     split: SplitIdAndFooterOffsets,
     split_filter: Arc<RwLock<CanSplitDoBetter>>,
     incremental_merge_collector: Arc<Mutex<IncrementalCollector>>,
-    leaf_split_search_permit: tokio::sync::OwnedSemaphorePermit,
+    mut search_permit: SearchPermit,
     aggregations_limits: AggregationLimitsGuard,
 ) {
     crate::SEARCH_METRICS.leaf_searches_splits_total.inc();
@@ -1337,11 +1438,13 @@ async fn leaf_search_single_split_wrapper(
         doc_mapper,
         split_filter.clone(),
         aggregations_limits,
+        &mut search_permit,
     )
     .await;
 
-    // We explicitly drop it, to highlight it to the reader
-    std::mem::drop(leaf_split_search_permit);
+    // Explicitly drop the permit for readability.
+    // This should always happen after the ephemeral search cache is dropped.
+    std::mem::drop(search_permit);
 
     if leaf_search_single_split_res.is_ok() {
         timer.observe_duration();
@@ -1377,6 +1480,15 @@ async fn leaf_search_single_split_wrapper(
 #[cfg(test)]
 mod tests {
     use std::ops::Bound;
+
+    use bytes::BufMut;
+    use quickwit_directories::write_hotcache;
+    use rand::{thread_rng, Rng};
+    use tantivy::directory::RamDirectory;
+    use tantivy::schema::{
+        BytesOptions, FieldEntry, Schema, TextFieldIndexing, TextOptions, Value,
+    };
+    use tantivy::TantivyDocument;
 
     use super::*;
 
@@ -1812,5 +1924,98 @@ mod tests {
                 serde_json::from_str(&request_bounds.aggregation_request.unwrap()).unwrap();
             assert_eq!(rewrote_bounds_agg, no_bounds_agg);
         }
+    }
+
+    fn create_tantivy_dir_with_hotcache<'a, V>(
+        field_entry: FieldEntry,
+        field_value: V,
+    ) -> (HotDirectory, usize)
+    where
+        V: Value<'a>,
+    {
+        let field_name = field_entry.name().to_string();
+        let mut schema_builder = Schema::builder();
+        schema_builder.add_field(field_entry);
+        let schema = schema_builder.build();
+
+        let ram_directory = RamDirectory::create();
+        let index = Index::open_or_create(ram_directory.clone(), schema.clone()).unwrap();
+
+        let mut index_writer = index.writer(15_000_000).unwrap();
+        let field = schema.get_field(&field_name).unwrap();
+        let mut new_doc = TantivyDocument::default();
+        new_doc.add_field_value(field, field_value);
+        index_writer.add_document(new_doc).unwrap();
+        index_writer.commit().unwrap();
+
+        let mut hotcache_bytes_writer = Vec::new().writer();
+        write_hotcache(ram_directory.clone(), &mut hotcache_bytes_writer).unwrap();
+        let hotcache_bytes = OwnedBytes::new(hotcache_bytes_writer.into_inner());
+        let hot_directory = HotDirectory::open(ram_directory.clone(), hotcache_bytes).unwrap();
+        (hot_directory, ram_directory.total_mem_usage())
+    }
+
+    #[test]
+    fn test_compute_index_size_without_store() {
+        // We don't want to make assertions on absolute index sizes (it might
+        // change in future Tantivy versions), but rather verify that the store
+        // is properly excluded from the computed size.
+
+        // We use random bytes so that the store can't compress them
+        let mut payload = vec![0u8; 1024];
+        thread_rng().fill(&mut payload[..]);
+
+        let (hotcache_directory_stored_payload, directory_size_stored_payload) =
+            create_tantivy_dir_with_hotcache(
+                FieldEntry::new_bytes("payload".to_string(), BytesOptions::default().set_stored()),
+                &payload,
+            );
+        let size_with_stored_payload =
+            compute_index_size(&hotcache_directory_stored_payload).as_u64();
+
+        let (hotcache_directory_index_only, directory_size_index_only) =
+            create_tantivy_dir_with_hotcache(
+                FieldEntry::new_bytes("payload".to_string(), BytesOptions::default()),
+                &payload,
+            );
+        let size_index_only = compute_index_size(&hotcache_directory_index_only).as_u64();
+
+        assert!(directory_size_stored_payload > directory_size_index_only + 1000);
+        assert!(size_with_stored_payload.abs_diff(size_index_only) < 10);
+    }
+
+    #[test]
+    fn test_compute_index_size_varies_with_data() {
+        // We don't want to make assertions on absolute index sizes (it might
+        // change in future Tantivy versions), but rather verify that an index
+        // with more data is indeed bigger.
+
+        let indexing_options =
+            TextOptions::default().set_indexing_options(TextFieldIndexing::default());
+
+        let (hotcache_directory_larger, directory_size_larger) = create_tantivy_dir_with_hotcache(
+            FieldEntry::new_text("text".to_string(), indexing_options.clone()),
+            "Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium \
+             doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore \
+             veritatis et quasi architecto beatae vitae dicta sunt explicabo. Nemo enim ipsam \
+             voluptatem quia voluptas sit aspernatur aut odit aut fugit, sed quia consequuntur \
+             magni dolores eos qui ratione voluptatem sequi nesciunt. Neque porro quisquam est, \
+             qui dolorem ipsum quia dolor sit amet, consectetur, adipisci velit, sed quia non \
+             numquam eius modi tempora incidunt ut labore et dolore magnam aliquam quaerat \
+             voluptatem. Ut enim ad minima veniam, quis nostrum exercitationem ullam corporis \
+             suscipit laboriosam, nisi ut aliquid ex ea commodi consequatur? Quis autem vel eum \
+             iure reprehenderit qui in ea voluptate velit esse quam nihil molestiae consequatur, \
+             vel illum qui dolorem eum fugiat quo voluptas nulla pariatur?",
+        );
+        let larger_size = compute_index_size(&hotcache_directory_larger).as_u64();
+
+        let (hotcache_directory_smaller, directory_size_smaller) = create_tantivy_dir_with_hotcache(
+            FieldEntry::new_text("text".to_string(), indexing_options),
+            "hi",
+        );
+        let smaller_size = compute_index_size(&hotcache_directory_smaller).as_u64();
+
+        assert!(directory_size_larger > directory_size_smaller + 100);
+        assert!(larger_size > smaller_size + 100);
     }
 }

@@ -36,7 +36,7 @@ use tracing::{debug, error, info, warn};
 use crate::retry::search::LeafSearchRetryPolicy;
 use crate::retry::search_stream::{LeafSearchStreamRetryPolicy, SuccessfulSplitIds};
 use crate::retry::{retry_client, DefaultRetryPolicy, RetryPolicy};
-use crate::{SearchError, SearchJobPlacer, SearchServiceClient};
+use crate::{merge_resource_stats_it, SearchError, SearchJobPlacer, SearchServiceClient};
 
 /// Maximum number of put requests emitted to perform a replicated given PUT KV.
 const MAX_PUT_KV_ATTEMPTS: usize = 6;
@@ -94,21 +94,36 @@ impl ClusterClient {
     ) -> crate::Result<LeafSearchResponse> {
         let mut response_res = client.leaf_search(request.clone()).await;
         let retry_policy = LeafSearchRetryPolicy {};
-        if let Some(retry_request) = retry_policy.retry_request(request, &response_res) {
-            assert!(!retry_request.leaf_requests.is_empty());
-            client = retry_client(
-                &self.search_job_placer,
-                client.grpc_addr(),
-                &retry_request.leaf_requests[0].split_offsets[0].split_id,
-            )
-            .await?;
-            debug!(
-                "Leaf search response error: `{:?}`. Retry once to execute {:?} with {:?}",
-                response_res, retry_request, client
+        // We retry only once.
+        let Some(retry_request) = retry_policy.retry_request(request, &response_res) else {
+            return response_res;
+        };
+        let Some(first_split) = retry_request
+            .leaf_requests
+            .iter()
+            .flat_map(|leaf_req| leaf_req.split_offsets.iter())
+            .next()
+        else {
+            warn!(
+                "the retry request did not contain any split to retry. this should never happen, \
+                 please report"
             );
-            let retry_result = client.leaf_search(retry_request).await;
-            response_res = merge_leaf_search_results(response_res, retry_result);
-        }
+            return response_res;
+        };
+        // There could be more than one split in the retry request. We pick a single client
+        // arbitrarily only considering the affinity of the first split.
+        client = retry_client(
+            &self.search_job_placer,
+            client.grpc_addr(),
+            &first_split.split_id,
+        )
+        .await?;
+        debug!(
+            "Leaf search response error: `{:?}`. Retry once to execute {:?} with {:?}",
+            response_res, retry_request, client
+        );
+        let retry_result = client.leaf_search(retry_request).await;
+        response_res = merge_original_with_retry_leaf_search_results(response_res, retry_result);
         response_res
     }
 
@@ -274,16 +289,24 @@ fn merge_intermediate_aggregation(left: &[u8], right: &[u8]) -> crate::Result<Ve
     Ok(serialized)
 }
 
-fn merge_leaf_search_response(
-    mut left_response: LeafSearchResponse,
-    right_response: LeafSearchResponse,
+/// Merge two leaf search response.
+///
+/// # Quirk
+///
+/// This is implemented for a retries.
+/// For instance, the set of attempted splits of right is supposed to be the set of failed
+/// list of the left one, so that the list of the overal failed splits is the list of splits on the
+/// `right_response`.
+fn merge_original_with_retry_leaf_search_response(
+    mut original_response: LeafSearchResponse,
+    retry_response: LeafSearchResponse,
 ) -> crate::Result<LeafSearchResponse> {
-    left_response
+    original_response
         .partial_hits
-        .extend(right_response.partial_hits);
+        .extend(retry_response.partial_hits);
     let intermediate_aggregation_result: Option<Vec<u8>> = match (
-        left_response.intermediate_aggregation_result,
-        right_response.intermediate_aggregation_result,
+        original_response.intermediate_aggregation_result,
+        retry_response.intermediate_aggregation_result,
     ) {
         (Some(left_agg_bytes), Some(right_agg_bytes)) => {
             let intermediate_aggregation_bytes: Vec<u8> =
@@ -294,24 +317,31 @@ fn merge_leaf_search_response(
         (Some(left), None) => Some(left),
         (None, None) => None,
     };
+    let resource_stats = merge_resource_stats_it([
+        &original_response.resource_stats,
+        &retry_response.resource_stats,
+    ]);
     Ok(LeafSearchResponse {
         intermediate_aggregation_result,
-        num_hits: left_response.num_hits + right_response.num_hits,
-        num_attempted_splits: left_response.num_attempted_splits
-            + right_response.num_attempted_splits,
-        failed_splits: right_response.failed_splits,
-        partial_hits: left_response.partial_hits,
+        num_hits: original_response.num_hits + retry_response.num_hits,
+        num_attempted_splits: original_response.num_attempted_splits
+            + retry_response.num_attempted_splits,
+        failed_splits: retry_response.failed_splits,
+        partial_hits: original_response.partial_hits,
+        num_successful_splits: original_response.num_successful_splits
+            + retry_response.num_successful_splits,
+        resource_stats,
     })
 }
 
 // Merge initial leaf search results with results obtained from a retry.
-fn merge_leaf_search_results(
+fn merge_original_with_retry_leaf_search_results(
     left_search_response_result: crate::Result<LeafSearchResponse>,
     right_search_response_result: crate::Result<LeafSearchResponse>,
 ) -> crate::Result<LeafSearchResponse> {
     match (left_search_response_result, right_search_response_result) {
         (Ok(left_response), Ok(right_response)) => {
-            merge_leaf_search_response(left_response, right_response)
+            merge_original_with_retry_leaf_search_response(left_response, right_response)
         }
         (Ok(single_valid_response), Err(_)) => Ok(single_valid_response),
         (Err(_), Ok(single_valid_response)) => Ok(single_valid_response),
@@ -626,8 +656,11 @@ mod tests {
             num_attempted_splits: 1,
             ..Default::default()
         };
-        let merged_leaf_search_response =
-            merge_leaf_search_results(Ok(leaf_response), Ok(leaf_response_retry)).unwrap();
+        let merged_leaf_search_response = merge_original_with_retry_leaf_search_results(
+            Ok(leaf_response),
+            Ok(leaf_response_retry),
+        )
+        .unwrap();
         assert_eq!(merged_leaf_search_response.num_attempted_splits, 2);
         assert_eq!(merged_leaf_search_response.num_hits, 2);
         assert_eq!(merged_leaf_search_response.partial_hits.len(), 2);
@@ -649,7 +682,7 @@ mod tests {
             num_attempted_splits: 1,
             ..Default::default()
         };
-        let merged_result = merge_leaf_search_results(
+        let merged_result = merge_original_with_retry_leaf_search_results(
             Err(SearchError::Internal("error".to_string())),
             Ok(leaf_response),
         )
@@ -663,7 +696,7 @@ mod tests {
 
     #[test]
     fn test_merge_leaf_search_retry_error_on_error() -> anyhow::Result<()> {
-        let merge_error = merge_leaf_search_results(
+        let merge_error = merge_original_with_retry_leaf_search_results(
             Err(SearchError::Internal("error".to_string())),
             Err(SearchError::Internal("retry error".to_string())),
         )

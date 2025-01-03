@@ -274,6 +274,15 @@ impl Source for PulsarSource {
         format!("{:?}", self)
     }
 
+    async fn finalize(
+        &mut self,
+        _exit_status: &ActorExitStatus,
+        _ctx: &SourceContext,
+    ) -> anyhow::Result<()> {
+        self.pulsar_consumer.close().await?;
+        Ok(())
+    }
+
     fn observable_state(&self) -> JsonValue {
         json!({
             "index_id": self.source_runtime.index_id(),
@@ -420,9 +429,7 @@ async fn connect_pulsar(params: &PulsarSourceParams) -> anyhow::Result<Pulsar<To
             builder = builder.with_auth_provider(OAuth2Authentication::client_credentials(auth));
         }
     }
-
     let pulsar: Pulsar<_> = builder.build().await?;
-
     Ok(pulsar)
 }
 

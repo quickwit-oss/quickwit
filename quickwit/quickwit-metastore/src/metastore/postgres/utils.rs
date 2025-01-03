@@ -101,10 +101,16 @@ pub(super) fn append_range_filters<V: Display>(
     };
 }
 
-pub(super) fn append_query_filters(sql: &mut SelectStatement, query: &ListSplitsQuery) {
-    // Note: `ListSplitsQuery` builder enforces a non empty `index_uids` list.
-
-    sql.cond_where(Expr::col(Splits::IndexUid).is_in(&query.index_uids));
+pub(super) fn append_query_filters_and_order_by(
+    sql: &mut SelectStatement,
+    query: &ListSplitsQuery,
+) {
+    if let Some(index_uids) = &query.index_uids {
+        // Note: `ListSplitsQuery` builder enforces a non empty `index_uids` list.
+        // TODO we should explore IN VALUES, = ANY and similar constructs in case they perform
+        // better.
+        sql.cond_where(Expr::col(Splits::IndexUid).is_in(index_uids));
+    }
 
     if let Some(node_id) = &query.node_id {
         sql.cond_where(Expr::col(Splits::NodeId).eq(node_id));
@@ -187,15 +193,24 @@ pub(super) fn append_query_filters(sql: &mut SelectStatement, query: &ListSplits
         Expr::expr(val)
     });
 
+    if let Some((index_uid, split_id)) = &query.after_split {
+        sql.cond_where(
+            Expr::tuple([
+                Expr::col(Splits::IndexUid).into(),
+                Expr::col(Splits::SplitId).into(),
+            ])
+            .gt(Expr::tuple([Expr::value(index_uid), Expr::value(split_id)])),
+        );
+    }
+
     match query.sort_by {
         SortBy::Staleness => {
-            sql.order_by(
-                (Splits::DeleteOpstamp, Splits::PublishTimestamp),
-                Order::Asc,
-            );
+            sql.order_by(Splits::DeleteOpstamp, Order::Asc)
+                .order_by(Splits::PublishTimestamp, Order::Asc);
         }
         SortBy::IndexUid => {
-            sql.order_by(Splits::IndexUid, Order::Asc);
+            sql.order_by(Splits::IndexUid, Order::Asc)
+                .order_by(Splits::SplitId, Order::Asc);
         }
         SortBy::None => (),
     }

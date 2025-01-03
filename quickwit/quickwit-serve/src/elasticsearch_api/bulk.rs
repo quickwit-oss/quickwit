@@ -20,6 +20,7 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
+use bytesize::ByteSize;
 use hyper::StatusCode;
 use quickwit_config::{disable_ingest_v1, enable_ingest_v2};
 use quickwit_ingest::{
@@ -42,8 +43,9 @@ use crate::{with_arg, Body};
 pub fn es_compat_bulk_handler(
     ingest_service: IngestServiceClient,
     ingest_router: IngestRouterServiceClient,
+    content_length_limit: ByteSize,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    elastic_bulk_filter()
+    elastic_bulk_filter(content_length_limit)
         .and(with_arg(ingest_service))
         .and(with_arg(ingest_router))
         .then(|body, bulk_options, ingest_service, ingest_router| {
@@ -58,8 +60,9 @@ pub fn es_compat_bulk_handler(
 pub fn es_compat_index_bulk_handler(
     ingest_service: IngestServiceClient,
     ingest_router: IngestRouterServiceClient,
+    content_length_limit: ByteSize,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    elastic_index_bulk_filter()
+    elastic_index_bulk_filter(content_length_limit)
         .and(with_arg(ingest_service))
         .and(with_arg(ingest_router))
         .then(
@@ -76,6 +79,7 @@ pub fn es_compat_index_bulk_handler(
         .and(extract_format_from_qs())
         .map(make_elastic_api_response)
         .recover(recover_fn)
+        .boxed()
 }
 
 async fn elastic_ingest_bulk(

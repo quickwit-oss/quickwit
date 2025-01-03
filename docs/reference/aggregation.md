@@ -16,7 +16,7 @@ There are two categories: [Metrics](#metric-aggregations) and [Buckets](#bucket-
 #### Prerequisite
 
 To be able to use aggregations on a field, the field needs to have a fast field index created. A fast field index is a columnar storage,
-where documents values are extracted and stored to.
+where documents values are extracted and stored.
 
 Example to create a fast field on text for term aggregations.
 ```yaml
@@ -121,9 +121,14 @@ These sub-aggregations will be aggregated for the buckets created by their “pa
 There are different bucket aggregators, each with a different “bucketing” strategy.
 Some define a single bucket, some define a fixed number of multiple buckets, and others dynamically create the buckets during the aggregation process.
 
-Example request, histogram with stats in each bucket:
 
-#### Aggregating on datetime fields
+### Histogram
+
+A histogram is a type of bucket aggregation where documents are grouped into buckets based on a fixed interval. Each document's value is "rounded down" to the nearest bucket boundary.
+
+E.g. if we have a price 18 and an interval of 5, the document will fall into the bucket with the key 15. The formula used for this is: `((val - offset) / interval).floor() * interval + offset`.
+
+#### Histogram on datetime fields
 
 See [`DateHistogram`](#date-histogram) for more convenient API for `datetime` fields.
 
@@ -131,7 +136,7 @@ Fields of type `datetime` are handled the same way as any numeric field. However
 
 Histogram with one bucket per day on a `datetime` field. `interval` needs to be provided in milliseconds.
 In the following example, we grouped documents per day (`1 day = 86400000 milliseconds`).
-The returned format is currently fixed at `Rfc3339`.
+The returned format is currently fixed at `RFC3339`.
 
 ##### Request
 ```json skip
@@ -139,7 +144,7 @@ The returned format is currently fixed at `Rfc3339`.
   "query": "*",
   "max_hits": 0,
   "aggs": {
-    "datetime_histogram":{
+    "count_per_day":{
       "histogram":{
         "field": "datetime",
         "interval": 86400000
@@ -154,7 +159,7 @@ The returned format is currently fixed at `Rfc3339`.
 {
   ...
   "aggregations": {
-    "datetime_histogram": {
+    "count_per_day": {
       "buckets": [
         {
           "doc_count": 1,
@@ -172,17 +177,12 @@ The returned format is currently fixed at `Rfc3339`.
 }
 ```
 
-### Histogram
-
-Histogram is a bucket aggregation, where buckets are created dynamically for the given interval. Each document value is rounded down to its bucket.
-
-E.g. if we have a price 18 and an interval of 5, the document will fall into the bucket with the key 15. The formula used for this is: ((val - offset) / interval).floor() * interval + offset.
 
 #### Returned Buckets
 
-By default buckets are returned between the min and max value of the documents, including empty buckets. Setting min_doc_count to != 0 will filter empty buckets.
+By default buckets are returned between the min and max value of the documents, including empty buckets. Setting `min_doc_count > 0` will filter empty buckets.
 
-The value range of the buckets can bet extended via extended_bounds or limit the range via hard_bounds.
+The value range of the buckets can bet extended via [`extended_bounds`](#extended_bounds) or limit the range via [`hard_bounds`](#hard_bounds).
 
 #### Example
 
@@ -298,7 +298,7 @@ Cannot be set in conjunction with `min_doc_count` > 0, since the empty buckets f
 
 `DateHistogram` is similar to `Histogram`, but it can only be used with [datetime type](../configuration/index-config#datetime-type) and provides a more convenient API to define intervals.
 
-Like the histogram, values are rounded down into the closest bucket.
+Like the histogram, values are rounded down to the closest bucket.
 
 The returned format is currently fixed at `Rfc3339`.
 
@@ -376,7 +376,7 @@ time unit (e.g., `1.5h` could instead be specified as `90m`).
 
 ###### **offset**
 
-Intervals implicitly defines an absolute grid of buckets `[interval * k, interval * (k + 1))`.
+Intervals implicitly define an absolute grid of buckets `[interval * k, interval * (k + 1))`.
 Offset makes it possible to shift this grid into `[offset + interval * k, offset + interval (k + 1))`. Offset has to be in the range [0, interval).
 
 This is especially useful when using `fixed_interval`, to shift the first bucket e.g. at the start of the year.
@@ -509,7 +509,7 @@ term-count.
 Even with a larger `shard_size` value, doc_count values for a terms aggregation may be
 approximate. As a result, any sub-aggregations on the terms aggregation may also be approximate.
 `sum_other_doc_count` is the number of documents that didn’t make it into the the top size
-terms. If this is greater than 0, you can be sure that the terms agg had to throw away some
+terms. If this is greater than 0, the terms agg had to throw away some
 buckets, either because they didn’t fit into `size` on the root node or they didn’t fit into
 `shard_size` on the leaf node.
 
@@ -563,6 +563,13 @@ Filter all terms that are lower than `min_doc_count`. Defaults to 1.
 
 _Expensive_ : When set to 0, this will return all terms in the field.
 
+###### **missing**
+
+The `missing` parameter defines how documents that are missing a value should be treated.
+By default they will be ignored but it is also possible to treat them as if they had a value.
+```json skip
+{ "field": "genre", "missing": "NO_DATA" }
+```
 
 ###### **order**
 
@@ -652,6 +659,15 @@ Supported field types are `u64`, `f64`, `i64`, and `datetime`.
 }
 ```
 
+#### Parameters
+
+###### **missing**
+The `missing` parameter defines how documents that are missing a value should be treated.
+By default they will be ignored but it is also possible to treat them as if they had a value.
+```json skip
+{ "field": "price", "missing": "10.0" }
+```
+
 ### Count
 
 A single-value metric aggregation that counts the number of values that are extracted from the aggregated documents.
@@ -683,6 +699,14 @@ Supported field types are `u64`, `f64`, `i64`, and `datetime`.
         }
     }
 }
+```
+#### Parameters
+
+###### **missing**
+The `missing` parameter defines how documents that are missing a value should be treated.
+By default they will be ignored but it is also possible to treat them as if they had a value.
+```json skip
+{ "field": "price", "missing": "10.0" }
 ```
 
 ### Max
@@ -717,6 +741,14 @@ Supported field types are `u64`, `f64`, `i64`, and `datetime`.
     }
 }
 ```
+#### Parameters
+
+###### **missing**
+The `missing` parameter defines how documents that are missing a value should be treated.
+By default they will be ignored but it is also possible to treat them as if they had a value.
+```json skip
+{ "field": "price", "missing": "10.0" }
+```
 
 ### Min
 
@@ -749,6 +781,14 @@ Supported field types are `u64`, `f64`, `i64`, and `datetime`.
         }
     }
 }
+```
+#### Parameters
+
+###### **missing**
+The `missing` parameter defines how documents that are missing a value should be treated.
+By default they will be ignored but it is also possible to treat them as if they had a value.
+```json skip
+{ "field": "price", "missing": "10.0" }
 ```
 
 ### Stats
@@ -789,6 +829,14 @@ Supported field types are `u64`, `f64`, `i64`, and `datetime`.
         }
     }
 }
+```
+#### Parameters
+
+###### **missing**
+The `missing` parameter defines how documents that are missing a value should be treated.
+By default they will be ignored but it is also possible to treat them as if they had a value.
+```json skip
+{ "field": "price", "missing": "10.0" }
 ```
 
 ### Extended Stats
@@ -840,6 +888,23 @@ Supported field types are `u64`, `f64`, `i64`, and `datetime`.
 }
 ```
 
+#### Parameters
+
+###### **missing**
+The `missing` parameter defines how documents that are missing a value should be treated.
+By default they will be ignored but it is also possible to treat them as if they had a value.
+```json skip
+{ "field": "price", "missing": "10.0" }
+```
+
+###### **sigma**
+
+The sigma parameter controls how many standard deviations +/- from the mean should be displayed.
+The default value is 2.
+```json skip
+{ "field": "price", "sigma": "3.0" }
+```
+
 ### Sum
 
 A single-value metric aggregation that that sums up numeric values that are that are extracted from the aggregated documents.
@@ -872,6 +937,16 @@ Supported field types are `u64`, `f64`, `i64`, and `datetime`.
     }
 }
 ```
+
+#### Parameters
+
+###### **missing**
+The `missing` parameter defines how documents that are missing a value should be treated.
+By default they will be ignored but it is also possible to treat them as if they had a value.
+```json skip
+{ "field": "price", "missing": "10.0" }
+```
+
 
 
 ### Percentiles
@@ -928,6 +1003,16 @@ In the case of website load times, this would typically be a field containing th
 While percentiles provide valuable insights into the distribution of data, it's important to understand that they are often estimates.
 This is because calculating exact percentiles for large data sets can be computationally expensive and time-consuming.
 
+#### Parameters
+
+###### **missing**
+The `missing` parameter defines how documents that are missing a value should be treated.
+By default they will be ignored but it is also possible to treat them as if they had a value.
+```json skip
+{ "field": "price", "missing": "10.0" }
+```
+
+
 ### Cardinality
 The cardinality aggregation is used to approximate the count of distinct values in a field. 
 Cardinality aggregations are essential when working with large datasets where computing the exact count of distinct values would be computationally expensive. 
@@ -968,6 +1053,16 @@ To use the cardinality aggregation, you need to specify the field on which to pe
 }
 ```
 
+
+#### Parameters
+
+###### **missing**
+The `missing` parameter defines how documents that are missing a value should be treated.
+By default they will be ignored but it is also possible to treat them as if they had a value.
+```json skip
+{ "field": "price", "missing": "10.0" }
+```
+
 #### Performance
 
 The cardinality aggregation on text fields is computationally expensive for datasets with a large amount of unique values. 
@@ -979,4 +1074,5 @@ For numeric fields, the cardinality aggregation is much more efficient as it dir
 
 ##### Limitations
 The parameter `precision_threshold` is ignored currently. Normally it allows to set the threshold until the aggregation is exact.
+
 

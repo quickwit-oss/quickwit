@@ -31,8 +31,8 @@ use tracing::info;
 
 use crate::actors::MergeSchedulerService;
 pub use crate::actors::{
-    IndexingError, IndexingPipeline, IndexingPipelineParams, IndexingService, PublisherType,
-    Sequencer, SplitsUpdateMailbox,
+    FinishPendingMergesAndShutdownPipeline, IndexingError, IndexingPipeline,
+    IndexingPipelineParams, IndexingService, PublisherType, Sequencer, SplitsUpdateMailbox,
 };
 pub use crate::controlled_directory::ControlledDirectory;
 use crate::models::IndexingStatistics;

@@ -126,14 +126,14 @@ message ListFieldsRequest {
   // Optional limit query to a list of fields
   // Wildcard expressions are supported.
   repeated string fields = 2;
-  
+
   // Time filter, expressed in seconds since epoch.
   // That filter is to be interpreted as the semi-open interval:
   // [start_timestamp, end_timestamp).
   optional int64 start_timestamp = 3;
   optional int64 end_timestamp = 4;
 
-  // Control if the the request will fail if split_ids contains a split that does not exist. 
+  // Control if the the request will fail if split_ids contains a split that does not exist.
   // optional bool fail_on_missing_index = 6;
 }
 
@@ -149,7 +149,7 @@ message LeafListFieldsRequest {
   // Optional limit query to a list of fields
   // Wildcard expressions are supported.
   repeated string fields = 4;
-  
+
 }
 
 message ListFieldsResponse {
@@ -299,6 +299,17 @@ message SearchResponse {
 
   // Scroll Id (only set if scroll_secs was set in the request)
   optional string scroll_id = 6;
+
+  // Returns the list of splits for which search failed.
+  // For the moment, the cause is unknown.
+  //
+  // It is up to the caller to decide whether to interpret
+  // this as an overall failure or to present the partial results
+  // to the end user.
+  repeated SplitSearchError failed_splits = 7;
+
+  // Total number of successful splits searched.
+  uint64 num_successful_splits = 8;
 }
 
 message SearchPlanResponse {
@@ -336,11 +347,19 @@ message LeafSearchRequest {
   repeated string index_uris = 9;
 }
 
+message ResourceStats {
+    uint64 short_lived_cache_num_bytes = 1;
+    uint64 split_num_docs = 2;
+    uint64 warmup_microsecs = 3;
+    uint64 cpu_thread_pool_wait_microsecs = 4;
+    uint64 cpu_microsecs = 5;
+}
+
 /// LeafRequestRef references data in LeafSearchRequest to deduplicate data.
 message LeafRequestRef {
   // The ordinal of the doc_mapper in `LeafSearchRequest.doc_mappers`
   uint32 doc_mapper_ord = 1;
-  
+
   // The ordinal of the index uri in LeafSearchRequest.index_uris
   uint32 index_uri_ord = 2;
 
@@ -453,15 +472,23 @@ message LeafSearchResponse {
   // The list of splits that failed. LeafSearchResponse can be an aggregation of results, so there may be multiple.
   repeated SplitSearchError failed_splits = 3;
 
-  // Total number of splits the leaf(s) were in charge of.
-  // num_attempted_splits = num_successful_splits + num_failed_splits.
+  // Total number of attempt to search into splits.
+  // We do have:
+  // `num_splits_requested == num_successful_splits + num_failed_splits.len()`
+  // But we do not necessarily have:
+  // `num_splits_requested = num_attempted_splits because of retries.`
   uint64 num_attempted_splits = 4;
+
+  // Total number of successful splits searched.
+  uint64 num_successful_splits = 7;
 
   // Deprecated json serialized intermediate aggregation_result.
   reserved 5;
 
   // postcard serialized intermediate aggregation_result.
   optional bytes intermediate_aggregation_result = 6;
+
+  ResourceStats resource_stats = 8;
 }
 
 message SnippetRequest {
@@ -550,8 +577,7 @@ message LeafListTermsResponse {
   // The list of splits that failed. LeafSearchResponse can be an aggregation of results, so there may be multiple.
   repeated SplitSearchError failed_splits = 3;
 
-  // Total number of splits the leaf(s) were in charge of.
-  // num_attempted_splits = num_successful_splits + num_failed_splits.
+  // Total number of single split search attempted.
   uint64 num_attempted_splits = 4;
 }
 

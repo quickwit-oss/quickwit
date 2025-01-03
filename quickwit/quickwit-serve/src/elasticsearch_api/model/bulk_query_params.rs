@@ -114,7 +114,7 @@ mod tests {
             serde_qs::from_str::<ElasticBulkOptions>("refresh=wait")
                 .unwrap_err()
                 .to_string(),
-            "unknown variant `wait`, expected one of `false`, `true`, `wait_for`"
+            "unknown variant `wait`, expected one of `false`, ``, `true`, `wait_for`"
         );
     }
 }

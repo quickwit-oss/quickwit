@@ -153,7 +153,7 @@ pub enum MultiLanguageTokenStream<'a> {
     Simple(SimpleTokenStream<'a>),
 }
 
-impl<'a> TokenStream for MultiLanguageTokenStream<'a> {
+impl TokenStream for MultiLanguageTokenStream<'_> {
     fn advance(&mut self) -> bool {
         match self {
             MultiLanguageTokenStream::Empty => false,
@@ -188,7 +188,7 @@ pub struct LinderaTokenStream<'a> {
     pub token: &'a mut Token,
 }
 
-impl<'a> TokenStream for LinderaTokenStream<'a> {
+impl TokenStream for LinderaTokenStream<'_> {
     fn advance(&mut self) -> bool {
         if self.tokens.is_empty() {
             return false;

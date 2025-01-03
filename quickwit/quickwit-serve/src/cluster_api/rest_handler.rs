@@ -45,6 +45,7 @@ pub fn cluster_handler(
         .and(extract_format_from_qs())
         .map(into_rest_api_response)
         .recover(recover_fn)
+        .boxed()
 }
 
 #[utoipa::path(

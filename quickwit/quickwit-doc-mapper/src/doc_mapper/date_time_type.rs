@@ -185,7 +185,7 @@ mod tests {
     use time::macros::datetime;
 
     use super::*;
-    use crate::default_doc_mapper::FieldMappingType;
+    use crate::doc_mapper::FieldMappingType;
     use crate::{Cardinality, FieldMappingEntry};
 
     #[test]

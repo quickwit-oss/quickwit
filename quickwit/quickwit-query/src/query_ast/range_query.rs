@@ -420,8 +420,8 @@ mod tests {
              type=I64, 1980)), upper_bound: Included(Term(field=6, type=Json, path=hello, \
              type=I64, 1989)) } }), Leaf(FastFieldRangeQuery { bounds: BoundsRange { lower_bound: \
              Included(Term(field=6, type=Json, path=hello, type=Str, \"1980\")), upper_bound: \
-             Included(Term(field=6, type=Json, path=hello, type=Str, \"1989\")) } })], filter: [] \
-             })"
+             Included(Term(field=6, type=Json, path=hello, type=Str, \"1989\")) } })], filter: \
+             [], minimum_should_match: None })"
         );
     }
 

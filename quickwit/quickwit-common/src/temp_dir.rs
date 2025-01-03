@@ -82,7 +82,7 @@ pub struct Builder<'a> {
     num_rand_chars: usize,
 }
 
-impl<'a> Default for Builder<'a> {
+impl Default for Builder<'_> {
     fn default() -> Self {
         Self {
             parts: Default::default(),

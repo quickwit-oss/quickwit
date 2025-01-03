@@ -29,7 +29,7 @@ use quickwit_proto::search::{
     LeafSearchStreamResponse, OutputFormat, SearchRequest, SearchStreamRequest,
     SplitIdAndFooterOffsets,
 };
-use quickwit_storage::Storage;
+use quickwit_storage::{ByteRangeCache, Storage};
 use tantivy::columnar::{DynamicColumn, HasAssociatedColumnType};
 use tantivy::fastfield::Column;
 use tantivy::query::Query;
@@ -58,7 +58,7 @@ pub async fn leaf_search_stream(
     request: SearchStreamRequest,
     storage: Arc<dyn Storage>,
     splits: Vec<SplitIdAndFooterOffsets>,
-    doc_mapper: Arc<dyn DocMapper>,
+    doc_mapper: Arc<DocMapper>,
 ) -> UnboundedReceiverStream<crate::Result<LeafSearchStreamResponse>> {
     info!(split_offsets = ?PrettySample::new(&splits, 5));
     let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
@@ -88,7 +88,7 @@ async fn leaf_search_results_stream(
     request: SearchStreamRequest,
     storage: Arc<dyn Storage>,
     splits: Vec<SplitIdAndFooterOffsets>,
-    doc_mapper: Arc<dyn DocMapper>,
+    doc_mapper: Arc<DocMapper>,
 ) -> impl futures::Stream<Item = crate::Result<LeafSearchStreamResponse>> + Sync + Send + 'static {
     let max_num_concurrent_split_streams = searcher_context
         .searcher_config
@@ -112,10 +112,11 @@ async fn leaf_search_results_stream(
 async fn leaf_search_stream_single_split(
     searcher_context: Arc<SearcherContext>,
     split: SplitIdAndFooterOffsets,
-    doc_mapper: Arc<dyn DocMapper>,
+    doc_mapper: Arc<DocMapper>,
     mut stream_request: SearchStreamRequest,
     storage: Arc<dyn Storage>,
 ) -> crate::Result<LeafSearchStreamResponse> {
+    // TODO: Should we track the memory here using the SearchPermitProvider?
     let _leaf_split_stream_permit = searcher_context
         .split_stream_semaphore
         .acquire()
@@ -127,12 +128,14 @@ async fn leaf_search_stream_single_split(
         &split,
     );
 
-    let index = open_index_with_caches(
+    let cache =
+        ByteRangeCache::with_infinite_capacity(&quickwit_storage::STORAGE_METRICS.shortlived_cache);
+    let (index, _) = open_index_with_caches(
         &searcher_context,
         storage,
         &split,
         Some(doc_mapper.tokenizer_manager()),
-        true,
+        Some(cache),
     )
     .await?;
     let split_schema = index.schema();
@@ -362,11 +365,11 @@ impl std::fmt::Display for SearchStreamRequestFields {
     }
 }
 
-impl<'a> SearchStreamRequestFields {
+impl SearchStreamRequestFields {
     pub fn from_request(
         stream_request: &SearchStreamRequest,
-        schema: &'a Schema,
-        doc_mapper: &dyn DocMapper,
+        schema: &Schema,
+        doc_mapper: &DocMapper,
     ) -> crate::Result<SearchStreamRequestFields> {
         let fast_field = schema.get_field(&stream_request.fast_field)?;
 

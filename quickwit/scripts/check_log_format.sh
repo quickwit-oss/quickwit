@@ -2,11 +2,11 @@
 
 RESULT=0
 
-for file in $(git ls-files | egrep "src/.*\.rs$")
+for file in $(git ls-files | grep -E "src/.*\.rs$")
 do
-    LOG_STARTING_WITH_UPPERCASE=$(egrep -n "(warn|info|error|debug)\!\(\"[A-Z][a-z]" $file)
+    LOG_STARTING_WITH_UPPERCASE=$(grep -E -n "(warn|info|error|debug)!\(\"[A-Z][a-z]" $file)
     DIFFRESULT=$?
-    LOG_ENDING_WITH_PERIOD=$(egrep -n "(warn|info|error|debug)\!.*\.\"\);" $file)
+    LOG_ENDING_WITH_PERIOD=$(grep -E -n "(warn|info|error|debug)!.*\.\"\);" $file)
     DIFFRESULT=$(($DIFFRESULT && $?))
     if [ $DIFFRESULT -eq 0 ]; then
       echo "===================="

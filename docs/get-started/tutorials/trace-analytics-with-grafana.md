@@ -12,7 +12,9 @@ You only need a few minutes to get Grafana working with Quickwit and build meani
 
 ## Create a Docker Compose recipe
 
-Let's add a [Quickwit instance](../installation.md) with the OTLP service enabled.
+First, create a `docker-compose.yml` file. This file will define the services needed to run Quickwit with OpenTelemetry and Grafana with the Quickwit Datasource plugin.
+
+Below is the complete Docker Compose configuration:
 
 ```yaml
 version: '3.0'
@@ -25,22 +27,20 @@ services:
     ports:
       - 7280:7280
     command: ["run"]
-```
 
-Then we create a [Grafana](https://grafana.com/docs/grafana/latest/setup-grafana/installation/docker/#run-grafana-via-docker-compose) service with the [Quickwit Datasource](https://github.com/quickwit-oss/quickwit-datasource) plugin.
-
-```yaml
   grafana:
     image: grafana/grafana-oss
     container_name: grafana
     ports:
       - "${MAP_HOST_GRAFANA:-127.0.0.1}:3000:3000"
     environment:
-      GF_INSTALL_PLUGINS: https://github.com/quickwit-oss/quickwit-datasource/releases/download/v0.3.1/quickwit-quickwit-datasource-0.3.1.zip;quickwit-quickwit-datasource
+      GF_INSTALL_PLUGINS: https://github.com/quickwit-oss/quickwit-datasource/releases/download/v0.4.6/quickwit-quickwit-datasource-0.4.6.zip;quickwit-quickwit-datasource
       GF_AUTH_DISABLE_LOGIN_FORM: "true"
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
 ```
+
+The default Grafana port is 3000. If this port is already taken, you can modify the port mapping, for example, changing 3000:3000 to 3100:3000 or any other available port.
 
 Save and run the recipe:
 
@@ -99,3 +99,5 @@ Quickwit sends itself its own traces, so you should already have data to display
 Here's what your first dashboard can look like :
 
 ![Quickwit Panel in Grafana Dashboard](../../assets/images/screenshot-grafana-tutorial-dashboard.png)
+
+

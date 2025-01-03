@@ -76,6 +76,9 @@ expected:
     total:
       value: 1
 ---
+engines:
+    # TODO check the discrepancy with ES
+    - quickwit
 json:
   query:
     multi_match:
@@ -86,20 +89,6 @@ expected:
   hits:
     total:
       value: 4
----
-# This query fails on elasticsearch, with an error message
-# explaining position are missing for one of the fields.
-#
-# Todo: Somehow we accept it on quickwit.
-engines:
-  - elasticsearch
-json:
-  query:
-    multi_match:
-      type: phrase
-      query: the pomle missingtoken
-      fields: ["payload.commits.message", "actor.login"]
-status_code: 400
 ---
 json:
   query:

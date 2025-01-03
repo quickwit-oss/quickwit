@@ -61,13 +61,20 @@ pub fn elastic_api_handlers(
     metastore: MetastoreServiceClient,
     index_service: IndexService,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    let ingest_content_length_limit = node_config.ingest_api_config.content_length_limit;
     es_compat_cluster_info_handler(node_config, BuildInfo::get())
         .or(es_compat_search_handler(search_service.clone()))
         .or(es_compat_bulk_handler(
             ingest_service.clone(),
             ingest_router.clone(),
+            ingest_content_length_limit,
         ))
-        .or(es_compat_index_bulk_handler(ingest_service, ingest_router))
+        .boxed()
+        .or(es_compat_index_bulk_handler(
+            ingest_service,
+            ingest_router,
+            ingest_content_length_limit,
+        ))
         .or(es_compat_index_search_handler(search_service.clone()))
         .or(es_compat_index_count_handler(search_service.clone()))
         .or(es_compat_scroll_handler(search_service.clone()))
@@ -75,6 +82,7 @@ pub fn elastic_api_handlers(
         .or(es_compat_index_field_capabilities_handler(
             search_service.clone(),
         ))
+        .boxed()
         .or(es_compat_index_stats_handler(metastore.clone()))
         .or(es_compat_delete_index_handler(index_service))
         .or(es_compat_stats_handler(metastore.clone()))
@@ -82,6 +90,7 @@ pub fn elastic_api_handlers(
         .or(es_compat_cat_indices_handler(metastore.clone()))
         .or(es_compat_resolve_index_handler(metastore.clone()))
         .recover(recover_fn)
+        .boxed()
     // Register newly created handlers here.
 }
 

@@ -403,7 +403,7 @@ struct IndexingPlansDiff<'a> {
     pub unplanned_tasks_by_node_id: FnvHashMap<&'a str, Vec<&'a IndexingTask>>,
 }
 
-impl<'a> IndexingPlansDiff<'a> {
+impl IndexingPlansDiff<'_> {
     pub fn has_same_nodes(&self) -> bool {
         self.missing_node_ids.is_empty() && self.unplanned_node_ids.is_empty()
     }
@@ -454,7 +454,7 @@ fn get_shard_locality_metrics(
     }
 }
 
-impl<'a> fmt::Debug for IndexingPlansDiff<'a> {
+impl fmt::Debug for IndexingPlansDiff<'_> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
         if self.has_same_nodes() && self.has_same_tasks() {
             return write!(formatter, "EmptyIndexingPlansDiff");

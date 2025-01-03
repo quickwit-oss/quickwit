@@ -612,6 +612,13 @@ mod tests {
                 max_num_concurrent_split_streams: 120,
                 split_cache: None,
                 request_timeout_secs: NonZeroU64::new(30).unwrap(),
+                storage_timeout_policy: Some(crate::StorageTimeoutPolicy {
+                    min_throughtput_bytes_per_secs: 100_000,
+                    timeout_millis: 2_000,
+                    max_num_retries: 2
+                }),
+                warmup_memory_budget: ByteSize::gb(100),
+                warmup_single_split_initial_allocation: ByteSize::gb(1),
             }
         );
         assert_eq!(

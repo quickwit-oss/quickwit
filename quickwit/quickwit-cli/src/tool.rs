@@ -495,7 +495,11 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
     let statistics =
         start_statistics_reporting_loop(indexing_pipeline_handle, args.input_path_opt.is_none())
             .await?;
-    merge_pipeline_handle.quit().await;
+    merge_pipeline_handle
+        .mailbox()
+        .ask(quickwit_indexing::FinishPendingMergesAndShutdownPipeline)
+        .await?;
+    merge_pipeline_handle.join().await;
     // Shutdown the indexing server.
     universe
         .send_exit_with_success(&indexing_server_mailbox)
@@ -550,6 +554,7 @@ pub async fn local_search_cli(args: LocalSearchArgs) -> anyhow::Result<()> {
         format: BodyFormat::Json,
         sort_by,
         count_all: CountHits::CountAll,
+        allow_failed_splits: false,
     };
     let search_request =
         search_request_from_api_request(vec![args.index_id], search_request_query_string)?;
@@ -840,7 +845,7 @@ struct Printer<'a> {
     pub stdout: &'a mut Stdout,
 }
 
-impl<'a> Printer<'a> {
+impl Printer<'_> {
     pub fn print_header(&mut self, header: &str) -> io::Result<()> {
         write!(&mut self.stdout, " {}", header.bright_blue())?;
         Ok(())
