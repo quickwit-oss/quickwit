@@ -4,7 +4,7 @@ Quickwit allows updating the mapping it uses to add more fields to an existing i
 
 ## Indexing
 
-When you update a doc mapping for an index, Quickwit will restart indexing pipelines to take the changes into account. As both this operation and the document ingestion are asynchronous, you can't assume documents sent immediately after the update will necessarily use the new mapping nor that documents sent immediately before the update won't be indexed using the new doc mapping.
+When you update a doc mapping for an index, Quickwit will restart indexing pipelines to take the changes into account. As both this operation and the document ingestion are asynchronous, there is no strict happens-before relationship between ingestion and update. This means a document ingested just before the update may be indexed according to the newer doc mapper, and document ingested just after the update may be indexed with the older doc mapper.
 
 ## Querying
 
