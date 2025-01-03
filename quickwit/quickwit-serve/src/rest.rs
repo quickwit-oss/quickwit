@@ -257,6 +257,7 @@ fn api_v1_routes(
     let api_v1_root_url = warp::path!("api" / "v1" / ..);
     api_v1_root_url.and(
         elastic_api_handlers(
+            quickwit_services.cluster.clone(),
             quickwit_services.node_config.clone(),
             quickwit_services.search_service.clone(),
             quickwit_services.ingest_service.clone(),
