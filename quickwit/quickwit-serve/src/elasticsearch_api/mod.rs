@@ -28,12 +28,14 @@ use std::sync::Arc;
 use bulk::{es_compat_bulk_handler, es_compat_index_bulk_handler};
 pub use filter::ElasticCompatibleApi;
 use hyper::StatusCode;
+use quickwit_cluster::Cluster;
 use quickwit_config::NodeConfig;
 use quickwit_index_management::IndexService;
 use quickwit_ingest::IngestServiceClient;
 use quickwit_proto::ingest::router::IngestRouterServiceClient;
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_search::SearchService;
+use rest_handler::es_compat_cluster_health_handler;
 pub use rest_handler::{
     es_compat_cat_indices_handler, es_compat_cluster_info_handler, es_compat_delete_index_handler,
     es_compat_index_cat_indices_handler, es_compat_index_count_handler,
@@ -54,6 +56,7 @@ use crate::{BodyFormat, BuildInfo};
 /// This is where all newly supported Elasticsearch handlers
 /// should be registered.
 pub fn elastic_api_handlers(
+    cluster: Cluster,
     node_config: Arc<NodeConfig>,
     search_service: Arc<dyn SearchService>,
     ingest_service: IngestServiceClient,
@@ -78,6 +81,7 @@ pub fn elastic_api_handlers(
         .or(es_compat_index_stats_handler(metastore.clone()))
         .or(es_compat_delete_index_handler(index_service))
         .or(es_compat_stats_handler(metastore.clone()))
+        .or(es_compat_cluster_health_handler(cluster))
         .or(es_compat_index_cat_indices_handler(metastore.clone()))
         .or(es_compat_cat_indices_handler(metastore.clone()))
         .or(es_compat_resolve_index_handler(metastore.clone()))
@@ -131,6 +135,7 @@ mod tests {
 
     use assert_json_diff::assert_json_include;
     use mockall::predicate;
+    use quickwit_cluster::{create_cluster_for_test, ChannelTransport, Cluster};
     use quickwit_config::NodeConfig;
     use quickwit_index_management::IndexService;
     use quickwit_ingest::{IngestApiService, IngestServiceClient};
@@ -155,6 +160,13 @@ mod tests {
         IngestServiceClient::from_mailbox(ingest_service_mailbox)
     }
 
+    pub async fn mock_cluster() -> Cluster {
+        let transport = ChannelTransport::default();
+        create_cluster_for_test(Vec::new(), &[], &transport, false)
+            .await
+            .unwrap()
+    }
+
     #[tokio::test]
     async fn test_msearch_api_return_200_responses() {
         let config = Arc::new(NodeConfig::for_test());
@@ -176,6 +188,7 @@ mod tests {
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let es_search_api_handler = super::elastic_api_handlers(
+            mock_cluster().await,
             config,
             Arc::new(mock_search_service),
             ingest_service_client(),
@@ -230,6 +243,7 @@ mod tests {
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let es_search_api_handler = super::elastic_api_handlers(
+            mock_cluster().await,
             config,
             Arc::new(mock_search_service),
             ingest_service_client(),
@@ -272,6 +286,7 @@ mod tests {
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let es_search_api_handler = super::elastic_api_handlers(
+            mock_cluster().await,
             config,
             Arc::new(mock_search_service),
             ingest_service_client(),
@@ -307,6 +322,7 @@ mod tests {
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let es_search_api_handler = elastic_api_handlers(
+            mock_cluster().await,
             config,
             Arc::new(mock_search_service),
             ingest_service_client(),
@@ -342,6 +358,7 @@ mod tests {
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let es_search_api_handler = super::elastic_api_handlers(
+            mock_cluster().await,
             config,
             Arc::new(mock_search_service),
             ingest_service_client(),
@@ -376,6 +393,7 @@ mod tests {
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let es_search_api_handler = super::elastic_api_handlers(
+            mock_cluster().await,
             config,
             Arc::new(mock_search_service),
             ingest_service_client(),
@@ -422,6 +440,7 @@ mod tests {
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let es_search_api_handler = super::elastic_api_handlers(
+            mock_cluster().await,
             config,
             Arc::new(mock_search_service),
             ingest_service_client(),

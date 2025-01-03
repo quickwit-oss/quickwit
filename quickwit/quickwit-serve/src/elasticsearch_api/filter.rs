@@ -204,6 +204,12 @@ pub(crate) fn elastic_stats_filter() -> impl Filter<Extract = (), Error = Reject
     warp::path!("_elastic" / "_stats").and(warp::get())
 }
 
+#[utoipa::path(get, tag = "Search", path = "/_cluster/health")]
+pub(crate) fn elastic_cluster_health_filter() -> impl Filter<Extract = (), Error = Rejection> + Clone
+{
+    warp::path!("_elastic" / "_cluster" / "health").and(warp::get())
+}
+
 #[utoipa::path(get, tag = "Search", path = "/_cat/indices/{index}")]
 pub(crate) fn elastic_index_cat_indices_filter(
 ) -> impl Filter<Extract = (Vec<String>, CatIndexQueryParams), Error = Rejection> + Clone {

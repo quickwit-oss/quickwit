@@ -172,6 +172,7 @@ mod tests {
     use crate::elasticsearch_api::bulk_v2::ElasticBulkResponse;
     use crate::elasticsearch_api::elastic_api_handlers;
     use crate::elasticsearch_api::model::ElasticsearchError;
+    use crate::elasticsearch_api::tests::mock_cluster;
     use crate::ingest_api::setup_ingest_service;
 
     #[tokio::test]
@@ -184,6 +185,7 @@ mod tests {
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let elastic_api_handlers = elastic_api_handlers(
+            mock_cluster().await,
             config,
             search_service,
             ingest_service,
@@ -216,6 +218,7 @@ mod tests {
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let elastic_api_handlers = elastic_api_handlers(
+            mock_cluster().await,
             config,
             search_service,
             ingest_service,
@@ -252,6 +255,7 @@ mod tests {
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let elastic_api_handlers = elastic_api_handlers(
+            mock_cluster().await,
             config,
             search_service,
             ingest_service,
@@ -285,6 +289,7 @@ mod tests {
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let elastic_api_handlers = elastic_api_handlers(
+            mock_cluster().await,
             config,
             search_service,
             ingest_service,
@@ -321,6 +326,7 @@ mod tests {
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let elastic_api_handlers = elastic_api_handlers(
+            mock_cluster().await,
             config,
             search_service,
             ingest_service,
@@ -408,6 +414,7 @@ mod tests {
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let elastic_api_handlers = elastic_api_handlers(
+            mock_cluster().await,
             config,
             search_service,
             ingest_service,
@@ -493,6 +500,7 @@ mod tests {
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let elastic_api_handlers = elastic_api_handlers(
+            mock_cluster().await,
             config,
             search_service,
             ingest_service,
