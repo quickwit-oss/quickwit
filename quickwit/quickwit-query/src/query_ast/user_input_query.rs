@@ -49,6 +49,7 @@ pub struct UserInputQuery {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_fields: Option<Vec<String>>,
     pub default_operator: BooleanOperand,
+    /// Support missing fields
     pub lenient: bool,
 }
 
@@ -273,12 +274,14 @@ fn convert_user_input_literal(
                     phrase: phrase.clone(),
                     params: full_text_params.clone(),
                     max_expansions: DEFAULT_PHRASE_QUERY_MAX_EXPANSION,
+                    lenient,
                 }
                 .into()
             } else if wildcard {
                 query_ast::WildcardQuery {
                     field: field_name,
                     value: phrase.clone(),
+                    lenient,
                 }
                 .into()
             } else {

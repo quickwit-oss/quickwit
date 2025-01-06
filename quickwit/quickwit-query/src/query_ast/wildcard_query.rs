@@ -34,21 +34,13 @@ use crate::{find_field_or_hit_dynamic, InvalidQuery};
 pub struct WildcardQuery {
     pub field: String,
     pub value: String,
+    /// Support missing fields
+    pub lenient: bool,
 }
 
 impl From<WildcardQuery> for QueryAst {
     fn from(wildcard_query: WildcardQuery) -> Self {
         Self::Wildcard(wildcard_query)
-    }
-}
-
-impl WildcardQuery {
-    #[cfg(test)]
-    pub fn from_field_value(field: impl ToString, value: impl ToString) -> Self {
-        Self {
-            field: field.to_string(),
-            value: value.to_string(),
-        }
     }
 }
 
@@ -77,7 +69,7 @@ fn unescape_with_final_wildcard(phrase: &str) -> anyhow::Result<String> {
         .scan(State::Normal, |state, c| {
             if *saw_wildcard {
                 return Some(Some(Err(anyhow!(
-                    "Wildcard iquery contains wildcard in non final position"
+                    "Wildcard query contains wildcard in non final position"
                 ))));
             }
             match state {
@@ -190,7 +182,13 @@ impl BuildTantivyAst for WildcardQuery {
         _search_fields: &[String],
         _with_validation: bool,
     ) -> Result<TantivyQueryAst, InvalidQuery> {
-        let (_, term) = self.extract_prefix_term(schema, tokenizer_manager)?;
+        let (_, term) = match self.extract_prefix_term(schema, tokenizer_manager) {
+            Ok(res) => res,
+            Err(InvalidQuery::FieldDoesNotExist { .. }) if self.lenient => {
+                return Ok(TantivyQueryAst::match_none())
+            }
+            Err(e) => return Err(e),
+        };
 
         let mut phrase_prefix_query =
             tantivy::query::PhrasePrefixQuery::new_with_offset(vec![(0, term)]);
@@ -206,20 +204,24 @@ mod tests {
     use super::*;
     use crate::create_default_quickwit_tokenizer_manager;
 
+    fn single_text_field_schema(field_name: &str, tokenizer: &str) -> TantivySchema {
+        let mut schema_builder = TantivySchema::builder();
+        let text_options = TextOptions::default()
+            .set_indexing_options(TextFieldIndexing::default().set_tokenizer(tokenizer));
+        schema_builder.add_text_field(field_name, text_options);
+        schema_builder.build()
+    }
+
     #[test]
     fn test_extract_term_for_wildcard() {
         let query = WildcardQuery {
             field: "my_field".to_string(),
             value: "MyString Wh1ch a nOrMal Tokenizer would cut*".to_string(),
+            lenient: false,
         };
         let tokenizer_manager = create_default_quickwit_tokenizer_manager();
         for tokenizer in ["raw", "whitespace"] {
-            let mut schema_builder = TantivySchema::builder();
-            let text_options = TextOptions::default()
-                .set_indexing_options(TextFieldIndexing::default().set_tokenizer(tokenizer));
-            schema_builder.add_text_field("my_field", text_options);
-            let schema = schema_builder.build();
-
+            let schema = single_text_field_schema("my_field", tokenizer);
             let (_field, term) = query
                 .extract_prefix_term(&schema, &tokenizer_manager)
                 .unwrap();
@@ -237,19 +239,34 @@ mod tests {
             "source_code_default",
             "source_code_with_hex",
         ] {
-            let mut schema_builder = TantivySchema::builder();
-            let text_options = TextOptions::default()
-                .set_indexing_options(TextFieldIndexing::default().set_tokenizer(tokenizer));
-            schema_builder.add_text_field("my_field", text_options);
-            let schema = schema_builder.build();
-
+            let schema = single_text_field_schema("my_field", tokenizer);
             let (_field, term) = query
                 .extract_prefix_term(&schema, &tokenizer_manager)
                 .unwrap();
-
             let value = term.value();
             let text = value.as_str().unwrap();
             assert_eq!(text, &query.value.trim_end_matches('*').to_lowercase());
         }
+    }
+
+    #[test]
+    fn test_extract_term_for_wildcard_missing_field() {
+        let query = WildcardQuery {
+            field: "my_missing_field".to_string(),
+            value: "My query value*".to_string(),
+            lenient: false,
+        };
+        let tokenizer_manager = create_default_quickwit_tokenizer_manager();
+        let schema = single_text_field_schema("my_field", "whitespace");
+        let err = query
+            .extract_prefix_term(&schema, &tokenizer_manager)
+            .unwrap_err();
+        let InvalidQuery::FieldDoesNotExist {
+            full_path: missing_field_full_path,
+        } = err
+        else {
+            panic!("unexpected error: {:?}", err);
+        };
+        assert_eq!(missing_field_full_path, "my_missing_field");
     }
 }

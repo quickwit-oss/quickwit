@@ -287,6 +287,7 @@ impl IndexingService {
             })?;
         let merge_policy =
             crate::merge_policy::merge_policy_from_settings(&index_config.indexing_settings);
+        let retention_policy = index_config.retention_policy_opt.clone();
         let split_store = IndexingSplitStore::new(storage.clone(), self.local_split_store.clone());
 
         let doc_mapper = build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)
@@ -301,6 +302,7 @@ impl IndexingService {
             split_store: split_store.clone(),
             merge_scheduler_service: self.merge_scheduler_service.clone(),
             merge_policy: merge_policy.clone(),
+            retention_policy: retention_policy.clone(),
             merge_io_throughput_limiter_opt: self.merge_io_throughput_limiter_opt.clone(),
             max_concurrent_split_uploads: self.max_concurrent_split_uploads,
             event_broker: self.event_broker.clone(),
@@ -329,6 +331,7 @@ impl IndexingService {
 
             // Merge-related parameters
             merge_policy,
+            retention_policy,
             max_concurrent_split_uploads_merge,
             merge_planner_mailbox,
 

@@ -19,6 +19,7 @@
 
 use serde::Deserialize;
 
+use super::LeniencyBool;
 use crate::elastic_query_dsl::ConvertibleToQueryAst;
 use crate::not_nan_f32::NotNaNf32;
 use crate::query_ast::UserInputQuery;
@@ -40,11 +41,8 @@ pub(crate) struct QueryStringQuery {
     default_operator: BooleanOperand,
     #[serde(default)]
     boost: Option<NotNaNf32>,
-    // Regardless of this option Quickwit behaves in elasticsearch definition of
-    // lenient. We include this property here just to accept user queries containing
-    // this option.
     #[serde(default)]
-    lenient: bool,
+    lenient: LeniencyBool,
 }
 
 impl ConvertibleToQueryAst for QueryStringQuery {

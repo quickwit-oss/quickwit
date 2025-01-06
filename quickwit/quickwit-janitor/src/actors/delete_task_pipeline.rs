@@ -181,6 +181,7 @@ impl DeleteTaskPipeline {
             UploaderType::DeleteUploader,
             self.metastore.clone(),
             merge_policy,
+            index_config.retention_policy_opt.clone(),
             split_store.clone(),
             SplitsUpdateMailbox::Publisher(publisher_mailbox),
             self.max_concurrent_split_uploads,

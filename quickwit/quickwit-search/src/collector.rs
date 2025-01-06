@@ -25,8 +25,8 @@ use itertools::Itertools;
 use quickwit_common::binary_heap::{SortKeyMapper, TopK};
 use quickwit_doc_mapper::WarmupInfo;
 use quickwit_proto::search::{
-    LeafSearchResponse, PartialHit, SearchRequest, SortByValue, SortOrder, SortValue,
-    SplitSearchError,
+    LeafSearchResponse, PartialHit, ResourceStats, SearchRequest, SortByValue, SortOrder,
+    SortValue, SplitSearchError,
 };
 use quickwit_proto::types::SplitId;
 use serde::Deserialize;
@@ -40,7 +40,7 @@ use tantivy::{DateTime, DocId, Score, SegmentOrdinal, SegmentReader, TantivyErro
 
 use crate::find_trace_ids_collector::{FindTraceIdsCollector, FindTraceIdsSegmentCollector, Span};
 use crate::top_k_collector::{specialized_top_k_segment_collector, QuickwitSegmentTopKCollector};
-use crate::GlobalDocAddress;
+use crate::{merge_resource_stats, merge_resource_stats_it, GlobalDocAddress};
 
 #[derive(Clone, Debug)]
 pub(crate) enum SortByComponent {
@@ -471,6 +471,7 @@ fn get_score_extractor(
     })
 }
 
+#[allow(clippy::large_enum_variant)]
 enum AggregationSegmentCollectors {
     FindTraceIdsSegmentCollector(Box<FindTraceIdsSegmentCollector>),
     TantivyAggregationSegmentCollector(AggregationSegmentCollector),
@@ -586,6 +587,7 @@ impl SegmentCollector for QuickwitSegmentCollector {
             }
             None => None,
         };
+
         Ok(LeafSearchResponse {
             intermediate_aggregation_result,
             num_hits: self.num_hits,
@@ -593,6 +595,7 @@ impl SegmentCollector for QuickwitSegmentCollector {
             failed_splits: Vec::new(),
             num_attempted_splits: 1,
             num_successful_splits: 1,
+            resource_stats: None,
         })
     }
 }
@@ -918,6 +921,11 @@ fn merge_leaf_responses(
         return Ok(leaf_responses.pop().unwrap());
     }
 
+    let resource_stats_it = leaf_responses
+        .iter()
+        .map(|leaf_response| &leaf_response.resource_stats);
+    let merged_resource_stats = merge_resource_stats_it(resource_stats_it);
+
     let merged_intermediate_aggregation_result: Option<Vec<u8>> =
         merge_intermediate_aggregation_result(
             aggregations_opt,
@@ -959,6 +967,7 @@ fn merge_leaf_responses(
         failed_splits,
         num_attempted_splits,
         num_successful_splits,
+        resource_stats: merged_resource_stats,
     })
 }
 
@@ -1182,6 +1191,7 @@ pub(crate) struct IncrementalCollector {
     num_attempted_splits: u64,
     num_successful_splits: u64,
     start_offset: usize,
+    resource_stats: Option<ResourceStats>,
 }
 
 impl IncrementalCollector {
@@ -1202,6 +1212,7 @@ impl IncrementalCollector {
             failed_splits: Vec::new(),
             num_attempted_splits: 0,
             num_successful_splits: 0,
+            resource_stats: None,
         }
     }
 
@@ -1214,7 +1225,10 @@ impl IncrementalCollector {
             num_attempted_splits,
             intermediate_aggregation_result,
             num_successful_splits,
+            resource_stats,
         } = leaf_response;
+
+        merge_resource_stats(&resource_stats, &mut self.resource_stats);
 
         self.num_hits += num_hits;
         self.top_k_hits.add_entries(partial_hits.into_iter());
@@ -1265,6 +1279,7 @@ impl IncrementalCollector {
             num_attempted_splits: self.num_attempted_splits,
             num_successful_splits: self.num_successful_splits,
             intermediate_aggregation_result,
+            resource_stats: self.resource_stats,
         })
     }
 }
@@ -1274,8 +1289,8 @@ mod tests {
     use std::cmp::Ordering;
 
     use quickwit_proto::search::{
-        LeafSearchResponse, PartialHit, SearchRequest, SortByValue, SortField, SortOrder,
-        SortValue, SplitSearchError,
+        LeafSearchResponse, PartialHit, ResourceStats, SearchRequest, SortByValue, SortField,
+        SortOrder, SortValue, SplitSearchError,
     };
     use tantivy::collector::Collector;
     use tantivy::TantivyDocument;
@@ -1771,6 +1786,7 @@ mod tests {
                 num_attempted_splits: 3,
                 num_successful_splits: 3,
                 intermediate_aggregation_result: None,
+                resource_stats: None,
             }],
         );
 
@@ -1788,7 +1804,8 @@ mod tests {
                 failed_splits: Vec::new(),
                 num_attempted_splits: 3,
                 num_successful_splits: 3,
-                intermediate_aggregation_result: None
+                intermediate_aggregation_result: None,
+                resource_stats: None,
             }
         );
 
@@ -1827,6 +1844,7 @@ mod tests {
                     num_attempted_splits: 3,
                     num_successful_splits: 3,
                     intermediate_aggregation_result: None,
+                    resource_stats: None,
                 },
                 LeafSearchResponse {
                     num_hits: 10,
@@ -1845,6 +1863,7 @@ mod tests {
                     num_attempted_splits: 2,
                     num_successful_splits: 1,
                     intermediate_aggregation_result: None,
+                    resource_stats: None,
                 },
             ],
         );
@@ -1876,7 +1895,8 @@ mod tests {
                 }],
                 num_attempted_splits: 5,
                 num_successful_splits: 4,
-                intermediate_aggregation_result: None
+                intermediate_aggregation_result: None,
+                resource_stats: None,
             }
         );
 
@@ -1916,6 +1936,10 @@ mod tests {
                     num_attempted_splits: 3,
                     num_successful_splits: 3,
                     intermediate_aggregation_result: None,
+                    resource_stats: Some(ResourceStats {
+                        cpu_microsecs: 100,
+                        ..Default::default()
+                    }),
                 },
                 LeafSearchResponse {
                     num_hits: 10,
@@ -1934,6 +1958,10 @@ mod tests {
                     num_attempted_splits: 2,
                     num_successful_splits: 1,
                     intermediate_aggregation_result: None,
+                    resource_stats: Some(ResourceStats {
+                        cpu_microsecs: 50,
+                        ..Default::default()
+                    }),
                 },
             ],
         );
@@ -1965,7 +1993,11 @@ mod tests {
                 }],
                 num_attempted_splits: 5,
                 num_successful_splits: 4,
-                intermediate_aggregation_result: None
+                intermediate_aggregation_result: None,
+                resource_stats: Some(ResourceStats {
+                    cpu_microsecs: 150,
+                    ..Default::default()
+                }),
             }
         );
         // TODO would be nice to test aggregation too.

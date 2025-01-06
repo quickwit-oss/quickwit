@@ -145,33 +145,38 @@ pub(crate) async fn start_rest_server(
     let api_doc = warp::path("openapi.json")
         .and(warp::get())
         .map(|| warp::reply::json(&crate::openapi::build_docs()))
-        .recover(recover_fn);
+        .recover(recover_fn)
+        .boxed();
 
     // `/health/*` routes.
     let health_check_routes = health_check_handlers(
         quickwit_services.cluster.clone(),
         quickwit_services.indexing_service_opt.clone(),
         quickwit_services.janitor_service_opt.clone(),
-    );
+    )
+    .boxed();
 
     // `/metrics` route.
     let metrics_routes = warp::path("metrics")
         .and(warp::get())
         .map(metrics_handler)
-        .recover(recover_fn);
+        .recover(recover_fn)
+        .boxed();
 
     // `/api/developer/*` route.
     let developer_routes = developer_api_routes(
         quickwit_services.cluster.clone(),
         quickwit_services.env_filter_reload_fn.clone(),
-    );
+    )
+    .boxed();
     // `/api/v1/*` routes.
     let api_v1_root_route = api_v1_routes(quickwit_services.clone());
 
     let redirect_root_to_ui_route = warp::path::end()
         .and(warp::get())
         .map(|| redirect(http::Uri::from_static("/ui/search")))
-        .recover(recover_fn);
+        .recover(recover_fn)
+        .boxed();
 
     let extra_headers = warp::reply::with::headers(
         quickwit_services
@@ -243,6 +248,7 @@ fn search_routes(
         .or(search_plan_post_handler(search_service.clone()))
         .or(search_stream_handler(search_service))
         .recover(recover_fn)
+        .boxed()
 }
 
 fn api_v1_routes(
@@ -260,37 +266,47 @@ fn api_v1_routes(
             quickwit_services.index_manager.clone(),
         )
         .or(cluster_handler(quickwit_services.cluster.clone()))
+        .boxed()
         .or(node_info_handler(
             BuildInfo::get(),
             RuntimeInfo::get(),
             quickwit_services.node_config.clone(),
         ))
+        .boxed()
         .or(indexing_get_handler(
             quickwit_services.indexing_service_opt.clone(),
         ))
+        .boxed()
         .or(search_routes(quickwit_services.search_service.clone()))
+        .boxed()
         .or(ingest_api_handlers(
             quickwit_services.ingest_router_service.clone(),
             quickwit_services.ingest_service.clone(),
             quickwit_services.node_config.ingest_api_config.clone(),
         ))
+        .boxed()
         .or(otlp_ingest_api_handlers(
             quickwit_services.otlp_logs_service_opt.clone(),
             quickwit_services.otlp_traces_service_opt.clone(),
         ))
+        .boxed()
         .or(index_management_handlers(
             quickwit_services.index_manager.clone(),
             quickwit_services.node_config.clone(),
         ))
+        .boxed()
         .or(delete_task_api_handlers(
             quickwit_services.metastore_client.clone(),
         ))
+        .boxed()
         .or(jaeger_api_handlers(
             quickwit_services.jaeger_service_opt.clone(),
         ))
+        .boxed()
         .or(index_template_api_handlers(
             quickwit_services.metastore_client.clone(),
-        )),
+        ))
+        .boxed(),
     )
 }
 

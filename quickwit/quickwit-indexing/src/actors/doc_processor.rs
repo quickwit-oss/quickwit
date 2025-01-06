@@ -139,7 +139,7 @@ fn try_into_vrl_doc(
         SourceInputFormat::Json => serde_json::from_slice::<VrlValue>(&raw_doc)?,
         SourceInputFormat::PlainText => {
             let mut map = std::collections::BTreeMap::new();
-            let key = PLAIN_TEXT.to_string();
+            let key = vrl::value::KeyString::from(PLAIN_TEXT);
             let value = VrlValue::Bytes(raw_doc);
             map.insert(key, value);
             VrlValue::Object(map)

@@ -95,10 +95,12 @@ pub fn index_management_handlers(
         .or(update_index_handler(index_service.metastore()))
         .or(clear_index_handler(index_service.clone()))
         .or(delete_index_handler(index_service.clone()))
+        .boxed()
         // Splits handlers
         .or(list_splits_handler(index_service.metastore()))
         .or(describe_index_handler(index_service.metastore()))
         .or(mark_splits_for_deletion_handler(index_service.metastore()))
+        .boxed()
         // Sources handlers.
         .or(reset_source_checkpoint_handler(index_service.metastore()))
         .or(toggle_source_handler(index_service.metastore()))
@@ -106,11 +108,13 @@ pub fn index_management_handlers(
         .or(get_source_handler(index_service.metastore()))
         .or(delete_source_handler(index_service.metastore()))
         .or(get_source_shards_handler(index_service.metastore()))
+        .boxed()
         // Tokenizer handlers.
         .or(analyze_request_handler())
         // Parse query into query AST handler.
         .or(parse_query_request_handler())
         .recover(recover_fn)
+        .boxed()
 }
 
 fn json_body<T: DeserializeOwned + Send>(
@@ -127,6 +131,7 @@ pub fn get_index_metadata_handler(
         .then(get_index_metadata)
         .and(extract_format_from_qs())
         .map(into_rest_api_response)
+        .boxed()
 }
 
 async fn get_index_metadata(
@@ -163,6 +168,7 @@ fn list_indexes_metadata_handler(
         .then(list_indexes_metadata)
         .and(extract_format_from_qs())
         .map(into_rest_api_response)
+        .boxed()
 }
 
 /// Describes an index with its main information and statistics.
@@ -260,6 +266,7 @@ fn describe_index_handler(
         .then(describe_index)
         .and(extract_format_from_qs())
         .map(into_rest_api_response)
+        .boxed()
 }
 
 /// This struct represents the QueryString passed to
@@ -377,6 +384,7 @@ fn list_splits_handler(
         .then(list_splits)
         .and(extract_format_from_qs())
         .map(into_rest_api_response)
+        .boxed()
 }
 
 #[derive(Deserialize, utoipa::ToSchema)]
@@ -433,6 +441,7 @@ fn mark_splits_for_deletion_handler(
         .then(mark_splits_for_deletion)
         .and(extract_format_from_qs())
         .map(into_rest_api_response)
+        .boxed()
 }
 
 #[utoipa::path(
@@ -496,6 +505,7 @@ fn create_index_handler(
         .map(log_failure("failed to create index"))
         .and(extract_format_from_qs())
         .map(into_rest_api_response)
+        .boxed()
 }
 
 #[utoipa::path(
@@ -544,6 +554,7 @@ fn update_index_handler(
         .map(log_failure("failed to update index"))
         .and(extract_format_from_qs())
         .map(into_rest_api_response)
+        .boxed()
 }
 
 #[utoipa::path(
@@ -606,6 +617,7 @@ fn clear_index_handler(
         .then(clear_index)
         .and(extract_format_from_qs())
         .map(into_rest_api_response)
+        .boxed()
 }
 
 #[utoipa::path(
@@ -646,6 +658,7 @@ fn delete_index_handler(
         .then(delete_index)
         .and(extract_format_from_qs())
         .map(into_rest_api_response)
+        .boxed()
 }
 
 #[utoipa::path(
@@ -686,6 +699,7 @@ fn create_source_handler(
         .map(log_failure("failed to create source"))
         .and(extract_format_from_qs())
         .map(into_rest_api_response)
+        .boxed()
 }
 
 #[utoipa::path(
@@ -741,6 +755,7 @@ fn get_source_handler(
         .then(get_source)
         .and(extract_format_from_qs())
         .map(into_rest_api_response)
+        .boxed()
 }
 
 async fn get_source(
@@ -774,6 +789,7 @@ fn reset_source_checkpoint_handler(
         .then(reset_source_checkpoint)
         .and(extract_format_from_qs())
         .map(into_rest_api_response)
+        .boxed()
 }
 
 #[utoipa::path(
@@ -821,6 +837,7 @@ fn toggle_source_handler(
         .then(toggle_source)
         .and(extract_format_from_qs())
         .map(into_rest_api_response)
+        .boxed()
 }
 
 #[derive(Deserialize, utoipa::ToSchema)]
@@ -880,6 +897,7 @@ fn delete_source_handler(
         .then(delete_source)
         .and(extract_format_from_qs())
         .map(into_rest_api_response)
+        .boxed()
 }
 
 #[utoipa::path(
@@ -930,6 +948,7 @@ fn get_source_shards_handler(
         .then(get_source_shards)
         .and(extract_format_from_qs())
         .map(into_rest_api_response)
+        .boxed()
 }
 
 async fn get_source_shards(
@@ -982,6 +1001,7 @@ fn analyze_request_handler() -> impl Filter<Extract = (impl warp::Reply,), Error
         .then(analyze_request)
         .and(extract_format_from_qs())
         .map(into_rest_api_response)
+        .boxed()
 }
 
 /// Analyzes text with given tokenizer config and returns the list of tokens.
@@ -1027,6 +1047,7 @@ fn parse_query_request_handler(
         .then(parse_query_request)
         .and(extract_format_from_qs())
         .map(into_rest_api_response)
+        .boxed()
 }
 
 /// Analyzes text with given tokenizer config and returns the list of tokens.

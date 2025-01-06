@@ -168,6 +168,8 @@ The formatting is based on the specified output format.
 On error, an "X-Stream-Error" header will be sent via the trailers channel with information about the error, and the stream will be closed via [`sender.abort()`](https://docs.rs/hyper/0.14.16/hyper/body/struct.Sender.html#method.abort).
 Depending on the client, the trailer header with error details may not be shown. The error will also be logged in quickwit ("Error when streaming search results").
 
+## Ingest API
+
 ### Ingest data into an index
 
 ```
@@ -318,12 +320,10 @@ Updates the configurations of an index. This endpoint follows PUT semantics, whi
 
 - The retention policy update is automatically picked up by the janitor service on its next state refresh.
 - The search settings update is automatically picked up by searcher nodes when the next query is executed.
-- The indexing settings update is not automatically picked up by the indexer nodes, they need to be manually restarted.
-- The doc mapping update is not automatically picked up by the indexer nodes, they have to be manually restarted.
+- The indexing settings update is automatically picked up by the indexer nodes once the control plane emits a new indexing plan.
+- The doc mapping update is automatically picked up by the indexer nodes once the control plane emit a new indexing plan.
 
-Updating the doc mapping doesn't reindex existing data. Queries and answers are mapped on a best effort basis when querying older splits.
-It is also not possible to update the timestamp field, or to modify/remove existing non-default tokenizers (but it is possible to change
-which tokenizer is used for a field).
+Updating the doc mapping doesn't reindex existing data. Queries and results are mapped on a best-effort basis when querying older splits. For more details, check [the reference](updating-mapper.md) out.
 
 #### PUT payload
 

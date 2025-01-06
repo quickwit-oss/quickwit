@@ -46,7 +46,7 @@ pub(crate) fn developer_api_routes(
     warp::path!("api" / "developer" / ..)
         .and(
             debug_handler(cluster.clone())
-                .or(log_level_handler(env_filter_reload_fn.clone()))
+                .or(log_level_handler(env_filter_reload_fn.clone()).boxed())
                 .or(pprof_handlers()),
         )
         .recover(recover_fn)

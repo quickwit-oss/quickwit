@@ -19,6 +19,7 @@
 
 use quickwit_common::rate_limited_error;
 use quickwit_common::tower::MakeLoadShedError;
+use serde::{Deserialize, Serialize};
 use thiserror;
 
 use crate::error::{ServiceError, ServiceErrorCode};

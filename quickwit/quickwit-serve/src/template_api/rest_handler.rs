@@ -57,6 +57,7 @@ pub(crate) fn index_template_api_handlers(
         .or(delete_index_template_handler(metastore.clone()))
         .or(list_index_templates_handler(metastore.clone()))
         .recover(recover_fn)
+        .boxed()
 }
 
 fn create_index_template_handler(
