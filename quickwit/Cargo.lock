@@ -5143,7 +5143,7 @@ checksum = "b15813163c1d831bf4a13c3610c05c0d03b39feb07f7e09fa234dac9b15aaf39"
 [[package]]
 name = "ownedbytes"
 version = "0.7.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?branch=trinity/sstable-partial-automaton#24c5dc2398024de68c09a54e21f37ab2f844b30b"
+source = "git+https://github.com/quickwit-oss/tantivy/?branch=trinity/sstable-partial-automaton#037d12c9c9b8c96c09288297cacc7e20d88ea842"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -8733,7 +8733,7 @@ checksum = "7b2093cf4c8eb1e67749a6762251bc9cd836b6fc171623bd0a9d324d37af2417"
 [[package]]
 name = "tantivy"
 version = "0.23.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?branch=trinity/sstable-partial-automaton#24c5dc2398024de68c09a54e21f37ab2f844b30b"
+source = "git+https://github.com/quickwit-oss/tantivy/?branch=trinity/sstable-partial-automaton#037d12c9c9b8c96c09288297cacc7e20d88ea842"
 dependencies = [
  "aho-corasick",
  "arc-swap",
@@ -8747,6 +8747,7 @@ dependencies = [
  "fastdivide",
  "fnv",
  "fs4",
+ "futures-channel",
  "futures-util",
  "htmlescape",
  "hyperloglogplus",
@@ -8786,7 +8787,7 @@ dependencies = [
 [[package]]
 name = "tantivy-bitpacker"
 version = "0.6.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?branch=trinity/sstable-partial-automaton#24c5dc2398024de68c09a54e21f37ab2f844b30b"
+source = "git+https://github.com/quickwit-oss/tantivy/?branch=trinity/sstable-partial-automaton#037d12c9c9b8c96c09288297cacc7e20d88ea842"
 dependencies = [
  "bitpacking",
 ]
@@ -8794,7 +8795,7 @@ dependencies = [
 [[package]]
 name = "tantivy-columnar"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?branch=trinity/sstable-partial-automaton#24c5dc2398024de68c09a54e21f37ab2f844b30b"
+source = "git+https://github.com/quickwit-oss/tantivy/?branch=trinity/sstable-partial-automaton#037d12c9c9b8c96c09288297cacc7e20d88ea842"
 dependencies = [
  "downcast-rs",
  "fastdivide",
@@ -8809,7 +8810,7 @@ dependencies = [
 [[package]]
 name = "tantivy-common"
 version = "0.7.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?branch=trinity/sstable-partial-automaton#24c5dc2398024de68c09a54e21f37ab2f844b30b"
+source = "git+https://github.com/quickwit-oss/tantivy/?branch=trinity/sstable-partial-automaton#037d12c9c9b8c96c09288297cacc7e20d88ea842"
 dependencies = [
  "async-trait",
  "byteorder",
@@ -8832,7 +8833,7 @@ dependencies = [
 [[package]]
 name = "tantivy-query-grammar"
 version = "0.22.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?branch=trinity/sstable-partial-automaton#24c5dc2398024de68c09a54e21f37ab2f844b30b"
+source = "git+https://github.com/quickwit-oss/tantivy/?branch=trinity/sstable-partial-automaton#037d12c9c9b8c96c09288297cacc7e20d88ea842"
 dependencies = [
  "nom",
 ]
@@ -8840,7 +8841,7 @@ dependencies = [
 [[package]]
 name = "tantivy-sstable"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?branch=trinity/sstable-partial-automaton#24c5dc2398024de68c09a54e21f37ab2f844b30b"
+source = "git+https://github.com/quickwit-oss/tantivy/?branch=trinity/sstable-partial-automaton#037d12c9c9b8c96c09288297cacc7e20d88ea842"
 dependencies = [
  "futures-util",
  "itertools 0.13.0",
@@ -8853,7 +8854,7 @@ dependencies = [
 [[package]]
 name = "tantivy-stacker"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?branch=trinity/sstable-partial-automaton#24c5dc2398024de68c09a54e21f37ab2f844b30b"
+source = "git+https://github.com/quickwit-oss/tantivy/?branch=trinity/sstable-partial-automaton#037d12c9c9b8c96c09288297cacc7e20d88ea842"
 dependencies = [
  "murmurhash32",
  "rand_distr",
@@ -8863,7 +8864,7 @@ dependencies = [
 [[package]]
 name = "tantivy-tokenizer-api"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?branch=trinity/sstable-partial-automaton#24c5dc2398024de68c09a54e21f37ab2f844b30b"
+source = "git+https://github.com/quickwit-oss/tantivy/?branch=trinity/sstable-partial-automaton#037d12c9c9b8c96c09288297cacc7e20d88ea842"
 dependencies = [
  "serde",
 ]

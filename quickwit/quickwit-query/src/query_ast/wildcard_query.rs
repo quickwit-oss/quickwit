@@ -206,7 +206,7 @@ impl BuildTantivyAst for WildcardQuery {
             tantivy_fst::Regex::new(&regex).context("failed to parse regex built from wildcard")?;
         let regex_automaton_with_path = prefix::JsonPathPrefix {
             prefix: path.unwrap_or_default(),
-            automaton: regex,
+            automaton: regex.into(),
         };
         let regex_query_with_path = prefix::AutomatonQuery {
             field,
@@ -222,9 +222,20 @@ mod prefix {
     use tantivy::query::{AutomatonWeight, EnableScoring, Query, Weight};
     use tantivy::schema::Field;
     use tantivy_fst::Automaton;
+
     pub struct JsonPathPrefix<A> {
         pub prefix: Vec<u8>,
-        pub automaton: A,
+        pub automaton: Arc<A>,
+    }
+
+    // we need to implement manually because the std adds an unnecessary bound `A: Clone`
+    impl<A> Clone for JsonPathPrefix<A> {
+        fn clone(&self) -> Self {
+            JsonPathPrefix {
+                prefix: self.prefix.clone(),
+                automaton: self.automaton.clone(),
+            }
+        }
     }
 
     #[derive(Clone)]

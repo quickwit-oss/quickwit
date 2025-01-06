@@ -346,6 +346,12 @@ async fn warm_up_automatons(
     terms_grouped_by_field: &HashMap<Field, HashSet<Automaton>>,
 ) -> anyhow::Result<()> {
     let mut warm_up_futures = Vec::new();
+    let cpu_intensive_executor = |task| async {
+        crate::search_thread_pool()
+            .run_cpu_intensive(task)
+            .await
+            .map_err(|_| std::io::Error::other("task panicked"))?
+    };
     for (field, automatons) in terms_grouped_by_field {
         for segment_reader in searcher.segment_readers() {
             let inv_idx = segment_reader.inverted_index(*field)?;
@@ -358,10 +364,11 @@ async fn warm_up_automatons(
                                 .context("failed parsing regex during warmup")?;
                             inv_idx_clone
                                 .warm_postings_automaton(
-                                    &quickwit_query::query_ast::JsonPathPrefix {
-                                        automaton: regex,
+                                    quickwit_query::query_ast::JsonPathPrefix {
+                                        automaton: regex.into(),
                                         prefix: path.clone().unwrap_or_default(),
                                     },
+                                    cpu_intensive_executor,
                                 )
                                 .await
                                 .context("failed loading automaton")

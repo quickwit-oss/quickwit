@@ -113,7 +113,7 @@ impl BuildTantivyAst for RegexQuery {
         let regex = tantivy_fst::Regex::new(&regex).context("failed to parse regex")?;
         let regex_automaton_with_path = JsonPathPrefix {
             prefix: path.unwrap_or_default(),
-            automaton: regex,
+            automaton: regex.into(),
         };
         let regex_query_with_path = AutomatonQuery {
             field,
