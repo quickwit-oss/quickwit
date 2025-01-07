@@ -879,7 +879,7 @@ mod tests {
                     ..Default::default()
                 },
                 peer_seeds: ConfigValue::for_test(List(vec![
-                    "unresolvable-host".to_string(),
+                    "unresolvable.example.com".to_string(),
                     "localhost".to_string(),
                     "localhost:1337".to_string(),
                     "127.0.0.1".to_string(),
