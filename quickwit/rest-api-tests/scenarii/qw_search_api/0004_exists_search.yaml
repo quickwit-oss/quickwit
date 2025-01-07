@@ -1,0 +1,68 @@
+endpoint: nested/search
+params:
+  query: "doesnotexist:*"
+expected:
+  num_hits: 0
+---
+# json fast fields:
+endpoint: nested/search
+params:
+  query: "json_fast:*"
+expected:
+  num_hits: 1
+---
+endpoint: nested/search
+params:
+  query: "json_fast.field_c:*"
+expected:
+  num_hits: 1
+---
+endpoint: nested/search
+params:
+  query: "json_fast.doesnotexist:*"
+expected:
+  num_hits: 0
+---
+# json text fields:
+endpoint: nested/search
+params:
+  query: "json_text.field_a:*"
+expected:
+  num_hits: 2
+---
+endpoint: nested/search
+params:
+  query: "json_text.field_b:*"
+expected:
+  num_hits: 1
+---
+endpoint: nested/search
+params:
+  query: "json_text:*"
+expected:
+  num_hits: 2
+---
+# object fields:
+endpoint: nested/search
+params:
+  query: "object_multi.object_fast_field:*"
+expected:
+  num_hits: 2
+---
+endpoint: nested/search
+params:
+  query: "object_multi.doesnotexist:*"
+expected:
+  num_hits: 0
+---
+endpoint: nested/search
+params:
+  query: "object_multi.object_text_field:*"
+expected:
+  num_hits: 1
+---
+endpoint: nested/search
+params:
+  query: "object_multi:*"
+expected:
+  num_hits: 3

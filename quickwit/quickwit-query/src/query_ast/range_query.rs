@@ -121,7 +121,11 @@ impl BuildTantivyAst for RangeQuery {
         _with_validation: bool,
     ) -> Result<TantivyQueryAst, InvalidQuery> {
         let (field, field_entry, json_path) =
-            super::utils::find_field_or_hit_dynamic(&self.field, schema)?;
+            super::utils::find_field_or_hit_dynamic(&self.field, schema).ok_or_else(|| {
+                InvalidQuery::FieldDoesNotExist {
+                    full_path: self.field.clone(),
+                }
+            })?;
         if !field_entry.is_fast() {
             return Err(InvalidQuery::SchemaError(format!(
                 "range queries are only supported for fast fields. (`{}` is not a fast field)",
