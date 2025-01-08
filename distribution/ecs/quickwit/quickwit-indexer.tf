@@ -20,6 +20,9 @@ module "quickwit_indexer" {
   enable_cloudwatch_logging      = var.enable_cloudwatch_logging
   service_config                 = var.quickwit_indexer
   quickwit_index_s3_prefix       = local.quickwit_index_s3_prefix
+  # Longer termination grace period for indexers because their ingest services
+  # need to commit their WALs. Should be larger than the largest commit timeout.
+  stop_timeout = 120
 }
 
 resource "aws_service_discovery_service" "indexer" {
