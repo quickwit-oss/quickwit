@@ -145,7 +145,7 @@ search_settings:
 ## Known limitations
 
 There are a few limitations on the current distributed tracing setup in Quickwit 0.7:
-- The OTLP gRPC service does not provide High-Availability and High-Durability, This will be fixed in 0.8.
+- The OTLP gRPC service does not provide High-Availability and High-Durability. This will be fixed in 0.9.
 - OTLP HTTP is only available with the Binary Protobuf Encoding.  OTLP HTTP with JSON encoding is not planned yet, but this can be easily fixed in the next version. Please open an issue if you need this feature.
 
 If you are interested in new features or discovered other limitations, please open an issue on [GitHub](https://github.com/quickwit-oss/quickwit).

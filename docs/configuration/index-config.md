@@ -584,6 +584,14 @@ This section describes indexing settings for a given index.
 | `docstore_compression_level` | Level of compression used by zstd for the docstore. Lower values may increase ingest speed, at the cost of index size | `8` |
 | `docstore_blocksize` | Size of blocks in the docstore, in bytes. Lower values may improve doc retrieval speed, at the cost of index size | `1000000` |
 
+:::note
+
+Choosing an appropriate commit timeout is critical. With a shorter commit timeout, ingested data is more quickly queryable. But the published splits will be smaller, increasing the overhead associated with [merges](#merge-policies). 
+
+When decommissioning definitively a indexer node that received data through the ingest API (including the [Elastic bulk API](/docs/reference/es_compatible_api) and the OTEL [log](/docs/log-management/otel-service.md) and [trace](/docs/distributed-tracing/otel-service.md) services), we need to make sure that all the data that was staged locally (Write Ahead Log) is indexed. After receiving the termination signal, the Quickwit process waits for the local indexing pipelines to complete. This can take as long as the longest commit timeout of all indexes. Make sure that the termination grace period of the infrastructure supporting the Quickwit indexer nodes is long enough (e.g [`terminationGracePeriodSeconds`](https://kubernetes.io/docs/concepts/containers/container-lifecycle-hooks/) in Kubernetes or [`stopTimeout`](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_definition_parameters.html) on AWS ECS).
+
+:::
+
 ### Merge policies
 
 Quickwit makes it possible to define the strategy used to decide which splits should be merged together and when.
