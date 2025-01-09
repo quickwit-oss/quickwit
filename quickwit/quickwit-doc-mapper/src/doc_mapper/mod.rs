@@ -94,6 +94,15 @@ pub enum Automaton {
     // we could add termset query here, instead of downloading the whole dictionary
 }
 
+/// Description of how a fast field should be warmed up
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct FastFieldWarmupInfo {
+    /// Name of the fast field
+    pub name: String,
+    /// Whether subfields should also be loaded for warmup
+    pub with_subfields: bool,
+}
+
 /// Information about what a DocMapper think should be warmed up before
 /// running the query.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -101,8 +110,8 @@ pub struct WarmupInfo {
     /// Name of fields from the term dictionary and posting list which needs to
     /// be entirely loaded
     pub term_dict_fields: HashSet<Field>,
-    /// Name of fast fields which needs to be loaded
-    pub fast_field_names: HashSet<String>,
+    /// Fast fields which needs to be loaded
+    pub fast_fields: HashSet<FastFieldWarmupInfo>,
     /// Whether to warmup field norms. Used mostly for scoring.
     pub field_norms: bool,
     /// Terms to warmup, and whether their position is needed too.
@@ -117,8 +126,17 @@ impl WarmupInfo {
     /// Merge other WarmupInfo into self.
     pub fn merge(&mut self, other: WarmupInfo) {
         self.term_dict_fields.extend(other.term_dict_fields);
-        self.fast_field_names.extend(other.fast_field_names);
         self.field_norms |= other.field_norms;
+
+        for fast_field_warmup_info in other.fast_fields.into_iter() {
+            // avoid overwriting with a less demanding warmup
+            if !self.fast_fields.contains(&FastFieldWarmupInfo {
+                name: fast_field_warmup_info.name.clone(),
+                with_subfields: true,
+            }) {
+                self.fast_fields.insert(fast_field_warmup_info);
+            }
+        }
 
         for (field, term_and_pos) in other.terms_grouped_by_field.into_iter() {
             let sub_map = self.terms_grouped_by_field.entry(field).or_default();
@@ -587,8 +605,14 @@ mod tests {
         }
     }
 
-    fn hashset(elements: &[&str]) -> HashSet<String> {
-        elements.iter().map(|elem| elem.to_string()).collect()
+    fn hashset_fast(elements: &[&str]) -> HashSet<FastFieldWarmupInfo> {
+        elements
+            .iter()
+            .map(|elem| FastFieldWarmupInfo {
+                name: elem.to_string(),
+                with_subfields: false,
+            })
+            .collect()
     }
 
     fn automaton_hashset(elements: &[&str]) -> HashSet<Automaton> {
@@ -640,7 +664,7 @@ mod tests {
     fn test_warmup_info_merge() {
         let wi_base = WarmupInfo {
             term_dict_fields: hashset_field(&[1, 2]),
-            fast_field_names: hashset(&["fast1", "fast2"]),
+            fast_fields: hashset_fast(&["fast1", "fast2"]),
             field_norms: false,
             terms_grouped_by_field: hashmap(&[(1, "term1", false), (1, "term2", false)]),
             term_ranges_grouped_by_field: hashmap_ranges(&[
@@ -663,7 +687,7 @@ mod tests {
         let mut wi_base = wi_base;
         let wi_2 = WarmupInfo {
             term_dict_fields: hashset_field(&[2, 3]),
-            fast_field_names: hashset(&["fast2", "fast3"]),
+            fast_fields: hashset_fast(&["fast2", "fast3"]),
             field_norms: true,
             terms_grouped_by_field: hashmap(&[(2, "term1", false), (1, "term2", true)]),
             term_ranges_grouped_by_field: hashmap_ranges(&[
@@ -681,8 +705,8 @@ mod tests {
 
         assert_eq!(wi_base.term_dict_fields, hashset_field(&[1, 2, 3]));
         assert_eq!(
-            wi_base.fast_field_names,
-            hashset(&["fast1", "fast2", "fast3"])
+            wi_base.fast_fields,
+            hashset_fast(&["fast1", "fast2", "fast3"])
         );
         assert!(wi_base.field_norms);
 
@@ -744,7 +768,7 @@ mod tests {
     fn test_warmup_info_simplify() {
         let mut warmup_info = WarmupInfo {
             term_dict_fields: hashset_field(&[1]),
-            fast_field_names: hashset(&["fast1", "fast2"]),
+            fast_fields: hashset_fast(&["fast1", "fast2"]),
             field_norms: false,
             terms_grouped_by_field: hashmap(&[
                 (1, "term1", false),
@@ -766,7 +790,7 @@ mod tests {
         };
         let expected = WarmupInfo {
             term_dict_fields: hashset_field(&[1]),
-            fast_field_names: hashset(&["fast1", "fast2"]),
+            fast_fields: hashset_fast(&["fast1", "fast2"]),
             field_norms: false,
             terms_grouped_by_field: hashmap(&[(1, "term2", true), (2, "term3", false)]),
             term_ranges_grouped_by_field: hashmap_ranges(&[

@@ -52,6 +52,14 @@ use crate::elastic_query_dsl::terms_query::TermsQuery;
 use crate::not_nan_f32::NotNaNf32;
 use crate::query_ast::QueryAst;
 
+/// Quickwit and Elasticsearch have different interpretations of leniency:
+/// - In Quickwit, lenient mode allows ignoring parts of the query that reference non-existing
+///   columns. This is a behavior that Elasticsearch supports by default.
+/// - In Elasticsearch, lenient mode primarily addresses type errors (such as searching for text in
+///   an integer field). Quickwit always supports this behavior, regardless of the `lenient`
+///   setting.
+pub type LeniencyBool = bool;
+
 fn default_max_expansions() -> u32 {
     50
 }

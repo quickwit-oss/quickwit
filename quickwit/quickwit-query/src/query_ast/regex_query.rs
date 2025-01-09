@@ -58,7 +58,12 @@ impl RegexQuery {
         &self,
         schema: &TantivySchema,
     ) -> Result<(Field, Option<Vec<u8>>, String), InvalidQuery> {
-        let (field, field_entry, json_path) = find_field_or_hit_dynamic(&self.field, schema)?;
+        let Some((field, field_entry, json_path)) = find_field_or_hit_dynamic(&self.field, schema)
+        else {
+            return Err(InvalidQuery::FieldDoesNotExist {
+                full_path: self.field.clone(),
+            });
+        };
         let field_type = field_entry.field_type();
 
         match field_type {

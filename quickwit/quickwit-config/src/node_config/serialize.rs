@@ -616,7 +616,9 @@ mod tests {
                     min_throughtput_bytes_per_secs: 100_000,
                     timeout_millis: 2_000,
                     max_num_retries: 2
-                })
+                }),
+                warmup_memory_budget: ByteSize::gb(100),
+                warmup_single_split_initial_allocation: ByteSize::gb(1),
             }
         );
         assert_eq!(
@@ -877,7 +879,7 @@ mod tests {
                     ..Default::default()
                 },
                 peer_seeds: ConfigValue::for_test(List(vec![
-                    "unresolvable-host".to_string(),
+                    "unresolvable.example.com".to_string(),
                     "localhost".to_string(),
                     "localhost:1337".to_string(),
                     "127.0.0.1".to_string(),

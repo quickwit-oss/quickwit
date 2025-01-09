@@ -36,22 +36,24 @@ pub fn parse_date_time_str(
     date_time_str: &str,
     date_time_formats: &[DateTimeInputFormat],
 ) -> Result<TantivyDateTime, String> {
+    let trimmed_date_time_str = date_time_str.trim_ascii();
+
     for date_time_format in date_time_formats {
         let date_time_opt = match date_time_format {
-            DateTimeInputFormat::Iso8601 => parse_iso8601(date_time_str)
+            DateTimeInputFormat::Iso8601 => parse_iso8601(trimmed_date_time_str)
                 .map(TantivyDateTime::from_utc)
                 .ok(),
-            DateTimeInputFormat::Rfc2822 => parse_rfc2822(date_time_str)
+            DateTimeInputFormat::Rfc2822 => parse_rfc2822(trimmed_date_time_str)
                 .map(TantivyDateTime::from_utc)
                 .ok(),
-            DateTimeInputFormat::Rfc3339 => parse_rfc3339(date_time_str)
+            DateTimeInputFormat::Rfc3339 => parse_rfc3339(trimmed_date_time_str)
                 .map(TantivyDateTime::from_utc)
                 .ok(),
             DateTimeInputFormat::Strptime(parser) => parser
-                .parse_date_time(date_time_str)
+                .parse_date_time(trimmed_date_time_str)
                 .map(TantivyDateTime::from_utc)
                 .ok(),
-            DateTimeInputFormat::Timestamp => parse_timestamp_str(date_time_str),
+            DateTimeInputFormat::Timestamp => parse_timestamp_str(trimmed_date_time_str),
         };
         if let Some(date_time) = date_time_opt {
             return Ok(date_time);
@@ -80,7 +82,7 @@ pub fn parse_timestamp_float(
         ));
     }
     let duration_since_epoch = Duration::try_from_secs_f64(timestamp)
-        .map_err(|error| format!("Failed to parse datetime `{timestamp}`: {error}"))?;
+        .map_err(|error| format!("failed to parse datetime `{timestamp}`: {error}"))?;
     let timestamp_nanos = duration_since_epoch.as_nanos() as i64;
     Ok(TantivyDateTime::from_timestamp_nanos(timestamp_nanos))
 }
@@ -208,13 +210,13 @@ mod tests {
     fn test_parse_strptime() {
         let test_data = vec![
             (
-                "%Y-%m-%d %H:%M:%S",
+                " %Y-%m-%d %H:%M:%S ",
                 "2012-05-21 12:09:14",
                 datetime!(2012-05-21 12:09:14 UTC),
             ),
             (
                 "%Y-%m-%d %H:%M:%S %z",
-                "2012-05-21 12:09:14 +0000",
+                " 2012-05-21 12:09:14 +0000 ",
                 datetime!(2012-05-21 12:09:14 UTC),
             ),
             (
@@ -260,15 +262,15 @@ mod tests {
             ),
         ];
         for (fmt, date_time_str, expected) in test_data {
-            let parser = StrptimeParser::from_strptime(fmt).unwrap();
-            let result = parser.parse_date_time(date_time_str);
+            let parser = DateTimeInputFormat::Strptime(StrptimeParser::from_strptime(fmt).unwrap());
+            let result = parse_date_time_str(date_time_str, &[parser]);
             if let Err(error) = &result {
                 panic!(
                     "failed to parse `{date_time_str}` using the following strptime format \
                      `{fmt}`: {error}"
                 )
             }
-            assert_eq!(result.unwrap(), expected);
+            assert_eq!(result.unwrap(), TantivyDateTime::from_utc(expected));
         }
     }
 
@@ -291,14 +293,14 @@ mod tests {
     #[test]
     fn test_parse_date_time_str() {
         for date_time_str in [
-            "20120521T120914Z",
-            "Mon, 21 May 2012 12:09:14 GMT",
-            "2012-05-21T12:09:14-00:00",
+            "20120521T120914Z ",
+            " Mon, 21 May 2012 12:09:14 GMT",
+            " 2012-05-21T12:09:14-00:00 ",
             "2012-05-21 12:09:14",
-            "2012/05/21 12:09:14",
+            " 2012/05/21 12:09:14",
             "2012/05/21 12:09:14 +00:00",
-            "1337602154",
-            "1337602154.0",
+            "1337602154 ",
+            " 1337602154.0 ",
         ] {
             let date_time = parse_date_time_str(
                 date_time_str,

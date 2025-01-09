@@ -273,6 +273,11 @@ fn make_elastic_bulk_response_v2(
                 format!("shard rate limiting [{}]", failure.index_id),
                 StatusCode::TOO_MANY_REQUESTS,
             ),
+            IngestFailureReason::NoShardsAvailable => (
+                ElasticException::RateLimited,
+                format!("no shards available [{}]", failure.index_id),
+                StatusCode::TOO_MANY_REQUESTS,
+            ),
             reason => {
                 let pretty_reason = reason
                     .as_str_name()
@@ -346,6 +351,7 @@ fn remove_doc_handles(
 
 #[cfg(test)]
 mod tests {
+    use bytesize::ByteSize;
     use quickwit_proto::ingest::router::{
         IngestFailure, IngestFailureReason, IngestResponseV2, IngestSuccess,
         MockIngestRouterService,
@@ -394,8 +400,9 @@ mod tests {
 
     fn es_compat_bulk_handler_v2(
         ingest_router: IngestRouterServiceClient,
+        content_length_limit: ByteSize,
     ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-        elastic_bulk_filter()
+        elastic_bulk_filter(content_length_limit)
             .and(with_arg(ingest_router))
             .then(|body, bulk_options, ingest_router| {
                 elastic_bulk_ingest_v2(None, body, bulk_options, ingest_router)
@@ -454,7 +461,7 @@ mod tests {
                 })
             });
         let ingest_router = IngestRouterServiceClient::from_mock(mock_ingest_router);
-        let handler = es_compat_bulk_handler_v2(ingest_router);
+        let handler = es_compat_bulk_handler_v2(ingest_router, ByteSize::mb(10));
 
         let payload = r#"
             {"create": {"_index": "my-index-1", "_id" : "1"}}
@@ -506,7 +513,7 @@ mod tests {
     #[tokio::test]
     async fn test_bulk_api_accepts_empty_requests() {
         let ingest_router = IngestRouterServiceClient::mocked();
-        let handler = es_compat_bulk_handler_v2(ingest_router);
+        let handler = es_compat_bulk_handler_v2(ingest_router, ByteSize::mb(10));
 
         let response = warp::test::request()
             .path("/_elastic/_bulk")
@@ -551,7 +558,7 @@ mod tests {
                 })
             });
         let ingest_router = IngestRouterServiceClient::from_mock(mock_ingest_router);
-        let handler = es_compat_bulk_handler_v2(ingest_router);
+        let handler = es_compat_bulk_handler_v2(ingest_router, ByteSize::mb(10));
 
         let payload = r#"
 
@@ -574,7 +581,7 @@ mod tests {
     #[tokio::test]
     async fn test_bulk_api_handles_malformed_requests() {
         let ingest_router = IngestRouterServiceClient::mocked();
-        let handler = es_compat_bulk_handler_v2(ingest_router);
+        let handler = es_compat_bulk_handler_v2(ingest_router, ByteSize::mb(10));
 
         let payload = r#"
             {"create": {"_index": "my-index-1", "_id" : "1"},}
@@ -675,7 +682,7 @@ mod tests {
                 })
             });
         let ingest_router = IngestRouterServiceClient::from_mock(mock_ingest_router);
-        let handler = es_compat_bulk_handler_v2(ingest_router);
+        let handler = es_compat_bulk_handler_v2(ingest_router, ByteSize::mb(10));
 
         let payload = r#"
             {"index": {"_index": "my-index-1", "_id" : "1"}}
@@ -817,7 +824,7 @@ mod tests {
                 })
             });
         let ingest_router = IngestRouterServiceClient::from_mock(mock_ingest_router);
-        let handler = es_compat_bulk_handler_v2(ingest_router);
+        let handler = es_compat_bulk_handler_v2(ingest_router, ByteSize::mb(10));
 
         let payload = r#"
             {"create": {"_index": "my-index-1", "_id" : "1"}}

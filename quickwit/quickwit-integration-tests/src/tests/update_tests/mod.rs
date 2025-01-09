@@ -41,7 +41,7 @@ async fn assert_hits_unordered(
         )
         .await;
     if let Ok(expected_hits) = expected_result {
-        let resp = search_res.unwrap_or_else(|_| panic!("query: {}", query));
+        let resp = search_res.unwrap_or_else(|err| panic!("query: {}, error: {}", query, err));
         assert_eq!(resp.errors.len(), 0, "query: {}", query);
         assert_eq!(
             resp.num_hits,

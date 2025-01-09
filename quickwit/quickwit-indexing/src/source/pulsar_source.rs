@@ -429,9 +429,7 @@ async fn connect_pulsar(params: &PulsarSourceParams) -> anyhow::Result<Pulsar<To
             builder = builder.with_auth_provider(OAuth2Authentication::client_credentials(auth));
         }
     }
-
     let pulsar: Pulsar<_> = builder.build().await?;
-
     Ok(pulsar)
 }
 

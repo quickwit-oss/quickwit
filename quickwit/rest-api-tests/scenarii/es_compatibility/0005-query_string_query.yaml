@@ -236,12 +236,24 @@ json:
   query:
     query_string:
       query: "true"
-      fields: ["public", "public.inner"]
+      fields: ["public", "public.notdefined", "notdefined"]
       lenient: true
 expected:
   hits:
     total:
       value: 100
+---
+# trailing wildcard
+json:
+  query:
+    query_string:
+      query: "jour*"
+      fields: ["payload.description", "payload.notdefined", "notdefined"]
+      lenient: true
+expected:
+  hits:
+    total:
+      value: 3
 ---
 # elasticsearch accepts this query
 engines:
@@ -250,5 +262,5 @@ json:
   query:
     query_string:
       query: "true"
-      fields: ["public", "public.inner"]
+      fields: ["public", "public.notdefined"]
 status_code: 400

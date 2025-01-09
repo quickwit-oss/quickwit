@@ -35,21 +35,13 @@ use crate::{find_field_or_hit_dynamic, InvalidQuery};
 pub struct WildcardQuery {
     pub field: String,
     pub value: String,
+    /// Support missing fields
+    pub lenient: bool,
 }
 
 impl From<WildcardQuery> for QueryAst {
     fn from(wildcard_query: WildcardQuery) -> Self {
         Self::Wildcard(wildcard_query)
-    }
-}
-
-impl WildcardQuery {
-    #[cfg(test)]
-    pub fn from_field_value(field: impl ToString, value: impl ToString) -> Self {
-        Self {
-            field: field.to_string(),
-            value: value.to_string(),
-        }
     }
 }
 
@@ -125,7 +117,12 @@ impl WildcardQuery {
         schema: &TantivySchema,
         tokenizer_manager: &TokenizerManager,
     ) -> Result<(Field, Option<Vec<u8>>, String), InvalidQuery> {
-        let (field, field_entry, json_path) = find_field_or_hit_dynamic(&self.field, schema)?;
+        let Some((field, field_entry, json_path)) = find_field_or_hit_dynamic(&self.field, schema)
+        else {
+            return Err(InvalidQuery::FieldDoesNotExist {
+                full_path: self.field.clone(),
+            });
+        };
         let field_type = field_entry.field_type();
 
         let sub_query_parts = parse_wildcard_query(&self.value);
@@ -185,7 +182,13 @@ impl BuildTantivyAst for WildcardQuery {
         _search_fields: &[String],
         _with_validation: bool,
     ) -> Result<TantivyQueryAst, InvalidQuery> {
-        let (field, path, regex) = self.to_regex(schema, tokenizer_manager)?;
+        let (field, path, regex) = match self.to_regex(schema, tokenizer_manager) {
+            Ok(res) => res,
+            Err(InvalidQuery::FieldDoesNotExist { .. }) if self.lenient => {
+                return Ok(TantivyQueryAst::match_none())
+            }
+            Err(e) => return Err(e),
+        };
         let regex =
             tantivy_fst::Regex::new(&regex).context("failed to parse regex built from wildcard")?;
         let regex_automaton_with_path = JsonPathPrefix {
@@ -207,11 +210,20 @@ mod tests {
     use super::*;
     use crate::create_default_quickwit_tokenizer_manager;
 
+    fn single_text_field_schema(field_name: &str, tokenizer: &str) -> TantivySchema {
+        let mut schema_builder = TantivySchema::builder();
+        let text_options = TextOptions::default()
+            .set_indexing_options(TextFieldIndexing::default().set_tokenizer(tokenizer));
+        schema_builder.add_text_field(field_name, text_options);
+        schema_builder.build()
+    }
+
     #[test]
     fn test_wildcard_query_to_regex_on_text() {
         let query = WildcardQuery {
             field: "text_field".to_string(),
             value: "MyString Wh1ch?a.nOrMal Tokenizer would*cut".to_string(),
+            lenient: false,
         };
 
         let tokenizer_manager = create_default_quickwit_tokenizer_manager();
@@ -255,6 +267,7 @@ mod tests {
             // keep the case, but sanitize special chars
             field: "json_field.Inner.Fie*ld".to_string(),
             value: "MyString Wh1ch?a.nOrMal Tokenizer would*cut".to_string(),
+            lenient: false,
         };
 
         let tokenizer_manager = create_default_quickwit_tokenizer_manager();
@@ -289,5 +302,24 @@ mod tests {
             assert_eq!(regex, "mystring wh1ch.a\\.normal tokenizer would.*cut");
             assert_eq!(path.unwrap(), "Inner\u{1}Fie*ld\0s".as_bytes());
         }
+    }
+
+    #[test]
+    fn test_extract_regex_wildcard_missing_field() {
+        let query = WildcardQuery {
+            field: "my_missing_field".to_string(),
+            value: "My query value*".to_string(),
+            lenient: false,
+        };
+        let tokenizer_manager = create_default_quickwit_tokenizer_manager();
+        let schema = single_text_field_schema("my_field", "whitespace");
+        let err = query.to_regex(&schema, &tokenizer_manager).unwrap_err();
+        let InvalidQuery::FieldDoesNotExist {
+            full_path: missing_field_full_path,
+        } = err
+        else {
+            panic!("unexpected error: {:?}", err);
+        };
+        assert_eq!(missing_field_full_path, "my_missing_field");
     }
 }

@@ -61,3 +61,8 @@ variable "task_execution_policy_arn" {}
 variable "quickwit_cpu_architecture" {}
 
 variable "module_id" {}
+
+variable "stop_timeout" {
+  # between 1s and 120s on Fargate, 30s is the ECS default
+  default = 30
+}
