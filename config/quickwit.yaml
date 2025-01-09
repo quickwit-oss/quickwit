@@ -130,6 +130,7 @@ indexer:
 # ingest_api:
 #   max_queue_memory_usage: 2GiB
 #   max_queue_disk_usage: 4GiB
+#   content_length_limit: 10MiB
 #
 # -------------------------------- Searcher settings --------------------------------
 # https://quickwit.io/docs/configuration/node-config#searcher-configuration

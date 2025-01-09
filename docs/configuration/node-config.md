@@ -176,6 +176,7 @@ indexer:
 | --- | --- | --- |
 | `max_queue_memory_usage` | Maximum size in bytes of the in-memory Ingest queue. | `2GiB` |
 | `max_queue_disk_usage` | Maximum disk-space in bytes taken by the Ingest queue. The minimum size is at least `256M` and be at least `max_queue_memory_usage`. | `4GiB` |
+| `content_length_limit` | Maximum payload size uncompressed. Increasing this is discouraged, use a [file source](../ingest-data/sqs-files.md) instead. | `10MiB` |
 
 Example:
 
@@ -183,6 +184,7 @@ Example:
 ingest_api:
   max_queue_memory_usage: 2GiB
   max_queue_disk_usage: 4GiB
+  content_length_limit: 10MiB
 ```
 
 ## Searcher configuration

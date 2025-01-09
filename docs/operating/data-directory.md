@@ -22,16 +22,20 @@ qwdata
 ├── indexing
 │   ├── wikipedia%01H13SVKDS03P%_ingest-api-source%RbaOAI
 │   └── wikipedia%01H13SVKDS03P%kafka-source%cNqQtI
+├── wal
+│   ├── wal-00000000000000000056
+│   └── wal-00000000000000000057
 └── queues
     ├── partition_id
     ├── wal-00000000000000000028
     └── wal-00000000000000000029
 ```
 
-### `/queues` directory
+### `/queues` and `/wal` directories
  
-This directory is created only if the ingest API service is running on your node. It contains write ahead log files of the ingest API to guard against data lost.
-The queue is truncated when Quickwit commits a split (piece of index), which means that the split is stored on the storage and its metadata are in the metastore.
+These directories are created only if the ingest API service is running on your node. They contains write ahead log files of the ingest API to guard against data loss. The `/queues` directory is used by the legacy version of the ingest (sometimes referred to as ingest V1). It is meant to be phased out in upcoming versions of Quickwit. Learn more about ingest API versions [here](../ingest-data/ingest-api.md#ingest-api-versions).
+
+The log file is truncated when Quickwit commits a split (piece of index), which means that the split is stored on the storage and its metadata are in the metastore.
 
 You can configure `max_queue_memory_usage` and `max_queue_disk_usage` in the [node config file](../configuration/node-config.md#ingest-api-configuration) to limit the max disk usage.
 
@@ -110,4 +114,3 @@ With these assumptions, you have to set `split_store_max_num_splits` to at least
 
 When starting, Quickwit is scanning all the splits in the cache directory to know which split is present locally, this can take a few minutes if you have tens of thousands splits. On Kubernetes, as your pod can be restarted if it takes too long to start, you may want to clean up the data directory or increase the liveliness probe timeout.
 Also please report such a behavior on [GitHub](https://github.com/quickwit-oss/quickwit) as we can certainly optimize this start phase.
-

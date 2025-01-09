@@ -141,12 +141,12 @@ pub fn build_index_command() -> Command {
                     Arg::new("wait")
                         .long("wait")
                         .short('w')
-                        .help("Wait for all documents to be committed and available for search before exiting")
+                        .help("Wait for all documents to be committed and available for search before exiting. Applies only to the last batch, see [#5417](https://github.com/quickwit-oss/quickwit/issues/5417).")
                         .action(ArgAction::SetTrue),
                     Arg::new("force")
                         .long("force")
                         .short('f')
-                        .help("Force a commit after the last document is sent, and wait for all documents to be committed and available for search before exiting")
+                        .help("Force a commit after the last document is sent, and wait for all documents to be committed and available for search before exiting. Applies only to the last batch, see [#5417](https://github.com/quickwit-oss/quickwit/issues/5417).")
                         .action(ArgAction::SetTrue)
                         .conflicts_with("wait"),
                     Arg::new("commit-timeout")

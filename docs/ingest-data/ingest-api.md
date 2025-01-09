@@ -69,3 +69,20 @@ curl -XDELETE 'http://localhost:7280/api/v1/indexes/stackoverflow-schemaless'
 ```
 
 This concludes the tutorial. You can now move on to the [next tutorial](/docs/ingest-data/kafka.md) to learn how to ingest data from Kafka.
+
+## Ingest API versions
+
+In 0.9, Quickwit introduced a new version of the ingest API that enables distributing the indexing in the cluster regardless of the node that received the ingest request. This new ingestion service is often referred to as "Ingest V2" compared to the legacy ingestion (V1). In upcoming versions the new ingest API will also be capable of replicating the write ahead log in order to achieve higher durability.
+
+By default, both ingestion services are enabled and ingest V2 is used. You can toggle this behavior with the following environment variables:
+
+| Variable              | Description   | Default value |
+| --------------------- | --------------|-------------- |
+| `QW_ENABLE_INGEST_V2` | Start the V2 ingest service and use it by default. | true | 
+| `QW_DISABLE_INGEST_V1`| V1 ingest will be used by the APIs only if V2 is disabled. Running V1 along V2 can be useful to finish indexing existing V1 logs. | false |
+
+:::note
+
+These configuration drive the ingest service used both by the `api/v1/<index-id>/ingest` endpoint and the [bulk API](../reference/es_compatible_api.md#_bulk--batch-ingestion-endpoint).
+
+:::
