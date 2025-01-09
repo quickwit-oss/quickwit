@@ -27,6 +27,7 @@ use crate::query_ast::{QueryAst, RegexQuery as AstRegexQuery};
 #[serde(deny_unknown_fields)]
 pub struct RegexQueryParams {
     value: String,
+    // we could probably add case_insensitive
 }
 
 pub type RegexQuery = OneFieldMap<RegexQueryParams>;

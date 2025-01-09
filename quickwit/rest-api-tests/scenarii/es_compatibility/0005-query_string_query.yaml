@@ -202,6 +202,16 @@ expected:
 ---
 json:
   query:
+    regexp:
+      payload.description:
+          value: "jour.*"
+expected:
+  hits:
+    total:
+      value: 3
+---
+json:
+  query:
     query_string:
       default_field: actor.id
       query: ">=10791466"

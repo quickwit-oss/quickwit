@@ -274,7 +274,7 @@ impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRanges<'b> {
     }
 
     fn visit_regex(&mut self, regex_query: &'a RegexQuery) -> Result<(), Self::Err> {
-        let (field, path, regex) = regex_query.to_regex(self.schema)?;
+        let (field, path, regex) = regex_query.to_field_and_regex(self.schema)?;
         self.add_automaton(field, Automaton::Regex(path, regex));
         Ok(())
     }

@@ -1122,6 +1122,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "bon"
+version = "3.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fe7acc34ff59877422326db7d6f2d845a582b16396b6b08194942bf34c6528ab"
+dependencies = [
+ "bon-macros",
+ "rustversion",
+]
+
+[[package]]
+name = "bon-macros"
+version = "3.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4159dd617a7fbc9be6a692fe69dc2954f8e6bb6bb5e4d7578467441390d77fd0"
+dependencies = [
+ "darling 0.20.10",
+ "ident_case",
+ "prettyplease 0.2.25",
+ "proc-macro2",
+ "quote",
+ "rustversion",
+ "syn 2.0.89",
+]
+
+[[package]]
 name = "borsh"
 version = "1.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5143,7 +5168,7 @@ checksum = "b15813163c1d831bf4a13c3610c05c0d03b39feb07f7e09fa234dac9b15aaf39"
 [[package]]
 name = "ownedbytes"
 version = "0.7.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?branch=trinity/sstable-partial-automaton#037d12c9c9b8c96c09288297cacc7e20d88ea842"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=d281ca3#d281ca3e659d9eaedd5c64dd1613c5b9d11d6c65"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -8733,12 +8758,13 @@ checksum = "7b2093cf4c8eb1e67749a6762251bc9cd836b6fc171623bd0a9d324d37af2417"
 [[package]]
 name = "tantivy"
 version = "0.23.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?branch=trinity/sstable-partial-automaton#037d12c9c9b8c96c09288297cacc7e20d88ea842"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=d281ca3#d281ca3e659d9eaedd5c64dd1613c5b9d11d6c65"
 dependencies = [
  "aho-corasick",
  "arc-swap",
  "base64 0.22.1",
  "bitpacking",
+ "bon",
  "byteorder",
  "census",
  "crc32fast",
@@ -8787,7 +8813,7 @@ dependencies = [
 [[package]]
 name = "tantivy-bitpacker"
 version = "0.6.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?branch=trinity/sstable-partial-automaton#037d12c9c9b8c96c09288297cacc7e20d88ea842"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=d281ca3#d281ca3e659d9eaedd5c64dd1613c5b9d11d6c65"
 dependencies = [
  "bitpacking",
 ]
@@ -8795,7 +8821,7 @@ dependencies = [
 [[package]]
 name = "tantivy-columnar"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?branch=trinity/sstable-partial-automaton#037d12c9c9b8c96c09288297cacc7e20d88ea842"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=d281ca3#d281ca3e659d9eaedd5c64dd1613c5b9d11d6c65"
 dependencies = [
  "downcast-rs",
  "fastdivide",
@@ -8810,7 +8836,7 @@ dependencies = [
 [[package]]
 name = "tantivy-common"
 version = "0.7.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?branch=trinity/sstable-partial-automaton#037d12c9c9b8c96c09288297cacc7e20d88ea842"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=d281ca3#d281ca3e659d9eaedd5c64dd1613c5b9d11d6c65"
 dependencies = [
  "async-trait",
  "byteorder",
@@ -8833,7 +8859,7 @@ dependencies = [
 [[package]]
 name = "tantivy-query-grammar"
 version = "0.22.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?branch=trinity/sstable-partial-automaton#037d12c9c9b8c96c09288297cacc7e20d88ea842"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=d281ca3#d281ca3e659d9eaedd5c64dd1613c5b9d11d6c65"
 dependencies = [
  "nom",
 ]
@@ -8841,7 +8867,7 @@ dependencies = [
 [[package]]
 name = "tantivy-sstable"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?branch=trinity/sstable-partial-automaton#037d12c9c9b8c96c09288297cacc7e20d88ea842"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=d281ca3#d281ca3e659d9eaedd5c64dd1613c5b9d11d6c65"
 dependencies = [
  "futures-util",
  "itertools 0.13.0",
@@ -8854,7 +8880,7 @@ dependencies = [
 [[package]]
 name = "tantivy-stacker"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?branch=trinity/sstable-partial-automaton#037d12c9c9b8c96c09288297cacc7e20d88ea842"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=d281ca3#d281ca3e659d9eaedd5c64dd1613c5b9d11d6c65"
 dependencies = [
  "murmurhash32",
  "rand_distr",
@@ -8864,7 +8890,7 @@ dependencies = [
 [[package]]
 name = "tantivy-tokenizer-api"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?branch=trinity/sstable-partial-automaton#037d12c9c9b8c96c09288297cacc7e20d88ea842"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=d281ca3#d281ca3e659d9eaedd5c64dd1613c5b9d11d6c65"
 dependencies = [
  "serde",
 ]

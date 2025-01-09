@@ -21,19 +21,16 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use anyhow::{bail, Context};
-pub use prefix::{AutomatonQuery, JsonPathPrefix};
 use serde::{Deserialize, Serialize};
 use tantivy::schema::{Field, FieldType, Schema as TantivySchema};
 use tantivy::Term;
 
 use super::{BuildTantivyAst, QueryAst};
-use crate::query_ast::TantivyQueryAst;
+use crate::query_ast::{AutomatonQuery, JsonPathPrefix, TantivyQueryAst};
 use crate::tokenizers::TokenizerManager;
 use crate::{find_field_or_hit_dynamic, InvalidQuery};
 
 /// A Wildcard query allows to match 'bond' with a query like 'b*d'.
-///
-/// At the moment, only wildcard at end of term is supported.
 #[derive(PartialEq, Eq, Debug, Serialize, Deserialize, Clone)]
 pub struct WildcardQuery {
     pub field: String,
@@ -72,7 +69,8 @@ fn parse_wildcard_query(mut query: &str) -> Vec<SubQuery> {
                     res.push(SubQuery::Text(chr.to_string()));
                     query = &query[chr.len_utf8()..];
                 } else {
-                    // this is invalid, but let's just ignore that escape sequence
+                    // escaping at the end is invalid, handle it as if that escape sequence wasn't
+                    // present
                     break;
                 }
             }
@@ -89,6 +87,36 @@ enum SubQuery {
     Text(String),
     Wildcard,
     QuestionMark,
+}
+
+fn sub_query_parts_to_regex(
+    sub_query_parts: Vec<SubQuery>,
+    tokenizer_name: &str,
+    tokenizer_manager: &TokenizerManager,
+) -> anyhow::Result<String> {
+    let mut normalizer = tokenizer_manager
+        .get_normalizer(tokenizer_name)
+        .with_context(|| format!("no tokenizer named `{}` is registered", tokenizer_name))?;
+
+    sub_query_parts
+        .into_iter()
+        .map(|part| match part {
+            SubQuery::Text(text) => {
+                let mut token_stream = normalizer.token_stream(&text);
+                let expected_token = token_stream
+                    .next()
+                    .context("normalizer generated no content")?
+                    .text
+                    .clone();
+                if let Some(_unexpected_token) = token_stream.next() {
+                    bail!("normalizer generated multiple tokens")
+                }
+                Ok(Cow::Owned(regex::escape(&expected_token)))
+            }
+            SubQuery::Wildcard => Ok(Cow::Borrowed(".*")),
+            SubQuery::QuestionMark => Ok(Cow::Borrowed(".")),
+        })
+        .collect::<Result<String, _>>()
 }
 
 impl WildcardQuery {
@@ -111,31 +139,8 @@ impl WildcardQuery {
                     ))
                 })?;
                 let tokenizer_name = text_field_indexing.tokenizer();
-                let mut normalizer = tokenizer_manager
-                    .get_normalizer(tokenizer_name)
-                    .with_context(|| {
-                        format!("no tokenizer named `{}` is registered", tokenizer_name)
-                    })?;
-
-                let regex = sub_query_parts
-                    .into_iter()
-                    .map(|part| match part {
-                        SubQuery::Text(text) => {
-                            let mut token_stream = normalizer.token_stream(&text);
-                            let expected_token = token_stream
-                                .next()
-                                .context("normalizer generated no content")?
-                                .text
-                                .clone();
-                            if let Some(_unexpected_token) = token_stream.next() {
-                                bail!("normalizer generated multiple tokens")
-                            }
-                            Ok(Cow::Owned(regex::escape(&expected_token)))
-                        }
-                        SubQuery::Wildcard => Ok(Cow::Borrowed(".*")),
-                        SubQuery::QuestionMark => Ok(Cow::Borrowed(".")),
-                    })
-                    .collect::<Result<String, _>>()?;
+                let regex =
+                    sub_query_parts_to_regex(sub_query_parts, tokenizer_name, tokenizer_manager)?;
 
                 Ok((field, None, regex))
             }
@@ -148,11 +153,8 @@ impl WildcardQuery {
                         ))
                     })?;
                 let tokenizer_name = text_field_indexing.tokenizer();
-                let mut normalizer = tokenizer_manager
-                    .get_normalizer(tokenizer_name)
-                    .with_context(|| {
-                        format!("no tokenizer named `{}` is registered", tokenizer_name)
-                    })?;
+                let regex =
+                    sub_query_parts_to_regex(sub_query_parts, tokenizer_name, tokenizer_manager)?;
 
                 let mut term_for_path = Term::from_field_json_path(
                     field,
@@ -165,25 +167,7 @@ impl WildcardQuery {
                 // We skip the 1st byte which is a marker to tell this is json. This isn't present
                 // in the dictionary
                 let byte_path_prefix = value.as_serialized()[1..].to_owned();
-                let regex = sub_query_parts
-                    .into_iter()
-                    .map(|part| match part {
-                        SubQuery::Text(text) => {
-                            let mut token_stream = normalizer.token_stream(&text);
-                            let expected_token = token_stream
-                                .next()
-                                .context("normalizer generated no content")?
-                                .text
-                                .clone();
-                            if let Some(_unexpected_token) = token_stream.next() {
-                                bail!("normalizer generated multiple tokens")
-                            }
-                            Ok(Cow::Owned(regex::escape(&expected_token)))
-                        }
-                        SubQuery::Wildcard => Ok(Cow::Borrowed(".*")),
-                        SubQuery::QuestionMark => Ok(Cow::Borrowed(".")),
-                    })
-                    .collect::<Result<String, _>>()?;
+
                 Ok((field, Some(byte_path_prefix), regex))
             }
             _ => Err(InvalidQuery::SchemaError(
@@ -204,137 +188,15 @@ impl BuildTantivyAst for WildcardQuery {
         let (field, path, regex) = self.to_regex(schema, tokenizer_manager)?;
         let regex =
             tantivy_fst::Regex::new(&regex).context("failed to parse regex built from wildcard")?;
-        let regex_automaton_with_path = prefix::JsonPathPrefix {
+        let regex_automaton_with_path = JsonPathPrefix {
             prefix: path.unwrap_or_default(),
             automaton: regex.into(),
         };
-        let regex_query_with_path = prefix::AutomatonQuery {
+        let regex_query_with_path = AutomatonQuery {
             field,
             automaton: Arc::new(regex_automaton_with_path),
         };
         Ok(regex_query_with_path.into())
-    }
-}
-
-mod prefix {
-    use std::sync::Arc;
-
-    use tantivy::query::{AutomatonWeight, EnableScoring, Query, Weight};
-    use tantivy::schema::Field;
-    use tantivy_fst::Automaton;
-
-    pub struct JsonPathPrefix<A> {
-        pub prefix: Vec<u8>,
-        pub automaton: Arc<A>,
-    }
-
-    // we need to implement manually because the std adds an unnecessary bound `A: Clone`
-    impl<A> Clone for JsonPathPrefix<A> {
-        fn clone(&self) -> Self {
-            JsonPathPrefix {
-                prefix: self.prefix.clone(),
-                automaton: self.automaton.clone(),
-            }
-        }
-    }
-
-    #[derive(Clone)]
-    pub enum JsonPathPrefixState<A> {
-        Prefix(usize),
-        Inner(A),
-        PrefixFailed,
-    }
-
-    impl<A: Automaton> Automaton for JsonPathPrefix<A> {
-        type State = JsonPathPrefixState<A::State>;
-
-        fn start(&self) -> Self::State {
-            if self.prefix.is_empty() {
-                JsonPathPrefixState::Inner(self.automaton.start())
-            } else {
-                JsonPathPrefixState::Prefix(0)
-            }
-        }
-
-        fn is_match(&self, state: &Self::State) -> bool {
-            match state {
-                JsonPathPrefixState::Prefix(_) => false,
-                JsonPathPrefixState::Inner(inner_state) => self.automaton.is_match(inner_state),
-                JsonPathPrefixState::PrefixFailed => false,
-            }
-        }
-
-        fn accept(&self, state: &Self::State, byte: u8) -> Self::State {
-            match state {
-                JsonPathPrefixState::Prefix(i) => {
-                    if self.prefix.get(*i) != Some(&byte) {
-                        return JsonPathPrefixState::PrefixFailed;
-                    }
-                    let next_pos = i + 1;
-                    if next_pos == self.prefix.len() {
-                        JsonPathPrefixState::Inner(self.automaton.start())
-                    } else {
-                        JsonPathPrefixState::Prefix(next_pos)
-                    }
-                }
-                JsonPathPrefixState::Inner(inner_state) => {
-                    JsonPathPrefixState::Inner(self.automaton.accept(inner_state, byte))
-                }
-                JsonPathPrefixState::PrefixFailed => JsonPathPrefixState::PrefixFailed,
-            }
-        }
-
-        fn can_match(&self, state: &Self::State) -> bool {
-            match state {
-                JsonPathPrefixState::Prefix(_) => true,
-                JsonPathPrefixState::Inner(inner_state) => self.automaton.can_match(inner_state),
-                JsonPathPrefixState::PrefixFailed => false,
-            }
-        }
-
-        fn will_always_match(&self, state: &Self::State) -> bool {
-            match state {
-                JsonPathPrefixState::Prefix(_) => false,
-                JsonPathPrefixState::Inner(inner_state) => {
-                    self.automaton.will_always_match(inner_state)
-                }
-                JsonPathPrefixState::PrefixFailed => false,
-            }
-        }
-    }
-
-    pub struct AutomatonQuery<A> {
-        pub automaton: Arc<A>,
-        pub field: Field,
-    }
-
-    impl<A> std::fmt::Debug for AutomatonQuery<A> {
-        fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-            f.debug_struct("AutomatonQuery")
-                .field("field", &self.field)
-                .field("automaton", &std::any::type_name::<A>())
-                .finish()
-        }
-    }
-
-    impl<A> Clone for AutomatonQuery<A> {
-        fn clone(&self) -> Self {
-            AutomatonQuery {
-                automaton: self.automaton.clone(),
-                field: self.field,
-            }
-        }
-    }
-
-    impl<A: Automaton + Send + Sync + 'static> Query for AutomatonQuery<A>
-    where A::State: Clone
-    {
-        fn weight(&self, _enabled_scoring: EnableScoring<'_>) -> tantivy::Result<Box<dyn Weight>> {
-            Ok(Box::new(AutomatonWeight::<A>::new(
-                self.field,
-                self.automaton.clone(),
-            )))
-        }
     }
 }
 

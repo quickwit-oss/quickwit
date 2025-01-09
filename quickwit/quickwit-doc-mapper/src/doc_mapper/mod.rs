@@ -91,6 +91,7 @@ pub enum Automaton {
     /// A regex in it's str representation as tantivy_fst::Regex isn't PartialEq, and the path if
     /// inside a json field
     Regex(Option<Vec<u8>>, String),
+    // we could add termset query here, instead of downloading the whole dictionary
 }
 
 /// Information about what a DocMapper think should be warmed up before

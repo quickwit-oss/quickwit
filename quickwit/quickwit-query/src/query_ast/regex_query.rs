@@ -20,18 +20,17 @@
 use std::sync::Arc;
 
 use anyhow::Context;
+pub use prefix::{AutomatonQuery, JsonPathPrefix};
 use serde::{Deserialize, Serialize};
 use tantivy::schema::{Field, FieldType, Schema as TantivySchema};
 use tantivy::Term;
 
 use super::{BuildTantivyAst, QueryAst};
-use crate::query_ast::{AutomatonQuery, JsonPathPrefix, TantivyQueryAst};
+use crate::query_ast::TantivyQueryAst;
 use crate::tokenizers::TokenizerManager;
 use crate::{find_field_or_hit_dynamic, InvalidQuery};
 
-/// A Wildcard query allows to match 'bond' with a query like 'b*d'.
-///
-/// At the moment, only wildcard at end of term is supported.
+/// A Regex query
 #[derive(PartialEq, Eq, Debug, Serialize, Deserialize, Clone)]
 pub struct RegexQuery {
     pub field: String,
@@ -55,7 +54,7 @@ impl RegexQuery {
 }
 
 impl RegexQuery {
-    pub fn to_regex(
+    pub fn to_field_and_regex(
         &self,
         schema: &TantivySchema,
     ) -> Result<(Field, Option<Vec<u8>>, String), InvalidQuery> {
@@ -109,7 +108,7 @@ impl BuildTantivyAst for RegexQuery {
         _search_fields: &[String],
         _with_validation: bool,
     ) -> Result<TantivyQueryAst, InvalidQuery> {
-        let (field, path, regex) = self.to_regex(schema)?;
+        let (field, path, regex) = self.to_field_and_regex(schema)?;
         let regex = tantivy_fst::Regex::new(&regex).context("failed to parse regex")?;
         let regex_automaton_with_path = JsonPathPrefix {
             prefix: path.unwrap_or_default(),
@@ -120,5 +119,259 @@ impl BuildTantivyAst for RegexQuery {
             automaton: Arc::new(regex_automaton_with_path),
         };
         Ok(regex_query_with_path.into())
+    }
+}
+
+mod prefix {
+    use std::sync::Arc;
+
+    use tantivy::query::{AutomatonWeight, EnableScoring, Query, Weight};
+    use tantivy::schema::Field;
+    use tantivy_fst::Automaton;
+
+    pub struct JsonPathPrefix<A> {
+        pub prefix: Vec<u8>,
+        pub automaton: Arc<A>,
+    }
+
+    // we need to implement manually because the std adds an unnecessary bound `A: Clone`
+    impl<A> Clone for JsonPathPrefix<A> {
+        fn clone(&self) -> Self {
+            JsonPathPrefix {
+                prefix: self.prefix.clone(),
+                automaton: self.automaton.clone(),
+            }
+        }
+    }
+
+    #[derive(Clone, Debug, PartialEq)]
+    pub enum JsonPathPrefixState<A> {
+        Prefix(usize),
+        Inner(A),
+        PrefixFailed,
+    }
+
+    impl<A: Automaton> Automaton for JsonPathPrefix<A> {
+        type State = JsonPathPrefixState<A::State>;
+
+        fn start(&self) -> Self::State {
+            if self.prefix.is_empty() {
+                JsonPathPrefixState::Inner(self.automaton.start())
+            } else {
+                JsonPathPrefixState::Prefix(0)
+            }
+        }
+
+        fn is_match(&self, state: &Self::State) -> bool {
+            match state {
+                JsonPathPrefixState::Prefix(_) => false,
+                JsonPathPrefixState::Inner(inner_state) => self.automaton.is_match(inner_state),
+                JsonPathPrefixState::PrefixFailed => false,
+            }
+        }
+
+        fn accept(&self, state: &Self::State, byte: u8) -> Self::State {
+            match state {
+                JsonPathPrefixState::Prefix(i) => {
+                    if self.prefix.get(*i) != Some(&byte) {
+                        return JsonPathPrefixState::PrefixFailed;
+                    }
+                    let next_pos = i + 1;
+                    if next_pos == self.prefix.len() {
+                        JsonPathPrefixState::Inner(self.automaton.start())
+                    } else {
+                        JsonPathPrefixState::Prefix(next_pos)
+                    }
+                }
+                JsonPathPrefixState::Inner(inner_state) => {
+                    JsonPathPrefixState::Inner(self.automaton.accept(inner_state, byte))
+                }
+                JsonPathPrefixState::PrefixFailed => JsonPathPrefixState::PrefixFailed,
+            }
+        }
+
+        fn can_match(&self, state: &Self::State) -> bool {
+            match state {
+                JsonPathPrefixState::Prefix(_) => true,
+                JsonPathPrefixState::Inner(inner_state) => self.automaton.can_match(inner_state),
+                JsonPathPrefixState::PrefixFailed => false,
+            }
+        }
+
+        fn will_always_match(&self, state: &Self::State) -> bool {
+            match state {
+                JsonPathPrefixState::Prefix(_) => false,
+                JsonPathPrefixState::Inner(inner_state) => {
+                    self.automaton.will_always_match(inner_state)
+                }
+                JsonPathPrefixState::PrefixFailed => false,
+            }
+        }
+    }
+
+    // we don't use RegexQuery to handle our path. We could tinker with the regex to embed
+    // json field path inside, but that seems not as clean, and would prevent support of
+    // case-insensitive search in the future (we would also make the path insensitive,
+    // which we shouldn't)
+    pub struct AutomatonQuery<A> {
+        pub automaton: Arc<A>,
+        pub field: Field,
+    }
+
+    impl<A> std::fmt::Debug for AutomatonQuery<A> {
+        fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.debug_struct("AutomatonQuery")
+                .field("field", &self.field)
+                .field("automaton", &std::any::type_name::<A>())
+                .finish()
+        }
+    }
+
+    impl<A> Clone for AutomatonQuery<A> {
+        fn clone(&self) -> Self {
+            AutomatonQuery {
+                automaton: self.automaton.clone(),
+                field: self.field,
+            }
+        }
+    }
+
+    impl<A: Automaton + Send + Sync + 'static> Query for AutomatonQuery<A>
+    where A::State: Clone
+    {
+        fn weight(&self, _enabled_scoring: EnableScoring<'_>) -> tantivy::Result<Box<dyn Weight>> {
+            Ok(Box::new(AutomatonWeight::<A>::new(
+                self.field,
+                self.automaton.clone(),
+            )))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use tantivy::schema::{Schema as TantivySchema, TEXT};
+    use tantivy_fst::{Automaton, Regex};
+
+    use super::prefix::JsonPathPrefixState;
+    use super::{JsonPathPrefix, RegexQuery};
+
+    #[test]
+    fn test_regex_query_text_field() {
+        let mut schema_builder = TantivySchema::builder();
+        schema_builder.add_text_field("field", TEXT);
+        let schema = schema_builder.build();
+
+        let query = RegexQuery {
+            field: "field".to_string(),
+            regex: "abc.*xyz".to_string(),
+        };
+        let (field, path, regex) = query.to_field_and_regex(&schema).unwrap();
+        assert_eq!(field, schema.get_field("field").unwrap());
+        assert!(path.is_none());
+        assert_eq!(regex, query.regex);
+    }
+
+    #[test]
+    fn test_regex_query_json_field() {
+        let mut schema_builder = TantivySchema::builder();
+        schema_builder.add_json_field("field", TEXT);
+        let schema = schema_builder.build();
+
+        let query = RegexQuery {
+            field: "field.sub.field".to_string(),
+            regex: "abc.*xyz".to_string(),
+        };
+        let (field, path, regex) = query.to_field_and_regex(&schema).unwrap();
+        assert_eq!(field, schema.get_field("field").unwrap());
+        assert_eq!(path.unwrap(), b"sub\x01field\0s");
+        assert_eq!(regex, query.regex);
+
+        // i believe this is how concatenated field behave
+        let query_empty_path = RegexQuery {
+            field: "field".to_string(),
+            regex: "abc.*xyz".to_string(),
+        };
+        let (field, path, regex) = query_empty_path.to_field_and_regex(&schema).unwrap();
+        assert_eq!(field, schema.get_field("field").unwrap());
+        assert_eq!(path.unwrap(), b"\0s");
+        assert_eq!(regex, query_empty_path.regex);
+    }
+
+    #[test]
+    fn test_json_prefix_automaton_empty_path() {
+        let regex = Arc::new(Regex::new("e(f|g.*)").unwrap());
+        let empty_path_automaton = JsonPathPrefix {
+            prefix: Vec::new(),
+            automaton: regex.clone(),
+        };
+
+        let start = empty_path_automaton.start();
+        assert_eq!(start, JsonPathPrefixState::Inner(regex.start()));
+    }
+
+    #[test]
+    fn test_json_prefix_automaton() {
+        let regex = Arc::new(Regex::new("e(f|g.*)").unwrap());
+        let automaton = JsonPathPrefix {
+            prefix: b"ab".to_vec(),
+            automaton: regex.clone(),
+        };
+
+        let start = automaton.start();
+        assert!(matches!(start, JsonPathPrefixState::Prefix(_)));
+        assert!(automaton.can_match(&start));
+        assert!(!automaton.is_match(&start));
+
+        let miss = automaton.accept(&start, b'g');
+        assert_eq!(miss, JsonPathPrefixState::PrefixFailed);
+        // supporting this is important for optimisation
+        assert!(!automaton.can_match(&miss));
+        assert!(!automaton.is_match(&miss));
+
+        let a = automaton.accept(&start, b'a');
+        assert!(matches!(a, JsonPathPrefixState::Prefix(_)));
+        assert!(automaton.can_match(&a));
+        assert!(!automaton.is_match(&a));
+
+        let ab = automaton.accept(&a, b'b');
+        assert_eq!(ab, JsonPathPrefixState::Inner(regex.start()));
+        assert!(automaton.can_match(&ab));
+        assert!(!automaton.is_match(&ab));
+
+        // starting here, we just take that we passthrough correctly,
+        // and reply to can_match as well as possible
+        // (we don't test will_always_match because Regex doesn't support it)
+        let abc = automaton.accept(&ab, b'c');
+        assert!(matches!(abc, JsonPathPrefixState::Inner(_)));
+        assert!(!automaton.can_match(&abc));
+        assert!(!automaton.is_match(&abc));
+
+        let abe = automaton.accept(&ab, b'e');
+        assert!(matches!(abe, JsonPathPrefixState::Inner(_)));
+        assert!(automaton.can_match(&abe));
+        assert!(!automaton.is_match(&abe));
+
+        let abef = automaton.accept(&abe, b'f');
+        assert!(matches!(abef, JsonPathPrefixState::Inner(_)));
+        assert!(automaton.can_match(&abef));
+        assert!(automaton.is_match(&abef));
+
+        let abefg = automaton.accept(&abef, b'g');
+        assert!(matches!(abefg, JsonPathPrefixState::Inner(_)));
+        assert!(!automaton.can_match(&abefg));
+        assert!(!automaton.is_match(&abefg));
+
+        let abeg = automaton.accept(&abe, b'g');
+        assert!(matches!(abeg, JsonPathPrefixState::Inner(_)));
+        assert!(automaton.can_match(&abeg));
+        assert!(automaton.is_match(&abeg));
+
+        let abegh = automaton.accept(&abeg, b'h');
+        assert!(matches!(abegh, JsonPathPrefixState::Inner(_)));
+        assert!(automaton.can_match(&abegh));
+        assert!(automaton.is_match(&abegh));
     }
 }
