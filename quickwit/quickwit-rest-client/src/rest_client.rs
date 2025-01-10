@@ -32,7 +32,6 @@ use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 use reqwest::{Client, ClientBuilder, Method, StatusCode, Url};
 use serde::Serialize;
 use serde_json::json;
-use tracing::warn;
 
 use crate::error::Error;
 use crate::models::{ApiResponse, IngestSource, Timeout};
@@ -121,8 +120,8 @@ pub struct QuickwitClientBuilder {
     ingest_timeout: Timeout,
     /// Timeout for the ingest operations that require waiting for commit.
     commit_timeout: Timeout,
-    /// Experimental: if true, use the ingest v2 endpoint.
-    ingest_v2: bool,
+    /// Forces use of ingest v1.
+    use_legacy_ingest: bool,
 }
 
 impl QuickwitClientBuilder {
@@ -134,7 +133,7 @@ impl QuickwitClientBuilder {
             search_timeout: DEFAULT_CLIENT_SEARCH_TIMEOUT,
             ingest_timeout: DEFAULT_CLIENT_INGEST_TIMEOUT,
             commit_timeout: DEFAULT_CLIENT_COMMIT_TIMEOUT,
-            ingest_v2: false,
+            use_legacy_ingest: false,
         }
     }
 
@@ -148,12 +147,6 @@ impl QuickwitClientBuilder {
         self
     }
 
-    pub fn enable_ingest_v2(mut self) -> Self {
-        warn!("ingest v2 experimental feature enabled!");
-        self.ingest_v2 = true;
-        self
-    }
-
     pub fn search_timeout(mut self, timeout: Timeout) -> Self {
         self.search_timeout = timeout;
         self
@@ -161,6 +154,12 @@ impl QuickwitClientBuilder {
 
     pub fn ingest_timeout(mut self, timeout: Timeout) -> Self {
         self.ingest_timeout = timeout;
+        self
+    }
+
+    // TODO(#5604)
+    pub fn use_legacy_ingest(mut self, use_legacy_ingest: bool) -> Self {
+        self.use_legacy_ingest = use_legacy_ingest;
         self
     }
 
@@ -177,7 +176,7 @@ impl QuickwitClientBuilder {
             search_timeout: self.search_timeout,
             ingest_timeout: self.ingest_timeout,
             commit_timeout: self.commit_timeout,
-            ingest_v2: self.ingest_v2,
+            use_legacy_ingest: self.use_legacy_ingest,
         }
     }
 }
@@ -193,16 +192,11 @@ pub struct QuickwitClient {
     ingest_timeout: Timeout,
     /// Timeout for the ingest operations that require waiting for commit.
     commit_timeout: Timeout,
-    // TODO remove me after Quickwit 0.7 release.
-    // If true, rely on ingest v2
-    ingest_v2: bool,
+    /// Forces use of ingest v1.
+    use_legacy_ingest: bool,
 }
 
 impl QuickwitClient {
-    pub fn enable_ingest_v2(&mut self) {
-        self.ingest_v2 = true;
-    }
-
     pub async fn search(
         &self,
         index_id: &str,
@@ -261,8 +255,9 @@ impl QuickwitClient {
         mut on_ingest_event: Option<&mut (dyn FnMut(IngestEvent) + Sync)>,
         last_block_commit: CommitType,
     ) -> Result<(), Error> {
-        let ingest_path = if self.ingest_v2 {
-            format!("{index_id}/ingest-v2")
+        // TODO(#5604)
+        let ingest_path = if self.use_legacy_ingest {
+            format!("{index_id}/ingest?use_legacy_ingest=true")
         } else {
             format!("{index_id}/ingest")
         };

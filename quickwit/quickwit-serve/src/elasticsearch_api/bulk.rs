@@ -22,7 +22,6 @@ use std::time::Instant;
 
 use bytesize::ByteSize;
 use hyper::StatusCode;
-use quickwit_config::{disable_ingest_v1, enable_ingest_v2};
 use quickwit_ingest::{
     CommitType, DocBatchBuilder, IngestRequest, IngestService, IngestServiceClient,
 };
@@ -44,12 +43,22 @@ pub fn es_compat_bulk_handler(
     ingest_service: IngestServiceClient,
     ingest_router: IngestRouterServiceClient,
     content_length_limit: ByteSize,
+    enable_ingest_v1: bool,
+    enable_ingest_v2: bool,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     elastic_bulk_filter(content_length_limit)
         .and(with_arg(ingest_service))
         .and(with_arg(ingest_router))
-        .then(|body, bulk_options, ingest_service, ingest_router| {
-            elastic_ingest_bulk(None, body, bulk_options, ingest_service, ingest_router)
+        .then(move |body, bulk_options, ingest_service, ingest_router| {
+            elastic_ingest_bulk(
+                None,
+                body,
+                bulk_options,
+                ingest_service,
+                ingest_router,
+                enable_ingest_v1,
+                enable_ingest_v2,
+            )
         })
         .and(extract_format_from_qs())
         .map(make_elastic_api_response)
@@ -61,18 +70,22 @@ pub fn es_compat_index_bulk_handler(
     ingest_service: IngestServiceClient,
     ingest_router: IngestRouterServiceClient,
     content_length_limit: ByteSize,
+    enable_ingest_v1: bool,
+    enable_ingest_v2: bool,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     elastic_index_bulk_filter(content_length_limit)
         .and(with_arg(ingest_service))
         .and(with_arg(ingest_router))
         .then(
-            |index_id, body, bulk_options, ingest_service, ingest_router| {
+            move |index_id, body, bulk_options, ingest_service, ingest_router| {
                 elastic_ingest_bulk(
                     Some(index_id),
                     body,
                     bulk_options,
                     ingest_service,
                     ingest_router,
+                    enable_ingest_v1,
+                    enable_ingest_v2,
                 )
             },
         )
@@ -88,11 +101,13 @@ async fn elastic_ingest_bulk(
     bulk_options: ElasticBulkOptions,
     ingest_service: IngestServiceClient,
     ingest_router: IngestRouterServiceClient,
+    enable_ingest_v1: bool,
+    enable_ingest_v2: bool,
 ) -> Result<ElasticBulkResponse, ElasticsearchError> {
-    if enable_ingest_v2() || bulk_options.enable_ingest_v2 {
+    if enable_ingest_v2 && !bulk_options.use_legacy_ingest {
         return elastic_bulk_ingest_v2(default_index_id, body, bulk_options, ingest_router).await;
     }
-    if disable_ingest_v1() {
+    if !enable_ingest_v1 {
         return Err(ElasticsearchError::new(
             StatusCode::INTERNAL_SERVER_ERROR,
             "ingest v1 is disabled: environment variable `QW_DISABLE_INGEST_V1` is set".to_string(),
@@ -196,6 +211,8 @@ mod tests {
             ingest_router,
             MetastoreServiceClient::mocked(),
             index_service,
+            true,
+            false,
         );
         let payload = r#"
             { "create" : { "_index" : "my-index", "_id" : "1"} }
@@ -229,6 +246,8 @@ mod tests {
             ingest_router,
             MetastoreServiceClient::mocked(),
             index_service,
+            true,
+            false,
         );
         let payload = r#"
             { "create" : { "_index" : "my-index-1", "_id" : "1"} }
@@ -266,6 +285,8 @@ mod tests {
             ingest_router,
             MetastoreServiceClient::mocked(),
             index_service,
+            true,
+            false,
         );
         let payload = "
             {\"create\": {\"_index\": \"my-index-1\", \"_id\": \"1674834324802805760\"}}
@@ -300,6 +321,8 @@ mod tests {
             ingest_router,
             MetastoreServiceClient::mocked(),
             index_service,
+            true,
+            false,
         );
         let payload = r#"
             { "create" : { "_index" : "my-index-1", "_id" : "1"} }
@@ -337,6 +360,8 @@ mod tests {
             ingest_router,
             MetastoreServiceClient::mocked(),
             index_service,
+            true,
+            false,
         );
         let payload = r#"
             { "create" : { "_index" : "my-index-1", "_id" : "1"} }
@@ -425,6 +450,8 @@ mod tests {
             ingest_router,
             MetastoreServiceClient::mocked(),
             index_service,
+            true,
+            false,
         );
         let payload = r#"
             { "create" : { "_index" : "my-index-1", "_id" : "1"} }
@@ -511,6 +538,8 @@ mod tests {
             ingest_router,
             MetastoreServiceClient::mocked(),
             index_service,
+            true,
+            false,
         );
         let payload = r#"
             {"create": {"_index": "my-index", "_id": "1"},}
