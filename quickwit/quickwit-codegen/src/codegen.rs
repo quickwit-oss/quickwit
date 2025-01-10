@@ -38,10 +38,7 @@ impl Codegen {
         ));
         args.prost_config
             .protoc_arg("--experimental_allow_proto3_optional")
-            .type_attribute(
-                ".",
-                "#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]",
-            )
+            .type_attribute(".", &args.type_attribute)
             .field_attribute(
                 "DocBatch.doc_buffer",
                 "#[schema(value_type = String, format = Binary)]",
@@ -62,7 +59,6 @@ impl Codegen {
     }
 }
 
-#[derive(Default)]
 pub struct CodegenBuilder {
     protos: Vec<String>,
     includes: Vec<String>,
@@ -72,9 +68,32 @@ pub struct CodegenBuilder {
     error_type_path: String,
     generate_extra_service_methods: bool,
     generate_prom_labels_for_requests: bool,
+    type_attribute: String,
+}
+
+impl Default for CodegenBuilder {
+    fn default() -> Self {
+        CodegenBuilder {
+            protos: Default::default(),
+            includes: Default::default(),
+            output_dir: Default::default(),
+            prost_config: Default::default(),
+            result_type_path: Default::default(),
+            error_type_path: Default::default(),
+            generate_extra_service_methods: Default::default(),
+            generate_prom_labels_for_requests: Default::default(),
+            type_attribute: "#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]"
+                .to_string(),
+        }
+    }
 }
 
 impl CodegenBuilder {
+    pub fn type_attribute(mut self, type_attribute: impl ToString) -> Self {
+        self.type_attribute = type_attribute.to_string();
+        self
+    }
+
     pub fn with_protos(mut self, protos: &[&str]) -> Self {
         self.protos = protos.iter().map(|proto| proto.to_string()).collect();
         self

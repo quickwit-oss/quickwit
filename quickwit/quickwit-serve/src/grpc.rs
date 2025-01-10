@@ -25,6 +25,7 @@ use bytesize::ByteSize;
 use quickwit_cluster::cluster_grpc_server;
 use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_config::service::QuickwitService;
+use quickwit_proto::cloudprem::CloudPremServiceClient;
 use quickwit_proto::developer::DeveloperServiceClient;
 use quickwit_proto::indexing::IndexingServiceClient;
 use quickwit_proto::jaeger::storage::v1::span_reader_plugin_server::SpanReaderPluginServer;
@@ -37,6 +38,7 @@ use quickwit_proto::tonic::transport::Server;
 use tokio::net::TcpListener;
 use tracing::*;
 
+use crate::cloudprem_api::CloudPremServiceImpl;
 use crate::developer_api::DeveloperApiServer;
 use crate::search_api::GrpcSearchAdapter;
 use crate::{QuickwitServices, INDEXING_GRPC_SERVER_METRICS_LAYER};
@@ -159,6 +161,21 @@ pub(crate) async fn start_grpc_server(
         None
     };
 
+    let cloudprem_grpc_service = if services
+        .node_config
+        .is_service_enabled(QuickwitService::Searcher)
+    {
+        let search_service = services.search_service.clone();
+        let cloudprem_service_impl = CloudPremServiceImpl::from(search_service);
+        Some(
+            CloudPremServiceClient::tower()
+                .build(cloudprem_service_impl)
+                .as_grpc_service(max_message_size),
+        )
+    } else {
+        None
+    };
+
     // Mount gRPC jaeger service if present.
     let jaeger_grpc_service = if let Some(jaeger_service) = services.jaeger_service_opt.clone() {
         enabled_grpc_services.insert("jaeger");
@@ -186,7 +203,8 @@ pub(crate) async fn start_grpc_server(
         .add_optional_service(metastore_grpc_service)
         .add_optional_service(otlp_log_grpc_service)
         .add_optional_service(otlp_trace_grpc_service)
-        .add_optional_service(search_grpc_service);
+        .add_optional_service(search_grpc_service)
+        .add_optional_service(cloudprem_grpc_service);
 
     let grpc_listen_addr = tcp_listener.local_addr()?;
     info!(

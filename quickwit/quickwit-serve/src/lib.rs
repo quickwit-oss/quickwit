@@ -20,6 +20,7 @@
 #![recursion_limit = "256"]
 
 mod build_info;
+mod cloudprem_api;
 mod cluster_api;
 mod decompression;
 mod delete_task_api;

@@ -7,6 +7,7 @@ for file in $(git ls-files | \
     grep -e "\.proto\|\.rs\|\.ts" | \
     grep -v "quickwit-proto/protos/third-party" | \
     grep -v "quickwit-proto/src" | \
+    grep -v "cloudprem" | \
     grep -v "/codegen/" \
 )
 do
