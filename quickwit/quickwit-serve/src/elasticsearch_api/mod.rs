@@ -55,6 +55,7 @@ use crate::{BodyFormat, BuildInfo};
 ///
 /// This is where all newly supported Elasticsearch handlers
 /// should be registered.
+#[allow(clippy::too_many_arguments)] // Will go away when we remove ingest v1.
 pub fn elastic_api_handlers(
     cluster: Cluster,
     node_config: Arc<NodeConfig>,
@@ -63,6 +64,8 @@ pub fn elastic_api_handlers(
     ingest_router: IngestRouterServiceClient,
     metastore: MetastoreServiceClient,
     index_service: IndexService,
+    enable_ingest_v1: bool,
+    enable_ingest_v2: bool,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     let ingest_content_length_limit = node_config.ingest_api_config.content_length_limit;
     es_compat_cluster_info_handler(node_config, BuildInfo::get())
@@ -71,12 +74,16 @@ pub fn elastic_api_handlers(
             ingest_service.clone(),
             ingest_router.clone(),
             ingest_content_length_limit,
+            enable_ingest_v1,
+            enable_ingest_v2,
         ))
         .boxed()
         .or(es_compat_index_bulk_handler(
             ingest_service,
             ingest_router,
             ingest_content_length_limit,
+            enable_ingest_v1,
+            enable_ingest_v2,
         ))
         .or(es_compat_index_search_handler(search_service.clone()))
         .or(es_compat_index_count_handler(search_service.clone()))
@@ -204,6 +211,8 @@ mod tests {
             ingest_router,
             MetastoreServiceClient::mocked(),
             index_service,
+            true,
+            false,
         );
         let msearch_payload = r#"
             {"index":"index-1"}
@@ -259,6 +268,8 @@ mod tests {
             ingest_router,
             MetastoreServiceClient::mocked(),
             index_service,
+            true,
+            false,
         );
         let msearch_payload = r#"
             {"index":"index-1"}
@@ -302,6 +313,8 @@ mod tests {
             ingest_router,
             MetastoreServiceClient::mocked(),
             index_service,
+            true,
+            false,
         );
         let msearch_payload = r#"
             {"index":"index-1"
@@ -338,6 +351,8 @@ mod tests {
             ingest_router,
             MetastoreServiceClient::mocked(),
             index_service,
+            true,
+            false,
         );
         let msearch_payload = r#"
             {"index":"index-1"}
@@ -374,6 +389,8 @@ mod tests {
             ingest_router,
             MetastoreServiceClient::mocked(),
             index_service,
+            true,
+            false,
         );
         let msearch_payload = r#"
             {"index":"index-1"}
@@ -409,6 +426,8 @@ mod tests {
             ingest_router,
             MetastoreServiceClient::mocked(),
             index_service,
+            true,
+            false,
         );
         let msearch_payload = r#"
             {}
@@ -456,6 +475,8 @@ mod tests {
             ingest_router,
             MetastoreServiceClient::mocked(),
             index_service,
+            true,
+            false,
         );
         let msearch_payload = r#"
             {"index": ["index-1", "index-2"]}
