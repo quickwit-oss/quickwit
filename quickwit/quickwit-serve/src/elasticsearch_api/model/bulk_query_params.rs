@@ -26,7 +26,7 @@ pub struct ElasticBulkOptions {
     #[serde(default)]
     pub refresh: ElasticRefresh,
     #[serde(default)]
-    pub enable_ingest_v2: bool,
+    pub use_legacy_ingest: bool,
 }
 
 /// ?refresh parameter for elasticsearch bulk request

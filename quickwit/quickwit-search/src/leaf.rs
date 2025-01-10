@@ -29,7 +29,7 @@ use bytesize::ByteSize;
 use futures::future::try_join_all;
 use quickwit_common::pretty::PrettySample;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
-use quickwit_doc_mapper::{DocMapper, TermRange, WarmupInfo};
+use quickwit_doc_mapper::{DocMapper, FastFieldWarmupInfo, TermRange, WarmupInfo};
 use quickwit_proto::search::{
     CountHits, LeafSearchRequest, LeafSearchResponse, PartialHit, ResourceStats, SearchRequest,
     SortOrder, SortValue, SplitIdAndFooterOffsets, SplitSearchError,
@@ -219,7 +219,7 @@ pub(crate) async fn warmup(searcher: &Searcher, warmup_info: &WarmupInfo) -> any
     let warm_up_term_dict_future =
         warm_up_term_dict_fields(searcher, &warmup_info.term_dict_fields)
             .instrument(debug_span!("warm_up_term_dicts"));
-    let warm_up_fastfields_future = warm_up_fastfields(searcher, &warmup_info.fast_field_names)
+    let warm_up_fastfields_future = warm_up_fastfields(searcher, &warmup_info.fast_fields)
         .instrument(debug_span!("warm_up_fastfields"));
     let warm_up_fieldnorms_future = warm_up_fieldnorms(searcher, warmup_info.field_norms)
         .instrument(debug_span!("warm_up_fieldnorms"));
@@ -271,11 +271,17 @@ async fn warm_up_postings(searcher: &Searcher, fields: &HashSet<Field>) -> anyho
 
 async fn warm_up_fastfield(
     fast_field_reader: &FastFieldReaders,
-    fast_field_name: &str,
+    fast_field: &FastFieldWarmupInfo,
 ) -> anyhow::Result<()> {
-    let columns = fast_field_reader
-        .list_dynamic_column_handles(fast_field_name)
+    let mut columns = fast_field_reader
+        .list_dynamic_column_handles(&fast_field.name)
         .await?;
+    if fast_field.with_subfields {
+        let subpath_columns = fast_field_reader
+            .list_subpath_dynamic_column_handles(&fast_field.name)
+            .await?;
+        columns.extend(subpath_columns);
+    }
     futures::future::try_join_all(
         columns
             .into_iter()
@@ -289,13 +295,13 @@ async fn warm_up_fastfield(
 /// all of the fast fields passed as argument.
 async fn warm_up_fastfields(
     searcher: &Searcher,
-    fast_field_names: &HashSet<String>,
+    fast_fields: &HashSet<FastFieldWarmupInfo>,
 ) -> anyhow::Result<()> {
     let mut warm_up_futures = Vec::new();
     for segment_reader in searcher.segment_readers() {
         let fast_field_reader = segment_reader.fast_fields();
-        for fast_field_name in fast_field_names {
-            let warm_up_fut = warm_up_fastfield(fast_field_reader, fast_field_name);
+        for fast_field in fast_fields {
+            let warm_up_fut = warm_up_fastfield(fast_field_reader, fast_field);
             warm_up_futures.push(Box::pin(warm_up_fut));
         }
     }

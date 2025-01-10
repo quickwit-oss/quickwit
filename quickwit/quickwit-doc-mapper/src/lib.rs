@@ -35,9 +35,9 @@ mod routing_expression;
 pub mod tag_pruning;
 
 pub use doc_mapper::{
-    analyze_text, BinaryFormat, DocMapper, DocMapperBuilder, FieldMappingEntry, FieldMappingType,
-    JsonObject, NamedField, QuickwitBytesOptions, QuickwitJsonOptions, TermRange, TokenizerConfig,
-    TokenizerEntry, WarmupInfo,
+    analyze_text, BinaryFormat, DocMapper, DocMapperBuilder, FastFieldWarmupInfo,
+    FieldMappingEntry, FieldMappingType, JsonObject, NamedField, QuickwitBytesOptions,
+    QuickwitJsonOptions, TermRange, TokenizerConfig, TokenizerEntry, WarmupInfo,
 };
 use doc_mapper::{
     FastFieldOptions, FieldMappingEntryForSerialization, IndexRecordOptionSchema,

@@ -717,7 +717,10 @@ impl Handler<ToggleSourceRequest> for ControlPlane {
         };
         info!(%index_uid, source_id, enabled=enable, "toggled source");
 
-        let mutation_occurred = self.model.toggle_source(&index_uid, &source_id, enable)?;
+        let mutation_occurred = self
+            .model
+            .toggle_source(&index_uid, &source_id, enable)
+            .context("failed to toggle source")?;
 
         if mutation_occurred {
             let _rebuild_plan_waiter = self.rebuild_plan_debounced(ctx);
@@ -1213,8 +1216,11 @@ mod tests {
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
 
-        let index_metadata = IndexMetadata::for_test("test-index", "ram://test");
-        let index_uid = index_metadata.index_uid.clone();
+        let mut index_metadata = IndexMetadata::for_test("test-index", "ram://test");
+        index_metadata
+            .add_source(SourceConfig::ingest_v2())
+            .unwrap();
+
         let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_add_source()
@@ -1226,14 +1232,16 @@ mod tests {
                 true
             })
             .returning(|_| Ok(EmptyResponse {}));
-        let index_metadata = IndexMetadata::for_test("test-index", "ram://test");
         mock_metastore
             .expect_list_indexes_metadata()
-            .returning(move |_| {
+            .return_once(move |_| {
                 Ok(ListIndexesMetadataResponse::for_test(vec![
                     index_metadata.clone()
                 ]))
             });
+        mock_metastore
+            .expect_list_shards()
+            .return_once(move |_| Ok(ListShardsResponse::default()));
 
         let cluster_config = ClusterConfig::for_test();
         let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
@@ -1246,6 +1254,7 @@ mod tests {
             ingester_pool,
             MetastoreServiceClient::from_mock(mock_metastore),
         );
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let source_config = SourceConfig::for_test("test-source", SourceParams::void());
         let add_source_request = AddSourceRequest {
             index_uid: Some(index_uid),
@@ -1268,15 +1277,23 @@ mod tests {
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
 
-        let mut mock_metastore = MockMetastoreService::new();
         let mut index_metadata = IndexMetadata::for_test("test-index", "ram://toto");
+        index_metadata
+            .add_source(SourceConfig::ingest_v2())
+            .unwrap();
+
         let test_source_config = SourceConfig::for_test("test-source", SourceParams::void());
-        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         index_metadata.add_source(test_source_config).unwrap();
+
+        let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_list_indexes_metadata()
             .return_once(|_| Ok(ListIndexesMetadataResponse::for_test(vec![index_metadata])));
+        mock_metastore
+            .expect_list_shards()
+            .return_once(move |_| Ok(ListShardsResponse::default()));
 
+        let index_uid = IndexUid::for_test("test-index", 0);
         let index_uid_clone = index_uid.clone();
         mock_metastore
             .expect_toggle_source()

@@ -1339,7 +1339,7 @@ pub async fn search_plan(
             searched_splits: split_ids,
             storage_requests: StorageRequestCount {
                 footer: 1,
-                fastfield: warmup_info.fast_field_names.len(),
+                fastfield: warmup_info.fast_fields.len(),
                 fieldnorm: fieldnorm_query_count,
                 sstable: sstable_query_count,
                 posting: sstable_query_count,

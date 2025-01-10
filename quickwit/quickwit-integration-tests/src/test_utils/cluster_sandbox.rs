@@ -63,6 +63,7 @@ pub struct TestNodeConfig {
 pub struct ClusterSandboxBuilder {
     temp_dir: TempDir,
     node_configs: Vec<TestNodeConfig>,
+    use_legacy_ingest: bool,
 }
 
 impl Default for ClusterSandboxBuilder {
@@ -70,6 +71,7 @@ impl Default for ClusterSandboxBuilder {
         Self {
             temp_dir: tempfile::tempdir().unwrap(),
             node_configs: Vec::new(),
+            use_legacy_ingest: false,
         }
     }
 }
@@ -91,6 +93,11 @@ impl ClusterSandboxBuilder {
             services: HashSet::from_iter(services),
             enable_otlp: true,
         });
+        self
+    }
+
+    pub fn use_legacy_ingest(mut self) -> Self {
+        self.use_legacy_ingest = true;
         self
     }
 
@@ -143,6 +150,7 @@ impl ClusterSandboxBuilder {
             temp_dir: self.temp_dir,
             node_configs: resolved_node_configs,
             tcp_listener_resolver,
+            use_legacy_ingest: self.use_legacy_ingest,
         }
     }
 
@@ -167,6 +175,7 @@ struct ResolvedClusterConfig {
     temp_dir: TempDir,
     node_configs: Vec<(NodeConfig, HashSet<QuickwitService>)>,
     tcp_listener_resolver: TestTcpListenerResolver,
+    use_legacy_ingest: bool,
 }
 
 impl ResolvedClusterConfig {
@@ -200,7 +209,7 @@ impl ResolvedClusterConfig {
                         quickwit_serve::do_nothing_env_filter_reload_fn(),
                     )
                     .await?;
-                    debug!("{} stopped successfully ({:?})", node_id, services);
+                    debug!("{node_id} stopped successfully ({:?})", services);
                     Result::<_, anyhow::Error>::Ok(result)
                 }
             });
@@ -237,6 +246,7 @@ impl ResolvedClusterConfig {
             indexer_rest_client: QuickwitClientBuilder::new(transport_url(
                 indexer_config.0.rest_config.listen_addr,
             ))
+            .use_legacy_ingest(self.use_legacy_ingest)
             .build(),
             trace_client: TraceServiceClient::new(indexer_channel.clone()),
             logs_client: LogsServiceClient::new(indexer_channel),
@@ -292,11 +302,6 @@ pub struct ClusterSandbox {
 }
 
 impl ClusterSandbox {
-    pub fn enable_ingest_v2(&mut self) {
-        self.indexer_rest_client.enable_ingest_v2();
-        self.searcher_rest_client.enable_ingest_v2();
-    }
-
     async fn wait_for_cluster_num_ready_nodes(
         &self,
         expected_num_ready_nodes: usize,
@@ -482,30 +487,40 @@ impl ClusterSandbox {
     ) -> Result<Vec<HashMap<String, ActorExitStatus>>, anyhow::Error> {
         // We need to drop rest clients first because reqwest can hold connections open
         // preventing rest server's graceful shutdown.
-        let mut shutdown_futures = Vec::new();
+        let mut indexer_shutdown_futures = Vec::new();
+        let mut other_shutdown_futures = Vec::new();
         let mut shutdown_nodes = HashMap::new();
         let mut i = 0;
         let shutdown_services_map = HashSet::from_iter(shutdown_services);
         while i < self.node_shutdown_handles.len() {
             let handler_services = &self.node_shutdown_handles[i].node_services;
-            if handler_services.is_subset(&shutdown_services_map) {
-                let handler_to_shutdown = self.node_shutdown_handles.remove(i);
-                shutdown_nodes.insert(
-                    handler_to_shutdown.node_id.clone(),
-                    handler_to_shutdown.node_services.clone(),
-                );
-                shutdown_futures.push(handler_to_shutdown.shutdown());
-            } else {
+            if !handler_services.is_subset(&shutdown_services_map) {
                 i += 1;
+                continue;
+            }
+            let handler_to_shutdown = self.node_shutdown_handles.remove(i);
+            shutdown_nodes.insert(
+                handler_to_shutdown.node_id.clone(),
+                handler_to_shutdown.node_services.clone(),
+            );
+            if handler_to_shutdown
+                .node_services
+                .contains(&QuickwitService::Indexer)
+            {
+                indexer_shutdown_futures.push(handler_to_shutdown.shutdown());
+            } else {
+                other_shutdown_futures.push(handler_to_shutdown.shutdown());
             }
         }
         debug!("shutting down {:?}", shutdown_nodes);
-        let result = future::join_all(shutdown_futures).await;
-        let mut statuses = Vec::new();
-        for node in result {
-            statuses.push(node?);
-        }
-        Ok(statuses)
+        // We must decommision the indexer nodes first and independently from the other nodes.
+        let indexer_shutdown_results = future::join_all(indexer_shutdown_futures).await;
+        let other_shutdown_results = future::join_all(other_shutdown_futures).await;
+        let exit_statuses = indexer_shutdown_results
+            .into_iter()
+            .chain(other_shutdown_results)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(exit_statuses)
     }
 
     pub async fn shutdown(

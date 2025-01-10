@@ -63,6 +63,8 @@ module "quickwit_service" {
         }
       ]
 
+      stopTimeout = var.stop_timeout
+
       dependencies = var.sidecar_container_dependencies
     }
   })

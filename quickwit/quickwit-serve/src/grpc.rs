@@ -192,7 +192,7 @@ pub(crate) async fn start_grpc_server(
     info!(
         enabled_grpc_services=?enabled_grpc_services,
         grpc_listen_addr=?grpc_listen_addr,
-        "Starting gRPC server listening on {grpc_listen_addr}."
+        "starting gRPC server listening on {grpc_listen_addr}"
     );
     // nodelay=true and keepalive=None are the default values for Server::builder()
     let tcp_incoming = TcpIncoming::from_listener(tcp_listener, true, None)

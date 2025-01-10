@@ -24,7 +24,7 @@ use std::sync::Arc;
 
 use futures::{FutureExt, StreamExt};
 use quickwit_common::pretty::PrettySample;
-use quickwit_doc_mapper::DocMapper;
+use quickwit_doc_mapper::{DocMapper, FastFieldWarmupInfo, WarmupInfo};
 use quickwit_proto::search::{
     LeafSearchStreamResponse, OutputFormat, SearchRequest, SearchStreamRequest,
     SplitIdAndFooterOffsets,
@@ -181,12 +181,21 @@ async fn leaf_search_stream_single_split(
         .iter()
         .any(|sort| sort.field_name == "_score");
 
-    // TODO no test fail if this line get removed
-    warmup_info.field_norms |= requires_scoring;
-
-    let fast_field_names =
-        request_fields.fast_fields_for_request(timestamp_filter_builder_opt.as_ref());
-    warmup_info.fast_field_names.extend(fast_field_names);
+    let fast_fields = request_fields
+        .fast_fields_for_request(timestamp_filter_builder_opt.as_ref())
+        .into_iter()
+        .map(|name| FastFieldWarmupInfo {
+            name,
+            with_subfields: false,
+        })
+        .collect();
+    let stream_warmup_info = WarmupInfo {
+        fast_fields,
+        // TODO no test fail if this line get removed
+        field_norms: requires_scoring,
+        ..Default::default()
+    };
+    warmup_info.merge(stream_warmup_info);
     warmup_info.simplify();
 
     warmup(&searcher, &warmup_info).await?;

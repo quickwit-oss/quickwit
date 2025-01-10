@@ -45,7 +45,10 @@ use crate::IndexerNodeInfo;
 
 fn index_metadata_for_test(index_id: &str, source_id: &str, num_pipelines: usize) -> IndexMetadata {
     let mut index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/test-index");
-    let source_config = SourceConfig {
+    let ingest_source_config = SourceConfig::ingest_v2();
+    index_metadata.add_source(ingest_source_config).unwrap();
+
+    let kafka_source_config = SourceConfig {
         enabled: true,
         source_id: source_id.to_string(),
         num_pipelines: NonZeroUsize::new(num_pipelines).unwrap(),
@@ -60,9 +63,7 @@ fn index_metadata_for_test(index_id: &str, source_id: &str, num_pipelines: usize
         transform_config: None,
         input_format: SourceInputFormat::Json,
     };
-    index_metadata
-        .sources
-        .insert(source_id.to_string(), source_config);
+    index_metadata.add_source(kafka_source_config).unwrap();
     index_metadata
 }
 

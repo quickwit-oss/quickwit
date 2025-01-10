@@ -222,32 +222,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_ingest_v2_args() {
-        let app = build_cli().no_binary_name(true);
-        let matches = app
-            .try_get_matches_from(["index", "ingest", "--index", "wikipedia", "--v2"])
-            .unwrap();
-        let command = CliCommand::parse_cli_args(matches).unwrap();
-        assert!(matches!(
-            command,
-            CliCommand::Index(IndexCliCommand::Ingest(
-                IngestDocsArgs {
-                    client_args,
-                    index_id,
-                    input_path_opt: None,
-                    batch_size_limit_opt: None,
-                    commit_type: CommitType::Auto,
-                })) if &index_id == "wikipedia"
-                && client_args.timeout.is_none()
-                && client_args.connect_timeout.is_none()
-                && client_args.commit_timeout.is_none()
-                && client_args.cluster_endpoint == Url::from_str("http://127.0.0.1:7280").unwrap()
-                && client_args.ingest_v2
-
-        ));
-    }
-
-    #[test]
     fn test_parse_ingest_args() -> anyhow::Result<()> {
         let app = build_cli().no_binary_name(true);
         let matches = app.try_get_matches_from([
@@ -273,7 +247,6 @@ mod tests {
                 && client_args.connect_timeout.is_none()
                 && client_args.commit_timeout.is_none()
                 && client_args.cluster_endpoint == Url::from_str("http://127.0.0.1:8000").unwrap()
-                && !client_args.ingest_v2
         ));
 
         let app = build_cli().no_binary_name(true);
@@ -301,7 +274,6 @@ mod tests {
                         && client_args.timeout.is_none()
                         && client_args.connect_timeout.is_none()
                         && client_args.commit_timeout.is_none()
-                        && !client_args.ingest_v2
                         && batch_size_limit == ByteSize::mb(8)
         ));
 
@@ -330,7 +302,6 @@ mod tests {
                     && client_args.timeout.is_none()
                     && client_args.connect_timeout.is_none()
                     && client_args.commit_timeout.is_none()
-                    && !client_args.ingest_v2
                     && batch_size_limit == ByteSize::kb(4)
         ));
 

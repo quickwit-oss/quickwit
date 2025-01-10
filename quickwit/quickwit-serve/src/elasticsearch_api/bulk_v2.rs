@@ -706,7 +706,7 @@ mod tests {
     }
 
     #[test]
-    fn test_make_elastic_bulk_response_v2() {
+    fn test_bulk_api_make_elastic_bulk_response_v2() {
         let response = make_elastic_bulk_response_v2(
             IngestResponseV2::default(),
             HashMap::new(),
@@ -803,7 +803,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_refresh_param() {
+    async fn test_bulk_api_refresh_parameter() {
         let mut mock_ingest_router = MockIngestRouterService::new();
         mock_ingest_router
             .expect_ingest()

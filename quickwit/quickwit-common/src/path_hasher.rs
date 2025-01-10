@@ -19,12 +19,20 @@
 
 use std::hash::Hasher;
 
+/// We use 255 as a separator as it isn't used by utf-8.
+///
+/// Tantivy uses 1 because it is more convenient for range queries, but we don't
+/// care about the sort order here.
+///
+/// Note: changing this is not retro-compatible!
+const SEPARATOR: &[u8] = &[255];
+
 /// Mini wrapper over the FnvHasher to incrementally hash nodes
 /// in a tree.
 ///
-/// The wrapper does not do too much. Its main purpose to
-/// work around the lack of Clone in the fnv Hasher
-/// and enforce a 0 byte separator between segments.
+/// Its purpose is to:
+/// - work around the lack of Clone in the fnv Hasher
+/// - enforce a 1 byte separator between segments
 #[derive(Default)]
 pub struct PathHasher {
     hasher: fnv::FnvHasher,
@@ -40,13 +48,13 @@ impl Clone for PathHasher {
 }
 
 impl PathHasher {
-    /// Helper function, mostly for tests.
+    #[cfg(any(test, feature = "testsuite"))]
     pub fn hash_path(segments: &[&[u8]]) -> u64 {
         let mut hasher = Self::default();
         for segment in segments {
             hasher.append(segment);
         }
-        hasher.finish()
+        hasher.finish_leaf()
     }
 
     /// Appends a new segment to our path.
@@ -56,13 +64,18 @@ impl PathHasher {
     #[inline]
     pub fn append(&mut self, payload: &[u8]) {
         self.hasher.write(payload);
-        // We use 255 as a separator as all utf8 bytes contain a 0
-        // in position 0-5.
-        self.hasher.write(&[255u8]);
+        self.hasher.write(SEPARATOR);
     }
 
     #[inline]
-    pub fn finish(&self) -> u64 {
+    pub fn finish_leaf(&self) -> u64 {
         self.hasher.finish()
+    }
+
+    #[inline]
+    pub fn finish_intermediate(&self) -> u64 {
+        let mut intermediate = fnv::FnvHasher::with_key(self.hasher.finish());
+        intermediate.write(SEPARATOR);
+        intermediate.finish()
     }
 }

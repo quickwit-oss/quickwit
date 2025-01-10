@@ -23,6 +23,7 @@ use std::sync::Arc;
 use hyper::http::HeaderValue;
 use hyper::{http, Method, StatusCode};
 use quickwit_common::tower::BoxFutureInfaillible;
+use quickwit_config::{disable_ingest_v1, enable_ingest_v2};
 use quickwit_search::SearchService;
 use tokio::net::TcpListener;
 use tower::make::Shared;
@@ -217,7 +218,7 @@ pub(crate) async fn start_rest_server(
     let rest_listen_addr = tcp_listener.local_addr()?;
     info!(
         rest_listen_addr=?rest_listen_addr,
-        "Starting REST server listening on {rest_listen_addr}."
+        "starting REST server listening on {rest_listen_addr}"
     );
 
     let rest_listener_std = tcp_listener.into_std()?;
@@ -264,6 +265,8 @@ fn api_v1_routes(
             quickwit_services.ingest_router_service.clone(),
             quickwit_services.metastore_client.clone(),
             quickwit_services.index_manager.clone(),
+            !disable_ingest_v1(),
+            enable_ingest_v2(),
         )
         .or(cluster_handler(quickwit_services.cluster.clone()))
         .boxed()
@@ -283,6 +286,8 @@ fn api_v1_routes(
             quickwit_services.ingest_router_service.clone(),
             quickwit_services.ingest_service.clone(),
             quickwit_services.node_config.ingest_api_config.clone(),
+            !disable_ingest_v1(),
+            enable_ingest_v2(),
         ))
         .boxed()
         .or(otlp_ingest_api_handlers(

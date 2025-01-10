@@ -28,7 +28,7 @@ One indexer running on a small instance (4 vCPUs) can ingest documents at a thro
 ## Multiple indexers, multiple searchers
 
 Indexing a single [data source](../configuration/source-config.md) on several indexers is only possible with a [Kafka source](../configuration/source-config.md#kafka-source).
-Support for native distributed indexing is planned for Quickwit 0.8 (Q2). Stay tuned!
+Support for native distributed indexing was added with Quickwit 0.9.
 
 ## File-backed metastore limitations
 

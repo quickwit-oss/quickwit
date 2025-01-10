@@ -27,20 +27,22 @@ use std::time::Instant;
 
 use anyhow::bail;
 use fnv::{FnvHashMap, FnvHashSet};
+use futures::StreamExt;
 use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::Progress;
-use quickwit_config::{IndexConfig, SourceConfig};
+use quickwit_config::{enable_ingest_v2, IndexConfig, SourceConfig, INGEST_V2_SOURCE_ID};
 use quickwit_ingest::ShardInfos;
-use quickwit_metastore::{IndexMetadata, ListIndexesMetadataResponseExt};
+use quickwit_metastore::{AddSourceRequestExt, IndexMetadata, ListIndexesMetadataResponseExt};
 use quickwit_proto::control_plane::ControlPlaneResult;
 use quickwit_proto::ingest::Shard;
 use quickwit_proto::metastore::{
-    self, EntityKind, ListIndexesMetadataRequest, ListShardsSubrequest, ListShardsSubresponse,
-    MetastoreError, MetastoreService, MetastoreServiceClient, SourceType,
+    self, AddSourceRequest, EntityKind, ListIndexesMetadataRequest, ListShardsSubrequest,
+    ListShardsSubresponse, MetastoreError, MetastoreResult, MetastoreService,
+    MetastoreServiceClient, SourceType, ToggleSourceRequest,
 };
 use quickwit_proto::types::{IndexId, IndexUid, NodeId, ShardId, SourceId, SourceUid};
 pub(super) use shard_table::{ScalingMode, ShardEntry, ShardLocations, ShardStats, ShardTable};
-use tracing::{info, instrument, warn};
+use tracing::{debug, error, info, instrument, warn};
 
 /// The control plane maintains a model in sync with the metastore.
 ///
@@ -104,6 +106,9 @@ impl ControlPlaneModel {
         for index_metadata in indexes_metadata {
             self.add_index(index_metadata);
         }
+        self.create_or_enable_ingest_v2_sources_if_necessary(metastore, progress)
+            .await?;
+
         let mut num_sources = 0;
         let mut num_shards = 0;
 
@@ -274,13 +279,18 @@ impl ControlPlaneModel {
         index_uid: &IndexUid,
         source_id: &SourceId,
         enable: bool,
-    ) -> anyhow::Result<bool> {
-        let Some(index_model) = self.index_table.get_mut(index_uid) else {
-            bail!("index `{}` not found", index_uid.index_id);
-        };
-        let Some(source_config) = index_model.sources.get_mut(source_id) else {
-            bail!("source `{source_id}` not found");
-        };
+    ) -> ControlPlaneResult<bool> {
+        let index_model = self.index_table.get_mut(index_uid).ok_or_else(|| {
+            MetastoreError::NotFound(EntityKind::Index {
+                index_id: index_uid.to_string(),
+            })
+        })?;
+        let source_config = index_model.sources.get_mut(source_id).ok_or_else(|| {
+            MetastoreError::NotFound(EntityKind::Source {
+                index_id: index_uid.to_string(),
+                source_id: source_id.clone(),
+            })
+        })?;
         let has_changed = source_config.enabled != enable;
         source_config.enabled = enable;
         Ok(has_changed)
@@ -392,12 +402,159 @@ impl ControlPlaneModel {
         self.shard_table
             .release_scaling_permits(source_uid, scaling_mode)
     }
+
+    // Quickwit 0.9 uses the ingest v2 source by default. For indexes created prior to 0.9, we need
+    // to ensure that the ingest v2 source is created and enabled if necessary.
+    //
+    // TODO(#5604)
+    async fn create_or_enable_ingest_v2_sources_if_necessary(
+        &mut self,
+        metastore: &mut MetastoreServiceClient,
+        progress: &Progress,
+    ) -> ControlPlaneResult<()> {
+        // User has voluntarily disabled ingest v2, nothing to do.
+        if !enable_ingest_v2() {
+            return Ok(());
+        }
+        // Indexes for which the ingest v2 source needs to be created.
+        let mut sources_to_create = Vec::new();
+        // Indexes for which the ingest v2 source needs to be enabled.
+        let mut sources_to_enable = Vec::new();
+
+        for (index_uid, index_metadata) in &self.index_table {
+            let ingest_v2_source_opt = index_metadata.sources.get(INGEST_V2_SOURCE_ID);
+
+            if let Some(ingest_v2_source) = ingest_v2_source_opt {
+                if !ingest_v2_source.enabled {
+                    sources_to_enable.push(index_uid.clone());
+                }
+            } else {
+                sources_to_create.push(index_uid.clone());
+            }
+        }
+        self.create_ingest_v2_sources(sources_to_create, metastore, progress)
+            .await?;
+        self.enable_ingest_v2_sources(sources_to_enable, metastore, progress)
+            .await?;
+        Ok(())
+    }
+
+    async fn create_ingest_v2_sources(
+        &mut self,
+        sources_to_create: Vec<IndexUid>,
+        metastore: &mut MetastoreServiceClient,
+        progress: &Progress,
+    ) -> MetastoreResult<()> {
+        let num_sources_to_create = sources_to_create.len();
+        let now = Instant::now();
+        info!("adding ingest v2 source to {num_sources_to_create} indexes");
+
+        let mut add_source_futures = Vec::with_capacity(num_sources_to_create);
+
+        for index_uid in sources_to_create {
+            let metastore = metastore.clone();
+            let source_config = SourceConfig::ingest_v2();
+            let add_source_request =
+                AddSourceRequest::try_from_source_config(index_uid.clone(), &source_config)?;
+            let add_source_future = async move {
+                let add_source_result = metastore.add_source(add_source_request).await;
+                match add_source_result {
+                    Ok(_) => Ok((index_uid, source_config)),
+                    Err(error) => Err((index_uid, error)),
+                }
+            };
+            add_source_futures.push(add_source_future);
+        }
+        let mut add_source_result_stream =
+            futures::stream::iter(add_source_futures).buffer_unordered(100);
+        let mut num_errors = 0;
+
+        while let Some(add_source_result) = progress
+            .protect_future(add_source_result_stream.next())
+            .await
+        {
+            match add_source_result {
+                Ok((index_uid, source_config)) => {
+                    self.add_source(&index_uid, source_config)?;
+                }
+                Err((index_uid, error)) => {
+                    num_errors += 1;
+                    debug!(%error, %index_uid, "failed to add ingest v2 source to index");
+                }
+            }
+        }
+        if num_errors > 0 {
+            error!("failed to add ingest v2 sources to {num_errors} indexes");
+        }
+        info!(
+            "added ingest v2 source to {num_sources_to_create} indexes in {}",
+            now.elapsed().pretty_display()
+        );
+        Ok(())
+    }
+
+    async fn enable_ingest_v2_sources(
+        &mut self,
+        sources_to_enable: Vec<IndexUid>,
+        metastore: &mut MetastoreServiceClient,
+        progress: &Progress,
+    ) -> MetastoreResult<()> {
+        let num_sources_to_enable = sources_to_enable.len();
+        let now = Instant::now();
+        info!("enabling {num_sources_to_enable} ingest v2 sources");
+
+        let mut toggle_source_futures = Vec::with_capacity(num_sources_to_enable);
+
+        for index_uid in sources_to_enable {
+            let metastore = metastore.clone();
+            let toggle_source_request = ToggleSourceRequest {
+                index_uid: index_uid.clone().into(),
+                source_id: INGEST_V2_SOURCE_ID.to_string(),
+                enable: true,
+            };
+            let toggle_source_future = async move {
+                let toggle_source_result = metastore.toggle_source(toggle_source_request).await;
+                match toggle_source_result {
+                    Ok(_) => Ok(index_uid),
+                    Err(error) => Err((index_uid, error)),
+                }
+            };
+            toggle_source_futures.push(toggle_source_future);
+        }
+        let mut toggle_source_result_stream =
+            futures::stream::iter(toggle_source_futures).buffer_unordered(100);
+        let mut num_errors = 0;
+
+        let ingest_v2_source_id = INGEST_V2_SOURCE_ID.to_string();
+
+        while let Some(toggle_source_result) = progress
+            .protect_future(toggle_source_result_stream.next())
+            .await
+        {
+            match toggle_source_result {
+                Ok(index_uid) => {
+                    self.toggle_source(&index_uid, &ingest_v2_source_id, true)?;
+                }
+                Err((index_uid, error)) => {
+                    num_errors += 1;
+                    debug!(%error, %index_uid, "failed to enable ingest v2 source");
+                }
+            }
+        }
+        if num_errors > 0 {
+            error!("failed to enable {num_errors} ingest v2 sources");
+        }
+        info!(
+            "enabled {num_sources_to_enable} ingest v2 sources in {}",
+            now.elapsed().pretty_display()
+        );
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
+    use metastore::EmptyResponse;
     use quickwit_config::{SourceConfig, SourceParams, INGEST_V2_SOURCE_ID};
     use quickwit_metastore::IndexMetadata;
     use quickwit_proto::ingest::{Shard, ShardState};
@@ -407,12 +564,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_control_plane_model_load_shard_table() {
-        let progress = Progress::default();
+        let index_uid0 = IndexUid::for_test("test-index-0", 0);
+        let index_uid1 = IndexUid::for_test("test-index-1", 0);
+        let index_uid2 = IndexUid::for_test("test-index-2", 0);
 
         let mut mock_metastore = MockMetastoreService::new();
-        let index_uid = IndexUid::from_str("test-index-0:00000000000000000000000000").unwrap();
-        let index_uid2 = IndexUid::from_str("test-index-1:00000000000000000000000000").unwrap();
-        let index_uid3 = IndexUid::from_str("test-index-2:00000000000000000000000000").unwrap();
         mock_metastore
             .expect_list_indexes_metadata()
             .returning(|request| {
@@ -433,28 +589,59 @@ mod tests {
                 let indexes = vec![index_0, index_1, index_2];
                 Ok(ListIndexesMetadataResponse::for_test(indexes))
             });
-        let index_uid_clone = index_uid.clone();
+        let index_uid2_clone = index_uid2.clone();
+        mock_metastore
+            .expect_add_source()
+            .return_once(move |request| {
+                assert_eq!(*request.index_uid(), index_uid2_clone);
+
+                let source_config = request.deserialize_source_config().unwrap();
+                assert_eq!(source_config.source_id, INGEST_V2_SOURCE_ID);
+                assert_eq!(source_config.source_type(), SourceType::IngestV2);
+
+                Ok(EmptyResponse {})
+            });
+        let index_uid1_clone = index_uid1.clone();
+        mock_metastore
+            .expect_toggle_source()
+            .return_once(move |request| {
+                assert_eq!(*request.index_uid(), index_uid1_clone);
+                assert_eq!(request.source_id, INGEST_V2_SOURCE_ID);
+                assert!(request.enable);
+
+                Ok(EmptyResponse {})
+            });
+        let index_uid0_clone = index_uid0.clone();
+        let index_uid1_clone = index_uid1.clone();
         let index_uid2_clone = index_uid2.clone();
         mock_metastore
             .expect_list_shards()
-            .returning(move |request| {
-                assert_eq!(request.subrequests.len(), 2);
+            .return_once(move |mut request| {
+                assert_eq!(request.subrequests.len(), 3);
 
-                assert_eq!(request.subrequests[0].index_uid(), &index_uid_clone);
+                request
+                    .subrequests
+                    .sort_by(|left, right| left.index_uid().cmp(right.index_uid()));
+
+                assert_eq!(request.subrequests[0].index_uid(), &index_uid0_clone);
                 assert_eq!(request.subrequests[0].source_id, INGEST_V2_SOURCE_ID);
                 assert!(request.subrequests[0].shard_state.is_none());
 
-                assert_eq!(request.subrequests[1].index_uid(), &index_uid2_clone);
+                assert_eq!(request.subrequests[1].index_uid(), &index_uid1_clone);
                 assert_eq!(request.subrequests[1].source_id, INGEST_V2_SOURCE_ID);
                 assert!(request.subrequests[1].shard_state.is_none());
 
+                assert_eq!(request.subrequests[2].index_uid(), &index_uid2_clone);
+                assert_eq!(request.subrequests[2].source_id, INGEST_V2_SOURCE_ID);
+                assert!(request.subrequests[2].shard_state.is_none());
+
                 let subresponses = vec![
                     metastore::ListShardsSubresponse {
-                        index_uid: Some(index_uid_clone.clone()),
+                        index_uid: Some(index_uid0_clone.clone()),
                         source_id: INGEST_V2_SOURCE_ID.to_string(),
                         shards: vec![Shard {
                             shard_id: Some(ShardId::from(42)),
-                            index_uid: Some(index_uid_clone.clone()),
+                            index_uid: Some(index_uid0_clone.clone()),
                             source_id: INGEST_V2_SOURCE_ID.to_string(),
                             shard_state: ShardState::Open as i32,
                             leader_id: "node1".to_string(),
@@ -462,7 +649,7 @@ mod tests {
                         }],
                     },
                     metastore::ListShardsSubresponse {
-                        index_uid: Some(index_uid2_clone.clone()),
+                        index_uid: Some(index_uid1_clone.clone()),
                         source_id: INGEST_V2_SOURCE_ID.to_string(),
                         shards: Vec::new(),
                     },
@@ -472,20 +659,21 @@ mod tests {
             });
         let mut model = ControlPlaneModel::default();
         let mut metastore = MetastoreServiceClient::from_mock(mock_metastore);
+        let progress = Progress::default();
         model
             .load_from_metastore(&mut metastore, &progress)
             .await
             .unwrap();
 
         assert_eq!(model.index_table.len(), 3);
-        assert_eq!(*model.index_uid("test-index-0").unwrap(), index_uid);
-        assert_eq!(*model.index_uid("test-index-1").unwrap(), index_uid2);
-        assert_eq!(*model.index_uid("test-index-2").unwrap(), index_uid3);
+        assert_eq!(*model.index_uid("test-index-0").unwrap(), index_uid0);
+        assert_eq!(*model.index_uid("test-index-1").unwrap(), index_uid1);
+        assert_eq!(*model.index_uid("test-index-2").unwrap(), index_uid2);
 
         assert_eq!(model.shard_table.num_shards(), 1);
 
         let source_uid_0 = SourceUid {
-            index_uid: index_uid.clone(),
+            index_uid: index_uid0.clone(),
             source_id: INGEST_V2_SOURCE_ID.to_string(),
         };
         let shards: Vec<&ShardEntry> = model
@@ -498,7 +686,7 @@ mod tests {
         assert_eq!(shards[0].shard_id(), ShardId::from(42));
 
         let source_uid_1 = SourceUid {
-            index_uid: index_uid2.clone(),
+            index_uid: index_uid1.clone(),
             source_id: INGEST_V2_SOURCE_ID.to_string(),
         };
         let shards: Vec<&ShardEntry> = model
