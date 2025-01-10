@@ -21,8 +21,8 @@ use crate::not_nan_f32::NotNaNf32;
 use crate::query_ast::field_presence::FieldPresenceQuery;
 use crate::query_ast::user_input_query::UserInputQuery;
 use crate::query_ast::{
-    BoolQuery, FullTextQuery, PhrasePrefixQuery, QueryAst, RangeQuery, TermQuery, TermSetQuery,
-    WildcardQuery,
+    BoolQuery, FullTextQuery, PhrasePrefixQuery, QueryAst, RangeQuery, RegexQuery, TermQuery,
+    TermSetQuery, WildcardQuery,
 };
 
 /// Simple trait to implement a Visitor over the QueryAst.
@@ -45,6 +45,7 @@ pub trait QueryAstVisitor<'a> {
             QueryAst::UserInput(user_text_query) => self.visit_user_text(user_text_query),
             QueryAst::FieldPresence(exists) => self.visit_exists(exists),
             QueryAst::Wildcard(wildcard) => self.visit_wildcard(wildcard),
+            QueryAst::Regex(regex) => self.visit_regex(regex),
         }
     }
 
@@ -111,6 +112,10 @@ pub trait QueryAstVisitor<'a> {
     fn visit_wildcard(&mut self, _wildcard_query: &'a WildcardQuery) -> Result<(), Self::Err> {
         Ok(())
     }
+
+    fn visit_regex(&mut self, _regex_query: &'a RegexQuery) -> Result<(), Self::Err> {
+        Ok(())
+    }
 }
 
 /// Simple trait to implement a Visitor over the QueryAst.
@@ -133,6 +138,7 @@ pub trait QueryAstTransformer {
             QueryAst::UserInput(user_text_query) => self.transform_user_text(user_text_query),
             QueryAst::FieldPresence(exists) => self.transform_exists(exists),
             QueryAst::Wildcard(wildcard) => self.transform_wildcard(wildcard),
+            QueryAst::Regex(regex) => self.transform_regex(regex),
         }
     }
 
@@ -230,5 +236,9 @@ pub trait QueryAstTransformer {
         wildcard_query: WildcardQuery,
     ) -> Result<Option<QueryAst>, Self::Err> {
         Ok(Some(QueryAst::Wildcard(wildcard_query)))
+    }
+
+    fn transform_regex(&mut self, regex_query: RegexQuery) -> Result<Option<QueryAst>, Self::Err> {
+        Ok(Some(QueryAst::Regex(regex_query)))
     }
 }

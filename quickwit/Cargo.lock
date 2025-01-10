@@ -5259,7 +5259,7 @@ checksum = "b15813163c1d831bf4a13c3610c05c0d03b39feb07f7e09fa234dac9b15aaf39"
 [[package]]
 name = "ownedbytes"
 version = "0.7.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=71cf198#71cf19870b6bf6b78ace1c8f887f888207a01925"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=d281ca3#d281ca3e659d9eaedd5c64dd1613c5b9d11d6c65"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -6996,10 +6996,12 @@ dependencies = [
  "proptest",
  "quickwit-common",
  "quickwit-datetime",
+ "regex",
  "serde",
  "serde_json",
  "serde_with",
  "tantivy",
+ "tantivy-fst",
  "thiserror 1.0.69",
  "time",
  "whichlang",
@@ -7062,6 +7064,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tantivy",
+ "tantivy-fst",
  "thiserror 1.0.69",
  "tokio",
  "tokio-stream",
@@ -8875,7 +8878,7 @@ checksum = "7b2093cf4c8eb1e67749a6762251bc9cd836b6fc171623bd0a9d324d37af2417"
 [[package]]
 name = "tantivy"
 version = "0.23.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=71cf198#71cf19870b6bf6b78ace1c8f887f888207a01925"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=d281ca3#d281ca3e659d9eaedd5c64dd1613c5b9d11d6c65"
 dependencies = [
  "aho-corasick",
  "arc-swap",
@@ -8890,6 +8893,7 @@ dependencies = [
  "fastdivide",
  "fnv",
  "fs4",
+ "futures-channel",
  "futures-util",
  "htmlescape",
  "hyperloglogplus",
@@ -8919,7 +8923,7 @@ dependencies = [
  "tantivy-stacker",
  "tantivy-tokenizer-api",
  "tempfile",
- "thiserror 2.0.6",
+ "thiserror 2.0.7",
  "time",
  "uuid",
  "winapi 0.3.9",
@@ -8929,7 +8933,7 @@ dependencies = [
 [[package]]
 name = "tantivy-bitpacker"
 version = "0.6.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=71cf198#71cf19870b6bf6b78ace1c8f887f888207a01925"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=d281ca3#d281ca3e659d9eaedd5c64dd1613c5b9d11d6c65"
 dependencies = [
  "bitpacking",
 ]
@@ -8937,7 +8941,7 @@ dependencies = [
 [[package]]
 name = "tantivy-columnar"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=71cf198#71cf19870b6bf6b78ace1c8f887f888207a01925"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=d281ca3#d281ca3e659d9eaedd5c64dd1613c5b9d11d6c65"
 dependencies = [
  "downcast-rs",
  "fastdivide",
@@ -8952,7 +8956,7 @@ dependencies = [
 [[package]]
 name = "tantivy-common"
 version = "0.7.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=71cf198#71cf19870b6bf6b78ace1c8f887f888207a01925"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=d281ca3#d281ca3e659d9eaedd5c64dd1613c5b9d11d6c65"
 dependencies = [
  "async-trait",
  "byteorder",
@@ -8975,7 +8979,7 @@ dependencies = [
 [[package]]
 name = "tantivy-query-grammar"
 version = "0.22.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=71cf198#71cf19870b6bf6b78ace1c8f887f888207a01925"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=d281ca3#d281ca3e659d9eaedd5c64dd1613c5b9d11d6c65"
 dependencies = [
  "nom",
 ]
@@ -8983,8 +8987,10 @@ dependencies = [
 [[package]]
 name = "tantivy-sstable"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=71cf198#71cf19870b6bf6b78ace1c8f887f888207a01925"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=d281ca3#d281ca3e659d9eaedd5c64dd1613c5b9d11d6c65"
 dependencies = [
+ "futures-util",
+ "itertools 0.13.0",
  "tantivy-bitpacker",
  "tantivy-common",
  "tantivy-fst",
@@ -8994,7 +9000,7 @@ dependencies = [
 [[package]]
 name = "tantivy-stacker"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=71cf198#71cf19870b6bf6b78ace1c8f887f888207a01925"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=d281ca3#d281ca3e659d9eaedd5c64dd1613c5b9d11d6c65"
 dependencies = [
  "murmurhash32",
  "rand_distr",
@@ -9004,7 +9010,7 @@ dependencies = [
 [[package]]
 name = "tantivy-tokenizer-api"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=71cf198#71cf19870b6bf6b78ace1c8f887f888207a01925"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=d281ca3#d281ca3e659d9eaedd5c64dd1613c5b9d11d6c65"
 dependencies = [
  "serde",
 ]
@@ -9076,11 +9082,11 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "2.0.6"
+version = "2.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8fec2a1820ebd077e2b90c4df007bebf344cd394098a13c563957d0afc83ea47"
+checksum = "93605438cbd668185516ab499d589afb7ee1859ea3d5fc8f6b0755e1c7443767"
 dependencies = [
- "thiserror-impl 2.0.6",
+ "thiserror-impl 2.0.7",
 ]
 
 [[package]]
@@ -9096,9 +9102,9 @@ dependencies = [
 
 [[package]]
 name = "thiserror-impl"
-version = "2.0.6"
+version = "2.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d65750cab40f4ff1929fb1ba509e9914eb756131cef4210da8d5d700d26f6312"
+checksum = "e1d8749b4531af2117677a5fcd12b1348a3fe2b81e36e61ffeac5c4aa3273e36"
 dependencies = [
  "proc-macro2",
  "quote",
