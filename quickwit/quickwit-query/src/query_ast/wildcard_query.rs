@@ -88,7 +88,7 @@ fn sub_query_parts_to_regex(
 ) -> anyhow::Result<String> {
     let mut normalizer = tokenizer_manager
         .get_normalizer(tokenizer_name)
-        .with_context(|| format!("no tokenizer named `{}` is registered", tokenizer_name))?;
+        .with_context(|| format!("no tokenizer named `{tokenizer_name}` is registered"))?;
 
     sub_query_parts
         .into_iter()

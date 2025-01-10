@@ -375,7 +375,7 @@ async fn warm_up_automatons(
                     match automaton {
                         Automaton::Regex(path, regex_str) => {
                             let regex = tantivy_fst::Regex::new(regex_str)
-                                .context("failed parsing regex during warmup")?;
+                                .context("failed to parse regex during warmup")?;
                             inv_idx_clone
                                 .warm_postings_automaton(
                                     quickwit_query::query_ast::JsonPathPrefix {
@@ -385,7 +385,7 @@ async fn warm_up_automatons(
                                     cpu_intensive_executor,
                                 )
                                 .await
-                                .context("failed loading automaton")
+                                .context("failed to load automaton")
                         }
                     }
                 });
