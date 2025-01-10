@@ -22,6 +22,7 @@ use std::sync::Arc;
 
 use hyper::http::HeaderValue;
 use hyper::{http, Method, StatusCode};
+use quickwit_common::metrics::Vector;
 use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_config::{disable_ingest_v1, enable_ingest_v2};
 use quickwit_search::SearchService;

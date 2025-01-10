@@ -25,7 +25,7 @@ use anyhow::{bail, Context};
 use async_trait::async_trait;
 use bytes::Bytes;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
-use quickwit_common::metrics::IntCounter;
+use quickwit_common::metrics::{IntCounter, Vector};
 use quickwit_common::rate_limited_tracing::rate_limited_warn;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::{SourceInputFormat, TransformConfig};

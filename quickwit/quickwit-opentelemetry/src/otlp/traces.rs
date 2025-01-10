@@ -23,6 +23,7 @@ use std::str::FromStr;
 
 use async_trait::async_trait;
 use prost::Message;
+use quickwit_common::metrics::Vector;
 use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_common::uri::Uri;
 use quickwit_config::{load_index_config_from_user_config, ConfigFormat, IndexConfig};

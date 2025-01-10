@@ -27,6 +27,7 @@ use async_trait::async_trait;
 use itertools::{Either, Itertools};
 use prost::Message;
 use prost_types::{Duration as WellKnownDuration, Timestamp as WellKnownTimestamp};
+use quickwit_common::metrics::Vector;
 use quickwit_config::JaegerConfig;
 use quickwit_opentelemetry::otlp::{
     extract_otel_traces_index_id_patterns_from_metadata, Event as QwEvent, Link as QwLink,

@@ -324,6 +324,7 @@ pub mod busy_detector {
     use std::time::Instant;
 
     use once_cell::sync::Lazy;
+    use quickwit_common::metrics::Vector;
     use tracing::debug;
 
     use crate::metrics::CLI_METRICS;

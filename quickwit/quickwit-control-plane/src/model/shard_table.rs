@@ -23,6 +23,7 @@ use std::ops::{Deref, DerefMut};
 use std::time::Duration;
 
 use fnv::{FnvHashMap, FnvHashSet};
+use quickwit_common::metrics::Vector;
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
 use quickwit_common::tower::ConstantRate;
 use quickwit_ingest::{RateMibPerSec, ShardInfo, ShardInfos};
