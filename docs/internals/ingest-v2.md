@@ -12,7 +12,7 @@ In the future, the shard based ingest will also be capable of writing a replica 
 
 Variables driving the ingest configuration are documented [here](../ingest-data/ingest-api.md#ingest-api-versions).
 
-With ingest V2, you can also activate the `enable_cooperative_indexing` option in the indexer configuration. The indexer configuration is in the node configuration:
+With ingest V2, you can also activate the `enable_cooperative_indexing` option in the indexer configuration. This setting is useful for deployments with very large numbers (dozens) of actively written indexers, to limit the indexing workbench memory consumption. The indexer configuration is in the node configuration:
 
 ```yaml
 version: 0.8
@@ -26,10 +26,9 @@ See [full configuration example](https://github.com/quickwit-oss/quickwit/blob/m
 ## Differences between ingest V1 and V2
 
 - V1 uses the `queues/` directory whereas V2 uses the `wal/` directory
-- both V1 and V2 are configured with
+- both V1 and V2 are configured with:
   - `ingest_api.max_queue_memory_usage` 
   - `ingest_api.max_queue_disk_usage` 
-- but ingest V2 can also be configured with 
-  - `ingest_api.shard_throughput_limit`, between 1MB and 20MB (/s), used to determine when to create new shards to distribute the indexing load. Should not be tweaked in 99% of the setups.
+- but ingest V2 can also be configured with:
   - `ingest_api.replication_factor`, not working yet
-- ingest V1 always writes to the WAL of the node receiving the request, V2 forwards it to
+- ingest V1 always writes to the WAL of the node receiving the request, V2 potentially forwards it to another node, dynamically assigned by the control plane to distribute the indexing work more evenly.

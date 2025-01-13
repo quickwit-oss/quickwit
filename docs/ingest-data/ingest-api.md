@@ -79,7 +79,7 @@ By default, both ingestion services are enabled and ingest V2 is used. You can t
 | Variable              | Description   | Default value |
 | --------------------- | --------------|-------------- |
 | `QW_ENABLE_INGEST_V2` | Start the V2 ingest service and use it by default. | true | 
-| `QW_DISABLE_INGEST_V1`| V1 ingest will be used by the APIs only if V2 is disabled. Running V1 along V2 can be useful to finish indexing existing V1 logs. | false |
+| `QW_DISABLE_INGEST_V1`| V1 ingest will be used by the APIs only if V2 is disabled. Running V1 along V2 is necessary to migrate to V2 without loosing existing unindexed V1 logs. | false |
 
 :::note
 

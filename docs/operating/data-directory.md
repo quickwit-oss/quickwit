@@ -33,7 +33,7 @@ qwdata
 
 ### `/queues` and `/wal` directories
  
-These directories are created only if the ingest API service is running on your node. They contains write ahead log files of the ingest API to guard against data loss. The `/queues` directory is used by the legacy version of the ingest (sometimes referred to as ingest V1). It is meant to be phased out in upcoming versions of Quickwit. Learn more about ingest API versions [here](../ingest-data/ingest-api.md#ingest-api-versions).
+These directories are created only if the ingest API service is running on your node. They contain write ahead log files of the ingest API to guard against data loss. The `/queues` directory is used by the legacy version of the ingest (sometimes referred to as ingest V1). It is meant to be phased out in upcoming versions of Quickwit. Learn more about ingest API versions [here](../ingest-data/ingest-api.md#ingest-api-versions).
 
 The log file is truncated when Quickwit commits a split (piece of index), which means that the split is stored on the storage and its metadata are in the metastore.
 
