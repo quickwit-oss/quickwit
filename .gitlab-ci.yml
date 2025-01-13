@@ -32,7 +32,7 @@ deploy:
   image: $BAZEL_CI_IMAGE
   stage: deploy
   tags:
-    - runner:main
+    - arch:amd64
   script:
     - export PATH="$PATH:$CI_PROJECT_DIR/bazel-bin"
     - bzl run pomsky-workflow.publish
