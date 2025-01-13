@@ -34,4 +34,5 @@ deploy:
   tags:
     - runner:main
   script:
+    - export PATH="$PATH:./bazel-bin"
     - bzl run pomsky-workflow.publish
