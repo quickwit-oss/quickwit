@@ -205,7 +205,6 @@ impl MergePlanner {
             .into_iter()
             .filter(|split_metadata| belongs_to_pipeline(pipeline_id, split_metadata))
             .collect();
-        // TODO it's unclear to me if we should also segregate by source id
         let ongoing_merge_operations_tracker = merge_scheduler_service
             .ask(GetOperationTracker(pipeline_id.index_uid.clone()))
             .await?;
