@@ -14,7 +14,7 @@ stages:
   - build
   - deploy
 
-build-image:
+build:
   image: $DOCKER_CI_IMAGE
   stage: build
   tags:
@@ -34,5 +34,5 @@ deploy:
   tags:
     - runner:main
   script:
-    - export PATH="$PATH:./bazel-bin"
+    - export PATH="$PATH:$CI_PROJECT_DIR/bazel-bin"
     - bzl run pomsky-workflow.publish
