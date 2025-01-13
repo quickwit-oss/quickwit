@@ -145,7 +145,12 @@ impl Handler<RunFinalizeMergePolicyAndQuit> for MergePlanner {
     ) -> Result<(), ActorExitStatus> {
         // consume failed merges so that we may try to reschedule them one last time
         for failed_merge in self.ongoing_merge_operations_tracker.take_dead() {
-            self.record_splits_if_necessary(failed_merge.splits);
+            for split in failed_merge.splits {
+                // if they were from a dead merge, we always record them, they are likely
+                // already part of our known splits, and we don't want to rebuild the known
+                // split list as it's likely to log about not halving its size.
+                self.record_split(split);
+            }
         }
         self.send_merge_ops(true, ctx).await?;
         Err(ActorExitStatus::Success)
@@ -313,6 +318,7 @@ impl MergePlanner {
             self.record_split(new_split);
         }
     }
+
     async fn compute_merge_ops(
         &mut self,
         is_finalize: bool,
