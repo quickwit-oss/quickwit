@@ -493,7 +493,7 @@ pub async fn serve_quickwit(
     // Set up the "control plane proxy" for the metastore.
     let metastore_through_control_plane = MetastoreServiceClient::new(ControlPlaneMetastore::new(
         control_plane_client.clone(),
-        metastore_client.clone(),
+        metastore_client,
     ));
 
     // Setup ingest service v1.
@@ -604,7 +604,9 @@ pub async fn serve_quickwit(
     let (search_job_placer, search_service) = setup_searcher(
         &node_config,
         cluster.change_stream(),
-        metastore_client.clone(),
+        // search remains available without a control plane because not all
+        // metastore RPCs are proxied
+        metastore_through_control_plane.clone(),
         storage_resolver.clone(),
         searcher_context,
     )
