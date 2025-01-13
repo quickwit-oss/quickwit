@@ -41,9 +41,8 @@ To utilize all CPUs on Indexer nodes that have more than 4 cores, your indexing
 workload needs to be broken down into multiple indexing pipelines. This can be
 achieved by creating multiple indexes or by using a [partitioned data
 source](../configuration/source-config.md#number-of-pipelines) such as
-[Kafka](../configuration/source-config.md#kafka-source).
-
-<!-- TODO: change this note when releasing ingest v2 -->
+[Kafka](../configuration/source-config.md#kafka-source) or the [ingest API
+(v2)](../ingest-data/ingest-api.md#ingest-api-versions).
 
 :::
 
