@@ -56,15 +56,15 @@ async fn test_ingest_v1_happy_path() {
             commit_timeout_secs: 1
         "#
     );
-    sandbox
-        .indexer_rest_client
+    let indexer_client = sandbox.rest_client_legacy_indexer();
+    indexer_client
         .indexes()
         .create(index_config, ConfigFormat::Yaml, false)
         .await
         .unwrap();
 
     ingest(
-        &sandbox.indexer_rest_client,
+        &indexer_client,
         index_id,
         ingest_json!({"body": "my-doc"}),
         CommitType::Auto,
@@ -80,8 +80,7 @@ async fn test_ingest_v1_happy_path() {
     sandbox.assert_hit_count(index_id, "*", 1).await;
 
     // Delete the index to avoid potential hanging on shutdown #5068
-    sandbox
-        .indexer_rest_client
+    indexer_client
         .indexes()
         .delete(index_id, false)
         .await

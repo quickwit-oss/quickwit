@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use quickwit_config::service::QuickwitService;
 use quickwit_serve::SearchRequestQueryString;
 use serde_json::Value;
 
@@ -30,7 +31,7 @@ async fn assert_hits_unordered(
     expected_result: Result<&[Value], ()>,
 ) {
     let search_res = sandbox
-        .searcher_rest_client
+        .rest_client(QuickwitService::Searcher)
         .search(
             index_id,
             SearchRequestQueryString {
