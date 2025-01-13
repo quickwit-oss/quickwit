@@ -19,6 +19,7 @@
 
 use std::time::Duration;
 
+use quickwit_config::service::QuickwitService;
 use serde_json::{json, Value};
 
 use super::assert_hits_unordered;
@@ -42,7 +43,7 @@ async fn validate_search_across_doc_mapping_updates(
         // The starting time is a bit long for a cluster.
         tokio::time::sleep(Duration::from_secs(3)).await;
         let indexing_service_counters = sandbox
-            .indexer_rest_client
+            .rest_client(QuickwitService::Indexer)
             .node_stats()
             .indexing()
             .await
@@ -52,7 +53,7 @@ async fn validate_search_across_doc_mapping_updates(
 
     // Create index
     sandbox
-        .indexer_rest_client
+        .rest_client(QuickwitService::Indexer)
         .indexes()
         .create(
             json!({
@@ -71,7 +72,7 @@ async fn validate_search_across_doc_mapping_updates(
         .unwrap();
 
     assert!(sandbox
-        .indexer_rest_client
+        .rest_client(QuickwitService::Indexer)
         .node_health()
         .is_live()
         .await
@@ -88,7 +89,7 @@ async fn validate_search_across_doc_mapping_updates(
 
     // Update index to also search "body" by default, search should now have 1 hit
     sandbox
-        .searcher_rest_client
+        .rest_client(QuickwitService::Searcher)
         .indexes()
         .update(
             index_id,

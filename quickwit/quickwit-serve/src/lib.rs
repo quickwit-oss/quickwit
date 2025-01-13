@@ -344,8 +344,8 @@ async fn start_control_plane_if_needed(
 
         // If the node is a metastore, we skip this check in order to avoid a deadlock.
         // If the node is a searcher, we skip this check because the searcher does not need to.
-        if !(node_config.is_service_enabled(QuickwitService::Metastore)
-            || node_config.is_service_enabled(QuickwitService::Searcher))
+        if !node_config.is_service_enabled(QuickwitService::Metastore)
+            && node_config.enabled_services != HashSet::from([QuickwitService::Searcher])
         {
             info!("connecting to control plane");
 
@@ -493,7 +493,7 @@ pub async fn serve_quickwit(
     // Set up the "control plane proxy" for the metastore.
     let metastore_through_control_plane = MetastoreServiceClient::new(ControlPlaneMetastore::new(
         control_plane_client.clone(),
-        metastore_client.clone(),
+        metastore_client,
     ));
 
     // Setup ingest service v1.
@@ -604,6 +604,8 @@ pub async fn serve_quickwit(
     let (search_job_placer, search_service) = setup_searcher(
         &node_config,
         cluster.change_stream(),
+        // search remains available without a control plane because not all
+        // metastore RPCs are proxied
         metastore_through_control_plane.clone(),
         storage_resolver.clone(),
         searcher_context,

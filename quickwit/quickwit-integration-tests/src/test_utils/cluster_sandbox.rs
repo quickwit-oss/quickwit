@@ -50,7 +50,6 @@ use reqwest::Url;
 use serde_json::Value;
 use tempfile::TempDir;
 use tokio::net::TcpListener;
-use tonic::transport::channel;
 use tracing::debug;
 
 use super::shutdown::NodeShutdownHandle;
@@ -150,7 +149,6 @@ impl ClusterSandboxBuilder {
             temp_dir: self.temp_dir,
             node_configs: resolved_node_configs,
             tcp_listener_resolver,
-            use_legacy_ingest: self.use_legacy_ingest,
         }
     }
 
@@ -175,7 +173,6 @@ struct ResolvedClusterConfig {
     temp_dir: TempDir,
     node_configs: Vec<(NodeConfig, HashSet<QuickwitService>)>,
     tcp_listener_resolver: TestTcpListenerResolver,
-    use_legacy_ingest: bool,
 }
 
 impl ResolvedClusterConfig {
@@ -216,41 +213,9 @@ impl ResolvedClusterConfig {
             shutdown_handler.set_node_join_handle(join_handle);
             node_shutdown_handles.push(shutdown_handler);
         }
-        let searcher_config = self
-            .node_configs
-            .iter()
-            .find(|node_config| node_config.1.contains(&QuickwitService::Searcher))
-            .cloned()
-            .unwrap();
-        let indexer_config = self
-            .node_configs
-            .iter()
-            .find(|node_config| node_config.1.contains(&QuickwitService::Indexer))
-            .cloned()
-            .unwrap();
-        let indexer_channel =
-            channel::Endpoint::from_str(&format!("http://{}", indexer_config.0.grpc_listen_addr))
-                .unwrap()
-                .connect_lazy();
-        let searcher_channel =
-            channel::Endpoint::from_str(&format!("http://{}", searcher_config.0.grpc_listen_addr))
-                .unwrap()
-                .connect_lazy();
 
         let sandbox = ClusterSandbox {
             node_configs: self.node_configs,
-            searcher_rest_client: QuickwitClientBuilder::new(transport_url(
-                searcher_config.0.rest_config.listen_addr,
-            ))
-            .build(),
-            indexer_rest_client: QuickwitClientBuilder::new(transport_url(
-                indexer_config.0.rest_config.listen_addr,
-            ))
-            .use_legacy_ingest(self.use_legacy_ingest)
-            .build(),
-            trace_client: TraceServiceClient::new(indexer_channel.clone()),
-            logs_client: LogsServiceClient::new(indexer_channel),
-            jaeger_client: SpanReaderPluginClient::new(searcher_channel),
             _temp_dir: self.temp_dir,
             node_shutdown_handles,
         };
@@ -292,23 +257,68 @@ pub(crate) async fn ingest(
 /// or REST clients to test it.
 pub struct ClusterSandbox {
     pub node_configs: Vec<(NodeConfig, HashSet<QuickwitService>)>,
-    pub searcher_rest_client: QuickwitClient,
-    pub indexer_rest_client: QuickwitClient,
-    pub trace_client: TraceServiceClient<tonic::transport::Channel>,
-    pub logs_client: LogsServiceClient<tonic::transport::Channel>,
-    pub jaeger_client: SpanReaderPluginClient<tonic::transport::Channel>,
     _temp_dir: TempDir,
     node_shutdown_handles: Vec<NodeShutdownHandle>,
 }
 
 impl ClusterSandbox {
+    fn find_node_for_service(&self, service: QuickwitService) -> NodeConfig {
+        self.node_configs
+            .iter()
+            .find(|config| config.1.contains(&service))
+            .unwrap_or_else(|| panic!("No {:?} node", service))
+            .0
+            .clone()
+    }
+
+    fn channel(&self, service: QuickwitService) -> tonic::transport::Channel {
+        let node_config = self.find_node_for_service(service);
+        let endpoint = format!("http://{}", node_config.grpc_listen_addr);
+        tonic::transport::Channel::from_shared(endpoint)
+            .unwrap()
+            .connect_lazy()
+    }
+
+    /// Returns a client to one of the nodes that runs the specified service
+    pub fn rest_client(&self, service: QuickwitService) -> QuickwitClient {
+        let node_config = self.find_node_for_service(service);
+
+        QuickwitClientBuilder::new(transport_url(node_config.rest_config.listen_addr)).build()
+    }
+
+    // TODO(#5604)
+    pub fn rest_client_legacy_indexer(&self) -> QuickwitClient {
+        let node_config = self.find_node_for_service(QuickwitService::Indexer);
+
+        QuickwitClientBuilder::new(transport_url(node_config.rest_config.listen_addr))
+            .use_legacy_ingest(true)
+            .build()
+    }
+
+    pub fn jaeger_client(&self) -> SpanReaderPluginClient<tonic::transport::Channel> {
+        SpanReaderPluginClient::new(self.channel(QuickwitService::Searcher))
+    }
+
+    pub fn logs_client(&self) -> LogsServiceClient<tonic::transport::Channel> {
+        LogsServiceClient::new(self.channel(QuickwitService::Indexer))
+    }
+
+    pub fn trace_client(&self) -> TraceServiceClient<tonic::transport::Channel> {
+        TraceServiceClient::new(self.channel(QuickwitService::Indexer))
+    }
+
     async fn wait_for_cluster_num_ready_nodes(
         &self,
         expected_num_ready_nodes: usize,
     ) -> anyhow::Result<()> {
         wait_until_predicate(
             || async move {
-                match self.indexer_rest_client.cluster().snapshot().await {
+                match self
+                    .rest_client(QuickwitService::Metastore)
+                    .cluster()
+                    .snapshot()
+                    .await
+                {
                     Ok(result) => {
                         if result.ready_nodes.len() != expected_num_ready_nodes {
                             debug!(
@@ -334,14 +344,21 @@ impl ClusterSandbox {
         Ok(())
     }
 
-    // Waits for the needed number of indexing pipeline to start.
+    /// Waits for the needed number of indexing pipeline to start.
+    ///
+    /// WARNING! does not work if multiple indexers are running
     pub async fn wait_for_indexing_pipelines(
         &self,
         required_pipeline_num: usize,
     ) -> anyhow::Result<()> {
         wait_until_predicate(
             || async move {
-                match self.indexer_rest_client.node_stats().indexing().await {
+                match self
+                    .rest_client(QuickwitService::Indexer)
+                    .node_stats()
+                    .indexing()
+                    .await
+                {
                     Ok(result) => {
                         if result.num_running_pipelines != required_pipeline_num {
                             debug!(
@@ -381,7 +398,7 @@ impl ClusterSandbox {
                 };
                 async move {
                     match self
-                        .indexer_rest_client
+                        .rest_client(QuickwitService::Metastore)
                         .splits(index_id)
                         .list(splits_query_params)
                         .await
@@ -458,7 +475,7 @@ impl ClusterSandbox {
 
     pub async fn assert_hit_count(&self, index_id: &str, query: &str, expected_num_hits: u64) {
         let search_response = self
-            .searcher_rest_client
+            .rest_client(QuickwitService::Searcher)
             .search(
                 index_id,
                 SearchRequestQueryString {
