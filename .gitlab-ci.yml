@@ -35,4 +35,4 @@ deploy:
     - arch:amd64
   script:
     - export PATH="$PATH:$CI_PROJECT_DIR/bazel-bin"
-    - bzl run pomsky-cnba-workflow.publish
+    - bzl run pomsky-cnab-workflow.publish
