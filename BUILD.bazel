@@ -1,13 +1,12 @@
 load("@com_datadoghq_cnab_tools//rules:cli_defaults.bzl", "REGISTRY")
-load("@com_datadoghq_cnab_tools//rules/ci:pipeline.bzl", "ci_pipeline", "ci_publish_cnab_workflow_task")
 load("@com_datadoghq_cnab_tools//rules:workflow.bzl", "cnab_workflow", "cnab_installation")
 load("@com_datadoghq_datacenter_config//rules:helm.bzl", "dd_helm_cnab", "dd_helm_cnab_installation")
 
 dd_helm_cnab(
-    name = "pomsky-cnab",
+    name = "pomsky",
     chart = "@pomsky_helm_charts//charts/quickwit:chart",
     registry = REGISTRY,
-    repository = "pomsky-cnab",
+    repository = "pomsky",
     service_catalog_file = ":service.datadog.yaml",
     tags = [
         "service:pomsky",
@@ -23,7 +22,7 @@ default_params = {
 
 dd_helm_cnab_installation(
     name = "pomsky.logs-cloudprem.vaporeon-b.us1.staging.dog",
-    bundle = ":pomsky-cnab",
+    bundle = ":pomsky",
     description = "Pomsky Staging",
     parameters = default_params,
     value_files = [
@@ -44,20 +43,4 @@ cnab_workflow(
         "team:logs-cloudprem",
     ],
     visibility = ["//visibility:public"],
-)
-
-ci_publish_cnab_workflow_task(
-    name = "publish-staging",
-    tags = ["manual"],
-    targets = [
-        ":staging",
-    ],
-)
-
-ci_pipeline(
-    name = "release-staging",
-    tags = ["manual"],
-    tasks = [
-        ":publish-staging",
-    ],
 )

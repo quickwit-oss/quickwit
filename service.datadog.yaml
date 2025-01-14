@@ -15,6 +15,5 @@ extensions:
         targets:
           - name: staging
             branch: main
-            ci_pipeline: :release-staging
             schedule: '* * * * *'
             slack: logs-cloudprem-ops

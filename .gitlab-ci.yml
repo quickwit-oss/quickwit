@@ -1,0 +1,38 @@
+variables:
+  BAZEL_CI_IMAGE: registry.ddbuild.io/bazel:5
+  DOCKER_CI_IMAGE: registry.ddbuild.io/docker:27.3.1
+
+workflow:
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+
+default:
+  before_script:
+    - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "https://github.com/DataDog/"
+
+stages:
+  - build
+  - deploy
+
+build:
+  image: $DOCKER_CI_IMAGE
+  stage: build
+  tags:
+    - arch:arm64
+  rules:
+    - changes:
+        - quickwit/**
+  id_tokens:
+    DDSIGN_ID_TOKEN:
+      aud: image-integrity
+  script:
+    - scripts/build_push_sign_image.sh
+
+deploy:
+  image: $BAZEL_CI_IMAGE
+  stage: deploy
+  tags:
+    - arch:amd64
+  script:
+    - export PATH="$PATH:$CI_PROJECT_DIR/bazel-bin"
+    - bzl run staging.publish
