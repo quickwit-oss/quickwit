@@ -1,0 +1,69 @@
+syntax = "proto3";
+
+package cloudprem;
+
+option go_package = "github.com/DataDog/dd-source/domains/event-platform/shared/libs/cloudprem-proto";
+option java_package = "com.dd.event_platform.cloudprem.proto";
+
+// We voluntarily avoid the multiple files option:
+// Java does not make it possible to alias classnames, or import a package.
+// We want to have a way to qualify the protobuf object class
+// in a non ambiguous way. The static class will help with this.
+option java_multiple_files = false;
+option java_outer_classname = "CloudPremProto";
+
+import "google/protobuf/any.proto";
+
+service CloudPremService {
+  rpc Ping(PingRequest) returns (PingResponse);
+  rpc List(ListRequest) returns (ListResponse);
+  rpc FetchOne(FetchOneRequest) returns (FetchOneResponse);
+}
+
+message PingRequest {}
+
+message PingResponse {}
+
+message ListRequest {
+  google.protobuf.Any query = 1;
+  uint32 num_events_to_fetch = 2;
+  bool should_compute_count = 3;
+  repeated string columns = 4;
+  repeated SortKV sort = 5;
+}
+
+message SortKV {
+  bool ascending = 1;
+  string name = 2;
+  string path = 3;
+}
+
+message ListResponse {
+  uint64 count = 1;
+  repeated Stream streams = 2;
+  Statistics statistics = 3;
+}
+
+message Statistics {
+    uint64 hit_count = 1;
+    uint64 scanned_count = 2;
+    uint64 result_memory_size = 3;
+    uint64 max_result_memory_size = 4;
+}
+
+message Stream {
+}
+
+message Event {
+  uint32 content_size = 1;
+  repeated ContentKV field_values = 2;
+}
+
+message ContentKV {
+  string key = 1;
+  string value = 2;
+}
+
+message FetchOneRequest {}
+
+message FetchOneResponse {}

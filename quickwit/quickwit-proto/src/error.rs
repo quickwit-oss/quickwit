@@ -47,6 +47,7 @@ pub enum ServiceErrorCode {
     TooManyRequests,
     Unauthenticated,
     Unavailable,
+    Unimplemented,
 }
 
 impl ServiceErrorCode {
@@ -61,6 +62,7 @@ impl ServiceErrorCode {
             Self::TooManyRequests => tonic::Code::ResourceExhausted,
             Self::Unauthenticated => tonic::Code::Unauthenticated,
             Self::Unavailable => tonic::Code::Unavailable,
+            Self::Unimplemented => tonic::Code::Unimplemented,
         }
     }
 
@@ -75,6 +77,7 @@ impl ServiceErrorCode {
             Self::TooManyRequests => http::StatusCode::TOO_MANY_REQUESTS,
             Self::Unauthenticated => http::StatusCode::UNAUTHORIZED,
             Self::Unavailable => http::StatusCode::SERVICE_UNAVAILABLE,
+            Self::Unimplemented => http::StatusCode::NOT_IMPLEMENTED,
         }
     }
 }

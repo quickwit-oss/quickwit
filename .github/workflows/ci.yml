@@ -10,6 +10,7 @@ on:
     paths:
       - "quickwit/**"
       - "!quickwit/quickwit-ui/**"
+
 env:
   CARGO_INCREMENTAL: 0
   QW_DISABLE_TELEMETRY: 1
@@ -28,6 +29,14 @@ jobs:
     name: Unit tests
     runs-on: ubuntu-16-core-latest
     timeout-minutes: 40
+    permissions:
+      id-token: write
+      contents: write
+      checks: write
+      statuses: write
+      actions: write
+      packages: write
+      pull-requests: write
     services:
       # PostgreSQL service container
       postgres:
@@ -98,6 +107,15 @@ jobs:
     name: Lints
     runs-on: ubuntu-16-core-latest
     timeout-minutes: 20
+    permissions:
+      contents: write
+      packages: write
+      pull-requests: write
+      id-token: write
+      checks: write
+      statuses: write
+      actions: write
+
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
