@@ -594,6 +594,17 @@ mod test {
     fn test_wildcard_query() {
         check_build_query_static_mode("title:hello*", Vec::new(), TestExpectation::Ok("Regex"));
         check_build_query_static_mode(
+            "title:\"hello world\"*",
+            Vec::new(),
+            TestExpectation::Ok("PhrasePrefixQuery"),
+        );
+        // the tokenizer removes '*' chars, making it a simple PhraseQuery (not RegexPhraseQuery)
+        check_build_query_static_mode(
+            "title:\"hello* world*\"",
+            Vec::new(),
+            TestExpectation::Ok("PhraseQuery"),
+        );
+        check_build_query_static_mode(
             "foo:bar*",
             Vec::new(),
             TestExpectation::Err("invalid query: field does not exist: `foo`"),
