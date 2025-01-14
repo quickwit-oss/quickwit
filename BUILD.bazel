@@ -1,4 +1,5 @@
 load("@com_datadoghq_cnab_tools//rules:cli_defaults.bzl", "REGISTRY")
+load("@com_datadoghq_cnab_tools//rules/ci:pipeline.bzl", "ci_pipeline", "ci_publish_cnab_workflow_task")
 load("@com_datadoghq_cnab_tools//rules:workflow.bzl", "cnab_workflow", "cnab_installation")
 load("@com_datadoghq_datacenter_config//rules:helm.bzl", "dd_helm_cnab", "dd_helm_cnab_installation")
 
@@ -31,7 +32,7 @@ dd_helm_cnab_installation(
 )
 
 cnab_workflow(
-    name = "pomsky-cnab-workflow",
+    name = "staging",
     description = "Deploy Pomsky to staging",
     parallel = True,
     tasks = [
@@ -43,4 +44,20 @@ cnab_workflow(
         "team:logs-cloudprem",
     ],
     visibility = ["//visibility:public"],
+)
+
+ci_publish_cnab_workflow_task(
+    name = "publish-staging",
+    tags = ["manual"],
+    targets = [
+        ":staging",
+    ],
+)
+
+ci_pipeline(
+    name = "release-staging",
+    tags = ["manual"],
+    tasks = [
+        ":publish-staging",
+    ],
 )
