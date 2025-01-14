@@ -9,10 +9,12 @@ contacts:
     type: slack
     contact: https://dd.enterprise.slack.com/archives/C080CR58077
 extensions:
-  workday_team: Logs CloudPrem
-  conductor:
-      targets:
-        - name: staging
-          branch: main
-          schedule: '* * * * *'
-          slack: logs-cloudprem-ops
+  datadoghq.com/sdp:
+    workday_team: Logs CloudPrem
+    conductor:
+        targets:
+          - name: staging
+            branch: main
+            ci_pipeline: :release-staging
+            schedule: '* * * * *'
+            slack: logs-cloudprem-ops
