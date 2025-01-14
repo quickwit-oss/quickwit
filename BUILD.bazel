@@ -31,7 +31,7 @@ dd_helm_cnab_installation(
 )
 
 cnab_workflow(
-    name = "pomsky-workflow",
+    name = "pomsky-cnab-workflow",
     description = "Deploy Pomsky to staging",
     parallel = True,
     tasks = [

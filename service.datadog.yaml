@@ -1,6 +1,18 @@
 schema-version: v2.2
 dd-service: pomsky
 team: logs-cloudprem
+repos:
+  - url: https://github.com/DataDog/pomsky
+    name: pomsky
 contacts:
-  - type: slack
-    contact: https://dd.slack.com/archives/C080CR58077
+  - name: logs-cloudprem-team
+    type: slack
+    contact: https://dd.enterprise.slack.com/archives/C080CR58077
+extensions:
+  workday_team: Logs CloudPrem
+  conductor:
+      targets:
+        - name: staging
+          branch: main
+          schedule: '* * * * *'
+          slack: logs-cloudprem-ops
