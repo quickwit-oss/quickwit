@@ -4,9 +4,19 @@ image:
   pullPolicy: Always
 
 podAnnotations:
+  ad.datadoghq.com/pomsky.checks: |
+      {
+        "openmetrics": {
+          "instances": [
+            {
+              "openmetrics_endpoint": "http://%%host%%:7280/metrics",
+              "namespace": "cloudprem",
+              "metrics": [".*"]
+            }
+          ]
+        }
+      }
   emissary.datadoghq.com/inject-lifecycle: "inject"
-  prometheus.io/scrape: "true"
-  prometheus.io/port: "7280"
 
 tolerations:
   - key: node
