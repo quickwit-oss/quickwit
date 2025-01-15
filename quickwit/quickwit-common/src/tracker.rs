@@ -81,7 +81,14 @@ impl<T> Tracker<T> {
         }
     }
 
-    pub fn rebuildable_from_the_void(&self) -> bool {
+    /// Return whether it is safe to recreate this tracker.
+    ///
+    /// A tracker is considered safe to recreate if this is the only instance left,
+    /// and it conaints no alive object (it may contain dead objects though).
+    ///
+    /// Once this return true, it will stay that way until [Tracker::track] or [Tracker::clone] are
+    /// called.
+    pub fn safe_to_recreate(&self) -> bool {
         Arc::strong_count(&self.unacknoledged_drop_receiver) == 1 && self.inner_inventory.len() == 0
     }
 
@@ -104,5 +111,75 @@ impl<T> Tracker<T> {
             acknoledged: false.into(),
             return_channel: self.return_channel.clone(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{TrackedObject, Tracker};
+
+    #[track_caller]
+    fn assert_tracked_eq<T: PartialEq + std::fmt::Debug>(
+        got: Vec<TrackedObject<T>>,
+        expected: Vec<T>,
+    ) {
+        assert_eq!(
+            got.len(),
+            expected.len(),
+            "expected vec of same lenght, {} != {}",
+            got.len(),
+            expected.len()
+        );
+        for (got_item, expected_item) in got.into_iter().zip(expected) {
+            assert_eq!(**got_item, expected_item);
+        }
+    }
+
+    #[test]
+    fn test_single_tracker() {
+        let tracker = Tracker::<u32>::new();
+
+        assert!(tracker.list_ongoing().is_empty());
+        assert!(tracker.take_dead().is_empty());
+        assert!(tracker.safe_to_recreate());
+
+        {
+            let tracked_1 = tracker.track(1);
+            assert_tracked_eq(tracker.list_ongoing(), vec![1]);
+            assert!(tracker.take_dead().is_empty());
+            assert!(!tracker.safe_to_recreate());
+            std::mem::drop(tracked_1); // done for clarity and silence unused var warn
+        }
+
+        assert!(tracker.list_ongoing().is_empty());
+        assert!(tracker.safe_to_recreate());
+        assert_eq!(tracker.take_dead(), vec![1]);
+        assert!(tracker.safe_to_recreate());
+    }
+
+    #[test]
+    fn test_two_tracker() {
+        let tracker = Tracker::<u32>::new();
+        let tracker2 = tracker.clone();
+
+        assert!(tracker.list_ongoing().is_empty());
+        assert!(tracker.take_dead().is_empty());
+        assert!(!tracker.safe_to_recreate());
+
+        {
+            let tracked_1 = tracker.track(1);
+            assert_tracked_eq(tracker.list_ongoing(), vec![1]);
+            assert_tracked_eq(tracker2.list_ongoing(), vec![1]);
+            assert!(tracker.take_dead().is_empty());
+            assert!(tracker2.take_dead().is_empty());
+            assert!(!tracker.safe_to_recreate());
+            std::mem::drop(tracked_1); // done for clarity and silence unused var warn
+        }
+
+        assert!(tracker.list_ongoing().is_empty());
+        assert!(tracker2.list_ongoing().is_empty());
+        assert_eq!(tracker2.take_dead(), vec![1]);
+        // we took awai the dead from tracker2, so they don't show up in tracker
+        assert!(tracker.take_dead().is_empty());
     }
 }

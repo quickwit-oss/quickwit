@@ -204,7 +204,7 @@ impl MergeSchedulerService {
         self.gc_sequence_id += 1;
         if self.gc_sequence_id % 100 == 0 {
             self.tracked_operations
-                .retain(|_k, tracker| !tracker.rebuildable_from_the_void())
+                .retain(|_k, tracker| !tracker.safe_to_recreate())
         }
     }
 }
