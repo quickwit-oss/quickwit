@@ -4,6 +4,8 @@ image:
   pullPolicy: Always
 
 podAnnotations:
+  # https://docs.datadoghq.com/containers/kubernetes/prometheus/?tab=kubernetesadv2
+  # https://docs.datadoghq.com/containers/guide/template_variables/
   ad.datadoghq.com/pomsky.checks: |
       {
         "openmetrics": {
