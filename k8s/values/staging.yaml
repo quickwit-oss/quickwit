@@ -5,6 +5,8 @@ image:
 
 podAnnotations:
   emissary.datadoghq.com/inject-lifecycle: "inject"
+  prometheus.io/scrape: true
+  prometheus.io/port: 7280
 
 tolerations:
   - key: node
