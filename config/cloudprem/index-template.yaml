@@ -1,0 +1,16 @@
+version: 0.8
+
+template_id: cloudprem
+
+index_id_patterns:
+  - cloudprem*
+
+description: Index config template for the cloudprem indexes
+
+priority: 0
+
+doc_mapping:
+  mode: dynamic
+
+indexing_settings:
+  commit_timeout_secs: 5
