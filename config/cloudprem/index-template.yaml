@@ -9,8 +9,112 @@ description: Index config template for the cloudprem indexes
 
 priority: 0
 
-doc_mapping:
-  mode: dynamic
-
 indexing_settings:
   commit_timeout_secs: 5
+
+# Note: replace ALL default tokenizer with ddg tokenizer
+# There would be two tokenizers: ddg and ddg_ignore_case (for message and all)
+  
+doc_mapping:
+  mode: dynamic # To include `custom` attributes
+  dynamic_mapping:  
+    indexed: true  
+    stored: true  
+    tokenizer: default 
+    record: position # for phrase queries
+    fast: true # for range queries
+  field_mappings:
+    - name: timestamp # RFC3339
+      type: datetime
+      fast: true
+
+    - name: message
+      type: text
+      tokenizer: default # +lowercase case insensitive search on message
+      record: position
+      fast: true
+
+    - name: tags
+      type: json # Best format to store tags is unclear
+      tokenizer: default  
+      record: position
+      fast: true # for range queries
+    
+    # The subfiels are `message` and `stack`. Are there others?
+    # If all fields are clear, we can convert to object.
+    - name: error
+      type: json 
+      tokenizer: default
+      record: position
+      fast: true
+
+    # other text like core attributes
+    - name: service
+      type: text
+      tokenizer: default  
+      record: position # for phrase search
+      fast: true
+    - name: service_type 
+      type: text
+      tokenizer: default  
+      record: position # for phrase search
+      fast: true
+    - name: status
+      type: text
+      tokenizer: default  
+      record: position # for phrase search
+      fast: true
+    - name: host
+      type: text
+      tokenizer: default  
+      record: position # for phrase search
+      fast: true
+    - name: trace_id
+      type: text
+      tokenizer: default  
+      record: position # for phrase search
+      fast: true
+    - name: span_id
+      type: text
+      tokenizer: default  
+      record: position # for phrase search
+      fast: true
+
+   # TODO: normally there is an `sds` object. Check OP SDS scanner:
+   # https://docs.datadoghq.com/observability_pipelines/processors/sensitive_data_scanner
+
+    # default fields to search. 
+    - name: default 
+      type: concatenate
+      concatenate_fields:
+      - message
+      - error.message
+      - error.stack
+      tokenizer: 
+      record: position # for phrase queries
+      fast: true # for range queries
+      
+    - name: all # ALL fields for *:search
+      type: concatenate
+      concatenate_fields: # This should contain all fields above
+      - timestamp
+      - message
+      - tags
+      - error
+      - service
+      - service_type
+      - status
+      - host
+      - trace_id
+      - span_id
+      include_dynamic_fields: true
+      tokenizer: default # +lowercase insensitive
+      record: position # for phrase queries
+      fast: true # for range queries
+  tag_fields: [] #  maybe add core attributes?
+  timestamp_field: timestamp
+  index_field_presence: true # For exists queries
+
+search_settings:
+  default_search_fields: []
+
