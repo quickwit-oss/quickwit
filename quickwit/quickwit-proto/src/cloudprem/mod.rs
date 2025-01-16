@@ -9,6 +9,8 @@ include!("../codegen/cloudprem/queryparser_proto.rs");
 #[derive(Debug, thiserror::Error, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CloudPremError {
+    #[error("invalid query: {0}")]
+    InvalidQuery(String),
     #[error("internal error: {0}")]
     Internal(String),
     #[error("service unavailable: {0}")]
@@ -26,6 +28,7 @@ pub type CloudPremResult<T> = Result<T, CloudPremError>;
 impl ServiceError for CloudPremError {
     fn error_code(&self) -> ServiceErrorCode {
         match self {
+            Self::InvalidQuery(_) => ServiceErrorCode::BadRequest,
             Self::Internal(error_msg) => {
                 rate_limited_error!(limit_per_min = 6, "ingest internal error: {error_msg}");
                 ServiceErrorCode::Internal

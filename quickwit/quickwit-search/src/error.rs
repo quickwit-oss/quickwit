@@ -191,3 +191,19 @@ impl From<std::convert::Infallible> for SearchError {
         match infallible {}
     }
 }
+
+impl From<SearchError> for quickwit_proto::cloudprem::CloudPremError {
+    fn from(err: SearchError) -> Self {
+        match err {
+            SearchError::Internal(msg) => Self::Internal(msg),
+            SearchError::IndexesNotFound { .. }
+            | SearchError::InvalidAggregationRequest(_)
+            | SearchError::InvalidArgument(_)
+            | SearchError::InvalidQuery(_) => Self::InvalidQuery(err.to_string()),
+            SearchError::StorageResolver(_) => Self::Internal(err.to_string()),
+            SearchError::Timeout(msg) => Self::Timeout(msg),
+            SearchError::TooManyRequests => Self::TooManyRequests,
+            SearchError::Unavailable(msg) => Self::Unavailable(msg),
+        }
+    }
+}

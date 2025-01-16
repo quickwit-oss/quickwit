@@ -55,6 +55,10 @@ fn value_to_json_literal(
     }
 }
 
+fn unsupported(feature: &str) -> InvalidQuery {
+    InvalidQuery::Other(anyhow::anyhow!("unsupported feature: {feature}"))
+}
+
 pub fn to_quickwit_query(cloudprem_query: QueryNode) -> Result<QueryAst, InvalidQuery> {
     Ok(match cloudprem_query.node.ok_or_else(missing_required)? {
         Node::All(_) => QueryAst::MatchAll,
@@ -202,8 +206,7 @@ pub fn to_quickwit_query(cloudprem_query: QueryNode) -> Result<QueryAst, Invalid
             .into()
         }
         Node::Quoted(_) => {
-            // TODO phrase query
-            todo!()
+            return Err(unsupported("phrase query"));
         }
         Node::TermIn(term_in_query) => {
             let terms = term_in_query
@@ -220,11 +223,17 @@ pub fn to_quickwit_query(cloudprem_query: QueryNode) -> Result<QueryAst, Invalid
         Node::Cidr(_) => {
             // TODO we are likely to support this via an automaton matching on strings.
             // not critical on MVP, and dependant on how we tokenize => reported until later.
-            todo!()
+            return Err(unsupported("cidr query"));
         }
         Node::Search(_) => {
             // this is a *:xxx query (full text on all fields)
-            todo!()
+            return Err(unsupported("whole event search query"));
         }
     })
+}
+
+impl From<InvalidQuery> for quickwit_proto::cloudprem::CloudPremError {
+    fn from(err: InvalidQuery) -> Self {
+        Self::InvalidQuery(err.to_string())
+    }
 }
