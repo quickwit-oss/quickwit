@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use crate::{GrpcServiceError, ServiceError, ServiceErrorCode};
 
 include!("../codegen/cloudprem/cloudprem.rs");
+include!("../codegen/cloudprem/queryparser_proto.rs");
 
 #[derive(Debug, thiserror::Error, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

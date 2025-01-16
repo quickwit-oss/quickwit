@@ -1,0 +1,166 @@
+syntax = "proto3";
+package queryparser_proto;
+
+option java_multiple_files = true;
+option java_package = "com.dd.queryparser.proto";
+
+message QueryNode {
+  oneof node {
+    MatchAllQueryNode all = 1;
+    MatchNoneQueryNode none = 2;
+    NotQueryNode not = 3;
+    BooleanQueryNode boolean = 4;
+    AttributeTermQueryNode term = 5;
+    AttributeRangeQueryNode range = 6;
+    AttributeComparisonQueryNode comparison = 7;
+    AttributeExistQueryNode exist = 8;
+    AttributeMissingQueryNode missing = 9;
+    AttributePrefixQueryNode prefix = 10;
+    AttributeWildcardQueryNode wildcard = 11;
+    AttributeQuotedQueryNode quoted = 12;
+    AttributeTermInQueryNode termIn = 13;
+    AttributeCidrQueryNode cidr = 14;
+    AttributeSearchQueryNode search = 15;
+  }
+}
+
+message Value {
+  oneof value {
+    string str = 1;
+    int64 int = 2;
+    double double = 3;
+  }
+}
+
+enum BooleanOperator {
+  INVALID_BOOLEAN_OPERATOR = 0;
+  AND = 1;
+  OR = 2;
+}
+
+message MatchAllQueryNode {}
+
+message MatchNoneQueryNode {}
+
+message NotQueryNode {
+  QueryNode inner = 1;
+}
+
+message BooleanQueryNode {
+  BooleanOperator operator = 1;
+  repeated QueryNode clauses = 2;
+}
+
+message AttributeTermQueryNode {
+  string attribute = 1;
+  Value value = 2;
+}
+
+message AttributeTermInQueryNode {
+  string attribute = 1;
+  repeated Value values = 2;
+}
+
+message AttributeRangeQueryNode {
+  string attribute = 1;
+  Value lower = 2;
+  Value upper = 3;
+  bool lowerInclusive = 4;
+  bool upperInclusive = 5;
+}
+
+message AttributeCidrQueryNode {
+  string attribute = 1;
+  repeated string masks = 2;
+}
+
+enum SearchQueryMode {
+  INVALID_SEARCH_MODE = 0;
+  WES = 1;
+  WES_QUOTED = 2;
+  WES_PREFIX = 3;
+  WES_GLOB = 4;
+  // TODO add FTS;
+}
+
+message AttributeSearchQueryNode {
+  string attribute = 1;
+  SearchQueryMode mode = 2;
+  // Raw text from query string, including backslashes
+  // Similarly to the AttributeWildcardQueryNode deprecated wildcard field
+  // Those string representatil are still used until the migration to WildcardPattern
+  // is complete
+  string text = 5 [deprecated = true];
+  WildcardPattern structured_text = 6;
+}
+
+enum ComparisonOperator {
+  INVALID_COMPARISON_OPERATOR = 0;
+  LT = 1;
+  LTE = 2;
+  GT = 3;
+  GTE = 4;
+}
+
+message AttributeComparisonQueryNode {
+  string attribute = 1;
+  Value value = 2;
+  ComparisonOperator operator = 3;
+}
+
+message AttributeExistQueryNode {
+  string attribute = 1;
+}
+
+message AttributeMissingQueryNode {
+  string attribute = 1;
+}
+
+message AttributePrefixQueryNode {
+  string attribute = 1;
+  string prefix = 2;
+}
+
+/*
+ * Piece of a wildcard pattern.
+ *
+ * For instance, `??*abc` is encoded as:
+ *
+ * * prefix_min_n_wild = 2 (two "?")
+ * * prefix_unbounded_n_wild = true ("*" means >2 wild chars can match)
+ * * literal = abc (this must match exactly)
+ *
+ * Other inputs, such as `*?*?*abc`, can have the exact same representation.
+ */
+message WildcardToken {
+  int32 prefix_min_n_wild = 1;
+  bool  prefix_unbounded_n_wild = 2;
+  string literal = 3;
+}
+
+/*
+ * Parsed pattern, which could be used to generate a regex.
+ *
+ * A pattern is a sequence of "any" characters (with min/max length)
+ * interspersed with literals. Each token represents the pair.
+ *
+ * For instance, `a*b*` is split into:
+ * 
+ * * `a` (literal "a")
+ * * `*b` (any string, then literal "b")
+ * * `*` (any string)
+ */
+message WildcardPattern {
+  repeated WildcardToken tokens = 1;
+}
+
+message AttributeWildcardQueryNode {
+  string attribute = 1;
+  string wildcard = 2 [deprecated = true]; // raw text from query string, including backslashes
+  WildcardPattern pattern = 3; // parsed pattern
+}
+
+message AttributeQuotedQueryNode {
+  string attribute = 1;
+  string text = 2;
+}

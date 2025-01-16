@@ -191,6 +191,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .run()
         .unwrap();
 
+    let cloudprem_prost_config = prost_build::Config::default();
+    Codegen::builder()
+        .with_prost_config(cloudprem_prost_config)
+        .with_protos(&["protos/cloudprem/queryparser.proto"])
+        .with_includes(&["protos"])
+        .with_output_dir("src/codegen/cloudprem")
+        // this are unused as there is no service in that file
+        .with_result_type_path("crate::cloudprem::CloudPremResult")
+        .with_error_type_path("crate::cloudprem::CloudPremError")
+        .generate_rpc_name_impls()
+        .run()
+        .unwrap();
+
     // Search service.
     let mut prost_config = prost_build::Config::default();
     prost_config.protoc_arg("--experimental_allow_proto3_optional");
