@@ -45,13 +45,14 @@ message ListResponse {
 }
 
 message Statistics {
-    uint64 hit_count = 1;
-    uint64 scanned_count = 2;
-    uint64 result_memory_size = 3;
-    uint64 max_result_memory_size = 4;
+  uint64 hit_count = 1;
+  uint64 scanned_count = 2;
+  uint64 result_memory_size = 3;
+  uint64 max_result_memory_size = 4;
 }
 
 message Stream {
+  repeated Event events = 1;
 }
 
 message Event {

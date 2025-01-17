@@ -84,15 +84,15 @@ impl CloudPremService for CloudPremServiceImpl {
         let hit_mapper = HitMapper {
             columns: request.columns,
         };
-        let _events = response
+        let events = response
             .hits
             .into_iter()
             .map(|hit| hit_mapper.hit_to_event(hit))
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect::<Result<_, _>>()?;
 
         Ok(ListResponse {
             count: response.num_hits,
-            streams: vec![quickwit_proto::cloudprem::Stream { /* events */}],
+            streams: vec![quickwit_proto::cloudprem::Stream { events }],
             statistics: None,
         })
     }
@@ -105,6 +105,7 @@ impl CloudPremService for CloudPremServiceImpl {
 
 struct HitMapper {
     // i assume we'll likely need a more tree-like structure in the future
+    #[allow(dead_code)]
     columns: Vec<String>,
 }
 
