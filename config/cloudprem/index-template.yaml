@@ -14,7 +14,12 @@ indexing_settings:
 
 # Note: replace ALL default tokenizer with ddg tokenizer
 # There would be two tokenizers: ddg and ddg_ignore_case (for message and all)
-  
+
+# There is an additional truncation in fields that applies only to indexed logs: the value is truncated to 75 KiB for the message field and 25 KiB for non-message fields. 
+# Datadog still stores the full text, and it remains visible in regular list queries in the Logs Explorer. However, the truncated version will be displayed when performing 
+# a grouped query, such as when grouping logs by that truncated field or performing similar operations that display that specific field.
+# => FF tokenizer truncation after 75Kb for message and 25Kb for other fields (seems quite high)
+
 doc_mapping:
   mode: dynamic # To include `custom` attributes
   dynamic_mapping:  
@@ -92,7 +97,6 @@ doc_mapping:
       - error.stack
       tokenizer: 
       record: position # for phrase queries
-      fast: true # for range queries
       
     - name: all # ALL fields for *:search
       type: concatenate
@@ -110,7 +114,6 @@ doc_mapping:
       include_dynamic_fields: true
       tokenizer: default # +lowercase insensitive
       record: position # for phrase queries
-      fast: true # for range queries
   tag_fields: [] #  maybe add core attributes?
   timestamp_field: timestamp
   index_field_presence: true # For exists queries
