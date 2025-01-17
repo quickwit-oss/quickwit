@@ -3,10 +3,10 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_proto::cloudprem::{
-    CloudPremError, CloudPremResult, CloudPremService, FetchOneRequest, FetchOneResponse,
+    CloudPremError, CloudPremResult, CloudPremService, Event, FetchOneRequest, FetchOneResponse,
     ListRequest, ListResponse, PingRequest, PingResponse,
 };
-use quickwit_proto::search::{CountHits, SearchRequest, SortField, SortOrder};
+use quickwit_proto::search::{CountHits, Hit, SearchRequest, SortField, SortOrder};
 use quickwit_search::SearchService;
 use tracing::info;
 
@@ -49,7 +49,7 @@ impl CloudPremService for CloudPremServiceImpl {
         } else {
             CountHits::Underestimate
         };
-        let request = SearchRequest {
+        let search_request = SearchRequest {
             index_id_patterns: vec!["cloudprem".to_string()], /* TODO this should become
                                                                * configurable and sent by EVP */
             query_ast: serde_json::to_string(&query_ast)
@@ -79,15 +79,20 @@ impl CloudPremService for CloudPremServiceImpl {
             count_hits: count_hits.into(),
         };
 
-        let response = self.search_service.root_search(request).await?;
+        let response = self.search_service.root_search(search_request).await?;
+
+        let hit_mapper = HitMapper {
+            columns: request.columns,
+        };
+        let _events = response
+            .hits
+            .into_iter()
+            .map(|hit| hit_mapper.hit_to_event(hit))
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(ListResponse {
             count: response.num_hits,
-            streams: response
-                .hits
-                .into_iter()
-                .map(|_| quickwit_proto::cloudprem::Stream {})
-                .collect(),
+            streams: vec![quickwit_proto::cloudprem::Stream { /* events */}],
             statistics: None,
         })
     }
@@ -95,5 +100,26 @@ impl CloudPremService for CloudPremServiceImpl {
     async fn fetch_one(&self, _request: FetchOneRequest) -> CloudPremResult<FetchOneResponse> {
         info!("Received FetchOne request");
         Err(CloudPremError::Unimplemented)
+    }
+}
+
+struct HitMapper {
+    // i assume we'll likely need a more tree-like structure in the future
+    columns: Vec<String>,
+}
+
+impl HitMapper {
+    fn hit_to_event(&self, hit: Hit) -> CloudPremResult<Event> {
+        // TODO we probably want to add the PartialHit as a dedicated "id" field or something like
+        // that?
+        let _map: serde_json::Value = serde_json::from_str(&hit.json)
+            .map_err(|e| CloudPremError::Internal(format!("failed to parse hit: {e}")))?;
+
+        // TODO implement extracing values
+        let field_values = vec![];
+        Ok(Event {
+            content_size: hit.json.len() as u32, // TODO that's probably not what we want
+            field_values,
+        })
     }
 }
