@@ -20,6 +20,12 @@ indexing_settings:
 # a grouped query, such as when grouping logs by that truncated field or performing similar operations that display that specific field.
 # => FF tokenizer truncation after 75Kb for message and 25Kb for other fields (seems quite high)
 
+# Sources: 
+# https://datadoghq.atlassian.net/wiki/spaces/LB/pages/2484928615/Logs+payload+format
+# https://github.com/DataDog/logs-backend/blob/prod/domains/event-platform/libs/percolation/src/main/resources/elasticsearch/mappings/event.conf
+# https://github.com/DataDog/logs-backend/blob/prod/domains/event-platform/libs/percolation/src/main/resources/elasticsearch/mappings/_root_event.conf
+# Note that not all fields in event.conf and _root_event.conf are handled here yet
+
 doc_mapping:
   mode: dynamic # To include `custom` attributes
   dynamic_mapping:  
