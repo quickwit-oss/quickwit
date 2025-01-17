@@ -85,7 +85,7 @@ doc_mapping:
       record: position # for phrase search
       fast: true
 
-   # TODO: normally there is an `sds` object. Check OP SDS scanner:
+   # TODO: normally there is an `sds_info` object. Check OP SDS scanner:
    # https://docs.datadoghq.com/observability_pipelines/processors/sensitive_data_scanner
 
     # default fields to search. 
