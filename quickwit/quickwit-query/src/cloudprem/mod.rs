@@ -6,8 +6,8 @@ use quickwit_proto::cloudprem::{BooleanOperator, QueryNode};
 use serde_json::Number;
 
 use crate::query_ast::{
-    BoolQuery, FieldPresenceQuery, PhrasePrefixQuery, QueryAst, RangeQuery, TermQuery,
-    TermSetQuery, WildcardQuery,
+    BoolQuery, FieldPresenceQuery, FullTextMode, FullTextParams, FullTextQuery, PhrasePrefixQuery,
+    QueryAst, RangeQuery, TermQuery, TermSetQuery, WildcardQuery,
 };
 use crate::{InvalidQuery, JsonLiteral};
 
@@ -157,9 +157,9 @@ pub fn to_quickwit_query(cloudprem_query: QueryNode) -> Result<QueryAst, Invalid
                 field: prefix_query.attribute,
                 phrase: prefix_query.prefix,
                 max_expansions: crate::query_ast::DEFAULT_PHRASE_QUERY_MAX_EXPANSION,
-                params: crate::query_ast::FullTextParams {
+                params: FullTextParams {
                     tokenizer: None,
-                    mode: crate::query_ast::FullTextMode::Phrase { slop: 0 },
+                    mode: FullTextMode::Phrase { slop: 0 },
                     zero_terms_query: crate::MatchAllOrNone::MatchNone,
                 },
                 lenient: false,
@@ -205,9 +205,17 @@ pub fn to_quickwit_query(cloudprem_query: QueryNode) -> Result<QueryAst, Invalid
             }
             .into()
         }
-        Node::Quoted(_) => {
-            return Err(unsupported("phrase query"));
+        Node::Quoted(quoted_query) => FullTextQuery {
+            field: quoted_query.attribute,
+            text: quoted_query.text,
+            params: FullTextParams {
+                tokenizer: None,
+                mode: FullTextMode::Phrase { slop: 0 },
+                zero_terms_query: crate::MatchAllOrNone::MatchNone,
+            },
+            lenient: false,
         }
+        .into(),
         Node::TermIn(term_in_query) => {
             let terms = term_in_query
                 .values
