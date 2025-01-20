@@ -16,20 +16,22 @@ pub fn parse_query(raw_message: prost_types::Any) -> Result<QueryNode, DecodeErr
     QueryNode::decode(raw_message.value.as_ref())
 }
 
-fn missing_required() -> InvalidQuery {
+// field is relative to the closest `node` (except when a `node` is what is missing)
+fn missing_required(field: &str) -> InvalidQuery {
     InvalidQuery::Other(anyhow::anyhow!(
-        "missing required field, this likely means a protobuf missmatch"
+        "missing required field '{field}', this likely means a protobuf missmatch"
     ))
 }
 
 fn value_to_string(
     value: Option<quickwit_proto::cloudprem::Value>,
+    path: &str,
 ) -> Result<String, InvalidQuery> {
     use quickwit_proto::cloudprem::value::Value;
     match value
-        .ok_or_else(missing_required)?
+        .ok_or_else(|| missing_required(&format!("{path}.value")))?
         .value
-        .ok_or_else(missing_required)?
+        .ok_or_else(|| missing_required(&format!("{path}.value.value")))?
     {
         Value::Str(s) => Ok(s),
         Value::Int(i) => Ok(i.to_string()),
@@ -39,12 +41,13 @@ fn value_to_string(
 
 fn value_to_json_literal(
     value: Option<quickwit_proto::cloudprem::Value>,
+    path: &str,
 ) -> Result<JsonLiteral, InvalidQuery> {
     use quickwit_proto::cloudprem::value::Value;
     match value
-        .ok_or_else(missing_required)?
+        .ok_or_else(|| missing_required(&format!("{path}.value")))?
         .value
-        .ok_or_else(missing_required)?
+        .ok_or_else(|| missing_required(&format!("{path}.value.value")))?
     {
         Value::Str(s) => Ok(s.into()),
         Value::Int(i) => Ok(i.into()),
@@ -55,16 +58,21 @@ fn value_to_json_literal(
     }
 }
 
-fn unsupported(feature: &str) -> InvalidQuery {
+fn unsupported_query_error(feature: &str) -> InvalidQuery {
     InvalidQuery::Other(anyhow::anyhow!("unsupported feature: {feature}"))
 }
 
 pub fn to_quickwit_query(cloudprem_query: QueryNode) -> Result<QueryAst, InvalidQuery> {
-    Ok(match cloudprem_query.node.ok_or_else(missing_required)? {
+    let Some(node) = cloudprem_query.node else {
+        return Err(missing_required("node"));
+    };
+    let ast = match node {
         Node::All(_) => QueryAst::MatchAll,
         Node::None(_) => QueryAst::MatchNone,
         Node::Not(not_query) => {
-            let inner_query = *not_query.inner.ok_or_else(missing_required)?;
+            let inner_query = *not_query
+                .inner
+                .ok_or_else(|| missing_required("not.inner"))?;
             BoolQuery {
                 must_not: vec![to_quickwit_query(inner_query)?],
                 ..BoolQuery::default()
@@ -89,13 +97,15 @@ pub fn to_quickwit_query(cloudprem_query: QueryNode) -> Result<QueryAst, Invalid
                     ..BoolQuery::default()
                 }
                 .into(),
-                BooleanOperator::InvalidBooleanOperator => return Err(missing_required()),
+                BooleanOperator::InvalidBooleanOperator => {
+                    return Err(missing_required("boolean.operator"))
+                }
             }
         }
         // TODO verify terms are already splited when we receive them
         Node::Term(term_query) => QueryAst::Term(TermQuery {
             field: term_query.attribute,
-            value: value_to_string(term_query.value)?,
+            value: value_to_string(term_query.value, "term.value")?,
         }),
         Node::Range(range_query) => {
             let to_bound = |value, inclusive| {
@@ -106,11 +116,11 @@ pub fn to_quickwit_query(cloudprem_query: QueryNode) -> Result<QueryAst, Invalid
                 }
             };
             let lower_bound = to_bound(
-                value_to_json_literal(range_query.lower)?,
+                value_to_json_literal(range_query.lower, "range.lower")?,
                 range_query.lower_inclusive,
             );
             let upper_bound = to_bound(
-                value_to_json_literal(range_query.upper)?,
+                value_to_json_literal(range_query.upper, "range.upper")?,
                 range_query.upper_inclusive,
             );
             RangeQuery {
@@ -123,13 +133,15 @@ pub fn to_quickwit_query(cloudprem_query: QueryNode) -> Result<QueryAst, Invalid
         Node::Comparison(comparison_query) => {
             use quickwit_proto::cloudprem::ComparisonOperator;
             let operator = comparison_query.operator();
-            let value = value_to_json_literal(comparison_query.value)?;
+            let value = value_to_json_literal(comparison_query.value, "comparison.value")?;
             let (lower_bound, upper_bound) = match operator {
                 ComparisonOperator::Lt => (Bound::Unbounded, Bound::Excluded(value)),
                 ComparisonOperator::Lte => (Bound::Unbounded, Bound::Included(value)),
                 ComparisonOperator::Gt => (Bound::Excluded(value), Bound::Unbounded),
                 ComparisonOperator::Gte => (Bound::Included(value), Bound::Unbounded),
-                ComparisonOperator::InvalidComparisonOperator => return Err(missing_required()),
+                ComparisonOperator::InvalidComparisonOperator => {
+                    return Err(missing_required("comparison.operator"))
+                }
             };
             RangeQuery {
                 field: comparison_query.attribute,
@@ -220,8 +232,7 @@ pub fn to_quickwit_query(cloudprem_query: QueryNode) -> Result<QueryAst, Invalid
             let terms = term_in_query
                 .values
                 .into_iter()
-                .map(Some)
-                .map(value_to_string)
+                .map(|val| value_to_string(Some(val), "termIn.values[]"))
                 .collect::<Result<_, _>>()?;
             TermSetQuery {
                 terms_per_field: std::iter::once((term_in_query.attribute, terms)).collect(),
@@ -231,13 +242,14 @@ pub fn to_quickwit_query(cloudprem_query: QueryNode) -> Result<QueryAst, Invalid
         Node::Cidr(_) => {
             // TODO we are likely to support this via an automaton matching on strings.
             // not critical on MVP, and dependant on how we tokenize => reported until later.
-            return Err(unsupported("cidr query"));
+            return Err(unsupported_query_error("cidr query"));
         }
         Node::Search(_) => {
             // this is a *:xxx query (full text on all fields)
-            return Err(unsupported("whole event search query"));
+            return Err(unsupported_query_error("whole event search query"));
         }
-    })
+    };
+    Ok(ast)
 }
 
 impl From<InvalidQuery> for quickwit_proto::cloudprem::CloudPremError {
