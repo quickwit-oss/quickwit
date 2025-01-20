@@ -18,7 +18,6 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::BTreeMap;
-use std::ops::Add;
 
 use bytes::Bytes;
 use quickwit_ingest::{IngestResponse, IngestServiceError};
@@ -40,12 +39,12 @@ pub struct RestIngestResponse {
     pub num_docs_for_processing: u64,
     /// Number of docs successfully ingested
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub num_ingested_docs: Option<u64>,
+    pub num_ingested_docs: Option<u64>, // TODO(#5604) remove Option
     /// Number of docs rejected because of parsing errors
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub num_rejected_docs: Option<u64>,
+    pub num_rejected_docs: Option<u64>, // TODO(#5604) remove Option
     /// Detailed description of parsing errors (available if the path param
-    /// `detailed_parse_failures` is set to `true`)
+    /// `detailed_response` is set to `true`)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parse_failures: Option<Vec<RestParseFailure>>,
 }
@@ -54,16 +53,17 @@ impl RestIngestResponse {
     pub(crate) fn from_ingest_v1(ingest_response: IngestResponse) -> Self {
         Self {
             num_docs_for_processing: ingest_response.num_docs_for_processing,
-            num_ingested_docs: None,
-            num_rejected_docs: None,
-            parse_failures: None,
+            ..Default::default()
         }
     }
 
-    /// Generate a detailed failure description if `doc_batch_clone_opt.is_some()`
+    /// Converts [`IngestResponseV2`] into [`RestIngestResponse`].
+    ///
+    /// Generates a detailed failure description (`parse_failures`) if
+    /// `doc_batch_clone_opt.is_some()`
     pub(crate) fn from_ingest_v2(
         mut ingest_response: IngestResponseV2,
-        doc_batch_clone_opt: Option<DocBatchV2>,
+        doc_batch_clone_opt: Option<&DocBatchV2>,
         num_docs_for_processing: u64,
     ) -> Result<Self, IngestServiceError> {
         let num_responses = ingest_response.successes.len() + ingest_response.failures.len();
@@ -84,7 +84,7 @@ impl RestIngestResponse {
             parse_failures: None,
         };
         if let Some(doc_batch) = doc_batch_clone_opt {
-            let docs: BTreeMap<DocUid, Bytes> = doc_batch.into_docs().collect();
+            let docs: BTreeMap<DocUid, Bytes> = doc_batch.docs().collect();
             let mut parse_failures = Vec::with_capacity(success_resp.parse_failures.len());
             for failure in success_resp.parse_failures {
                 let doc = docs.get(&failure.doc_uid()).ok_or_else(|| {
@@ -94,21 +94,18 @@ impl RestIngestResponse {
                     ))
                 })?;
                 parse_failures.push(RestParseFailure {
+                    reason: failure.reason(),
                     message: failure.message,
                     document: String::from_utf8(doc.to_vec()).unwrap(),
-                    reason: ParseFailureReason::from_i32(failure.reason).unwrap_or_default(),
                 });
             }
             resp.parse_failures = Some(parse_failures);
         }
         Ok(resp)
     }
-}
 
-impl Add for RestIngestResponse {
-    type Output = Self;
-
-    fn add(self, other: Self) -> Self {
+    /// Aggregates ingest counts and errors.
+    pub fn merge(self, other: Self) -> Self {
         Self {
             num_docs_for_processing: self.num_docs_for_processing + other.num_docs_for_processing,
             num_ingested_docs: apply_op(self.num_ingested_docs, other.num_ingested_docs, |a, b| {
@@ -214,7 +211,7 @@ mod tests {
     }
 
     #[test]
-    fn test_add_responses() {
+    fn test_merge_responses() {
         let response1 = RestIngestResponse {
             num_docs_for_processing: 10,
             num_ingested_docs: Some(5),
@@ -235,12 +232,12 @@ mod tests {
                 reason: ParseFailureReason::InvalidJson,
             }]),
         };
-        let combined_response = response1 + response2;
-        assert_eq!(combined_response.num_docs_for_processing, 25);
-        assert_eq!(combined_response.num_ingested_docs.unwrap(), 15);
-        assert_eq!(combined_response.num_rejected_docs.unwrap(), 5);
+        let merged_response = response1.merge(response2);
+        assert_eq!(merged_response.num_docs_for_processing, 25);
+        assert_eq!(merged_response.num_ingested_docs.unwrap(), 15);
+        assert_eq!(merged_response.num_rejected_docs.unwrap(), 5);
         assert_eq!(
-            combined_response.parse_failures.unwrap(),
+            merged_response.parse_failures.unwrap(),
             vec![
                 RestParseFailure {
                     message: "error1".to_string(),

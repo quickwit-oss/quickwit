@@ -57,7 +57,7 @@ struct IngestOptions {
     #[serde(default)]
     use_legacy_ingest: bool,
     #[serde(default)]
-    detailed_parse_failures: bool,
+    detailed_response: bool,
 }
 
 impl IngestOptions {
@@ -175,9 +175,9 @@ async fn ingest_v1(
     ingest_options: IngestOptions,
     ingest_service: IngestServiceClient,
 ) -> Result<RestIngestResponse, IngestServiceError> {
-    if ingest_options.detailed_parse_failures {
-        return Err(IngestServiceError::Unsupported(
-            "detailed_parse_failures is not supported in ingest v1".to_string(),
+    if ingest_options.detailed_response {
+        return Err(IngestServiceError::BadRequest(
+            "detailed_response is not supported in ingest v1".to_string(),
         ));
     }
     // The size of the body should be an upper bound of the size of the batch. The removal of the
@@ -214,7 +214,7 @@ async fn ingest_v2(
         return Ok(response);
     };
     let num_docs_for_processing = doc_batch.num_docs() as u64;
-    let doc_batch_clone_opt = if ingest_options.detailed_parse_failures {
+    let doc_batch_clone_opt = if ingest_options.detailed_response {
         Some(doc_batch.clone())
     } else {
         None
@@ -231,7 +231,11 @@ async fn ingest_v2(
         subrequests: vec![subrequest],
     };
     let response = ingest_router.ingest(request).await?;
-    RestIngestResponse::from_ingest_v2(response, doc_batch_clone_opt, num_docs_for_processing)
+    RestIngestResponse::from_ingest_v2(
+        response,
+        doc_batch_clone_opt.as_ref(),
+        num_docs_for_processing,
+    )
 }
 
 pub fn tail_handler(
@@ -572,7 +576,7 @@ pub(crate) mod tests {
             false,
         );
         let resp = warp::test::request()
-            .path("/my-index/ingest?detailed_parse_failures=true")
+            .path("/my-index/ingest?detailed_response=true")
             .method("POST")
             .json(&true)
             .body(r#"{"id": 1, "message": "push"}"#)

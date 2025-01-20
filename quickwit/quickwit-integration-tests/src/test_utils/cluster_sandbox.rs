@@ -293,7 +293,7 @@ impl ClusterSandbox {
         let node_config = self.find_node_for_service(QuickwitService::Indexer);
 
         QuickwitClientBuilder::new(transport_url(node_config.rest_config.listen_addr))
-            .detailed_parse_failures(true)
+            .detailed_response(true)
             .build()
     }
 

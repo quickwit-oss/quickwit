@@ -126,7 +126,7 @@ pub struct QuickwitClientBuilder {
     /// Forces use of ingest v1.
     use_legacy_ingest: bool,
     /// Request detailed parse failures report from the ingest api.
-    detailed_parse_failures: bool,
+    detailed_response: bool,
 }
 
 impl QuickwitClientBuilder {
@@ -139,7 +139,7 @@ impl QuickwitClientBuilder {
             ingest_timeout: DEFAULT_CLIENT_INGEST_TIMEOUT,
             commit_timeout: DEFAULT_CLIENT_COMMIT_TIMEOUT,
             use_legacy_ingest: false,
-            detailed_parse_failures: false,
+            detailed_response: false,
         }
     }
 
@@ -169,8 +169,8 @@ impl QuickwitClientBuilder {
         self
     }
 
-    pub fn detailed_parse_failures(mut self, is_detailed: bool) -> Self {
-        self.detailed_parse_failures = is_detailed;
+    pub fn detailed_response(mut self, is_detailed: bool) -> Self {
+        self.detailed_response = is_detailed;
         self
     }
 
@@ -188,7 +188,7 @@ impl QuickwitClientBuilder {
             ingest_timeout: self.ingest_timeout,
             commit_timeout: self.commit_timeout,
             use_legacy_ingest: self.use_legacy_ingest,
-            detailed_parse_failures: self.detailed_parse_failures,
+            detailed_response: self.detailed_response,
         }
     }
 }
@@ -207,7 +207,7 @@ pub struct QuickwitClient {
     /// Forces use of ingest v1.
     use_legacy_ingest: bool,
     /// Request detailed parse failures report from the ingest api.
-    detailed_parse_failures: bool,
+    detailed_response: bool,
 }
 
 impl QuickwitClient {
@@ -269,14 +269,14 @@ impl QuickwitClient {
         mut on_ingest_event: Option<&mut (dyn FnMut(IngestEvent) + Sync)>,
         last_block_commit: CommitType,
     ) -> Result<RestIngestResponse, Error> {
-        // TODO(#5604)
         let ingest_path = format!("{index_id}/ingest");
         let mut query_params = HashMap::new();
+        // TODO(#5604)
         if self.use_legacy_ingest {
             query_params.insert("use_legacy_ingest", "true");
         }
-        if self.detailed_parse_failures {
-            query_params.insert("detailed_parse_failures", "true");
+        if self.detailed_response {
+            query_params.insert("detailed_response", "true");
         }
         let batch_size_limit = batch_size_limit_opt.unwrap_or(INGEST_CONTENT_LENGTH_LIMIT);
         let mut batch_reader = match ingest_source {
@@ -322,7 +322,8 @@ impl QuickwitClient {
                     }
                     tokio::time::sleep(Duration::from_millis(500)).await;
                 } else {
-                    cumulated_resp = cumulated_resp + response.deserialize().await?;
+                    let current_parsed_resp = response.deserialize().await?;
+                    cumulated_resp = cumulated_resp.merge(current_parsed_resp);
                     break;
                 }
             }
