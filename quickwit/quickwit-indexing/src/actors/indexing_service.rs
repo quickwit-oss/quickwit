@@ -147,10 +147,10 @@ impl IndexingService {
         storage_resolver: StorageResolver,
         event_broker: EventBroker,
     ) -> anyhow::Result<IndexingService> {
-        let split_store_space_quota = SplitStoreQuota::new(
+        let split_store_space_quota = SplitStoreQuota::try_new(
             indexer_config.split_store_max_num_splits,
             indexer_config.split_store_max_num_bytes,
-        );
+        )?;
         let merge_io_throughput_limiter_opt =
             indexer_config.max_merge_write_throughput.map(io::limiter);
         let split_cache_dir_path = get_cache_directory_path(&data_dir_path);

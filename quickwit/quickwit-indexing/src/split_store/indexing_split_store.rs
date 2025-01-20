@@ -217,7 +217,7 @@ impl IndexingSplitStore {
     /// Takes a snapshot of the cache view (only used for testing).
     #[cfg(any(test, feature = "testsuite"))]
     pub async fn inspect_split_cache(&self) -> HashMap<String, ByteSize> {
-        self.inner.split_cache.inspect().await
+        self.inner.split_cache.inspect_registry().await
     }
 }
 
@@ -229,7 +229,7 @@ mod tests {
     use bytesize::ByteSize;
     use quickwit_common::io::IoControls;
     use quickwit_metastore::{SplitMaturity, SplitMetadata};
-    use quickwit_storage::{RamStorage, SplitPayloadBuilder};
+    use quickwit_storage::{PutPayload, RamStorage, SplitPayloadBuilder};
     use tempfile::tempdir;
     use time::OffsetDateTime;
     use tokio::fs;
@@ -311,17 +311,37 @@ mod tests {
             Some(ByteSize(3))
         );
 
+        let io_controls = IoControls::default();
+        {
+            let output = tempfile::tempdir()?;
+            let split1 = split_store
+                .fetch_and_open_split(&split_id1, output.path(), &io_controls)
+                .await?;
+            let local_store_stats = split_store.inspect_split_cache().await;
+            assert_eq!(local_store_stats.len(), 1);
+            assert!(split1.exists(std::path::Path::new("splitfile")).unwrap());
+        }
+        {
+            let output = tempfile::tempdir()?;
+            let split2 = split_store
+                .fetch_and_open_split(&split_id2, output.path(), &io_controls)
+                .await?;
+            let local_store_stats = split_store.inspect_split_cache().await;
+            assert_eq!(local_store_stats.len(), 0);
+            assert!(split2.exists(std::path::Path::new("splitfile")).unwrap());
+        }
+
         Ok(())
     }
 
     #[tokio::test]
-    async fn test_put_should_not_store_in_cache_when_max_num_files_reached() -> anyhow::Result<()> {
+    async fn test_evection_and_fallback_to_remote() -> anyhow::Result<()> {
         let temp_dir = tempfile::tempdir()?;
 
         let split_cache_dir = tempdir()?;
         let split_cache = IndexingSplitCache::open(
             split_cache_dir.path().to_path_buf(),
-            SplitStoreQuota::new(1, ByteSize::mb(1)),
+            SplitStoreQuota::try_new(1, ByteSize::mb(1)).unwrap(),
         )
         .await?;
 
@@ -329,7 +349,9 @@ mod tests {
         let split_store = IndexingSplitStore::new(remote_storage, Arc::new(split_cache));
 
         let split_id1 = Ulid::new().to_string();
+        let split_payload1 = SplitPayloadBuilder::get_split_payload(&[], &[], &[5, 5, 5])?;
         let split_id2 = Ulid::new().to_string();
+        let split_payload2 = SplitPayloadBuilder::get_split_payload(&[], &[], &[5, 5, 5, 5])?;
 
         {
             let split_path = temp_dir.path().join(&split_id1);
@@ -340,11 +362,7 @@ mod tests {
                 .store_split(
                     &split_metadata1,
                     &split_path,
-                    Box::new(SplitPayloadBuilder::get_split_payload(
-                        &[],
-                        &[],
-                        &[5, 5, 5],
-                    )?),
+                    Box::new(split_payload1.clone()),
                 )
                 .await?;
             assert!(!split_path.try_exists()?);
@@ -369,11 +387,7 @@ mod tests {
                 .store_split(
                     &split_metadata2,
                     &split_path,
-                    Box::new(SplitPayloadBuilder::get_split_payload(
-                        &[],
-                        &[],
-                        &[5, 5, 5],
-                    )?),
+                    Box::new(split_payload2.clone()),
                 )
                 .await?;
             assert!(!split_path.try_exists()?);
@@ -388,18 +402,36 @@ mod tests {
                 Some(ByteSize(12))
             );
         }
+        let io_controls = IoControls::default();
         {
+            // get from remote storage because split_id1 was evicted by split_id2
             let output = tempfile::tempdir()?;
-            let io_controls = IoControls::default();
-            // get from cache
             let _split1 = split_store
                 .fetch_and_open_split(&split_id1, output.path(), &io_controls)
                 .await?;
-            // get from remote storage
+            assert_eq!(io_controls.num_bytes(), split_payload1.len());
+        }
+        {
+            // get from cache
+            let output = tempfile::tempdir()?;
             let _split2 = split_store
                 .fetch_and_open_split(&split_id2, output.path(), &io_controls)
                 .await?;
+            // the number of downloaded by didn't change (still the size of split_payload1)
+            assert_eq!(io_controls.num_bytes(), split_payload1.len());
         }
+        {
+            // get from remote because getting from cache removes the split from the cache
+            let output = tempfile::tempdir()?;
+            let _split2 = split_store
+                .fetch_and_open_split(&split_id2, output.path(), &io_controls)
+                .await?;
+            assert_eq!(
+                io_controls.num_bytes(),
+                split_payload1.len() + split_payload2.len()
+            );
+        }
+
         Ok(())
     }
 }
