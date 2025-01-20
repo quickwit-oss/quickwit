@@ -56,13 +56,23 @@ message Stream {
 }
 
 message Event {
-  uint32 content_size = 1;
-  repeated ContentKV field_values = 2;
+  EventTracker tracker = 1;
+  string content_json = 2;
 }
 
-message ContentKV {
-  string key = 1;
-  string value = 2;
+message EventTracker {
+  // A unique id tied to the event.
+  string id = 1;
+
+  // The epoch in milliseconds marking when the event was created.
+  uint64 epoch_ms = 2;
+
+  // An extra int to break ties.
+  uint32 tiebreaker = 3;
+
+  optional string fragment_id = 4;
+
+  optional sint64 row_number = 5;
 }
 
 message FetchOneRequest {}

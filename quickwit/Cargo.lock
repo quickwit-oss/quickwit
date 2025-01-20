@@ -7108,6 +7108,7 @@ dependencies = [
  "quickwit-common",
  "quickwit-config",
  "quickwit-control-plane",
+ "quickwit-datetime",
  "quickwit-doc-mapper",
  "quickwit-index-management",
  "quickwit-indexing",
