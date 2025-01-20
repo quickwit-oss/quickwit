@@ -99,15 +99,14 @@ doc_mapping:
       type: concatenate
       concatenate_fields:
       - message
-      - error.message
-      - error.stack
+      - error
       tokenizer: 
       record: position # for phrase queries
       
     - name: all # ALL fields for *:search
       type: concatenate
       concatenate_fields: # This should contain all fields above
-      - timestamp
+      # - timestamp # Not supported in concat fields
       - message
       - tags
       - error
