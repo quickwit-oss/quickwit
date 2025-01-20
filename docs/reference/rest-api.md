@@ -193,7 +193,7 @@ POST api/v1/<index id>/ingest?commit=wait_for -d \
 ```
 
 :::info
-The payload size is limited to 10MB as this endpoint is intended to receive documents in batch.
+The payload size is limited to 10MB [by default](../configuration/node-config.md#ingest-api-configuration) as this endpoint is intended to receive documents in batch.
 :::
 
 #### Path variable
@@ -204,9 +204,10 @@ The payload size is limited to 10MB as this endpoint is intended to receive docu
 
 #### Query parameters
 
-| Variable            | Type       | Description                                        | Default value |
-|---------------------|------------|----------------------------------------------------|---------------|
-| `commit`            | `String`   | The commit behavior: `auto`, `wait_for` or `force` | `auto`        |
+| Variable                  | Type       | Description                                        | Default value |
+|---------------------------|------------|----------------------------------------------------|---------------|
+| `commit`                  | `String`   | The commit behavior: `auto`, `wait_for` or `force` | `auto`        |
+| `detailed_parse_failures` | `bool`     | Enable `parse_failures` in the response. Setting to `true` might impact performances negatively. | `false`        |
 
 #### Response
 
@@ -214,7 +215,15 @@ The response is a JSON object, and the content type is `application/json; charse
 
 | Field                       | Description                                                                                                                                                              |   Type   |
 |-----------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:--------:|
-| `num_docs_for_processing` | Total number of documents ingested for processing. The documents may not have been processed. The API will not return indexing errors, check the server logs for errors. | `number` |
+| `num_docs_for_processing` | Total number of documents submitted for processing. The documents may not have been processed. | `number` |
+| `num_ingested_docs`       | Number of documents successfully persisted in the write ahead log | `number` |
+| `num_rejected_docs`       | Number of documents that couldn't be parsed (invalid json, bad schema...) | `number` |
+| `parse_failures`          | List detailing parsing failures. Only available if `detailed_parse_failures` is set to `true`. | `list(object)` |
+
+The parse failure objects contain the following fields:
+- `message`: a detailed message explaining the error
+- `reason`: on of `invalid_json`, `invalid_schema` or `unspecified`
+- `document`: the utf-8 decoded string of the document byte chunk that generated the error
 
 
 ## Index API

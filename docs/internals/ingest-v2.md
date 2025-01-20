@@ -32,3 +32,4 @@ See [full configuration example](https://github.com/quickwit-oss/quickwit/blob/m
 - but ingest V2 can also be configured with:
   - `ingest_api.replication_factor`, not working yet
 - ingest V1 always writes to the WAL of the node receiving the request, V2 potentially forwards it to another node, dynamically assigned by the control plane to distribute the indexing work more evenly.
+- ingest V2 parses and validates input documents synchronously. Schema and JSON formatting errors are returned in the ingest response (for ingest V1 those errors were available in the server logs only).

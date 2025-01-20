@@ -17,9 +17,11 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+mod response;
 mod rest_handler;
 
+pub use response::{RestIngestResponse, RestParseFailure};
 #[cfg(test)]
-pub(crate) use rest_handler::tests::setup_ingest_service;
+pub(crate) use rest_handler::tests::setup_ingest_v1_service;
 pub(crate) use rest_handler::{ingest_api_handlers, lines};
 pub use rest_handler::{IngestApi, IngestApiSchemas};

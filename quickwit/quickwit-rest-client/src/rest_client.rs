@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashMap;
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -27,7 +28,9 @@ pub use quickwit_ingest::CommitType;
 use quickwit_metastore::{IndexMetadata, Split, SplitInfo};
 use quickwit_proto::ingest::Shard;
 use quickwit_search::SearchResponseRest;
-use quickwit_serve::{ListSplitsQueryParams, ListSplitsResponse, SearchRequestQueryString};
+use quickwit_serve::{
+    ListSplitsQueryParams, ListSplitsResponse, RestIngestResponse, SearchRequestQueryString,
+};
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 use reqwest::{Client, ClientBuilder, Method, StatusCode, Url};
 use serde::Serialize;
@@ -122,6 +125,8 @@ pub struct QuickwitClientBuilder {
     commit_timeout: Timeout,
     /// Forces use of ingest v1.
     use_legacy_ingest: bool,
+    /// Request detailed parse failures report from the ingest api.
+    detailed_parse_failures: bool,
 }
 
 impl QuickwitClientBuilder {
@@ -134,6 +139,7 @@ impl QuickwitClientBuilder {
             ingest_timeout: DEFAULT_CLIENT_INGEST_TIMEOUT,
             commit_timeout: DEFAULT_CLIENT_COMMIT_TIMEOUT,
             use_legacy_ingest: false,
+            detailed_parse_failures: false,
         }
     }
 
@@ -163,6 +169,11 @@ impl QuickwitClientBuilder {
         self
     }
 
+    pub fn detailed_parse_failures(mut self, is_detailed: bool) -> Self {
+        self.detailed_parse_failures = is_detailed;
+        self
+    }
+
     pub fn commit_timeout(mut self, timeout: Timeout) -> Self {
         self.commit_timeout = timeout;
         self
@@ -177,6 +188,7 @@ impl QuickwitClientBuilder {
             ingest_timeout: self.ingest_timeout,
             commit_timeout: self.commit_timeout,
             use_legacy_ingest: self.use_legacy_ingest,
+            detailed_parse_failures: self.detailed_parse_failures,
         }
     }
 }
@@ -194,6 +206,8 @@ pub struct QuickwitClient {
     commit_timeout: Timeout,
     /// Forces use of ingest v1.
     use_legacy_ingest: bool,
+    /// Request detailed parse failures report from the ingest api.
+    detailed_parse_failures: bool,
 }
 
 impl QuickwitClient {
@@ -254,13 +268,16 @@ impl QuickwitClient {
         batch_size_limit_opt: Option<usize>,
         mut on_ingest_event: Option<&mut (dyn FnMut(IngestEvent) + Sync)>,
         last_block_commit: CommitType,
-    ) -> Result<(), Error> {
+    ) -> Result<RestIngestResponse, Error> {
         // TODO(#5604)
-        let ingest_path = if self.use_legacy_ingest {
-            format!("{index_id}/ingest?use_legacy_ingest=true")
-        } else {
-            format!("{index_id}/ingest")
-        };
+        let ingest_path = format!("{index_id}/ingest");
+        let mut query_params = HashMap::new();
+        if self.use_legacy_ingest {
+            query_params.insert("use_legacy_ingest", "true");
+        }
+        if self.detailed_parse_failures {
+            query_params.insert("detailed_parse_failures", "true");
+        }
         let batch_size_limit = batch_size_limit_opt.unwrap_or(INGEST_CONTENT_LENGTH_LIMIT);
         let mut batch_reader = match ingest_source {
             IngestSource::File(filepath) => {
@@ -271,21 +288,30 @@ impl QuickwitClient {
                 BatchLineReader::from_string(ingest_payload, batch_size_limit)
             }
         };
+        let mut cumulated_resp = RestIngestResponse::default();
         while let Some(batch) = batch_reader.next_batch().await? {
             loop {
-                let (query_params, timeout) =
-                    if !batch_reader.has_next() && last_block_commit != CommitType::Auto {
-                        (last_block_commit.to_query_parameter(), self.commit_timeout)
-                    } else {
-                        (None, self.ingest_timeout)
-                    };
+                let timeout = if !batch_reader.has_next() && last_block_commit != CommitType::Auto {
+                    self.commit_timeout
+                } else {
+                    self.ingest_timeout
+                };
+                match last_block_commit {
+                    CommitType::Auto => {}
+                    CommitType::WaitFor => {
+                        query_params.insert("commit", "wait_for");
+                    }
+                    CommitType::Force => {
+                        query_params.insert("commit", "force");
+                    }
+                }
                 let response = self
                     .transport
                     .send(
                         Method::POST,
                         &ingest_path,
                         None,
-                        query_params,
+                        Some(&query_params),
                         Some(batch.clone()),
                         timeout,
                     )
@@ -296,7 +322,7 @@ impl QuickwitClient {
                     }
                     tokio::time::sleep(Duration::from_millis(500)).await;
                 } else {
-                    response.check().await?;
+                    cumulated_resp = cumulated_resp + response.deserialize().await?;
                     break;
                 }
             }
@@ -305,7 +331,7 @@ impl QuickwitClient {
             }
         }
 
-        Ok(())
+        Ok(cumulated_resp)
     }
 }
 
