@@ -37,7 +37,7 @@ use ulid::Ulid;
 
 use super::SplitStoreQuota;
 
-/// TODO Make this configurable.
+// TODO Make this configurable.
 const SPLIT_MAX_AGE: Duration = Duration::from_secs(2 * 24 * 3_600); // 2 days
 
 pub fn get_tantivy_directory_from_split_bundle(
@@ -46,7 +46,7 @@ pub fn get_tantivy_directory_from_split_bundle(
     let mmap_directory = MmapDirectory::open(split_file.parent().ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::NotFound,
-            format!("couldn't find parent for {:?}", &split_file),
+            format!("couldn't find parent for {}", split_file.display()),
         )
     })?)?;
     let split_fileslice = mmap_directory.open_read(Path::new(&split_file))?;
@@ -73,8 +73,8 @@ async fn num_bytes_in_folder(directory_path: &Path) -> io::Result<ByteSize> {
 
 /// The local split store is a cache for freshly indexed splits.
 ///
-/// In order to save the cost of an extra write, we store them in the form
-/// of a directory and the splits are built on the file upon upload.
+/// In order to save the cost of an extra write, we store splits in the form
+/// of a directory and the split bundles are built upon upload.
 #[derive(Debug, Copy, Clone)]
 struct SplitFolder {
     split_id: Ulid,
@@ -84,10 +84,10 @@ struct SplitFolder {
 impl SplitFolder {
     /// Creates a new `SplitFolder`.
     ///
-    /// There are no specific constraint on `path`.
+    /// There are no specific constraints on `path`.
     pub async fn create(split_id: &str, path: &Path) -> io::Result<Self> {
         let split_id = Ulid::from_str(split_id).map_err(|_err| {
-            let error_msg = format!("Split Id should be an `Ulid`. got `{split_id:?}`");
+            let error_msg = format!("split Id should be an ulid: got `{split_id}`");
             io::Error::new(io::ErrorKind::InvalidInput, error_msg)
         })?;
         let num_bytes = num_bytes_in_folder(path).await?;
@@ -180,7 +180,7 @@ impl SplitFolderRegistry {
             })
     }
 
-    // Inserting the same split_folder with a different number of bytes panics.
+    /// Returns whether the element was inserted or was already present
     fn insert(&mut self, split_folder: SplitFolder) -> bool {
         if let Entry::Vacant(entry) = self.split_folders.entry(split_folder.split_id) {
             entry.insert(split_folder.num_bytes);
@@ -282,7 +282,7 @@ impl InnerSplitCache {
         let evicted_split = self
             .split_registry
             .pop_oldest()
-            .expect("No remaining split to remove");
+            .expect("split cache should not be empty");
         let result = tokio::fs::remove_dir_all(&self.split_path(evicted_split.split_id)).await;
         if let Err(io_err) = result {
             if io_err.kind() == io::ErrorKind::NotFound {
@@ -331,9 +331,9 @@ impl InnerSplitCache {
         Ok(())
     }
 
-    /// Ensures that there is room to store the split,
-    /// return false, if the split should not be added to the cache.
-    /// return true and record split , if the split should be moved into the cache.
+    /// Ensures that there is room to store the split:
+    /// - return false if the split should not be added to the cache.
+    /// - return true and record the split if the split should be moved into the cache.
     async fn make_room_and_record_split(&mut self, split_folder: SplitFolder) -> io::Result<bool> {
         // We don't accept splits that are too large.
         if split_folder.num_bytes > self.split_registry.quota().max_num_bytes() {
@@ -394,7 +394,7 @@ impl IndexingSplitCache {
 
             if metadata.is_file() {
                 warn!(
-                    "Unexpected file found in split cache directory: `{}`.",
+                    "unexpected file found in split cache directory: `{}`",
                     dir_path.display()
                 );
                 continue;
@@ -402,8 +402,8 @@ impl IndexingSplitCache {
 
             let split_id = split_id_from_split_folder(&dir_path).ok_or_else(|| {
                 let error_msg = format!(
-                    "split folder name should match the format `<split_id>.split`. got \
-                     `{dir_path:?}`"
+                    "split folder name should match the format `<split_id>.split`: got `{}`",
+                    dir_path.display()
                 );
                 io::Error::new(io::ErrorKind::InvalidInput, error_msg)
             })?;
@@ -480,7 +480,7 @@ impl IndexingSplitCache {
             .move_out(split_ulid, output_dir_path)
             .await?;
         if split_file_opt.is_none() {
-            debug!(split_id = split_id, "Split folder not in cache");
+            debug!(split_id, "split folder not in cache");
         }
         Ok(split_file_opt)
     }

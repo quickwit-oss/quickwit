@@ -335,7 +335,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_evection_and_fallback_to_remote() -> anyhow::Result<()> {
+    async fn test_eviction_and_fallback_to_remote() -> anyhow::Result<()> {
         let temp_dir = tempfile::tempdir()?;
 
         let split_cache_dir = tempdir()?;

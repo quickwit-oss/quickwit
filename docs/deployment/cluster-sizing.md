@@ -29,7 +29,7 @@ Here are some high-level guidelines to size your Indexer nodes:
     <!-- TODO: revisit this when cooperative indexing becomes the default -->
   - Don't use instances with less than 8GB of RAM
     <!-- Note: 2GB for the heap size (per pipeline) and 2GB for ingest queues -->
-- Mount the data directory to a volume of at least 120GB to store
+- Mount the data directory to a volume of at least 120GB to store:
   - the [split cache](../configuration/node-config.md#Indexer-configuration) (default 100GB)
   - the [ingest queue](../configuration/node-config.md#ingest-api-configuration) (default 4GiB)
   - a little extra for the indexes that are being built (first generation and merges)
