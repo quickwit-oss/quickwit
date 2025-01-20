@@ -716,7 +716,9 @@ mod test {
     use quickwit_ingest::CommitType;
     use quickwit_metastore::IndexMetadata;
     use quickwit_search::SearchResponseRest;
-    use quickwit_serve::{ListSplitsQueryParams, ListSplitsResponse, SearchRequestQueryString};
+    use quickwit_serve::{
+        ListSplitsQueryParams, ListSplitsResponse, RestIngestResponse, SearchRequestQueryString,
+    };
     use reqwest::header::CONTENT_TYPE;
     use reqwest::{StatusCode, Url};
     use serde_json::json;
@@ -806,19 +808,26 @@ mod test {
             .expect(2)
             .mount(&mock_server)
             .await;
+        let mock_response = RestIngestResponse {
+            num_docs_for_processing: 2,
+            num_ingested_docs: Some(2),
+            num_rejected_docs: Some(0),
+            parse_failures: Some(Vec::new()),
+        };
         Mock::given(method("POST"))
             .and(path("/api/v1/my-index/ingest"))
             .and(query_param_is_missing("commit"))
             .and(body_bytes(buffer))
-            .respond_with(ResponseTemplate::new(StatusCode::OK))
+            .respond_with(ResponseTemplate::new(StatusCode::OK).set_body_json(&mock_response))
             .up_to_n_times(1)
             .mount(&mock_server)
             .await;
         let ingest_source = IngestSource::File(PathBuf::from_str(&ndjson_filepath).unwrap());
-        qw_client
+        let actual_response = qw_client
             .ingest("my-index", ingest_source, None, None, CommitType::Auto)
             .await
             .unwrap();
+        assert_eq!(actual_response, mock_response);
     }
 
     #[tokio::test]
@@ -834,19 +843,26 @@ mod test {
             .read_to_end(&mut buffer)
             .await
             .unwrap();
+        let mock_response = RestIngestResponse {
+            num_docs_for_processing: 2,
+            num_ingested_docs: Some(2),
+            num_rejected_docs: Some(0),
+            parse_failures: Some(Vec::new()),
+        };
         Mock::given(method("POST"))
             .and(path("/api/v1/my-index/ingest"))
             .and(query_param("commit", "force"))
             .and(body_bytes(buffer))
-            .respond_with(ResponseTemplate::new(StatusCode::OK))
+            .respond_with(ResponseTemplate::new(StatusCode::OK).set_body_json(&mock_response))
             .up_to_n_times(1)
             .mount(&mock_server)
             .await;
         let ingest_source = IngestSource::File(PathBuf::from_str(&ndjson_filepath).unwrap());
-        qw_client
+        let actual_response = qw_client
             .ingest("my-index", ingest_source, None, None, CommitType::Force)
             .await
             .unwrap();
+        assert_eq!(actual_response, mock_response);
     }
 
     #[tokio::test]
@@ -862,19 +878,26 @@ mod test {
             .read_to_end(&mut buffer)
             .await
             .unwrap();
+        let mock_response = RestIngestResponse {
+            num_docs_for_processing: 2,
+            num_ingested_docs: Some(2),
+            num_rejected_docs: Some(0),
+            parse_failures: Some(Vec::new()),
+        };
         Mock::given(method("POST"))
             .and(path("/api/v1/my-index/ingest"))
             .and(query_param("commit", "wait_for"))
             .and(body_bytes(buffer))
-            .respond_with(ResponseTemplate::new(StatusCode::OK))
+            .respond_with(ResponseTemplate::new(StatusCode::OK).set_body_json(&mock_response))
             .up_to_n_times(1)
             .mount(&mock_server)
             .await;
         let ingest_source = IngestSource::File(PathBuf::from_str(&ndjson_filepath).unwrap());
-        qw_client
+        let actual_response = qw_client
             .ingest("my-index", ingest_source, None, None, CommitType::WaitFor)
             .await
             .unwrap();
+        assert_eq!(actual_response, mock_response);
     }
 
     #[tokio::test]
