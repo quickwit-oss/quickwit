@@ -3,11 +3,12 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_proto::cloudprem::{
-    CloudPremError, CloudPremResult, CloudPremService, Event, FetchOneRequest, FetchOneResponse,
-    ListRequest, ListResponse, PingRequest, PingResponse,
+    CloudPremError, CloudPremResult, CloudPremService, ContentKv, Event, FetchOneRequest,
+    FetchOneResponse, ListRequest, ListResponse, PingRequest, PingResponse,
 };
 use quickwit_proto::search::{CountHits, Hit, SearchRequest, SortField, SortOrder};
 use quickwit_search::SearchService;
+use serde_json::Value as JsonValue;
 use tracing::info;
 
 #[allow(dead_code)]
@@ -113,14 +114,160 @@ impl HitMapper {
     fn hit_to_event(&self, hit: Hit) -> CloudPremResult<Event> {
         // TODO we probably want to add the PartialHit as a dedicated "id" field or something like
         // that?
-        let _map: serde_json::Value = serde_json::from_str(&hit.json)
+        let map: serde_json::Map<String, JsonValue> = serde_json::from_str(&hit.json)
             .map_err(|e| CloudPremError::Internal(format!("failed to parse hit: {e}")))?;
 
-        // TODO implement extracing values
-        let field_values = vec![];
+        // TODO filter by columns
+        let field_values = JsonValueIterator::new(map)
+            .map(|(key, value)| ContentKv {
+                key,
+                value: value.to_string(),
+            })
+            .collect();
         Ok(Event {
             content_size: hit.json.len() as u32, // TODO that's probably not what we want
             field_values,
         })
+    }
+}
+
+enum MapOrArrayIter {
+    Array(std::vec::IntoIter<JsonValue>),
+    Map(serde_json::map::IntoIter),
+}
+
+impl MapOrArrayIter {
+    fn is_map(&self) -> bool {
+        matches!(self, MapOrArrayIter::Map(_))
+    }
+}
+
+impl Iterator for MapOrArrayIter {
+    type Item = (Option<String>, JsonValue);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            MapOrArrayIter::Array(iter) => iter.next().map(|value| (None, value)),
+            MapOrArrayIter::Map(iter) => iter.next().map(|(key, value)| (Some(key), value)),
+        }
+    }
+}
+
+/// Iterate over all primitive values inside the provided JsonValue, ignoring Nulls, and opening
+/// arrays and objects.
+pub(crate) struct JsonValueIterator {
+    stack: Vec<MapOrArrayIter>,
+    current_key: String,
+    dot_positions: Vec<usize>,
+}
+
+impl JsonValueIterator {
+    pub fn new(source: serde_json::Map<String, JsonValue>) -> JsonValueIterator {
+        let base_value = MapOrArrayIter::Map(source.into_iter());
+        JsonValueIterator {
+            stack: vec![base_value],
+            current_key: String::new(),
+            dot_positions: vec![0],
+        }
+    }
+}
+
+impl Iterator for JsonValueIterator {
+    type Item = (String, JsonValue);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            let currently_itered = self.stack.last_mut()?;
+
+            if currently_itered.is_map() {
+                // for map, we push pop the last part between each key,
+                // for array, we mustn't
+                if let Some(dot_pos) = self.dot_positions.last() {
+                    self.current_key.truncate(*dot_pos);
+                }
+            }
+            let Some((path, value)) = currently_itered.next() else {
+                let poped = self.stack.pop().unwrap();
+                if poped.is_map() {
+                    self.dot_positions.pop();
+                }
+                continue;
+            };
+            if let Some(path) = path {
+                self.current_key.push('.');
+                self.current_key.push_str(&path);
+            }
+            match value {
+                JsonValue::Array(array) => {
+                    self.stack.push(MapOrArrayIter::Array(array.into_iter()));
+                }
+                JsonValue::Object(map) => {
+                    self.dot_positions.push(self.current_key.len());
+                    self.stack.push(MapOrArrayIter::Map(map.into_iter()));
+                }
+                JsonValue::Null => continue,
+                value => {
+                    // we always push '.' + key, to not prefix all paths with a '.',
+                    // we need to ignore that initial '.' everywhere
+                    let key = self.current_key[1..].to_string();
+                    return Some((key, value));
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use serde_json::{json, Value as JsonValue};
+
+    use super::JsonValueIterator;
+
+    #[test]
+    fn test_json_value_iterator() {
+        let source_json = json!({
+            "a": 1,
+            "b": [2, 3],
+            "c": {
+                "d": 4,
+                "e": 5,
+                "f": ["f", 7]
+            },
+            "g": [
+                {
+                    "h": 8,
+                    "i": 9
+                },
+                10,
+                [11, 12]
+            ]
+        });
+        let expected: HashMap<_, _> = [
+            ("a", json!(1)),
+            ("b", json!(2)),
+            ("b", json!(3)),
+            ("c.d", json!(4)),
+            ("c.e", json!(5)),
+            ("c.f", json!("f")),
+            ("c.f", json!(7)),
+            ("g.h", json!(8)),
+            ("g.i", json!(9)),
+            ("g", json!(10)),
+            ("g", json!(11)),
+            ("g", json!(12)),
+        ]
+        .into_iter()
+        // invert key and value to not need a multimap (some keys are duplicated,
+        // values were choosen to not be)
+        .map(|(k, v)| (v, k.to_string()))
+        .collect();
+        let JsonValue::Object(map) = source_json else {
+            panic!("should have been a map");
+        };
+
+        let extracted: HashMap<_, _> = JsonValueIterator::new(map).map(|(k, v)| (v, k)).collect();
+        assert_eq!(extracted, expected);
     }
 }
