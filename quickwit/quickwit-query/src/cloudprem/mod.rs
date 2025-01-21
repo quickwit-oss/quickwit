@@ -11,7 +11,10 @@ use crate::query_ast::{
 };
 use crate::{InvalidQuery, JsonLiteral};
 
-const WES_FIELD: &str = "all";
+const EVP_WES_FIELD: &str = "*";
+const QW_WES_FIELD: &str = "all";
+const EVP_DEFAULT_FIELD: &str = "_default_";
+const QW_DEFAULT_FIELD: &str = "default";
 
 pub fn parse_query(raw_message: prost_types::Any) -> Result<QueryNode, DecodeError> {
     // TODO validate type url?
@@ -106,7 +109,7 @@ pub fn to_quickwit_query(cloudprem_query: QueryNode) -> Result<QueryAst, Invalid
         }
         // TODO verify terms are already splited when we receive them
         Node::Term(term_query) => FullTextQuery {
-            field: term_query.attribute,
+            field: map_field_name(term_query.attribute),
             text: value_to_string(term_query.value, "term.value")?,
             params: FullTextParams {
                 tokenizer: None,
@@ -135,7 +138,7 @@ pub fn to_quickwit_query(cloudprem_query: QueryNode) -> Result<QueryAst, Invalid
                 range_query.upper_inclusive,
             );
             RangeQuery {
-                field: range_query.attribute,
+                field: map_field_name(range_query.attribute),
                 lower_bound,
                 upper_bound,
             }
@@ -155,19 +158,19 @@ pub fn to_quickwit_query(cloudprem_query: QueryNode) -> Result<QueryAst, Invalid
                 }
             };
             RangeQuery {
-                field: comparison_query.attribute,
+                field: map_field_name(comparison_query.attribute),
                 lower_bound,
                 upper_bound,
             }
             .into()
         }
         Node::Exist(exist_query) => FieldPresenceQuery {
-            field: exist_query.attribute,
+            field: map_field_name(exist_query.attribute),
         }
         .into(),
         Node::Missing(missing_query) => BoolQuery {
             must_not: vec![FieldPresenceQuery {
-                field: missing_query.attribute,
+                field: map_field_name(missing_query.attribute),
             }
             .into()],
             ..BoolQuery::default()
@@ -177,7 +180,7 @@ pub fn to_quickwit_query(cloudprem_query: QueryNode) -> Result<QueryAst, Invalid
             // TODO maybe we want to make this into a wildcard query instead?
             // or give infinite expansion
             PhrasePrefixQuery {
-                field: prefix_query.attribute,
+                field: map_field_name(prefix_query.attribute),
                 phrase: prefix_query.prefix,
                 max_expansions: crate::query_ast::DEFAULT_PHRASE_QUERY_MAX_EXPANSION,
                 params: FullTextParams {
@@ -199,14 +202,14 @@ pub fn to_quickwit_query(cloudprem_query: QueryNode) -> Result<QueryAst, Invalid
                 wildcard_query.wildcard
             };
             WildcardQuery {
-                field: wildcard_query.attribute,
+                field: map_field_name(wildcard_query.attribute),
                 value: string_wildcard,
                 lenient: false,
             }
             .into()
         }
         Node::Quoted(quoted_query) => FullTextQuery {
-            field: quoted_query.attribute,
+            field: map_field_name(quoted_query.attribute),
             text: quoted_query.text,
             params: FullTextParams {
                 tokenizer: None,
@@ -223,7 +226,8 @@ pub fn to_quickwit_query(cloudprem_query: QueryNode) -> Result<QueryAst, Invalid
                 .map(|val| value_to_string(Some(val), "termIn.values[]"))
                 .collect::<Result<_, _>>()?;
             TermSetQuery {
-                terms_per_field: std::iter::once((term_in_query.attribute, terms)).collect(),
+                terms_per_field: std::iter::once((map_field_name(term_in_query.attribute), terms))
+                    .collect(),
             }
             .into()
         }
@@ -257,7 +261,7 @@ pub fn to_quickwit_query(cloudprem_query: QueryNode) -> Result<QueryAst, Invalid
                 search_query.text
             };
             FullTextQuery {
-                field: WES_FIELD.to_string(),
+                field: map_field_name(search_query.attribute),
                 text: string_pattern,
                 params: FullTextParams {
                     tokenizer: None,
@@ -303,4 +307,14 @@ fn wildcard_pattern_to_string(pattern: &WildcardPattern) -> String {
         string_wildcard.push_str(&token.literal[last_pushed_pos..]);
     }
     string_wildcard
+}
+
+fn map_field_name(field_name: String) -> String {
+    if field_name == EVP_DEFAULT_FIELD {
+        QW_DEFAULT_FIELD.to_string()
+    } else if field_name == EVP_WES_FIELD {
+        QW_WES_FIELD.to_string()
+    } else {
+        field_name
+    }
 }
