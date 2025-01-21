@@ -88,7 +88,7 @@ impl CloudPremService for CloudPremServiceImpl {
 
         let hit_mapper = HitMapper {
             id_field: "id".to_string(),
-            ts_field: "itimestampd".to_string(),
+            ts_field: "timestamp".to_string(),
         };
         let events = response
             .hits
@@ -141,7 +141,8 @@ impl HitMapper {
             tracker: Some(EventTracker {
                 id: event_id,
                 epoch_ms: timestamp as u64,
-                tiebreaker: 0, // TODO get from event?
+                tiebreaker: 0, /* TODO get from event? or if we record ingest time with ns, use
+                                * sub ms precision? */
                 row_number: hit
                     .partial_hit
                     .as_ref()
