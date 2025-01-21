@@ -1,0 +1,359 @@
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct QueryNode {
+    #[prost(
+        oneof = "query_node::Node",
+        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15"
+    )]
+    pub node: ::core::option::Option<query_node::Node>,
+}
+/// Nested message and enum types in `QueryNode`.
+pub mod query_node {
+    #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+    #[serde(rename_all = "snake_case")]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Node {
+        #[prost(message, tag = "1")]
+        All(super::MatchAllQueryNode),
+        #[prost(message, tag = "2")]
+        None(super::MatchNoneQueryNode),
+        #[prost(message, tag = "3")]
+        Not(::prost::alloc::boxed::Box<super::NotQueryNode>),
+        #[prost(message, tag = "4")]
+        Boolean(super::BooleanQueryNode),
+        #[prost(message, tag = "5")]
+        Term(super::AttributeTermQueryNode),
+        #[prost(message, tag = "6")]
+        Range(super::AttributeRangeQueryNode),
+        #[prost(message, tag = "7")]
+        Comparison(super::AttributeComparisonQueryNode),
+        #[prost(message, tag = "8")]
+        Exist(super::AttributeExistQueryNode),
+        #[prost(message, tag = "9")]
+        Missing(super::AttributeMissingQueryNode),
+        #[prost(message, tag = "10")]
+        Prefix(super::AttributePrefixQueryNode),
+        #[prost(message, tag = "11")]
+        Wildcard(super::AttributeWildcardQueryNode),
+        #[prost(message, tag = "12")]
+        Quoted(super::AttributeQuotedQueryNode),
+        #[prost(message, tag = "13")]
+        TermIn(super::AttributeTermInQueryNode),
+        #[prost(message, tag = "14")]
+        Cidr(super::AttributeCidrQueryNode),
+        #[prost(message, tag = "15")]
+        Search(super::AttributeSearchQueryNode),
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Value {
+    #[prost(oneof = "value::Value", tags = "1, 2, 3")]
+    pub value: ::core::option::Option<value::Value>,
+}
+/// Nested message and enum types in `Value`.
+pub mod value {
+    #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+    #[serde(rename_all = "snake_case")]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Value {
+        #[prost(string, tag = "1")]
+        Str(::prost::alloc::string::String),
+        #[prost(int64, tag = "2")]
+        Int(i64),
+        #[prost(double, tag = "3")]
+        Double(f64),
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct MatchAllQueryNode {}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct MatchNoneQueryNode {}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct NotQueryNode {
+    #[prost(message, optional, boxed, tag = "1")]
+    pub inner: ::core::option::Option<::prost::alloc::boxed::Box<QueryNode>>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct BooleanQueryNode {
+    #[prost(enumeration = "BooleanOperator", tag = "1")]
+    pub operator: i32,
+    #[prost(message, repeated, tag = "2")]
+    pub clauses: ::prost::alloc::vec::Vec<QueryNode>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AttributeTermQueryNode {
+    #[prost(string, tag = "1")]
+    pub attribute: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "2")]
+    pub value: ::core::option::Option<Value>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AttributeTermInQueryNode {
+    #[prost(string, tag = "1")]
+    pub attribute: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "2")]
+    pub values: ::prost::alloc::vec::Vec<Value>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AttributeRangeQueryNode {
+    #[prost(string, tag = "1")]
+    pub attribute: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "2")]
+    pub lower: ::core::option::Option<Value>,
+    #[prost(message, optional, tag = "3")]
+    pub upper: ::core::option::Option<Value>,
+    #[prost(bool, tag = "4")]
+    pub lower_inclusive: bool,
+    #[prost(bool, tag = "5")]
+    pub upper_inclusive: bool,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AttributeCidrQueryNode {
+    #[prost(string, tag = "1")]
+    pub attribute: ::prost::alloc::string::String,
+    #[prost(string, repeated, tag = "2")]
+    pub masks: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AttributeSearchQueryNode {
+    #[prost(string, tag = "1")]
+    pub attribute: ::prost::alloc::string::String,
+    #[prost(enumeration = "SearchQueryMode", tag = "2")]
+    pub mode: i32,
+    /// Raw text from query string, including backslashes
+    /// Similarly to the AttributeWildcardQueryNode deprecated wildcard field
+    /// Those string representatil are still used until the migration to WildcardPattern
+    /// is complete
+    #[deprecated]
+    #[prost(string, tag = "5")]
+    pub text: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "6")]
+    pub structured_text: ::core::option::Option<WildcardPattern>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AttributeComparisonQueryNode {
+    #[prost(string, tag = "1")]
+    pub attribute: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "2")]
+    pub value: ::core::option::Option<Value>,
+    #[prost(enumeration = "ComparisonOperator", tag = "3")]
+    pub operator: i32,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AttributeExistQueryNode {
+    #[prost(string, tag = "1")]
+    pub attribute: ::prost::alloc::string::String,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AttributeMissingQueryNode {
+    #[prost(string, tag = "1")]
+    pub attribute: ::prost::alloc::string::String,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AttributePrefixQueryNode {
+    #[prost(string, tag = "1")]
+    pub attribute: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub prefix: ::prost::alloc::string::String,
+}
+///
+/// Piece of a wildcard pattern.
+///
+/// For instance, `??*abc` is encoded as:
+///
+/// * prefix_min_n_wild = 2 (two "?")
+/// * prefix_unbounded_n_wild = true ("*" means >2 wild chars can match)
+/// * literal = abc (this must match exactly)
+///
+/// Other inputs, such as `*?*?*abc`, can have the exact same representation.
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WildcardToken {
+    #[prost(int32, tag = "1")]
+    pub prefix_min_n_wild: i32,
+    #[prost(bool, tag = "2")]
+    pub prefix_unbounded_n_wild: bool,
+    #[prost(string, tag = "3")]
+    pub literal: ::prost::alloc::string::String,
+}
+///
+/// Parsed pattern, which could be used to generate a regex.
+///
+/// A pattern is a sequence of "any" characters (with min/max length)
+/// interspersed with literals. Each token represents the pair.
+///
+/// For instance, `a*b*` is split into:
+///
+/// * `a` (literal "a")
+/// * `*b` (any string, then literal "b")
+/// * `*` (any string)
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WildcardPattern {
+    #[prost(message, repeated, tag = "1")]
+    pub tokens: ::prost::alloc::vec::Vec<WildcardToken>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AttributeWildcardQueryNode {
+    #[prost(string, tag = "1")]
+    pub attribute: ::prost::alloc::string::String,
+    /// raw text from query string, including backslashes
+    #[deprecated]
+    #[prost(string, tag = "2")]
+    pub wildcard: ::prost::alloc::string::String,
+    /// parsed pattern
+    #[prost(message, optional, tag = "3")]
+    pub pattern: ::core::option::Option<WildcardPattern>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AttributeQuotedQueryNode {
+    #[prost(string, tag = "1")]
+    pub attribute: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub text: ::prost::alloc::string::String,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum BooleanOperator {
+    InvalidBooleanOperator = 0,
+    And = 1,
+    Or = 2,
+}
+impl BooleanOperator {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            BooleanOperator::InvalidBooleanOperator => "INVALID_BOOLEAN_OPERATOR",
+            BooleanOperator::And => "AND",
+            BooleanOperator::Or => "OR",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "INVALID_BOOLEAN_OPERATOR" => Some(Self::InvalidBooleanOperator),
+            "AND" => Some(Self::And),
+            "OR" => Some(Self::Or),
+            _ => None,
+        }
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum SearchQueryMode {
+    InvalidSearchMode = 0,
+    Wes = 1,
+    WesQuoted = 2,
+    WesPrefix = 3,
+    /// TODO add FTS;
+    WesGlob = 4,
+}
+impl SearchQueryMode {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            SearchQueryMode::InvalidSearchMode => "INVALID_SEARCH_MODE",
+            SearchQueryMode::Wes => "WES",
+            SearchQueryMode::WesQuoted => "WES_QUOTED",
+            SearchQueryMode::WesPrefix => "WES_PREFIX",
+            SearchQueryMode::WesGlob => "WES_GLOB",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "INVALID_SEARCH_MODE" => Some(Self::InvalidSearchMode),
+            "WES" => Some(Self::Wes),
+            "WES_QUOTED" => Some(Self::WesQuoted),
+            "WES_PREFIX" => Some(Self::WesPrefix),
+            "WES_GLOB" => Some(Self::WesGlob),
+            _ => None,
+        }
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ComparisonOperator {
+    InvalidComparisonOperator = 0,
+    Lt = 1,
+    Lte = 2,
+    Gt = 3,
+    Gte = 4,
+}
+impl ComparisonOperator {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            ComparisonOperator::InvalidComparisonOperator => {
+                "INVALID_COMPARISON_OPERATOR"
+            }
+            ComparisonOperator::Lt => "LT",
+            ComparisonOperator::Lte => "LTE",
+            ComparisonOperator::Gt => "GT",
+            ComparisonOperator::Gte => "GTE",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "INVALID_COMPARISON_OPERATOR" => Some(Self::InvalidComparisonOperator),
+            "LT" => Some(Self::Lt),
+            "LTE" => Some(Self::Lte),
+            "GT" => Some(Self::Gt),
+            "GTE" => Some(Self::Gte),
+            _ => None,
+        }
+    }
+}

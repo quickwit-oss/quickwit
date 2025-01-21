@@ -52,22 +52,34 @@ pub struct Statistics {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Stream {}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Event {
-    #[prost(uint32, tag = "1")]
-    pub content_size: u32,
-    #[prost(message, repeated, tag = "2")]
-    pub field_values: ::prost::alloc::vec::Vec<ContentKv>,
+pub struct Stream {
+    #[prost(message, repeated, tag = "1")]
+    pub events: ::prost::alloc::vec::Vec<Event>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ContentKv {
-    #[prost(string, tag = "1")]
-    pub key: ::prost::alloc::string::String,
+pub struct Event {
+    #[prost(message, optional, tag = "1")]
+    pub tracker: ::core::option::Option<EventTracker>,
     #[prost(string, tag = "2")]
-    pub value: ::prost::alloc::string::String,
+    pub content_json: ::prost::alloc::string::String,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct EventTracker {
+    /// A unique id tied to the event.
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
+    /// The epoch in milliseconds marking when the event was created.
+    #[prost(uint64, tag = "2")]
+    pub epoch_ms: u64,
+    /// An extra int to break ties.
+    #[prost(uint32, tag = "3")]
+    pub tiebreaker: u32,
+    #[prost(string, optional, tag = "4")]
+    pub fragment_id: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(sint64, optional, tag = "5")]
+    pub row_number: ::core::option::Option<i64>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

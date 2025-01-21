@@ -35,7 +35,7 @@ use crate::query_ast::{
 use crate::tokenizers::TokenizerManager;
 use crate::{BooleanOperand, InvalidQuery, JsonLiteral};
 
-const DEFAULT_PHRASE_QUERY_MAX_EXPANSION: u32 = 50;
+pub(crate) const DEFAULT_PHRASE_QUERY_MAX_EXPANSION: u32 = 50;
 
 /// A query expressed in the tantivy query grammar DSL.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
