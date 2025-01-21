@@ -20,18 +20,18 @@
 use bytes::{Buf, Bytes};
 use quickwit_config::{IngestApiConfig, INGEST_V2_SOURCE_ID};
 use quickwit_ingest::{
-    CommitType, DocBatchBuilder, DocBatchV2Builder, FetchResponse, IngestRequest, IngestResponse,
-    IngestService, IngestServiceClient, IngestServiceError, TailRequest,
+    CommitType, DocBatchBuilder, DocBatchV2Builder, FetchResponse, IngestRequest, IngestService,
+    IngestServiceClient, IngestServiceError, TailRequest,
 };
 use quickwit_proto::ingest::router::{
-    IngestRequestV2, IngestResponseV2, IngestRouterService, IngestRouterServiceClient,
-    IngestSubrequest,
+    IngestRequestV2, IngestRouterService, IngestRouterServiceClient, IngestSubrequest,
 };
 use quickwit_proto::ingest::CommitTypeV2;
 use quickwit_proto::types::{DocUidGenerator, IndexId};
 use serde::Deserialize;
 use warp::{Filter, Rejection};
 
+use super::RestIngestResponse;
 use crate::decompression::get_body_bytes;
 use crate::format::extract_format_from_qs;
 use crate::rest_api_response::into_rest_api_response;
@@ -56,6 +56,8 @@ struct IngestOptions {
     commit_type: CommitTypeV2,
     #[serde(default)]
     use_legacy_ingest: bool,
+    #[serde(default)]
+    detailed_response: bool,
 }
 
 impl IngestOptions {
@@ -139,7 +141,7 @@ fn ingest_handler(
     path = "/{index_id}/ingest",
     request_body(content = String, description = "Documents to ingest in NDJSON format and limited to 10MB", content_type = "application/json"),
     responses(
-        (status = 200, description = "Successfully ingested documents.", body = IngestResponse)
+        (status = 200, description = "Successfully ingested documents.", body = RestIngestResponse)
     ),
     params(
         ("index_id" = String, Path, description = "The index ID to add docs to."),
@@ -155,7 +157,7 @@ async fn ingest(
     ingest_service: IngestServiceClient,
     enable_ingest_v1: bool,
     enable_ingest_v2: bool,
-) -> Result<IngestResponse, IngestServiceError> {
+) -> Result<RestIngestResponse, IngestServiceError> {
     if enable_ingest_v2 && !ingest_options.use_legacy_ingest {
         return ingest_v2(index_id, body, ingest_options, ingest_router).await;
     }
@@ -172,7 +174,12 @@ async fn ingest_v1(
     body: Body,
     ingest_options: IngestOptions,
     ingest_service: IngestServiceClient,
-) -> Result<IngestResponse, IngestServiceError> {
+) -> Result<RestIngestResponse, IngestServiceError> {
+    if ingest_options.detailed_response {
+        return Err(IngestServiceError::BadRequest(
+            "detailed_response is not supported in ingest v1".to_string(),
+        ));
+    }
     // The size of the body should be an upper bound of the size of the batch. The removal of the
     // end of line character for each doc compensates the addition of the `DocCommand` header.
     let mut doc_batch_builder = DocBatchBuilder::with_capacity(index_id, body.content.remaining());
@@ -184,7 +191,7 @@ async fn ingest_v1(
         commit: ingest_options.commit_type_v1() as i32,
     };
     let ingest_response = ingest_service.ingest(ingest_req).await?;
-    Ok(ingest_response)
+    Ok(RestIngestResponse::from_ingest_v1(ingest_response))
 }
 
 async fn ingest_v2(
@@ -192,20 +199,26 @@ async fn ingest_v2(
     body: Body,
     ingest_options: IngestOptions,
     ingest_router: IngestRouterServiceClient,
-) -> Result<IngestResponse, IngestServiceError> {
+) -> Result<RestIngestResponse, IngestServiceError> {
     let mut doc_batch_builder = DocBatchV2Builder::default();
     let mut doc_uid_generator = DocUidGenerator::default();
 
     for doc in lines(&body.content) {
         doc_batch_builder.add_doc(doc_uid_generator.next_doc_uid(), doc);
     }
+    drop(body);
     let doc_batch_opt = doc_batch_builder.build();
 
     let Some(doc_batch) = doc_batch_opt else {
-        let response = IngestResponse::default();
+        let response = RestIngestResponse::default();
         return Ok(response);
     };
-    let num_docs = doc_batch.num_docs();
+    let num_docs_for_processing = doc_batch.num_docs() as u64;
+    let doc_batch_clone_opt = if ingest_options.detailed_response {
+        Some(doc_batch.clone())
+    } else {
+        None
+    };
 
     let subrequest = IngestSubrequest {
         subrequest_id: 0,
@@ -218,26 +231,11 @@ async fn ingest_v2(
         subrequests: vec![subrequest],
     };
     let response = ingest_router.ingest(request).await?;
-    convert_ingest_response_v2(response, num_docs)
-}
-
-fn convert_ingest_response_v2(
-    mut response: IngestResponseV2,
-    num_docs: usize,
-) -> Result<IngestResponse, IngestServiceError> {
-    let num_responses = response.successes.len() + response.failures.len();
-    if num_responses != 1 {
-        return Err(IngestServiceError::Internal(format!(
-            "expected a single failure/success, got {num_responses}",
-        )));
-    }
-    if response.successes.pop().is_some() {
-        return Ok(IngestResponse {
-            num_docs_for_processing: num_docs as u64,
-        });
-    }
-    let ingest_failure = response.failures.pop().unwrap();
-    Err(ingest_failure.into())
+    RestIngestResponse::from_ingest_v2(
+        response,
+        doc_batch_clone_opt.as_ref(),
+        num_docs_for_processing,
+    )
 }
 
 pub fn tail_handler(
@@ -295,12 +293,11 @@ pub(crate) mod tests {
     use quickwit_config::IngestApiConfig;
     use quickwit_ingest::{
         init_ingest_api, CreateQueueIfNotExistsRequest, FetchRequest, FetchResponse,
-        IngestApiService, IngestResponse, IngestServiceClient, SuggestTruncateRequest,
-        QUEUES_DIR_NAME,
+        IngestApiService, IngestServiceClient, SuggestTruncateRequest, QUEUES_DIR_NAME,
     };
     use quickwit_proto::ingest::router::IngestRouterServiceClient;
 
-    use super::ingest_api_handlers;
+    use super::{ingest_api_handlers, RestIngestResponse};
     use crate::ingest_api::lines;
 
     #[test]
@@ -321,7 +318,7 @@ pub(crate) mod tests {
         }
     }
 
-    pub(crate) async fn setup_ingest_service(
+    pub(crate) async fn setup_ingest_v1_service(
         queues: &[&str],
         config: &IngestApiConfig,
     ) -> (
@@ -352,7 +349,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn test_ingest_api_returns_200_when_ingest_json_and_fetch() {
         let (universe, _temp_dir, ingest_service, _) =
-            setup_ingest_service(&["my-index"], &IngestApiConfig::default()).await;
+            setup_ingest_v1_service(&["my-index"], &IngestApiConfig::default()).await;
         let ingest_router = IngestRouterServiceClient::mocked();
         let ingest_api_handlers = ingest_api_handlers(
             ingest_router,
@@ -369,7 +366,7 @@ pub(crate) mod tests {
             .reply(&ingest_api_handlers)
             .await;
         assert_eq!(resp.status(), 200);
-        let ingest_response: IngestResponse = serde_json::from_slice(resp.body()).unwrap();
+        let ingest_response: RestIngestResponse = serde_json::from_slice(resp.body()).unwrap();
         assert_eq!(ingest_response.num_docs_for_processing, 1);
 
         let resp = warp::test::request()
@@ -393,7 +390,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn test_ingest_api_returns_200_when_ingest_ndjson_and_fetch() {
         let (universe, _temp_dir, ingest_service, _) =
-            setup_ingest_service(&["my-index"], &IngestApiConfig::default()).await;
+            setup_ingest_v1_service(&["my-index"], &IngestApiConfig::default()).await;
         let ingest_router = IngestRouterServiceClient::mocked();
         let ingest_api_handlers = ingest_api_handlers(
             ingest_router,
@@ -413,7 +410,7 @@ pub(crate) mod tests {
             .reply(&ingest_api_handlers)
             .await;
         assert_eq!(resp.status(), 200);
-        let ingest_response: IngestResponse = serde_json::from_slice(resp.body()).unwrap();
+        let ingest_response: RestIngestResponse = serde_json::from_slice(resp.body()).unwrap();
         assert_eq!(ingest_response.num_docs_for_processing, 3);
 
         universe.assert_quit().await;
@@ -424,7 +421,7 @@ pub(crate) mod tests {
         let config: IngestApiConfig =
             serde_json::from_str(r#"{ "max_queue_memory_usage": "1" }"#).unwrap();
         let (universe, _temp_dir, ingest_service, _) =
-            setup_ingest_service(&["my-index"], &config).await;
+            setup_ingest_v1_service(&["my-index"], &config).await;
         let ingest_router = IngestRouterServiceClient::mocked();
         let ingest_api_handlers = ingest_api_handlers(
             ingest_router,
@@ -449,7 +446,7 @@ pub(crate) mod tests {
         let config: IngestApiConfig =
             serde_json::from_str(r#"{ "content_length_limit": "1" }"#).unwrap();
         let (universe, _temp_dir, ingest_service, _) =
-            setup_ingest_service(&["my-index"], &IngestApiConfig::default()).await;
+            setup_ingest_v1_service(&["my-index"], &IngestApiConfig::default()).await;
         let ingest_router = IngestRouterServiceClient::mocked();
         let ingest_api_handlers =
             ingest_api_handlers(ingest_router, ingest_service, config.clone(), true, false);
@@ -467,7 +464,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn test_ingest_api_blocks_when_wait_is_specified() {
         let (universe, _temp_dir, ingest_service_client, ingest_service_mailbox) =
-            setup_ingest_service(&["my-index"], &IngestApiConfig::default()).await;
+            setup_ingest_v1_service(&["my-index"], &IngestApiConfig::default()).await;
         let ingest_router = IngestRouterServiceClient::mocked();
         let ingest_api_handlers = ingest_api_handlers(
             ingest_router,
@@ -485,7 +482,7 @@ pub(crate) mod tests {
                 .reply(&ingest_api_handlers)
                 .await;
             assert_eq!(resp.status(), 200);
-            let ingest_response: IngestResponse = serde_json::from_slice(resp.body()).unwrap();
+            let ingest_response: RestIngestResponse = serde_json::from_slice(resp.body()).unwrap();
             assert_eq!(ingest_response.num_docs_for_processing, 1);
         });
         universe.sleep(Duration::from_secs(10)).await;
@@ -518,7 +515,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn test_ingest_api_blocks_when_force_is_specified() {
         let (universe, _temp_dir, ingest_service_client, ingest_service_mailbox) =
-            setup_ingest_service(&["my-index"], &IngestApiConfig::default()).await;
+            setup_ingest_v1_service(&["my-index"], &IngestApiConfig::default()).await;
         let ingest_router = IngestRouterServiceClient::mocked();
         let ingest_api_handlers = ingest_api_handlers(
             ingest_router,
@@ -536,7 +533,7 @@ pub(crate) mod tests {
                 .reply(&ingest_api_handlers)
                 .await;
             assert_eq!(resp.status(), 200);
-            let ingest_response: IngestResponse = serde_json::from_slice(resp.body()).unwrap();
+            let ingest_response: RestIngestResponse = serde_json::from_slice(resp.body()).unwrap();
             assert_eq!(ingest_response.num_docs_for_processing, 1);
         });
         universe.sleep(Duration::from_secs(10)).await;
@@ -563,6 +560,29 @@ pub(crate) mod tests {
             .await
             .unwrap();
         handle.await.unwrap();
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_ingest_api_unsupported_detailed_errors() {
+        let (universe, _temp_dir, ingest_service, _) =
+            setup_ingest_v1_service(&["my-index"], &IngestApiConfig::default()).await;
+        let ingest_router = IngestRouterServiceClient::mocked();
+        let ingest_api_handlers = ingest_api_handlers(
+            ingest_router,
+            ingest_service,
+            IngestApiConfig::default(),
+            true,
+            false,
+        );
+        let resp = warp::test::request()
+            .path("/my-index/ingest?detailed_response=true")
+            .method("POST")
+            .json(&true)
+            .body(r#"{"id": 1, "message": "push"}"#)
+            .reply(&ingest_api_handlers)
+            .await;
+        assert_eq!(resp.status(), 400);
         universe.assert_quit().await;
     }
 }

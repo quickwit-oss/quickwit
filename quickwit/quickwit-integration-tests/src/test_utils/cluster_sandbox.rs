@@ -44,7 +44,9 @@ use quickwit_rest_client::rest_client::{
     CommitType, QuickwitClient, QuickwitClientBuilder, DEFAULT_BASE_URL,
 };
 use quickwit_serve::tcp_listener::for_tests::TestTcpListenerResolver;
-use quickwit_serve::{serve_quickwit, ListSplitsQueryParams, SearchRequestQueryString};
+use quickwit_serve::{
+    serve_quickwit, ListSplitsQueryParams, RestIngestResponse, SearchRequestQueryString,
+};
 use quickwit_storage::StorageResolver;
 use reqwest::Url;
 use serde_json::Value;
@@ -246,11 +248,11 @@ pub(crate) async fn ingest(
     index_id: &str,
     ingest_source: IngestSource,
     commit_type: CommitType,
-) -> anyhow::Result<()> {
-    client
+) -> anyhow::Result<RestIngestResponse> {
+    let resp = client
         .ingest(index_id, ingest_source, None, None, commit_type)
         .await?;
-    Ok(())
+    Ok(resp)
 }
 
 /// A test environment where you can start a Quickwit cluster and use the gRPC
@@ -284,6 +286,15 @@ impl ClusterSandbox {
         let node_config = self.find_node_for_service(service);
 
         QuickwitClientBuilder::new(transport_url(node_config.rest_config.listen_addr)).build()
+    }
+
+    /// A client configured to ingest documents and return detailed parse failures.
+    pub fn detailed_ingest_client(&self) -> QuickwitClient {
+        let node_config = self.find_node_for_service(QuickwitService::Indexer);
+
+        QuickwitClientBuilder::new(transport_url(node_config.rest_config.listen_addr))
+            .detailed_response(true)
+            .build()
     }
 
     // TODO(#5604)

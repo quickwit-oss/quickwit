@@ -122,7 +122,7 @@ impl Default for ClientArgs {
 }
 
 impl ClientArgs {
-    pub fn client(self) -> QuickwitClient {
+    pub fn client_builder(self) -> QuickwitClientBuilder {
         let mut builder = QuickwitClientBuilder::new(self.cluster_endpoint);
         if let Some(connect_timeout) = self.connect_timeout {
             builder = builder.connect_timeout(connect_timeout);
@@ -135,7 +135,11 @@ impl ClientArgs {
         if let Some(commit_timeout) = self.commit_timeout {
             builder = builder.commit_timeout(commit_timeout);
         }
-        builder.build()
+        builder
+    }
+
+    pub fn client(self) -> QuickwitClient {
+        self.client_builder().build()
     }
 
     pub fn parse_for_ingest(matches: &mut ArgMatches) -> anyhow::Result<Self> {

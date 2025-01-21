@@ -242,6 +242,7 @@ mod tests {
                     input_path_opt: None,
                     batch_size_limit_opt: None,
                     commit_type: CommitType::Auto,
+                    detailed_response: false,
                 })) if &index_id == "wikipedia"
                 && client_args.timeout.is_none()
                 && client_args.connect_timeout.is_none()
@@ -255,6 +256,7 @@ mod tests {
             "ingest",
             "--index",
             "wikipedia",
+            "--detailed-response",
             "--batch-size-limit",
             "8MB",
             "--force",
@@ -269,6 +271,7 @@ mod tests {
                     input_path_opt: None,
                     batch_size_limit_opt: Some(batch_size_limit),
                     commit_type: CommitType::Force,
+                    detailed_response: true,
                 })) if &index_id == "wikipedia"
                         && client_args.cluster_endpoint == Url::from_str("http://127.0.0.1:7280").unwrap()
                         && client_args.timeout.is_none()
@@ -297,6 +300,7 @@ mod tests {
                     input_path_opt: None,
                     batch_size_limit_opt: Some(batch_size_limit),
                     commit_type: CommitType::WaitFor,
+                    detailed_response: false,
                 })) if &index_id == "wikipedia"
                     && client_args.cluster_endpoint == Url::from_str("http://127.0.0.1:7280").unwrap()
                     && client_args.timeout.is_none()
@@ -326,6 +330,7 @@ mod tests {
                     input_path_opt: None,
                     batch_size_limit_opt: None,
                     commit_type: CommitType::Auto,
+                    detailed_response: false,
                 })) if &index_id == "wikipedia"
                         && client_args.cluster_endpoint == Url::from_str("http://127.0.0.1:7280").unwrap()
                         && client_args.timeout == Some(Timeout::from_secs(10))
@@ -357,6 +362,7 @@ mod tests {
                     input_path_opt: None,
                     batch_size_limit_opt: None,
                     commit_type: CommitType::WaitFor,
+                    detailed_response: false,
                 })) if &index_id == "wikipedia"
                         && client_args.cluster_endpoint == Url::from_str("http://127.0.0.1:7280").unwrap()
                         && client_args.timeout == Some(Timeout::none())

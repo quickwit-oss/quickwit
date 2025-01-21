@@ -342,6 +342,7 @@ quickwit index ingest
     [--input-path <input-path>]
     [--batch-size-limit <batch-size-limit>]
     [--wait]
+    [--detailed-response]
     [--force]
     [--commit-timeout <commit-timeout>]
 ```
@@ -354,6 +355,7 @@ quickwit index ingest
 | `--input-path` | Location of the input file. |
 | `--batch-size-limit` | Size limit of each submitted document batch. |
 | `--wait` | Wait for all documents to be committed and available for search before exiting. Applies only to the last batch, see [#5417](https://github.com/quickwit-oss/quickwit/issues/5417). |
+| `--detailed-response` | Print detailed errors. Enabling might impact performance negatively. |
 | `--force` | Force a commit after the last document is sent, and wait for all documents to be committed and available for search before exiting. Applies only to the last batch, see [#5417](https://github.com/quickwit-oss/quickwit/issues/5417). |
 | `--commit-timeout` | Timeout for ingest operations that require waiting for the final commit (`--wait` or `--force`). This is different from the `commit_timeout_secs` indexing setting, which sets the maximum time before committing splits after their creation. |
 
