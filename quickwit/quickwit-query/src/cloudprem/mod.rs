@@ -2,14 +2,16 @@ use std::ops::Bound;
 
 use prost::{DecodeError, Message};
 use quickwit_proto::cloudprem::query_node::Node;
-use quickwit_proto::cloudprem::{BooleanOperator, QueryNode};
+use quickwit_proto::cloudprem::{BooleanOperator, QueryNode, SearchQueryMode, WildcardPattern};
 use serde_json::Number;
 
 use crate::query_ast::{
     BoolQuery, FieldPresenceQuery, FullTextMode, FullTextParams, FullTextQuery, PhrasePrefixQuery,
-    QueryAst, RangeQuery, TermQuery, TermSetQuery, WildcardQuery,
+    QueryAst, RangeQuery, TermSetQuery, WildcardQuery,
 };
 use crate::{InvalidQuery, JsonLiteral};
+
+const WES_FIELD: &str = "all";
 
 pub fn parse_query(raw_message: prost_types::Any) -> Result<QueryNode, DecodeError> {
     // TODO validate type url?
@@ -103,10 +105,19 @@ pub fn to_quickwit_query(cloudprem_query: QueryNode) -> Result<QueryAst, Invalid
             }
         }
         // TODO verify terms are already splited when we receive them
-        Node::Term(term_query) => QueryAst::Term(TermQuery {
+        Node::Term(term_query) => FullTextQuery {
             field: term_query.attribute,
-            value: value_to_string(term_query.value, "term.value")?,
-        }),
+            text: value_to_string(term_query.value, "term.value")?,
+            params: FullTextParams {
+                tokenizer: None,
+                mode: FullTextMode::Bool {
+                    operator: crate::BooleanOperand::And,
+                },
+                zero_terms_query: crate::MatchAllOrNone::MatchNone,
+            },
+            lenient: false,
+        }
+        .into(),
         Node::Range(range_query) => {
             let to_bound = |value, inclusive| {
                 if inclusive {
@@ -180,30 +191,7 @@ pub fn to_quickwit_query(cloudprem_query: QueryNode) -> Result<QueryAst, Invalid
         }
         Node::Wildcard(wildcard_query) => {
             let string_wildcard = if let Some(pattern) = wildcard_query.pattern {
-                let mut string_wildcard = String::new();
-                for token in pattern.tokens {
-                    for _ in 0..token.prefix_min_n_wild {
-                        string_wildcard.push('?');
-                    }
-                    if token.prefix_unbounded_n_wild {
-                        string_wildcard.push('*');
-                    }
-                    let mut last_pushed_pos = 0;
-                    for (pos, ctrl_char) in token.literal.match_indices(['?', '*', '\\']) {
-                        string_wildcard.push_str(&token.literal[last_pushed_pos..pos]);
-
-                        match ctrl_char {
-                            "?" => string_wildcard.push_str("\\?"),
-                            "*" => string_wildcard.push_str("\\*"),
-                            "\\" => string_wildcard.push_str("\\\\"),
-                            _ => unreachable!("{ctrl_char:?} was matched by match_indices"),
-                        }
-                        // the control char we found is considered pushed
-                        last_pushed_pos = pos + 1;
-                    }
-                    string_wildcard.push_str(&token.literal[last_pushed_pos..]);
-                }
-                string_wildcard
+                wildcard_pattern_to_string(&pattern)
             } else {
                 // we only do this if upstream did not provide us with a preparsed
                 // (non deprecated) input
@@ -244,9 +232,41 @@ pub fn to_quickwit_query(cloudprem_query: QueryNode) -> Result<QueryAst, Invalid
             // not critical on MVP, and dependant on how we tokenize => reported until later.
             return Err(unsupported_query_error("cidr query"));
         }
-        Node::Search(_) => {
+        Node::Search(search_query) => {
             // this is a *:xxx query (full text on all fields)
-            return Err(unsupported_query_error("whole event search query"));
+            let mode = match search_query.mode() {
+                SearchQueryMode::InvalidSearchMode => return Err(missing_required("search.mode")),
+
+                SearchQueryMode::Wes => FullTextMode::Bool {
+                    operator: crate::BooleanOperand::And,
+                },
+                SearchQueryMode::WesQuoted => FullTextMode::Phrase { slop: 0 },
+                SearchQueryMode::WesPrefix => {
+                    return Err(unsupported_query_error("WES prefix query"))
+                }
+                SearchQueryMode::WesGlob => {
+                    return Err(unsupported_query_error("WES globing query"))
+                }
+            };
+            let string_pattern = if let Some(pattern) = search_query.structured_text {
+                wildcard_pattern_to_string(&pattern)
+            } else {
+                // we only do this if upstream did not provide us with a preparsed
+                // (non deprecated) input
+                #[allow(deprecated)]
+                search_query.text
+            };
+            FullTextQuery {
+                field: WES_FIELD.to_string(),
+                text: string_pattern,
+                params: FullTextParams {
+                    tokenizer: None,
+                    mode,
+                    zero_terms_query: crate::MatchAllOrNone::MatchNone,
+                },
+                lenient: false,
+            }
+            .into()
         }
     };
     Ok(ast)
@@ -256,4 +276,31 @@ impl From<InvalidQuery> for quickwit_proto::cloudprem::CloudPremError {
     fn from(err: InvalidQuery) -> Self {
         Self::InvalidQuery(err.to_string())
     }
+}
+
+fn wildcard_pattern_to_string(pattern: &WildcardPattern) -> String {
+    let mut string_wildcard = String::new();
+    for token in &pattern.tokens {
+        for _ in 0..token.prefix_min_n_wild {
+            string_wildcard.push('?');
+        }
+        if token.prefix_unbounded_n_wild {
+            string_wildcard.push('*');
+        }
+        let mut last_pushed_pos = 0;
+        for (pos, ctrl_char) in token.literal.match_indices(['?', '*', '\\']) {
+            string_wildcard.push_str(&token.literal[last_pushed_pos..pos]);
+
+            match ctrl_char {
+                "?" => string_wildcard.push_str("\\?"),
+                "*" => string_wildcard.push_str("\\*"),
+                "\\" => string_wildcard.push_str("\\\\"),
+                _ => unreachable!("{ctrl_char:?} was matched by match_indices"),
+            }
+            // the control char we found is considered pushed
+            last_pushed_pos = pos + 1;
+        }
+        string_wildcard.push_str(&token.literal[last_pushed_pos..]);
+    }
+    string_wildcard
 }

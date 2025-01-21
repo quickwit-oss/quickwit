@@ -9,7 +9,7 @@ use quickwit_proto::cloudprem::{
 use quickwit_proto::search::{CountHits, Hit, SearchRequest, SortField, SortOrder};
 use quickwit_search::SearchService;
 use serde_json::Value as JsonValue;
-use tracing::info;
+use tracing::{debug, info};
 
 #[allow(dead_code)]
 pub struct CloudPremServiceImpl {
@@ -44,7 +44,10 @@ impl CloudPremService for CloudPremServiceImpl {
         };
         let query_evp_ast = quickwit_query::cloudprem::parse_query(query)
             .map_err(|err| CloudPremError::InvalidQuery(format!("failed to parse query: {err}")))?;
+
+        debug!("received ast: {query_evp_ast:?}");
         let query_ast = quickwit_query::cloudprem::to_quickwit_query(query_evp_ast)?;
+        debug!("converted ast: {query_ast:?}");
 
         let count_hits = if request.should_compute_count {
             CountHits::CountAll
@@ -52,8 +55,8 @@ impl CloudPremService for CloudPremServiceImpl {
             CountHits::Underestimate
         };
         let search_request = SearchRequest {
-            index_id_patterns: vec!["cloudprem".to_string()], /* TODO this should become
-                                                               * configurable and sent by EVP */
+            index_id_patterns: vec!["datadog-op".to_string()], /* TODO this should become
+                                                                * configurable and sent by EVP */
             query_ast: serde_json::to_string(&query_ast)
                 .map_err(|e| CloudPremError::Internal(e.to_string()))?,
             start_timestamp: None,
