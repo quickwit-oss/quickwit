@@ -55,11 +55,12 @@ doc_mapping:
       type: text
       tokenizer: raw
 
-    - name: tags
-      type: json # Best format to store tags is unclear
-      tokenizer: default  
-      record: position
-      fast: true # for range queries
+    # comment for now, since json does not allow arrays (we could support that)
+    #- name: tags
+    #  type: json # Best format to store tags is unclear
+    #  tokenizer: default  
+    #  record: position
+    #  fast: true # for range queries
     
     # The subfiels are `message` and `stack`. Are there others?
     # If all fields are clear, we can convert to object.
