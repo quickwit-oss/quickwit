@@ -26,6 +26,11 @@ indexing_settings:
 # https://github.com/DataDog/logs-backend/blob/prod/domains/event-platform/libs/percolation/src/main/resources/elasticsearch/mappings/_root_event.conf
 # Note that not all fields in event.conf and _root_event.conf are handled here yet
 
+# TODO Check following field names:
+# tiebreaker(i64): used to differentiate logs with the same timestamp, which are stored only as ms. QW stores timestamp as ns. https://datadoghq.atlassian.net/wiki/spaces/LB/pages/1885536545/FAQ#I-sent-events-in-the-same-millisecond-but-with-a-timestamp-attribute-with-different-nanoseconds.-All-the-events-are-mixed-up-in-the-explorer.-How-to-explain-this%3F
+# host_id(u64): A number for the host_id. How is it generated? Is is required?
+# random_draw(f64), source_fragment_id(string), trace_id_low(string)
+
 doc_mapping:
   mode: dynamic # To include `custom` attributes
   dynamic_mapping:  
