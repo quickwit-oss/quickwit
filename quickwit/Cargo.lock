@@ -10252,8 +10252,9 @@ dependencies = [
 
 [[package]]
 name = "whichlang"
-version = "0.1.0"
-source = "git+https://github.com/quickwit-oss/whichlang?rev=fe406416#fe406416cbad9849f790a274d25b2a53caccd2fa"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b9aa3ad29c3d08283ac6b769e3ec15ad1ddb88af7d2e9bc402c574973b937e7"
 
 [[package]]
 name = "whoami"

@@ -273,7 +273,7 @@ vrl = { version = "0.19", default-features = false, features = [
   "value",
 ] }
 warp = "0.3"
-whichlang = { git = "https://github.com/quickwit-oss/whichlang", rev = "fe406416" }
+whichlang = "0.1"
 wiremock = "0.5"
 zstd = "0.13.0"
 
