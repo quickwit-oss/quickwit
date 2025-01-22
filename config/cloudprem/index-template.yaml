@@ -45,6 +45,11 @@ doc_mapping:
       record: position
       fast: true
 
+    # Seems to be used only internally, e.g. for paging
+    - name: id
+      type: text
+      tokenizer: raw
+
     - name: tags
       type: json # Best format to store tags is unclear
       tokenizer: default  
@@ -88,6 +93,7 @@ doc_mapping:
       type: text
       tokenizer: raw
       fast: true
+      
 
    # TODO: normally there is an `sds_info` object. Check OP SDS scanner:
    # https://docs.datadoghq.com/observability_pipelines/processors/sensitive_data_scanner
