@@ -50,7 +50,7 @@ async fn test_update_doc_mapping_restart_indexing_pipeline() {
         // The starting time is a bit long for a cluster.
         tokio::time::sleep(Duration::from_secs(3)).await;
         let indexing_service_counters = sandbox
-            .indexer_rest_client
+            .rest_client(QuickwitService::Indexer)
             .node_stats()
             .indexing()
             .await
@@ -65,7 +65,7 @@ async fn test_update_doc_mapping_restart_indexing_pipeline() {
 
     // Create index
     sandbox
-        .indexer_rest_client
+        .rest_client(QuickwitService::Indexer)
         .indexes()
         .create(
             json!({
@@ -89,7 +89,7 @@ async fn test_update_doc_mapping_restart_indexing_pipeline() {
         .unwrap();
 
     assert!(sandbox
-        .indexer_rest_client
+        .rest_client(QuickwitService::Indexer)
         .node_health()
         .is_live()
         .await
@@ -106,7 +106,7 @@ async fn test_update_doc_mapping_restart_indexing_pipeline() {
     // ingest some documents with old doc mapping.
     // we *don't* use local ingest to use a normal indexing pipeline
     sandbox
-        .indexer_rest_client
+        .rest_client(QuickwitService::Indexer)
         .ingest(
             index_id,
             IngestSource::Str(payload.clone()),
@@ -128,7 +128,7 @@ async fn test_update_doc_mapping_restart_indexing_pipeline() {
     // the pipeline gets killed and restarted (in practice as this cluster is very lightly loaded,
     // it will almost always kill the pipeline before these documents are commited)
     sandbox
-        .indexer_rest_client
+        .rest_client(QuickwitService::Indexer)
         .ingest(
             index_id,
             IngestSource::Str(payload.clone()),
@@ -141,7 +141,7 @@ async fn test_update_doc_mapping_restart_indexing_pipeline() {
 
     // Update index
     sandbox
-        .searcher_rest_client
+        .rest_client(QuickwitService::Searcher)
         .indexes()
         .update(
             index_id,
@@ -168,7 +168,7 @@ async fn test_update_doc_mapping_restart_indexing_pipeline() {
     // the pipeline gets killed and restarted. In practice this will almost always use the new
     // mapping on a lightly loaded cluster.
     sandbox
-        .indexer_rest_client
+        .rest_client(QuickwitService::Indexer)
         .ingest(
             index_id,
             IngestSource::Str(payload.clone()),
@@ -188,7 +188,7 @@ async fn test_update_doc_mapping_restart_indexing_pipeline() {
 
     // we ingest again, definitely with the up to date doc mapper this time
     sandbox
-        .indexer_rest_client
+        .rest_client(QuickwitService::Indexer)
         .ingest(
             index_id,
             IngestSource::Str(payload.clone()),
@@ -206,7 +206,7 @@ async fn test_update_doc_mapping_restart_indexing_pipeline() {
         .unwrap();
 
     let splits = sandbox
-        .indexer_rest_client
+        .rest_client(QuickwitService::Indexer)
         .splits(index_id)
         .list(ListSplitsQueryParams::default())
         .await

@@ -87,11 +87,6 @@ impl MetastoreService for ControlPlaneMetastore {
         Ok(response)
     }
 
-    // Technically, proxying this call via the control plane is not necessary at the moment because
-    // it does not modify attributes the control plane cares about (retention policy, search
-    // settings). However, it would be easy to forget to do so when we add the ability to update the
-    // doc mapping or merge policy of an index, so we've already set up the proxy here since calling
-    // `update_index` is very infrequent anyway.
     async fn update_index(
         &self,
         request: UpdateIndexRequest,

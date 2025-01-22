@@ -18,3 +18,9 @@ Quickwit 0.7.1 will create the new index `otel-logs-v0_7` which is now used by d
 
 In the traces index `otel-traces-v0_7`, the `service_name` field is now `fast`. 
 No migration is done if `otel-traces-v0_7` already exists. If you want `service_name` field to be `fast`, you have to delete first the existing `otel-traces-v0_7` index or you need to create your own index.
+
+## Migration from 0.8 to 0.9
+
+Quickwit 0.9 introduces a new ingestion service to to power the ingest and bulk APIs (v2). The new ingest is enabled and used by default, even though the legacy one (v1) remains enabled to finish indexing residual data in the legacy write ahead logs. Note that `ingest_api.max_queue_disk_usage` is enforced on both ingest versions separately, which means that the cumulated disk usage might be up to twice this limit.
+
+The control plane should be upgraded first in order to enable the new ingest source (v2) on all existing indexes. Ingested data into previously existing indexes on upgraded indexer nodes will not be picked by the indexing pipelines until the control plane is upgraded.

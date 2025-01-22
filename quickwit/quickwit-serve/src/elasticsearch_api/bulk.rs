@@ -192,14 +192,14 @@ mod tests {
     use crate::elasticsearch_api::elastic_api_handlers;
     use crate::elasticsearch_api::model::ElasticsearchError;
     use crate::elasticsearch_api::tests::mock_cluster;
-    use crate::ingest_api::setup_ingest_service;
+    use crate::ingest_api::setup_ingest_v1_service;
 
     #[tokio::test]
     async fn test_bulk_api_returns_404_if_index_id_does_not_exist() {
         let config = Arc::new(NodeConfig::for_test());
         let search_service = Arc::new(MockSearchService::new());
         let (universe, _temp_dir, ingest_service, _) =
-            setup_ingest_service(&["my-index"], &IngestApiConfig::default()).await;
+            setup_ingest_v1_service(&["my-index"], &IngestApiConfig::default()).await;
         let ingest_router = IngestRouterServiceClient::mocked();
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
@@ -234,7 +234,8 @@ mod tests {
         let config = Arc::new(NodeConfig::for_test());
         let search_service = Arc::new(MockSearchService::new());
         let (universe, _temp_dir, ingest_service, _) =
-            setup_ingest_service(&["my-index-1", "my-index-2"], &IngestApiConfig::default()).await;
+            setup_ingest_v1_service(&["my-index-1", "my-index-2"], &IngestApiConfig::default())
+                .await;
         let ingest_router = IngestRouterServiceClient::mocked();
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
@@ -273,7 +274,7 @@ mod tests {
         let config = Arc::new(NodeConfig::for_test());
         let search_service = Arc::new(MockSearchService::new());
         let (universe, _temp_dir, ingest_service, _) =
-            setup_ingest_service(&["my-index-1"], &IngestApiConfig::default()).await;
+            setup_ingest_v1_service(&["my-index-1"], &IngestApiConfig::default()).await;
         let ingest_router = IngestRouterServiceClient::mocked();
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
@@ -309,7 +310,8 @@ mod tests {
         let config = Arc::new(NodeConfig::for_test());
         let search_service = Arc::new(MockSearchService::new());
         let (universe, _temp_dir, ingest_service, _) =
-            setup_ingest_service(&["my-index-1", "my-index-2"], &IngestApiConfig::default()).await;
+            setup_ingest_v1_service(&["my-index-1", "my-index-2"], &IngestApiConfig::default())
+                .await;
         let ingest_router = IngestRouterServiceClient::mocked();
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
@@ -348,7 +350,8 @@ mod tests {
         let config = Arc::new(NodeConfig::for_test());
         let search_service = Arc::new(MockSearchService::new());
         let (universe, _temp_dir, ingest_service, ingest_service_mailbox) =
-            setup_ingest_service(&["my-index-1", "my-index-2"], &IngestApiConfig::default()).await;
+            setup_ingest_v1_service(&["my-index-1", "my-index-2"], &IngestApiConfig::default())
+                .await;
         let ingest_router = IngestRouterServiceClient::mocked();
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
@@ -438,7 +441,8 @@ mod tests {
         let config = Arc::new(NodeConfig::for_test());
         let search_service = Arc::new(MockSearchService::new());
         let (universe, _temp_dir, ingest_service, ingest_service_mailbox) =
-            setup_ingest_service(&["my-index-1", "my-index-2"], &IngestApiConfig::default()).await;
+            setup_ingest_v1_service(&["my-index-1", "my-index-2"], &IngestApiConfig::default())
+                .await;
         let ingest_router = IngestRouterServiceClient::mocked();
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());

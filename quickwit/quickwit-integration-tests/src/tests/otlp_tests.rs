@@ -78,9 +78,9 @@ async fn test_ingest_traces_with_otlp_grpc_api() {
 
     // Send the spans on the default index
     let tested_clients = vec![
-        sandbox.trace_client.clone(),
+        sandbox.trace_client().clone(),
         sandbox
-            .trace_client
+            .trace_client()
             .clone()
             .send_compressed(CompressionEncoding::Gzip),
     ];
@@ -122,7 +122,7 @@ async fn test_ingest_traces_with_otlp_grpc_api() {
             tonic::metadata::MetadataValue::try_from("non-existing-index").unwrap(),
         );
         let status = sandbox
-            .trace_client
+            .trace_client()
             .clone()
             .export(tonic_request)
             .await
@@ -171,9 +171,9 @@ async fn test_ingest_logs_with_otlp_grpc_api() {
 
     // Send the logs on the default index
     let tested_clients = vec![
-        sandbox.logs_client.clone(),
+        sandbox.logs_client().clone(),
         sandbox
-            .logs_client
+            .logs_client()
             .clone()
             .send_compressed(CompressionEncoding::Gzip),
     ];
@@ -229,7 +229,7 @@ async fn test_jaeger_api() {
         resource_spans: make_resource_spans_for_test(),
     };
     sandbox
-        .trace_client
+        .trace_client()
         .export(export_trace_request)
         .await
         .unwrap();
@@ -248,7 +248,7 @@ async fn test_jaeger_api() {
         // Test `GetServices`
         let get_services_request = GetServicesRequest {};
         let get_services_response = sandbox
-            .jaeger_client
+            .jaeger_client()
             .get_services(tonic::Request::new(get_services_request))
             .await
             .unwrap()
@@ -262,7 +262,7 @@ async fn test_jaeger_api() {
             span_kind: "".to_string(),
         };
         let get_operations_response = sandbox
-            .jaeger_client
+            .jaeger_client()
             .get_operations(tonic::Request::new(get_operations_request))
             .await
             .unwrap()
@@ -295,7 +295,7 @@ async fn test_jaeger_api() {
             span_kind: "server".to_string(),
         };
         let get_operations_response = sandbox
-            .jaeger_client
+            .jaeger_client()
             .get_operations(tonic::Request::new(get_operations_request))
             .await
             .unwrap()
@@ -325,7 +325,7 @@ async fn test_jaeger_api() {
         };
         let find_trace_ids_request = FindTraceIDsRequest { query: Some(query) };
         let find_trace_ids_response = sandbox
-            .jaeger_client
+            .jaeger_client()
             .find_trace_i_ds(tonic::Request::new(find_trace_ids_request))
             .await
             .unwrap()
@@ -346,7 +346,7 @@ async fn test_jaeger_api() {
         };
         let find_trace_ids_request = FindTraceIDsRequest { query: Some(query) };
         let find_trace_ids_response = sandbox
-            .jaeger_client
+            .jaeger_client()
             .find_trace_i_ds(tonic::Request::new(find_trace_ids_request))
             .await
             .unwrap()
@@ -367,7 +367,7 @@ async fn test_jaeger_api() {
         };
         let find_trace_ids_request = FindTraceIDsRequest { query: Some(query) };
         let find_trace_ids_response = sandbox
-            .jaeger_client
+            .jaeger_client()
             .find_trace_i_ds(tonic::Request::new(find_trace_ids_request))
             .await
             .unwrap()
@@ -388,7 +388,7 @@ async fn test_jaeger_api() {
         };
         let find_trace_ids_request = FindTraceIDsRequest { query: Some(query) };
         let find_trace_ids_response = sandbox
-            .jaeger_client
+            .jaeger_client()
             .find_trace_i_ds(tonic::Request::new(find_trace_ids_request))
             .await
             .unwrap()
@@ -409,7 +409,7 @@ async fn test_jaeger_api() {
         };
         let find_trace_ids_request = FindTraceIDsRequest { query: Some(query) };
         let find_trace_ids_response = sandbox
-            .jaeger_client
+            .jaeger_client()
             .find_trace_i_ds(tonic::Request::new(find_trace_ids_request))
             .await
             .unwrap()
@@ -423,7 +423,7 @@ async fn test_jaeger_api() {
             trace_id: [1; 16].to_vec(),
         };
         let mut span_stream = sandbox
-            .jaeger_client
+            .jaeger_client()
             .get_trace(tonic::Request::new(get_trace_request))
             .await
             .unwrap()

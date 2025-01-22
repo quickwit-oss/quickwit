@@ -115,16 +115,6 @@ pub async fn start_ingest_api_service(
     init_ingest_api(universe, &queues_dir_path, config).await
 }
 
-impl CommitType {
-    pub fn to_query_parameter(&self) -> Option<&'static [(&'static str, &'static str)]> {
-        match self {
-            CommitType::Auto => None,
-            CommitType::WaitFor => Some(&[("commit", "wait_for")]),
-            CommitType::Force => Some(&[("commit", "force")]),
-        }
-    }
-}
-
 #[macro_export]
 macro_rules! with_lock_metrics {
     ($future:expr, $($label:tt),*) => {

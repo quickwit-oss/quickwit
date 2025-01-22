@@ -48,6 +48,8 @@ pub enum IngestServiceError {
     RateLimited(RateLimitingCause),
     #[error("ingest service is unavailable ({0})")]
     Unavailable(String),
+    #[error("bad request ({0})")]
+    BadRequest(String),
 }
 
 impl From<AskError<IngestServiceError>> for IngestServiceError {
@@ -161,6 +163,7 @@ impl ServiceError for IngestServiceError {
             }
             Self::RateLimited(_) => ServiceErrorCode::TooManyRequests,
             Self::Unavailable(_) => ServiceErrorCode::Unavailable,
+            Self::BadRequest(_) => ServiceErrorCode::BadRequest,
         }
     }
 }
@@ -204,6 +207,7 @@ impl From<IngestServiceError> for tonic::Status {
             IngestServiceError::IoError { .. } => tonic::Code::Internal,
             IngestServiceError::RateLimited(_) => tonic::Code::ResourceExhausted,
             IngestServiceError::Unavailable(_) => tonic::Code::Unavailable,
+            IngestServiceError::BadRequest(_) => tonic::Code::InvalidArgument,
         };
         let message = error.to_string();
         tonic::Status::new(code, message)

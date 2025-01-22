@@ -44,7 +44,7 @@ async fn test_update_search_settings_on_multi_nodes_cluster() {
         // The starting time is a bit long for a cluster.
         tokio::time::sleep(Duration::from_secs(3)).await;
         let indexing_service_counters = sandbox
-            .indexer_rest_client
+            .rest_client(QuickwitService::Indexer)
             .node_stats()
             .indexing()
             .await
@@ -54,7 +54,7 @@ async fn test_update_search_settings_on_multi_nodes_cluster() {
 
     // Create an index
     sandbox
-        .indexer_rest_client
+        .rest_client(QuickwitService::Indexer)
         .indexes()
         .create(
             r#"
@@ -77,7 +77,7 @@ async fn test_update_search_settings_on_multi_nodes_cluster() {
         .await
         .unwrap();
     assert!(sandbox
-        .indexer_rest_client
+        .rest_client(QuickwitService::Indexer)
         .node_health()
         .is_live()
         .await
@@ -87,7 +87,7 @@ async fn test_update_search_settings_on_multi_nodes_cluster() {
     sandbox.wait_for_indexing_pipelines(1).await.unwrap();
 
     ingest(
-        &sandbox.indexer_rest_client,
+        &sandbox.rest_client(QuickwitService::Indexer),
         "my-updatable-index",
         ingest_json!({"title": "first", "body": "first record"}),
         CommitType::Auto,
@@ -104,7 +104,7 @@ async fn test_update_search_settings_on_multi_nodes_cluster() {
     // Update the index to also search `body` by default, the same search should
     // now have 1 hit
     sandbox
-        .indexer_rest_client
+        .rest_client(QuickwitService::Indexer)
         .indexes()
         .update(
             "my-updatable-index",

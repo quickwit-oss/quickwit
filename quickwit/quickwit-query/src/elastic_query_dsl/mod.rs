@@ -29,6 +29,7 @@ mod one_field_map;
 mod phrase_prefix_query;
 mod query_string_query;
 mod range_query;
+mod regex_query;
 mod string_or_struct;
 mod term_query;
 mod terms_query;
@@ -46,6 +47,7 @@ use crate::elastic_query_dsl::match_bool_prefix::MatchBoolPrefixQuery;
 use crate::elastic_query_dsl::match_phrase_query::MatchPhraseQuery;
 use crate::elastic_query_dsl::match_query::MatchQuery;
 use crate::elastic_query_dsl::multi_match::MultiMatchQuery;
+use crate::elastic_query_dsl::regex_query::RegexQuery;
 use crate::elastic_query_dsl::terms_query::TermsQuery;
 use crate::not_nan_f32::NotNaNf32;
 use crate::query_ast::QueryAst;
@@ -87,6 +89,7 @@ pub(crate) enum ElasticQueryDslInner {
     MultiMatch(MultiMatchQuery),
     Range(RangeQuery),
     Exists(ExistsQuery),
+    Regexp(RegexQuery),
 }
 
 #[derive(Deserialize, Debug, Eq, PartialEq, Clone)]
@@ -134,6 +137,7 @@ impl ConvertibleToQueryAst for ElasticQueryDslInner {
             Self::Match(match_query) => match_query.convert_to_query_ast(),
             Self::Exists(exists_query) => exists_query.convert_to_query_ast(),
             Self::MultiMatch(multi_match_query) => multi_match_query.convert_to_query_ast(),
+            Self::Regexp(regex_query) => regex_query.convert_to_query_ast(),
         }
     }
 }

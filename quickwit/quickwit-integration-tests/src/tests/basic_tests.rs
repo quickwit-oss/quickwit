@@ -56,7 +56,7 @@ async fn test_standalone_server() {
     {
         // The indexing service should be running.
         let counters = sandbox
-            .indexer_rest_client
+            .rest_client(QuickwitService::Indexer)
             .node_stats()
             .indexing()
             .await
@@ -67,7 +67,7 @@ async fn test_standalone_server() {
     {
         // Create an dynamic index.
         sandbox
-            .indexer_rest_client
+            .rest_client(QuickwitService::Indexer)
             .indexes()
             .create(
                 r#"
@@ -87,7 +87,7 @@ async fn test_standalone_server() {
         // Index should be searchable
         assert_eq!(
             sandbox
-                .indexer_rest_client
+                .rest_client(QuickwitService::Indexer)
                 .search(
                     "my-new-index",
                     SearchRequestQueryString {
@@ -119,7 +119,7 @@ async fn test_multi_nodes_cluster() {
         .await;
 
     sandbox
-        .indexer_rest_client
+        .rest_client(QuickwitService::Indexer)
         .indexes()
         .create(
             r#"
@@ -139,7 +139,7 @@ async fn test_multi_nodes_cluster() {
         .unwrap();
 
     assert!(sandbox
-        .indexer_rest_client
+        .rest_client(QuickwitService::Indexer)
         .node_health()
         .is_live()
         .await
@@ -150,7 +150,7 @@ async fn test_multi_nodes_cluster() {
 
     // Check that search is working
     let search_response_empty = sandbox
-        .searcher_rest_client
+        .rest_client(QuickwitService::Searcher)
         .search(
             "my-new-multi-node-index",
             SearchRequestQueryString {

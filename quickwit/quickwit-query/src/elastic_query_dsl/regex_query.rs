@@ -17,11 +17,27 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-mod response;
-mod rest_handler;
+use serde::Deserialize;
 
-pub use response::{RestIngestResponse, RestParseFailure};
-#[cfg(test)]
-pub(crate) use rest_handler::tests::setup_ingest_v1_service;
-pub(crate) use rest_handler::{ingest_api_handlers, lines};
-pub use rest_handler::{IngestApi, IngestApiSchemas};
+use crate::elastic_query_dsl::one_field_map::OneFieldMap;
+use crate::elastic_query_dsl::ConvertibleToQueryAst;
+use crate::query_ast::{QueryAst, RegexQuery as AstRegexQuery};
+
+#[derive(Deserialize, Debug, Default, Eq, PartialEq, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct RegexQueryParams {
+    value: String,
+    // we could probably add case_insensitive
+}
+
+pub type RegexQuery = OneFieldMap<RegexQueryParams>;
+
+impl ConvertibleToQueryAst for RegexQuery {
+    fn convert_to_query_ast(self) -> anyhow::Result<QueryAst> {
+        Ok(AstRegexQuery {
+            field: self.field,
+            regex: self.value.value,
+        }
+        .into())
+    }
+}

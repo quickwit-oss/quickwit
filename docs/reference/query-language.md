@@ -75,14 +75,21 @@ Matches documents if the targeted field contains a token equal to the provided t
 
 `field:value` will match any document where the field 'field' has a token 'value'.
 
-### Term Prefix `field:prefix*`
+### Wildcard `field:wil?car*d`
 ```
-term_prefix = term '*'
+wildcard = [term_char\*\?]+
 ```
 
-Matches documents if the targeted field contains a token which starts with the provided value.
+Matches documents if the targeted field contains a token that matches the wildcard:
+- `?` replaces one and only one term character
+- `*` replaces any number of term characters or an empty string
 
-`field:quick*` will match any document where the field 'field' has a token like `quickwit` or `quickstart`, but not `qui` or `abcd`.
+Examples:
+- `field:quick*` will match any document where the field 'field' has a token like `quickwit` or `quickstart`, but not `qui` or `abcd`.
+- `field:h?llo` will match any document where the field 'field' has a token like `hello` or `hallo`, but not `heillo` or `hllo`.
+
+Queries with prefixes (`field:qui*`) are much more efficient than queries starting with a wildcard (`field:*wit`)
+
 
 ### Term set `field:IN [a b c]`
 ```
@@ -110,8 +117,15 @@ slop = '~' [01-9]+
 
 ```
 
-Matches if the field contains the sequence of token provided. `field:"looks good to me"` will match any document containing that sequence of tokens.
+Matches if the field contains the sequence of token provided:
+- `field:"looks good to me"` will match any document containing that sequence of tokens.
+- `field:"look* good to me"` with the default tokenizer is equivalent to `field:"look good to me"`, i.e. the '*' character is pruned by the tokenizer and not interpreted as a wildcard.
+
+:::info
+
 The field must have been configured with `record: position` when indexing.
+
+:::
 
 ###### Slop operator
 Is is also possible to add a slop, which allow matching a sequence with some distance. For instance `"looks to me"~1` will match "looks good to me", but not "looks very good to me".

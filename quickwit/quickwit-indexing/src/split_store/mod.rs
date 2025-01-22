@@ -17,10 +17,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+mod indexing_split_cache;
 mod indexing_split_store;
-mod local_split_store;
 mod split_store_quota;
 
+pub use indexing_split_cache::{get_tantivy_directory_from_split_bundle, IndexingSplitCache};
 pub use indexing_split_store::IndexingSplitStore;
-pub use local_split_store::{get_tantivy_directory_from_split_bundle, LocalSplitStore};
 pub use split_store_quota::SplitStoreQuota;

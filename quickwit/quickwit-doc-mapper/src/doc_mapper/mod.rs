@@ -85,6 +85,15 @@ pub struct TermRange {
     pub limit: Option<u64>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// Supported automaton types to warmup
+pub enum Automaton {
+    /// A regex in it's str representation as tantivy_fst::Regex isn't PartialEq, and the path if
+    /// inside a json field
+    Regex(Option<Vec<u8>>, String),
+    // we could add termset query here, instead of downloading the whole dictionary
+}
+
 /// Description of how a fast field should be warmed up
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FastFieldWarmupInfo {
@@ -109,6 +118,8 @@ pub struct WarmupInfo {
     pub terms_grouped_by_field: HashMap<Field, HashMap<Term, bool>>,
     /// Term ranges to warmup, and whether their position is needed too.
     pub term_ranges_grouped_by_field: HashMap<Field, HashMap<TermRange, bool>>,
+    /// Automatons to warmup
+    pub automatons_grouped_by_field: HashMap<Field, HashSet<Automaton>>,
 }
 
 impl WarmupInfo {
@@ -142,6 +153,11 @@ impl WarmupInfo {
             for (term_range, include_position) in term_range_and_pos.into_iter() {
                 *sub_map.entry(term_range).or_default() |= include_position;
             }
+        }
+
+        for (field, automatons) in other.automatons_grouped_by_field.into_iter() {
+            let sub_map = self.automatons_grouped_by_field.entry(field).or_default();
+            sub_map.extend(automatons);
         }
     }
 
@@ -599,6 +615,13 @@ mod tests {
             .collect()
     }
 
+    fn automaton_hashset(elements: &[&str]) -> HashSet<Automaton> {
+        elements
+            .iter()
+            .map(|elem| Automaton::Regex(None, elem.to_string()))
+            .collect()
+    }
+
     fn hashset_field(elements: &[u32]) -> HashSet<Field> {
         elements
             .iter()
@@ -648,6 +671,12 @@ mod tests {
                 (2, "term1", false),
                 (2, "term2", false),
             ]),
+            automatons_grouped_by_field: [(
+                Field::from_field_id(1),
+                automaton_hashset(&["my_reg.*ex"]),
+            )]
+            .into_iter()
+            .collect(),
         };
 
         // merging with default has no impact
@@ -665,6 +694,12 @@ mod tests {
                 (3, "term1", false),
                 (2, "term2", true),
             ]),
+            automatons_grouped_by_field: [
+                (Field::from_field_id(1), automaton_hashset(&["other-re.ex"])),
+                (Field::from_field_id(2), automaton_hashset(&["my_reg.*ex"])),
+            ]
+            .into_iter()
+            .collect(),
         };
         wi_base.merge(wi_2.clone());
 
@@ -712,6 +747,17 @@ mod tests {
             );
         }
 
+        let expected_automatons = [(1, "my_reg.*ex"), (1, "other-re.ex"), (2, "my_reg.*ex")];
+        for (field, regex) in expected_automatons {
+            let field = Field::from_field_id(field);
+            let automaton = Automaton::Regex(None, regex.to_string());
+            assert!(wi_base
+                .automatons_grouped_by_field
+                .get(&field)
+                .unwrap()
+                .contains(&automaton));
+        }
+
         // merge is idempotent
         let mut wi_cloned = wi_base.clone();
         wi_cloned.merge(wi_2);
@@ -734,6 +780,13 @@ mod tests {
                 (1, "term2", true),
                 (2, "term3", false),
             ]),
+            automatons_grouped_by_field: [
+                (Field::from_field_id(1), automaton_hashset(&["other-re.ex"])),
+                (Field::from_field_id(1), automaton_hashset(&["other-re.ex"])),
+                (Field::from_field_id(2), automaton_hashset(&["my_reg.ex"])),
+            ]
+            .into_iter()
+            .collect(),
         };
         let expected = WarmupInfo {
             term_dict_fields: hashset_field(&[1]),
@@ -744,6 +797,12 @@ mod tests {
                 (1, "term2", true),
                 (2, "term3", false),
             ]),
+            automatons_grouped_by_field: [
+                (Field::from_field_id(1), automaton_hashset(&["other-re.ex"])),
+                (Field::from_field_id(2), automaton_hashset(&["my_reg.ex"])),
+            ]
+            .into_iter()
+            .collect(),
         };
 
         warmup_info.simplify();

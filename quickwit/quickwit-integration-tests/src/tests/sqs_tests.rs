@@ -25,6 +25,7 @@ use std::time::Duration;
 use aws_sdk_sqs::types::QueueAttributeName;
 use quickwit_common::test_utils::wait_until_predicate;
 use quickwit_common::uri::Uri;
+use quickwit_config::service::QuickwitService;
 use quickwit_config::ConfigFormat;
 use quickwit_indexing::source::sqs_queue::test_helpers as sqs_test_helpers;
 use quickwit_metastore::SplitState;
@@ -66,7 +67,7 @@ async fn test_sqs_with_duplicates() {
     let queue_url = sqs_test_helpers::create_queue(&sqs_client, "test-single-node-cluster").await;
 
     sandbox
-        .indexer_rest_client
+        .rest_client(QuickwitService::Indexer)
         .indexes()
         .create(index_config.clone(), ConfigFormat::Yaml, false)
         .await
@@ -91,7 +92,7 @@ async fn test_sqs_with_duplicates() {
     );
 
     sandbox
-        .indexer_rest_client
+        .rest_client(QuickwitService::Indexer)
         .sources(index_id)
         .create(source_config_input, ConfigFormat::Yaml)
         .await
@@ -139,7 +140,7 @@ async fn test_sqs_with_duplicates() {
     .expect("number of in-flight messages didn't reach 2 within the timeout");
 
     sandbox
-        .indexer_rest_client
+        .rest_client(QuickwitService::Indexer)
         .indexes()
         .delete(index_id, false)
         .await
@@ -171,7 +172,7 @@ async fn test_sqs_garbage_collect() {
     let queue_url = sqs_test_helpers::create_queue(&sqs_client, "test-single-node-cluster").await;
 
     sandbox
-        .indexer_rest_client
+        .rest_client(QuickwitService::Indexer)
         .indexes()
         .create(index_config.clone(), ConfigFormat::Yaml, false)
         .await
@@ -198,7 +199,7 @@ async fn test_sqs_garbage_collect() {
     );
 
     sandbox
-        .indexer_rest_client
+        .rest_client(QuickwitService::Indexer)
         .sources(index_id)
         .create(source_config_input, ConfigFormat::Yaml)
         .await
@@ -221,7 +222,7 @@ async fn test_sqs_garbage_collect() {
     wait_until_predicate(
         || async {
             let shard_count = sandbox
-                .indexer_rest_client
+                .rest_client(QuickwitService::Indexer)
                 .sources(index_id)
                 .get_shards(source_id)
                 .await
@@ -237,7 +238,7 @@ async fn test_sqs_garbage_collect() {
     .expect("shards where not pruned within the timeout");
 
     sandbox
-        .indexer_rest_client
+        .rest_client(QuickwitService::Indexer)
         .indexes()
         .delete(index_id, false)
         .await
