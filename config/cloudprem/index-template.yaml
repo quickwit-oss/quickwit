@@ -82,13 +82,11 @@ doc_mapping:
       fast: true
     - name: trace_id
       type: text
-      tokenizer: default  
-      record: position # for phrase search
+      tokenizer: raw
       fast: true
     - name: span_id
       type: text
-      tokenizer: default  
-      record: position # for phrase search
+      tokenizer: raw
       fast: true
 
    # TODO: normally there is an `sds_info` object. Check OP SDS scanner:
