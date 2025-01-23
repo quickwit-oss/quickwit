@@ -10,7 +10,7 @@ for file in $(git ls-files | \
     grep -v "/codegen/" \
 )
 do
-    diff <(sed 's/{\\d+}/2024/' .license_header.txt) <(head -n 19 $file) > /dev/null
+    diff <(sed 's/{\\d+}/2021/' .license_header.txt) <(head -n 14 $file) > /dev/null
     DIFFRESULT=$?
     if [ $DIFFRESULT -ne 0 ]; then
         grep -q -i 'begin quickwit-codegen' $file
