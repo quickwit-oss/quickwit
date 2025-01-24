@@ -40,7 +40,7 @@ doc_mapping:
     record: position # for phrase queries
     fast: true # for range queries
   field_mappings:
-    - name: timestamp # RFC3339
+    - name: timestamp # TODO: The recognized date formats are: ISO8601, UNIX (the milliseconds EPOCH format), and RFC3164.
       type: datetime
       fast: true
 
