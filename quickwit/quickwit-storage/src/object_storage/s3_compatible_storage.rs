@@ -81,11 +81,13 @@ pub struct S3CompatibleObjectStorage {
     s3_client: S3Client,
     uri: Uri,
     bucket: String,
-    prefix: PathBuf,
+    prefix: String,
     multipart_policy: MultiPartPolicy,
     retry_params: RetryParams,
     disable_multi_object_delete: bool,
     disable_multipart_upload: bool,
+    // If 0, we don't have any prefix
+    hash_prefix_cardinality: usize,
 }
 
 impl fmt::Debug for S3CompatibleObjectStorage {
@@ -94,6 +96,7 @@ impl fmt::Debug for S3CompatibleObjectStorage {
             .debug_struct("S3CompatibleObjectStorage")
             .field("bucket", &self.bucket)
             .field("prefix", &self.prefix)
+            .field("hash_prefix_cardinality", &self.hash_prefix_cardinality)
             .finish()
     }
 }
@@ -176,11 +179,12 @@ impl S3CompatibleObjectStorage {
             s3_client,
             uri: uri.clone(),
             bucket,
-            prefix,
+            prefix: prefix.to_string_lossy().to_string(),
             multipart_policy: MultiPartPolicy::default(),
             retry_params,
             disable_multi_object_delete,
             disable_multipart_upload,
+            hash_prefix_cardinality: s3_storage_config.hash_prefix_cardinality,
         })
     }
 
@@ -188,7 +192,7 @@ impl S3CompatibleObjectStorage {
     ///
     /// This method overrides any existing prefix. (It does NOT
     /// append the argument to any existing prefix.)
-    pub fn with_prefix(self, prefix: PathBuf) -> Self {
+    pub fn with_prefix(self, prefix: String) -> Self {
         Self {
             s3_client: self.s3_client,
             uri: self.uri,
@@ -198,6 +202,7 @@ impl S3CompatibleObjectStorage {
             retry_params: self.retry_params,
             disable_multi_object_delete: self.disable_multi_object_delete,
             disable_multipart_upload: self.disable_multipart_upload,
+            hash_prefix_cardinality: self.hash_prefix_cardinality,
         }
     }
 
@@ -257,12 +262,49 @@ async fn compute_md5<T: AsyncRead + std::marker::Unpin>(mut read: T) -> io::Resu
         }
     }
 }
+const HEX_ALPHABET: [u8; 16] = *b"0123456789abcdef";
+const UNINITIALIZED_HASH_PREFIX: &str = "00000000";
+
+fn build_key(prefix: &str, relative_path: &str, hash_prefix_cardinality: usize) -> String {
+    let mut key = String::with_capacity(
+        UNINITIALIZED_HASH_PREFIX.len() + 1 + prefix.len() + 1 + relative_path.len(),
+    );
+    if hash_prefix_cardinality > 1 {
+        key.push_str(UNINITIALIZED_HASH_PREFIX);
+        key.push('/');
+    }
+    key.push_str(prefix);
+    if key.as_bytes().last().copied() != Some(b'/') {
+        key.push('/');
+    }
+    key.push_str(relative_path);
+    // We then set up the prefix.
+    if hash_prefix_cardinality > 1 {
+        let key_without_prefix = &key.as_bytes()[UNINITIALIZED_HASH_PREFIX.len() + 1..];
+        let mut prefix_hash: usize =
+            murmurhash32::murmurhash3(key_without_prefix) as usize % hash_prefix_cardinality;
+        unsafe {
+            let prefix_buf: &mut [u8] = &mut key.as_bytes_mut()[..UNINITIALIZED_HASH_PREFIX.len()];
+            for prefix_byte in prefix_buf {
+                let hex: u8 = HEX_ALPHABET[(prefix_hash % 16) as usize];
+                *prefix_byte = hex;
+                if prefix_hash < 16 {
+                    break;
+                }
+                prefix_hash /= 16;
+            }
+        }
+    }
+    key
+}
 
 impl S3CompatibleObjectStorage {
     fn key(&self, relative_path: &Path) -> String {
-        // FIXME: This may not work on Windows.
-        let key_path = self.prefix.join(relative_path);
-        key_path.to_string_lossy().to_string()
+        build_key(
+            &self.prefix,
+            relative_path.to_string_lossy().as_ref(),
+            self.hash_prefix_cardinality,
+        )
     }
 
     fn relative_path(&self, key: &str) -> PathBuf {
@@ -953,13 +995,13 @@ mod tests {
         let s3_client = S3Client::new(&sdk_config);
         let uri = Uri::for_test("s3://bucket/indexes");
         let bucket = "bucket".to_string();
-        let prefix = PathBuf::new();
 
         let mut s3_storage = S3CompatibleObjectStorage {
             s3_client,
             uri,
             bucket,
-            prefix,
+            prefix: String::new(),
+            hash_prefix_cardinality: 0,
             multipart_policy: MultiPartPolicy::default(),
             retry_params: RetryParams::for_test(),
             disable_multi_object_delete: false,
@@ -970,7 +1012,7 @@ mod tests {
             PathBuf::from("indexes/foo")
         );
 
-        s3_storage.prefix = PathBuf::from("indexes");
+        s3_storage.prefix = "indexes".to_string();
 
         assert_eq!(
             s3_storage.relative_path("indexes/foo"),
@@ -1008,13 +1050,13 @@ mod tests {
         let s3_client = S3Client::from_conf(config);
         let uri = Uri::for_test("s3://bucket/indexes");
         let bucket = "bucket".to_string();
-        let prefix = PathBuf::new();
 
         let s3_storage = S3CompatibleObjectStorage {
             s3_client,
             uri,
             bucket,
-            prefix,
+            prefix: String::new(),
+            hash_prefix_cardinality: 0,
             multipart_policy: MultiPartPolicy::default(),
             retry_params: RetryParams::for_test(),
             disable_multi_object_delete: true,
@@ -1049,13 +1091,13 @@ mod tests {
         let s3_client = S3Client::from_conf(config);
         let uri = Uri::for_test("s3://bucket/indexes");
         let bucket = "bucket".to_string();
-        let prefix = PathBuf::new();
 
         let s3_storage = S3CompatibleObjectStorage {
             s3_client,
             uri,
             bucket,
-            prefix,
+            prefix: String::new(),
+            hash_prefix_cardinality: 0,
             multipart_policy: MultiPartPolicy::default(),
             retry_params: RetryParams::for_test(),
             disable_multi_object_delete: false,
@@ -1131,13 +1173,13 @@ mod tests {
         let s3_client = S3Client::from_conf(config);
         let uri = Uri::for_test("s3://bucket/indexes");
         let bucket = "bucket".to_string();
-        let prefix = PathBuf::new();
 
         let s3_storage = S3CompatibleObjectStorage {
             s3_client,
             uri,
             bucket,
-            prefix,
+            prefix: String::new(),
+            hash_prefix_cardinality: 0,
             multipart_policy: MultiPartPolicy::default(),
             retry_params: RetryParams::for_test(),
             disable_multi_object_delete: false,
@@ -1224,13 +1266,13 @@ mod tests {
         let s3_client = S3Client::from_conf(config);
         let uri = Uri::for_test("s3://bucket/indexes");
         let bucket = "bucket".to_string();
-        let prefix = PathBuf::new();
 
         let s3_storage = S3CompatibleObjectStorage {
             s3_client,
             uri,
             bucket,
-            prefix,
+            prefix: String::new(),
+            hash_prefix_cardinality: 0,
             multipart_policy: MultiPartPolicy::default(),
             retry_params: RetryParams::for_test(),
             disable_multi_object_delete: false,
@@ -1240,5 +1282,20 @@ mod tests {
             .put(Path::new("my-path"), Box::new(vec![1, 2, 3]))
             .await
             .unwrap();
+    }
+
+    #[test]
+    fn test_build_key() {
+        assert_eq!(build_key("hello", "coucou", 0), "hello/coucou");
+        assert_eq!(build_key("hello/", "coucou", 0), "hello/coucou");
+        assert_eq!(build_key("hello/", "coucou", 1), "hello/coucou");
+        assert_eq!(build_key("hello", "coucou", 1), "hello/coucou");
+        assert_eq!(build_key("hello/", "coucou", 2), "10000000/hello/coucou");
+        assert_eq!(build_key("hello", "coucou", 2), "10000000/hello/coucou");
+        assert_eq!(build_key("hello/", "coucou", 16), "d0000000/hello/coucou");
+        assert_eq!(build_key("hello", "coucou", 16), "d0000000/hello/coucou");
+        assert_eq!(build_key("hello/", "coucou", 17), "50000000/hello/coucou");
+        assert_eq!(build_key("hello", "coucou", 17), "50000000/hello/coucou");
+        assert_eq!(build_key("hello/", "coucou", 70), "f0000000/hello/coucou");
     }
 }
