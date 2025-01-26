@@ -143,7 +143,9 @@ impl RoutingTableEntry {
         &self,
         ingester_pool: &IngesterPool,
         rate_limited_shards: &HashSet<ShardId>,
-    ) -> Option<&RoutingEntry> {
+    ) -> Result<&RoutingEntry, NextOpenShardError> {
+        let mut error = NextOpenShardError::NoShardsAvailable;
+
         for (shards, round_robin_idx) in [
             (&self.local_shards, &self.local_round_robin_idx),
             (&self.remote_shards, &self.remote_round_robin_idx),
@@ -154,17 +156,20 @@ impl RoutingTableEntry {
             for _attempt in 0..shards.len() {
                 let shard_idx = round_robin_idx.fetch_add(1, Ordering::Relaxed);
                 let shard_routing_entry: &RoutingEntry = &shards[shard_idx % shards.len()];
-                if !shard_routing_entry.shard_state.is_open()
-                    || rate_limited_shards.contains(&shard_routing_entry.shard_id)
-                {
+
+                if !shard_routing_entry.shard_state.is_open() {
+                    continue;
+                }
+                if rate_limited_shards.contains(&shard_routing_entry.shard_id) {
+                    error = NextOpenShardError::RateLimited;
                     continue;
                 }
                 if ingester_pool.contains_key(&shard_routing_entry.leader_id) {
-                    return Some(shard_routing_entry);
+                    return Ok(shard_routing_entry);
                 }
             }
         }
-        None
+        Err(error)
     }
 
     /// Inserts the open shards the routing table is not aware of.
@@ -321,6 +326,12 @@ impl RoutingTableEntry {
         shards.extend(&self.remote_shards);
         shards
     }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum NextOpenShardError {
+    NoShardsAvailable,
+    RateLimited,
 }
 
 /// Stores the list of shards the router is aware of for each index and source. The resolution from
@@ -657,12 +668,12 @@ mod tests {
         let source_id: SourceId = "test-source".into();
         let table_entry = RoutingTableEntry::empty(index_uid.clone(), source_id.clone());
         let ingester_pool = IngesterPool::default();
-
         let mut rate_limited_shards = HashSet::new();
 
-        let shard_opt =
-            table_entry.next_open_shard_round_robin(&ingester_pool, &rate_limited_shards);
-        assert!(shard_opt.is_none());
+        let error = table_entry
+            .next_open_shard_round_robin(&ingester_pool, &rate_limited_shards)
+            .unwrap_err();
+        assert_eq!(error, NextOpenShardError::NoShardsAvailable);
 
         ingester_pool.insert("test-ingester-0".into(), IngesterServiceClient::mocked());
         ingester_pool.insert("test-ingester-1".into(), IngesterServiceClient::mocked());
@@ -776,6 +787,36 @@ mod tests {
             .next_open_shard_round_robin(&ingester_pool, &rate_limited_shards)
             .unwrap();
         assert_eq!(shard.shard_id, ShardId::from(2));
+    }
+
+    #[test]
+    fn test_routing_table_entry_next_open_shard_round_robin_rate_limited_error() {
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id: SourceId = "test-source".into();
+
+        let ingester_pool = IngesterPool::default();
+        ingester_pool.insert("test-ingester-0".into(), IngesterServiceClient::mocked());
+
+        let rate_limited_shards = HashSet::from_iter([ShardId::from(1)]);
+
+        let table_entry = RoutingTableEntry {
+            index_uid: index_uid.clone(),
+            source_id: source_id.clone(),
+            local_shards: vec![RoutingEntry {
+                index_uid: index_uid.clone(),
+                source_id: "test-source".to_string(),
+                shard_id: ShardId::from(1),
+                shard_state: ShardState::Open,
+                leader_id: "test-ingester-0".into(),
+            }],
+            local_round_robin_idx: AtomicUsize::default(),
+            remote_shards: Vec::new(),
+            remote_round_robin_idx: AtomicUsize::default(),
+        };
+        let error = table_entry
+            .next_open_shard_round_robin(&ingester_pool, &rate_limited_shards)
+            .unwrap_err();
+        assert_eq!(error, NextOpenShardError::RateLimited);
     }
 
     #[test]

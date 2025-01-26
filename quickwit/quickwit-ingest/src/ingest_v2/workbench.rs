@@ -37,7 +37,7 @@ use super::router::PersistRequestSummary;
 #[derive(Default)]
 pub(super) struct IngestWorkbench {
     pub subworkbenches: BTreeMap<SubrequestId, IngestSubworkbench>,
-    pub rate_limited_shard: HashSet<ShardId>,
+    pub rate_limited_shards: HashSet<ShardId>,
     pub num_successes: usize,
     /// The number of batch persist attempts. This is not sum of the number of attempts for each
     /// subrequest.
@@ -238,6 +238,13 @@ impl IngestWorkbench {
 
     pub fn record_no_shards_available(&mut self, subrequest_id: SubrequestId) {
         self.record_failure(subrequest_id, SubworkbenchFailure::NoShardsAvailable);
+    }
+
+    pub fn record_rate_limited(&mut self, subrequest_id: SubrequestId) {
+        self.record_failure(
+            subrequest_id,
+            SubworkbenchFailure::RateLimited(RateLimitingCause::ShardRateLimiting),
+        );
     }
 
     /// Marks a node as unavailable for the span of the workbench.
