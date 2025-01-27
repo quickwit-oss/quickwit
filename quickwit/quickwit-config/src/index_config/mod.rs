@@ -268,7 +268,12 @@ impl IndexConfig {
         hasher.finish()
     }
 
-    /// Compare IndexConfig config level fingerprints
+    /// Compare IndexConfig level fingerprints
+    ///
+    /// This method is meant to enable IndexConfig level fingerprint comparison
+    /// without taking the risk of mixing them up with pipeline level
+    /// fingerprints (computed by
+    /// [`crate::indexing_pipeline_params_fingerprint()`]).
     pub fn equals_fingerprint(&self, other: &Self) -> bool {
         self.indexing_params_fingerprint() == other.indexing_params_fingerprint()
     }

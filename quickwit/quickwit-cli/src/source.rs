@@ -47,7 +47,7 @@ pub fn build_source_command() -> Command {
             )
         .subcommand(
             Command::new("update")
-                .about("Update an existing source.")
+                .about("Updates an existing source.")
                 .args(&[
                     arg!(--index <INDEX_ID> "ID of the target index")
                         .display_order(1)

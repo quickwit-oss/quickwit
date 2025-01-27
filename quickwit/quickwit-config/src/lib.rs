@@ -283,7 +283,8 @@ pub trait TestableForRegression: Serialize + DeserializeOwned {
     fn assert_equality(&self, other: &Self);
 }
 
-/// Return a fingerprint of all parameters that should trigger an indexing pipeline restart.
+/// Returns a fingerprint (a hash) of all the parameters that should force an
+/// indexing pipeline to restart upon index or source config updates.
 pub fn indexing_pipeline_params_fingerprint(
     index_config: &IndexConfig,
     source_config: &SourceConfig,

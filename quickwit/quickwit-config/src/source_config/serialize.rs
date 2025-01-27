@@ -59,6 +59,11 @@ pub fn load_source_config_from_user_config(
     source_config_for_serialization.validate_and_build()
 }
 
+/// Parses and validates a [`SourceConfig`] update.
+///
+/// Ensures that the new configuration is valid in itself and compared to the
+/// current source config. If the new configuration omits some fields, the
+/// default values will be used, not those of the current source config.
 pub fn load_source_config_update(
     config_format: ConfigFormat,
     config_content: &[u8],
@@ -76,11 +81,9 @@ pub fn load_source_config_update(
         new_source_config.source_id
     );
 
-    ensure!(
-        current_source_config.source_type() == new_source_config.source_type(),
-        "source type cannot be updated, current type: {}",
-        current_source_config.source_type(),
-    );
+    current_source_config
+        .source_params
+        .validate_update(&new_source_config.source_params)?;
 
     Ok(new_source_config)
 }

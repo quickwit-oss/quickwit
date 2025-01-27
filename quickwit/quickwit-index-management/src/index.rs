@@ -490,8 +490,8 @@ impl IndexService {
             UpdateSourceRequest::try_from_source_config(index_uid.clone(), &source_config)?;
         self.metastore.update_source(update_source_request).await?;
         info!(
-            "source `{}` successfully updated for index `{}`",
-            source_id, index_uid.index_id,
+            "source `{source_id}` successfully updated for index `{}`",
+            index_uid.index_id
         );
         let index_metadata_request = IndexMetadataRequest::for_index_id(index_uid.index_id);
         let source = self

@@ -19,6 +19,7 @@ use std::hash::{Hash, Hasher};
 use std::num::NonZeroUsize;
 use std::str::FromStr;
 
+use anyhow::ensure;
 use bytes::Bytes;
 use quickwit_common::is_false;
 use quickwit_common::uri::Uri;
@@ -71,19 +72,7 @@ pub struct SourceConfig {
 
 impl SourceConfig {
     pub fn source_type(&self) -> SourceType {
-        match self.source_params {
-            SourceParams::File(_) => SourceType::File,
-            SourceParams::Ingest => SourceType::IngestV2,
-            SourceParams::IngestApi => SourceType::IngestV1,
-            SourceParams::IngestCli => SourceType::Cli,
-            SourceParams::Kafka(_) => SourceType::Kafka,
-            SourceParams::Kinesis(_) => SourceType::Kinesis,
-            SourceParams::PubSub(_) => SourceType::PubSub,
-            SourceParams::Pulsar(_) => SourceType::Pulsar,
-            SourceParams::Stdin => SourceType::Stdin,
-            SourceParams::Vec(_) => SourceType::Vec,
-            SourceParams::Void(_) => SourceType::Void,
-        }
+        self.source_params.source_type()
     }
 
     // TODO: Remove after source factory refactor.
@@ -140,7 +129,7 @@ impl SourceConfig {
         }
     }
 
-    /// Return a fingerprint of parameters relevant for indexers
+    /// Returns a fingerprint of parameters relevant for indexers.
     ///
     /// This should remain private to this crate to avoid confusion with the
     /// full indexing pipeline fingerprint that also includes the index config's
@@ -263,6 +252,51 @@ impl SourceParams {
     pub fn void() -> Self {
         Self::Void(VoidSourceParams)
     }
+
+    fn source_type(&self) -> SourceType {
+        match self {
+            SourceParams::File(_) => SourceType::File,
+            SourceParams::Ingest => SourceType::IngestV2,
+            SourceParams::IngestApi => SourceType::IngestV1,
+            SourceParams::IngestCli => SourceType::Cli,
+            SourceParams::Kafka(_) => SourceType::Kafka,
+            SourceParams::Kinesis(_) => SourceType::Kinesis,
+            SourceParams::PubSub(_) => SourceType::PubSub,
+            SourceParams::Pulsar(_) => SourceType::Pulsar,
+            SourceParams::Stdin => SourceType::Stdin,
+            SourceParams::Vec(_) => SourceType::Vec,
+            SourceParams::Void(_) => SourceType::Void,
+        }
+    }
+
+    fn validate_update(&self, new_source_params: &SourceParams) -> anyhow::Result<()> {
+        match (self, new_source_params) {
+            (
+                SourceParams::File(FileSourceParams::Notifications(current)),
+                SourceParams::File(FileSourceParams::Notifications(new)),
+            ) => current.validate_update(new),
+            (SourceParams::Kafka(current), SourceParams::Kafka(new)) => {
+                current.validate_update(new)
+            }
+            (SourceParams::Kinesis(current), SourceParams::Kinesis(new)) => {
+                current.validate_update(new)
+            }
+            (SourceParams::PubSub(current), SourceParams::PubSub(new)) => {
+                current.validate_update(new)
+            }
+            (SourceParams::Pulsar(current), SourceParams::Pulsar(new)) => {
+                current.validate_update(new)
+            }
+            (current, new) if current.source_type() != new.source_type() => Err(anyhow::anyhow!(
+                "source type cannot be changed, current type {}",
+                current.source_type(),
+            )),
+            _ => Err(anyhow::anyhow!(
+                "source type {} cannot be updated",
+                self.source_type(),
+            )),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
@@ -302,6 +336,17 @@ fn default_deduplication_cleanup_interval_secs() -> u32 {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum FileSourceNotification {
     Sqs(FileSourceSqs),
+}
+
+impl FileSourceNotification {
+    fn validate_update(&self, other: &Self) -> anyhow::Result<()> {
+        match (self, other) {
+            (Self::Sqs(_), Self::Sqs(_)) => {
+                // changing the queue or the deduplication settings should be fine
+                Ok(())
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, utoipa::ToSchema)]
@@ -392,6 +437,16 @@ pub struct KafkaSourceParams {
     pub enable_backfill_mode: bool,
 }
 
+impl KafkaSourceParams {
+    fn validate_update(&self, other: &Self) -> anyhow::Result<()> {
+        // Updating the topic would likely mess up the checkpoints because the
+        // Kafka partition IDs are used as metastore checkpoint PartitionId
+        // and there uniqueness is not guaranteed across topics.
+        ensure!(self.topic == other.topic, "Kafka topic cannot be updated");
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PubSubSourceParams {
@@ -414,6 +469,13 @@ pub struct PubSubSourceParams {
     pub max_messages_per_pull: Option<i32>,
 }
 
+impl PubSubSourceParams {
+    fn validate_update(&self, _other: &Self) -> anyhow::Result<()> {
+        // experimental source, no validation is performed
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum RegionOrEndpoint {
@@ -430,6 +492,23 @@ pub struct KinesisSourceParams {
     /// When backfill mode is enabled, the source exits after reaching the end of the stream.
     #[serde(skip_serializing_if = "is_false")]
     pub enable_backfill_mode: bool,
+}
+
+impl KinesisSourceParams {
+    fn validate_update(&self, other: &Self) -> anyhow::Result<()> {
+        // Changing the stream would likely mess up the checkpoints because the
+        // Kinesis shard IDs are used as metastore checkpoint PartitionId, and
+        // there uniqueness is only guarantied within a stream.
+        ensure!(
+            self.stream_name == other.stream_name,
+            "Kinesis stream_name cannot be updated"
+        );
+        ensure!(
+            self.region_or_endpoint == other.region_or_endpoint,
+            "Kinesis region or endpoint cannot be updated"
+        );
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
@@ -496,6 +575,15 @@ pub struct PulsarSourceParams {
     #[serde(default, with = "serde_yaml::with::singleton_map")]
     /// Authentication for pulsar.
     pub authentication: Option<PulsarSourceAuth>,
+}
+
+impl PulsarSourceParams {
+    fn validate_update(&self, _other: &Self) -> anyhow::Result<()> {
+        // In the Pulsar source, we use use combinations of the topic+partition
+        // (generated by the Pulsar client library) as metastore checkpoint
+        // PartitionId, and those are guarantied to be unique across topics.
+        Ok(())
+    }
 }
 
 #[derive(
@@ -1395,39 +1483,56 @@ mod tests {
         let file_content = std::fs::read(&source_config_filepath).unwrap();
         let source_config_uri = Uri::from_str(&source_config_filepath).unwrap();
         let config_format = ConfigFormat::sniff_from_uri(&source_config_uri).unwrap();
-        let mut existing_source_config =
-            load_source_config_from_user_config(config_format, &file_content).unwrap();
-        existing_source_config.num_pipelines = NonZero::new(4).unwrap();
-        let new_source_config =
-            load_source_config_update(config_format, &file_content, &existing_source_config)
-                .unwrap();
+        {
+            let mut existing_source_config =
+                load_source_config_from_user_config(config_format, &file_content).unwrap();
+            existing_source_config.num_pipelines = NonZero::new(4).unwrap();
+            let new_source_config =
+                load_source_config_update(config_format, &file_content, &existing_source_config)
+                    .unwrap();
 
-        let expected_source_config = SourceConfig {
-            source_id: "hdfs-logs-kafka-source".to_string(),
-            num_pipelines: NonZeroUsize::new(2).unwrap(),
-            enabled: true,
-            source_params: SourceParams::Kafka(KafkaSourceParams {
-                topic: "cloudera-cluster-logs".to_string(),
-                client_log_level: None,
-                client_params: json! {{"bootstrap.servers": "localhost:9092"}},
+            let expected_source_config = SourceConfig {
+                source_id: "hdfs-logs-kafka-source".to_string(),
+                num_pipelines: NonZeroUsize::new(2).unwrap(),
+                enabled: true,
+                source_params: SourceParams::Kafka(KafkaSourceParams {
+                    topic: "cloudera-cluster-logs".to_string(),
+                    client_log_level: None,
+                    client_params: json! {{"bootstrap.servers": "localhost:9092"}},
+                    enable_backfill_mode: false,
+                }),
+                transform_config: Some(TransformConfig {
+                    vrl_script: ".message = downcase(string!(.message))".to_string(),
+                    timezone: "local".to_string(),
+                }),
+                input_format: SourceInputFormat::Json,
+            };
+            assert_eq!(new_source_config, expected_source_config);
+            assert_eq!(new_source_config.num_pipelines.get(), 2);
+        }
+        {
+            // the source type cannot be updated
+            let mut existing_source_config =
+                load_source_config_from_user_config(config_format, &file_content).unwrap();
+            existing_source_config.source_params = SourceParams::Kinesis(KinesisSourceParams {
+                stream_name: "my-stream".to_string(),
+                region_or_endpoint: None,
                 enable_backfill_mode: false,
-            }),
-            transform_config: Some(TransformConfig {
-                vrl_script: ".message = downcase(string!(.message))".to_string(),
-                timezone: "local".to_string(),
-            }),
-            input_format: SourceInputFormat::Json,
-        };
-        assert_eq!(new_source_config, expected_source_config);
-        assert_eq!(new_source_config.num_pipelines.get(), 2);
-
-        // the source type cannot be updated
-        existing_source_config.source_params = SourceParams::Kinesis(KinesisSourceParams {
-            stream_name: "my-stream".to_string(),
-            region_or_endpoint: None,
-            enable_backfill_mode: false,
-        });
-        load_source_config_update(config_format, &file_content, &existing_source_config)
-            .unwrap_err();
+            });
+            load_source_config_update(config_format, &file_content, &existing_source_config)
+                .unwrap_err();
+        }
+        {
+            // the topic cannot be updated
+            let mut existing_source_config =
+                load_source_config_from_user_config(config_format, &file_content).unwrap();
+            let SourceParams::Kafka(kafka_params) = &mut existing_source_config.source_params
+            else {
+                panic!("expected Kafka source params");
+            };
+            kafka_params.topic = "other_topic_name".to_string();
+            load_source_config_update(config_format, &file_content, &existing_source_config)
+                .unwrap_err();
+        }
     }
 }
