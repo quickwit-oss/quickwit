@@ -349,6 +349,45 @@ mod test {
     }
 
     #[test]
+    fn test_default_dynamic_mapping_matches_docs() {
+        let minimal_config_yaml = r#"
+            version: 0.8
+            index_id: hdfs-logs
+            doc_mapping:
+              doc_mapping_uid: 00000000000000000000000000
+        "#;
+        let docs_config_yaml = r#"
+            version: 0.8
+            index_id: hdfs-logs
+            doc_mapping:
+                doc_mapping_uid: 00000000000000000000000000
+                mode: dynamic
+                dynamic_mapping:
+                    indexed: true
+                    stored: true
+                    tokenizer: default
+                    record: basic
+                    expand_dots: true
+                    fast: true
+        "#;
+        {
+            let minimal_index_config: IndexConfig = load_index_config_from_user_config(
+                ConfigFormat::Yaml,
+                minimal_config_yaml.as_bytes(),
+                &Uri::for_test("s3://mybucket"),
+            )
+            .unwrap();
+            let docs_index_config: IndexConfig = load_index_config_from_user_config(
+                ConfigFormat::Yaml,
+                docs_config_yaml.as_bytes(),
+                &Uri::for_test("s3://mybucket"),
+            )
+            .unwrap();
+            assert_eq!(minimal_index_config, docs_index_config);
+        }
+    }
+
+    #[test]
     fn test_update_index_root_uri() {
         let original_config_yaml = r#"
             version: 0.8

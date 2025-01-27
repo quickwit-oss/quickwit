@@ -266,7 +266,7 @@ mod tests {
             tantivy_schema.get_field_entry(dynamic_field).field_type()
         {
             let text_opt = json_options.get_text_indexing_options().unwrap();
-            assert_eq!(text_opt.tokenizer(), "raw");
+            assert_eq!(text_opt.tokenizer(), "default");
         } else {
             panic!("dynamic field should be of JSON type");
         }
