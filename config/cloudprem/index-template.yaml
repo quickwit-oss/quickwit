@@ -24,7 +24,8 @@ indexing_settings:
 # https://datadoghq.atlassian.net/wiki/spaces/LB/pages/2484928615/Logs+payload+format
 # https://github.com/DataDog/logs-backend/blob/prod/domains/event-platform/libs/percolation/src/main/resources/elasticsearch/mappings/event.conf
 # https://github.com/DataDog/logs-backend/blob/prod/domains/event-platform/libs/percolation/src/main/resources/elasticsearch/mappings/_root_event.conf
-# Note that not all fields in event.conf and _root_event.conf are handled here yet
+# https://github.com/DataDog/logs-backend/blob/prod/domains/event-platform/libs/facets/src/main/java/com/dd/logs/facets/RootFacets.java#L85
+# Note that not all fields in the sources (e.g. event.conf) are handled here yet
 
 # TODO Check following field names:
 # tiebreaker(i64): used to differentiate logs with the same timestamp, which are stored only as ms. QW stores timestamp as ns. https://datadoghq.atlassian.net/wiki/spaces/LB/pages/1885536545/FAQ#I-sent-events-in-the-same-millisecond-but-with-a-timestamp-attribute-with-different-nanoseconds.-All-the-events-are-mixed-up-in-the-explorer.-How-to-explain-this%3F
@@ -109,7 +110,7 @@ doc_mapping:
       concatenate_fields:
       - message
       - error
-      tokenizer: 
+      tokenizer: default
       record: position # for phrase queries
       
     - name: all # ALL fields for *:search
