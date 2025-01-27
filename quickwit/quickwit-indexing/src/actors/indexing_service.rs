@@ -242,8 +242,15 @@ impl IndexingService {
             pipeline_uid,
         };
         let index_config = index_metadata.into_index_config();
-        self.spawn_pipeline_inner(ctx, pipeline_id.clone(), index_config, source_config, None)
-            .await?;
+        self.spawn_pipeline_inner(
+            ctx,
+            pipeline_id.clone(),
+            index_config,
+            source_config,
+            None,
+            None,
+        )
+        .await?;
         Ok(pipeline_id)
     }
 
@@ -254,6 +261,7 @@ impl IndexingService {
         index_config: IndexConfig,
         source_config: SourceConfig,
         immature_splits_opt: Option<Vec<SplitMetadata>>,
+        expected_params_fingerprint: Option<u64>,
     ) -> Result<(), IndexingError> {
         if self
             .indexing_pipelines
@@ -312,6 +320,15 @@ impl IndexingService {
             (self.max_concurrent_split_uploads - max_concurrent_split_uploads_index).max(1);
 
         let params_fingerprint = indexing_params_fingerprint(&index_config, &source_config);
+        if let Some(expected_params_fingerprint) = expected_params_fingerprint {
+            if params_fingerprint != expected_params_fingerprint {
+                warn!(
+                    expected_fingerprint = expected_params_fingerprint,
+                    actual_fingerprint = params_fingerprint,
+                    "params fingerprint mismatch"
+                );
+            }
+        }
         let pipeline_params = IndexingPipelineParams {
             pipeline_id: indexing_pipeline_id.clone(),
             metastore: self.metastore.clone(),
@@ -632,20 +649,14 @@ impl IndexingService {
     /// Identifies the pipelines to spawn and shutdown by comparing the scheduled plan with the
     /// current running plan.
     fn compute_pipeline_diff(&self, tasks: &[IndexingTask]) -> IndexingPipelineDiff {
-        let mut pipelines_to_spawn: Vec<IndexingPipelineId> = Vec::new();
+        let mut pipelines_to_spawn: Vec<IndexingTask> = Vec::new();
         let mut scheduled_pipeline_uids: HashSet<PipelineUid> = HashSet::with_capacity(tasks.len());
 
         for task in tasks {
             let pipeline_uid = task.pipeline_uid();
 
             if !self.indexing_pipelines.contains_key(&pipeline_uid) {
-                let pipeline_id = IndexingPipelineId {
-                    node_id: self.node_id.clone(),
-                    index_uid: task.index_uid().clone(),
-                    source_id: task.source_id.clone(),
-                    pipeline_uid,
-                };
-                pipelines_to_spawn.push(pipeline_id);
+                pipelines_to_spawn.push(task.clone());
             }
             scheduled_pipeline_uids.insert(pipeline_uid);
         }
@@ -665,10 +676,19 @@ impl IndexingService {
     /// Spawns the pipelines with supplied ids and returns a list of failed pipelines.
     async fn spawn_pipelines(
         &mut self,
-        pipelines_to_spawn: &[IndexingPipelineId],
+        pipelines_to_spawn: &[IndexingTask],
         ctx: &ActorContext<Self>,
     ) -> Result<Vec<IndexingPipelineId>, IndexingError> {
-        let indexes_metadata = self.indexes_metadata(ctx, pipelines_to_spawn).await?;
+        let pipelines_to_spawn_ids: Vec<_> = pipelines_to_spawn
+            .iter()
+            .map(|task| IndexingPipelineId {
+                node_id: self.node_id.clone(),
+                index_uid: task.index_uid().clone(),
+                pipeline_uid: task.pipeline_uid(),
+                source_id: task.source_id.clone(),
+            })
+            .collect();
+        let indexes_metadata = self.indexes_metadata(ctx, &pipelines_to_spawn_ids).await?;
 
         let per_index_uid_indexes_metadata: HashMap<IndexUid, IndexMetadata> = indexes_metadata
             .into_iter()
@@ -676,45 +696,44 @@ impl IndexingService {
             .collect();
 
         let mut per_merge_pipeline_immature_splits: HashMap<MergePipelineId, Vec<SplitMetadata>> =
-            self.fetch_immature_splits_for_new_merge_pipelines(pipelines_to_spawn, ctx)
+            self.fetch_immature_splits_for_new_merge_pipelines(&pipelines_to_spawn_ids, ctx)
                 .await?;
 
         let mut spawn_pipeline_failures: Vec<IndexingPipelineId> = Vec::new();
 
-        for pipeline_to_spawn in pipelines_to_spawn {
+        for (task_to_spawn, id_to_spawn) in pipelines_to_spawn.iter().zip(pipelines_to_spawn_ids) {
             if let Some(index_metadata) =
-                per_index_uid_indexes_metadata.get(&pipeline_to_spawn.index_uid)
+                per_index_uid_indexes_metadata.get(task_to_spawn.index_uid())
             {
-                if let Some(source_config) =
-                    index_metadata.sources.get(&pipeline_to_spawn.source_id)
-                {
-                    let merge_pipeline_id = pipeline_to_spawn.merge_pipeline_id();
+                if let Some(source_config) = index_metadata.sources.get(&task_to_spawn.source_id) {
+                    let merge_pipeline_id = id_to_spawn.merge_pipeline_id();
                     let immature_splits_opt =
                         per_merge_pipeline_immature_splits.remove(&merge_pipeline_id);
 
                     if let Err(error) = self
                         .spawn_pipeline_inner(
                             ctx,
-                            pipeline_to_spawn.clone(),
+                            id_to_spawn.clone(),
                             index_metadata.index_config.clone(),
                             source_config.clone(),
                             immature_splits_opt,
+                            Some(task_to_spawn.params_fingerprint),
                         )
                         .await
                     {
-                        error!(pipeline_id=?pipeline_to_spawn, %error, "failed to spawn pipeline");
-                        spawn_pipeline_failures.push(pipeline_to_spawn.clone());
+                        error!(pipeline_id=?id_to_spawn, %error, "failed to spawn pipeline");
+                        spawn_pipeline_failures.push(id_to_spawn.clone());
                     }
                 } else {
-                    error!(pipeline_id=?pipeline_to_spawn, "failed to spawn pipeline: source not found");
-                    spawn_pipeline_failures.push(pipeline_to_spawn.clone());
+                    error!(pipeline_id=?id_to_spawn, "failed to spawn pipeline: source not found");
+                    spawn_pipeline_failures.push(id_to_spawn.clone());
                 }
             } else {
                 error!(
                     "failed to spawn pipeline: index `{}` no longer exists",
-                    pipeline_to_spawn.index_uid
+                    id_to_spawn.index_uid
                 );
-                spawn_pipeline_failures.push(pipeline_to_spawn.clone());
+                spawn_pipeline_failures.push(id_to_spawn.clone());
             }
         }
         Ok(spawn_pipeline_failures)
@@ -971,7 +990,7 @@ impl Handler<Healthz> for IndexingService {
 #[derive(Debug)]
 struct IndexingPipelineDiff {
     pipelines_to_shutdown: Vec<PipelineUid>,
-    pipelines_to_spawn: Vec<IndexingPipelineId>,
+    pipelines_to_spawn: Vec<IndexingTask>,
 }
 
 #[cfg(test)]
