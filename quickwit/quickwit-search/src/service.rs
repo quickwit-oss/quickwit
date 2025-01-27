@@ -173,7 +173,6 @@ impl SearchServiceImpl {
         }
     }
 }
-
 pub fn deserialize_doc_mapper(doc_mapper_str: &str) -> crate::Result<Arc<DocMapper>> {
     let doc_mapper = serde_json::from_str::<Arc<DocMapper>>(doc_mapper_str).map_err(|err| {
         SearchError::Internal(format!("failed to deserialize doc mapper: `{err}`"))

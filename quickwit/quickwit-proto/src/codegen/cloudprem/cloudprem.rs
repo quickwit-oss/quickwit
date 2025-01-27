@@ -78,15 +78,23 @@ pub struct EventTracker {
     pub tiebreaker: u32,
     #[prost(string, optional, tag = "4")]
     pub fragment_id: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(sint64, optional, tag = "5")]
-    pub row_number: ::core::option::Option<i64>,
+    #[prost(uint64, optional, tag = "5")]
+    pub row_number: ::core::option::Option<u64>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct FetchOneRequest {}
+pub struct FetchOneRequest {
+    #[prost(message, optional, tag = "1")]
+    pub event_tracker: ::core::option::Option<EventTracker>,
+}
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct FetchOneResponse {}
+pub struct FetchOneResponse {
+    #[prost(message, optional, tag = "1")]
+    pub event: ::core::option::Option<Event>,
+    #[prost(message, optional, tag = "2")]
+    pub statistics: ::core::option::Option<Statistics>,
+}
 /// BEGIN quickwit-codegen
 #[allow(unused_imports)]
 use std::str::FromStr;

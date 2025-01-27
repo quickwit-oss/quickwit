@@ -19,6 +19,12 @@ pub enum CloudPremError {
     Timeout(String),
     #[error("too many requests")]
     TooManyRequests,
+    #[error("document not found id={id}, last known docaddr {split_id:?}/{doc_id:?}")]
+    DocumentNotFound {
+        id: String,
+        split_id: Option<String>,
+        doc_id: Option<u64>,
+    },
     #[error("unimplemented")]
     Unimplemented,
 }
@@ -36,6 +42,7 @@ impl ServiceError for CloudPremError {
             Self::Unavailable(_) => ServiceErrorCode::Unavailable,
             Self::Timeout(_) => ServiceErrorCode::Timeout,
             Self::TooManyRequests => ServiceErrorCode::TooManyRequests,
+            Self::DocumentNotFound { .. } => ServiceErrorCode::NotFound,
             Self::Unimplemented => ServiceErrorCode::Unimplemented,
         }
     }
