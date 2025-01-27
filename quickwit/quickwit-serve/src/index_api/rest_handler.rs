@@ -1106,9 +1106,13 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "sqs-for-tests")]
     #[tokio::test]
     async fn test_update_source() {
+        use quickwit_indexing::source::sqs_queue::test_helpers::start_mock_sqs_get_queue_attributes_endpoint;
+
         let metastore = metastore_for_test();
+        let (queue_url, _guard) = start_mock_sqs_get_queue_attributes_endpoint();
         let index_service = IndexService::new(metastore.clone(), StorageResolver::unconfigured());
         let mut node_config = NodeConfig::for_test();
         node_config.default_index_root_uri = Uri::for_test("file:///default-index-root-uri");
@@ -1132,64 +1136,77 @@ mod tests {
         assert_json_include!(actual: resp_json, expected: expected_response_json);
 
         // Create source.
-        let source_config_body = r#"{"version": "0.7", "source_id": "vec-source", "source_type": "vec", "params": {"docs": [], "batch_num_docs": 10}}"#;
+        let source_config_body = serde_json::json!({
+            "version": "0.7",
+            "source_id": "sqs-source",
+            "source_type": "file",
+            "params": {"notifications": [{"type": "sqs", "queue_url": queue_url, "message_type": "s3_notification"}]},
+        });
         let resp = warp::test::request()
             .path("/indexes/hdfs-logs/sources")
             .method("POST")
-            .json(&true)
-            .body(source_config_body)
+            .json(&source_config_body)
             .reply(&index_management_handler)
             .await;
-        assert_eq!(resp.status(), 200);
+        let resp_body = std::str::from_utf8(resp.body()).unwrap();
+        assert_eq!(resp.status(), 200, "{resp_body}");
 
-        // Update the source.
-        let update_source_config_body = r#"{"version": "0.7", "source_id": "vec-source", "source_type": "vec", "params": {"docs": [], "batch_num_docs": 20}}"#;
-        let resp = warp::test::request()
-            .path("/indexes/hdfs-logs/sources/vec-source")
-            .method("PUT")
-            .json(&true)
-            .body(update_source_config_body)
-            .reply(&index_management_handler)
-            .await;
-        assert_eq!(resp.status(), 200);
-        // Check that the source has been updated.
-        let index_metadata = metastore
-            .index_metadata(IndexMetadataRequest::for_index_id("hdfs-logs".to_string()))
-            .await
-            .unwrap()
-            .deserialize_index_metadata()
-            .unwrap();
-        assert!(index_metadata.sources.contains_key("vec-source"));
-        let source_config = index_metadata.sources.get("vec-source").unwrap();
-        assert_eq!(source_config.source_type(), SourceType::Vec);
-        assert_eq!(
-            source_config.source_params,
-            SourceParams::Vec(VecSourceParams {
-                docs: Vec::new(),
-                batch_num_docs: 20,
-                partition: "".to_string(),
-            })
-        );
-
-        // Update the source with a different source_id (forbidden)
-        let update_source_config_body = r#"{"version": "0.7", "source_id": "other-source-id", "source_type": "vec", "params": {"docs": [], "batch_num_docs": 20}}"#;
-        let resp = warp::test::request()
-            .path("/indexes/hdfs-logs/sources/vec-source")
-            .method("PUT")
-            .json(&true)
-            .body(update_source_config_body)
-            .reply(&index_management_handler)
-            .await;
-        assert_eq!(resp.status(), 400);
-        // Check that the source hasn't been updated.
-        let index_metadata = metastore
-            .index_metadata(IndexMetadataRequest::for_index_id("hdfs-logs".to_string()))
-            .await
-            .unwrap()
-            .deserialize_index_metadata()
-            .unwrap();
-        assert!(index_metadata.sources.contains_key("vec-source"));
-        assert!(!index_metadata.sources.contains_key("other-source-id"));
+        {
+            // Update the source.
+            let update_source_config_body = serde_json::json!({
+                "version": "0.7",
+                "source_id": "sqs-source",
+                "source_type": "file",
+                "params": {"notifications": [{"type": "sqs", "queue_url": queue_url, "message_type": "s3_notification"}]},
+            });
+            let resp = warp::test::request()
+                .path("/indexes/hdfs-logs/sources/sqs-source")
+                .method("PUT")
+                .json(&update_source_config_body)
+                .reply(&index_management_handler)
+                .await;
+            let resp_body = std::str::from_utf8(resp.body()).unwrap();
+            assert_eq!(resp.status(), 200, "{resp_body}");
+            // Check that the source has been updated.
+            let index_metadata = metastore
+                .index_metadata(IndexMetadataRequest::for_index_id("hdfs-logs".to_string()))
+                .await
+                .unwrap()
+                .deserialize_index_metadata()
+                .unwrap();
+            let metastore_source_config = index_metadata.sources.get("sqs-source").unwrap();
+            assert_eq!(metastore_source_config.source_type(), SourceType::File);
+            assert_eq!(
+                metastore_source_config,
+                &serde_json::from_value(update_source_config_body).unwrap(),
+            );
+        }
+        {
+            // Update the source with a different source_id (forbidden)
+            let update_source_config_body = serde_json::json!({
+                "version": "0.7",
+                "source_id": "new-source-id",
+                "source_type": "file",
+                "params": {"notifications": [{"type": "sqs", "queue_url": queue_url, "message_type": "s3_notification"}]},
+            });
+            let resp = warp::test::request()
+                .path("/indexes/hdfs-logs/sources/sqs-source")
+                .method("PUT")
+                .json(&update_source_config_body)
+                .reply(&index_management_handler)
+                .await;
+            let resp_body = std::str::from_utf8(resp.body()).unwrap();
+            assert_eq!(resp.status(), 400, "{resp_body}");
+            // Check that the source hasn't been updated.
+            let index_metadata = metastore
+                .index_metadata(IndexMetadataRequest::for_index_id("hdfs-logs".to_string()))
+                .await
+                .unwrap()
+                .deserialize_index_metadata()
+                .unwrap();
+            assert!(index_metadata.sources.contains_key("sqs-source"));
+            assert!(!index_metadata.sources.contains_key("other-source-id"));
+        }
     }
 
     #[tokio::test]
