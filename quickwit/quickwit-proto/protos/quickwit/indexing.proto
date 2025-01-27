@@ -42,7 +42,7 @@ message IndexingTask {
   // The shards assigned to the indexer.
   repeated quickwit.ingest.ShardId shard_ids = 3;
   // Fingerprint of the pipeline parameters. Anything that should cause a pipeline restart (such
-  // as updating indexing settings or doc mapping) should influence this value.
+  // as updating indexing settings, the doc mapping or the source) should influence this value.
   uint64 params_fingerprint = 6;
 }
 

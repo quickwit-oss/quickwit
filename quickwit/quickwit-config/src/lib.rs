@@ -14,6 +14,7 @@
 
 #![deny(clippy::disallowed_methods)]
 
+use std::hash::Hasher;
 use std::str::FromStr;
 
 use anyhow::{bail, ensure, Context};
@@ -50,6 +51,7 @@ pub use quickwit_doc_mapper::DocMapping;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
+use siphasher::sip::SipHasher;
 use source_config::FileSourceParamsForSerde;
 pub use source_config::{
     load_source_config_from_user_config, FileSourceMessageType, FileSourceNotification,
@@ -279,6 +281,16 @@ pub trait TestableForRegression: Serialize + DeserializeOwned {
 
     /// Asserts that `self` and `other` are equal. It must panic if they are not.
     fn assert_equality(&self, other: &Self);
+}
+
+pub fn indexing_params_fingerprint(
+    index_config: &IndexConfig,
+    source_config: &SourceConfig,
+) -> u64 {
+    let mut hasher = SipHasher::new();
+    hasher.write_u64(index_config.indexing_params_fingerprint());
+    hasher.write_u64(source_config.indexing_params_fingerprint());
+    hasher.finish()
 }
 
 #[cfg(test)]

@@ -31,7 +31,8 @@ use quickwit_common::io::Limiter;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::{io, temp_dir};
 use quickwit_config::{
-    build_doc_mapper, IndexConfig, IndexerConfig, SourceConfig, INGEST_API_SOURCE_ID,
+    build_doc_mapper, indexing_params_fingerprint, IndexConfig, IndexerConfig, SourceConfig,
+    INGEST_API_SOURCE_ID,
 };
 use quickwit_ingest::{
     DropQueueRequest, GetPartitionId, IngestApiService, IngesterPool, ListQueuesRequest,
@@ -310,7 +311,7 @@ impl IndexingService {
         let max_concurrent_split_uploads_merge =
             (self.max_concurrent_split_uploads - max_concurrent_split_uploads_index).max(1);
 
-        let params_fingerprint = index_config.indexing_params_fingerprint();
+        let params_fingerprint = indexing_params_fingerprint(&index_config, &source_config);
         let pipeline_params = IndexingPipelineParams {
             pipeline_id: indexing_pipeline_id.clone(),
             metastore: self.metastore.clone(),

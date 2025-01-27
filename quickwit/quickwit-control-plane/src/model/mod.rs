@@ -214,8 +214,7 @@ impl ControlPlaneModel {
         let Some(index_model) = self.index_table.get_mut(index_uid) else {
             bail!("index `{}` not found", index_uid.index_id);
         };
-        let fp_changed = index_model.index_config.indexing_params_fingerprint()
-            != index_config.indexing_params_fingerprint();
+        let fp_changed = !index_model.index_config.equals_fingerprint(&index_config);
         index_model.index_config = index_config;
         self.update_metrics();
         Ok(fp_changed)

@@ -25,7 +25,7 @@ use fnv::{FnvHashMap, FnvHashSet};
 use itertools::Itertools;
 use once_cell::sync::OnceCell;
 use quickwit_common::pretty::PrettySample;
-use quickwit_config::{FileSourceParams, SourceParams};
+use quickwit_config::{indexing_params_fingerprint, FileSourceParams, SourceParams};
 use quickwit_proto::indexing::{
     ApplyIndexingPlanRequest, CpuCapacity, IndexingService, IndexingTask, PIPELINE_FULL_CAPACITY,
     PIPELINE_THROUGHPUT,
@@ -165,7 +165,7 @@ fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
         }
         let params_fingerprint = model
             .index_metadata(&source_uid.index_uid)
-            .map(|index_meta| index_meta.index_config.indexing_params_fingerprint())
+            .map(|index_meta| indexing_params_fingerprint(&index_meta.index_config, source_config))
             .unwrap_or_default();
         match source_config.source_params {
             SourceParams::File(FileSourceParams::Filepath(_))

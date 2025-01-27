@@ -15,6 +15,7 @@
 pub(crate) mod serialize;
 
 use std::borrow::Cow;
+use std::hash::{Hash, Hasher};
 use std::num::NonZeroUsize;
 use std::str::FromStr;
 
@@ -30,6 +31,7 @@ use serde_json::Value as JsonValue;
 pub use serialize::load_source_config_from_user_config;
 // For backward compatibility.
 use serialize::VersionedSourceConfig;
+use siphasher::sip::SipHasher;
 
 use crate::{disable_ingest_v1, enable_ingest_v2};
 
@@ -138,6 +140,20 @@ impl SourceConfig {
         }
     }
 
+    /// Return a fingerprint of parameters relevant for indexers
+    ///
+    /// This should remain private to this crate to avoid confusion with the
+    /// full indexing pipeline fingerprint that also includes the index config's
+    /// fingerprint.
+    pub(crate) fn indexing_params_fingerprint(&self) -> u64 {
+        let mut hasher = SipHasher::new();
+        self.input_format.hash(&mut hasher);
+        self.num_pipelines.hash(&mut hasher);
+        self.source_params.hash(&mut hasher);
+        self.transform_config.hash(&mut hasher);
+        hasher.finish()
+    }
+
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test(source_id: &str, source_params: SourceParams) -> Self {
         Self {
@@ -177,7 +193,9 @@ impl crate::TestableForRegression for SourceConfig {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, Hash, utoipa::ToSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum SourceInputFormat {
     #[default]
@@ -209,7 +227,7 @@ impl FromStr for SourceInputFormat {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Hash, utoipa::ToSchema)]
 #[serde(tag = "source_type", content = "params", rename_all = "snake_case")]
 pub enum SourceParams {
     #[schema(value_type = FileSourceParamsForSerde)]
@@ -247,7 +265,7 @@ impl SourceParams {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum FileSourceMessageType {
     /// See <https://docs.aws.amazon.com/AmazonS3/latest/userguide/notification-content-structure.html>
@@ -256,7 +274,7 @@ pub enum FileSourceMessageType {
     RawUri,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct FileSourceSqs {
     pub queue_url: String,
     pub message_type: FileSourceMessageType,
@@ -280,7 +298,7 @@ fn default_deduplication_cleanup_interval_secs() -> u32 {
     60
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum FileSourceNotification {
     Sqs(FileSourceSqs),
@@ -295,7 +313,7 @@ pub(super) struct FileSourceParamsForSerde {
     filepath: Option<String>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[serde(
     try_from = "FileSourceParamsForSerde",
     into = "FileSourceParamsForSerde"
@@ -354,7 +372,7 @@ impl FileSourceParams {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct KafkaSourceParams {
     /// Name of the topic that the source consumes.
@@ -374,7 +392,7 @@ pub struct KafkaSourceParams {
     pub enable_backfill_mode: bool,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PubSubSourceParams {
     /// Name of the subscription that the source consumes.
@@ -396,14 +414,14 @@ pub struct PubSubSourceParams {
     pub max_messages_per_pull: Option<i32>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum RegionOrEndpoint {
     Region(String),
     Endpoint(String),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(try_from = "KinesisSourceParamsInner")]
 pub struct KinesisSourceParams {
     pub stream_name: String,
@@ -443,7 +461,7 @@ impl TryFrom<KinesisSourceParamsInner> for KinesisSourceParams {
     }
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct VecSourceParams {
     #[schema(value_type = Vec<String>)]
@@ -453,11 +471,13 @@ pub struct VecSourceParams {
     pub partition: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct VoidSourceParams;
 
-#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(
+    Clone, Debug, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
+)]
 #[serde(deny_unknown_fields)]
 pub struct PulsarSourceParams {
     /// List of the topics that the source consumes.
@@ -478,7 +498,9 @@ pub struct PulsarSourceParams {
     pub authentication: Option<PulsarSourceAuth>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(
+    Clone, Debug, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum PulsarSourceAuth {
     Token(String),
@@ -510,7 +532,7 @@ fn default_consumer_name() -> String {
     "quickwit".to_string()
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, utoipa::ToSchema)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TransformConfig {
     /// [VRL] source code of the transform compiled to a VRL [`Program`](vrl::compiler::Program).
