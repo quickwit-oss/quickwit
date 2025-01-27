@@ -316,7 +316,7 @@ pub mod test_helpers {
     /// Runs a mock SQS GetQueueAttributes endpoint to enable creating SQS
     /// sources that pass the connectivity check
     ///
-    /// Rerturns the queue URL to use for the source and a guard for the
+    /// Returns the queue URL to use for the source and a guard for the
     /// temporary mock server
     pub fn start_mock_sqs_get_queue_attributes_endpoint() -> (String, oneshot::Sender<()>) {
         let hello = warp::path!().map(|| "{}");

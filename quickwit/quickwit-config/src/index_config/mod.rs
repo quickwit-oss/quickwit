@@ -268,7 +268,7 @@ impl IndexConfig {
         hasher.finish()
     }
 
-    /// Compare IndexConfig level fingerprints
+    /// Compares IndexConfig level fingerprints
     ///
     /// This method is meant to enable IndexConfig level fingerprint comparison
     /// without taking the risk of mixing them up with pipeline level
