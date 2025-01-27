@@ -47,7 +47,7 @@ pub use metastore::{
     IndexMetadataResponseExt, IndexesMetadataResponseExt, ListIndexesMetadataResponseExt,
     ListSplitsQuery, ListSplitsRequestExt, ListSplitsResponseExt, MetastoreServiceExt,
     MetastoreServiceStreamSplitsExt, PublishSplitsRequestExt, StageSplitsRequestExt,
-    UpdateIndexRequestExt,
+    UpdateIndexRequestExt, UpdateSourceRequestExt,
 };
 pub use metastore_factory::{MetastoreFactory, UnsupportedMetastore};
 pub use metastore_resolver::MetastoreResolver;

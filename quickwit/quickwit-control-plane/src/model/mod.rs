@@ -563,7 +563,7 @@ impl ControlPlaneModel {
 #[cfg(test)]
 mod tests {
     use metastore::EmptyResponse;
-    use quickwit_config::{SourceConfig, SourceParams, INGEST_V2_SOURCE_ID};
+    use quickwit_config::{SourceConfig, SourceParams, TransformConfig, INGEST_V2_SOURCE_ID};
     use quickwit_metastore::IndexMetadata;
     use quickwit_proto::ingest::{Shard, ShardState};
     use quickwit_proto::metastore::{ListIndexesMetadataResponse, MockMetastoreService};
@@ -764,6 +764,35 @@ mod tests {
         assert_eq!(
             model.index_table.get(&index_uid).unwrap().index_config,
             index_config
+        );
+    }
+
+    #[test]
+    fn test_control_plane_model_update_sources() {
+        let mut model = ControlPlaneModel::default();
+        let mut index_metadata = IndexMetadata::for_test("test-index", "ram:///indexes");
+        let mut my_source = SourceConfig::for_test("my-source", SourceParams::void());
+        index_metadata.add_source(my_source.clone()).unwrap();
+        index_metadata
+            .add_source(SourceConfig::ingest_v2())
+            .unwrap();
+        let index_uid = index_metadata.index_uid.clone();
+        model.add_index(index_metadata.clone());
+
+        // Update a source
+        my_source.transform_config = Some(TransformConfig::new("del(.username)".to_string(), None));
+        model.update_source(&index_uid, my_source.clone()).unwrap();
+
+        assert_eq!(model.index_table.len(), 1);
+        assert_eq!(
+            model
+                .index_table
+                .get(&index_uid)
+                .unwrap()
+                .sources
+                .get("my-source")
+                .unwrap(),
+            &my_source
         );
     }
 

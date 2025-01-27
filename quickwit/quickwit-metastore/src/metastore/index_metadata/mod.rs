@@ -158,7 +158,7 @@ impl IndexMetadata {
                 if entry.get() == &source_config {
                     return Ok(false);
                 }
-                entry.insert(source_config.clone());
+                entry.insert(source_config);
                 Ok(true)
             }
             Entry::Vacant(_) => Err(MetastoreError::NotFound(EntityKind::Source {

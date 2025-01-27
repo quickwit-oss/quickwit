@@ -125,10 +125,10 @@ service MetastoreService {
   // Adds a source.
   rpc AddSource(AddSourceRequest) returns (EmptyResponse);
 
-  // Update a source.
+  // Updates a source.
   rpc UpdateSource(UpdateSourceRequest) returns (EmptyResponse);
 
-  // Toggles source.
+  // Toggles (turns on or off) source.
   rpc ToggleSource(ToggleSourceRequest) returns (EmptyResponse);
 
   // Removes source.

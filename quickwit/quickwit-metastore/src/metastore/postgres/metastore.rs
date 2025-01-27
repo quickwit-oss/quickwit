@@ -1081,7 +1081,7 @@ impl MetastoreService for PostgresqlMetastore {
     async fn update_source(&self, request: UpdateSourceRequest) -> MetastoreResult<EmptyResponse> {
         let source_config = request.deserialize_source_config()?;
         let index_uid: IndexUid = request.index_uid().clone();
-        run_with_tx!(self.connection_pool, tx, "add source", {
+        run_with_tx!(self.connection_pool, tx, "update source", {
             mutate_index_metadata::<MetastoreError, _>(tx, index_uid, |index_metadata| {
                 let mutation_occurred = index_metadata.update_source(source_config)?;
                 Ok(MutationOccurred::from(mutation_occurred))

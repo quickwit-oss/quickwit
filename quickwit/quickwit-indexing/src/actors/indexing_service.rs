@@ -31,8 +31,8 @@ use quickwit_common::io::Limiter;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::{io, temp_dir};
 use quickwit_config::{
-    build_doc_mapper, indexing_params_fingerprint, IndexConfig, IndexerConfig, SourceConfig,
-    INGEST_API_SOURCE_ID,
+    build_doc_mapper, indexing_pipeline_params_fingerprint, IndexConfig, IndexerConfig,
+    SourceConfig, INGEST_API_SOURCE_ID,
 };
 use quickwit_ingest::{
     DropQueueRequest, GetPartitionId, IngestApiService, IngesterPool, ListQueuesRequest,
@@ -319,7 +319,8 @@ impl IndexingService {
         let max_concurrent_split_uploads_merge =
             (self.max_concurrent_split_uploads - max_concurrent_split_uploads_index).max(1);
 
-        let params_fingerprint = indexing_params_fingerprint(&index_config, &source_config);
+        let params_fingerprint =
+            indexing_pipeline_params_fingerprint(&index_config, &source_config);
         if let Some(expected_params_fingerprint) = expected_params_fingerprint {
             if params_fingerprint != expected_params_fingerprint {
                 warn!(
@@ -1215,7 +1216,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_indexing_service_apply_plan() {
-        const PARAMS_FINGERPRINT: u64 = 3865067856550546352;
+        const PARAMS_FINGERPRINT_INGEST_API: u64 = 1637744865450232394;
+        const PARAMS_FINGERPRINT_SOURCE_1: u64 = 1705211905504908791;
+        const PARAMS_FINGERPRINT_SOURCE_2: u64 = 8706667372658059428;
 
         quickwit_common::setup_logging_for_tests();
         let transport = ChannelTransport::default();
@@ -1276,14 +1279,14 @@ mod tests {
                 source_id: "test-indexing-service--source-1".to_string(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::for_test(0u128)),
-                params_fingerprint: PARAMS_FINGERPRINT,
+                params_fingerprint: PARAMS_FINGERPRINT_SOURCE_1,
             },
             IndexingTask {
                 index_uid: Some(metadata.index_uid.clone()),
                 source_id: "test-indexing-service--source-1".to_string(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::for_test(1u128)),
-                params_fingerprint: PARAMS_FINGERPRINT,
+                params_fingerprint: PARAMS_FINGERPRINT_SOURCE_1,
             },
         ];
         indexing_service
@@ -1322,28 +1325,28 @@ mod tests {
                 source_id: INGEST_API_SOURCE_ID.to_string(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::for_test(3u128)),
-                params_fingerprint: PARAMS_FINGERPRINT,
+                params_fingerprint: PARAMS_FINGERPRINT_INGEST_API,
             },
             IndexingTask {
                 index_uid: Some(metadata.index_uid.clone()),
                 source_id: "test-indexing-service--source-1".to_string(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::for_test(1u128)),
-                params_fingerprint: PARAMS_FINGERPRINT,
+                params_fingerprint: PARAMS_FINGERPRINT_SOURCE_1,
             },
             IndexingTask {
                 index_uid: Some(metadata.index_uid.clone()),
                 source_id: "test-indexing-service--source-1".to_string(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::for_test(2u128)),
-                params_fingerprint: PARAMS_FINGERPRINT,
+                params_fingerprint: PARAMS_FINGERPRINT_SOURCE_1,
             },
             IndexingTask {
                 index_uid: Some(metadata.index_uid.clone()),
                 source_id: source_config_2.source_id.clone(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::for_test(4u128)),
-                params_fingerprint: PARAMS_FINGERPRINT,
+                params_fingerprint: PARAMS_FINGERPRINT_SOURCE_2,
             },
         ];
         indexing_service
@@ -1384,21 +1387,21 @@ mod tests {
                 source_id: INGEST_API_SOURCE_ID.to_string(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::for_test(3u128)),
-                params_fingerprint: PARAMS_FINGERPRINT,
+                params_fingerprint: PARAMS_FINGERPRINT_INGEST_API,
             },
             IndexingTask {
                 index_uid: Some(metadata.index_uid.clone()),
                 source_id: "test-indexing-service--source-1".to_string(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::for_test(1u128)),
-                params_fingerprint: PARAMS_FINGERPRINT,
+                params_fingerprint: PARAMS_FINGERPRINT_SOURCE_1,
             },
             IndexingTask {
                 index_uid: Some(metadata.index_uid.clone()),
                 source_id: source_config_2.source_id.clone(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::for_test(4u128)),
-                params_fingerprint: PARAMS_FINGERPRINT,
+                params_fingerprint: PARAMS_FINGERPRINT_SOURCE_2,
             },
         ];
         indexing_service

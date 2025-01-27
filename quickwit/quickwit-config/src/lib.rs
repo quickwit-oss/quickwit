@@ -283,7 +283,8 @@ pub trait TestableForRegression: Serialize + DeserializeOwned {
     fn assert_equality(&self, other: &Self);
 }
 
-pub fn indexing_params_fingerprint(
+/// Return a fingerprint of all parameters that should trigger an indexing pipeline restart.
+pub fn indexing_pipeline_params_fingerprint(
     index_config: &IndexConfig,
     source_config: &SourceConfig,
 ) -> u64 {

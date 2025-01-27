@@ -868,12 +868,12 @@ pub trait MetastoreService: std::fmt::Debug + Send + Sync + 'static {
         &self,
         request: AddSourceRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse>;
-    /// Update a source.
+    /// Updates a source.
     async fn update_source(
         &self,
         request: UpdateSourceRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse>;
-    /// Toggles source.
+    /// Toggles (turns on or off) source.
     async fn toggle_source(
         &self,
         request: ToggleSourceRequest,
@@ -6290,7 +6290,7 @@ pub mod metastore_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        /// Update a source.
+        /// Updates a source.
         pub async fn update_source(
             &mut self,
             request: impl tonic::IntoRequest<super::UpdateSourceRequest>,
@@ -6318,7 +6318,7 @@ pub mod metastore_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        /// Toggles source.
+        /// Toggles (turns on or off) source.
         pub async fn toggle_source(
             &mut self,
             request: impl tonic::IntoRequest<super::ToggleSourceRequest>,
@@ -6952,12 +6952,12 @@ pub mod metastore_service_grpc_server {
             &self,
             request: tonic::Request<super::AddSourceRequest>,
         ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status>;
-        /// Update a source.
+        /// Updates a source.
         async fn update_source(
             &self,
             request: tonic::Request<super::UpdateSourceRequest>,
         ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status>;
-        /// Toggles source.
+        /// Toggles (turns on or off) source.
         async fn toggle_source(
             &self,
             request: tonic::Request<super::ToggleSourceRequest>,
