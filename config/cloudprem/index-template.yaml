@@ -50,7 +50,7 @@ doc_mapping:
       record: position
       fast: true
 
-    # Seems to be used only internally, e.g. for paging
+    # Seems to be used only internally, e.g. for paging and fetch_one
     - name: id
       type: text
       tokenizer: raw
@@ -73,23 +73,19 @@ doc_mapping:
     # other text like core attributes
     - name: service
       type: text
-      tokenizer: default  
-      record: position # for phrase search
+      tokenizer: raw  
       fast: true
     - name: service_type 
       type: text
-      tokenizer: default  
-      record: position # for phrase search
+      tokenizer: raw  
       fast: true
     - name: status
       type: text
-      tokenizer: default  
-      record: position # for phrase search
+      tokenizer: raw  
       fast: true
     - name: host
       type: text
-      tokenizer: default  
-      record: position # for phrase search
+      tokenizer: raw  
       fast: true
     - name: trace_id
       type: text
