@@ -55,8 +55,8 @@ impl CloudPremService for CloudPremServiceImpl {
             CountHits::Underestimate
         };
         let search_request = SearchRequest {
-            index_id_patterns: vec!["datadog-op".to_string()], /* TODO this should become
-                                                                * configurable and sent by EVP */
+            index_id_patterns: vec!["datadog-op*".to_string()], /* TODO this should become
+                                                                 * configurable and sent by EVP */
             query_ast: serde_json::to_string(&query_ast)
                 .map_err(|e| CloudPremError::Internal(e.to_string()))?,
             start_timestamp: None,
