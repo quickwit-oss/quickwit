@@ -32,9 +32,9 @@ use super::index_resource::{
 };
 use super::source_resource::{
     __path_create_source, __path_delete_source, __path_reset_source_checkpoint,
-    __path_toggle_source, create_source_handler, delete_source_handler, get_source_handler,
-    get_source_shards_handler, reset_source_checkpoint_handler, toggle_source_handler,
-    ToggleSource,
+    __path_toggle_source, __path_update_source, create_source_handler, delete_source_handler,
+    get_source_handler, get_source_shards_handler, reset_source_checkpoint_handler,
+    toggle_source_handler, update_source_handler, ToggleSource,
 };
 use super::split_resource::{
     __path_list_splits, __path_mark_splits_for_deletion, list_splits_handler,
@@ -57,6 +57,7 @@ use crate::simple_list::from_simple_list;
         describe_index,
         mark_splits_for_deletion,
         create_source,
+        update_source,
         reset_source_checkpoint,
         toggle_source,
         delete_source,
@@ -102,6 +103,7 @@ pub fn index_management_handlers(
         .or(reset_source_checkpoint_handler(index_service.metastore()))
         .or(toggle_source_handler(index_service.metastore()))
         .or(create_source_handler(index_service.clone()))
+        .or(update_source_handler(index_service.clone()))
         .or(get_source_handler(index_service.metastore()))
         .or(delete_source_handler(index_service.metastore()))
         .or(get_source_shards_handler(index_service.metastore()))
@@ -1105,6 +1107,92 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_update_source() {
+        let metastore = metastore_for_test();
+        let index_service = IndexService::new(metastore.clone(), StorageResolver::unconfigured());
+        let mut node_config = NodeConfig::for_test();
+        node_config.default_index_root_uri = Uri::for_test("file:///default-index-root-uri");
+        let index_management_handler =
+            super::index_management_handlers(index_service, Arc::new(node_config));
+        let resp = warp::test::request()
+            .path("/indexes")
+            .method("POST")
+            .json(&true)
+            .body(r#"{"version": "0.7", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]}}"#)
+            .reply(&index_management_handler)
+            .await;
+        assert_eq!(resp.status(), 200);
+        let resp_json: serde_json::Value = serde_json::from_slice(resp.body()).unwrap();
+        let expected_response_json = serde_json::json!({
+            "index_config": {
+                "index_id": "hdfs-logs",
+                "index_uri": "file:///default-index-root-uri/hdfs-logs",
+            }
+        });
+        assert_json_include!(actual: resp_json, expected: expected_response_json);
+
+        // Create source.
+        let source_config_body = r#"{"version": "0.7", "source_id": "vec-source", "source_type": "vec", "params": {"docs": [], "batch_num_docs": 10}}"#;
+        let resp = warp::test::request()
+            .path("/indexes/hdfs-logs/sources")
+            .method("POST")
+            .json(&true)
+            .body(source_config_body)
+            .reply(&index_management_handler)
+            .await;
+        assert_eq!(resp.status(), 200);
+
+        // Update the source.
+        let update_source_config_body = r#"{"version": "0.7", "source_id": "vec-source", "source_type": "vec", "params": {"docs": [], "batch_num_docs": 20}}"#;
+        let resp = warp::test::request()
+            .path("/indexes/hdfs-logs/sources/vec-source")
+            .method("PUT")
+            .json(&true)
+            .body(update_source_config_body)
+            .reply(&index_management_handler)
+            .await;
+        assert_eq!(resp.status(), 200);
+        // Check that the source has been updated.
+        let index_metadata = metastore
+            .index_metadata(IndexMetadataRequest::for_index_id("hdfs-logs".to_string()))
+            .await
+            .unwrap()
+            .deserialize_index_metadata()
+            .unwrap();
+        assert!(index_metadata.sources.contains_key("vec-source"));
+        let source_config = index_metadata.sources.get("vec-source").unwrap();
+        assert_eq!(source_config.source_type(), SourceType::Vec);
+        assert_eq!(
+            source_config.source_params,
+            SourceParams::Vec(VecSourceParams {
+                docs: Vec::new(),
+                batch_num_docs: 20,
+                partition: "".to_string(),
+            })
+        );
+
+        // Update the source with a different source_id (forbidden)
+        let update_source_config_body = r#"{"version": "0.7", "source_id": "other-source-id", "source_type": "vec", "params": {"docs": [], "batch_num_docs": 20}}"#;
+        let resp = warp::test::request()
+            .path("/indexes/hdfs-logs/sources/vec-source")
+            .method("PUT")
+            .json(&true)
+            .body(update_source_config_body)
+            .reply(&index_management_handler)
+            .await;
+        assert_eq!(resp.status(), 400);
+        // Check that the source hasn't been updated.
+        let index_metadata = metastore
+            .index_metadata(IndexMetadataRequest::for_index_id("hdfs-logs".to_string()))
+            .await
+            .unwrap()
+            .deserialize_index_metadata()
+            .unwrap();
+        assert!(index_metadata.sources.contains_key("vec-source"));
+        assert!(!index_metadata.sources.contains_key("other-source-id"));
+    }
+
+    #[tokio::test]
     async fn test_delete_non_existing_source() {
         let mut mock_metastore = MockMetastoreService::new();
         mock_metastore.expect_index_metadata().return_once(|_| {
@@ -1239,13 +1327,6 @@ mod tests {
         let index_management_handler =
             super::index_management_handlers(index_service, Arc::new(NodeConfig::for_test()))
                 .recover(recover_fn);
-        // Check server returns 405 if sources root path is used.
-        let resp = warp::test::request()
-            .path("/indexes/quickwit-demo-index/sources/source-to-toggle")
-            .method("PUT")
-            .reply(&index_management_handler)
-            .await;
-        assert_eq!(resp.status(), 405);
         let resp = warp::test::request()
             .path("/indexes/quickwit-demo-index/sources/source-to-toggle/toggle")
             .method("PUT")

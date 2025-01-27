@@ -28,9 +28,9 @@ use regex::Regex;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value as JsonValue;
-pub use serialize::load_source_config_from_user_config;
 // For backward compatibility.
 use serialize::VersionedSourceConfig;
+pub use serialize::{load_source_config_from_user_config, load_source_config_update};
 use siphasher::sip::SipHasher;
 
 use crate::{disable_ingest_v1, enable_ingest_v2};
@@ -627,6 +627,7 @@ impl TransformConfig {
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZero;
     use std::str::FromStr;
 
     use quickwit_common::uri::Uri;
@@ -1386,5 +1387,47 @@ mod tests {
             load_source_config_from_user_config(ConfigFormat::Json, file_content.as_bytes())
                 .unwrap();
         assert_eq!(source_config.input_format, SourceInputFormat::PlainText);
+    }
+
+    #[tokio::test]
+    async fn test_update_kafka_source_config() {
+        let source_config_filepath = get_source_config_filepath("kafka-source.json");
+        let file_content = std::fs::read(&source_config_filepath).unwrap();
+        let source_config_uri = Uri::from_str(&source_config_filepath).unwrap();
+        let config_format = ConfigFormat::sniff_from_uri(&source_config_uri).unwrap();
+        let mut existing_source_config =
+            load_source_config_from_user_config(config_format, &file_content).unwrap();
+        existing_source_config.num_pipelines = NonZero::new(4).unwrap();
+        let new_source_config =
+            load_source_config_update(config_format, &file_content, &existing_source_config)
+                .unwrap();
+
+        let expected_source_config = SourceConfig {
+            source_id: "hdfs-logs-kafka-source".to_string(),
+            num_pipelines: NonZeroUsize::new(2).unwrap(),
+            enabled: true,
+            source_params: SourceParams::Kafka(KafkaSourceParams {
+                topic: "cloudera-cluster-logs".to_string(),
+                client_log_level: None,
+                client_params: json! {{"bootstrap.servers": "localhost:9092"}},
+                enable_backfill_mode: false,
+            }),
+            transform_config: Some(TransformConfig {
+                vrl_script: ".message = downcase(string!(.message))".to_string(),
+                timezone: "local".to_string(),
+            }),
+            input_format: SourceInputFormat::Json,
+        };
+        assert_eq!(new_source_config, expected_source_config);
+        assert_eq!(new_source_config.num_pipelines.get(), 2);
+
+        // the source type cannot be updated
+        existing_source_config.source_params = SourceParams::Kinesis(KinesisSourceParams {
+            stream_name: "my-stream".to_string(),
+            region_or_endpoint: None,
+            enable_backfill_mode: false,
+        });
+        load_source_config_update(config_format, &file_content, &existing_source_config)
+            .unwrap_err();
     }
 }

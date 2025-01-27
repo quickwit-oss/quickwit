@@ -19,8 +19,8 @@
 
 use bytes::Bytes;
 use quickwit_config::{
-    load_source_config_from_user_config, ConfigFormat, FileSourceParams, SourceConfig,
-    SourceParams, CLI_SOURCE_ID, INGEST_API_SOURCE_ID,
+    load_source_config_from_user_config, load_source_config_update, ConfigFormat, FileSourceParams,
+    SourceConfig, SourceParams, CLI_SOURCE_ID, INGEST_API_SOURCE_ID,
 };
 use quickwit_index_management::{IndexService, IndexServiceError};
 use quickwit_metastore::IndexMetadataResponseExt;
@@ -98,6 +98,67 @@ pub async fn create_source(
         .index_uid;
     info!(index_id = %index_id, source_id = %source_config.source_id, "create-source");
     index_service.add_source(index_uid, source_config).await
+}
+
+pub fn update_source_handler(
+    index_service: IndexService,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    warp::path!("indexes" / String / "sources" / String)
+        .and(warp::put())
+        .and(extract_config_format())
+        .and(warp::body::content_length_limit(1024 * 1024))
+        .and(warp::filters::body::bytes())
+        .and(with_arg(index_service))
+        .then(update_source)
+        .map(log_failure("failed to update source"))
+        .and(extract_format_from_qs())
+        .map(into_rest_api_response)
+        .boxed()
+}
+
+#[utoipa::path(
+    put,
+    tag = "Sources",
+    path = "/indexes/{index_id}/sources/{source_id}",
+    request_body = VersionedSourceConfig,
+    responses(
+        // We return `VersionedSourceConfig` as it's the serialized model view.
+        (status = 200, description = "Successfully updated source.", body = VersionedSourceConfig)
+    ),
+    params(
+        ("index_id" = String, Path, description = "The index ID to create a source for."),
+        ("source_id" = String, Path, description = "The source ID to update."),
+    )
+)]
+/// Updates Source.
+pub async fn update_source(
+    index_id: IndexId,
+    source_id: SourceId,
+    config_format: ConfigFormat,
+    source_config_bytes: Bytes,
+    mut index_service: IndexService,
+) -> Result<SourceConfig, IndexServiceError> {
+    let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
+    let mut current_index_metadata = index_service
+        .metastore()
+        .index_metadata(index_metadata_request)
+        .await?
+        .deserialize_index_metadata()?;
+    let current_source_config = current_index_metadata.sources.remove(&source_id).ok_or({
+        MetastoreError::NotFound(EntityKind::Source {
+            index_id: index_id.to_string(),
+            source_id,
+        })
+    })?;
+
+    let new_source_config: SourceConfig =
+        load_source_config_update(config_format, &source_config_bytes, &current_source_config)
+            .map_err(IndexServiceError::InvalidConfig)?;
+
+    info!(index_id = %index_id, source_id = %new_source_config.source_id, "update-source");
+    index_service
+        .update_source(current_index_metadata.index_uid, new_source_config)
+        .await
 }
 
 pub fn get_source_handler(

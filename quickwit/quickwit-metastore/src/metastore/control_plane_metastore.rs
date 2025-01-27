@@ -106,7 +106,7 @@ impl MetastoreService for ControlPlaneMetastore {
     }
 
     async fn toggle_source(&self, request: ToggleSourceRequest) -> MetastoreResult<EmptyResponse> {
-        let response = self.control_plane.clone().toggle_source(request).await?;
+        let response = self.control_plane.toggle_source(request).await?;
         Ok(response)
     }
 

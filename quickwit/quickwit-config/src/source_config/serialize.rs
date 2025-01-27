@@ -14,7 +14,7 @@
 
 use std::num::NonZeroUsize;
 
-use anyhow::bail;
+use anyhow::{bail, ensure};
 use quickwit_proto::types::SourceId;
 use serde::{Deserialize, Serialize};
 
@@ -57,6 +57,32 @@ pub fn load_source_config_from_user_config(
     let source_config_for_serialization: SourceConfigForSerialization =
         versioned_source_config.into();
     source_config_for_serialization.validate_and_build()
+}
+
+pub fn load_source_config_update(
+    config_format: ConfigFormat,
+    config_content: &[u8],
+    current_source_config: &SourceConfig,
+) -> anyhow::Result<SourceConfig> {
+    let versioned_source_config: VersionedSourceConfig = config_format.parse(config_content)?;
+    let source_config_for_serialization: SourceConfigForSerialization =
+        versioned_source_config.into();
+    let new_source_config = source_config_for_serialization.validate_and_build()?;
+
+    ensure!(
+        current_source_config.source_id == new_source_config.source_id,
+        "existing `source_id` {} does not match updated `source_id` {}",
+        current_source_config.source_id,
+        new_source_config.source_id
+    );
+
+    ensure!(
+        current_source_config.source_type() == new_source_config.source_type(),
+        "source type cannot be updated, current type: {}",
+        current_source_config.source_type(),
+    );
+
+    Ok(new_source_config)
 }
 
 impl SourceConfigForSerialization {

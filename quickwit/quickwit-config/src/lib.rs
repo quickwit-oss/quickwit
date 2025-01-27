@@ -54,11 +54,11 @@ use serde_json::Value as JsonValue;
 use siphasher::sip::SipHasher;
 use source_config::FileSourceParamsForSerde;
 pub use source_config::{
-    load_source_config_from_user_config, FileSourceMessageType, FileSourceNotification,
-    FileSourceParams, FileSourceSqs, KafkaSourceParams, KinesisSourceParams, PubSubSourceParams,
-    PulsarSourceAuth, PulsarSourceParams, RegionOrEndpoint, SourceConfig, SourceInputFormat,
-    SourceParams, TransformConfig, VecSourceParams, VoidSourceParams, CLI_SOURCE_ID,
-    INGEST_API_SOURCE_ID, INGEST_V2_SOURCE_ID,
+    load_source_config_from_user_config, load_source_config_update, FileSourceMessageType,
+    FileSourceNotification, FileSourceParams, FileSourceSqs, KafkaSourceParams,
+    KinesisSourceParams, PubSubSourceParams, PulsarSourceAuth, PulsarSourceParams,
+    RegionOrEndpoint, SourceConfig, SourceInputFormat, SourceParams, TransformConfig,
+    VecSourceParams, VoidSourceParams, CLI_SOURCE_ID, INGEST_API_SOURCE_ID, INGEST_V2_SOURCE_ID,
 };
 use tracing::warn;
 
