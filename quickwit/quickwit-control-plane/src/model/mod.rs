@@ -214,8 +214,7 @@ impl ControlPlaneModel {
         let Some(index_model) = self.index_table.get_mut(index_uid) else {
             bail!("index `{}` not found", index_uid.index_id);
         };
-        let fp_changed = index_model.index_config.indexing_params_fingerprint()
-            != index_config.indexing_params_fingerprint();
+        let fp_changed = !index_model.index_config.equals_fingerprint(&index_config);
         index_model.index_config = index_config;
         self.update_metrics();
         Ok(fp_changed)
@@ -246,6 +245,20 @@ impl ControlPlaneModel {
             self.shard_table
                 .add_source(index_uid, &source_config.source_id);
         }
+        Ok(())
+    }
+
+    pub(crate) fn update_source(
+        &mut self,
+        index_uid: &IndexUid,
+        source_config: SourceConfig,
+    ) -> ControlPlaneResult<()> {
+        let index_metadata = self.index_table.get_mut(index_uid).ok_or_else(|| {
+            MetastoreError::NotFound(EntityKind::Index {
+                index_id: index_uid.to_string(),
+            })
+        })?;
+        index_metadata.update_source(source_config)?;
         Ok(())
     }
 
@@ -550,7 +563,7 @@ impl ControlPlaneModel {
 #[cfg(test)]
 mod tests {
     use metastore::EmptyResponse;
-    use quickwit_config::{SourceConfig, SourceParams, INGEST_V2_SOURCE_ID};
+    use quickwit_config::{SourceConfig, SourceParams, TransformConfig, INGEST_V2_SOURCE_ID};
     use quickwit_metastore::IndexMetadata;
     use quickwit_proto::ingest::{Shard, ShardState};
     use quickwit_proto::metastore::{ListIndexesMetadataResponse, MockMetastoreService};
@@ -751,6 +764,35 @@ mod tests {
         assert_eq!(
             model.index_table.get(&index_uid).unwrap().index_config,
             index_config
+        );
+    }
+
+    #[test]
+    fn test_control_plane_model_update_sources() {
+        let mut model = ControlPlaneModel::default();
+        let mut index_metadata = IndexMetadata::for_test("test-index", "ram:///indexes");
+        let mut my_source = SourceConfig::for_test("my-source", SourceParams::void());
+        index_metadata.add_source(my_source.clone()).unwrap();
+        index_metadata
+            .add_source(SourceConfig::ingest_v2())
+            .unwrap();
+        let index_uid = index_metadata.index_uid.clone();
+        model.add_index(index_metadata.clone());
+
+        // Update a source
+        my_source.transform_config = Some(TransformConfig::new("del(.username)".to_string(), None));
+        model.update_source(&index_uid, my_source.clone()).unwrap();
+
+        assert_eq!(model.index_table.len(), 1);
+        assert_eq!(
+            model
+                .index_table
+                .get(&index_uid)
+                .unwrap()
+                .sources
+                .get("my-source")
+                .unwrap(),
+            &my_source
         );
     }
 

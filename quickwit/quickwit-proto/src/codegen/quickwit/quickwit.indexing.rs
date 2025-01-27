@@ -22,7 +22,7 @@ pub struct IndexingTask {
     #[prost(message, repeated, tag = "3")]
     pub shard_ids: ::prost::alloc::vec::Vec<crate::types::ShardId>,
     /// Fingerprint of the pipeline parameters. Anything that should cause a pipeline restart (such
-    /// as updating indexing settings or doc mapping) should influence this value.
+    /// as updating indexing settings, the doc mapping or the source) should influence this value.
     #[prost(uint64, tag = "6")]
     pub params_fingerprint: u64,
 }

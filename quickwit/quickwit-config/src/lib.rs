@@ -14,6 +14,7 @@
 
 #![deny(clippy::disallowed_methods)]
 
+use std::hash::Hasher;
 use std::str::FromStr;
 
 use anyhow::{bail, ensure, Context};
@@ -50,13 +51,14 @@ pub use quickwit_doc_mapper::DocMapping;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
+use siphasher::sip::SipHasher;
 use source_config::FileSourceParamsForSerde;
 pub use source_config::{
-    load_source_config_from_user_config, FileSourceMessageType, FileSourceNotification,
-    FileSourceParams, FileSourceSqs, KafkaSourceParams, KinesisSourceParams, PubSubSourceParams,
-    PulsarSourceAuth, PulsarSourceParams, RegionOrEndpoint, SourceConfig, SourceInputFormat,
-    SourceParams, TransformConfig, VecSourceParams, VoidSourceParams, CLI_SOURCE_ID,
-    INGEST_API_SOURCE_ID, INGEST_V2_SOURCE_ID,
+    load_source_config_from_user_config, load_source_config_update, FileSourceMessageType,
+    FileSourceNotification, FileSourceParams, FileSourceSqs, KafkaSourceParams,
+    KinesisSourceParams, PubSubSourceParams, PulsarSourceAuth, PulsarSourceParams,
+    RegionOrEndpoint, SourceConfig, SourceInputFormat, SourceParams, TransformConfig,
+    VecSourceParams, VoidSourceParams, CLI_SOURCE_ID, INGEST_API_SOURCE_ID, INGEST_V2_SOURCE_ID,
 };
 use tracing::warn;
 
@@ -279,6 +281,18 @@ pub trait TestableForRegression: Serialize + DeserializeOwned {
 
     /// Asserts that `self` and `other` are equal. It must panic if they are not.
     fn assert_equality(&self, other: &Self);
+}
+
+/// Returns a fingerprint (a hash) of all the parameters that should force an
+/// indexing pipeline to restart upon index or source config updates.
+pub fn indexing_pipeline_params_fingerprint(
+    index_config: &IndexConfig,
+    source_config: &SourceConfig,
+) -> u64 {
+    let mut hasher = SipHasher::new();
+    hasher.write_u64(index_config.indexing_params_fingerprint());
+    hasher.write_u64(source_config.indexing_params_fingerprint());
+    hasher.finish()
 }
 
 #[cfg(test)]

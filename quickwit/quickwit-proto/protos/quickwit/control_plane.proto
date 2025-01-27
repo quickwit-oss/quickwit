@@ -49,6 +49,9 @@ service ControlPlaneService {
   // Adds a source to an index.
   rpc AddSource(quickwit.metastore.AddSourceRequest) returns (quickwit.metastore.EmptyResponse);
 
+  // Update a source.
+  rpc UpdateSource(quickwit.metastore.UpdateSourceRequest) returns (quickwit.metastore.EmptyResponse);
+
   // Enables or disables a source.
   rpc ToggleSource(quickwit.metastore.ToggleSourceRequest) returns (quickwit.metastore.EmptyResponse);
 

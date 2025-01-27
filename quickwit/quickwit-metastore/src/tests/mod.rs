@@ -372,6 +372,13 @@ macro_rules! metastore_test_suite {
 
             #[tokio::test]
             #[serial_test::file_serial]
+            async fn test_metastore_update_source() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::source::test_metastore_update_source::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::file_serial]
             async fn test_metastore_toggle_source() {
                 let _ = tracing_subscriber::fmt::try_init();
                 $crate::tests::source::test_metastore_toggle_source::<$metastore_type>().await;

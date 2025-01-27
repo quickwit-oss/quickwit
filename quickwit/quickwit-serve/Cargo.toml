@@ -98,3 +98,7 @@ pprof = [
   "dep:pprof"
 ]
 testsuite = []
+sqs-for-tests = [
+  "quickwit-indexing/sqs",
+  "quickwit-indexing/sqs-test-helpers"
+]

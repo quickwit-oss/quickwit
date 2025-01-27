@@ -493,6 +493,27 @@ quickwit source create
 |-----------------|-------------|
 | `--index` | ID of the target index |
 | `--source-config` | Path to source config file. Please, refer to the documentation for more details. |
+### source update
+
+Update an existing source.  
+`quickwit source update [args]`
+
+*Synopsis*
+
+```bash
+quickwit source update
+    --index <index>
+    --source <source>
+    --source-config <source-config>
+```
+
+*Options*
+
+| Option | Description |
+|-----------------|-------------|
+| `--index` | ID of the target index |
+| `--source` | ID of the source |
+| `--source-config` | Path to source config file. Please, refer to the documentation for more details. |
 ### source enable
 
 Enables a source for an index.  

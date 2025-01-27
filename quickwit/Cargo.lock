@@ -6691,6 +6691,7 @@ dependencies = [
  "ulid",
  "utoipa",
  "vrl",
+ "warp",
 ]
 
 [[package]]

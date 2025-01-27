@@ -38,7 +38,7 @@ use quickwit_proto::metastore::{
     IndexMetadataFailure, IndexMetadataRequest, IndexMetadataResponse, IndexesMetadataResponse,
     ListIndexesMetadataResponse, ListSplitsRequest, ListSplitsResponse, MetastoreError,
     MetastoreResult, MetastoreService, MetastoreServiceClient, MetastoreServiceStream,
-    PublishSplitsRequest, StageSplitsRequest, UpdateIndexRequest,
+    PublishSplitsRequest, StageSplitsRequest, UpdateIndexRequest, UpdateSourceRequest,
 };
 use quickwit_proto::types::{IndexUid, NodeId, SplitId};
 use time::OffsetDateTime;
@@ -421,6 +421,36 @@ impl AddSourceRequestExt for AddSourceRequest {
     }
 }
 
+/// Helper trait to build a [`UpdateSourceRequest`] and deserialize its payload.
+pub trait UpdateSourceRequestExt {
+    /// Creates a new [`UpdateSourceRequest`] from a [`SourceConfig`].
+    fn try_from_source_config(
+        index_uid: impl Into<IndexUid>,
+        source_config: &SourceConfig,
+    ) -> MetastoreResult<UpdateSourceRequest>;
+
+    /// Deserializes the `source_config_json` field of a [`UpdateSourceRequest`] into a
+    /// [`SourceConfig`].
+    fn deserialize_source_config(&self) -> MetastoreResult<SourceConfig>;
+}
+
+impl UpdateSourceRequestExt for UpdateSourceRequest {
+    fn try_from_source_config(
+        index_uid: impl Into<IndexUid>,
+        source_config: &SourceConfig,
+    ) -> MetastoreResult<UpdateSourceRequest> {
+        let source_config_json = serde_utils::to_json_str(&source_config)?;
+        let request = Self {
+            index_uid: Some(index_uid.into()),
+            source_config_json,
+        };
+        Ok(request)
+    }
+
+    fn deserialize_source_config(&self) -> MetastoreResult<SourceConfig> {
+        serde_utils::from_json_str(&self.source_config_json)
+    }
+}
 /// Helper trait to build a [`DeleteTask`] and deserialize its payload.
 pub trait StageSplitsRequestExt {
     /// Creates a new [`StageSplitsRequest`] from a [`SplitMetadata`].

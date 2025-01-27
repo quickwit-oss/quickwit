@@ -122,10 +122,13 @@ service MetastoreService {
   // Deletes splits.
   rpc DeleteSplits(DeleteSplitsRequest) returns (EmptyResponse);
 
-  // Adds source.
+  // Adds a source.
   rpc AddSource(AddSourceRequest) returns (EmptyResponse);
 
-  // Toggles source.
+  // Updates a source.
+  rpc UpdateSource(UpdateSourceRequest) returns (EmptyResponse);
+
+  // Toggles (turns on or off) source.
   rpc ToggleSource(ToggleSourceRequest) returns (EmptyResponse);
 
   // Removes source.
@@ -315,6 +318,11 @@ message DeleteSplitsRequest {
 }
 
 message AddSourceRequest {
+  quickwit.common.IndexUid index_uid = 1;
+  string source_config_json = 2;
+}
+
+message UpdateSourceRequest {
   quickwit.common.IndexUid index_uid = 1;
   string source_config_json = 2;
 }

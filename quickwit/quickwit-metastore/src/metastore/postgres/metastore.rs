@@ -42,7 +42,8 @@ use quickwit_proto::metastore::{
     MetastoreResult, MetastoreService, MetastoreServiceStream, OpenShardSubrequest,
     OpenShardSubresponse, OpenShardsRequest, OpenShardsResponse, PruneShardsRequest,
     PublishSplitsRequest, ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest,
-    UpdateIndexRequest, UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
+    UpdateIndexRequest, UpdateSourceRequest, UpdateSplitsDeleteOpstampRequest,
+    UpdateSplitsDeleteOpstampResponse,
 };
 use quickwit_proto::types::{IndexId, IndexUid, Position, PublishToken, ShardId, SourceId};
 use sea_query::{Alias, Asterisk, Expr, Func, PostgresQueryBuilder, Query, UnionType};
@@ -68,7 +69,8 @@ use crate::file_backed::MutationOccurred;
 use crate::metastore::postgres::model::Shards;
 use crate::metastore::postgres::utils::split_maturity_timestamp;
 use crate::metastore::{
-    use_shard_api, IndexesMetadataResponseExt, PublishSplitsRequestExt, STREAM_SPLITS_CHUNK_SIZE,
+    use_shard_api, IndexesMetadataResponseExt, PublishSplitsRequestExt, UpdateSourceRequestExt,
+    STREAM_SPLITS_CHUNK_SIZE,
 };
 use crate::{
     AddSourceRequestExt, CreateIndexRequestExt, IndexMetadata, IndexMetadataResponseExt,
@@ -1068,6 +1070,21 @@ impl MetastoreService for PostgresqlMetastore {
             mutate_index_metadata::<MetastoreError, _>(tx, index_uid, |index_metadata| {
                 index_metadata.add_source(source_config)?;
                 Ok(MutationOccurred::Yes(()))
+            })
+            .await?;
+            Ok(())
+        })?;
+        Ok(EmptyResponse {})
+    }
+
+    #[instrument(skip(self))]
+    async fn update_source(&self, request: UpdateSourceRequest) -> MetastoreResult<EmptyResponse> {
+        let source_config = request.deserialize_source_config()?;
+        let index_uid: IndexUid = request.index_uid().clone();
+        run_with_tx!(self.connection_pool, tx, "update source", {
+            mutate_index_metadata::<MetastoreError, _>(tx, index_uid, |index_metadata| {
+                let mutation_occurred = index_metadata.update_source(source_config)?;
+                Ok(MutationOccurred::from(mutation_occurred))
             })
             .await?;
             Ok(())

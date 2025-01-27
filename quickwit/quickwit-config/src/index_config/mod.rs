@@ -257,11 +257,25 @@ pub struct IndexConfig {
 
 impl IndexConfig {
     /// Return a fingerprint of parameters relevant for indexers
-    pub fn indexing_params_fingerprint(&self) -> u64 {
+    ///
+    /// This should remain private to this crate to avoid confusion with the
+    /// full indexing pipeline fingerprint that also includes the source's
+    /// fingerprint.
+    pub(crate) fn indexing_params_fingerprint(&self) -> u64 {
         let mut hasher = SipHasher::new();
         self.doc_mapping.doc_mapping_uid.hash(&mut hasher);
         self.indexing_settings.hash(&mut hasher);
         hasher.finish()
+    }
+
+    /// Compares IndexConfig level fingerprints
+    ///
+    /// This method is meant to enable IndexConfig level fingerprint comparison
+    /// without taking the risk of mixing them up with pipeline level
+    /// fingerprints (computed by
+    /// [`crate::indexing_pipeline_params_fingerprint()`]).
+    pub fn equals_fingerprint(&self, other: &Self) -> bool {
+        self.indexing_params_fingerprint() == other.indexing_params_fingerprint()
     }
 
     #[cfg(any(test, feature = "testsuite"))]

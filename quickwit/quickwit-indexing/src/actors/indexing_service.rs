@@ -31,7 +31,8 @@ use quickwit_common::io::Limiter;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::{io, temp_dir};
 use quickwit_config::{
-    build_doc_mapper, IndexConfig, IndexerConfig, SourceConfig, INGEST_API_SOURCE_ID,
+    build_doc_mapper, indexing_pipeline_params_fingerprint, IndexConfig, IndexerConfig,
+    SourceConfig, INGEST_API_SOURCE_ID,
 };
 use quickwit_ingest::{
     DropQueueRequest, GetPartitionId, IngestApiService, IngesterPool, ListQueuesRequest,
@@ -241,8 +242,15 @@ impl IndexingService {
             pipeline_uid,
         };
         let index_config = index_metadata.into_index_config();
-        self.spawn_pipeline_inner(ctx, pipeline_id.clone(), index_config, source_config, None)
-            .await?;
+        self.spawn_pipeline_inner(
+            ctx,
+            pipeline_id.clone(),
+            index_config,
+            source_config,
+            None,
+            None,
+        )
+        .await?;
         Ok(pipeline_id)
     }
 
@@ -253,6 +261,7 @@ impl IndexingService {
         index_config: IndexConfig,
         source_config: SourceConfig,
         immature_splits_opt: Option<Vec<SplitMetadata>>,
+        expected_params_fingerprint: Option<u64>,
     ) -> Result<(), IndexingError> {
         if self
             .indexing_pipelines
@@ -310,7 +319,24 @@ impl IndexingService {
         let max_concurrent_split_uploads_merge =
             (self.max_concurrent_split_uploads - max_concurrent_split_uploads_index).max(1);
 
-        let params_fingerprint = index_config.indexing_params_fingerprint();
+        let params_fingerprint =
+            indexing_pipeline_params_fingerprint(&index_config, &source_config);
+        if let Some(expected_params_fingerprint) = expected_params_fingerprint {
+            // If the fingerprint of the config freshly fetched from the
+            // metastore is different from that received from the control plane,
+            // it means that the config changed again since the last indexing
+            // plan was built. In this case, postpone the pipeline creation.
+            if params_fingerprint != expected_params_fingerprint {
+                info!(
+                    index_id = indexing_pipeline_id.index_uid.index_id,
+                    source_id = indexing_pipeline_id.source_id,
+                    expected = expected_params_fingerprint,
+                    actual = params_fingerprint,
+                    "pipeline fingerprint mismatch, postponing pipeline creation"
+                );
+                return Ok(());
+            }
+        }
         let pipeline_params = IndexingPipelineParams {
             pipeline_id: indexing_pipeline_id.clone(),
             metastore: self.metastore.clone(),
@@ -631,20 +657,14 @@ impl IndexingService {
     /// Identifies the pipelines to spawn and shutdown by comparing the scheduled plan with the
     /// current running plan.
     fn compute_pipeline_diff(&self, tasks: &[IndexingTask]) -> IndexingPipelineDiff {
-        let mut pipelines_to_spawn: Vec<IndexingPipelineId> = Vec::new();
+        let mut pipelines_to_spawn: Vec<IndexingTask> = Vec::new();
         let mut scheduled_pipeline_uids: HashSet<PipelineUid> = HashSet::with_capacity(tasks.len());
 
         for task in tasks {
             let pipeline_uid = task.pipeline_uid();
 
             if !self.indexing_pipelines.contains_key(&pipeline_uid) {
-                let pipeline_id = IndexingPipelineId {
-                    node_id: self.node_id.clone(),
-                    index_uid: task.index_uid().clone(),
-                    source_id: task.source_id.clone(),
-                    pipeline_uid,
-                };
-                pipelines_to_spawn.push(pipeline_id);
+                pipelines_to_spawn.push(task.clone());
             }
             scheduled_pipeline_uids.insert(pipeline_uid);
         }
@@ -664,10 +684,19 @@ impl IndexingService {
     /// Spawns the pipelines with supplied ids and returns a list of failed pipelines.
     async fn spawn_pipelines(
         &mut self,
-        pipelines_to_spawn: &[IndexingPipelineId],
+        pipelines_to_spawn: &[IndexingTask],
         ctx: &ActorContext<Self>,
     ) -> Result<Vec<IndexingPipelineId>, IndexingError> {
-        let indexes_metadata = self.indexes_metadata(ctx, pipelines_to_spawn).await?;
+        let pipelines_to_spawn_ids: Vec<_> = pipelines_to_spawn
+            .iter()
+            .map(|task| IndexingPipelineId {
+                node_id: self.node_id.clone(),
+                index_uid: task.index_uid().clone(),
+                pipeline_uid: task.pipeline_uid(),
+                source_id: task.source_id.clone(),
+            })
+            .collect();
+        let indexes_metadata = self.indexes_metadata(ctx, &pipelines_to_spawn_ids).await?;
 
         let per_index_uid_indexes_metadata: HashMap<IndexUid, IndexMetadata> = indexes_metadata
             .into_iter()
@@ -675,45 +704,44 @@ impl IndexingService {
             .collect();
 
         let mut per_merge_pipeline_immature_splits: HashMap<MergePipelineId, Vec<SplitMetadata>> =
-            self.fetch_immature_splits_for_new_merge_pipelines(pipelines_to_spawn, ctx)
+            self.fetch_immature_splits_for_new_merge_pipelines(&pipelines_to_spawn_ids, ctx)
                 .await?;
 
         let mut spawn_pipeline_failures: Vec<IndexingPipelineId> = Vec::new();
 
-        for pipeline_to_spawn in pipelines_to_spawn {
+        for (task_to_spawn, id_to_spawn) in pipelines_to_spawn.iter().zip(pipelines_to_spawn_ids) {
             if let Some(index_metadata) =
-                per_index_uid_indexes_metadata.get(&pipeline_to_spawn.index_uid)
+                per_index_uid_indexes_metadata.get(task_to_spawn.index_uid())
             {
-                if let Some(source_config) =
-                    index_metadata.sources.get(&pipeline_to_spawn.source_id)
-                {
-                    let merge_pipeline_id = pipeline_to_spawn.merge_pipeline_id();
+                if let Some(source_config) = index_metadata.sources.get(&task_to_spawn.source_id) {
+                    let merge_pipeline_id = id_to_spawn.merge_pipeline_id();
                     let immature_splits_opt =
                         per_merge_pipeline_immature_splits.remove(&merge_pipeline_id);
 
                     if let Err(error) = self
                         .spawn_pipeline_inner(
                             ctx,
-                            pipeline_to_spawn.clone(),
+                            id_to_spawn.clone(),
                             index_metadata.index_config.clone(),
                             source_config.clone(),
                             immature_splits_opt,
+                            Some(task_to_spawn.params_fingerprint),
                         )
                         .await
                     {
-                        error!(pipeline_id=?pipeline_to_spawn, %error, "failed to spawn pipeline");
-                        spawn_pipeline_failures.push(pipeline_to_spawn.clone());
+                        error!(pipeline_id=?id_to_spawn, %error, "failed to spawn pipeline");
+                        spawn_pipeline_failures.push(id_to_spawn.clone());
                     }
                 } else {
-                    error!(pipeline_id=?pipeline_to_spawn, "failed to spawn pipeline: source not found");
-                    spawn_pipeline_failures.push(pipeline_to_spawn.clone());
+                    error!(pipeline_id=?id_to_spawn, "failed to spawn pipeline: source not found");
+                    spawn_pipeline_failures.push(id_to_spawn.clone());
                 }
             } else {
                 error!(
                     "failed to spawn pipeline: index `{}` no longer exists",
-                    pipeline_to_spawn.index_uid
+                    id_to_spawn.index_uid
                 );
-                spawn_pipeline_failures.push(pipeline_to_spawn.clone());
+                spawn_pipeline_failures.push(id_to_spawn.clone());
             }
         }
         Ok(spawn_pipeline_failures)
@@ -970,7 +998,7 @@ impl Handler<Healthz> for IndexingService {
 #[derive(Debug)]
 struct IndexingPipelineDiff {
     pipelines_to_shutdown: Vec<PipelineUid>,
-    pipelines_to_spawn: Vec<IndexingPipelineId>,
+    pipelines_to_spawn: Vec<IndexingTask>,
 }
 
 #[cfg(test)]
@@ -1195,7 +1223,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_indexing_service_apply_plan() {
-        const PARAMS_FINGERPRINT: u64 = 3865067856550546352;
+        const PARAMS_FINGERPRINT_INGEST_API: u64 = 1637744865450232394;
+        const PARAMS_FINGERPRINT_SOURCE_1: u64 = 1705211905504908791;
+        const PARAMS_FINGERPRINT_SOURCE_2: u64 = 8706667372658059428;
 
         quickwit_common::setup_logging_for_tests();
         let transport = ChannelTransport::default();
@@ -1231,8 +1261,13 @@ mod tests {
             cluster.clone(),
         )
         .await;
+        let metadata = metastore
+            .index_metadata(IndexMetadataRequest::for_index_id(index_id.clone()))
+            .await
+            .unwrap()
+            .deserialize_index_metadata()
+            .unwrap();
 
-        // Test `apply plan`.
         let source_config_1 = SourceConfig {
             source_id: "test-indexing-service--source-1".to_string(),
             num_pipelines: NonZeroUsize::MIN,
@@ -1241,43 +1276,41 @@ mod tests {
             transform_config: None,
             input_format: SourceInputFormat::Json,
         };
-        let add_source_request =
-            AddSourceRequest::try_from_source_config(index_uid.clone(), &source_config_1).unwrap();
-        metastore.add_source(add_source_request).await.unwrap();
-        let metadata = metastore
-            .index_metadata(IndexMetadataRequest::for_index_id(index_id.clone()))
-            .await
-            .unwrap()
-            .deserialize_index_metadata()
-            .unwrap();
-        let indexing_tasks = vec![
-            IndexingTask {
-                index_uid: Some(metadata.index_uid.clone()),
-                source_id: "test-indexing-service--source-1".to_string(),
-                shard_ids: Vec::new(),
-                pipeline_uid: Some(PipelineUid::for_test(0u128)),
-                params_fingerprint: PARAMS_FINGERPRINT,
-            },
-            IndexingTask {
-                index_uid: Some(metadata.index_uid.clone()),
-                source_id: "test-indexing-service--source-1".to_string(),
-                shard_ids: Vec::new(),
-                pipeline_uid: Some(PipelineUid::for_test(1u128)),
-                params_fingerprint: PARAMS_FINGERPRINT,
-            },
-        ];
-        indexing_service
-            .ask_for_res(ApplyIndexingPlanRequest { indexing_tasks })
-            .await
-            .unwrap();
-        assert_eq!(
-            indexing_service_handle
-                .observe()
+        {
+            // Assign 2 indexing tasks
+            // -> total: 1 source * 2 pipelines
+            let add_source_request =
+                AddSourceRequest::try_from_source_config(index_uid.clone(), &source_config_1)
+                    .unwrap();
+            metastore.add_source(add_source_request).await.unwrap();
+            let indexing_tasks = vec![
+                IndexingTask {
+                    index_uid: Some(metadata.index_uid.clone()),
+                    source_id: source_config_1.source_id.clone(),
+                    shard_ids: Vec::new(),
+                    pipeline_uid: Some(PipelineUid::for_test(0u128)),
+                    params_fingerprint: PARAMS_FINGERPRINT_SOURCE_1,
+                },
+                IndexingTask {
+                    index_uid: Some(metadata.index_uid.clone()),
+                    source_id: source_config_1.source_id.clone(),
+                    shard_ids: Vec::new(),
+                    pipeline_uid: Some(PipelineUid::for_test(1u128)),
+                    params_fingerprint: PARAMS_FINGERPRINT_SOURCE_1,
+                },
+            ];
+            indexing_service
+                .ask_for_res(ApplyIndexingPlanRequest { indexing_tasks })
                 .await
-                .num_running_pipelines,
-            2
-        );
-
+                .unwrap();
+            assert_eq!(
+                indexing_service_handle
+                    .observe()
+                    .await
+                    .num_running_pipelines,
+                2
+            );
+        }
         let kafka_params = KafkaSourceParams {
             topic: "my-topic".to_string(),
             client_log_level: None,
@@ -1292,126 +1325,170 @@ mod tests {
             transform_config: None,
             input_format: SourceInputFormat::Json,
         };
-        let add_source_request_2 =
-            AddSourceRequest::try_from_source_config(index_uid.clone(), &source_config_2).unwrap();
-        metastore.add_source(add_source_request_2).await.unwrap();
+        {
+            // Assign 2 more indexing tasks (1 new source + activate ingest API source)
+            // -> total: 2 source * 1 pipeline + 1 source * 2 pipelines
+            let add_source_request_2 =
+                AddSourceRequest::try_from_source_config(index_uid.clone(), &source_config_2)
+                    .unwrap();
+            metastore.add_source(add_source_request_2).await.unwrap();
 
-        let indexing_tasks = vec![
-            IndexingTask {
-                index_uid: Some(metadata.index_uid.clone()),
-                source_id: INGEST_API_SOURCE_ID.to_string(),
-                shard_ids: Vec::new(),
-                pipeline_uid: Some(PipelineUid::for_test(3u128)),
-                params_fingerprint: PARAMS_FINGERPRINT,
-            },
-            IndexingTask {
-                index_uid: Some(metadata.index_uid.clone()),
-                source_id: "test-indexing-service--source-1".to_string(),
-                shard_ids: Vec::new(),
-                pipeline_uid: Some(PipelineUid::for_test(1u128)),
-                params_fingerprint: PARAMS_FINGERPRINT,
-            },
-            IndexingTask {
-                index_uid: Some(metadata.index_uid.clone()),
-                source_id: "test-indexing-service--source-1".to_string(),
-                shard_ids: Vec::new(),
-                pipeline_uid: Some(PipelineUid::for_test(2u128)),
-                params_fingerprint: PARAMS_FINGERPRINT,
-            },
-            IndexingTask {
-                index_uid: Some(metadata.index_uid.clone()),
-                source_id: source_config_2.source_id.clone(),
-                shard_ids: Vec::new(),
-                pipeline_uid: Some(PipelineUid::for_test(4u128)),
-                params_fingerprint: PARAMS_FINGERPRINT,
-            },
-        ];
-        indexing_service
-            .ask_for_res(ApplyIndexingPlanRequest {
-                indexing_tasks: indexing_tasks.clone(),
-            })
-            .await
-            .unwrap();
-        assert_eq!(
-            indexing_service_handle
-                .observe()
+            let indexing_tasks = vec![
+                IndexingTask {
+                    index_uid: Some(metadata.index_uid.clone()),
+                    source_id: INGEST_API_SOURCE_ID.to_string(),
+                    shard_ids: Vec::new(),
+                    pipeline_uid: Some(PipelineUid::for_test(3u128)),
+                    params_fingerprint: PARAMS_FINGERPRINT_INGEST_API,
+                },
+                IndexingTask {
+                    index_uid: Some(metadata.index_uid.clone()),
+                    source_id: source_config_1.source_id.clone(),
+                    shard_ids: Vec::new(),
+                    pipeline_uid: Some(PipelineUid::for_test(1u128)),
+                    params_fingerprint: PARAMS_FINGERPRINT_SOURCE_1,
+                },
+                IndexingTask {
+                    index_uid: Some(metadata.index_uid.clone()),
+                    source_id: source_config_1.source_id.clone(),
+                    shard_ids: Vec::new(),
+                    pipeline_uid: Some(PipelineUid::for_test(2u128)),
+                    params_fingerprint: PARAMS_FINGERPRINT_SOURCE_1,
+                },
+                IndexingTask {
+                    index_uid: Some(metadata.index_uid.clone()),
+                    source_id: source_config_2.source_id.clone(),
+                    shard_ids: Vec::new(),
+                    pipeline_uid: Some(PipelineUid::for_test(4u128)),
+                    params_fingerprint: PARAMS_FINGERPRINT_SOURCE_2,
+                },
+            ];
+            indexing_service
+                .ask_for_res(ApplyIndexingPlanRequest {
+                    indexing_tasks: indexing_tasks.clone(),
+                })
                 .await
-                .num_running_pipelines,
-            4
-        );
-
-        cluster
-            .wait_for_ready_members(
-                |members| {
-                    members
-                        .iter()
-                        .any(|member| member.indexing_tasks.len() == indexing_tasks.len())
+                .unwrap();
+            assert_eq!(
+                indexing_service_handle
+                    .observe()
+                    .await
+                    .num_running_pipelines,
+                4
+            );
+            cluster
+                .wait_for_ready_members(
+                    |members| {
+                        members
+                            .iter()
+                            .any(|member| member.indexing_tasks.len() == indexing_tasks.len())
+                    },
+                    Duration::from_secs(5),
+                )
+                .await
+                .unwrap();
+            let self_member = &cluster.ready_members().await[0];
+            assert_eq!(
+                HashSet::<_>::from_iter(self_member.indexing_tasks.iter()),
+                HashSet::from_iter(indexing_tasks.iter())
+            );
+        }
+        {
+            // Remove 1 task (source_1 runs only 1 pipeline)
+            // -> total = 3 sources x 1 pipeline each
+            let indexing_tasks = vec![
+                IndexingTask {
+                    index_uid: Some(metadata.index_uid.clone()),
+                    source_id: INGEST_API_SOURCE_ID.to_string(),
+                    shard_ids: Vec::new(),
+                    pipeline_uid: Some(PipelineUid::for_test(3u128)),
+                    params_fingerprint: PARAMS_FINGERPRINT_INGEST_API,
                 },
-                Duration::from_secs(5),
-            )
-            .await
-            .unwrap();
-
-        let self_member = &cluster.ready_members().await[0];
-
-        assert_eq!(
-            HashSet::<_>::from_iter(self_member.indexing_tasks.iter()),
-            HashSet::from_iter(indexing_tasks.iter())
-        );
-        let indexing_tasks = vec![
-            IndexingTask {
-                index_uid: Some(metadata.index_uid.clone()),
-                source_id: INGEST_API_SOURCE_ID.to_string(),
-                shard_ids: Vec::new(),
-                pipeline_uid: Some(PipelineUid::for_test(3u128)),
-                params_fingerprint: PARAMS_FINGERPRINT,
-            },
-            IndexingTask {
-                index_uid: Some(metadata.index_uid.clone()),
-                source_id: "test-indexing-service--source-1".to_string(),
-                shard_ids: Vec::new(),
-                pipeline_uid: Some(PipelineUid::for_test(1u128)),
-                params_fingerprint: PARAMS_FINGERPRINT,
-            },
-            IndexingTask {
-                index_uid: Some(metadata.index_uid.clone()),
-                source_id: source_config_2.source_id.clone(),
-                shard_ids: Vec::new(),
-                pipeline_uid: Some(PipelineUid::for_test(4u128)),
-                params_fingerprint: PARAMS_FINGERPRINT,
-            },
-        ];
-        indexing_service
-            .ask_for_res(ApplyIndexingPlanRequest {
-                indexing_tasks: indexing_tasks.clone(),
-            })
-            .await
-            .unwrap();
-        let indexing_service_obs = indexing_service_handle.observe().await;
-        assert_eq!(indexing_service_obs.num_running_pipelines, 3);
-        assert_eq!(indexing_service_obs.num_deleted_queues, 0);
-        assert_eq!(indexing_service_obs.num_delete_queue_failures, 0);
-
-        indexing_service_handle.process_pending_and_observe().await;
-
-        cluster
-            .wait_for_ready_members(
-                |members| {
-                    members
-                        .iter()
-                        .any(|member| member.indexing_tasks.len() == indexing_tasks.len())
+                IndexingTask {
+                    index_uid: Some(metadata.index_uid.clone()),
+                    source_id: source_config_1.source_id.clone(),
+                    shard_ids: Vec::new(),
+                    pipeline_uid: Some(PipelineUid::for_test(1u128)),
+                    params_fingerprint: PARAMS_FINGERPRINT_SOURCE_1,
                 },
-                Duration::from_secs(5),
-            )
-            .await
-            .unwrap();
+                IndexingTask {
+                    index_uid: Some(metadata.index_uid.clone()),
+                    source_id: source_config_2.source_id.clone(),
+                    shard_ids: Vec::new(),
+                    pipeline_uid: Some(PipelineUid::for_test(4u128)),
+                    params_fingerprint: PARAMS_FINGERPRINT_SOURCE_2,
+                },
+            ];
+            indexing_service
+                .ask_for_res(ApplyIndexingPlanRequest {
+                    indexing_tasks: indexing_tasks.clone(),
+                })
+                .await
+                .unwrap();
+            let indexing_service_obs = indexing_service_handle.observe().await;
+            assert_eq!(indexing_service_obs.num_running_pipelines, 3);
+            assert_eq!(indexing_service_obs.num_deleted_queues, 0);
+            assert_eq!(indexing_service_obs.num_delete_queue_failures, 0);
 
-        let self_member = &cluster.ready_members().await[0];
+            indexing_service_handle.process_pending_and_observe().await;
 
-        assert_eq!(
-            HashSet::<_>::from_iter(self_member.indexing_tasks.iter()),
-            HashSet::from_iter(indexing_tasks.iter())
-        );
+            cluster
+                .wait_for_ready_members(
+                    |members| {
+                        members
+                            .iter()
+                            .any(|member| member.indexing_tasks.len() == indexing_tasks.len())
+                    },
+                    Duration::from_secs(5),
+                )
+                .await
+                .unwrap();
+
+            let self_member = &cluster.ready_members().await[0];
+
+            assert_eq!(
+                HashSet::<_>::from_iter(self_member.indexing_tasks.iter()),
+                HashSet::from_iter(indexing_tasks.iter())
+            );
+        }
+        {
+            // Rescheduling a task (source_1) with an unexpected fingerprint
+            // removes the existing pipeline but doesn't start a new one.
+            // -> total: 2 sources x 1 pipeline
+            let indexing_tasks = vec![
+                IndexingTask {
+                    index_uid: Some(metadata.index_uid.clone()),
+                    source_id: INGEST_API_SOURCE_ID.to_string(),
+                    shard_ids: Vec::new(),
+                    pipeline_uid: Some(PipelineUid::for_test(3u128)),
+                    params_fingerprint: PARAMS_FINGERPRINT_INGEST_API,
+                },
+                IndexingTask {
+                    index_uid: Some(metadata.index_uid.clone()),
+                    source_id: source_config_1.source_id.clone(),
+                    shard_ids: Vec::new(),
+                    pipeline_uid: Some(PipelineUid::for_test(7u128)),
+                    params_fingerprint: 42,
+                },
+                IndexingTask {
+                    index_uid: Some(metadata.index_uid.clone()),
+                    source_id: source_config_2.source_id.clone(),
+                    shard_ids: Vec::new(),
+                    pipeline_uid: Some(PipelineUid::for_test(4u128)),
+                    params_fingerprint: PARAMS_FINGERPRINT_SOURCE_2,
+                },
+            ];
+            indexing_service
+                .ask_for_res(ApplyIndexingPlanRequest {
+                    indexing_tasks: indexing_tasks.clone(),
+                })
+                .await
+                .unwrap();
+            let indexing_service_obs = indexing_service_handle.observe().await;
+            assert_eq!(indexing_service_obs.num_running_pipelines, 2);
+            assert_eq!(indexing_service_obs.num_deleted_queues, 0);
+            assert_eq!(indexing_service_obs.num_delete_queue_failures, 0);
+        }
 
         // Delete index and apply empty plan
         metastore

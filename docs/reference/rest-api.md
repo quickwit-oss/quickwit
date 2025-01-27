@@ -606,9 +606,57 @@ Create source by posting a source config JSON payload.
 | `version**       | `String` | Config format version, put your current Quickwit version.                               | _required_    |
 | `source_id`     | `String` | Source ID. See ID [validation rules](../configuration/source-config.md).                 | _required_    |
 | `source_type`   | `String` | Source type: `kafka`, `kinesis` or `pulsar`.                                             | _required_    |
-| `num_pipelines` | `usize`  | Number of running indexing pipelines per node for this source.                           | 1             |
+| `num_pipelines` | `usize`  | Number of running indexing pipelines per node for this source.                           | `1`           |
+| `transform`     | `object` | A [VRL](https://vector.dev/docs/reference/vrl/) transformation applied to incoming documents, as defined in [source config docs](../configuration/source-config.md#transform-parameters).                          | `null`         |
 | `params`        | `object` | Source parameters as defined in [source config docs](../configuration/source-config.md). | _required_    |
 
+
+**Payload Example**
+
+curl -XPOST http://localhost:7280/api/v1/indexes/my-index/sources --data @source_config.json -H "Content-Type: application/json"
+
+```json title="source_config.json
+{
+    "version": "0.8",
+    "source_id": "kafka-source",
+    "source_type": "kafka",
+    "params": {
+        "topic": "quickwit-fts-staging",
+        "client_params": {
+            "bootstrap.servers": "kafka-quickwit-server:9092"
+        }
+    }
+}
+```
+
+#### Response
+
+The response is the created source config, and the content type is `application/json; charset=UTF-8.`
+
+### Update a source
+
+```
+PUT api/v1/indexes/<index id>/sources/<source id>
+```
+
+Update a source by posting a source config JSON payload.
+
+#### PUT payload
+
+| Variable          | Type     | Description                                                                            | Default value |
+|-------------------|----------|----------------------------------------------------------------------------------------|---------------|
+| `version**       | `String` | Config format version, put your current Quickwit version.                               | _required_    |
+| `source_id`     | `String` | Source ID, must be the same source as in the request URL.                                | _required_    |
+| `source_type`   | `String` | Source type: `kafka`, `kinesis` or `pulsar`. Cannot be updated.                          | _required_    |
+| `num_pipelines` | `usize`  | Number of running indexing pipelines per node for this source.                           | `1`           |
+| `transform`     | `object` | A [VRL](https://vector.dev/docs/reference/vrl/) transformation applied to incoming documents, as defined in [source config docs](../configuration/source-config.md#transform-parameters).                          | `null`         |
+| `params`        | `object` | Source parameters as defined in [source config docs](../configuration/source-config.md). | _required_    |
+
+:::warning
+
+While updating `num_pipelines` and `transform` is generally safe and reversible, updating `params` has consequences specific to the source type and might have side effects such as loosing the source's checkpoints. Perform such updates with great care. 
+
+:::
 
 **Payload Example**
 

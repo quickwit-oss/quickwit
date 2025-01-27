@@ -31,7 +31,7 @@ use quickwit_proto::metastore::{
     ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreResult, MetastoreService,
     MetastoreServiceClient, MetastoreServiceStream, OpenShardsRequest, OpenShardsResponse,
     PruneShardsRequest, PublishSplitsRequest, ResetSourceCheckpointRequest, StageSplitsRequest,
-    ToggleSourceRequest, UpdateIndexRequest, UpdateSplitsDeleteOpstampRequest,
+    ToggleSourceRequest, UpdateIndexRequest, UpdateSourceRequest, UpdateSplitsDeleteOpstampRequest,
     UpdateSplitsDeleteOpstampResponse,
 };
 
@@ -100,8 +100,13 @@ impl MetastoreService for ControlPlaneMetastore {
         Ok(response)
     }
 
+    async fn update_source(&self, request: UpdateSourceRequest) -> MetastoreResult<EmptyResponse> {
+        let response = self.control_plane.update_source(request).await?;
+        Ok(response)
+    }
+
     async fn toggle_source(&self, request: ToggleSourceRequest) -> MetastoreResult<EmptyResponse> {
-        let response = self.control_plane.clone().toggle_source(request).await?;
+        let response = self.control_plane.toggle_source(request).await?;
         Ok(response)
     }
 

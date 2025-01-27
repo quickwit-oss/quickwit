@@ -26,13 +26,13 @@ use quickwit_indexing::check_source_connectivity;
 use quickwit_metastore::{
     AddSourceRequestExt, CreateIndexResponseExt, IndexMetadata, IndexMetadataResponseExt,
     ListIndexesMetadataResponseExt, ListSplitsQuery, ListSplitsRequestExt,
-    MetastoreServiceStreamSplitsExt, SplitInfo, SplitMetadata, SplitState,
+    MetastoreServiceStreamSplitsExt, SplitInfo, SplitMetadata, SplitState, UpdateSourceRequestExt,
 };
 use quickwit_proto::metastore::{
     serde_utils, AddSourceRequest, CreateIndexRequest, DeleteIndexRequest, EntityKind,
     IndexMetadataRequest, ListIndexesMetadataRequest, ListSplitsRequest,
     MarkSplitsForDeletionRequest, MetastoreError, MetastoreService, MetastoreServiceClient,
-    ResetSourceCheckpointRequest,
+    ResetSourceCheckpointRequest, UpdateSourceRequest,
 };
 use quickwit_proto::types::{IndexUid, SplitId};
 use quickwit_proto::{ServiceError, ServiceErrorCode};
@@ -458,6 +458,40 @@ impl IndexService {
         info!(
             "source `{}` successfully created for index `{}`",
             source_id, index_uid.index_id,
+        );
+        let index_metadata_request = IndexMetadataRequest::for_index_id(index_uid.index_id);
+        let source = self
+            .metastore
+            .index_metadata(index_metadata_request)
+            .await?
+            .deserialize_index_metadata()?
+            .sources
+            .get(&source_id)
+            .ok_or_else(|| {
+                IndexServiceError::Internal(
+                    "created source is not in index metadata, this should never happen".to_string(),
+                )
+            })?
+            .clone();
+        Ok(source)
+    }
+
+    /// Updates a source from an index identified by its UID.
+    pub async fn update_source(
+        &mut self,
+        index_uid: IndexUid,
+        source_config: SourceConfig,
+    ) -> Result<SourceConfig, IndexServiceError> {
+        let source_id = source_config.source_id.clone();
+        check_source_connectivity(&self.storage_resolver, &source_config)
+            .await
+            .map_err(IndexServiceError::InvalidConfig)?;
+        let update_source_request =
+            UpdateSourceRequest::try_from_source_config(index_uid.clone(), &source_config)?;
+        self.metastore.update_source(update_source_request).await?;
+        info!(
+            "source `{source_id}` successfully updated for index `{}`",
+            index_uid.index_id
         );
         let index_metadata_request = IndexMetadataRequest::for_index_id(index_uid.index_id);
         let source = self

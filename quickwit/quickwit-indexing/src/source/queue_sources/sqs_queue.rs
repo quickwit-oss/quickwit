@@ -256,10 +256,11 @@ pub(crate) async fn check_connectivity(queue_url: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-#[cfg(feature = "sqs-localstack-tests")]
+#[cfg(feature = "sqs-test-helpers")]
 pub mod test_helpers {
     use aws_sdk_sqs::types::QueueAttributeName;
     use ulid::Ulid;
+    use warp::Filter;
 
     use super::*;
 
@@ -310,6 +311,31 @@ pub mod test_helpers {
             .get(&attribute)
             .unwrap()
             .to_string()
+    }
+
+    /// Runs a mock SQS GetQueueAttributes endpoint to enable creating SQS
+    /// sources that pass the connectivity check
+    ///
+    /// Returns the queue URL to use for the source and a guard for the
+    /// temporary mock server
+    pub fn start_mock_sqs_get_queue_attributes_endpoint() -> (String, oneshot::Sender<()>) {
+        let hello = warp::path!().map(|| "{}");
+        let (tx, rx) = oneshot::channel();
+        let (addr, server) =
+            warp::serve(hello).bind_with_graceful_shutdown(([127, 0, 0, 1], 0), async {
+                rx.await.ok();
+            });
+        tokio::spawn(server);
+        let queue_url = format!("http://{}:{}/", addr.ip(), addr.port());
+        (queue_url, tx)
+    }
+
+    #[tokio::test]
+    async fn test_mock_sqs_get_queue_attributes_endpoint() {
+        let (queue_url, _shutdown) = start_mock_sqs_get_queue_attributes_endpoint();
+        check_connectivity(&queue_url).await.unwrap();
+        drop(_shutdown);
+        check_connectivity(&queue_url).await.unwrap_err();
     }
 }
 
