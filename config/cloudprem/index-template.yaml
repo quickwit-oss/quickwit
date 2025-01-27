@@ -118,7 +118,7 @@ doc_mapping:
       concatenate_fields: # This should contain all fields above
       # - timestamp # Not supported in concat fields
       - message
-      - tags
+      # - tags 
       - error
       - service
       - service_type
