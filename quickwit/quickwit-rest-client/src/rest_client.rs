@@ -535,6 +535,30 @@ impl<'a> SourceClient<'a> {
         Ok(source_config)
     }
 
+    pub async fn update(
+        &self,
+        source_id: &str,
+        source_config_input: impl AsRef<[u8]>,
+        config_format: ConfigFormat,
+    ) -> Result<SourceConfig, Error> {
+        let header_map = header_from_config_format(config_format);
+        let source_config_bytes = Bytes::copy_from_slice(source_config_input.as_ref());
+        let path = format!("{}/{source_id}", self.sources_root_url());
+        let response = self
+            .transport
+            .send::<()>(
+                Method::PUT,
+                &path,
+                Some(header_map),
+                None,
+                Some(source_config_bytes),
+                self.timeout,
+            )
+            .await?;
+        let source_config = response.deserialize().await?;
+        Ok(source_config)
+    }
+
     pub async fn get(&self, source_id: &str) -> Result<SourceConfig, Error> {
         let path = format!("{}/{source_id}", self.sources_root_url());
         let response = self
@@ -1123,6 +1147,25 @@ mod test {
             qw_client
                 .sources("my-index")
                 .create("", ConfigFormat::Toml)
+                .await
+                .unwrap(),
+            source_config
+        );
+
+        // PUT update source with yaml
+        Mock::given(method("PUT"))
+            .and(path("/api/v1/indexes/my-index/sources/my-source-1"))
+            .and(header(CONTENT_TYPE.as_str(), "application/yaml"))
+            .respond_with(
+                ResponseTemplate::new(StatusCode::OK).set_body_json(source_config.clone()),
+            )
+            .up_to_n_times(1)
+            .mount(&mock_server)
+            .await;
+        assert_eq!(
+            qw_client
+                .sources("my-index")
+                .update("my-source-1", "", ConfigFormat::Yaml)
                 .await
                 .unwrap(),
             source_config
