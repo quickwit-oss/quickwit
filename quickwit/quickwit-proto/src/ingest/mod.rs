@@ -36,7 +36,7 @@ pub type IngestV2Result<T> = std::result::Result<T, IngestV2Error>;
 pub enum RateLimitingCause {
     #[error("router load shedding")]
     RouterLoadShedding,
-    #[error("load shadding")]
+    #[error("load shedding")]
     LoadShedding,
     #[error("wal full (memory or disk)")]
     WalFull,
