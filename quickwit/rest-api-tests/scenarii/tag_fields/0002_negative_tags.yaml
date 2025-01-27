@@ -1,23 +1,23 @@
 # regression test for https://github.com/quickwit-oss/quickwit/issues/4698
-endpoint: tagged/search
+endpoint: simple/search
 params:
   query: "tag:1"
 expected:
   num_hits: 3
 ---
-endpoint: tagged/search
+endpoint: simple/search
 params:
   query: "-tag:2"
 expected:
   num_hits: 4
 ---
-endpoint: tagged/search
+endpoint: simple/search
 params:
   query: "tag:2"
 expected:
   num_hits: 1
 ---
-endpoint: tagged/search
+endpoint: simple/search
 params:
   query: "-tag:1"
 expected:
