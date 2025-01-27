@@ -150,6 +150,24 @@ impl IndexMetadata {
         }
     }
 
+    /// Adds a source to the index. Returns whether a mutation occurred and an
+    /// error if the source doesn't exist.
+    pub fn update_source(&mut self, source_config: SourceConfig) -> MetastoreResult<bool> {
+        match self.sources.entry(source_config.source_id.clone()) {
+            Entry::Occupied(mut entry) => {
+                if entry.get() == &source_config {
+                    return Ok(false);
+                }
+                entry.insert(source_config.clone());
+                Ok(true)
+            }
+            Entry::Vacant(_) => Err(MetastoreError::NotFound(EntityKind::Source {
+                index_id: self.index_id().to_string(),
+                source_id: source_config.source_id,
+            })),
+        }
+    }
+
     pub(crate) fn toggle_source(&mut self, source_id: &str, enable: bool) -> MetastoreResult<bool> {
         let Some(source_config) = self.sources.get_mut(source_id) else {
             return Err(MetastoreError::NotFound(EntityKind::Source {

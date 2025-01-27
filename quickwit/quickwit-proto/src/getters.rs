@@ -135,6 +135,7 @@ generate_getters! {
     StageSplitsRequest,
     ToggleSourceRequest,
     UpdateIndexRequest,
+    UpdateSourceRequest,
     UpdateSplitsDeleteOpstampRequest
 }
 

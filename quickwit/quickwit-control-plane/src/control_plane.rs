@@ -46,6 +46,7 @@ use quickwit_proto::metastore::{
     DeleteShardsRequest, DeleteSourceRequest, EmptyResponse, FindIndexTemplateMatchesRequest,
     IndexMetadataResponse, IndexTemplateMatch, MetastoreError, MetastoreResult, MetastoreService,
     MetastoreServiceClient, PruneShardsRequest, ToggleSourceRequest, UpdateIndexRequest,
+    UpdateSourceRequest,
 };
 use quickwit_proto::types::{IndexId, IndexUid, NodeId, ShardId, SourceId, SourceUid};
 use serde::Serialize;
@@ -678,6 +679,47 @@ impl Handler<AddSourceRequest> for ControlPlane {
             .context("failed to add source")?;
 
         info!(%index_uid, source_id, "added source");
+
+        // TODO: Refine the event. Notify index will have the effect to reload the entire state from
+        // the metastore. We should update the state of the control plane.
+        let _rebuild_plan_waiter = self.rebuild_plan_debounced(ctx);
+
+        let response = EmptyResponse {};
+        Ok(Ok(response))
+    }
+}
+
+#[async_trait]
+impl Handler<UpdateSourceRequest> for ControlPlane {
+    type Reply = ControlPlaneResult<EmptyResponse>;
+
+    async fn handle(
+        &mut self,
+        request: UpdateSourceRequest,
+        ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        let index_uid: IndexUid = request.index_uid().clone();
+        let source_config: SourceConfig =
+            match serde_utils::from_json_str(&request.source_config_json) {
+                Ok(source_config) => source_config,
+                Err(error) => {
+                    return Ok(Err(ControlPlaneError::from(error)));
+                }
+            };
+        let source_id = source_config.source_id.clone();
+        debug!(%index_uid, source_id, "updating source");
+
+        if let Err(error) = ctx
+            .protect_future(self.metastore.update_source(request))
+            .await
+        {
+            return Ok(Err(ControlPlaneError::from(error)));
+        };
+        self.model
+            .update_source(&index_uid, source_config)
+            .context("failed to add source")?;
+
+        info!(%index_uid, source_id, "updated source");
 
         // TODO: Refine the event. Notify index will have the effect to reload the entire state from
         // the metastore. We should update the state of the control plane.

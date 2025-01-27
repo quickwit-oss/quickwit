@@ -512,6 +512,11 @@ impl FileBackedIndex {
         Ok(())
     }
 
+    /// Updates a source. Returns whether a mutation occurred.
+    pub(crate) fn update_source(&mut self, source_config: SourceConfig) -> MetastoreResult<bool> {
+        self.metadata.update_source(source_config)
+    }
+
     /// Enables or disables a source. Returns whether a mutation occurred.
     pub(crate) fn toggle_source(&mut self, source_id: &str, enable: bool) -> MetastoreResult<bool> {
         self.metadata.toggle_source(source_id, enable)

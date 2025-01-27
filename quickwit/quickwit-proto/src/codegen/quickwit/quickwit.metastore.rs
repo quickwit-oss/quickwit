@@ -198,6 +198,15 @@ pub struct AddSourceRequest {
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UpdateSourceRequest {
+    #[prost(message, optional, tag = "1")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
+    #[prost(string, tag = "2")]
+    pub source_config_json: ::prost::alloc::string::String,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ToggleSourceRequest {
     #[prost(message, optional, tag = "1")]
     pub index_uid: ::core::option::Option<crate::types::IndexUid>,
@@ -695,6 +704,11 @@ impl RpcName for AddSourceRequest {
         "add_source"
     }
 }
+impl RpcName for UpdateSourceRequest {
+    fn rpc_name() -> &'static str {
+        "update_source"
+    }
+}
 impl RpcName for ToggleSourceRequest {
     fn rpc_name() -> &'static str {
         "toggle_source"
@@ -849,10 +863,15 @@ pub trait MetastoreService: std::fmt::Debug + Send + Sync + 'static {
         &self,
         request: DeleteSplitsRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse>;
-    /// Adds source.
+    /// Adds a source.
     async fn add_source(
         &self,
         request: AddSourceRequest,
+    ) -> crate::metastore::MetastoreResult<EmptyResponse>;
+    /// Update a source.
+    async fn update_source(
+        &self,
+        request: UpdateSourceRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse>;
     /// Toggles source.
     async fn toggle_source(
@@ -1123,6 +1142,12 @@ impl MetastoreService for MetastoreServiceClient {
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.inner.0.add_source(request).await
     }
+    async fn update_source(
+        &self,
+        request: UpdateSourceRequest,
+    ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        self.inner.0.update_source(request).await
+    }
     async fn toggle_source(
         &self,
         request: ToggleSourceRequest,
@@ -1320,6 +1345,12 @@ pub mod mock_metastore_service {
             request: super::AddSourceRequest,
         ) -> crate::metastore::MetastoreResult<super::EmptyResponse> {
             self.inner.lock().await.add_source(request).await
+        }
+        async fn update_source(
+            &self,
+            request: super::UpdateSourceRequest,
+        ) -> crate::metastore::MetastoreResult<super::EmptyResponse> {
+            self.inner.lock().await.update_source(request).await
         }
         async fn toggle_source(
             &self,
@@ -1631,6 +1662,22 @@ impl tower::Service<AddSourceRequest> for InnerMetastoreServiceClient {
     fn call(&mut self, request: AddSourceRequest) -> Self::Future {
         let svc = self.clone();
         let fut = async move { svc.0.add_source(request).await };
+        Box::pin(fut)
+    }
+}
+impl tower::Service<UpdateSourceRequest> for InnerMetastoreServiceClient {
+    type Response = EmptyResponse;
+    type Error = crate::metastore::MetastoreError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: UpdateSourceRequest) -> Self::Future {
+        let svc = self.clone();
+        let fut = async move { svc.0.update_source(request).await };
         Box::pin(fut)
     }
 }
@@ -1987,6 +2034,11 @@ struct MetastoreServiceTowerServiceStack {
         EmptyResponse,
         crate::metastore::MetastoreError,
     >,
+    update_source_svc: quickwit_common::tower::BoxService<
+        UpdateSourceRequest,
+        EmptyResponse,
+        crate::metastore::MetastoreError,
+    >,
     toggle_source_svc: quickwit_common::tower::BoxService<
         ToggleSourceRequest,
         EmptyResponse,
@@ -2151,6 +2203,12 @@ impl MetastoreService for MetastoreServiceTowerServiceStack {
         request: AddSourceRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.add_source_svc.clone().ready().await?.call(request).await
+    }
+    async fn update_source(
+        &self,
+        request: UpdateSourceRequest,
+    ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        self.update_source_svc.clone().ready().await?.call(request).await
     }
     async fn toggle_source(
         &self,
@@ -2387,6 +2445,16 @@ type AddSourceLayer = quickwit_common::tower::BoxLayer<
     EmptyResponse,
     crate::metastore::MetastoreError,
 >;
+type UpdateSourceLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        UpdateSourceRequest,
+        EmptyResponse,
+        crate::metastore::MetastoreError,
+    >,
+    UpdateSourceRequest,
+    EmptyResponse,
+    crate::metastore::MetastoreError,
+>;
 type ToggleSourceLayer = quickwit_common::tower::BoxLayer<
     quickwit_common::tower::BoxService<
         ToggleSourceRequest,
@@ -2581,6 +2649,7 @@ pub struct MetastoreServiceTowerLayerStack {
     mark_splits_for_deletion_layers: Vec<MarkSplitsForDeletionLayer>,
     delete_splits_layers: Vec<DeleteSplitsLayer>,
     add_source_layers: Vec<AddSourceLayer>,
+    update_source_layers: Vec<UpdateSourceLayer>,
     toggle_source_layers: Vec<ToggleSourceLayer>,
     delete_source_layers: Vec<DeleteSourceLayer>,
     reset_source_checkpoint_layers: Vec<ResetSourceCheckpointLayer>,
@@ -2907,6 +2976,31 @@ impl MetastoreServiceTowerLayerStack {
                 crate::metastore::MetastoreError,
             >,
         >>::Service as tower::Service<AddSourceRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    UpdateSourceRequest,
+                    EmptyResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                UpdateSourceRequest,
+                EmptyResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service: tower::Service<
+                UpdateSourceRequest,
+                Response = EmptyResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                UpdateSourceRequest,
+                EmptyResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service as tower::Service<UpdateSourceRequest>>::Future: Send + 'static,
         L: tower::Layer<
                 quickwit_common::tower::BoxService<
                     ToggleSourceRequest,
@@ -3394,6 +3488,8 @@ impl MetastoreServiceTowerLayerStack {
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.add_source_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.update_source_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.toggle_source_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.delete_source_layers
@@ -3664,6 +3760,25 @@ impl MetastoreServiceTowerLayerStack {
         <L::Service as tower::Service<AddSourceRequest>>::Future: Send + 'static,
     {
         self.add_source_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_update_source_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    UpdateSourceRequest,
+                    EmptyResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                UpdateSourceRequest,
+                Response = EmptyResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<UpdateSourceRequest>>::Future: Send + 'static,
+    {
+        self.update_source_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
     pub fn stack_toggle_source_layer<L>(mut self, layer: L) -> Self
@@ -4181,6 +4296,14 @@ impl MetastoreServiceTowerLayerStack {
                 quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
+        let update_source_svc = self
+            .update_source_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
+                |svc, layer| layer.layer(svc),
+            );
         let toggle_source_svc = self
             .toggle_source_layers
             .into_iter()
@@ -4339,6 +4462,7 @@ impl MetastoreServiceTowerLayerStack {
             mark_splits_for_deletion_svc,
             delete_splits_svc,
             add_source_svc,
+            update_source_svc,
             toggle_source_svc,
             delete_source_svc,
             reset_source_checkpoint_svc,
@@ -4507,6 +4631,12 @@ where
         >
         + tower::Service<
             AddSourceRequest,
+            Response = EmptyResponse,
+            Error = crate::metastore::MetastoreError,
+            Future = BoxFuture<EmptyResponse, crate::metastore::MetastoreError>,
+        >
+        + tower::Service<
+            UpdateSourceRequest,
             Response = EmptyResponse,
             Error = crate::metastore::MetastoreError,
             Future = BoxFuture<EmptyResponse, crate::metastore::MetastoreError>,
@@ -4704,6 +4834,12 @@ where
     async fn add_source(
         &self,
         request: AddSourceRequest,
+    ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        self.clone().call(request).await
+    }
+    async fn update_source(
+        &self,
+        request: UpdateSourceRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.clone().call(request).await
     }
@@ -5036,6 +5172,20 @@ where
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
                 AddSourceRequest::rpc_name(),
+            ))
+    }
+    async fn update_source(
+        &self,
+        request: UpdateSourceRequest,
+    ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        self.inner
+            .clone()
+            .update_source(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                UpdateSourceRequest::rpc_name(),
             ))
     }
     async fn toggle_source(
@@ -5456,6 +5606,17 @@ for MetastoreServiceGrpcServerAdapter {
         self.inner
             .0
             .add_source(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(crate::error::grpc_error_to_grpc_status)
+    }
+    async fn update_source(
+        &self,
+        request: tonic::Request<UpdateSourceRequest>,
+    ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
+        self.inner
+            .0
+            .update_source(request.into_inner())
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -6104,7 +6265,7 @@ pub mod metastore_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        /// Adds source.
+        /// Adds a source.
         pub async fn add_source(
             &mut self,
             request: impl tonic::IntoRequest<super::AddSourceRequest>,
@@ -6126,6 +6287,34 @@ pub mod metastore_service_grpc_client {
             req.extensions_mut()
                 .insert(
                     GrpcMethod::new("quickwit.metastore.MetastoreService", "AddSource"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Update a source.
+        pub async fn update_source(
+            &mut self,
+            request: impl tonic::IntoRequest<super::UpdateSourceRequest>,
+        ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.metastore.MetastoreService/UpdateSource",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit.metastore.MetastoreService",
+                        "UpdateSource",
+                    ),
                 );
             self.inner.unary(req, path, codec).await
         }
@@ -6758,10 +6947,15 @@ pub mod metastore_service_grpc_server {
             &self,
             request: tonic::Request<super::DeleteSplitsRequest>,
         ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status>;
-        /// Adds source.
+        /// Adds a source.
         async fn add_source(
             &self,
             request: tonic::Request<super::AddSourceRequest>,
+        ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status>;
+        /// Update a source.
+        async fn update_source(
+            &self,
+            request: tonic::Request<super::UpdateSourceRequest>,
         ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status>;
         /// Toggles source.
         async fn toggle_source(
@@ -7560,6 +7754,52 @@ pub mod metastore_service_grpc_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = AddSourceSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.metastore.MetastoreService/UpdateSource" => {
+                    #[allow(non_camel_case_types)]
+                    struct UpdateSourceSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: MetastoreServiceGrpc,
+                    > tonic::server::UnaryService<super::UpdateSourceRequest>
+                    for UpdateSourceSvc<T> {
+                        type Response = super::EmptyResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::UpdateSourceRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).update_source(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = UpdateSourceSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

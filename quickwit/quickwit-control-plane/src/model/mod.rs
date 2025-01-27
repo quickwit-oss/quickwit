@@ -248,6 +248,20 @@ impl ControlPlaneModel {
         Ok(())
     }
 
+    pub(crate) fn update_source(
+        &mut self,
+        index_uid: &IndexUid,
+        source_config: SourceConfig,
+    ) -> ControlPlaneResult<()> {
+        let index_metadata = self.index_table.get_mut(index_uid).ok_or_else(|| {
+            MetastoreError::NotFound(EntityKind::Index {
+                index_id: index_uid.to_string(),
+            })
+        })?;
+        index_metadata.update_source(source_config)?;
+        Ok(())
+    }
+
     pub(crate) fn delete_source(&mut self, source_uid: &SourceUid) {
         // Removing shards from shard table.
         self.shard_table
