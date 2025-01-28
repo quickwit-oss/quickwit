@@ -43,6 +43,7 @@ use crate::leaf_cache::LeafSearchCache;
 use crate::list_fields::{leaf_list_fields, root_list_fields};
 use crate::list_fields_cache::ListFieldsCache;
 use crate::list_terms::{leaf_list_terms, root_list_terms};
+use crate::metrics::SEARCH_METRICS;
 use crate::root::fetch_docs_phase;
 use crate::scroll_context::{MiniKV, ScrollContext, ScrollKeyAndStartOffset};
 use crate::search_permit_provider::SearchPermitProvider;
@@ -197,15 +198,30 @@ impl SearchService for SearchServiceImpl {
         if leaf_search_request.search_request.is_none() {
             return Err(SearchError::Internal("no search request".to_string()));
         }
-
-        let leaf_search_response = multi_leaf_search(
+        let start = Instant::now();
+        let leaf_search_response_result = multi_leaf_search(
             self.searcher_context.clone(),
             leaf_search_request,
             &self.storage_resolver,
         )
-        .await?;
+        .await;
 
-        Ok(leaf_search_response)
+        let elapsed = start.elapsed().as_secs_f64();
+        let label_values = if leaf_search_response_result.is_ok() {
+            ["success"]
+        } else {
+            ["error"]
+        };
+        SEARCH_METRICS
+            .leaf_search_requests_total
+            .with_label_values(label_values)
+            .inc();
+        SEARCH_METRICS
+            .leaf_search_request_duration_seconds
+            .with_label_values(label_values)
+            .observe(elapsed);
+
+        leaf_search_response_result
     }
 
     async fn fetch_docs(
