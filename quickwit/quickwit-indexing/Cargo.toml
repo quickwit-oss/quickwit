@@ -47,6 +47,7 @@ tracing = { workspace = true }
 ulid = { workspace = true }
 utoipa = { workspace = true }
 vrl = { workspace = true, optional = true }
+warp = { workspace = true, optional = true }
 
 quickwit-actors = { workspace = true }
 quickwit-aws = { workspace = true }
@@ -84,7 +85,8 @@ sqs = [
   "queue-sources",
   "quickwit-aws/sqs",
 ]
-sqs-localstack-tests = []
+sqs-test-helpers = ["warp"]
+sqs-localstack-tests = ["sqs-test-helpers"]
 vendored-kafka = [
   "kafka",
   "libz-sys/static",

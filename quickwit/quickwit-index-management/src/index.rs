@@ -1,21 +1,16 @@
-// Copyright (C) 2024 Quickwit, Inc.
+// Copyright 2021-Present Datadog, Inc.
 //
-// Quickwit is offered under the AGPL v3.0 and as commercial software.
-// For commercial licensing, contact us at hello@quickwit.io.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// AGPL:
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program. If not, see <http://www.gnu.org/licenses/>.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -31,13 +26,13 @@ use quickwit_indexing::check_source_connectivity;
 use quickwit_metastore::{
     AddSourceRequestExt, CreateIndexResponseExt, IndexMetadata, IndexMetadataResponseExt,
     ListIndexesMetadataResponseExt, ListSplitsQuery, ListSplitsRequestExt,
-    MetastoreServiceStreamSplitsExt, SplitInfo, SplitMetadata, SplitState,
+    MetastoreServiceStreamSplitsExt, SplitInfo, SplitMetadata, SplitState, UpdateSourceRequestExt,
 };
 use quickwit_proto::metastore::{
     serde_utils, AddSourceRequest, CreateIndexRequest, DeleteIndexRequest, EntityKind,
     IndexMetadataRequest, ListIndexesMetadataRequest, ListSplitsRequest,
     MarkSplitsForDeletionRequest, MetastoreError, MetastoreService, MetastoreServiceClient,
-    ResetSourceCheckpointRequest,
+    ResetSourceCheckpointRequest, UpdateSourceRequest,
 };
 use quickwit_proto::types::{IndexUid, SplitId};
 use quickwit_proto::{ServiceError, ServiceErrorCode};
@@ -463,6 +458,40 @@ impl IndexService {
         info!(
             "source `{}` successfully created for index `{}`",
             source_id, index_uid.index_id,
+        );
+        let index_metadata_request = IndexMetadataRequest::for_index_id(index_uid.index_id);
+        let source = self
+            .metastore
+            .index_metadata(index_metadata_request)
+            .await?
+            .deserialize_index_metadata()?
+            .sources
+            .get(&source_id)
+            .ok_or_else(|| {
+                IndexServiceError::Internal(
+                    "created source is not in index metadata, this should never happen".to_string(),
+                )
+            })?
+            .clone();
+        Ok(source)
+    }
+
+    /// Updates a source from an index identified by its UID.
+    pub async fn update_source(
+        &mut self,
+        index_uid: IndexUid,
+        source_config: SourceConfig,
+    ) -> Result<SourceConfig, IndexServiceError> {
+        let source_id = source_config.source_id.clone();
+        check_source_connectivity(&self.storage_resolver, &source_config)
+            .await
+            .map_err(IndexServiceError::InvalidConfig)?;
+        let update_source_request =
+            UpdateSourceRequest::try_from_source_config(index_uid.clone(), &source_config)?;
+        self.metastore.update_source(update_source_request).await?;
+        info!(
+            "source `{source_id}` successfully updated for index `{}`",
+            index_uid.index_id
         );
         let index_metadata_request = IndexMetadataRequest::for_index_id(index_uid.index_id);
         let source = self

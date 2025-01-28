@@ -74,37 +74,7 @@ allow = [
 confidence-threshold = 0.8
 # Allow 1 or more licenses on a per-crate basis, so that particular licenses
 # aren't accepted for every possible crate as with the normal allow list
-exceptions = [
-    { name = "quickwit-actors", allow = ["AGPL-3.0"], version = "*" },
-    { name = "quickwit-aws", allow = ["AGPL-3.0"], version = "*" },
-    { name = "quickwit-cli", allow = ["AGPL-3.0"], version = "*" },
-    { name = "quickwit-cluster", allow = ["AGPL-3.0"], version = "*" },
-    { name = "quickwit-codegen", allow = ["AGPL-3.0"], version = "*" },
-    { name = "quickwit-codegen-example", allow = ["AGPL-3.0"], version = "*" },
-    { name = "quickwit-common", allow = ["AGPL-3.0"], version = "*" },
-    { name = "quickwit-config", allow = ["AGPL-3.0"], version = "*" },
-    { name = "quickwit-control-plane", allow = ["AGPL-3.0"], version = "*" },
-    { name = "quickwit-datetime", allow = ["AGPL-3.0"], version = "*" },
-    { name = "quickwit-directories", allow = ["AGPL-3.0"], version = "*" },
-    { name = "quickwit-doc-mapper", allow = ["AGPL-3.0"], version = "*" },
-    { name = "quickwit-indexing", allow = ["AGPL-3.0"], version = "*" },
-    { name = "quickwit-index-management", allow = ["AGPL-3.0"], version = "*" },
-    { name = "quickwit-ingest", allow = ["AGPL-3.0"], version = "*" },
-    { name = "quickwit-integration-tests", allow = ["AGPL-3.0"], version = "*" },
-    { name = "quickwit-jaeger", allow = ["AGPL-3.0"], version = "*" },
-    { name = "quickwit-janitor", allow = ["AGPL-3.0"], version = "*" },
-    { name = "quickwit-lambda", allow = ["AGPL-3.0"], version = "*" },
-    { name = "quickwit-macros", allow = ["AGPL-3.0"], version = "*" },
-    { name = "quickwit-metastore", allow = ["AGPL-3.0"], version = "*" },
-    { name = "quickwit-opentelemetry", allow = ["AGPL-3.0"], version = "*" },
-    { name = "quickwit-proto", allow = ["AGPL-3.0"], version = "*" },
-    { name = "quickwit-query", allow = ["AGPL-3.0"], version = "*" },
-    { name = "quickwit-rest-client", allow = ["AGPL-3.0"], version = "*" },
-    { name = "quickwit-search", allow = ["AGPL-3.0"], version = "*" },
-    { name = "quickwit-serve", allow = ["AGPL-3.0"], version = "*" },
-    { name = "quickwit-storage", allow = ["AGPL-3.0"], version = "*" },
-    { name = "quickwit-telemetry", allow = ["AGPL-3.0"], version = "*" },
-]
+exceptions = []
 
 # Some crates don't have (easily) machine readable licensing information,
 # adding a clarification entry for it allows you to manually specify the

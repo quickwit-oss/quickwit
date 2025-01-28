@@ -1,28 +1,25 @@
-// Copyright (C) 2024 Quickwit, Inc.
+// Copyright 2021-Present Datadog, Inc.
 //
-// Quickwit is offered under the AGPL v3.0 and as commercial software.
-// For commercial licensing, contact us at hello@quickwit.io.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// AGPL:
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program. If not, see <http://www.gnu.org/licenses/>.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 pub(crate) mod serialize;
 
 use std::borrow::Cow;
+use std::hash::{Hash, Hasher};
 use std::num::NonZeroUsize;
 use std::str::FromStr;
 
+use anyhow::ensure;
 use bytes::Bytes;
 use quickwit_common::is_false;
 use quickwit_common::uri::Uri;
@@ -32,9 +29,10 @@ use regex::Regex;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value as JsonValue;
-pub use serialize::load_source_config_from_user_config;
 // For backward compatibility.
 use serialize::VersionedSourceConfig;
+pub use serialize::{load_source_config_from_user_config, load_source_config_update};
+use siphasher::sip::SipHasher;
 
 use crate::{disable_ingest_v1, enable_ingest_v2};
 
@@ -74,19 +72,7 @@ pub struct SourceConfig {
 
 impl SourceConfig {
     pub fn source_type(&self) -> SourceType {
-        match self.source_params {
-            SourceParams::File(_) => SourceType::File,
-            SourceParams::Ingest => SourceType::IngestV2,
-            SourceParams::IngestApi => SourceType::IngestV1,
-            SourceParams::IngestCli => SourceType::Cli,
-            SourceParams::Kafka(_) => SourceType::Kafka,
-            SourceParams::Kinesis(_) => SourceType::Kinesis,
-            SourceParams::PubSub(_) => SourceType::PubSub,
-            SourceParams::Pulsar(_) => SourceType::Pulsar,
-            SourceParams::Stdin => SourceType::Stdin,
-            SourceParams::Vec(_) => SourceType::Vec,
-            SourceParams::Void(_) => SourceType::Void,
-        }
+        self.source_params.source_type()
     }
 
     // TODO: Remove after source factory refactor.
@@ -143,6 +129,20 @@ impl SourceConfig {
         }
     }
 
+    /// Returns a fingerprint of parameters relevant for indexers.
+    ///
+    /// This should remain private to this crate to avoid confusion with the
+    /// full indexing pipeline fingerprint that also includes the index config's
+    /// fingerprint.
+    pub(crate) fn indexing_params_fingerprint(&self) -> u64 {
+        let mut hasher = SipHasher::new();
+        self.input_format.hash(&mut hasher);
+        self.num_pipelines.hash(&mut hasher);
+        self.source_params.hash(&mut hasher);
+        self.transform_config.hash(&mut hasher);
+        hasher.finish()
+    }
+
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test(source_id: &str, source_params: SourceParams) -> Self {
         Self {
@@ -182,7 +182,9 @@ impl crate::TestableForRegression for SourceConfig {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, Hash, utoipa::ToSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum SourceInputFormat {
     #[default]
@@ -214,7 +216,7 @@ impl FromStr for SourceInputFormat {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Hash, utoipa::ToSchema)]
 #[serde(tag = "source_type", content = "params", rename_all = "snake_case")]
 pub enum SourceParams {
     #[schema(value_type = FileSourceParamsForSerde)]
@@ -250,9 +252,54 @@ impl SourceParams {
     pub fn void() -> Self {
         Self::Void(VoidSourceParams)
     }
+
+    fn source_type(&self) -> SourceType {
+        match self {
+            SourceParams::File(_) => SourceType::File,
+            SourceParams::Ingest => SourceType::IngestV2,
+            SourceParams::IngestApi => SourceType::IngestV1,
+            SourceParams::IngestCli => SourceType::Cli,
+            SourceParams::Kafka(_) => SourceType::Kafka,
+            SourceParams::Kinesis(_) => SourceType::Kinesis,
+            SourceParams::PubSub(_) => SourceType::PubSub,
+            SourceParams::Pulsar(_) => SourceType::Pulsar,
+            SourceParams::Stdin => SourceType::Stdin,
+            SourceParams::Vec(_) => SourceType::Vec,
+            SourceParams::Void(_) => SourceType::Void,
+        }
+    }
+
+    fn validate_update(&self, new_source_params: &SourceParams) -> anyhow::Result<()> {
+        match (self, new_source_params) {
+            (
+                SourceParams::File(FileSourceParams::Notifications(current)),
+                SourceParams::File(FileSourceParams::Notifications(new)),
+            ) => current.validate_update(new),
+            (SourceParams::Kafka(current), SourceParams::Kafka(new)) => {
+                current.validate_update(new)
+            }
+            (SourceParams::Kinesis(current), SourceParams::Kinesis(new)) => {
+                current.validate_update(new)
+            }
+            (SourceParams::PubSub(current), SourceParams::PubSub(new)) => {
+                current.validate_update(new)
+            }
+            (SourceParams::Pulsar(current), SourceParams::Pulsar(new)) => {
+                current.validate_update(new)
+            }
+            (current, new) if current.source_type() != new.source_type() => Err(anyhow::anyhow!(
+                "source type cannot be changed, current type {}",
+                current.source_type(),
+            )),
+            _ => Err(anyhow::anyhow!(
+                "source type {} cannot be updated",
+                self.source_type(),
+            )),
+        }
+    }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum FileSourceMessageType {
     /// See <https://docs.aws.amazon.com/AmazonS3/latest/userguide/notification-content-structure.html>
@@ -261,7 +308,7 @@ pub enum FileSourceMessageType {
     RawUri,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct FileSourceSqs {
     pub queue_url: String,
     pub message_type: FileSourceMessageType,
@@ -285,10 +332,21 @@ fn default_deduplication_cleanup_interval_secs() -> u32 {
     60
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum FileSourceNotification {
     Sqs(FileSourceSqs),
+}
+
+impl FileSourceNotification {
+    fn validate_update(&self, other: &Self) -> anyhow::Result<()> {
+        match (self, other) {
+            (Self::Sqs(_), Self::Sqs(_)) => {
+                // changing the queue or the deduplication settings should be fine
+                Ok(())
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, utoipa::ToSchema)]
@@ -300,7 +358,7 @@ pub(super) struct FileSourceParamsForSerde {
     filepath: Option<String>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[serde(
     try_from = "FileSourceParamsForSerde",
     into = "FileSourceParamsForSerde"
@@ -359,7 +417,7 @@ impl FileSourceParams {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct KafkaSourceParams {
     /// Name of the topic that the source consumes.
@@ -379,7 +437,17 @@ pub struct KafkaSourceParams {
     pub enable_backfill_mode: bool,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+impl KafkaSourceParams {
+    fn validate_update(&self, other: &Self) -> anyhow::Result<()> {
+        // Updating the topic would likely mess up the checkpoints because the
+        // Kafka partition IDs are used as metastore checkpoint PartitionId
+        // and there uniqueness is not guaranteed across topics.
+        ensure!(self.topic == other.topic, "Kafka topic cannot be updated");
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PubSubSourceParams {
     /// Name of the subscription that the source consumes.
@@ -401,14 +469,21 @@ pub struct PubSubSourceParams {
     pub max_messages_per_pull: Option<i32>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+impl PubSubSourceParams {
+    fn validate_update(&self, _other: &Self) -> anyhow::Result<()> {
+        // experimental source, no validation is performed
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum RegionOrEndpoint {
     Region(String),
     Endpoint(String),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(try_from = "KinesisSourceParamsInner")]
 pub struct KinesisSourceParams {
     pub stream_name: String,
@@ -417,6 +492,23 @@ pub struct KinesisSourceParams {
     /// When backfill mode is enabled, the source exits after reaching the end of the stream.
     #[serde(skip_serializing_if = "is_false")]
     pub enable_backfill_mode: bool,
+}
+
+impl KinesisSourceParams {
+    fn validate_update(&self, other: &Self) -> anyhow::Result<()> {
+        // Changing the stream would likely mess up the checkpoints because the
+        // Kinesis shard IDs are used as metastore checkpoint PartitionId, and
+        // there uniqueness is only guarantied within a stream.
+        ensure!(
+            self.stream_name == other.stream_name,
+            "Kinesis stream_name cannot be updated"
+        );
+        ensure!(
+            self.region_or_endpoint == other.region_or_endpoint,
+            "Kinesis region or endpoint cannot be updated"
+        );
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
@@ -448,7 +540,7 @@ impl TryFrom<KinesisSourceParamsInner> for KinesisSourceParams {
     }
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct VecSourceParams {
     #[schema(value_type = Vec<String>)]
@@ -458,11 +550,13 @@ pub struct VecSourceParams {
     pub partition: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct VoidSourceParams;
 
-#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(
+    Clone, Debug, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
+)]
 #[serde(deny_unknown_fields)]
 pub struct PulsarSourceParams {
     /// List of the topics that the source consumes.
@@ -483,7 +577,18 @@ pub struct PulsarSourceParams {
     pub authentication: Option<PulsarSourceAuth>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+impl PulsarSourceParams {
+    fn validate_update(&self, _other: &Self) -> anyhow::Result<()> {
+        // In the Pulsar source, we use use combinations of the topic+partition
+        // (generated by the Pulsar client library) as metastore checkpoint
+        // PartitionId, and those are "guaranteed" to be unique across topics.
+        Ok(())
+    }
+}
+
+#[derive(
+    Clone, Debug, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum PulsarSourceAuth {
     Token(String),
@@ -515,7 +620,7 @@ fn default_consumer_name() -> String {
     "quickwit".to_string()
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, utoipa::ToSchema)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TransformConfig {
     /// [VRL] source code of the transform compiled to a VRL [`Program`](vrl::compiler::Program).
@@ -610,6 +715,7 @@ impl TransformConfig {
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZero;
     use std::str::FromStr;
 
     use quickwit_common::uri::Uri;
@@ -1369,5 +1475,64 @@ mod tests {
             load_source_config_from_user_config(ConfigFormat::Json, file_content.as_bytes())
                 .unwrap();
         assert_eq!(source_config.input_format, SourceInputFormat::PlainText);
+    }
+
+    #[tokio::test]
+    async fn test_update_kafka_source_config() {
+        let source_config_filepath = get_source_config_filepath("kafka-source.json");
+        let file_content = std::fs::read(&source_config_filepath).unwrap();
+        let source_config_uri = Uri::from_str(&source_config_filepath).unwrap();
+        let config_format = ConfigFormat::sniff_from_uri(&source_config_uri).unwrap();
+        {
+            let mut existing_source_config =
+                load_source_config_from_user_config(config_format, &file_content).unwrap();
+            existing_source_config.num_pipelines = NonZero::new(4).unwrap();
+            let new_source_config =
+                load_source_config_update(config_format, &file_content, &existing_source_config)
+                    .unwrap();
+
+            let expected_source_config = SourceConfig {
+                source_id: "hdfs-logs-kafka-source".to_string(),
+                num_pipelines: NonZeroUsize::new(2).unwrap(),
+                enabled: true,
+                source_params: SourceParams::Kafka(KafkaSourceParams {
+                    topic: "cloudera-cluster-logs".to_string(),
+                    client_log_level: None,
+                    client_params: json! {{"bootstrap.servers": "localhost:9092"}},
+                    enable_backfill_mode: false,
+                }),
+                transform_config: Some(TransformConfig {
+                    vrl_script: ".message = downcase(string!(.message))".to_string(),
+                    timezone: "local".to_string(),
+                }),
+                input_format: SourceInputFormat::Json,
+            };
+            assert_eq!(new_source_config, expected_source_config);
+            assert_eq!(new_source_config.num_pipelines.get(), 2);
+        }
+        {
+            // the source type cannot be updated
+            let mut existing_source_config =
+                load_source_config_from_user_config(config_format, &file_content).unwrap();
+            existing_source_config.source_params = SourceParams::Kinesis(KinesisSourceParams {
+                stream_name: "my-stream".to_string(),
+                region_or_endpoint: None,
+                enable_backfill_mode: false,
+            });
+            load_source_config_update(config_format, &file_content, &existing_source_config)
+                .unwrap_err();
+        }
+        {
+            // the topic cannot be updated
+            let mut existing_source_config =
+                load_source_config_from_user_config(config_format, &file_content).unwrap();
+            let SourceParams::Kafka(kafka_params) = &mut existing_source_config.source_params
+            else {
+                panic!("expected Kafka source params");
+            };
+            kafka_params.topic = "other_topic_name".to_string();
+            load_source_config_update(config_format, &file_content, &existing_source_config)
+                .unwrap_err();
+        }
     }
 }

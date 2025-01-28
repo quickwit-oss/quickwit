@@ -1,7 +1,7 @@
 {
   "name": "quickwit-ui",
   "version": "0.8.0",
-  "license": "AGPL-3.0",
+  "license": "Apache-2.0",
   "private": true,
   "proxy": "http://127.0.0.1:7280",
   "homepage": "/ui/",

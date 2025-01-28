@@ -1,21 +1,16 @@
-// Copyright (C) 2024 Quickwit, Inc.
+// Copyright 2021-Present Datadog, Inc.
 //
-// Quickwit is offered under the AGPL v3.0 and as commercial software.
-// For commercial licensing, contact us at hello@quickwit.io.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// AGPL:
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program. If not, see <http://www.gnu.org/licenses/>.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 mod change_tracker;
 mod scheduling;
@@ -30,7 +25,7 @@ use fnv::{FnvHashMap, FnvHashSet};
 use itertools::Itertools;
 use once_cell::sync::OnceCell;
 use quickwit_common::pretty::PrettySample;
-use quickwit_config::{FileSourceParams, SourceParams};
+use quickwit_config::{indexing_pipeline_params_fingerprint, FileSourceParams, SourceParams};
 use quickwit_proto::indexing::{
     ApplyIndexingPlanRequest, CpuCapacity, IndexingService, IndexingTask, PIPELINE_FULL_CAPACITY,
     PIPELINE_THROUGHPUT,
@@ -170,7 +165,9 @@ fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
         }
         let params_fingerprint = model
             .index_metadata(&source_uid.index_uid)
-            .map(|index_meta| index_meta.index_config.indexing_params_fingerprint())
+            .map(|index_meta| {
+                indexing_pipeline_params_fingerprint(&index_meta.index_config, source_config)
+            })
             .unwrap_or_default();
         match source_config.source_params {
             SourceParams::File(FileSourceParams::Filepath(_))

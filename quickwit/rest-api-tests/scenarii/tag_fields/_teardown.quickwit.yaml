@@ -1,0 +1,6 @@
+method: DELETE
+endpoint: indexes/allowedtypes
+status_code: null
+---
+method: DELETE
+endpoint: indexes/simple

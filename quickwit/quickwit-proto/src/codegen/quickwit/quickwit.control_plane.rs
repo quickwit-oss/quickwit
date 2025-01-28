@@ -154,6 +154,11 @@ pub trait ControlPlaneService: std::fmt::Debug + Send + Sync + 'static {
         &self,
         request: super::metastore::AddSourceRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse>;
+    /// Update a source.
+    async fn update_source(
+        &self,
+        request: super::metastore::UpdateSourceRequest,
+    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse>;
     /// Enables or disables a source.
     async fn toggle_source(
         &self,
@@ -300,6 +305,12 @@ impl ControlPlaneService for ControlPlaneServiceClient {
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
         self.inner.0.add_source(request).await
     }
+    async fn update_source(
+        &self,
+        request: super::metastore::UpdateSourceRequest,
+    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
+        self.inner.0.update_source(request).await
+    }
     async fn toggle_source(
         &self,
         request: super::metastore::ToggleSourceRequest,
@@ -371,6 +382,14 @@ pub mod mock_control_plane_service {
             super::super::metastore::EmptyResponse,
         > {
             self.inner.lock().await.add_source(request).await
+        }
+        async fn update_source(
+            &self,
+            request: super::super::metastore::UpdateSourceRequest,
+        ) -> crate::control_plane::ControlPlaneResult<
+            super::super::metastore::EmptyResponse,
+        > {
+            self.inner.lock().await.update_source(request).await
         }
         async fn toggle_source(
             &self,
@@ -483,6 +502,23 @@ for InnerControlPlaneServiceClient {
         Box::pin(fut)
     }
 }
+impl tower::Service<super::metastore::UpdateSourceRequest>
+for InnerControlPlaneServiceClient {
+    type Response = super::metastore::EmptyResponse;
+    type Error = crate::control_plane::ControlPlaneError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: super::metastore::UpdateSourceRequest) -> Self::Future {
+        let svc = self.clone();
+        let fut = async move { svc.0.update_source(request).await };
+        Box::pin(fut)
+    }
+}
 impl tower::Service<super::metastore::ToggleSourceRequest>
 for InnerControlPlaneServiceClient {
     type Response = super::metastore::EmptyResponse;
@@ -591,6 +627,11 @@ struct ControlPlaneServiceTowerServiceStack {
         super::metastore::EmptyResponse,
         crate::control_plane::ControlPlaneError,
     >,
+    update_source_svc: quickwit_common::tower::BoxService<
+        super::metastore::UpdateSourceRequest,
+        super::metastore::EmptyResponse,
+        crate::control_plane::ControlPlaneError,
+    >,
     toggle_source_svc: quickwit_common::tower::BoxService<
         super::metastore::ToggleSourceRequest,
         super::metastore::EmptyResponse,
@@ -646,6 +687,12 @@ impl ControlPlaneService for ControlPlaneServiceTowerServiceStack {
         request: super::metastore::AddSourceRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
         self.add_source_svc.clone().ready().await?.call(request).await
+    }
+    async fn update_source(
+        &self,
+        request: super::metastore::UpdateSourceRequest,
+    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
+        self.update_source_svc.clone().ready().await?.call(request).await
     }
     async fn toggle_source(
         &self,
@@ -718,6 +765,16 @@ type AddSourceLayer = quickwit_common::tower::BoxLayer<
     super::metastore::EmptyResponse,
     crate::control_plane::ControlPlaneError,
 >;
+type UpdateSourceLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        super::metastore::UpdateSourceRequest,
+        super::metastore::EmptyResponse,
+        crate::control_plane::ControlPlaneError,
+    >,
+    super::metastore::UpdateSourceRequest,
+    super::metastore::EmptyResponse,
+    crate::control_plane::ControlPlaneError,
+>;
 type ToggleSourceLayer = quickwit_common::tower::BoxLayer<
     quickwit_common::tower::BoxService<
         super::metastore::ToggleSourceRequest,
@@ -774,6 +831,7 @@ pub struct ControlPlaneServiceTowerLayerStack {
     update_index_layers: Vec<UpdateIndexLayer>,
     delete_index_layers: Vec<DeleteIndexLayer>,
     add_source_layers: Vec<AddSourceLayer>,
+    update_source_layers: Vec<UpdateSourceLayer>,
     toggle_source_layers: Vec<ToggleSourceLayer>,
     delete_source_layers: Vec<DeleteSourceLayer>,
     get_or_create_open_shards_layers: Vec<GetOrCreateOpenShardsLayer>,
@@ -890,6 +948,33 @@ impl ControlPlaneServiceTowerLayerStack {
             >,
         >>::Service as tower::Service<
             super::metastore::AddSourceRequest,
+        >>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    super::metastore::UpdateSourceRequest,
+                    super::metastore::EmptyResponse,
+                    crate::control_plane::ControlPlaneError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                super::metastore::UpdateSourceRequest,
+                super::metastore::EmptyResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
+        >>::Service: tower::Service<
+                super::metastore::UpdateSourceRequest,
+                Response = super::metastore::EmptyResponse,
+                Error = crate::control_plane::ControlPlaneError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                super::metastore::UpdateSourceRequest,
+                super::metastore::EmptyResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
+        >>::Service as tower::Service<
+            super::metastore::UpdateSourceRequest,
         >>::Future: Send + 'static,
         L: tower::Layer<
                 quickwit_common::tower::BoxService<
@@ -1033,6 +1118,8 @@ impl ControlPlaneServiceTowerLayerStack {
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.add_source_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.update_source_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.toggle_source_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.delete_source_layers
@@ -1127,6 +1214,27 @@ impl ControlPlaneServiceTowerLayerStack {
         >>::Future: Send + 'static,
     {
         self.add_source_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_update_source_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    super::metastore::UpdateSourceRequest,
+                    super::metastore::EmptyResponse,
+                    crate::control_plane::ControlPlaneError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                super::metastore::UpdateSourceRequest,
+                Response = super::metastore::EmptyResponse,
+                Error = crate::control_plane::ControlPlaneError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<
+            super::metastore::UpdateSourceRequest,
+        >>::Future: Send + 'static,
+    {
+        self.update_source_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
     pub fn stack_toggle_source_layer<L>(mut self, layer: L) -> Self
@@ -1325,6 +1433,14 @@ impl ControlPlaneServiceTowerLayerStack {
                 quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
+        let update_source_svc = self
+            .update_source_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
+                |svc, layer| layer.layer(svc),
+            );
         let toggle_source_svc = self
             .toggle_source_layers
             .into_iter()
@@ -1371,6 +1487,7 @@ impl ControlPlaneServiceTowerLayerStack {
             update_index_svc,
             delete_index_svc,
             add_source_svc,
+            update_source_svc,
             toggle_source_svc,
             delete_source_svc,
             get_or_create_open_shards_svc,
@@ -1489,6 +1606,15 @@ where
             >,
         >
         + tower::Service<
+            super::metastore::UpdateSourceRequest,
+            Response = super::metastore::EmptyResponse,
+            Error = crate::control_plane::ControlPlaneError,
+            Future = BoxFuture<
+                super::metastore::EmptyResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
+        >
+        + tower::Service<
             super::metastore::ToggleSourceRequest,
             Response = super::metastore::EmptyResponse,
             Error = crate::control_plane::ControlPlaneError,
@@ -1559,6 +1685,12 @@ where
     async fn add_source(
         &self,
         request: super::metastore::AddSourceRequest,
+    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
+        self.clone().call(request).await
+    }
+    async fn update_source(
+        &self,
+        request: super::metastore::UpdateSourceRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
         self.clone().call(request).await
     }
@@ -1685,6 +1817,20 @@ where
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
                 super::metastore::AddSourceRequest::rpc_name(),
+            ))
+    }
+    async fn update_source(
+        &self,
+        request: super::metastore::UpdateSourceRequest,
+    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
+        self.inner
+            .clone()
+            .update_source(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                super::metastore::UpdateSourceRequest::rpc_name(),
             ))
     }
     async fn toggle_source(
@@ -1818,6 +1964,17 @@ for ControlPlaneServiceGrpcServerAdapter {
         self.inner
             .0
             .add_source(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(crate::error::grpc_error_to_grpc_status)
+    }
+    async fn update_source(
+        &self,
+        request: tonic::Request<super::metastore::UpdateSourceRequest>,
+    ) -> Result<tonic::Response<super::metastore::EmptyResponse>, tonic::Status> {
+        self.inner
+            .0
+            .update_source(request.into_inner())
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -2089,6 +2246,39 @@ pub mod control_plane_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// Update a source.
+        pub async fn update_source(
+            &mut self,
+            request: impl tonic::IntoRequest<
+                super::super::metastore::UpdateSourceRequest,
+            >,
+        ) -> std::result::Result<
+            tonic::Response<super::super::metastore::EmptyResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.control_plane.ControlPlaneService/UpdateSource",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit.control_plane.ControlPlaneService",
+                        "UpdateSource",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
         /// Enables or disables a source.
         pub async fn toggle_source(
             &mut self,
@@ -2286,6 +2476,14 @@ pub mod control_plane_service_grpc_server {
         async fn add_source(
             &self,
             request: tonic::Request<super::super::metastore::AddSourceRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::metastore::EmptyResponse>,
+            tonic::Status,
+        >;
+        /// Update a source.
+        async fn update_source(
+            &self,
+            request: tonic::Request<super::super::metastore::UpdateSourceRequest>,
         ) -> std::result::Result<
             tonic::Response<super::super::metastore::EmptyResponse>,
             tonic::Status,
@@ -2591,6 +2789,55 @@ pub mod control_plane_service_grpc_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = AddSourceSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.control_plane.ControlPlaneService/UpdateSource" => {
+                    #[allow(non_camel_case_types)]
+                    struct UpdateSourceSvc<T: ControlPlaneServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: ControlPlaneServiceGrpc,
+                    > tonic::server::UnaryService<
+                        super::super::metastore::UpdateSourceRequest,
+                    > for UpdateSourceSvc<T> {
+                        type Response = super::super::metastore::EmptyResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::super::metastore::UpdateSourceRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).update_source(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = UpdateSourceSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
