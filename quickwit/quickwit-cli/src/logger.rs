@@ -16,15 +16,16 @@ use std::env;
 use std::sync::Arc;
 
 use anyhow::Context;
-use opentelemetry::sdk::propagation::TraceContextPropagator;
-use opentelemetry::sdk::trace::BatchConfig;
-use opentelemetry::sdk::{trace, Resource};
+use opentelemetry::trace::TracerProvider;
 use opentelemetry::{global, KeyValue};
-use opentelemetry_otlp::WithExportConfig;
+use opentelemetry_sdk::propagation::TraceContextPropagator;
+use opentelemetry_sdk::trace::BatchConfigBuilder;
+use opentelemetry_sdk::{trace, Resource};
 use quickwit_common::get_bool_from_env;
 use quickwit_serve::{BuildInfo, EnvFilterReloadFn};
 use tracing::Level;
 use tracing_subscriber::fmt::time::UtcTime;
+use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
 
@@ -66,23 +67,32 @@ pub fn setup_logging_and_tracing(
     // Note on disabling ANSI characters: setting the ansi boolean on event format is insufficient.
     // It is thus set on layers, see https://github.com/tokio-rs/tracing/issues/1817
     if get_bool_from_env(QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY, false) {
-        let otlp_exporter = opentelemetry_otlp::new_exporter().tonic().with_env();
-        // In debug mode, Quickwit can generate a lot of spans, and the default queue size of 2048
-        // is too small.
-        let batch_config = BatchConfig::default().with_max_queue_size(32768);
-        let trace_config = trace::config().with_resource(Resource::new([
-            KeyValue::new("service.name", "quickwit"),
-            KeyValue::new("service.version", build_info.version.clone()),
-        ]));
-        let tracer = opentelemetry_otlp::new_pipeline()
-            .tracing()
-            .with_exporter(otlp_exporter)
-            .with_trace_config(trace_config)
-            .with_batch_config(batch_config)
-            .install_batch(opentelemetry::runtime::Tokio)
+        let otlp_exporter = opentelemetry_otlp::SpanExporter::builder()
+            .with_tonic()
+            .build()
             .context("failed to initialize OpenTelemetry OTLP exporter")?;
+        let batch_processor =
+            trace::BatchSpanProcessor::builder(otlp_exporter, opentelemetry_sdk::runtime::Tokio)
+                .with_batch_config(
+                    BatchConfigBuilder::default()
+                        // Quickwit can generate a lot of spans, especially in debug mode, and the
+                        // default queue size of 2048 is too small.
+                        .with_max_queue_size(32_768)
+                        .build(),
+                )
+                .build();
+        let provider = opentelemetry_sdk::trace::TracerProvider::builder()
+            .with_span_processor(batch_processor)
+            .with_resource(Resource::new([
+                KeyValue::new("service.name", "quickwit"),
+                KeyValue::new("service.version", build_info.version.clone()),
+            ]))
+            .build();
+        let tracer = provider.tracer("quickwit");
+        let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+
         registry
-            .with(tracing_opentelemetry::layer().with_tracer(tracer))
+            .with(telemetry_layer)
             .with(
                 tracing_subscriber::fmt::layer()
                     .event_format(event_format)
