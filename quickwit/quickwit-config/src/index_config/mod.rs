@@ -27,6 +27,7 @@ use humantime::parse_duration;
 use quickwit_common::uri::Uri;
 use quickwit_doc_mapper::{DocMapper, DocMapperBuilder, DocMapping};
 use quickwit_proto::types::IndexId;
+use rand::{distributions, thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 pub use serialize::{load_index_config_from_user_config, load_index_config_update};
 use siphasher::sip::SipHasher;
@@ -182,6 +183,16 @@ pub struct RetentionPolicy {
     #[serde(default = "RetentionPolicy::default_schedule")]
     #[serde(rename = "schedule")]
     pub evaluation_schedule: String,
+
+    /// A jitter to apply to the schedule. The policy will be evaluated [0..jitter_second] seconds
+    /// after the scheduled time. When many indexes use the same schedule, this can be used to
+    /// spread the load instead of causing a very bursty load.o
+    ///
+    /// If unset, a default jitter of `min(1 hour, next_next_evaluation - next_evaluation)` is
+    /// applied. Said otherwise, an operation may start any time between the next time it's
+    /// scheduled, and the time after that, but no later than 1h after the scheduled time.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub jitter_secs: Option<u64>,
 }
 
 impl RetentionPolicy {
@@ -198,7 +209,7 @@ impl RetentionPolicy {
         })
     }
 
-    pub fn evaluation_schedule(&self) -> anyhow::Result<Schedule> {
+    fn evaluation_schedule(&self) -> anyhow::Result<Schedule> {
         let evaluation_schedule = prepend_at_char(&self.evaluation_schedule);
 
         Schedule::from_str(&evaluation_schedule).with_context(|| {
@@ -211,13 +222,24 @@ impl RetentionPolicy {
 
     pub fn duration_until_next_evaluation(&self) -> anyhow::Result<Duration> {
         let schedule = self.evaluation_schedule()?;
-        let future_date = schedule
-            .upcoming(Utc)
+        let mut schedule_iter = schedule.upcoming(Utc);
+        let future_date = schedule_iter
             .next()
             .expect("Failed to obtain next evaluation date.");
-        let duration = (future_date - Utc::now())
+        let mut duration = (future_date - Utc::now())
             .to_std()
             .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+        let jitter_secs = self.jitter_secs.unwrap_or_else(|| {
+            if let Some(next_next_date) = schedule_iter.next() {
+                let time_between_schedules = next_next_date - future_date;
+                time_between_schedules.num_seconds().clamp(0, 3600) as u64
+            } else {
+                // we don't know when the schedule is. That's odd. Let's allow no jitter
+                0
+            }
+        });
+        let jitter = thread_rng().sample::<u64, _>(distributions::Standard) % (jitter_secs + 1);
+        duration += Duration::from_secs(jitter);
         Ok(duration)
     }
 
@@ -438,6 +460,7 @@ impl crate::TestableForRegression for IndexConfig {
         let retention_policy = Some(RetentionPolicy {
             retention_period: "90 days".to_string(),
             evaluation_schedule: "daily".to_string(),
+            jitter_secs: None,
         });
         let stable_log_config = StableLogMergePolicyConfig {
             merge_factor: 9,
@@ -570,6 +593,7 @@ mod tests {
         let expected_retention_policy = RetentionPolicy {
             retention_period: "90 days".to_string(),
             evaluation_schedule: "daily".to_string(),
+            jitter_secs: None,
         };
         assert_eq!(
             index_config.retention_policy_opt.unwrap(),
@@ -745,6 +769,7 @@ mod tests {
         let retention_policy = RetentionPolicy {
             retention_period: "90 days".to_string(),
             evaluation_schedule: "hourly".to_string(),
+            jitter_secs: None,
         };
         let retention_policy_yaml = serde_yaml::to_string(&retention_policy).unwrap();
         assert_eq!(
@@ -765,6 +790,7 @@ mod tests {
             let expected_retention_policy = RetentionPolicy {
                 retention_period: "90 days".to_string(),
                 evaluation_schedule: "hourly".to_string(),
+                jitter_secs: None,
             };
             assert_eq!(retention_policy, expected_retention_policy);
         }
@@ -779,6 +805,7 @@ mod tests {
             let expected_retention_policy = RetentionPolicy {
                 retention_period: "90 days".to_string(),
                 evaluation_schedule: "daily".to_string(),
+                jitter_secs: None,
             };
             assert_eq!(retention_policy, expected_retention_policy);
         }
@@ -790,6 +817,7 @@ mod tests {
             let retention_policy = RetentionPolicy {
                 retention_period: "1 hour".to_string(),
                 evaluation_schedule: "hourly".to_string(),
+                jitter_secs: None,
             };
             assert_eq!(
                 retention_policy.retention_period().unwrap(),
@@ -799,6 +827,7 @@ mod tests {
                 let retention_policy = RetentionPolicy {
                     retention_period: "foo".to_string(),
                     evaluation_schedule: "hourly".to_string(),
+                    jitter_secs: None,
                 };
                 assert_eq!(
                     retention_policy.retention_period().unwrap_err().to_string(),
@@ -823,6 +852,7 @@ mod tests {
             let retention_policy = RetentionPolicy {
                 retention_period: "1 hour".to_string(),
                 evaluation_schedule: "@hourly".to_string(),
+                jitter_secs: None,
             };
             assert_eq!(
                 retention_policy.evaluation_schedule().unwrap(),
@@ -833,6 +863,7 @@ mod tests {
             let retention_policy = RetentionPolicy {
                 retention_period: "1 hour".to_string(),
                 evaluation_schedule: "hourly".to_string(),
+                jitter_secs: None,
             };
             assert_eq!(
                 retention_policy.evaluation_schedule().unwrap(),
@@ -843,6 +874,7 @@ mod tests {
             let retention_policy = RetentionPolicy {
                 retention_period: "1 hour".to_string(),
                 evaluation_schedule: "0 * * * * *".to_string(),
+                jitter_secs: None,
             };
             let evaluation_schedule = retention_policy.evaluation_schedule().unwrap();
             assert_eq!(evaluation_schedule.seconds().count(), 1);
@@ -856,6 +888,7 @@ mod tests {
             let retention_policy = RetentionPolicy {
                 retention_period: "1 hour".to_string(),
                 evaluation_schedule: "hourly".to_string(),
+                jitter_secs: None,
             };
             retention_policy.validate().unwrap();
         }
@@ -863,6 +896,7 @@ mod tests {
             let retention_policy = RetentionPolicy {
                 retention_period: "foo".to_string(),
                 evaluation_schedule: "hourly".to_string(),
+                jitter_secs: None,
             };
             retention_policy.validate().unwrap_err();
         }
@@ -870,6 +904,7 @@ mod tests {
             let retention_policy = RetentionPolicy {
                 retention_period: "1 hour".to_string(),
                 evaluation_schedule: "foo".to_string(),
+                jitter_secs: None,
             };
             retention_policy.validate().unwrap_err();
         }
@@ -878,10 +913,11 @@ mod tests {
     #[test]
     fn test_retention_schedule_duration() {
         let schedule_test_helper_fn = |schedule_str: &str| {
-            let hourly_schedule = Schedule::from_str(&prepend_at_char(schedule_str)).unwrap();
+            let schedule = Schedule::from_str(&prepend_at_char(schedule_str)).unwrap();
             let retention_policy = RetentionPolicy {
                 retention_period: "1 hour".to_string(),
                 evaluation_schedule: schedule_str.to_string(),
+                jitter_secs: Some(0),
             };
 
             let next_evaluation_duration = chrono::Duration::nanoseconds(
@@ -891,8 +927,95 @@ mod tests {
                     .as_nanos() as i64,
             );
             let next_evaluation_date = Utc::now() + next_evaluation_duration;
-            let expected_date = hourly_schedule.upcoming(Utc).next().unwrap();
+            let expected_date = schedule.upcoming(Utc).next().unwrap();
             assert_eq!(next_evaluation_date.timestamp(), expected_date.timestamp());
+        };
+
+        schedule_test_helper_fn("hourly");
+        schedule_test_helper_fn("daily");
+        schedule_test_helper_fn("weekly");
+        schedule_test_helper_fn("monthly");
+        schedule_test_helper_fn("* * * ? * ?");
+    }
+
+    #[test]
+    fn test_retention_schedule_durationi_with_jitter() {
+        let schedule_test_helper_fn = |schedule_str: &str| {
+            let schedule = Schedule::from_str(&prepend_at_char(schedule_str)).unwrap();
+            let retention_policy = RetentionPolicy {
+                retention_period: "1 hour".to_string(),
+                evaluation_schedule: schedule_str.to_string(),
+                jitter_secs: Some(60 * 30),
+            };
+
+            for _ in 0..11 {
+                // we run this a few times in case we are unlucky and pick a null jitter.
+                // This happens in one in 3601 tries, 11 unlucky tries in a row is as likely as
+                // finding the right aes128 key to decrypt some message at random on 1st try.
+                let next_evaluation_duration = chrono::Duration::nanoseconds(
+                    retention_policy
+                        .duration_until_next_evaluation()
+                        .unwrap()
+                        .as_nanos() as i64,
+                );
+                let next_evaluation_date = Utc::now() + next_evaluation_duration;
+                let expected_date_early = schedule.upcoming(Utc).next().unwrap();
+                let expected_date_late =
+                    schedule.upcoming(Utc).next().unwrap() + chrono::Duration::seconds(30 * 60);
+                assert!(next_evaluation_date.timestamp() >= expected_date_early.timestamp());
+                assert!(next_evaluation_date.timestamp() <= expected_date_late.timestamp());
+                if next_evaluation_date.timestamp() != expected_date_early.timestamp() {
+                    return;
+                }
+            }
+            panic!("got no jitter at all on multiple successive runs")
+        };
+
+        schedule_test_helper_fn("hourly");
+        schedule_test_helper_fn("daily");
+        schedule_test_helper_fn("weekly");
+        schedule_test_helper_fn("monthly");
+        schedule_test_helper_fn("* * * ? * ?");
+    }
+
+    #[test]
+    fn test_retention_schedule_durationi_with_default_jitter() {
+        let schedule_test_helper_fn = |schedule_str: &str| {
+            let schedule = Schedule::from_str(&prepend_at_char(schedule_str)).unwrap();
+            let retention_policy = RetentionPolicy {
+                retention_period: "1 hour".to_string(),
+                evaluation_schedule: schedule_str.to_string(),
+                jitter_secs: None,
+            };
+            let max_1s_delay = schedule_str.starts_with('*');
+            let (limit, max_delay) = if max_1s_delay {
+                // one of our policies only allow 2 start dates, to make the test reliable, try a
+                // few more times
+                (128, 1)
+            } else {
+                (11, 3600)
+            };
+            for _ in 0..limit {
+                // we run this a few times in case we are unlucky and pick a null jitter.
+                // This happens in one in 3601 tries, 11 unlucky tries in a row is as likely as
+                // finding the right aes128 key to decrypt some message at random on 1st try.
+                let next_evaluation_duration = chrono::Duration::nanoseconds(
+                    retention_policy
+                        .duration_until_next_evaluation()
+                        .unwrap()
+                        .as_nanos() as i64,
+                );
+                let next_evaluation_date = Utc::now() + next_evaluation_duration;
+                let expected_date_early = schedule.upcoming(Utc).next().unwrap();
+                let expected_date_late =
+                    schedule.upcoming(Utc).next().unwrap() + chrono::Duration::seconds(max_delay);
+                assert!(dbg!(next_evaluation_date.timestamp()) >= expected_date_early.timestamp());
+                assert!(next_evaluation_date.timestamp() <= expected_date_late.timestamp());
+                if next_evaluation_date.timestamp() != expected_date_early.timestamp() {
+                    return;
+                }
+            }
+            panic!("got no jitter at all on multiple successive runs")
         };
 
         schedule_test_helper_fn("hourly");
