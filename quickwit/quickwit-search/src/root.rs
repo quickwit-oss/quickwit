@@ -1224,6 +1224,14 @@ pub async fn root_search(
         ["error"]
     };
     SEARCH_METRICS
+        .root_search_requests_total
+        .with_label_values(label_values)
+        .inc();
+    SEARCH_METRICS
+        .root_search_request_duration_seconds
+        .with_label_values(label_values)
+        .observe(elapsed.as_secs_f64());
+    SEARCH_METRICS
         .root_search_targeted_splits
         .with_label_values(label_values)
         .observe(num_splits as f64);

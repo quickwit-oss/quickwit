@@ -15,7 +15,7 @@
 use std::fmt;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use bytesize::ByteSize;
 use futures::{StreamExt, TryStreamExt};
@@ -32,7 +32,6 @@ use tower::timeout::Timeout;
 use tracing::{info_span, warn, Instrument};
 
 use crate::error::parse_grpc_error;
-use crate::metrics::SEARCH_METRICS;
 use crate::SearchService;
 
 /// Impl is an enumeration that meant to manage Quickwit's search service client types.
@@ -106,30 +105,14 @@ impl SearchServiceClient {
         &mut self,
         request: quickwit_proto::search::SearchRequest,
     ) -> crate::Result<quickwit_proto::search::SearchResponse> {
-        let start = Instant::now();
-        let response_result = match &mut self.client_impl {
+        match &mut self.client_impl {
             SearchServiceClientImpl::Grpc(grpc_client) => grpc_client
                 .root_search(request)
                 .await
                 .map(|tonic_response| tonic_response.into_inner())
                 .map_err(|tonic_error| parse_grpc_error(&tonic_error)),
             SearchServiceClientImpl::Local(service) => service.root_search(request).await,
-        };
-        let elapsed = start.elapsed().as_secs_f64();
-        let label_values = if response_result.is_ok() {
-            ["success"]
-        } else {
-            ["error"]
-        };
-        SEARCH_METRICS
-            .root_search_requests_total
-            .with_label_values(label_values)
-            .inc();
-        SEARCH_METRICS
-            .root_search_request_duration_seconds
-            .with_label_values(label_values)
-            .observe(elapsed);
-        response_result
+        }
     }
 
     /// Perform leaf search.
@@ -137,30 +120,14 @@ impl SearchServiceClient {
         &mut self,
         request: quickwit_proto::search::LeafSearchRequest,
     ) -> crate::Result<quickwit_proto::search::LeafSearchResponse> {
-        let start = Instant::now();
-        let response_result = match &mut self.client_impl {
+        match &mut self.client_impl {
             SearchServiceClientImpl::Grpc(grpc_client) => grpc_client
                 .leaf_search(request)
                 .await
                 .map(|tonic_response| tonic_response.into_inner())
                 .map_err(|tonic_error| parse_grpc_error(&tonic_error)),
             SearchServiceClientImpl::Local(service) => service.leaf_search(request).await,
-        };
-        let elapsed = start.elapsed().as_secs_f64();
-        let label_values = if response_result.is_ok() {
-            ["success"]
-        } else {
-            ["error"]
-        };
-        SEARCH_METRICS
-            .leaf_search_requests_total
-            .with_label_values(label_values)
-            .inc();
-        SEARCH_METRICS
-            .leaf_search_request_duration_seconds
-            .with_label_values(label_values)
-            .observe(elapsed);
-        response_result
+        }
     }
 
     /// Perform leaf search.

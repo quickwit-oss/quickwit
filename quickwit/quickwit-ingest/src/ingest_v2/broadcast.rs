@@ -124,7 +124,7 @@ enum ShardInfosChange<'a> {
 }
 
 impl LocalShardsSnapshot {
-    pub fn diff<'a>(&'a self, other: &'a Self) -> impl Iterator<Item = ShardInfosChange<'a>> + '_ {
+    pub fn diff<'a>(&'a self, other: &'a Self) -> impl Iterator<Item = ShardInfosChange<'a>> + 'a {
         self.per_source_shard_infos
             .iter()
             .diff_by_key(other.per_source_shard_infos.iter())
