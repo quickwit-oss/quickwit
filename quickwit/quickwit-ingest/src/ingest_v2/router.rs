@@ -538,7 +538,7 @@ fn update_ingest_metrics(ingest_result: &IngestV2Result<IngestResponseV2>, num_s
                     IngestFailureReason::NoShardsAvailable => {
                         ingest_results_metrics.no_shards_available.inc()
                     }
-                    IngestFailureReason::ShardRateLimited => {
+                    IngestFailureReason::AttemptedShardsRateLimited => {
                         ingest_results_metrics.attempted_shards_rate_limited.inc()
                     }
                     IngestFailureReason::AllShardsRateLimited => {
@@ -2171,7 +2171,7 @@ mod tests {
         assert_eq!(ingest_response.failures.len(), 1);
         assert_eq!(
             ingest_response.failures[0].reason(),
-            IngestFailureReason::ShardRateLimited
+            IngestFailureReason::AttemptedShardsRateLimited
         );
     }
 }

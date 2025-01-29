@@ -360,7 +360,7 @@ impl SubworkbenchFailure {
                 RateLimitingCause::WalFull => IngestFailureReason::WalFull,
                 RateLimitingCause::CircuitBreaker => IngestFailureReason::CircuitBreaker,
                 RateLimitingCause::AttemptedShardsRateLimited => {
-                    IngestFailureReason::ShardRateLimited
+                    IngestFailureReason::AttemptedShardsRateLimited
                 }
                 RateLimitingCause::AllShardsRateLimited => {
                     IngestFailureReason::AllShardsRateLimited

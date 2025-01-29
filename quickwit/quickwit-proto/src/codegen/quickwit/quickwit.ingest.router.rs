@@ -75,8 +75,7 @@ pub enum IngestFailureReason {
     SourceNotFound = 2,
     Internal = 3,
     NoShardsAvailable = 4,
-    /// the shards we attempted to write to are rate limited
-    ShardRateLimited = 5,
+    AttemptedShardsRateLimited = 5,
     WalFull = 6,
     Timeout = 7,
     RouterLoadShedding = 8,
@@ -93,15 +92,25 @@ impl IngestFailureReason {
         match self {
             IngestFailureReason::Unspecified => "INGEST_FAILURE_REASON_UNSPECIFIED",
             IngestFailureReason::IndexNotFound => "INGEST_FAILURE_REASON_INDEX_NOT_FOUND",
-            IngestFailureReason::SourceNotFound => "INGEST_FAILURE_REASON_SOURCE_NOT_FOUND",
+            IngestFailureReason::SourceNotFound => {
+                "INGEST_FAILURE_REASON_SOURCE_NOT_FOUND"
+            }
             IngestFailureReason::Internal => "INGEST_FAILURE_REASON_INTERNAL",
-            IngestFailureReason::NoShardsAvailable => "INGEST_FAILURE_REASON_NO_SHARDS_AVAILABLE",
-            IngestFailureReason::ShardRateLimited => "INGEST_FAILURE_REASON_SHARD_RATE_LIMITED",
+            IngestFailureReason::NoShardsAvailable => {
+                "INGEST_FAILURE_REASON_NO_SHARDS_AVAILABLE"
+            }
+            IngestFailureReason::AttemptedShardsRateLimited => {
+                "INGEST_FAILURE_REASON_ATTEMPTED_SHARDS_RATE_LIMITED"
+            }
             IngestFailureReason::WalFull => "INGEST_FAILURE_REASON_WAL_FULL",
             IngestFailureReason::Timeout => "INGEST_FAILURE_REASON_TIMEOUT",
-            IngestFailureReason::RouterLoadShedding => "INGEST_FAILURE_REASON_ROUTER_LOAD_SHEDDING",
+            IngestFailureReason::RouterLoadShedding => {
+                "INGEST_FAILURE_REASON_ROUTER_LOAD_SHEDDING"
+            }
             IngestFailureReason::LoadShedding => "INGEST_FAILURE_REASON_LOAD_SHEDDING",
-            IngestFailureReason::CircuitBreaker => "INGEST_FAILURE_REASON_CIRCUIT_BREAKER",
+            IngestFailureReason::CircuitBreaker => {
+                "INGEST_FAILURE_REASON_CIRCUIT_BREAKER"
+            }
             IngestFailureReason::AllShardsRateLimited => {
                 "INGEST_FAILURE_REASON_ALL_SHARDS_RATE_LIMITED"
             }
@@ -115,13 +124,19 @@ impl IngestFailureReason {
             "INGEST_FAILURE_REASON_SOURCE_NOT_FOUND" => Some(Self::SourceNotFound),
             "INGEST_FAILURE_REASON_INTERNAL" => Some(Self::Internal),
             "INGEST_FAILURE_REASON_NO_SHARDS_AVAILABLE" => Some(Self::NoShardsAvailable),
-            "INGEST_FAILURE_REASON_SHARD_RATE_LIMITED" => Some(Self::ShardRateLimited),
+            "INGEST_FAILURE_REASON_ATTEMPTED_SHARDS_RATE_LIMITED" => {
+                Some(Self::AttemptedShardsRateLimited)
+            }
             "INGEST_FAILURE_REASON_WAL_FULL" => Some(Self::WalFull),
             "INGEST_FAILURE_REASON_TIMEOUT" => Some(Self::Timeout),
-            "INGEST_FAILURE_REASON_ROUTER_LOAD_SHEDDING" => Some(Self::RouterLoadShedding),
+            "INGEST_FAILURE_REASON_ROUTER_LOAD_SHEDDING" => {
+                Some(Self::RouterLoadShedding)
+            }
             "INGEST_FAILURE_REASON_LOAD_SHEDDING" => Some(Self::LoadShedding),
             "INGEST_FAILURE_REASON_CIRCUIT_BREAKER" => Some(Self::CircuitBreaker),
-            "INGEST_FAILURE_REASON_ALL_SHARDS_RATE_LIMITED" => Some(Self::AllShardsRateLimited),
+            "INGEST_FAILURE_REASON_ALL_SHARDS_RATE_LIMITED" => {
+                Some(Self::AllShardsRateLimited)
+            }
             _ => None,
         }
     }
@@ -129,9 +144,8 @@ impl IngestFailureReason {
 /// BEGIN quickwit-codegen
 #[allow(unused_imports)]
 use std::str::FromStr;
-
-use quickwit_common::tower::RpcName;
 use tower::{Layer, Service, ServiceExt};
+use quickwit_common::tower::RpcName;
 impl RpcName for IngestRequestV2 {
     fn rpc_name() -> &'static str {
         "ingest"
@@ -155,12 +169,14 @@ pub struct IngestRouterServiceClient {
 struct InnerIngestRouterServiceClient(std::sync::Arc<dyn IngestRouterService>);
 impl IngestRouterServiceClient {
     pub fn new<T>(instance: T) -> Self
-    where T: IngestRouterService {
+    where
+        T: IngestRouterService,
+    {
         #[cfg(any(test, feature = "testsuite"))]
         assert!(
-            std::any::TypeId::of::<T>() != std::any::TypeId::of::<MockIngestRouterService>(),
-            "`MockIngestRouterService` must be wrapped in a `MockIngestRouterServiceWrapper`: use \
-             `IngestRouterServiceClient::from_mock(mock)` to instantiate the client"
+            std::any::TypeId::of:: < T > () != std::any::TypeId::of:: <
+            MockIngestRouterService > (),
+            "`MockIngestRouterService` must be wrapped in a `MockIngestRouterServiceWrapper`: use `IngestRouterServiceClient::from_mock(mock)` to instantiate the client"
         );
         Self {
             inner: InnerIngestRouterServiceClient(std::sync::Arc::new(instance)),
@@ -182,12 +198,18 @@ impl IngestRouterServiceClient {
         channel: tonic::transport::Channel,
         max_message_size: bytesize::ByteSize,
     ) -> Self {
-        let (_, connection_keys_watcher) =
-            tokio::sync::watch::channel(std::collections::HashSet::from_iter([addr]));
-        let client = ingest_router_service_grpc_client::IngestRouterServiceGrpcClient::new(channel)
+        let (_, connection_keys_watcher) = tokio::sync::watch::channel(
+            std::collections::HashSet::from_iter([addr]),
+        );
+        let client = ingest_router_service_grpc_client::IngestRouterServiceGrpcClient::new(
+                channel,
+            )
             .max_decoding_message_size(max_message_size.0 as usize)
             .max_encoding_message_size(max_message_size.0 as usize);
-        let adapter = IngestRouterServiceGrpcClientAdapter::new(client, connection_keys_watcher);
+        let adapter = IngestRouterServiceGrpcClientAdapter::new(
+            client,
+            connection_keys_watcher,
+        );
         Self::new(adapter)
     }
     pub fn from_balance_channel(
@@ -195,11 +217,15 @@ impl IngestRouterServiceClient {
         max_message_size: bytesize::ByteSize,
     ) -> IngestRouterServiceClient {
         let connection_keys_watcher = balance_channel.connection_keys_watcher();
-        let client =
-            ingest_router_service_grpc_client::IngestRouterServiceGrpcClient::new(balance_channel)
-                .max_decoding_message_size(max_message_size.0 as usize)
-                .max_encoding_message_size(max_message_size.0 as usize);
-        let adapter = IngestRouterServiceGrpcClientAdapter::new(client, connection_keys_watcher);
+        let client = ingest_router_service_grpc_client::IngestRouterServiceGrpcClient::new(
+                balance_channel,
+            )
+            .max_decoding_message_size(max_message_size.0 as usize)
+            .max_encoding_message_size(max_message_size.0 as usize);
+        let adapter = IngestRouterServiceGrpcClientAdapter::new(
+            client,
+            connection_keys_watcher,
+        );
         Self::new(adapter)
     }
     pub fn from_mailbox<A>(mailbox: quickwit_actors::Mailbox<A>) -> Self
@@ -250,8 +276,9 @@ pub mod mock_ingest_router_service {
         }
     }
 }
-pub type BoxFuture<T, E> =
-    std::pin::Pin<Box<dyn std::future::Future<Output = Result<T, E>> + Send + 'static>>;
+pub type BoxFuture<T, E> = std::pin::Pin<
+    Box<dyn std::future::Future<Output = Result<T, E>> + Send + 'static>,
+>;
 impl tower::Service<IngestRequestV2> for InnerIngestRouterServiceClient {
     type Response = IngestResponseV2;
     type Error = crate::ingest::IngestV2Error;
@@ -311,10 +338,7 @@ impl IngestRouterServiceTowerLayerStack {
                     IngestResponseV2,
                     crate::ingest::IngestV2Error,
                 >,
-            > + Clone
-            + Send
-            + Sync
-            + 'static,
+            > + Clone + Send + Sync + 'static,
         <L as tower::Layer<
             quickwit_common::tower::BoxService<
                 IngestRequestV2,
@@ -325,10 +349,7 @@ impl IngestRouterServiceTowerLayerStack {
                 IngestRequestV2,
                 Response = IngestResponseV2,
                 Error = crate::ingest::IngestV2Error,
-            > + Clone
-            + Send
-            + Sync
-            + 'static,
+            > + Clone + Send + Sync + 'static,
         <<L as tower::Layer<
             quickwit_common::tower::BoxService<
                 IngestRequestV2,
@@ -337,8 +358,7 @@ impl IngestRouterServiceTowerLayerStack {
             >,
         >>::Service as tower::Service<IngestRequestV2>>::Future: Send + 'static,
     {
-        self.ingest_layers
-            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.ingest_layers.push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self
     }
     pub fn stack_ingest_layer<L>(mut self, layer: L) -> Self
@@ -349,25 +369,21 @@ impl IngestRouterServiceTowerLayerStack {
                     IngestResponseV2,
                     crate::ingest::IngestV2Error,
                 >,
-            > + Send
-            + Sync
-            + 'static,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 IngestRequestV2,
                 Response = IngestResponseV2,
                 Error = crate::ingest::IngestV2Error,
-            > + Clone
-            + Send
-            + Sync
-            + 'static,
+            > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<IngestRequestV2>>::Future: Send + 'static,
     {
-        self.ingest_layers
-            .push(quickwit_common::tower::BoxLayer::new(layer));
+        self.ingest_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
     pub fn build<T>(self, instance: T) -> IngestRouterServiceClient
-    where T: IngestRouterService {
+    where
+        T: IngestRouterService,
+    {
         let inner_client = InnerIngestRouterServiceClient(std::sync::Arc::new(instance));
         self.build_from_inner_client(inner_client)
     }
@@ -377,7 +393,11 @@ impl IngestRouterServiceTowerLayerStack {
         channel: tonic::transport::Channel,
         max_message_size: bytesize::ByteSize,
     ) -> IngestRouterServiceClient {
-        let client = IngestRouterServiceClient::from_channel(addr, channel, max_message_size);
+        let client = IngestRouterServiceClient::from_channel(
+            addr,
+            channel,
+            max_message_size,
+        );
         let inner_client = client.inner;
         self.build_from_inner_client(inner_client)
     }
@@ -386,8 +406,10 @@ impl IngestRouterServiceTowerLayerStack {
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
         max_message_size: bytesize::ByteSize,
     ) -> IngestRouterServiceClient {
-        let client =
-            IngestRouterServiceClient::from_balance_channel(balance_channel, max_message_size);
+        let client = IngestRouterServiceClient::from_balance_channel(
+            balance_channel,
+            max_message_size,
+        );
         let inner_client = client.inner;
         self.build_from_inner_client(inner_client)
     }
@@ -399,13 +421,16 @@ impl IngestRouterServiceTowerLayerStack {
         A: quickwit_actors::Actor + std::fmt::Debug + Send + 'static,
         IngestRouterServiceMailbox<A>: IngestRouterService,
     {
-        let inner_client = InnerIngestRouterServiceClient(std::sync::Arc::new(
-            IngestRouterServiceMailbox::new(mailbox),
-        ));
+        let inner_client = InnerIngestRouterServiceClient(
+            std::sync::Arc::new(IngestRouterServiceMailbox::new(mailbox)),
+        );
         self.build_from_inner_client(inner_client)
     }
     #[cfg(any(test, feature = "testsuite"))]
-    pub fn build_from_mock(self, mock: MockIngestRouterService) -> IngestRouterServiceClient {
+    pub fn build_from_mock(
+        self,
+        mock: MockIngestRouterService,
+    ) -> IngestRouterServiceClient {
         let client = IngestRouterServiceClient::from_mock(mock);
         let inner_client = client.inner;
         self.build_from_inner_client(inner_client)
@@ -414,10 +439,14 @@ impl IngestRouterServiceTowerLayerStack {
         self,
         inner_client: InnerIngestRouterServiceClient,
     ) -> IngestRouterServiceClient {
-        let ingest_svc = self.ingest_layers.into_iter().rev().fold(
-            quickwit_common::tower::BoxService::new(inner_client.clone()),
-            |svc, layer| layer.layer(svc),
-        );
+        let ingest_svc = self
+            .ingest_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
+                |svc, layer| layer.layer(svc),
+            );
         let tower_svc_stack = IngestRouterServiceTowerServiceStack {
             inner: inner_client,
             ingest_svc,
@@ -431,7 +460,8 @@ struct MailboxAdapter<A: quickwit_actors::Actor, E> {
     phantom: std::marker::PhantomData<E>,
 }
 impl<A, E> std::ops::Deref for MailboxAdapter<A, E>
-where A: quickwit_actors::Actor
+where
+    A: quickwit_actors::Actor,
 {
     type Target = quickwit_actors::Mailbox<A>;
     fn deref(&self) -> &Self::Target {
@@ -463,8 +493,7 @@ impl<A: quickwit_actors::Actor> Clone for IngestRouterServiceMailbox<A> {
 impl<A, M, T, E> tower::Service<M> for IngestRouterServiceMailbox<A>
 where
     A: quickwit_actors::Actor
-        + quickwit_actors::DeferableReplyHandler<M, Reply = Result<T, E>>
-        + Send
+        + quickwit_actors::DeferableReplyHandler<M, Reply = Result<T, E>> + Send
         + 'static,
     M: std::fmt::Debug + Send + 'static,
     T: Send + 'static,
@@ -486,10 +515,7 @@ where
     fn call(&mut self, message: M) -> Self::Future {
         let mailbox = self.inner.clone();
         let fut = async move {
-            mailbox
-                .ask_for_res(message)
-                .await
-                .map_err(|error| error.into())
+            mailbox.ask_for_res(message).await.map_err(|error| error.into())
         };
         Box::pin(fut)
     }
@@ -498,7 +524,9 @@ where
 impl<A> IngestRouterService for IngestRouterServiceMailbox<A>
 where
     A: quickwit_actors::Actor + std::fmt::Debug,
-    IngestRouterServiceMailbox<A>: tower::Service<
+    IngestRouterServiceMailbox<
+        A,
+    >: tower::Service<
         IngestRequestV2,
         Response = IngestResponseV2,
         Error = crate::ingest::IngestV2Error,
@@ -516,8 +544,9 @@ where
 pub struct IngestRouterServiceGrpcClientAdapter<T> {
     inner: T,
     #[allow(dead_code)]
-    connection_addrs_rx:
-        tokio::sync::watch::Receiver<std::collections::HashSet<std::net::SocketAddr>>,
+    connection_addrs_rx: tokio::sync::watch::Receiver<
+        std::collections::HashSet<std::net::SocketAddr>,
+    >,
 }
 impl<T> IngestRouterServiceGrpcClientAdapter<T> {
     pub fn new(
@@ -534,18 +563,15 @@ impl<T> IngestRouterServiceGrpcClientAdapter<T> {
 }
 #[async_trait::async_trait]
 impl<T> IngestRouterService
-    for IngestRouterServiceGrpcClientAdapter<
-        ingest_router_service_grpc_client::IngestRouterServiceGrpcClient<T>,
-    >
+for IngestRouterServiceGrpcClientAdapter<
+    ingest_router_service_grpc_client::IngestRouterServiceGrpcClient<T>,
+>
 where
-    T: tonic::client::GrpcService<tonic::body::BoxBody>
-        + std::fmt::Debug
-        + Clone
-        + Send
-        + Sync
-        + 'static,
+    T: tonic::client::GrpcService<tonic::body::BoxBody> + std::fmt::Debug + Clone + Send
+        + Sync + 'static,
     T::ResponseBody: tonic::codegen::Body<Data = tonic::codegen::Bytes> + Send + 'static,
-    <T::ResponseBody as tonic::codegen::Body>::Error: Into<tonic::codegen::StdError> + Send,
+    <T::ResponseBody as tonic::codegen::Body>::Error: Into<tonic::codegen::StdError>
+        + Send,
     T::Future: Send,
 {
     async fn ingest(
@@ -557,9 +583,10 @@ where
             .ingest(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|status| {
-                crate::error::grpc_status_to_service_error(status, IngestRequestV2::rpc_name())
-            })
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                IngestRequestV2::rpc_name(),
+            ))
     }
 }
 #[derive(Debug)]
@@ -568,7 +595,9 @@ pub struct IngestRouterServiceGrpcServerAdapter {
 }
 impl IngestRouterServiceGrpcServerAdapter {
     pub fn new<T>(instance: T) -> Self
-    where T: IngestRouterService {
+    where
+        T: IngestRouterService,
+    {
         Self {
             inner: InnerIngestRouterServiceClient(std::sync::Arc::new(instance)),
         }
@@ -576,8 +605,7 @@ impl IngestRouterServiceGrpcServerAdapter {
 }
 #[async_trait::async_trait]
 impl ingest_router_service_grpc_server::IngestRouterServiceGrpc
-    for IngestRouterServiceGrpcServerAdapter
-{
+for IngestRouterServiceGrpcServerAdapter {
     async fn ingest(
         &self,
         request: tonic::Request<IngestRequestV2>,
@@ -593,8 +621,8 @@ impl ingest_router_service_grpc_server::IngestRouterServiceGrpc
 /// Generated client implementations.
 pub mod ingest_router_service_grpc_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
-    use tonic::codegen::http::Uri;
     use tonic::codegen::*;
+    use tonic::codegen::http::Uri;
     #[derive(Debug, Clone)]
     pub struct IngestRouterServiceGrpcClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -638,10 +666,13 @@ pub mod ingest_router_service_grpc_client {
                     <T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody,
                 >,
             >,
-            <T as tonic::codegen::Service<http::Request<tonic::body::BoxBody>>>::Error:
-                Into<StdError> + Send + Sync,
+            <T as tonic::codegen::Service<
+                http::Request<tonic::body::BoxBody>,
+            >>::Error: Into<StdError> + Send + Sync,
         {
-            IngestRouterServiceGrpcClient::new(InterceptedService::new(inner, interceptor))
+            IngestRouterServiceGrpcClient::new(
+                InterceptedService::new(inner, interceptor),
+            )
         }
         /// Compress requests with the given encoding.
         ///
@@ -679,22 +710,31 @@ pub mod ingest_router_service_grpc_client {
         pub async fn ingest(
             &mut self,
             request: impl tonic::IntoRequest<super::IngestRequestV2>,
-        ) -> std::result::Result<tonic::Response<super::IngestResponseV2>, tonic::Status> {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+        ) -> std::result::Result<
+            tonic::Response<super::IngestResponseV2>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/quickwit.ingest.router.IngestRouterService/Ingest",
             );
             let mut req = request.into_request();
-            req.extensions_mut().insert(GrpcMethod::new(
-                "quickwit.ingest.router.IngestRouterService",
-                "Ingest",
-            ));
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit.ingest.router.IngestRouterService",
+                        "Ingest",
+                    ),
+                );
             self.inner.unary(req, path, codec).await
         }
     }
@@ -703,8 +743,7 @@ pub mod ingest_router_service_grpc_client {
 pub mod ingest_router_service_grpc_server {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
-    /// Generated trait containing gRPC methods that should be implemented for use with
-    /// IngestRouterServiceGrpcServer.
+    /// Generated trait containing gRPC methods that should be implemented for use with IngestRouterServiceGrpcServer.
     #[async_trait]
     pub trait IngestRouterServiceGrpc: Send + Sync + 'static {
         /// Ingests batches of documents for one or multiple indexes.
@@ -712,7 +751,10 @@ pub mod ingest_router_service_grpc_server {
         async fn ingest(
             &self,
             request: tonic::Request<super::IngestRequestV2>,
-        ) -> std::result::Result<tonic::Response<super::IngestResponseV2>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::IngestResponseV2>,
+            tonic::Status,
+        >;
     }
     #[derive(Debug)]
     pub struct IngestRouterServiceGrpcServer<T: IngestRouterServiceGrpc> {
@@ -737,8 +779,13 @@ pub mod ingest_router_service_grpc_server {
                 max_encoding_message_size: None,
             }
         }
-        pub fn with_interceptor<F>(inner: T, interceptor: F) -> InterceptedService<Self, F>
-        where F: tonic::service::Interceptor {
+        pub fn with_interceptor<F>(
+            inner: T,
+            interceptor: F,
+        ) -> InterceptedService<Self, F>
+        where
+            F: tonic::service::Interceptor,
+        {
             InterceptedService::new(Self::new(inner), interceptor)
         }
         /// Enable decompressing requests with the given encoding.
@@ -770,7 +817,8 @@ pub mod ingest_router_service_grpc_server {
             self
         }
     }
-    impl<T, B> tonic::codegen::Service<http::Request<B>> for IngestRouterServiceGrpcServer<T>
+    impl<T, B> tonic::codegen::Service<http::Request<B>>
+    for IngestRouterServiceGrpcServer<T>
     where
         T: IngestRouterServiceGrpc,
         B: Body + Send + 'static,
@@ -791,11 +839,15 @@ pub mod ingest_router_service_grpc_server {
                 "/quickwit.ingest.router.IngestRouterService/Ingest" => {
                     #[allow(non_camel_case_types)]
                     struct IngestSvc<T: IngestRouterServiceGrpc>(pub Arc<T>);
-                    impl<T: IngestRouterServiceGrpc>
-                        tonic::server::UnaryService<super::IngestRequestV2> for IngestSvc<T>
-                    {
+                    impl<
+                        T: IngestRouterServiceGrpc,
+                    > tonic::server::UnaryService<super::IngestRequestV2>
+                    for IngestSvc<T> {
                         type Response = super::IngestResponseV2;
-                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::IngestRequestV2>,
@@ -828,14 +880,18 @@ pub mod ingest_router_service_grpc_server {
                     };
                     Box::pin(fut)
                 }
-                _ => Box::pin(async move {
-                    Ok(http::Response::builder()
-                        .status(200)
-                        .header("grpc-status", "12")
-                        .header("content-type", "application/grpc")
-                        .body(empty_body())
-                        .unwrap())
-                }),
+                _ => {
+                    Box::pin(async move {
+                        Ok(
+                            http::Response::builder()
+                                .status(200)
+                                .header("grpc-status", "12")
+                                .header("content-type", "application/grpc")
+                                .body(empty_body())
+                                .unwrap(),
+                        )
+                    })
+                }
             }
         }
     }
@@ -861,7 +917,8 @@ pub mod ingest_router_service_grpc_server {
             write!(f, "{:?}", self.0)
         }
     }
-    impl<T: IngestRouterServiceGrpc> tonic::server::NamedService for IngestRouterServiceGrpcServer<T> {
+    impl<T: IngestRouterServiceGrpc> tonic::server::NamedService
+    for IngestRouterServiceGrpcServer<T> {
         const NAME: &'static str = "quickwit.ingest.router.IngestRouterService";
     }
 }

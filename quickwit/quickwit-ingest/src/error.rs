@@ -113,7 +113,7 @@ impl From<IngestFailure> for IngestServiceError {
             IngestFailureReason::NoShardsAvailable => {
                 IngestServiceError::Unavailable("no shards available".to_string())
             }
-            IngestFailureReason::ShardRateLimited => {
+            IngestFailureReason::AttemptedShardsRateLimited => {
                 IngestServiceError::RateLimited(RateLimitingCause::AttemptedShardsRateLimited)
             }
             IngestFailureReason::AllShardsRateLimited => {
