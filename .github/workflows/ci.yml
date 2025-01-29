@@ -168,7 +168,7 @@ jobs:
           key: ${{ runner.os }}-cargo-tools-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Install dd-rust-license-tool
-        run: dd-rust-license-tool --help || cargo install --git https://github.com/guilload/rust-license-tool.git --branch guilload/manifest-option --force
+        run: dd-rust-license-tool --help || cargo install --git https://github.com/DataDog/rust-license-tool.git --force
 
       - name: Check Datadog third-party license file
-        run: dd-rust-license-tool --config quickwit/license-tool.toml --manifest quickwit/Cargo.toml check
+        run: dd-rust-license-tool --config quickwit/license-tool.toml --manifest-path quickwit/Cargo.toml check
