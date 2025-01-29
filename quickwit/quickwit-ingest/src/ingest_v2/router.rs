@@ -366,8 +366,8 @@ impl IngestRouter {
 
         // Subrequests for which no shards are available to route the subrequests to.
         let mut no_shards_available_subrequest_ids: Vec<SubrequestId> = Vec::new();
-        // Subrequests for which the shards are rate limited.
-        let mut rate_limited_subrequest_ids: Vec<SubrequestId> = Vec::new();
+        // Subrequests for which all the shards are rate limited.
+        let mut all_shards_rate_limited_subrequest_ids: Vec<SubrequestId> = Vec::new();
 
         let mut per_leader_persist_subrequests: HashMap<&LeaderId, Vec<PersistSubrequest>> =
             HashMap::new();
@@ -385,7 +385,7 @@ impl IngestRouter {
             let next_open_shard = match next_open_shard_res_opt {
                 Some(Ok(next_open_shard)) => next_open_shard,
                 Some(Err(NextOpenShardError::RateLimited)) => {
-                    rate_limited_subrequest_ids.push(subrequest.subrequest_id);
+                    all_shards_rate_limited_subrequest_ids.push(subrequest.subrequest_id);
                     continue;
                 }
                 Some(Err(NextOpenShardError::NoShardsAvailable)) | None => {
@@ -450,8 +450,8 @@ impl IngestRouter {
         for subrequest_id in no_shards_available_subrequest_ids {
             workbench.record_no_shards_available(subrequest_id);
         }
-        for subrequest_id in rate_limited_subrequest_ids {
-            workbench.record_rate_limited(subrequest_id);
+        for subrequest_id in all_shards_rate_limited_subrequest_ids {
+            workbench.record_all_shards_rate_limited(subrequest_id);
         }
         self.process_persist_results(workbench, persist_futures)
             .await;
@@ -539,7 +539,10 @@ fn update_ingest_metrics(ingest_result: &IngestV2Result<IngestResponseV2>, num_s
                         ingest_results_metrics.no_shards_available.inc()
                     }
                     IngestFailureReason::ShardRateLimited => {
-                        ingest_results_metrics.shard_rate_limited.inc()
+                        ingest_results_metrics.attempted_shards_rate_limited.inc()
+                    }
+                    IngestFailureReason::AllShardsRateLimited => {
+                        ingest_results_metrics.all_shards_rate_limited.inc();
                     }
                     IngestFailureReason::WalFull => ingest_results_metrics.wal_full.inc(),
                     IngestFailureReason::Timeout => ingest_results_metrics.timeout.inc(),
@@ -568,9 +571,14 @@ fn update_ingest_metrics(ingest_result: &IngestV2Result<IngestResponseV2>, num_s
                         .circuit_breaker
                         .inc_by(num_subrequests);
                 }
-                RateLimitingCause::ShardRateLimiting => {
+                RateLimitingCause::AttemptedShardsRateLimited => {
                     ingest_results_metrics
-                        .shard_rate_limited
+                        .attempted_shards_rate_limited
+                        .inc_by(num_subrequests);
+                }
+                RateLimitingCause::AllShardsRateLimited => {
+                    ingest_results_metrics
+                        .all_shards_rate_limited
                         .inc_by(num_subrequests);
                 }
                 RateLimitingCause::Unknown => {

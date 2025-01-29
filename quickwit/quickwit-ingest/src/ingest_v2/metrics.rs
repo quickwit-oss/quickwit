@@ -31,7 +31,8 @@ pub(crate) struct IngestResultMetrics {
     pub source_not_found: IntCounter,
     pub internal: IntCounter,
     pub no_shards_available: IntCounter,
-    pub shard_rate_limited: IntCounter,
+    pub attempted_shards_rate_limited: IntCounter,
+    pub all_shards_rate_limited: IntCounter,
     pub wal_full: IntCounter,
     pub timeout: IntCounter,
     pub router_timeout: IntCounter,
@@ -58,7 +59,10 @@ impl Default for IngestResultMetrics {
             source_not_found: ingest_result_total_vec.with_label_values(["source_not_found"]),
             internal: ingest_result_total_vec.with_label_values(["internal"]),
             no_shards_available: ingest_result_total_vec.with_label_values(["no_shards_available"]),
-            shard_rate_limited: ingest_result_total_vec.with_label_values(["shard_rate_limited"]),
+            attempted_shards_rate_limited: ingest_result_total_vec
+                .with_label_values(["attempted_shards_rate_limited"]),
+            all_shards_rate_limited: ingest_result_total_vec
+                .with_label_values(["all_shards_rate_limited"]),
             wal_full: ingest_result_total_vec.with_label_values(["wal_full"]),
             timeout: ingest_result_total_vec.with_label_values(["timeout"]),
             router_timeout: ingest_result_total_vec.with_label_values(["router_timeout"]),

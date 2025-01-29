@@ -42,8 +42,10 @@ pub enum RateLimitingCause {
     WalFull,
     #[error("circuit breaker")]
     CircuitBreaker,
-    #[error("shard rate limiting")]
-    ShardRateLimiting,
+    #[error("attempted shards rate limited")]
+    AttemptedShardsRateLimited,
+    #[error("all shards rate limited")]
+    AllShardsRateLimited,
     #[error("unknown")]
     Unknown,
 }
