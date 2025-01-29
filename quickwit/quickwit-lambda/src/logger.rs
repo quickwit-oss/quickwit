@@ -14,15 +14,17 @@
 
 use anyhow::Context;
 use once_cell::sync::OnceCell;
-use opentelemetry::sdk::propagation::TraceContextPropagator;
-use opentelemetry::sdk::trace::{BatchConfig, TracerProvider};
-use opentelemetry::sdk::{trace, Resource};
+use opentelemetry::trace::TracerProvider as _;
 use opentelemetry::{global, KeyValue};
-use opentelemetry_otlp::WithExportConfig;
+use opentelemetry_otlp::{WithExportConfig, WithHttpConfig};
+use opentelemetry_sdk::propagation::TraceContextPropagator;
+use opentelemetry_sdk::trace::{BatchConfigBuilder, TracerProvider};
+use opentelemetry_sdk::{trace, Resource};
 use quickwit_serve::BuildInfo;
 use tracing::{debug, Level};
 use tracing_subscriber::fmt::format::{FmtSpan, JsonFields};
 use tracing_subscriber::fmt::time::UtcTime;
+use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::registry::LookupSpan;
 use tracing_subscriber::{EnvFilter, Layer};
@@ -31,15 +33,15 @@ use crate::environment::{
     ENABLE_VERBOSE_JSON_LOGS, OPENTELEMETRY_AUTHORIZATION, OPENTELEMETRY_URL,
 };
 
-static TRACER_PROVIDER: OnceCell<Option<TracerProvider>> = OnceCell::new();
+static TRACER_PROVIDER: OnceCell<TracerProvider> = OnceCell::new();
 pub(crate) const RUNTIME_CONTEXT_SPAN: &str = "runtime_context";
 
 fn fmt_env_filter(level: Level) -> EnvFilter {
-    let default_filter = format!("quickwit={level}")
+    let default_directive = format!("quickwit={level}")
         .parse()
-        .expect("Invalid default filter");
+        .expect("default directive should be valid");
     EnvFilter::builder()
-        .with_default_directive(default_filter)
+        .with_default_directive(default_directive)
         .from_env_lossy()
 }
 
@@ -104,23 +106,39 @@ fn otlp_layer<S>(
     ot_auth: String,
     level: Level,
     build_info: &BuildInfo,
-) -> impl Layer<S>
+) -> anyhow::Result<impl Layer<S>>
 where
     S: for<'a> LookupSpan<'a>,
     S: tracing::Subscriber,
 {
-    let headers = std::collections::HashMap::from([("Authorization".into(), ot_auth)]);
-    let otlp_exporter = opentelemetry_otlp::new_exporter()
-        .http()
+    let headers = std::collections::HashMap::from([("Authorization".to_string(), ot_auth)]);
+    let otlp_exporter = opentelemetry_otlp::SpanExporter::builder()
+        .with_http()
         .with_endpoint(ot_url)
-        .with_headers(headers);
-    // In debug mode, Quickwit can generate a lot of spans, and the default queue size of 2048
-    // is too small.
-    let batch_config = BatchConfig::default().with_max_queue_size(32768);
-    let trace_config = trace::config().with_resource(Resource::new([
-        KeyValue::new("service.name", "quickwit"),
-        KeyValue::new("service.version", build_info.version.clone()),
-    ]));
+        .with_headers(headers)
+        .build()
+        .context("failed to initialize OpenTelemetry OTLP exporter")?;
+    let batch_processor =
+        trace::BatchSpanProcessor::builder(otlp_exporter, opentelemetry_sdk::runtime::Tokio)
+            .with_batch_config(
+                BatchConfigBuilder::default()
+                    // Quickwit can generate a lot of spans, especially in debug mode, and the
+                    // default queue size of 2048 is too small.
+                    .with_max_queue_size(32_768)
+                    .build(),
+            )
+            .build();
+    let provider = opentelemetry_sdk::trace::TracerProvider::builder()
+        .with_span_processor(batch_processor)
+        .with_resource(Resource::new([
+            KeyValue::new("service.name", "quickwit"),
+            KeyValue::new("service.version", build_info.version.clone()),
+        ]))
+        .build();
+    TRACER_PROVIDER
+        .set(provider.clone())
+        .expect("cell should be empty");
+    let tracer = provider.tracer("quickwit");
     let env_filter = std::env::var(EnvFilter::DEFAULT_ENV)
         .map(|_| EnvFilter::from_default_env())
         .or_else(|_| {
@@ -130,17 +148,9 @@ where
             ))
         })
         .expect("Failed to set up OTLP tracing filter.");
-    let tracer = opentelemetry_otlp::new_pipeline()
-        .tracing()
-        .with_exporter(otlp_exporter)
-        .with_trace_config(trace_config)
-        .with_batch_config(batch_config)
-        .install_batch(opentelemetry::runtime::Tokio)
-        .expect("Failed to initialize OpenTelemetry OTLP exporter.");
-    TRACER_PROVIDER.set(tracer.provider()).unwrap();
-    tracing_opentelemetry::layer()
+    Ok(tracing_opentelemetry::layer()
         .with_tracer(tracer)
-        .with_filter(env_filter)
+        .with_filter(env_filter))
 }
 
 pub fn setup_lambda_tracer(level: Level) -> anyhow::Result<()> {
@@ -153,24 +163,24 @@ pub fn setup_lambda_tracer(level: Level) -> anyhow::Result<()> {
     ) {
         registry
             .with(fmt_layer(level))
-            .with(otlp_layer(ot_url, ot_auth, level, build_info))
+            .with(otlp_layer(ot_url, ot_auth, level, build_info)?)
             .try_init()
-            .context("Failed to set up tracing.")?;
+            .context("failed to register tracing subscriber")?;
     } else {
         registry
             .with(fmt_layer(level))
             .try_init()
-            .context("Failed to set up tracing.")?;
+            .context("failed to register tracing subscriber")?;
     }
     Ok(())
 }
 
 pub fn flush_tracer() {
-    if let Some(Some(tracer_provider)) = TRACER_PROVIDER.get() {
+    if let Some(tracer_provider) = TRACER_PROVIDER.get() {
         debug!("flush tracers");
         for res in tracer_provider.force_flush() {
             if let Err(err) = res {
-                debug!(err=?err, "Failed to flush tracer");
+                debug!(?err, "failed to flush tracer");
             }
         }
     }
