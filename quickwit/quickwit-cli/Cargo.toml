@@ -36,6 +36,7 @@ numfmt = { workspace = true }
 once_cell = { workspace = true }
 openssl-probe = { workspace = true, optional = true }
 opentelemetry = { workspace = true }
+opentelemetry_sdk = { workspace = true }
 opentelemetry-otlp = { workspace = true }
 reqwest = { workspace = true }
 serde_json = { workspace = true }
