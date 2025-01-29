@@ -72,9 +72,14 @@ message EventTracker {
 
   optional string fragment_id = 4;
 
-  optional sint64 row_number = 5;
+  optional uint64 row_number = 5;
 }
 
-message FetchOneRequest {}
+message FetchOneRequest {
+  EventTracker event_tracker = 1;
+}
 
-message FetchOneResponse {}
+message FetchOneResponse {
+  Event event = 1;
+  Statistics statistics = 2;
+}

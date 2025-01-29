@@ -4,12 +4,17 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use quickwit_proto::cloudprem::{
     CloudPremError, CloudPremResult, CloudPremService, Event, EventTracker, FetchOneRequest,
-    FetchOneResponse, ListRequest, ListResponse, PingRequest, PingResponse,
+    FetchOneResponse, ListRequest, ListResponse, PingRequest, PingResponse, Statistics,
 };
-use quickwit_proto::search::{CountHits, Hit, SearchRequest, SortField, SortOrder};
+use quickwit_proto::search::{CountHits, Hit, SearchRequest, SearchResponse, SortField, SortOrder};
+use quickwit_query::query_ast::{FullTextMode, FullTextParams, FullTextQuery, QueryAst};
+use quickwit_query::MatchAllOrNone;
 use quickwit_search::SearchService;
 use serde_json::Value as JsonValue;
-use tracing::{debug, info};
+use tracing::{debug, error, info};
+
+// TODO this should become configurable and sent by EVP
+const CLOUD_PREM_INDEX_ID_PATTERN: &str = "datadog-op-*";
 
 #[allow(dead_code)]
 pub struct CloudPremServiceImpl {
@@ -26,6 +31,24 @@ impl From<Arc<dyn SearchService>> for CloudPremServiceImpl {
     fn from(search_service: Arc<dyn SearchService>) -> Self {
         CloudPremServiceImpl { search_service }
     }
+}
+
+fn query_ast_to_search_doc_id(doc_id: &str) -> QueryAst {
+    let full_text_params = FullTextParams {
+        tokenizer: None,
+        mode: FullTextMode::Bool {
+            operator: quickwit_query::BooleanOperand::And,
+        },
+        zero_terms_query: MatchAllOrNone::MatchNone,
+    };
+    // Right now, the id field does not use a raw tokenizer, so we cannot
+    // rely on the term query.
+    QueryAst::FullText(FullTextQuery {
+        field: "id".to_string(),
+        text: doc_id.to_string(),
+        params: full_text_params,
+        lenient: false,
+    })
 }
 
 #[async_trait]
@@ -55,8 +78,7 @@ impl CloudPremService for CloudPremServiceImpl {
             CountHits::Underestimate
         };
         let search_request = SearchRequest {
-            index_id_patterns: vec!["datadog-op-*".to_string()], /* TODO this should become
-                                                                  * configurable and sent by EVP */
+            index_id_patterns: vec![CLOUD_PREM_INDEX_ID_PATTERN.to_string()],
             query_ast: serde_json::to_string(&query_ast)
                 .map_err(|e| CloudPremError::Internal(e.to_string()))?,
             start_timestamp: None,
@@ -86,33 +108,89 @@ impl CloudPremService for CloudPremServiceImpl {
 
         let response = self.search_service.root_search(search_request).await?;
 
-        let hit_mapper = HitMapper {
-            id_field: "id".to_string(),
-            ts_field: "timestamp".to_string(),
-        };
         let events = response
             .hits
             .into_iter()
-            .map(|hit| hit_mapper.hit_to_event(hit))
+            .map(|hit| DEFAULT_HIT_MAPPER.hit_to_event(hit))
             .collect::<Result<_, _>>()?;
+
+        let statistics = Statistics {
+            hit_count: response.num_hits,
+            scanned_count: 0,
+            result_memory_size: 0u64,
+            max_result_memory_size: 0u64,
+        };
 
         Ok(ListResponse {
             count: response.num_hits,
             streams: vec![quickwit_proto::cloudprem::Stream { events }],
-            statistics: None,
+            statistics: Some(statistics),
         })
     }
 
-    async fn fetch_one(&self, _request: FetchOneRequest) -> CloudPremResult<FetchOneResponse> {
-        info!("received FetchOne request");
-        Err(CloudPremError::Unimplemented)
+    async fn fetch_one(
+        &self,
+        fetch_one_request: FetchOneRequest,
+    ) -> CloudPremResult<FetchOneResponse> {
+        let Some(event_tracker) = fetch_one_request.event_tracker.as_ref() else {
+            error!("fetchone with missing event tracker");
+            return Err(CloudPremError::InvalidQuery(
+                "Missing event tracker".to_string(),
+            ));
+        };
+
+        info!(id=%event_tracker.id, "received FetchOne request");
+        let query_ast = query_ast_to_search_doc_id(&event_tracker.id);
+
+        // TODO optimize fetch one by leveraging the information in the event tracker
+        // (last seen split_id, etc.)
+        let search_request = SearchRequest {
+            index_id_patterns: vec![CLOUD_PREM_INDEX_ID_PATTERN.to_string()],
+            query_ast: serde_json::to_string(&query_ast)
+                .map_err(|e| CloudPremError::Internal(e.to_string()))?,
+            start_timestamp: None,
+            end_timestamp: None,
+            max_hits: 1,
+            start_offset: 0,
+            aggregation_request: None,
+            snippet_fields: Vec::new(),
+            sort_fields: Vec::new(),
+            scroll_ttl_secs: None,
+            search_after: None,
+            count_hits: CountHits::Underestimate.into(),
+        };
+
+        let search_response: SearchResponse =
+            self.search_service.root_search(search_request).await?;
+
+        if search_response.hits.len() != 1 {
+            return Err(CloudPremError::DocumentNotFound {
+                id: event_tracker.id.clone(),
+                split_id: event_tracker.fragment_id.clone(),
+                doc_id: event_tracker.row_number,
+            });
+        }
+
+        let hit: Hit = search_response.hits.into_iter().next().unwrap();
+
+        let event = DEFAULT_HIT_MAPPER.hit_to_event(hit)?;
+
+        Ok(FetchOneResponse {
+            event: Some(event),
+            statistics: None,
+        })
     }
 }
 
 struct HitMapper {
-    id_field: String,
-    ts_field: String,
+    id_field: &'static str,
+    ts_field: &'static str,
 }
+
+const DEFAULT_HIT_MAPPER: HitMapper = HitMapper {
+    id_field: "id",
+    ts_field: "timestamp",
+};
 
 impl HitMapper {
     fn hit_to_event(&self, hit: Hit) -> CloudPremResult<Event> {
@@ -120,13 +198,13 @@ impl HitMapper {
         let map: serde_json::Map<String, JsonValue> = serde_json::from_str(&hit.json)
             .map_err(|e| CloudPremError::Internal(format!("failed to parse hit: {e}")))?;
 
-        let event_id = if let Some(id) = map.get(&self.id_field) {
+        let event_id = if let Some(id) = map.get(self.id_field) {
             id.to_string()
         } else {
             "missing_id".to_string()
         };
 
-        let timestamp = if let Some(JsonValue::String(ts)) = map.get(&self.ts_field) {
+        let timestamp = if let Some(JsonValue::String(ts)) = map.get(self.ts_field) {
             quickwit_datetime::parse_date_time_str(
                 ts,
                 &[quickwit_datetime::DateTimeInputFormat::Rfc3339],
@@ -146,7 +224,7 @@ impl HitMapper {
                 row_number: hit
                     .partial_hit
                     .as_ref()
-                    .map(|partial_hit| partial_hit.doc_id as i64),
+                    .map(|partial_hit| u64::from(partial_hit.doc_id)),
                 fragment_id: hit.partial_hit.map(|partial_hit| partial_hit.split_id),
             }),
             content_json: hit.json,
