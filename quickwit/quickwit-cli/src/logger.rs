@@ -16,7 +16,12 @@ use std::env;
 use std::sync::Arc;
 
 use anyhow::Context;
-use opentelemetry::trace::TracerProvider;
+use once_cell::sync::Lazy;
+use opentelemetry::propagation::text_map_propagator::FieldIter;
+use opentelemetry::propagation::{TextMapCompositePropagator, TextMapPropagator};
+use opentelemetry::trace::{
+    SpanContext, SpanId, TraceContextExt, TraceFlags, TraceId, TraceState, TracerProvider,
+};
 use opentelemetry::{global, KeyValue};
 use opentelemetry_sdk::propagation::TraceContextPropagator;
 use opentelemetry_sdk::trace::BatchConfigBuilder;
@@ -32,6 +37,20 @@ use tracing_subscriber::EnvFilter;
 use crate::QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY;
 #[cfg(feature = "tokio-console")]
 use crate::QW_ENABLE_TOKIO_CONSOLE_ENV_KEY;
+
+const DD_SAMPLING_PRIORITY_HEADER: &str = "x-datadog-sampling-priority";
+const DD_SOURCE_HEADER: &str = "x-datadog-querysource";
+const DD_SPAN_PARENT_HEADER: &str = "x-datadog-parent-id";
+const DD_SPAN_TRACE_HEADER: &str = "x-datadog-trace-id";
+
+static DD_APM_HEADERS: Lazy<Vec<String>> = Lazy::new(|| {
+    vec![
+        DD_SAMPLING_PRIORITY_HEADER.to_string(),
+        DD_SOURCE_HEADER.to_string(),
+        DD_SPAN_PARENT_HEADER.to_string(),
+        DD_SPAN_TRACE_HEADER.to_string(),
+    ]
+});
 
 pub fn setup_logging_and_tracing(
     level: Level,
@@ -49,7 +68,13 @@ pub fn setup_logging_and_tracing(
         .map(|_| EnvFilter::from_default_env())
         .or_else(|_| EnvFilter::try_new(format!("quickwit={level},tantivy=WARN")))
         .context("failed to set up tracing env filter")?;
-    global::set_text_map_propagator(TraceContextPropagator::new());
+
+    let composite_propagator = TextMapCompositePropagator::new(vec![
+        Box::new(DatadogApmPropagator),
+        Box::new(TraceContextPropagator::new()),
+    ]);
+    global::set_text_map_propagator(composite_propagator);
+
     let (reloadable_env_filter, reload_handle) = tracing_subscriber::reload::Layer::new(env_filter);
     let registry = tracing_subscriber::registry().with(reloadable_env_filter);
     let event_format = tracing_subscriber::fmt::format()
@@ -115,4 +140,78 @@ pub fn setup_logging_and_tracing(
         reload_handle.reload(new_env_filter)?;
         Ok(())
     }))
+}
+
+#[derive(Debug)]
+struct DatadogApmPropagator;
+
+fn extract_span_context(
+    extractor: &dyn opentelemetry::propagation::Extractor,
+) -> Option<SpanContext> {
+    let trace_id = extractor
+        .get(DD_SPAN_TRACE_HEADER)?
+        .parse::<u128>()
+        .map(TraceId::from)
+        .ok()?;
+    let span_id = extractor
+        .get(DD_SPAN_PARENT_HEADER)?
+        .parse::<u64>()
+        .map(SpanId::from)
+        .ok()?;
+
+    let span_context = SpanContext::new(
+        trace_id,
+        span_id,
+        TraceFlags::NOT_SAMPLED,
+        true,
+        TraceState::default(),
+    );
+
+    if span_context.is_valid() {
+        return Some(span_context);
+    }
+    None
+}
+
+impl TextMapPropagator for DatadogApmPropagator {
+    fn fields(&self) -> FieldIter<'_> {
+        FieldIter::new(&DD_APM_HEADERS)
+    }
+
+    fn extract_with_context(
+        &self,
+        cx: &opentelemetry::Context,
+        extractor: &dyn opentelemetry::propagation::Extractor,
+    ) -> opentelemetry::Context {
+        let Some(span_context) = extract_span_context(extractor) else {
+            return cx.clone();
+        };
+        cx.with_remote_span_context(span_context)
+    }
+
+    fn inject_context(
+        &self,
+        cx: &opentelemetry::Context,
+        injector: &mut dyn opentelemetry::propagation::Injector,
+    ) {
+        let span = cx.span();
+        let span_context = span.span_context();
+
+        if span_context.is_valid() {
+            let trace_id: u128 = u128::from_be_bytes(span_context.trace_id().to_bytes());
+            injector.set(DD_SPAN_TRACE_HEADER, trace_id.to_string());
+
+            let span_id: u64 = u64::from_be_bytes(span_context.span_id().to_bytes());
+            injector.set(DD_SPAN_PARENT_HEADER, span_id.to_string());
+
+            let trace_state = span_context.trace_state();
+
+            if let Some(source) = trace_state.get(DD_SOURCE_HEADER) {
+                injector.set(DD_SOURCE_HEADER, source.to_string());
+            }
+            if let Some(priority) = trace_state.get(DD_SAMPLING_PRIORITY_HEADER) {
+                injector.set(DD_SAMPLING_PRIORITY_HEADER, priority.to_string());
+            }
+        }
+    }
 }

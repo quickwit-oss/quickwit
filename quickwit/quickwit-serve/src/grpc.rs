@@ -17,6 +17,8 @@ use std::error::Error;
 use std::sync::Arc;
 
 use bytesize::ByteSize;
+use hyper::HeaderMap;
+use opentelemetry::propagation::Extractor;
 use quickwit_cluster::cluster_grpc_server;
 use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_config::service::QuickwitService;
@@ -32,11 +34,25 @@ use quickwit_proto::tonic::transport::server::TcpIncoming;
 use quickwit_proto::tonic::transport::Server;
 use tokio::net::TcpListener;
 use tracing::*;
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use crate::cloudprem_api::CloudPremServiceImpl;
 use crate::developer_api::DeveloperApiServer;
 use crate::search_api::GrpcSearchAdapter;
 use crate::{QuickwitServices, INDEXING_GRPC_SERVER_METRICS_LAYER};
+
+struct HttpHeadersCarrier<'a>(&'a HeaderMap);
+
+impl Extractor for HttpHeadersCarrier<'_> {
+    fn get(&self, key: &str) -> Option<&str> {
+        self.0.get(key).and_then(|value| value.to_str().ok())
+    }
+
+    /// Returns a list of all header keys. It can return keys for which `get` returns `None`.
+    fn keys(&self) -> Vec<&str> {
+        self.0.keys().map(|key| key.as_str()).collect()
+    }
+}
 
 /// Starts and binds gRPC services to `grpc_listen_addr`.
 pub(crate) async fn start_grpc_server(
@@ -47,7 +63,17 @@ pub(crate) async fn start_grpc_server(
     shutdown_signal: BoxFutureInfaillible<()>,
 ) -> anyhow::Result<()> {
     let mut enabled_grpc_services = BTreeSet::new();
-    let mut server = Server::builder();
+    let mut server = Server::builder().trace_fn(|request| {
+        let method = request.method();
+        let path = request.uri().path();
+        let span = tracing::span!(tracing::Level::INFO, "grpc-request", %method, %path);
+
+        let parent_context = opentelemetry::global::get_text_map_propagator(|propagator| {
+            propagator.extract(&HttpHeadersCarrier(request.headers()))
+        });
+        span.set_parent(parent_context);
+        span
+    });
 
     let cluster_grpc_service = cluster_grpc_server(services.cluster.clone());
 

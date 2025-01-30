@@ -45,6 +45,7 @@ tokio-stream = { workspace = true }
 tower = { workspace = true }
 tower-http = { workspace = true }
 tracing = { workspace = true }
+tracing-opentelemetry = { workspace = true }
 utoipa = { workspace = true }
 warp = { workspace = true }
 zstd = { workspace = true }
