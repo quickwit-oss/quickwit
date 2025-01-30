@@ -22,7 +22,6 @@ use quickwit_indexing::actors::IndexingServiceCounters;
 pub use quickwit_ingest::CommitType;
 use quickwit_metastore::{IndexMetadata, Split, SplitInfo};
 use quickwit_proto::ingest::Shard;
-use quickwit_search::SearchResponseRest;
 use quickwit_serve::{
     ListSplitsQueryParams, ListSplitsResponse, RestIngestResponse, SearchRequestQueryString,
 };
@@ -32,7 +31,7 @@ use serde::Serialize;
 use serde_json::json;
 
 use crate::error::Error;
-use crate::models::{ApiResponse, IngestSource, Timeout};
+use crate::models::{ApiResponse, IngestSource, SearchResponseRestClient, Timeout};
 use crate::BatchLineReader;
 
 pub const DEFAULT_BASE_URL: &str = "http://127.0.0.1:7280";
@@ -210,7 +209,7 @@ impl QuickwitClient {
         &self,
         index_id: &str,
         search_query: SearchRequestQueryString,
-    ) -> Result<SearchResponseRest, Error> {
+    ) -> Result<SearchResponseRestClient, Error> {
         let path = format!("{index_id}/search");
         let bytes = serde_json::to_string(&search_query)
             .unwrap()
@@ -735,7 +734,6 @@ mod test {
     use quickwit_indexing::mock_split;
     use quickwit_ingest::CommitType;
     use quickwit_metastore::IndexMetadata;
-    use quickwit_search::SearchResponseRest;
     use quickwit_serve::{
         ListSplitsQueryParams, ListSplitsResponse, RestIngestResponse, SearchRequestQueryString,
     };
@@ -750,7 +748,7 @@ mod test {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use crate::error::Error;
-    use crate::models::IngestSource;
+    use crate::models::{IngestSource, SearchResponseRestClient};
     use crate::rest_client::QuickwitClientBuilder;
 
     #[tokio::test]
@@ -773,7 +771,7 @@ mod test {
         let search_query_params = SearchRequestQueryString {
             ..Default::default()
         };
-        let expected_search_response = SearchResponseRest {
+        let expected_search_response = SearchResponseRestClient {
             num_hits: 0,
             hits: Vec::new(),
             snippets: None,

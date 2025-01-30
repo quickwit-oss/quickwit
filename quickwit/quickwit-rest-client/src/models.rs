@@ -17,6 +17,8 @@ use std::time::Duration;
 
 use reqwest::StatusCode;
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 
 use crate::error::{ApiError, Error, ErrorResponsePayload};
 
@@ -69,6 +71,20 @@ impl ApiResponse {
             Ok(object)
         }
     }
+}
+
+/// A cousin of [`quickwit_search::SearchResponseRest`] that implements [`Deserialize`]
+///
+/// This version of the response is necessary because
+/// `serde_json_borrow::OwnedValue` is not deserializeable.
+#[derive(Deserialize, Serialize, PartialEq, Debug)]
+pub struct SearchResponseRestClient {
+    pub num_hits: u64,
+    pub hits: Vec<JsonValue>,
+    pub snippets: Option<Vec<JsonValue>>,
+    pub elapsed_time_micros: u64,
+    pub errors: Vec<String>,
+    pub aggregations: Option<JsonValue>,
 }
 
 #[derive(Clone)]

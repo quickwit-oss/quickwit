@@ -24,7 +24,7 @@ use crate::error::SearchError;
 
 /// SearchResponseRest represents the response returned by the REST search API
 /// and is meant to be serialized into JSON.
-#[derive(Serialize, Deserialize, PartialEq, Debug, utoipa::ToSchema)]
+#[derive(Serialize, PartialEq, Debug, utoipa::ToSchema)]
 pub struct SearchResponseRest {
     /// Overall number of documents matching the query.
     pub num_hits: u64,
@@ -39,10 +39,12 @@ pub struct SearchResponseRest {
     pub elapsed_time_micros: u64,
     /// Search errors.
     pub errors: Vec<String>,
-    /// Aggregations.
+    /// Aggregations. We use `serde_json_borrow` here to avoid unnecessary
+    /// allocations. On large aggregation results with tens of thousands of
+    /// entries this has a significant impact.
     #[schema(value_type = Object)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub aggregations: Option<JsonValue>,
+    pub aggregations: Option<serde_json_borrow::OwnedValue>,
 }
 
 impl TryFrom<SearchResponse> for SearchResponseRest {
@@ -79,7 +81,7 @@ impl TryFrom<SearchResponse> for SearchResponseRest {
         };
 
         let aggregations_opt = if let Some(aggregation_json) = search_response.aggregation {
-            let aggregation: JsonValue = serde_json::from_str(&aggregation_json)
+            let aggregation = serde_json_borrow::OwnedValue::parse_from(aggregation_json)
                 .map_err(|err| SearchError::Internal(err.to_string()))?;
             Some(aggregation)
         } else {
