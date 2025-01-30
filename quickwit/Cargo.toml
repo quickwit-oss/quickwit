@@ -163,7 +163,7 @@ openssl = { version = "0.10.66", default-features = false }
 openssl-probe = "0.1.5"
 opentelemetry = "0.27"
 opentelemetry_sdk = { version = "0.27", features = ["rt-tokio"] }
-opentelemetry-otlp = "0.27"
+opentelemetry-otlp = { version= "0.27", features = ["zstd-tonic"] }
 ouroboros = "0.18.0"
 percent-encoding = "2.3.1"
 pin-project = "1.1.0"

@@ -11,7 +11,7 @@ use quickwit_query::query_ast::{FullTextMode, FullTextParams, FullTextQuery, Que
 use quickwit_query::MatchAllOrNone;
 use quickwit_search::SearchService;
 use serde_json::Value as JsonValue;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 // TODO this should become configurable and sent by EVP
 const CLOUD_PREM_INDEX_ID_PATTERN: &str = "datadog-op-*";
@@ -141,13 +141,16 @@ impl CloudPremService for CloudPremServiceImpl {
 
         info!(id=%event_tracker.id, "received FetchOne request");
         let query_ast = query_ast_to_search_doc_id(&event_tracker.id);
+        let query_ast_json = serde_json::to_string(&query_ast)
+            .map_err(|e| CloudPremError::Internal(e.to_string()))?;
+
+        debug!(query=%query_ast_json, "query ast for fetch one");
 
         // TODO optimize fetch one by leveraging the information in the event tracker
         // (last seen split_id, etc.)
         let search_request = SearchRequest {
             index_id_patterns: vec![CLOUD_PREM_INDEX_ID_PATTERN.to_string()],
-            query_ast: serde_json::to_string(&query_ast)
-                .map_err(|e| CloudPremError::Internal(e.to_string()))?,
+            query_ast: query_ast_json,
             start_timestamp: None,
             end_timestamp: None,
             max_hits: 1,
@@ -163,7 +166,8 @@ impl CloudPremService for CloudPremServiceImpl {
         let search_response: SearchResponse =
             self.search_service.root_search(search_request).await?;
 
-        if search_response.hits.len() != 1 {
+        if search_response.hits.is_empty() {
+            warn!("document not found on fetch one");
             return Err(CloudPremError::DocumentNotFound {
                 id: event_tracker.id.clone(),
                 split_id: event_tracker.fragment_id.clone(),
@@ -171,7 +175,16 @@ impl CloudPremService for CloudPremServiceImpl {
             });
         }
 
+        if search_response.hits.len() > 1 {
+            warn!("there should be only one document");
+        }
+
         let hit: Hit = search_response.hits.into_iter().next().unwrap();
+
+        debug!(
+            doc_id = event_tracker.id.as_str(),
+            "fetch one document found"
+        );
 
         let event = DEFAULT_HIT_MAPPER.hit_to_event(hit)?;
 
@@ -198,8 +211,8 @@ impl HitMapper {
         let map: serde_json::Map<String, JsonValue> = serde_json::from_str(&hit.json)
             .map_err(|e| CloudPremError::Internal(format!("failed to parse hit: {e}")))?;
 
-        let event_id = if let Some(id) = map.get(self.id_field) {
-            id.to_string()
+        let event_id = if let Some(JsonValue::String(id_str)) = map.get(self.id_field) {
+            id_str.clone()
         } else {
             "missing_id".to_string()
         };
