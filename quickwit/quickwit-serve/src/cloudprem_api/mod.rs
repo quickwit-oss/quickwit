@@ -166,7 +166,7 @@ impl CloudPremService for CloudPremServiceImpl {
         let search_response: SearchResponse =
             self.search_service.root_search(search_request).await?;
 
-        if search_response.hits.len() == 0 {
+        if search_response.hits.is_empty() {
             warn!("document not found on fetch one");
             return Err(CloudPremError::DocumentNotFound {
                 id: event_tracker.id.clone(),
@@ -211,8 +211,8 @@ impl HitMapper {
         let map: serde_json::Map<String, JsonValue> = serde_json::from_str(&hit.json)
             .map_err(|e| CloudPremError::Internal(format!("failed to parse hit: {e}")))?;
 
-        let event_id = if let Some(id) = map.get(self.id_field) {
-            id.to_string()
+        let event_id = if let Some(JsonValue::String(id_str)) = map.get(self.id_field) {
+            id_str.clone()
         } else {
             "missing_id".to_string()
         };
