@@ -232,7 +232,7 @@ quickwit run --service metastore --config=./config/quickwit.yaml
 # Open a new terminal and run:
 cat << EOF > wikipedia-kafka-source.json
 {
-  "version": "0.7",
+  "version": "0.9",
   "source_id": "kafka-source",
   "source_type": "kafka",
   "params": {

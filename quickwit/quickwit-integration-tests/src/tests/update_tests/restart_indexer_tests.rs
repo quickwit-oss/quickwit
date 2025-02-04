@@ -64,7 +64,7 @@ async fn test_update_doc_mapping_restart_indexing_pipeline() {
         .indexes()
         .create(
             json!({
-                "version": "0.8",
+                "version": "0.9",
                 "index_id": index_id,
                 "doc_mapping": {
                     "doc_mapping_uid": initial_mapping_uid,
@@ -141,7 +141,7 @@ async fn test_update_doc_mapping_restart_indexing_pipeline() {
         .update(
             index_id,
             json!({
-                "version": "0.8",
+                "version": "0.9",
                 "index_id": index_id,
                 "doc_mapping": {
                     "doc_mapping_uid": final_mapping_uid,

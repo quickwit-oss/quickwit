@@ -257,7 +257,7 @@ curl -XPOST http://localhost:7280/api/v1/indexes --data @index_config.json -H "C
 
 ```json title="index_config.json
 {
-    "version": "0.8",
+    "version": "0.9",
     "index_id": "hdfs-logs",
     "doc_mapping": {
         "field_mappings": [
@@ -355,7 +355,7 @@ curl -XPUT http://localhost:7280/api/v1/indexes/hdfs-logs --data @updated_index_
 
 ```json title="updated_index_update.json
 {
-    "version": "0.8",
+    "version": "0.9",
     "index_id": "hdfs-logs",
     "doc_mapping": {
         "field_mappings": [
@@ -513,7 +513,7 @@ GET /api/v1/indexes/stackoverflow/splits?offset=0&limit=10
       "split_state": "Published",
       "update_timestamp": 1695642901,
       "publish_timestamp": 1695642901,
-      "version": "0.7",
+      "version": "0.9",
       "split_id": "01HB632HD8W6WHNM7CZFH3KG1X",
       "index_uid": "stackoverflow:01HB6321TDT3SP58D4EZP14KSX",
       "partition_id": 0,
@@ -617,7 +617,7 @@ curl -XPOST http://localhost:7280/api/v1/indexes/my-index/sources --data @source
 
 ```json title="source_config.json
 {
-    "version": "0.8",
+    "version": "0.9",
     "source_id": "kafka-source",
     "source_type": "kafka",
     "params": {
@@ -664,7 +664,7 @@ curl -XPOST http://localhost:7280/api/v1/indexes/my-index/sources --data @source
 
 ```json title="source_config.json
 {
-    "version": "0.8",
+    "version": "0.9",
     "source_id": "kafka-source",
     "source_type": "kafka",
     "params": {

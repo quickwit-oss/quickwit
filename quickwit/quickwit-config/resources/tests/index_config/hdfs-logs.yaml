@@ -1,4 +1,4 @@
-version: 0.8
+version: 0.9
 index_id: hdfs-logs
 index_uri: s3://quickwit-indexes/hdfs-logs
 
