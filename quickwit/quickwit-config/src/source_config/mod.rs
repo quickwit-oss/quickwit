@@ -871,9 +871,7 @@ mod tests {
             let error = load_source_config_from_user_config(ConfigFormat::Json, content.as_bytes())
                 .unwrap_err();
             println!("error: {error}");
-            assert!(error
-                .to_string()
-                .contains("`num_pipelines` must be"));
+            assert!(error.to_string().contains("`num_pipelines` must be"));
         }
         {
             let content = r#"
