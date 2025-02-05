@@ -7283,6 +7283,7 @@ dependencies = [
  "tower 0.4.13",
  "tower-http",
  "tracing",
+ "tracing-opentelemetry",
  "utoipa",
  "warp",
  "zstd 0.13.2",
