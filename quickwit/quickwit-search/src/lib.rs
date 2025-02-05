@@ -86,7 +86,9 @@ pub use crate::root::{
     IndexMetasForLeafSearch, SearchJob,
 };
 pub use crate::search_job_placer::{Job, SearchJobPlacer};
-pub use crate::search_response_rest::{SearchPlanResponseRest, SearchResponseRest};
+pub use crate::search_response_rest::{
+    AggregationResults, SearchPlanResponseRest, SearchResponseRest,
+};
 pub use crate::search_stream::root_search_stream;
 pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
 
