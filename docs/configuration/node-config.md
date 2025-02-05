@@ -205,7 +205,7 @@ This section contains the configuration options for a Searcher.
 
 ### Searcher split cache configuration
 
-This section contains the configuration options for the on disk searcher split cache.
+This section contains the configuration options for the on-disk searcher split cache. Files are stored in the data directory under `searcher-split-cache/`.
 
 | Property | Description | Default value |
 | --- | --- | --- |
