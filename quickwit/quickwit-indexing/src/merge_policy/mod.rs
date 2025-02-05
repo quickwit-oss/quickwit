@@ -397,7 +397,7 @@ pub mod tests {
     fn apply_merge(
         merge_policy: &Arc<dyn MergePolicy>,
         split_index: &mut HashMap<String, SplitMetadata>,
-        merge_op: &TrackedObject<MergeOperation>,
+        merge_op: TrackedObject<MergeOperation>,
     ) -> SplitMetadata {
         for split in merge_op.splits_as_slice() {
             assert!(split_index.remove(split.split_id()).is_some());
@@ -451,7 +451,7 @@ pub mod tests {
                 let new_splits: Vec<SplitMetadata> = merge_tasks
                     .into_iter()
                     .map(|merge_op| {
-                        apply_merge(&merge_policy, &mut split_index, &merge_op.merge_operation)
+                        apply_merge(&merge_policy, &mut split_index, merge_op.merge_operation)
                     })
                     .collect();
                 merge_planner_mailbox
@@ -472,7 +472,7 @@ pub mod tests {
 
         let merge_tasks = merge_task_inbox.drain_for_test_typed::<MergeTask>();
         for merge_task in merge_tasks {
-            apply_merge(&merge_policy, &mut split_index, &merge_task.merge_operation);
+            apply_merge(&merge_policy, &mut split_index, merge_task.merge_operation);
         }
 
         let split_metadatas: Vec<SplitMetadata> = split_index.values().cloned().collect();

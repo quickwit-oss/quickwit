@@ -1,77 +1,83 @@
-use std::mem::MaybeUninit;
 use std::ops::Deref;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
 use census::{Inventory, TrackedObject as InventoredObject};
 
-pub type TrackedObject<T> = InventoredObject<RecordUnacknowledgedDrop<T>>;
-
+/// A ressource tracker
+///
+/// This is used to track whether an object is alive (still in use), or if it's dead (no longer
+/// used, but not acknowledged). It does not keep any traces of object that were alive, but were
+/// since acknowledged.
 #[derive(Clone)]
-pub struct Tracker<T> {
-    inner_inventory: Inventory<RecordUnacknowledgedDrop<T>>,
+pub struct Tracker<T: Clone> {
+    inner_inventory: Inventory<T>,
     unacknowledged_drop_receiver: Arc<Mutex<Receiver<T>>>,
     return_channel: Sender<T>,
 }
 
+/// A single tracked object
 #[derive(Debug)]
-pub struct RecordUnacknowledgedDrop<T> {
-    // safety: this is always kept initialized except after Self::drop, where we move that
-    // that value away to either send it through the return channel, or drop it manually
-    inner: MaybeUninit<T>,
-    acknowledged: AtomicBool,
+pub struct TrackedObject<T: Clone> {
+    inner: Option<InventoredObject<T>>,
     return_channel: Sender<T>,
 }
 
-impl<T> RecordUnacknowledgedDrop<T> {
-    pub fn acknowledge(&self) {
-        self.acknowledged.store(true, Ordering::Relaxed);
+impl<T: Clone> TrackedObject<T> {
+    /// acknoledge an object
+    pub fn acknowledge(mut self) {
+        self.inner.take();
     }
 
+    /// Create an untracked object mostly for tests
     pub fn untracked(value: T) -> Self {
-        let (sender, _receiver) = channel();
-        RecordUnacknowledgedDrop {
-            inner: MaybeUninit::new(value),
-            acknowledged: true.into(),
-            return_channel: sender,
+        Tracker::new().track(value)
+    }
+
+    /// Create an object which is tracked only as long as it's alive,
+    /// but not once it's dead.
+    /// The object is tracked through the provided census inventory
+    pub fn track_alive_in(value: T, inventory: &Inventory<T>) -> Self {
+        TrackedObject {
+            inner: Some(inventory.track(value)),
+            return_channel: channel().0,
         }
     }
 }
 
-impl<T> Deref for RecordUnacknowledgedDrop<T> {
+impl<T: Clone> AsRef<T> for TrackedObject<T> {
+    fn as_ref(&self) -> &T {
+        self
+    }
+}
+
+impl<T: Clone> Deref for TrackedObject<T> {
     type Target = T;
     fn deref(&self) -> &T {
-        unsafe {
-            // safety: see struct definition, this operation is valid except after drop.
-            self.inner.assume_init_ref()
-        }
+        self.inner
+            .as_ref()
+            .expect("inner should only be None during drop")
     }
 }
 
-impl<T> Drop for RecordUnacknowledgedDrop<T> {
+impl<T: Clone> Drop for TrackedObject<T> {
     fn drop(&mut self) {
-        let item = unsafe {
-            // safety: see struct definition. Additionally, we don't touch to self.inner
-            // after this point so there is no risk of making a 2nd copy and cause a
-            // double-free
-            self.inner.assume_init_read()
-        };
-        if !*self.acknowledged.get_mut() {
+        if let Some(item) = self.inner.take() {
             // if send fails, no one cared about getting that notification, it's fine to
             // drop item
-            let _ = self.return_channel.send(item);
+            let _ = self.return_channel.send(item.as_ref().clone());
         }
     }
 }
 
-impl<T> Default for Tracker<T> {
+impl<T: Clone> Default for Tracker<T> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T> Tracker<T> {
+impl<T: Clone> Tracker<T> {
+    /// Create a new tracker
     pub fn new() -> Self {
         let (sender, receiver) = channel();
         Tracker {
@@ -84,7 +90,7 @@ impl<T> Tracker<T> {
     /// Return whether it is safe to recreate this tracker.
     ///
     /// A tracker is considered safe to recreate if this is the only instance left,
-    /// and it conaints no alive object (it may contain dead objects though).
+    /// and it contains no alive object (it may contain dead objects though).
     ///
     /// Once this return true, it will stay that way until [Tracker::track] or [Tracker::clone] are
     /// called.
@@ -93,10 +99,12 @@ impl<T> Tracker<T> {
             && self.inner_inventory.len() == 0
     }
 
-    pub fn list_ongoing(&self) -> Vec<TrackedObject<T>> {
+    /// List object which are considered alive
+    pub fn list_ongoing(&self) -> Vec<InventoredObject<T>> {
         self.inner_inventory.list()
     }
 
+    /// Take away the list of object considered dead
     pub fn take_dead(&self) -> Vec<T> {
         let mut res = Vec::new();
         let receiver = self.unacknowledged_drop_receiver.lock().unwrap();
@@ -106,22 +114,22 @@ impl<T> Tracker<T> {
         res
     }
 
+    /// Track a new object.
     pub fn track(&self, value: T) -> TrackedObject<T> {
-        self.inner_inventory.track(RecordUnacknowledgedDrop {
-            inner: MaybeUninit::new(value),
-            acknowledged: false.into(),
+        TrackedObject {
+            inner: Some(self.inner_inventory.track(value)),
             return_channel: self.return_channel.clone(),
-        })
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{TrackedObject, Tracker};
+    use super::{InventoredObject, Tracker};
 
     #[track_caller]
     fn assert_tracked_eq<T: PartialEq + std::fmt::Debug>(
-        got: Vec<TrackedObject<T>>,
+        got: Vec<InventoredObject<T>>,
         expected: Vec<T>,
     ) {
         assert_eq!(
@@ -132,7 +140,7 @@ mod tests {
             expected.len()
         );
         for (got_item, expected_item) in got.into_iter().zip(expected) {
-            assert_eq!(**got_item, expected_item);
+            assert_eq!(*got_item, expected_item);
         }
     }
 

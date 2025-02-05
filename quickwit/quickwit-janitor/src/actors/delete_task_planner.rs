@@ -21,7 +21,7 @@ use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::extract_time_range;
-use quickwit_common::tracker::RecordUnacknowledgedDrop;
+use quickwit_common::tracker::TrackedObject;
 use quickwit_common::uri::Uri;
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_indexing::actors::{schedule_merge, MergeSchedulerService, MergeSplitDownloader};
@@ -84,7 +84,7 @@ pub struct DeleteTaskPlanner {
     /// a merge operation is dropped after the publish of the split that underwent
     /// the delete operation.
     /// The inventory is used to avoid sending twice the same delete operation.
-    ongoing_delete_operations_inventory: Inventory<RecordUnacknowledgedDrop<MergeOperation>>,
+    ongoing_delete_operations_inventory: Inventory<MergeOperation>,
 }
 
 #[async_trait]
@@ -196,9 +196,10 @@ impl DeleteTaskPlanner {
                     split_with_deletes.split_metadata,
                 );
                 info!(delete_operation=?delete_operation, "planned delete operation");
-                let tracked_delete_operation = self
-                    .ongoing_delete_operations_inventory
-                    .track(RecordUnacknowledgedDrop::untracked(delete_operation));
+                let tracked_delete_operation = TrackedObject::track_alive_in(
+                    delete_operation,
+                    &self.ongoing_delete_operations_inventory,
+                );
                 schedule_merge(
                     &self.merge_scheduler_service,
                     tracked_delete_operation,
