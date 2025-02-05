@@ -796,7 +796,6 @@ mod tests {
         delete_task_executor_handle
             .process_pending_and_observe()
             .await;
-        universe.sleep(*quickwit_actors::HEARTBEAT).await;
 
         let packager_msgs: Vec<IndexedSplitBatch> = merge_packager_inbox.drain_for_test_typed();
         if !result_docs.is_empty() {
@@ -853,7 +852,6 @@ mod tests {
                 |split| split.split_state == quickwit_metastore::SplitState::MarkedForDeletion
             ));
         }
-        universe.sleep(*quickwit_actors::HEARTBEAT).await;
         test_sandbox.assert_quit().await;
         universe.assert_quit().await;
         Ok(())

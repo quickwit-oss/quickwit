@@ -23,7 +23,7 @@ use futures::TryStreamExt;
 use itertools::Itertools;
 use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, ActorState, Handler, Healthz, Mailbox,
-    Observation,
+    Observation, SendError,
 };
 use quickwit_cluster::Cluster;
 use quickwit_common::fs::get_cache_directory_path;
@@ -539,12 +539,17 @@ impl IndexingService {
                 // The queue capacity of the merge pipeline is unbounded, so `.send_message(...)`
                 // should not block.
                 // We avoid using `.quit()` here because it waits for the actor to exit.
-                merge_pipeline_handle
+                // In some case the pipeline could already be shutting down, in which case we can
+                // receive a Disconnected
+                match merge_pipeline_handle
                     .handle
                     .mailbox()
                     .send_message(FinishPendingMergesAndShutdownPipeline)
                     .await
-                    .expect("merge pipeline mailbox should not be full");
+                {
+                    Ok(_) | Err(SendError::Disconnected) => (),
+                    Err(SendError::Full) => panic!("merge pipeline mailbox should not be full"),
+                }
             }
         }
         // Finally, we remove the completed or failed merge pipelines.
