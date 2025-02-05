@@ -404,7 +404,7 @@ pub mod tests {
         }
         let merged_split = fake_merge(merge_policy, merge_op.splits_as_slice());
         split_index.insert(merged_split.split_id().to_string(), merged_split.clone());
-        merge_op.acknoledge();
+        merge_op.acknowledge();
         merged_split
     }
 

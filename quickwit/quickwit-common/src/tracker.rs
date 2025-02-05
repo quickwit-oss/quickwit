@@ -6,40 +6,40 @@ use std::sync::{Arc, Mutex};
 
 use census::{Inventory, TrackedObject as InventoredObject};
 
-pub type TrackedObject<T> = InventoredObject<RecordUnacknoledgedDrop<T>>;
+pub type TrackedObject<T> = InventoredObject<RecordUnacknowledgedDrop<T>>;
 
 #[derive(Clone)]
 pub struct Tracker<T> {
-    inner_inventory: Inventory<RecordUnacknoledgedDrop<T>>,
-    unacknoledged_drop_receiver: Arc<Mutex<Receiver<T>>>,
+    inner_inventory: Inventory<RecordUnacknowledgedDrop<T>>,
+    unacknowledged_drop_receiver: Arc<Mutex<Receiver<T>>>,
     return_channel: Sender<T>,
 }
 
 #[derive(Debug)]
-pub struct RecordUnacknoledgedDrop<T> {
+pub struct RecordUnacknowledgedDrop<T> {
     // safety: this is always kept initialized except after Self::drop, where we move that
     // that value away to either send it through the return channel, or drop it manually
     inner: MaybeUninit<T>,
-    acknoledged: AtomicBool,
+    acknowledged: AtomicBool,
     return_channel: Sender<T>,
 }
 
-impl<T> RecordUnacknoledgedDrop<T> {
-    pub fn acknoledge(&self) {
-        self.acknoledged.store(true, Ordering::Relaxed);
+impl<T> RecordUnacknowledgedDrop<T> {
+    pub fn acknowledge(&self) {
+        self.acknowledged.store(true, Ordering::Relaxed);
     }
 
     pub fn untracked(value: T) -> Self {
         let (sender, _receiver) = channel();
-        RecordUnacknoledgedDrop {
+        RecordUnacknowledgedDrop {
             inner: MaybeUninit::new(value),
-            acknoledged: true.into(),
+            acknowledged: true.into(),
             return_channel: sender,
         }
     }
 }
 
-impl<T> Deref for RecordUnacknoledgedDrop<T> {
+impl<T> Deref for RecordUnacknowledgedDrop<T> {
     type Target = T;
     fn deref(&self) -> &T {
         unsafe {
@@ -49,7 +49,7 @@ impl<T> Deref for RecordUnacknoledgedDrop<T> {
     }
 }
 
-impl<T> Drop for RecordUnacknoledgedDrop<T> {
+impl<T> Drop for RecordUnacknowledgedDrop<T> {
     fn drop(&mut self) {
         let item = unsafe {
             // safety: see struct definition. Additionally, we don't touch to self.inner
@@ -57,7 +57,7 @@ impl<T> Drop for RecordUnacknoledgedDrop<T> {
             // double-free
             self.inner.assume_init_read()
         };
-        if !*self.acknoledged.get_mut() {
+        if !*self.acknowledged.get_mut() {
             // if send fails, no one cared about getting that notification, it's fine to
             // drop item
             let _ = self.return_channel.send(item);
@@ -76,7 +76,7 @@ impl<T> Tracker<T> {
         let (sender, receiver) = channel();
         Tracker {
             inner_inventory: Inventory::new(),
-            unacknoledged_drop_receiver: Arc::new(Mutex::new(receiver)),
+            unacknowledged_drop_receiver: Arc::new(Mutex::new(receiver)),
             return_channel: sender,
         }
     }
@@ -89,7 +89,8 @@ impl<T> Tracker<T> {
     /// Once this return true, it will stay that way until [Tracker::track] or [Tracker::clone] are
     /// called.
     pub fn safe_to_recreate(&self) -> bool {
-        Arc::strong_count(&self.unacknoledged_drop_receiver) == 1 && self.inner_inventory.len() == 0
+        Arc::strong_count(&self.unacknowledged_drop_receiver) == 1
+            && self.inner_inventory.len() == 0
     }
 
     pub fn list_ongoing(&self) -> Vec<TrackedObject<T>> {
@@ -98,7 +99,7 @@ impl<T> Tracker<T> {
 
     pub fn take_dead(&self) -> Vec<T> {
         let mut res = Vec::new();
-        let receiver = self.unacknoledged_drop_receiver.lock().unwrap();
+        let receiver = self.unacknowledged_drop_receiver.lock().unwrap();
         while let Ok(dead_entry) = receiver.try_recv() {
             res.push(dead_entry);
         }
@@ -106,9 +107,9 @@ impl<T> Tracker<T> {
     }
 
     pub fn track(&self, value: T) -> TrackedObject<T> {
-        self.inner_inventory.track(RecordUnacknoledgedDrop {
+        self.inner_inventory.track(RecordUnacknowledgedDrop {
             inner: MaybeUninit::new(value),
-            acknoledged: false.into(),
+            acknowledged: false.into(),
             return_channel: self.return_channel.clone(),
         })
     }
