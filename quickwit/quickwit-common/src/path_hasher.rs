@@ -1,30 +1,33 @@
-// Copyright (C) 2024 Quickwit, Inc.
+// Copyright 2021-Present Datadog, Inc.
 //
-// Quickwit is offered under the AGPL v3.0 and as commercial software.
-// For commercial licensing, contact us at hello@quickwit.io.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// AGPL:
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program. If not, see <http://www.gnu.org/licenses/>.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 use std::hash::Hasher;
+
+/// We use 255 as a separator as it isn't used by utf-8.
+///
+/// Tantivy uses 1 because it is more convenient for range queries, but we don't
+/// care about the sort order here.
+///
+/// Note: changing this is not retro-compatible!
+const SEPARATOR: &[u8] = &[255];
 
 /// Mini wrapper over the FnvHasher to incrementally hash nodes
 /// in a tree.
 ///
-/// The wrapper does not do too much. Its main purpose to
-/// work around the lack of Clone in the fnv Hasher
-/// and enforce a 0 byte separator between segments.
+/// Its purpose is to:
+/// - work around the lack of Clone in the fnv Hasher
+/// - enforce a 1 byte separator between segments
 #[derive(Default)]
 pub struct PathHasher {
     hasher: fnv::FnvHasher,
@@ -40,13 +43,13 @@ impl Clone for PathHasher {
 }
 
 impl PathHasher {
-    /// Helper function, mostly for tests.
+    #[cfg(any(test, feature = "testsuite"))]
     pub fn hash_path(segments: &[&[u8]]) -> u64 {
         let mut hasher = Self::default();
         for segment in segments {
             hasher.append(segment);
         }
-        hasher.finish()
+        hasher.finish_leaf()
     }
 
     /// Appends a new segment to our path.
@@ -56,13 +59,18 @@ impl PathHasher {
     #[inline]
     pub fn append(&mut self, payload: &[u8]) {
         self.hasher.write(payload);
-        // We use 255 as a separator as all utf8 bytes contain a 0
-        // in position 0-5.
-        self.hasher.write(&[255u8]);
+        self.hasher.write(SEPARATOR);
     }
 
     #[inline]
-    pub fn finish(&self) -> u64 {
+    pub fn finish_leaf(&self) -> u64 {
         self.hasher.finish()
+    }
+
+    #[inline]
+    pub fn finish_intermediate(&self) -> u64 {
+        let mut intermediate = fnv::FnvHasher::with_key(self.hasher.finish());
+        intermediate.write(SEPARATOR);
+        intermediate.finish()
     }
 }

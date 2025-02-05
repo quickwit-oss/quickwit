@@ -1,21 +1,16 @@
-// Copyright (C) 2024 Quickwit, Inc.
+// Copyright 2021-Present Datadog, Inc.
 //
-// Quickwit is offered under the AGPL v3.0 and as commercial software.
-// For commercial licensing, contact us at hello@quickwit.io.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// AGPL:
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program. If not, see <http://www.gnu.org/licenses/>.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 use std::collections::{BTreeSet, HashMap};
 use std::fmt;
@@ -51,6 +46,7 @@ use quickwit_proto::metastore::{
     DeleteShardsRequest, DeleteSourceRequest, EmptyResponse, FindIndexTemplateMatchesRequest,
     IndexMetadataResponse, IndexTemplateMatch, MetastoreError, MetastoreResult, MetastoreService,
     MetastoreServiceClient, PruneShardsRequest, ToggleSourceRequest, UpdateIndexRequest,
+    UpdateSourceRequest,
 };
 use quickwit_proto::types::{IndexId, IndexUid, NodeId, ShardId, SourceId, SourceUid};
 use serde::Serialize;
@@ -693,6 +689,47 @@ impl Handler<AddSourceRequest> for ControlPlane {
     }
 }
 
+#[async_trait]
+impl Handler<UpdateSourceRequest> for ControlPlane {
+    type Reply = ControlPlaneResult<EmptyResponse>;
+
+    async fn handle(
+        &mut self,
+        request: UpdateSourceRequest,
+        ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        let index_uid: IndexUid = request.index_uid().clone();
+        let source_config: SourceConfig =
+            match serde_utils::from_json_str(&request.source_config_json) {
+                Ok(source_config) => source_config,
+                Err(error) => {
+                    return Ok(Err(ControlPlaneError::from(error)));
+                }
+            };
+        let source_id = source_config.source_id.clone();
+        debug!(%index_uid, source_id, "updating source");
+
+        if let Err(error) = ctx
+            .protect_future(self.metastore.update_source(request))
+            .await
+        {
+            return Ok(Err(ControlPlaneError::from(error)));
+        };
+        self.model
+            .update_source(&index_uid, source_config)
+            .context("failed to add source")?;
+
+        info!(%index_uid, source_id, "updated source");
+
+        // TODO: Refine the event. Notify index will have the effect to reload the entire state from
+        // the metastore. We should update the state of the control plane.
+        let _rebuild_plan_waiter = self.rebuild_plan_debounced(ctx);
+
+        let response = EmptyResponse {};
+        Ok(Ok(response))
+    }
+}
+
 // This handler is a metastore call proxied through the control plane: we must first forward the
 // request to the metastore, and then act on the event.
 #[async_trait]
@@ -717,7 +754,10 @@ impl Handler<ToggleSourceRequest> for ControlPlane {
         };
         info!(%index_uid, source_id, enabled=enable, "toggled source");
 
-        let mutation_occurred = self.model.toggle_source(&index_uid, &source_id, enable)?;
+        let mutation_occurred = self
+            .model
+            .toggle_source(&index_uid, &source_id, enable)
+            .context("failed to toggle source")?;
 
         if mutation_occurred {
             let _rebuild_plan_waiter = self.rebuild_plan_debounced(ctx);
@@ -1074,12 +1114,15 @@ async fn watcher_indexers(
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZero;
     use std::sync::Arc;
 
     use mockall::Sequence;
     use quickwit_actors::{AskError, Observe, SupervisorMetrics};
     use quickwit_cluster::ClusterChangeStreamFactoryForTest;
-    use quickwit_config::{IndexConfig, SourceParams, CLI_SOURCE_ID, INGEST_V2_SOURCE_ID};
+    use quickwit_config::{
+        IndexConfig, KafkaSourceParams, SourceParams, CLI_SOURCE_ID, INGEST_V2_SOURCE_ID,
+    };
     use quickwit_indexing::IndexingService;
     use quickwit_metastore::{
         CreateIndexRequestExt, IndexMetadata, ListIndexesMetadataResponseExt,
@@ -1213,8 +1256,11 @@ mod tests {
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
 
-        let index_metadata = IndexMetadata::for_test("test-index", "ram://test");
-        let index_uid = index_metadata.index_uid.clone();
+        let mut index_metadata = IndexMetadata::for_test("test-index", "ram://test");
+        index_metadata
+            .add_source(SourceConfig::ingest_v2())
+            .unwrap();
+
         let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_add_source()
@@ -1225,15 +1271,18 @@ mod tests {
                 assert_eq!(source_config.source_type(), SourceType::Void);
                 true
             })
-            .returning(|_| Ok(EmptyResponse {}));
-        let index_metadata = IndexMetadata::for_test("test-index", "ram://test");
+            .return_once(|_| Ok(EmptyResponse {}));
+        // the list_indexes_metadata and list_shards calls are made when the control plane starts
         mock_metastore
             .expect_list_indexes_metadata()
-            .returning(move |_| {
+            .return_once(move |_| {
                 Ok(ListIndexesMetadataResponse::for_test(vec![
                     index_metadata.clone()
                 ]))
             });
+        mock_metastore
+            .expect_list_shards()
+            .return_once(move |_| Ok(ListShardsResponse::default()));
 
         let cluster_config = ClusterConfig::for_test();
         let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
@@ -1246,6 +1295,7 @@ mod tests {
             ingester_pool,
             MetastoreServiceClient::from_mock(mock_metastore),
         );
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let source_config = SourceConfig::for_test("test-source", SourceParams::void());
         let add_source_request = AddSourceRequest {
             index_uid: Some(index_uid),
@@ -1262,21 +1312,128 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_control_plane_update_source() {
+        let universe = Universe::with_accelerated_time();
+        let pipelines_after_update = 3;
+        let self_node_id: NodeId = "test-node".into();
+        let indexer_pool = IndexerPool::default();
+        let mut mock_indexer = MockIndexingService::new();
+        // call when starting the cp
+        mock_indexer
+            .expect_apply_indexing_plan()
+            .withf(|request| request.indexing_tasks.len() == 1)
+            .return_once(|_| Ok(ApplyIndexingPlanResponse {}));
+        // call after the update (3 tasks because 3 pipelines)
+        mock_indexer
+            .expect_apply_indexing_plan()
+            .withf(move |request| request.indexing_tasks.len() == pipelines_after_update)
+            .return_once(|_| Ok(ApplyIndexingPlanResponse {}));
+        let indexer = IndexingServiceClient::from_mock(mock_indexer);
+        let indexer_info = IndexerNodeInfo {
+            node_id: self_node_id.clone(),
+            generation_id: 0,
+            client: indexer,
+            indexing_tasks: Vec::new(),
+            indexing_capacity: CpuCapacity::from_cpu_millis(1_000),
+        };
+        indexer_pool.insert(self_node_id.clone(), indexer_info);
+
+        let ingester_pool = IngesterPool::default();
+
+        let mut index_metadata = IndexMetadata::for_test("test-index", "ram://tata");
+        index_metadata
+            .add_source(SourceConfig::ingest_v2())
+            .unwrap();
+
+        let mut test_source_config = SourceConfig::for_test(
+            "test-source",
+            SourceParams::Kafka(KafkaSourceParams {
+                topic: "test-topic".to_string(),
+                client_log_level: None,
+                enable_backfill_mode: false,
+                client_params: json!({}),
+            }),
+        );
+        index_metadata
+            .add_source(test_source_config.clone())
+            .unwrap();
+
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore
+            .expect_update_source()
+            .withf(move |update_source_request| {
+                let source_config: SourceConfig =
+                    serde_json::from_str(&update_source_request.source_config_json).unwrap();
+                assert_eq!(source_config.source_id, "test-source");
+                assert_eq!(source_config.source_type(), SourceType::Kafka);
+                assert_eq!(
+                    source_config.num_pipelines,
+                    NonZero::new(pipelines_after_update).unwrap()
+                );
+                true
+            })
+            .return_once(|_| Ok(EmptyResponse {}));
+        // the list_indexes_metadata and list_shards calls are made when the control plane starts
+        mock_metastore
+            .expect_list_indexes_metadata()
+            .return_once(move |_| {
+                Ok(ListIndexesMetadataResponse::for_test(vec![
+                    index_metadata.clone()
+                ]))
+            });
+        mock_metastore
+            .expect_list_shards()
+            .return_once(move |_| Ok(ListShardsResponse::default()));
+
+        let cluster_config = ClusterConfig::for_test();
+        let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
+        let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
+            &universe,
+            cluster_config,
+            self_node_id,
+            cluster_change_stream_factory,
+            indexer_pool,
+            ingester_pool,
+            MetastoreServiceClient::from_mock(mock_metastore),
+        );
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
+        test_source_config.num_pipelines = NonZero::new(pipelines_after_update).unwrap();
+        let update_source_request = UpdateSourceRequest {
+            index_uid: Some(index_uid),
+            source_config_json: serde_json::to_string(&test_source_config).unwrap(),
+        };
+        control_plane_mailbox
+            .ask_for_res(update_source_request)
+            .await
+            .unwrap();
+
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
     async fn test_control_plane_toggle_source() {
         let universe = Universe::with_accelerated_time();
         let self_node_id: NodeId = "test-node".into();
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
 
-        let mut mock_metastore = MockMetastoreService::new();
         let mut index_metadata = IndexMetadata::for_test("test-index", "ram://toto");
+        index_metadata
+            .add_source(SourceConfig::ingest_v2())
+            .unwrap();
+
         let test_source_config = SourceConfig::for_test("test-source", SourceParams::void());
-        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         index_metadata.add_source(test_source_config).unwrap();
+
+        let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_list_indexes_metadata()
             .return_once(|_| Ok(ListIndexesMetadataResponse::for_test(vec![index_metadata])));
+        mock_metastore
+            .expect_list_shards()
+            .return_once(move |_| Ok(ListShardsResponse::default()));
 
+        let index_uid = IndexUid::for_test("test-index", 0);
         let index_uid_clone = index_uid.clone();
         mock_metastore
             .expect_toggle_source()

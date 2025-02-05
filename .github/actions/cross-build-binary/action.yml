@@ -43,7 +43,6 @@ runs:
         QW_COMMIT_DATE: ${{ env.QW_COMMIT_DATE }}
         QW_COMMIT_HASH: ${{ env.QW_COMMIT_HASH }}
         QW_COMMIT_TAGS: ${{ env.QW_COMMIT_TAGS }}
-
       working-directory: ./quickwit
     - name: Bundle archive
       run: |

@@ -342,6 +342,7 @@ quickwit index ingest
     [--input-path <input-path>]
     [--batch-size-limit <batch-size-limit>]
     [--wait]
+    [--detailed-response]
     [--force]
     [--commit-timeout <commit-timeout>]
 ```
@@ -353,8 +354,9 @@ quickwit index ingest
 | `--index` | ID of the target index |
 | `--input-path` | Location of the input file. |
 | `--batch-size-limit` | Size limit of each submitted document batch. |
-| `--wait` | Wait for all documents to be committed and available for search before exiting |
-| `--force` | Force a commit after the last document is sent, and wait for all documents to be committed and available for search before exiting |
+| `--wait` | Wait for all documents to be committed and available for search before exiting. Applies only to the last batch, see [#5417](https://github.com/quickwit-oss/quickwit/issues/5417). |
+| `--detailed-response` | Print detailed errors. Enabling might impact performance negatively. |
+| `--force` | Force a commit after the last document is sent, and wait for all documents to be committed and available for search before exiting. Applies only to the last batch, see [#5417](https://github.com/quickwit-oss/quickwit/issues/5417). |
 | `--commit-timeout` | Timeout for ingest operations that require waiting for the final commit (`--wait` or `--force`). This is different from the `commit_timeout_secs` indexing setting, which sets the maximum time before committing splits after their creation. |
 
 *Examples*
@@ -490,6 +492,27 @@ quickwit source create
 | Option | Description |
 |-----------------|-------------|
 | `--index` | ID of the target index |
+| `--source-config` | Path to source config file. Please, refer to the documentation for more details. |
+### source update
+
+Update an existing source.  
+`quickwit source update [args]`
+
+*Synopsis*
+
+```bash
+quickwit source update
+    --index <index>
+    --source <source>
+    --source-config <source-config>
+```
+
+*Options*
+
+| Option | Description |
+|-----------------|-------------|
+| `--index` | ID of the target index |
+| `--source` | ID of the source |
 | `--source-config` | Path to source config file. Please, refer to the documentation for more details. |
 ### source enable
 

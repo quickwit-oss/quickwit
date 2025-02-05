@@ -193,7 +193,9 @@ POST api/v1/<index id>/ingest?commit=wait_for -d \
 ```
 
 :::info
-The payload size is limited to 10MB as this endpoint is intended to receive documents in batch.
+
+The payload size is limited to 10MB [by default](../configuration/node-config.md#ingest-api-configuration) since this endpoint is intended to receive documents in batches.
+
 :::
 
 #### Path variable
@@ -207,6 +209,7 @@ The payload size is limited to 10MB as this endpoint is intended to receive docu
 | Variable            | Type       | Description                                        | Default value |
 |---------------------|------------|----------------------------------------------------|---------------|
 | `commit`            | `String`   | The commit behavior: `auto`, `wait_for` or `force` | `auto`        |
+| `detailed_response` | `bool`     | Enable `parse_failures` in the response. Setting to `true` might impact performances negatively. | `false`        |
 
 #### Response
 
@@ -214,7 +217,15 @@ The response is a JSON object, and the content type is `application/json; charse
 
 | Field                       | Description                                                                                                                                                              |   Type   |
 |-----------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:--------:|
-| `num_docs_for_processing` | Total number of documents ingested for processing. The documents may not have been processed. The API will not return indexing errors, check the server logs for errors. | `number` |
+| `num_docs_for_processing` | Total number of documents submitted for processing. The documents may not have been processed. | `number` |
+| `num_ingested_docs`       | Number of documents successfully persisted in the write ahead log | `number` |
+| `num_rejected_docs`       | Number of documents that couldn't be parsed (invalid json, bad schema...) | `number` |
+| `parse_failures`          | List detailing parsing failures. Only available if `detailed_response` is set to `true`. | `list(object)` |
+
+The parse failure objects contain the following fields:
+- `message`: a detailed message explaining the error
+- `reason`: one of `invalid_json`, `invalid_schema` or `unspecified`
+- `document`: the utf-8 decoded string of the document byte chunk that generated the error
 
 
 ## Index API
@@ -320,12 +331,10 @@ Updates the configurations of an index. This endpoint follows PUT semantics, whi
 
 - The retention policy update is automatically picked up by the janitor service on its next state refresh.
 - The search settings update is automatically picked up by searcher nodes when the next query is executed.
-- The indexing settings update is not automatically picked up by the indexer nodes, they need to be manually restarted.
-- The doc mapping update is not automatically picked up by the indexer nodes, they have to be manually restarted.
+- The indexing settings update is automatically picked up by the indexer nodes once the control plane emits a new indexing plan.
+- The doc mapping update is automatically picked up by the indexer nodes once the control plane emit a new indexing plan.
 
-Updating the doc mapping doesn't reindex existing data. Queries and answers are mapped on a best effort basis when querying older splits.
-It is also not possible to update the timestamp field, or to modify/remove existing non-default tokenizers (but it is possible to change
-which tokenizer is used for a field).
+Updating the doc mapping doesn't reindex existing data. Queries and results are mapped on a best-effort basis when querying older splits. For more details, check [the reference](updating-mapper.md) out.
 
 #### PUT payload
 
@@ -597,9 +606,57 @@ Create source by posting a source config JSON payload.
 | `version**       | `String` | Config format version, put your current Quickwit version.                               | _required_    |
 | `source_id`     | `String` | Source ID. See ID [validation rules](../configuration/source-config.md).                 | _required_    |
 | `source_type`   | `String` | Source type: `kafka`, `kinesis` or `pulsar`.                                             | _required_    |
-| `num_pipelines` | `usize`  | Number of running indexing pipelines per node for this source.                           | 1             |
+| `num_pipelines` | `usize`  | Number of running indexing pipelines per node for this source.                           | `1`           |
+| `transform`     | `object` | A [VRL](https://vector.dev/docs/reference/vrl/) transformation applied to incoming documents, as defined in [source config docs](../configuration/source-config.md#transform-parameters).                          | `null`         |
 | `params`        | `object` | Source parameters as defined in [source config docs](../configuration/source-config.md). | _required_    |
 
+
+**Payload Example**
+
+curl -XPOST http://localhost:7280/api/v1/indexes/my-index/sources --data @source_config.json -H "Content-Type: application/json"
+
+```json title="source_config.json
+{
+    "version": "0.8",
+    "source_id": "kafka-source",
+    "source_type": "kafka",
+    "params": {
+        "topic": "quickwit-fts-staging",
+        "client_params": {
+            "bootstrap.servers": "kafka-quickwit-server:9092"
+        }
+    }
+}
+```
+
+#### Response
+
+The response is the created source config, and the content type is `application/json; charset=UTF-8.`
+
+### Update a source
+
+```
+PUT api/v1/indexes/<index id>/sources/<source id>
+```
+
+Update a source by posting a source config JSON payload.
+
+#### PUT payload
+
+| Variable          | Type     | Description                                                                            | Default value |
+|-------------------|----------|----------------------------------------------------------------------------------------|---------------|
+| `version**       | `String` | Config format version, put your current Quickwit version.                               | _required_    |
+| `source_id`     | `String` | Source ID, must be the same source as in the request URL.                                | _required_    |
+| `source_type`   | `String` | Source type: `kafka`, `kinesis` or `pulsar`. Cannot be updated.                          | _required_    |
+| `num_pipelines` | `usize`  | Number of running indexing pipelines per node for this source.                           | `1`           |
+| `transform`     | `object` | A [VRL](https://vector.dev/docs/reference/vrl/) transformation applied to incoming documents, as defined in [source config docs](../configuration/source-config.md#transform-parameters).                          | `null`         |
+| `params`        | `object` | Source parameters as defined in [source config docs](../configuration/source-config.md). | _required_    |
+
+:::warning
+
+While updating `num_pipelines` and `transform` is generally safe and reversible, updating `params` has consequences specific to the source type and might have side effects such as loosing the source's checkpoints. Perform such updates with great care. 
+
+:::
 
 **Payload Example**
 

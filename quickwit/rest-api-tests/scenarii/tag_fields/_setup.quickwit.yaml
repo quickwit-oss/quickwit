@@ -1,0 +1,45 @@
+# Delete possibly remaining index
+method: DELETE
+endpoint: indexes/allowedtypes
+status_code: null
+---
+method: DELETE
+endpoint: indexes/simple
+status_code: null
+---
+method: POST
+endpoint: indexes/
+json:
+  version: "0.7"
+  index_id: simple
+  doc_mapping:
+    field_mappings:
+      - name: seq
+        type: u64
+      - name: tag
+        type: u64
+    tag_fields: ["tag"]
+---
+method: POST
+endpoint: simple/ingest
+params:
+  commit: force
+ndjson:
+  - {"seq": 1, "tag": 1}
+  - {"seq": 2, "tag": 2}
+---
+method: POST
+endpoint: simple/ingest
+params:
+  commit: force
+ndjson:
+  - {"seq": 1, "tag": 1}
+  - {"seq": 3, "tag": null}
+---
+method: POST
+endpoint: simple/ingest
+params:
+  commit: force
+ndjson:
+  - {"seq": 4, "tag": 1}
+---

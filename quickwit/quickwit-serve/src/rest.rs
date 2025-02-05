@@ -1,21 +1,16 @@
-// Copyright (C) 2024 Quickwit, Inc.
+// Copyright 2021-Present Datadog, Inc.
 //
-// Quickwit is offered under the AGPL v3.0 and as commercial software.
-// For commercial licensing, contact us at hello@quickwit.io.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// AGPL:
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program. If not, see <http://www.gnu.org/licenses/>.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 use std::fmt::Formatter;
 use std::sync::Arc;
@@ -23,6 +18,7 @@ use std::sync::Arc;
 use hyper::http::HeaderValue;
 use hyper::{http, Method, StatusCode};
 use quickwit_common::tower::BoxFutureInfaillible;
+use quickwit_config::{disable_ingest_v1, enable_ingest_v2};
 use quickwit_search::SearchService;
 use tokio::net::TcpListener;
 use tower::make::Shared;
@@ -217,7 +213,7 @@ pub(crate) async fn start_rest_server(
     let rest_listen_addr = tcp_listener.local_addr()?;
     info!(
         rest_listen_addr=?rest_listen_addr,
-        "Starting REST server listening on {rest_listen_addr}."
+        "starting REST server listening on {rest_listen_addr}"
     );
 
     let rest_listener_std = tcp_listener.into_std()?;
@@ -257,12 +253,15 @@ fn api_v1_routes(
     let api_v1_root_url = warp::path!("api" / "v1" / ..);
     api_v1_root_url.and(
         elastic_api_handlers(
+            quickwit_services.cluster.clone(),
             quickwit_services.node_config.clone(),
             quickwit_services.search_service.clone(),
             quickwit_services.ingest_service.clone(),
             quickwit_services.ingest_router_service.clone(),
             quickwit_services.metastore_client.clone(),
             quickwit_services.index_manager.clone(),
+            !disable_ingest_v1(),
+            enable_ingest_v2(),
         )
         .or(cluster_handler(quickwit_services.cluster.clone()))
         .boxed()
@@ -282,6 +281,8 @@ fn api_v1_routes(
             quickwit_services.ingest_router_service.clone(),
             quickwit_services.ingest_service.clone(),
             quickwit_services.node_config.ingest_api_config.clone(),
+            !disable_ingest_v1(),
+            enable_ingest_v2(),
         ))
         .boxed()
         .or(otlp_ingest_api_handlers(

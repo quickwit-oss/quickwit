@@ -1,21 +1,16 @@
-// Copyright (C) 2024 Quickwit, Inc.
+// Copyright 2021-Present Datadog, Inc.
 //
-// Quickwit is offered under the AGPL v3.0 and as commercial software.
-// For commercial licensing, contact us at hello@quickwit.io.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// AGPL:
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program. If not, see <http://www.gnu.org/licenses/>.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 use std::collections::{HashMap, HashSet};
 use std::ops::Bound;
@@ -33,13 +28,14 @@ use quickwit_proto::search::{
     SplitIdAndFooterOffsets, SplitSearchError,
 };
 use quickwit_proto::types::IndexUid;
-use quickwit_storage::Storage;
+use quickwit_storage::{ByteRangeCache, Storage};
 use tantivy::schema::{Field, FieldType};
 use tantivy::{ReloadPolicy, Term};
 use tracing::{debug, error, info, instrument};
 
 use crate::leaf::open_index_with_caches;
 use crate::search_job_placer::group_jobs_by_index_id;
+use crate::search_permit_provider::compute_initial_memory_allocation;
 use crate::{resolve_index_patterns, ClusterClient, SearchError, SearchJob, SearcherContext};
 
 /// Performs a distributed list terms.
@@ -216,7 +212,10 @@ async fn leaf_list_terms_single_split(
     storage: Arc<dyn Storage>,
     split: SplitIdAndFooterOffsets,
 ) -> crate::Result<LeafListTermsResponse> {
-    let index = open_index_with_caches(searcher_context, storage, &split, None, true).await?;
+    let cache =
+        ByteRangeCache::with_infinite_capacity(&quickwit_storage::STORAGE_METRICS.shortlived_cache);
+    let (index, _) =
+        open_index_with_caches(searcher_context, storage, &split, None, Some(cache)).await?;
     let split_schema = index.schema();
     let reader = index
         .reader_builder()
@@ -325,18 +324,26 @@ pub async fn leaf_list_terms(
     splits: &[SplitIdAndFooterOffsets],
 ) -> Result<LeafListTermsResponse, SearchError> {
     info!(split_offsets = ?PrettySample::new(splits, 5));
+    let permit_sizes = splits.iter().map(|split| {
+        compute_initial_memory_allocation(
+            split,
+            searcher_context
+                .searcher_config
+                .warmup_single_split_initial_allocation,
+        )
+    });
+    let permits = searcher_context
+        .search_permit_provider
+        .get_permits(permit_sizes)
+        .await;
     let leaf_search_single_split_futures: Vec<_> = splits
         .iter()
-        .map(|split| {
+        .zip(permits.into_iter())
+        .map(|(split, search_permit_recv)| {
             let index_storage_clone = index_storage.clone();
             let searcher_context_clone = searcher_context.clone();
             async move {
-                let _leaf_split_search_permit = searcher_context_clone
-                    .search_permit_provider
-                    .get_permit()
-                    .await
-                    .expect("Failed to acquire permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
-
+                let leaf_split_search_permit = search_permit_recv.await;
                 // TODO dedicated counter and timer?
                 crate::SEARCH_METRICS.leaf_searches_splits_total.inc();
                 let timer = crate::SEARCH_METRICS
@@ -350,6 +357,11 @@ pub async fn leaf_list_terms(
                 )
                 .await;
                 timer.observe_duration();
+
+                // Explicitly drop the permit for readability.
+                // This should always happen after the ephemeral search cache is dropped.
+                std::mem::drop(leaf_split_search_permit);
+
                 leaf_search_single_split_res.map_err(|err| (split.split_id.clone(), err))
             }
         })

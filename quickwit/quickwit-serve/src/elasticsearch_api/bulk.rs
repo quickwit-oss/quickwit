@@ -1,27 +1,22 @@
-// Copyright (C) 2024 Quickwit, Inc.
+// Copyright 2021-Present Datadog, Inc.
 //
-// Quickwit is offered under the AGPL v3.0 and as commercial software.
-// For commercial licensing, contact us at hello@quickwit.io.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// AGPL:
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program. If not, see <http://www.gnu.org/licenses/>.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 use std::collections::HashMap;
 use std::time::Instant;
 
+use bytesize::ByteSize;
 use hyper::StatusCode;
-use quickwit_config::{disable_ingest_v1, enable_ingest_v2};
 use quickwit_ingest::{
     CommitType, DocBatchBuilder, IngestRequest, IngestService, IngestServiceClient,
 };
@@ -42,12 +37,23 @@ use crate::{with_arg, Body};
 pub fn es_compat_bulk_handler(
     ingest_service: IngestServiceClient,
     ingest_router: IngestRouterServiceClient,
+    content_length_limit: ByteSize,
+    enable_ingest_v1: bool,
+    enable_ingest_v2: bool,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    elastic_bulk_filter()
+    elastic_bulk_filter(content_length_limit)
         .and(with_arg(ingest_service))
         .and(with_arg(ingest_router))
-        .then(|body, bulk_options, ingest_service, ingest_router| {
-            elastic_ingest_bulk(None, body, bulk_options, ingest_service, ingest_router)
+        .then(move |body, bulk_options, ingest_service, ingest_router| {
+            elastic_ingest_bulk(
+                None,
+                body,
+                bulk_options,
+                ingest_service,
+                ingest_router,
+                enable_ingest_v1,
+                enable_ingest_v2,
+            )
         })
         .and(extract_format_from_qs())
         .map(make_elastic_api_response)
@@ -58,18 +64,23 @@ pub fn es_compat_bulk_handler(
 pub fn es_compat_index_bulk_handler(
     ingest_service: IngestServiceClient,
     ingest_router: IngestRouterServiceClient,
+    content_length_limit: ByteSize,
+    enable_ingest_v1: bool,
+    enable_ingest_v2: bool,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    elastic_index_bulk_filter()
+    elastic_index_bulk_filter(content_length_limit)
         .and(with_arg(ingest_service))
         .and(with_arg(ingest_router))
         .then(
-            |index_id, body, bulk_options, ingest_service, ingest_router| {
+            move |index_id, body, bulk_options, ingest_service, ingest_router| {
                 elastic_ingest_bulk(
                     Some(index_id),
                     body,
                     bulk_options,
                     ingest_service,
                     ingest_router,
+                    enable_ingest_v1,
+                    enable_ingest_v2,
                 )
             },
         )
@@ -85,11 +96,13 @@ async fn elastic_ingest_bulk(
     bulk_options: ElasticBulkOptions,
     ingest_service: IngestServiceClient,
     ingest_router: IngestRouterServiceClient,
+    enable_ingest_v1: bool,
+    enable_ingest_v2: bool,
 ) -> Result<ElasticBulkResponse, ElasticsearchError> {
-    if enable_ingest_v2() || bulk_options.enable_ingest_v2 {
+    if enable_ingest_v2 && !bulk_options.use_legacy_ingest {
         return elastic_bulk_ingest_v2(default_index_id, body, bulk_options, ingest_router).await;
     }
-    if disable_ingest_v1() {
+    if !enable_ingest_v1 {
         return Err(ElasticsearchError::new(
             StatusCode::INTERNAL_SERVER_ERROR,
             "ingest v1 is disabled: environment variable `QW_DISABLE_INGEST_V1` is set".to_string(),
@@ -173,24 +186,28 @@ mod tests {
     use crate::elasticsearch_api::bulk_v2::ElasticBulkResponse;
     use crate::elasticsearch_api::elastic_api_handlers;
     use crate::elasticsearch_api::model::ElasticsearchError;
-    use crate::ingest_api::setup_ingest_service;
+    use crate::elasticsearch_api::tests::mock_cluster;
+    use crate::ingest_api::setup_ingest_v1_service;
 
     #[tokio::test]
     async fn test_bulk_api_returns_404_if_index_id_does_not_exist() {
         let config = Arc::new(NodeConfig::for_test());
         let search_service = Arc::new(MockSearchService::new());
         let (universe, _temp_dir, ingest_service, _) =
-            setup_ingest_service(&["my-index"], &IngestApiConfig::default()).await;
+            setup_ingest_v1_service(&["my-index"], &IngestApiConfig::default()).await;
         let ingest_router = IngestRouterServiceClient::mocked();
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let elastic_api_handlers = elastic_api_handlers(
+            mock_cluster().await,
             config,
             search_service,
             ingest_service,
             ingest_router,
             MetastoreServiceClient::mocked(),
             index_service,
+            true,
+            false,
         );
         let payload = r#"
             { "create" : { "_index" : "my-index", "_id" : "1"} }
@@ -212,17 +229,21 @@ mod tests {
         let config = Arc::new(NodeConfig::for_test());
         let search_service = Arc::new(MockSearchService::new());
         let (universe, _temp_dir, ingest_service, _) =
-            setup_ingest_service(&["my-index-1", "my-index-2"], &IngestApiConfig::default()).await;
+            setup_ingest_v1_service(&["my-index-1", "my-index-2"], &IngestApiConfig::default())
+                .await;
         let ingest_router = IngestRouterServiceClient::mocked();
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let elastic_api_handlers = elastic_api_handlers(
+            mock_cluster().await,
             config,
             search_service,
             ingest_service,
             ingest_router,
             MetastoreServiceClient::mocked(),
             index_service,
+            true,
+            false,
         );
         let payload = r#"
             { "create" : { "_index" : "my-index-1", "_id" : "1"} }
@@ -248,17 +269,20 @@ mod tests {
         let config = Arc::new(NodeConfig::for_test());
         let search_service = Arc::new(MockSearchService::new());
         let (universe, _temp_dir, ingest_service, _) =
-            setup_ingest_service(&["my-index-1"], &IngestApiConfig::default()).await;
+            setup_ingest_v1_service(&["my-index-1"], &IngestApiConfig::default()).await;
         let ingest_router = IngestRouterServiceClient::mocked();
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let elastic_api_handlers = elastic_api_handlers(
+            mock_cluster().await,
             config,
             search_service,
             ingest_service,
             ingest_router,
             MetastoreServiceClient::mocked(),
             index_service,
+            true,
+            false,
         );
         let payload = "
             {\"create\": {\"_index\": \"my-index-1\", \"_id\": \"1674834324802805760\"}}
@@ -281,17 +305,21 @@ mod tests {
         let config = Arc::new(NodeConfig::for_test());
         let search_service = Arc::new(MockSearchService::new());
         let (universe, _temp_dir, ingest_service, _) =
-            setup_ingest_service(&["my-index-1", "my-index-2"], &IngestApiConfig::default()).await;
+            setup_ingest_v1_service(&["my-index-1", "my-index-2"], &IngestApiConfig::default())
+                .await;
         let ingest_router = IngestRouterServiceClient::mocked();
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let elastic_api_handlers = elastic_api_handlers(
+            mock_cluster().await,
             config,
             search_service,
             ingest_service,
             ingest_router,
             MetastoreServiceClient::mocked(),
             index_service,
+            true,
+            false,
         );
         let payload = r#"
             { "create" : { "_index" : "my-index-1", "_id" : "1"} }
@@ -317,17 +345,21 @@ mod tests {
         let config = Arc::new(NodeConfig::for_test());
         let search_service = Arc::new(MockSearchService::new());
         let (universe, _temp_dir, ingest_service, ingest_service_mailbox) =
-            setup_ingest_service(&["my-index-1", "my-index-2"], &IngestApiConfig::default()).await;
+            setup_ingest_v1_service(&["my-index-1", "my-index-2"], &IngestApiConfig::default())
+                .await;
         let ingest_router = IngestRouterServiceClient::mocked();
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let elastic_api_handlers = elastic_api_handlers(
+            mock_cluster().await,
             config,
             search_service,
             ingest_service,
             ingest_router,
             MetastoreServiceClient::mocked(),
             index_service,
+            true,
+            false,
         );
         let payload = r#"
             { "create" : { "_index" : "my-index-1", "_id" : "1"} }
@@ -404,17 +436,21 @@ mod tests {
         let config = Arc::new(NodeConfig::for_test());
         let search_service = Arc::new(MockSearchService::new());
         let (universe, _temp_dir, ingest_service, ingest_service_mailbox) =
-            setup_ingest_service(&["my-index-1", "my-index-2"], &IngestApiConfig::default()).await;
+            setup_ingest_v1_service(&["my-index-1", "my-index-2"], &IngestApiConfig::default())
+                .await;
         let ingest_router = IngestRouterServiceClient::mocked();
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let elastic_api_handlers = elastic_api_handlers(
+            mock_cluster().await,
             config,
             search_service,
             ingest_service,
             ingest_router,
             MetastoreServiceClient::mocked(),
             index_service,
+            true,
+            false,
         );
         let payload = r#"
             { "create" : { "_index" : "my-index-1", "_id" : "1"} }
@@ -494,12 +530,15 @@ mod tests {
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let elastic_api_handlers = elastic_api_handlers(
+            mock_cluster().await,
             config,
             search_service,
             ingest_service,
             ingest_router,
             MetastoreServiceClient::mocked(),
             index_service,
+            true,
+            false,
         );
         let payload = r#"
             {"create": {"_index": "my-index", "_id": "1"},}

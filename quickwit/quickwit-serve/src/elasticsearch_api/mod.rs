@@ -1,21 +1,16 @@
-// Copyright (C) 2024 Quickwit, Inc.
+// Copyright 2021-Present Datadog, Inc.
 //
-// Quickwit is offered under the AGPL v3.0 and as commercial software.
-// For commercial licensing, contact us at hello@quickwit.io.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// AGPL:
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program. If not, see <http://www.gnu.org/licenses/>.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 mod bulk;
 mod bulk_v2;
@@ -28,12 +23,14 @@ use std::sync::Arc;
 use bulk::{es_compat_bulk_handler, es_compat_index_bulk_handler};
 pub use filter::ElasticCompatibleApi;
 use hyper::StatusCode;
+use quickwit_cluster::Cluster;
 use quickwit_config::NodeConfig;
 use quickwit_index_management::IndexService;
 use quickwit_ingest::IngestServiceClient;
 use quickwit_proto::ingest::router::IngestRouterServiceClient;
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_search::SearchService;
+use rest_handler::es_compat_cluster_health_handler;
 pub use rest_handler::{
     es_compat_cat_indices_handler, es_compat_cluster_info_handler, es_compat_delete_index_handler,
     es_compat_index_cat_indices_handler, es_compat_index_count_handler,
@@ -53,22 +50,36 @@ use crate::{BodyFormat, BuildInfo};
 ///
 /// This is where all newly supported Elasticsearch handlers
 /// should be registered.
+#[allow(clippy::too_many_arguments)] // Will go away when we remove ingest v1.
 pub fn elastic_api_handlers(
+    cluster: Cluster,
     node_config: Arc<NodeConfig>,
     search_service: Arc<dyn SearchService>,
     ingest_service: IngestServiceClient,
     ingest_router: IngestRouterServiceClient,
     metastore: MetastoreServiceClient,
     index_service: IndexService,
+    enable_ingest_v1: bool,
+    enable_ingest_v2: bool,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    let ingest_content_length_limit = node_config.ingest_api_config.content_length_limit;
     es_compat_cluster_info_handler(node_config, BuildInfo::get())
         .or(es_compat_search_handler(search_service.clone()))
         .or(es_compat_bulk_handler(
             ingest_service.clone(),
             ingest_router.clone(),
+            ingest_content_length_limit,
+            enable_ingest_v1,
+            enable_ingest_v2,
         ))
         .boxed()
-        .or(es_compat_index_bulk_handler(ingest_service, ingest_router))
+        .or(es_compat_index_bulk_handler(
+            ingest_service,
+            ingest_router,
+            ingest_content_length_limit,
+            enable_ingest_v1,
+            enable_ingest_v2,
+        ))
         .or(es_compat_index_search_handler(search_service.clone()))
         .or(es_compat_index_count_handler(search_service.clone()))
         .or(es_compat_scroll_handler(search_service.clone()))
@@ -80,6 +91,7 @@ pub fn elastic_api_handlers(
         .or(es_compat_index_stats_handler(metastore.clone()))
         .or(es_compat_delete_index_handler(index_service))
         .or(es_compat_stats_handler(metastore.clone()))
+        .or(es_compat_cluster_health_handler(cluster))
         .or(es_compat_index_cat_indices_handler(metastore.clone()))
         .or(es_compat_cat_indices_handler(metastore.clone()))
         .or(es_compat_resolve_index_handler(metastore.clone()))
@@ -134,6 +146,7 @@ mod tests {
 
     use assert_json_diff::assert_json_include;
     use mockall::predicate;
+    use quickwit_cluster::{create_cluster_for_test, ChannelTransport, Cluster};
     use quickwit_config::NodeConfig;
     use quickwit_index_management::IndexService;
     use quickwit_ingest::{IngestApiService, IngestServiceClient};
@@ -158,6 +171,13 @@ mod tests {
         IngestServiceClient::from_mailbox(ingest_service_mailbox)
     }
 
+    pub async fn mock_cluster() -> Cluster {
+        let transport = ChannelTransport::default();
+        create_cluster_for_test(Vec::new(), &[], &transport, false)
+            .await
+            .unwrap()
+    }
+
     #[tokio::test]
     async fn test_msearch_api_return_200_responses() {
         let config = Arc::new(NodeConfig::for_test());
@@ -179,12 +199,15 @@ mod tests {
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let es_search_api_handler = super::elastic_api_handlers(
+            mock_cluster().await,
             config,
             Arc::new(mock_search_service),
             ingest_service_client(),
             ingest_router,
             MetastoreServiceClient::mocked(),
             index_service,
+            true,
+            false,
         );
         let msearch_payload = r#"
             {"index":"index-1"}
@@ -233,12 +256,15 @@ mod tests {
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let es_search_api_handler = super::elastic_api_handlers(
+            mock_cluster().await,
             config,
             Arc::new(mock_search_service),
             ingest_service_client(),
             ingest_router,
             MetastoreServiceClient::mocked(),
             index_service,
+            true,
+            false,
         );
         let msearch_payload = r#"
             {"index":"index-1"}
@@ -275,12 +301,15 @@ mod tests {
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let es_search_api_handler = super::elastic_api_handlers(
+            mock_cluster().await,
             config,
             Arc::new(mock_search_service),
             ingest_service_client(),
             ingest_router,
             MetastoreServiceClient::mocked(),
             index_service,
+            true,
+            false,
         );
         let msearch_payload = r#"
             {"index":"index-1"
@@ -310,12 +339,15 @@ mod tests {
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let es_search_api_handler = elastic_api_handlers(
+            mock_cluster().await,
             config,
             Arc::new(mock_search_service),
             ingest_service_client(),
             ingest_router,
             MetastoreServiceClient::mocked(),
             index_service,
+            true,
+            false,
         );
         let msearch_payload = r#"
             {"index":"index-1"}
@@ -345,12 +377,15 @@ mod tests {
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let es_search_api_handler = super::elastic_api_handlers(
+            mock_cluster().await,
             config,
             Arc::new(mock_search_service),
             ingest_service_client(),
             ingest_router,
             MetastoreServiceClient::mocked(),
             index_service,
+            true,
+            false,
         );
         let msearch_payload = r#"
             {"index":"index-1"}
@@ -379,12 +414,15 @@ mod tests {
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let es_search_api_handler = super::elastic_api_handlers(
+            mock_cluster().await,
             config,
             Arc::new(mock_search_service),
             ingest_service_client(),
             ingest_router,
             MetastoreServiceClient::mocked(),
             index_service,
+            true,
+            false,
         );
         let msearch_payload = r#"
             {}
@@ -425,12 +463,15 @@ mod tests {
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let es_search_api_handler = super::elastic_api_handlers(
+            mock_cluster().await,
             config,
             Arc::new(mock_search_service),
             ingest_service_client(),
             ingest_router,
             MetastoreServiceClient::mocked(),
             index_service,
+            true,
+            false,
         );
         let msearch_payload = r#"
             {"index": ["index-1", "index-2"]}

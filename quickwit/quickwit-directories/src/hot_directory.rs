@@ -1,21 +1,16 @@
-// Copyright (C) 2024 Quickwit, Inc.
+// Copyright 2021-Present Datadog, Inc.
 //
-// Quickwit is offered under the AGPL v3.0 and as commercial software.
-// For commercial licensing, contact us at hello@quickwit.io.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// AGPL:
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program. If not, see <http://www.gnu.org/licenses/>.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
@@ -205,14 +200,12 @@ impl StaticDirectoryCache {
         self.file_lengths.get(path).copied()
     }
 
-    /// return the files and their cached lengths
-    pub fn get_stats(&self) -> Vec<(PathBuf, usize)> {
+    pub fn get_file_lengths(&self) -> Vec<(PathBuf, u64)> {
         let mut entries = self
-            .slices
+            .file_lengths
             .iter()
-            .map(|(path, cache)| (path.to_owned(), cache.len()))
+            .map(|(path, len)| (path.clone(), *len))
             .collect::<Vec<_>>();
-
         entries.sort_by_key(|el| el.0.to_owned());
         entries
     }
@@ -264,10 +257,6 @@ impl StaticSliceCache {
             return Some(self.bytes.slice(start..start + byte_range.len()));
         }
         None
-    }
-
-    pub fn len(&self) -> usize {
-        self.bytes.len()
     }
 }
 
@@ -376,12 +365,12 @@ impl HotDirectory {
             }),
         })
     }
-    /// Get files and their cached sizes.
-    pub fn get_stats_per_file(
-        hot_cache_bytes: OwnedBytes,
-    ) -> anyhow::Result<Vec<(PathBuf, usize)>> {
-        let static_cache = StaticDirectoryCache::open(hot_cache_bytes)?;
-        Ok(static_cache.get_stats())
+
+    /// Get all the files in the directory and their sizes.
+    ///
+    /// The actual cached data is a very small fraction of this length.
+    pub fn get_file_lengths(&self) -> Vec<(PathBuf, u64)> {
+        self.inner.cache.get_file_lengths()
     }
 }
 
@@ -704,10 +693,10 @@ mod tests {
         assert_eq!(directory_cache.get_file_length(three_path), Some(300));
         assert_eq!(directory_cache.get_file_length(four_path), None);
 
-        let stats = directory_cache.get_stats();
-        assert_eq!(stats[0], (one_path.to_owned(), 8));
-        assert_eq!(stats[1], (three_path.to_owned(), 0));
-        assert_eq!(stats[2], (two_path.to_owned(), 7));
+        let file_lengths = directory_cache.get_file_lengths();
+        assert_eq!(file_lengths[0], (one_path.to_owned(), 100));
+        assert_eq!(file_lengths[1], (three_path.to_owned(), 300));
+        assert_eq!(file_lengths[2], (two_path.to_owned(), 200));
 
         assert_eq!(
             directory_cache

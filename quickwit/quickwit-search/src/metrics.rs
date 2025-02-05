@@ -1,24 +1,20 @@
-// Copyright (C) 2024 Quickwit, Inc.
+// Copyright 2021-Present Datadog, Inc.
 //
-// Quickwit is offered under the AGPL v3.0 and as commercial software.
-// For commercial licensing, contact us at hello@quickwit.io.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// AGPL:
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program. If not, see <http://www.gnu.org/licenses/>.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 // See https://prometheus.io/docs/practices/naming/
 
+use bytesize::ByteSize;
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
     exponential_buckets, linear_buckets, new_counter, new_counter_vec, new_gauge_vec,
@@ -37,6 +33,7 @@ pub struct SearchMetrics {
     pub job_assigned_total: IntCounterVec<1>,
     pub leaf_search_single_split_tasks_pending: IntGauge,
     pub leaf_search_single_split_tasks_ongoing: IntGauge,
+    pub leaf_search_single_split_warmup_num_bytes: Histogram,
 }
 
 impl Default for SearchMetrics {
@@ -51,6 +48,18 @@ impl Default for SearchMetrics {
         .flatten()
         .copied()
         .collect();
+
+        let pseudo_exponential_bytes_buckets = vec![
+            ByteSize::mb(10).as_u64() as f64,
+            ByteSize::mb(20).as_u64() as f64,
+            ByteSize::mb(50).as_u64() as f64,
+            ByteSize::mb(100).as_u64() as f64,
+            ByteSize::mb(200).as_u64() as f64,
+            ByteSize::mb(500).as_u64() as f64,
+            ByteSize::gb(1).as_u64() as f64,
+            ByteSize::gb(2).as_u64() as f64,
+            ByteSize::gb(5).as_u64() as f64,
+        ];
 
         let leaf_search_single_split_tasks = new_gauge_vec::<1>(
             "leaf_search_single_split_tasks",
@@ -124,6 +133,12 @@ impl Default for SearchMetrics {
                 .with_label_values(["ongoing"]),
             leaf_search_single_split_tasks_pending: leaf_search_single_split_tasks
                 .with_label_values(["pending"]),
+            leaf_search_single_split_warmup_num_bytes: new_histogram(
+                "leaf_search_single_split_warmup_num_bytes",
+                "Size of the short lived cache for a single split once the warmup is done.",
+                "search",
+                pseudo_exponential_bytes_buckets,
+            ),
             job_assigned_total: new_counter_vec(
                 "job_assigned_total",
                 "Number of job assigned to searchers, per affinity rank.",

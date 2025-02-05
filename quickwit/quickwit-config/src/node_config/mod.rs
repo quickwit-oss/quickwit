@@ -1,21 +1,16 @@
-// Copyright (C) 2024 Quickwit, Inc.
+// Copyright 2021-Present Datadog, Inc.
 //
-// Quickwit is offered under the AGPL v3.0 and as commercial software.
-// For commercial licensing, contact us at hello@quickwit.io.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// AGPL:
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program. If not, see <http://www.gnu.org/licenses/>.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 mod serialize;
 
@@ -226,6 +221,8 @@ pub struct SearcherConfig {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub storage_timeout_policy: Option<StorageTimeoutPolicy>,
+    pub warmup_memory_budget: ByteSize,
+    pub warmup_single_split_initial_allocation: ByteSize,
 }
 
 /// Configuration controlling how fast a searcher should timeout a `get_slice`
@@ -263,7 +260,7 @@ impl StorageTimeoutPolicy {
 
 impl Default for SearcherConfig {
     fn default() -> Self {
-        Self {
+        SearcherConfig {
             fast_field_cache_capacity: ByteSize::gb(1),
             split_footer_cache_capacity: ByteSize::mb(500),
             partial_request_cache_capacity: ByteSize::mb(64),
@@ -274,6 +271,8 @@ impl Default for SearcherConfig {
             split_cache: None,
             request_timeout_secs: Self::default_request_timeout_secs(),
             storage_timeout_policy: None,
+            warmup_memory_budget: ByteSize::gb(100),
+            warmup_single_split_initial_allocation: ByteSize::gb(1),
         }
     }
 }
@@ -306,6 +305,14 @@ impl SearcherConfig {
                      split_cache.max_file_descriptors ({})",
                     self.max_num_concurrent_split_streams,
                     split_cache_limits.max_file_descriptors
+                );
+            }
+            if self.warmup_single_split_initial_allocation > self.warmup_memory_budget {
+                anyhow::bail!(
+                    "warmup_single_split_initial_allocation ({}) must be lower or equal to \
+                     warmup_memory_budget ({})",
+                    self.warmup_single_split_initial_allocation,
+                    self.warmup_memory_budget
                 );
             }
         }

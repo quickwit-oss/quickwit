@@ -1,21 +1,16 @@
-// Copyright (C) 2024 Quickwit, Inc.
+// Copyright 2021-Present Datadog, Inc.
 //
-// Quickwit is offered under the AGPL v3.0 and as commercial software.
-// For commercial licensing, contact us at hello@quickwit.io.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// AGPL:
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program. If not, see <http://www.gnu.org/licenses/>.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 use std::time::Duration;
 
@@ -44,7 +39,7 @@ async fn test_update_search_settings_on_multi_nodes_cluster() {
         // The starting time is a bit long for a cluster.
         tokio::time::sleep(Duration::from_secs(3)).await;
         let indexing_service_counters = sandbox
-            .indexer_rest_client
+            .rest_client(QuickwitService::Indexer)
             .node_stats()
             .indexing()
             .await
@@ -54,7 +49,7 @@ async fn test_update_search_settings_on_multi_nodes_cluster() {
 
     // Create an index
     sandbox
-        .indexer_rest_client
+        .rest_client(QuickwitService::Indexer)
         .indexes()
         .create(
             r#"
@@ -77,7 +72,7 @@ async fn test_update_search_settings_on_multi_nodes_cluster() {
         .await
         .unwrap();
     assert!(sandbox
-        .indexer_rest_client
+        .rest_client(QuickwitService::Indexer)
         .node_health()
         .is_live()
         .await
@@ -87,7 +82,7 @@ async fn test_update_search_settings_on_multi_nodes_cluster() {
     sandbox.wait_for_indexing_pipelines(1).await.unwrap();
 
     ingest(
-        &sandbox.indexer_rest_client,
+        &sandbox.rest_client(QuickwitService::Indexer),
         "my-updatable-index",
         ingest_json!({"title": "first", "body": "first record"}),
         CommitType::Auto,
@@ -104,7 +99,7 @@ async fn test_update_search_settings_on_multi_nodes_cluster() {
     // Update the index to also search `body` by default, the same search should
     // now have 1 hit
     sandbox
-        .indexer_rest_client
+        .rest_client(QuickwitService::Indexer)
         .indexes()
         .update(
             "my-updatable-index",

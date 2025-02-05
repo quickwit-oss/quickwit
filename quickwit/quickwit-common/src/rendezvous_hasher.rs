@@ -1,21 +1,16 @@
-// Copyright (C) 2024 Quickwit, Inc.
+// Copyright 2021-Present Datadog, Inc.
 //
-// Quickwit is offered under the AGPL v3.0 and as commercial software.
-// For commercial licensing, contact us at hello@quickwit.io.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// AGPL:
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program. If not, see <http://www.gnu.org/licenses/>.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 use std::cmp::Reverse;
 use std::hash::{Hash, Hasher};
@@ -43,6 +38,7 @@ mod tests {
     use std::net::SocketAddr;
 
     use super::*;
+    use crate::SocketAddrLegacyHash;
 
     fn test_socket_addr(last_byte: u8) -> SocketAddr {
         ([127, 0, 0, last_byte], 10_000u16).into()
@@ -55,17 +51,38 @@ mod tests {
         let socket3 = test_socket_addr(3);
         let socket4 = test_socket_addr(4);
 
-        let mut socket_set1 = vec![socket4, socket3, socket1, socket2];
+        let legacy_socket1 = SocketAddrLegacyHash(&socket1);
+        let legacy_socket2 = SocketAddrLegacyHash(&socket2);
+        let legacy_socket3 = SocketAddrLegacyHash(&socket3);
+        let legacy_socket4 = SocketAddrLegacyHash(&socket4);
+
+        let mut socket_set1 = vec![
+            legacy_socket4,
+            legacy_socket3,
+            legacy_socket1,
+            legacy_socket2,
+        ];
         sort_by_rendez_vous_hash(&mut socket_set1, "key");
 
-        let mut socket_set2 = vec![socket1, socket2, socket4];
+        let mut socket_set2 = vec![legacy_socket1, legacy_socket2, legacy_socket4];
         sort_by_rendez_vous_hash(&mut socket_set2, "key");
 
-        let mut socket_set3 = vec![socket1, socket4];
+        let mut socket_set3 = vec![legacy_socket1, legacy_socket4];
         sort_by_rendez_vous_hash(&mut socket_set3, "key");
 
-        assert_eq!(socket_set1, &[socket1, socket3, socket2, socket4]);
-        assert_eq!(socket_set2, &[socket1, socket2, socket4]);
-        assert_eq!(socket_set3, &[socket1, socket4]);
+        assert_eq!(
+            socket_set1,
+            &[
+                legacy_socket1,
+                legacy_socket2,
+                legacy_socket3,
+                legacy_socket4
+            ]
+        );
+        assert_eq!(
+            socket_set2,
+            &[legacy_socket1, legacy_socket2, legacy_socket4]
+        );
+        assert_eq!(socket_set3, &[legacy_socket1, legacy_socket4]);
     }
 }

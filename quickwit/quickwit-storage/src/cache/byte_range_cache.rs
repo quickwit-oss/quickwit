@@ -1,27 +1,23 @@
-// Copyright (C) 2024 Quickwit, Inc.
+// Copyright 2021-Present Datadog, Inc.
 //
-// Quickwit is offered under the AGPL v3.0 and as commercial software.
-// For commercial licensing, contact us at hello@quickwit.io.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// AGPL:
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program. If not, see <http://www.gnu.org/licenses/>.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 use std::borrow::{Borrow, Cow};
 use std::collections::BTreeMap;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 use tantivy::directory::OwnedBytes;
 
@@ -344,31 +340,54 @@ impl<T: 'static + ToOwned + ?Sized> Drop for NeedMutByteRangeCache<T> {
 /// cached data, the changes may or may not get recorded.
 ///
 /// At the moment this is hardly a cache as it features no eviction policy.
+#[derive(Clone)]
 pub struct ByteRangeCache {
-    inner: Mutex<NeedMutByteRangeCache<Path>>,
+    inner_arc: Arc<Inner>,
+}
+
+struct Inner {
+    num_stored_bytes: AtomicU64,
+    need_mut_byte_range_cache: Mutex<NeedMutByteRangeCache<Path>>,
 }
 
 impl ByteRangeCache {
     /// Creates a slice cache that never removes any entry.
     pub fn with_infinite_capacity(cache_counters: &'static CacheMetrics) -> Self {
+        let need_mut_byte_range_cache =
+            NeedMutByteRangeCache::with_infinite_capacity(cache_counters);
+        let inner = Inner {
+            num_stored_bytes: AtomicU64::default(),
+            need_mut_byte_range_cache: Mutex::new(need_mut_byte_range_cache),
+        };
         ByteRangeCache {
-            inner: Mutex::new(NeedMutByteRangeCache::with_infinite_capacity(
-                cache_counters,
-            )),
+            inner_arc: Arc::new(inner),
         }
+    }
+
+    /// Overall amount of bytes stored in the cache.
+    pub fn get_num_bytes(&self) -> u64 {
+        self.inner_arc.num_stored_bytes.load(Ordering::Relaxed)
     }
 
     /// If available, returns the cached view of the slice.
     pub fn get_slice(&self, path: &Path, byte_range: Range<usize>) -> Option<OwnedBytes> {
-        self.inner.lock().unwrap().get_slice(path, byte_range)
+        self.inner_arc
+            .need_mut_byte_range_cache
+            .lock()
+            .unwrap()
+            .get_slice(path, byte_range)
     }
 
     /// Put the given amount of data in the cache.
     pub fn put_slice(&self, path: PathBuf, byte_range: Range<usize>, bytes: OwnedBytes) {
-        self.inner
-            .lock()
-            .unwrap()
-            .put_slice(path, byte_range, bytes)
+        let mut need_mut_byte_range_cache_locked =
+            self.inner_arc.need_mut_byte_range_cache.lock().unwrap();
+        need_mut_byte_range_cache_locked.put_slice(path, byte_range, bytes);
+        let num_bytes = need_mut_byte_range_cache_locked.num_bytes;
+        drop(need_mut_byte_range_cache_locked);
+        self.inner_arc
+            .num_stored_bytes
+            .store(num_bytes, Ordering::Relaxed);
     }
 }
 
@@ -446,13 +465,13 @@ mod tests {
                             .sum();
                         // in some case we have ranges touching each other, count_items count them
                         // as only one, but cache count them as 2.
-                        assert!(cache.inner.lock().unwrap().num_items >= expected_item_count as u64);
+                        assert!(cache.inner_arc.need_mut_byte_range_cache.lock().unwrap().num_items >= expected_item_count as u64);
 
                         let expected_byte_count = state.values()
                             .flatten()
                             .filter(|stored| **stored)
                             .count();
-                        assert_eq!(cache.inner.lock().unwrap().num_bytes, expected_byte_count as u64);
+                        assert_eq!(cache.inner_arc.need_mut_byte_range_cache.lock().unwrap().num_bytes, expected_byte_count as u64);
                     }
                     Operation::Get {
                         range,
@@ -519,7 +538,7 @@ mod tests {
         );
 
         {
-            let mutable_cache = cache.inner.lock().unwrap();
+            let mutable_cache = cache.inner_arc.need_mut_byte_range_cache.lock().unwrap();
             assert_eq!(mutable_cache.cache.len(), 4);
             assert_eq!(mutable_cache.num_items, 4);
             assert_eq!(mutable_cache.cache_counters.in_cache_count.get(), 4);
@@ -531,7 +550,7 @@ mod tests {
 
         {
             // now they should've been merged, except the last one
-            let mutable_cache = cache.inner.lock().unwrap();
+            let mutable_cache = cache.inner_arc.need_mut_byte_range_cache.lock().unwrap();
             assert_eq!(mutable_cache.cache.len(), 2);
             assert_eq!(mutable_cache.num_items, 2);
             assert_eq!(mutable_cache.cache_counters.in_cache_count.get(), 2);

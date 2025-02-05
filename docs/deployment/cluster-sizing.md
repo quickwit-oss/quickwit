@@ -29,10 +29,10 @@ Here are some high-level guidelines to size your Indexer nodes:
     <!-- TODO: revisit this when cooperative indexing becomes the default -->
   - Don't use instances with less than 8GB of RAM
     <!-- Note: 2GB for the heap size (per pipeline) and 2GB for ingest queues -->
-- Mount the data directory to a volume of at least 110GB to store the [split
-  cache](../configuration/node-config.md#Indexer-configuration) and the [ingest
-  queue](../configuration/node-config.md#ingest-api-configuration).
-  <!-- Note: 4GB max_queue_disk_usage and 100GB split_store_max_num_bytes -->
+- Mount the data directory to a volume of at least 120GB to store:
+  - the [split cache](../configuration/node-config.md#Indexer-configuration) (default 100GB)
+  - the [ingest queue](../configuration/node-config.md#ingest-api-configuration) (default 4GiB)
+  - a little extra for the indexes that are being built (first generation and merges)
 - Local SSDs are preferred for deploying Indexers since they generally provide the best performance per dollar and save some network bandwidth. However, remote disks can also if they provide roughly 20 MB/s of write throughput per core when using the ingest API or 10 MB/s when relying on other sources. For Amazon EBS volumes, this is equivalent to 320 or 160 IOPS per core (assuming 64 KB IOPS).
 
 :::note
@@ -41,9 +41,8 @@ To utilize all CPUs on Indexer nodes that have more than 4 cores, your indexing
 workload needs to be broken down into multiple indexing pipelines. This can be
 achieved by creating multiple indexes or by using a [partitioned data
 source](../configuration/source-config.md#number-of-pipelines) such as
-[Kafka](../configuration/source-config.md#kafka-source).
-
-<!-- TODO: change this note when releasing ingest v2 -->
+[Kafka](../configuration/source-config.md#kafka-source) or the [ingest API
+(v2)](../ingest-data/ingest-api.md#ingest-api-versions).
 
 :::
 

@@ -1,21 +1,16 @@
-// Copyright (C) 2024 Quickwit, Inc.
+// Copyright 2021-Present Datadog, Inc.
 //
-// Quickwit is offered under the AGPL v3.0 and as commercial software.
-// For commercial licensing, contact us at hello@quickwit.io.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// AGPL:
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program. If not, see <http://www.gnu.org/licenses/>.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 pub mod file_backed;
 pub(crate) mod index_metadata;
@@ -43,7 +38,7 @@ use quickwit_proto::metastore::{
     IndexMetadataFailure, IndexMetadataRequest, IndexMetadataResponse, IndexesMetadataResponse,
     ListIndexesMetadataResponse, ListSplitsRequest, ListSplitsResponse, MetastoreError,
     MetastoreResult, MetastoreService, MetastoreServiceClient, MetastoreServiceStream,
-    PublishSplitsRequest, StageSplitsRequest, UpdateIndexRequest,
+    PublishSplitsRequest, StageSplitsRequest, UpdateIndexRequest, UpdateSourceRequest,
 };
 use quickwit_proto::types::{IndexUid, NodeId, SplitId};
 use time::OffsetDateTime;
@@ -426,6 +421,36 @@ impl AddSourceRequestExt for AddSourceRequest {
     }
 }
 
+/// Helper trait to build a [`UpdateSourceRequest`] and deserialize its payload.
+pub trait UpdateSourceRequestExt {
+    /// Creates a new [`UpdateSourceRequest`] from a [`SourceConfig`].
+    fn try_from_source_config(
+        index_uid: impl Into<IndexUid>,
+        source_config: &SourceConfig,
+    ) -> MetastoreResult<UpdateSourceRequest>;
+
+    /// Deserializes the `source_config_json` field of a [`UpdateSourceRequest`] into a
+    /// [`SourceConfig`].
+    fn deserialize_source_config(&self) -> MetastoreResult<SourceConfig>;
+}
+
+impl UpdateSourceRequestExt for UpdateSourceRequest {
+    fn try_from_source_config(
+        index_uid: impl Into<IndexUid>,
+        source_config: &SourceConfig,
+    ) -> MetastoreResult<UpdateSourceRequest> {
+        let source_config_json = serde_utils::to_json_str(&source_config)?;
+        let request = Self {
+            index_uid: Some(index_uid.into()),
+            source_config_json,
+        };
+        Ok(request)
+    }
+
+    fn deserialize_source_config(&self) -> MetastoreResult<SourceConfig> {
+        serde_utils::from_json_str(&self.source_config_json)
+    }
+}
 /// Helper trait to build a [`DeleteTask`] and deserialize its payload.
 pub trait StageSplitsRequestExt {
     /// Creates a new [`StageSplitsRequest`] from a [`SplitMetadata`].

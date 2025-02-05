@@ -1,23 +1,19 @@
-// Copyright (C) 2024 Quickwit, Inc.
+// Copyright 2021-Present Datadog, Inc.
 //
-// Quickwit is offered under the AGPL v3.0 and as commercial software.
-// For commercial licensing, contact us at hello@quickwit.io.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// AGPL:
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program. If not, see <http://www.gnu.org/licenses/>.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::OnceLock;
 use std::time::Duration;
 
@@ -49,7 +45,7 @@ use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResult
 use tantivy::collector::Collector;
 use tantivy::schema::{Field, FieldEntry, FieldType, Schema};
 use tantivy::TantivyError;
-use tracing::{debug, info, info_span, instrument};
+use tracing::{debug, info_span, instrument};
 
 use crate::cluster_client::ClusterClient;
 use crate::collector::{make_merge_collector, QuickwitAggregations};
@@ -683,8 +679,44 @@ pub fn get_count_from_metadata(split_metadatas: &[SplitMetadata]) -> Vec<LeafSea
             num_attempted_splits: 1,
             num_successful_splits: 1,
             intermediate_aggregation_result: None,
+            resource_stats: None,
         })
         .collect()
+}
+
+/// Returns true if the query is particularly memory intensive.
+///
+/// This function only considers the memory usage associated to the input data
+/// and does not take in account aggregations (intermediary or not) results for instance.
+///
+/// Since its point is to log memory intensive queries, it focuses on the metric of the number of
+/// bytes per document.
+///
+/// The threshold is computed dynamically using gradient descent.
+fn is_top_5pct_memory_intensive(num_bytes: u64, split_num_docs: u64) -> bool {
+    // It is not worth considering small splits for this.
+    if split_num_docs < 100_000 {
+        return false;
+    }
+    // We multiply those figure by 1_000 for accuracy.
+    const PERCENTILE: u64 = 95;
+    const PRIOR_NUM_BYTES_PER_DOC: u64 = 3 * 1_000;
+    static NUM_BYTES_PER_DOC_95_PERCENTILE_ESTIMATOR: AtomicU64 =
+        AtomicU64::new(PRIOR_NUM_BYTES_PER_DOC);
+    let num_bits_per_docs = num_bytes * 1_000 / split_num_docs;
+    let current_estimator = NUM_BYTES_PER_DOC_95_PERCENTILE_ESTIMATOR.load(Ordering::Relaxed);
+    let is_memory_intensive = num_bits_per_docs > current_estimator;
+    let new_estimator: u64 = if is_memory_intensive {
+        current_estimator.saturating_add(PRIOR_NUM_BYTES_PER_DOC * PERCENTILE / 100)
+    } else {
+        current_estimator.saturating_sub(PRIOR_NUM_BYTES_PER_DOC * (100 - PERCENTILE) / 100)
+    };
+    // We do not use fetch_add / fetch_sub directly as they wrap around.
+    // Concurrency could lead to different results here, but really we don't care.
+    //
+    // This is just ignoring some gradient updates.
+    NUM_BYTES_PER_DOC_95_PERCENTILE_ESTIMATOR.store(new_estimator, Ordering::Relaxed);
+    is_memory_intensive
 }
 
 /// If this method fails for some splits, a partial search response is returned, with the list of
@@ -744,9 +776,21 @@ pub(crate) async fn search_partial_hits_phase(
         has_intermediate_aggregation_result = leaf_search_response.intermediate_aggregation_result.is_some(),
         "Merged leaf search response."
     );
+
+    if let Some(resource_stats) = &leaf_search_response.resource_stats {
+        if is_top_5pct_memory_intensive(
+            resource_stats.short_lived_cache_num_bytes,
+            resource_stats.split_num_docs,
+        ) {
+            // We log at most 5 times per minute.
+            quickwit_common::rate_limited_info!(limit_per_min=5, split_num_docs=resource_stats.split_num_docs, %search_request.query_ast, short_lived_cached_num_bytes=resource_stats.short_lived_cache_num_bytes, query=%search_request.query_ast, "memory intensive query");
+        }
+    }
+
     if !leaf_search_response.failed_splits.is_empty() {
         quickwit_common::rate_limited_error!(limit_per_min=6, failed_splits = ?leaf_search_response.failed_splits, "leaf search response contains at least one failed split");
     }
+
     Ok(leaf_search_response)
 }
 
@@ -1114,7 +1158,6 @@ pub async fn root_search(
     mut metastore: MetastoreServiceClient,
     cluster_client: &ClusterClient,
 ) -> crate::Result<SearchResponse> {
-    info!(searcher_context = ?searcher_context, search_request = ?search_request);
     let start_instant = tokio::time::Instant::now();
     let list_indexes_metadatas_request = ListIndexesMetadataRequest {
         index_id_patterns: search_request.index_id_patterns.clone(),
@@ -1169,14 +1212,25 @@ pub async fn root_search(
     )
     .await;
 
+    let elapsed = start_instant.elapsed();
+
     if let Ok(search_response) = &mut search_response_result {
-        search_response.elapsed_time_micros = start_instant.elapsed().as_micros() as u64;
+        search_response.elapsed_time_micros = elapsed.as_micros() as u64;
     }
+
     let label_values = if search_response_result.is_ok() {
         ["success"]
     } else {
         ["error"]
     };
+    SEARCH_METRICS
+        .root_search_requests_total
+        .with_label_values(label_values)
+        .inc();
+    SEARCH_METRICS
+        .root_search_request_duration_seconds
+        .with_label_values(label_values)
+        .observe(elapsed.as_secs_f64());
     SEARCH_METRICS
         .root_search_targeted_splits
         .with_label_values(label_values)
@@ -1288,7 +1342,7 @@ pub async fn search_plan(
             searched_splits: split_ids,
             storage_requests: StorageRequestCount {
                 footer: 1,
-                fastfield: warmup_info.fast_field_names.len(),
+                fastfield: warmup_info.fast_fields.len(),
                 fieldnorm: fieldnorm_query_count,
                 sstable: sstable_query_count,
                 posting: sstable_query_count,

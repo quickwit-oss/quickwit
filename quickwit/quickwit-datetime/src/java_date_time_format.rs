@@ -1,21 +1,16 @@
-// Copyright (C) 2024 Quickwit, Inc.
+// Copyright 2021-Present Datadog, Inc.
 //
-// Quickwit is offered under the AGPL v3.0 and as commercial software.
-// For commercial licensing, contact us at hello@quickwit.io.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// AGPL:
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program. If not, see <http://www.gnu.org/licenses/>.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 use std::collections::HashMap;
 use std::num::NonZeroU8;
@@ -36,7 +31,6 @@ use crate::date_time_format;
 const JAVA_DATE_FORMAT_TOKENS: &[&str] = &[
     "yyyy",
     "xxxx",
-    "xx[xx]",
     "SSSSSSSSS", // For nanoseconds
     "SSSSSSS",   // For microseconds
     "SSSSSS",    // For fractional seconds up to six digits
@@ -45,10 +39,8 @@ const JAVA_DATE_FORMAT_TOKENS: &[&str] = &[
     "SSS",
     "SS",
     "ZZ",
-    "xx",
     "ww",
     "w[w]",
-    "yy",
     "MM",
     "dd",
     "HH",
@@ -112,29 +104,12 @@ fn build_zone_offset(_: &str) -> Option<OwnedFormatItem> {
     ))
 }
 
-fn build_year_item(ptn: &str) -> Option<OwnedFormatItem> {
-    let mut full_year = Year::default();
-    full_year.repr = YearRepr::Full;
-    let full_year_component = OwnedFormatItem::Component(Component::Year(full_year));
-
-    let mut short_year = Year::default();
-    short_year.repr = YearRepr::LastTwo;
-    let short_year_component = OwnedFormatItem::Component(Component::Year(short_year));
-
-    if ptn.len() == 4 {
-        Some(full_year_component)
-    } else if ptn.len() == 2 {
-        Some(short_year_component)
-    } else {
-        Some(OwnedFormatItem::First(
-            vec![full_year_component, short_year_component].into_boxed_slice(),
-        ))
-    }
-}
-
-fn build_week_based_year_item(ptn: &str) -> Option<OwnedFormatItem> {
-    // TODO no `Component` for that
-    build_year_item(ptn)
+// There is a `YearRepr::LastTwo` representation in the time crate, but the parser is unreliable, so
+// we only support `YearRepr::Full` for now. See also https://github.com/time-rs/time/issues/649.
+const fn year_item() -> Option<OwnedFormatItem> {
+    let mut year_component = Year::default();
+    year_component.repr = YearRepr::Full;
+    Some(OwnedFormatItem::Component(Component::Year(year_component)))
 }
 
 fn build_month_item(ptn: &str) -> Option<OwnedFormatItem> {
@@ -256,8 +231,7 @@ fn match_java_date_format_token(
             }
 
             let format_item = match *token {
-                "yyyy" | "yy" => build_year_item(token),
-                "xxxx" | "xx[xx]" | "xx" => build_week_based_year_item(token),
+                "yyyy" | "xxxx" => year_item(),
                 "MM" | "M" => build_month_item(token),
                 "dd" | "d" => build_day_item(token),
                 "HH" | "H" => build_hour_item(token),
@@ -269,7 +243,7 @@ fn match_java_date_format_token(
                 "Z" => build_zone_offset(token),
                 "ww" | "w[w]" | "w" => build_week_of_year_item(token),
                 "e" => build_day_of_week_item(token),
-                _ => return Err(format!("Unrecognized token '{}'", token)),
+                _ => return Err(format!("unrecognized token '{token}'")),
             };
             return Ok(format_item);
         }
@@ -299,16 +273,16 @@ fn resolve_java_datetime_format_alias(java_datetime_format: &str) -> &str {
         m.insert("basic_date", "yyyyMMdd");
 
         m.insert("strict_basic_week_date", "xxxx'W'wwe");
-        m.insert("basic_week_date", "xx[xx]'W'wwe");
+        m.insert("basic_week_date", "xxxx'W'wwe");
 
         m.insert("strict_basic_week_date_time", "xxxx'W'wwe'T'HHmmss.SSSZ");
-        m.insert("basic_week_date_time", "xx[xx]'W'wwe'T'HHmmss.SSSZ");
+        m.insert("basic_week_date_time", "xxxx'W'wwe'T'HHmmss.SSSZ");
 
         m.insert(
             "strict_basic_week_date_time_no_millis",
             "xxxx'W'wwe'T'HHmmssZ",
         );
-        m.insert("basic_week_date_time_no_millis", "xx[xx]'W'wwe'T'HHmmssZ");
+        m.insert("basic_week_date_time_no_millis", "xxxx'W'wwe'T'HHmmssZ");
 
         m.insert("strict_week_date", "xxxx-'W'ww-e");
         m.insert("week_date", "xxxx-'W'w[w]-e");
@@ -356,8 +330,8 @@ impl StrptimeParser {
             .is_empty()
         {
             return Err(format!(
-                "datetime string `{}` does not match strptime format `{}`",
-                date_time_str, &self.strptime_format
+                "datetime string `{date_time_str}` does not match strptime format `{}`",
+                self.strptime_format
             ));
         }
 
@@ -590,17 +564,12 @@ mod tests {
             "2024W313",
             datetime!(2024-08-01 0:00:00.0 +00:00:00),
         );
-        test_parse_java_datetime_aux(
-            "basic_week_date",
-            "24W313",
-            datetime!(2024-08-01 0:00:00.0 +00:00:00),
-        );
-        // // ❌ 'the 'year' component could not be parsed'
-        // test_parse_java_datetime_aux(
-        //     "basic_week_date",
-        //     "1W313",
-        //     datetime!(2018-08-02 0:00:00.0 +00:00:00),
-        // );
+        let parser = StrptimeParser::from_java_datetime_format("basic_week_date").unwrap();
+        parser.parse_date_time("24W313").unwrap_err();
+
+        let parser = StrptimeParser::from_java_datetime_format("basic_week_date").unwrap();
+        parser.parse_date_time("1W313").unwrap_err();
+
         test_parse_java_datetime_aux(
             "basic_week_date_time",
             "2018W313T121212.1Z",
@@ -706,7 +675,7 @@ mod tests {
         for (date_str, &expected_dt) in dates.iter().zip(expected.iter()) {
             let parsed_dt = parser
                 .parse_date_time(date_str)
-                .unwrap_or_else(|e| panic!("Failed to parse {}: {}", date_str, e));
+                .unwrap_or_else(|error| panic!("failed to parse {date_str}: {error}"));
             assert_eq!(parsed_dt, expected_dt);
         }
     }
@@ -736,18 +705,18 @@ mod tests {
         for (date_str, &expected_dt) in dates.iter().zip(expected.iter()) {
             let parsed_dt = parser
                 .parse_date_time(date_str)
-                .unwrap_or_else(|e| panic!("Failed to parse {}: {}", date_str, e));
+                .unwrap_or_else(|error| panic!("failed to parse {date_str}: {error}"));
             assert_eq!(parsed_dt, expected_dt);
         }
     }
 
     #[test]
     fn test_parse_java_datetime_format_items() {
-        let format_str = "xx[xx]'W'wwe";
+        let format_str = "xxxx'W'wwe";
         let result = parse_java_datetime_format_items(format_str).unwrap();
 
         // We expect the tokens to be parsed as:
-        // - 'xx[xx]' (week-based year) with optional length
+        // - 'xxxx' (week-based year)
         // - 'W' (literal)
         // - 'ww' (week of year)
         // - 'e' (day of week)
@@ -756,37 +725,22 @@ mod tests {
 
         // Verify each token
         match &result[0] {
-            OwnedFormatItem::First(boxed_slice) => {
-                assert_eq!(boxed_slice.len(), 2);
-                match (&boxed_slice[0], &boxed_slice[1]) {
-                    (
-                        OwnedFormatItem::Component(Component::Year(_)),
-                        OwnedFormatItem::Component(Component::Year(_)),
-                    ) => {}
-                    unexpected => {
-                        panic!("Expected two Year components, but found: {:?}", unexpected)
-                    }
-                }
+            OwnedFormatItem::Component(Component::Year(year)) => {
+                assert_eq!(year.repr, YearRepr::Full);
             }
-            unexpected => panic!(
-                "Expected First with two Year components, but found: {:?}",
-                unexpected
-            ),
+            unexpected => panic!("expected Year, but found: {unexpected:?}",),
         }
-
         match &result[1] {
             OwnedFormatItem::Literal(lit) => assert_eq!(lit.as_ref(), b"W"),
-            unexpected => panic!("Expected literal 'W', but found: {:?}", unexpected),
+            unexpected => panic!("expected literal 'W', but found: {unexpected:?}"),
         }
-
         match &result[2] {
             OwnedFormatItem::Component(Component::WeekNumber(_)) => {}
-            unexpected => panic!("Expected WeekNumber component, but found: {:?}", unexpected),
+            unexpected => panic!("expected WeekNumber component, but found: {unexpected:?}"),
         }
-
         match &result[3] {
             OwnedFormatItem::Component(Component::Weekday(_)) => {}
-            unexpected => panic!("Expected Weekday component, but found: {:?}", unexpected),
+            unexpected => panic!("expected Weekday component, but found: {unexpected:?}"),
         }
     }
 
@@ -803,15 +757,14 @@ mod tests {
 
         for (input, expected) in test_cases.iter() {
             let result = parser.parse_date_time(input).unwrap();
-            assert_eq!(result, *expected, "Failed to parse {}", input);
+            assert_eq!(result, *expected, "failed to parse {input}");
         }
 
         // Test error case
         let error_case = "2023-1430";
         assert!(
             parser.parse_date_time(error_case).is_err(),
-            "Expected error for input: {}",
-            error_case
+            "expected error for input: {error_case}",
         );
     }
 }

@@ -1,28 +1,23 @@
-// Copyright (C) 2024 Quickwit, Inc.
+// Copyright 2021-Present Datadog, Inc.
 //
-// Quickwit is offered under the AGPL v3.0 and as commercial software.
-// For commercial licensing, contact us at hello@quickwit.io.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// AGPL:
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program. If not, see <http://www.gnu.org/licenses/>.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 use crate::not_nan_f32::NotNaNf32;
 use crate::query_ast::field_presence::FieldPresenceQuery;
 use crate::query_ast::user_input_query::UserInputQuery;
 use crate::query_ast::{
-    BoolQuery, FullTextQuery, PhrasePrefixQuery, QueryAst, RangeQuery, TermQuery, TermSetQuery,
-    WildcardQuery,
+    BoolQuery, FullTextQuery, PhrasePrefixQuery, QueryAst, RangeQuery, RegexQuery, TermQuery,
+    TermSetQuery, WildcardQuery,
 };
 
 /// Simple trait to implement a Visitor over the QueryAst.
@@ -45,6 +40,7 @@ pub trait QueryAstVisitor<'a> {
             QueryAst::UserInput(user_text_query) => self.visit_user_text(user_text_query),
             QueryAst::FieldPresence(exists) => self.visit_exists(exists),
             QueryAst::Wildcard(wildcard) => self.visit_wildcard(wildcard),
+            QueryAst::Regex(regex) => self.visit_regex(regex),
         }
     }
 
@@ -111,6 +107,10 @@ pub trait QueryAstVisitor<'a> {
     fn visit_wildcard(&mut self, _wildcard_query: &'a WildcardQuery) -> Result<(), Self::Err> {
         Ok(())
     }
+
+    fn visit_regex(&mut self, _regex_query: &'a RegexQuery) -> Result<(), Self::Err> {
+        Ok(())
+    }
 }
 
 /// Simple trait to implement a Visitor over the QueryAst.
@@ -133,6 +133,7 @@ pub trait QueryAstTransformer {
             QueryAst::UserInput(user_text_query) => self.transform_user_text(user_text_query),
             QueryAst::FieldPresence(exists) => self.transform_exists(exists),
             QueryAst::Wildcard(wildcard) => self.transform_wildcard(wildcard),
+            QueryAst::Regex(regex) => self.transform_regex(regex),
         }
     }
 
@@ -230,5 +231,9 @@ pub trait QueryAstTransformer {
         wildcard_query: WildcardQuery,
     ) -> Result<Option<QueryAst>, Self::Err> {
         Ok(Some(QueryAst::Wildcard(wildcard_query)))
+    }
+
+    fn transform_regex(&mut self, regex_query: RegexQuery) -> Result<Option<QueryAst>, Self::Err> {
+        Ok(Some(QueryAst::Regex(regex_query)))
     }
 }

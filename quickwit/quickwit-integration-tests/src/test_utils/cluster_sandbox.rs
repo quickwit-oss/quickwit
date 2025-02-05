@@ -1,21 +1,16 @@
-// Copyright (C) 2024 Quickwit, Inc.
+// Copyright 2021-Present Datadog, Inc.
 //
-// Quickwit is offered under the AGPL v3.0 and as commercial software.
-// For commercial licensing, contact us at hello@quickwit.io.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// AGPL:
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program. If not, see <http://www.gnu.org/licenses/>.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
@@ -44,13 +39,14 @@ use quickwit_rest_client::rest_client::{
     CommitType, QuickwitClient, QuickwitClientBuilder, DEFAULT_BASE_URL,
 };
 use quickwit_serve::tcp_listener::for_tests::TestTcpListenerResolver;
-use quickwit_serve::{serve_quickwit, ListSplitsQueryParams, SearchRequestQueryString};
+use quickwit_serve::{
+    serve_quickwit, ListSplitsQueryParams, RestIngestResponse, SearchRequestQueryString,
+};
 use quickwit_storage::StorageResolver;
 use reqwest::Url;
 use serde_json::Value;
 use tempfile::TempDir;
 use tokio::net::TcpListener;
-use tonic::transport::channel;
 use tracing::debug;
 
 use super::shutdown::NodeShutdownHandle;
@@ -63,6 +59,7 @@ pub struct TestNodeConfig {
 pub struct ClusterSandboxBuilder {
     temp_dir: TempDir,
     node_configs: Vec<TestNodeConfig>,
+    use_legacy_ingest: bool,
 }
 
 impl Default for ClusterSandboxBuilder {
@@ -70,6 +67,7 @@ impl Default for ClusterSandboxBuilder {
         Self {
             temp_dir: tempfile::tempdir().unwrap(),
             node_configs: Vec::new(),
+            use_legacy_ingest: false,
         }
     }
 }
@@ -91,6 +89,11 @@ impl ClusterSandboxBuilder {
             services: HashSet::from_iter(services),
             enable_otlp: true,
         });
+        self
+    }
+
+    pub fn use_legacy_ingest(mut self) -> Self {
+        self.use_legacy_ingest = true;
         self
     }
 
@@ -200,47 +203,16 @@ impl ResolvedClusterConfig {
                         quickwit_serve::do_nothing_env_filter_reload_fn(),
                     )
                     .await?;
-                    debug!("{} stopped successfully ({:?})", node_id, services);
+                    debug!("{node_id} stopped successfully ({:?})", services);
                     Result::<_, anyhow::Error>::Ok(result)
                 }
             });
             shutdown_handler.set_node_join_handle(join_handle);
             node_shutdown_handles.push(shutdown_handler);
         }
-        let searcher_config = self
-            .node_configs
-            .iter()
-            .find(|node_config| node_config.1.contains(&QuickwitService::Searcher))
-            .cloned()
-            .unwrap();
-        let indexer_config = self
-            .node_configs
-            .iter()
-            .find(|node_config| node_config.1.contains(&QuickwitService::Indexer))
-            .cloned()
-            .unwrap();
-        let indexer_channel =
-            channel::Endpoint::from_str(&format!("http://{}", indexer_config.0.grpc_listen_addr))
-                .unwrap()
-                .connect_lazy();
-        let searcher_channel =
-            channel::Endpoint::from_str(&format!("http://{}", searcher_config.0.grpc_listen_addr))
-                .unwrap()
-                .connect_lazy();
 
         let sandbox = ClusterSandbox {
             node_configs: self.node_configs,
-            searcher_rest_client: QuickwitClientBuilder::new(transport_url(
-                searcher_config.0.rest_config.listen_addr,
-            ))
-            .build(),
-            indexer_rest_client: QuickwitClientBuilder::new(transport_url(
-                indexer_config.0.rest_config.listen_addr,
-            ))
-            .build(),
-            trace_client: TraceServiceClient::new(indexer_channel.clone()),
-            logs_client: LogsServiceClient::new(indexer_channel),
-            jaeger_client: SpanReaderPluginClient::new(searcher_channel),
             _temp_dir: self.temp_dir,
             node_shutdown_handles,
         };
@@ -271,30 +243,74 @@ pub(crate) async fn ingest(
     index_id: &str,
     ingest_source: IngestSource,
     commit_type: CommitType,
-) -> anyhow::Result<()> {
-    client
+) -> anyhow::Result<RestIngestResponse> {
+    let resp = client
         .ingest(index_id, ingest_source, None, None, commit_type)
         .await?;
-    Ok(())
+    Ok(resp)
 }
 
 /// A test environment where you can start a Quickwit cluster and use the gRPC
 /// or REST clients to test it.
 pub struct ClusterSandbox {
     pub node_configs: Vec<(NodeConfig, HashSet<QuickwitService>)>,
-    pub searcher_rest_client: QuickwitClient,
-    pub indexer_rest_client: QuickwitClient,
-    pub trace_client: TraceServiceClient<tonic::transport::Channel>,
-    pub logs_client: LogsServiceClient<tonic::transport::Channel>,
-    pub jaeger_client: SpanReaderPluginClient<tonic::transport::Channel>,
     _temp_dir: TempDir,
     node_shutdown_handles: Vec<NodeShutdownHandle>,
 }
 
 impl ClusterSandbox {
-    pub fn enable_ingest_v2(&mut self) {
-        self.indexer_rest_client.enable_ingest_v2();
-        self.searcher_rest_client.enable_ingest_v2();
+    fn find_node_for_service(&self, service: QuickwitService) -> NodeConfig {
+        self.node_configs
+            .iter()
+            .find(|config| config.1.contains(&service))
+            .unwrap_or_else(|| panic!("No {:?} node", service))
+            .0
+            .clone()
+    }
+
+    fn channel(&self, service: QuickwitService) -> tonic::transport::Channel {
+        let node_config = self.find_node_for_service(service);
+        let endpoint = format!("http://{}", node_config.grpc_listen_addr);
+        tonic::transport::Channel::from_shared(endpoint)
+            .unwrap()
+            .connect_lazy()
+    }
+
+    /// Returns a client to one of the nodes that runs the specified service
+    pub fn rest_client(&self, service: QuickwitService) -> QuickwitClient {
+        let node_config = self.find_node_for_service(service);
+
+        QuickwitClientBuilder::new(transport_url(node_config.rest_config.listen_addr)).build()
+    }
+
+    /// A client configured to ingest documents and return detailed parse failures.
+    pub fn detailed_ingest_client(&self) -> QuickwitClient {
+        let node_config = self.find_node_for_service(QuickwitService::Indexer);
+
+        QuickwitClientBuilder::new(transport_url(node_config.rest_config.listen_addr))
+            .detailed_response(true)
+            .build()
+    }
+
+    // TODO(#5604)
+    pub fn rest_client_legacy_indexer(&self) -> QuickwitClient {
+        let node_config = self.find_node_for_service(QuickwitService::Indexer);
+
+        QuickwitClientBuilder::new(transport_url(node_config.rest_config.listen_addr))
+            .use_legacy_ingest(true)
+            .build()
+    }
+
+    pub fn jaeger_client(&self) -> SpanReaderPluginClient<tonic::transport::Channel> {
+        SpanReaderPluginClient::new(self.channel(QuickwitService::Searcher))
+    }
+
+    pub fn logs_client(&self) -> LogsServiceClient<tonic::transport::Channel> {
+        LogsServiceClient::new(self.channel(QuickwitService::Indexer))
+    }
+
+    pub fn trace_client(&self) -> TraceServiceClient<tonic::transport::Channel> {
+        TraceServiceClient::new(self.channel(QuickwitService::Indexer))
     }
 
     async fn wait_for_cluster_num_ready_nodes(
@@ -303,7 +319,12 @@ impl ClusterSandbox {
     ) -> anyhow::Result<()> {
         wait_until_predicate(
             || async move {
-                match self.indexer_rest_client.cluster().snapshot().await {
+                match self
+                    .rest_client(QuickwitService::Metastore)
+                    .cluster()
+                    .snapshot()
+                    .await
+                {
                     Ok(result) => {
                         if result.ready_nodes.len() != expected_num_ready_nodes {
                             debug!(
@@ -329,14 +350,21 @@ impl ClusterSandbox {
         Ok(())
     }
 
-    // Waits for the needed number of indexing pipeline to start.
+    /// Waits for the needed number of indexing pipeline to start.
+    ///
+    /// WARNING! does not work if multiple indexers are running
     pub async fn wait_for_indexing_pipelines(
         &self,
         required_pipeline_num: usize,
     ) -> anyhow::Result<()> {
         wait_until_predicate(
             || async move {
-                match self.indexer_rest_client.node_stats().indexing().await {
+                match self
+                    .rest_client(QuickwitService::Indexer)
+                    .node_stats()
+                    .indexing()
+                    .await
+                {
                     Ok(result) => {
                         if result.num_running_pipelines != required_pipeline_num {
                             debug!(
@@ -376,7 +404,7 @@ impl ClusterSandbox {
                 };
                 async move {
                     match self
-                        .indexer_rest_client
+                        .rest_client(QuickwitService::Metastore)
                         .splits(index_id)
                         .list(splits_query_params)
                         .await
@@ -453,7 +481,7 @@ impl ClusterSandbox {
 
     pub async fn assert_hit_count(&self, index_id: &str, query: &str, expected_num_hits: u64) {
         let search_response = self
-            .searcher_rest_client
+            .rest_client(QuickwitService::Searcher)
             .search(
                 index_id,
                 SearchRequestQueryString {
@@ -482,30 +510,40 @@ impl ClusterSandbox {
     ) -> Result<Vec<HashMap<String, ActorExitStatus>>, anyhow::Error> {
         // We need to drop rest clients first because reqwest can hold connections open
         // preventing rest server's graceful shutdown.
-        let mut shutdown_futures = Vec::new();
+        let mut indexer_shutdown_futures = Vec::new();
+        let mut other_shutdown_futures = Vec::new();
         let mut shutdown_nodes = HashMap::new();
         let mut i = 0;
         let shutdown_services_map = HashSet::from_iter(shutdown_services);
         while i < self.node_shutdown_handles.len() {
             let handler_services = &self.node_shutdown_handles[i].node_services;
-            if handler_services.is_subset(&shutdown_services_map) {
-                let handler_to_shutdown = self.node_shutdown_handles.remove(i);
-                shutdown_nodes.insert(
-                    handler_to_shutdown.node_id.clone(),
-                    handler_to_shutdown.node_services.clone(),
-                );
-                shutdown_futures.push(handler_to_shutdown.shutdown());
-            } else {
+            if !handler_services.is_subset(&shutdown_services_map) {
                 i += 1;
+                continue;
+            }
+            let handler_to_shutdown = self.node_shutdown_handles.remove(i);
+            shutdown_nodes.insert(
+                handler_to_shutdown.node_id.clone(),
+                handler_to_shutdown.node_services.clone(),
+            );
+            if handler_to_shutdown
+                .node_services
+                .contains(&QuickwitService::Indexer)
+            {
+                indexer_shutdown_futures.push(handler_to_shutdown.shutdown());
+            } else {
+                other_shutdown_futures.push(handler_to_shutdown.shutdown());
             }
         }
         debug!("shutting down {:?}", shutdown_nodes);
-        let result = future::join_all(shutdown_futures).await;
-        let mut statuses = Vec::new();
-        for node in result {
-            statuses.push(node?);
-        }
-        Ok(statuses)
+        // We must decommision the indexer nodes first and independently from the other nodes.
+        let indexer_shutdown_results = future::join_all(indexer_shutdown_futures).await;
+        let other_shutdown_results = future::join_all(other_shutdown_futures).await;
+        let exit_statuses = indexer_shutdown_results
+            .into_iter()
+            .chain(other_shutdown_results)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(exit_statuses)
     }
 
     pub async fn shutdown(

@@ -91,7 +91,7 @@ The doc mapping defines how a document and the fields it contains are stored and
 | `field_mappings` | Collection of field mapping, each having its own data type (text, binary, datetime, bool, i64, u64, f64, ip, json).   | `[]` |
 | `mode`        | Defines how quickwit should handle document fields that are not present in the `field_mappings`. In particular, the "dynamic" mode makes it possible to use quickwit in a schemaless manner. (See [mode](#mode)) | `dynamic`
 | `dynamic_mapping` | This parameter is only allowed when `mode` is set to `dynamic`. It then defines whether dynamically mapped fields should be indexed, stored, etc.  | (See [mode](#mode))
-| `tag_fields` | Collection of fields* already defined in `field_mappings` whose values will be stored as part of the `tags` metadata. [Learn more about tags](../overview/concepts/querying.md#tag-pruning). | `[]` |
+| `tag_fields` | Collection of fields* explicitly defined in `field_mappings` whose values will be stored as part of the `tags` metadata. Allowed types are: `text` (with raw tokenizer), `i64` and `u64`. [Learn more about tags](../overview/concepts/querying.md#tag-pruning). | `[]` |
 | `store_source` | Whether or not the original JSON document is stored or not in the index.   | `false` |
 | `timestamp_field`      | Timestamp field* used for sharding documents in splits. The field has to be of type `datetime`. [Learn more about time sharding](./../overview/architecture.md).  | `None` |
 | `partition_key`   |  If set, quickwit will route documents into different splits depending on the field name declared as the `partition_key`. | `null` |
@@ -583,6 +583,14 @@ This section describes indexing settings for a given index.
 | `resources.heap_size`      | Indexer heap size per source per index.   | `2000000000` |
 | `docstore_compression_level` | Level of compression used by zstd for the docstore. Lower values may increase ingest speed, at the cost of index size | `8` |
 | `docstore_blocksize` | Size of blocks in the docstore, in bytes. Lower values may improve doc retrieval speed, at the cost of index size | `1000000` |
+
+:::note
+
+Choosing an appropriate commit timeout is critical. With a shorter commit timeout, ingested data is queryable faster. But the published splits will be smaller, increasing the overhead associated with [merges](#merge-policies). 
+
+When decommissioning definitively an indexer node that received data through the ingest API (including the [Elastic bulk API](/docs/reference/es_compatible_api) and the OTEL [log](/docs/log-management/otel-service.md) and [trace](/docs/distributed-tracing/otel-service.md) services), we need to make sure that all the data that was persisted locally (Write Ahead Log) is indexed and committed. After receiving the termination signal, the Quickwit process waits for the indexing pipelines to finish processing this local data. This can take as long as the longest commit timeout of all indexes. Make sure that the termination grace period of the infrastructure supporting the Quickwit indexer nodes is long enough (e.g [`terminationGracePeriodSeconds`](https://kubernetes.io/docs/concepts/containers/container-lifecycle-hooks/) in Kubernetes or [`stopTimeout`](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_definition_parameters.html) on AWS ECS).
+
+:::
 
 ### Merge policies
 

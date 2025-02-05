@@ -1,21 +1,16 @@
-// Copyright (C) 2024 Quickwit, Inc.
+// Copyright 2021-Present Datadog, Inc.
 //
-// Quickwit is offered under the AGPL v3.0 and as commercial software.
-// For commercial licensing, contact us at hello@quickwit.io.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// AGPL:
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program. If not, see <http://www.gnu.org/licenses/>.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 use bytes::Bytes;
 use bytesize::ByteSize;
@@ -35,7 +30,6 @@ use crate::search_api::{extract_index_id_patterns, extract_index_id_patterns_def
 use crate::Body;
 
 const BODY_LENGTH_LIMIT: ByteSize = ByteSize::mib(1);
-const CONTENT_LENGTH_LIMIT: ByteSize = ByteSize::mib(10);
 
 // TODO: Make all elastic endpoint models `utoipa` compatible
 // and register them here.
@@ -72,11 +66,12 @@ pub(crate) fn elasticsearch_filter(
     )
 )]
 pub(crate) fn elastic_bulk_filter(
+    content_length_limit: ByteSize,
 ) -> impl Filter<Extract = (Body, ElasticBulkOptions), Error = Rejection> + Clone {
     warp::path!("_elastic" / "_bulk")
         .and(warp::post().or(warp::put()).unify())
         .and(warp::body::content_length_limit(
-            CONTENT_LENGTH_LIMIT.as_u64(),
+            content_length_limit.as_u64(),
         ))
         .and(get_body_bytes())
         .and(serde_qs::warp::query(serde_qs::Config::default()))
@@ -95,11 +90,12 @@ pub(crate) fn elastic_bulk_filter(
     )
 )]
 pub(crate) fn elastic_index_bulk_filter(
+    content_length_limit: ByteSize,
 ) -> impl Filter<Extract = (String, Body, ElasticBulkOptions), Error = Rejection> + Clone {
     warp::path!("_elastic" / String / "_bulk")
         .and(warp::post().or(warp::put()).unify())
         .and(warp::body::content_length_limit(
-            CONTENT_LENGTH_LIMIT.as_u64(),
+            content_length_limit.as_u64(),
         ))
         .and(get_body_bytes())
         .and(serde_qs::warp::query::<ElasticBulkOptions>(
@@ -202,6 +198,12 @@ pub(crate) fn elastic_index_stats_filter(
 #[utoipa::path(get, tag = "Search", path = "/_stats")]
 pub(crate) fn elastic_stats_filter() -> impl Filter<Extract = (), Error = Rejection> + Clone {
     warp::path!("_elastic" / "_stats").and(warp::get())
+}
+
+#[utoipa::path(get, tag = "Search", path = "/_cluster/health")]
+pub(crate) fn elastic_cluster_health_filter() -> impl Filter<Extract = (), Error = Rejection> + Clone
+{
+    warp::path!("_elastic" / "_cluster" / "health").and(warp::get())
 }
 
 #[utoipa::path(get, tag = "Search", path = "/_cat/indices/{index}")]
