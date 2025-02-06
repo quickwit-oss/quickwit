@@ -1,5 +1,5 @@
 ---
-title: Version 0.7 upgrade
+title: Version upgrade
 sidebar_position: 4
 ---
 

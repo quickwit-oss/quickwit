@@ -15,6 +15,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
+use quickwit_serve::{RestIngestResponse, RestParseFailure};
 use reqwest::StatusCode;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -94,6 +95,43 @@ pub enum IngestSource {
     Stdin,
 }
 
+#[derive(Debug, PartialEq, Default)]
+pub struct CumulatedIngestResponse {
+    pub num_docs_for_processing: u64,
+    pub num_ingested_docs: Option<u64>,
+    pub num_rejected_docs: Option<u64>,
+    pub parse_failures: Option<Vec<RestParseFailure>>,
+    pub num_too_many_requests: u64,
+}
+
+impl CumulatedIngestResponse {
+    /// Aggregates ingest counts and errors.
+    pub fn merge(self, other: RestIngestResponse) -> Self {
+        Self {
+            num_docs_for_processing: self.num_docs_for_processing + other.num_docs_for_processing,
+            num_ingested_docs: apply_op(self.num_ingested_docs, other.num_ingested_docs, |a, b| {
+                a + b
+            }),
+            num_rejected_docs: apply_op(self.num_rejected_docs, other.num_rejected_docs, |a, b| {
+                a + b
+            }),
+            parse_failures: apply_op(self.parse_failures, other.parse_failures, |a, b| {
+                a.into_iter().chain(b).collect()
+            }),
+            num_too_many_requests: self.num_too_many_requests,
+        }
+    }
+}
+
+fn apply_op<T>(a: Option<T>, b: Option<T>, f: impl Fn(T, T) -> T) -> Option<T> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(f(a, b)),
+        (Some(a), None) => Some(a),
+        (None, Some(b)) => Some(b),
+        (None, None) => None,
+    }
+}
+
 /// A structure that represent a timeout. Unlike Duration it can also represent an infinite or no
 /// timeout value.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Debug)]
@@ -147,5 +185,57 @@ impl Timeout {
         } else {
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use quickwit_proto::ingest::ParseFailureReason;
+
+    use super::*;
+
+    #[test]
+    fn test_merge_responses() {
+        let mut merged_response = CumulatedIngestResponse::default();
+        let response1 = RestIngestResponse {
+            num_docs_for_processing: 10,
+            num_ingested_docs: Some(5),
+            num_rejected_docs: Some(2),
+            parse_failures: Some(vec![RestParseFailure {
+                message: "error1".to_string(),
+                document: "doc1".to_string(),
+                reason: ParseFailureReason::InvalidJson,
+            }]),
+        };
+        let response2 = RestIngestResponse {
+            num_docs_for_processing: 15,
+            num_ingested_docs: Some(10),
+            num_rejected_docs: Some(3),
+            parse_failures: Some(vec![RestParseFailure {
+                message: "error2".to_string(),
+                document: "doc2".to_string(),
+                reason: ParseFailureReason::InvalidJson,
+            }]),
+        };
+        merged_response = merged_response.merge(response1);
+        merged_response = merged_response.merge(response2);
+        assert_eq!(merged_response.num_docs_for_processing, 25);
+        assert_eq!(merged_response.num_ingested_docs.unwrap(), 15);
+        assert_eq!(merged_response.num_rejected_docs.unwrap(), 5);
+        assert_eq!(
+            merged_response.parse_failures.unwrap(),
+            vec![
+                RestParseFailure {
+                    message: "error1".to_string(),
+                    document: "doc1".to_string(),
+                    reason: ParseFailureReason::InvalidJson,
+                },
+                RestParseFailure {
+                    message: "error2".to_string(),
+                    document: "doc2".to_string(),
+                    reason: ParseFailureReason::InvalidJson,
+                }
+            ]
+        );
     }
 }

@@ -34,14 +34,12 @@ use quickwit_proto::jaeger::storage::v1::span_reader_plugin_client::SpanReaderPl
 use quickwit_proto::opentelemetry::proto::collector::logs::v1::logs_service_client::LogsServiceClient;
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_client::TraceServiceClient;
 use quickwit_proto::types::NodeId;
-use quickwit_rest_client::models::IngestSource;
+use quickwit_rest_client::models::{CumulatedIngestResponse, IngestSource};
 use quickwit_rest_client::rest_client::{
     CommitType, QuickwitClient, QuickwitClientBuilder, DEFAULT_BASE_URL,
 };
 use quickwit_serve::tcp_listener::for_tests::TestTcpListenerResolver;
-use quickwit_serve::{
-    serve_quickwit, ListSplitsQueryParams, RestIngestResponse, SearchRequestQueryString,
-};
+use quickwit_serve::{serve_quickwit, ListSplitsQueryParams, SearchRequestQueryString};
 use quickwit_storage::StorageResolver;
 use reqwest::Url;
 use serde_json::Value;
@@ -243,7 +241,7 @@ pub(crate) async fn ingest(
     index_id: &str,
     ingest_source: IngestSource,
     commit_type: CommitType,
-) -> anyhow::Result<RestIngestResponse> {
+) -> anyhow::Result<CumulatedIngestResponse> {
     let resp = client
         .ingest(index_id, ingest_source, None, None, commit_type)
         .await?;

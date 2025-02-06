@@ -22,16 +22,16 @@ use quickwit_indexing::actors::IndexingServiceCounters;
 pub use quickwit_ingest::CommitType;
 use quickwit_metastore::{IndexMetadata, Split, SplitInfo};
 use quickwit_proto::ingest::Shard;
-use quickwit_serve::{
-    ListSplitsQueryParams, ListSplitsResponse, RestIngestResponse, SearchRequestQueryString,
-};
+use quickwit_serve::{ListSplitsQueryParams, ListSplitsResponse, SearchRequestQueryString};
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 use reqwest::{Client, ClientBuilder, Method, StatusCode, Url};
 use serde::Serialize;
 use serde_json::json;
 
 use crate::error::Error;
-use crate::models::{ApiResponse, IngestSource, SearchResponseRestClient, Timeout};
+use crate::models::{
+    ApiResponse, CumulatedIngestResponse, IngestSource, SearchResponseRestClient, Timeout,
+};
 use crate::BatchLineReader;
 
 pub const DEFAULT_BASE_URL: &str = "http://127.0.0.1:7280";
@@ -262,7 +262,7 @@ impl QuickwitClient {
         batch_size_limit_opt: Option<usize>,
         mut on_ingest_event: Option<&mut (dyn FnMut(IngestEvent) + Sync)>,
         last_block_commit: CommitType,
-    ) -> Result<RestIngestResponse, Error> {
+    ) -> Result<CumulatedIngestResponse, Error> {
         let ingest_path = format!("{index_id}/ingest");
         let mut query_params = HashMap::new();
         // TODO(#5604)
@@ -282,7 +282,7 @@ impl QuickwitClient {
                 BatchLineReader::from_string(ingest_payload, batch_size_limit)
             }
         };
-        let mut cumulated_resp = RestIngestResponse::default();
+        let mut cumulated_resp = CumulatedIngestResponse::default();
         while let Some(batch) = batch_reader.next_batch().await? {
             loop {
                 let timeout = if !batch_reader.has_next() && last_block_commit != CommitType::Auto {
@@ -311,15 +311,16 @@ impl QuickwitClient {
                     )
                     .await?;
                 if response.status_code() == StatusCode::TOO_MANY_REQUESTS {
-                    if let Some(event_fn) = &mut on_ingest_event {
-                        event_fn(IngestEvent::Sleep)
-                    }
-                    tokio::time::sleep(Duration::from_millis(500)).await;
+                    cumulated_resp.num_too_many_requests += 1;
                 } else {
                     let current_parsed_resp = response.deserialize().await?;
                     cumulated_resp = cumulated_resp.merge(current_parsed_resp);
                     break;
                 }
+                if let Some(event_fn) = &mut on_ingest_event {
+                    event_fn(IngestEvent::Sleep)
+                }
+                tokio::time::sleep(Duration::from_millis(500)).await;
             }
             if let Some(event_fn) = &mut on_ingest_event {
                 event_fn(IngestEvent::IngestedDocBatch(batch.len()))
@@ -748,7 +749,7 @@ mod test {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use crate::error::Error;
-    use crate::models::{IngestSource, SearchResponseRestClient};
+    use crate::models::{CumulatedIngestResponse, IngestSource, SearchResponseRestClient};
     use crate::rest_client::QuickwitClientBuilder;
 
     #[tokio::test]
@@ -845,7 +846,16 @@ mod test {
             .ingest("my-index", ingest_source, None, None, CommitType::Auto)
             .await
             .unwrap();
-        assert_eq!(actual_response, mock_response);
+        assert_eq!(
+            actual_response,
+            CumulatedIngestResponse {
+                num_docs_for_processing: 2,
+                num_ingested_docs: Some(2),
+                num_rejected_docs: Some(0),
+                parse_failures: Some(Vec::new()),
+                num_too_many_requests: 2,
+            }
+        );
     }
 
     #[tokio::test]
@@ -880,7 +890,16 @@ mod test {
             .ingest("my-index", ingest_source, None, None, CommitType::Force)
             .await
             .unwrap();
-        assert_eq!(actual_response, mock_response);
+        assert_eq!(
+            actual_response,
+            CumulatedIngestResponse {
+                num_docs_for_processing: 2,
+                num_ingested_docs: Some(2),
+                num_rejected_docs: Some(0),
+                parse_failures: Some(Vec::new()),
+                ..Default::default()
+            }
+        );
     }
 
     #[tokio::test]
@@ -915,7 +934,16 @@ mod test {
             .ingest("my-index", ingest_source, None, None, CommitType::WaitFor)
             .await
             .unwrap();
-        assert_eq!(actual_response, mock_response);
+        assert_eq!(
+            actual_response,
+            CumulatedIngestResponse {
+                num_docs_for_processing: 2,
+                num_ingested_docs: Some(2),
+                num_rejected_docs: Some(0),
+                parse_failures: Some(Vec::new()),
+                ..Default::default()
+            }
+        );
     }
 
     #[tokio::test]
