@@ -359,14 +359,20 @@ async fn test_ingest_v2_high_throughput() {
     let line = json!({"body": "my dummy repeated payload"}).to_string();
     let num_docs = body_size / line.len();
     let body = std::iter::repeat_n(&line, num_docs).join("\n");
-    let ingest_resp = ingest(
-        &sandbox.rest_client(QuickwitService::Indexer),
-        index_id,
-        IngestSource::Str(body),
-        CommitType::Auto,
-    )
-    .await
-    .unwrap();
+    let ingest_resp = sandbox
+        .rest_client(QuickwitService::Indexer)
+        .ingest(
+            index_id,
+            IngestSource::Str(body),
+            // TODO: when using the default 10MiB batch size, we get persist
+            // timeouts with code 500 on some lower performance machines (e.g.
+            // Github runners). We should investigate why this happens exactly.
+            Some(5_000_000),
+            None,
+            CommitType::Auto,
+        )
+        .await
+        .unwrap();
     assert_eq!(ingest_resp.num_docs_for_processing, num_docs as u64);
     assert_eq!(ingest_resp.num_ingested_docs, Some(num_docs as u64));
     assert_eq!(ingest_resp.num_rejected_docs, Some(0));
