@@ -33,9 +33,8 @@ use quickwit_config::{ConfigFormat, IndexConfig};
 use quickwit_metastore::{IndexMetadata, Split, SplitState};
 use quickwit_proto::search::{CountHits, SortField, SortOrder};
 use quickwit_proto::types::IndexId;
-use quickwit_rest_client::models::IngestSource;
+use quickwit_rest_client::models::{IngestSource, SearchResponseRestClient};
 use quickwit_rest_client::rest_client::{CommitType, IngestEvent};
-use quickwit_search::SearchResponseRest;
 use quickwit_serve::{ListSplitsQueryParams, SearchRequestQueryString, SortBy};
 use quickwit_storage::{load_file, StorageResolver};
 use tabled::settings::object::{FirstRow, Rows, Segment};
@@ -1083,7 +1082,7 @@ fn progress_bar_style() -> ProgressStyle {
     .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"])
 }
 
-pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchResponseRest> {
+pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchResponseRestClient> {
     let aggs: Option<serde_json::Value> = args
         .aggregation
         .map(|aggs_string| {
