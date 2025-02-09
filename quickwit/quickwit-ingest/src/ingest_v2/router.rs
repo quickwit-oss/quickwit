@@ -350,7 +350,7 @@ impl IngestRouter {
             for ((index_uid, source_id), shard_ids) in deleted_shards {
                 state_guard
                     .routing_table
-                    .delete_shards(&index_uid, source_id, &shard_ids);
+                    .delete_shards_by_id(&index_uid, source_id, &shard_ids);
             }
         }
     }
@@ -639,6 +639,20 @@ impl EventSubscriber<LocalShardsUpdate> for WeakRouterState {
         let index_uid = local_shards_update.source_uid.index_uid;
         let source_id = local_shards_update.source_uid.source_id;
 
+        if local_shards_update.is_deletion {
+            let mut state_guard = state.lock().await;
+
+            if state_guard
+                .routing_table
+                .delete_shards_by_leader_id(&index_uid, &source_id, &leader_id)
+                .is_some()
+            {
+                state_guard
+                    .debouncer
+                    .delete_if_released(&index_uid.index_id, &source_id);
+            }
+            return;
+        };
         let mut open_shard_ids: Vec<ShardId> = Vec::new();
         let mut closed_shard_ids: Vec<ShardId> = Vec::new();
 
@@ -687,7 +701,7 @@ impl EventSubscriber<ShardPositionsUpdate> for WeakRouterState {
 
         state_guard
             .routing_table
-            .delete_shards(&index_uid, &source_id, &deleted_shard_ids);
+            .delete_shards_by_id(&index_uid, &source_id, &deleted_shard_ids);
     }
 }
 
@@ -1833,6 +1847,7 @@ mod tests {
                     long_term_ingestion_rate: RateMibPerSec(0),
                 },
             ]),
+            is_deletion: false,
         };
         event_broker.publish(local_shards_update);
 
