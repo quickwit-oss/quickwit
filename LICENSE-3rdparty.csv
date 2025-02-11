@@ -70,7 +70,7 @@ bytecount,https://github.com/llogiq/bytecount,Apache-2.0 OR MIT,"Andre Bogus <bo
 byteorder,https://github.com/BurntSushi/byteorder,Unlicense OR MIT,Andrew Gallant <jamslam@gmail.com>
 bytes,https://github.com/tokio-rs/bytes,MIT,"Carl Lerche <me@carllerche.com>, Sean McArthur <sean@seanmonstar.com>"
 bytes-utils,https://github.com/vorner/bytes-utils,Apache-2.0 OR MIT,Michal 'vorner' Vaner <vorner@vorner.cz>
-bytesize,https://github.com/hyunsik/bytesize,Apache-2.0,Hyunsik Choi <hyunsik.choi@gmail.com>
+bytesize,https://github.com/bytesize-rs/bytesize,Apache-2.0,Hyunsik Choi <hyunsik.choi@gmail.com>
 bytestring,https://github.com/actix/actix-net,MIT OR Apache-2.0,"Nikolay Kim <fafhrd91@gmail.com>, Rob Ede <robjtede@icloud.com>"
 bzip2,https://github.com/alexcrichton/bzip2-rs,MIT OR Apache-2.0,Alex Crichton <alex@alexcrichton.com>
 cast,https://github.com/japaric/cast.rs,MIT OR Apache-2.0,Jorge Aparicio <jorge@japaric.io>
