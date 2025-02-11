@@ -12,6 +12,7 @@ default:
 
 stages:
   - build
+  - publish
   - deploy
 
 build:
@@ -27,6 +28,23 @@ build:
       aud: image-integrity
   script:
     - scripts/build_push_sign_image.sh
+  variables:
+    TAG: $CI_COMMIT_TAG
+
+publish_to_docker_registries:
+  stage: publish
+  rules:
+    - if: $CI_COMMIT_BRANCH =~ /^v.*/
+      when: on_success
+    - when: manual
+  trigger:
+    project: DataDog/public-images
+    branch: main
+    strategy: depend
+  variables:
+    IMG_SOURCES: registry.ddbuild.io/pomsky:latest
+    IMG_DESTINATIONS: cloudprem:$CI_COMMIT_TAG
+    IMG_REGISTRIES: dockerhub
 
 deploy:
   image: $BAZEL_CI_IMAGE
