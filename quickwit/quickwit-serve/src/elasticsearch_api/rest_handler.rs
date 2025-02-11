@@ -18,7 +18,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
-use elasticsearch_dsl::search::{Hit as ElasticHit, SearchResponse as ElasticsearchResponse};
+use elasticsearch_dsl::search::Hit as ElasticHit;
 use elasticsearch_dsl::{HitsMetadata, ShardStatistics, Source, TotalHits, TotalHitsRelation};
 use futures_util::StreamExt;
 use hyper::StatusCode;
@@ -36,7 +36,9 @@ use quickwit_proto::search::{
 use quickwit_proto::types::IndexUid;
 use quickwit_query::query_ast::{BoolQuery, QueryAst, UserInputQuery};
 use quickwit_query::BooleanOperand;
-use quickwit_search::{list_all_splits, resolve_index_patterns, SearchError, SearchService};
+use quickwit_search::{
+    list_all_splits, resolve_index_patterns, AggregationResults, SearchError, SearchService,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use warp::reply::with_status;
@@ -54,10 +56,10 @@ use super::model::{
     build_list_field_request_for_es_api, convert_to_es_field_capabilities_response,
     CatIndexQueryParams, DeleteQueryParams, ElasticsearchCatIndexResponse, ElasticsearchError,
     ElasticsearchResolveIndexEntryResponse, ElasticsearchResolveIndexResponse,
-    ElasticsearchStatsResponse, FieldCapabilityQueryParams, FieldCapabilityRequestBody,
-    FieldCapabilityResponse, MultiSearchHeader, MultiSearchQueryParams, MultiSearchResponse,
-    MultiSearchSingleResponse, ScrollQueryParams, SearchBody, SearchQueryParams,
-    SearchQueryParamsCount, StatsResponseEntry,
+    ElasticsearchResponse, ElasticsearchStatsResponse, FieldCapabilityQueryParams,
+    FieldCapabilityRequestBody, FieldCapabilityResponse, MultiSearchHeader, MultiSearchQueryParams,
+    MultiSearchResponse, MultiSearchSingleResponse, ScrollQueryParams, SearchBody,
+    SearchQueryParams, SearchQueryParamsCount, StatsResponseEntry,
 };
 use super::{make_elastic_api_response, TrackTotalHits};
 use crate::format::BodyFormat;
@@ -1006,8 +1008,16 @@ fn convert_to_es_search_response(
         .into_iter()
         .map(|hit| convert_hit(hit, append_shard_doc, &_source_excludes, &_source_includes))
         .collect();
-    let aggregations: Option<serde_json::Value> = if let Some(aggregation_json) = resp.aggregation {
-        serde_json::from_str(&aggregation_json).ok()
+    let aggregations: Option<AggregationResults> = if let Some(aggregation_json) = resp.aggregation
+    {
+        let aggregations = AggregationResults::from_json(&aggregation_json).map_err(|_| {
+            ElasticsearchError::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to parse aggregation results".to_string(),
+                None,
+            )
+        })?;
+        Some(aggregations)
     } else {
         None
     };

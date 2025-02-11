@@ -160,7 +160,6 @@ mod tests {
 
     use super::elastic_api_handlers;
     use super::model::ElasticsearchError;
-    use crate::elasticsearch_api::model::MultiSearchResponse;
     use crate::elasticsearch_api::rest_handler::es_compat_cluster_info_handler;
     use crate::rest::recover_fn;
     use crate::BuildInfo;
@@ -224,12 +223,17 @@ mod tests {
         assert_eq!(resp.status(), 200);
         assert!(resp.headers().get("x-elastic-product").is_none(),);
         let string_body = String::from_utf8(resp.body().to_vec()).unwrap();
-        let es_msearch_response: MultiSearchResponse = serde_json::from_str(&string_body).unwrap();
-        assert_eq!(es_msearch_response.responses.len(), 2);
-        for response in es_msearch_response.responses {
-            assert_eq!(response.status, 200);
-            assert_eq!(response.error, None);
-            assert!(response.response.is_some())
+        let es_msearch_response: serde_json::Value = serde_json::from_str(&string_body).unwrap();
+        let responses = es_msearch_response
+            .get("responses")
+            .unwrap()
+            .as_array()
+            .unwrap();
+        assert_eq!(responses.len(), 2);
+        for response in responses {
+            assert_eq!(response.get("status").unwrap().as_u64().unwrap(), 200);
+            assert_eq!(response.get("error"), None);
+            response.get("hits").unwrap();
         }
     }
 
@@ -279,15 +283,20 @@ mod tests {
             .reply(&es_search_api_handler)
             .await;
         assert_eq!(resp.status(), 200);
-        let es_msearch_response: MultiSearchResponse = serde_json::from_slice(resp.body()).unwrap();
-        assert_eq!(es_msearch_response.responses.len(), 2);
-        assert_eq!(es_msearch_response.responses[0].status, 200);
-        assert!(es_msearch_response.responses[0].error.is_none());
-        assert_eq!(es_msearch_response.responses[1].status, 500);
-        assert!(es_msearch_response.responses[1].response.is_none());
-        let error_cause = es_msearch_response.responses[1].error.as_ref().unwrap();
+        let es_msearch_response: serde_json::Value = serde_json::from_slice(resp.body()).unwrap();
+        let responses = es_msearch_response
+            .get("responses")
+            .unwrap()
+            .as_array()
+            .unwrap();
+        assert_eq!(responses.len(), 2);
+        assert_eq!(responses[0].get("status").unwrap().as_u64().unwrap(), 200);
+        assert_eq!(responses[0].get("error"), None);
+        assert_eq!(responses[1].get("status").unwrap().as_u64().unwrap(), 500);
+        assert_eq!(responses[1].get("hits"), None);
+        let error_cause = responses[1].get("error").unwrap();
         assert_eq!(
-            error_cause.reason.as_ref().unwrap(),
+            error_cause.get("reason").unwrap().as_str().unwrap(),
             "internal error: `something bad happened`"
         );
     }

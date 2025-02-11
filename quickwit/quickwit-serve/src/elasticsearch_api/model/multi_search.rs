@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use elasticsearch_dsl::search::SearchResponse as ElasticsearchResponse;
 use elasticsearch_dsl::ErrorCause;
 use hyper::StatusCode;
 use serde::{Deserialize, Serialize};
@@ -20,6 +19,7 @@ use serde_with::formats::PreferMany;
 use serde_with::{serde_as, OneOrMany};
 
 use super::search_query_params::ExpandWildcards;
+use super::search_response::ElasticsearchResponse;
 use super::ElasticsearchError;
 use crate::simple_list::{from_simple_list, to_simple_list};
 
@@ -100,12 +100,12 @@ pub struct MultiSearchHeader {
     pub routing: Option<Vec<String>>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize)]
 pub struct MultiSearchResponse {
     pub responses: Vec<MultiSearchSingleResponse>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Debug)]
 pub struct MultiSearchSingleResponse {
     #[serde(with = "http_serde::status_code")]
     pub status: StatusCode,
