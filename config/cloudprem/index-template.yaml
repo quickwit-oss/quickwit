@@ -12,7 +12,7 @@ priority: 0
 indexing_settings:
   commit_timeout_secs: 5
 
-# Note: replace ALL default tokenizer with ddg tokenizer
+# TODO: replace ALL default tokenizer with ddg tokenizer
 # There would be two tokenizers: ddg and ddg_ignore_case (for message and all)
 
 # There is an additional truncation in fields that applies only to indexed logs: the value is truncated to 75 KiB for the message field and 25 KiB for non-message fields. 
