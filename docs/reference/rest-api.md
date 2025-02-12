@@ -796,9 +796,9 @@ Get the list of delete tasks for a given `index_id`.
 The response is an array of `DeleteTask`.
 
 
-## Template API
+## Index template API
 
-This API manages template resources. Templates are higher level configuration objects used to automatically create indexes according to predefined rules. See [template configuration](../configuration/template-config.md).
+This API manages index template resources. Templates are higher level configuration objects used to automatically create indexes according to predefined rules. See [index template configuration](../configuration/template-config.md).
 
 ### Create a template
 
@@ -808,7 +808,7 @@ POST api/v1/templates
 
 #### POST payload
 
-Create a template by posting a [template configuration](../configuration/template-config.md) payload. The API accepts JSON with the header `content-type: application/json` and YAML with `content-type: application/yaml`.
+Create an index template by posting a [template configuration](../configuration/template-config.md) payload. The API accepts JSON with the header `content-type: application/json` and YAML with `content-type: application/yaml`.
 
 **Example**
 
@@ -840,7 +840,7 @@ doc_mapping:
 
 #### Response
 
-The created template configuration as JSON.
+The created index template configuration as JSON.
 
 
 ### Update a template
@@ -858,7 +858,7 @@ PUT api/v1/templates/<template id>
 
 #### POST payload
 
-Update a template by posting an [template configuration](../configuration/template-config.md) payload. The API accepts JSON with the header `content-type: application/json` and YAML with `content-type: application/yaml`.
+Update an index template by posting an [template configuration](../configuration/template-config.md) payload. The API accepts JSON with the header `content-type: application/json` and YAML with `content-type: application/yaml`.
 
 **Example**
 
@@ -876,7 +876,7 @@ GET api/v1/templates
 
 #### Response
 
-An array with all the existing template configurations as JSON.
+An array with all the existing index template configurations as JSON.
 
 ### Get a template
 
@@ -892,7 +892,7 @@ GET api/v1/templates/<template id>
 
 #### Response
 
-The requested template configuration as JSON.
+The requested index template configuration as JSON.
 
 ### Delete a template
 
