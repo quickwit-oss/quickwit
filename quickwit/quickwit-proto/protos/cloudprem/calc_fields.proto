@@ -1,0 +1,147 @@
+syntax = "proto3";
+
+package calcfieldspb;
+
+option java_multiple_files = true;
+option java_package = "com.dd.calc_fields.proto";
+
+// Represents a calculation node in the AST for a calculated field. Function
+// descriptions can be found in the following links:
+// https://datadoghq.atlassian.net/wiki/spaces/EP/pages/3203203931/Short+expressions+spec
+// https://docs.google.com/document/d/184iqx-6rdVv7i4urGcjdnfWlOFqVidSLGBdIcfM4hOw/edit?usp=sharing
+message CalcNode {
+  // Literal value. Can be an int, double, or string.
+  message Literal {
+    oneof literal_value {
+      int64 int_value = 1;
+      double double_value = 2;
+      string string_value = 3;
+      bool bool_value = 4;
+    }
+  }
+
+  // Field reference. Can be a calculated field (like '#foo') or a regular field
+  // (like 'service' or '@duration').
+  message FieldRef {
+    // Includes the leading '#' or '@' (if any).
+    string field_name = 1;
+  }
+
+  // Function call. Besides regular functions like 'lower' or 'concat', this
+  // includes binary operators like '+' and '==' as well as unary operators like
+  // 'not' and 'is_null'.
+  //
+  // Note that array literals can be represented as function calls in the AST.
+  message FuncCall {
+    FuncName func_name = 1;
+    repeated CalcNode arg = 2;
+
+    // Next available value: 65
+    enum FuncName {
+      UNKNOWN = 0;
+      // -- Boolean
+      AND = 1;  // n arguments all booleans
+      OR = 2;   // n arguments all booleans
+      XOR = 64; // 2 arguments boolean
+      NOT = 3;  // 1 argument boolean
+      // -- Arithmetic
+      ADD = 4;      // n arguments number / col types
+      SUBTRACT = 5; // 2 arguments number / col types
+      MULTIPLY = 6; // n arguments number / col types
+      DIVIDE = 7;   // 2 arguments number / col types
+      INT_DIV = 23; // 2 arguments integer / col types
+      INT_MOD = 24; // 2 arguments integer / col types
+      ABS = 25;     // 1 argument number / col types
+      SIGN = 26;    // 1 argument number / col types
+      ROUND = 27;   // 1 argument number, 2nd argument optional constant integer
+      FLOOR = 28;   // 1 argument number
+      CEIL = 29;    // 1 argument number
+      EXP = 30;     // 1 argument number
+      LN = 31;      // 1 argument number
+      LOG = 32;     // 2 arguments number, 2nd argument must be constant
+      LOG10 = 33;   // 1 argument number
+      POW = 34;     // 2 arguments number, 2nd argument must be constant
+      SQRT = 35;    // 1 argument number
+      // -- Random
+      RAND_FLOAT = 36; // 1 argument: 0: integer seed
+      RAND_INT = 37; // 2 arguments: 0: integer seed, 1: integer max (exclusive)
+      // -- Comparison
+      EQ = 8;           // 2 arguments any type
+      NEQ = 22;         // 2 arguments any type
+      GT = 9;           // 2 arguments any type
+      LT = 10;          // 2 arguments any type
+      GT_EQ = 11;       // 2 arguments any type
+      LT_EQ = 12;       // 2 arguments any type
+      IS_NULL = 13;     // 1 argument any type
+      IS_NOT_NULL = 14; // 1 argument any type
+      IN = 21;          // 2+ arguments any type: 0: a column,
+      // 1+: list of constant values
+      MIN = 38;         // 1+ arguments number / col types
+      MAX = 39;         // 1+ arguments number / col types
+      // -- Misc
+      CIDR = 15; // 2+ arguments, 0: column containing IP addresses, 1+: string
+      // constant IP masks like "10.20.3.4/12"
+      // -- String operators
+      UPPER = 16;     // 1 argument, string type
+      LOWER = 17;     // 1 argument, string type
+      PROPER = 18;    // 1 argument, string type
+      CONCAT = 19;    // n arguments, string type
+      TEXT_JOIN = 20; // 3+ arguments string type, 0: join token like ",",
+      // 1,2+: columns / strings to join together
+      LEFT = 40;    // 2 arguments, 0: string, 1: integer
+      RIGHT = 41;    // 2 arguments, 0: string, 1: integer
+      SUBSTRING = 42; // 3 arguments, 0: string, 1: integer start, 2: optional
+      // integer length
+      SPLIT_BEFORE = 43;    // 3 arguments, 0: string, 1: string separator,
+      // 2: integer index
+      SPLIT_AFTER = 44;     // 3 arguments, 0: string, 1: string separator,
+      // 2: integer index
+      CONTAINS_SUBSTR = 45; // 3 arguments, 0: string, 1: string, 2: optional
+      // boolean (case sensitive)
+      STARTS_WITH = 46;     // 2 arguments, 0: string, 1: string
+      ENDS_WITH = 47;       // 2 arguments, 0: string, 1: string
+      BYTE_LENGTH = 48;     // 1 argument, string
+      REGEXP_MATCH = 49;    // 2 arguments, 0: string, 1: string
+      REGEXP_EXTRACT = 50;  // 4 arguments, 0: string, 1: string, 2: optional
+      // integer capturing group index, 3: optional
+      // integer position, 4: optional integer occurrence
+      REGEXP_REPLACE = 51;  // 3 arguments, 0: string, 1: string, 2: string
+      RTRIM = 52; // 2 arguments, 0: string, 1: optional string chars-to-trim
+      LTRIM = 53; // 2 arguments, 0: string, 1: optional string chars-to-trim
+      TRIM = 54;  // 2 arguments, 0: string, 1: optional string chars-to-trim
+      // -- Conditional operators
+      IF = 55;       // 3 arguments, 0: boolean, 1: any type, 2: any type
+      COALESCE = 56; // n arguments, any type (returns first non-null argument)
+      SWITCH = 57;   // n arguments (returns (K*2)th argument if 0th argument
+      // equals (K*2-1)th argument, else returns last argument).
+      SWITCH_WHEN = 58; // n arguments (returns (K*2)th argument for the first
+      // true (K*2-1)th argument, else returns last argument).
+      // -- Cast operators
+      CAST_STRING = 59;    // 1 argument, any type
+      CAST_INT = 60;       // 1 argument, any type (aborts query on failure)
+      TRY_CAST_INT = 61;   // 1 argument, any type (returns null on failure)
+      CAST_FLOAT = 62;     // 1 argument, any type (aborts query on failure)
+      TRY_CAST_FLOAT = 63; // 1 argument, any type (returns null on failure)
+      TO_TIMESTAMP = 65; // 2 arguments, 0: string, 1: string
+      EXTRACT = 66; // 2 arguments, 0: string, 1: string
+    }
+  }
+
+  // A node in the AST.
+  oneof calc_node {
+    Literal literal = 1;
+    FieldRef field_ref = 2;
+    FuncCall func_call = 3;
+  }
+}
+
+// Represents a calculated field: defined by a name and an AST.
+message CalcField {
+  // Does not include the leading '#'.
+  string name = 1;
+  CalcNode calc_node = 2;
+}
+
+// Represents a list of calculated fields. Duplicate definitions and circular
+// dependencies are not allowed.
+message CalcFields {repeated CalcField calc_field = 1;}

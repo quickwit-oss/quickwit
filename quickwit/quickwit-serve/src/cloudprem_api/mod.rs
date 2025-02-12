@@ -3,8 +3,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_proto::cloudprem::{
-    CloudPremError, CloudPremResult, CloudPremService, Event, EventTracker, FetchOneRequest,
-    FetchOneResponse, ListRequest, ListResponse, PingRequest, PingResponse, Statistics,
+    AggregationRequest, AggregationResponse, CloudPremError, CloudPremResult, CloudPremService,
+    Event, EventTracker, FetchOneRequest, FetchOneResponse, ListRequest, ListResponse, PingRequest,
+    PingResponse, Statistics,
 };
 use quickwit_proto::search::{CountHits, Hit, SearchRequest, SearchResponse, SortField, SortOrder};
 use quickwit_query::query_ast::{FullTextMode, FullTextParams, FullTextQuery, QueryAst};
@@ -192,6 +193,10 @@ impl CloudPremService for CloudPremServiceImpl {
             event: Some(event),
             statistics: None,
         })
+    }
+
+    async fn aggregate(&self, _: AggregationRequest) -> CloudPremResult<AggregationResponse> {
+        Err(CloudPremError::Unimplemented)
     }
 }
 

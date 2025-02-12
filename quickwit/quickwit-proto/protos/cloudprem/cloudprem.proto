@@ -18,6 +18,7 @@ service CloudPremService {
   rpc Ping(PingRequest) returns (PingResponse);
   rpc List(ListRequest) returns (ListResponse);
   rpc FetchOne(FetchOneRequest) returns (FetchOneResponse);
+  rpc Aggregate(AggregationRequest) returns (AggregationResponse);
 }
 
 message PingRequest {}
@@ -25,6 +26,7 @@ message PingRequest {}
 message PingResponse {}
 
 message ListRequest {
+  // this is always a com.dd.queryparser.proto.QueryNode, but we can't import logs-backend protobuf from here
   google.protobuf.Any query = 1;
   uint32 num_events_to_fetch = 2;
   bool should_compute_count = 3;
@@ -82,4 +84,174 @@ message FetchOneRequest {
 message FetchOneResponse {
   Event event = 1;
   Statistics statistics = 2;
+}
+
+message AggregationRequest {
+  // this is always a com.dd.queryparser.proto.QueryNode, but we can't import logs-backend protobuf from here
+  google.protobuf.Any query = 1;
+  Aggregation aggregation = 2;
+}
+
+message Aggregation {
+  oneof Aggregation {
+    AttributeGroupBy attribute_group_by = 1;
+    TimeGrouping time_group_by = 2;
+    HistogramGroupBy histogram_group_by = 3;
+    FlatFieldsGroupBy flat_fields_group_by = 4;
+    Computes computes = 5;
+    ListCompute list_compute = 6;
+    AnyCompute any_compute = 7;
+    MetricCompute metric_compute = 8;
+  }
+}
+
+message AttributeGroupBy {
+  ExpressionNode expression = 1;
+  uint32 limit = 2;
+  SortByExprAndAgg sort = 3;
+  optional string missing = 4;
+  optional string total = 5;
+  Aggregation child = 6;
+}
+
+message TimeGrouping {
+  string output = 1;
+  string path = 2;
+  string time_zone = 3;
+  optional uint64 interval_ns = 4;
+  optional string rollup = 5;
+  Aggregation child = 6;
+}
+
+message HistogramGroupBy {
+  string output = 1;
+  string path = 2;
+  string attribute = 3;
+  Bucket bucket = 4;
+}
+
+message Bucket {
+  double interval = 1;
+  double min = 2;
+  double max = 3;
+  bool with_out_of_bounds_bucket = 4;
+}
+
+message FlatFieldsGroupBy {
+  repeated Field fields = 1;
+  repeated string outputs = 2;
+  uint32 limit = 3;
+  SortByExprAndAgg sort = 4;
+  optional string total = 5;
+  Aggregation child = 6;
+}
+
+message Field {
+  ExpressionNode expression = 1;
+  optional string missing = 2;
+}
+
+message Computes {
+  repeated Aggregation aggregation = 1;
+  repeated TimeGrouping time_grouping = 2;
+}
+
+message ListCompute {
+  ExpressionNode sort = 1;
+  repeated ExpressionNode to_list = 2;
+  uint32 limit = 3;
+  bool ascending = 4;
+  string id = 5;
+}
+
+message AnyCompute {
+  repeated ExpressionNode to_list = 1;
+  uint32 limit = 2;
+  string id = 3;
+}
+
+message MetricCompute {
+  ExpressionNode expression = 1;
+  string id = 2;
+  string type = 3;
+}
+
+message AggregationResponse {
+  repeated AggregationResult result = 1;
+  Statistics statistics = 2;
+}
+
+message AggregationResult {
+  repeated string key = 1;
+  repeated AggValue value = 2;
+}
+
+
+message SortByExprAndAgg {
+    bool ascending = 1;
+    optional ExprAndAgg expr_and_agg = 2;
+    SortType type = 3;
+}
+
+message ExprAndAgg {
+    ExpressionNode expr = 1;
+    string agg_function = 2;
+}
+
+enum SortType {
+    INVALID = 0;
+    TIME = 1;
+    FIELD = 2;
+    METRIC = 3;
+}
+
+message ExpressionNode {
+  // this is always a com.dd.calc_fields.proto.CalcNode
+  google.protobuf.Any calcNode = 1;
+}
+
+
+/*
+ * everything below is exactly the same as com.dd.event.store.reader.proto.Value
+ * We can't afford an Any here as it would add one type-url per entry
+ */
+
+message AggValue {
+  oneof value {
+    string string_value = 1;
+    int64 int64_value = 2;
+    uint64 uint64_value = 3;
+    double float64_value = 4;
+    bytes sketch_value = 5;
+    bytes hll_value = 6;
+    Avg avg_value = 7;
+    FirstLast first_last_value = 8;
+    Highlight highlight_value = 9;
+    bytes hll_data_sketch_value = 10;
+  }
+}
+
+message Highlight {
+  // We support multiple FTS columns, so in order to distinguish their highlighted version,
+  // we'll use a map from column name to highlighted text.
+  map<string, string> highlight = 1;
+}
+
+message Avg {
+  double sum = 1;
+  uint64 count = 2;
+}
+
+message FirstLast {
+  // This is repeated in case the FIRST/LAST function was called with
+  // limit > 1. For now though, we only support limit == 1.
+  repeated FirstLastEntry entries = 1;
+}
+
+message FirstLastEntry {
+    bytes sort_by = 1;
+    reserved 2, 3, 4, 5;
+
+    // This field contains an encoded FirstLastValues message.
+    bytes encoded_values = 6;
 }

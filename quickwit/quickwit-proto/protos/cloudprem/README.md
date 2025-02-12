@@ -8,5 +8,8 @@ file in this directory are shared with other ddog project
     owned by event platform, used for the query AST
     url: https://github.com/DataDog/logs-backend/blob/prod/libs/grpc/queryparser-proto/src/main/resources/queryparser.proto
 
+- calc_fields.proto:
+    owned by event platform, used for expression AST inside aggregations
+    url: https://github.com/DataDog/logs-backend/blob/prod/libs/grpc/exprparser-proto/src/main/resources/calc_fields.proto
 
 eventually, we should investigate a simple way to automate keeping them in sync (submodule?)

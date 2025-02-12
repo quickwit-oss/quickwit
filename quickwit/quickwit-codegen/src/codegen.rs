@@ -38,7 +38,7 @@ impl Codegen {
                 "DocBatch.doc_buffer",
                 "#[schema(value_type = String, format = Binary)]",
             )
-            .enum_attribute(".", "#[serde(rename_all=\"snake_case\")]")
+            .enum_attribute(".", &args.enum_attribute)
             .service_generator(service_generator)
             .out_dir(args.output_dir);
 
@@ -64,6 +64,7 @@ pub struct CodegenBuilder {
     generate_extra_service_methods: bool,
     generate_prom_labels_for_requests: bool,
     type_attribute: String,
+    enum_attribute: String,
 }
 
 impl Default for CodegenBuilder {
@@ -79,6 +80,7 @@ impl Default for CodegenBuilder {
             generate_prom_labels_for_requests: Default::default(),
             type_attribute: "#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]"
                 .to_string(),
+            enum_attribute: "#[serde(rename_all=\"snake_case\")]".to_string(),
         }
     }
 }
@@ -86,6 +88,11 @@ impl Default for CodegenBuilder {
 impl CodegenBuilder {
     pub fn type_attribute(mut self, type_attribute: impl ToString) -> Self {
         self.type_attribute = type_attribute.to_string();
+        self
+    }
+
+    pub fn enum_attribute(mut self, enum_attribute: impl ToString) -> Self {
+        self.enum_attribute = enum_attribute.to_string();
         self
     }
 

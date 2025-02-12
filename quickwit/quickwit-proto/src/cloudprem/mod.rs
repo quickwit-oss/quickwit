@@ -5,6 +5,7 @@ use crate::{GrpcServiceError, ServiceError, ServiceErrorCode};
 
 include!("../codegen/cloudprem/cloudprem.rs");
 include!("../codegen/cloudprem/queryparser_proto.rs");
+include!("../codegen/cloudprem/calcfieldspb.rs");
 
 #[derive(Debug, thiserror::Error, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

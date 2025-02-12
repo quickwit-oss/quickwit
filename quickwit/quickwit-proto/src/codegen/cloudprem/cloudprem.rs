@@ -7,6 +7,7 @@ pub struct PingResponse {}
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListRequest {
+    /// this is always a com.dd.queryparser.proto.QueryNode, but we can't import logs-backend protobuf from here
     #[prost(message, optional, tag = "1")]
     pub query: ::core::option::Option<::prost_types::Any>,
     #[prost(uint32, tag = "2")]
@@ -95,6 +96,308 @@ pub struct FetchOneResponse {
     #[prost(message, optional, tag = "2")]
     pub statistics: ::core::option::Option<Statistics>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AggregationRequest {
+    /// this is always a com.dd.queryparser.proto.QueryNode, but we can't import logs-backend protobuf from here
+    #[prost(message, optional, tag = "1")]
+    pub query: ::core::option::Option<::prost_types::Any>,
+    #[prost(message, optional, tag = "2")]
+    pub aggregation: ::core::option::Option<Aggregation>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Aggregation {
+    #[prost(oneof = "aggregation::Aggregation", tags = "1, 2, 3, 4, 5, 6, 7, 8")]
+    pub aggregation: ::core::option::Option<aggregation::Aggregation>,
+}
+/// Nested message and enum types in `Aggregation`.
+pub mod aggregation {
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Aggregation {
+        #[prost(message, tag = "1")]
+        AttributeGroupBy(::prost::alloc::boxed::Box<super::AttributeGroupBy>),
+        #[prost(message, tag = "2")]
+        TimeGroupBy(::prost::alloc::boxed::Box<super::TimeGrouping>),
+        #[prost(message, tag = "3")]
+        HistogramGroupBy(super::HistogramGroupBy),
+        #[prost(message, tag = "4")]
+        FlatFieldsGroupBy(::prost::alloc::boxed::Box<super::FlatFieldsGroupBy>),
+        #[prost(message, tag = "5")]
+        Computes(super::Computes),
+        #[prost(message, tag = "6")]
+        ListCompute(super::ListCompute),
+        #[prost(message, tag = "7")]
+        AnyCompute(super::AnyCompute),
+        #[prost(message, tag = "8")]
+        MetricCompute(super::MetricCompute),
+    }
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AttributeGroupBy {
+    #[prost(message, optional, tag = "1")]
+    pub expression: ::core::option::Option<ExpressionNode>,
+    #[prost(uint32, tag = "2")]
+    pub limit: u32,
+    #[prost(message, optional, tag = "3")]
+    pub sort: ::core::option::Option<SortByExprAndAgg>,
+    #[prost(string, optional, tag = "4")]
+    pub missing: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "5")]
+    pub total: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(message, optional, boxed, tag = "6")]
+    pub child: ::core::option::Option<::prost::alloc::boxed::Box<Aggregation>>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct TimeGrouping {
+    #[prost(string, tag = "1")]
+    pub output: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub path: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub time_zone: ::prost::alloc::string::String,
+    #[prost(uint64, optional, tag = "4")]
+    pub interval_ns: ::core::option::Option<u64>,
+    #[prost(string, optional, tag = "5")]
+    pub rollup: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(message, optional, boxed, tag = "6")]
+    pub child: ::core::option::Option<::prost::alloc::boxed::Box<Aggregation>>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct HistogramGroupBy {
+    #[prost(string, tag = "1")]
+    pub output: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub path: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub attribute: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "4")]
+    pub bucket: ::core::option::Option<Bucket>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Bucket {
+    #[prost(double, tag = "1")]
+    pub interval: f64,
+    #[prost(double, tag = "2")]
+    pub min: f64,
+    #[prost(double, tag = "3")]
+    pub max: f64,
+    #[prost(bool, tag = "4")]
+    pub with_out_of_bounds_bucket: bool,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct FlatFieldsGroupBy {
+    #[prost(message, repeated, tag = "1")]
+    pub fields: ::prost::alloc::vec::Vec<Field>,
+    #[prost(string, repeated, tag = "2")]
+    pub outputs: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(uint32, tag = "3")]
+    pub limit: u32,
+    #[prost(message, optional, tag = "4")]
+    pub sort: ::core::option::Option<SortByExprAndAgg>,
+    #[prost(string, optional, tag = "5")]
+    pub total: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(message, optional, boxed, tag = "6")]
+    pub child: ::core::option::Option<::prost::alloc::boxed::Box<Aggregation>>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Field {
+    #[prost(message, optional, tag = "1")]
+    pub expression: ::core::option::Option<ExpressionNode>,
+    #[prost(string, optional, tag = "2")]
+    pub missing: ::core::option::Option<::prost::alloc::string::String>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Computes {
+    #[prost(message, repeated, tag = "1")]
+    pub aggregation: ::prost::alloc::vec::Vec<Aggregation>,
+    #[prost(message, repeated, tag = "2")]
+    pub time_grouping: ::prost::alloc::vec::Vec<TimeGrouping>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListCompute {
+    #[prost(message, optional, tag = "1")]
+    pub sort: ::core::option::Option<ExpressionNode>,
+    #[prost(message, repeated, tag = "2")]
+    pub to_list: ::prost::alloc::vec::Vec<ExpressionNode>,
+    #[prost(uint32, tag = "3")]
+    pub limit: u32,
+    #[prost(bool, tag = "4")]
+    pub ascending: bool,
+    #[prost(string, tag = "5")]
+    pub id: ::prost::alloc::string::String,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AnyCompute {
+    #[prost(message, repeated, tag = "1")]
+    pub to_list: ::prost::alloc::vec::Vec<ExpressionNode>,
+    #[prost(uint32, tag = "2")]
+    pub limit: u32,
+    #[prost(string, tag = "3")]
+    pub id: ::prost::alloc::string::String,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct MetricCompute {
+    #[prost(message, optional, tag = "1")]
+    pub expression: ::core::option::Option<ExpressionNode>,
+    #[prost(string, tag = "2")]
+    pub id: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub r#type: ::prost::alloc::string::String,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AggregationResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub result: ::prost::alloc::vec::Vec<AggregationResult>,
+    #[prost(message, optional, tag = "2")]
+    pub statistics: ::core::option::Option<Statistics>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AggregationResult {
+    #[prost(string, repeated, tag = "1")]
+    pub key: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(message, repeated, tag = "2")]
+    pub value: ::prost::alloc::vec::Vec<AggValue>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SortByExprAndAgg {
+    #[prost(bool, tag = "1")]
+    pub ascending: bool,
+    #[prost(message, optional, tag = "2")]
+    pub expr_and_agg: ::core::option::Option<ExprAndAgg>,
+    #[prost(enumeration = "SortType", tag = "3")]
+    pub r#type: i32,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ExprAndAgg {
+    #[prost(message, optional, tag = "1")]
+    pub expr: ::core::option::Option<ExpressionNode>,
+    #[prost(string, tag = "2")]
+    pub agg_function: ::prost::alloc::string::String,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ExpressionNode {
+    /// this is always a com.dd.calc_fields.proto.CalcNode
+    #[prost(message, optional, tag = "1")]
+    pub calc_node: ::core::option::Option<::prost_types::Any>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AggValue {
+    #[prost(oneof = "agg_value::Value", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10")]
+    pub value: ::core::option::Option<agg_value::Value>,
+}
+/// Nested message and enum types in `AggValue`.
+pub mod agg_value {
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Value {
+        #[prost(string, tag = "1")]
+        StringValue(::prost::alloc::string::String),
+        #[prost(int64, tag = "2")]
+        Int64Value(i64),
+        #[prost(uint64, tag = "3")]
+        Uint64Value(u64),
+        #[prost(double, tag = "4")]
+        Float64Value(f64),
+        #[prost(bytes, tag = "5")]
+        SketchValue(::prost::alloc::vec::Vec<u8>),
+        #[prost(bytes, tag = "6")]
+        HllValue(::prost::alloc::vec::Vec<u8>),
+        #[prost(message, tag = "7")]
+        AvgValue(super::Avg),
+        #[prost(message, tag = "8")]
+        FirstLastValue(super::FirstLast),
+        #[prost(message, tag = "9")]
+        HighlightValue(super::Highlight),
+        #[prost(bytes, tag = "10")]
+        HllDataSketchValue(::prost::alloc::vec::Vec<u8>),
+    }
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Highlight {
+    /// We support multiple FTS columns, so in order to distinguish their highlighted version,
+    /// we'll use a map from column name to highlighted text.
+    #[prost(map = "string, string", tag = "1")]
+    pub highlight: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        ::prost::alloc::string::String,
+    >,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Avg {
+    #[prost(double, tag = "1")]
+    pub sum: f64,
+    #[prost(uint64, tag = "2")]
+    pub count: u64,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct FirstLast {
+    /// This is repeated in case the FIRST/LAST function was called with
+    /// limit > 1. For now though, we only support limit == 1.
+    #[prost(message, repeated, tag = "1")]
+    pub entries: ::prost::alloc::vec::Vec<FirstLastEntry>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct FirstLastEntry {
+    #[prost(bytes = "vec", tag = "1")]
+    pub sort_by: ::prost::alloc::vec::Vec<u8>,
+    /// This field contains an encoded FirstLastValues message.
+    #[prost(bytes = "vec", tag = "6")]
+    pub encoded_values: ::prost::alloc::vec::Vec<u8>,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum SortType {
+    Invalid = 0,
+    Time = 1,
+    Field = 2,
+    Metric = 3,
+}
+impl SortType {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            SortType::Invalid => "INVALID",
+            SortType::Time => "TIME",
+            SortType::Field => "FIELD",
+            SortType::Metric => "METRIC",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "INVALID" => Some(Self::Invalid),
+            "TIME" => Some(Self::Time),
+            "FIELD" => Some(Self::Field),
+            "METRIC" => Some(Self::Metric),
+            _ => None,
+        }
+    }
+}
 /// BEGIN quickwit-codegen
 #[allow(unused_imports)]
 use std::str::FromStr;
@@ -115,6 +418,11 @@ impl RpcName for FetchOneRequest {
         "fetch_one"
     }
 }
+impl RpcName for AggregationRequest {
+    fn rpc_name() -> &'static str {
+        "aggregate"
+    }
+}
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait CloudPremService: std::fmt::Debug + Send + Sync + 'static {
@@ -130,6 +438,10 @@ pub trait CloudPremService: std::fmt::Debug + Send + Sync + 'static {
         &self,
         request: FetchOneRequest,
     ) -> crate::cloudprem::CloudPremResult<FetchOneResponse>;
+    async fn aggregate(
+        &self,
+        request: AggregationRequest,
+    ) -> crate::cloudprem::CloudPremResult<AggregationResponse>;
 }
 #[derive(Debug, Clone)]
 pub struct CloudPremServiceClient {
@@ -240,6 +552,12 @@ impl CloudPremService for CloudPremServiceClient {
     ) -> crate::cloudprem::CloudPremResult<FetchOneResponse> {
         self.inner.0.fetch_one(request).await
     }
+    async fn aggregate(
+        &self,
+        request: AggregationRequest,
+    ) -> crate::cloudprem::CloudPremResult<AggregationResponse> {
+        self.inner.0.aggregate(request).await
+    }
 }
 #[cfg(any(test, feature = "testsuite"))]
 pub mod mock_cloud_prem_service {
@@ -267,6 +585,12 @@ pub mod mock_cloud_prem_service {
             request: super::FetchOneRequest,
         ) -> crate::cloudprem::CloudPremResult<super::FetchOneResponse> {
             self.inner.lock().await.fetch_one(request).await
+        }
+        async fn aggregate(
+            &self,
+            request: super::AggregationRequest,
+        ) -> crate::cloudprem::CloudPremResult<super::AggregationResponse> {
+            self.inner.lock().await.aggregate(request).await
         }
     }
 }
@@ -321,6 +645,22 @@ impl tower::Service<FetchOneRequest> for InnerCloudPremServiceClient {
         Box::pin(fut)
     }
 }
+impl tower::Service<AggregationRequest> for InnerCloudPremServiceClient {
+    type Response = AggregationResponse;
+    type Error = crate::cloudprem::CloudPremError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: AggregationRequest) -> Self::Future {
+        let svc = self.clone();
+        let fut = async move { svc.0.aggregate(request).await };
+        Box::pin(fut)
+    }
+}
 /// A tower service stack is a set of tower services.
 #[derive(Debug)]
 struct CloudPremServiceTowerServiceStack {
@@ -339,6 +679,11 @@ struct CloudPremServiceTowerServiceStack {
     fetch_one_svc: quickwit_common::tower::BoxService<
         FetchOneRequest,
         FetchOneResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+    aggregate_svc: quickwit_common::tower::BoxService<
+        AggregationRequest,
+        AggregationResponse,
         crate::cloudprem::CloudPremError,
     >,
 }
@@ -361,6 +706,12 @@ impl CloudPremService for CloudPremServiceTowerServiceStack {
         request: FetchOneRequest,
     ) -> crate::cloudprem::CloudPremResult<FetchOneResponse> {
         self.fetch_one_svc.clone().ready().await?.call(request).await
+    }
+    async fn aggregate(
+        &self,
+        request: AggregationRequest,
+    ) -> crate::cloudprem::CloudPremResult<AggregationResponse> {
+        self.aggregate_svc.clone().ready().await?.call(request).await
     }
 }
 type PingLayer = quickwit_common::tower::BoxLayer<
@@ -393,11 +744,22 @@ type FetchOneLayer = quickwit_common::tower::BoxLayer<
     FetchOneResponse,
     crate::cloudprem::CloudPremError,
 >;
+type AggregateLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        AggregationRequest,
+        AggregationResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+    AggregationRequest,
+    AggregationResponse,
+    crate::cloudprem::CloudPremError,
+>;
 #[derive(Debug, Default)]
 pub struct CloudPremServiceTowerLayerStack {
     ping_layers: Vec<PingLayer>,
     list_layers: Vec<ListLayer>,
     fetch_one_layers: Vec<FetchOneLayer>,
+    aggregate_layers: Vec<AggregateLayer>,
 }
 impl CloudPremServiceTowerLayerStack {
     pub fn stack_layer<L>(mut self, layer: L) -> Self
@@ -477,10 +839,36 @@ impl CloudPremServiceTowerLayerStack {
                 crate::cloudprem::CloudPremError,
             >,
         >>::Service as tower::Service<FetchOneRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    AggregationRequest,
+                    AggregationResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                AggregationRequest,
+                AggregationResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service: tower::Service<
+                AggregationRequest,
+                Response = AggregationResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                AggregationRequest,
+                AggregationResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service as tower::Service<AggregationRequest>>::Future: Send + 'static,
     {
         self.ping_layers.push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.list_layers.push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.fetch_one_layers.push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.aggregate_layers.push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self
     }
     pub fn stack_ping_layer<L>(mut self, layer: L) -> Self
@@ -538,6 +926,25 @@ impl CloudPremServiceTowerLayerStack {
         <L::Service as tower::Service<FetchOneRequest>>::Future: Send + 'static,
     {
         self.fetch_one_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_aggregate_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    AggregationRequest,
+                    AggregationResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                AggregationRequest,
+                Response = AggregationResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<AggregationRequest>>::Future: Send + 'static,
+    {
+        self.aggregate_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
     pub fn build<T>(self, instance: T) -> CloudPremServiceClient
@@ -620,11 +1027,20 @@ impl CloudPremServiceTowerLayerStack {
                 quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
+        let aggregate_svc = self
+            .aggregate_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
+                |svc, layer| layer.layer(svc),
+            );
         let tower_svc_stack = CloudPremServiceTowerServiceStack {
             inner: inner_client,
             ping_svc,
             list_svc,
             fetch_one_svc,
+            aggregate_svc,
         };
         CloudPremServiceClient::new(tower_svc_stack)
     }
@@ -718,6 +1134,12 @@ where
             Response = FetchOneResponse,
             Error = crate::cloudprem::CloudPremError,
             Future = BoxFuture<FetchOneResponse, crate::cloudprem::CloudPremError>,
+        >
+        + tower::Service<
+            AggregationRequest,
+            Response = AggregationResponse,
+            Error = crate::cloudprem::CloudPremError,
+            Future = BoxFuture<AggregationResponse, crate::cloudprem::CloudPremError>,
         >,
 {
     async fn ping(
@@ -736,6 +1158,12 @@ where
         &self,
         request: FetchOneRequest,
     ) -> crate::cloudprem::CloudPremResult<FetchOneResponse> {
+        self.clone().call(request).await
+    }
+    async fn aggregate(
+        &self,
+        request: AggregationRequest,
+    ) -> crate::cloudprem::CloudPremResult<AggregationResponse> {
         self.clone().call(request).await
     }
 }
@@ -815,6 +1243,20 @@ where
                 FetchOneRequest::rpc_name(),
             ))
     }
+    async fn aggregate(
+        &self,
+        request: AggregationRequest,
+    ) -> crate::cloudprem::CloudPremResult<AggregationResponse> {
+        self.inner
+            .clone()
+            .aggregate(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                AggregationRequest::rpc_name(),
+            ))
+    }
 }
 #[derive(Debug)]
 pub struct CloudPremServiceGrpcServerAdapter {
@@ -862,6 +1304,17 @@ for CloudPremServiceGrpcServerAdapter {
         self.inner
             .0
             .fetch_one(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(crate::error::grpc_error_to_grpc_status)
+    }
+    async fn aggregate(
+        &self,
+        request: tonic::Request<AggregationRequest>,
+    ) -> Result<tonic::Response<AggregationResponse>, tonic::Status> {
+        self.inner
+            .0
+            .aggregate(request.into_inner())
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -1021,6 +1474,31 @@ pub mod cloud_prem_service_grpc_client {
                 .insert(GrpcMethod::new("cloudprem.CloudPremService", "FetchOne"));
             self.inner.unary(req, path, codec).await
         }
+        pub async fn aggregate(
+            &mut self,
+            request: impl tonic::IntoRequest<super::AggregationRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::AggregationResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/cloudprem.CloudPremService/Aggregate",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("cloudprem.CloudPremService", "Aggregate"));
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -1043,6 +1521,13 @@ pub mod cloud_prem_service_grpc_server {
             request: tonic::Request<super::FetchOneRequest>,
         ) -> std::result::Result<
             tonic::Response<super::FetchOneResponse>,
+            tonic::Status,
+        >;
+        async fn aggregate(
+            &self,
+            request: tonic::Request<super::AggregationRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::AggregationResponse>,
             tonic::Status,
         >;
     }
@@ -1241,6 +1726,50 @@ pub mod cloud_prem_service_grpc_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = FetchOneSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/cloudprem.CloudPremService/Aggregate" => {
+                    #[allow(non_camel_case_types)]
+                    struct AggregateSvc<T: CloudPremServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: CloudPremServiceGrpc,
+                    > tonic::server::UnaryService<super::AggregationRequest>
+                    for AggregateSvc<T> {
+                        type Response = super::AggregationResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::AggregationRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move { (*inner).aggregate(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = AggregateSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
