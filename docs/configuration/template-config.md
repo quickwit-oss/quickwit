@@ -1,14 +1,14 @@
 ---
-title: Template configuration
+title: Index template configuration
 sidebar_position: 7
 toc_max_heading_level: 4
 ---
 
-This page describes how to configure a template.
+This page describes how to configure an index template.
 
-Templates let you dynamically create indexes according to predefined rules. Templates are used automatically when documents are received on the ingest API for an index that doesn't exist.
+Index templates let you dynamically create indexes according to predefined rules. Templates are used automatically when documents are received on the ingest API for an index that doesn't exist.
 
-The template configuration lets you define the following parameters:
+The index template configuration lets you define the following parameters:
 - `template_id` (required)
 - `description`
 - `index_id_patterns` (required)
@@ -21,7 +21,7 @@ Besides, the following parameters can also be configured and are the same as tho
 - search settings
 - retention policy
 
-You can manage templates using the [template API](../reference/rest-api.md#template-api).
+You can manage templates using the [index template API](../reference/rest-api.md#index-template-api).
 
 ## Config file format
 
@@ -82,11 +82,11 @@ retention:
 
 ## Template ID
 
-The `template_id` is a string that uniquely identifies the template within the metastore. It may only contain uppercase or lowercase ASCII letters, digits, hyphens (`-`), and underscores (`_`). It must start with a letter and contain at least 3 characters but no more than 255.
+The `template_id` is a string that uniquely identifies the index template within the metastore. It may only contain uppercase or lowercase ASCII letters, digits, hyphens (`-`), and underscores (`_`). It must start with a letter and contain at least 3 characters but no more than 255.
 
 ## Description
 
-An optional string that describes what the template is used for.
+An optional string that describes what the index template is used for.
 
 ## Index root uri
 
