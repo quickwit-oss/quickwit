@@ -117,7 +117,7 @@ difflib,https://github.com/DimaKudosh/difflib,MIT,Dima Kudosh <dimakudosh@gmail.
 digest,https://github.com/RustCrypto/traits,MIT OR Apache-2.0,RustCrypto Developers
 displaydoc,https://github.com/yaahc/displaydoc,MIT OR Apache-2.0,Jane Lusby <jlusby@yaah.dev>
 downcast,https://github.com/fkoep/downcast-rs,MIT,Felix Köpge <fkoep@mailbox.org>
-downcast-rs,https://github.com/marcianx/downcast-rs,MIT OR Apache-2.0,"Ashish Myles <marcianx@gmail.com>, Runji Wang <wangrunji0408@163.com>"
+downcast-rs,https://github.com/marcianx/downcast-rs,MIT OR Apache-2.0,The downcast-rs Authors
 dtoa,https://github.com/dtolnay/dtoa,MIT OR Apache-2.0,David Tolnay <dtolnay@gmail.com>
 dyn-clone,https://github.com/dtolnay/dyn-clone,MIT OR Apache-2.0,David Tolnay <dtolnay@gmail.com>
 ecdsa,https://github.com/RustCrypto/signatures/tree/master/ecdsa,Apache-2.0 OR MIT,RustCrypto Developers
