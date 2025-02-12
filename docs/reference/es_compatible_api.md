@@ -749,7 +749,7 @@ The multi-target expression has the following constraints:
 
     - It must follow the regex `^[a-zA-Z\*][a-zA-Z0-9-_\.\*]{0,254}$`.
     - It cannot contain consecutive asterisks (`*`).
-    - If it contains an asterisk (`*`), the length must be greater than or equal to 3 characters.
+    - If it does not contain an asterisk (`*`), the length must be greater than or equal to 3 characters.
 
 ### Examples
 ```

@@ -32,15 +32,19 @@ pub enum VersionedIndexTemplate {
 pub struct IndexTemplateV0_8 {
     #[schema(value_type = String)]
     pub template_id: IndexTemplateId,
+    /// Glob patterns (e.g., `logs-foo*`) with negation by prepending `-` (e.g `-logs-fool`).
     #[schema(value_type = Vec<String>)]
     pub index_id_patterns: Vec<IndexIdPattern>,
+    /// The actual index URI is the concatenation of this with the index id.
     #[schema(value_type = String)]
     #[serde(default)]
     pub index_root_uri: Option<Uri>,
+    /// When multiple templates match an index, the one with the highest priority is selected.
     #[serde(default)]
     pub priority: usize,
     #[serde(default)]
     pub description: Option<String>,
+
     pub doc_mapping: DocMapping,
     #[serde(default)]
     pub indexing_settings: IndexingSettings,

@@ -96,7 +96,7 @@ The following are some constrains about the multi-target expression.
 
     - It must follow the regex `^[a-zA-Z\*][a-zA-Z0-9-_\.\*]{0,254}$`.
     - It cannot contain consecutive asterisks (`*`).
-    - If it contains an asterisk (`*`), the length must be greater than or equal to 3 characters.
+    - If it does not contain an asterisk (`*`), the length must be greater than or equal to 3 characters.
 
 #### Examples
 ```
@@ -794,3 +794,118 @@ Get the list of delete tasks for a given `index_id`.
 #### Response
 
 The response is an array of `DeleteTask`.
+
+
+## Template API
+
+This API manages template resources. Templates are higher level configuration objects used to automatically create indexes according to predefined rules. See [template configuration](../configuration/template-config.md).
+
+### Create a template
+
+```
+POST api/v1/templates
+```
+
+#### POST payload
+
+Create a template by posting a [template configuration](../configuration/template-config.md) payload. The API accepts JSON with the header `content-type: application/json` and YAML with `content-type: application/yaml`.
+
+**Example**
+
+```yaml
+version: 0.9 # File format version.
+
+template_id: "all-logs"
+
+index_root_uri: "s3://my-bucket/logs/"
+
+description: "All my logs"
+
+index_id_patterns:
+    - logs-*
+
+priority: 100
+
+doc_mapping:
+  mode: dynamic
+  field_mappings:
+    - name: timestamp
+      type: datetime
+      input_formats:
+        - unix_timestamp
+      output_format: unix_timestamp_secs
+      fast: true
+  timestamp_field: timestamp
+```
+
+#### Response
+
+The created template configuration as JSON.
+
+
+### Update a template
+
+```
+PUT api/v1/templates/<template id>
+```
+
+#### Path variable
+
+| Variable      | Description   |
+| ------------- | ------------- |
+| `template id` | The template id  |
+
+
+#### POST payload
+
+Update a template by posting an [template configuration](../configuration/template-config.md) payload. The API accepts JSON with the header `content-type: application/json` and YAML with `content-type: application/yaml`.
+
+**Example**
+
+See [create endpoint](#create-a-template).
+
+#### Response
+
+The updated template configuration as JSON.
+
+### List the templates
+
+```
+GET api/v1/templates
+```
+
+#### Response
+
+An array with all the existing template configurations as JSON.
+
+### Get a template
+
+```
+GET api/v1/templates/<template id>
+```
+
+#### Path variable
+
+| Variable      | Description   |
+| ------------- | ------------- |
+| `template id` | The template id  |
+
+#### Response
+
+The requested template configuration as JSON.
+
+### Delete a template
+
+```
+DELETE api/v1/templates/<template id>
+```
+
+#### Path variable
+
+| Variable      | Description   |
+| ------------- | ------------- |
+| `template id` | The template id  |
+
+#### Response
+
+Empty response.
