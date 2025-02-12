@@ -54,6 +54,10 @@ This directory is used for caching splits that will undergo a merge operation to
 
 You can [configure](../configuration/node-config#indexer-configuration) the number of splits the cache can hold with `split_store_max_num_splits` and limit the overall size in bytes of splits with `split_store_max_num_bytes`.
 
+### `/searcher-split-cache` directory
+
+This directory is used by searcher nodes to cache entire splits and reduce calls to the object store. It won't be created unless you set the `split_cache` fields in the [searcher configuration](../configuration/node-config.md#searcher-configuration).
+
 
 ## Setting the right splits cache limits
 
