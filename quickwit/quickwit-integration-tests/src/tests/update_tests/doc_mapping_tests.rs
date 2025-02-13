@@ -101,7 +101,7 @@ async fn validate_search_across_doc_mapping_updates(
         )
         .await
         .unwrap();
-
+    tokio::time::sleep(Duration::from_millis(50)).await;
     sandbox
         .local_ingest(index_id, ingest_after_update)
         .await
