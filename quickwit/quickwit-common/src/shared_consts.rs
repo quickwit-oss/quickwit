@@ -69,8 +69,14 @@ pub const SPLIT_FIELDS_FILE_NAME: &str = "split_fields";
 /// More or less the indexing throughput of a core
 /// i.e PIPELINE_THROUGHPUT / PIPELINE_FULL_CAPACITY
 pub const DEFAULT_SHARD_THROUGHPUT_LIMIT: ByteSize = ByteSize::mib(5);
-///
+/// Large enough to absorb small bursts but should remain defensive against unbalanced shards
 pub const DEFAULT_SHARD_BURST_LIMIT: ByteSize = ByteSize::mib(50);
+
+/// Maximum factor that avoids oscillating between scale up and scale down
+pub const MAX_SHARD_SCALE_UP_FACTOR: f32 = 2.0;
+/// A high value to allow quick scale up by default
+pub const DEFAULT_SHARD_SCALE_UP_FACTOR: f32 = 1.5;
+const _: () = assert!(DEFAULT_SHARD_SCALE_UP_FACTOR < MAX_SHARD_SCALE_UP_FACTOR);
 
 // (Just a reexport).
 pub use bytesize::MIB;
