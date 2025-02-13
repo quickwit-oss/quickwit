@@ -195,8 +195,60 @@ impl CloudPremService for CloudPremServiceImpl {
         })
     }
 
-    async fn aggregate(&self, _: AggregationRequest) -> CloudPremResult<AggregationResponse> {
-        Err(CloudPremError::Unimplemented)
+    async fn aggregate(&self, request: AggregationRequest) -> CloudPremResult<AggregationResponse> {
+        info!("received Aggregation request");
+
+        let Some(query) = request.query else {
+            return Err(CloudPremError::Internal("missing query".to_string()));
+        };
+        let query_evp_ast = quickwit_query::cloudprem::parse_query(query)
+            .map_err(|err| CloudPremError::InvalidQuery(format!("failed to parse query: {err}")))?;
+
+        debug!("received query ast: {query_evp_ast:?}");
+        let query_ast = quickwit_query::cloudprem::to_quickwit_query(query_evp_ast)?;
+        debug!("converted query ast: {query_ast:?}");
+
+        let Some(evp_aggregation_ast) = request.aggregation else {
+            return Err(CloudPremError::Internal("missing aggregation".to_string()));
+        };
+
+        debug!("received aggregation ast {evp_aggregation_ast:?}");
+        let aggregation_ast =
+            quickwit_query::cloudprem::to_tantivy_aggregation(evp_aggregation_ast)?;
+        debug!("converted aggregation ast {aggregation_ast:?}");
+
+        let search_request = SearchRequest {
+            index_id_patterns: vec![CLOUD_PREM_INDEX_ID_PATTERN.to_string()],
+            query_ast: serde_json::to_string(&query_ast)
+                .map_err(|e| CloudPremError::Internal(e.to_string()))?,
+            start_timestamp: None,
+            end_timestamp: None,
+            max_hits: 0,
+            start_offset: 0,
+            aggregation_request: Some(
+                serde_json::to_string(&aggregation_ast)
+                    .map_err(|e| CloudPremError::Internal(e.to_string()))?,
+            ),
+            snippet_fields: Vec::new(),
+            sort_fields: Vec::new(),
+            scroll_ttl_secs: None,
+            search_after: None,
+            count_hits: CountHits::Underestimate.into(),
+        };
+
+        let response = self.search_service.root_search(search_request).await?;
+
+        let statistics = Statistics {
+            hit_count: response.num_hits,
+            scanned_count: 0,
+            result_memory_size: 0u64,
+            max_result_memory_size: 0u64,
+        };
+
+        Ok(AggregationResponse {
+            result: Vec::new(),
+            statistics: Some(statistics),
+        })
     }
 }
 
