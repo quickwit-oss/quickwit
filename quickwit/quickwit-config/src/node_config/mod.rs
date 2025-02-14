@@ -25,7 +25,10 @@ use anyhow::{bail, ensure};
 use bytesize::ByteSize;
 use http::HeaderMap;
 use quickwit_common::net::HostAddr;
-use quickwit_common::shared_consts::DEFAULT_SHARD_THROUGHPUT_LIMIT;
+use quickwit_common::shared_consts::{
+    DEFAULT_SHARD_BURST_LIMIT, DEFAULT_SHARD_SCALE_UP_FACTOR, DEFAULT_SHARD_THROUGHPUT_LIMIT,
+    MAX_SHARD_SCALE_UP_FACTOR,
+};
 use quickwit_common::uri::Uri;
 use quickwit_proto::indexing::CpuCapacity;
 use quickwit_proto::types::NodeId;
@@ -39,7 +42,7 @@ use crate::{ConfigFormat, MetastoreConfigs};
 
 pub const DEFAULT_QW_CONFIG_PATH: &str = "config/quickwit.yaml";
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RestConfig {
     pub listen_addr: SocketAddr,
@@ -48,7 +51,7 @@ pub struct RestConfig {
     pub extra_headers: HeaderMap,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GrpcConfig {
     #[serde(default = "GrpcConfig::default_max_message_size")]
@@ -78,7 +81,7 @@ impl Default for GrpcConfig {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct IndexerConfig {
     #[serde(default = "IndexerConfig::default_split_store_max_num_bytes")]
@@ -175,7 +178,7 @@ impl Default for IndexerConfig {
     }
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SplitCacheLimits {
     pub max_num_bytes: ByteSize,
@@ -201,7 +204,7 @@ impl SplitCacheLimits {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct SearcherConfig {
     pub aggregation_memory_limit: ByteSize,
@@ -236,7 +239,7 @@ pub struct SearcherConfig {
 /// This policy is inspired by this guidance. It does not track instanteneous throughput, but
 /// computes an overall timeout using the following formula:
 /// `timeout_offset + num_bytes_get_request / min_throughtput`
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct StorageTimeoutPolicy {
     pub min_throughtput_bytes_per_secs: u64,
     pub timeout_millis: u64,
@@ -320,14 +323,21 @@ impl SearcherConfig {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct IngestApiConfig {
+    /// Maximum memory space taken by the ingest WAL
     pub max_queue_memory_usage: ByteSize,
+    /// Maximum disk space taken by the ingest WAL
     pub max_queue_disk_usage: ByteSize,
     replication_factor: usize,
     pub content_length_limit: ByteSize,
+    /// (hidden) Targeted throughput for each shard
     pub shard_throughput_limit: ByteSize,
+    /// (hidden) Targeted throughput for each shard
+    pub shard_burst_limit: ByteSize,
+    /// (hidden) new_shard_count = ceil(old_shard_count * shard_scaling_factor)
+    pub shard_scale_up_factor: f32,
 }
 
 impl Default for IngestApiConfig {
@@ -338,6 +348,8 @@ impl Default for IngestApiConfig {
             replication_factor: 1,
             content_length_limit: ByteSize::mib(10),
             shard_throughput_limit: DEFAULT_SHARD_THROUGHPUT_LIMIT,
+            shard_burst_limit: DEFAULT_SHARD_BURST_LIMIT,
+            shard_scale_up_factor: DEFAULT_SHARD_SCALE_UP_FACTOR,
         }
     }
 }
@@ -389,11 +401,27 @@ impl IngestApiConfig {
             "shard_throughput_limit ({:?}) must be within 1mb and 20mb",
             self.shard_throughput_limit
         );
+        // The newline delimited format is persisted as something a bit larger
+        // (lines prefixed with their length)
+        let estimated_persist_size = ByteSize::b(3 * self.content_length_limit.as_u64() / 2);
+        ensure!(
+            self.shard_burst_limit >= estimated_persist_size,
+            "shard_burst_limit ({:?}) must be at least 1.5*content_length_limit ({:?})",
+            self.shard_burst_limit,
+            estimated_persist_size,
+        );
+        ensure!(
+            self.shard_scale_up_factor > 1.0
+                && self.shard_scale_up_factor <= MAX_SHARD_SCALE_UP_FACTOR,
+            "shard_scale_up_factor ({:?}) must be in the (1,{}) interval",
+            self.shard_scale_up_factor,
+            MAX_SHARD_SCALE_UP_FACTOR,
+        );
         Ok(())
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct JaegerConfig {
     /// Enables the gRPC endpoint that allows the Jaeger Query Service to connect and retrieve
