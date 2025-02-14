@@ -16,7 +16,7 @@ stages:
   - sign
   - deploy
 
-build_docker_image:
+build_image:
   image: $DOCKER_CI_IMAGE
   stage: build
   tags:
@@ -26,32 +26,32 @@ build_docker_image:
         - .gitlab-ci.yml
         - quickwit/**
   script:
-    - scripts/image-tool.sh --push --metadata-file meta.json
+    - scripts/image-tool.sh --push --repo cloudprem --metadata-file meta.json
   artifacts:
     paths:
       - meta.json
 
-publish_to_public_docker_registries:
+publish_public_image:
   stage: publish
   trigger:
     project: DataDog/public-images
     branch: main
     strategy: depend
   variables:
-    IMG_SOURCES: registry.ddbuild.io/pomsky:edge
+    IMG_SOURCES: registry.ddbuild.io/cloudprem:edge
     IMG_DESTINATIONS: cloudprem:edge
     IMG_REGISTRIES: dockerhub
 
-sign_docker_image:
+sign_image:
   image: $DOCKER_CI_IMAGE
   stage: sign
   needs:
-    - build_docker_image
+    - build_image
   id_tokens:
     DDSIGN_ID_TOKEN:
       aud: image-integrity
   script:
-    - scripts/image-tool.sh --sign --metadata-file meta.json
+    - scripts/image-tool.sh --sign --repo cloudprem --metadata-file meta.json
 
 deploy_to_staging:
   image: $BAZEL_CI_IMAGE
