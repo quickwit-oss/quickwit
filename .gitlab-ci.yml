@@ -26,7 +26,7 @@ build_docker_image:
         - .gitlab-ci.yml
         - quickwit/**
   script:
-    - scripts/image-tool.sh --build --push --metadata-file meta.json
+    - scripts/image-tool.sh --push --metadata-file meta.json
   artifacts:
     paths:
       - meta.json

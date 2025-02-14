@@ -14,6 +14,7 @@ REPO="$DEFAULT_REPO"
 TAG="$DEFAULT_TAG"
 TARGET_ENV="$DEFAULT_TARGET_ENV"
 PLATFORM="$DEFAULT_PLATFORM"
+DO_BUILD=false
 DO_PUSH=false
 DO_SIGN=false
 METADATA_FILE=""
@@ -27,8 +28,11 @@ usage() {
     echo "  --target-env <env>             Target environment (default: $DEFAULT_TARGET_ENV)"
     echo "  --platform <platform>          Build platform (default: $DEFAULT_PLATFORM)"
     echo "  --metadata-file <file>         Path to save metadata file (optional)"
-    echo "  --push                         Push the image after building"
-    echo "  --sign                         Sign the image after building"
+    echo "  --build                        Build the image"
+    echo "  --push                         Build and push the image"
+    echo "  --sign                         Sign the image"
+    echo
+    echo "At least one action flag (--build, --push, or --sign) must be specified"
     exit 1
 }
 
@@ -89,7 +93,12 @@ while [[ $# -gt 0 ]]; do
                 usage
             fi
             ;;
+        --build)
+            DO_BUILD=true
+            shift
+            ;;
         --push)
+            DO_BUILD=true
             DO_PUSH=true
             shift
             ;;
@@ -106,6 +115,12 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Verify at least one action was specified
+if [ "$DO_BUILD" = false ] && [ "$DO_PUSH" = false ] && [ "$DO_SIGN" = false ]; then
+    echo "Error: At least one action flag (--build, --push, or --sign) must be specified"
+    usage
+fi
 
 # Construct Docker image name
 DOCKER_IMAGE="${REGISTRY}/${REPO}:${TAG}"
@@ -157,13 +172,8 @@ sign_image() {
 }
 
 # Main execution logic
-build_image
-
-if [ "$DO_SIGN" = true ]; then
-    if [ "$DO_PUSH" = false ]; then
-        echo "Warning: Signing an image that wasn't pushed"
-    fi
-    sign_image
+if [ "$DO_BUILD" = true ]; then
+    build_image
 fi
 
 # Cleanup only if we created a temporary file
