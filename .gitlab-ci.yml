@@ -46,6 +46,8 @@ publish_public_image:
 sign_image:
   image: $DOCKER_CI_IMAGE
   stage: sign
+  tags:
+    - arch:arm64
   needs:
     - build_image
   id_tokens:
