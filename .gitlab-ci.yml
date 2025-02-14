@@ -41,6 +41,7 @@ publish_public_image:
     IMG_SOURCES: registry.ddbuild.io/cloudprem:edge
     IMG_DESTINATIONS: cloudprem:edge
     IMG_REGISTRIES: dockerhub
+    IMG_SIGNING: "false"
 
 sign_image:
   image: $DOCKER_CI_IMAGE
