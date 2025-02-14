@@ -13,40 +13,47 @@ default:
 stages:
   - build
   - publish
+  - sign
   - deploy
 
-build:
+build_docker_image:
   image: $DOCKER_CI_IMAGE
   stage: build
   tags:
     - arch:arm64
   rules:
     - changes:
+        - .gitlab-ci.yml
         - quickwit/**
-  id_tokens:
-    DDSIGN_ID_TOKEN:
-      aud: image-integrity
   script:
-    - scripts/build_push_sign_image.sh
-  variables:
-    TAG: $CI_COMMIT_TAG
+    - scripts/image-tool.sh --build --push --metadata-file meta.json
+  artifacts:
+    paths:
+      - meta.json
 
-publish_to_docker_registries:
+publish_to_public_docker_registries:
   stage: publish
-  rules:
-    - if: $CI_COMMIT_BRANCH =~ /^v.*/
-      when: on_success
-    - when: manual
   trigger:
     project: DataDog/public-images
     branch: main
     strategy: depend
   variables:
-    IMG_SOURCES: registry.ddbuild.io/pomsky:latest
-    IMG_DESTINATIONS: cloudprem:$CI_COMMIT_TAG
+    IMG_SOURCES: registry.ddbuild.io/pomsky:edge
+    IMG_DESTINATIONS: cloudprem:edge
     IMG_REGISTRIES: dockerhub
 
-deploy:
+sign_docker_image:
+  image: $DOCKER_CI_IMAGE
+  stage: sign
+  needs:
+    - build_docker_image
+  id_tokens:
+    DDSIGN_ID_TOKEN:
+      aud: image-integrity
+  script:
+    - scripts/image-tool.sh --sign --metadata-file meta.json
+
+deploy_to_staging:
   image: $BAZEL_CI_IMAGE
   stage: deploy
   tags:
