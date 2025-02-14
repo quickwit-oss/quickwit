@@ -298,7 +298,7 @@ mod tests {
             .path("/templates")
             .method("POST")
             .json(&json!({
-                "version": "0.7",
+                "version": "0.9",
                 "template_id": "test-template-foo",
                 "index_id_patterns": ["test-index-foo*"],
                 "doc_mapping": {},
@@ -379,7 +379,7 @@ mod tests {
             .path("/templates/test-template-foo")
             .method("PUT")
             .json(&json!({
-                "version": "0.7",
+                "version": "0.9",
                 "template_id": "test-template-bar", // This `template_id` should be ignored and overridden by the path parameter.
                 "index_id_patterns": ["test-index-foo*"],
                 "doc_mapping": {},

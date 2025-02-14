@@ -1,7 +1,7 @@
 {
-    "version": "0.7",
+    "version": "0.9",
     "source_id": "hdfs-logs-kafka-source",
-    "desired_num_pipelines": 2,
+    "num_pipelines": 2,
     "source_type": "kafka",
     "params": {
         "topic": "cloudera-cluster-logs",

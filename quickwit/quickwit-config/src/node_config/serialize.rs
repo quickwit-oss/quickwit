@@ -145,16 +145,16 @@ pub async fn load_node_config_with_env(
 #[derive(Debug, Deserialize)]
 #[serde(tag = "version")]
 enum VersionedNodeConfig {
-    #[serde(rename = "0.8")]
+    #[serde(rename = "0.9")]
     // Retro compatibility.
-    #[serde(alias = "0.7")]
-    V0_8(NodeConfigBuilder),
+    #[serde(alias = "0.7", alias = "0.8")]
+    V0_9(NodeConfigBuilder),
 }
 
 impl From<VersionedNodeConfig> for NodeConfigBuilder {
     fn from(versioned_node_config: VersionedNodeConfig) -> Self {
         match versioned_node_config {
-            VersionedNodeConfig::V0_8(node_config_builder) => node_config_builder,
+            VersionedNodeConfig::V0_9(node_config_builder) => node_config_builder,
         }
     }
 }
