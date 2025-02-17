@@ -18,16 +18,16 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
+use quickwit_common::tracker::Tracker;
 use quickwit_metastore::SplitMetadata;
 use quickwit_proto::indexing::MergePipelineId;
 use quickwit_proto::types::DocMappingUid;
 use serde::Serialize;
-use tantivy::Inventory;
 use time::OffsetDateTime;
 use tracing::{info, warn};
 
 use super::MergeSchedulerService;
-use crate::actors::merge_scheduler_service::schedule_merge;
+use crate::actors::merge_scheduler_service::{schedule_merge, GetOperationTracker};
 use crate::actors::MergeSplitDownloader;
 use crate::merge_policy::MergeOperation;
 use crate::models::NewSplits;
@@ -80,11 +80,15 @@ pub struct MergePlanner {
     merge_split_downloader_mailbox: Mailbox<MergeSplitDownloader>,
     merge_scheduler_service: Mailbox<MergeSchedulerService>,
 
-    /// Inventory of ongoing merge operations. If everything goes well,
-    /// a merge operation is dropped after the publish of the merged split.
+    /// Track ongoing and failed merge operations for this index
     ///
-    /// It is used to GC the known_split_ids set.
-    ongoing_merge_operations_inventory: Inventory<MergeOperation>,
+    /// We don't want to emit a new merge for splits already in the process of
+    /// being merged, but we want to keep track of failed merges so we can
+    /// reschedule them.
+    // TODO currently the MergePlanner is teared down when a merge fails, so this
+    // mechanism is only useful when there are some merges left from a previous
+    // pipeline. We could only tear down the rest of the pipeline on error.
+    ongoing_merge_operations_tracker: Tracker<MergeOperation>,
 
     /// We use the actor start_time as a way to identify incarnations.
     ///
@@ -134,8 +138,15 @@ impl Handler<RunFinalizeMergePolicyAndQuit> for MergePlanner {
         _plan_merge: RunFinalizeMergePolicyAndQuit,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        // Note we ignore messages that could be coming from a different incarnation.
-        // (See comment on `Self::incarnation_start_at`.)
+        // consume failed merges so that we may try to reschedule them one last time
+        for failed_merge in self.ongoing_merge_operations_tracker.take_dead() {
+            for split in failed_merge.splits {
+                // if they were from a dead merge, we always record them, they are likely
+                // already part of our known splits, and we don't want to rebuild the known
+                // split list as it's likely to log about not halving its size.
+                self.record_split(split);
+            }
+        }
         self.send_merge_ops(true, ctx).await?;
         Err(ActorExitStatus::Success)
     }
@@ -183,30 +194,42 @@ impl MergePlanner {
         QueueCapacity::Bounded(1)
     }
 
-    pub fn new(
+    pub async fn new(
         pipeline_id: &MergePipelineId,
         immature_splits: Vec<SplitMetadata>,
         merge_policy: Arc<dyn MergePolicy>,
         merge_split_downloader_mailbox: Mailbox<MergeSplitDownloader>,
         merge_scheduler_service: Mailbox<MergeSchedulerService>,
-    ) -> MergePlanner {
+    ) -> anyhow::Result<MergePlanner> {
         let immature_splits: Vec<SplitMetadata> = immature_splits
             .into_iter()
             .filter(|split_metadata| belongs_to_pipeline(pipeline_id, split_metadata))
             .collect();
+        let ongoing_merge_operations_tracker = merge_scheduler_service
+            .ask(GetOperationTracker(pipeline_id.index_uid.clone()))
+            .await?;
+
+        let mut known_split_ids: HashSet<String> = HashSet::new();
+        let ongoing_merge_operations = ongoing_merge_operations_tracker.list_ongoing();
+        for merge_op in ongoing_merge_operations {
+            for split in &merge_op.splits {
+                known_split_ids.insert(split.split_id().to_string());
+            }
+        }
+
         let mut merge_planner = MergePlanner {
-            known_split_ids: Default::default(),
+            known_split_ids,
             known_split_ids_recompute_attempt_id: 0,
             partitioned_young_splits: Default::default(),
             merge_policy,
             merge_split_downloader_mailbox,
             merge_scheduler_service,
-            ongoing_merge_operations_inventory: Inventory::default(),
+            ongoing_merge_operations_tracker,
 
             incarnation_started_at: Instant::now(),
         };
         merge_planner.record_splits_if_necessary(immature_splits);
-        merge_planner
+        Ok(merge_planner)
     }
 
     fn rebuild_known_split_ids(&self) -> HashSet<String> {
@@ -217,7 +240,7 @@ impl MergePlanner {
                 known_split_ids.insert(split.split_id().to_string());
             }
         }
-        let ongoing_merge_operations = self.ongoing_merge_operations_inventory.list();
+        let ongoing_merge_operations = self.ongoing_merge_operations_tracker.list_ongoing();
         // Add splits that are known as in merge.
         for merge_op in ongoing_merge_operations {
             for split in &merge_op.splits {
@@ -237,7 +260,7 @@ impl MergePlanner {
 
     /// Updates `known_split_ids` and return true if the split was not
     /// previously known and should be recorded.
-    fn acknownledge_split(&mut self, split_id: &str) -> bool {
+    fn acknowledge_split(&mut self, split_id: &str) -> bool {
         if self.known_split_ids.contains(split_id) {
             return false;
         }
@@ -251,6 +274,10 @@ impl MergePlanner {
         if self.known_split_ids_recompute_attempt_id % 100 == 0 {
             self.known_split_ids = self.rebuild_known_split_ids();
             self.known_split_ids_recompute_attempt_id = 0;
+
+            for failed_merge in self.ongoing_merge_operations_tracker.take_dead() {
+                self.record_splits_if_necessary(failed_merge.splits);
+            }
         }
     }
 
@@ -280,12 +307,13 @@ impl MergePlanner {
             // a split already in store to be received.
             //
             // See `known_split_ids`.
-            if !self.acknownledge_split(new_split.split_id()) {
+            if !self.acknowledge_split(new_split.split_id()) {
                 continue;
             }
             self.record_split(new_split);
         }
     }
+
     async fn compute_merge_ops(
         &mut self,
         is_finalize: bool,
@@ -323,9 +351,8 @@ impl MergePlanner {
         let merge_ops = self.compute_merge_ops(is_finalize, ctx).await?;
         for merge_operation in merge_ops {
             info!(merge_operation=?merge_operation, "schedule merge operation");
-            let tracked_merge_operation = self
-                .ongoing_merge_operations_inventory
-                .track(merge_operation);
+            let tracked_merge_operation =
+                self.ongoing_merge_operations_tracker.track(merge_operation);
             schedule_merge(
                 &self.merge_scheduler_service,
                 tracked_merge_operation,
@@ -435,7 +462,8 @@ mod tests {
             merge_policy,
             merge_split_downloader_mailbox,
             universe.get_or_spawn_one(),
-        );
+        )
+        .await?;
         let (merge_planner_mailbox, merge_planner_handle) =
             universe.spawn_builder().spawn(merge_planner);
         {
@@ -560,7 +588,8 @@ mod tests {
             merge_policy,
             merge_split_downloader_mailbox,
             universe.get_or_spawn_one(),
-        );
+        )
+        .await?;
         let (merge_planner_mailbox, merge_planner_handle) =
             universe.spawn_builder().spawn(merge_planner);
 
@@ -652,7 +681,8 @@ mod tests {
             merge_policy,
             merge_split_downloader_mailbox,
             universe.get_or_spawn_one(),
-        );
+        )
+        .await?;
         let (merge_planner_mailbox, merge_planner_handle) =
             universe.spawn_builder().spawn(merge_planner);
         universe.sleep(Duration::from_secs(10)).await;
@@ -717,7 +747,8 @@ mod tests {
             merge_policy,
             merge_split_downloader_mailbox,
             universe.get_or_spawn_one(),
-        );
+        )
+        .await?;
         // We create a fake old mailbox that contains two new splits and a PlanMerge message from an
         // old incarnation. This could happen in real life if the merge pipeline failed
         // right after a `PlanMerge` was pushed to the pipeline. Note that #3847 did not

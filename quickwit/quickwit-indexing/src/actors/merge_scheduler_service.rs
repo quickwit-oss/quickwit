@@ -14,13 +14,14 @@
 
 use std::cmp::Reverse;
 use std::collections::binary_heap::PeekMut;
-use std::collections::BinaryHeap;
+use std::collections::{BinaryHeap, HashMap};
 use std::sync::Arc;
 
 use anyhow::Context;
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox};
-use tantivy::TrackedObject;
+use quickwit_common::tracker::{TrackedObject, Tracker};
+use quickwit_proto::types::IndexUid;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tracing::error;
 
@@ -118,6 +119,8 @@ pub struct MergeSchedulerService {
     pending_merge_queue: BinaryHeap<ScheduledMerge>,
     next_merge_id: u64,
     pending_merge_bytes: u64,
+    tracked_operations: HashMap<IndexUid, Tracker<MergeOperation>>,
+    gc_sequence_id: usize,
 }
 
 impl Default for MergeSchedulerService {
@@ -135,6 +138,8 @@ impl MergeSchedulerService {
             pending_merge_queue: BinaryHeap::default(),
             next_merge_id: 0,
             pending_merge_bytes: 0,
+            tracked_operations: HashMap::new(),
+            gc_sequence_id: 0,
         }
     }
 
@@ -188,6 +193,14 @@ impl MergeSchedulerService {
         crate::metrics::INDEXER_METRICS
             .ongoing_merge_operations
             .set(num_merges);
+    }
+
+    fn maybe_gc_trackers(&mut self) {
+        self.gc_sequence_id += 1;
+        if self.gc_sequence_id % 100 == 0 {
+            self.tracked_operations
+                .retain(|_k, tracker| !tracker.safe_to_recreate())
+        }
     }
 }
 
@@ -289,7 +302,29 @@ impl Handler<PermitReleased> for MergeSchedulerService {
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         self.schedule_pending_merges(ctx);
+        self.maybe_gc_trackers();
         Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct GetOperationTracker(pub IndexUid);
+
+#[async_trait]
+impl Handler<GetOperationTracker> for MergeSchedulerService {
+    type Reply = Tracker<MergeOperation>;
+
+    async fn handle(
+        &mut self,
+        get_operation_tracker: GetOperationTracker,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        let tracker = self
+            .tracked_operations
+            .entry(get_operation_tracker.0)
+            .or_default()
+            .clone();
+        Ok(tracker)
     }
 }
 
@@ -298,8 +333,8 @@ mod tests {
     use std::time::Duration;
 
     use quickwit_actors::Universe;
+    use quickwit_common::tracker::Tracker;
     use quickwit_metastore::SplitMetadata;
-    use tantivy::Inventory;
     use tokio::time::timeout;
 
     use super::*;
@@ -339,7 +374,7 @@ mod tests {
         let (merge_scheduler_service, _) = universe
             .spawn_builder()
             .spawn(MergeSchedulerService::new(2));
-        let inventory = Inventory::new();
+        let inventory = Tracker::new();
 
         let (merge_split_downloader_mailbox, merge_split_downloader_inbox) =
             universe.create_test_mailbox();

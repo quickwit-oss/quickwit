@@ -18,7 +18,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use bytes::Bytes;
-use quickwit_actors::{Mailbox, Universe};
+use quickwit_actors::{ActorHandle, Mailbox, Universe};
 use quickwit_cluster::{create_cluster_for_test, ChannelTransport};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::rand::append_random_suffix;
@@ -32,13 +32,16 @@ use quickwit_ingest::{init_ingest_api, IngesterPool, QUEUES_DIR_NAME};
 use quickwit_metastore::{
     CreateIndexRequestExt, MetastoreResolver, Split, SplitMetadata, SplitState,
 };
+use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::{CreateIndexRequest, MetastoreService, MetastoreServiceClient};
 use quickwit_proto::types::{IndexUid, NodeId, PipelineUid, SourceId};
 use quickwit_storage::{Storage, StorageResolver};
 use serde_json::Value as JsonValue;
 
-use crate::actors::IndexingService;
-use crate::models::{DetachIndexingPipeline, IndexingStatistics, SpawnPipeline};
+use crate::actors::{IndexingPipeline, IndexingService, MergePipeline};
+use crate::models::{
+    DetachIndexingPipeline, DetachMergePipeline, IndexingStatistics, SpawnPipeline,
+};
 
 /// Creates a Test environment.
 ///
@@ -56,6 +59,7 @@ pub struct TestSandbox {
     storage: Arc<dyn Storage>,
     add_docs_id: AtomicUsize,
     universe: Universe,
+    indexing_pipeline_id: Option<IndexingPipelineId>,
     _temp_dir: tempfile::TempDir,
 }
 
@@ -130,6 +134,14 @@ impl TestSandbox {
         .await?;
         let (indexing_service, _indexing_service_handle) =
             universe.spawn_builder().spawn(indexing_service_actor);
+
+        let indexing_pipeline_id = indexing_service
+            .ask_for_res(SpawnPipeline {
+                index_id: index_uid.index_id.to_string(),
+                source_config,
+                pipeline_uid: PipelineUid::for_test(1u128),
+            })
+            .await?;
         Ok(TestSandbox {
             node_id,
             index_uid,
@@ -141,6 +153,7 @@ impl TestSandbox {
             storage,
             add_docs_id: AtomicUsize::default(),
             universe,
+            indexing_pipeline_id: Some(indexing_pipeline_id),
             _temp_dir: temp_dir,
         })
     }
@@ -189,6 +202,56 @@ impl TestSandbox {
         Ok(pipeline_statistics)
     }
 
+    /// Adds documents and waits for them to be indexed (creating a separate split).
+    ///
+    /// The documents are expected to be `JsonValue`.
+    /// They can be created using the `serde_json::json!` macro.
+    pub async fn add_documents_through_api<I>(&self, json_docs: I) -> anyhow::Result<()>
+    where
+        I: IntoIterator<Item = JsonValue> + 'static,
+        I::IntoIter: Send,
+    {
+        let ingest_api_service_mailbox = self
+            .universe
+            .get_one::<quickwit_ingest::IngestApiService>()
+            .unwrap();
+
+        let batch_builder =
+            quickwit_ingest::DocBatchBuilder::new(self.index_uid.index_id.to_string());
+        let mut json_writer = batch_builder.json_writer();
+        for doc in json_docs {
+            json_writer.ingest_doc(doc)?;
+        }
+        let batch = json_writer.build();
+        let ingest_request = quickwit_ingest::IngestRequest {
+            doc_batches: vec![batch],
+            commit: quickwit_ingest::CommitType::WaitFor as i32,
+        };
+        ingest_api_service_mailbox
+            .ask_for_res(ingest_request)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn take_indexing_and_merge_pipeline(
+        &mut self,
+    ) -> anyhow::Result<(ActorHandle<IndexingPipeline>, ActorHandle<MergePipeline>)> {
+        let pipeline_id = self.indexing_pipeline_id.take().unwrap();
+        let merge_pipeline_id = pipeline_id.merge_pipeline_id();
+        let indexing_pipeline = self
+            .indexing_service
+            .ask_for_res(DetachIndexingPipeline { pipeline_id })
+            .await?;
+        let merge_pipeline = self
+            .indexing_service
+            .ask_for_res(DetachMergePipeline {
+                pipeline_id: merge_pipeline_id,
+            })
+            .await?;
+
+        Ok((indexing_pipeline, merge_pipeline))
+    }
+
     /// Returns the metastore of the TestSandbox.
     ///
     /// The metastore is a file-backed metastore.
@@ -231,6 +294,11 @@ impl TestSandbox {
     /// Returns the underlying universe.
     pub fn universe(&self) -> &Universe {
         &self.universe
+    }
+
+    /// Returns a Mailbox for the indexing service
+    pub fn indexing_service(&self) -> Mailbox<IndexingService> {
+        self.indexing_service.clone()
     }
 
     /// Gracefully quits all registered actors in the underlying universe and asserts that none of
