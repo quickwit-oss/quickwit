@@ -1792,7 +1792,7 @@ mod tests {
     }
 
     #[test]
-    fn test_quickwit_json_options_default_tokenizer_is_default() {
+    fn test_quickwit_json_options_default_tokenizer_is_raw() {
         let quickwit_json_options = QuickwitJsonOptions::default();
         assert_eq!(
             quickwit_json_options
@@ -1802,6 +1802,12 @@ mod tests {
                 .name(),
             "raw"
         );
+    }
+
+    #[test]
+    fn test_quickwit_json_options_default_fast_is_false() {
+        let quickwit_json_options = QuickwitJsonOptions::default();
+        assert_eq!(quickwit_json_options.fast, FastFieldOptions::Disabled);
     }
 
     #[test]
