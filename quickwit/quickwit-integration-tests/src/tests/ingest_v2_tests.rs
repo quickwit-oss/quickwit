@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use futures_util::FutureExt;
 use itertools::Itertools;
@@ -23,9 +23,9 @@ use quickwit_indexing::actors::INDEXING_DIR_NAME;
 use quickwit_metastore::SplitState;
 use quickwit_proto::ingest::ParseFailureReason;
 use quickwit_rest_client::error::{ApiError, Error};
-use quickwit_rest_client::models::IngestSource;
+use quickwit_rest_client::models::{CumulatedIngestResponse, IngestSource};
 use quickwit_rest_client::rest_client::CommitType;
-use quickwit_serve::{ListSplitsQueryParams, RestIngestResponse, RestParseFailure};
+use quickwit_serve::{ListSplitsQueryParams, RestParseFailure, SearchRequestQueryString};
 use serde_json::json;
 
 use crate::ingest_json;
@@ -306,11 +306,11 @@ async fn test_ingest_v2_happy_path() {
     .unwrap();
     assert_eq!(
         ingest_resp,
-        RestIngestResponse {
+        CumulatedIngestResponse {
             num_docs_for_processing: 1,
             num_ingested_docs: Some(1),
             num_rejected_docs: Some(0),
-            parse_failures: None,
+            ..Default::default()
         },
     );
 
@@ -328,6 +328,83 @@ async fn test_ingest_v2_happy_path() {
         .delete(index_id, false)
         .await
         .unwrap();
+
+    sandbox.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn test_ingest_v2_high_throughput() {
+    let sandbox = ClusterSandboxBuilder::build_and_start_standalone().await;
+    let index_id = "test_high_throughput";
+    let index_config = format!(
+        r#"
+        version: 0.8
+        index_id: {index_id}
+        doc_mapping:
+            field_mappings:
+            - name: body
+              type: text
+        indexing_settings:
+            commit_timeout_secs: 1
+        "#
+    );
+    sandbox
+        .rest_client(QuickwitService::Indexer)
+        .indexes()
+        .create(index_config, ConfigFormat::Yaml, false)
+        .await
+        .unwrap();
+
+    let body_size = 20 * 1000 * 1000;
+    let line = json!({"body": "my dummy repeated payload"}).to_string();
+    let num_docs = body_size / line.len();
+    let body = std::iter::repeat_n(&line, num_docs).join("\n");
+    let ingest_resp = sandbox
+        .rest_client(QuickwitService::Indexer)
+        .ingest(
+            index_id,
+            IngestSource::Str(body),
+            // TODO: when using the default 10MiB batch size, we get persist
+            // timeouts with code 500 on some lower performance machines (e.g.
+            // Github runners). We should investigate why this happens exactly.
+            Some(5_000_000),
+            None,
+            CommitType::Auto,
+        )
+        .await
+        .unwrap();
+    assert_eq!(ingest_resp.num_docs_for_processing, num_docs as u64);
+    assert_eq!(ingest_resp.num_ingested_docs, Some(num_docs as u64));
+    assert_eq!(ingest_resp.num_rejected_docs, Some(0));
+    // num_too_many_requests might actually be > 0
+
+    let searcher_client = sandbox.rest_client(QuickwitService::Searcher);
+    // wait for the docs to be indexed
+    let start_time = Instant::now();
+    loop {
+        let res = searcher_client
+            .search(
+                index_id,
+                SearchRequestQueryString {
+                    query: "*".to_string(),
+                    ..Default::default()
+                },
+            )
+            .await;
+        if let Ok(success_resp) = res {
+            if success_resp.num_hits == num_docs as u64 {
+                break;
+            }
+        }
+        if start_time.elapsed() > Duration::from_secs(20) {
+            panic!(
+                "didn't manage to index {} docs in {:?}",
+                num_docs,
+                start_time.elapsed()
+            );
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
 
     sandbox.shutdown().await.unwrap();
 }
@@ -372,11 +449,11 @@ async fn test_commit_force() {
     .unwrap();
     assert_eq!(
         ingest_resp,
-        RestIngestResponse {
+        CumulatedIngestResponse {
             num_docs_for_processing: 1,
             num_ingested_docs: Some(1),
             num_rejected_docs: Some(0),
-            parse_failures: None,
+            ..Default::default()
         },
     );
 
@@ -452,20 +529,20 @@ async fn test_commit_wait_for() {
     let (ingest_resp_1, ingest_resp_2) = tokio::join!(ingest_1_fut, ingest_2_fut);
     assert_eq!(
         ingest_resp_1,
-        RestIngestResponse {
+        CumulatedIngestResponse {
             num_docs_for_processing: 1,
             num_ingested_docs: Some(1),
             num_rejected_docs: Some(0),
-            parse_failures: None,
+            ..Default::default()
         },
     );
     assert_eq!(
         ingest_resp_2,
-        RestIngestResponse {
+        CumulatedIngestResponse {
             num_docs_for_processing: 1,
             num_ingested_docs: Some(1),
             num_rejected_docs: Some(0),
-            parse_failures: None,
+            ..Default::default()
         },
     );
 
@@ -523,11 +600,11 @@ async fn test_commit_auto() {
         .unwrap();
     assert_eq!(
         ingest_resp,
-        RestIngestResponse {
+        CumulatedIngestResponse {
             num_docs_for_processing: 1,
             num_ingested_docs: Some(1),
             num_rejected_docs: Some(0),
-            parse_failures: None,
+            ..Default::default()
         },
     );
 
@@ -577,7 +654,7 @@ async fn test_detailed_ingest_response() {
 
     assert_eq!(
         ingest_resp,
-        RestIngestResponse {
+        CumulatedIngestResponse {
             num_docs_for_processing: 2,
             num_ingested_docs: Some(1),
             num_rejected_docs: Some(1),
@@ -586,6 +663,7 @@ async fn test_detailed_ingest_response() {
                 message: "failed to parse JSON document".to_string(),
                 reason: ParseFailureReason::InvalidJson,
             }]),
+            ..Default::default()
         },
     );
     sandbox.shutdown().await.unwrap();
