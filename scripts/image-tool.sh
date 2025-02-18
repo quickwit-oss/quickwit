@@ -152,7 +152,7 @@ build_image() {
     echo "Target Environment: $TARGET_ENV"
     echo "Platform: $PLATFORM"
     echo "Metadata File: $METADATA_FILE"
-    
+
     docker buildx build \
         -f Dockerfile \
         -t "$DOCKER_IMAGE" \
@@ -174,6 +174,10 @@ sign_image() {
 # Main execution logic
 if [ "$DO_BUILD" = true ]; then
     build_image
+fi
+
+if [ "$DO_SIGN" = true ]; then
+    sign_image
 fi
 
 # Cleanup only if we created a temporary file

@@ -13,7 +13,6 @@ default:
 stages:
   - build
   - publish
-  - sign
   - deploy
 
 build_image:
@@ -25,11 +24,12 @@ build_image:
     - changes:
         - .gitlab-ci.yml
         - quickwit/**
+  id_tokens:
+    DDSIGN_ID_TOKEN:
+      aud: image-integrity
   script:
-    - scripts/image-tool.sh --push --repo cloudprem --metadata-file meta.json
-  artifacts:
-    paths:
-      - meta.json
+    - scripts/image-tool.sh --push --repo cloudprem
+    - scripts/image-tool.sh --push --sign --repo pomsky
 
 publish_public_image:
   stage: publish
@@ -42,19 +42,6 @@ publish_public_image:
     IMG_DESTINATIONS: cloudprem:edge
     IMG_REGISTRIES: dockerhub
     IMG_SIGNING: "false"
-
-sign_image:
-  image: $DOCKER_CI_IMAGE
-  stage: sign
-  tags:
-    - arch:arm64
-  needs:
-    - build_image
-  id_tokens:
-    DDSIGN_ID_TOKEN:
-      aud: image-integrity
-  script:
-    - scripts/image-tool.sh --sign --repo cloudprem --metadata-file meta.json
 
 deploy_to_staging:
   image: $BAZEL_CI_IMAGE
