@@ -95,6 +95,7 @@ chrono = { version = "0.4", default-features = false, features = [
   "clock",
   "std",
 ] }
+chrono-tz = "0.10.1"
 clap = { version = "4.5.0", features = ["env", "string"] }
 coarsetime = "0.1.33"
 colored = "2.1.0"
@@ -330,7 +331,7 @@ quickwit-serve = { path = "quickwit-serve" }
 quickwit-storage = { path = "quickwit-storage" }
 quickwit-telemetry = { path = "quickwit-telemetry" }
 
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "d281ca3", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "0368162", default-features = false, features = [
   "lz4-compression",
   "mmap",
   "quickwit",

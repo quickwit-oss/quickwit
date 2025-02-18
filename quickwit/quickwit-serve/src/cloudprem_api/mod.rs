@@ -212,9 +212,13 @@ impl CloudPremService for CloudPremServiceImpl {
             return Err(CloudPremError::Internal("missing aggregation".to_string()));
         };
 
+        // TODO we can use ExtractTimestampRange to get some decent timestamp from the request
+        // this is all a hack to somewhat support calendar invervals though
+        let start_ts_secs = 1735686000; // 2025-01-01
+
         debug!("received aggregation ast {evp_aggregation_ast:?}");
         let aggregation_ast =
-            quickwit_query::cloudprem::to_tantivy_aggregation(evp_aggregation_ast)?;
+            quickwit_query::cloudprem::to_tantivy_aggregation(evp_aggregation_ast, start_ts_secs)?;
         debug!("converted aggregation ast {aggregation_ast:?}");
 
         let search_request = SearchRequest {

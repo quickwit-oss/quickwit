@@ -5,6 +5,7 @@ use quickwit_proto::cloudprem::query_node::Node;
 use quickwit_proto::cloudprem::{BooleanOperator, QueryNode, SearchQueryMode, WildcardPattern};
 use serde_json::Number;
 
+use super::{missing_required, unsupported_query_error};
 use crate::query_ast::{
     BoolQuery, FieldPresenceQuery, FullTextMode, FullTextParams, FullTextQuery, PhrasePrefixQuery,
     QueryAst, RangeQuery, TermSetQuery, WildcardQuery,
@@ -19,13 +20,6 @@ const QW_DEFAULT_FIELD: &str = "default";
 pub fn parse_query(raw_message: prost_types::Any) -> Result<QueryNode, DecodeError> {
     // TODO validate type url?
     QueryNode::decode(raw_message.value.as_ref())
-}
-
-// field is relative to the closest `node` (except when a `node` is what is missing)
-fn missing_required(field: &str) -> InvalidQuery {
-    InvalidQuery::Other(anyhow::anyhow!(
-        "missing required field '{field}', this likely means a protobuf missmatch"
-    ))
 }
 
 fn value_to_string(
@@ -61,10 +55,6 @@ fn value_to_json_literal(
                 .ok_or_else(|| anyhow::anyhow!("unsupported NaN or infinite f64"))?,
         )),
     }
-}
-
-fn unsupported_query_error(feature: &str) -> InvalidQuery {
-    InvalidQuery::Other(anyhow::anyhow!("unsupported feature: {feature}"))
 }
 
 pub fn to_quickwit_query(cloudprem_query: QueryNode) -> Result<QueryAst, InvalidQuery> {
