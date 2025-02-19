@@ -7232,6 +7232,7 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "bytesize",
+ "chrono",
  "elasticsearch-dsl",
  "flate2",
  "futures",
