@@ -52,7 +52,9 @@ use tracing::{debug, error, info, instrument, warn};
 use crate::actors::Packager;
 use crate::controlled_directory::ControlledDirectory;
 use crate::merge_policy::MergeOperationType;
-use crate::models::{IndexedSplit, IndexedSplitBatch, MergeScratch, PublishLock, SplitAttrs};
+use crate::models::{
+    IndexedSplit, IndexedSplitBatch, MergeScratch, PublishLock, SplitAttrs,
+};
 
 #[derive(Clone)]
 pub struct MergeExecutor {
@@ -95,16 +97,37 @@ impl Handler<MergeScratch> for MergeExecutor {
         let start = Instant::now();
         let merge_task = merge_scratch.merge_task;
         let indexed_split_opt: Option<IndexedSplit> = match merge_task.operation_type {
-            MergeOperationType::Merge => Some(
-                self.process_merge(
-                    merge_task.merge_split_id.clone(),
-                    merge_task.splits.clone(),
-                    merge_scratch.tantivy_dirs,
-                    merge_scratch.merge_scratch_directory,
-                    ctx,
-                )
-                .await?,
-            ),
+            MergeOperationType::Merge => {
+                let merge_res = self
+                    .process_merge(
+                        merge_task.merge_split_id.clone(),
+                        merge_task.splits.clone(),
+                        merge_scratch.tantivy_dirs,
+                        merge_scratch.merge_scratch_directory,
+                        ctx,
+                    )
+                    .await;
+                match merge_res {
+                    Ok(indexed_split) => Some(indexed_split),
+                    Err(err) => {
+                        // A failure in a merge is a bit special.
+                        //
+                        // Instead of failing the pipeline, we just log it.
+                        // The idea is to limit the risk associated with a potential split of death.
+                        //
+                        // Such a split is now not tracked by the merge planner and won't undergo a
+                        // merge until the merge pipeline is restarted.
+                        //
+                        // With a merge policy that marks splits as mature after a day or so, this
+                        // limits the noise associated to those failed
+                        // merges.
+                        //
+                        // This logic is part of a temporary firefighting fix for #5687
+                        error!(merge_task=?merge_task, split_err=?err, "failed to merge splits");
+                        return Ok(());
+                    }
+                }
+            }
             MergeOperationType::DeleteAndMerge => {
                 assert_eq!(
                     merge_task.splits.len(),
