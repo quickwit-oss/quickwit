@@ -47,7 +47,7 @@ use tantivy::index::SegmentId;
 use tantivy::tokenizer::TokenizerManager;
 use tantivy::{DateTime, Directory, Index, IndexMeta, IndexWriter, SegmentReader};
 use tokio::runtime::Handle;
-use tracing::{debug, info, instrument, warn};
+use tracing::{debug, error, info, instrument, warn};
 
 use crate::actors::Packager;
 use crate::controlled_directory::ControlledDirectory;
@@ -315,7 +315,7 @@ impl MergeExecutor {
         )?;
         // TODO it would be nice if tantivy could let us run the merge in the current thread.
         fail_point!("before-merge-split");
-        let controlled_directory = self
+        let controlled_directory_res = self
             .merge_split_directories(
                 union_index_meta,
                 split_directories,
@@ -324,7 +324,13 @@ impl MergeExecutor {
                 merge_scratch_directory.path(),
                 ctx,
             )
-            .await?;
+            .await;
+        if let Err(merge_err) = controlled_directory_res.as_ref() {
+            let split_ids: Vec<&str> = splits.iter().map(|split| split.split_id()).collect();
+            error!(split_ids=?split_ids, merge_split_id=merge_split_id.as_str(), err=?merge_err, "failed to merge splits");
+        }
+
+        let controlled_directory = controlled_directory_res?;
         fail_point!("after-merge-split");
 
         // This will have the side effect of deleting the directory containing the downloaded
