@@ -22,6 +22,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 --->
 
+# [0.9.0]
+
+### Added
+- Add Ingest V2 (#5600, #5566, #5463, #5375, #5350, #5252 #5202)
+- Add SQS source (#5374, #5335, #5148)
+- Disable control plane check for searcher (#5599, #5360)
+- Partially implement `_elastic/_cluster/health` (#5595)
+- Make Jaeger span attribute-to-tag conversion exhaustive (#5574)
+- Use `content_length_limit` for ES bulk limit (#5573)
+- Limit and monitor warmup memory usage (#5568)
+- Add eviction metrics to caches (#5523)
+- Record object storage request latencies (#5521)
+- Add some kind of throttling on the janitor to prevent it from overloading (#5510)
+- Prevent single split searches from different `leaf_search` from interleaving (#5509)
+- Retry on S3 internal error (#5504)
+- Allow specifying OTEL index ID in header (#5503)
+- Add a metric to count storage errors and their error code (#5497)
+- Add support for concatenated fields (#4773, #5369, #5331) 
+- Add number of splits per root/leaf search histograms (#5472)
+- Introduce a searcher config option to timeout get requests (#5467)
+- Add fingerprint to task in cluster state (#5464)
+- Enrich root/leaf search spans with number of docs and splits (#5450)
+- Add some additional search metrics (#5447)
+- Improve GC resilience and add metrics (#5420)
+- Enable force shutdown with 2nd Ctrl+C (#5414)
+- Add request_timeout_secs config to searcher config (#5402)
+- Memoize S3 client (#5377)
+- Add more env var config for Postgres (#5365)
+- Enable str fast field range queries (#5324)
+- Allow querying non-existing fields (#5308)
+- Support updating doc mapper through api (#5253) 
+- Add optional special handling for hex in code tokenizer (#5200)
+- Added a circuit breaker layer (#5134)
+- Various performance optimizations in Tantivy (https://github.com/quickwit-oss/tantivy/blob/main/CHANGELOG.md)
+
+### Changed
+- Parse datetimes and timestamps with leading and/or trailing whitespace (#5544)
+- Restrict maturity period to retention (#5543)
+- Wait for merge at end of local ingest (#5542)
+- Log PostgreSQL metastore error (#5530)
+- Update azure multipart policy (#5553)
+- Stop relying on our own version of pulsar-rs (#5487)
+- Handle nested OTLP values in attributes and log bodies (#5485)
+- Improve merge pipeline finalization (#5475)
+- Allow failed splits in root search (#5440)
+- Batch delete from GC (#5404, #5380)
+- Make some S3 errors retryable (#5384)
+- Change default timestamps in OTEL logs (#5366)
+- Only return root spans for Jaeger HTTP API (#5358)
+- Share aggregation limit on node (#5357)
+
+### Fixed
+- Fix existence queries for nested fields (#5581)
+- Fix lenient option with wildcard queries (#5575)
+- Fix incompatible ES Java date format (#5462)
+- Fix bulk api response order (#5434)
+- Fix pulsar finalize (#5471)
+- Fix pulsar URI scheme (#5470)
+- Fix grafana searchers dashboard (#5455)
+- Fix jaeger http endpoint (#5378)
+- Fix file re-ingestion after EOF (#5330)
+- Fix source path in Lambda distrib (#5327)
+- Fix configuration interpolation (#5403)
+- Fix jaeger duration parse error (#5518)
+- Fix unit conversion in jaeger http search endpoint (#5519)
+
+### Removed
+- Remove support for 2-digit years in java datetime parser (#5596)
+- Remove DocMapper trait (#5508)
+
+
 # [0.8.1]
 
 ### Fixed

@@ -1,21 +1,16 @@
-// Copyright (C) 2024 Quickwit, Inc.
+// Copyright 2021-Present Datadog, Inc.
 //
-// Quickwit is offered under the AGPL v3.0 and as commercial software.
-// For commercial licensing, contact us at hello@quickwit.io.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// AGPL:
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program. If not, see <http://www.gnu.org/licenses/>.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
@@ -23,7 +18,7 @@ use std::ops::Bound;
 
 use quickwit_query::query_ast::{
     FieldPresenceQuery, FullTextQuery, PhrasePrefixQuery, QueryAst, QueryAstVisitor, RangeQuery,
-    TermSetQuery, WildcardQuery,
+    RegexQuery, TermSetQuery, WildcardQuery,
 };
 use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_query::{find_field_or_hit_dynamic, InvalidQuery};
@@ -33,7 +28,7 @@ use tantivy::Term;
 use tracing::error;
 
 use crate::doc_mapper::FastFieldWarmupInfo;
-use crate::{QueryParserError, TermRange, WarmupInfo};
+use crate::{Automaton, QueryParserError, TermRange, WarmupInfo};
 
 #[derive(Default)]
 struct RangeQueryFields {
@@ -124,8 +119,8 @@ pub(crate) fn build_query(
     )?;
 
     let term_set_query_fields = extract_term_set_query_fields(query_ast, &schema)?;
-    let term_ranges_grouped_by_field =
-        extract_prefix_term_ranges(query_ast, &schema, tokenizer_manager)?;
+    let (term_ranges_grouped_by_field, automatons_grouped_by_field) =
+        extract_prefix_term_ranges_and_automaton(query_ast, &schema, tokenizer_manager)?;
 
     let mut terms_grouped_by_field: HashMap<Field, HashMap<_, bool>> = Default::default();
     query.query_terms(&mut |term, need_position| {
@@ -142,6 +137,7 @@ pub(crate) fn build_query(
         terms_grouped_by_field,
         term_ranges_grouped_by_field,
         fast_fields,
+        automatons_grouped_by_field,
         ..WarmupInfo::default()
     };
 
@@ -211,6 +207,7 @@ struct ExtractPrefixTermRanges<'a> {
     schema: &'a Schema,
     tokenizer_manager: &'a TokenizerManager,
     term_ranges_to_warm_up: HashMap<Field, HashMap<TermRange, PositionNeeded>>,
+    automatons_to_warm_up: HashMap<Field, HashSet<Automaton>>,
 }
 
 impl<'a> ExtractPrefixTermRanges<'a> {
@@ -219,6 +216,7 @@ impl<'a> ExtractPrefixTermRanges<'a> {
             schema,
             tokenizer_manager,
             term_ranges_to_warm_up: HashMap::new(),
+            automatons_to_warm_up: HashMap::new(),
         }
     }
 
@@ -241,6 +239,13 @@ impl<'a> ExtractPrefixTermRanges<'a> {
             .or_default()
             .entry(term_range)
             .or_default() |= position_needed;
+    }
+
+    fn add_automaton(&mut self, field: Field, automaton: Automaton) {
+        self.automatons_to_warm_up
+            .entry(field)
+            .or_default()
+            .insert(automaton);
     }
 }
 
@@ -277,25 +282,44 @@ impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRanges<'b> {
     }
 
     fn visit_wildcard(&mut self, wildcard_query: &'a WildcardQuery) -> Result<(), Self::Err> {
-        let term = match wildcard_query.extract_prefix_term(self.schema, self.tokenizer_manager) {
-            Ok((_, term)) => term,
+        let (field, path, regex) =
+            match wildcard_query.to_regex(self.schema, self.tokenizer_manager) {
+                Ok(res) => res,
+                /* the query will be nullified when casting to a tantivy ast */
+                Err(InvalidQuery::FieldDoesNotExist { .. }) => return Ok(()),
+                Err(e) => return Err(e),
+            };
+
+        self.add_automaton(field, Automaton::Regex(path, regex));
+        Ok(())
+    }
+
+    fn visit_regex(&mut self, regex_query: &'a RegexQuery) -> Result<(), Self::Err> {
+        let (field, path, regex) = match regex_query.to_field_and_regex(self.schema) {
+            Ok(res) => res,
             /* the query will be nullified when casting to a tantivy ast */
             Err(InvalidQuery::FieldDoesNotExist { .. }) => return Ok(()),
             Err(e) => return Err(e),
         };
-        self.add_prefix_term(term, u32::MAX, false);
+        self.add_automaton(field, Automaton::Regex(path, regex));
         Ok(())
     }
 }
 
-fn extract_prefix_term_ranges(
+type TermRangeWarmupInfo = HashMap<Field, HashMap<TermRange, PositionNeeded>>;
+type AutomatonWarmupInfo = HashMap<Field, HashSet<Automaton>>;
+
+fn extract_prefix_term_ranges_and_automaton(
     query_ast: &QueryAst,
     schema: &Schema,
     tokenizer_manager: &TokenizerManager,
-) -> anyhow::Result<HashMap<Field, HashMap<TermRange, PositionNeeded>>> {
+) -> anyhow::Result<(TermRangeWarmupInfo, AutomatonWarmupInfo)> {
     let mut visitor = ExtractPrefixTermRanges::with_schema(schema, tokenizer_manager);
     visitor.visit(query_ast)?;
-    Ok(visitor.term_ranges_to_warm_up)
+    Ok((
+        visitor.term_ranges_to_warm_up,
+        visitor.automatons_to_warm_up,
+    ))
 }
 
 #[cfg(test)]
@@ -563,21 +587,24 @@ mod test {
 
     #[test]
     fn test_wildcard_query() {
+        check_build_query_static_mode("title:hello*", Vec::new(), TestExpectation::Ok("Regex"));
         check_build_query_static_mode(
-            "title:hello*",
+            "title:\"hello world\"*",
             Vec::new(),
             TestExpectation::Ok("PhrasePrefixQuery"),
+        );
+        // the tokenizer removes '*' chars, making it a simple PhraseQuery (not RegexPhraseQuery)
+        check_build_query_static_mode(
+            "title:\"hello* world*\"",
+            Vec::new(),
+            TestExpectation::Ok("PhraseQuery"),
         );
         check_build_query_static_mode(
             "foo:bar*",
             Vec::new(),
             TestExpectation::Err("invalid query: field does not exist: `foo`"),
         );
-        check_build_query_static_mode(
-            "title:hello*yo",
-            Vec::new(),
-            TestExpectation::Err("Wildcard query contains wildcard in non final position"),
-        );
+        check_build_query_static_mode("title:hello*yo", Vec::new(), TestExpectation::Ok("Regex"));
     }
 
     #[test]

@@ -96,7 +96,7 @@ The following are some constrains about the multi-target expression.
 
     - It must follow the regex `^[a-zA-Z\*][a-zA-Z0-9-_\.\*]{0,254}$`.
     - It cannot contain consecutive asterisks (`*`).
-    - If it contains an asterisk (`*`), the length must be greater than or equal to 3 characters.
+    - If it does not contain an asterisk (`*`), the length must be greater than or equal to 3 characters.
 
 #### Examples
 ```
@@ -193,7 +193,9 @@ POST api/v1/<index id>/ingest?commit=wait_for -d \
 ```
 
 :::info
-The payload size is limited to 10MB as this endpoint is intended to receive documents in batch.
+
+The payload size is limited to 10MB [by default](../configuration/node-config.md#ingest-api-configuration) since this endpoint is intended to receive documents in batches.
+
 :::
 
 #### Path variable
@@ -207,6 +209,7 @@ The payload size is limited to 10MB as this endpoint is intended to receive docu
 | Variable            | Type       | Description                                        | Default value |
 |---------------------|------------|----------------------------------------------------|---------------|
 | `commit`            | `String`   | The commit behavior: `auto`, `wait_for` or `force` | `auto`        |
+| `detailed_response` | `bool`     | Enable `parse_failures` in the response. Setting to `true` might impact performances negatively. | `false`        |
 
 #### Response
 
@@ -214,7 +217,15 @@ The response is a JSON object, and the content type is `application/json; charse
 
 | Field                       | Description                                                                                                                                                              |   Type   |
 |-----------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:--------:|
-| `num_docs_for_processing` | Total number of documents ingested for processing. The documents may not have been processed. The API will not return indexing errors, check the server logs for errors. | `number` |
+| `num_docs_for_processing` | Total number of documents submitted for processing. The documents may not have been processed. | `number` |
+| `num_ingested_docs`       | Number of documents successfully persisted in the write ahead log | `number` |
+| `num_rejected_docs`       | Number of documents that couldn't be parsed (invalid json, bad schema...) | `number` |
+| `parse_failures`          | List detailing parsing failures. Only available if `detailed_response` is set to `true`. | `list(object)` |
+
+The parse failure objects contain the following fields:
+- `message`: a detailed message explaining the error
+- `reason`: one of `invalid_json`, `invalid_schema` or `unspecified`
+- `document`: the utf-8 decoded string of the document byte chunk that generated the error
 
 
 ## Index API
@@ -595,9 +606,57 @@ Create source by posting a source config JSON payload.
 | `version**       | `String` | Config format version, put your current Quickwit version.                               | _required_    |
 | `source_id`     | `String` | Source ID. See ID [validation rules](../configuration/source-config.md).                 | _required_    |
 | `source_type`   | `String` | Source type: `kafka`, `kinesis` or `pulsar`.                                             | _required_    |
-| `num_pipelines` | `usize`  | Number of running indexing pipelines per node for this source.                           | 1             |
+| `num_pipelines` | `usize`  | Number of running indexing pipelines per node for this source.                           | `1`           |
+| `transform`     | `object` | A [VRL](https://vector.dev/docs/reference/vrl/) transformation applied to incoming documents, as defined in [source config docs](../configuration/source-config.md#transform-parameters).                          | `null`         |
 | `params`        | `object` | Source parameters as defined in [source config docs](../configuration/source-config.md). | _required_    |
 
+
+**Payload Example**
+
+curl -XPOST http://localhost:7280/api/v1/indexes/my-index/sources --data @source_config.json -H "Content-Type: application/json"
+
+```json title="source_config.json
+{
+    "version": "0.8",
+    "source_id": "kafka-source",
+    "source_type": "kafka",
+    "params": {
+        "topic": "quickwit-fts-staging",
+        "client_params": {
+            "bootstrap.servers": "kafka-quickwit-server:9092"
+        }
+    }
+}
+```
+
+#### Response
+
+The response is the created source config, and the content type is `application/json; charset=UTF-8.`
+
+### Update a source
+
+```
+PUT api/v1/indexes/<index id>/sources/<source id>
+```
+
+Update a source by posting a source config JSON payload.
+
+#### PUT payload
+
+| Variable          | Type     | Description                                                                            | Default value |
+|-------------------|----------|----------------------------------------------------------------------------------------|---------------|
+| `version**       | `String` | Config format version, put your current Quickwit version.                               | _required_    |
+| `source_id`     | `String` | Source ID, must be the same source as in the request URL.                                | _required_    |
+| `source_type`   | `String` | Source type: `kafka`, `kinesis` or `pulsar`. Cannot be updated.                          | _required_    |
+| `num_pipelines` | `usize`  | Number of running indexing pipelines per node for this source.                           | `1`           |
+| `transform`     | `object` | A [VRL](https://vector.dev/docs/reference/vrl/) transformation applied to incoming documents, as defined in [source config docs](../configuration/source-config.md#transform-parameters).                          | `null`         |
+| `params`        | `object` | Source parameters as defined in [source config docs](../configuration/source-config.md). | _required_    |
+
+:::warning
+
+While updating `num_pipelines` and `transform` is generally safe and reversible, updating `params` has consequences specific to the source type and might have side effects such as loosing the source's checkpoints. Perform such updates with great care. 
+
+:::
 
 **Payload Example**
 
@@ -735,3 +794,118 @@ Get the list of delete tasks for a given `index_id`.
 #### Response
 
 The response is an array of `DeleteTask`.
+
+
+## Index template API
+
+This API manages index template resources. Templates are higher level configuration objects used to automatically create indexes according to predefined rules. See [index template configuration](../configuration/template-config.md).
+
+### Create a template
+
+```
+POST api/v1/templates
+```
+
+#### POST payload
+
+Create an index template by posting a [template configuration](../configuration/template-config.md) payload. The API accepts JSON with the header `content-type: application/json` and YAML with `content-type: application/yaml`.
+
+**Example**
+
+```yaml
+version: 0.9 # File format version.
+
+template_id: "all-logs"
+
+index_root_uri: "s3://my-bucket/logs/"
+
+description: "All my logs"
+
+index_id_patterns:
+    - logs-*
+
+priority: 100
+
+doc_mapping:
+  mode: dynamic
+  field_mappings:
+    - name: timestamp
+      type: datetime
+      input_formats:
+        - unix_timestamp
+      output_format: unix_timestamp_secs
+      fast: true
+  timestamp_field: timestamp
+```
+
+#### Response
+
+The created index template configuration as JSON.
+
+
+### Update a template
+
+```
+PUT api/v1/templates/<template id>
+```
+
+#### Path variable
+
+| Variable      | Description   |
+| ------------- | ------------- |
+| `template id` | The template id  |
+
+
+#### POST payload
+
+Update an index template by posting an [template configuration](../configuration/template-config.md) payload. The API accepts JSON with the header `content-type: application/json` and YAML with `content-type: application/yaml`.
+
+**Example**
+
+See [create endpoint](#create-a-template).
+
+#### Response
+
+The updated template configuration as JSON.
+
+### List the templates
+
+```
+GET api/v1/templates
+```
+
+#### Response
+
+An array with all the existing index template configurations as JSON.
+
+### Get a template
+
+```
+GET api/v1/templates/<template id>
+```
+
+#### Path variable
+
+| Variable      | Description   |
+| ------------- | ------------- |
+| `template id` | The template id  |
+
+#### Response
+
+The requested index template configuration as JSON.
+
+### Delete a template
+
+```
+DELETE api/v1/templates/<template id>
+```
+
+#### Path variable
+
+| Variable      | Description   |
+| ------------- | ------------- |
+| `template id` | The template id  |
+
+#### Response
+
+Empty response.

@@ -15,14 +15,6 @@ keep it open, just write `See #<Issue Number>`.
 Feel free to send your contribution in an unfinished state to get early feedback.
 In that case, simply mark the PR with the tag [WIP] (standing for work in progress).
 
-## Signing the CLA
-Quickwit is an open source project licensed under AGPLv3.
-It is also distributed under a commercial license by Quickwit, Inc.
-
-Contributors are required to sign a Contributor License Agreement.
-The process is simple and fast. Upon your first pull request, you will be prompted to
-[sign our CLA by visiting this link](https://cla-assistant.io/quickwit-oss/quickwit).
-
 ## PR verification checks
 When you submit a pull request to the project, the CI system runs several verification checks. After your PR is merged, a more exhaustive list of tests will be run.
 
@@ -84,7 +76,7 @@ Run `make test-all` to run all tests.
 1. Ensure Docker and Docker Compose are correctly installed on your machine (see above)
 2. Start the Jaeger services (UI, collector, agent, ...) running the command `make docker-compose-up DOCKER_SERVICES=jaeger`
 3. Start Quickwit with the following environment variables:
-   
+
 ```
 OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
 QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER=true

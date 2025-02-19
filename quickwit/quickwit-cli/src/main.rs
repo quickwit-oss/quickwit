@@ -1,21 +1,16 @@
-// Copyright (C) 2024 Quickwit, Inc.
+// Copyright 2021-Present Datadog, Inc.
 //
-// Quickwit is offered under the AGPL v3.0 and as commercial software.
-// For commercial licensing, contact us at hello@quickwit.io.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// AGPL:
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program. If not, see <http://www.gnu.org/licenses/>.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #![recursion_limit = "256"]
 
@@ -222,32 +217,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_ingest_v2_args() {
-        let app = build_cli().no_binary_name(true);
-        let matches = app
-            .try_get_matches_from(["index", "ingest", "--index", "wikipedia", "--v2"])
-            .unwrap();
-        let command = CliCommand::parse_cli_args(matches).unwrap();
-        assert!(matches!(
-            command,
-            CliCommand::Index(IndexCliCommand::Ingest(
-                IngestDocsArgs {
-                    client_args,
-                    index_id,
-                    input_path_opt: None,
-                    batch_size_limit_opt: None,
-                    commit_type: CommitType::Auto,
-                })) if &index_id == "wikipedia"
-                && client_args.timeout.is_none()
-                && client_args.connect_timeout.is_none()
-                && client_args.commit_timeout.is_none()
-                && client_args.cluster_endpoint == Url::from_str("http://127.0.0.1:7280").unwrap()
-                && client_args.ingest_v2
-
-        ));
-    }
-
-    #[test]
     fn test_parse_ingest_args() -> anyhow::Result<()> {
         let app = build_cli().no_binary_name(true);
         let matches = app.try_get_matches_from([
@@ -268,12 +237,12 @@ mod tests {
                     input_path_opt: None,
                     batch_size_limit_opt: None,
                     commit_type: CommitType::Auto,
+                    detailed_response: false,
                 })) if &index_id == "wikipedia"
                 && client_args.timeout.is_none()
                 && client_args.connect_timeout.is_none()
                 && client_args.commit_timeout.is_none()
                 && client_args.cluster_endpoint == Url::from_str("http://127.0.0.1:8000").unwrap()
-                && !client_args.ingest_v2
         ));
 
         let app = build_cli().no_binary_name(true);
@@ -282,6 +251,7 @@ mod tests {
             "ingest",
             "--index",
             "wikipedia",
+            "--detailed-response",
             "--batch-size-limit",
             "8MB",
             "--force",
@@ -296,12 +266,12 @@ mod tests {
                     input_path_opt: None,
                     batch_size_limit_opt: Some(batch_size_limit),
                     commit_type: CommitType::Force,
+                    detailed_response: true,
                 })) if &index_id == "wikipedia"
                         && client_args.cluster_endpoint == Url::from_str("http://127.0.0.1:7280").unwrap()
                         && client_args.timeout.is_none()
                         && client_args.connect_timeout.is_none()
                         && client_args.commit_timeout.is_none()
-                        && !client_args.ingest_v2
                         && batch_size_limit == ByteSize::mb(8)
         ));
 
@@ -325,12 +295,12 @@ mod tests {
                     input_path_opt: None,
                     batch_size_limit_opt: Some(batch_size_limit),
                     commit_type: CommitType::WaitFor,
+                    detailed_response: false,
                 })) if &index_id == "wikipedia"
                     && client_args.cluster_endpoint == Url::from_str("http://127.0.0.1:7280").unwrap()
                     && client_args.timeout.is_none()
                     && client_args.connect_timeout.is_none()
                     && client_args.commit_timeout.is_none()
-                    && !client_args.ingest_v2
                     && batch_size_limit == ByteSize::kb(4)
         ));
 
@@ -355,6 +325,7 @@ mod tests {
                     input_path_opt: None,
                     batch_size_limit_opt: None,
                     commit_type: CommitType::Auto,
+                    detailed_response: false,
                 })) if &index_id == "wikipedia"
                         && client_args.cluster_endpoint == Url::from_str("http://127.0.0.1:7280").unwrap()
                         && client_args.timeout == Some(Timeout::from_secs(10))
@@ -386,6 +357,7 @@ mod tests {
                     input_path_opt: None,
                     batch_size_limit_opt: None,
                     commit_type: CommitType::WaitFor,
+                    detailed_response: false,
                 })) if &index_id == "wikipedia"
                         && client_args.cluster_endpoint == Url::from_str("http://127.0.0.1:7280").unwrap()
                         && client_args.timeout == Some(Timeout::none())

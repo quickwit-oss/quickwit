@@ -1,27 +1,22 @@
-// Copyright (C) 2024 Quickwit, Inc.
+// Copyright 2021-Present Datadog, Inc.
 //
-// Quickwit is offered under the AGPL v3.0 and as commercial software.
-// For commercial licensing, contact us at hello@quickwit.io.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// AGPL:
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program. If not, see <http://www.gnu.org/licenses/>.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 use bytesize::ByteSize;
 use quickwit_config::IndexerConfig;
 
 /// A struct for keeping in check multiple SplitStore.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SplitStoreQuota {
     /// Current number of splits in the cache.
     num_splits_in_cache: usize,
@@ -29,7 +24,7 @@ pub struct SplitStoreQuota {
     size_in_bytes_in_cache: ByteSize,
     /// Maximum number of files allowed in the cache.
     max_num_splits: usize,
-    /// Maximum size in bytes allowed in the cache.
+    /// Maximum size in bytes allowed in the cache. 0 if max_num_splits=0.
     max_num_bytes: ByteSize,
 }
 
@@ -45,17 +40,20 @@ impl Default for SplitStoreQuota {
 }
 
 impl SplitStoreQuota {
-    pub fn new(max_num_splits: usize, max_num_bytes: ByteSize) -> Self {
-        Self {
+    pub fn try_new(max_num_splits: usize, max_num_bytes: ByteSize) -> anyhow::Result<Self> {
+        if max_num_splits == 0 && max_num_bytes.as_u64() > 0 {
+            anyhow::bail!("max_num_bytes cannot be > 0 if max_num_splits is 0");
+        }
+        Ok(Self {
             max_num_splits,
             max_num_bytes,
             ..Default::default()
-        }
+        })
     }
 
     /// Space quota that prevents any caching.
     pub fn no_caching() -> Self {
-        Self::new(0, ByteSize::default())
+        Self::try_new(0, ByteSize::default()).unwrap()
     }
 
     pub fn can_fit_split(&self, split_size_in_bytes: ByteSize) -> bool {
@@ -85,6 +83,10 @@ impl SplitStoreQuota {
     pub fn max_num_bytes(&self) -> ByteSize {
         self.max_num_bytes
     }
+
+    pub fn used_num_bytes(&self) -> ByteSize {
+        self.size_in_bytes_in_cache
+    }
 }
 
 #[cfg(test)]
@@ -94,27 +96,32 @@ mod tests {
     use crate::split_store::SplitStoreQuota;
 
     #[test]
+    fn test_invalid_quota() {
+        SplitStoreQuota::try_new(0, ByteSize(100)).unwrap_err();
+    }
+
+    #[test]
     fn test_split_store_quota_max_bytes_accepted() {
-        let split_store_quota = SplitStoreQuota::new(3, ByteSize(100));
+        let split_store_quota = SplitStoreQuota::try_new(3, ByteSize(100)).unwrap();
         assert!(split_store_quota.can_fit_split(ByteSize(100)));
     }
 
     #[test]
     fn test_split_store_quota_exceeding_bytes() {
-        let split_store_quota = SplitStoreQuota::new(3, ByteSize(100));
+        let split_store_quota = SplitStoreQuota::try_new(3, ByteSize(100)).unwrap();
         assert!(!split_store_quota.can_fit_split(ByteSize(101)));
     }
 
     #[test]
     fn test_split_store_quota_max_num_files_accepted() {
-        let mut split_store_quota = SplitStoreQuota::new(2, ByteSize(100));
+        let mut split_store_quota = SplitStoreQuota::try_new(2, ByteSize(100)).unwrap();
         split_store_quota.add_split(ByteSize(1));
         assert!(split_store_quota.can_fit_split(ByteSize(1)));
     }
 
     #[test]
     fn test_split_store_quota_exceeding_max_num_files() {
-        let mut split_store_quota = SplitStoreQuota::new(2, ByteSize(100));
+        let mut split_store_quota = SplitStoreQuota::try_new(2, ByteSize(100)).unwrap();
         split_store_quota.add_split(ByteSize(1));
         split_store_quota.add_split(ByteSize(1));
         assert!(!split_store_quota.can_fit_split(ByteSize(1)));

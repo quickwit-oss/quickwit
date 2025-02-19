@@ -1,21 +1,16 @@
-// Copyright (C) 2024 Quickwit, Inc.
+// Copyright 2021-Present Datadog, Inc.
 //
-// Quickwit is offered under the AGPL v3.0 and as commercial software.
-// For commercial licensing, contact us at hello@quickwit.io.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// AGPL:
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program. If not, see <http://www.gnu.org/licenses/>.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 use std::io::Write;
 use std::iter;
@@ -25,6 +20,7 @@ use std::time::Duration;
 use aws_sdk_sqs::types::QueueAttributeName;
 use quickwit_common::test_utils::wait_until_predicate;
 use quickwit_common::uri::Uri;
+use quickwit_config::service::QuickwitService;
 use quickwit_config::ConfigFormat;
 use quickwit_indexing::source::sqs_queue::test_helpers as sqs_test_helpers;
 use quickwit_metastore::SplitState;
@@ -66,7 +62,7 @@ async fn test_sqs_with_duplicates() {
     let queue_url = sqs_test_helpers::create_queue(&sqs_client, "test-single-node-cluster").await;
 
     sandbox
-        .indexer_rest_client
+        .rest_client(QuickwitService::Indexer)
         .indexes()
         .create(index_config.clone(), ConfigFormat::Yaml, false)
         .await
@@ -91,7 +87,7 @@ async fn test_sqs_with_duplicates() {
     );
 
     sandbox
-        .indexer_rest_client
+        .rest_client(QuickwitService::Indexer)
         .sources(index_id)
         .create(source_config_input, ConfigFormat::Yaml)
         .await
@@ -139,7 +135,7 @@ async fn test_sqs_with_duplicates() {
     .expect("number of in-flight messages didn't reach 2 within the timeout");
 
     sandbox
-        .indexer_rest_client
+        .rest_client(QuickwitService::Indexer)
         .indexes()
         .delete(index_id, false)
         .await
@@ -171,7 +167,7 @@ async fn test_sqs_garbage_collect() {
     let queue_url = sqs_test_helpers::create_queue(&sqs_client, "test-single-node-cluster").await;
 
     sandbox
-        .indexer_rest_client
+        .rest_client(QuickwitService::Indexer)
         .indexes()
         .create(index_config.clone(), ConfigFormat::Yaml, false)
         .await
@@ -198,7 +194,7 @@ async fn test_sqs_garbage_collect() {
     );
 
     sandbox
-        .indexer_rest_client
+        .rest_client(QuickwitService::Indexer)
         .sources(index_id)
         .create(source_config_input, ConfigFormat::Yaml)
         .await
@@ -221,7 +217,7 @@ async fn test_sqs_garbage_collect() {
     wait_until_predicate(
         || async {
             let shard_count = sandbox
-                .indexer_rest_client
+                .rest_client(QuickwitService::Indexer)
                 .sources(index_id)
                 .get_shards(source_id)
                 .await
@@ -237,11 +233,128 @@ async fn test_sqs_garbage_collect() {
     .expect("shards where not pruned within the timeout");
 
     sandbox
-        .indexer_rest_client
+        .rest_client(QuickwitService::Indexer)
         .indexes()
         .delete(index_id, false)
         .await
         .unwrap();
+
+    sandbox.shutdown().await.unwrap();
+}
+
+// this source update test is done here because SQS is the only long running
+// configurable source for which we have integration tests set up.
+#[tokio::test]
+async fn test_update_source_multi_node_cluster() {
+    quickwit_common::setup_logging_for_tests();
+    let index_id = "test-update-source-cluster";
+    let sqs_client = sqs_test_helpers::get_localstack_sqs_client().await.unwrap();
+    let queue_url = sqs_test_helpers::create_queue(&sqs_client, "test-update-source-cluster").await;
+
+    let sandbox = ClusterSandboxBuilder::default()
+        .add_node([QuickwitService::Searcher])
+        .add_node([QuickwitService::Metastore])
+        .add_node([QuickwitService::Indexer])
+        .add_node([QuickwitService::ControlPlane])
+        .add_node([QuickwitService::Janitor])
+        .build_and_start()
+        .await;
+
+    {
+        // Wait for indexer to fully start.
+        // The starting time is a bit long for a cluster.
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        let indexing_service_counters = sandbox
+            .rest_client(QuickwitService::Indexer)
+            .node_stats()
+            .indexing()
+            .await
+            .unwrap();
+        assert_eq!(indexing_service_counters.num_running_pipelines, 0);
+    }
+
+    // Create an index
+    let index_config = format!(
+        r#"
+        version: 0.8
+        index_id: {}
+        doc_mapping:
+            field_mappings:
+            - name: body
+              type: text
+        indexing_settings:
+            commit_timeout_secs: 1
+        "#,
+        index_id
+    );
+    sandbox
+        .rest_client(QuickwitService::Indexer)
+        .indexes()
+        .create(index_config, ConfigFormat::Yaml, false)
+        .await
+        .unwrap();
+
+    // Wait until indexing pipelines are started
+    sandbox.wait_for_indexing_pipelines(1).await.unwrap();
+
+    // create an SQS source with 1 pipeline
+    let source_id: &str = "test-update-source-cluster";
+    let source_config_input = format!(
+        r#"
+            version: 0.7
+            source_id: {}
+            desired_num_pipelines: 1
+            max_num_pipelines_per_indexer: 1
+            source_type: file
+            params:
+                notifications:
+                  - type: sqs
+                    queue_url: {}
+                    message_type: raw_uri
+                    deduplication_window_max_messages: 5
+                    deduplication_cleanup_interval_secs: 3
+            input_format: plain_text
+        "#,
+        source_id, queue_url
+    );
+    sandbox
+        .rest_client(QuickwitService::Indexer)
+        .sources(index_id)
+        .create(source_config_input, ConfigFormat::Yaml)
+        .await
+        .unwrap();
+
+    // Wait until the SQS indexing pipeline is also started
+    sandbox.wait_for_indexing_pipelines(2).await.unwrap();
+
+    // increase the number of pipelines to 3
+    let source_config_input = format!(
+        r#"
+            version: 0.7
+            source_id: {}
+            desired_num_pipelines: 3
+            max_num_pipelines_per_indexer: 3
+            source_type: file
+            params:
+                notifications:
+                  - type: sqs
+                    queue_url: {}
+                    message_type: raw_uri
+                    deduplication_window_max_messages: 5
+                    deduplication_cleanup_interval_secs: 3
+            input_format: plain_text
+        "#,
+        source_id, queue_url
+    );
+    sandbox
+        .rest_client(QuickwitService::Metastore)
+        .sources(index_id)
+        .update(source_id, source_config_input, ConfigFormat::Yaml)
+        .await
+        .unwrap();
+
+    // Wait until the SQS indexing pipeline is also started
+    sandbox.wait_for_indexing_pipelines(4).await.unwrap();
 
     sandbox.shutdown().await.unwrap();
 }

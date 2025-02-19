@@ -84,7 +84,7 @@ grpc:
 
 :::warning
 We advise changing the default value of 20 MiB only if you encounter the following error:
-`Error, message length too large: found 24732228 bytes, the limit is: 20971520 bytes.` In that case, increase `max_message_size` by increments of 10 MiB until the issue disappears. This is a temporary fix: the next version of Quickwit, 0.8, will rely exclusively on gRPC streaming endpoints and handle messages of any length.
+`Error, message length too large: found 24732228 bytes, the limit is: 20971520 bytes.` In that case, increase `max_message_size` by increments of 10 MiB until the issue disappears. This is a temporary fix: the next version of Quickwit will rely exclusively on gRPC streaming endpoints and handle messages of any length.
 :::
 
 ## Storage configuration
@@ -176,6 +176,7 @@ indexer:
 | --- | --- | --- |
 | `max_queue_memory_usage` | Maximum size in bytes of the in-memory Ingest queue. | `2GiB` |
 | `max_queue_disk_usage` | Maximum disk-space in bytes taken by the Ingest queue. The minimum size is at least `256M` and be at least `max_queue_memory_usage`. | `4GiB` |
+| `content_length_limit` | Maximum payload size uncompressed. Increasing this is discouraged, use a [file source](../ingest-data/sqs-files.md) instead. | `10MiB` |
 
 Example:
 
@@ -183,6 +184,7 @@ Example:
 ingest_api:
   max_queue_memory_usage: 2GiB
   max_queue_disk_usage: 4GiB
+  content_length_limit: 10MiB
 ```
 
 ## Searcher configuration
@@ -203,7 +205,7 @@ This section contains the configuration options for a Searcher.
 
 ### Searcher split cache configuration
 
-This section contains the configuration options for the on disk searcher split cache.
+This section contains the configuration options for the on-disk searcher split cache. Files are stored in the data directory under `searcher-split-cache/`.
 
 | Property | Description | Default value |
 | --- | --- | --- |

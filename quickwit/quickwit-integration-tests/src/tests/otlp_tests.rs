@@ -1,21 +1,16 @@
-// Copyright (C) 2024 Quickwit, Inc.
+// Copyright 2021-Present Datadog, Inc.
 //
-// Quickwit is offered under the AGPL v3.0 and as commercial software.
-// For commercial licensing, contact us at hello@quickwit.io.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// AGPL:
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program. If not, see <http://www.gnu.org/licenses/>.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 use std::collections::HashMap;
 
@@ -78,9 +73,9 @@ async fn test_ingest_traces_with_otlp_grpc_api() {
 
     // Send the spans on the default index
     let tested_clients = vec![
-        sandbox.trace_client.clone(),
+        sandbox.trace_client().clone(),
         sandbox
-            .trace_client
+            .trace_client()
             .clone()
             .send_compressed(CompressionEncoding::Gzip),
     ];
@@ -122,7 +117,7 @@ async fn test_ingest_traces_with_otlp_grpc_api() {
             tonic::metadata::MetadataValue::try_from("non-existing-index").unwrap(),
         );
         let status = sandbox
-            .trace_client
+            .trace_client()
             .clone()
             .export(tonic_request)
             .await
@@ -171,9 +166,9 @@ async fn test_ingest_logs_with_otlp_grpc_api() {
 
     // Send the logs on the default index
     let tested_clients = vec![
-        sandbox.logs_client.clone(),
+        sandbox.logs_client().clone(),
         sandbox
-            .logs_client
+            .logs_client()
             .clone()
             .send_compressed(CompressionEncoding::Gzip),
     ];
@@ -229,7 +224,7 @@ async fn test_jaeger_api() {
         resource_spans: make_resource_spans_for_test(),
     };
     sandbox
-        .trace_client
+        .trace_client()
         .export(export_trace_request)
         .await
         .unwrap();
@@ -248,7 +243,7 @@ async fn test_jaeger_api() {
         // Test `GetServices`
         let get_services_request = GetServicesRequest {};
         let get_services_response = sandbox
-            .jaeger_client
+            .jaeger_client()
             .get_services(tonic::Request::new(get_services_request))
             .await
             .unwrap()
@@ -262,7 +257,7 @@ async fn test_jaeger_api() {
             span_kind: "".to_string(),
         };
         let get_operations_response = sandbox
-            .jaeger_client
+            .jaeger_client()
             .get_operations(tonic::Request::new(get_operations_request))
             .await
             .unwrap()
@@ -295,7 +290,7 @@ async fn test_jaeger_api() {
             span_kind: "server".to_string(),
         };
         let get_operations_response = sandbox
-            .jaeger_client
+            .jaeger_client()
             .get_operations(tonic::Request::new(get_operations_request))
             .await
             .unwrap()
@@ -325,7 +320,7 @@ async fn test_jaeger_api() {
         };
         let find_trace_ids_request = FindTraceIDsRequest { query: Some(query) };
         let find_trace_ids_response = sandbox
-            .jaeger_client
+            .jaeger_client()
             .find_trace_i_ds(tonic::Request::new(find_trace_ids_request))
             .await
             .unwrap()
@@ -346,7 +341,7 @@ async fn test_jaeger_api() {
         };
         let find_trace_ids_request = FindTraceIDsRequest { query: Some(query) };
         let find_trace_ids_response = sandbox
-            .jaeger_client
+            .jaeger_client()
             .find_trace_i_ds(tonic::Request::new(find_trace_ids_request))
             .await
             .unwrap()
@@ -367,7 +362,7 @@ async fn test_jaeger_api() {
         };
         let find_trace_ids_request = FindTraceIDsRequest { query: Some(query) };
         let find_trace_ids_response = sandbox
-            .jaeger_client
+            .jaeger_client()
             .find_trace_i_ds(tonic::Request::new(find_trace_ids_request))
             .await
             .unwrap()
@@ -388,7 +383,7 @@ async fn test_jaeger_api() {
         };
         let find_trace_ids_request = FindTraceIDsRequest { query: Some(query) };
         let find_trace_ids_response = sandbox
-            .jaeger_client
+            .jaeger_client()
             .find_trace_i_ds(tonic::Request::new(find_trace_ids_request))
             .await
             .unwrap()
@@ -409,7 +404,7 @@ async fn test_jaeger_api() {
         };
         let find_trace_ids_request = FindTraceIDsRequest { query: Some(query) };
         let find_trace_ids_response = sandbox
-            .jaeger_client
+            .jaeger_client()
             .find_trace_i_ds(tonic::Request::new(find_trace_ids_request))
             .await
             .unwrap()
@@ -423,7 +418,7 @@ async fn test_jaeger_api() {
             trace_id: [1; 16].to_vec(),
         };
         let mut span_stream = sandbox
-            .jaeger_client
+            .jaeger_client()
             .get_trace(tonic::Request::new(get_trace_request))
             .await
             .unwrap()

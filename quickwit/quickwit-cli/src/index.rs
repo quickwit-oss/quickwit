@@ -1,21 +1,16 @@
-// Copyright (C) 2024 Quickwit, Inc.
+// Copyright 2021-Present Datadog, Inc.
 //
-// Quickwit is offered under the AGPL v3.0 and as commercial software.
-// For commercial licensing, contact us at hello@quickwit.io.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// AGPL:
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program. If not, see <http://www.gnu.org/licenses/>.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 use std::borrow::Cow;
 use std::fmt::Display;
@@ -38,9 +33,8 @@ use quickwit_config::{ConfigFormat, IndexConfig};
 use quickwit_metastore::{IndexMetadata, Split, SplitState};
 use quickwit_proto::search::{CountHits, SortField, SortOrder};
 use quickwit_proto::types::IndexId;
-use quickwit_rest_client::models::IngestSource;
+use quickwit_rest_client::models::{IngestSource, SearchResponseRestClient};
 use quickwit_rest_client::rest_client::{CommitType, IngestEvent};
-use quickwit_search::SearchResponseRest;
 use quickwit_serve::{ListSplitsQueryParams, SearchRequestQueryString, SortBy};
 use quickwit_storage::{load_file, StorageResolver};
 use tabled::settings::object::{FirstRow, Rows, Segment};
@@ -49,7 +43,7 @@ use tabled::settings::{Alignment, Disable, Format, Modify, Panel, Rotate, Style}
 use tabled::{Table, Tabled};
 use tracing::{debug, Level};
 
-use crate::checklist::GREEN_COLOR;
+use crate::checklist::{GREEN_COLOR, RED_COLOR};
 use crate::stats::{mean, percentile, std_deviation};
 use crate::{client_args, make_table, prompt_confirmation, ClientArgs};
 
@@ -141,18 +135,16 @@ pub fn build_index_command() -> Command {
                     Arg::new("wait")
                         .long("wait")
                         .short('w')
-                        .help("Wait for all documents to be committed and available for search before exiting")
+                        .help("Wait for all documents to be committed and available for search before exiting. Applies only to the last batch, see [#5417](https://github.com/quickwit-oss/quickwit/issues/5417).")
                         .action(ArgAction::SetTrue),
-                    // TODO remove me after Quickwit 0.7.
-                    Arg::new("v2")
-                        .long("v2")
-                        .help("Ingest v2 (experimental! Do not use me.)")
-                        .hide(true)
+                    Arg::new("detailed-response")
+                        .long("detailed-response")
+                        .help("Print detailed errors. Enabling might impact performance negatively.")
                         .action(ArgAction::SetTrue),
                     Arg::new("force")
                         .long("force")
                         .short('f')
-                        .help("Force a commit after the last document is sent, and wait for all documents to be committed and available for search before exiting")
+                        .help("Force a commit after the last document is sent, and wait for all documents to be committed and available for search before exiting. Applies only to the last batch, see [#5417](https://github.com/quickwit-oss/quickwit/issues/5417).")
                         .action(ArgAction::SetTrue)
                         .conflicts_with("wait"),
                     Arg::new("commit-timeout")
@@ -234,6 +226,7 @@ pub struct IngestDocsArgs {
     pub input_path_opt: Option<PathBuf>,
     pub batch_size_limit_opt: Option<ByteSize>,
     pub commit_type: CommitType,
+    pub detailed_response: bool,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -378,7 +371,7 @@ impl IndexCliCommand {
         } else {
             None
         };
-
+        let detailed_response: bool = matches.get_flag("detailed-response");
         let batch_size_limit_opt = matches
             .remove_one::<String>("batch-size-limit")
             .map(|limit| limit.parse::<ByteSize>())
@@ -401,6 +394,7 @@ impl IndexCliCommand {
             input_path_opt,
             batch_size_limit_opt,
             commit_type,
+            detailed_response,
         }))
     }
 
@@ -1025,7 +1019,11 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         progress_bar.set_message(format!("{throughput:.1} MiB/s"));
     };
 
-    let qw_client = args.client_args.client();
+    let mut qw_client_builder = args.client_args.client_builder();
+    if args.detailed_response {
+        qw_client_builder = qw_client_builder.detailed_response(args.detailed_response);
+    }
+    let qw_client = qw_client_builder.build();
     let ingest_source = match args.input_path_opt {
         Some(filepath) => IngestSource::File(filepath),
         None => IngestSource::Stdin,
@@ -1033,7 +1031,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
     let batch_size_limit_opt = args
         .batch_size_limit_opt
         .map(|batch_size_limit| batch_size_limit.as_u64() as usize);
-    qw_client
+    let response = qw_client
         .ingest(
             &args.index_id,
             ingest_source,
@@ -1044,9 +1042,35 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         .await?;
     progress_bar.finish();
     println!(
-        "Ingested {} documents successfully.",
-        "✔".color(GREEN_COLOR)
+        "{} Ingested {} document(s) successfully.",
+        "✔".color(GREEN_COLOR),
+        response
+            .num_ingested_docs
+            // TODO(#5604) remove unwrap
+            .unwrap_or(response.num_docs_for_processing),
     );
+    if let Some(rejected) = response.num_rejected_docs {
+        if rejected > 0 {
+            println!(
+                "{} Rejected {} document(s).",
+                "✖".color(RED_COLOR),
+                rejected
+            );
+        }
+    }
+    if let Some(parse_failures) = response.parse_failures {
+        if !parse_failures.is_empty() {
+            println!("Detailed parse failures:");
+        }
+        for (idx, failure) in parse_failures.iter().enumerate() {
+            let reason_value = serde_json::to_value(failure.reason).unwrap();
+            println!();
+            println!("┌ error {}", idx + 1);
+            println!("├ reason: {}", reason_value.as_str().unwrap());
+            println!("├ message: {}", failure.message);
+            println!("└ document: {}", failure.document);
+        }
+    }
     Ok(())
 }
 
@@ -1058,7 +1082,7 @@ fn progress_bar_style() -> ProgressStyle {
     .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"])
 }
 
-pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchResponseRest> {
+pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchResponseRestClient> {
     let aggs: Option<serde_json::Value> = args
         .aggregation
         .map(|aggs_string| {

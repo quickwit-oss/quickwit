@@ -1,21 +1,16 @@
-// Copyright (C) 2024 Quickwit, Inc.
+// Copyright 2021-Present Datadog, Inc.
 //
-// Quickwit is offered under the AGPL v3.0 and as commercial software.
-// For commercial licensing, contact us at hello@quickwit.io.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// AGPL:
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program. If not, see <http://www.gnu.org/licenses/>.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 use std::pin::Pin;
 use std::str::FromStr;
@@ -48,6 +43,7 @@ use crate::leaf_cache::LeafSearchCache;
 use crate::list_fields::{leaf_list_fields, root_list_fields};
 use crate::list_fields_cache::ListFieldsCache;
 use crate::list_terms::{leaf_list_terms, root_list_terms};
+use crate::metrics::SEARCH_METRICS;
 use crate::root::fetch_docs_phase;
 use crate::scroll_context::{MiniKV, ScrollContext, ScrollKeyAndStartOffset};
 use crate::search_permit_provider::SearchPermitProvider;
@@ -202,15 +198,30 @@ impl SearchService for SearchServiceImpl {
         if leaf_search_request.search_request.is_none() {
             return Err(SearchError::Internal("no search request".to_string()));
         }
-
-        let leaf_search_response = multi_leaf_search(
+        let start = Instant::now();
+        let leaf_search_response_result = multi_leaf_search(
             self.searcher_context.clone(),
             leaf_search_request,
             &self.storage_resolver,
         )
-        .await?;
+        .await;
 
-        Ok(leaf_search_response)
+        let elapsed = start.elapsed().as_secs_f64();
+        let label_values = if leaf_search_response_result.is_ok() {
+            ["success"]
+        } else {
+            ["error"]
+        };
+        SEARCH_METRICS
+            .leaf_search_requests_total
+            .with_label_values(label_values)
+            .inc();
+        SEARCH_METRICS
+            .leaf_search_request_duration_seconds
+            .with_label_values(label_values)
+            .observe(elapsed);
+
+        leaf_search_response_result
     }
 
     async fn fetch_docs(

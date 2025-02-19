@@ -1,21 +1,16 @@
-// Copyright (C) 2024 Quickwit, Inc.
+// Copyright 2021-Present Datadog, Inc.
 //
-// Quickwit is offered under the AGPL v3.0 and as commercial software.
-// For commercial licensing, contact us at hello@quickwit.io.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// AGPL:
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program. If not, see <http://www.gnu.org/licenses/>.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 use serde::{Deserialize, Serialize};
 use tantivy::query::BoostQuery as TantivyBoostQuery;
@@ -28,6 +23,7 @@ mod field_presence;
 mod full_text_query;
 mod phrase_prefix_query;
 mod range_query;
+mod regex_query;
 mod tantivy_query_ast;
 mod term_query;
 mod term_set_query;
@@ -41,6 +37,7 @@ pub use field_presence::FieldPresenceQuery;
 pub use full_text_query::{FullTextMode, FullTextParams, FullTextQuery};
 pub use phrase_prefix_query::PhrasePrefixQuery;
 pub use range_query::RangeQuery;
+pub use regex_query::{AutomatonQuery, JsonPathPrefix, RegexQuery};
 use tantivy_query_ast::TantivyQueryAst;
 pub use term_query::TermQuery;
 pub use term_set_query::TermSetQuery;
@@ -63,6 +60,7 @@ pub enum QueryAst {
     Range(RangeQuery),
     UserInput(UserInputQuery),
     Wildcard(WildcardQuery),
+    Regex(RegexQuery),
     MatchAll,
     MatchNone,
     Boost {
@@ -105,7 +103,8 @@ impl QueryAst {
             | ast @ QueryAst::MatchNone
             | ast @ QueryAst::FieldPresence(_)
             | ast @ QueryAst::Range(_)
-            | ast @ QueryAst::Wildcard(_) => Ok(ast),
+            | ast @ QueryAst::Wildcard(_)
+            | ast @ QueryAst::Regex(_) => Ok(ast),
             QueryAst::UserInput(user_text_query) => {
                 user_text_query.parse_user_query(default_search_fields)
             }
@@ -244,6 +243,12 @@ impl BuildTantivyAst for QueryAst {
                 with_validation,
             ),
             QueryAst::Wildcard(wildcard) => wildcard.build_tantivy_ast_call(
+                schema,
+                tokenizer_manager,
+                search_fields,
+                with_validation,
+            ),
+            QueryAst::Regex(regex) => regex.build_tantivy_ast_call(
                 schema,
                 tokenizer_manager,
                 search_fields,

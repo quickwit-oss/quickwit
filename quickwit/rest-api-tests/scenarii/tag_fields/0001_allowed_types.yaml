@@ -1,0 +1,133 @@
+# allowed types
+method: POST
+endpoint: indexes/
+json:
+  version: "0.7"
+  index_id: allowedtypes
+  doc_mapping:
+    mode: dynamic
+    field_mappings:
+      - name: text1
+        type: text
+        tokenizer: raw
+      - name: number1
+        type: u64
+      - name: number2
+        type: i64
+    tag_fields: 
+      - text1
+      - number1
+      - number2
+---
+# tokenized not allowed
+method: POST
+endpoint: indexes/
+json:
+  version: "0.7"
+  index_id: tokenizedtype
+  doc_mapping:
+    mode: dynamic
+    field_mappings:
+      - name: text1
+        type: text
+        tokenizer: default
+    tag_fields: [text1]
+status_code: 400
+---
+# float not allowed
+method: POST
+endpoint: indexes/
+json:
+  version: "0.7"
+  index_id: floattype
+  doc_mapping:
+    mode: dynamic
+    field_mappings:
+      - name: number3
+        type: f64
+    tag_fields: [number3]
+status_code: 400
+---
+# boolean not allowed
+method: POST
+endpoint: indexes/
+json:
+  version: "0.7"
+  index_id: booltype
+  doc_mapping:
+    mode: dynamic
+    field_mappings:
+      - name: boolean
+        type: bool
+    tag_fields: [boolean]
+status_code: 400
+---
+# json not allowed
+method: POST
+endpoint: indexes/
+json:
+  version: "0.7"
+  index_id: jsontype
+  doc_mapping:
+    mode: dynamic
+    field_mappings:
+      - name: json1
+        type: json
+    tag_fields: [json1]
+status_code: 400
+---
+# ip not allowed
+method: POST
+endpoint: indexes/
+json:
+  version: "0.7"
+  index_id: iptype
+  doc_mapping:
+    mode: dynamic
+    field_mappings:
+      - name: ip1
+        type: ip
+    tag_fields: [ip1]
+status_code: 400
+---
+# bytes not allowed
+method: POST
+endpoint: indexes/
+json:
+  version: "0.7"
+  index_id: bytestype
+  doc_mapping:
+    mode: dynamic
+    field_mappings:
+      - name: bytes1
+        type: bytes
+    tag_fields: [bytes1]
+status_code: 400
+---
+# bytes not allowed
+method: POST
+endpoint: indexes/
+json:
+  version: "0.7"
+  index_id: datetype
+  doc_mapping:
+    mode: dynamic
+    field_mappings:
+      - name: date1
+        type: datetime
+        input_formats:
+          - rfc3339
+    tag_fields: [date1]
+status_code: 400
+---
+# dynamic not allowed
+method: POST
+endpoint: indexes/
+json:
+  version: "0.7"
+  index_id: dynamictype
+  doc_mapping:
+    mode: dynamic
+    tag_fields: [dynamic1]
+status_code: 400
+---

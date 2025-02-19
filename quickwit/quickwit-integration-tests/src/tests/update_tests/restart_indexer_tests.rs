@@ -1,21 +1,16 @@
-// Copyright (C) 2024 Quickwit, Inc.
+// Copyright 2021-Present Datadog, Inc.
 //
-// Quickwit is offered under the AGPL v3.0 and as commercial software.
-// For commercial licensing, contact us at hello@quickwit.io.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// AGPL:
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program. If not, see <http://www.gnu.org/licenses/>.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 use std::fmt::Write;
 use std::time::Duration;
@@ -50,7 +45,7 @@ async fn test_update_doc_mapping_restart_indexing_pipeline() {
         // The starting time is a bit long for a cluster.
         tokio::time::sleep(Duration::from_secs(3)).await;
         let indexing_service_counters = sandbox
-            .indexer_rest_client
+            .rest_client(QuickwitService::Indexer)
             .node_stats()
             .indexing()
             .await
@@ -65,7 +60,7 @@ async fn test_update_doc_mapping_restart_indexing_pipeline() {
 
     // Create index
     sandbox
-        .indexer_rest_client
+        .rest_client(QuickwitService::Indexer)
         .indexes()
         .create(
             json!({
@@ -89,7 +84,7 @@ async fn test_update_doc_mapping_restart_indexing_pipeline() {
         .unwrap();
 
     assert!(sandbox
-        .indexer_rest_client
+        .rest_client(QuickwitService::Indexer)
         .node_health()
         .is_live()
         .await
@@ -106,7 +101,7 @@ async fn test_update_doc_mapping_restart_indexing_pipeline() {
     // ingest some documents with old doc mapping.
     // we *don't* use local ingest to use a normal indexing pipeline
     sandbox
-        .indexer_rest_client
+        .rest_client(QuickwitService::Indexer)
         .ingest(
             index_id,
             IngestSource::Str(payload.clone()),
@@ -128,7 +123,7 @@ async fn test_update_doc_mapping_restart_indexing_pipeline() {
     // the pipeline gets killed and restarted (in practice as this cluster is very lightly loaded,
     // it will almost always kill the pipeline before these documents are commited)
     sandbox
-        .indexer_rest_client
+        .rest_client(QuickwitService::Indexer)
         .ingest(
             index_id,
             IngestSource::Str(payload.clone()),
@@ -141,7 +136,7 @@ async fn test_update_doc_mapping_restart_indexing_pipeline() {
 
     // Update index
     sandbox
-        .searcher_rest_client
+        .rest_client(QuickwitService::Searcher)
         .indexes()
         .update(
             index_id,
@@ -168,7 +163,7 @@ async fn test_update_doc_mapping_restart_indexing_pipeline() {
     // the pipeline gets killed and restarted. In practice this will almost always use the new
     // mapping on a lightly loaded cluster.
     sandbox
-        .indexer_rest_client
+        .rest_client(QuickwitService::Indexer)
         .ingest(
             index_id,
             IngestSource::Str(payload.clone()),
@@ -188,7 +183,7 @@ async fn test_update_doc_mapping_restart_indexing_pipeline() {
 
     // we ingest again, definitely with the up to date doc mapper this time
     sandbox
-        .indexer_rest_client
+        .rest_client(QuickwitService::Indexer)
         .ingest(
             index_id,
             IngestSource::Str(payload.clone()),
@@ -206,7 +201,7 @@ async fn test_update_doc_mapping_restart_indexing_pipeline() {
         .unwrap();
 
     let splits = sandbox
-        .indexer_rest_client
+        .rest_client(QuickwitService::Indexer)
         .splits(index_id)
         .list(ListSplitsQueryParams::default())
         .await

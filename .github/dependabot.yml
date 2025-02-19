@@ -1,33 +1,44 @@
 version: 2
-
 updates:
+  # Rust dependencies
   - package-ecosystem: cargo
     directory: "/quickwit"
     schedule:
-      interval: daily
-      time: "20:00"
+      interval: "weekly"
+    groups:
+      rust-dependencies:
+        patterns:
+          - "*"
     open-pull-requests-limit: 10
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-patch"]
 
+  # Docker dependencies
   - package-ecosystem: docker
     directory: "/"
     schedule:
-      interval: daily
-      time: "20:00"
+      interval: "weekly"
     open-pull-requests-limit: 10
 
-  - package-ecosystem: "github-actions"
+  # GitHub Actions
+  - package-ecosystem: github-actions
     directory: "/"
     schedule:
-      interval: daily
-      time: "20:00"
+      interval: "weekly"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
     open-pull-requests-limit: 10
 
-  - package-ecosystem: "npm"
+  # NPM dependencies
+  - package-ecosystem: npm
     directory: "/"
     schedule:
-      interval: daily
-      time: "20:00"
+      interval: "weekly"
+    groups:
+      npm-dependencies:
+        patterns:
+          - "*"
     open-pull-requests-limit: 10

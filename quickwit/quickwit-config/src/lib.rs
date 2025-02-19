@@ -1,24 +1,20 @@
-// Copyright (C) 2024 Quickwit, Inc.
+// Copyright 2021-Present Datadog, Inc.
 //
-// Quickwit is offered under the AGPL v3.0 and as commercial software.
-// For commercial licensing, contact us at hello@quickwit.io.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// AGPL:
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program. If not, see <http://www.gnu.org/licenses/>.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #![deny(clippy::disallowed_methods)]
 
+use std::hash::Hasher;
 use std::str::FromStr;
 
 use anyhow::{bail, ensure, Context};
@@ -55,13 +51,14 @@ pub use quickwit_doc_mapper::DocMapping;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
+use siphasher::sip::SipHasher;
 use source_config::FileSourceParamsForSerde;
 pub use source_config::{
-    load_source_config_from_user_config, FileSourceMessageType, FileSourceNotification,
-    FileSourceParams, FileSourceSqs, KafkaSourceParams, KinesisSourceParams, PubSubSourceParams,
-    PulsarSourceAuth, PulsarSourceParams, RegionOrEndpoint, SourceConfig, SourceInputFormat,
-    SourceParams, TransformConfig, VecSourceParams, VoidSourceParams, CLI_SOURCE_ID,
-    INGEST_API_SOURCE_ID, INGEST_V2_SOURCE_ID,
+    load_source_config_from_user_config, load_source_config_update, FileSourceMessageType,
+    FileSourceNotification, FileSourceParams, FileSourceSqs, KafkaSourceParams,
+    KinesisSourceParams, PubSubSourceParams, PulsarSourceAuth, PulsarSourceParams,
+    RegionOrEndpoint, SourceConfig, SourceInputFormat, SourceParams, TransformConfig,
+    VecSourceParams, VoidSourceParams, CLI_SOURCE_ID, INGEST_API_SOURCE_ID, INGEST_V2_SOURCE_ID,
 };
 use tracing::warn;
 
@@ -86,7 +83,7 @@ pub use crate::storage_config::{
 /// Returns true if the ingest API v2 is enabled.
 pub fn enable_ingest_v2() -> bool {
     static ENABLE_INGEST_V2: Lazy<bool> =
-        Lazy::new(|| get_bool_from_env("QW_ENABLE_INGEST_V2", false));
+        Lazy::new(|| get_bool_from_env("QW_ENABLE_INGEST_V2", true));
     *ENABLE_INGEST_V2
 }
 
@@ -284,6 +281,18 @@ pub trait TestableForRegression: Serialize + DeserializeOwned {
 
     /// Asserts that `self` and `other` are equal. It must panic if they are not.
     fn assert_equality(&self, other: &Self);
+}
+
+/// Returns a fingerprint (a hash) of all the parameters that should force an
+/// indexing pipeline to restart upon index or source config updates.
+pub fn indexing_pipeline_params_fingerprint(
+    index_config: &IndexConfig,
+    source_config: &SourceConfig,
+) -> u64 {
+    let mut hasher = SipHasher::new();
+    hasher.write_u64(index_config.indexing_params_fingerprint());
+    hasher.write_u64(source_config.indexing_params_fingerprint());
+    hasher.finish()
 }
 
 #[cfg(test)]
