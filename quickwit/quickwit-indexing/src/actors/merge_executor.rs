@@ -551,7 +551,7 @@ impl MergeExecutor {
 
         debug!(segment_ids=?segment_ids,"merging-segments");
         // TODO it would be nice if tantivy could let us run the merge in the current thread.
-        index_writer.merge(&segment_ids).wait()?;
+        index_writer.merge(&segment_ids).await?;
 
         Ok(output_directory)
     }
