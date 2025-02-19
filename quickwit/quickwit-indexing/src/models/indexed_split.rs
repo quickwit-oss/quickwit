@@ -155,6 +155,7 @@ impl IndexedSplitBuilder {
     }
 }
 
+
 #[derive(Debug)]
 pub struct IndexedSplitBatch {
     pub splits: Vec<IndexedSplit>,

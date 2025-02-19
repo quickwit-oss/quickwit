@@ -48,7 +48,7 @@ use tracing::{info, warn};
 use super::MutationOccurred;
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::metastore::{use_shard_api, SortBy};
-use crate::{split_tag_filter, IndexMetadata, ListSplitsQuery, Split, SplitMetadata, SplitState};
+use crate::{split_tag_filter, IndexMetadata, ListSplitsQuery, Split, SplitMaturity, SplitMetadata, SplitState};
 
 /// A `FileBackedIndex` object carries an index metadata and its split metadata.
 // This struct is meant to be used only within the [`FileBackedMetastore`]. The public visibility is
@@ -239,6 +239,31 @@ impl FileBackedIndex {
         self.metadata.set_doc_mapping(doc_mapping)
     }
 
+    pub(crate) fn increase_failed_merge_ops(&mut self, split_id: &str, maturity: bool) -> MetastoreResult<()> {
+        let make_failed_precondition_err = |message: String| {
+            let entity = EntityKind::Split {
+                split_id: split_id.to_string(),
+            };
+            MetastoreError::FailedPrecondition {
+                entity,
+                message
+            }
+        };
+        let split = self.splits.get_mut(split_id)
+            .ok_or_else(|| make_failed_precondition_err("split not found".to_string()))?;
+
+        if split.split_state != SplitState::Published {
+            return Err(make_failed_precondition_err(format!("split is not published, state={}", split.split_state)));
+        }
+
+        split.split_metadata.failed_merge_ops += 1;
+        if maturity {
+            split.split_metadata.maturity = SplitMaturity::Mature;
+        }
+
+        Ok(())
+    }
+
     /// Stages a single split.
     ///
     /// If a split already exists and is in the [SplitState::Staged] state,
@@ -250,7 +275,7 @@ impl FileBackedIndex {
     pub(crate) fn stage_split(
         &mut self,
         split_metadata: SplitMetadata,
-    ) -> Result<(), MetastoreError> {
+    ) -> MetastoreResult<()> {
         // Check whether the split exists.
         // If the split exists, we check what state it is in. If it's anything other than `Staged`
         // something has gone very wrong and we should abort the operation.

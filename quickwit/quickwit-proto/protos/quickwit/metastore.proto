@@ -200,6 +200,16 @@ service MetastoreService {
 
   // Deletes index templates.
   rpc DeleteIndexTemplates(DeleteIndexTemplatesRequest) returns (EmptyResponse);
+
+  // Marks splits as mature.
+  // Contrary to most other methods of the Metastore trait, a failure of this
+  // method will just log an error without restarting the actor.
+  //
+  // The main purpose of this method is to mark splits as mature after
+  // they have gone through a failed merge operation.
+  //
+  // This makes it possible to avoid attempting to remerge a split of death.
+  rpc IncreaseFailedMergeOps(IncreaseFailedMergeOpsRequest) returns (EmptyResponse);
 }
 
 message EmptyResponse {
@@ -525,4 +535,15 @@ message ListIndexTemplatesResponse {
 
 message DeleteIndexTemplatesRequest {
   repeated string template_ids = 1;
+}
+
+
+message IncreaseFailedMergeOpsRequest {
+    quickwit.common.IndexUid index_uid = 1;
+    repeated SplitAndMaturity split_and_maturities = 2;
+}
+
+message SplitAndMaturity {
+  string split_id = 1;
+  bool maturity = 2;
 }

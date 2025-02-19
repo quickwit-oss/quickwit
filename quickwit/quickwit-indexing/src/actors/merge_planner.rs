@@ -89,6 +89,7 @@ pub struct MergePlanner {
     /// a merge operation is dropped after the publish of the merged split.
     ///
     /// It is used to GC the known_split_ids set.
+    // TODO check if this is ok for the failed merge path.
     ongoing_merge_operations_inventory: Inventory<MergeOperation>,
 
     /// We use the actor start_time as a way to identify incarnations.

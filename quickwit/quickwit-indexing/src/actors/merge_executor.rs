@@ -52,7 +52,7 @@ use tracing::{debug, error, info, instrument, warn};
 use crate::actors::Packager;
 use crate::controlled_directory::ControlledDirectory;
 use crate::merge_policy::MergeOperationType;
-use crate::models::{IndexedSplit, IndexedSplitBatch, MergeScratch, PublishLock, SplitAttrs};
+use crate::models::{FailedMergeOperation, IndexedSplit, IndexedSplitBatch, MergeScratch, PublishLock, SplitAttrs};
 
 #[derive(Clone)]
 pub struct MergeExecutor {
@@ -95,16 +95,46 @@ impl Handler<MergeScratch> for MergeExecutor {
         let start = Instant::now();
         let merge_task = merge_scratch.merge_task;
         let indexed_split_opt: Option<IndexedSplit> = match merge_task.operation_type {
-            MergeOperationType::Merge => Some(
-                self.process_merge(
+            MergeOperationType::Merge => {
+                let merge_res = self.process_merge(
                     merge_task.merge_split_id.clone(),
                     merge_task.splits.clone(),
                     merge_scratch.tantivy_dirs,
                     merge_scratch.merge_scratch_directory,
-                    ctx,
-                )
-                .await?,
-            ),
+                    ctx).await;
+                match merge_res {
+                    Ok(indexed_split) => Some(indexed_split),
+                    Err(err) => {
+                        // A failure in a merge is a bit special.
+                        // We just log it, and forward the FailedMergeOperation operation
+                        // into the pipeline so that the
+                        error!(merge_task=?merge_task, split_err=?err, "failed to merge splits");
+                        let mut split_and_maturities = Vec::new();
+                        for split in merge_task.splits {
+                            if split.failed_merge_ops > 1 {
+                                maturity = true;
+                            }
+                            split_and_maturities.push(SplitAndMaturity {
+                                split_id: split.split_id,
+                                maturity,
+                            });
+                        }
+                        let failed_merge_operation = FailedMergeOperation {
+                            index_uid: self.pipeline_id.index_uid.clone(),
+                            split_and_maturities
+                            splits: merge_task.splits.clone(),
+                            merge_task: Some(merge_task),
+                        };
+                        ctx.send_message(
+                            &self.merge_packager_mailbox,
+                            failed_merge_operation,
+                        )
+                        .await?;
+                        return Ok(());
+                    },
+
+                }
+            },
             MergeOperationType::DeleteAndMerge => {
                 assert_eq!(
                     merge_task.splits.len(),

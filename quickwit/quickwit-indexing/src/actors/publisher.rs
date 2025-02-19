@@ -26,7 +26,7 @@ use serde::Serialize;
 use tracing::{info, instrument, warn};
 
 use crate::actors::MergePlanner;
-use crate::models::{NewSplits, SplitsUpdate};
+use crate::models::{FailedMergeOperation, NewSplits, SplitsUpdate};
 use crate::source::{SourceActor, SuggestTruncate};
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -211,6 +211,36 @@ impl Handler<SplitsUpdate> for Publisher {
         Ok(())
     }
 }
+
+#[async_trait]
+impl Handler<FailedMergeOperation> for Publisher {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        failed_merge_operation: FailedMergeOperation,
+        ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, quickwit_actors::ActorExitStatus> {
+
+        let FailedMergeOperation {
+            index_uid,
+            split_and_maturities,
+            merge_task,
+        } = failed_merge_operation;
+
+        let increase_failed_merge_ops_req = quickwit_proto::metastore::IncreaseFailedMergeOpsRequest {
+            index_uid: Some(index_uid),
+            split_and_maturities: split_and_maturities,
+        };
+
+        ctx.protect_future(self.metastore.increase_failed_merge_ops(increase_failed_merge_ops_req))
+            .await
+            .context("failed to publish splits")?;
+
+        Ok(())
+    }
+}
+
 
 #[cfg(test)]
 mod tests {

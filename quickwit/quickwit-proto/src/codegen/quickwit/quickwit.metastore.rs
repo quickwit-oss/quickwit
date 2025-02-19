@@ -529,6 +529,24 @@ pub struct DeleteIndexTemplatesRequest {
     pub template_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IncreaseFailedMergeOpsRequest {
+    #[prost(message, optional, tag = "1")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
+    #[prost(message, repeated, tag = "2")]
+    pub split_and_maturities: ::prost::alloc::vec::Vec<SplitAndMaturity>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SplitAndMaturity {
+    #[prost(string, tag = "1")]
+    pub split_id: ::prost::alloc::string::String,
+    #[prost(bool, tag = "2")]
+    pub maturity: bool,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -785,6 +803,11 @@ impl RpcName for DeleteIndexTemplatesRequest {
         "delete_index_templates"
     }
 }
+impl RpcName for IncreaseFailedMergeOpsRequest {
+    fn rpc_name() -> &'static str {
+        "increase_failed_merge_ops"
+    }
+}
 pub type MetastoreServiceStream<T> = quickwit_common::ServiceStream<
     crate::metastore::MetastoreResult<T>,
 >;
@@ -956,6 +979,18 @@ pub trait MetastoreService: std::fmt::Debug + Send + Sync + 'static {
     async fn delete_index_templates(
         &self,
         request: DeleteIndexTemplatesRequest,
+    ) -> crate::metastore::MetastoreResult<EmptyResponse>;
+    /// Marks splits as mature.
+    /// Contrary to most other methods of the Metastore trait, a failure of this
+    /// method will just log an error without restarting the actor.
+    ///
+    /// The main purpose of this method is to mark splits as mature after
+    /// they have gone through a failed merge operation.
+    ///
+    /// This makes it possible to avoid attempting to remerge a split of death.
+    async fn increase_failed_merge_ops(
+        &self,
+        request: IncreaseFailedMergeOpsRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse>;
     async fn check_connectivity(&self) -> anyhow::Result<()>;
     fn endpoints(&self) -> Vec<quickwit_common::uri::Uri>;
@@ -1231,6 +1266,12 @@ impl MetastoreService for MetastoreServiceClient {
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.inner.0.delete_index_templates(request).await
     }
+    async fn increase_failed_merge_ops(
+        &self,
+        request: IncreaseFailedMergeOpsRequest,
+    ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        self.inner.0.increase_failed_merge_ops(request).await
+    }
     async fn check_connectivity(&self) -> anyhow::Result<()> {
         self.inner.0.check_connectivity().await
     }
@@ -1430,6 +1471,12 @@ pub mod mock_metastore_service {
             request: super::DeleteIndexTemplatesRequest,
         ) -> crate::metastore::MetastoreResult<super::EmptyResponse> {
             self.inner.lock().await.delete_index_templates(request).await
+        }
+        async fn increase_failed_merge_ops(
+            &self,
+            request: super::IncreaseFailedMergeOpsRequest,
+        ) -> crate::metastore::MetastoreResult<super::EmptyResponse> {
+            self.inner.lock().await.increase_failed_merge_ops(request).await
         }
         async fn check_connectivity(&self) -> anyhow::Result<()> {
             self.inner.lock().await.check_connectivity().await
@@ -1922,6 +1969,22 @@ impl tower::Service<DeleteIndexTemplatesRequest> for InnerMetastoreServiceClient
         Box::pin(fut)
     }
 }
+impl tower::Service<IncreaseFailedMergeOpsRequest> for InnerMetastoreServiceClient {
+    type Response = EmptyResponse;
+    type Error = crate::metastore::MetastoreError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: IncreaseFailedMergeOpsRequest) -> Self::Future {
+        let svc = self.clone();
+        let fut = async move { svc.0.increase_failed_merge_ops(request).await };
+        Box::pin(fut)
+    }
+}
 /// A tower service stack is a set of tower services.
 #[derive(Debug)]
 struct MetastoreServiceTowerServiceStack {
@@ -2074,6 +2137,11 @@ struct MetastoreServiceTowerServiceStack {
     >,
     delete_index_templates_svc: quickwit_common::tower::BoxService<
         DeleteIndexTemplatesRequest,
+        EmptyResponse,
+        crate::metastore::MetastoreError,
+    >,
+    increase_failed_merge_ops_svc: quickwit_common::tower::BoxService<
+        IncreaseFailedMergeOpsRequest,
         EmptyResponse,
         crate::metastore::MetastoreError,
     >,
@@ -2259,6 +2327,12 @@ impl MetastoreService for MetastoreServiceTowerServiceStack {
         request: DeleteIndexTemplatesRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.delete_index_templates_svc.clone().ready().await?.call(request).await
+    }
+    async fn increase_failed_merge_ops(
+        &self,
+        request: IncreaseFailedMergeOpsRequest,
+    ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        self.increase_failed_merge_ops_svc.clone().ready().await?.call(request).await
     }
     async fn check_connectivity(&self) -> anyhow::Result<()> {
         self.inner.0.check_connectivity().await
@@ -2567,6 +2641,16 @@ type DeleteIndexTemplatesLayer = quickwit_common::tower::BoxLayer<
     EmptyResponse,
     crate::metastore::MetastoreError,
 >;
+type IncreaseFailedMergeOpsLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        IncreaseFailedMergeOpsRequest,
+        EmptyResponse,
+        crate::metastore::MetastoreError,
+    >,
+    IncreaseFailedMergeOpsRequest,
+    EmptyResponse,
+    crate::metastore::MetastoreError,
+>;
 #[derive(Debug, Default)]
 pub struct MetastoreServiceTowerLayerStack {
     create_index_layers: Vec<CreateIndexLayer>,
@@ -2599,6 +2683,7 @@ pub struct MetastoreServiceTowerLayerStack {
     find_index_template_matches_layers: Vec<FindIndexTemplateMatchesLayer>,
     list_index_templates_layers: Vec<ListIndexTemplatesLayer>,
     delete_index_templates_layers: Vec<DeleteIndexTemplatesLayer>,
+    increase_failed_merge_ops_layers: Vec<IncreaseFailedMergeOpsLayer>,
 }
 impl MetastoreServiceTowerLayerStack {
     pub fn stack_layer<L>(mut self, layer: L) -> Self
@@ -3369,6 +3454,33 @@ impl MetastoreServiceTowerLayerStack {
         >>::Service as tower::Service<
             DeleteIndexTemplatesRequest,
         >>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    IncreaseFailedMergeOpsRequest,
+                    EmptyResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                IncreaseFailedMergeOpsRequest,
+                EmptyResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service: tower::Service<
+                IncreaseFailedMergeOpsRequest,
+                Response = EmptyResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                IncreaseFailedMergeOpsRequest,
+                EmptyResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service as tower::Service<
+            IncreaseFailedMergeOpsRequest,
+        >>::Future: Send + 'static,
     {
         self.create_index_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
@@ -3429,6 +3541,8 @@ impl MetastoreServiceTowerLayerStack {
         self.list_index_templates_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.delete_index_templates_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.increase_failed_merge_ops_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self
     }
@@ -4029,6 +4143,28 @@ impl MetastoreServiceTowerLayerStack {
             .push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
+    pub fn stack_increase_failed_merge_ops_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    IncreaseFailedMergeOpsRequest,
+                    EmptyResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                IncreaseFailedMergeOpsRequest,
+                Response = EmptyResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<
+            IncreaseFailedMergeOpsRequest,
+        >>::Future: Send + 'static,
+    {
+        self.increase_failed_merge_ops_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
     pub fn build<T>(self, instance: T) -> MetastoreServiceClient
     where
         T: MetastoreService,
@@ -4325,6 +4461,14 @@ impl MetastoreServiceTowerLayerStack {
                 quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
+        let increase_failed_merge_ops_svc = self
+            .increase_failed_merge_ops_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
+                |svc, layer| layer.layer(svc),
+            );
         let tower_svc_stack = MetastoreServiceTowerServiceStack {
             inner: inner_client,
             create_index_svc,
@@ -4357,6 +4501,7 @@ impl MetastoreServiceTowerLayerStack {
             find_index_template_matches_svc,
             list_index_templates_svc,
             delete_index_templates_svc,
+            increase_failed_merge_ops_svc,
         };
         MetastoreServiceClient::new(tower_svc_stack)
     }
@@ -4633,6 +4778,12 @@ where
             Response = EmptyResponse,
             Error = crate::metastore::MetastoreError,
             Future = BoxFuture<EmptyResponse, crate::metastore::MetastoreError>,
+        >
+        + tower::Service<
+            IncreaseFailedMergeOpsRequest,
+            Response = EmptyResponse,
+            Error = crate::metastore::MetastoreError,
+            Future = BoxFuture<EmptyResponse, crate::metastore::MetastoreError>,
         >,
 {
     async fn create_index(
@@ -4812,6 +4963,12 @@ where
     async fn delete_index_templates(
         &self,
         request: DeleteIndexTemplatesRequest,
+    ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        self.clone().call(request).await
+    }
+    async fn increase_failed_merge_ops(
+        &self,
+        request: IncreaseFailedMergeOpsRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.clone().call(request).await
     }
@@ -5290,6 +5447,20 @@ where
                 DeleteIndexTemplatesRequest::rpc_name(),
             ))
     }
+    async fn increase_failed_merge_ops(
+        &self,
+        request: IncreaseFailedMergeOpsRequest,
+    ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        self.inner
+            .clone()
+            .increase_failed_merge_ops(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                IncreaseFailedMergeOpsRequest::rpc_name(),
+            ))
+    }
     async fn check_connectivity(&self) -> anyhow::Result<()> {
         if self.connection_addrs_rx.borrow().len() == 0 {
             anyhow::bail!("no server currently available")
@@ -5654,6 +5825,17 @@ for MetastoreServiceGrpcServerAdapter {
         self.inner
             .0
             .delete_index_templates(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(crate::error::grpc_error_to_grpc_status)
+    }
+    async fn increase_failed_merge_ops(
+        &self,
+        request: tonic::Request<IncreaseFailedMergeOpsRequest>,
+    ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
+        self.inner
+            .0
+            .increase_failed_merge_ops(request.into_inner())
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -6670,6 +6852,41 @@ pub mod metastore_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// Marks splits as mature.
+        /// Contrary to most other methods of the Metastore trait, a failure of this
+        /// method will just log an error without restarting the actor.
+        ///
+        /// The main purpose of this method is to mark splits as mature after
+        /// they have gone through a failed merge operation.
+        ///
+        /// This makes it possible to avoid attempting to remerge a split of death.
+        pub async fn increase_failed_merge_ops(
+            &mut self,
+            request: impl tonic::IntoRequest<super::IncreaseFailedMergeOpsRequest>,
+        ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.metastore.MetastoreService/IncreaseFailedMergeOps",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit.metastore.MetastoreService",
+                        "IncreaseFailedMergeOps",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -6898,6 +7115,18 @@ pub mod metastore_service_grpc_server {
         async fn delete_index_templates(
             &self,
             request: tonic::Request<super::DeleteIndexTemplatesRequest>,
+        ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status>;
+        /// Marks splits as mature.
+        /// Contrary to most other methods of the Metastore trait, a failure of this
+        /// method will just log an error without restarting the actor.
+        ///
+        /// The main purpose of this method is to mark splits as mature after
+        /// they have gone through a failed merge operation.
+        ///
+        /// This makes it possible to avoid attempting to remerge a split of death.
+        async fn increase_failed_merge_ops(
+            &self,
+            request: tonic::Request<super::IncreaseFailedMergeOpsRequest>,
         ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status>;
     }
     /// Metastore meant to manage Quickwit's indexes, their splits and delete tasks.
@@ -8393,6 +8622,54 @@ pub mod metastore_service_grpc_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = DeleteIndexTemplatesSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.metastore.MetastoreService/IncreaseFailedMergeOps" => {
+                    #[allow(non_camel_case_types)]
+                    struct IncreaseFailedMergeOpsSvc<T: MetastoreServiceGrpc>(
+                        pub Arc<T>,
+                    );
+                    impl<
+                        T: MetastoreServiceGrpc,
+                    > tonic::server::UnaryService<super::IncreaseFailedMergeOpsRequest>
+                    for IncreaseFailedMergeOpsSvc<T> {
+                        type Response = super::EmptyResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::IncreaseFailedMergeOpsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).increase_failed_merge_ops(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = IncreaseFailedMergeOpsSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

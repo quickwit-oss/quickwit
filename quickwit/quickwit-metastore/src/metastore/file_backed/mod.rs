@@ -45,27 +45,13 @@ use itertools::Itertools;
 use quickwit_common::ServiceStream;
 use quickwit_config::IndexTemplate;
 use quickwit_proto::metastore::{
-    serde_utils, AcquireShardsRequest, AcquireShardsResponse, AddSourceRequest, CreateIndexRequest,
-    CreateIndexResponse, CreateIndexTemplateRequest, DeleteIndexRequest,
-    DeleteIndexTemplatesRequest, DeleteQuery, DeleteShardsRequest, DeleteShardsResponse,
-    DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, EmptyResponse, EntityKind,
-    FindIndexTemplateMatchesRequest, FindIndexTemplateMatchesResponse, GetIndexTemplateRequest,
-    GetIndexTemplateResponse, IndexMetadataFailure, IndexMetadataFailureReason,
-    IndexMetadataRequest, IndexMetadataResponse, IndexTemplateMatch, IndexesMetadataRequest,
-    IndexesMetadataResponse, LastDeleteOpstampRequest, LastDeleteOpstampResponse,
-    ListDeleteTasksRequest, ListDeleteTasksResponse, ListIndexTemplatesRequest,
-    ListIndexTemplatesResponse, ListIndexesMetadataRequest, ListIndexesMetadataResponse,
-    ListShardsRequest, ListShardsResponse, ListSplitsRequest, ListSplitsResponse,
-    ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError, MetastoreResult,
-    MetastoreService, MetastoreServiceStream, OpenShardSubrequest, OpenShardsRequest,
-    OpenShardsResponse, PruneShardsRequest, PublishSplitsRequest, ResetSourceCheckpointRequest,
-    StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest, UpdateSplitsDeleteOpstampRequest,
-    UpdateSplitsDeleteOpstampResponse,
+    serde_utils, AcquireShardsRequest, AcquireShardsResponse, AddSourceRequest, CreateIndexRequest, CreateIndexResponse, CreateIndexTemplateRequest, DeleteIndexRequest, DeleteIndexTemplatesRequest, DeleteQuery, DeleteShardsRequest, DeleteShardsResponse, DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, EmptyResponse, EntityKind, FindIndexTemplateMatchesRequest, FindIndexTemplateMatchesResponse, GetIndexTemplateRequest, GetIndexTemplateResponse, IncreaseFailedMergeOpsRequest, IndexMetadataFailure, IndexMetadataFailureReason, IndexMetadataRequest, IndexMetadataResponse, IndexTemplateMatch, IndexesMetadataRequest, IndexesMetadataResponse, LastDeleteOpstampRequest, LastDeleteOpstampResponse, ListDeleteTasksRequest, ListDeleteTasksResponse, ListIndexTemplatesRequest, ListIndexTemplatesResponse, ListIndexesMetadataRequest, ListIndexesMetadataResponse, ListShardsRequest, ListShardsResponse, ListSplitsRequest, ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceStream, OpenShardSubrequest, OpenShardsRequest, OpenShardsResponse, PruneShardsRequest, PublishSplitsRequest, ResetSourceCheckpointRequest, SplitAndMaturity, StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest, UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse
 };
 use quickwit_proto::types::{IndexId, IndexUid};
 use quickwit_storage::Storage;
 use time::OffsetDateTime;
 use tokio::sync::{Mutex, OwnedMutexGuard, RwLock};
+use tracing::error;
 use ulid::Ulid;
 
 use self::file_backed_index::FileBackedIndex;
@@ -713,9 +699,29 @@ impl MetastoreService for FileBackedMetastore {
         Ok(EmptyResponse {})
     }
 
+
+    async fn increase_failed_merge_ops(&self, req: IncreaseFailedMergeOpsRequest) -> MetastoreResult<EmptyResponse> {
+        let IncreaseFailedMergeOpsRequest { index_uid: index_uid_opt, split_and_maturities } = req;
+        let Some(index_uid) = index_uid_opt else {
+            return Err(MetastoreError::InvalidArgument { message: "missing index uid".to_string() });
+        };
+        self.mutate(&index_uid, |index| {
+            let mut modified = false;
+            for SplitAndMaturity { split_id, maturity } in split_and_maturities {
+                match index.increase_failed_merge_ops(&split_id, maturity) {
+                    Ok(()) => { modified = true; }
+                    Err(err) => {
+                        error!(err=%err, "failed to increase failed merge ops");
+                    }
+                }
+            }
+            Ok(MutationOccurred::from(modified))
+        }).await?;
+        Ok(EmptyResponse {})
+    }
+
     async fn delete_splits(&self, request: DeleteSplitsRequest) -> MetastoreResult<EmptyResponse> {
         let index_uid = request.index_uid().clone();
-
         self.mutate(&index_uid, |index| {
             index.delete_splits(request.split_ids)?;
             Ok(MutationOccurred::Yes(EmptyResponse {}))
@@ -1187,6 +1193,7 @@ impl MetastoreService for FileBackedMetastore {
         }
         Ok(EmptyResponse {})
     }
+
 }
 
 impl MetastoreServiceExt for FileBackedMetastore {}

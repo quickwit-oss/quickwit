@@ -28,7 +28,7 @@ use async_trait::async_trait;
 use fail::fail_point;
 use itertools::Itertools;
 use once_cell::sync::OnceCell;
-use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
+use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity, SendError};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::spawn_named_task;
 use quickwit_config::RetentionPolicy;
@@ -48,7 +48,7 @@ use crate::actors::Publisher;
 use crate::merge_policy::{MergePolicy, MergeTask};
 use crate::metrics::INDEXER_METRICS;
 use crate::models::{
-    create_split_metadata, EmptySplit, PackagedSplit, PackagedSplitBatch, PublishLock, SplitsUpdate,
+    create_split_metadata, EmptySplit, FailedMergeOperation, PackagedSplit, PackagedSplitBatch, PublishLock, SplitsUpdate
 };
 use crate::split_store::IndexingSplitStore;
 
@@ -100,6 +100,21 @@ impl From<Mailbox<Sequencer<Publisher>>> for SplitsUpdateMailbox {
 }
 
 impl SplitsUpdateMailbox {
+    async fn send<M>(&self, message: M, ctx: &ActorContext<Uploader>) -> Result<(), SendError>
+    where Publisher: Handler<M>, M: std::fmt::Debug + Send + Sync + 'static {
+        match self {
+            SplitsUpdateMailbox::Sequencer(mailbox) => {
+                let (tx, rx) = oneshot::channel();
+                let _ = tx.send(SequencerCommand::Proceed(message));
+                ctx.send_message(mailbox, rx).await?;
+            },
+            SplitsUpdateMailbox::Publisher(mailbox) => {
+                ctx.send_message(mailbox, message).await?;
+            },
+        }
+        Ok(())
+    }
+
     async fn get_split_update_sender(
         &self,
         ctx: &ActorContext<Uploader>,
@@ -428,6 +443,21 @@ impl Handler<EmptySplit> for Uploader {
         };
 
         split_update_sender.send(splits_update, ctx).await?;
+        Ok(())
+    }
+}
+
+// for Failed Merge Operation simply forward messages.
+#[async_trait]
+impl Handler<FailedMergeOperation> for Uploader {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        message: FailedMergeOperation,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        self.split_update_mailbox.send(message, ctx).await?;
         Ok(())
     }
 }

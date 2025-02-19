@@ -137,6 +137,9 @@ pub struct SplitMetadata {
     /// Doc mapping UID used when creating this split. This split may only be merged with other
     /// splits using the same doc mapping UID.
     pub doc_mapping_uid: DocMappingUid,
+
+    /// Number of failed merge operation this split has gone through.
+    pub failed_merge_ops: usize,
 }
 
 impl fmt::Debug for SplitMetadata {
@@ -286,6 +289,7 @@ impl quickwit_config::TestableForRegression for SplitMetadata {
             footer_offsets: 1000..2000,
             num_merge_ops: 3,
             doc_mapping_uid: DocMappingUid::default(),
+            failed_merge_ops: 1,
         }
     }
 
@@ -426,6 +430,7 @@ mod tests {
             delete_opstamp: 0,
             num_merge_ops: 0,
             doc_mapping_uid: DocMappingUid::default(),
+            failed_merge_ops: 1,
         };
 
         let expected_output = "SplitMetadata { split_id: \"split-1\", index_uid: IndexUid { \

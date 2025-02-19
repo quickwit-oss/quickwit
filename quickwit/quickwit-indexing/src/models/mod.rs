@@ -47,7 +47,7 @@ pub use merge_statistics::MergeStatistics;
 pub use packaged_split::{PackagedSplit, PackagedSplitBatch};
 pub use processed_doc::{ProcessedDoc, ProcessedDocBatch};
 pub use publish_lock::{NewPublishLock, PublishLock};
-pub use publisher_message::SplitsUpdate;
+pub use publisher_message::{SplitsUpdate, FailedMergeOperation};
 use quickwit_proto::types::PublishToken;
 pub use raw_doc_batch::RawDocBatch;
 pub(crate) use shard_positions::LocalShardPositionsUpdate;

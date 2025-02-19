@@ -22,11 +22,32 @@ use std::fmt;
 use itertools::Itertools;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_metastore::SplitMetadata;
+use quickwit_proto::metastore::SplitAndMaturity;
 use quickwit_proto::types::{IndexUid, PublishToken};
 use tracing::Span;
 
 use crate::merge_policy::MergeTask;
 use crate::models::PublishLock;
+
+pub struct FailedMergeOperation {
+    pub index_uid: IndexUid,
+    pub split_and_maturities: Vec<SplitAndMaturity>,
+    pub merge_task: Option<MergeTask>,
+}
+
+impl fmt::Debug for FailedMergeOperation {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let failed_split_ids: String = self
+            .splits
+            .iter()
+            .map(|split| split.split_id())
+            .join(",");
+        f.debug_struct("FailedMergeOperation")
+            .field("index_uid", &self.index_uid)
+            .field("splits", &failed_split_ids)
+            .finish()
+    }
+}
 
 pub struct SplitsUpdate {
     pub index_uid: IndexUid,
