@@ -640,6 +640,10 @@ mod tls {
 
         // TODO we could add support for client authorization, it seems less important than on the
         // gRPC side though
+        if config.validate_client {
+            anyhow::bail!("mTLS isn't supported on rest api");
+        }
+
         let mut cfg = rustls::ServerConfig::builder()
             .with_safe_defaults()
             .with_no_client_auth()

@@ -58,6 +58,10 @@ pub(crate) async fn start_grpc_server(
             let ca_cert = Certificate::from_pem(ca_cert);
             tls = tls.client_ca_root(ca_cert);
         }
+        // TODO using this builtin method means we have no way of hot-reloading certificates
+        // (i.e. the process must be restarted every time its certificate expires)
+        // to do better, we'd need to wra the TcpListener with something that does (m)TLS
+        // and that we control, however it would be somewhat painful, and more error prone
         server = server.tls_config(tls)?;
     }
 

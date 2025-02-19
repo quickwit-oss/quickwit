@@ -62,6 +62,8 @@ pub struct Cluster {
     self_chitchat_id: ChitchatId,
     /// Socket address (UDP) the node listens on for receiving gossip messages.
     pub gossip_listen_addr: SocketAddr,
+    // TODO this should become an ArcSwap<ClienTlsConfig> or something so that
+    // some task can watch for new certifites and update this (hot reloading)
     tls_config: Option<ClientTlsConfig>,
     gossip_interval: Duration,
     inner: Arc<RwLock<InnerCluster>>,
