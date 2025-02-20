@@ -41,7 +41,9 @@ const SCALING_DOWN_RATE_LIMITER_SETTINGS: RateLimiterSettings = RateLimiterSetti
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub(crate) enum ScalingMode {
-    Up,
+    /// Scale up by adding this number of shards
+    Up(usize),
+    /// Scale down by removing one shard
     Down,
 }
 
@@ -542,7 +544,7 @@ impl ShardTable {
     ) -> Option<bool> {
         let table_entry = self.table_entries.get_mut(source_uid)?;
         let scaling_rate_limiter = match scaling_mode {
-            ScalingMode::Up => &mut table_entry.scaling_up_rate_limiter,
+            ScalingMode::Up(_) => &mut table_entry.scaling_up_rate_limiter,
             ScalingMode::Down => &mut table_entry.scaling_down_rate_limiter,
         };
         Some(scaling_rate_limiter.acquire(1))
@@ -551,7 +553,7 @@ impl ShardTable {
     pub fn drain_scaling_permits(&mut self, source_uid: &SourceUid, scaling_mode: ScalingMode) {
         if let Some(table_entry) = self.table_entries.get_mut(source_uid) {
             let scaling_rate_limiter = match scaling_mode {
-                ScalingMode::Up => &mut table_entry.scaling_up_rate_limiter,
+                ScalingMode::Up(_) => &mut table_entry.scaling_up_rate_limiter,
                 ScalingMode::Down => &mut table_entry.scaling_down_rate_limiter,
             };
             scaling_rate_limiter.drain();
@@ -561,7 +563,7 @@ impl ShardTable {
     pub fn release_scaling_permits(&mut self, source_uid: &SourceUid, scaling_mode: ScalingMode) {
         if let Some(table_entry) = self.table_entries.get_mut(source_uid) {
             let scaling_rate_limiter = match scaling_mode {
-                ScalingMode::Up => &mut table_entry.scaling_up_rate_limiter,
+                ScalingMode::Up(_) => &mut table_entry.scaling_up_rate_limiter,
                 ScalingMode::Down => &mut table_entry.scaling_down_rate_limiter,
             };
             scaling_rate_limiter.release(1);
@@ -1047,7 +1049,7 @@ mod tests {
             source_id: source_id.clone(),
         };
         assert!(shard_table
-            .acquire_scaling_permits(&source_uid, ScalingMode::Up)
+            .acquire_scaling_permits(&source_uid, ScalingMode::Up(1))
             .is_none());
 
         shard_table.add_source(&index_uid, &source_id);
@@ -1060,7 +1062,7 @@ mod tests {
             .available_permits();
 
         assert!(shard_table
-            .acquire_scaling_permits(&source_uid, ScalingMode::Up)
+            .acquire_scaling_permits(&source_uid, ScalingMode::Up(1))
             .unwrap());
 
         let new_available_permits = shard_table
@@ -1132,10 +1134,10 @@ mod tests {
             .available_permits();
 
         assert!(shard_table
-            .acquire_scaling_permits(&source_uid, ScalingMode::Up)
+            .acquire_scaling_permits(&source_uid, ScalingMode::Up(1))
             .unwrap());
 
-        shard_table.release_scaling_permits(&source_uid, ScalingMode::Up);
+        shard_table.release_scaling_permits(&source_uid, ScalingMode::Up(1));
 
         let new_available_permits = shard_table
             .table_entries
