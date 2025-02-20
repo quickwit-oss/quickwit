@@ -205,11 +205,33 @@ mod tests {
         let metastore = test_sandbox.metastore();
         let delete_query_api_handlers =
             super::delete_task_api_handlers(metastore).recover(recover_fn);
+
+        // POST a delete query
         let resp = warp::test::request()
             .path("/test-delete-task-rest/delete-tasks")
             .method("POST")
             .json(&true)
             .body(r#"{"query": "body:myterm", "start_timestamp": 1, "end_timestamp": 10}"#)
+            .reply(&delete_query_api_handlers)
+            .await;
+        assert_eq!(resp.status(), 200);
+        let created_delete_task: DeleteTask = serde_json::from_slice(resp.body()).unwrap();
+        assert_eq!(created_delete_task.opstamp, 1);
+        let created_delete_query = created_delete_task.delete_query.unwrap();
+        assert_eq!(created_delete_query.index_uid(), &test_sandbox.index_uid());
+        assert_eq!(
+            created_delete_query.query_ast,
+            r#"{"type":"full_text","field":"body","text":"myterm","params":{"mode":{"type":"phrase_fallback_to_intersection"}},"lenient":false}"#
+        );
+        assert_eq!(created_delete_query.start_timestamp, Some(1));
+        assert_eq!(created_delete_query.end_timestamp, Some(10));
+
+        // POST a delete query with default fields
+        let resp = warp::test::request()
+            .path("/test-delete-task-rest/delete-tasks")
+            .method("POST")
+            .json(&true)
+            .body(r#"{"query": "myterm", "start_timestamp": 1, "end_timestamp": 10, "search_fields": ["body"]}"#)
             .reply(&delete_query_api_handlers)
             .await;
         assert_eq!(resp.status(), 200);
