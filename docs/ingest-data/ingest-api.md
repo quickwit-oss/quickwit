@@ -26,6 +26,8 @@ version: 0.7
 index_id: stackoverflow-schemaless
 doc_mapping:
   mode: dynamic
+  dynamic_mapping:
+    tokenizer: default
 indexing_settings:
   commit_timeout_secs: 30
 EOF
@@ -34,6 +36,8 @@ EOF
 # Or with cURL.
 curl -XPOST -H 'Content-Type: application/yaml' 'http://localhost:7280/api/v1/indexes' --data-binary @stackoverflow-schemaless-config.yaml
 ```
+
+Note that for this example, we configure the dynamic mapping to use the [default tokenizer](../configuration/index-config.md#description-of-available-tokenizers). This is necessary to enable full-text search on all text fields.
 
 ## Ingest data
 
@@ -83,6 +87,6 @@ By default, both ingestion services are enabled and ingest V2 is used. You can t
 
 :::note
 
-These configuration drive the ingest service used both by the `api/v1/<index-id>/ingest` endpoint and the [bulk API](../reference/es_compatible_api.md#_bulk--batch-ingestion-endpoint).
+These configurations drive the ingest service used both by the `api/v1/<index-id>/ingest` endpoint and the [bulk API](../reference/es_compatible_api.md#_bulk--batch-ingestion-endpoint).
 
 :::
