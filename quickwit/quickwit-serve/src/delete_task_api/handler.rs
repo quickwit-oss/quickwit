@@ -45,6 +45,7 @@ pub struct DeleteQueryRequest {
     /// Query text. The query language is that of tantivy.
     pub query: String,
     // Fields to search on
+    #[serde(rename(deserialize = "search_field"))]
     #[serde(default)]
     pub search_fields: Option<Vec<String>>,
     /// If set, restrict delete to documents with a `timestamp >= start_timestamp`.
@@ -232,7 +233,7 @@ mod tests {
             .path("/test-delete-task-rest/delete-tasks")
             .method("POST")
             .json(&true)
-            .body(r#"{"query": "myterm", "start_timestamp": 1, "end_timestamp": 10, "search_fields": ["body"]}"#)
+            .body(r#"{"query": "myterm", "start_timestamp": 1, "end_timestamp": 10, "search_field": ["body"]}"#)
             .reply(&delete_query_api_handlers)
             .await;
         assert_eq!(resp.status(), 200);
