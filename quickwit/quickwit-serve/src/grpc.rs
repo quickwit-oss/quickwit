@@ -16,10 +16,10 @@ use std::collections::BTreeSet;
 use std::error::Error;
 use std::sync::Arc;
 
-use bytesize::ByteSize;
 use quickwit_cluster::cluster_grpc_server;
 use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_config::service::QuickwitService;
+use quickwit_config::GrpcConfig;
 use quickwit_proto::developer::DeveloperServiceClient;
 use quickwit_proto::indexing::IndexingServiceClient;
 use quickwit_proto::jaeger::storage::v1::span_reader_plugin_server::SpanReaderPluginServer;
@@ -28,7 +28,7 @@ use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_se
 use quickwit_proto::search::search_service_server::SearchServiceServer;
 use quickwit_proto::tonic::codegen::CompressionEncoding;
 use quickwit_proto::tonic::transport::server::TcpIncoming;
-use quickwit_proto::tonic::transport::Server;
+use quickwit_proto::tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
 use tokio::net::TcpListener;
 use tracing::*;
 
@@ -39,20 +39,38 @@ use crate::{QuickwitServices, INDEXING_GRPC_SERVER_METRICS_LAYER};
 /// Starts and binds gRPC services to `grpc_listen_addr`.
 pub(crate) async fn start_grpc_server(
     tcp_listener: TcpListener,
-    max_message_size: ByteSize,
+    grpc_config: GrpcConfig,
     services: Arc<QuickwitServices>,
     readiness_trigger: BoxFutureInfaillible<()>,
     shutdown_signal: BoxFutureInfaillible<()>,
 ) -> anyhow::Result<()> {
     let mut enabled_grpc_services = BTreeSet::new();
     let mut server = Server::builder();
+    if let Some(tls_config) = grpc_config.tls {
+        let cert = std::fs::read_to_string(tls_config.cert_path)?;
+        let key = std::fs::read_to_string(tls_config.key_path)?;
+        let identity = Identity::from_pem(cert, key);
+
+        let mut tls = ServerTlsConfig::new().identity(identity);
+
+        if tls_config.validate_client {
+            let ca_cert = std::fs::read_to_string(tls_config.ca_path)?;
+            let ca_cert = Certificate::from_pem(ca_cert);
+            tls = tls.client_ca_root(ca_cert);
+        }
+        // TODO using this builtin method means we have no way of hot-reloading certificates
+        // (i.e. the process must be restarted every time its certificate expires)
+        // to do better, we'd need to wra the TcpListener with something that does (m)TLS
+        // and that we control, however it would be somewhat painful, and more error prone
+        server = server.tls_config(tls)?;
+    }
 
     let cluster_grpc_service = cluster_grpc_server(services.cluster.clone());
 
     // Mount gRPC metastore service if `QuickwitService::Metastore` is enabled on node.
     let metastore_grpc_service = if let Some(metastore_server) = &services.metastore_server_opt {
         enabled_grpc_services.insert("metastore");
-        Some(metastore_server.as_grpc_service(max_message_size))
+        Some(metastore_server.as_grpc_service(grpc_config.max_message_size))
     } else {
         None
     };
@@ -66,7 +84,7 @@ pub(crate) async fn start_grpc_server(
             let indexing_service = IndexingServiceClient::tower()
                 .stack_layer(INDEXING_GRPC_SERVER_METRICS_LAYER.clone())
                 .build_from_mailbox(indexing_service);
-            Some(indexing_service.as_grpc_service(max_message_size))
+            Some(indexing_service.as_grpc_service(grpc_config.max_message_size))
         } else {
             None
         }
@@ -79,7 +97,11 @@ pub(crate) async fn start_grpc_server(
         .is_service_enabled(QuickwitService::Indexer)
     {
         enabled_grpc_services.insert("ingest-api");
-        Some(services.ingest_service.as_grpc_service(max_message_size))
+        Some(
+            services
+                .ingest_service
+                .as_grpc_service(grpc_config.max_message_size),
+        )
     } else {
         None
     };
@@ -91,7 +113,7 @@ pub(crate) async fn start_grpc_server(
 
         let ingest_router_service = services
             .ingest_router_service
-            .as_grpc_service(max_message_size);
+            .as_grpc_service(grpc_config.max_message_size);
         Some(ingest_router_service)
     } else {
         None
@@ -99,7 +121,7 @@ pub(crate) async fn start_grpc_server(
 
     let ingester_grpc_service = if let Some(ingester_service) = services.ingester_service() {
         enabled_grpc_services.insert("ingester");
-        Some(ingester_service.as_grpc_service(max_message_size))
+        Some(ingester_service.as_grpc_service(grpc_config.max_message_size))
     } else {
         None
     };
@@ -113,7 +135,7 @@ pub(crate) async fn start_grpc_server(
         Some(
             services
                 .control_plane_client
-                .as_grpc_service(max_message_size),
+                .as_grpc_service(grpc_config.max_message_size),
         )
     } else {
         None
@@ -147,8 +169,8 @@ pub(crate) async fn start_grpc_server(
         let grpc_search_service = GrpcSearchAdapter::from(search_service);
         Some(
             SearchServiceServer::new(grpc_search_service)
-                .max_decoding_message_size(max_message_size.0 as usize)
-                .max_encoding_message_size(max_message_size.0 as usize),
+                .max_decoding_message_size(grpc_config.max_message_size.0 as usize)
+                .max_encoding_message_size(grpc_config.max_message_size.0 as usize),
         )
     } else {
         None

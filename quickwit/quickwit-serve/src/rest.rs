@@ -13,9 +13,12 @@
 // limitations under the License.
 
 use std::fmt::Formatter;
+use std::pin::Pin;
 use std::sync::Arc;
 
 use hyper::http::HeaderValue;
+use hyper::server::accept::Accept;
+use hyper::server::conn::AddrIncoming;
 use hyper::{http, Method, StatusCode};
 use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_config::{disable_ingest_v1, enable_ingest_v2};
@@ -216,7 +219,16 @@ pub(crate) async fn start_rest_server(
         "starting REST server listening on {rest_listen_addr}"
     );
 
-    let rest_listener_std = tcp_listener.into_std()?;
+    let incoming = AddrIncoming::from_listener(tcp_listener)?;
+
+    let maybe_tls_incoming =
+        if let Some(tls_config) = &quickwit_services.node_config.rest_config.tls {
+            let rustls_config = tls::make_rustls_config(tls_config)?;
+            EitherIncoming::Left(tls::TlsAcceptor::new(rustls_config, incoming))
+        } else {
+            EitherIncoming::Right(incoming)
+        };
+
     // `graceful_shutdown()` seems to be blocking in presence of existing connections.
     // The following approach of dropping the serve supposedly is not bullet proof, but it seems to
     // work in our unit test.
@@ -226,7 +238,7 @@ pub(crate) async fn start_rest_server(
 
     let serve_fut = async move {
         tokio::select! {
-             res = hyper::Server::from_tcp(rest_listener_std)?.serve(Shared::new(service)) => { res }
+             res = hyper::Server::builder(maybe_tls_incoming).serve(Shared::new(service)) => { res }
              _ = shutdown_signal => { Ok(()) }
         }
     };
@@ -464,6 +476,227 @@ fn build_cors(cors_origins: &[String]) -> CorsLayer {
     }
 
     cors
+}
+
+mod tls {
+    // most of this module is copied from hyper-tls examples, licensed under Apache 2.0, MIT or ISC
+
+    use std::future::Future;
+    use std::pin::Pin;
+    use std::sync::Arc;
+    use std::task::{ready, Context, Poll};
+    use std::vec::Vec;
+    use std::{fs, io};
+
+    use hyper::server::accept::Accept;
+    use hyper::server::conn::{AddrIncoming, AddrStream};
+    use quickwit_config::TlsConfig;
+    use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+    use tokio_rustls::rustls::ServerConfig;
+
+    fn error(err: String) -> io::Error {
+        io::Error::new(io::ErrorKind::Other, err)
+    }
+
+    // Load public certificate from file.
+    fn load_certs(filename: &str) -> io::Result<Vec<rustls::Certificate>> {
+        // Open certificate file.
+        let certfile =
+            fs::read(filename).map_err(|e| error(format!("failed to open {}: {}", filename, e)))?;
+
+        // Load and return certificate.
+        let certs = rustls_pemfile::certs(&mut certfile.as_ref())
+            .map_err(|_| error("failed to load certificate".into()))?;
+        Ok(certs.into_iter().map(rustls::Certificate).collect())
+    }
+
+    // Load private key from file.
+    fn load_private_key(filename: &str) -> io::Result<rustls::PrivateKey> {
+        // Open keyfile.
+        let keyfile =
+            fs::read(filename).map_err(|e| error(format!("failed to open {}: {}", filename, e)))?;
+
+        // Load and return a single private key.
+        let keys = rustls_pemfile::pkcs8_private_keys(&mut keyfile.as_ref())
+            .map_err(|_| error("failed to load private key".into()))?;
+        if keys.len() != 1 {
+            return Err(error(format!(
+                "expected a single private key, got {}",
+                keys.len()
+            )));
+        }
+
+        Ok(rustls::PrivateKey(keys[0].clone()))
+    }
+
+    pub struct TlsAcceptor {
+        config: Arc<ServerConfig>,
+        incoming: AddrIncoming,
+    }
+
+    impl TlsAcceptor {
+        pub fn new(config: Arc<ServerConfig>, incoming: AddrIncoming) -> TlsAcceptor {
+            TlsAcceptor { config, incoming }
+        }
+    }
+
+    impl Accept for TlsAcceptor {
+        type Conn = TlsStream;
+        type Error = io::Error;
+
+        fn poll_accept(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+        ) -> Poll<Option<Result<Self::Conn, Self::Error>>> {
+            let pin = self.get_mut();
+            match ready!(Pin::new(&mut pin.incoming).poll_accept(cx)) {
+                Some(Ok(sock)) => Poll::Ready(Some(Ok(TlsStream::new(sock, pin.config.clone())))),
+                Some(Err(e)) => Poll::Ready(Some(Err(e))),
+                None => Poll::Ready(None),
+            }
+        }
+    }
+
+    enum State {
+        Handshaking(tokio_rustls::Accept<AddrStream>),
+        Streaming(tokio_rustls::server::TlsStream<AddrStream>),
+    }
+
+    // tokio_rustls::server::TlsStream doesn't expose constructor methods,
+    // so we have to TlsAcceptor::accept and handshake to have access to it
+    // TlsStream implements AsyncRead/AsyncWrite handshaking tokio_rustls::Accept first
+    pub struct TlsStream {
+        state: State,
+    }
+
+    impl TlsStream {
+        fn new(stream: AddrStream, config: Arc<ServerConfig>) -> TlsStream {
+            let accept = tokio_rustls::TlsAcceptor::from(config).accept(stream);
+            TlsStream {
+                state: State::Handshaking(accept),
+            }
+        }
+    }
+
+    impl AsyncRead for TlsStream {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            cx: &mut Context,
+            buf: &mut ReadBuf,
+        ) -> Poll<io::Result<()>> {
+            let pin = self.get_mut();
+            match pin.state {
+                State::Handshaking(ref mut accept) => match ready!(Pin::new(accept).poll(cx)) {
+                    Ok(mut stream) => {
+                        let result = Pin::new(&mut stream).poll_read(cx, buf);
+                        pin.state = State::Streaming(stream);
+                        result
+                    }
+                    Err(err) => Poll::Ready(Err(err)),
+                },
+                State::Streaming(ref mut stream) => Pin::new(stream).poll_read(cx, buf),
+            }
+        }
+    }
+
+    impl AsyncWrite for TlsStream {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            let pin = self.get_mut();
+            match pin.state {
+                State::Handshaking(ref mut accept) => match ready!(Pin::new(accept).poll(cx)) {
+                    Ok(mut stream) => {
+                        let result = Pin::new(&mut stream).poll_write(cx, buf);
+                        pin.state = State::Streaming(stream);
+                        result
+                    }
+                    Err(err) => Poll::Ready(Err(err)),
+                },
+                State::Streaming(ref mut stream) => Pin::new(stream).poll_write(cx, buf),
+            }
+        }
+
+        fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            match self.state {
+                State::Handshaking(_) => Poll::Ready(Ok(())),
+                State::Streaming(ref mut stream) => Pin::new(stream).poll_flush(cx),
+            }
+        }
+
+        fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            match self.state {
+                State::Handshaking(_) => Poll::Ready(Ok(())),
+                State::Streaming(ref mut stream) => Pin::new(stream).poll_shutdown(cx),
+            }
+        }
+    }
+
+    pub fn make_rustls_config(config: &TlsConfig) -> anyhow::Result<Arc<ServerConfig>> {
+        let certs = load_certs(&config.cert_path)?;
+        let key = load_private_key(&config.key_path)?;
+
+        // TODO we could add support for client authorization, it seems less important than on the
+        // gRPC side though
+        if config.validate_client {
+            anyhow::bail!("mTLS isn't supported on rest api");
+        }
+
+        let mut cfg = rustls::ServerConfig::builder()
+            .with_safe_defaults()
+            .with_no_client_auth()
+            .with_single_cert(certs, key)
+            .map_err(|e| error(format!("{}", e)))?;
+        // Configure ALPN to accept HTTP/2, HTTP/1.1, and HTTP/1.0 in that order.
+        cfg.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec(), b"http/1.0".to_vec()];
+        Ok(Arc::new(cfg))
+    }
+}
+
+enum EitherIncoming<L, R> {
+    Left(L),
+    Right(R),
+}
+
+impl<L, R> EitherIncoming<L, R> {
+    pub fn as_pin_mut(self: Pin<&mut Self>) -> EitherIncoming<Pin<&mut L>, Pin<&mut R>> {
+        // SAFETY: `get_unchecked_mut` is fine because we don't move anything.
+        // We can use `new_unchecked` because the `inner` parts are guaranteed
+        // to be pinned, as they come from `self` which is pinned, and we never
+        // offer an unpinned `&mut A` or `&mut B` through `Pin<&mut Self>`. We
+        // also don't have an implementation of `Drop`, nor manual `Unpin`.
+        unsafe {
+            match self.get_unchecked_mut() {
+                EitherIncoming::Left(inner) => EitherIncoming::Left(Pin::new_unchecked(inner)),
+                EitherIncoming::Right(inner) => EitherIncoming::Right(Pin::new_unchecked(inner)),
+            }
+        }
+    }
+}
+
+impl<L, R, E> Accept for EitherIncoming<L, R>
+where
+    L: Accept<Error = E>,
+    R: Accept<Error = E>,
+{
+    type Conn = tokio_util::either::Either<L::Conn, R::Conn>;
+    type Error = E;
+
+    fn poll_accept(
+        self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Result<Self::Conn, Self::Error>>> {
+        match self.as_pin_mut() {
+            EitherIncoming::Left(l) => l
+                .poll_accept(cx)
+                .map(|opt| opt.map(|res| res.map(tokio_util::either::Either::Left))),
+            EitherIncoming::Right(r) => r
+                .poll_accept(cx)
+                .map(|opt| opt.map(|res| res.map(tokio_util::either::Either::Right))),
+        }
+    }
 }
 
 #[cfg(test)]

@@ -25,6 +25,7 @@ use quickwit_proto::cluster::{
     FetchClusterStateResponse, NodeState as ProtoNodeState, VersionedKeyValue,
 };
 use tonic::async_trait;
+use tonic::transport::ClientTlsConfig;
 
 use crate::Cluster;
 
@@ -35,8 +36,11 @@ static CLUSTER_GRPC_CLIENT_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
 static CLUSTER_GRPC_SERVER_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
     Lazy::new(|| GrpcMetricsLayer::new("cluster", "server"));
 
-pub(crate) async fn cluster_grpc_client(socket_addr: SocketAddr) -> ClusterServiceClient {
-    let channel = make_channel(socket_addr).await;
+pub(crate) async fn cluster_grpc_client(
+    socket_addr: SocketAddr,
+    tls_config: Option<ClientTlsConfig>,
+) -> ClusterServiceClient {
+    let channel = make_channel(socket_addr, tls_config).await;
 
     ClusterServiceClient::tower()
         .stack_layer(CLUSTER_GRPC_CLIENT_METRICS_LAYER.clone())
