@@ -7293,6 +7293,7 @@ dependencies = [
  "tracing",
  "tracing-opentelemetry",
  "utoipa",
+ "uuid",
  "warp",
  "zstd 0.13.2",
 ]

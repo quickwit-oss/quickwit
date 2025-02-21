@@ -12,6 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod normalize_field_name;
+mod normalize_tags;
 mod rest_handler;
+
+pub(crate) use normalize_field_name::{normalize_fields, NormalizeField};
+pub(crate) use normalize_tags::{convert_tags, StringOrVec};
 pub(crate) use rest_handler::datadog_ingest_api_handlers;
 pub use rest_handler::DDGAgentApi;
