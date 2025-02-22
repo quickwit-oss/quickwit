@@ -42,8 +42,10 @@ pub enum RateLimitingCause {
     WalFull,
     #[error("circuit breaker")]
     CircuitBreaker,
-    #[error("shard rate limiting")]
-    ShardRateLimiting,
+    #[error("attempted shards rate limited")]
+    AttemptedShardsRateLimited,
+    #[error("all shards rate limited")]
+    AllShardsRateLimited,
     #[error("unknown")]
     Unknown,
 }
@@ -312,7 +314,9 @@ impl From<PersistFailureReason> for IngestFailureReason {
             PersistFailureReason::ShardNotFound => IngestFailureReason::NoShardsAvailable,
             PersistFailureReason::ShardClosed => IngestFailureReason::NoShardsAvailable,
             PersistFailureReason::WalFull => IngestFailureReason::WalFull,
-            PersistFailureReason::ShardRateLimited => IngestFailureReason::ShardRateLimited,
+            PersistFailureReason::ShardRateLimited => {
+                IngestFailureReason::AttemptedShardsRateLimited
+            }
             PersistFailureReason::Timeout => IngestFailureReason::Timeout,
         }
     }
