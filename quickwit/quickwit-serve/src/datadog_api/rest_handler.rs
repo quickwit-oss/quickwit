@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use core::fmt;
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -27,8 +26,7 @@ use quickwit_proto::ingest::router::{
 use quickwit_proto::ingest::CommitTypeV2;
 use quickwit_proto::types::{DocUidGenerator, IndexId};
 use quickwit_proto::{ServiceError, ServiceErrorCode};
-use serde::de::Visitor;
-use serde::{self, Deserialize, Deserializer, Serialize};
+use serde::{self, Deserialize, Serialize};
 use serde_json::Value;
 use tracing::{debug, error, warn};
 use uuid::Uuid;
@@ -37,6 +35,7 @@ use warp::{Filter, Rejection};
 use super::{convert_tags, normalize_fields, NormalizeField, StringOrVec};
 use crate::decompression::get_body_bytes;
 use crate::rest_api_response::into_rest_api_response;
+use crate::simple_list::from_simple_list;
 use crate::{with_arg, Body, BodyFormat};
 
 const DATADOG_INDEX_ID: &str = "datadog";
@@ -199,42 +198,8 @@ pub struct DatadogLogMsg {
     pub hostname: String,
     pub service: String,
     pub ddsource: String,
-    // Instead of `Bytes`, we now store a `Vec<String>` for ddtags
-    #[serde(deserialize_with = "deserialize_ddtags")]
-    pub ddtags: Vec<String>,
-}
-
-/// A visitor to parse a comma-separated string into `Vec<String>`.
-pub struct CommaSplitVisitor;
-
-impl<'de> Visitor<'de> for CommaSplitVisitor {
-    type Value = Vec<String>;
-
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        write!(formatter, "a comma-separated string")
-    }
-
-    fn visit_borrowed_str<E>(self, value: &'de str) -> Result<Self::Value, E>
-    where E: serde::de::Error {
-        self.visit_str(value)
-    }
-
-    fn visit_string<E>(self, value: String) -> Result<Self::Value, E>
-    where E: serde::de::Error {
-        self.visit_str(&value)
-    }
-
-    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
-    where E: serde::de::Error {
-        let parts = value.split(',').map(str::to_string).collect();
-        Ok(parts)
-    }
-}
-
-/// A helper function so you can do `deserializer.deserialize_str(CommaSplitVisitor)`.
-pub fn deserialize_ddtags<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
-where D: Deserializer<'de> {
-    deserializer.deserialize_str(CommaSplitVisitor)
+    #[serde(deserialize_with = "from_simple_list")]
+    pub ddtags: Option<Vec<String>>,
 }
 
 /// TODO: Move to pipeline later on
@@ -274,20 +239,21 @@ impl ProcessedLog {
         }
     }
 
-    pub fn from_datadog_log_msg(mut msg: DatadogLogMsg) -> Self {
-        msg.ddtags.push("ingest:pomchi".to_string());
+    pub fn from_datadog_log_msg(msg: DatadogLogMsg) -> Self {
+        let ingest_size_in_bytes = serde_json::to_string(&msg)
+            .map(|s| s.len())
+            .unwrap_or_default();
+        let tags = msg.ddtags.unwrap_or_default();
         let mut processed = ProcessedLog {
-            ingest_size_in_bytes: serde_json::to_string(&msg)
-                .map(|s| s.len())
-                .unwrap_or_default(),
             message: msg.message,
+            ingest_size_in_bytes,
             status: msg.status.unwrap_or("info".to_string()).to_lowercase(),
             timestamp: msg.timestamp,
             host: msg.hostname,
             service: msg.service,
             source: msg.ddsource,
-            tag: convert_tags(&msg.ddtags),
-            tags: msg.ddtags,
+            tag: convert_tags(&tags),
+            tags,
             id: Uuid::new_v4().to_string(),
             discovery_timestamp: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -355,7 +321,7 @@ impl ProcessedLog {
                         }
                     }
                     _ => {
-                        warn!("Unhandled alias: {}", alias);
+                        warn!("unhandled alias: {alias}");
                         // Any other field, just copy it over
                         processed.custom.insert(alias.to_owned(), val);
                     }
@@ -459,7 +425,7 @@ mod tests {
             hostname: "test-host".to_string(),
             service: "test-service".to_string(),
             ddsource: "rust".to_string(),
-            ddtags: vec!["env:dev".into(), "region:us-east".into()],
+            ddtags: Some(vec!["env:dev".into(), "region:us-east".into()]),
         }
     }
 

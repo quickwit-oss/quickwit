@@ -33,7 +33,7 @@ impl StringOrVec {
     }
 }
 
-pub fn convert_tags(orig: &Vec<String>) -> HashMap<String, StringOrVec> {
+pub fn convert_tags(orig: &[String]) -> HashMap<String, StringOrVec> {
     let mut object_map: HashMap<String, StringOrVec> = HashMap::new();
 
     for tag in orig {
@@ -85,11 +85,11 @@ mod tests {
             hostname: "".to_string(),
             service: "".to_string(),
             ddsource: "".to_string(),
-            ddtags: vec![
+            ddtags: Some(vec![
                 "env:dev".into(),
                 "region:us-east".into(),
                 "region:east".into(),
-            ],
+            ]),
         };
         let processed = ProcessedLog::from_datadog_log_msg(msg.clone());
 
@@ -98,10 +98,6 @@ mod tests {
             (
                 "region".to_string(),
                 StringOrVec::Vec(vec!["us-east".to_string(), "east".to_string()]),
-            ),
-            (
-                "ingest".to_string(),
-                StringOrVec::String("pomchi".to_string()),
             ),
         ]);
         assert_eq!(processed.tag, expected_map);
