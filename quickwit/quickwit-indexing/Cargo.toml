@@ -46,6 +46,7 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 ulid = { workspace = true }
 utoipa = { workspace = true }
+urlencoding = { workspace = true }
 vrl = { workspace = true, optional = true }
 warp = { workspace = true, optional = true }
 
