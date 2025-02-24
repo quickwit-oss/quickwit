@@ -32,6 +32,7 @@ libz-sys = { workspace = true, optional = true }
 once_cell = { workspace = true }
 oneshot = { workspace = true }
 openssl = { workspace = true, optional = true }
+percent-encoding = { workspace = true }
 pulsar = { workspace = true, optional = true }
 quickwit-query = { workspace = true }
 regex = { workspace = true }
