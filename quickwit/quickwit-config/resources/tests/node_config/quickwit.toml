@@ -1,4 +1,4 @@
-version = "0.7"
+version = "0.9"
 
 cluster_id = "quickwit-cluster"
 node_id = "my-unique-node-id"
