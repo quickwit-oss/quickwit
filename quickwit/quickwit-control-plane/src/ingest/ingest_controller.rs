@@ -285,7 +285,7 @@ impl IngestController {
         ingester_pool: IngesterPool,
         replication_factor: usize,
         max_shard_ingestion_throughput_mib_per_sec: f32,
-        shard_scaling_factor: f32,
+        shard_scale_up_factor: f32,
     ) -> Self {
         IngestController {
             metastore,
@@ -295,7 +295,7 @@ impl IngestController {
             stats: IngestControllerStats::default(),
             scaling_arbiter: ScalingArbiter::with_max_shard_ingestion_throughput_mib_per_sec(
                 max_shard_ingestion_throughput_mib_per_sec,
-                shard_scaling_factor,
+                shard_scale_up_factor,
             ),
         }
     }
@@ -673,17 +673,17 @@ impl IngestController {
         shard_stats: ShardStats,
         model: &mut ControlPlaneModel,
         progress: &Progress,
-        shards_to_create: usize,
+        num_shards_to_open: usize,
     ) -> MetastoreResult<()> {
         if !model
-            .acquire_scaling_permits(&source_uid, ScalingMode::Up(shards_to_create))
+            .acquire_scaling_permits(&source_uid, ScalingMode::Up(num_shards_to_open))
             .unwrap_or(false)
         {
             return Ok(());
         }
-        let new_num_open_shards = shard_stats.num_open_shards + shards_to_create;
+        let new_num_open_shards = shard_stats.num_open_shards + num_shards_to_open;
         let new_shards_per_source: HashMap<SourceUid, usize> =
-            HashMap::from_iter([(source_uid.clone(), shards_to_create)]);
+            HashMap::from_iter([(source_uid.clone(), num_shards_to_open)]);
         let successful_source_uids_res = self
             .try_open_shards(new_shards_per_source, model, &Default::default(), progress)
             .await;
@@ -695,7 +695,7 @@ impl IngestController {
                 if successful_source_uids.is_empty() {
                     // We did not manage to create the shard.
                     // We can release our permit.
-                    model.release_scaling_permits(&source_uid, ScalingMode::Up(shards_to_create));
+                    model.release_scaling_permits(&source_uid, ScalingMode::Up(num_shards_to_open));
                     warn!(
                         index_uid=%source_uid.index_uid,
                         source_id=%source_uid.source_id,
@@ -719,7 +719,7 @@ impl IngestController {
                     source_id=%source_uid.source_id,
                     "scaling up number of shards to {new_num_open_shards} failed: {metastore_error:?}"
                 );
-                model.release_scaling_permits(&source_uid, ScalingMode::Up(shards_to_create));
+                model.release_scaling_permits(&source_uid, ScalingMode::Up(num_shards_to_open));
                 Err(metastore_error)
             }
         }

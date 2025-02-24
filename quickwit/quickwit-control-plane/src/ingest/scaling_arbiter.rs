@@ -30,14 +30,14 @@ pub(crate) struct ScalingArbiter {
     // after scaling up, and double check that it is above the long term threshold.
     scale_up_shards_short_term_threshold_mib_per_sec: f32,
     scale_up_shards_long_term_threshold_mib_per_sec: f32,
-    // The max increase factor of the number of shards in one scaling operation
-    shard_scaling_factor: f32,
+    // The max increase factor of the number of shards in one scale up operation
+    shard_scale_up_factor: f32,
 }
 
 impl ScalingArbiter {
     pub fn with_max_shard_ingestion_throughput_mib_per_sec(
         max_shard_throughput_mib_per_sec: f32,
-        shard_scaling_factor: f32,
+        shard_scale_up_factor: f32,
     ) -> ScalingArbiter {
         ScalingArbiter {
             scale_up_shards_short_term_threshold_mib_per_sec: max_shard_throughput_mib_per_sec
@@ -45,7 +45,7 @@ impl ScalingArbiter {
             scale_up_shards_long_term_threshold_mib_per_sec: max_shard_throughput_mib_per_sec
                 * 0.3f32,
             scale_down_shards_threshold_mib_per_sec: max_shard_throughput_mib_per_sec * 0.2f32,
-            shard_scaling_factor,
+            shard_scale_up_factor,
         }
     }
 
@@ -65,7 +65,7 @@ impl ScalingArbiter {
 
             // compute the next number of shards we should have according the scaling factor
             let target_number_shards =
-                (shard_stats.num_open_shards as f32 * self.shard_scaling_factor).ceil() as usize;
+                (shard_stats.num_open_shards as f32 * self.shard_scale_up_factor).ceil() as usize;
 
             let new_number_shards = max_number_shards.min(target_number_shards);
 

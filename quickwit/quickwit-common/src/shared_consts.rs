@@ -67,9 +67,9 @@ pub const INGESTER_PRIMARY_SHARDS_PREFIX: &str = "ingester.primary_shards:";
 pub const SPLIT_FIELDS_FILE_NAME: &str = "split_fields";
 
 /// More or less the indexing throughput of a core
-/// i.e PIPELINE_THROUGHPUT / PIPELINE_FULL_CAPACITY
+/// i.e. PIPELINE_THROUGHPUT / PIPELINE_FULL_CAPACITY
 pub const DEFAULT_SHARD_THROUGHPUT_LIMIT: ByteSize = ByteSize::mib(5);
-/// Large enough to absorb small bursts but should remain defensive against unbalanced shards
+/// Large enough to absorb small bursts but should remain defensive against unbalanced shards.
 pub const DEFAULT_SHARD_BURST_LIMIT: ByteSize = ByteSize::mib(50);
 
 /// A compromise between "exponential" scale up and moderate shard count increase.

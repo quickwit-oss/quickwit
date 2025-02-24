@@ -25,7 +25,7 @@ use quickwit_proto::ingest::{Shard, ShardState};
 use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceId, SourceUid};
 use tracing::{error, info, warn};
 
-/// Limits the number of shards that can be opened for scaling up a source to 5 per minute.
+/// Limits the number of scale up operations that can happen to a source to 5 per minute.
 const SCALING_UP_RATE_LIMITER_SETTINGS: RateLimiterSettings = RateLimiterSettings {
     burst_limit: 5,
     rate_limit: ConstantRate::new(5, Duration::from_secs(60)),
