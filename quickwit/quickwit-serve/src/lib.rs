@@ -853,7 +853,6 @@ async fn setup_ingest_v2(
 ) -> anyhow::Result<(IngestRouter, IngestRouterServiceClient, Option<Ingester>)> {
     // Instantiate ingest router.
     let self_node_id: NodeId = cluster.self_node_id().into();
-    let content_length_limit = node_config.ingest_api_config.content_length_limit;
     let replication_factor = node_config
         .ingest_api_config
         .replication_factor()
@@ -875,15 +874,10 @@ async fn setup_ingest_v2(
         .stack_layer(INGEST_GRPC_SERVER_METRICS_LAYER.clone())
         .build(ingest_router.clone());
 
-    // We compute the burst limit as something a bit larger than the content length limit, because
-    // we actually rewrite the `\n-delimited format into a tiny bit larger buffer, where the
-    // line length is prefixed.
-    let burst_limit = (content_length_limit.as_u64() * 3 / 2).clamp(10_000_000, 200_000_000);
-
     let rate_limit =
         ConstantRate::bytes_per_sec(node_config.ingest_api_config.shard_throughput_limit);
     let rate_limiter_settings = RateLimiterSettings {
-        burst_limit,
+        burst_limit: node_config.ingest_api_config.shard_burst_limit.as_u64(),
         rate_limit,
         // Refill every 100ms.
         refill_period: Duration::from_millis(100),
