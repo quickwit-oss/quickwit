@@ -351,9 +351,10 @@ pub struct IngestApiConfig {
     pub content_length_limit: ByteSize,
     /// (hidden) Targeted throughput for each shard
     pub shard_throughput_limit: ByteSize,
-    /// (hidden) Targeted throughput for each shard
+    /// (hidden) Maximum accumulated throughput capacity for underutilized
+    /// shards, allowing the throughput limit to be temporarily exceeded
     pub shard_burst_limit: ByteSize,
-    /// (hidden) new_shard_count = ceil(old_shard_count * shard_scaling_factor)
+    /// (hidden) new_shard_count = ceil(old_shard_count * shard_scale_up_factor)
     ///
     /// Setting this too high will be cancelled out by the arbiter that prevents
     /// creating too many shards at once.
@@ -412,13 +413,13 @@ impl IngestApiConfig {
             self.max_queue_memory_usage
         );
         info!(
-            "ingestion shard throughput limit: {:?}",
+            "ingestion shard throughput limit: {}",
             self.shard_throughput_limit
         );
         ensure!(
             self.shard_throughput_limit >= ByteSize::mib(1)
                 && self.shard_throughput_limit <= ByteSize::mib(20),
-            "shard_throughput_limit ({:?}) must be within 1mb and 20mb",
+            "shard_throughput_limit ({}) must be within 1mb and 20mb",
             self.shard_throughput_limit
         );
         // The newline delimited format is persisted as something a bit larger
@@ -426,13 +427,13 @@ impl IngestApiConfig {
         let estimated_persist_size = ByteSize::b(3 * self.content_length_limit.as_u64() / 2);
         ensure!(
             self.shard_burst_limit >= estimated_persist_size,
-            "shard_burst_limit ({:?}) must be at least 1.5*content_length_limit ({:?})",
+            "shard_burst_limit ({}) must be at least 1.5*content_length_limit ({})",
             self.shard_burst_limit,
             estimated_persist_size,
         );
         ensure!(
             self.shard_scale_up_factor > 1.0,
-            "shard_scale_up_factor ({:?}) must be greater than 1",
+            "shard_scale_up_factor ({}) must be greater than 1",
             self.shard_scale_up_factor,
         );
         Ok(())

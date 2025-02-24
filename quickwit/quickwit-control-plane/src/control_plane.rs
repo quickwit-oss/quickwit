@@ -167,7 +167,7 @@ impl ControlPlane {
                     ingester_pool.clone(),
                     replication_factor,
                     shard_throughput_limit_mib,
-                    cluster_config.shard_scaling_factor,
+                    cluster_config.shard_scale_up_factor,
                 );
 
                 let readiness_tx = readiness_tx.clone();

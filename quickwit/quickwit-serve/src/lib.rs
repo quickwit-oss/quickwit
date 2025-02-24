@@ -1058,7 +1058,7 @@ async fn setup_control_plane(
         default_index_root_uri,
         replication_factor,
         shard_throughput_limit: ingest_api_config.shard_throughput_limit,
-        shard_scaling_factor: ingest_api_config.shard_scale_up_factor,
+        shard_scale_up_factor: ingest_api_config.shard_scale_up_factor,
     };
     let (control_plane_mailbox, _control_plane_handle, mut readiness_rx) = ControlPlane::spawn(
         universe,
