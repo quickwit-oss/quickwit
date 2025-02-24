@@ -25,7 +25,7 @@ use anyhow::{bail, ensure};
 use bytesize::ByteSize;
 use http::HeaderMap;
 use quickwit_common::net::HostAddr;
-use quickwit_common::shared_consts::DEFAULT_SHARD_THROUGHPUT_LIMIT;
+use quickwit_common::shared_consts::{DEFAULT_SHARD_BURST_LIMIT, DEFAULT_SHARD_THROUGHPUT_LIMIT};
 use quickwit_common::uri::Uri;
 use quickwit_proto::indexing::CpuCapacity;
 use quickwit_proto::types::NodeId;
@@ -341,11 +341,16 @@ impl SearcherConfig {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct IngestApiConfig {
+    /// Maximum memory space taken by the ingest WAL
     pub max_queue_memory_usage: ByteSize,
+    /// Maximum disk space taken by the ingest WAL
     pub max_queue_disk_usage: ByteSize,
     replication_factor: usize,
     pub content_length_limit: ByteSize,
+    /// [hidden] Targeted throughput for each shard
     pub shard_throughput_limit: ByteSize,
+    /// [hidden] Targeted throughput for each shard
+    pub shard_burst_limit: ByteSize,
 }
 
 impl Default for IngestApiConfig {
@@ -356,6 +361,7 @@ impl Default for IngestApiConfig {
             replication_factor: 1,
             content_length_limit: ByteSize::mib(10),
             shard_throughput_limit: DEFAULT_SHARD_THROUGHPUT_LIMIT,
+            shard_burst_limit: DEFAULT_SHARD_BURST_LIMIT,
         }
     }
 }
@@ -406,6 +412,15 @@ impl IngestApiConfig {
                 && self.shard_throughput_limit <= ByteSize::mib(20),
             "shard_throughput_limit ({:?}) must be within 1mb and 20mb",
             self.shard_throughput_limit
+        );
+        // The newline delimited format is persisted as something a bit larger
+        // (lines prefixed with their length)
+        let estimated_persist_size = ByteSize::b(3 * self.content_length_limit.as_u64() / 2);
+        ensure!(
+            self.shard_burst_limit >= estimated_persist_size,
+            "shard_burst_limit ({:?}) must be at least 1.5*content_length_limit ({:?})",
+            self.shard_burst_limit,
+            estimated_persist_size,
         );
         Ok(())
     }
