@@ -131,7 +131,8 @@ jobs:
         if: always() && steps.modified.outputs.rust_src == 'true'
         uses: taiki-e/cache-cargo-install-action@v2
         with:
-          tool: cargo-deny
+          # 0.18 requires rustc 1.85
+          tool: cargo-deny@0.17.0
       - name: cargo clippy
         if: always() && steps.modified.outputs.rust_src == 'true'
         run: cargo clippy --workspace --tests --all-features
