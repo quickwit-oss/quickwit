@@ -61,7 +61,7 @@ pub fn convert_tags(orig: &Vec<String>) -> HashMap<String, StringOrVec> {
 mod tests {
 
     use super::*;
-    use crate::datadog_agent_api::rest_handler::{AgentLogMsg, ProcessedLog};
+    use crate::datadog_api::rest_handler::{DatadogLogMsg, ProcessedLog};
 
     /// Test the `StringOrVec` serde_json serialization
     #[test]
@@ -75,10 +75,10 @@ mod tests {
         assert_eq!(json, r#"["hello","world"]"#);
     }
 
-    /// A simple test to ensure `ProcessedLog::from_agent_log_msg` copies and transforms fields.
+    /// A simple test to ensure `ProcessedLog::from_datadog_log_msg` copies and transforms fields.
     #[test]
     fn test_processed_log_basic() {
-        let msg = AgentLogMsg {
+        let msg = DatadogLogMsg {
             message: "".to_string(),
             status: Some("".to_string()),
             timestamp: chrono::Utc::now(),
@@ -91,7 +91,7 @@ mod tests {
                 "region:east".into(),
             ],
         };
-        let processed = ProcessedLog::from_agent_log_msg(msg.clone());
+        let processed = ProcessedLog::from_datadog_log_msg(msg.clone());
 
         let expected_map = HashMap::from_iter(vec![
             ("env".to_string(), StringOrVec::String("dev".to_string())),

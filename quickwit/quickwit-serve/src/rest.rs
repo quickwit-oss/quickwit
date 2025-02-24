@@ -34,7 +34,7 @@ use warp::filters::log::Info;
 use warp::{redirect, Filter, Rejection, Reply};
 
 use crate::cluster_api::cluster_handler;
-use crate::datadog_agent_api::datadog_ingest_api_handlers;
+use crate::datadog_api::datadog_ingest_api_handlers;
 use crate::decompression::{CorruptedData, UnsupportedEncoding};
 use crate::delete_task_api::delete_task_api_handlers;
 use crate::developer_api::developer_api_routes;

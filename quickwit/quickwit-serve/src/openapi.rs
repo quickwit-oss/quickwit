@@ -23,7 +23,7 @@ use utoipa::openapi::Tag;
 use utoipa::OpenApi;
 
 use crate::cluster_api::ClusterApi;
-use crate::datadog_agent_api::DDGAgentApi;
+use crate::datadog_api::DatadogApi;
 use crate::delete_task_api::DeleteTaskApi;
 use crate::developer_api::DeveloperApi;
 use crate::elasticsearch_api::ElasticCompatibleApi;
@@ -93,7 +93,7 @@ pub fn build_docs() -> utoipa::openapi::OpenApi {
     docs_base.merge_components_and_paths(IndexingApi::openapi().with_path_prefix("/api/v1"));
     docs_base.merge_components_and_paths(IndexTemplateApi::openapi().with_path_prefix("/api/v1"));
     docs_base.merge_components_and_paths(IngestApi::openapi().with_path_prefix("/api/v1"));
-    docs_base.merge_components_and_paths(DDGAgentApi::openapi());
+    docs_base.merge_components_and_paths(DatadogApi::openapi());
     docs_base.merge_components_and_paths(JaegerApi::openapi().with_path_prefix("/api/v1"));
     docs_base.merge_components_and_paths(MetricsApi::openapi().with_path_prefix("/metrics"));
     docs_base.merge_components_and_paths(NodeInfoApi::openapi().with_path_prefix("/api/v1"));
