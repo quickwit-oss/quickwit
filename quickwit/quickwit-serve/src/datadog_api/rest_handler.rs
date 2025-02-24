@@ -365,6 +365,8 @@ impl ProcessedLog {
 /// - String (RFC3164) -> unsupported currently
 ///
 /// If we succeed, we update `processed.timestamp`. Otherwise, we do nothing.
+///
+/// TODO: replace with quickwit-date-time
 pub fn try_parse_and_update_timestamp(processed: &mut ProcessedLog, ts_val: Option<&Value>) {
     match ts_val {
         Some(Value::Number(num)) => {
