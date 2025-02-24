@@ -23,13 +23,13 @@ use std::sync::Arc;
 pub(crate) use const_write_amplification::ConstWriteAmplificationMergePolicy;
 use itertools::Itertools;
 pub use nop_merge_policy::NopMergePolicy;
+use quickwit_common::tracker::TrackedObject;
 use quickwit_config::merge_policy_config::MergePolicyConfig;
 use quickwit_config::IndexingSettings;
 use quickwit_metastore::{SplitMaturity, SplitMetadata};
 use quickwit_proto::types::SplitId;
 use serde::Serialize;
 pub(crate) use stable_log_merge_policy::StableLogMergePolicy;
-use tantivy::TrackedObject;
 use tracing::{info_span, Span};
 
 use crate::actors::MergePermit;
@@ -55,8 +55,8 @@ pub struct MergeTask {
 impl MergeTask {
     #[cfg(any(test, feature = "testsuite"))]
     pub fn from_merge_operation_for_test(merge_operation: MergeOperation) -> MergeTask {
-        let inventory = tantivy::Inventory::default();
-        let tracked_merge_operation = inventory.track(merge_operation);
+        let tracker = quickwit_common::tracker::Tracker::new();
+        let tracked_merge_operation = tracker.track(merge_operation);
         MergeTask {
             merge_operation: tracked_merge_operation,
             _merge_permit: MergePermit::for_test(),
@@ -397,13 +397,14 @@ pub mod tests {
     fn apply_merge(
         merge_policy: &Arc<dyn MergePolicy>,
         split_index: &mut HashMap<String, SplitMetadata>,
-        merge_op: &MergeOperation,
+        merge_op: TrackedObject<MergeOperation>,
     ) -> SplitMetadata {
         for split in merge_op.splits_as_slice() {
             assert!(split_index.remove(split.split_id()).is_some());
         }
         let merged_split = fake_merge(merge_policy, merge_op.splits_as_slice());
         split_index.insert(merged_split.split_id().to_string(), merged_split.clone());
+        merge_op.acknowledge();
         merged_split
     }
 
@@ -427,7 +428,8 @@ pub mod tests {
             merge_policy.clone(),
             merge_task_mailbox,
             universe.get_or_spawn_one::<MergeSchedulerService>(),
-        );
+        )
+        .await?;
         let mut split_index: HashMap<String, SplitMetadata> = HashMap::default();
         let (merge_planner_mailbox, merge_planner_handler) =
             universe.spawn_builder().spawn(merge_planner);
@@ -448,7 +450,9 @@ pub mod tests {
                 }
                 let new_splits: Vec<SplitMetadata> = merge_tasks
                     .into_iter()
-                    .map(|merge_op| apply_merge(&merge_policy, &mut split_index, &merge_op))
+                    .map(|merge_op| {
+                        apply_merge(&merge_policy, &mut split_index, merge_op.merge_operation)
+                    })
                     .collect();
                 merge_planner_mailbox
                     .send_message(NewSplits { new_splits })
@@ -468,7 +472,7 @@ pub mod tests {
 
         let merge_tasks = merge_task_inbox.drain_for_test_typed::<MergeTask>();
         for merge_task in merge_tasks {
-            apply_merge(&merge_policy, &mut split_index, &merge_task);
+            apply_merge(&merge_policy, &mut split_index, merge_task.merge_operation);
         }
 
         let split_metadatas: Vec<SplitMetadata> = split_index.values().cloned().collect();
