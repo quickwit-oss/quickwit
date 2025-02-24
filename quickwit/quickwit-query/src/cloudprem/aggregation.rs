@@ -325,6 +325,7 @@ impl ResultMapper {
         agg_result: TantivyAggregationResults,
         state: &EvpAggregationResult,
     ) -> Result<(), CloudPremError> {
+        let mut to_emit = None;
         for (key, agg) in agg_result.0 {
             match agg {
                 TantivyAggregationResult::BucketResult(bucket_result) => {
@@ -347,16 +348,19 @@ impl ResultMapper {
                 }
                 TantivyAggregationResult::MetricResult(metric_result) => {
                     use tantivy::aggregation::agg_result::MetricResult;
+
                     let last_value = match metric_result {
                         MetricResult::Count(count) => count.value.unwrap_or_default() as u64,
                         _ => return Err(CloudPremError::Unimplemented),
                     };
-                    let mut result_to_push = state.clone();
-                    result_to_push.key.push(key);
-                    result_to_push.value.push(u64_to_agg_value(last_value));
-                    self.results.push(result_to_push)
+                    let to_emit_mut = to_emit.get_or_insert_with(|| state.clone());
+                    to_emit_mut.key.push(key);
+                    to_emit_mut.value.push(u64_to_agg_value(last_value));
                 }
             }
+        }
+        if let Some(to_emit) = to_emit {
+            self.results.push(to_emit);
         }
         Ok(())
     }
