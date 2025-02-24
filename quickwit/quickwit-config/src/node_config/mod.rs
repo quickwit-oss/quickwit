@@ -27,7 +27,6 @@ use http::HeaderMap;
 use quickwit_common::net::HostAddr;
 use quickwit_common::shared_consts::{
     DEFAULT_SHARD_BURST_LIMIT, DEFAULT_SHARD_SCALE_UP_FACTOR, DEFAULT_SHARD_THROUGHPUT_LIMIT,
-    MAX_SHARD_SCALE_UP_FACTOR,
 };
 use quickwit_common::uri::Uri;
 use quickwit_proto::indexing::CpuCapacity;
@@ -355,6 +354,9 @@ pub struct IngestApiConfig {
     /// (hidden) Targeted throughput for each shard
     pub shard_burst_limit: ByteSize,
     /// (hidden) new_shard_count = ceil(old_shard_count * shard_scaling_factor)
+    ///
+    /// Setting this too high will be cancelled out by the arbiter that prevents
+    /// creating too many shards at once.
     pub shard_scale_up_factor: f32,
 }
 
@@ -429,11 +431,9 @@ impl IngestApiConfig {
             estimated_persist_size,
         );
         ensure!(
-            self.shard_scale_up_factor > 1.0
-                && self.shard_scale_up_factor <= MAX_SHARD_SCALE_UP_FACTOR,
-            "shard_scale_up_factor ({:?}) must be in the (1,{}) interval",
+            self.shard_scale_up_factor > 1.0,
+            "shard_scale_up_factor ({:?}) must be greater than 1",
             self.shard_scale_up_factor,
-            MAX_SHARD_SCALE_UP_FACTOR,
         );
         Ok(())
     }
