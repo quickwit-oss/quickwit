@@ -330,7 +330,7 @@ quickwit-telemetry = { path = "quickwit-telemetry" }
 
 #tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "71cf198", default-features = false, features = [
 
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "82b510b88bca638fea7959b4d2a858e381ccf227", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "5e550bee", default-features = false, features = [
   "lz4-compression",
   "mmap",
   "quickwit",
