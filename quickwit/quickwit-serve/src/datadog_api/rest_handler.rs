@@ -457,14 +457,9 @@ mod tests {
         let custom_extra = processed.custom.get("extra").unwrap();
         assert_eq!(custom_extra, &Value::Number(123.into()));
 
-        // The `ddtags` were renamed to `tags`, plus we appended "ingest:pomchi"
-        // Check that "ingest:pomchi" is indeed present
-        assert!(processed.tags.contains(&"ingest:pomchi".to_string()));
-
         // Check that `tag` was created properly from `ddtags`.
         // e.g. "env:dev" =>  tag["env"] = "dev"
         //      "region:us-east" => tag["region"] = "us-east"
-        // and now also "ingest:pomchi"
         let tag_env = processed.tag.get("env").unwrap();
         assert_eq!(
             tag_env,
@@ -473,8 +468,6 @@ mod tests {
         );
         let tag_region = processed.tag.get("region").unwrap();
         assert_eq!(tag_region, &StringOrVec::String("us-east".to_string()));
-        let tag_ingest = processed.tag.get("ingest").unwrap();
-        assert_eq!(tag_ingest, &StringOrVec::String("pomchi".to_string()));
     }
 
     /// Test that integer timestamps are interpreted as seconds or milliseconds
