@@ -5,7 +5,7 @@ use prost::Message;
 use quickwit_proto::cloudprem::aggregation::Aggregation as AggregationNode;
 use quickwit_proto::cloudprem::{
     AggValue as EvpAggValue, Aggregation as EvpAggregation,
-    AggregationResult as EvpAggregationResult,
+    AggregationResult as EvpAggregationResult, CloudPremError,
 };
 use tantivy::aggregation::agg_req::{
     Aggregation as TantivyAggregation, AggregationVariants, Aggregations as TantivyAggregations,
@@ -87,27 +87,7 @@ pub fn to_tantivy_aggregation(
         AggregationNode::ListCompute(_) => return Err(unsupported_query_error("list compute")),
         AggregationNode::AnyCompute(_) => return Err(unsupported_query_error("any compute")),
         AggregationNode::MetricCompute(metric_compute) => {
-            // TODO support more than count
-            let output = metric_compute.id;
-            if metric_compute.r#type != "COUNT" {
-                return Err(InvalidQuery::Other(anyhow::anyhow!(
-                    "unsupported metric aggregation: {}",
-                    metric_compute.r#type
-                )));
-            }
-
-            // we just want to count all matching docs, maybe setting a column with low cardinality
-            // but always set is faster?
-            let count_agg = metric::CountAggregation {
-                field: "_i_dont_exist_".to_string(),
-                missing: Some(1.0),
-            };
-
-            let tantivy_agg = TantivyAggregation {
-                // TODO can we get a into() from *Aggregation to AggregationVariants instead?
-                agg: AggregationVariants::Count(count_agg),
-                sub_aggregation: HashMap::new(),
-            };
+            let (output, tantivy_agg) = handle_metric_compute(metric_compute)?;
             if tantivy_aggregations
                 .insert(output.clone(), tantivy_agg)
                 .is_some()
@@ -227,6 +207,32 @@ fn handle_time_group_by(
     Ok((time_grouping.output, tantivy_agg))
 }
 
+fn handle_metric_compute(
+    metric_compute: quickwit_proto::cloudprem::MetricCompute,
+) -> Result<(String, TantivyAggregation), InvalidQuery> {
+    // TODO support more than count
+    if metric_compute.r#type != "COUNT" {
+        return Err(InvalidQuery::Other(anyhow::anyhow!(
+            "unsupported metric aggregation: {}",
+            metric_compute.r#type
+        )));
+    }
+
+    let count_agg = metric::CountAggregation {
+        // this field is always set
+        field: "status".to_string(),
+        missing: None,
+    };
+
+    let tantivy_agg = TantivyAggregation {
+        // TODO can we get a into() from *Aggregation to AggregationVariants instead?
+        agg: AggregationVariants::Count(count_agg),
+        sub_aggregation: HashMap::new(),
+    };
+
+    Ok((metric_compute.id, tantivy_agg))
+}
+
 /// this function attemps at converting a rollup to interval+offset
 ///
 /// We do this because tantivy doesn't support calendar intervals.
@@ -291,125 +297,68 @@ fn timezone_and_ts_to_offset(timezone: &str, ts_secs: i64) -> Result<i32, Invali
 
 pub fn aggregation_result_to_proto(
     result_json: &str,
-) -> Result<Vec<EvpAggregationResult>, InvalidQuery> {
-    let aggregations: TantivyAggregationResults = serde_json::from_str(result_json).unwrap();
+) -> Result<Vec<EvpAggregationResult>, CloudPremError> {
+    let aggregations: TantivyAggregationResults =
+        serde_json::from_str(result_json).map_err(|err| {
+            CloudPremError::Internal(format!("failed to deserialize agg result: {err}"))
+        })?;
 
-    let iter = AggregationMapper::new(aggregations);
-
-    Ok(iter.collect())
+    let mut mapper = ResultMapper {
+        results: Vec::new(),
+    };
+    mapper.consume_agg(aggregations)?;
+    Ok(mapper.results)
 }
 
-type MapIter = std::collections::hash_map::IntoIter<String, TantivyAggregationResult>;
-
-enum ValueIter {
-    Terms(std::vec::IntoIter<tantivy::aggregation::agg_result::BucketEntry>),
+struct ResultMapper {
+    results: Vec<EvpAggregationResult>,
 }
 
-impl Iterator for ValueIter {
-    type Item = (tantivy::aggregation::Key, TantivyAggregationResults);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            ValueIter::Terms(terms) => {
-                let entry = terms.next()?;
-                Some((entry.key, entry.sub_aggregation))
-            }
-        }
+impl ResultMapper {
+    fn consume_agg(&mut self, agg_result: TantivyAggregationResults) -> Result<(), CloudPremError> {
+        let state = EvpAggregationResult::default();
+        self.consume_agg_aux(agg_result, &state)
     }
-}
 
-enum StackEntry {
-    KeyIter(MapIter),
-    ValueIter(ValueIter),
-}
-
-// TODO verify this does what we want. if we have a GroupBy(abc)+Count+Max aggregation,
-// this will output [GroupBy(abc), Count] and [GroupBy(abc), Max], which may not be what we want
-// (this should be correct for aggregations with a single metric though, which is enought for most
-// of the ui) TODO that code might be better expressed by tree traversal+callback than trying to
-// build an iterator
-struct AggregationMapper {
-    stack: Vec<StackEntry>,
-    // at all time, each KeyIter entry on the stack must have a corresponding key,
-    // possibly a dummy one before iteration starts
-    keys: Vec<String>,
-    // at all time, each ValueIter entry on the stack must have a corresponding value,
-    // possibly a dummy one before iteration starts
-    values: Vec<EvpAggValue>,
-}
-
-impl AggregationMapper {
-    fn new(aggregations: TantivyAggregationResults) -> Self {
-        AggregationMapper {
-            stack: vec![StackEntry::KeyIter(aggregations.0.into_iter())],
-            keys: vec![String::new()],
-            values: Vec::new(),
-        }
-    }
-}
-
-impl Iterator for AggregationMapper {
-    type Item = EvpAggregationResult;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            let Some(currently_itered) = self.stack.last_mut() else {
-                return None; // iteration ended
-            };
-            match currently_itered {
-                StackEntry::KeyIter(iter) => {
-                    // first, pop the key we placed at last iteration of this key iter
-                    // on it's very first round, the value poped is a dummy empty string
-                    self.keys.pop();
-                    let Some((key, agg)) = iter.next() else {
-                        self.stack.pop();
-                        continue;
-                    };
-                    self.keys.push(key);
-                    match agg {
-                        TantivyAggregationResult::BucketResult(bucket_result) => {
-                            use tantivy::aggregation::agg_result::BucketResult;
-                            match bucket_result {
-                                BucketResult::Range { .. } => todo!(),
-                                BucketResult::Histogram { .. } => todo!(),
-                                BucketResult::Terms { buckets, .. } => {
-                                    let value_iter = ValueIter::Terms(buckets.into_iter());
-                                    self.stack.push(StackEntry::ValueIter(value_iter));
-                                    self.values.push(EvpAggValue { value: None });
-                                }
-                            }
+    fn consume_agg_aux(
+        &mut self,
+        agg_result: TantivyAggregationResults,
+        state: &EvpAggregationResult,
+    ) -> Result<(), CloudPremError> {
+        for (key, agg) in agg_result.0 {
+            match agg {
+                TantivyAggregationResult::BucketResult(bucket_result) => {
+                    use tantivy::aggregation::agg_result::BucketResult;
+                    match bucket_result {
+                        BucketResult::Range { .. } => return Err(CloudPremError::Unimplemented),
+                        BucketResult::Histogram { .. } => {
+                            return Err(CloudPremError::Unimplemented)
                         }
-                        TantivyAggregationResult::MetricResult(metric_result) => {
-                            use tantivy::aggregation::agg_result::MetricResult;
-                            let last_value = match metric_result {
-                                MetricResult::Count(count) => {
-                                    count.value.unwrap_or_default() as u64
-                                }
-                                _ => todo!(),
-                            };
-                            let mut values = self.values.clone();
-                            values.push(u64_to_agg_value(last_value));
-                            return Some(EvpAggregationResult {
-                                key: self.keys.clone(),
-                                value: values,
-                            });
+                        BucketResult::Terms { buckets, .. } => {
+                            let mut mut_state = state.clone();
+                            mut_state.key.push(key);
+                            for bucket in buckets {
+                                mut_state.value.push(key_to_agg_value(bucket.key));
+                                self.consume_agg_aux(bucket.sub_aggregation, &mut_state)?;
+                                mut_state.value.pop();
+                            }
                         }
                     }
                 }
-                StackEntry::ValueIter(iter) => {
-                    self.values.pop();
-                    let Some((value, agg)) = iter.next() else {
-                        self.stack.pop();
-                        continue;
+                TantivyAggregationResult::MetricResult(metric_result) => {
+                    use tantivy::aggregation::agg_result::MetricResult;
+                    let last_value = match metric_result {
+                        MetricResult::Count(count) => count.value.unwrap_or_default() as u64,
+                        _ => return Err(CloudPremError::Unimplemented),
                     };
-                    self.values.push(key_to_agg_value(value));
-
-                    let key_iter = agg.0.into_iter();
-                    self.stack.push(StackEntry::KeyIter(key_iter));
-                    self.keys.push(String::new());
+                    let mut result_to_push = state.clone();
+                    result_to_push.key.push(key);
+                    result_to_push.value.push(u64_to_agg_value(last_value));
+                    self.results.push(result_to_push)
                 }
             }
         }
+        Ok(())
     }
 }
 
