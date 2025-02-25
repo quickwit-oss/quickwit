@@ -409,14 +409,6 @@ impl TextIndexingOptions {
             fieldnorms: false,
         }
     }
-
-    fn default_dynamic() -> Self {
-        TextIndexingOptions {
-            tokenizer: QuickwitTextTokenizer::default(),
-            record: IndexRecordOption::Basic,
-            fieldnorms: false,
-        }
-    }
 }
 
 impl Default for TextIndexingOptions {
@@ -619,11 +611,8 @@ impl QuickwitJsonOptions {
     /// Build a default QuickwitJsonOptions for dynamic fields.
     pub fn default_dynamic() -> Self {
         QuickwitJsonOptions {
-            description: None,
-            indexing_options: Some(TextIndexingOptions::default_dynamic()),
-            stored: true,
-            expand_dots: true,
             fast: FastFieldOptions::default_enabled(),
+            ..Default::default()
         }
     }
 }
@@ -1803,7 +1792,7 @@ mod tests {
     }
 
     #[test]
-    fn test_quickwit_json_options_default_tokenizer_is_default() {
+    fn test_quickwit_json_options_default_tokenizer_is_raw() {
         let quickwit_json_options = QuickwitJsonOptions::default();
         assert_eq!(
             quickwit_json_options
@@ -1813,6 +1802,12 @@ mod tests {
                 .name(),
             "raw"
         );
+    }
+
+    #[test]
+    fn test_quickwit_json_options_default_fast_is_false() {
+        let quickwit_json_options = QuickwitJsonOptions::default();
+        assert_eq!(quickwit_json_options.fast, FastFieldOptions::Disabled);
     }
 
     #[test]

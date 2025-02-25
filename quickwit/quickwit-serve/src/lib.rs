@@ -48,7 +48,6 @@ use std::convert::Infallible;
 use std::fs;
 use std::net::SocketAddr;
 use std::num::NonZeroUsize;
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -578,12 +577,11 @@ pub async fn serve_quickwit(
             }
         }
     }
-    let split_cache_root_directory: PathBuf =
-        node_config.data_dir_path.join("searcher-split-cache");
+
     let split_cache_opt: Option<Arc<SplitCache>> =
         if let Some(split_cache_limits) = node_config.searcher_config.split_cache {
             let split_cache = SplitCache::with_root_path(
-                split_cache_root_directory,
+                node_config.data_dir_path.join("searcher-split-cache"),
                 storage_resolver.clone(),
                 split_cache_limits,
             )
@@ -718,7 +716,7 @@ pub async fn serve_quickwit(
     });
     let grpc_server = grpc::start_grpc_server(
         tcp_listener_resolver.resolve(grpc_listen_addr).await?,
-        grpc_config.max_message_size,
+        grpc_config,
         quickwit_services.clone(),
         grpc_readiness_trigger,
         grpc_shutdown_signal,
@@ -776,17 +774,21 @@ pub async fn serve_quickwit(
         }
         actor_exit_statuses
     });
-    let grpc_join_handle = spawn_named_task(grpc_server, "grpc_server");
-    let rest_join_handle = spawn_named_task(rest_server, "rest_server");
+    let grpc_join_handle = async move {
+        spawn_named_task(grpc_server, "grpc_server")
+            .await
+            .expect("tasks running the gRPC server should not panic or be cancelled")
+            .context("gRPC server failed")
+    };
+    let rest_join_handle = async move {
+        spawn_named_task(rest_server, "rest_server")
+            .await
+            .expect("tasks running the REST server should not panic or be cancelled")
+            .context("REST server failed")
+    };
 
-    let (grpc_res, rest_res) = tokio::try_join!(grpc_join_handle, rest_join_handle)
-        .expect("tasks running the gRPC and REST servers should not panic or be cancelled");
-
-    if let Err(grpc_err) = grpc_res {
-        error!("gRPC server failed: {:?}", grpc_err);
-    }
-    if let Err(rest_err) = rest_res {
-        error!("REST server failed: {:?}", rest_err);
+    if let Err(err) = tokio::try_join!(grpc_join_handle, rest_join_handle) {
+        error!("server failed: {err:?}");
     }
     let actor_exit_statuses = shutdown_handle
         .await

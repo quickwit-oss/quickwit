@@ -74,7 +74,7 @@ fn create_index_template_handler(
     path = "/templates",
     request_body = VersionedIndexTemplate,
     responses(
-        (status = 200, description = "The index template was successfully created.")
+        (status = 200, description = "The index template was successfully created.", body = VersionedIndexTemplate)
     ),
 )]
 /// Creates a new index template.
@@ -121,7 +121,7 @@ fn get_index_template_handler(
     tag = "Templates",
     path = "/templates/{template_id}",
     responses(
-        (status = 200, description = "The index template was successfully retrieved."),
+        (status = 200, description = "The index template was successfully retrieved.", body = VersionedIndexTemplate),
         (status = 404, description = "The index template was not found.")
     ),
 )]
@@ -156,8 +156,9 @@ fn update_index_template_handler(
     put,
     tag = "Templates",
     path = "/templates/{template_id}",
+    request_body = VersionedIndexTemplate,
     responses(
-        (status = 200, description = "The index template was successfully retrieved."),
+        (status = 200, description = "The index template was successfully retrieved.", body = VersionedIndexTemplate),
         (status = 404, description = "The index template was not found.")
     ),
 )]
@@ -245,7 +246,7 @@ fn list_index_templates_handler(
     tag = "Templates",
     path = "/templates",
     responses(
-        (status = 200, description = "The index template was successfully retrieved."),
+        (status = 200, description = "The index template was successfully retrieved.", body = [VersionedIndexTemplate]),
     ),
 )]
 /// Retrieves all the index templates stored in the metastore.

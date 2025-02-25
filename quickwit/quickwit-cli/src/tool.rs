@@ -25,7 +25,9 @@ use clap::{arg, ArgMatches, Command};
 use colored::{ColoredString, Colorize};
 use humantime::format_duration;
 use quickwit_actors::{ActorExitStatus, ActorHandle, Mailbox, Universe};
-use quickwit_cluster::{ChannelTransport, Cluster, ClusterMember, FailureDetectorConfig};
+use quickwit_cluster::{
+    make_client_tls_config, ChannelTransport, Cluster, ClusterMember, FailureDetectorConfig,
+};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::Uri;
@@ -945,6 +947,12 @@ async fn create_empty_cluster(config: &NodeConfig) -> anyhow::Result<Cluster> {
         config.gossip_interval,
         FailureDetectorConfig::default(),
         &ChannelTransport::default(),
+        config
+            .grpc_config
+            .tls
+            .as_ref()
+            .map(make_client_tls_config)
+            .transpose()?,
     )
     .await?;
 
