@@ -15,10 +15,9 @@
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use chrono::serde::ts_milliseconds;
-use chrono::{DateTime, TimeZone, Utc};
 use quickwit_common::rate_limited_error;
 use quickwit_config::INGEST_V2_SOURCE_ID;
+use quickwit_datetime::{parse_date_time_str, parse_timestamp, DateTimeInputFormat};
 use quickwit_ingest::DocBatchV2Builder;
 use quickwit_proto::ingest::router::{
     IngestRequestV2, IngestRouterService, IngestRouterServiceClient, IngestSubrequest,
@@ -28,6 +27,7 @@ use quickwit_proto::types::{DocUidGenerator, IndexId};
 use quickwit_proto::{ServiceError, ServiceErrorCode};
 use serde::{self, Deserialize, Serialize};
 use serde_json::Value;
+use time::OffsetDateTime;
 use tracing::{debug, error, warn};
 use uuid::Uuid;
 use warp::{Filter, Rejection};
@@ -114,6 +114,17 @@ impl ServiceError for DatadogApiError {
     }
 }
 
+fn deserialize_datadog_log(data: &[u8]) -> Result<Vec<DatadogLogMsg>, DatadogApiError> {
+    serde_json::from_slice(data).map_err(|error| {
+        error!(
+            message = "Failed to parse datadog logs.",
+            internal_log_rate_limit = true,
+            error = ?error
+        );
+        DatadogApiError::InvalidPayload(format!("Error parsing JSON: {:?}", error))
+    })
+}
+
 async fn datadog_ingest_logs(
     ingest_router: IngestRouterServiceClient,
     index_id: IndexId,
@@ -133,10 +144,7 @@ async fn datadog_ingest_logs(
         // TODO: We could just validate + get the byte bounds of each object instead of the more
         // expensive serde_json rountrip.
         // e.g. Vec<RawValue> + validation
-        let messages: Vec<DatadogLogMsg> =
-            serde_json::from_slice(&body.content).map_err(|error| {
-                DatadogApiError::InvalidPayload(format!("Error parsing JSON: {:?}", error))
-            })?;
+        let messages: Vec<DatadogLogMsg> = deserialize_datadog_log(&body.content)?;
 
         let mut doc_batch_builder = DocBatchV2Builder::default();
         let mut doc_uid_generator = DocUidGenerator::default();
@@ -190,11 +198,8 @@ async fn datadog_ingest_logs(
 pub struct DatadogLogMsg {
     pub message: String,
     pub status: Option<String>,
-    #[serde(
-        deserialize_with = "ts_milliseconds::deserialize",
-        serialize_with = "ts_milliseconds::serialize"
-    )]
-    pub timestamp: DateTime<Utc>,
+    #[serde(with = "time::serde::timestamp::milliseconds")]
+    pub timestamp: OffsetDateTime,
     pub hostname: String,
     pub service: String,
     pub ddsource: String,
@@ -204,11 +209,12 @@ pub struct DatadogLogMsg {
 
 /// TODO: Move to pipeline later on
 /// The final enriched struct we want to produce.
-#[derive(Clone, Default, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ProcessedLog {
     pub message: String,
     pub status: String,
-    pub timestamp: DateTime<Utc>,
+    #[serde(with = "time::serde::rfc3339")]
+    pub timestamp: OffsetDateTime,
     pub host: String,
     pub service: String,
     pub source: String,
@@ -259,7 +265,9 @@ impl ProcessedLog {
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_millis() as i64,
-            ..Default::default()
+            trace_id: None,
+            span_id: None,
+            custom: Default::default(),
         };
 
         let fields = vec![
@@ -360,32 +368,27 @@ impl ProcessedLog {
 }
 
 /// Attempt to parse `ts_val` as one of the following:
-/// - Integer (Unix epoch) -> parse as either seconds or milliseconds
-/// - String (ISO-8601) -> parse via `parse_from_rfc3339`
+/// - Integer (Unix epoch)
+/// - String (RFC3339)
+/// - String (ISO-8601)
 /// - String (RFC3164) -> unsupported currently
 ///
 /// If we succeed, we update `processed.timestamp`. Otherwise, we do nothing.
-///
-/// TODO: replace with quickwit-date-time
 pub fn try_parse_and_update_timestamp(processed: &mut ProcessedLog, ts_val: Option<&Value>) {
     match ts_val {
         Some(Value::Number(num)) => {
             if let Some(epoch_i64) = num.as_i64() {
-                if let Some(dt) = parse_any_epoch(epoch_i64) {
-                    processed.timestamp = dt;
+                if let Ok(dt) = parse_timestamp(epoch_i64) {
+                    processed.timestamp = dt.into_utc();
                 }
             }
         }
-
         Some(Value::String(s)) => {
-            if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
-                processed.timestamp = dt.with_timezone(&Utc);
-            } else if let Ok(epoch_i64) = s.parse::<i64>() {
-                if let Some(dt) = parse_any_epoch(epoch_i64) {
-                    processed.timestamp = dt;
-                }
-            } else if let Ok(dt) = parse_rfc3164(s) {
-                processed.timestamp = dt;
+            if let Ok(dt) = parse_date_time_str(
+                s,
+                &[DateTimeInputFormat::Rfc3339, DateTimeInputFormat::Iso8601],
+            ) {
+                processed.timestamp = dt.into_utc();
             }
         }
 
@@ -393,26 +396,8 @@ pub fn try_parse_and_update_timestamp(processed: &mut ProcessedLog, ts_val: Opti
     }
 }
 
-/// Heuristic to interpret an i64 as either seconds or milliseconds since epoch.
-fn parse_any_epoch(epoch_i64: i64) -> Option<DateTime<Utc>> {
-    // If it's small (within ~ +/- 2 billion), treat as seconds
-    if epoch_i64.abs() < 2_000_000_000 {
-        chrono::Utc.timestamp_opt(epoch_i64, 0).single()
-    } else {
-        // Otherwise treat as milliseconds
-        chrono::Utc.timestamp_millis_opt(epoch_i64).single()
-    }
-}
-
-/// Minimal stub for RFC3164 parser. Real RFC3164 parsing can be more complex since
-/// the format typically lacks a year/timezone, e.g. "Aug 13 14:55:02".
-fn parse_rfc3164(s: &str) -> Result<DateTime<Utc>, String> {
-    // Example: always fail or do a partial parse with a guessed year.
-    Err(format!("RFC3164 parser not implemented: {s:?}"))
-}
-
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
 
     use serde_json::Value;
 
@@ -423,12 +408,32 @@ mod tests {
         DatadogLogMsg {
             message: "Test log message".to_string(),
             status: Some("INFO".to_string()),
-            timestamp: chrono::Utc::now(),
+            timestamp: OffsetDateTime::now_utc(),
             hostname: "test-host".to_string(),
             service: "test-service".to_string(),
             ddsource: "rust".to_string(),
             ddtags: Some(vec!["env:dev".into(), "region:us-east".into()]),
         }
+    }
+
+    pub fn make_processed_log() -> ProcessedLog {
+        ProcessedLog::from_datadog_log_msg(make_datadog_log_msg())
+    }
+
+    #[test]
+    fn deserialize_datadog_log_test() {
+        let data = r#"[
+            {
+              "hostname": "COMP-DMXWPJQKQY",
+              "message": "[2025-02-11T16:41:16.703Z] Info : Modified 9 routes in 0ms",
+              "service": "service123",
+              "ddsource": "appgate_client",
+              "status": "info",
+              "ddtags": "filename:driver.log,dirname:/var/log/appgate,ingest:pomchi",
+              "timestamp": 1739872513
+            }
+        ]"#;
+        deserialize_datadog_log(data.as_bytes()).unwrap();
     }
 
     #[test]
@@ -475,44 +480,21 @@ mod tests {
     /// Test that integer timestamps are interpreted as seconds or milliseconds
     #[test]
     fn test_epoch_timestamps() {
-        let mut p = ProcessedLog::default();
+        let mut p = make_processed_log();
         // Suppose we pass Some(&Value::Number(123456789.into()))
         //  => That is <2_000_000_000, so treat as seconds
         try_parse_and_update_timestamp(&mut p, Some(&Value::Number(123456789.into())));
         // That is 1973-11-29T21:33:09Z if seconds
         assert_eq!(
             p.timestamp,
-            chrono::Utc.timestamp_opt(123456789, 0).unwrap()
+            OffsetDateTime::from_unix_timestamp(123456789).unwrap()
         );
 
         // Suppose we pass a bigger number => treat as milliseconds
-        let mut p2 = ProcessedLog::default();
+        let mut p2 = make_processed_log();
         try_parse_and_update_timestamp(&mut p2, Some(&Value::Number(1_694_449_000_000i64.into())));
         // That is around 2023-09-10T14:50:00Z if milliseconds
         // We'll just check it's not the default or zero
         assert_ne!(p2.timestamp, p.timestamp);
-    }
-
-    /// Test that ISO-8601 strings parse via RFC3339
-    #[test]
-    fn test_iso8601_timestamp() {
-        let mut p = ProcessedLog::default();
-        let iso_str = "2023-10-07T12:34:56Z";
-        try_parse_and_update_timestamp(&mut p, Some(&Value::String(iso_str.to_string())));
-
-        // Check that it's parsed as Utc
-        assert_eq!(
-            p.timestamp,
-            chrono::DateTime::parse_from_rfc3339(iso_str)
-                .unwrap()
-                .with_timezone(&chrono::Utc)
-        );
-    }
-
-    /// Because parse_rfc3164 is unimplemented, we can test it fails
-    #[test]
-    fn test_rfc3164_parser() {
-        let r = parse_rfc3164("Oct  7 12:34:56");
-        assert!(r.is_err());
     }
 }

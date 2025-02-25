@@ -82,6 +82,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::datadog_api::rest_handler::tests::make_processed_log;
 
     #[test]
     fn test_from_comma_sep() {
@@ -93,7 +94,7 @@ mod tests {
 
     #[test]
     fn test_normalize_fields_remove_old() {
-        let mut log = ProcessedLog::default();
+        let mut log = make_processed_log();
         log.custom.insert("@timestamp".to_string(), json!("value1"));
 
         let nf = NormalizeField::from_comma_sep("@timestamp, timestamp", "timestamp", true);
@@ -111,7 +112,7 @@ mod tests {
 
     #[test]
     fn test_normalize_fields_preserve_old() {
-        let mut log = ProcessedLog::default();
+        let mut log = make_processed_log();
         log.custom.insert("@timestamp".to_string(), json!("value1"));
 
         let nf = NormalizeField::from_comma_sep("@timestamp, timestamp", "timestamp", false);
@@ -129,7 +130,7 @@ mod tests {
 
     #[test]
     fn test_normalize_fields_no_alias_found() {
-        let mut log = ProcessedLog::default();
+        let mut log = make_processed_log();
         log.custom.insert("other".to_string(), json!("value1"));
 
         let nf = NormalizeField::from_comma_sep("@timestamp, timestamp", "timestamp", true);

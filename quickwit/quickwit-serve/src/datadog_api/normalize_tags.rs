@@ -60,6 +60,8 @@ pub fn convert_tags(orig: &[String]) -> HashMap<String, StringOrVec> {
 #[cfg(test)]
 mod tests {
 
+    use time::OffsetDateTime;
+
     use super::*;
     use crate::datadog_api::rest_handler::{DatadogLogMsg, ProcessedLog};
 
@@ -81,7 +83,7 @@ mod tests {
         let msg = DatadogLogMsg {
             message: "".to_string(),
             status: Some("".to_string()),
-            timestamp: chrono::Utc::now(),
+            timestamp: OffsetDateTime::now_utc(),
             hostname: "".to_string(),
             service: "".to_string(),
             ddsource: "".to_string(),
