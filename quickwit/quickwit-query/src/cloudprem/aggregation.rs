@@ -18,6 +18,8 @@ use tantivy::aggregation::{bucket, metric};
 use super::{missing_required, unsupported_query_error};
 use crate::InvalidQuery;
 
+const CALC_NODE_TYPE_URL: &str = "type.googleapis.com/calcfieldspb.CalcNode";
+
 pub fn to_tantivy_aggregation(
     cloudprem_aggregation: EvpAggregation,
     start_ts_secs: i64,
@@ -113,6 +115,12 @@ fn extract_field_name(
         return Err(missing_required("calc_node"));
     };
 
+    if calc_node_bytes.type_url != CALC_NODE_TYPE_URL {
+        return Err(unsupported_query_error(&format!(
+            "calc_node uses unknown type '{}'",
+            calc_node_bytes.type_url
+        )));
+    }
     let calc_node = quickwit_proto::cloudprem::CalcNode::decode(calc_node_bytes.value.as_ref())
         .context("failed decoding CalcNode")?;
 
@@ -219,9 +227,9 @@ fn handle_metric_compute(
     }
 
     let count_agg = metric::CountAggregation {
-        // this field is always set
-        field: "status".to_string(),
-        missing: None,
+        // this field is never set, so we don't download anything
+        field: "__non_existing_field__".to_string(),
+        missing: Some(1.0),
     };
 
     let tantivy_agg = TantivyAggregation {
@@ -385,5 +393,56 @@ fn key_to_agg_value(val: tantivy::aggregation::Key) -> EvpAggValue {
     };
     EvpAggValue {
         value: Some(evp_val),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use prost_types::Any;
+    use quickwit_proto::cloudprem::aggregation::Aggregation as AggregationEnum;
+    use quickwit_proto::cloudprem::*;
+    use tantivy::aggregation::agg_req::{Aggregation as TantivyAgg, AggregationVariants};
+    use tantivy::aggregation::metric::*;
+
+    use super::to_tantivy_aggregation;
+
+    #[test]
+    fn test_count_all() {
+        let evp_agg = Aggregation {
+            aggregation: Some(AggregationEnum::Computes(Computes {
+                aggregation: vec![Aggregation {
+                    aggregation: Some(AggregationEnum::MetricCompute(MetricCompute {
+                        expression: Some(ExpressionNode {
+                            calc_node: Some(Any {
+                                type_url: "type.googleapis.com/calcfieldspb.CalcNode".to_string(),
+                                value: vec![18, 7, 10, 5, 99, 111, 117, 110, 116],
+                            }),
+                        }),
+                        id: "count:count".to_string(),
+                        r#type: "COUNT".to_string(),
+                    })),
+                }],
+                time_grouping: vec![],
+            })),
+        };
+
+        let expected = [(
+            "count:count".to_string(),
+            TantivyAgg {
+                agg: AggregationVariants::Count(CountAggregation {
+                    field: "__non_existing_field__".to_string(),
+                    missing: Some(1.0),
+                }),
+                sub_aggregation: HashMap::new(),
+            },
+        )]
+        .into_iter()
+        .collect();
+
+        let res = to_tantivy_aggregation(evp_agg, 0).unwrap();
+
+        assert_eq!(res, expected);
     }
 }
