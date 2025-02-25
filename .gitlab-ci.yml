@@ -40,7 +40,7 @@ publish_public_image:
   variables:
     IMG_SOURCES: registry.ddbuild.io/cloudprem:edge
     IMG_DESTINATIONS: cloudprem:edge
-    IMG_REGISTRIES: dockerhub
+    IMG_REGISTRIES: dockerhub,ecr-public
     IMG_SIGNING: "false"
 
 deploy_to_staging:

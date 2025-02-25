@@ -26,6 +26,7 @@ use quickwit_serve::{
     ListSplitsQueryParams, ListSplitsResponse, RestIngestResponse, SearchRequestQueryString,
 };
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
+use reqwest::tls::Certificate;
 use reqwest::{Client, ClientBuilder, Method, StatusCode, Url};
 use serde::Serialize;
 use serde_json::json;
@@ -50,7 +51,7 @@ struct Transport {
 }
 
 impl Transport {
-    fn new(endpoint: Url, connect_timeout: Timeout) -> Self {
+    fn new(endpoint: Url, connect_timeout: Timeout, ca_cert: Option<Certificate>) -> Self {
         let base_url = endpoint;
         let api_url = base_url
             .join("api/v1/")
@@ -58,6 +59,11 @@ impl Transport {
         let mut client_builder = ClientBuilder::new();
         if let Some(duration) = connect_timeout.as_duration_opt() {
             client_builder = client_builder.connect_timeout(duration);
+        }
+        if let Some(ca_cert) = ca_cert {
+            client_builder = client_builder
+                .tls_built_in_root_certs(false)
+                .add_root_certificate(ca_cert);
         }
         Self {
             base_url,
@@ -121,6 +127,8 @@ pub struct QuickwitClientBuilder {
     use_legacy_ingest: bool,
     /// Request detailed parse failures report from the ingest api.
     detailed_response: bool,
+    /// Validate against a custom TLS certificate authority
+    ca_cert: Option<Certificate>,
 }
 
 impl QuickwitClientBuilder {
@@ -134,6 +142,7 @@ impl QuickwitClientBuilder {
             commit_timeout: DEFAULT_CLIENT_COMMIT_TIMEOUT,
             use_legacy_ingest: false,
             detailed_response: false,
+            ca_cert: None,
         }
     }
 
@@ -173,8 +182,13 @@ impl QuickwitClientBuilder {
         self
     }
 
+    pub fn set_tls_ca(mut self, ca_cert: Option<Certificate>) -> Self {
+        self.ca_cert = ca_cert;
+        self
+    }
+
     pub fn build(self) -> QuickwitClient {
-        let transport = Transport::new(self.base_url, self.connect_timeout);
+        let transport = Transport::new(self.base_url, self.connect_timeout, self.ca_cert);
         QuickwitClient {
             transport,
             timeout: self.timeout,

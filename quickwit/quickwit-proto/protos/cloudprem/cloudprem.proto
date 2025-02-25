@@ -21,7 +21,9 @@ service CloudPremService {
   rpc Aggregate(AggregationRequest) returns (AggregationResponse);
 }
 
-message PingRequest {}
+message PingRequest {
+  int64 org_id = 1;
+}
 
 message PingResponse {}
 
@@ -32,6 +34,7 @@ message ListRequest {
   bool should_compute_count = 3;
   repeated string columns = 4;
   repeated SortKV sort = 5;
+  int64 org_id = 6;
 }
 
 message SortKV {
@@ -79,6 +82,7 @@ message EventTracker {
 
 message FetchOneRequest {
   EventTracker event_tracker = 1;
+  int64 org_id = 2;
 }
 
 message FetchOneResponse {
@@ -90,6 +94,7 @@ message AggregationRequest {
   // this is always a com.dd.queryparser.proto.QueryNode, but we can't import logs-backend protobuf from here
   google.protobuf.Any query = 1;
   Aggregation aggregation = 2;
+  int64 org_id = 3;
 }
 
 message Aggregation {

@@ -1,6 +1,9 @@
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct PingRequest {}
+pub struct PingRequest {
+    #[prost(int64, tag = "1")]
+    pub org_id: i64,
+}
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PingResponse {}
@@ -18,6 +21,8 @@ pub struct ListRequest {
     pub columns: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     #[prost(message, repeated, tag = "5")]
     pub sort: ::prost::alloc::vec::Vec<SortKv>,
+    #[prost(int64, tag = "6")]
+    pub org_id: i64,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -87,6 +92,8 @@ pub struct EventTracker {
 pub struct FetchOneRequest {
     #[prost(message, optional, tag = "1")]
     pub event_tracker: ::core::option::Option<EventTracker>,
+    #[prost(int64, tag = "2")]
+    pub org_id: i64,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -104,6 +111,8 @@ pub struct AggregationRequest {
     pub query: ::core::option::Option<::prost_types::Any>,
     #[prost(message, optional, tag = "2")]
     pub aggregation: ::core::option::Option<Aggregation>,
+    #[prost(int64, tag = "3")]
+    pub org_id: i64,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

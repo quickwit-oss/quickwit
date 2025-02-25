@@ -45,8 +45,9 @@ pub struct DeleteQueryRequest {
     /// Query text. The query language is that of tantivy.
     pub query: String,
     // Fields to search on
+    #[serde(rename(deserialize = "search_field"))]
     #[serde(default)]
-    pub search_fields: Vec<String>,
+    pub search_fields: Option<Vec<String>>,
     /// If set, restrict delete to documents with a `timestamp >= start_timestamp`.
     pub start_timestamp: Option<i64>,
     /// If set, restrict delete to documents with a `timestamp < end_timestamp``.
@@ -149,8 +150,8 @@ pub async fn post_delete_request(
         .await?
         .deserialize_index_metadata()?;
     let index_uid: IndexUid = metadata.index_uid.clone();
-    let query_ast = query_ast_from_user_text(&delete_request.query, Some(Vec::new()))
-        .parse_user_query(&[])
+    let query_ast = query_ast_from_user_text(&delete_request.query, delete_request.search_fields)
+        .parse_user_query(&metadata.index_config.search_settings.default_search_fields)
         .map_err(|err| JanitorError::InvalidDeleteQuery(err.to_string()))?;
     let query_ast_json = serde_json::to_string(&query_ast).map_err(|_err| {
         JanitorError::Internal("failed to serialized delete query ast".to_string())
@@ -188,10 +189,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_delete_task_api() {
-        quickwit_common::setup_logging_for_tests();
         let index_id = "test-delete-task-rest";
         let doc_mapping_yaml = r#"
             field_mappings:
+              - name: title
+                type: text
               - name: body
                 type: text
               - name: ts
@@ -199,12 +201,14 @@ mod tests {
                 fast: true
             mode: lenient
         "#;
-        let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"])
+        let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "", &["title"])
             .await
             .unwrap();
         let metastore = test_sandbox.metastore();
         let delete_query_api_handlers =
             super::delete_task_api_handlers(metastore).recover(recover_fn);
+
+        // POST a delete query with explicit field name in query
         let resp = warp::test::request()
             .path("/test-delete-task-rest/delete-tasks")
             .method("POST")
@@ -220,6 +224,46 @@ mod tests {
         assert_eq!(
             created_delete_query.query_ast,
             r#"{"type":"full_text","field":"body","text":"myterm","params":{"mode":{"type":"phrase_fallback_to_intersection"}},"lenient":false}"#
+        );
+        assert_eq!(created_delete_query.start_timestamp, Some(1));
+        assert_eq!(created_delete_query.end_timestamp, Some(10));
+
+        // POST a delete query with specified default field
+        let resp = warp::test::request()
+            .path("/test-delete-task-rest/delete-tasks")
+            .method("POST")
+            .json(&true)
+            .body(r#"{"query": "myterm", "start_timestamp": 1, "end_timestamp": 10, "search_field": ["body"]}"#)
+            .reply(&delete_query_api_handlers)
+            .await;
+        assert_eq!(resp.status(), 200);
+        let created_delete_task: DeleteTask = serde_json::from_slice(resp.body()).unwrap();
+        assert_eq!(created_delete_task.opstamp, 2);
+        let created_delete_query = created_delete_task.delete_query.unwrap();
+        assert_eq!(created_delete_query.index_uid(), &test_sandbox.index_uid());
+        assert_eq!(
+            created_delete_query.query_ast,
+            r#"{"type":"full_text","field":"body","text":"myterm","params":{"mode":{"type":"phrase_fallback_to_intersection"}},"lenient":false}"#
+        );
+        assert_eq!(created_delete_query.start_timestamp, Some(1));
+        assert_eq!(created_delete_query.end_timestamp, Some(10));
+
+        // POST a delete query using the config default field
+        let resp = warp::test::request()
+            .path("/test-delete-task-rest/delete-tasks")
+            .method("POST")
+            .json(&true)
+            .body(r#"{"query": "myterm", "start_timestamp": 1, "end_timestamp": 10}"#)
+            .reply(&delete_query_api_handlers)
+            .await;
+        assert_eq!(resp.status(), 200);
+        let created_delete_task: DeleteTask = serde_json::from_slice(resp.body()).unwrap();
+        assert_eq!(created_delete_task.opstamp, 3);
+        let created_delete_query = created_delete_task.delete_query.unwrap();
+        assert_eq!(created_delete_query.index_uid(), &test_sandbox.index_uid());
+        assert_eq!(
+            created_delete_query.query_ast,
+            r#"{"type":"full_text","field":"title","text":"myterm","params":{"mode":{"type":"phrase_fallback_to_intersection"}},"lenient":false}"#
         );
         assert_eq!(created_delete_query.start_timestamp, Some(1));
         assert_eq!(created_delete_query.end_timestamp, Some(10));
@@ -242,7 +286,8 @@ mod tests {
             .await;
         assert_eq!(resp.status(), 200);
         let delete_tasks: Vec<DeleteTask> = serde_json::from_slice(resp.body()).unwrap();
-        assert_eq!(delete_tasks.len(), 1);
+        assert_eq!(delete_tasks.len(), 3);
+
         test_sandbox.assert_quit().await;
     }
 }
