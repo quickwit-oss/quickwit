@@ -79,6 +79,7 @@ census,https://github.com/quickwit-inc/census,MIT,Paul Masurel <paul.masurel@gma
 cfg-if,https://github.com/alexcrichton/cfg-if,MIT OR Apache-2.0,Alex Crichton <alex@alexcrichton.com>
 chitchat,https://github.com/quickwit-oss/chitchat,MIT,"Quickwit, Inc. <hello@quickwit.io>"
 chrono,https://github.com/chronotope/chrono,MIT OR Apache-2.0,The chrono Authors
+chrono-tz,https://github.com/chronotope/chrono-tz,MIT OR Apache-2.0,The chrono-tz Authors
 ciborium,https://github.com/enarx/ciborium,Apache-2.0,Nathaniel McCallum <npmccallum@profian.com>
 cipher,https://github.com/RustCrypto/traits,MIT OR Apache-2.0,RustCrypto Developers
 clap,https://github.com/clap-rs/clap,MIT OR Apache-2.0,The clap Authors
@@ -117,7 +118,7 @@ difflib,https://github.com/DimaKudosh/difflib,MIT,Dima Kudosh <dimakudosh@gmail.
 digest,https://github.com/RustCrypto/traits,MIT OR Apache-2.0,RustCrypto Developers
 displaydoc,https://github.com/yaahc/displaydoc,MIT OR Apache-2.0,Jane Lusby <jlusby@yaah.dev>
 downcast,https://github.com/fkoep/downcast-rs,MIT,Felix Köpge <fkoep@mailbox.org>
-downcast-rs,https://github.com/marcianx/downcast-rs,MIT OR Apache-2.0,"Ashish Myles <marcianx@gmail.com>, Runji Wang <wangrunji0408@163.com>"
+downcast-rs,https://github.com/marcianx/downcast-rs,MIT OR Apache-2.0,The downcast-rs Authors
 dtoa,https://github.com/dtolnay/dtoa,MIT OR Apache-2.0,David Tolnay <dtolnay@gmail.com>
 dyn-clone,https://github.com/dtolnay/dyn-clone,MIT OR Apache-2.0,David Tolnay <dtolnay@gmail.com>
 ecdsa,https://github.com/RustCrypto/signatures/tree/master/ecdsa,Apache-2.0 OR MIT,RustCrypto Developers
@@ -303,12 +304,14 @@ ownedbytes,https://github.com/quickwit-oss/tantivy,MIT,"Paul Masurel <paul@quick
 p256,https://github.com/RustCrypto/elliptic-curves/tree/master/p256,Apache-2.0 OR MIT,RustCrypto Developers
 parking,https://github.com/smol-rs/parking,Apache-2.0 OR MIT,"Stjepan Glavina <stjepang@gmail.com>, The Rust Project Developers"
 parking_lot,https://github.com/Amanieu/parking_lot,MIT OR Apache-2.0,Amanieu d'Antras <amanieu@gmail.com>
+parse-zoneinfo,https://github.com/chronotope/chrono-tz,MIT,The parse-zoneinfo Authors
 password-hash,https://github.com/RustCrypto/traits/tree/master/password-hash,MIT OR Apache-2.0,RustCrypto Developers
 pbkdf2,https://github.com/RustCrypto/password-hashes/tree/master/pbkdf2,MIT OR Apache-2.0,RustCrypto Developers
 peakmem-alloc,https://github.com/PSeitz/peakmem-alloc,MIT,Pascal Seitz <pascal.seitz@gmail.com>
 perf-event,https://github.com/jimblandy/perf-event,MIT OR Apache-2.0,Jim Blandy <jimb@red-bean.com>
 perf-event-open-sys,https://github.com/jimblandy/perf-event-open-sys,MIT OR Apache-2.0,Jim Blandy <jimb@red-bean.com>
 petgraph,https://github.com/petgraph/petgraph,MIT OR Apache-2.0,"bluss, mitchmindtree"
+phf,https://github.com/rust-phf/rust-phf,MIT,Steven Fackler <sfackler@gmail.com>
 pin-project,https://github.com/taiki-e/pin-project,Apache-2.0 OR MIT,The pin-project Authors
 pin-project-internal,https://github.com/taiki-e/pin-project,Apache-2.0 OR MIT,The pin-project-internal Authors
 pin-project-lite,https://github.com/taiki-e/pin-project-lite,Apache-2.0 OR MIT,The pin-project-lite Authors
