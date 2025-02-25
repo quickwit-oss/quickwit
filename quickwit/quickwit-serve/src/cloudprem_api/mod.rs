@@ -241,6 +241,11 @@ impl CloudPremService for CloudPremServiceImpl {
         };
 
         let response = self.search_service.root_search(search_request).await?;
+        let aggregation_result = quickwit_query::cloudprem::aggregation_result_to_proto(
+            &response.aggregation.ok_or_else(|| {
+                CloudPremError::Internal("request generated no aggregation result".to_string())
+            })?,
+        )?;
 
         let statistics = Statistics {
             hit_count: response.num_hits,
@@ -250,7 +255,7 @@ impl CloudPremService for CloudPremServiceImpl {
         };
 
         Ok(AggregationResponse {
-            result: Vec::new(),
+            result: aggregation_result,
             statistics: Some(statistics),
         })
     }
