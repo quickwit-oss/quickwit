@@ -574,7 +574,9 @@ impl ShardTable {
 #[derive(Clone, Copy, Default)]
 pub(crate) struct ShardStats {
     pub num_open_shards: usize,
+    /// Average short-term ingestion rate (MiB/s) per open shard
     pub avg_short_term_ingestion_rate: f32,
+    /// Average long-term ingestion rate (MiB/s) per open shard
     pub avg_long_term_ingestion_rate: f32,
 }
 

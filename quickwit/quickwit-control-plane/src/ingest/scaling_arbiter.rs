@@ -18,7 +18,7 @@ pub(crate) struct ScalingArbiter {
     // Threshold in MiB/s below which we decrease the number of shards.
     scale_down_shards_threshold_mib_per_sec: f32,
 
-    // Threshold in MiB/s above which we increase the number of shards.
+    // Per shard threshold in MiB/s above which we increase the number of shards.
     //
     // We want scaling up to be reactive, so we first inspect the short
     // term threshold.
@@ -49,29 +49,42 @@ impl ScalingArbiter {
         }
     }
 
-    // Scale based on the "per shard average" metric
+    /// Computes the maximum number of shards we can have without going below
+    /// the long term scale up threshold
+    fn long_term_scale_up_threshold_max_shards(&self, shard_stats: ShardStats) -> usize {
+        (shard_stats.avg_long_term_ingestion_rate * shard_stats.num_open_shards as f32
+            / self.scale_up_shards_long_term_threshold_mib_per_sec)
+            .floor() as usize
+    }
+
+    /// Computes the next number of shards we should have according the scaling factor
+    fn scale_up_factor_target_shards(&self, shard_stats: ShardStats) -> usize {
+        (shard_stats.num_open_shards as f32 * self.shard_scale_up_factor).ceil() as usize
+    }
+
+    /// Scale based on the "per shard average" metric
+    ///
+    /// Returns `None` when there are no open shards because in that case routers are expected to
+    /// make the [`quickwit_proto::control_plane::GetOrCreateOpenShardsRequest`]
     pub(crate) fn should_scale(&self, shard_stats: ShardStats) -> Option<ScalingMode> {
+        if shard_stats.num_open_shards == 0 {
+            return None;
+        }
         // Scale up based on the short term metric value while making sure that
         // the long term value doesn't get near the scale down threshold.
         if shard_stats.avg_short_term_ingestion_rate
             >= self.scale_up_shards_short_term_threshold_mib_per_sec
         {
-            // compute the maximum number of shards we can add without going below
-            // the long term scale up threshold
-            let max_number_shards = (shard_stats.avg_long_term_ingestion_rate
-                * shard_stats.num_open_shards as f32
-                / self.scale_up_shards_long_term_threshold_mib_per_sec)
-                .floor() as usize;
+            let new_calculated_num_shards = usize::min(
+                self.long_term_scale_up_threshold_max_shards(shard_stats),
+                self.scale_up_factor_target_shards(shard_stats),
+            );
 
-            // compute the next number of shards we should have according the scaling factor
-            let target_number_shards =
-                (shard_stats.num_open_shards as f32 * self.shard_scale_up_factor).ceil() as usize;
+            let target_num_shards = usize::max(1, new_calculated_num_shards);
 
-            let new_number_shards = max_number_shards.min(target_number_shards);
-
-            if new_number_shards > shard_stats.num_open_shards {
+            if target_num_shards > shard_stats.num_open_shards {
                 return Some(ScalingMode::Up(
-                    new_number_shards - shard_stats.num_open_shards,
+                    target_num_shards - shard_stats.num_open_shards,
                 ));
             }
         }
@@ -96,9 +109,16 @@ mod tests {
     #[test]
     fn test_scaling_arbiter_one_by_one() {
         // use shard throughput 10MiB to simplify calculations
-        let scaling_arbiter = ScalingArbiter::with_max_shard_ingestion_throughput_mib_per_sec(
-            10.0, // with a factor close to 1 shards are effectively added 1 by 1
-            1.01,
+        // with a factor close to 1 shards are effectively added 1 by 1
+        let scaling_arbiter =
+            ScalingArbiter::with_max_shard_ingestion_throughput_mib_per_sec(10.0, 1.01);
+        assert_eq!(
+            scaling_arbiter.should_scale(ShardStats {
+                num_open_shards: 0,
+                avg_short_term_ingestion_rate: 0.0,
+                avg_long_term_ingestion_rate: 0.0,
+            }),
+            None,
         );
         assert_eq!(
             scaling_arbiter.should_scale(ShardStats {
@@ -143,8 +163,8 @@ mod tests {
         assert_eq!(
             scaling_arbiter.should_scale(ShardStats {
                 num_open_shards: 1,
-                avg_short_term_ingestion_rate: 8.0f32,
-                avg_long_term_ingestion_rate: 3.0f32,
+                avg_short_term_ingestion_rate: 8.0,
+                avg_long_term_ingestion_rate: 3.0,
             }),
             None,
         );
@@ -155,6 +175,14 @@ mod tests {
         // use shard throughput 10MiB to simplify calculations
         let scaling_arbiter =
             ScalingArbiter::with_max_shard_ingestion_throughput_mib_per_sec(10.0, 2.);
+        assert_eq!(
+            scaling_arbiter.should_scale(ShardStats {
+                num_open_shards: 0,
+                avg_short_term_ingestion_rate: 0.0,
+                avg_long_term_ingestion_rate: 0.0,
+            }),
+            None,
+        );
         assert_eq!(
             scaling_arbiter.should_scale(ShardStats {
                 num_open_shards: 2,
@@ -211,6 +239,83 @@ mod tests {
                 avg_long_term_ingestion_rate: 5.,
             }),
             Some(ScalingMode::Up(1)),
+        );
+    }
+
+    #[test]
+    fn test_scale_up_computations() {
+        // use shard throughput 10MiB to simplify calculations
+        let scaling_arbiter =
+            ScalingArbiter::with_max_shard_ingestion_throughput_mib_per_sec(10.0, 1.5);
+
+        let shard_stats = ShardStats {
+            num_open_shards: 0,
+            avg_short_term_ingestion_rate: 0.,
+            avg_long_term_ingestion_rate: 0.,
+        };
+        assert_eq!(
+            scaling_arbiter.long_term_scale_up_threshold_max_shards(shard_stats),
+            0
+        );
+        assert_eq!(
+            scaling_arbiter.scale_up_factor_target_shards(shard_stats),
+            0
+        );
+
+        let shard_stats = ShardStats {
+            num_open_shards: 1,
+            avg_short_term_ingestion_rate: 5.0,
+            avg_long_term_ingestion_rate: 6.1,
+        };
+        assert_eq!(
+            scaling_arbiter.long_term_scale_up_threshold_max_shards(shard_stats),
+            2
+        );
+        assert_eq!(
+            scaling_arbiter.scale_up_factor_target_shards(shard_stats),
+            2
+        );
+
+        let shard_stats = ShardStats {
+            num_open_shards: 2,
+            avg_short_term_ingestion_rate: 5.0,
+            avg_long_term_ingestion_rate: 1.1,
+        };
+        assert_eq!(
+            scaling_arbiter.long_term_scale_up_threshold_max_shards(shard_stats),
+            0
+        );
+        assert_eq!(
+            scaling_arbiter.scale_up_factor_target_shards(shard_stats),
+            3
+        );
+
+        let shard_stats = ShardStats {
+            num_open_shards: 2,
+            avg_short_term_ingestion_rate: 5.0,
+            avg_long_term_ingestion_rate: 6.1,
+        };
+        assert_eq!(
+            scaling_arbiter.long_term_scale_up_threshold_max_shards(shard_stats),
+            4
+        );
+        assert_eq!(
+            scaling_arbiter.scale_up_factor_target_shards(shard_stats),
+            3
+        );
+
+        let shard_stats = ShardStats {
+            num_open_shards: 5,
+            avg_short_term_ingestion_rate: 5.0,
+            avg_long_term_ingestion_rate: 1.1,
+        };
+        assert_eq!(
+            scaling_arbiter.long_term_scale_up_threshold_max_shards(shard_stats),
+            1
+        );
+        assert_eq!(
+            scaling_arbiter.scale_up_factor_target_shards(shard_stats),
+            8
         );
     }
 }
