@@ -110,7 +110,6 @@ doc_mapping:
     - name: span_id
       type: text
       tokenizer: raw
-      fast: true
       
 
    # TODO: normally there is an `sds_info` object. Check OP SDS scanner:
