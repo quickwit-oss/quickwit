@@ -26,6 +26,9 @@ pub mod events;
 
 include!("../codegen/quickwit/quickwit.metastore.rs");
 
+pub const METASTORE_FILE_DESCRIPTOR_SET: &[u8] =
+    include_bytes!("../codegen/quickwit/metastore_descriptor.bin");
+
 pub type MetastoreResult<T> = Result<T, MetastoreError>;
 
 /// Lists the object types stored and managed by the metastore.

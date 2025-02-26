@@ -31,6 +31,9 @@ use crate::{GrpcServiceError, ServiceError, ServiceErrorCode};
 
 include!("../codegen/quickwit/quickwit.indexing.rs");
 
+pub const INDEXING_FILE_DESCRIPTOR_SET: &[u8] =
+    include_bytes!("../codegen/quickwit/indexing_descriptor.bin");
+
 pub type IndexingResult<T> = std::result::Result<T, IndexingError>;
 
 #[derive(Debug, thiserror::Error, Eq, PartialEq, Serialize, Deserialize)]
