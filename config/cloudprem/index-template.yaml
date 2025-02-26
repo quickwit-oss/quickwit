@@ -1,11 +1,11 @@
-version: 0.8
+version: 0.9
 
-template_id: cloudprem
+template_id: datadog
 
 index_id_patterns:
-  - cloudprem*
+  - datadog*
 
-description: Index config template for the cloudprem indexes
+description: Index config template for the datadog cloudprem indexes
 
 priority: 0
 
@@ -58,6 +58,18 @@ doc_mapping:
     - name: id
       type: text
       tokenizer: raw
+
+    - name: custom
+      type: json 
+      tokenizer: default
+      record: position
+      fast: true
+
+    - name: tag # contains normalized tags, e.g {"env": "prod"}
+      type: json 
+      tokenizer: default
+      record: position
+      fast: true
 
     # comment for now, since json does not allow arrays (we could support that)
     #- name: tags
@@ -126,6 +138,8 @@ doc_mapping:
       - host
       - trace_id
       - span_id
+      - custom
+      - tag
       include_dynamic_fields: true
       tokenizer: default # +lowercase insensitive
       record: position # for phrase queries
