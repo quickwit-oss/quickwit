@@ -404,6 +404,7 @@ mod tests {
     use quickwit_proto::cloudprem::aggregation::Aggregation as AggregationEnum;
     use quickwit_proto::cloudprem::*;
     use tantivy::aggregation::agg_req::{Aggregation as TantivyAgg, AggregationVariants};
+    use tantivy::aggregation::bucket::*;
     use tantivy::aggregation::metric::*;
 
     use super::to_tantivy_aggregation;
@@ -436,6 +437,211 @@ mod tests {
                     missing: Some(1.0),
                 }),
                 sub_aggregation: HashMap::new(),
+            },
+        )]
+        .into_iter()
+        .collect();
+
+        let res = to_tantivy_aggregation(evp_agg, 0).unwrap();
+
+        assert_eq!(res, expected);
+    }
+
+    #[test]
+    fn test_count_by_facet() {
+        let evp_agg = Aggregation {
+            aggregation: Some(AggregationEnum::AttributeGroupBy(Box::new(
+                AttributeGroupBy {
+                    expression: Some(ExpressionNode {
+                        calc_node: Some(Any {
+                            type_url: "type.googleapis.com/calcfieldspb.CalcNode".to_string(),
+                            value: vec![18, 8, 10, 6, 115, 116, 97, 116, 117, 115],
+                        }),
+                    }),
+                    limit: 50,
+                    sort: Some(SortByExprAndAgg {
+                        ascending: false,
+                        expr_and_agg: Some(ExprAndAgg {
+                            expr: Some(ExpressionNode {
+                                calc_node: Some(Any {
+                                    type_url: "type.googleapis.com/calcfieldspb.CalcNode"
+                                        .to_string(),
+                                    value: vec![18, 7, 10, 5, 99, 111, 117, 110, 116],
+                                }),
+                            }),
+                            agg_function: "count".to_string(),
+                        }),
+                        r#type: SortType::Metric as i32,
+                    }),
+                    missing: None,
+                    total: None,
+                    child: Some(Box::new(Aggregation {
+                        aggregation: Some(AggregationEnum::Computes(Computes {
+                            aggregation: vec![Aggregation {
+                                aggregation: Some(AggregationEnum::MetricCompute(MetricCompute {
+                                    expression: Some(ExpressionNode {
+                                        calc_node: Some(Any {
+                                            type_url: "type.googleapis.com/calcfieldspb.CalcNode"
+                                                .to_string(),
+                                            value: vec![18, 7, 10, 5, 99, 111, 117, 110, 116],
+                                        }),
+                                    }),
+                                    id: "count:count".to_string(),
+                                    r#type: "COUNT".to_string(),
+                                })),
+                            }],
+                            time_grouping: vec![],
+                        })),
+                    })),
+                },
+            ))),
+        };
+
+        let expected = [(
+            "status".to_string(),
+            TantivyAgg {
+                agg: AggregationVariants::Terms(TermsAggregation {
+                    field: "status".to_string(),
+                    size: Some(50),
+                    segment_size: None,
+                    show_term_doc_count_error: None,
+                    min_doc_count: None,
+                    order: None,
+                    missing: None,
+                }),
+                sub_aggregation: [(
+                    "count:count".to_string(),
+                    TantivyAgg {
+                        agg: AggregationVariants::Count(CountAggregation {
+                            field: "__non_existing_field__".to_string(),
+                            missing: Some(1.0),
+                        }),
+                        sub_aggregation: HashMap::new(),
+                    },
+                )]
+                .into_iter()
+                .collect(),
+            },
+        )]
+        .into_iter()
+        .collect();
+
+        let res = to_tantivy_aggregation(evp_agg, 0).unwrap();
+
+        assert_eq!(res, expected);
+    }
+
+    #[test]
+    fn test_timeline_aggregation() {
+        let evp_agg = Aggregation {
+            aggregation: Some(AggregationEnum::AttributeGroupBy(Box::new(
+                AttributeGroupBy {
+                    expression: Some(ExpressionNode {
+                        calc_node: Some(Any {
+                            type_url: "type.googleapis.com/calcfieldspb.CalcNode".to_string(),
+                            value: vec![18, 8, 10, 6, 115, 116, 97, 116, 117, 115],
+                        }),
+                    }),
+                    limit: 10,
+                    sort: Some(SortByExprAndAgg {
+                        ascending: false,
+                        expr_and_agg: Some(ExprAndAgg {
+                            expr: Some(ExpressionNode {
+                                calc_node: Some(Any {
+                                    type_url: "type.googleapis.com/calcfieldspb.CalcNode"
+                                        .to_string(),
+                                    value: vec![18, 7, 10, 5, 99, 111, 117, 110, 116],
+                                }),
+                            }),
+                            agg_function: "count".to_string(),
+                        }),
+                        r#type: SortType::Metric as i32,
+                    }),
+                    missing: None,
+                    total: None,
+                    child: Some(Box::new(Aggregation {
+                        aggregation: Some(AggregationEnum::Computes(Computes {
+                            aggregation: vec![],
+                            time_grouping: vec![TimeGrouping {
+                                output: "time:28800000".to_string(),
+                                path: "timestamp".to_string(),
+                                time_zone: "Z".to_string(),
+                                interval_ns: Some(28800000000000),
+                                rollup: None,
+                                child: Some(Box::new(Aggregation {
+                                    aggregation: Some(AggregationEnum::Computes(Computes {
+                                        aggregation: vec![Aggregation {
+                                            aggregation: Some(AggregationEnum::MetricCompute(
+                                                MetricCompute {
+                                                    expression: Some(ExpressionNode {
+                                                        calc_node: Some(Any {
+                                                            type_url: "type.googleapis.com/\
+                                                                       calcfieldspb.CalcNode"
+                                                                .to_string(),
+                                                            value: vec![
+                                                                18, 7, 10, 5, 99, 111, 117, 110,
+                                                                116,
+                                                            ],
+                                                        }),
+                                                    }),
+                                                    id: "count:count:timeseries:28800000"
+                                                        .to_string(),
+                                                    r#type: "COUNT".to_string(),
+                                                },
+                                            )),
+                                        }],
+                                        time_grouping: vec![],
+                                    })),
+                                })),
+                            }],
+                        })),
+                    })),
+                },
+            ))),
+        };
+        let expected = [(
+            "status".to_string(),
+            TantivyAgg {
+                agg: AggregationVariants::Terms(TermsAggregation {
+                    field: "status".to_string(),
+                    size: Some(10),
+                    segment_size: None,
+                    show_term_doc_count_error: None,
+                    min_doc_count: None,
+                    order: None,
+                    missing: None,
+                }),
+                sub_aggregation: [(
+                    "time:28800000".to_string(),
+                    TantivyAgg {
+                        agg: AggregationVariants::DateHistogram(DateHistogramAggregationReq {
+                            interval: None,
+                            calendar_interval: None,
+                            field: "timestamp".to_string(),
+                            format: None,
+                            fixed_interval: Some("28800000ms".to_string()),
+                            offset: None,
+                            min_doc_count: None,
+                            hard_bounds: None,
+                            extended_bounds: None,
+                            keyed: false,
+                        }),
+                        sub_aggregation: [(
+                            "count:count:timeseries:28800000".to_string(),
+                            TantivyAgg {
+                                agg: AggregationVariants::Count(CountAggregation {
+                                    field: "__non_existing_field__".to_string(),
+                                    missing: Some(1.0),
+                                }),
+                                sub_aggregation: HashMap::new(),
+                            },
+                        )]
+                        .into_iter()
+                        .collect(),
+                    },
+                )]
+                .into_iter()
+                .collect(),
             },
         )]
         .into_iter()
