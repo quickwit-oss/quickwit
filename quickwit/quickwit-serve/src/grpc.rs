@@ -16,6 +16,7 @@ use std::collections::BTreeSet;
 use std::error::Error;
 use std::sync::Arc;
 
+use anyhow::Context;
 use quickwit_cluster::cluster_grpc_server;
 use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_config::service::QuickwitService;
@@ -30,6 +31,7 @@ use quickwit_proto::tonic::codegen::CompressionEncoding;
 use quickwit_proto::tonic::transport::server::TcpIncoming;
 use quickwit_proto::tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
 use tokio::net::TcpListener;
+use tonic_reflection::server::{ServerReflection, ServerReflectionServer};
 use tracing::*;
 
 use crate::developer_api::DeveloperApiServer;
@@ -45,7 +47,9 @@ pub(crate) async fn start_grpc_server(
     shutdown_signal: BoxFutureInfaillible<()>,
 ) -> anyhow::Result<()> {
     let mut enabled_grpc_services = BTreeSet::new();
+    let mut file_descriptor_sets = Vec::new();
     let mut server = Server::builder();
+
     if let Some(tls_config) = grpc_config.tls {
         let cert = std::fs::read_to_string(tls_config.cert_path)?;
         let key = std::fs::read_to_string(tls_config.key_path)?;
@@ -66,10 +70,13 @@ pub(crate) async fn start_grpc_server(
     }
 
     let cluster_grpc_service = cluster_grpc_server(services.cluster.clone());
+    file_descriptor_sets.push(quickwit_proto::cluster::CLUSTER_PLANE_FILE_DESCRIPTOR_SET);
 
     // Mount gRPC metastore service if `QuickwitService::Metastore` is enabled on node.
     let metastore_grpc_service = if let Some(metastore_server) = &services.metastore_server_opt {
         enabled_grpc_services.insert("metastore");
+        file_descriptor_sets.push(quickwit_proto::metastore::METASTORE_FILE_DESCRIPTOR_SET);
+
         Some(metastore_server.as_grpc_service(grpc_config.max_message_size))
     } else {
         None
@@ -81,6 +88,8 @@ pub(crate) async fn start_grpc_server(
     {
         if let Some(indexing_service) = services.indexing_service_opt.clone() {
             enabled_grpc_services.insert("indexing");
+            file_descriptor_sets.push(quickwit_proto::indexing::INDEXING_FILE_DESCRIPTOR_SET);
+
             let indexing_service = IndexingServiceClient::tower()
                 .stack_layer(INDEXING_GRPC_SERVER_METRICS_LAYER.clone())
                 .build_from_mailbox(indexing_service);
@@ -121,6 +130,7 @@ pub(crate) async fn start_grpc_server(
 
     let ingester_grpc_service = if let Some(ingester_service) = services.ingester_service() {
         enabled_grpc_services.insert("ingester");
+        file_descriptor_sets.push(quickwit_proto::ingest::INGEST_FILE_DESCRIPTOR_SET);
         Some(ingester_service.as_grpc_service(grpc_config.max_message_size))
     } else {
         None
@@ -132,6 +142,8 @@ pub(crate) async fn start_grpc_server(
         .is_service_enabled(QuickwitService::ControlPlane)
     {
         enabled_grpc_services.insert("control-plane");
+        file_descriptor_sets.push(quickwit_proto::control_plane::CONTROL_PLANE_FILE_DESCRIPTOR_SET);
+
         Some(
             services
                 .control_plane_client
@@ -165,6 +177,8 @@ pub(crate) async fn start_grpc_server(
         .is_service_enabled(QuickwitService::Searcher)
     {
         enabled_grpc_services.insert("search");
+        file_descriptor_sets.push(quickwit_proto::search::SEARCH_FILE_DESCRIPTOR_SET);
+
         let search_service = services.search_service.clone();
         let grpc_search_service = GrpcSearchAdapter::from(search_service);
         Some(
@@ -185,15 +199,19 @@ pub(crate) async fn start_grpc_server(
     };
     let developer_grpc_service = {
         enabled_grpc_services.insert("developer");
+        file_descriptor_sets.push(quickwit_proto::developer::DEVELOPER_FILE_DESCRIPTOR_SET);
 
         let developer_service = DeveloperApiServer::from_services(&services);
 
         DeveloperServiceClient::new(developer_service)
             .as_grpc_service(DeveloperApiServer::MAX_GRPC_MESSAGE_SIZE)
     };
+    let reflection_service = build_reflection_service(&file_descriptor_sets)?;
+
     let server_router = server
         .add_service(cluster_grpc_service)
         .add_service(developer_grpc_service)
+        .add_service(reflection_service)
         .add_optional_service(control_plane_grpc_service)
         .add_optional_service(indexing_grpc_service)
         .add_optional_service(ingest_api_grpc_service)
@@ -218,4 +236,17 @@ pub(crate) async fn start_grpc_server(
     let (serve_res, _trigger_res) = tokio::join!(serve_fut, readiness_trigger);
     serve_res?;
     Ok(())
+}
+
+fn build_reflection_service(
+    file_descriptor_sets: &[&[u8]],
+) -> anyhow::Result<ServerReflectionServer<impl ServerReflection>> {
+    let mut builder = tonic_reflection::server::Builder::configure();
+
+    for file_descriptor_set in file_descriptor_sets {
+        builder = builder.register_encoded_file_descriptor_set(file_descriptor_set)
+    }
+    builder
+        .build()
+        .context("failed to build reflection service")
 }

@@ -22,7 +22,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // services.
     //
     // Cluster service.
+    let mut prost_config = prost_build::Config::default();
+    prost_config.file_descriptor_set_path("src/codegen/quickwit/cluster_descriptor.bin");
+
     Codegen::builder()
+        .with_prost_config(prost_config)
         .with_protos(&["protos/quickwit/cluster.proto"])
         .with_output_dir("src/codegen/quickwit")
         .with_result_type_path("crate::cluster::ClusterResult")
@@ -33,6 +37,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Control plane.
     let mut prost_config = prost_build::Config::default();
+    prost_config.file_descriptor_set_path("src/codegen/quickwit/control_plane_descriptor.bin");
+
     prost_config
         .extern_path(
             ".quickwit.common.DocMappingUid",
@@ -52,7 +58,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Developer service.
     let mut prost_config = prost_build::Config::default();
-    prost_config.bytes(["GetDebugInfoResponse.debug_info_json"]);
+    prost_config
+        .bytes(["GetDebugInfoResponse.debug_info_json"])
+        .file_descriptor_set_path("src/codegen/quickwit/developer_descriptor.bin");
 
     Codegen::builder()
         .with_prost_config(prost_config)
@@ -72,7 +80,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "crate::types::PipelineUid",
         )
         .extern_path(".quickwit.common.IndexUid", "crate::types::IndexUid")
-        .extern_path(".quickwit.ingest.ShardId", "crate::types::ShardId");
+        .extern_path(".quickwit.ingest.ShardId", "crate::types::ShardId")
+        .file_descriptor_set_path("src/codegen/quickwit/indexing_descriptor.bin");
 
     Codegen::builder()
         .with_prost_config(prost_config)
@@ -107,7 +116,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .field_attribute(
             "DeleteQuery.end_timestamp",
             "#[serde(skip_serializing_if = \"Option::is_none\")]",
-        );
+        )
+        .file_descriptor_set_path("src/codegen/quickwit/metastore_descriptor.bin");
 
     Codegen::builder()
         .with_prost_config(prost_config)
@@ -157,7 +167,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .field_attribute(
             "Shard.update_timestamp",
             "#[serde(default = \"super::compatibility_shard_update_timestamp\")]",
-        );
+        )
+        .file_descriptor_set_path("src/codegen/quickwit/ingest_descriptor.bin");
 
     Codegen::builder()
         .with_prost_config(prost_config)
@@ -175,7 +186,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Search service.
     let mut prost_config = prost_build::Config::default();
-    prost_config.protoc_arg("--experimental_allow_proto3_optional");
+    prost_config
+        .file_descriptor_set_path("src/codegen/quickwit/search_descriptor.bin")
+        .protoc_arg("--experimental_allow_proto3_optional");
 
     tonic_build::configure()
         .enum_attribute(".", "#[serde(rename_all=\"snake_case\")]")

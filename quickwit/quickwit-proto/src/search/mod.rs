@@ -21,6 +21,9 @@ pub use sort_by_value::SortValue;
 
 include!("../codegen/quickwit/quickwit.search.rs");
 
+pub const SEARCH_FILE_DESCRIPTOR_SET: &[u8] =
+    include_bytes!("../codegen/quickwit/search_descriptor.bin");
+
 impl SearchRequest {
     pub fn time_range(&self) -> impl std::ops::RangeBounds<i64> {
         use std::ops::Bound;
