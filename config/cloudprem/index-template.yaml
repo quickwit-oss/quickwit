@@ -33,18 +33,15 @@ indexing_settings:
 # random_draw(f64), source_fragment_id(string), trace_id_low(string)
 
 doc_mapping:
-  mode: dynamic # To include `custom` attributes
-  dynamic_mapping:  
-    indexed: true  
-    stored: true  
-    tokenizer: default 
-    record: position # for phrase queries
-    fast: true # for range queries
+  mode: lenient
   field_mappings:
-    - name: timestamp # TODO: Add RFC3164
+    # TODO: Add RFC3164
+    # With the preprocessing in Pomsky, we can actually just use one
+    - name: timestamp
       type: datetime
       fast: true
       input_formats:
+        - rfc3339
         - iso8601
         - unix_timestamp
 
@@ -71,15 +68,15 @@ doc_mapping:
       record: position
       fast: true
 
-    # comment for now, since json does not allow arrays (we could support that)
-    #- name: tags
-    #  type: json # Best format to store tags is unclear
-    #  tokenizer: default  
-    #  record: position
-    #  fast: true # for range queries
+    - name: tags # we can completely drop it and reconstruct it from tag
+      type: 'array<text>'
+      stored: true
+      indexed: false
+      fast: false
     
     # The subfiels are `message` and `stack`. Are there others?
     # If all fields are clear, we can convert to object.
+    # TODO: This is unused currently in the Pomsky processing and would reside in `custom`
     - name: error
       type: json 
       tokenizer: default
@@ -129,7 +126,9 @@ doc_mapping:
       concatenate_fields: # This should contain all fields above
       # - timestamp # Not supported in concat fields
       - message
-      # - tags 
+      # TODO: Check if we need to cover queries addressing tags, e.g. tags `*:"env:prod"` or tag `*:prod`
+      # Generally this could be extracted by a query processor
+      # - tag OR tags
       - error
       - service
       - service_type
@@ -138,7 +137,6 @@ doc_mapping:
       - trace_id
       - span_id
       - custom
-      - tag
       include_dynamic_fields: true
       tokenizer: default # +lowercase insensitive
       record: position # for phrase queries
