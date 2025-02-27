@@ -18,6 +18,9 @@ use crate::{GrpcServiceError, ServiceError, ServiceErrorCode};
 
 include!("../codegen/quickwit/quickwit.developer.rs");
 
+pub const DEVELOPER_FILE_DESCRIPTOR_SET: &[u8] =
+    include_bytes!("../codegen/quickwit/developer_descriptor.bin");
+
 pub type DeveloperResult<T> = std::result::Result<T, DeveloperError>;
 
 #[derive(Debug, thiserror::Error, Eq, PartialEq, serde::Serialize, serde::Deserialize)]

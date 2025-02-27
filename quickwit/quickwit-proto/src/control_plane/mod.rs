@@ -23,6 +23,9 @@ use crate::{GrpcServiceError, ServiceError, ServiceErrorCode};
 
 include!("../codegen/quickwit/quickwit.control_plane.rs");
 
+pub const CONTROL_PLANE_FILE_DESCRIPTOR_SET: &[u8] =
+    include_bytes!("../codegen/quickwit/control_plane_descriptor.bin");
+
 pub type ControlPlaneResult<T> = std::result::Result<T, ControlPlaneError>;
 
 #[derive(Debug, thiserror::Error, Eq, PartialEq, Serialize, Deserialize)]
