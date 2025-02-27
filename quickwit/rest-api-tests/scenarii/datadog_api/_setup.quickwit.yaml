@@ -13,16 +13,77 @@ json:
   indexing_settings:
     commit_timeout_secs: 1
   doc_mapping:
-    mode: dynamic
-    timestamp_field: timestamp
+    mode: lenient
     field_mappings:
-      - name: timestamp
+      - name: timestamp # TODO: Add RFC3164
         type: datetime
         fast: true
         input_formats:
           - rfc3339
+          - iso8601
+          - unix_timestamp
+
+      - name: message
+        type: text
+        tokenizer: default # +lowercase case insensitive search on message
+        record: position
+        fast: true
+
+      # Seems to be used only internally, e.g. for paging and fetch_one
+      - name: id
+        type: text
+        tokenizer: raw
+
+      - name: custom
+        type: json 
+        tokenizer: default
+        record: position
+        fast: true
+
+      - name: tag # contains normalized tags, e.g {"env": "prod"}
+        type: json 
+        tokenizer: default
+        record: position
+        fast: true
+
+      - name: tags
+        type: 'array<text>'
+        stored: true
+        indexed: false
+        fast: false
+      
+      # The subfiels are `message` and `stack`. Are there others?
+      # If all fields are clear, we can convert to object.
+      - name: error
+        type: json 
+        tokenizer: default
+        record: position
+        fast: true
+
+      # other text like core attributes
       - name: service
         type: text
+        tokenizer: raw  
+        fast: true
+      - name: service_type 
+        type: text
+        tokenizer: raw  
+        fast: true
+      - name: status
+        type: text
+        tokenizer: raw  
+        fast: true
+      - name: host
+        type: text
+        tokenizer: raw  
+        fast: true
+      - name: trace_id
+        type: text
+        tokenizer: raw
+        fast: true
+      - name: span_id
+        type: text
+        tokenizer: raw
         fast: true
 ---
 # Ingest documents
