@@ -9,6 +9,7 @@ description: Index config template for the datadog cloudprem indexes
 
 priority: 0
 
+# TODO: increase commit_timeout_secs of 5 secs after testing phase
 indexing_settings:
   commit_timeout_secs: 5
 
