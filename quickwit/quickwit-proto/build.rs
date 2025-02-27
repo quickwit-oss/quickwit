@@ -184,7 +184,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .run()
         .unwrap();
 
-    let cloudprem_prost_config = prost_build::Config::default();
+    let mut cloudprem_prost_config = prost_build::Config::default();
+    cloudprem_prost_config.file_descriptor_set_path("src/codegen/cloudprem/descriptor.bin");
+
     Codegen::builder()
         .with_prost_config(cloudprem_prost_config)
         .with_protos(&["protos/cloudprem/cloudprem.proto"])
@@ -198,9 +200,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .run()
         .unwrap();
 
-    let cloudprem_prost_config = prost_build::Config::default();
     Codegen::builder()
-        .with_prost_config(cloudprem_prost_config)
         .with_protos(&[
             "protos/cloudprem/queryparser.proto",
             "protos/cloudprem/calc_fields.proto",

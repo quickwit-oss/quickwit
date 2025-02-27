@@ -223,6 +223,9 @@ pub(crate) async fn start_grpc_server(
         .node_config
         .is_service_enabled(QuickwitService::Searcher)
     {
+        enabled_grpc_services.insert("cloudprem");
+        file_descriptor_sets.push(quickwit_proto::cloudprem::CLOUDPREM_FILE_DESCRIPTOR_SET);
+
         let search_service = services.search_service.clone();
         let cloudprem_service_impl = CloudPremServiceImpl::from(search_service);
         Some(
