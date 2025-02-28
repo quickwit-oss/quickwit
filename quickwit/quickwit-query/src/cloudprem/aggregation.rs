@@ -359,6 +359,10 @@ impl ResultMapper {
 
                     let last_value = match metric_result {
                         MetricResult::Count(count) => count.value.unwrap_or_default() as u64,
+                        // TODO our ast is widely ambiguous, and while we ask for a count, it gets
+                        // parsed back as something else entirely. For now we only support counts,
+                        // but we will *have to* do better
+                        MetricResult::Average(count) => count.value.unwrap_or_default() as u64,
                         _ => return Err(CloudPremError::Unimplemented),
                     };
                     let to_emit_mut = to_emit.get_or_insert_with(|| state.clone());
@@ -397,6 +401,58 @@ fn key_to_agg_value(val: tantivy::aggregation::Key) -> EvpAggValue {
 }
 
 #[cfg(test)]
+mod test_helpers {
+
+    use quickwit_proto::cloudprem::agg_value::Value;
+    use quickwit_proto::cloudprem::{AggValue, AggregationResult as EvpAggregationResult};
+
+    // this module is here to make tests easier to read and write
+    pub trait IntoValue {
+        fn to_value(&self) -> AggValue {
+            AggValue {
+                value: Some(self.val()),
+            }
+        }
+        fn val(&self) -> Value;
+    }
+
+    impl IntoValue for &str {
+        fn val(&self) -> Value {
+            Value::StringValue(self.to_string())
+        }
+    }
+    impl IntoValue for u64 {
+        fn val(&self) -> Value {
+            Value::Uint64Value(*self)
+        }
+    }
+    impl IntoValue for i64 {
+        fn val(&self) -> Value {
+            Value::Int64Value(*self)
+        }
+    }
+    impl IntoValue for f64 {
+        fn val(&self) -> Value {
+            Value::Float64Value(*self)
+        }
+    }
+
+    pub fn test_response_helper<'a>(
+        vals: impl IntoIterator<Item = impl IntoIterator<Item = (&'a str, &'a dyn IntoValue)>>,
+    ) -> Vec<EvpAggregationResult> {
+        vals.into_iter()
+            .map(|kv| {
+                let (key, value) = kv
+                    .into_iter()
+                    .map(|(key, value)| (key.to_string(), value.to_value()))
+                    .unzip();
+                EvpAggregationResult { key, value }
+            })
+            .collect()
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use std::collections::HashMap;
 
@@ -407,10 +463,11 @@ mod tests {
     use tantivy::aggregation::bucket::*;
     use tantivy::aggregation::metric::*;
 
-    use super::to_tantivy_aggregation;
+    use super::test_helpers::test_response_helper;
+    use super::{aggregation_result_to_proto, to_tantivy_aggregation};
 
     #[test]
-    fn test_count_all() {
+    fn test_count_request() {
         let evp_agg = Aggregation {
             aggregation: Some(AggregationEnum::Computes(Computes {
                 aggregation: vec![Aggregation {
@@ -448,7 +505,7 @@ mod tests {
     }
 
     #[test]
-    fn test_count_by_facet() {
+    fn test_count_by_facet_request() {
         let evp_agg = Aggregation {
             aggregation: Some(AggregationEnum::AttributeGroupBy(Box::new(
                 AttributeGroupBy {
@@ -532,7 +589,7 @@ mod tests {
     }
 
     #[test]
-    fn test_timeline_aggregation() {
+    fn test_timeline_aggregation_request() {
         let evp_agg = Aggregation {
             aggregation: Some(AggregationEnum::AttributeGroupBy(Box::new(
                 AttributeGroupBy {
@@ -649,6 +706,34 @@ mod tests {
 
         let res = to_tantivy_aggregation(evp_agg, 0).unwrap();
 
+        assert_eq!(res, expected);
+    }
+
+    #[test]
+    fn test_count_response() {
+        let qw_reply = "{\"count:count\":{\"value\":2.0}}";
+        let expected = test_response_helper([[("count:count", &2u64 as _)]]);
+
+        let res = aggregation_result_to_proto(qw_reply).unwrap();
+        assert_eq!(res, expected);
+    }
+
+    #[test]
+    #[ignore] // doesnt work yet because unimplemented + json type confusion
+    fn test_map_reply_admin_test() {
+        let qw_reply = "{\"status\":{\"buckets\":[{\"key\":\"info\",\"doc_count\":2,\"time:\
+                        28800000\":{\"buckets\":[{\"key_as_string\":\"2025-01-30T08:00:00Z\",\"\
+                        key\":1738224000000.0,\"doc_count\":2,\"count:count:timeseries:28800000\":\
+                        {\"value\":2.0}}]}}],\"sum_other_doc_count\":0,\"\
+                        doc_count_error_upper_bound\":0}}";
+
+        let expected = test_response_helper([[
+            ("bucket", &"info" as _),
+            ("time:28800000", &"2025-01-30T08:00:00Z" as _),
+            ("count:count:timeseries:28800000", &2u64 as _),
+        ]]);
+
+        let res = aggregation_result_to_proto(qw_reply).unwrap();
         assert_eq!(res, expected);
     }
 }
