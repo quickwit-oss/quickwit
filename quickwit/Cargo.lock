@@ -7133,6 +7133,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "criterion",
+ "either",
  "hex",
  "lindera-core",
  "lindera-dictionary",

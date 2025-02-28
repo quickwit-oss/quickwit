@@ -334,29 +334,44 @@ impl ResultMapper {
         state: &EvpAggregationResult,
     ) -> Result<(), CloudPremError> {
         let mut to_emit = None;
-        for (key, agg) in agg_result.0 {
+        for (_key, agg) in agg_result.0 {
             match agg {
                 TantivyAggregationResult::BucketResult(bucket_result) => {
                     use tantivy::aggregation::agg_result::BucketResult;
                     match bucket_result {
-                        BucketResult::Range { .. } => return Err(CloudPremError::Unimplemented),
-                        BucketResult::Histogram { .. } => {
-                            return Err(CloudPremError::Unimplemented)
+                        BucketResult::Range { buckets } => {
+                            let mut mut_state = state.clone();
+                            for bucket in bucket_iter(buckets) {
+                                mut_state.key.push(bucket.key.to_string());
+                                self.consume_agg_aux(bucket.sub_aggregation, &mut_state)?;
+                                mut_state.key.pop();
+                            }
+                        }
+                        BucketResult::Histogram { buckets } => {
+                            let mut mut_state = state.clone();
+                            for bucket in bucket_iter(buckets) {
+                                mut_state.key.push(
+                                    bucket
+                                        .key_as_string
+                                        .unwrap_or_else(|| bucket.key.to_string()),
+                                );
+                                self.consume_agg_aux(bucket.sub_aggregation, &mut_state)?;
+                                mut_state.key.pop();
+                            }
                         }
                         BucketResult::Terms { buckets, .. } => {
                             let mut mut_state = state.clone();
-                            mut_state.key.push(key);
                             for bucket in buckets {
-                                mut_state.value.push(key_to_agg_value(bucket.key));
+                                mut_state.key.push(bucket.key.to_string());
                                 self.consume_agg_aux(bucket.sub_aggregation, &mut_state)?;
-                                mut_state.value.pop();
+                                mut_state.key.pop();
                             }
                         }
                     }
                 }
                 TantivyAggregationResult::MetricResult(metric_result) => {
                     use tantivy::aggregation::agg_result::MetricResult;
-
+                    // TODO we need to guarantee the order of append somehow
                     let last_value = match metric_result {
                         MetricResult::Count(count) => count.value.unwrap_or_default() as u64,
                         // TODO our ast is widely ambiguous, and while we ask for a count, it gets
@@ -366,7 +381,6 @@ impl ResultMapper {
                         _ => return Err(CloudPremError::Unimplemented),
                     };
                     let to_emit_mut = to_emit.get_or_insert_with(|| state.clone());
-                    to_emit_mut.key.push(key);
                     to_emit_mut.value.push(u64_to_agg_value(last_value));
                 }
             }
@@ -386,17 +400,14 @@ fn u64_to_agg_value(val: u64) -> EvpAggValue {
     }
 }
 
-fn key_to_agg_value(val: tantivy::aggregation::Key) -> EvpAggValue {
-    use quickwit_proto::cloudprem::agg_value::Value;
-    use tantivy::aggregation::Key;
-    let evp_val = match val {
-        Key::Str(s) => Value::StringValue(s),
-        Key::I64(int) => Value::Int64Value(int),
-        Key::U64(uint) => Value::Uint64Value(uint),
-        Key::F64(int) => Value::Float64Value(int),
-    };
-    EvpAggValue {
-        value: Some(evp_val),
+fn bucket_iter<T>(
+    buckets: tantivy::aggregation::agg_result::BucketEntries<T>,
+) -> impl Iterator<Item = T> {
+    use either::Either;
+    use tantivy::aggregation::agg_result::BucketEntries;
+    match buckets {
+        BucketEntries::Vec(vec) => Either::Left(vec.into_iter()),
+        BucketEntries::HashMap(map) => Either::Right(map.into_values()),
     }
 }
 
@@ -404,7 +415,7 @@ fn key_to_agg_value(val: tantivy::aggregation::Key) -> EvpAggValue {
 mod test_helpers {
 
     use quickwit_proto::cloudprem::agg_value::Value;
-    use quickwit_proto::cloudprem::{AggValue, AggregationResult as EvpAggregationResult};
+    use quickwit_proto::cloudprem::AggValue;
 
     // this module is here to make tests easier to read and write
     pub trait IntoValue {
@@ -436,20 +447,6 @@ mod test_helpers {
             Value::Float64Value(*self)
         }
     }
-
-    pub fn test_response_helper<'a>(
-        vals: impl IntoIterator<Item = impl IntoIterator<Item = (&'a str, &'a dyn IntoValue)>>,
-    ) -> Vec<EvpAggregationResult> {
-        vals.into_iter()
-            .map(|kv| {
-                let (key, value) = kv
-                    .into_iter()
-                    .map(|(key, value)| (key.to_string(), value.to_value()))
-                    .unzip();
-                EvpAggregationResult { key, value }
-            })
-            .collect()
-    }
 }
 
 #[cfg(test)]
@@ -463,7 +460,7 @@ mod tests {
     use tantivy::aggregation::bucket::*;
     use tantivy::aggregation::metric::*;
 
-    use super::test_helpers::test_response_helper;
+    use super::test_helpers::IntoValue;
     use super::{aggregation_result_to_proto, to_tantivy_aggregation};
 
     #[test]
@@ -712,14 +709,16 @@ mod tests {
     #[test]
     fn test_count_response() {
         let qw_reply = "{\"count:count\":{\"value\":2.0}}";
-        let expected = test_response_helper([[("count:count", &2u64 as _)]]);
+        let expected = vec![AggregationResult {
+            key: vec![],
+            value: vec![2u64.to_value()],
+        }];
 
         let res = aggregation_result_to_proto(qw_reply).unwrap();
         assert_eq!(res, expected);
     }
 
     #[test]
-    #[ignore] // doesnt work yet because unimplemented + json type confusion
     fn test_map_reply_admin_test() {
         let qw_reply = "{\"status\":{\"buckets\":[{\"key\":\"info\",\"doc_count\":2,\"time:\
                         28800000\":{\"buckets\":[{\"key_as_string\":\"2025-01-30T08:00:00Z\",\"\
@@ -727,11 +726,10 @@ mod tests {
                         {\"value\":2.0}}]}}],\"sum_other_doc_count\":0,\"\
                         doc_count_error_upper_bound\":0}}";
 
-        let expected = test_response_helper([[
-            ("bucket", &"info" as _),
-            ("time:28800000", &"2025-01-30T08:00:00Z" as _),
-            ("count:count:timeseries:28800000", &2u64 as _),
-        ]]);
+        let expected = vec![AggregationResult {
+            key: vec!["info".to_string(), "2025-01-30T08:00:00Z".to_string()],
+            value: vec![2u64.to_value()],
+        }];
 
         let res = aggregation_result_to_proto(qw_reply).unwrap();
         assert_eq!(res, expected);
