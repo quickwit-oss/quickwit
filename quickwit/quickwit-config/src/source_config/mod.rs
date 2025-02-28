@@ -861,41 +861,22 @@ mod tests {
         {
             let content = r#"
             {
-                "version": "0.7",
+                "version": "0.9",
                 "source_id": "hdfs-logs-void-source",
-                "desired_num_pipelines": 0,
-                "max_num_pipelines_per_indexer": 1,
+                "num_pipelines": 0,
                 "source_type": "void",
                 "params": {}
             }
             "#;
             let error = load_source_config_from_user_config(ConfigFormat::Json, content.as_bytes())
                 .unwrap_err();
-            assert!(error
-                .to_string()
-                .contains("`desired_num_pipelines` must be"));
+            println!("error: {error}");
+            assert!(error.to_string().contains("`num_pipelines` must be"));
         }
-        // {
-        //     let content = r#"
-        //     {
-        //         "version": "0.7",
-        //         "source_id": "hdfs-logs-void-source",
-        //         "desired_num_pipelines": 1,
-        //         "max_num_pipelines_per_indexer": 0,
-        //         "source_type": "void",
-        //         "params": {}
-        //     }
-        //     "#;
-        //     let error = load_source_config_from_user_config(ConfigFormat::Json,
-        // content.as_bytes())         .unwrap_err();
-        //     assert!(error
-        //         .to_string()
-        //         .contains("`max_num_pipelines_per_indexer` must be"));
-        // }
         {
             let content = r#"
             {
-                "version": "0.8",
+                "version": "0.9",
                 "source_id": "hdfs-logs-void-source",
                 "num_pipelines": 2,
                 "source_type": "void",
@@ -909,10 +890,9 @@ mod tests {
         {
             let content = r#"
             {
-                "version": "0.7",
+                "version": "0.9",
                 "source_id": "hdfs-logs-void-source",
-                "desired_num_pipelines": 2,
-                "max_num_pipelines_per_indexer": 1,
+                "num_pipelines": 2,
                 "source_type": "void",
                 "params": {}
             }
@@ -970,7 +950,7 @@ mod tests {
         {
             let content = r#"
             {
-                "version": "0.8",
+                "version": "0.9",
                 "source_id": "hdfs-logs-kafka-source",
                 "num_pipelines": 3,
                 "source_type": "kafka",
@@ -1461,10 +1441,9 @@ mod tests {
     #[tokio::test]
     async fn test_source_config_plain_text_input_format() {
         let file_content = r#"{
-            "version": "0.7",
+            "version": "0.9",
             "source_id": "logs-file-source",
-            "desired_num_pipelines": 1,
-            "max_num_pipelines_per_indexer": 1,
+            "num_pipelines": 1,
             "source_type": "file",
             "params": {
               "filepath": "s3://mybucket/test_non_json_corpus.txt"
