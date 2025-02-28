@@ -28,10 +28,10 @@ build_image:
     DDSIGN_ID_TOKEN:
       aud: image-integrity
   script:
-    - scripts/image-tool.sh --push --repo cloudprem
+    - scripts/image-tool.sh --push --platform linux/amd64,linux/arm64 --repo cloudprem
     - scripts/image-tool.sh --push --sign --repo pomsky
 
-publish_public_image:
+publish_public_images:
   stage: publish
   trigger:
     project: DataDog/public-images

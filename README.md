@@ -130,17 +130,11 @@ We estimate that Quickwit can be up to 10x cheaper on average than Elastic. To u
 
 ### What license does Quickwit use?
 
-Quickwit is open-source under the GNU Affero General Public License Version 3 - AGPLv3. Fundamentally, this means you are free to use Quickwit for your project if you don't modify Quickwit. However, if you do and you are distributing your modified version to the public, you have to make the modifications public.
-We also provide a commercial license for enterprises to provide support and a voice on our roadmap.
+Quickwit is open-source under the Apache License, Version 2.0 - Apache-2.0.
 
 ### Is it possible to set up Quickwit for a High Availability (HA)?
 
 HA is available for search, for indexing it's available only with a Kafka source.
-
-### What is Quickwit's business model?
-
-Our business model relies on our commercial license. There is no plan to become SaaS soon.
-
 
 # 🤝 Contribute and spread the word
 
