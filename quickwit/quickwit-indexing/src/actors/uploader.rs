@@ -314,15 +314,23 @@ impl Handler<PackagedSplitBatch> for Uploader {
                     if batch.publish_lock.is_dead() {
                         // TODO: Remove the junk right away?
                         info!("splits' publish lock is dead");
-                        split_update_sender.discard()?;
-                        return Ok(());
+                        if let Err(e) = split_update_sender.discard() {
+                            warn!(cause=?e, "could not discard split");
+                        }
+                        return;
                     }
 
-                    let split_streamer = SplitPayloadBuilder::get_split_payload(
+                    let split_streamer = match SplitPayloadBuilder::get_split_payload(
                         &packaged_split.split_files,
                         &packaged_split.serialized_split_fields,
                         &packaged_split.hotcache_bytes,
-                    )?;
+                    ) {
+                        Ok(split_streamer) => split_streamer,
+                        Err(e) => {
+                            warn!(cause=?e, split_id=packaged_split.split_id(), "could not create split streamer");
+                            return;
+                        }
+                    };
                     let split_metadata = create_split_metadata(
                         &merge_policy,
                         retention_policy.as_ref(),
@@ -340,11 +348,22 @@ impl Handler<PackagedSplitBatch> for Uploader {
 
                 }
 
-                let stage_splits_request = StageSplitsRequest::try_from_splits_metadata(index_uid.clone(), split_metadata_list.clone())?;
-                metastore
+                let stage_splits_request = match StageSplitsRequest::try_from_splits_metadata(index_uid.clone(), split_metadata_list.clone()) {
+                    Ok(stage_splits_request) => stage_splits_request,
+                    Err(e) => {
+                        warn!(cause=?e, "could not create stage splits request");
+                        return;
+                    }
+                };
+                if let Err(e) = metastore
                     .clone()
                     .stage_splits(stage_splits_request)
-                    .await?;
+                    .await
+                {
+                    warn!(cause=?e, "failed to stage splits");
+                    return;
+                };
+
                 counters.num_staged_splits.fetch_add(split_metadata_list.len() as u64, Ordering::SeqCst);
 
                 let mut packaged_splits_and_metadata = Vec::with_capacity(batch.splits.len());
@@ -363,7 +382,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
                     if let Err(cause) = upload_result {
                         warn!(cause=?cause, split_id=packaged_split.split_id(), "Failed to upload split. Killing!");
                         kill_switch.kill();
-                        bail!("failed to upload split `{}`. killing the actor context", packaged_split.split_id());
+                        return;
                     }
 
                     packaged_splits_and_metadata.push((packaged_split, metadata));
@@ -379,11 +398,17 @@ impl Handler<PackagedSplitBatch> for Uploader {
                     batch.batch_parent_span,
                 );
 
-                split_update_sender.send(splits_update, &ctx_clone).await?;
+                let target = match &split_update_sender {
+                    SplitsUpdateSender::Sequencer(_) => "sequencer",
+                    SplitsUpdateSender::Publisher(_) => "publisher",
+                };
+                if let Err(e) = split_update_sender.send(splits_update, &ctx_clone).await {
+                    warn!(cause=?e, target, "failed to send uploaded split");
+                    return;
+                }
                 // We explicitly drop it in order to force move the permit guard into the async
                 // task.
                 mem::drop(permit_guard);
-                Result::<(), anyhow::Error>::Ok(())
             }
             .instrument(Span::current()),
             "upload_single_task"
