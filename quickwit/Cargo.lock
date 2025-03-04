@@ -6861,6 +6861,7 @@ dependencies = [
  "async-trait",
  "itertools 0.13.0",
  "once_cell",
+ "postcard",
  "prost 0.11.9",
  "prost-types 0.11.9",
  "quickwit-actors",

@@ -2,14 +2,18 @@ use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use tantivy::aggregation::agg_result::{
     AggregationResult as TantivyAggregationResult, AggregationResults as TantivyAggregationResults,
-    BucketEntries as TantivyBucketEntries, BucketResult as TantivyBucketResult,
-    MetricResult as TantivyMetricResult,
+    BucketEntries as TantivyBucketEntries, BucketEntry as TantivyBucketEntry,
+    BucketResult as TantivyBucketResult, MetricResult as TantivyMetricResult,
+    RangeBucketEntry as TantivyRangeBucketEntry,
 };
 use tantivy::aggregation::metric::{
     ExtendedStats, PercentilesMetricResult, SingleMetricResult, Stats, TopHitsMetricResult,
 };
+use tantivy::aggregation::Key as TantivyKey;
 
-#[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
+// hopefully all From in this module are no-ops, otherwise, this is a very sad situation
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 /// The final aggegation result.
 pub struct AggregationResults(pub FxHashMap<String, AggregationResult>);
 
@@ -25,7 +29,7 @@ impl From<AggregationResults> for TantivyAggregationResults {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 /// An aggregation is either a bucket or a metric.
 pub enum AggregationResult {
     /// Bucket result variant.
@@ -120,7 +124,7 @@ impl From<MetricResult> for TantivyMetricResult {
 }
 
 /// BucketEntry holds bucket aggregation result types.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum BucketResult {
     /// This is the range entry for a bucket, which contains a key, count, from, to, and optionally
     /// sub-aggregations.
@@ -146,7 +150,6 @@ pub enum BucketResult {
         buckets: Vec<BucketEntry>,
         /// The number of documents that didn’t make it into to TOP N due to shard_size or size
         sum_other_doc_count: u64,
-        #[serde(skip_serializing_if = "Option::is_none")]
         /// The upper bound error for the doc count of each term.
         doc_count_error_upper_bound: Option<u64>,
     },
@@ -166,7 +169,7 @@ impl From<TantivyBucketResult> for BucketResult {
                 sum_other_doc_count,
                 doc_count_error_upper_bound,
             } => BucketResult::Terms {
-                buckets,
+                buckets: buckets.into_iter().map(Into::into).collect(),
                 sum_other_doc_count,
                 doc_count_error_upper_bound,
             },
@@ -188,7 +191,7 @@ impl From<BucketResult> for TantivyBucketResult {
                 sum_other_doc_count,
                 doc_count_error_upper_bound,
             } => TantivyBucketResult::Terms {
-                buckets,
+                buckets: buckets.into_iter().map(Into::into).collect(),
                 sum_other_doc_count,
                 doc_count_error_upper_bound,
             },
@@ -206,23 +209,147 @@ pub enum BucketEntries<T> {
     HashMap(FxHashMap<String, T>),
 }
 
-impl<T> From<TantivyBucketEntries<T>> for BucketEntries<T> {
-    fn from(value: TantivyBucketEntries<T>) -> BucketEntries<T> {
+impl<T, U> From<TantivyBucketEntries<T>> for BucketEntries<U>
+where U: From<T>
+{
+    fn from(value: TantivyBucketEntries<T>) -> BucketEntries<U> {
         match value {
-            TantivyBucketEntries::Vec(vec) => BucketEntries::Vec(vec),
-            TantivyBucketEntries::HashMap(map) => BucketEntries::HashMap(map),
+            TantivyBucketEntries::Vec(vec) => {
+                BucketEntries::Vec(vec.into_iter().map(Into::into).collect())
+            }
+            TantivyBucketEntries::HashMap(map) => {
+                BucketEntries::HashMap(map.into_iter().map(|(k, v)| (k, v.into())).collect())
+            }
         }
     }
 }
 
-impl<T> From<BucketEntries<T>> for TantivyBucketEntries<T> {
-    fn from(value: BucketEntries<T>) -> TantivyBucketEntries<T> {
+impl<T, U> From<BucketEntries<T>> for TantivyBucketEntries<U>
+where U: From<T>
+{
+    fn from(value: BucketEntries<T>) -> TantivyBucketEntries<U> {
         match value {
-            BucketEntries::Vec(vec) => TantivyBucketEntries::Vec(vec),
-            BucketEntries::HashMap(map) => TantivyBucketEntries::HashMap(map),
+            BucketEntries::Vec(vec) => {
+                TantivyBucketEntries::Vec(vec.into_iter().map(Into::into).collect())
+            }
+            BucketEntries::HashMap(map) => {
+                TantivyBucketEntries::HashMap(map.into_iter().map(|(k, v)| (k, v.into())).collect())
+            }
         }
     }
 }
 
-pub type BucketEntry = tantivy::aggregation::agg_result::BucketEntry;
-pub type RangeBucketEntry = tantivy::aggregation::agg_result::RangeBucketEntry;
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RangeBucketEntry {
+    /// The identifier of the bucket.
+    pub key: Key,
+    /// Number of documents in the bucket.
+    pub doc_count: u64,
+    /// Sub-aggregations in this bucket.
+    // here we had a flatten, postcard didn't like that (unknown map size)
+    pub sub_aggregation: AggregationResults,
+    /// The from range of the bucket. Equals `f64::MIN` when `None`.
+    pub from: Option<f64>,
+    /// The to range of the bucket. Equals `f64::MAX` when `None`.
+    pub to: Option<f64>,
+    /// The optional string representation for the `from` range.
+    pub from_as_string: Option<String>,
+    /// The optional string representation for the `to` range.
+    pub to_as_string: Option<String>,
+}
+
+impl From<TantivyRangeBucketEntry> for RangeBucketEntry {
+    fn from(value: TantivyRangeBucketEntry) -> RangeBucketEntry {
+        RangeBucketEntry {
+            key: value.key.into(),
+            doc_count: value.doc_count,
+            from: value.from,
+            to: value.to,
+            from_as_string: value.from_as_string,
+            to_as_string: value.to_as_string,
+            sub_aggregation: value.sub_aggregation.into(),
+        }
+    }
+}
+
+impl From<RangeBucketEntry> for TantivyRangeBucketEntry {
+    fn from(value: RangeBucketEntry) -> TantivyRangeBucketEntry {
+        TantivyRangeBucketEntry {
+            key: value.key.into(),
+            doc_count: value.doc_count,
+            from: value.from,
+            to: value.to,
+            from_as_string: value.from_as_string,
+            to_as_string: value.to_as_string,
+            sub_aggregation: value.sub_aggregation.into(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BucketEntry {
+    /// The string representation of the bucket.
+    pub key_as_string: Option<String>,
+    /// The identifier of the bucket.
+    pub key: Key,
+    /// Number of documents in the bucket.
+    pub doc_count: u64,
+    /// Sub-aggregations in this bucket.
+    pub sub_aggregation: AggregationResults,
+}
+
+impl From<TantivyBucketEntry> for BucketEntry {
+    fn from(value: TantivyBucketEntry) -> BucketEntry {
+        BucketEntry {
+            key_as_string: value.key_as_string,
+            key: value.key.into(),
+            doc_count: value.doc_count,
+            sub_aggregation: value.sub_aggregation.into(),
+        }
+    }
+}
+
+impl From<BucketEntry> for TantivyBucketEntry {
+    fn from(value: BucketEntry) -> TantivyBucketEntry {
+        TantivyBucketEntry {
+            key_as_string: value.key_as_string,
+            key: value.key.into(),
+            doc_count: value.doc_count,
+            sub_aggregation: value.sub_aggregation.into(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum Key {
+    /// String key
+    Str(String),
+    /// `i64` key
+    I64(i64),
+    /// `u64` key
+    U64(u64),
+    /// `f64` key
+    F64(f64),
+}
+
+impl From<TantivyKey> for Key {
+    fn from(value: TantivyKey) -> Key {
+        match value {
+            TantivyKey::Str(s) => Key::Str(s),
+            TantivyKey::I64(i) => Key::I64(i),
+            TantivyKey::U64(u) => Key::U64(u),
+            TantivyKey::F64(f) => Key::F64(f),
+        }
+    }
+}
+
+impl From<Key> for TantivyKey {
+    fn from(value: Key) -> TantivyKey {
+        match value {
+            Key::Str(s) => TantivyKey::Str(s),
+            Key::I64(i) => TantivyKey::I64(i),
+            Key::U64(u) => TantivyKey::U64(u),
+            Key::F64(f) => TantivyKey::F64(f),
+        }
+    }
+}
