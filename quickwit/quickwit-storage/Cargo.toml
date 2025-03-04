@@ -26,6 +26,7 @@ once_cell = { workspace = true }
 pin-project = { workspace = true }
 rand = { workspace = true }
 regex = { workspace = true }
+murmurhash32 = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tantivy = { workspace = true }
