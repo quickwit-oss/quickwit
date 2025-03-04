@@ -249,6 +249,7 @@ fn prepend_at_char(schedule: &str) -> String {
 pub struct IndexConfig {
     pub index_id: IndexId,
     pub index_uri: Uri,
+    //pub pipline: PipelineStepConfig,
     pub doc_mapping: DocMapping,
     pub indexing_settings: IndexingSettings,
     pub search_settings: SearchSettings,

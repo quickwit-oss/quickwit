@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod rest_handler;
+mod grok;
+mod remap_field;
 
-pub(crate) use rest_handler::datadog_ingest_api_handlers;
-pub use rest_handler::DatadogApi;
+pub use grok::*;
+pub use remap_field::*;
