@@ -6858,6 +6858,7 @@ dependencies = [
  "quickwit-query",
  "serde",
  "serde_json",
+ "serde_with",
  "thiserror 1.0.69",
  "time",
  "tracing",

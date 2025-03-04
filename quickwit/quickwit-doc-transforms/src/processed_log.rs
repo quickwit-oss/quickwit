@@ -13,12 +13,13 @@
 // limitations under the License.
 
 use std::collections::HashMap;
-use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use quickwit_datetime::{parse_date_time_str, parse_timestamp, DateTimeInputFormat};
-use serde::{self, Deserialize, Deserializer, Serialize};
+use serde::{self, Deserialize, Serialize};
 use serde_json::Value;
+use serde_with::formats::CommaSeparator;
+use serde_with::{serde_as, StringWithSeparator};
 use time::OffsetDateTime;
 use tracing::warn;
 use uuid::Uuid;
@@ -27,6 +28,7 @@ use crate::normalize_field::{normalize_fields, NormalizeField};
 use crate::{convert_tags, StringOrVec};
 
 // https://github.com/DataDog/datadog-agent/blob/a33248c2bc125920a9577af1e16f12298875a4ad/pkg/logs/processor/json.go#L23-L49
+#[serde_as]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct DatadogLogMsg {
@@ -37,27 +39,9 @@ pub struct DatadogLogMsg {
     pub hostname: String,
     pub service: String,
     pub ddsource: String,
-    #[serde(deserialize_with = "from_simple_list")]
-    pub ddtags: Option<Vec<String>>,
-}
-
-/// Deserializes a comma separated string of values
-/// into a [`Vec<T>`].
-/// Used to deserialize list of values from the query string.
-pub fn from_simple_list<'de, D, T>(deserializer: D) -> Result<Option<Vec<T>>, D::Error>
-where
-    D: Deserializer<'de>,
-    T: FromStr,
-    <T as FromStr>::Err: ToString,
-{
-    let str_sequence = String::deserialize(deserializer)?;
-    let list = str_sequence
-        .trim_matches(',')
-        .split(',')
-        .map(|item| T::from_str(item))
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|err| serde::de::Error::custom(err.to_string()))?;
-    Ok(Some(list))
+    #[serde_as(as = "StringWithSeparator::<CommaSeparator, String>")]
+    #[serde(default)]
+    pub ddtags: Vec<String>,
 }
 
 /// TODO: Move to pipeline later on
@@ -102,7 +86,7 @@ impl ProcessedLog {
         let ingest_size_in_bytes = serde_json::to_string(&msg)
             .map(|s| s.len())
             .unwrap_or_default();
-        let tags = msg.ddtags.unwrap_or_default();
+        let tags = msg.ddtags;
         let mut processed = ProcessedLog {
             message: msg.message,
             ingest_size_in_bytes,
@@ -267,12 +251,58 @@ pub(crate) mod tests {
             hostname: "test-host".to_string(),
             service: "test-service".to_string(),
             ddsource: "rust".to_string(),
-            ddtags: Some(vec!["env:dev".into(), "region:us-east".into()]),
+            ddtags: vec!["env:dev".into(), "region:us-east".into()],
         }
     }
 
     pub fn make_processed_log() -> ProcessedLog {
         ProcessedLog::from_datadog_log_msg(make_datadog_log_msg())
+    }
+
+    #[test]
+    fn test_deserialize_datadog_log_msg() {
+        let json = r#"{ 
+                "message": "Overridden message", 
+                "status": "info", 
+                "ddtags": "env:dev,region:us-east",
+                "timestamp": 1620000000000,
+                "hostname": "test-host",
+                "service": "test-service",
+                "ddsource": "rust"
+            }"#
+        .to_string();
+        let msg: DatadogLogMsg = serde_json::from_str(&json).unwrap();
+        assert_eq!(msg.message, "Overridden message");
+        assert_eq!(msg.status.unwrap(), "info");
+        assert_eq!(msg.hostname, "test-host");
+        assert_eq!(msg.service, "test-service");
+        assert_eq!(msg.ddsource, "rust");
+        assert_eq!(
+            msg.ddtags,
+            vec!["env:dev".to_string(), "region:us-east".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_deserialize_datadog_log_msg_with_no_tags() {
+        // Test with no tags
+        // unclear if tags is optional or not
+        let json = r#"{ 
+                "message": "Overridden message", 
+                "status": "info", 
+                "timestamp": 1620000000000,
+                "hostname": "test-host",
+                "service": "test-service",
+                "ddsource": "rust"
+            }"#
+        .to_string();
+        let msg: DatadogLogMsg = serde_json::from_str(&json).unwrap();
+        assert_eq!(msg.message, "Overridden message");
+        assert_eq!(msg.status.unwrap(), "info");
+        assert_eq!(msg.hostname, "test-host");
+        assert_eq!(msg.service, "test-service");
+        assert_eq!(msg.ddsource, "rust");
+        assert_eq!(msg.ddtags, Vec::<String>::new());
     }
 
     #[test]
