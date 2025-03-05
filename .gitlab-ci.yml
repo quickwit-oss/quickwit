@@ -23,7 +23,7 @@ build_image:
   rules:
     - changes:
         - .gitlab-ci.yml
-        - quickwit/**
+        - quickwit/**/*
   id_tokens:
     DDSIGN_ID_TOKEN:
       aud: image-integrity
