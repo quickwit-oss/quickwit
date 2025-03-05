@@ -23,6 +23,7 @@ build_image:
   rules:
     - changes:
         - .gitlab-ci.yml
+        - Dockerfile
         - quickwit/**/*
   id_tokens:
     DDSIGN_ID_TOKEN:
