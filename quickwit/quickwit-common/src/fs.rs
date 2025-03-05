@@ -42,26 +42,30 @@ pub fn get_disk_size(dir_path: &Path) -> Option<ByteSize> {
     let disks = sysinfo::Disks::new_with_refreshed_list_specifics(
         DiskRefreshKind::nothing().with_storage(),
     );
-    let mut best_match: Option<&Disk> = None;
+    let mut best_match: Option<(&Disk, PathBuf)> = None;
+    let dir_path = dir_path.canonicalize().ok()?;
     for disk in disks.list() {
-        if dir_path.starts_with(disk.mount_point()) {
+        let canonical_mount_path = disk.mount_point().canonicalize().ok()?;
+        if dir_path.starts_with(&canonical_mount_path) {
             match best_match {
-                Some(best_disk) if disk.mount_point().starts_with(best_disk.mount_point()) => {
-                    best_match = Some(disk);
+                Some((_, best_mount_point))
+                    if canonical_mount_path.starts_with(&best_mount_point) =>
+                {
+                    best_match = Some((disk, canonical_mount_path.clone()));
                 }
                 None => {
-                    best_match = Some(disk);
+                    best_match = Some((disk, canonical_mount_path.clone()));
                 }
                 _ => {}
             }
         }
-        if disk.mount_point().starts_with(dir_path) && disk.mount_point() != dir_path {
+        if canonical_mount_path.starts_with(&dir_path) && canonical_mount_path != dir_path {
             // if a disk is mounted within the directory, we can't determine the
             // size of the directories disk
             return None;
         }
     }
-    best_match.map(|disk| ByteSize::b(disk.total_space()))
+    best_match.map(|(disk, _)| ByteSize::b(disk.total_space()))
 }
 
 #[cfg(test)]
