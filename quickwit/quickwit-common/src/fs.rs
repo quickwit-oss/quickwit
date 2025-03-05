@@ -14,6 +14,8 @@
 
 use std::path::{Path, PathBuf};
 
+use bytesize::ByteSize;
+use sysinfo::{Disk, DiskRefreshKind};
 use tokio;
 
 /// Deletes the contents of a directory.
@@ -32,6 +34,34 @@ pub async fn empty_dir<P: AsRef<Path>>(path: P) -> anyhow::Result<()> {
 /// Helper function to get the indexer split cache path.
 pub fn get_cache_directory_path(data_dir_path: &Path) -> PathBuf {
     data_dir_path.join("indexer-split-cache").join("splits")
+}
+
+/// Get the total size of the disk containing the given directory, or `None` if
+/// it couldn't be determined.
+pub fn get_disk_size(dir_path: &Path) -> Option<ByteSize> {
+    let disks = sysinfo::Disks::new_with_refreshed_list_specifics(
+        DiskRefreshKind::nothing().with_storage(),
+    );
+    let mut best_match: Option<&Disk> = None;
+    for disk in disks.list() {
+        if dir_path.starts_with(disk.mount_point()) {
+            match best_match {
+                Some(best_disk) if disk.mount_point().starts_with(best_disk.mount_point()) => {
+                    best_match = Some(disk);
+                }
+                None => {
+                    best_match = Some(disk);
+                }
+                _ => {}
+            }
+        }
+        if disk.mount_point().starts_with(dir_path) && disk.mount_point() != dir_path {
+            // if a disk is mounted within the directory, we can't determine the
+            // size of the directories disk
+            return None;
+        }
+    }
+    best_match.map(|disk| ByteSize::b(disk.total_space()))
 }
 
 #[cfg(test)]
