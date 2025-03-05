@@ -139,7 +139,7 @@ encoding_rs_io,https://github.com/BurntSushi/encoding_rs_io,MIT OR Apache-2.0,An
 enum-iterator,https://github.com/stephaneyfx/enum-iterator,MIT,Stephane Raux <stephaneyfx@gmail.com>
 enum-iterator-derive,https://github.com/stephaneyfx/enum-iterator,0BSD,Stephane Raux <stephaneyfx@gmail.com>
 env_logger,https://github.com/rust-cli/env_logger,MIT OR Apache-2.0,The env_logger Authors
-equivalent,https://github.com/cuviper/equivalent,Apache-2.0 OR MIT,The equivalent Authors
+equivalent,https://github.com/indexmap-rs/equivalent,Apache-2.0 OR MIT,The equivalent Authors
 errno,https://github.com/lambda-fairy/rust-errno,MIT OR Apache-2.0,Chris Wong <lambda.fairy@gmail.com>
 event-listener,https://github.com/smol-rs/event-listener,Apache-2.0 OR MIT,Stjepan Glavina <stjepang@gmail.com>
 extend,https://github.com/davidpdrsn/ext,MIT,David Pedersen <david.pdrsn@gmail.com>
@@ -277,6 +277,7 @@ new_string_template,https://github.com/hasezoey/new_string_template,MIT,hasezoey
 no-std-net,https://github.com/dunmatt/no-std-net,MIT,M@ Dunlap <mattdunlap@gmail.com>
 nom,https://github.com/Geal/nom,MIT,contact@geoffroycouprie.com
 normalize-line-endings,https://github.com/derekdreery/normalize-line-endings,Apache-2.0,Richard Dodd <richdodj@gmail.com>
+ntapi,https://github.com/MSxDOS/ntapi,Apache-2.0 OR MIT,MSxDOS <melcodos@gmail.com>
 nu-ansi-term,https://github.com/nushell/nu-ansi-term,MIT,"ogham@bsago.me, Ryan Scheel (Havvy) <ryan.havvy@gmail.com>, Josh Triplett <josh@joshtriplett.org>, The Nushell Project Developers"
 num-bigint,https://github.com/rust-num/num-bigint,MIT OR Apache-2.0,The Rust Project Developers
 num-conv,https://github.com/jhpratt/num-conv,MIT OR Apache-2.0,Jacob Pratt <jacob@jhpratt.dev>
@@ -364,7 +365,7 @@ regex-syntax,https://github.com/rust-lang/regex/tree/master/regex-syntax,MIT OR 
 reqwest,https://github.com/seanmonstar/reqwest,MIT OR Apache-2.0,Sean McArthur <sean@seanmonstar.com>
 retain_mut,https://github.com/upsuper/retain_mut,MIT,Xidorn Quan <me@upsuper.org>
 rfc6979,https://github.com/RustCrypto/signatures/tree/master/rfc6979,Apache-2.0 OR MIT,RustCrypto Developers
-ring,https://github.com/briansmith/ring,ISC AND Custom,Brian Smith <brian@briansmith.org>
+ring,https://github.com/ctz/ring,Apache-2.0 AND ISC,The ring Authors
 roxmltree,https://github.com/RazrFalcon/roxmltree,MIT OR Apache-2.0,Evgeniy Reizner <razrfalcon@gmail.com>
 rust-embed,https://github.com/pyros2097/rust-embed,MIT,pyros2097 <pyros2097@gmail.com>
 rust-stemmers,https://github.com/CurrySoftware/rust-stemmers,MIT OR BSD-3-Clause,"Jakob Demler <jdemler@curry-software.com>, CurrySoftware <info@curry-software.com>"
@@ -425,6 +426,7 @@ subtle,https://github.com/dalek-cryptography/subtle,BSD-3-Clause,"Isis Lovecruft
 syn,https://github.com/dtolnay/syn,MIT OR Apache-2.0,David Tolnay <dtolnay@gmail.com>
 sync_wrapper,https://github.com/Actyx/sync_wrapper,Apache-2.0,Actyx AG <developer@actyx.io>
 synstructure,https://github.com/mystor/synstructure,MIT,Nika Layzell <nika@thelayzells.com>
+sysinfo,https://github.com/GuillaumeGomez/sysinfo,MIT,Guillaume Gomez <guillaume1.gomez@gmail.com>
 system-configuration,https://github.com/mullvad/system-configuration-rs,MIT OR Apache-2.0,Mullvad VPN
 tabled,https://github.com/zhiburt/tabled,MIT,Maxim Zhiburt <zhiburt@gmail.com>
 tantivy,https://github.com/quickwit-oss/tantivy,MIT,Paul Masurel <paul.masurel@gmail.com>
@@ -510,20 +512,7 @@ whichlang,https://github.com/quickwit-oss/whichlang,MIT,"Quickwit, Inc. <hello@q
 winapi,https://github.com/retep998/winapi-rs,MIT,Peter Atashian <retep998@gmail.com>
 winapi,https://github.com/retep998/winapi-rs,MIT OR Apache-2.0,Peter Atashian <retep998@gmail.com>
 winapi-util,https://github.com/BurntSushi/winapi-util,Unlicense OR MIT,Andrew Gallant <jamslam@gmail.com>
-windows-core,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
-windows-registry,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
-windows-result,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
-windows-strings,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
-windows-sys,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
-windows-targets,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
-windows_aarch64_gnullvm,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
-windows_aarch64_msvc,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
-windows_i686_gnu,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
-windows_i686_gnullvm,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
-windows_i686_msvc,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
-windows_x86_64_gnu,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
-windows_x86_64_gnullvm,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
-windows_x86_64_msvc,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
+windows,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
 winnow,https://github.com/winnow-rs/winnow,MIT,The winnow Authors
 winreg,https://github.com/gentoo90/winreg-rs,MIT,Igor Shaula <gentoo90@gmail.com>
 wit-bindgen-rt,https://github.com/bytecodealliance/wasi-rs,Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT,The wit-bindgen-rt Authors
@@ -536,6 +525,7 @@ yansi,https://github.com/SergioBenitez/yansi,MIT OR Apache-2.0,Sergio Benitez <s
 yoke,https://github.com/unicode-org/icu4x,Unicode-3.0,Manish Goregaokar <manishsmail@gmail.com>
 yoke-derive,https://github.com/unicode-org/icu4x,Unicode-3.0,Manish Goregaokar <manishsmail@gmail.com>
 zerocopy,https://github.com/google/zerocopy,BSD-2-Clause OR Apache-2.0 OR MIT,Joshua Liebow-Feeser <joshlf@google.com>
+zerocopy,https://github.com/google/zerocopy,BSD-2-Clause OR Apache-2.0 OR MIT,"Joshua Liebow-Feeser <joshlf@google.com>, Jack Wrenn <jswrenn@amazon.com>"
 zerofrom,https://github.com/unicode-org/icu4x,Unicode-3.0,Manish Goregaokar <manishsmail@gmail.com>
 zerofrom-derive,https://github.com/unicode-org/icu4x,Unicode-3.0,Manish Goregaokar <manishsmail@gmail.com>
 zeroize,https://github.com/RustCrypto/utils/tree/master/zeroize,Apache-2.0 OR MIT,The RustCrypto Project Developers
