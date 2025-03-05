@@ -14,6 +14,8 @@
 
 use std::path::{Path, PathBuf};
 
+use bytesize::ByteSize;
+use sysinfo::{Disk, DiskRefreshKind};
 use tokio;
 
 /// Deletes the contents of a directory.
@@ -32,6 +34,38 @@ pub async fn empty_dir<P: AsRef<Path>>(path: P) -> anyhow::Result<()> {
 /// Helper function to get the indexer split cache path.
 pub fn get_cache_directory_path(data_dir_path: &Path) -> PathBuf {
     data_dir_path.join("indexer-split-cache").join("splits")
+}
+
+/// Get the total size of the disk containing the given directory, or `None` if
+/// it couldn't be determined.
+pub fn get_disk_size(dir_path: &Path) -> Option<ByteSize> {
+    let disks = sysinfo::Disks::new_with_refreshed_list_specifics(
+        DiskRefreshKind::nothing().with_storage(),
+    );
+    let mut best_match: Option<(&Disk, PathBuf)> = None;
+    let dir_path = dir_path.canonicalize().ok()?;
+    for disk in disks.list() {
+        let canonical_mount_path = disk.mount_point().canonicalize().ok()?;
+        if dir_path.starts_with(&canonical_mount_path) {
+            match best_match {
+                Some((_, best_mount_point))
+                    if canonical_mount_path.starts_with(&best_mount_point) =>
+                {
+                    best_match = Some((disk, canonical_mount_path.clone()));
+                }
+                None => {
+                    best_match = Some((disk, canonical_mount_path.clone()));
+                }
+                _ => {}
+            }
+        }
+        if canonical_mount_path.starts_with(&dir_path) && canonical_mount_path != dir_path {
+            // if a disk is mounted within the directory, we can't determine the
+            // size of the directories disk
+            return None;
+        }
+    }
+    best_match.map(|(disk, _)| ByteSize::b(disk.total_space()))
 }
 
 #[cfg(test)]

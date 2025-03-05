@@ -29,14 +29,13 @@ RUN apt-get -y update \
                           protobuf-compiler \
     && rm -rf /var/lib/apt/lists/*
 
-# Required by tonic
-RUN rustup component add rustfmt
-
 COPY quickwit /quickwit
 COPY config/quickwit.yaml /quickwit/config/quickwit.yaml
 COPY --from=ui-builder /quickwit/quickwit-ui/build /quickwit/quickwit-ui/build
 
 WORKDIR /quickwit
+
+RUN rustup toolchain install
 
 RUN echo "Building workspace with feature(s) '$CARGO_FEATURES' and profile '$CARGO_PROFILE'" \
     && RUSTFLAGS="--cfg tokio_unstable" \
