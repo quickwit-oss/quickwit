@@ -65,7 +65,7 @@ jobs:
         run: curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain none -y
       - name: Setup stable Rust Toolchain
         if: steps.modified.outputs.rust_src == 'true'
-        run: rustup show
+        run: rustup show active-toolchain || rustup toolchain install
         working-directory: ./quickwit
       - name: Setup cache
         uses: Swatinem/rust-cache@v2
@@ -120,7 +120,7 @@ jobs:
         run: rustup toolchain install nightly
       - name: Setup stable Rust Toolchain
         if: steps.modified.outputs.rust_src == 'true'
-        run: rustup show
+        run: rustup show active-toolchain || rustup toolchain install
         working-directory: ./quickwit
       - name: Setup cache
         if: steps.modified.outputs.rust_src == 'true'
