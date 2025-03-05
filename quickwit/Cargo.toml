@@ -273,7 +273,7 @@ ulid = "1.1"
 username = "0.2"
 utoipa = { version = "4.2", features = ["time", "ulid"] }
 uuid = { version = "1.10", features = ["v4", "serde"] }
-vrl = { version = "0.19", default-features = false, features = [
+vrl = { version = "0.22", default-features = false, features = [
   "compiler",
   "diagnostic",
   "stdlib",
@@ -345,7 +345,7 @@ tantivy-fst = "0.5"
 
 # This is actually not used directly the goal is to fix the version
 # used by reqwest.
-encoding_rs = "=0.8.32"
+encoding_rs = "=0.8.35"
 
 [patch.crates-io]
 sasl2-sys = { git = "https://github.com/quickwit-oss/rust-sasl/", rev = "085a4c7" }

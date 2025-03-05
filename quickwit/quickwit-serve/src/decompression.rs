@@ -16,7 +16,7 @@ use std::io::Read;
 use std::sync::OnceLock;
 
 use bytes::Bytes;
-use flate2::read::GzDecoder;
+use flate2::read::{MultiGzDecoder, ZlibDecoder};
 use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
 use quickwit_common::thread_pool::run_cpu_intensive;
 use thiserror::Error;
@@ -39,10 +39,11 @@ fn get_ingest_load_shield() -> &'static LoadShield {
 /// searchable, so the second approach is more suitable for this use case.
 async fn decompress_body(encoding: Option<String>, body: Bytes) -> Result<Bytes, warp::Rejection> {
     match encoding.as_deref() {
+        Some("identity") => Ok(body),
         Some("gzip" | "x-gzip") => {
             let decompressed = run_cpu_intensive(move || {
                 let mut decompressed = Vec::new();
-                let mut decoder = GzDecoder::new(body.as_ref());
+                let mut decoder = MultiGzDecoder::new(body.as_ref());
                 decoder
                     .read_to_end(&mut decompressed)
                     .map_err(|_| warp::reject::custom(CorruptedData))?;
@@ -57,6 +58,18 @@ async fn decompress_body(encoding: Option<String>, body: Bytes) -> Result<Bytes,
                 zstd::decode_all(body.as_ref())
                     .map(Bytes::from)
                     .map_err(|_| warp::reject::custom(CorruptedData))
+            })
+            .await
+            .map_err(|_| warp::reject::custom(CorruptedData))??;
+            Ok(decompressed)
+        }
+        Some("deflate" | "x-deflate") => {
+            let decompressed = run_cpu_intensive(move || {
+                let mut decompressed = Vec::new();
+                ZlibDecoder::new(body.as_ref())
+                    .read_to_end(&mut decompressed)
+                    .map_err(|_| warp::reject::custom(CorruptedData))?;
+                Result::<_, warp::Rejection>::Ok(Bytes::from(decompressed))
             })
             .await
             .map_err(|_| warp::reject::custom(CorruptedData))??;
