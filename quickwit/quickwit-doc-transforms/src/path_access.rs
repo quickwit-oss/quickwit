@@ -96,11 +96,11 @@ pub fn set_or_create_nested_mut(root: &mut serde_json::Value, segments: &[String
         }
         let map = current.as_object_mut().unwrap();
         if is_last {
-            // Final segment: if not present, insert Null
-            if !map.contains_key(segment) {
-                map.insert(segment.clone(), Value::Null);
+            if map.contains_key(segment) {
+                *map.get_mut(segment).unwrap() = value;
+            } else {
+                map.insert(segment.clone(), value);
             }
-            *map.get_mut(segment).unwrap() = value;
             return;
         } else {
             // Intermediate
@@ -174,7 +174,6 @@ mod tests {
         *got = json!("user");
         assert_eq!(value["attributes"]["role"], "user");
 
-        // Going deeper
         let parsed = parse_path("attributes.metadata.enabled");
         let got = get_nested_mut(&mut value, &parsed.segments).unwrap();
         assert_eq!(*got, json!(true));
