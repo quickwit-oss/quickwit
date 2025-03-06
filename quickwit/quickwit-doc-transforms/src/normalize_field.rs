@@ -31,7 +31,10 @@ impl NormalizeField {
     /// Creates a NormalizeField by splitting a comma-separated list of aliases,
     /// e.g. `("@timestamp, timestamp, time", "timestamp", true)`
     pub fn from_comma_sep(from_csv: &str, to: &str, remove_old: bool) -> Self {
-        let from = from_csv.split(',').map(|s| s.trim().to_owned()).collect();
+        let from = from_csv
+            .split(',')
+            .map(|field| field.trim().to_string())
+            .collect();
         NormalizeField {
             from,
             to: to.to_owned(),
@@ -71,5 +74,75 @@ pub fn normalize_fields(
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+    use crate::processed_log::tests::make_processed_log;
+
+    #[test]
+    fn test_from_comma_sep() {
+        let nf = NormalizeField::from_comma_sep("@timestamp, timestamp, time", "timestamp", true);
+        assert_eq!(nf.from, vec!["@timestamp", "timestamp", "time"]);
+        assert_eq!(nf.to, "timestamp");
+        assert!(nf.remove_old);
+    }
+
+    #[test]
+    fn test_normalize_fields_remove_old() {
+        let mut log = make_processed_log();
+        log.custom.insert("@timestamp".to_string(), json!("value1"));
+
+        let nf = NormalizeField::from_comma_sep("@timestamp, timestamp", "timestamp", true);
+        let mut remapped = false;
+        normalize_fields(&mut log, &[nf], |log, new_field, value| {
+            log.custom.insert(new_field.to_string(), value);
+            remapped = true;
+        });
+
+        // Verify that the alias is removed and the normalized field is added.
+        assert!(!log.custom.contains_key("@timestamp"));
+        assert_eq!(log.custom.get("timestamp"), Some(&json!("value1")));
+        assert!(remapped);
+    }
+
+    #[test]
+    fn test_normalize_fields_preserve_old() {
+        let mut log = make_processed_log();
+        log.custom.insert("@timestamp".to_string(), json!("value1"));
+
+        let nf = NormalizeField::from_comma_sep("@timestamp, timestamp", "timestamp", false);
+        let mut remapped = false;
+        normalize_fields(&mut log, &[nf], |log, new_field, value| {
+            log.custom.insert(new_field.to_string(), value);
+            remapped = true;
+        });
+
+        // Verify that the original alias remains and the normalized field is added.
+        assert!(log.custom.contains_key("@timestamp"));
+        assert_eq!(log.custom.get("timestamp"), Some(&json!("value1")));
+        assert!(remapped);
+    }
+
+    #[test]
+    fn test_normalize_fields_no_alias_found() {
+        let mut log = make_processed_log();
+        log.custom.insert("other".to_string(), json!("value1"));
+
+        let nf = NormalizeField::from_comma_sep("@timestamp, timestamp", "timestamp", true);
+        let mut remapped = false;
+        normalize_fields(&mut log, &[nf], |log, new_field, value| {
+            log.custom.insert(new_field.to_string(), value);
+            remapped = true;
+        });
+
+        // Since no alias was found, nothing should have been remapped.
+        assert!(!remapped);
+        assert!(log.custom.contains_key("other"));
+        assert!(!log.custom.contains_key("timestamp"));
     }
 }

@@ -30,7 +30,7 @@ pub fn build_vrl_matcher(query: &str) -> Result<Box<dyn Matcher<ProcessedLog>>, 
         message: e.to_string(),
     })?;
 
-    Ok(build_matcher(&node, &FilterResolver).unwrap())
+    Ok(build_matcher(&node, &FilterResolver)?)
 }
 
 #[derive(Debug, Clone, Deserialize)]

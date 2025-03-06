@@ -16,20 +16,17 @@ use std::collections::HashMap;
 
 use crate::StringOrVec;
 
-pub fn convert_tags(orig: &Vec<String>) -> HashMap<String, StringOrVec> {
+pub fn convert_tags(orig: &[String]) -> HashMap<String, StringOrVec> {
     let mut object_map: HashMap<String, StringOrVec> = HashMap::new();
 
     for tag in orig {
-        if let Some(pos) = tag.find(':') {
-            let key = &tag[..pos];
-            let value = &tag[pos + 1..];
+        if let Some((key, value)) = tag.split_once(':') {
             object_map
                 .entry(key.to_string())
-                .and_modify(|e| match e {
+                .and_modify(|entry| match entry {
                     StringOrVec::String(existing_val) => {
-                        // If the key already exists, use an array to store the values
-                        let vec = vec![std::mem::take(existing_val), value.to_string()];
-                        *e = StringOrVec::Vec(vec);
+                        let tag_values = vec![std::mem::take(existing_val), value.to_string()];
+                        *entry = StringOrVec::Vec(tag_values);
                     }
                     StringOrVec::Vec(vec) => vec.push(value.to_string()),
                 })
@@ -50,7 +47,6 @@ mod tests {
 
         let result = convert_tags(&input);
 
-        // Single-value checks
         assert_eq!(
             result.get("color"),
             Some(&StringOrVec::String("blue".to_string()))
@@ -60,7 +56,6 @@ mod tests {
             Some(&StringOrVec::String("medium".to_string()))
         );
 
-        // Make sure we've inserted only these two entries
         assert_eq!(result.len(), 2);
     }
 
@@ -83,13 +78,11 @@ mod tests {
                 "red".to_string(),
             ]))
         );
-        // The "size" key remains a single value
         assert_eq!(
             result.get("size"),
             Some(&StringOrVec::String("medium".to_string()))
         );
 
-        // Make sure we've inserted only these two keys
         assert_eq!(result.len(), 2);
     }
 }

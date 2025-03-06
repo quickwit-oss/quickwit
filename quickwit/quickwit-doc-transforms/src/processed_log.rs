@@ -70,7 +70,7 @@ pub struct ProcessedLog {
 
 impl ProcessedLog {
     #[allow(dead_code)]
-    pub fn get_core_string_field_by_name(&self, field: &str) -> Option<&String> {
+    pub fn get_core_string_field_by_name(&self, field: &str) -> Option<&str> {
         match field {
             "message" => Some(&self.message),
             "status" => Some(&self.status),

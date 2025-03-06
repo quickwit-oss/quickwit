@@ -91,6 +91,7 @@ pub fn set_or_create_nested_mut(root: &mut serde_json::Value, segments: &[String
     for (i, segment) in segments.iter().enumerate() {
         let is_last = (i + 1) == segments.len();
         if !current.is_object() {
+            // TODO: Check how it should behave here. Should we overwrite the value?
             *current = Value::Object(serde_json::Map::new());
         }
         let map = current.as_object_mut().unwrap();
@@ -130,5 +131,111 @@ pub fn remove_nested(root: &mut Value, segments: &[String]) -> Option<Value> {
         map.remove(segments.last().unwrap())
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn test_parse_path() {
+        let parsed = parse_path("attributes.role");
+        assert_eq!(parsed.segments, vec!["attributes", "role"]);
+
+        let parsed = parse_path("single");
+        assert_eq!(parsed.segments, vec!["single"]);
+
+        // Edge case: empty string leads to a single empty segment
+        let parsed = parse_path("");
+        assert_eq!(parsed.segments, vec![""]);
+    }
+
+    #[test]
+    fn test_get_nested_mut() {
+        // A nested structure
+        let mut value = json!({
+            "attributes": {
+                "role": "admin",
+                "metadata": {
+                    "enabled": true
+                }
+            }
+        });
+
+        // Should return "admin"
+        let parsed = parse_path("attributes.role");
+        let got = get_nested_mut(&mut value, &parsed.segments).unwrap();
+        assert_eq!(*got, json!("admin"));
+
+        // Modify in place
+        *got = json!("user");
+        assert_eq!(value["attributes"]["role"], "user");
+
+        // Going deeper
+        let parsed = parse_path("attributes.metadata.enabled");
+        let got = get_nested_mut(&mut value, &parsed.segments).unwrap();
+        assert_eq!(*got, json!(true));
+
+        // Nonexistent field should return None
+        let parsed = parse_path("attributes.unknown");
+        assert!(get_nested_mut(&mut value, &parsed.segments).is_none());
+
+        // If an intermediate is not an object, we fail early
+        let mut value2 = json!({
+            "attributes": "not-an-object"
+        });
+        let parsed2 = parse_path("attributes.role");
+        assert!(get_nested_mut(&mut value2, &parsed2.segments).is_none());
+    }
+
+    #[test]
+    fn test_set_or_create_nested_mut() {
+        let mut value = json!({});
+        let parsed = parse_path("attributes.role");
+
+        // Should create intermediates and set to "admin"
+        set_or_create_nested_mut(&mut value, &parsed.segments, json!("admin"));
+        assert_eq!(value, json!({"attributes": {"role": "admin"}}));
+
+        // Overwrite existing
+        set_or_create_nested_mut(&mut value, &parsed.segments, json!("user"));
+        assert_eq!(value, json!({"attributes": {"role": "user"}}));
+
+        // If an intermediate is not an object, it should be overwritten with an object
+        let mut value2 = json!({ "attributes": "not-an-object" });
+        set_or_create_nested_mut(&mut value2, &parsed.segments, json!("test"));
+        assert_eq!(value2, json!({ "attributes": { "role": "test" } }));
+    }
+
+    #[test]
+    fn test_remove_nested() {
+        // Basic removal
+        let mut value = json!({
+            "attributes": {
+                "role": "admin",
+                "other": "stuff"
+            }
+        });
+        let parsed = parse_path("attributes.role");
+        let removed = remove_nested(&mut value, &parsed.segments);
+        assert_eq!(removed, Some(json!("admin")));
+        assert_eq!(value, json!({"attributes": {"other": "stuff"}}));
+
+        // Removing a non-existent field
+        let parsed_missing = parse_path("attributes.missing");
+        let removed_none = remove_nested(&mut value, &parsed_missing.segments);
+        assert_eq!(removed_none, None);
+
+        // Removal from top-level
+        let mut value2 = json!({
+            "top": "something",
+            "another": "field"
+        });
+        let removed_top = remove_nested(&mut value2, &["top".to_string()]);
+        assert_eq!(removed_top, Some(json!("something")));
+        assert_eq!(value2, json!({"another": "field"}));
     }
 }
