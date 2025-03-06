@@ -27,7 +27,7 @@ pub enum PipelineError {
     GrokParse { message: String },
 
     #[error("Could not parse path: {source}")]
-    PathParse {
+    PathParseError {
         #[from]
         source: vrl::path::PathParseError,
     },
@@ -35,7 +35,7 @@ pub enum PipelineError {
     #[error("Other pipeline error: {source}")]
     Other {
         #[from]
-        source: Box<dyn std::error::Error + Send + Sync>,
+        source: String,
     },
 
     #[error("Could not parse query: {message}")]

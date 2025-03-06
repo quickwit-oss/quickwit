@@ -30,7 +30,7 @@ pub struct GrokParserStep {
 }
 
 impl PipelineStep for GrokParserStep {
-    fn apply(&self, value: &mut ProcessedLog) -> Result<(), PipelineError> {
+    fn apply(&self, value: &mut ProcessedLog) -> crate::Result<()> {
         if !self.filter.run(value) {
             return Ok(());
         }
@@ -41,7 +41,7 @@ impl PipelineStep for GrokParserStep {
         use vrl::datadog_grok::parse_grok::FatalError;
         match result {
             Ok(parsed) => {
-                let json_val = vrl_value_to_serde_json(parsed.parsed);
+                let json_val = vrl_value_to_serde_json(parsed.parsed)?;
                 // TODO: handle errors in parsed.internal_errors
                 // TODO: Remove clones
 
@@ -65,21 +65,27 @@ impl PipelineStep for GrokParserStep {
 }
 
 /// A helper function to convert VRL's `Value` into `serde_json::Value`.
-fn vrl_value_to_serde_json(v: VrlValue) -> serde_json::Value {
-    match v {
+fn vrl_value_to_serde_json(v: VrlValue) -> crate::Result<serde_json::Value> {
+    let value = match v {
         VrlValue::Bytes(s) => {
-            serde_json::Value::String(unsafe { String::from_utf8_unchecked(s.to_vec()) })
+            // This can't fail, because the grok parser only returns strings.
+            serde_json::Value::String(String::from_utf8(s.to_vec()).map_err(|err| {
+                PipelineError::Other {
+                    source: err.to_string(),
+                }
+            })?)
         }
         VrlValue::Float(f) => serde_json::Value::from(f.into_inner()),
         VrlValue::Array(arr) => {
-            let json_arr = arr.into_iter().map(vrl_value_to_serde_json).collect();
-            serde_json::Value::Array(json_arr)
+            let json_arr: crate::Result<Vec<_>> =
+                arr.into_iter().map(vrl_value_to_serde_json).collect();
+            serde_json::Value::Array(json_arr?)
         }
         VrlValue::Object(map) => {
             let json_map = map
                 .into_iter()
-                .map(|(k, v)| (k.clone().into(), vrl_value_to_serde_json(v)))
-                .collect();
+                .map(|(k, v)| Ok((String::from(k.clone()), vrl_value_to_serde_json(v)?)))
+                .collect::<crate::Result<_>>()?;
             serde_json::Value::Object(json_map)
         }
         VrlValue::Null => serde_json::Value::Null,
@@ -87,7 +93,8 @@ fn vrl_value_to_serde_json(v: VrlValue) -> serde_json::Value {
         VrlValue::Regex(_value_regex) => serde_json::Value::Null,
         VrlValue::Integer(i) => i.into(),
         VrlValue::Timestamp(date_time) => date_time.to_rfc3339().into(),
-    }
+    };
+    Ok(value)
 }
 
 pub fn build_grok_parser_step(

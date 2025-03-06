@@ -30,6 +30,8 @@ pub use flatten_tags::convert_tags;
 pub use pipeline::{Pipeline, PipelineStep, PipelineStepConfig};
 pub use processed_log::{DatadogLogMsg, ProcessedLog};
 
+pub type Result<T> = std::result::Result<T, error::PipelineError>;
+
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum StringOrVec {
