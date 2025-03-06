@@ -23,7 +23,7 @@ s3-localstack-tests = []
 
 [dependencies]
 anyhow = { workspace = true }
-aws_lambda_events = "0.15.0"
+aws_lambda_events = "0.16.0"
 bytesize = { workspace = true }
 chitchat = { workspace = true }
 chrono = { workspace = true }
