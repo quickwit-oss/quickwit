@@ -20,21 +20,32 @@ pub fn convert_tags(orig: &[String]) -> HashMap<String, StringOrVec> {
     let mut object_map: HashMap<String, StringOrVec> = HashMap::new();
 
     for tag in orig {
-        if let Some((key, value)) = tag.split_once(':') {
+        if let Some(tag) = TagKV::parse_tag(tag) {
             object_map
-                .entry(key.to_string())
+                .entry(tag.key.to_string())
                 .and_modify(|entry| match entry {
                     StringOrVec::String(existing_val) => {
-                        let tag_values = vec![std::mem::take(existing_val), value.to_string()];
+                        let tag_values = vec![std::mem::take(existing_val), tag.value.to_string()];
                         *entry = StringOrVec::Vec(tag_values);
                     }
-                    StringOrVec::Vec(vec) => vec.push(value.to_string()),
+                    StringOrVec::Vec(vec) => vec.push(tag.value.to_string()),
                 })
-                .or_insert(StringOrVec::String(value.to_string()));
+                .or_insert(StringOrVec::String(tag.value.to_string()));
         }
     }
 
     object_map
+}
+
+#[derive(Debug, Clone)]
+pub struct TagKV<'a> {
+    pub key: &'a str,
+    pub value: &'a str,
+}
+impl TagKV<'_> {
+    pub fn parse_tag(tag: &str) -> Option<TagKV> {
+        tag.split_once(':').map(|(key, value)| TagKV { key, value })
+    }
 }
 
 #[cfg(test)]

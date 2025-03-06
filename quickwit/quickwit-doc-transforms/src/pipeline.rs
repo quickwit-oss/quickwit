@@ -149,22 +149,6 @@ impl PipelineStep for NestedPipelineStep {
     }
 }
 
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
-pub struct TagKV<'a> {
-    pub key: &'a str,
-    pub value: &'a str,
-}
-#[allow(dead_code)]
-impl TagKV<'_> {
-    pub fn parse_tag(tag: &str) -> TagKV {
-        let mut parts = tag.splitn(2, ':');
-        let key = parts.next().unwrap();
-        let value = parts.next().unwrap_or("");
-        TagKV { key, value }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use serde_json::json;

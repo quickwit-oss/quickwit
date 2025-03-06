@@ -42,7 +42,10 @@ impl PipelineStep for GrokParserStep {
         match result {
             Ok(parsed) => {
                 let json_val = vrl_value_to_serde_json(parsed.parsed);
+                // TODO: handle errors in parsed.internal_errors
                 // TODO: Remove clones
+
+                // The unwrap() is safe, grok always returns an object.
                 for (key, v) in json_val.as_object().unwrap() {
                     value.custom.insert(key.clone(), v.clone());
                 }
@@ -92,12 +95,9 @@ pub fn build_grok_parser_step(
     filter: Box<dyn Matcher<ProcessedLog>>,
 ) -> Result<GrokParserStep, PipelineError> {
     let aliases = BTreeMap::new();
-    let grok_rules = match parse_grok_rules(pattern_strings, aliases) {
-        Ok(rules) => rules,
-        Err(source) => {
-            return Err(PipelineError::GrokCompile { source });
-        }
-    };
+
+    let grok_rules = parse_grok_rules(pattern_strings, aliases)
+        .map_err(|source| PipelineError::GrokCompile { source })?;
 
     Ok(GrokParserStep { filter, grok_rules })
 }
