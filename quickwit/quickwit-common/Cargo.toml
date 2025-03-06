@@ -15,6 +15,7 @@ anyhow = { workspace = true }
 async-speed-limit = { workspace = true }
 async-trait = { workspace = true }
 bytesize = { workspace = true }
+census = { workspace = true }
 coarsetime = { workspace = true }
 dyn-clone = { workspace = true }
 env_logger = { workspace = true }
