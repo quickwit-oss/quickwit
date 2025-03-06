@@ -44,7 +44,6 @@ pub struct DatadogLogMsg {
     pub ddtags: Vec<String>,
 }
 
-/// TODO: Move to pipeline later on
 /// The final enriched struct we want to produce.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ProcessedLog {

@@ -39,3 +39,57 @@ pub fn convert_tags(orig: &Vec<String>) -> HashMap<String, StringOrVec> {
 
     object_map
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_single_value() {
+        let input = vec!["color:blue".to_string(), "size:medium".to_string()];
+
+        let result = convert_tags(&input);
+
+        // Single-value checks
+        assert_eq!(
+            result.get("color"),
+            Some(&StringOrVec::String("blue".to_string()))
+        );
+        assert_eq!(
+            result.get("size"),
+            Some(&StringOrVec::String("medium".to_string()))
+        );
+
+        // Make sure we've inserted only these two entries
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn test_multi_value() {
+        let input = vec![
+            "color:blue".to_string(),
+            "color:red".to_string(),
+            "size:medium".to_string(),
+        ];
+
+        let result = convert_tags(&input);
+
+        // Multi-value check: same key "color" appears twice
+        // => values get converted into a Vec
+        assert_eq!(
+            result.get("color"),
+            Some(&StringOrVec::Vec(vec![
+                "blue".to_string(),
+                "red".to_string(),
+            ]))
+        );
+        // The "size" key remains a single value
+        assert_eq!(
+            result.get("size"),
+            Some(&StringOrVec::String("medium".to_string()))
+        );
+
+        // Make sure we've inserted only these two keys
+        assert_eq!(result.len(), 2);
+    }
+}

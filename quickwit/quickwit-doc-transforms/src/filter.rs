@@ -42,7 +42,7 @@ struct FilterResolver;
 impl Resolver for FilterResolver {}
 
 use vrl::datadog_search_syntax::Field;
-use vrl::datadog_search_syntax::Field::{Attribute as Custom, Reserved as CoreAttibute};
+use vrl::datadog_search_syntax::Field::{Attribute as Custom, Reserved as CoreAttribute};
 
 /// Note: All reserved fields are of type String except for `timestamp` and `tags`, which are
 /// unhandled below currently
@@ -54,7 +54,7 @@ impl Filter<ProcessedLog> for FilterResolver {
     {
         match field {
             Field::Default(_) => todo!(),
-            CoreAttibute(_attr) => Ok(Box::new(true)), // They always exist
+            CoreAttribute(_attr) => Ok(Box::new(true)), // They always exist
             Custom(_custom_path) => todo!(),
             Field::Tag(tag_str) => Ok(Run::boxed(move |log: &ProcessedLog| {
                 log.tag.contains_key(&tag_str)
@@ -71,7 +71,7 @@ impl Filter<ProcessedLog> for FilterResolver {
         let to_match = to_match.to_string();
         match field {
             Field::Default(_) => todo!(),
-            CoreAttibute(attr) => Ok(Run::boxed(move |log: &ProcessedLog| {
+            CoreAttribute(attr) => Ok(Run::boxed(move |log: &ProcessedLog| {
                 log.get_core_string_field_by_name(&attr)
                     .map(|v| v == &to_match)
                     .unwrap_or(false)

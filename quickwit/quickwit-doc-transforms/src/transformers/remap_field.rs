@@ -56,3 +56,82 @@ impl PipelineStep for RemapStep {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::processed_log::tests::make_datadog_log_msg;
+
+    #[test]
+    fn test_remapstep_move_value_remove_original() {
+        // Set up initial log
+        let mut log = ProcessedLog::from_datadog_log_msg(make_datadog_log_msg());
+
+        // Insert an entry in `log.custom` at key "foo"
+        log.custom.insert("foo".to_string(), json!("bar_value"));
+
+        // Create the RemapStep
+        let step = RemapStep {
+            filter: Box::new(true),
+            from_path: ParsedPath {
+                segments: vec!["foo".into()],
+            },
+            to_path: ParsedPath {
+                segments: vec!["baz".into()],
+            },
+            preserve_original: false,
+        };
+
+        // Apply the step
+        step.apply(&mut log).unwrap();
+
+        // Verify the value was moved
+        assert_eq!(
+            log.custom.get("baz"),
+            Some(&json!("bar_value")),
+            "Expected 'baz' to contain the moved value"
+        );
+        // Verify the original is removed
+        assert!(
+            !log.custom.contains_key("foo"),
+            "Expected the original 'foo' to be removed"
+        );
+    }
+
+    #[test]
+    fn test_remapstep_move_value_preserve_original() {
+        // Set up initial log
+        let mut log = ProcessedLog::from_datadog_log_msg(make_datadog_log_msg());
+
+        // Insert an entry in `log.custom` at key "alpha"
+        log.custom.insert("alpha".to_string(), json!("123"));
+
+        // Create the RemapStep with `preserve_original = true`
+        let step = RemapStep {
+            filter: Box::new(true),
+            from_path: ParsedPath {
+                segments: vec!["alpha".into()],
+            },
+            to_path: ParsedPath {
+                segments: vec!["omega".into()],
+            },
+            preserve_original: true,
+        };
+
+        // Apply the step
+        step.apply(&mut log).unwrap();
+
+        // Verify the value was copied
+        assert_eq!(
+            log.custom.get("omega"),
+            Some(&json!("123")),
+            "Expected 'omega' to contain the moved value"
+        );
+        // Verify the original is preserved
+        assert_eq!(
+            log.custom.get("alpha"),
+            Some(&json!("123")),
+            "Expected original 'alpha' to remain"
+        );
+    }
+}

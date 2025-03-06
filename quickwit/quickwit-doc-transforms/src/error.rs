@@ -27,7 +27,7 @@ pub enum PipelineError {
     GrokParse { message: String },
 
     #[error("Could not parse path: {source}")]
-    PathParseError {
+    PathParse {
         #[from]
         source: vrl::path::PathParseError,
     },

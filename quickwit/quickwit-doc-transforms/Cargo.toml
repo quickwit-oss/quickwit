@@ -1,6 +1,6 @@
 [package]
 name = "quickwit-doc-transforms"
-description = "Configuragle transforms on documents before indexing"
+description = "Configure transforms on documents before indexing"
 
 version.workspace = true
 edition.workspace = true

@@ -20,24 +20,23 @@ use serde_json::Value;
 /// Attributes that represent special fields in Datadog.
 #[allow(dead_code)]
 pub static CORE_ATTRIBUTES: &[&str] = &[
-    "id",
-    "discovery_timestamp",
-    "ingest_size_in_bytes",
-    "random_draw",
     "custom",
+    "discovery_timestamp",
     "host",
     "host_id",
+    "id",
+    "ingest_size_in_bytes",
+    "message",
+    "random_draw",
+    "service",
     "source",
     "source_type",
     "source_fragment_id",
-    "status",
-    "service",
-    "trace_id",
     "span_id",
-    "message",
-    "timestamp",
+    "status",
     "tag",
     "tags",
+    "timestamp",
     "trace_id",
     "trace_id_low",
 ];
@@ -45,7 +44,7 @@ pub static CORE_ATTRIBUTES: &[&str] = &[
 /// Any attribute that's not a field is tag.
 #[allow(dead_code)]
 pub fn is_core_attr(attribute: &str) -> bool {
-    /// Use OnceCell from stf to create a FnvHashSet of CORE_ATTRIBUTES
+    /// Use OnceLock from std to create a FnvHashSet of CORE_ATTRIBUTES
     static CORE_ATTRIBUTES_SET: OnceLock<FnvHashSet<&'static str>> = OnceLock::new();
     let core_attributes = CORE_ATTRIBUTES_SET.get_or_init(|| {
         let mut set = FnvHashSet::default();

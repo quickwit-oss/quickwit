@@ -28,7 +28,7 @@ pub struct NormalizeField {
 }
 
 impl NormalizeField {
-    /// Create a NormalizeField by splitting a comma-separated list of aliases,
+    /// Creates a NormalizeField by splitting a comma-separated list of aliases,
     /// e.g. `("@timestamp, timestamp, time", "timestamp", true)`
     pub fn from_comma_sep(from_csv: &str, to: &str, remove_old: bool) -> Self {
         let from = from_csv.split(',').map(|s| s.trim().to_owned()).collect();

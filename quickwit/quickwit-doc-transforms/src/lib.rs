@@ -41,7 +41,7 @@ impl StringOrVec {
     pub fn contains(&self, value: &str) -> bool {
         match self {
             StringOrVec::String(val) => val == value,
-            StringOrVec::Vec(vec) => vec.contains(&value.to_string()),
+            StringOrVec::Vec(vec) => vec.iter().any(|elem| *elem == value),
         }
     }
 }
