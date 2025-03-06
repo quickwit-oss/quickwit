@@ -763,7 +763,7 @@ mod tests {
     use quickwit_config::service::QuickwitService;
     use quickwit_proto::indexing::IndexingTask;
     use quickwit_proto::types::IndexUid;
-    use rand::Rng;
+    use rand::Rng as _;
 
     use super::*;
 
@@ -1030,12 +1030,12 @@ mod tests {
             .await
             .unwrap(),
         );
-        let mut random_generator = rand::thread_rng();
+        let mut random_generator = rand::rng();
         // TODO: increase it back to 1000 when https://github.com/quickwit-oss/chitchat/issues/81 is fixed
         let indexing_tasks = (0..500)
             .map(|pipeline_id| {
-                let index_id = random_generator.gen_range(0..=10_000);
-                let source_id = random_generator.gen_range(0..=100);
+                let index_id = random_generator.random_range(0..=10_000);
+                let source_id = random_generator.random_range(0..=100);
                 IndexingTask {
                     pipeline_uid: Some(PipelineUid::for_test(pipeline_id as u128)),
                     index_uid: Some(

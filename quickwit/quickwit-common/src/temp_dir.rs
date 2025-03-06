@@ -335,17 +335,17 @@ mod tests {
 
     #[test]
     fn test_prefix_random() {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let template = "A".repeat(100);
         for _ in 0..10000 {
-            let rand_bytes = rng.gen::<usize>() % 4;
-            let parts_num = rng.gen::<usize>() % 10;
+            let rand_bytes = rng.random::<u32>() % 4;
+            let parts_num = rng.random::<u32>() % 10;
             let mut builder = Builder::default();
-            builder.rand_bytes(rand_bytes);
+            builder.rand_bytes(rand_bytes as usize);
             let mut max_size = 0;
             for _ in 0..parts_num {
-                let size = 1 + rand::random::<usize>() % 10;
-                builder.join(&template[0..size]);
+                let size = 1 + rand::random::<u32>() % 10;
+                builder.join(&template[0..size as usize]);
                 max_size += size + 1;
             }
             let separator_count = if rand_bytes > 0 {
@@ -360,20 +360,21 @@ mod tests {
                 }
             };
             let limit_threshold = parts_num + separator_count + rand_bytes;
-            if parts_num > 0 && rng.gen::<bool>() {
-                builder.max_length(rand::random::<usize>() % limit_threshold);
+            if parts_num > 0 && rng.random::<bool>() {
+                let max_len = (rand::random::<u32>() % limit_threshold) as usize;
+                builder.max_length(max_len);
                 assert_eq!(
                     "the filename limit is too small",
                     builder.prefix().unwrap_err().to_string()
                 );
             } else {
-                let len = limit_threshold + rand::random::<usize>() % 100;
-                builder.max_length(len);
-                let builder_debug = format!("{:?}, len {}", builder, len);
+                let max_len = (limit_threshold + rand::random::<u32>() % 100) as usize;
+                builder.max_length(max_len);
+                let builder_debug = format!("{:?}, len {}", builder, max_len);
                 let builder_prefix = builder.prefix().unwrap();
                 assert_eq!(
                     builder_prefix.len(),
-                    cmp::min(len - rand_bytes, max_size),
+                    cmp::min(max_len - rand_bytes as usize, max_size as usize),
                     "{} -> {}",
                     builder_debug,
                     builder_prefix

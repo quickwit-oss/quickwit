@@ -336,7 +336,7 @@ pub mod tests {
     pub(crate) fn proptest_merge_policy(merge_policy: &dyn MergePolicy) {
         proptest!(|(mut splits in prop::collection::vec(split_strategy(), 0..100))| {
             let mut cloned_splits = splits.clone();
-            cloned_splits.shuffle(&mut rand::thread_rng());
+            cloned_splits.shuffle(&mut rand::rng());
 
             let original_num_splits = splits.len();
 

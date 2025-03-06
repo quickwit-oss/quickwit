@@ -226,6 +226,7 @@ mod tests {
 
     use bytes::Bytes;
     use quickwit_actors::{ActorContext, Universe};
+    use rand_distr::weighted::WeightedIndex;
     use tokio::sync::watch;
 
     use super::Queues;
@@ -445,7 +446,7 @@ mod tests {
 
         use rand::rngs::StdRng;
         use rand::{Rng, SeedableRng};
-        use rand_distr::{Distribution, LogNormal, WeightedIndex};
+        use rand_distr::{Distribution, LogNormal};
 
         const NUM_QUEUES: usize = 100;
         const NUM_RECORDS: usize = 1_000_000;
@@ -467,7 +468,7 @@ mod tests {
         let records: Vec<Record> = record_queue_ids
             .into_iter()
             .map(|queue_id| {
-                let num_bytes: usize = rng.gen_range(80..800);
+                let num_bytes: usize = rng.random_range(80..800);
                 let payload: Vec<u8> = repeat_with(rand::random::<u8>).take(num_bytes).collect();
                 Record {
                     queue_id: queue_id.to_string(),

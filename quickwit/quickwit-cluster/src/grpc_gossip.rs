@@ -196,7 +196,7 @@ fn select_gossip_candidates(
             find_gossip_candidate_grpc_addr(self_chitchat_id, node_state)
                 .map(|grpc_addr| (&node_state.chitchat_id().node_id, grpc_addr))
         })
-        .choose_multiple(&mut rand::thread_rng(), MAX_GOSSIP_PEERS)
+        .choose_multiple(&mut rand::rng(), MAX_GOSSIP_PEERS)
         .into_iter()
         .map(|(node_id, grpc_addr)| (node_id.clone(), grpc_addr))
         .unzip()

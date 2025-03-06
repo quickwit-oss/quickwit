@@ -747,7 +747,7 @@ mod tests {
     use itertools::Itertools;
     use quickwit_proto::indexing::{mcpu, CpuCapacity, IndexingTask};
     use quickwit_proto::types::{IndexUid, NodeId, PipelineUid, ShardId, SourceUid};
-    use rand::seq::SliceRandom;
+    use rand::seq::IndexedRandom;
 
     use super::{
         build_physical_indexing_plan,
@@ -873,7 +873,7 @@ mod tests {
         for indexer in &indexers {
             indexer_id_to_cpu_capacities.insert(indexer.as_str().to_string(), mcpu(16_000));
         }
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         let mut shard_locations = ShardLocations::default();
         for shard_id in &shard_ids {

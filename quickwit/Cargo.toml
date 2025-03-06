@@ -135,7 +135,7 @@ hyper = { version = "0.14", features = [
 hyper-rustls = "0.24"
 indexmap = { version = "2.7", features = ["serde"] }
 indicatif = "0.17.3"
-itertools = "0.13"
+itertools = "0.14"
 json_comments = "0.2"
 libz-sys = "1.1.8"
 lru = "0.12"
@@ -188,8 +188,8 @@ pulsar = { version = "6.3", default-features = false, features = [
   "tokio-runtime",
 ] }
 quote = "1.0.23"
-rand = "0.8"
-rand_distr = "0.4"
+rand = "0.9"
+rand_distr = "0.5"
 rayon = "1.10"
 rdkafka = { version = "0.33", default-features = false, features = [
   "cmake-build",
@@ -229,7 +229,7 @@ sqlx = { version = "0.7", features = [
   "time",
 ] }
 syn = { version = "2.0.11", features = ["extra-traits", "full", "parsing"] }
-sync_wrapper = "0.1.2"
+sync_wrapper = "1.0.2"
 sysinfo = "0.33.1"
 tabled = { version = "0.14", features = ["color"] }
 tempfile = "3"

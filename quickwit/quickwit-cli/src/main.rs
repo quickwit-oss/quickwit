@@ -69,7 +69,9 @@ fn register_build_info_metric() {
 
 async fn main_impl() -> anyhow::Result<()> {
     #[cfg(feature = "openssl-support")]
-    openssl_probe::init_ssl_cert_env_vars();
+    unsafe {
+        openssl_probe::init_openssl_env_vars()
+    };
     register_build_info_metric();
 
     let about_text = about_text();
