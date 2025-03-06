@@ -73,7 +73,7 @@ impl Filter<ProcessedLog> for FilterResolver {
             Field::Default(_) => todo!(),
             CoreAttribute(attr) => Ok(Run::boxed(move |log: &ProcessedLog| {
                 log.get_core_string_field_by_name(&attr)
-                    .map(|v| v == &to_match)
+                    .map(|v| v == to_match)
                     .unwrap_or(false)
             })),
             Custom(_custom_path) => todo!(),
