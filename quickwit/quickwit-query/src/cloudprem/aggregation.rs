@@ -220,7 +220,7 @@ fn handle_metric_compute(
 ) -> Result<(String, TantivyAggregation), InvalidQuery> {
     let field = extract_field_name(metric_compute.expression.as_ref())?;
 
-    // TODO support more than count
+    // TODO support more aggregations?
     let agg = match metric_compute.r#type.as_str() {
         "COUNT" => {
             let count_agg = metric::CountAggregation {
@@ -368,7 +368,7 @@ impl ResultMapper {
         state: &EvpAggregationResult,
     ) -> Result<(), CloudPremError> {
         let mut to_emit = None;
-        for (_key, agg) in agg_result.0 {
+        for (key, agg) in agg_result.0 {
             match agg {
                 TantivyAggregationResult::BucketResult(bucket_result) => {
                     use tantivy::aggregation::agg_result::BucketResult;
@@ -415,7 +415,11 @@ impl ResultMapper {
                         _ => return Err(CloudPremError::Unimplemented),
                     };
                     let to_emit_mut = to_emit.get_or_insert_with(|| state.clone());
-                    to_emit_mut.value.push(u64_to_agg_value(last_value));
+                    if key.contains("cardinality") {
+                        to_emit_mut.value.push(generate_sketch(last_value));
+                    } else {
+                        to_emit_mut.value.push(u64_to_agg_value(last_value));
+                    }
                 }
             }
         }
@@ -442,6 +446,33 @@ fn bucket_iter<T>(
     match buckets {
         BucketEntries::Vec(vec) => Either::Left(vec.into_iter()),
         BucketEntries::HashMap(map) => Either::Right(map.into_values()),
+    }
+}
+
+fn generate_sketch(count: u64) -> EvpAggValue {
+    const VERSION: u8 = 0x10;
+    const EMPTY: u8 = 0x01;
+    const EXPLICIT: u8 = 0x02;
+    // const SPARSE: u8 = 0x01;
+    // const FULL: u8 = 0x01;
+
+    const WIDTH_5_COUNT_2_11: u8 = 0b100_01011;
+    #[allow(clippy::unusual_byte_groupings)]
+    const CUTOFF: u8 = 0b0_1_111111; // pad, sparseEnabled, explicitCUtoff=63 (implementation defined)
+
+    let hll = if count == 0 || count > 256 {
+        vec![VERSION | EMPTY, WIDTH_5_COUNT_2_11, CUTOFF]
+    } else {
+        let mut res: Vec<u8> = Vec::with_capacity(count as usize * 8 + 3);
+        res.copy_from_slice(&[VERSION | EXPLICIT, WIDTH_5_COUNT_2_11, CUTOFF]);
+        for i in 0..count {
+            res.copy_from_slice(&[0, 0, 0, 0, 0, 0, 0, i as u8]);
+        }
+        res
+    };
+
+    EvpAggValue {
+        value: Some(quickwit_proto::cloudprem::agg_value::Value::HllValue(hll)),
     }
 }
 
