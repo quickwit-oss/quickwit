@@ -218,23 +218,57 @@ fn handle_time_group_by(
 fn handle_metric_compute(
     metric_compute: quickwit_proto::cloudprem::MetricCompute,
 ) -> Result<(String, TantivyAggregation), InvalidQuery> {
-    // TODO support more than count
-    if metric_compute.r#type != "COUNT" {
-        return Err(InvalidQuery::Other(anyhow::anyhow!(
-            "unsupported metric aggregation: {}",
-            metric_compute.r#type
-        )));
-    }
+    let field = extract_field_name(metric_compute.expression.as_ref())?;
 
-    let count_agg = metric::CountAggregation {
-        // this field is never set, so we don't download anything
-        field: "__non_existing_field__".to_string(),
-        missing: Some(1.0),
+    // TODO support more than count
+    let agg = match metric_compute.r#type.as_str() {
+        "COUNT" => {
+            let count_agg = metric::CountAggregation {
+                // this field is never set, so we don't download anything
+                field: "__non_existing_field__".to_string(),
+                missing: Some(1.0),
+            };
+            // TODO can we get a into() from *Aggregation to AggregationVariants instead?
+            AggregationVariants::Count(count_agg)
+        }
+        "CARDINALITY_SKETCH" => {
+            let cardinality = metric::CardinalityAggregationReq {
+                field,
+                missing: None,
+            };
+            AggregationVariants::Cardinality(cardinality)
+        }
+        "SUM" => {
+            let cardinality = metric::SumAggregation {
+                field,
+                missing: None,
+            };
+            AggregationVariants::Sum(cardinality)
+        }
+        "MAX" => {
+            let cardinality = metric::MaxAggregation {
+                field,
+                missing: None,
+            };
+            AggregationVariants::Max(cardinality)
+        }
+        "MIN" => {
+            let cardinality = metric::MinAggregation {
+                field,
+                missing: None,
+            };
+            AggregationVariants::Min(cardinality)
+        }
+        other => {
+            return Err(InvalidQuery::Other(anyhow::anyhow!(
+                "unsupported metric aggregation: {other:?}"
+            )));
+        }
     };
 
     let tantivy_agg = TantivyAggregation {
         // TODO can we get a into() from *Aggregation to AggregationVariants instead?
-        agg: AggregationVariants::Count(count_agg),
+        agg,
         sub_aggregation: HashMap::new(),
     };
 
