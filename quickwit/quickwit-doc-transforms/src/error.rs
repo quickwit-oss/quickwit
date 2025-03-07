@@ -32,11 +32,8 @@ pub enum PipelineError {
         source: vrl::path::PathParseError,
     },
 
-    #[error("Other pipeline error: {source}")]
-    Other {
-        #[from]
-        source: String,
-    },
+    #[error("Other pipeline error: {error}")]
+    Other { error: String },
 
     #[error("Could not parse query: {message}")]
     QueryParse { message: String },

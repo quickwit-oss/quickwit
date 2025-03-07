@@ -71,7 +71,7 @@ fn vrl_value_to_serde_json(v: VrlValue) -> crate::Result<serde_json::Value> {
             // This can't fail, because the grok parser only returns strings.
             serde_json::Value::String(String::from_utf8(s.to_vec()).map_err(|err| {
                 PipelineError::Other {
-                    source: err.to_string(),
+                    error: err.to_string(),
                 }
             })?)
         }
