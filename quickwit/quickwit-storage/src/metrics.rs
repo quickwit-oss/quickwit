@@ -14,7 +14,8 @@
 
 // See https://prometheus.io/docs/practices/naming/
 
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
+
 use quickwit_common::metrics::{
     new_counter, new_counter_vec, new_gauge, new_histogram_vec, Histogram, IntCounter,
     IntCounterVec, IntGauge,
@@ -39,8 +40,14 @@ pub struct StorageMetrics {
 
     pub object_storage_delete_requests_total: IntCounter,
     pub object_storage_bulk_delete_requests_total: IntCounter,
-    pub object_storage_delete_request_duration: Histogram,
-    pub object_storage_bulk_delete_request_duration: Histogram,
+    pub object_storage_delete_request_duration:
+        LazyLock<Histogram, Box<dyn Fn() -> Histogram + Send>>,
+    pub object_storage_bulk_delete_request_duration:
+        LazyLock<Histogram, Box<dyn Fn() -> Histogram + Send>>,
+    pub object_storage_get_request_duration: LazyLock<Histogram, Box<dyn Fn() -> Histogram + Send>>,
+    pub object_storage_put_request_duration: LazyLock<Histogram, Box<dyn Fn() -> Histogram + Send>>,
+    pub object_storage_put_part_request_duration:
+        LazyLock<Histogram, Box<dyn Fn() -> Histogram + Send>>,
 }
 
 impl Default for StorageMetrics {
@@ -81,10 +88,26 @@ impl Default for StorageMetrics {
             ["action"],
             vec![0.1, 0.5, 1.0, 5.0, 10.0, 30.0, 60.0],
         );
-        let object_storage_delete_request_duration =
-            object_storage_request_duration.with_label_values(["delete_object"]);
-        let object_storage_bulk_delete_request_duration =
-            object_storage_request_duration.with_label_values(["delete_objects"]);
+        let object_storage_request_duration_clone = object_storage_request_duration.clone();
+        let object_storage_delete_request_duration = LazyLock::new(Box::new(move || {
+            object_storage_request_duration_clone.with_label_values(["delete_object"])
+        }) as _);
+        let object_storage_request_duration_clone = object_storage_request_duration.clone();
+        let object_storage_bulk_delete_request_duration = LazyLock::new(Box::new(move || {
+            object_storage_request_duration_clone.with_label_values(["delete_objects"])
+        }) as _);
+        let object_storage_request_duration_clone = object_storage_request_duration.clone();
+        let object_storage_get_request_duration = LazyLock::new(Box::new(move || {
+            object_storage_request_duration_clone.with_label_values(["get"])
+        }) as _);
+        let object_storage_request_duration_clone = object_storage_request_duration.clone();
+        let object_storage_put_request_duration = LazyLock::new(Box::new(move || {
+            object_storage_request_duration_clone.with_label_values(["put"])
+        }) as _);
+        let object_storage_request_duration_clone = object_storage_request_duration.clone();
+        let object_storage_put_part_request_duration = LazyLock::new(Box::new(move || {
+            object_storage_request_duration_clone.with_label_values(["put_part"])
+        }) as _);
 
         StorageMetrics {
             fast_field_cache: CacheMetrics::for_component("fastfields"),
@@ -137,6 +160,9 @@ impl Default for StorageMetrics {
             object_storage_bulk_delete_requests_total,
             object_storage_delete_request_duration,
             object_storage_bulk_delete_request_duration,
+            object_storage_get_request_duration,
+            object_storage_put_request_duration,
+            object_storage_put_part_request_duration,
         }
     }
 }
@@ -207,8 +233,8 @@ impl CacheMetrics {
 
 /// Storage counters exposes a bunch a set of storage/cache related metrics through a prometheus
 /// endpoint.
-pub static STORAGE_METRICS: Lazy<StorageMetrics> = Lazy::new(StorageMetrics::default);
+pub static STORAGE_METRICS: LazyLock<StorageMetrics> = LazyLock::new(StorageMetrics::default);
 
 #[cfg(test)]
-pub static CACHE_METRICS_FOR_TESTS: Lazy<CacheMetrics> =
-    Lazy::new(|| CacheMetrics::for_component("fortest"));
+pub static CACHE_METRICS_FOR_TESTS: LazyLock<CacheMetrics> =
+    LazyLock::new(|| CacheMetrics::for_component("fortest"));

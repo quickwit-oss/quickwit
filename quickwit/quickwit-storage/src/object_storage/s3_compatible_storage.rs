@@ -289,6 +289,9 @@ impl S3CompatibleObjectStorage {
         crate::STORAGE_METRICS
             .object_storage_upload_num_bytes
             .inc_by(len);
+        let _timer = crate::STORAGE_METRICS
+            .object_storage_put_request_duration
+            .start_timer();
 
         self.s3_client
             .put_object()
@@ -424,6 +427,9 @@ impl S3CompatibleObjectStorage {
         crate::STORAGE_METRICS
             .object_storage_upload_num_bytes
             .inc_by(part.len());
+        let _timer = crate::STORAGE_METRICS
+            .object_storage_put_part_request_duration
+            .start_timer();
 
         let upload_part_output = self
             .s3_client
@@ -544,6 +550,9 @@ impl S3CompatibleObjectStorage {
         let range_str = range_opt.map(|range| format!("bytes={}-{}", range.start, range.end - 1));
 
         crate::STORAGE_METRICS.object_storage_get_total.inc();
+        let _timer = crate::STORAGE_METRICS
+            .object_storage_get_request_duration
+            .start_timer();
 
         let get_object_output = self
             .s3_client
