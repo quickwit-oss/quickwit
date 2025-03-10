@@ -263,7 +263,8 @@ fn make_elastic_bulk_response_v2(
                 format!("timeout [{}]", failure.index_id),
                 StatusCode::REQUEST_TIMEOUT,
             ),
-            IngestFailureReason::ShardRateLimited => (
+            IngestFailureReason::AttemptedShardsRateLimited
+            | IngestFailureReason::AllShardsRateLimited => (
                 ElasticException::RateLimited,
                 format!("shard rate limiting [{}]", failure.index_id),
                 StatusCode::TOO_MANY_REQUESTS,

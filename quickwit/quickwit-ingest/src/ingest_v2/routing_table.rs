@@ -330,7 +330,9 @@ impl RoutingTableEntry {
 
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum NextOpenShardError {
+    /// no open shard
     NoShardsAvailable,
+    /// all open shards are rate limited
     RateLimited,
 }
 

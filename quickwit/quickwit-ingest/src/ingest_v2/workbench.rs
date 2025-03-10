@@ -240,10 +240,10 @@ impl IngestWorkbench {
         self.record_failure(subrequest_id, SubworkbenchFailure::NoShardsAvailable);
     }
 
-    pub fn record_rate_limited(&mut self, subrequest_id: SubrequestId) {
+    pub fn record_all_shards_rate_limited(&mut self, subrequest_id: SubrequestId) {
         self.record_failure(
             subrequest_id,
-            SubworkbenchFailure::RateLimited(RateLimitingCause::ShardRateLimiting),
+            SubworkbenchFailure::RateLimited(RateLimitingCause::AllShardsRateLimited),
         );
     }
 
@@ -359,7 +359,12 @@ impl SubworkbenchFailure {
                 RateLimitingCause::LoadShedding => IngestFailureReason::RouterLoadShedding,
                 RateLimitingCause::WalFull => IngestFailureReason::WalFull,
                 RateLimitingCause::CircuitBreaker => IngestFailureReason::CircuitBreaker,
-                RateLimitingCause::ShardRateLimiting => IngestFailureReason::ShardRateLimited,
+                RateLimitingCause::AttemptedShardsRateLimited => {
+                    IngestFailureReason::AttemptedShardsRateLimited
+                }
+                RateLimitingCause::AllShardsRateLimited => {
+                    IngestFailureReason::AllShardsRateLimited
+                }
                 RateLimitingCause::Unknown => IngestFailureReason::Unspecified,
             },
             Self::Persist(persist_failure_reason) => (*persist_failure_reason).into(),
