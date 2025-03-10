@@ -37,8 +37,6 @@ pub fn build_vrl_matcher(query: &str) -> Result<Box<dyn Matcher<ProcessedLog>>, 
 #[derive(Debug, Clone, Deserialize)]
 struct FilterResolver;
 
-const DEFAULT_FIELD: &str = "_default_";
-
 /// Uses the default `Resolver`, to build a `Vec<Field>`.
 ///
 /// Resolves the field name to the corresponding `Field` enum variant.
@@ -47,10 +45,10 @@ const DEFAULT_FIELD: &str = "_default_";
 /// We don't need Field::Default, as we can manually expand it instead.
 impl Resolver for FilterResolver {
     fn build_fields(&self, attr: &str) -> Vec<Field> {
-        // If no field is specified, it will be expanded to DEFAULT_FIELD by VRL.
+        // If no field is specified, it will be expanded to "_default_" by VRL.
         // TODO: Check if this is the correct behavior. Normally this would do a tokenized field
         // search e.g. on message. We don't do that currently.
-        if attr == DEFAULT_FIELD {
+        if attr == "_default_" {
             return vec![
                 Field::Reserved("message".to_string()),
                 Field::Attribute("error.message".to_string()),
@@ -234,7 +232,9 @@ impl Filter<ProcessedLog> for FilterResolver {
 /// Search on default fields like message behaves like contains, so this method returns a bool flag
 /// if the search should be done on the default field.
 fn match_on_string<F>(field: Field, pred: F) -> Box<dyn Matcher<ProcessedLog>>
-where F: Fn(&str, bool) -> bool + Clone + 'static + Send + Sync {
+where
+    F: Fn(&str, bool) -> bool + Clone + 'static + Send + Sync,
+{
     match field {
         Field::Default(_) => unreachable!(),
         Field::Reserved(attr) => Run::boxed(move |log: &ProcessedLog| {
@@ -319,86 +319,76 @@ mod vrl_matcher_tests {
         }
     }
 
+    fn check_query(query: &str, log: &ProcessedLog) -> bool {
+        let matcher = build_vrl_matcher(query).expect("failed to parse query");
+        matcher.run(log)
+    }
+
     /// Basic test: match the `service` core field
     #[test]
     fn test_search_on_default() {
         let log = make_log();
-        let matcher = build_vrl_matcher("hello").expect("failed to parse query");
-        assert!(matcher.run(&log), "Should find 'hello' in message");
+        assert!(check_query("hello", &log), "Should find 'hello' in message");
     }
 
     /// Basic test: match the `service` core field
     #[test]
     fn test_match_core_service() {
         let log = make_log();
-        let matcher = build_vrl_matcher("service:myservice").expect("failed to parse query");
-        assert!(matcher.run(&log), "Should match service == \"myservice\"");
-
+        assert!(
+            check_query("service:myservice", &log),
+            "Should match service == \"myservice\""
+        );
         // Negative check
-        let matcher = build_vrl_matcher("service:another-service").expect("failed to parse query");
-        assert!(!matcher.run(&log), "Should not match different service");
+        assert!(
+            !check_query("service:another-service", &log),
+            "Should not match different service"
+        );
     }
 
     /// Match a tag with the Datadog syntax: "region:us-east"
     #[test]
     fn test_match_tag() {
         let log = make_log();
-
         // "region:us-east" should match since region is a list containing "us-east"
-        let matcher = build_vrl_matcher("region:us-east").expect("failed to parse query");
-        assert!(matcher.run(&log));
-
+        assert!(check_query("region:us-east", &log));
         // "region:west" should fail, no "west" in region
-        let matcher = build_vrl_matcher("region:west").expect("failed to parse query");
-        assert!(!matcher.run(&log));
+        assert!(!check_query("region:west", &log));
     }
 
     /// Combine filters with AND logic (Datadog syntax: "service: X AND host: Y")
     #[test]
     fn test_and_logic() {
         let log = make_log();
-
         // Matches both
-        let matcher =
-            build_vrl_matcher("service:myservice AND host:myhost").expect("failed to parse query");
-        assert!(matcher.run(&log), "Should match both conditions");
-
+        assert!(
+            check_query("service:myservice AND host:myhost", &log),
+            "Should match both conditions"
+        );
         // Fails second condition
-        let matcher = build_vrl_matcher("service:myservice AND host:anotherhost")
-            .expect("failed to parse query");
-        assert!(!matcher.run(&log));
+        assert!(!check_query("service:myservice AND host:anotherhost", &log));
     }
 
     /// Show OR logic: "host:myhost OR region:us-east"
     #[test]
     fn test_or_logic() {
         let log = make_log();
-
-        // Should match, because `host:myhost` is true
-        // (Datadog syntax typically is: host:myhost OR region:west)
-        let matcher =
-            build_vrl_matcher("host:myhost OR region:west").expect("failed to parse query");
-        assert!(matcher.run(&log));
-
+        // Should match, because `host:myhost` is true (Datadog syntax typically is: host:myhost OR
+        // region:west)
+        assert!(check_query("host:myhost OR region:west", &log));
         // Should fail, neither side matches
-        let matcher =
-            build_vrl_matcher("host:unknown OR region:west").expect("failed to parse query");
-        assert!(!matcher.run(&log));
+        assert!(!check_query("host:unknown OR region:west", &log));
     }
 
     /// Matches custom JSON attributes in `log.custom`:
     #[test]
     fn test_match_custom_attr() {
         let log = make_log();
-
         // "user_id:1234" => user_id == "1234"
-        let matcher = build_vrl_matcher("@user_id:1234").expect("failed to parse query");
-        assert!(matcher.run(&log));
-
+        assert!(check_query("@user_id:1234", &log));
         // "float_val:3.10" might or might not match, depending on your equals logic
-        let matcher = build_vrl_matcher("@float_val:3.10").expect("failed to parse query");
         assert!(
-            !matcher.run(&log),
+            !check_query("@float_val:3.10", &log),
             "We store 3.10 as a JSON number, might differ from '3.10' text"
         );
     }
@@ -407,141 +397,97 @@ mod vrl_matcher_tests {
     #[test]
     fn test_match_nested() {
         let log = make_log();
-
         // "nested.level:over9000" should match
-        let matcher = build_vrl_matcher("@nested.level:over9000").expect("failed to parse query");
-        assert!(matcher.run(&log));
-
+        assert!(check_query("@nested.level:over9000", &log));
         // "nested.level:over9001" should fail
-        let matcher = build_vrl_matcher("@nested.level:over9001").expect("failed to parse query");
-        assert!(!matcher.run(&log));
+        assert!(!check_query("@nested.level:over9001", &log));
     }
 
     /// Example of numeric comparison if your Filter supports it: "float_val > 3"
     #[test]
     fn test_compare_float_val() {
         let log = make_log();
-
-        let matcher = build_vrl_matcher("@float_val:>3").expect("failed to parse query");
-        assert!(matcher.run(&log));
-
-        let matcher = build_vrl_matcher("@float_val:>4").expect("failed to parse query");
-        assert!(!matcher.run(&log));
+        assert!(check_query("@float_val:>3", &log));
+        assert!(!check_query("@float_val:>4", &log));
     }
 
     /// Example of wildcard or prefix if your Filter supports it: "service:my*" (wildcard syntax)
     #[test]
     fn test_match_wildcard() {
         let log = make_log();
-
         // e.g., "service:my*" means "service" starts with "my"
-        let matcher = build_vrl_matcher("service:my*").expect("failed to parse query");
-        assert!(matcher.run(&log));
-
+        assert!(check_query("service:my*", &log));
         // negative example
-        let matcher = build_vrl_matcher("service:not*").expect("failed to parse query");
-        assert!(!matcher.run(&log));
+        assert!(!check_query("service:not*", &log));
     }
 
     /// Demonstrate a negation: "NOT region:east"
     #[test]
     fn test_match_negation() {
-        // region:east
         let log = make_log();
-
         // "region:east" is true, so "NOT region:east" is false
-        let matcher = build_vrl_matcher("NOT region:east").expect("failed to parse query");
-        assert!(!matcher.run(&log));
-
+        assert!(!check_query("NOT region:east", &log));
         // "NOT region:west" => since region:west is false, negation is true
-        let matcher = build_vrl_matcher("NOT region:west").expect("failed to parse query");
-        assert!(matcher.run(&log));
+        assert!(check_query("NOT region:west", &log));
     }
 
     #[test]
     fn test_or_on_source() {
         let log = make_log();
-        let query = "source:(mysource OR othersource OR datadog-agent)";
-        let matcher = build_vrl_matcher(query).expect("failed to parse query");
-        assert!(matcher.run(&log));
+        assert!(check_query(
+            "source:(mysource OR othersource OR datadog-agent)",
+            &log
+        ));
         // Alternate syntax
-        let query = "source:(mysource || othersource || datadog-agent)";
-        let matcher = build_vrl_matcher(query).expect("failed to parse query");
-        assert!(matcher.run(&log));
-        let query = "source:(othersource OR datadog-agent)";
-        let matcher = build_vrl_matcher(query).expect("failed to parse query");
-        assert!(!matcher.run(&log));
+        assert!(check_query(
+            "source:(mysource || othersource || datadog-agent)",
+            &log
+        ));
+        assert!(!check_query("source:(othersource OR datadog-agent)", &log));
     }
 
     #[test]
     fn test_tag_exists() {
         let log = make_log();
-        let query = "env:*";
-        let matcher = build_vrl_matcher(query).expect("failed to parse query");
-        assert!(matcher.run(&log));
-        let query = "envv:*";
-        let matcher = build_vrl_matcher(query).expect("failed to parse query");
-        assert!(!matcher.run(&log));
-
-        let query = "env:* AND region:east";
-        let matcher = build_vrl_matcher(query).expect("failed to parse query");
-        assert!(matcher.run(&log));
+        assert!(check_query("env:*", &log));
+        assert!(!check_query("envv:*", &log));
+        assert!(check_query("env:* AND region:east", &log));
     }
 
     #[test]
     fn test_mix_tag_and_core_attr() {
         let log = make_log();
         // implicit AND
-        let query = "env:dev service:myservice";
-        let matcher = build_vrl_matcher(query).expect("failed to parse query");
-        assert!(matcher.run(&log));
-        let query = "env:dev service:otherservice";
-        let matcher = build_vrl_matcher(query).expect("failed to parse query");
-        assert!(!matcher.run(&log));
+        assert!(check_query("env:dev service:myservice", &log));
+        assert!(!check_query("env:dev service:otherservice", &log));
     }
 
     #[test]
     fn test_mix_tag_and_negated_core_attr() {
         let log = make_log();
-        let query = "env:dev AND NOT service:myservice";
-        let matcher = build_vrl_matcher(query).expect("failed to parse query");
-        assert!(!matcher.run(&log));
+        assert!(!check_query("env:dev AND NOT service:myservice", &log));
     }
 
     #[test]
     fn test_two_tags() {
         let log = make_log();
-        let query = "env:dev region:us-east";
-        let matcher = build_vrl_matcher(query).expect("failed to parse query");
-        assert!(matcher.run(&log));
-        let query = "env:dev region:west";
-        let matcher = build_vrl_matcher(query).expect("failed to parse query");
-        assert!(!matcher.run(&log));
+        assert!(check_query("env:dev region:us-east", &log));
+        assert!(!check_query("env:dev region:west", &log));
     }
 
     #[test]
     fn test_default_field() {
         let log = make_log();
-        let query = "\"[gc,cpu   ]\"";
-        let matcher = build_vrl_matcher(query).expect("failed to parse query");
-        assert!(matcher.run(&log));
-
+        assert!(check_query("\"[gc,cpu   ]\"", &log));
         // Case insensitive
-        let query = "GC";
-        let matcher = build_vrl_matcher(query).expect("failed to parse query");
-        assert!(matcher.run(&log));
-
+        assert!(check_query("GC", &log));
         // TODO: This should match "[gc,cpu   ]" although the spaces are not the same
-        //let query = "\"[gc,cpu ]\"";
-        //let matcher = build_vrl_matcher(query).expect("failed to parse query");
-        //assert!(matcher.run(&log));
+        //assert!(check_query("\"[gc,cpu ]\"", &log));
     }
 
     #[test]
     fn test_match_everything() {
         let log = make_log();
-        let query = "*";
-        let matcher = build_vrl_matcher(query).expect("failed to parse query");
-        assert!(matcher.run(&log));
+        assert!(check_query("*", &log));
     }
 }
