@@ -2,3 +2,4 @@
 * Add rulenames in grok.rs
 * Add missing transformers
 * Do field normalization after JSON parsing
+* Replicate uncommon default field matching behaviour (see commented test)

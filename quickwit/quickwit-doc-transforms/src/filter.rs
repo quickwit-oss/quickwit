@@ -127,7 +127,8 @@ impl Filter<ProcessedLog> for FilterResolver {
         let to_match = to_match.to_string();
         Ok(match_on_string(field, move |s: &str, contains: bool| {
             if contains {
-                s.contains(&to_match)
+                // Replace with a case-insensitive comparison
+                s.to_lowercase().contains(&to_match.to_lowercase())
             } else {
                 s == to_match
             }
@@ -525,9 +526,22 @@ mod vrl_matcher_tests {
         let matcher = build_vrl_matcher(query).expect("failed to parse query");
         assert!(matcher.run(&log));
 
+        // Case insensitive
+        let query = "GC";
+        let matcher = build_vrl_matcher(query).expect("failed to parse query");
+        assert!(matcher.run(&log));
+
         // TODO: This should match "[gc,cpu   ]" although the spaces are not the same
         //let query = "\"[gc,cpu ]\"";
         //let matcher = build_vrl_matcher(query).expect("failed to parse query");
         //assert!(matcher.run(&log));
+    }
+
+    #[test]
+    fn test_match_everything() {
+        let log = make_log();
+        let query = "*";
+        let matcher = build_vrl_matcher(query).expect("failed to parse query");
+        assert!(matcher.run(&log));
     }
 }
