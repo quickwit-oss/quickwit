@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::any::type_name;
 use std::collections::BTreeMap;
 use std::net::IpAddr;
 use std::str::FromStr;
@@ -28,6 +27,7 @@ use tantivy::schema::{
 use tantivy::TantivyDocument as Document;
 
 use super::date_time_type::QuickwitDateTimeOptions;
+use super::deser_num::{deserialize_f64, deserialize_i64, deserialize_u64};
 use super::field_mapping_entry::QuickwitBoolOptions;
 use super::tantivy_val_to_json::formatted_tantivy_value_to_json;
 use crate::doc_mapper::field_mapping_entry::{
@@ -144,13 +144,11 @@ pub(crate) fn map_primitive_json_to_tantivy(value: JsonValue) -> Option<TantivyV
         JsonValue::Array(_) | JsonValue::Object(_) | JsonValue::Null => None,
         JsonValue::String(text) => Some(TantivyValue::Str(text)),
         JsonValue::Bool(val) => Some((val).into()),
-        JsonValue::Number(number) => {
-            if let Some(val) = u64::from_json_number(&number) {
-                Some((val).into())
-            } else {
-                i64::from_json_number(&number).map(|val| (val).into())
-            }
-        }
+        JsonValue::Number(number) => number
+            .as_i64()
+            .map(Into::into)
+            .or(number.as_u64().map(Into::into))
+            .or(number.as_f64().map(Into::into)),
     }
 }
 
@@ -165,13 +163,13 @@ impl LeafType {
                 }
             }
             LeafType::I64(numeric_options) => {
-                i64::validate_json(json_val, numeric_options.coerce).map(|_| ())
+                deserialize_i64(json_val, numeric_options.coerce).map(|_| ())
             }
             LeafType::U64(numeric_options) => {
-                u64::validate_json(json_val, numeric_options.coerce).map(|_| ())
+                deserialize_u64(json_val, numeric_options.coerce).map(|_| ())
             }
             LeafType::F64(numeric_options) => {
-                f64::validate_json(json_val, numeric_options.coerce).map(|_| ())
+                deserialize_f64(json_val, numeric_options.coerce).map(|_| ())
             }
             LeafType::Bool(_) => {
                 if json_val.is_bool() {
@@ -221,9 +219,15 @@ impl LeafType {
                     Err(format!("expected string, got `{json_val}`"))
                 }
             }
-            LeafType::I64(numeric_options) => i64::from_json(json_val, numeric_options.coerce),
-            LeafType::U64(numeric_options) => u64::from_json(json_val, numeric_options.coerce),
-            LeafType::F64(numeric_options) => f64::from_json(json_val, numeric_options.coerce),
+            LeafType::I64(numeric_options) => {
+                deserialize_i64(json_val, numeric_options.coerce).map(i64::into)
+            }
+            LeafType::U64(numeric_options) => {
+                deserialize_u64(json_val, numeric_options.coerce).map(u64::into)
+            }
+            LeafType::F64(numeric_options) => {
+                deserialize_f64(json_val, numeric_options.coerce).map(f64::into)
+            }
             LeafType::Bool(_) => {
                 if let JsonValue::Bool(val) = json_val {
                     Ok(TantivyValue::Bool(val))
@@ -271,15 +275,15 @@ impl LeafType {
                 }
             }
             LeafType::I64(numeric_options) => {
-                let val = i64::from_json_to_self(&json_val, numeric_options.coerce)?;
+                let val = deserialize_i64(&json_val, numeric_options.coerce)?;
                 Ok(OneOrIter::one((val).into()))
             }
             LeafType::U64(numeric_options) => {
-                let val = u64::from_json_to_self(&json_val, numeric_options.coerce)?;
+                let val = deserialize_u64(&json_val, numeric_options.coerce)?;
                 Ok(OneOrIter::one((val).into()))
             }
             LeafType::F64(numeric_options) => {
-                let val = f64::from_json_to_self(&json_val, numeric_options.coerce)?;
+                let val = deserialize_f64(&json_val, numeric_options.coerce)?;
                 Ok(OneOrIter::one((val).into()))
             }
             LeafType::Bool(_) => {
@@ -621,108 +625,6 @@ fn insert_json_val(
         }
     }
     doc_json.insert(last_field_name.to_string(), json_val);
-}
-
-pub(crate) trait NumVal: Sized + FromStr + ToString + Into<TantivyValue> {
-    fn from_json_number(num: &serde_json::Number) -> Option<Self>;
-
-    fn validate_json(json_val: &BorrowedJsonValue, coerce: bool) -> Result<(), String> {
-        match json_val {
-            BorrowedJsonValue::Number(num_val) => {
-                let num_val = serde_json::Number::from(*num_val);
-                Self::from_json_number(&num_val).ok_or_else(|| {
-                    format!(
-                        "expected {}, got inconvertible JSON number `{}`",
-                        type_name::<Self>(),
-                        num_val
-                    )
-                })?;
-                Ok(())
-            }
-            BorrowedJsonValue::Str(str_val) => {
-                if coerce {
-                    str_val.parse::<Self>().map_err(|_| {
-                        format!(
-                            "failed to coerce JSON string `\"{str_val}\"` to {}",
-                            type_name::<Self>()
-                        )
-                    })?;
-                    Ok(())
-                } else {
-                    Err(format!(
-                        "expected JSON number, got string `\"{str_val}\"`. enable coercion to {} \
-                         with the `coerce` parameter in the field mapping",
-                        type_name::<Self>()
-                    ))
-                }
-            }
-            _ => {
-                let message = if coerce {
-                    format!("expected JSON number or string, got `{json_val}`")
-                } else {
-                    format!("expected JSON number, got `{json_val}`")
-                };
-                Err(message)
-            }
-        }
-    }
-
-    fn from_json_to_self(json_val: &JsonValue, coerce: bool) -> Result<Self, String> {
-        match json_val {
-            JsonValue::Number(num_val) => Self::from_json_number(num_val).ok_or_else(|| {
-                format!(
-                    "expected {}, got inconvertible JSON number `{}`",
-                    type_name::<Self>(),
-                    num_val
-                )
-            }),
-            JsonValue::String(str_val) => {
-                if coerce {
-                    str_val.parse::<Self>().map_err(|_| {
-                        format!(
-                            "failed to coerce JSON string `\"{str_val}\"` to {}",
-                            type_name::<Self>()
-                        )
-                    })
-                } else {
-                    Err(format!(
-                        "expected JSON number, got string `\"{str_val}\"`. enable coercion to {} \
-                         with the `coerce` parameter in the field mapping",
-                        type_name::<Self>()
-                    ))
-                }
-            }
-            _ => {
-                let message = if coerce {
-                    format!("expected JSON number or string, got `{json_val}`")
-                } else {
-                    format!("expected JSON number, got `{json_val}`")
-                };
-                Err(message)
-            }
-        }
-    }
-
-    fn from_json(json_val: JsonValue, coerce: bool) -> Result<TantivyValue, String> {
-        Self::from_json_to_self(&json_val, coerce).map(Self::into)
-    }
-}
-
-impl NumVal for u64 {
-    fn from_json_number(num: &serde_json::Number) -> Option<Self> {
-        num.as_u64()
-    }
-}
-
-impl NumVal for i64 {
-    fn from_json_number(num: &serde_json::Number) -> Option<Self> {
-        num.as_i64()
-    }
-}
-impl NumVal for f64 {
-    fn from_json_number(num: &serde_json::Number) -> Option<Self> {
-        num.as_f64()
-    }
 }
 
 #[derive(Clone, Default)]
