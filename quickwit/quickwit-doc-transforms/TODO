@@ -1,0 +1,4 @@
+* Handle more than numerical ranges in filter.rs (compare fn)
+* Add rulenames in grok.rs
+* Add missing transformers
+* Do field normalization after JSON parsing

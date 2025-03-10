@@ -69,7 +69,6 @@ pub struct ProcessedLog {
 }
 
 impl ProcessedLog {
-    #[allow(dead_code)]
     pub fn get_core_string_field_by_name(&self, field: &str) -> Option<&str> {
         match field {
             "message" => Some(&self.message),
@@ -77,6 +76,7 @@ impl ProcessedLog {
             "host" => Some(&self.host),
             "service" => Some(&self.service),
             "source" => Some(&self.source),
+            "trace_id" => self.trace_id.as_deref(),
             _ => None,
         }
     }
@@ -183,7 +183,7 @@ impl ProcessedLog {
             if let Some(Value::String(m)) = parsed_map.remove("message") {
                 processed.message = m;
             }
-            // TODO: Check that status contains valid values
+            // TODO: Check that status contains valid values (reuse status remapper transform)
             if let Some(Value::String(s)) = parsed_map.remove("status") {
                 processed.status = s.to_lowercase();
             }

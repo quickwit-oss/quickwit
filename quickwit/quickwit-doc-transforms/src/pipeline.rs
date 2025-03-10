@@ -176,7 +176,7 @@ mod tests {
         assert!(log.custom.get("a").is_none());
     }
 
-    fn get_pipeline() -> Pipeline {
+    fn get_grok_pipeline() -> Pipeline {
         let step_cfg = PipelineStepConfig::Grok {
             filter: "service:appgate_driver_logs OR service:appgate_app_logs".into(),
             patterns: vec![
@@ -196,7 +196,7 @@ mod tests {
             .into();
         let logs = vec![agent_log];
 
-        let pipeline = get_pipeline();
+        let pipeline = get_grok_pipeline();
         let logs = pipeline.process_logs(logs).unwrap();
         assert_eq!(logs.len(), 1);
         assert_eq!(logs[0].custom.len(), 3);
@@ -211,7 +211,7 @@ mod tests {
             .into();
         let logs = vec![agent_log];
 
-        let pipeline = get_pipeline();
+        let pipeline = get_grok_pipeline();
         let logs = pipeline.process_logs(logs).unwrap();
         assert_eq!(logs.len(), 1);
         assert_eq!(logs[0].custom.len(), 3);

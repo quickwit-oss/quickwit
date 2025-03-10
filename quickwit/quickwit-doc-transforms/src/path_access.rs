@@ -85,6 +85,26 @@ pub fn get_nested_mut<'a>(root: &'a mut Value, segments: &[String]) -> Option<&'
     Some(current)
 }
 
+/// Recursively get a **mutable reference** to a nested path, if it exists.
+/// We accept serde_json::Map here as this is the type of `custom`.
+pub fn get_nested<'a>(
+    root: &'a serde_json::Map<String, Value>,
+    mut segments: impl Iterator<Item = &'a str>,
+) -> Option<&'a Value> {
+    // Return None if there are no segments.
+    let first = segments.next()?;
+    // Start by retrieving the first value from the root.
+    let mut current = root.get(first)?;
+    // Traverse the nested objects for each segment.
+    for segment in segments {
+        current = match current {
+            Value::Object(map) => map.get(segment)?,
+            _ => return None,
+        };
+    }
+    Some(current)
+}
+
 /// Like `get_nested_mut`, but we create intermediate objects if missing.
 pub fn set_or_create_nested_mut(root: &mut serde_json::Value, segments: &[String], value: Value) {
     let mut current = root;

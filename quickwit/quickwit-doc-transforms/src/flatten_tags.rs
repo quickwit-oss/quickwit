@@ -38,6 +38,7 @@ pub fn convert_tags(orig: &[String]) -> HashMap<String, StringOrVec> {
 }
 
 #[derive(Debug, Clone)]
+/// Datadog tags are key-value pairs, separated by a colon, e.g. "env:prod"
 pub struct TagKV<'a> {
     pub key: &'a str,
     pub value: &'a str,
