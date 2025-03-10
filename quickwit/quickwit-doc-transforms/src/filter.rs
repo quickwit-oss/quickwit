@@ -232,9 +232,7 @@ impl Filter<ProcessedLog> for FilterResolver {
 /// Search on default fields like message behaves like contains, so this method returns a bool flag
 /// if the search should be done on the default field.
 fn match_on_string<F>(field: Field, pred: F) -> Box<dyn Matcher<ProcessedLog>>
-where
-    F: Fn(&str, bool) -> bool + Clone + 'static + Send + Sync,
-{
+where F: Fn(&str, bool) -> bool + Clone + 'static + Send + Sync {
     match field {
         Field::Default(_) => unreachable!(),
         Field::Reserved(attr) => Run::boxed(move |log: &ProcessedLog| {
