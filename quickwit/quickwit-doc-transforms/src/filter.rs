@@ -125,38 +125,13 @@ impl Filter<ProcessedLog> for FilterResolver {
         to_match: &str,
     ) -> Result<Box<dyn Matcher<ProcessedLog>>, vrl::path::PathParseError> {
         let to_match = to_match.to_string();
-        match field {
-            Field::Default(_) => {
-                unreachable!();
+        Ok(match_on_string(field, move |s: &str, contains: bool| {
+            if contains {
+                s.contains(&to_match)
+            } else {
+                s == to_match
             }
-
-            Field::Reserved(attr) => Ok(Run::boxed(move |log: &ProcessedLog| {
-                log.get_core_string_field_by_name(&attr)
-                    .map(|v| v == to_match)
-                    .unwrap_or(false)
-            })),
-
-            Field::Attribute(custom_path) => {
-                Ok(Run::boxed(move |log: &ProcessedLog| {
-                    if let Some(value) = get_nested(&log.custom, custom_path.split('.')) {
-                        match value {
-                            serde_json::Value::String(s) => s == &to_match,
-                            // If not a string, you might want to compare its JSON stringified form:
-                            other => other == &to_match,
-                        }
-                    } else {
-                        false
-                    }
-                }))
-            }
-
-            Field::Tag(tag_str) => Ok(Run::boxed(move |log: &ProcessedLog| {
-                log.tag
-                    .get(&tag_str)
-                    .map(|val| val.contains(&to_match))
-                    .unwrap_or(false)
-            })),
-        }
+        }))
     }
 
     fn prefix(
@@ -165,8 +140,12 @@ impl Filter<ProcessedLog> for FilterResolver {
         prefix: &str,
     ) -> Result<Box<dyn Matcher<ProcessedLog>>, vrl::path::PathParseError> {
         let prefix = prefix.to_string();
-        Ok(match_on_string(field, move |s: &str| {
-            s.starts_with(&prefix)
+        Ok(match_on_string(field, move |s: &str, contains: bool| {
+            if contains {
+                s.contains(&prefix)
+            } else {
+                s.starts_with(&prefix)
+            }
         }))
     }
 
@@ -177,7 +156,9 @@ impl Filter<ProcessedLog> for FilterResolver {
         wildcard: &str,
     ) -> Result<Box<dyn Matcher<ProcessedLog>>, vrl::path::PathParseError> {
         let re = regex::wildcard_regex(wildcard);
-        Ok(match_on_string(field, move |s: &str| re.is_match(s)))
+        Ok(match_on_string(field, move |s: &str, _contains: bool| {
+            re.is_match(s)
+        }))
     }
 
     /// For range queries like `> 5`, `< 10`, etc.
@@ -248,33 +229,43 @@ impl Filter<ProcessedLog> for FilterResolver {
 }
 
 /// A helper function that creates a matcher using a predicate on &str type fields.
+///
+/// Search on default fields like message behaves like contains, so this method returns a bool flag
+/// if the search should be done on the default field.
 fn match_on_string<F>(field: Field, pred: F) -> Box<dyn Matcher<ProcessedLog>>
-where F: Fn(&str) -> bool + Clone + 'static + Send + Sync {
+where F: Fn(&str, bool) -> bool + Clone + 'static + Send + Sync {
     match field {
         Field::Default(_) => unreachable!(),
         Field::Reserved(attr) => Run::boxed(move |log: &ProcessedLog| {
             log.get_core_string_field_by_name(&attr)
-                .map(&pred)
+                .map(|text| pred(text, attr == "message"))
                 .unwrap_or(false)
         }),
         Field::Attribute(custom_path) => Run::boxed(move |log: &ProcessedLog| {
             get_nested(&log.custom, custom_path.split('.'))
                 .and_then(|value| {
-                    if let serde_json::Value::String(s) = value {
-                        Some(s)
+                    if let serde_json::Value::String(json_string) = value {
+                        Some(json_string)
                     } else {
                         None
                     }
                 })
-                .map(|s| pred(s))
+                .map(|text| {
+                    pred(
+                        text,
+                        custom_path == "error.message"
+                            || custom_path == "error.stack"
+                            || custom_path == "title",
+                    )
+                })
                 .unwrap_or(false)
         }),
         Field::Tag(tag_str) => Run::boxed(move |log: &ProcessedLog| {
             log.tag
                 .get(&tag_str)
                 .map(|val| match val {
-                    StringOrVec::String(s) => pred(s),
-                    StringOrVec::Vec(vs) => vs.iter().any(|s| pred(s)),
+                    StringOrVec::String(tags) => pred(tags, false),
+                    StringOrVec::Vec(tags) => tags.iter().any(|tag| pred(tag, false)),
                 })
                 .unwrap_or(false)
         }),
@@ -308,7 +299,9 @@ mod vrl_matcher_tests {
         );
 
         ProcessedLog {
-            message: "hello".to_string(),
+            message: "[2025-03-10T10:58:38.384+0000][31740.749s][511][info][gc,cpu   ] GC(18381) \
+                      User=0.15s Sys=0.00s Real=0.02s hello"
+                .to_string(),
             status: "info".to_string(),
             timestamp: OffsetDateTime::now_utc(),
             host: "myhost".to_string(),
@@ -462,5 +455,79 @@ mod vrl_matcher_tests {
         // "NOT region:west" => since region:west is false, negation is true
         let matcher = build_vrl_matcher("NOT region:west").expect("failed to parse query");
         assert!(matcher.run(&log));
+    }
+
+    #[test]
+    fn test_or_on_source() {
+        let log = make_log();
+        let query = "source:(mysource OR othersource OR datadog-agent)";
+        let matcher = build_vrl_matcher(query).expect("failed to parse query");
+        assert!(matcher.run(&log));
+        // Alternate syntax
+        let query = "source:(mysource || othersource || datadog-agent)";
+        let matcher = build_vrl_matcher(query).expect("failed to parse query");
+        assert!(matcher.run(&log));
+        let query = "source:(othersource OR datadog-agent)";
+        let matcher = build_vrl_matcher(query).expect("failed to parse query");
+        assert!(!matcher.run(&log));
+    }
+
+    #[test]
+    fn test_tag_exists() {
+        let log = make_log();
+        let query = "env:*";
+        let matcher = build_vrl_matcher(query).expect("failed to parse query");
+        assert!(matcher.run(&log));
+        let query = "envv:*";
+        let matcher = build_vrl_matcher(query).expect("failed to parse query");
+        assert!(!matcher.run(&log));
+
+        let query = "env:* AND region:east";
+        let matcher = build_vrl_matcher(query).expect("failed to parse query");
+        assert!(matcher.run(&log));
+    }
+
+    #[test]
+    fn test_mix_tag_and_core_attr() {
+        let log = make_log();
+        // implicit AND
+        let query = "env:dev service:myservice";
+        let matcher = build_vrl_matcher(query).expect("failed to parse query");
+        assert!(matcher.run(&log));
+        let query = "env:dev service:otherservice";
+        let matcher = build_vrl_matcher(query).expect("failed to parse query");
+        assert!(!matcher.run(&log));
+    }
+
+    #[test]
+    fn test_mix_tag_and_negated_core_attr() {
+        let log = make_log();
+        let query = "env:dev AND NOT service:myservice";
+        let matcher = build_vrl_matcher(query).expect("failed to parse query");
+        assert!(!matcher.run(&log));
+    }
+
+    #[test]
+    fn test_two_tags() {
+        let log = make_log();
+        let query = "env:dev region:us-east";
+        let matcher = build_vrl_matcher(query).expect("failed to parse query");
+        assert!(matcher.run(&log));
+        let query = "env:dev region:west";
+        let matcher = build_vrl_matcher(query).expect("failed to parse query");
+        assert!(!matcher.run(&log));
+    }
+
+    #[test]
+    fn test_default_field() {
+        let log = make_log();
+        let query = "\"[gc,cpu   ]\"";
+        let matcher = build_vrl_matcher(query).expect("failed to parse query");
+        assert!(matcher.run(&log));
+
+        // TODO: This should match "[gc,cpu   ]" although the spaces are not the same
+        //let query = "\"[gc,cpu ]\"";
+        //let matcher = build_vrl_matcher(query).expect("failed to parse query");
+        //assert!(matcher.run(&log));
     }
 }

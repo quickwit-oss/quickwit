@@ -211,6 +211,41 @@ mod tests {
     }
 
     #[test]
+    fn test_get_nested() {
+        let data = json!({
+            "a": {
+                "b": {
+                    "c": "value"
+                },
+                "d": "another value"
+            },
+            "e": "value at root"
+        });
+        let map = data.as_object().expect("expected object");
+
+        // Test retrieving nested value: "a" -> "b" -> "c"
+        let value = get_nested(map, ["a", "b", "c"].iter().copied());
+        assert_eq!(value, Some(&Value::String("value".to_string())));
+
+        // Test retrieving a top-level key: "e"
+        let value = get_nested(map, ["e"].iter().copied());
+        assert_eq!(value, Some(&Value::String("value at root".to_string())));
+
+        // Test a non-existent nested key: "a" -> "x"
+        let value = get_nested(map, ["a", "x"].iter().copied());
+        assert!(value.is_none());
+
+        // Test when a non-object is encountered before the path ends:
+        // "a" -> "d" -> "something" should return None
+        let value = get_nested(map, ["a", "d", "something"].iter().copied());
+        assert!(value.is_none());
+
+        // Test with an empty iterator, should return None
+        let value = get_nested(map, [].iter().copied());
+        assert!(value.is_none());
+    }
+
+    #[test]
     fn test_set_or_create_nested_mut() {
         let mut value = json!({});
         let parsed = parse_path("attributes.role");
