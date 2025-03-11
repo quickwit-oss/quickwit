@@ -1034,6 +1034,29 @@ mod tests {
                 .default_search_fields,
             ["severity_text", "body"]
         );
+        // test with index_uri at the root of a bucket
+        {
+            let resp = warp::test::request()
+                .path("/indexes")
+                .method("POST")
+                .json(&true)
+                .body(r#"{"version": "0.7", "index_id": "hdfs-logs2", "index_uri": "s3://my-bucket", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]},"search_settings":{"default_search_fields":["body"]}}"#)
+                .reply(&index_management_handler)
+                .await;
+            let body = std::str::from_utf8(resp.body()).unwrap();
+            assert_eq!(resp.status(), 200, "{body}",);
+        }
+        {
+            let resp = warp::test::request()
+                .path("/indexes/hdfs-logs2")
+                .method("PUT")
+                .json(&true)
+                .body(r#"{"version": "0.7", "index_id": "hdfs-logs2", "index_uri": "s3://my-bucket", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]},"search_settings":{"default_search_fields":["severity_text", "body"]}}"#)
+                .reply(&index_management_handler)
+                .await;
+            let body = std::str::from_utf8(resp.body()).unwrap();
+            assert_eq!(resp.status(), 200, "{body}",);
+        }
     }
 
     #[tokio::test]
