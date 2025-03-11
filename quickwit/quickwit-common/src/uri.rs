@@ -169,23 +169,30 @@ impl Uri {
     }
 
     /// Returns the parent URI.
+    ///
+    /// When the URI points to an object store, this method makes sure that the
+    /// result targets to a well defined bucket, e.g `s3://` returns `None`.
+    ///
     /// Does not apply to PostgreSQL URIs.
     pub fn parent(&self) -> Option<Uri> {
+        self.parent_unchecked().filter(|parent| {
+            let path = parent.path();
+            match self.protocol() {
+                Protocol::S3 => path.components().count() >= 1,
+                Protocol::Azure => path.components().count() >= 2,
+                Protocol::Google => path.components().count() >= 1,
+                _ => true,
+            }
+        })
+    }
+
+    /// Same as [Self::parent()] but without the additional check on object stores.
+    pub fn parent_unchecked(&self) -> Option<Uri> {
         if self.protocol().is_database() {
             return None;
         }
         let path = self.path();
         let protocol = self.protocol();
-
-        if protocol == Protocol::S3 && path.components().count() < 2 {
-            return None;
-        }
-        if protocol == Protocol::Azure && path.components().count() < 3 {
-            return None;
-        }
-        if protocol == Protocol::Google && path.components().count() < 2 {
-            return None;
-        }
         let parent_path = path.parent()?;
 
         Some(Self {
@@ -597,9 +604,21 @@ mod tests {
             "ram:///foo"
         );
         assert!(Uri::for_test("s3://bucket").parent().is_none());
+        assert_eq!(
+            Uri::for_test("s3://bucket").parent_unchecked().unwrap(),
+            "s3://"
+        );
         assert!(Uri::for_test("s3://bucket/").parent().is_none());
         assert_eq!(
+            Uri::for_test("s3://bucket/").parent_unchecked().unwrap(),
+            "s3://"
+        );
+        assert_eq!(
             Uri::for_test("s3://bucket/foo").parent().unwrap(),
+            "s3://bucket"
+        );
+        assert_eq!(
+            Uri::for_test("s3://bucket/foo").parent_unchecked().unwrap(),
             "s3://bucket"
         );
         assert_eq!(
