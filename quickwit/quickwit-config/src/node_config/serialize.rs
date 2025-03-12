@@ -18,7 +18,9 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use anyhow::{bail, Context};
+use bytesize::ByteSize;
 use http::HeaderMap;
+use quickwit_common::fs::get_disk_size;
 use quickwit_common::net::{find_private_ip, get_short_hostname, Host};
 use quickwit_common::new_coolid;
 use quickwit_common::uri::Uri;
@@ -338,7 +340,59 @@ fn validate(node_config: &NodeConfig) -> anyhow::Result<()> {
     if node_config.peer_seeds.is_empty() {
         warn!("peer seeds are empty");
     }
+    validate_disk_usage(node_config);
     Ok(())
+}
+
+/// A list of all the known disk budgets
+///
+/// External disk usage and unbounded disk usages, e.g the indexing workbench
+/// (indexing/) and the delete task workbench (delete_task_service/) are not included.
+#[derive(Default, Debug)]
+struct ExpectedDiskUsage {
+    // indexer / ingester
+    split_store_max_num_bytes: Option<ByteSize>,
+    max_queue_disk_usage: Option<ByteSize>,
+    // searcher
+    split_cache: Option<ByteSize>,
+}
+
+impl ExpectedDiskUsage {
+    fn from_config(node_config: &NodeConfig) -> Self {
+        let mut expected = Self::default();
+        if node_config.is_service_enabled(QuickwitService::Indexer) {
+            expected.max_queue_disk_usage =
+                Some(node_config.ingest_api_config.max_queue_disk_usage);
+            expected.split_store_max_num_bytes =
+                Some(node_config.indexer_config.split_store_max_num_bytes);
+        }
+        if node_config.is_service_enabled(QuickwitService::Searcher) {
+            expected.split_cache = node_config
+                .searcher_config
+                .split_cache
+                .map(|limits| limits.max_num_bytes);
+        }
+        expected
+    }
+
+    fn total(&self) -> ByteSize {
+        self.split_store_max_num_bytes.unwrap_or_default()
+            + self.max_queue_disk_usage.unwrap_or_default()
+            + self.split_cache.unwrap_or_default()
+    }
+}
+
+fn validate_disk_usage(node_config: &NodeConfig) {
+    if let Some(volume_size) = get_disk_size(&node_config.data_dir_path) {
+        let expected_disk_usage = ExpectedDiskUsage::from_config(node_config);
+        if expected_disk_usage.total() > volume_size {
+            warn!(
+                ?volume_size,
+                ?expected_disk_usage,
+                "data dir volume too small"
+            );
+        }
+    }
 }
 
 #[cfg(test)]

@@ -34,6 +34,7 @@ use warp::filters::log::Info;
 use warp::{redirect, Filter, Rejection, Reply};
 
 use crate::cluster_api::cluster_handler;
+use crate::datadog_api::datadog_ingest_api_handlers;
 use crate::decompression::{CorruptedData, UnsupportedEncoding};
 use crate::delete_task_api::delete_task_api_handlers;
 use crate::developer_api::developer_api_routes;
@@ -187,6 +188,10 @@ pub(crate) async fn start_rest_server(
 
     // Combine all the routes together.
     let rest_routes = api_v1_root_route
+        .or(datadog_ingest_api_handlers(
+            quickwit_services.ingest_router_service.clone(),
+        ))
+        .boxed()
         .or(api_doc)
         .or(redirect_root_to_ui_route)
         .or(ui_handler())

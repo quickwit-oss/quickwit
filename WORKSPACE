@@ -33,7 +33,7 @@ rules_go_setup()
 
 git_repository(
     name = "com_datadoghq_datacenter_config",
-    commit = "96a0b02f886a4e1ec82be1f9d0bd82e4b0d0508f",
+    commit = "cdc36e161294148f4cd1ddc1c4f7063acdbf1855",
     remote = "https://github.com/DataDog/datacenter-config.git",
 )
 
