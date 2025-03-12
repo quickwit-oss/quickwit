@@ -107,13 +107,18 @@ impl CloudPremService for CloudPremServiceImpl {
             count_hits: count_hits.into(),
         };
 
-        let response = self.search_service.root_search(search_request).await?;
+        let response = self
+            .search_service
+            .root_search(search_request)
+            .await
+            .inspect_err(|e| warn!("list root search failed: {e}"))?;
 
         let events = response
             .hits
             .into_iter()
             .map(|hit| DEFAULT_HIT_MAPPER.hit_to_event(hit))
-            .collect::<Result<_, _>>()?;
+            .collect::<Result<_, _>>()
+            .inspect_err(|e| warn!("building hit list failed with: {e}"))?;
 
         let statistics = Statistics {
             hit_count: response.num_hits,
@@ -205,16 +210,22 @@ impl CloudPremService for CloudPremServiceImpl {
             .map_err(|err| CloudPremError::InvalidQuery(format!("failed to parse query: {err}")))?;
 
         debug!("received query ast: {query_evp_ast:?}");
-        let query_ast = quickwit_query::cloudprem::to_quickwit_query(query_evp_ast)?;
+        let query_ast = quickwit_query::cloudprem::to_quickwit_query(query_evp_ast)
+            .inspect_err(|e| warn!("failed to query map ast: {e}"))?;
         debug!("converted query ast: {query_ast:?}");
 
         let Some(evp_aggregation_ast) = request.aggregation else {
             return Err(CloudPremError::Internal("missing aggregation".to_string()));
         };
 
+        // TODO we can use ExtractTimestampRange to get some decent timestamp from the request
+        // this is all a hack to somewhat support calendar invervals though
+        let start_ts_secs = 1735686000; // 2025-01-01
+
         debug!("received aggregation ast {evp_aggregation_ast:?}");
         let aggregation_ast =
-            quickwit_query::cloudprem::to_tantivy_aggregation(evp_aggregation_ast)?;
+            quickwit_query::cloudprem::to_tantivy_aggregation(evp_aggregation_ast, start_ts_secs)
+                .inspect_err(|e| warn!("failed to aggregation map ast: {e}"))?;
         debug!("converted aggregation ast {aggregation_ast:?}");
 
         let search_request = SearchRequest {
@@ -236,7 +247,19 @@ impl CloudPremService for CloudPremServiceImpl {
             count_hits: CountHits::Underestimate.into(),
         };
 
-        let response = self.search_service.root_search(search_request).await?;
+        let response = self
+            .search_service
+            .root_search(search_request)
+            .await
+            .inspect_err(|e| warn!("list root search failed: {e}"))?;
+
+        tracing::trace!("request result: {response:?}");
+        let aggregation_result = quickwit_query::cloudprem::aggregation_result_to_proto(
+            &response.aggregation.ok_or_else(|| {
+                CloudPremError::Internal("request generated no aggregation result".to_string())
+            })?,
+        )?;
+        tracing::trace!("aggregation result: {aggregation_result:?}");
 
         let statistics = Statistics {
             hit_count: response.num_hits,
@@ -246,7 +269,7 @@ impl CloudPremService for CloudPremServiceImpl {
         };
 
         Ok(AggregationResponse {
-            result: Vec::new(),
+            result: aggregation_result,
             statistics: Some(statistics),
         })
     }
