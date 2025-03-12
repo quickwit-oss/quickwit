@@ -14,7 +14,7 @@
 
 use serde_json::Value;
 
-use super::rest_handler::ProcessedLog;
+use crate::ProcessedLog;
 
 /// Holds the data needed to handle a "field alias" mapping.
 /// - `from` is a list of aliases to look for in the data, e.g. ["@timestamp", "timestamp"]
@@ -82,7 +82,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::datadog_api::rest_handler::tests::make_processed_log;
+    use crate::processed_log::tests::make_processed_log;
 
     #[test]
     fn test_from_comma_sep() {
