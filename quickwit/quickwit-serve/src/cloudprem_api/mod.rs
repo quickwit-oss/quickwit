@@ -15,7 +15,7 @@ use serde_json::Value as JsonValue;
 use tracing::{debug, error, info, warn};
 
 // TODO this should become configurable and sent by EVP
-const CLOUD_PREM_INDEX_ID_PATTERN: &str = "datadog-op-*";
+const CLOUD_PREM_INDEX_ID_PATTERN: &str = "datadog*";
 
 #[allow(dead_code)]
 pub struct CloudPremServiceImpl {
