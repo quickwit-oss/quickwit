@@ -43,8 +43,8 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde_qs = { workspace = true }
 serde_with = { workspace = true }
-time = { workspace = true }
 thiserror = { workspace = true }
+time = { workspace = true }
 tokio = { workspace = true }
 tokio-rustls = { workspace = true }
 tokio-stream = { workspace = true }
@@ -54,8 +54,9 @@ tower = { workspace = true }
 tower-http = { workspace = true }
 tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
-uuid = { workspace = true }
+urlencoding = { workspace = true }
 utoipa = { workspace = true }
+uuid = { workspace = true }
 warp = { workspace = true }
 zstd = { workspace = true }
 

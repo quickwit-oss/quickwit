@@ -7358,6 +7358,7 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-opentelemetry",
+ "urlencoding",
  "utoipa",
  "uuid",
  "warp",
