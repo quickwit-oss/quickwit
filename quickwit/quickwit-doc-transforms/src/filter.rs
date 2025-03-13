@@ -15,9 +15,10 @@
 use std::str::FromStr;
 
 use serde::Deserialize;
-use vrl::datadog_filter::{build_matcher, regex, Filter, Matcher, Resolver, Run};
-use vrl::datadog_search_syntax::{Comparison, ComparisonValue, Field, QueryNode};
+use vrl::datadog_filter::{build_matcher, regex as vrl_regex, Filter, Matcher, Resolver, Run};
+use vrl::datadog_search_syntax::{Comparison, ComparisonValue, Field as VRLField, QueryNode};
 
+use crate::default_field_search::matches;
 use crate::error::PipelineError;
 use crate::path_access::get_nested;
 use crate::{ProcessedLog, StringOrVec};
@@ -30,30 +31,33 @@ pub fn build_vrl_matcher(query: &str) -> Result<Box<dyn Matcher<ProcessedLog>>, 
     let node = QueryNode::from_str(query).map_err(|e| PipelineError::QueryParse {
         message: e.to_string(),
     })?;
-
     Ok(build_matcher(&node, &FilterResolver)?)
 }
 
 #[derive(Debug, Clone, Deserialize)]
 struct FilterResolver;
 
-/// Uses the default `Resolver`, to build a `Vec<Field>`.
+/// If no field is specified, it will be expanded to "_default_" by VRL.
+/// TODO: This should be an export from the vrl crate.
+const VRL_DEFAULT_FIELD: &str = "_default_";
+
+/// Uses the default `Resolver`, to build a `Vec<VRLField>`.
 ///
-/// Resolves the field name to the corresponding `Field` enum variant.
+/// Resolves the field name to the corresponding `VRLField` enum variant.
 ///
-/// Field is from vrl crate, which is a custom enum that represents the different types of fields.
-/// We don't need Field::Default, as we can manually expand it instead.
+/// VRLField is from vrl crate, which is a custom enum that represents the different types of
+/// fields. We don't need VRLField::Default, as we can manually expand it instead.
 impl Resolver for FilterResolver {
-    fn build_fields(&self, attr: &str) -> Vec<Field> {
+    fn build_fields(&self, attr: &str) -> Vec<VRLField> {
         // If no field is specified, it will be expanded to "_default_" by VRL.
         // TODO: Check if this is the correct behavior. Normally this would do a tokenized field
         // search e.g. on message. We don't do that currently.
-        if attr == "_default_" {
+        if attr == VRL_DEFAULT_FIELD {
             return vec![
-                Field::Reserved("message".to_string()),
-                Field::Attribute("error.message".to_string()),
-                Field::Attribute("error.stack".to_string()),
-                Field::Attribute("title".to_string()),
+                VRLField::Reserved("message".to_string()),
+                VRLField::Attribute("error.message".to_string()),
+                VRLField::Attribute("error.stack".to_string()),
+                VRLField::Attribute("title".to_string()),
             ];
         }
 
@@ -70,11 +74,11 @@ impl Resolver for FilterResolver {
         ];
 
         // Attributes start with '@' and are custom fields in `ProcessedLog::custom`.
-        // If a field is not a Field::Reserved, it's a Field::Tag
+        // If a field is not a VRLField::Reserved, it's a VRLField::Tag
         let field = match attr {
-            v if RESERVED_ATTRIBUTES.contains(&v) => Field::Reserved(v.to_string()),
-            v if v.starts_with('@') => Field::Attribute(v[1..].to_string()),
-            v => Field::Tag(v.to_string()),
+            v if RESERVED_ATTRIBUTES.contains(&v) => VRLField::Reserved(v.to_string()),
+            v if v.starts_with('@') => VRLField::Attribute(v[1..].to_string()),
+            v => VRLField::Tag(v.to_string()),
         };
 
         vec![field]
@@ -85,19 +89,19 @@ impl Resolver for FilterResolver {
 /// unhandled below currently
 /// Implementation of `Filter` for `FilterResolver`.
 ///
-/// Note: Our resolver will never return a `Field::Default` variant, so we can ignore it.
+/// Note: Our resolver will never return a `VRLField::Default` variant, so we can ignore it.
 impl Filter<ProcessedLog> for FilterResolver {
     /// Check if a field exists in the log.
     fn exists(
         &self,
-        field: Field,
+        field: VRLField,
     ) -> Result<Box<dyn Matcher<ProcessedLog>>, vrl::path::PathParseError> {
         match field {
-            Field::Default(_) => {
+            VRLField::Default(_) => {
                 unreachable!();
             }
             // Core attributes like "message", "status", "host", etc.
-            Field::Reserved(attr) => {
+            VRLField::Reserved(attr) => {
                 // All attr exists except trace_id is optional
                 match attr.as_str() {
                     "trace_id" => Ok(Run::boxed(|log: &ProcessedLog| log.trace_id.is_some())),
@@ -105,12 +109,12 @@ impl Filter<ProcessedLog> for FilterResolver {
                 }
             }
 
-            Field::Attribute(custom_path) => Ok(Run::boxed(move |log: &ProcessedLog| {
+            VRLField::Attribute(custom_path) => Ok(Run::boxed(move |log: &ProcessedLog| {
                 get_nested(&log.custom, custom_path.split('.')).is_some()
             })),
 
             // For tags (like `env:` or `region:`), we look up in `log.tag`.
-            Field::Tag(tag_str) => Ok(Run::boxed(move |log: &ProcessedLog| {
+            VRLField::Tag(tag_str) => Ok(Run::boxed(move |log: &ProcessedLog| {
                 log.tag.contains_key(&tag_str)
             })),
         }
@@ -119,51 +123,74 @@ impl Filter<ProcessedLog> for FilterResolver {
     /// For exact matches like `foo`.
     fn equals(
         &self,
-        field: Field,
+        field: VRLField,
         to_match: &str,
     ) -> Result<Box<dyn Matcher<ProcessedLog>>, vrl::path::PathParseError> {
         let to_match = to_match.to_string();
-        Ok(match_on_string(field, move |s: &str, contains: bool| {
-            if contains {
-                // Replace with a case-insensitive comparison
-                s.to_lowercase().contains(&to_match.to_lowercase())
-            } else {
-                s == to_match
-            }
-        }))
+        Ok(match_on_string(
+            field,
+            move |field_content: &str, is_default_field: bool| {
+                if is_default_field {
+                    // TODO: matches should be already case insensitive
+                    matches(
+                        to_match.to_lowercase().as_str(),
+                        field_content.to_lowercase().as_str(),
+                    )
+                } else {
+                    field_content == to_match
+                }
+            },
+        ))
     }
 
     fn prefix(
         &self,
-        field: Field,
+        field: VRLField,
         prefix: &str,
     ) -> Result<Box<dyn Matcher<ProcessedLog>>, vrl::path::PathParseError> {
         let prefix = prefix.to_string();
-        Ok(match_on_string(field, move |s: &str, contains: bool| {
-            if contains {
-                s.contains(&prefix)
-            } else {
-                s.starts_with(&prefix)
-            }
-        }))
+        Ok(match_on_string(
+            field,
+            move |field_content: &str, is_default_field: bool| {
+                if is_default_field {
+                    // VRL removes the wildcard from the prefix, so we need to add it back for the
+                    // matches function.
+                    let prefix = prefix.to_lowercase() + "*";
+                    matches(prefix.as_str(), field_content.to_lowercase().as_str())
+                } else {
+                    field_content.starts_with(&prefix)
+                }
+            },
+        ))
     }
 
     /// For wildcard queries like `foo*bar`.
     fn wildcard(
         &self,
-        field: Field,
-        wildcard: &str,
+        field: VRLField,
+        pattern_with_wildcard: &str,
     ) -> Result<Box<dyn Matcher<ProcessedLog>>, vrl::path::PathParseError> {
-        let re = regex::wildcard_regex(wildcard);
-        Ok(match_on_string(field, move |s: &str, _contains: bool| {
-            re.is_match(s)
-        }))
+        let pattern_with_wildcard = pattern_with_wildcard.to_string();
+        Ok(match_on_string(
+            field,
+            move |field_content: &str, is_default_field: bool| {
+                if is_default_field {
+                    matches(
+                        pattern_with_wildcard.to_lowercase().as_str(),
+                        field_content.to_lowercase().as_str(),
+                    )
+                } else {
+                    let re = vrl_regex::wildcard_regex(&pattern_with_wildcard);
+                    re.is_match(field_content)
+                }
+            },
+        ))
     }
 
     /// For range queries like `> 5`, `< 10`, etc.
     fn compare(
         &self,
-        field: Field,
+        field: VRLField,
         comparator: Comparison,
         comparison_value: ComparisonValue,
     ) -> Result<Box<dyn Matcher<ProcessedLog>>, vrl::path::PathParseError> {
@@ -172,8 +199,8 @@ impl Filter<ProcessedLog> for FilterResolver {
         Ok(Run::boxed(move |log: &ProcessedLog| {
             // Convert the log's value to an f64 if possible
             let log_val = match &field {
-                Field::Default(_) => unreachable!(),
-                Field::Reserved(attr) => {
+                VRLField::Default(_) => unreachable!(),
+                VRLField::Reserved(attr) => {
                     if let Some(s) = log.get_core_string_field_by_name(attr) {
                         s.parse::<f64>().ok()
                     } else {
@@ -181,7 +208,7 @@ impl Filter<ProcessedLog> for FilterResolver {
                     }
                 }
 
-                Field::Attribute(custom_path) => {
+                VRLField::Attribute(custom_path) => {
                     if let Some(v) = get_nested(&log.custom, custom_path.split('.')) {
                         match v {
                             serde_json::Value::Number(num) => num.as_f64(),
@@ -193,7 +220,7 @@ impl Filter<ProcessedLog> for FilterResolver {
                     }
                 }
 
-                Field::Tag(tag_str) => {
+                VRLField::Tag(tag_str) => {
                     // Optionally parse the first string if we have a single string, ignoring Vec.
                     if let Some(v) = log.tag.get(tag_str) {
                         match v {
@@ -229,18 +256,19 @@ impl Filter<ProcessedLog> for FilterResolver {
 
 /// A helper function that creates a matcher using a predicate on &str type fields.
 ///
-/// Search on default fields like message behaves like contains, so this method returns a bool flag
-/// if the search should be done on the default field.
-fn match_on_string<F>(field: Field, pred: F) -> Box<dyn Matcher<ProcessedLog>>
+/// The predicate callback is called with 2 parameters: (field content, flag if it's a default
+/// field) Match on default fields (`message`, `title`, `error.message` or `error.stack`) behave
+/// different, more like a fulltext search.
+fn match_on_string<F>(field: VRLField, pred: F) -> Box<dyn Matcher<ProcessedLog>>
 where F: Fn(&str, bool) -> bool + Clone + 'static + Send + Sync {
     match field {
-        Field::Default(_) => unreachable!(),
-        Field::Reserved(attr) => Run::boxed(move |log: &ProcessedLog| {
+        VRLField::Default(_) => unreachable!(),
+        VRLField::Reserved(attr) => Run::boxed(move |log: &ProcessedLog| {
             log.get_core_string_field_by_name(&attr)
                 .map(|text| pred(text, attr == "message"))
                 .unwrap_or(false)
         }),
-        Field::Attribute(custom_path) => Run::boxed(move |log: &ProcessedLog| {
+        VRLField::Attribute(custom_path) => Run::boxed(move |log: &ProcessedLog| {
             get_nested(&log.custom, custom_path.split('.'))
                 .and_then(|value| {
                     if let serde_json::Value::String(json_string) = value {
@@ -259,7 +287,7 @@ where F: Fn(&str, bool) -> bool + Clone + 'static + Send + Sync {
                 })
                 .unwrap_or(false)
         }),
-        Field::Tag(tag_str) => Run::boxed(move |log: &ProcessedLog| {
+        VRLField::Tag(tag_str) => Run::boxed(move |log: &ProcessedLog| {
             log.tag
                 .get(&tag_str)
                 .map(|val| match val {
@@ -474,18 +502,134 @@ mod vrl_matcher_tests {
     }
 
     #[test]
-    fn test_default_field() {
-        let log = make_log();
+    fn test_default_field_bsh() {
+        let mut log = make_log();
+        log.message = "[2025-03-10T10:58:38.384+0000][31740.749s][511][info][gc,cpu   ] GC(18381) \
+                       User=0.15s Sys=0.00s Real=0.02s hello"
+            .to_string();
+
         assert!(check_query("\"[gc,cpu   ]\"", &log));
         // Case insensitive
         assert!(check_query("GC", &log));
         // TODO: This should match "[gc,cpu   ]" although the spaces are not the same
-        //assert!(check_query("\"[gc,cpu ]\"", &log));
+        assert!(check_query("\"[gc,cpu ]\"", &log));
     }
 
     #[test]
     fn test_match_everything() {
         let log = make_log();
         assert!(check_query("*", &log));
+    }
+
+    #[ignore]
+    #[test]
+    // TODO: Enable after https://github.com/vectordotdev/vrl/pull/1334 is merged, which passes the
+    // information on if it's a phrase search or not.
+    // Use cases based on experimental tests at https://ddstaging.datadoghq.com/logs/pipelines/pipeline/add
+    fn test_default_field_phrase_matching() {
+        let mut log = make_log();
+        log.message = "Setting Handles in set_event_mentions for event_id:8008795072438008673, \
+                       fetching."
+            .to_string();
+
+        assert!(check_query(
+            "\"Setting Handles in set_event_mentions\"",
+            &log
+        ));
+        // casing is ignored
+        assert!(check_query(
+            "\"Setting handles in set_event_mentions\"",
+            &log
+        ));
+        // special chars are ignored
+        assert!(check_query(
+            "\"Setting [] handles .. in set_event_mentions\"",
+            &log
+        ));
+        // Wildcard in quotes does not work
+        assert!(!check_query(
+            "\"Setting handle* in set_event_mentions\"",
+            &log
+        ));
+    }
+
+    #[test]
+    // Use cases based on experimental tests at https://ddstaging.datadoghq.com/logs/pipelines/pipeline/add
+    fn test_default_field_matching_tokens() {
+        let mut log = make_log();
+        // Use cases based on experimental tests
+        log.message = "Setting Handles in set_event_mentions for event_id:8008795072438008673, \
+                       fetching."
+            .to_string();
+
+        assert!(!check_query("Setting Handle", &log));
+        // Wildcards in tokens are allowed
+        assert!(check_query("Setting Hand*", &log));
+
+        // some tokens are filtered and ignored, but some are not
+        // Some have more complex behavior like `.`
+        // _ is not filtered => No hit
+        assert!(!check_query("Setting Handles ___", &log));
+        // These are filtered => Hit
+        let filtered_chars = vec!["@", "^", "%", ":"];
+        for c in filtered_chars {
+            assert!(
+                check_query(&format!("\"Setting Handles {}\"", c), &log),
+                "{}",
+                c
+            );
+        }
+        // Wildcards in tokens are allowed
+        assert!(check_query("Setting Hand*", &log));
+
+        // Weird matching behavior
+        // TODO: VRL tokenizes this into:
+        // AttributeTerm { attr: "_default_", value: "Setting" }
+        // AttributeWildcard { attr: "_default_", wildcard: "Hand*..." }
+        assert!(check_query("Setting Hand*...", &log));
+
+        // Since ":' is a ignored token, it can be replaced with '.' and still matches
+        // This is a little weird, because the opposite is not the case (I think)
+        assert!(check_query("\"event_id:8008795072438008673\"", &log));
+        // TODO: This is not handled correctly yet
+        //assert!(check_query("\"event_id.8008795072438008673\"", &log));
+    }
+
+    #[test]
+    // Use cases based on experimental tests at https://ddstaging.datadoghq.com/logs/pipelines/pipeline/add
+    fn test_default_field_matching_ip_addr() {
+        let mut log = make_log();
+        // Use cases based on experimental tests
+        // '.' is a special case, it can be replaced with any char if encapsulated in alphanumeric
+        // chars (so it seems)
+        log.message = "127.0.0.1".to_string();
+
+        assert!(check_query("127.0.0.1", &log));
+        assert!(!check_query("127.0.0..1", &log));
+        // ':' is a token seperator for this query
+        assert!(!check_query("\"127:0:0:1\"", &log));
+    }
+
+    #[ignore]
+    #[test]
+    // Use cases based on experimental tests at https://ddstaging.datadoghq.com/logs/pipelines/pipeline/add
+    // TODO: Understand the weird behavior and decide if we want to follow it
+    fn test_default_field_weird() {
+        let mut log = make_log();
+        log.message = "[CommitProcessor:105:o.a.z.s.q.LearnerSessionTracker@116]".to_string();
+        assert!(check_query(
+            "[CommitProcessor:105:o.a.z.s.q.LearnerSessionTracker@116]",
+            &log
+        ));
+
+        // Hits, but it shouldn't since LearnerSessionTrac is not the full token
+        // Buggy behavior?
+        assert!(check_query(
+            "[CommitProcessor:105:o.a.z.s.q.LearnerSessionTrac",
+            &log
+        ));
+        assert!(check_query("CommitProcessor:105:o.a.z.s.q.L", &log));
+        // No hit
+        assert!(!check_query("CommitProcessor:105:o.a.z.s.q.", &log));
     }
 }

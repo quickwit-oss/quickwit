@@ -17,6 +17,7 @@
 
 use serde::{Deserialize, Serialize};
 
+mod default_field_search;
 mod error;
 mod filter;
 mod flatten_tags;
