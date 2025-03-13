@@ -127,14 +127,20 @@ impl Filter<ProcessedLog> for FilterResolver {
         to_match: &str,
     ) -> Result<Box<dyn Matcher<ProcessedLog>>, vrl::path::PathParseError> {
         let to_match = to_match.to_string();
-        Ok(match_on_string(field, move |s: &str, contains: bool| {
-            if contains {
-                // TODO: matches should be already case insensitive
-                matches(to_match.to_lowercase().as_str(), s.to_lowercase().as_str())
-            } else {
-                s == to_match
-            }
-        }))
+        Ok(match_on_string(
+            field,
+            move |field_content: &str, is_default_field: bool| {
+                if is_default_field {
+                    // TODO: matches should be already case insensitive
+                    matches(
+                        to_match.to_lowercase().as_str(),
+                        field_content.to_lowercase().as_str(),
+                    )
+                } else {
+                    field_content == to_match
+                }
+            },
+        ))
     }
 
     fn prefix(
@@ -143,13 +149,19 @@ impl Filter<ProcessedLog> for FilterResolver {
         prefix: &str,
     ) -> Result<Box<dyn Matcher<ProcessedLog>>, vrl::path::PathParseError> {
         let prefix = prefix.to_string();
-        Ok(match_on_string(field, move |s: &str, contains: bool| {
-            if contains {
-                s.contains(&prefix)
-            } else {
-                s.starts_with(&prefix)
-            }
-        }))
+        Ok(match_on_string(
+            field,
+            move |field_content: &str, is_default_field: bool| {
+                if is_default_field {
+                    // VRL removes the wildcard from the prefix, so we need to add it back for the
+                    // matches function.
+                    let prefix = prefix.to_lowercase() + "*";
+                    matches(prefix.as_str(), field_content.to_lowercase().as_str())
+                } else {
+                    field_content.starts_with(&prefix)
+                }
+            },
+        ))
     }
 
     /// For wildcard queries like `foo*bar`.
@@ -158,10 +170,21 @@ impl Filter<ProcessedLog> for FilterResolver {
         field: VRLField,
         pattern_with_wildcard: &str,
     ) -> Result<Box<dyn Matcher<ProcessedLog>>, vrl::path::PathParseError> {
-        let re = vrl_regex::wildcard_regex(pattern_with_wildcard);
-        Ok(match_on_string(field, move |s: &str, _contains: bool| {
-            re.is_match(s)
-        }))
+        let pattern_with_wildcard = pattern_with_wildcard.to_string();
+        Ok(match_on_string(
+            field,
+            move |field_content: &str, is_default_field: bool| {
+                if is_default_field {
+                    matches(
+                        pattern_with_wildcard.to_lowercase().as_str(),
+                        field_content.to_lowercase().as_str(),
+                    )
+                } else {
+                    let re = vrl_regex::wildcard_regex(&pattern_with_wildcard);
+                    re.is_match(field_content)
+                }
+            },
+        ))
     }
 
     /// For range queries like `> 5`, `< 10`, etc.
@@ -563,7 +586,7 @@ mod vrl_matcher_tests {
         // TODO: VRL tokenizes this into:
         // AttributeTerm { attr: "_default_", value: "Setting" }
         // AttributeWildcard { attr: "_default_", wildcard: "Hand*..." }
-        //assert!(check_query("Setting Hand*...", &log));
+        assert!(check_query("Setting Hand*...", &log));
 
         // Since ":' is a ignored token, it can be replaced with '.' and still matches
         // This is a little weird, because the opposite is not the case (I think)
