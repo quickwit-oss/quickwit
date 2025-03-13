@@ -67,6 +67,7 @@ fn tokenize(input: &str) -> Vec<&str> {
 }
 
 /// Removes leading and trailing '.' from the text slice
+/// TODO: Check if we should also remove leading/trailing '-' characters
 fn trim_dot_edges(input: &str, mut start: usize, mut end: usize) -> &str {
     // Skip leading dots.
     while start < end && input.as_bytes()[start] == b'.' {
