@@ -16,12 +16,12 @@ indexing_settings:
 # TODO: replace ALL default tokenizer with ddg tokenizer
 # There would be two tokenizers: ddg and ddg_ignore_case (for message and all)
 
-# There is an additional truncation in fields that applies only to indexed logs: the value is truncated to 75 KiB for the message field and 25 KiB for non-message fields. 
-# Datadog still stores the full text, and it remains visible in regular list queries in the Logs Explorer. However, the truncated version will be displayed when performing 
+# There is an additional truncation in fields that applies only to indexed logs: the value is truncated to 75 KiB for the message field and 25 KiB for non-message fields.
+# Datadog still stores the full text, and it remains visible in regular list queries in the Logs Explorer. However, the truncated version will be displayed when performing
 # a grouped query, such as when grouping logs by that truncated field or performing similar operations that display that specific field.
 # => FF tokenizer truncation after 75Kb for message and 25Kb for other fields (seems quite high)
 
-# Sources: 
+# Sources:
 # https://datadoghq.atlassian.net/wiki/spaces/LB/pages/2484928615/Logs+payload+format
 # https://github.com/DataDog/logs-backend/blob/prod/domains/event-platform/libs/percolation/src/main/resources/elasticsearch/mappings/event.conf
 # https://github.com/DataDog/logs-backend/blob/prod/domains/event-platform/libs/percolation/src/main/resources/elasticsearch/mappings/_root_event.conf
@@ -34,7 +34,7 @@ indexing_settings:
 # random_draw(f64), source_fragment_id(string), trace_id_low(string)
 
 doc_mapping:
-  mode: lenient
+  mode: strict
   field_mappings:
     # TODO: Add RFC3164
     # With the preprocessing in Pomsky, we can actually just use one
@@ -58,15 +58,14 @@ doc_mapping:
       tokenizer: raw
 
     - name: custom
-      type: json 
+      type: json
       tokenizer: default
       record: position
       fast: true
 
     - name: tag # contains normalized tags, e.g {"env": "prod"}
-      type: json 
+      type: json
       tokenizer: default
-      record: position
       fast: true
 
     - name: tags # we can completely drop it and reconstruct it from tag
@@ -74,12 +73,12 @@ doc_mapping:
       stored: true
       indexed: false
       fast: false
-    
+
     # The subfiels are `message` and `stack`. Are there others?
     # If all fields are clear, we can convert to object.
     # TODO: This is unused currently in the Pomsky processing and would reside in `custom`
     - name: error
-      type: json 
+      type: json
       tokenizer: default
       record: position
       fast: true
@@ -87,19 +86,19 @@ doc_mapping:
     # other text like core attributes
     - name: service
       type: text
-      tokenizer: raw  
+      tokenizer: raw
       fast: true
-    - name: service_type 
+    - name: service_type
       type: text
-      tokenizer: raw  
+      tokenizer: raw
       fast: true
     - name: status
       type: text
-      tokenizer: raw  
+      tokenizer: raw
       fast: true
     - name: host
       type: text
-      tokenizer: raw  
+      tokenizer: raw
       fast: true
     - name: trace_id
       type: text
@@ -108,20 +107,20 @@ doc_mapping:
     - name: span_id
       type: text
       tokenizer: raw
-      
+
 
    # TODO: normally there is an `sds_info` object. Check OP SDS scanner:
    # https://docs.datadoghq.com/observability_pipelines/processors/sensitive_data_scanner
 
-    # default fields to search. 
-    - name: default 
+    # default fields to search.
+    - name: default
       type: concatenate
       concatenate_fields:
       - message
       - error
       tokenizer: default
       record: position # for phrase queries
-      
+
     - name: all # ALL fields for *:search
       type: concatenate
       concatenate_fields: # This should contain all fields above
@@ -138,7 +137,6 @@ doc_mapping:
       - trace_id
       - span_id
       - custom
-      include_dynamic_fields: true
       tokenizer: default # +lowercase insensitive
       record: position # for phrase queries
   tag_fields: [] #  maybe add core attributes?
