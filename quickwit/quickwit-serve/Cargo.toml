@@ -30,7 +30,9 @@ hyper-rustls = { workspace = true }
 itertools = { workspace = true }
 mime_guess = { workspace = true }
 once_cell = { workspace = true }
+openssl = { workspace = true }
 opentelemetry = { workspace = true }
+pem = { workspace = true }
 percent-encoding = { workspace = true }
 pprof = { workspace = true, optional = true }
 prost = { workspace = true }
