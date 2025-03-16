@@ -13,13 +13,14 @@
 // limitations under the License.
 
 use serde::Deserialize;
-use vrl::datadog_filter::Matcher;
 
 use crate::error::PipelineError;
 use crate::filter::build_vrl_matcher;
 use crate::path_access::parse_path;
 use crate::processed_log::ProcessedLog;
-use crate::transformers::{build_grok_parser_step, RemapStep};
+use crate::transformers::{
+    build_grok_parser_step, AttributeRemapStep, DateRemapStep, FilteredStep, StatusRemapStep,
+};
 
 /// Trait for steps in the pipeline. Each step mutates a `ProcessedLog`.
 pub trait PipelineStep: Send + Sync + std::fmt::Debug {
@@ -29,6 +30,16 @@ pub trait PipelineStep: Send + Sync + std::fmt::Debug {
 #[derive(Debug)]
 pub struct Pipeline {
     steps: Vec<Box<dyn PipelineStep>>,
+}
+
+impl PipelineStep for Pipeline {
+    /// Apply the entire pipeline to `value` in place.
+    fn apply(&self, value: &mut ProcessedLog) -> Result<(), PipelineError> {
+        for step in &self.steps {
+            step.apply(value)?;
+        }
+        Ok(())
+    }
 }
 
 impl Pipeline {
@@ -48,14 +59,6 @@ impl Pipeline {
         Ok(logs)
     }
 
-    /// Apply the entire pipeline to `value` in place.
-    pub fn apply(&self, value: &mut ProcessedLog) -> Result<(), PipelineError> {
-        for step in &self.steps {
-            step.apply(value)?;
-        }
-        Ok(())
-    }
-
     /// Build a Pipeline from a list of typed `StepConfig`.
     pub fn from_configs(configs: &[PipelineStepConfig]) -> Result<Self, PipelineError> {
         let mut steps = Vec::new();
@@ -72,86 +75,179 @@ impl Pipeline {
 pub enum PipelineStepConfig {
     /// A nested pipeline step.
     NestedPipeline {
-        #[serde(default)]
-        filter: String,
+        #[serde(flatten)]
+        common: CommonConfig,
+        #[serde(rename = "processors")]
         steps: Vec<PipelineStepConfig>,
+        /// The description of the pipeline.
+        #[serde(default)]
+        description: String,
+        /// A list of tags associated with the pipeline.
+        ///
+        /// The docs are unclear on the use of this field. Related issue: <https://github.com/DataDog/documentation/issues/28172>
+        #[serde(default)]
+        tags: Vec<String>,
     },
     /// Grok transform: parse a field with a pattern, optionally add a prefix to captured fields.
     Grok {
-        #[serde(default)]
-        filter: String,
+        #[serde(flatten)]
+        common: CommonConfig,
         patterns: Vec<String>,
     },
     /// Remap one nested path to another (optionally preserve the original).
-    Remap {
+    /// Serde rename to `attribute-remapper` to keep compatible with logs pipelines
+    #[serde(rename = "attribute-remapper")]
+    /// Example (read path):
+    /// {
+    ///     "type": "attribute-remapper",
+    ///     "id": "1234",
+    ///     "name": "Map @dd.env to env tag",
+    ///     "enabled": true,
+    ///     "meta": {
+    ///         "last_update": {
+    ///             "timestamp": 1700645013725,
+    ///             "user_name": "User123",
+    ///             "user_email": "user123@gmail.com"
+    ///         },
+    ///         "tags": []
+    ///     },
+    ///     "sources": [
+    ///         "dd.env"
+    ///     ],
+    ///     "sourceType": "attribute",
+    ///     "target": "env",
+    ///     "targetType": "tag",
+    ///     "preserveSource": true,
+    ///     "overrideOnConflict": false
+    /// }
+    AttributeRemapper {
+        #[serde(flatten)]
+        common: CommonConfig,
+        sources: Vec<String>,
+        target: String,
         #[serde(default)]
-        filter: String,
-        from: String,
-        to: String,
-        #[serde(default)]
+        #[serde(rename = "preserveSource")]
         preserve_original: bool,
     },
+    /// Status remapper: remap a status field to a new location.
+    /// Serde rename to `status-remapper` to keep compatible with logs pipelines
+    #[serde(rename = "status-remapper")]
+    StatusRemapper {
+        #[serde(flatten)]
+        common: CommonConfig,
+        sources: Vec<String>,
+    },
+    /// Date remapper
+    /// Serde rename to `status-remapper` to keep compatible with logs pipelines
+    #[serde(rename = "date-remapper")]
+    DateRemapper {
+        #[serde(flatten)]
+        common: CommonConfig,
+        sources: Vec<String>,
+    },
+}
+
+#[derive(Debug, Deserialize, Clone)]
+/// Common fields for all pipeline steps.
+/// They are flattened into the step config.
+pub struct CommonConfig {
+    /// The id of the pipeline step. Unclear if this is used.
+    #[serde(default)]
+    pub id: String,
+    /// The name of the pipeline step.
+    /// name is not optional for the pipline step type in the logs processing API.
+    #[serde(default)]
+    pub name: String,
+    /// Whether the step is enabled.
+    /// The logs processing API uses `is_enabled` but the output uses `enabled`.
+    #[serde(alias = "is_enabled")]
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    /// The filter to check before applying the step.
+    pub filter: Filter,
+}
+
+impl Default for CommonConfig {
+    fn default() -> Self {
+        Self {
+            id: Default::default(),
+            name: Default::default(),
+            // Note: On the logs processing API, the default is `false` and so is the serde
+            // default. This is just for convenience in the tests.
+            enabled: true,
+            filter: Default::default(),
+        }
+    }
+}
+
+#[derive(Debug, Default, Deserialize, Clone)]
+pub struct Filter {
+    #[serde(default)]
+    pub query: String,
+}
+
+impl From<&str> for Filter {
+    fn from(query: &str) -> Self {
+        Self {
+            query: query.to_string(),
+        }
+    }
 }
 
 /// Convert a `StepConfig` into a boxed pipeline step implementation.
 pub fn build_step(cfg: &PipelineStepConfig) -> Result<Box<dyn PipelineStep>, PipelineError> {
     match cfg {
-        PipelineStepConfig::NestedPipeline { filter, steps } => {
-            let filter = build_vrl_matcher(filter)?;
+        PipelineStepConfig::NestedPipeline { common, steps, .. } => {
+            let filter = build_vrl_matcher(&common.filter.query, common.enabled)?;
 
             let sub_pipeline = Pipeline::from_configs(steps)?;
-            Ok(Box::new(NestedPipelineStep {
-                filter,
-                pipeline: sub_pipeline,
-            }))
+            Ok(Box::new(FilteredStep::new(filter, sub_pipeline)))
         }
         PipelineStepConfig::Grok {
-            filter,
+            common,
             patterns: pattern,
         } => {
-            let filter = build_vrl_matcher(filter)?;
-            let grok = build_grok_parser_step(pattern, filter)?;
+            let filter = build_vrl_matcher(&common.filter.query, common.enabled)?;
+            let grok = build_grok_parser_step(pattern)?;
 
-            Ok(Box::new(grok))
+            Ok(Box::new(FilteredStep::new(filter, grok)))
         }
-        PipelineStepConfig::Remap {
-            filter,
-            from,
-            to,
+        PipelineStepConfig::AttributeRemapper {
+            common,
+            sources,
+            target,
             preserve_original,
         } => {
-            let filter = build_vrl_matcher(filter)?;
-            let from_path = parse_path(from);
-            let to_path = parse_path(to);
-            Ok(Box::new(RemapStep {
-                filter,
-                from_path,
+            let filter = build_vrl_matcher(&common.filter.query, common.enabled)?;
+            let sources = sources.iter().map(AsRef::as_ref).map(parse_path).collect();
+            let to_path = parse_path(target);
+            let remap = AttributeRemapStep {
+                sources,
                 to_path,
                 preserve_original: *preserve_original,
-            }))
+            };
+            Ok(Box::new(FilteredStep::new(filter, remap)))
         }
-    }
-}
-
-/// A nested pipeline step: if filter matches, apply sub-steps.
-#[derive(Debug)]
-pub struct NestedPipelineStep {
-    filter: Box<dyn Matcher<ProcessedLog>>,
-    pipeline: Pipeline,
-}
-
-impl PipelineStep for NestedPipelineStep {
-    fn apply(&self, value: &mut ProcessedLog) -> Result<(), PipelineError> {
-        if self.filter.run(value) {
-            self.pipeline.apply(value)?;
+        PipelineStepConfig::StatusRemapper { common, sources } => {
+            let filter = build_vrl_matcher(&common.filter.query, common.enabled)?;
+            let sources = sources.iter().map(AsRef::as_ref).map(parse_path).collect();
+            let remap = StatusRemapStep { sources };
+            Ok(Box::new(FilteredStep::new(filter, remap)))
         }
-        Ok(())
+        PipelineStepConfig::DateRemapper { common, sources } => {
+            let filter = build_vrl_matcher(&common.filter.query, common.enabled)?;
+            let sources = sources.iter().map(AsRef::as_ref).map(parse_path).collect();
+            let remap = DateRemapStep { sources };
+            Ok(Box::new(FilteredStep::new(filter, remap)))
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use serde_json::json;
+    use time::OffsetDateTime;
 
     use super::*;
     use crate::processed_log::tests::make_datadog_log_msg;
@@ -159,11 +255,13 @@ mod tests {
     #[test]
     fn test_nested_pipeline() {
         let configs = vec![PipelineStepConfig::NestedPipeline {
-            filter: "".into(),
-            steps: vec![PipelineStepConfig::Remap {
-                filter: "".into(),
-                from: "a".to_string(),
-                to: "b.c".to_string(),
+            common: Default::default(),
+            description: "Nested pipeline".to_string(),
+            tags: vec![],
+            steps: vec![PipelineStepConfig::AttributeRemapper {
+                common: Default::default(),
+                sources: vec!["a".to_string()],
+                target: "b.c".to_string(),
                 preserve_original: false,
             }],
         }];
@@ -178,7 +276,10 @@ mod tests {
 
     fn get_grok_pipeline() -> Pipeline {
         let step_cfg = PipelineStepConfig::Grok {
-            filter: "service:appgate_driver_logs OR service:appgate_app_logs".into(),
+            common: CommonConfig {
+                filter: "service:appgate_driver_logs OR service:appgate_app_logs".into(),
+                ..Default::default()
+            },
             patterns: vec![
                 r#"\[%{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):date}\] %{data:level} : %{data:message}"#
                     .into(),
@@ -217,5 +318,110 @@ mod tests {
         assert_eq!(logs[0].custom.len(), 3);
         assert_eq!(logs[0].custom["level"], "Info");
         assert_eq!(logs[0].custom["date"], 1739215606419u64);
+    }
+
+    #[test]
+    fn test_deserialize_remap_yaml() {
+        let yaml = r#"
+type: attribute-remapper
+id: "3EkBeJhPSMqAprV3LOJv5Q"
+name: "Map @dd.env to env tag"
+enabled: true
+meta:
+  last_update:
+    timestamp: 1700645013725
+    user_name: "User123"
+    user_email: "user123@gmail.com"
+  tags: []
+sources:
+  - "dd.env"
+sourceType: "attribute"
+target: "env"
+targetType: "tag"
+preserveSource: true
+overrideOnConflict: false
+"#;
+
+        let config: PipelineStepConfig =
+            serde_yaml::from_str(yaml).expect("Deserialization failed");
+
+        // The expected mapping is:
+        // - "sources" -> `from` (taking the first element)
+        // - "target" -> `to`
+        // - "preserveSource" -> `preserve_original`
+        match config {
+            PipelineStepConfig::AttributeRemapper {
+                common,
+                sources: from,
+                target: to,
+                preserve_original,
+            } => {
+                // The filter is defaulted to an empty string.
+                assert_eq!(common.filter.query, "");
+                assert_eq!(from, vec!["dd.env"]);
+                assert_eq!(to, "env");
+                assert!(preserve_original);
+            }
+            _ => panic!("Expected PipelineStepConfig::Remap variant"),
+        }
+    }
+
+    #[test]
+    fn test_date_remapper_deser() {
+        let yaml = r#"
+type: date-remapper
+id: "123456"
+name: "Define `timestamp` as the official date of the log"
+enabled: true
+sources:
+  - "timestamp"
+"#;
+
+        let config: PipelineStepConfig =
+            serde_yaml::from_str(yaml).expect("Deserialization failed");
+        let step = build_step(&config).unwrap();
+
+        let mut log = ProcessedLog::from_datadog_log_msg(make_datadog_log_msg());
+        log.custom
+            .insert("timestamp".to_string(), json!("2021-01-01T00:00:00Z"));
+        step.apply(&mut log).unwrap();
+        assert_eq!(
+            log.timestamp,
+            OffsetDateTime::from_unix_timestamp(1609459200).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_status_remapper_deser() {
+        // The format of logs processing
+        let yaml = r#"
+type: status-remapper
+id: "123456"
+name: "Define `http.status_category`, `level` as the official status of the log"
+enabled: true
+sources:
+  - "http.status_category"
+  - "level"
+"#;
+
+        let config: PipelineStepConfig =
+            serde_yaml::from_str(yaml).expect("Deserialization failed");
+        let step = build_step(&config).unwrap();
+
+        let mut agent_log = ProcessedLog::from_datadog_log_msg(make_datadog_log_msg());
+        agent_log
+            .custom
+            .insert("http".to_string(), json!({"status_category": "warn"}));
+        step.apply(&mut agent_log).unwrap();
+        assert_eq!(agent_log.status, "warning");
+
+        let mut agent_log = ProcessedLog::from_datadog_log_msg(make_datadog_log_msg());
+        agent_log.custom.insert("level".to_string(), "warn".into());
+        step.apply(&mut agent_log).unwrap();
+        assert_eq!(agent_log.status, "warning");
+
+        let mut agent_log = ProcessedLog::from_datadog_log_msg(make_datadog_log_msg());
+        step.apply(&mut agent_log).unwrap();
+        assert_eq!(agent_log.status, "info"); // default
     }
 }

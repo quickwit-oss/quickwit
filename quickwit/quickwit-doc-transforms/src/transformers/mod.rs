@@ -12,8 +12,37 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod date_remaper;
 mod grok;
 mod remap_field;
+mod status_remaper;
 
+pub use date_remaper::*;
 pub use grok::*;
 pub use remap_field::*;
+pub use status_remaper::*;
+use vrl::datadog_filter::Matcher;
+
+use crate::error::PipelineError;
+use crate::{PipelineStep, ProcessedLog};
+
+/// A helper struct that wraps a pipeline step with a filter.
+#[derive(Debug)]
+pub struct FilteredStep<T: PipelineStep> {
+    pub filter: Box<dyn Matcher<ProcessedLog>>,
+    pub step: T,
+}
+impl<T: PipelineStep> FilteredStep<T> {
+    pub fn new(filter: Box<dyn Matcher<ProcessedLog>>, step: T) -> Self {
+        Self { filter, step }
+    }
+}
+
+impl<T: PipelineStep> PipelineStep for FilteredStep<T> {
+    fn apply(&self, value: &mut ProcessedLog) -> Result<(), PipelineError> {
+        if !self.filter.run(value) {
+            return Ok(());
+        }
+        self.step.apply(value)
+    }
+}

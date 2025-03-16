@@ -26,6 +26,7 @@ quickwit-datetime = { workspace = true }
 quickwit-query = { workspace = true }
 
 [dev-dependencies]
+serde_yaml = { workspace = true }
 
 [features]
 testsuite = []

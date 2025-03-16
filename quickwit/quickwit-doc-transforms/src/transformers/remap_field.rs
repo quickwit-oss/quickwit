@@ -13,44 +13,41 @@
 // limitations under the License.
 
 use serde_json::{json, Value};
-use vrl::datadog_filter::Matcher;
 
 use crate::error::PipelineError;
 use crate::path_access::*;
 use crate::pipeline::*;
 use crate::ProcessedLog;
 
-/// A step that remaps one nested path to a new location, optionally removing the original.
-///
-/// Operations are done on the `custom` field of the log.
+/// A step that copies a value from `custom` to a new location, optionally removing the original.
 #[derive(Debug)]
-pub struct RemapStep {
-    pub filter: Box<dyn Matcher<ProcessedLog>>,
-    pub from_path: ParsedPath,
+pub struct AttributeRemapStep {
+    pub sources: Vec<ParsedPath>,
     pub to_path: ParsedPath,
     pub preserve_original: bool,
 }
 
-impl PipelineStep for RemapStep {
+impl PipelineStep for AttributeRemapStep {
     fn apply(&self, value: &mut ProcessedLog) -> Result<(), PipelineError> {
-        if !self.filter.run(value) {
-            return Ok(());
-        }
-        // Extract the value at `from_path`
-        let from_val_opt =
-            get_nested_mut(&mut json!(value.custom), &self.from_path.segments).cloned();
-        if let Some(from_val) = from_val_opt {
-            // Insert it at `to_path`
-            let mut custom_json = json!(value.custom);
-            set_or_create_nested_mut(&mut custom_json, &self.to_path.segments, from_val);
+        for from_path in &self.sources {
+            // Extract the value at `from_path`
+            let from_val_opt =
+                get_nested_mut(&mut json!(value.custom), &from_path.segments).cloned();
+            if let Some(from_val) = from_val_opt {
+                // Insert it at `to_path`
+                let mut custom_json = json!(value.custom);
+                set_or_create_nested_mut(&mut custom_json, &self.to_path.segments, from_val);
 
-            if !self.preserve_original {
-                remove_nested(&mut custom_json, &self.from_path.segments);
+                if !self.preserve_original {
+                    remove_nested(&mut custom_json, &from_path.segments);
+                }
+                match custom_json {
+                    Value::Object(obj) => value.custom = obj,
+                    _ => unreachable!("custom field should be an object"),
+                };
+                // TODO: exist on the first match? Is this correct?
+                break;
             }
-            match custom_json {
-                Value::Object(obj) => value.custom = obj,
-                _ => unreachable!("custom field should be an object"),
-            };
         }
 
         Ok(())
@@ -71,11 +68,10 @@ mod tests {
         log.custom.insert("foo".to_string(), json!("bar_value"));
 
         // Create the RemapStep
-        let step = RemapStep {
-            filter: Box::new(true),
-            from_path: ParsedPath {
+        let step = AttributeRemapStep {
+            sources: vec![ParsedPath {
                 segments: vec!["foo".into()],
-            },
+            }],
             to_path: ParsedPath {
                 segments: vec!["baz".into()],
             },
@@ -107,11 +103,10 @@ mod tests {
         log.custom.insert("alpha".to_string(), json!("123"));
 
         // Create the RemapStep with `preserve_original = true`
-        let step = RemapStep {
-            filter: Box::new(true),
-            from_path: ParsedPath {
+        let step = AttributeRemapStep {
+            sources: vec![ParsedPath {
                 segments: vec!["alpha".into()],
-            },
+            }],
             to_path: ParsedPath {
                 segments: vec!["omega".into()],
             },

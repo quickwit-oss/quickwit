@@ -14,7 +14,6 @@
 
 use std::collections::BTreeMap;
 
-use vrl::datadog_filter::Matcher;
 use vrl::datadog_grok::parse_grok::parse_grok;
 use vrl::datadog_grok::parse_grok_rules::{parse_grok_rules, GrokRule};
 use vrl::value::Value as VrlValue;
@@ -25,16 +24,11 @@ use crate::ProcessedLog;
 
 #[derive(Debug)]
 pub struct GrokParserStep {
-    pub filter: Box<dyn Matcher<ProcessedLog>>,
     pub grok_rules: Vec<GrokRule>,
 }
 
 impl PipelineStep for GrokParserStep {
     fn apply(&self, value: &mut ProcessedLog) -> crate::Result<()> {
-        if !self.filter.run(value) {
-            return Ok(());
-        }
-
         let log_line = &value.message;
         let result = parse_grok(log_line, &self.grok_rules);
 
@@ -97,16 +91,13 @@ fn vrl_value_to_serde_json(v: VrlValue) -> crate::Result<serde_json::Value> {
     Ok(value)
 }
 
-pub fn build_grok_parser_step(
-    pattern_strings: &[String],
-    filter: Box<dyn Matcher<ProcessedLog>>,
-) -> Result<GrokParserStep, PipelineError> {
+pub fn build_grok_parser_step(pattern_strings: &[String]) -> Result<GrokParserStep, PipelineError> {
     let aliases = BTreeMap::new();
 
     let grok_rules = parse_grok_rules(pattern_strings, aliases)
         .map_err(|source| PipelineError::GrokCompile { source })?;
 
-    Ok(GrokParserStep { filter, grok_rules })
+    Ok(GrokParserStep { grok_rules })
 }
 
 #[cfg(test)]
@@ -119,10 +110,9 @@ mod tests {
 
     #[test]
     fn test_vrl_grok_step() -> Result<(), Box<dyn std::error::Error>> {
-        let filter = Box::new(true);
         let pattern_strings = vec!["time=%{TIME:time} ip=%{IP:ip}".to_string()];
 
-        let step = build_grok_parser_step(&pattern_strings, filter)?;
+        let step = build_grok_parser_step(&pattern_strings)?;
         let pipeline = Pipeline::from_steps(vec![Box::new(step)]);
 
         let mut log = ProcessedLog::from_datadog_log_msg(make_datadog_log_msg());
@@ -140,7 +130,7 @@ mod tests {
         let invalid_pattern = "(??"; // broken pattern
         let pattern_strings = vec![invalid_pattern.to_string()];
 
-        let res = build_grok_parser_step(&pattern_strings, Box::new(true));
+        let res = build_grok_parser_step(&pattern_strings);
         assert!(res.is_err());
     }
 }

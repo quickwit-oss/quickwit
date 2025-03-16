@@ -137,7 +137,7 @@ impl ProcessedLog {
             |processed: &mut ProcessedLog, alias, val| {
                 match alias {
                     "timestamp" => {
-                        try_parse_and_update_timestamp(processed, Some(&val));
+                        try_parse_and_update_timestamp(processed, &val);
                     }
                     "host" => {
                         if let Some(s) = val.as_str() {
@@ -187,7 +187,9 @@ impl ProcessedLog {
             if let Some(Value::String(s)) = parsed_map.remove("status") {
                 processed.status = s.to_lowercase();
             }
-            try_parse_and_update_timestamp(&mut processed, parsed_map.get("timestamp"));
+            if let Some(val) = parsed_map.get("timestamp") {
+                try_parse_and_update_timestamp(&mut processed, val);
+            }
             if let Some(Value::String(h)) = parsed_map.remove("hostname") {
                 processed.host = h;
             }
@@ -210,16 +212,16 @@ impl ProcessedLog {
 /// - String (RFC3164) -> unsupported currently
 ///
 /// If we succeed, we update `processed.timestamp`. Otherwise, we do nothing.
-pub fn try_parse_and_update_timestamp(processed: &mut ProcessedLog, ts_val: Option<&Value>) {
+pub fn try_parse_and_update_timestamp(processed: &mut ProcessedLog, ts_val: &Value) {
     match ts_val {
-        Some(Value::Number(num)) => {
+        Value::Number(num) => {
             if let Some(epoch_i64) = num.as_i64() {
                 if let Ok(dt) = parse_timestamp(epoch_i64) {
                     processed.timestamp = dt.into_utc();
                 }
             }
         }
-        Some(Value::String(s)) => {
+        Value::String(s) => {
             if let Ok(dt) = parse_date_time_str(
                 s,
                 &[DateTimeInputFormat::Rfc3339, DateTimeInputFormat::Iso8601],
@@ -351,7 +353,7 @@ pub(crate) mod tests {
         let mut p = make_processed_log();
         // Suppose we pass Some(&Value::Number(123456789.into()))
         //  => That is <2_000_000_000, so treat as seconds
-        try_parse_and_update_timestamp(&mut p, Some(&Value::Number(123456789.into())));
+        try_parse_and_update_timestamp(&mut p, &Value::Number(123456789.into()));
         // That is 1973-11-29T21:33:09Z if seconds
         assert_eq!(
             p.timestamp,
@@ -360,7 +362,7 @@ pub(crate) mod tests {
 
         // Suppose we pass a bigger number => treat as milliseconds
         let mut p2 = make_processed_log();
-        try_parse_and_update_timestamp(&mut p2, Some(&Value::Number(1_694_449_000_000i64.into())));
+        try_parse_and_update_timestamp(&mut p2, &Value::Number(1_694_449_000_000i64.into()));
         // That is around 2023-09-10T14:50:00Z if milliseconds
         // We'll just check it's not the default or zero
         assert_ne!(p2.timestamp, p.timestamp);
