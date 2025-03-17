@@ -1,4 +1,4 @@
-CloudPrem
+Datadog CloudPrem
 END USER LICENSE AGREEMENT
 
 Please read this End-User License Agreement (“Agreement”) carefully before clicking the “I Agree” button, downloading or using the Datadog Materials.
@@ -34,9 +34,11 @@ Definitions. For purposes of this Agreement, the following terms have the follow
 
 “Documentation” means Datadog’s standard user documentation for the Datadog Services, currently available at https://docs.datadoghq.com/.
 
-“Datadog Materials” means the applicable software, program, application, driver, configuration file(s), software setting, or other material being provided to you with this download.
+“Datadog Materials” means the applicable software, program, web or downloadable application, driver, configuration file(s), software setting, or other material being provided or made available to you.
 
-“Intermediary” means a third party marketplace or a Datadog approved reseller through which the Datadog Services are made available for purchase. including, for example, viruses, worms, time bombs, and Trojan horses.
+“Intermediary” means a third party marketplace or a Datadog approved reseller through which the Datadog Services are made available for purchase.
+
+“Malicious Code” means code, files, scripts, agents or programs intended to do harm, including, for example, viruses, worms, time bombs, and Trojan horses.
 
 “Personal Data” means any information relating to an identified or identifiable natural person.
 
@@ -55,7 +57,7 @@ B. You are responsible for violations of the restrictions set forth in this sect
 C. Datadog reserves the right, but does not assume the obligation, to investigate any violation of this Section or misuse of the Datadog Materials. Datadog may report any activity that it suspects violates any law or regulation to appropriate law enforcement officials, regulators, or other appropriate third parties. Such reporting may include disclosing appropriate data originating from or about you. Datadog also may cooperate with appropriate law enforcement agencies, regulators, or other appropriate third parties to help with the investigation and prosecution of illegal conduct by providing network and systems information related to alleged violations of these terms.
 
 3. INTELLECTUAL PROPERTY
-The Datadog Materials, including without limitation all copyrights, patents, trademarks, trade secrets and other intellectual property rights associated therewith (“Intellectual Property Rights”) are, and shall remain, the property of Datadog. You acknowledge and agree that unless otherwise agreed by the parties in writing, you do not acquire any ownership interest or other rights in the Downloadable Materials. You shall not take any action to interfere with Datadog’s or its licensor’s ownership of or rights in the Datadog Materials.
+The Datadog Materials, including without limitation all copyrights, patents, trademarks, trade secrets and other intellectual property rights associated therewith (“Intellectual Property Rights”) are, and shall remain, the property of Datadog. You acknowledge and agree that unless otherwise agreed by the parties in writing, you do not acquire any ownership interest or other rights in the Datadog Materials. You shall not take any action to interfere with Datadog’s or its licensor’s ownership of or rights in the Datadog Materials.
 
 4. YOUR SUGGESTIONS
 By providing feedback, comments, ideas, improvements or suggestions with respect to the Datadog Materials (collectively, “Suggestions”) to Datadog, you assign all rights and ownership in those Suggestions exclusively to Datadog and Datadog shall be free to use, copy, modify, publish, or redistribute the Suggestions for any purpose and in any way without any credit or any compensation to you.
@@ -78,7 +80,7 @@ The Datadog Materials may collect data about you, including Personal Data, and y
 Except for filtering, masking and otherwise removing Sensitive Information, or as may otherwise be expressly described in the Datadog’s Documentation, or agreed by the parties in writing, you shall not use the Datadog Materials to process any Sensitive Information and shall use reasonable efforts to restrict the inclusion of other Personal Data submitted or otherwise uploaded to the Datadog Services, including by applying filters, masking, and other tools and configurations described in the Documentation, including at https://docs.datadoghq.com/data_security/.
 
 8. YOUR RESPONSIBILITIES
-If you use the Datadog Materials in connection with the Datadog Services, your use of those Datadog Services are subject to pricing terms in the applicable Subscription Agreement. You are responsible for payment of any and all fees incurred as a result of your use of the Datadog Services, whether or not facilitated through the Datadog Materials, in accordance with the Subscription Agreement.
+If you use the Datadog Materials in connection with the Datadog Services, your use of those Datadog Services are subject to the terms and pricing in the applicable Subscription Agreement. You are responsible for payment of any and all fees incurred as a result of your use of the Datadog Services, whether or not facilitated through the Datadog Materials, in accordance with the Subscription Agreement.
 
 Without limiting anything in this Agreement, you agree that you are solely responsible for configuring any applicable usage and privacy and security settings in the Datadog Materials.
 

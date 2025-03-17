@@ -51,10 +51,14 @@ RUN echo "Building workspace with feature(s) '$CARGO_FEATURES' and profile '$CAR
 
 FROM debian:bookworm-slim AS quickwit
 
-LABEL org.opencontainers.image.title="Quickwit"
-LABEL maintainer="Quickwit, Inc. <hello@quickwit.io>"
-LABEL org.opencontainers.image.vendor="Quickwit, Inc."
-LABEL org.opencontainers.image.licenses="AGPL-3.0"
+LABEL org.opencontainers.image.title="Datadog CloudPrem"
+LABEL maintainer="Datadog, Inc."
+LABEL org.opencontainers.image.vendor="Datadog, Inc."
+LABEL org.opencontainers.image.licenses="Datadog EULA"
+
+COPY NOTICE /quickwit/
+COPY LICENSE /quickwit/
+COPY LICENSE-3rdparty.csv /quickwit/
 
 RUN apt-get -y update \
     && apt-get -y install ca-certificates \
