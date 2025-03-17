@@ -21,7 +21,9 @@ use tantivy::aggregation::agg_result::{
     RangeBucketEntry as TantivyRangeBucketEntry,
 };
 use tantivy::aggregation::metric::{
-    ExtendedStats, PercentilesMetricResult, SingleMetricResult, Stats, TopHitsMetricResult,
+    ExtendedStats, PercentileValues as TantivyPercentileValues, PercentileValuesVecEntry,
+    PercentilesMetricResult as TantivyPercentilesMetricResult, SingleMetricResult, Stats,
+    TopHitsMetricResult,
 };
 use tantivy::aggregation::Key as TantivyKey;
 
@@ -113,7 +115,7 @@ impl From<TantivyMetricResult> for MetricResult {
             TantivyMetricResult::Stats(val) => MetricResult::Stats(val),
             TantivyMetricResult::ExtendedStats(val) => MetricResult::ExtendedStats(val),
             TantivyMetricResult::Sum(val) => MetricResult::Sum(val),
-            TantivyMetricResult::Percentiles(val) => MetricResult::Percentiles(val),
+            TantivyMetricResult::Percentiles(val) => MetricResult::Percentiles(val.into()),
             TantivyMetricResult::TopHits(val) => MetricResult::TopHits(val),
             TantivyMetricResult::Cardinality(val) => MetricResult::Cardinality(val),
         }
@@ -130,7 +132,7 @@ impl From<MetricResult> for TantivyMetricResult {
             MetricResult::Stats(val) => TantivyMetricResult::Stats(val),
             MetricResult::ExtendedStats(val) => TantivyMetricResult::ExtendedStats(val),
             MetricResult::Sum(val) => TantivyMetricResult::Sum(val),
-            MetricResult::Percentiles(val) => TantivyMetricResult::Percentiles(val),
+            MetricResult::Percentiles(val) => TantivyMetricResult::Percentiles(val.into()),
             MetricResult::TopHits(val) => TantivyMetricResult::TopHits(val),
             MetricResult::Cardinality(val) => TantivyMetricResult::Cardinality(val),
         }
@@ -365,5 +367,44 @@ impl From<Key> for TantivyKey {
             Key::U64(u) => TantivyKey::U64(u),
             Key::F64(f) => TantivyKey::F64(f),
         }
+    }
+}
+
+/// Single-metric aggregations use this common result structure.
+///
+/// Main reason to wrap it in value is to match elasticsearch output structure.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PercentilesMetricResult {
+    /// The result of the percentile metric.
+    pub values: PercentileValues,
+}
+
+/// This is the wrapper of percentile entries, which can be vector or hashmap
+/// depending on if it's keyed or not.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum PercentileValues {
+    /// Vector format percentile entries
+    Vec(Vec<PercentileValuesVecEntry>),
+    /// HashMap format percentile entries. Key is the serialized percentile
+    HashMap(FxHashMap<String, f64>),
+}
+
+impl From<TantivyPercentilesMetricResult> for PercentilesMetricResult {
+    fn from(value: TantivyPercentilesMetricResult) -> PercentilesMetricResult {
+        let values = match value.values {
+            TantivyPercentileValues::Vec(vec) => PercentileValues::Vec(vec),
+            TantivyPercentileValues::HashMap(map) => PercentileValues::HashMap(map),
+        };
+        PercentilesMetricResult { values }
+    }
+}
+
+impl From<PercentilesMetricResult> for TantivyPercentilesMetricResult {
+    fn from(value: PercentilesMetricResult) -> TantivyPercentilesMetricResult {
+        let values = match value.values {
+            PercentileValues::Vec(vec) => TantivyPercentileValues::Vec(vec),
+            PercentileValues::HashMap(map) => TantivyPercentileValues::HashMap(map),
+        };
+        TantivyPercentilesMetricResult { values }
     }
 }
