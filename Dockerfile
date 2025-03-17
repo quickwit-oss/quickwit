@@ -21,12 +21,13 @@ ENV QW_COMMIT_HASH=$QW_COMMIT_HASH
 ENV QW_COMMIT_TAGS=$QW_COMMIT_TAGS
 
 RUN apt-get -y update \
-    && apt-get -y install ca-certificates \
-                          clang \
-                          cmake \
-                          libssl-dev \
-                          llvm \
-                          protobuf-compiler \
+    && apt-get -y install \
+        ca-certificates \
+        clang \
+        cmake \
+        libssl-dev \
+        llvm \
+        protobuf-compiler \
     && rm -rf /var/lib/apt/lists/*
 
 COPY quickwit /quickwit
@@ -49,7 +50,7 @@ RUN echo "Building workspace with feature(s) '$CARGO_FEATURES' and profile '$CAR
     && find target/$CARGO_PROFILE -maxdepth 1 -perm /a+x -type f -exec mv {} /quickwit/bin \;
 
 
-FROM debian:bookworm-slim AS quickwit
+FROM registry.ddbuild.io/images/base/gbi-ubuntu_2204:latest AS quickwit
 
 LABEL org.opencontainers.image.title="Datadog CloudPrem"
 LABEL maintainer="Datadog, Inc."
@@ -60,9 +61,14 @@ COPY NOTICE /quickwit/
 COPY LICENSE /quickwit/
 COPY LICENSE-3rdparty.csv /quickwit/
 
+# Switch to root so we can install dependencies
+USER root
+
 RUN apt-get -y update \
-    && apt-get -y install ca-certificates \
-                          libssl3 \
+    && apt-get -y install \
+        ca-certificates \
+        libssl3 \
+        tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /quickwit
@@ -73,6 +79,8 @@ COPY --from=bin-builder /quickwit/config/quickwit.yaml /quickwit/config/quickwit
 ENV QW_CONFIG=/quickwit/config/quickwit.yaml
 ENV QW_DATA_DIR=/quickwit/qwdata
 ENV QW_LISTEN_ADDRESS=0.0.0.0
+
+USER dog
 
 RUN quickwit --version
 
