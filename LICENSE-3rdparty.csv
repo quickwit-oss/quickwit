@@ -192,6 +192,7 @@ float-cmp,https://github.com/mikedilger/float-cmp,MIT,Mike Dilger <mike@mikedilg
 flume,https://github.com/zesterer/flume,Apache-2.0 OR MIT,Joshua Barretto <joshua.s.barretto@gmail.com>
 fnv,https://github.com/servo/rust-fnv,Apache-2.0  OR  MIT,Alex Crichton <alex@alexcrichton.com>
 foldhash,https://github.com/orlp/foldhash,Zlib,Orson Peters <orsonpeters@gmail.com>
+foreign-types,https://github.com/sfackler/foreign-types,MIT OR Apache-2.0,Steven Fackler <sfackler@gmail.com>
 fragile,https://github.com/mitsuhiko/fragile,Apache-2.0,Armin Ronacher <armin.ronacher@active-4.com>
 fs4,https://github.com/al8n/fs4-rs,MIT OR Apache-2.0,"Dan Burkert <dan@danburkert.com>, Al Liu <scygliu1@gmail.com>"
 fslock,https://github.com/brunoczim/fslock,MIT,The fslock Authors
@@ -345,7 +346,10 @@ oneshot,https://github.com/faern/oneshot,MIT OR Apache-2.0,Linus Färnstrand <fa
 onig,http://github.com/iwillspeak/rust-onig,MIT,"Will Speak <will@willspeak.me>, Ivan Ivashchenko <defuz@me.com>"
 oorandom,https://hg.sr.ht/~icefox/oorandom,MIT,Simon Heath <icefox@dreamquest.io>
 opaque-debug,https://github.com/RustCrypto/utils,MIT OR Apache-2.0,RustCrypto Developers
+openssl,https://github.com/sfackler/rust-openssl,Apache-2.0,Steven Fackler <sfackler@gmail.com>
+openssl-macros,https://github.com/sfackler/rust-openssl,MIT OR Apache-2.0,The openssl-macros Authors
 openssl-probe,https://github.com/alexcrichton/openssl-probe,MIT OR Apache-2.0,Alex Crichton <alex@alexcrichton.com>
+openssl-sys,https://github.com/sfackler/rust-openssl,MIT,"Alex Crichton <alex@alexcrichton.com>, Steven Fackler <sfackler@gmail.com>"
 opentelemetry,https://github.com/open-telemetry/opentelemetry-rust,Apache-2.0,The opentelemetry Authors
 opentelemetry-http,https://github.com/open-telemetry/opentelemetry-rust,Apache-2.0,The opentelemetry-http Authors
 opentelemetry-otlp,https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-otlp,Apache-2.0,The opentelemetry-otlp Authors
@@ -366,6 +370,7 @@ paste,https://github.com/dtolnay/paste,MIT OR Apache-2.0,David Tolnay <dtolnay@g
 pbkdf2,https://github.com/RustCrypto/password-hashes/tree/master/pbkdf2,MIT OR Apache-2.0,RustCrypto Developers
 peakmem-alloc,https://github.com/PSeitz/peakmem-alloc,MIT,Pascal Seitz <pascal.seitz@gmail.com>
 peeking_take_while,https://github.com/fitzgen/peeking_take_while,MIT OR Apache-2.0,Nick Fitzgerald <fitzgen@gmail.com>
+pem,https://github.com/jcreekmore/pem-rs,MIT,Jonathan Creekmore <jonathan@thecreekmores.org>
 perf-event,https://github.com/jimblandy/perf-event,MIT OR Apache-2.0,Jim Blandy <jimb@red-bean.com>
 perf-event-open-sys,https://github.com/jimblandy/perf-event-open-sys,MIT OR Apache-2.0,Jim Blandy <jimb@red-bean.com>
 pest,https://github.com/pest-parser/pest,MIT OR Apache-2.0,Dragoș Tiselice <dragostiselice@gmail.com>

@@ -1,4 +1,7 @@
 [overrides]
+# These crates do not specify a homepage in their metadata.
+"openssl-macros" = { origin = "https://github.com/sfackler/rust-openssl" }
+
 # rust-license-tool can't find the license for crunchy-0.2.2, but it's MIT
 # according to the crate's Cargo.toml.
 "crunchy-0.2.2" = { license = "MIT", origin = "https://github.com/eira-fransham/crunchy" }
