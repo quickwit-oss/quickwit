@@ -18,6 +18,8 @@ use crate::error::PipelineError;
 use crate::filter::build_vrl_matcher;
 use crate::path_access::parse_path;
 use crate::processed_log::ProcessedLog;
+use crate::transformers::grok_auto_step::build_grok_parser_auto_step;
+use crate::transformers::grok_rules::LogsProcessingGrokRules;
 use crate::transformers::{
     build_grok_parser_step, AttributeRemapStep, DateRemapStep, FilteredStep, StatusRemapStep,
 };
@@ -70,7 +72,7 @@ impl Pipeline {
     }
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum PipelineStepConfig {
     /// A nested pipeline step.
@@ -88,11 +90,18 @@ pub enum PipelineStepConfig {
         #[serde(default)]
         tags: Vec<String>,
     },
-    /// Grok transform: parse a field with a pattern, optionally add a prefix to captured fields.
+    /// Grok transforms based on the value of the `source` field from a list of library grok rules.
+    #[serde(rename = "auto-grok")]
+    AutoGrok {
+        #[serde(flatten)]
+        common: CommonConfig,
+    },
+    /// Grok transform based on passed match_rules and support_rules.
+    #[serde(rename = "grok-parser")]
     Grok {
         #[serde(flatten)]
         common: CommonConfig,
-        patterns: Vec<String>,
+        grok: LogsProcessingGrokRules,
     },
     /// Remap one nested path to another (optionally preserve the original).
     /// Serde rename to `attribute-remapper` to keep compatible with logs pipelines
@@ -204,14 +213,16 @@ pub fn build_step(cfg: &PipelineStepConfig) -> Result<Box<dyn PipelineStep>, Pip
             let sub_pipeline = Pipeline::from_configs(steps)?;
             Ok(Box::new(FilteredStep::new(filter, sub_pipeline)))
         }
-        PipelineStepConfig::Grok {
-            common,
-            patterns: pattern,
-        } => {
+        PipelineStepConfig::Grok { common, grok } => {
             let filter = build_vrl_matcher(&common.filter.query, common.enabled)?;
-            let grok = build_grok_parser_step(pattern)?;
+            let grok = build_grok_parser_step(grok)?;
 
             Ok(Box::new(FilteredStep::new(filter, grok)))
+        }
+        PipelineStepConfig::AutoGrok { common: _ } => {
+            // TODO: respect common.enabled
+            let auto_grok = build_grok_parser_auto_step()?;
+            Ok(Box::new(auto_grok))
         }
         PipelineStepConfig::AttributeRemapper {
             common,
@@ -251,6 +262,7 @@ mod tests {
 
     use super::*;
     use crate::processed_log::tests::make_datadog_log_msg;
+    use crate::transformers::grok_rules::Rule;
 
     #[test]
     fn test_nested_pipeline() {
@@ -280,12 +292,12 @@ mod tests {
                 filter: "service:appgate_driver_logs OR service:appgate_app_logs".into(),
                 ..Default::default()
             },
-            patterns: vec![
-                r#"\[%{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):date}\] %{data:level} : %{data:message}"#
-                    .into(),
-            ],
+            grok: LogsProcessingGrokRules {
+                support_rules: vec![],
+                match_rules: vec![Rule{ name: "".to_string(), rule:r#"\[%{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):date}\] %{data:level} : %{data:message}"#.to_string()  }] ,
+            },
         };
-        Pipeline::from_configs(&[step_cfg.clone()]).unwrap()
+        Pipeline::from_configs(&[step_cfg]).unwrap()
     }
 
     #[test]
@@ -423,5 +435,33 @@ sources:
         let mut agent_log = ProcessedLog::from_datadog_log_msg(make_datadog_log_msg());
         step.apply(&mut agent_log).unwrap();
         assert_eq!(agent_log.status, "info"); // default
+    }
+
+    #[test]
+    fn test_grok_parser_deser() {
+        // The format of logs processing
+        let yaml = r#"
+type: grok-parser
+id: "123456"
+name: "grok-parser test"
+enabled: true
+grok:
+  matchRules: "default_format %{_pid}:%{_role} %{_date} %{_severity} %{data:message}"
+  supportRules: "_date (%{date(\"dd MMM HH:mm:ss.SSS\"):date}|%{date(\"dd MMM yyyy HH:mm:ss.SSS\"):date})\n_pid %{integer:pid}\n_severity %{notSpace:severity}\n_role %{word:role}\n"
+"#;
+
+        let config: PipelineStepConfig =
+            serde_yaml::from_str(yaml).expect("Deserialization failed");
+        let step = build_step(&config).unwrap();
+
+        let mut agent_log = ProcessedLog::from_datadog_log_msg(make_datadog_log_msg());
+        agent_log.message = "2115:M 08 Jan 17:55:41.572 # WARNING: The TCP backlog setting of 511 \
+                             cannot be enforced because /proc/sys/net/core/somaxconn is set to \
+                             the lower value of 128."
+            .into();
+
+        step.apply(&mut agent_log).unwrap();
+        assert_eq!(agent_log.custom.len(), 5);
+        assert_eq!(agent_log.custom["pid"], 2115);
     }
 }

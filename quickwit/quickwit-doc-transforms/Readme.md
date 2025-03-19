@@ -5,6 +5,8 @@ See [datadog documentation](https://docs.datadoghq.com/logs/log_configuration/pr
 
 # TODO
 
+- Log events can be submitted up to 18 hours in the past and two hours in the future.
+
 ### Filters
 * Handle more than numerical ranges in filter.rs (compare fn)
 * Do field normalization after JSON parsing

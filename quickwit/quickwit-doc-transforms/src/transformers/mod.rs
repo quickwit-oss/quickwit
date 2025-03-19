@@ -13,7 +13,7 @@
 // limitations under the License.
 
 mod date_remaper;
-mod grok;
+pub mod grok;
 mod remap_field;
 mod status_remaper;
 
