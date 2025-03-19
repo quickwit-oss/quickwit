@@ -309,6 +309,7 @@ mod test {
         invalid_index_config.retention_policy_opt = Some(RetentionPolicy {
             retention_period: "90 days".to_string(),
             evaluation_schedule: "hourly".to_string(),
+            jitter_secs: None,
         });
         let validation_err = invalid_index_config
             .build_and_validate(None)
