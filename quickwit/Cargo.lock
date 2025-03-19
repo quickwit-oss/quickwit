@@ -7307,6 +7307,7 @@ dependencies = [
  "lru",
  "md5",
  "mockall",
+ "murmurhash32",
  "once_cell",
  "opendal",
  "pin-project",
