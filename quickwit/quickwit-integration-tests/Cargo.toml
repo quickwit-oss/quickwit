@@ -24,6 +24,7 @@ aws-sdk-sqs = { workspace = true }
 futures-util = { workspace = true }
 hyper = { workspace = true }
 itertools = { workspace = true }
+regex = { workspace = true }
 reqwest = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }

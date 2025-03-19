@@ -342,6 +342,10 @@ impl QuickwitClient {
 
         Ok(cumulated_resp)
     }
+
+    pub fn base_url(&self) -> &Url {
+        &self.transport.base_url
+    }
 }
 
 pub enum IngestEvent {
