@@ -88,6 +88,7 @@ time = { workspace = true }
 
 [dev-dependencies]
 assert-json-diff = { workspace = true }
+http-body = "0.4"
 itertools = { workspace = true }
 mockall = { workspace = true }
 tempfile = { workspace = true }

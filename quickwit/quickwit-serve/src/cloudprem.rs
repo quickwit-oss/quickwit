@@ -1,9 +1,15 @@
 use std::sync::LazyLock;
+use std::task::{Context as TaskContext, Poll};
 
 use anyhow::{bail, Context};
+use futures::future::{ready, Either, Ready};
 use openssl::pkey::{PKey, PKeyRef, Public};
 use openssl::x509::X509;
-use quickwit_proto::tonic::{Request, Status};
+use quickwit_proto::tonic::body::BoxBody;
+use quickwit_proto::tonic::codegen::http::{Request, Response};
+use quickwit_proto::tonic::transport::Body;
+use quickwit_proto::tonic::Status;
+use tower::{Layer, Service};
 
 /// CA certificate used by the CloudPrem bridge.
 const CA_CERT: &str = "-----BEGIN CERTIFICATE-----
@@ -51,25 +57,22 @@ static CA_CERT_PUBLIC_KEY: LazyLock<PKey<Public>> = LazyLock::new(|| {
 ///
 /// This interceptor parses and verifies the CloudPrem bridge client certificate.
 ///
-/// The client certificate is forwarded by the AWS ALB to the backend via the
-/// urlencoded `X-Amzn-Mtls-Clientcert` header, which also carries the intermediate certificates
-/// but in the context of CloudPrem, there is always only one certificate.
+/// The AWS ALB forwards the client certificate to the backend via the URL-encoded
+/// `X-Amzn-Mtls-Clientcert` header. It can also carry intermediate certificates, but in the context
+/// of CloudPrem, we always expect a single certificate.
 ///
 /// https://docs.aws.amazon.com/elasticloadbalancing/latest/application/mutual-authentication.html
-pub(crate) fn aws_mtls_interceptor(request: Request<()>) -> Result<Request<()>, Status> {
-    aws_mtls_interceptor_impl(request, &CA_CERT_PUBLIC_KEY)
-}
-
-fn aws_mtls_interceptor_impl(
-    request: Request<()>,
+fn aws_mtls_interceptor_impl<T>(
+    request: Request<T>,
     ca_cert_public_key: &PKeyRef<Public>,
-) -> Result<Request<()>, Status> {
-    let is_internal_traffic = request.metadata().get("X-Forwarded-For").is_none();
+) -> Result<Request<T>, Status> {
+    let path = request.uri().path();
+    let is_external_traffic = path.starts_with("/cloudprem");
 
-    if is_internal_traffic {
+    if !is_external_traffic {
         return Ok(request);
     }
-    let Some(encoded_client_cert) = request.metadata().get("X-Amzn-Mtls-Clientcert") else {
+    let Some(encoded_client_cert) = request.headers().get("X-Amzn-Mtls-Clientcert") else {
         return Err(Status::unauthenticated("could not find client certificate"));
     };
     let client_cert = urlencoding::decode_binary(encoded_client_cert.as_bytes());
@@ -109,9 +112,61 @@ fn verify_client_cert(
         .context("failed to verify client certificate")
 }
 
+#[derive(Clone)]
+pub(crate) struct AwsMtlsInterceptor<'a, S> {
+    inner: S,
+    ca_cert_public_key: &'a PKeyRef<Public>,
+}
+
+impl<'a, S> Service<Request<Body>> for AwsMtlsInterceptor<'a, S>
+where S: Service<Request<Body>, Response = Response<BoxBody>>
+{
+    type Response = S::Response;
+    type Error = S::Error;
+    type Future = Either<S::Future, Ready<Result<Self::Response, Self::Error>>>;
+
+    fn poll_ready(&mut self, cx: &mut TaskContext<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
+    }
+
+    fn call(&mut self, request: Request<Body>) -> Self::Future {
+        match aws_mtls_interceptor_impl(request, self.ca_cert_public_key) {
+            Ok(request) => Either::Left(self.inner.call(request)),
+            Err(status) => Either::Right(ready(Ok(status.to_http()))),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct AwsMtlsInterceptorLayer<'a> {
+    ca_cert_public_key: &'a PKeyRef<Public>,
+}
+
+impl AwsMtlsInterceptorLayer<'static> {
+    pub fn for_cloudprem_bridge() -> Self {
+        Self {
+            ca_cert_public_key: &CA_CERT_PUBLIC_KEY,
+        }
+    }
+}
+
+impl<'a, S> Layer<S> for AwsMtlsInterceptorLayer<'a> {
+    type Service = AwsMtlsInterceptor<'a, S>;
+
+    fn layer(&self, inner: S) -> Self::Service {
+        Self::Service {
+            inner,
+            ca_cert_public_key: self.ca_cert_public_key,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use quickwit_proto::tonic::Code;
+    use hyper::StatusCode;
+    use quickwit_proto::tonic::{Code, Status};
+    use tonic::body::empty_body;
+    use tower::service_fn;
 
     use super::*;
 
@@ -120,49 +175,74 @@ mod tests {
         include_bytes!("../../quickwit-integration-tests/test_data/server.crt");
 
     #[test]
-    fn test_aws_mtls_interceptor() {
+    fn test_aws_mtls_interceptor_impl() {
         // Internal traffic should be allowed
-        let request = Request::new(());
-        aws_mtls_interceptor(request).unwrap();
+        let request = Request::builder().uri("/api/v1/indexes").body(()).unwrap();
+        aws_mtls_interceptor_impl(request, &CA_CERT_PUBLIC_KEY).unwrap();
 
         // External traffic without client certificate should be rejected
-        let mut request = Request::new(());
-        request
-            .metadata_mut()
-            .insert("x-forwarded-for", "127.0.0.1".parse().unwrap());
-
-        let status = aws_mtls_interceptor(request).unwrap_err();
+        let request = Request::builder().uri("/cloudprem").body(()).unwrap();
+        let status = aws_mtls_interceptor_impl(request, &CA_CERT_PUBLIC_KEY).unwrap_err();
         assert_eq!(status.code(), Code::Unauthenticated);
 
-        // External traffic with invalid client certificate should be allowed
-        let mut request = Request::new(());
-        request
-            .metadata_mut()
-            .insert("x-forwarded-for", "127.0.0.1".parse().unwrap());
+        // External traffic with invalid client certificate should be rejected
+        let encoded_client_cert = urlencoding::encode_binary(TEST_CLIENT_CERT).to_string();
 
-        let encoded_client_cert = urlencoding::encode_binary(TEST_CLIENT_CERT);
-        request.metadata_mut().insert(
-            "x-amzn-mtls-clientcert",
-            encoded_client_cert.parse().unwrap(),
-        );
-
+        let request = Request::builder()
+            .uri("/cloudprem")
+            .header("x-amzn-mtls-clientcert", &encoded_client_cert)
+            .body(())
+            .unwrap();
         let status = aws_mtls_interceptor_impl(request, &CA_CERT_PUBLIC_KEY).unwrap_err();
         assert_eq!(status.code(), Code::Unauthenticated);
 
         // External traffic with valid client certificate should be allowed
-        let mut request = Request::new(());
-        request
-            .metadata_mut()
-            .insert("x-forwarded-for", "127.0.0.1".parse().unwrap());
+        let request = Request::builder()
+            .uri("/cloudprem")
+            .header("x-amzn-mtls-clientcert", &encoded_client_cert)
+            .body(())
+            .unwrap();
+        let test_ca_cert_public_key = X509::from_pem(TEST_CA_CERT).unwrap().public_key().unwrap();
+        aws_mtls_interceptor_impl(request, &test_ca_cert_public_key).unwrap();
+    }
 
-        let encoded_client_cert = urlencoding::encode_binary(TEST_CLIENT_CERT);
-        request.metadata_mut().insert(
-            "x-amzn-mtls-clientcert",
-            encoded_client_cert.parse().unwrap(),
+    #[tokio::test]
+    async fn test_aws_mtls_interceptor_layer() {
+        let test_ca_cert_public_key = X509::from_pem(TEST_CA_CERT).unwrap().public_key().unwrap();
+        let interceptor = AwsMtlsInterceptorLayer {
+            ca_cert_public_key: &test_ca_cert_public_key,
+        };
+        let service = service_fn(|_request: Request<Body>| async {
+            let response = Response::builder()
+                .status(StatusCode::OK)
+                .header("grpc-status", "0")
+                .body(empty_body())
+                .unwrap();
+            Ok::<_, Status>(response)
+        });
+        let mut intercepted_service = interceptor.layer(service);
+
+        let request = Request::builder()
+            .uri("/cloudprem")
+            .body(Body::empty())
+            .unwrap();
+        let response = intercepted_service.call(request).await.unwrap();
+        assert_eq!(
+            response.headers().get("grpc-status"),
+            Some(&"16".parse().unwrap())
         );
 
-        let ca_cert_public_key = X509::from_pem(TEST_CA_CERT).unwrap().public_key().unwrap();
-        aws_mtls_interceptor_impl(request, &ca_cert_public_key).unwrap();
+        let encoded_client_cert = urlencoding::encode_binary(TEST_CLIENT_CERT).to_string();
+        let request = Request::builder()
+            .uri("/cloudprem")
+            .header("x-amzn-mtls-clientcert", &encoded_client_cert)
+            .body(Body::empty())
+            .unwrap();
+        let response = intercepted_service.call(request).await.unwrap();
+        assert_eq!(
+            response.headers().get("grpc-status"),
+            Some(&"0".parse().unwrap())
+        );
     }
 
     #[test]
@@ -170,8 +250,8 @@ mod tests {
         let verified = verify_client_cert(TEST_CLIENT_CERT, &CA_CERT_PUBLIC_KEY).unwrap();
         assert!(!verified);
 
-        let ca_cert_public_key = X509::from_pem(TEST_CA_CERT).unwrap().public_key().unwrap();
-        let verified = verify_client_cert(TEST_CLIENT_CERT, &ca_cert_public_key).unwrap();
+        let test_ca_cert_public_key = X509::from_pem(TEST_CA_CERT).unwrap().public_key().unwrap();
+        let verified = verify_client_cert(TEST_CLIENT_CERT, &test_ca_cert_public_key).unwrap();
 
         assert!(verified);
     }

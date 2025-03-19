@@ -31,7 +31,6 @@ use quickwit_proto::opentelemetry::proto::collector::logs::v1::logs_service_serv
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_server::TraceServiceServer;
 use quickwit_proto::search::search_service_server::SearchServiceServer;
 use quickwit_proto::tonic::codegen::CompressionEncoding;
-use quickwit_proto::tonic::service::interceptor;
 use quickwit_proto::tonic::transport::server::TcpIncoming;
 use quickwit_proto::tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
 use tokio::net::TcpListener;
@@ -39,10 +38,11 @@ use tonic_reflection::server::{ServerReflection, ServerReflectionServer};
 use tracing::*;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
+use crate::cloudprem::AwsMtlsInterceptorLayer;
 use crate::cloudprem_api::CloudPremServiceImpl;
 use crate::developer_api::DeveloperApiServer;
 use crate::search_api::GrpcSearchAdapter;
-use crate::{cloudprem, QuickwitServices, INDEXING_GRPC_SERVER_METRICS_LAYER};
+use crate::{QuickwitServices, INDEXING_GRPC_SERVER_METRICS_LAYER};
 
 struct HttpHeadersCarrier<'a>(&'a HeaderMap);
 
@@ -257,7 +257,7 @@ pub(crate) async fn start_grpc_server(
     let reflection_service = build_reflection_service(&file_descriptor_sets)?;
 
     let server_router = server
-        .layer(interceptor(cloudprem::aws_mtls_interceptor))
+        .layer(AwsMtlsInterceptorLayer::for_cloudprem_bridge())
         .add_service(cluster_grpc_service)
         .add_service(developer_grpc_service)
         .add_service(reflection_service)
