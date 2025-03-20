@@ -336,9 +336,17 @@ pub async fn update_index(
     let index_uid = current_index_metadata.index_uid.clone();
     let current_index_config = current_index_metadata.into_index_config();
 
-    let new_index_config =
-        load_index_config_update(config_format, &index_config_bytes, &current_index_config)
-            .map_err(IndexServiceError::InvalidConfig)?;
+    let current_index_parent_dir = &current_index_config
+        .index_uri
+        .parent_unchecked()
+        .ok_or_else(|| IndexServiceError::Internal("index URI should have a parent".to_string()))?;
+    let new_index_config = load_index_config_update(
+        config_format,
+        &index_config_bytes,
+        current_index_parent_dir,
+        &current_index_config,
+    )
+    .map_err(IndexServiceError::InvalidConfig)?;
 
     let update_request = UpdateIndexRequest::try_from_updates(
         index_uid,
