@@ -631,6 +631,10 @@ impl IndexingService {
         let pipeline_diff = self.compute_pipeline_diff(tasks);
 
         if !pipeline_diff.pipelines_to_shutdown.is_empty() {
+            info!(
+                pipeline_uids=?pipeline_diff.pipelines_to_shutdown,
+                "shutdown indexing pipelines"
+            );
             self.shutdown_pipelines(&pipeline_diff.pipelines_to_shutdown)
                 .await;
         }

@@ -15,6 +15,7 @@
 use std::fmt;
 
 use quickwit_actors::AskError;
+use quickwit_common::tower::TimeoutExceeded;
 use quickwit_proto::error::GrpcServiceError;
 pub use quickwit_proto::error::{grpc_error_to_grpc_status, grpc_status_to_service_error};
 use quickwit_proto::{ServiceError, ServiceErrorCode};
@@ -70,5 +71,11 @@ where E: fmt::Debug
 {
     fn from(error: AskError<E>) -> Self {
         HelloError::Internal(format!("{error:?}"))
+    }
+}
+
+impl From<TimeoutExceeded> for HelloError {
+    fn from(_: TimeoutExceeded) -> Self {
+        HelloError::Timeout("client".to_string())
     }
 }
