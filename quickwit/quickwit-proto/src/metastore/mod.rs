@@ -16,7 +16,7 @@ use std::fmt;
 
 use quickwit_common::rate_limited_error;
 use quickwit_common::retry::Retryable;
-use quickwit_common::tower::MakeLoadShedError;
+use quickwit_common::tower::{MakeLoadShedError, TimeoutExceeded};
 use serde::{Deserialize, Serialize};
 
 use crate::types::{IndexId, IndexUid, QueueId, SourceId, SplitId};
@@ -184,6 +184,12 @@ impl From<sqlx::Error> for MetastoreError {
         MetastoreError::Db {
             message: error.to_string(),
         }
+    }
+}
+
+impl From<TimeoutExceeded> for MetastoreError {
+    fn from(_: TimeoutExceeded) -> Self {
+        MetastoreError::Timeout("client".to_string())
     }
 }
 
