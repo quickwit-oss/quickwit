@@ -1,0 +1,20 @@
+ndjson:
+  - index: { "_index": "test-index" }
+  - message: Hola, Mundo!
+  - index: { "_index": "test-index-pattern-11" }
+  - message: Hola, Mundo!
+  - index: { "_index": "test-index-pattern-&1" }
+  - message: Hola, Mundo!
+status_code: 200
+expected:
+  errors: true
+  items:
+    - index:
+        _index: test-index
+        status: 201
+    - index:
+        _index: test-index-pattern-11
+        status: 201
+    - index:
+        _index: test-index-pattern-&1
+        status: 400
