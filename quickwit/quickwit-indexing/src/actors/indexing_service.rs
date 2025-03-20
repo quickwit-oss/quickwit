@@ -631,10 +631,6 @@ impl IndexingService {
         let pipeline_diff = self.compute_pipeline_diff(tasks);
 
         if !pipeline_diff.pipelines_to_shutdown.is_empty() {
-            info!(
-                pipeline_uids=?pipeline_diff.pipelines_to_shutdown,
-                "shutdown indexing pipelines"
-            );
             self.shutdown_pipelines(&pipeline_diff.pipelines_to_shutdown)
                 .await;
         }
@@ -753,6 +749,10 @@ impl IndexingService {
 
     /// Shuts down the pipelines with supplied ids and performs necessary cleanup.
     async fn shutdown_pipelines(&mut self, pipelines_to_shutdown: &[PipelineUid]) {
+        info!(
+            pipeline_uids=?pipelines_to_shutdown,
+            "shutdown indexing pipelines"
+        );
         let should_gc_ingest_api_queues = pipelines_to_shutdown
             .iter()
             .flat_map(|pipeline_uid| self.indexing_pipelines.get(pipeline_uid))

@@ -769,7 +769,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_balanced_channel_timeout() {
+    async fn test_balanced_channel_timeout_with_server_crash() {
         let addr_str = "127.0.0.1:11112";
         let addr: SocketAddr = addr_str.parse().unwrap();
         // We want to abruptly stop a server without even sending the connection
@@ -808,7 +808,8 @@ mod tests {
             .unwrap();
 
         let grpc_client = HelloClient::tower()
-            // this test fails if we comment out the TimeoutLayer
+            // this test hangs forever if we comment out the TimeoutLayer, which
+            // shows that a request without explicit timeout might hang forever
             .stack_layer(TimeoutLayer::new(Duration::from_secs(3)))
             .build_from_balance_channel(balance_channel, ByteSize::mib(1));
 
@@ -819,10 +820,8 @@ mod tests {
                 })
                 .await
         };
-        let response_fut = tokio::time::timeout(Duration::from_secs(5), response_fut);
         response_fut
             .await
-            .unwrap()
             .expect_err("should have timed out at the client level");
     }
 }
