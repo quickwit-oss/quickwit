@@ -38,7 +38,7 @@ use serde_json::{json, Value as JsonValue};
 use tokio::sync::{mpsc, watch};
 use tokio::task::{spawn_blocking, JoinHandle};
 use tokio::time;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::actors::DocProcessor;
 use crate::models::{NewPublishLock, PublishLock};
@@ -363,9 +363,11 @@ impl KafkaSource {
             let next_offset = match &current_position {
                 Position::Beginning => Offset::Beginning,
                 Position::Offset(offset) => {
-                    let offset = offset
-                        .as_i64()
-                        .expect("Kafka offset should be stored as i64");
+                    let Some(offset) = offset.as_i64() else {
+                        error!("Kafka offset should be stored as i64, skipping partition");
+                        continue;
+                    };
+
                     Offset::Offset(offset + 1)
                 }
                 Position::Eof(_) => {
@@ -595,11 +597,13 @@ fn spawn_consumer_poll_loop(
                         as i32;
                     // Quickwit positions are inclusive whereas Kafka offsets are exclusive, hence
                     // the increment by 1.
-                    let next_position = position
-                        .as_i64()
-                        .expect("Kafka offset should be stored as i64.")
-                        + 1;
-                    let offset = Offset::Offset(next_position);
+
+                    let Some(next_position) = position.as_i64() else {
+                        error!("Kafka offset should be stored as i64, skipping partition");
+                        continue;
+                    };
+
+                    let offset = Offset::Offset(next_position + 1);
                     tpl.add_partition_offset(&topic, partition, offset)
                         .expect("The offset should be valid.");
                 }
