@@ -3437,12 +3437,12 @@ dependencies = [
 
 [[package]]
 name = "http-body-util"
-version = "0.1.2"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "793429d76616a256bcb62c2a2ec2bed781c8307e797e2598c50010f2bee2544f"
+checksum = "b021d93e26becf5dc7e1b75b1bed1fd93124b374ceb73f43d4d4eafec896a64a"
 dependencies = [
  "bytes",
- "futures-util",
+ "futures-core",
  "http 1.2.0",
  "http-body 1.0.1",
  "pin-project-lite",
@@ -7304,6 +7304,7 @@ dependencies = [
  "futures-util",
  "glob",
  "hex",
+ "http-body 0.4.6",
  "http-serde 1.1.3",
  "humantime",
  "hyper 0.14.32",
@@ -7312,7 +7313,9 @@ dependencies = [
  "mime_guess",
  "mockall",
  "once_cell",
+ "openssl",
  "opentelemetry",
+ "pem 3.0.5",
  "percent-encoding",
  "pprof",
  "prost 0.11.9",

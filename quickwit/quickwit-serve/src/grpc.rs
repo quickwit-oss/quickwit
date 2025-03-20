@@ -31,15 +31,14 @@ use quickwit_proto::opentelemetry::proto::collector::logs::v1::logs_service_serv
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_server::TraceServiceServer;
 use quickwit_proto::search::search_service_server::SearchServiceServer;
 use quickwit_proto::tonic::codegen::CompressionEncoding;
-use quickwit_proto::tonic::service::interceptor;
 use quickwit_proto::tonic::transport::server::TcpIncoming;
 use quickwit_proto::tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
-use quickwit_proto::tonic::{Request, Status};
 use tokio::net::TcpListener;
 use tonic_reflection::server::{ServerReflection, ServerReflectionServer};
 use tracing::*;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
+use crate::cloudprem::AwsMtlsInterceptorLayer;
 use crate::cloudprem_api::CloudPremServiceImpl;
 use crate::developer_api::DeveloperApiServer;
 use crate::search_api::GrpcSearchAdapter;
@@ -258,7 +257,7 @@ pub(crate) async fn start_grpc_server(
     let reflection_service = build_reflection_service(&file_descriptor_sets)?;
 
     let server_router = server
-        .layer(interceptor(aws_mtls_interceptor))
+        .layer(AwsMtlsInterceptorLayer::for_cloudprem_bridge())
         .add_service(cluster_grpc_service)
         .add_service(developer_grpc_service)
         .add_service(reflection_service)
@@ -300,29 +299,4 @@ fn build_reflection_service(
     builder
         .build()
         .context("failed to build reflection service")
-}
-
-fn aws_mtls_interceptor(request: Request<()>) -> Result<Request<()>, Status> {
-    if let Some(cert_chain) = request.metadata().get("X-Amzn-Mtls-Clientcert") {
-        let Ok(cert_chain_str) = cert_chain.to_str() else {
-            return Err(Status::invalid_argument(
-                "failed to parse mTLS client certificate",
-            ));
-        };
-
-        let Ok(decoded_cert_chain) = urlencoding::decode(cert_chain_str) else {
-            return Err(Status::invalid_argument(
-                "failed to decode mTLS client certificate",
-            ));
-        };
-        tracing::info!("mTLS client certificate chain: {decoded_cert_chain}");
-
-        let Some(leaf_cert) = decoded_cert_chain.split(',').last() else {
-            return Err(Status::invalid_argument(
-                "failed to parse mTLS client certificate",
-            ));
-        };
-        tracing::info!("mTLS leaf client certificate: {leaf_cert}");
-    }
-    Ok(request)
 }

@@ -169,6 +169,7 @@ opentelemetry = "0.27"
 opentelemetry_sdk = { version = "0.27", features = ["rt-tokio"] }
 opentelemetry-otlp = { version= "0.27", features = ["zstd-tonic"] }
 ouroboros = "0.18.0"
+pem = "3.0.5"
 percent-encoding = "2.3.1"
 pin-project = "1.1.0"
 pnet = { version = "0.33.0", features = ["std"] }

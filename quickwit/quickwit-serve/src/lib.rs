@@ -15,6 +15,7 @@
 #![recursion_limit = "256"]
 
 mod build_info;
+mod cloudprem;
 mod cloudprem_api;
 mod cluster_api;
 mod datadog_api;
