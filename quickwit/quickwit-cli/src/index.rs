@@ -1071,6 +1071,13 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
             println!("└ document: {}", failure.document);
         }
     }
+    if response.num_too_many_requests > 0 {
+        println!("Retried request counts:");
+        println!(
+            "  429 (too many requests)   = {}",
+            response.num_too_many_requests
+        );
+    }
     Ok(())
 }
 
