@@ -29,9 +29,10 @@ build_image:
     DDSIGN_ID_TOKEN:
       aud: image-integrity
   script:
-    - scripts/image-tool.sh --push --sign --platform linux/amd64,linux/arm64 --repo cloudprem $CI_COMMIT_SHA
-      # also publish an image with a unique name to save us from race conditions causing public release of the wrong image
-    - scripts/image-tool.sh --push --sign --platform linux/amd64,linux/arm64 --repo cloudprem --tag $CI_COMMIT_SHA
+      # push an unsigned image for public use, identify it with it's SHA to prevent race condition between pipelines
+    - scripts/image-tool.sh --push --platform linux/amd64,linux/arm64 --repo cloudprem --tag $CI_COMMIT_SHA
+      # and a signed image to pomsky for internal deployments
+    - scripts/image-tool.sh --push --sign --repo pomsky
 
 generate-docker-tag-names:
   tags: ["arch:amd64"]
