@@ -13,6 +13,8 @@
 // limitations under the License.
 
 mod cluster_sandbox;
+mod prometheus_parser;
 mod shutdown;
 
 pub(crate) use cluster_sandbox::{ingest, ClusterSandbox, ClusterSandboxBuilder};
+pub(crate) use prometheus_parser::{filter_metrics, parse_prometheus_metrics};
