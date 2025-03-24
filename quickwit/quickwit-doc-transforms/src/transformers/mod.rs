@@ -16,11 +16,13 @@ mod date_remaper;
 pub mod grok;
 mod remap_field;
 mod status_remaper;
+mod stringbuilder;
 
 pub use date_remaper::*;
 pub use grok::*;
 pub use remap_field::*;
 pub use status_remaper::*;
+pub use stringbuilder::*;
 use vrl::datadog_filter::Matcher;
 
 use crate::error::PipelineError;

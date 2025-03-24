@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use serde_json::{json, Value};
-
 use crate::error::PipelineError;
 use crate::path_access::*;
 use crate::pipeline::*;
@@ -31,20 +29,13 @@ impl PipelineStep for AttributeRemapStep {
     fn apply(&self, value: &mut ProcessedLog) -> Result<(), PipelineError> {
         for from_path in &self.sources {
             // Extract the value at `from_path`
-            let from_val_opt =
-                get_nested_mut(&mut json!(value.custom), &from_path.segments).cloned();
+            let from_val_opt = get_nested(&value.custom, from_path.iter()).cloned();
             if let Some(from_val) = from_val_opt {
-                // Insert it at `to_path`
-                let mut custom_json = json!(value.custom);
-                set_or_create_nested_mut(&mut custom_json, &self.to_path.segments, from_val);
+                set_value_at_path_on_map(&mut value.custom, &self.to_path.segments, from_val);
 
                 if !self.preserve_original {
-                    remove_nested(&mut custom_json, &from_path.segments);
+                    remove_nested_from_map(&mut value.custom, &from_path.segments);
                 }
-                match custom_json {
-                    Value::Object(obj) => value.custom = obj,
-                    _ => unreachable!("custom field should be an object"),
-                };
                 // TODO: exist on the first match? Is this correct?
                 break;
             }
@@ -56,6 +47,8 @@ impl PipelineStep for AttributeRemapStep {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
     use crate::processed_log::tests::make_datadog_log_msg;
 

@@ -21,7 +21,8 @@ use crate::processed_log::ProcessedLog;
 use crate::transformers::grok_auto_step::build_grok_parser_auto_step;
 use crate::transformers::grok_rules::LogsProcessingGrokRules;
 use crate::transformers::{
-    build_grok_parser_step, AttributeRemapStep, DateRemapStep, FilteredStep, StatusRemapStep,
+    build_grok_parser_step, AttributeRemapStep, CompiledTemplateString, DateRemapStep,
+    FilteredStep, StatusRemapStep, StringBuilderStep,
 };
 
 /// Trait for steps in the pipeline. Each step mutates a `ProcessedLog`.
@@ -154,6 +155,16 @@ pub enum PipelineStepConfig {
         common: CommonConfig,
         sources: Vec<String>,
     },
+    /// A step that constructs a string from a template and writes it to a field.
+    #[serde(rename = "string-builder-processor")]
+    StringBuilder {
+        #[serde(flatten)]
+        common: CommonConfig,
+        template: String,
+        target: String,
+        #[serde(default)]
+        is_replace_missing: bool,
+    },
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -251,6 +262,20 @@ pub fn build_step(cfg: &PipelineStepConfig) -> Result<Box<dyn PipelineStep>, Pip
             let sources = sources.iter().map(AsRef::as_ref).map(parse_path).collect();
             let remap = DateRemapStep { sources };
             Ok(Box::new(FilteredStep::new(filter, remap)))
+        }
+        PipelineStepConfig::StringBuilder {
+            common,
+            template,
+            target,
+            is_replace_missing,
+        } => {
+            let filter = build_vrl_matcher(&common.filter.query, common.enabled)?;
+            let step = StringBuilderStep {
+                template: CompiledTemplateString::compile(template),
+                to_path: parse_path(target),
+                is_replace_missing: *is_replace_missing,
+            };
+            Ok(Box::new(FilteredStep::new(filter, step)))
         }
     }
 }
