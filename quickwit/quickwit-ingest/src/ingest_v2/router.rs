@@ -25,7 +25,7 @@ use quickwit_common::pubsub::{EventBroker, EventSubscriber};
 use quickwit_common::{rate_limited_error, rate_limited_warn};
 use quickwit_proto::control_plane::{
     ControlPlaneService, ControlPlaneServiceClient, GetOrCreateOpenShardsRequest,
-    GetOrCreateOpenShardsSubrequest,
+    GetOrCreateOpenShardsSubrequest, GetOrCreateOpenShardsSuccess,
 };
 use quickwit_proto::indexing::ShardPositionsUpdate;
 use quickwit_proto::ingest::ingester::{
@@ -45,13 +45,14 @@ use tracing::{error, info};
 
 use super::broadcast::LocalShardsUpdate;
 use super::debouncing::{
-    DebouncedGetOrCreateOpenShardsRequest, GetOrCreateOpenShardsRequestDebouncer,
+    DebouncedGetOrCreateOpenShardsRequest, GetOrCreateOpenShardsErrorDebounced,
+    GetOrCreateOpenShardsRequestDebouncer, Rendezvous,
 };
 use super::ingester::PERSIST_REQUEST_TIMEOUT;
 use super::metrics::IngestResultMetrics;
 use super::routing_table::{NextOpenShardError, RoutingTable};
-use super::workbench::IngestWorkbench;
-use super::{pending_subrequests, IngesterPool};
+use super::workbench::{pending_subrequests_for_attempt, IngestWorkbench};
+use super::IngesterPool;
 use crate::{get_ingest_router_buffer_size, LeaderId};
 
 /// Duration after which ingest requests time out with [`IngestV2Error::Timeout`].
@@ -155,7 +156,7 @@ impl IngestRouter {
     }
 
     /// Inspects the shard table for each subrequest and returns the appropriate
-    /// [`GetOrCreateOpenShardsRequest`] request if open shards do not exist for all the them.
+    /// [`GetOrCreateOpenShardsRequest`] request for those without open shards.
     async fn make_get_or_create_open_shard_request(
         &self,
         workbench: &mut IngestWorkbench,
@@ -169,7 +170,9 @@ impl IngestRouter {
 
         let mut state_guard = self.state.lock().await;
 
-        for subrequest in pending_subrequests(&workbench.subworkbenches) {
+        for subrequest in
+            pending_subrequests_for_attempt(&workbench.subworkbenches, workbench.num_attempts)
+        {
             if !state_guard.routing_table.has_open_shards(
                 &subrequest.index_id,
                 &subrequest.source_id,
@@ -192,7 +195,7 @@ impl IngestRouter {
                         debounced_request.push_subrequest(subrequest, permit);
                     }
                     Err(barrier) => {
-                        debounced_request.push_barrier(barrier);
+                        debounced_request.push_barrier(subrequest.subrequest_id, barrier);
                     }
                 }
             }
@@ -219,28 +222,65 @@ impl IngestRouter {
         workbench: &mut IngestWorkbench,
         debounced_request: DebouncedGetOrCreateOpenShardsRequest,
     ) {
-        let (request_opt, rendezvous) = debounced_request.take();
+        let (request_opt, mut rendezvous) = debounced_request.take();
 
-        if let Some(request) = request_opt {
-            self.populate_routing_table(workbench, request).await;
+        let Some(request) = request_opt else {
+            return;
+        };
+
+        let successes = self
+            .try_get_or_create_open_shards(request, workbench, &mut rendezvous)
+            .await;
+
+        self.populate_routing_table(successes).await;
+
+        let rendezvouz_errors = rendezvous.wait().await;
+        for (subrequest_id, error) in rendezvouz_errors.into_iter() {
+            match error {
+                GetOrCreateOpenShardsErrorDebounced::ControlPlaneError(control_plane_error) => {
+                    workbench.record_get_or_create_open_shards_error(
+                        subrequest_id,
+                        &control_plane_error,
+                    );
+                }
+                GetOrCreateOpenShardsErrorDebounced::Failure(failure) => {
+                    workbench.record_get_or_create_open_shards_failure(failure);
+                }
+            }
         }
-        rendezvous.wait().await;
     }
 
-    /// Issues a [`GetOrCreateOpenShardsRequest`] request to the control plane and populates the
-    /// shard table according to the response received.
-    async fn populate_routing_table(
+    /// Issues a [`GetOrCreateOpenShardsRequest`] request, returning the
+    /// successful shard creations if any and recording the failures to the
+    /// provided workbench and rendezvous
+    async fn try_get_or_create_open_shards(
         &self,
-        workbench: &mut IngestWorkbench,
         request: GetOrCreateOpenShardsRequest,
-    ) {
+        workbench: &mut IngestWorkbench,
+        rendezvous: &mut Rendezvous,
+    ) -> Vec<GetOrCreateOpenShardsSuccess> {
         if request.subrequests.is_empty() {
-            return;
+            return Vec::new();
         }
-        let response_result = self.control_plane.get_or_create_open_shards(request).await;
+        let response_result = self
+            .control_plane
+            .get_or_create_open_shards(request.clone())
+            .await;
         let response = match response_result {
             Ok(response) => response,
             Err(control_plane_error) => {
+                for subrequest in &request.subrequests {
+                    rendezvous.write_error(
+                        subrequest.subrequest_id,
+                        GetOrCreateOpenShardsErrorDebounced::ControlPlaneError(
+                            control_plane_error.clone(),
+                        ),
+                    );
+                    workbench.record_get_or_create_open_shards_error(
+                        subrequest.subrequest_id,
+                        &control_plane_error,
+                    );
+                }
                 if workbench.is_last_attempt() {
                     rate_limited_error!(
                         limit_per_min = 10,
@@ -252,22 +292,33 @@ impl IngestRouter {
                         "failed to get open shards from control plane: {control_plane_error}"
                     );
                 };
-                return;
+                return Vec::new();
             }
         };
-        let mut state_guard = self.state.lock().await;
 
-        for success in response.successes {
+        for failure in response.failures {
+            rendezvous.write_error(
+                failure.subrequest_id,
+                GetOrCreateOpenShardsErrorDebounced::Failure(failure.clone()),
+            );
+            workbench.record_get_or_create_open_shards_failure(failure);
+        }
+
+        response.successes
+    }
+
+    async fn populate_routing_table(&self, successes: Vec<GetOrCreateOpenShardsSuccess>) {
+        if successes.is_empty() {
+            return;
+        }
+
+        let mut state_guard = self.state.lock().await;
+        for success in successes {
             state_guard.routing_table.replace_shards(
                 success.index_uid().clone(),
                 success.source_id,
                 success.open_shards,
             );
-        }
-        drop(state_guard);
-
-        for failure in response.failures {
-            workbench.record_get_or_create_open_shards_failure(failure);
         }
     }
 
@@ -375,7 +426,9 @@ impl IngestRouter {
         let rate_limited_shards: &HashSet<ShardId> = &workbench.rate_limited_shards;
         let state_guard = self.state.lock().await;
 
-        for subrequest in pending_subrequests(&workbench.subworkbenches) {
+        for subrequest in
+            pending_subrequests_for_attempt(&workbench.subworkbenches, workbench.num_attempts)
+        {
             let next_open_shard_res_opt = state_guard
                 .routing_table
                 .find_entry(&subrequest.index_id, &subrequest.source_id)
@@ -547,6 +600,7 @@ fn update_ingest_metrics(ingest_result: &IngestV2Result<IngestResponseV2>, num_s
                         ingest_results_metrics.router_load_shedding.inc()
                     }
                     IngestFailureReason::LoadShedding => ingest_results_metrics.load_shedding.inc(),
+                    IngestFailureReason::Unavailable => ingest_results_metrics.unavailable.inc(),
                 }
             }
         }
@@ -1026,9 +1080,15 @@ mod tests {
             closed_shards: Vec::new(),
             unavailable_leaders: Vec::new(),
         };
-        router
-            .populate_routing_table(&mut workbench, get_or_create_open_shards_request)
+        let successes = router
+            .try_get_or_create_open_shards(
+                get_or_create_open_shards_request,
+                &mut workbench,
+                &mut Rendezvous::default(),
+            )
             .await;
+        assert_eq!(successes.len(), 2);
+        router.populate_routing_table(successes).await;
 
         let state_guard = router.state.lock().await;
         let routing_table = &state_guard.routing_table;
@@ -1430,7 +1490,7 @@ mod tests {
         let subworkbench = workbench.subworkbenches.get(&1).unwrap();
         assert!(matches!(
             subworkbench.last_failure_opt,
-            Some(SubworkbenchFailure::Unavailable)
+            Some(SubworkbenchFailure::IngesterUnavailable)
         ));
     }
 
