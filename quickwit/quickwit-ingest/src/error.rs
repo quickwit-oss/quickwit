@@ -131,6 +131,9 @@ impl From<IngestFailure> for IngestServiceError {
             IngestFailureReason::CircuitBreaker => {
                 IngestServiceError::RateLimited(RateLimitingCause::CircuitBreaker)
             }
+            IngestFailureReason::Unavailable => {
+                IngestServiceError::Unavailable("service unavailable".to_string())
+            }
         }
     }
 }

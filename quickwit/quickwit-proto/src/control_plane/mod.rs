@@ -28,7 +28,7 @@ pub const CONTROL_PLANE_FILE_DESCRIPTOR_SET: &[u8] =
 
 pub type ControlPlaneResult<T> = std::result::Result<T, ControlPlaneError>;
 
-#[derive(Debug, thiserror::Error, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, thiserror::Error, Eq, PartialEq, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum ControlPlaneError {
     #[error("internal error: {0}")]

@@ -16,14 +16,16 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use quickwit_proto::control_plane::{
-    GetOrCreateOpenShardsRequest, GetOrCreateOpenShardsSubrequest,
+    ControlPlaneError, GetOrCreateOpenShardsFailure, GetOrCreateOpenShardsRequest,
+    GetOrCreateOpenShardsSubrequest,
 };
 use quickwit_proto::ingest::ShardIds;
-use quickwit_proto::types::{IndexId, SourceId};
+use quickwit_proto::types::{IndexId, SourceId, SubrequestId};
 use tokio::sync::{OwnedRwLockWriteGuard, RwLock};
+use tracing::error;
 
 #[derive(Default)]
-struct Debouncer(Arc<RwLock<()>>);
+struct Debouncer(Arc<RwLock<Option<GetOrCreateOpenShardsErrorDebounced>>>);
 
 impl Debouncer {
     fn acquire(&self) -> Result<PermitGuard, BarrierGuard> {
@@ -37,14 +39,14 @@ impl Debouncer {
 }
 
 #[derive(Debug)]
-pub(super) struct PermitGuard(#[allow(dead_code)] OwnedRwLockWriteGuard<()>);
+pub(super) struct PermitGuard(OwnedRwLockWriteGuard<Option<GetOrCreateOpenShardsErrorDebounced>>);
 
 #[derive(Debug)]
-pub(super) struct BarrierGuard(Arc<RwLock<()>>);
+pub(super) struct BarrierGuard(Arc<RwLock<Option<GetOrCreateOpenShardsErrorDebounced>>>);
 
 impl BarrierGuard {
-    pub async fn wait(self) {
-        let _ = self.0.read().await;
+    async fn wait(self) -> Option<GetOrCreateOpenShardsErrorDebounced> {
+        self.0.read().await.clone()
     }
 }
 
@@ -96,31 +98,55 @@ impl DebouncedGetOrCreateOpenShardsRequest {
         subrequest: GetOrCreateOpenShardsSubrequest,
         permit: PermitGuard,
     ) {
+        self.rendezvous
+            .permits
+            .insert(subrequest.subrequest_id, permit);
         self.subrequests.push(subrequest);
-        self.rendezvous.permits.push(permit);
     }
 
-    pub fn push_barrier(&mut self, barrier: BarrierGuard) {
-        self.rendezvous.barriers.push(barrier);
+    pub fn push_barrier(&mut self, subrequest_id: u32, barrier: BarrierGuard) {
+        self.rendezvous.barriers.insert(subrequest_id, barrier);
     }
+}
+
+#[derive(Debug, Clone)]
+pub enum GetOrCreateOpenShardsErrorDebounced {
+    ControlPlaneError(ControlPlaneError),
+    Failure(GetOrCreateOpenShardsFailure),
 }
 
 #[derive(Default)]
 pub(super) struct Rendezvous {
-    permits: Vec<PermitGuard>,
-    barriers: Vec<BarrierGuard>,
+    permits: HashMap<SubrequestId, PermitGuard>,
+    barriers: HashMap<SubrequestId, BarrierGuard>,
 }
 
 impl Rendezvous {
-    /// Releases the permits and waits for the barriers to be lifted.
-    pub async fn wait(mut self) {
+    pub fn write_error(
+        &mut self,
+        subrequest_id: SubrequestId,
+        response: GetOrCreateOpenShardsErrorDebounced,
+    ) {
+        if let Some(permit) = self.permits.get_mut(&subrequest_id) {
+            *permit.0 = Some(response)
+        } else {
+            error!("no permit found for subrequest, please report");
+        }
+    }
+
+    /// Releases the permits and waits for the barriers to be lifted, returning errors if any.
+    pub async fn wait(mut self) -> HashMap<SubrequestId, GetOrCreateOpenShardsErrorDebounced> {
         // Releasing the permits before waiting for the barriers is necessary to avoid
         // dead locks.
         self.permits.clear();
 
-        for barrier in self.barriers {
-            barrier.wait().await;
+        let mut responses = HashMap::with_capacity(self.barriers.len());
+        for (sub_request_id, barrier) in self.barriers {
+            if let Some(error) = barrier.wait().await {
+                responses.insert(sub_request_id, error);
+            }
         }
+        responses
     }
 }
 
@@ -203,7 +229,7 @@ mod tests {
             GetOrCreateOpenShardsSubrequest {
                 index_id: "test-index".to_string(),
                 source_id: "test-source-foo".to_string(),
-                ..Default::default()
+                subrequest_id: 1,
             },
             permit,
         );
@@ -211,7 +237,7 @@ mod tests {
         let barrier = debouncer
             .acquire("test-index", "test-source-foo")
             .unwrap_err();
-        debounced_request.push_barrier(barrier);
+        debounced_request.push_barrier(2, barrier);
 
         let (request_opt, rendezvous) = debounced_request.take();
         let request = request_opt.unwrap();

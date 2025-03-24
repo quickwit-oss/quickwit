@@ -81,6 +81,7 @@ pub enum IngestFailureReason {
     RouterLoadShedding = 8,
     LoadShedding = 9,
     CircuitBreaker = 10,
+    Unavailable = 11,
 }
 impl IngestFailureReason {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -110,6 +111,7 @@ impl IngestFailureReason {
             IngestFailureReason::CircuitBreaker => {
                 "INGEST_FAILURE_REASON_CIRCUIT_BREAKER"
             }
+            IngestFailureReason::Unavailable => "INGEST_FAILURE_REASON_UNAVAILABLE",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -128,6 +130,7 @@ impl IngestFailureReason {
             }
             "INGEST_FAILURE_REASON_LOAD_SHEDDING" => Some(Self::LoadShedding),
             "INGEST_FAILURE_REASON_CIRCUIT_BREAKER" => Some(Self::CircuitBreaker),
+            "INGEST_FAILURE_REASON_UNAVAILABLE" => Some(Self::Unavailable),
             _ => None,
         }
     }
