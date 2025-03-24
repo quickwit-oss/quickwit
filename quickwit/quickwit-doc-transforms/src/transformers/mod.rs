@@ -12,12 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod core_string_attr_remapper;
 mod date_remaper;
 pub mod grok;
 mod remap_field;
 mod status_remaper;
 mod stringbuilder;
 
+pub use core_string_attr_remapper::*;
 pub use date_remaper::*;
 pub use grok::*;
 pub use remap_field::*;

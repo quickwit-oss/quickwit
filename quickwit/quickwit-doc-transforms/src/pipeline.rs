@@ -21,8 +21,8 @@ use crate::processed_log::ProcessedLog;
 use crate::transformers::grok_auto_step::build_grok_parser_auto_step;
 use crate::transformers::grok_rules::LogsProcessingGrokRules;
 use crate::transformers::{
-    build_grok_parser_step, AttributeRemapStep, CompiledTemplateString, DateRemapStep,
-    FilteredStep, StatusRemapStep, StringBuilderStep,
+    build_grok_parser_step, AttributeRemapStep, CompiledTemplateString, CoreStringAttr,
+    CoreStringAttrRemapStep, DateRemapStep, FilteredStep, StatusRemapStep, StringBuilderStep,
 };
 
 /// Trait for steps in the pipeline. Each step mutates a `ProcessedLog`.
@@ -165,6 +165,38 @@ pub enum PipelineStepConfig {
         #[serde(default)]
         is_replace_missing: bool,
     },
+    /// Copies a string value from `custom` to message field.
+    /// Only string values are supported.
+    #[serde(rename = "message-remapper")]
+    MessageRemapper {
+        #[serde(flatten)]
+        common: CommonConfig,
+        sources: Vec<String>,
+    },
+    /// Copies a string value from `custom` to the traceid field.
+    /// Only string values are supported.
+    #[serde(rename = "trace-id-remapper")]
+    TraceIdRemapper {
+        #[serde(flatten)]
+        common: CommonConfig,
+        sources: Vec<String>,
+    },
+    /// Copies a string value from `custom` to the traceid field.
+    /// Only string values are supported.
+    #[serde(rename = "span-id-remapper")]
+    SpanIdRemapper {
+        #[serde(flatten)]
+        common: CommonConfig,
+        sources: Vec<String>,
+    },
+    /// Copies a string value from `custom` to the service field.
+    /// Only string values are supported.
+    #[serde(rename = "service-remapper")]
+    ServiceRemapper {
+        #[serde(flatten)]
+        common: CommonConfig,
+        sources: Vec<String>,
+    },
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -277,7 +309,30 @@ pub fn build_step(cfg: &PipelineStepConfig) -> Result<Box<dyn PipelineStep>, Pip
             };
             Ok(Box::new(FilteredStep::new(filter, step)))
         }
+        PipelineStepConfig::MessageRemapper { common, sources } => {
+            string_core_attr_remapper(common, sources, CoreStringAttr::Message)
+        }
+        PipelineStepConfig::TraceIdRemapper { common, sources } => {
+            string_core_attr_remapper(common, sources, CoreStringAttr::TraceId)
+        }
+        PipelineStepConfig::SpanIdRemapper { common, sources } => {
+            string_core_attr_remapper(common, sources, CoreStringAttr::SpanId)
+        }
+        PipelineStepConfig::ServiceRemapper { common, sources } => {
+            string_core_attr_remapper(common, sources, CoreStringAttr::Service)
+        }
     }
+}
+
+fn string_core_attr_remapper(
+    common: &CommonConfig,
+    sources: &[String],
+    core_attr: CoreStringAttr,
+) -> Result<Box<dyn PipelineStep>, PipelineError> {
+    let sources = sources.iter().map(AsRef::as_ref).map(parse_path).collect();
+    let filter = build_vrl_matcher(&common.filter.query, common.enabled)?;
+    let step = CoreStringAttrRemapStep { sources, core_attr };
+    Ok(Box::new(FilteredStep::new(filter, step)))
 }
 
 #[cfg(test)]
@@ -488,5 +543,28 @@ grok:
         step.apply(&mut agent_log).unwrap();
         assert_eq!(agent_log.custom.len(), 5);
         assert_eq!(agent_log.custom["pid"], 2115);
+    }
+
+    #[test]
+    fn test_message_remapper_deser() {
+        // The format of logs processing
+        let yaml = r#"
+type: message-remapper
+id: "123456"
+name: ""
+enabled: true
+sources:
+  - "http.status_category"
+  - "msg"
+"#;
+
+        let config: PipelineStepConfig =
+            serde_yaml::from_str(yaml).expect("Deserialization failed");
+        let step = build_step(&config).unwrap();
+
+        let mut agent_log = ProcessedLog::from_datadog_log_msg(make_datadog_log_msg());
+        agent_log.custom.insert("msg".to_string(), "blub".into());
+        step.apply(&mut agent_log).unwrap();
+        assert_eq!(agent_log.message, "blub");
     }
 }
