@@ -412,7 +412,6 @@ pub(super) struct IngestSubworkbench {
 
 impl IngestSubworkbench {
     pub fn new(subrequest: IngestSubrequest) -> Self {
-        // TODO validate index id and set failure if necessary
         Self {
             subrequest,
             ..Default::default()
