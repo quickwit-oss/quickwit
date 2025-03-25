@@ -37,7 +37,7 @@ build_image:
 generate-docker-tag-names:
   tags: ["arch:amd64"]
   image: registry.ddbuild.io/ci/auto_inject/gitlab:current
-  stage: deploy
+  stage: publish
   variables:
     IMG_DESTINATION_BASE: cloudprem
   script:
