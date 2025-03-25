@@ -132,7 +132,7 @@ impl From<IngestFailure> for IngestServiceError {
                 IngestServiceError::RateLimited(RateLimitingCause::CircuitBreaker)
             }
             IngestFailureReason::Unavailable => {
-                IngestServiceError::Unavailable("service unavailable".to_string())
+                IngestServiceError::Unavailable("internal service unavailable".to_string())
             }
         }
     }
