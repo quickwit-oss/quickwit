@@ -20,7 +20,7 @@ fi
 
 IMG_DESTINATIONS="${IMG_DESTINATION_BASE}:edge"
 
-if [ ! -z "$CI_COMMIT_TAG" ]; then
+if [ ! -z "${CI_COMMIT_TAG-}" ]; then
   if echo "$CI_COMMIT_TAG" | grep -q "^cp"; then
     # cp*
     IMG_DESTINATIONS="${IMG_DESTINATIONS},${IMG_DESTINATION_BASE}:devel"
