@@ -29,8 +29,22 @@ build_image:
     DDSIGN_ID_TOKEN:
       aud: image-integrity
   script:
-    - scripts/image-tool.sh --push --platform linux/amd64,linux/arm64 --repo cloudprem
+      # push an unsigned image for public use, identify it with it's SHA to prevent race condition between pipelines
+    - scripts/image-tool.sh --push --platform linux/amd64,linux/arm64 --repo cloudprem --tag $CI_COMMIT_SHA
+      # and a signed image to pomsky for internal deployments
     - scripts/image-tool.sh --push --sign --repo pomsky
+
+generate-docker-tag-names:
+  tags: ["arch:amd64"]
+  image: registry.ddbuild.io/ci/auto_inject/gitlab:current
+  stage: deploy
+  variables:
+    IMG_DESTINATION_BASE: cloudprem
+  script:
+    - .gitlab/list-docker-tags.sh
+  artifacts:
+    reports:
+      dotenv: build.env
 
 publish_public_images:
   stage: publish
@@ -38,9 +52,12 @@ publish_public_images:
     project: DataDog/public-images
     branch: main
     strategy: depend
+  needs:
+    - job: generate-docker-tag-names
+      artifacts: true
   variables:
-    IMG_SOURCES: registry.ddbuild.io/cloudprem:edge
-    IMG_DESTINATIONS: cloudprem:edge
+    IMG_SOURCES: registry.ddbuild.io/cloudprem:$CI_COMMIT_SHA
+    IMG_DESTINATIONS: $IMG_DESTINATIONS
     IMG_REGISTRIES: dockerhub,ecr-public
     IMG_SIGNING: "false"
 
