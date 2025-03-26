@@ -21,8 +21,9 @@ use crate::processed_log::ProcessedLog;
 use crate::transformers::grok_auto_step::build_grok_parser_auto_step;
 use crate::transformers::grok_rules::LogsProcessingGrokRules;
 use crate::transformers::{
-    build_grok_parser_step, AttributeRemapStep, CompiledTemplateString, CoreStringAttr,
-    CoreStringAttrRemapStep, DateRemapStep, FilteredStep, StatusRemapStep, StringBuilderStep,
+    build_grok_parser_step, AttributeRemapStep, CategoryProcessorMapping, CategoryProcessorStep,
+    CompiledTemplateString, CoreStringAttr, CoreStringAttrRemapStep, DateRemapStep, FilteredStep,
+    StatusRemapStep, StringBuilderStep,
 };
 
 /// Trait for steps in the pipeline. Each step mutates a `ProcessedLog`.
@@ -32,6 +33,8 @@ pub trait PipelineStep: Send + Sync + std::fmt::Debug {
 
 #[derive(Debug)]
 pub struct Pipeline {
+    #[allow(dead_code)]
+    version: u64,
     steps: Vec<Box<dyn PipelineStep>>,
 }
 
@@ -48,7 +51,7 @@ impl PipelineStep for Pipeline {
 impl Pipeline {
     #[cfg(test)]
     pub fn from_steps(steps: Vec<Box<dyn PipelineStep>>) -> Self {
-        Self { steps }
+        Self { steps, version: 0 }
     }
 
     pub fn process_logs(
@@ -69,19 +72,59 @@ impl Pipeline {
             let step = build_step(cfg)?;
             steps.push(step);
         }
-        Ok(Self { steps })
+        Ok(Self { steps, version: 0 })
     }
+
+    /// Build a Pipeline from a `PipelineConfig`.
+    pub fn from_config(config: &PipelineConfig) -> Result<Self, PipelineError> {
+        let mut steps = Vec::new();
+        for cfg in &config.pipelines {
+            let step = build_step(cfg)?;
+            steps.push(step);
+        }
+        Ok(Self {
+            steps,
+            version: config.version,
+        })
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PipelineConfig {
+    version: u64,
+    #[serde(rename = "lookupTablesRemainingSizeInKB")]
+    #[allow(dead_code)]
+    lookup_tables_remaining_size_in_kb: f64,
+    pipelines: Vec<PipelineStepConfig>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum PipelineStepConfig {
+    #[serde(rename = "url-parser")]
+    UrlParser {},
+    #[serde(rename = "user-agent-parser")]
+    UserAgentParser {},
+    #[serde(rename = "geo-ip-parser")]
+    GeoIpParser {},
+    #[serde(rename = "category-processor")]
+    CategoryProcessor {
+        #[serde(flatten)]
+        common: CommonConfig,
+        categories: Vec<CategoryConfig>,
+        target: String,
+    },
+    #[serde(rename = "arithmetic-processor")]
+    ArithmeticProcessor {},
+    #[serde(rename = "lookup-processor")]
+    LookupProcessor {},
     /// A nested pipeline step.
+    #[serde(rename = "pipeline")]
     NestedPipeline {
         #[serde(flatten)]
         common: CommonConfig,
         #[serde(rename = "processors")]
-        steps: Vec<PipelineStepConfig>,
+        processors: Vec<PipelineStepConfig>,
         /// The description of the pipeline.
         #[serde(default)]
         description: String,
@@ -220,6 +263,12 @@ pub struct CommonConfig {
     pub filter: Filter,
 }
 
+#[derive(Debug, Deserialize, Clone)]
+pub struct CategoryConfig {
+    pub filter: Filter,
+    pub name: String,
+}
+
 impl Default for CommonConfig {
     fn default() -> Self {
         Self {
@@ -250,7 +299,11 @@ impl From<&str> for Filter {
 /// Convert a `StepConfig` into a boxed pipeline step implementation.
 pub fn build_step(cfg: &PipelineStepConfig) -> Result<Box<dyn PipelineStep>, PipelineError> {
     match cfg {
-        PipelineStepConfig::NestedPipeline { common, steps, .. } => {
+        PipelineStepConfig::NestedPipeline {
+            common,
+            processors: steps,
+            ..
+        } => {
             let filter = build_vrl_matcher(&common.filter.query, common.enabled)?;
 
             let sub_pipeline = Pipeline::from_configs(steps)?;
@@ -309,6 +362,27 @@ pub fn build_step(cfg: &PipelineStepConfig) -> Result<Box<dyn PipelineStep>, Pip
             };
             Ok(Box::new(FilteredStep::new(filter, step)))
         }
+        PipelineStepConfig::CategoryProcessor {
+            common,
+            categories,
+            target,
+        } => {
+            let filter = build_vrl_matcher(&common.filter.query, common.enabled)?;
+            let step = CategoryProcessorStep {
+                mappings: categories
+                    .iter()
+                    .map(|cat| {
+                        let filter = build_vrl_matcher(&cat.filter.query, true)?;
+                        Ok(CategoryProcessorMapping {
+                            filter,
+                            name: cat.name.clone(),
+                        })
+                    })
+                    .collect::<crate::Result<_>>()?,
+                to_path: parse_path(target),
+            };
+            Ok(Box::new(FilteredStep::new(filter, step)))
+        }
         PipelineStepConfig::MessageRemapper { common, sources } => {
             string_core_attr_remapper(common, sources, CoreStringAttr::Message)
         }
@@ -321,6 +395,15 @@ pub fn build_step(cfg: &PipelineStepConfig) -> Result<Box<dyn PipelineStep>, Pip
         PipelineStepConfig::ServiceRemapper { common, sources } => {
             string_core_attr_remapper(common, sources, CoreStringAttr::Service)
         }
+        _ => Ok(Box::new(DummyStep)),
+    }
+}
+
+#[derive(Debug)]
+struct DummyStep;
+impl PipelineStep for DummyStep {
+    fn apply(&self, _value: &mut ProcessedLog) -> Result<(), PipelineError> {
+        Ok(())
     }
 }
 
@@ -350,7 +433,7 @@ mod tests {
             common: Default::default(),
             description: "Nested pipeline".to_string(),
             tags: vec![],
-            steps: vec![PipelineStepConfig::AttributeRemapper {
+            processors: vec![PipelineStepConfig::AttributeRemapper {
                 common: Default::default(),
                 sources: vec!["a".to_string()],
                 target: "b.c".to_string(),
