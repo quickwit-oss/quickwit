@@ -1605,6 +1605,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fb3b4b9e5a7c7514dfa52869339ee98b3156b0bfb4e8a77c4ff4babb64b1604f"
 dependencies = [
  "clap_builder",
+ "clap_derive",
 ]
 
 [[package]]
@@ -1617,6 +1618,18 @@ dependencies = [
  "anstyle",
  "clap_lex",
  "strsim",
+]
+
+[[package]]
+name = "clap_derive"
+version = "4.5.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4ac6a0c7b1a9e9a5186361f67dfa1b88213572f427fb9ab038efb2bd8c582dab"
+dependencies = [
+ "heck 0.5.0",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.89",
 ]
 
 [[package]]
@@ -2105,6 +2118,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "dashmap"
+version = "6.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5041cc499144891f3790297212f32a74fb938e5136a14943f338ef9e0ae276cf"
+dependencies = [
+ "cfg-if",
+ "crossbeam-utils",
+ "hashbrown 0.14.5",
+ "lock_api",
+ "once_cell",
+ "parking_lot_core",
+]
+
+[[package]]
 name = "data-encoding"
 version = "2.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2564,6 +2591,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "env_filter"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "186e05a59d4c50738528153b83b0b0194d3a29507dfec16eccd4b342903397d0"
+dependencies = [
+ "log",
+]
+
+[[package]]
 name = "env_logger"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2574,6 +2610,16 @@ dependencies = [
  "log",
  "regex",
  "termcolor",
+]
+
+[[package]]
+name = "env_logger"
+version = "0.11.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3716d7a920fb4fac5d84e9d4bce8ceb321e9414b4409da61b07b75c1e3d0697"
+dependencies = [
+ "env_filter",
+ "log",
 ]
 
 [[package]]
@@ -3852,6 +3898,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "inferno"
+version = "0.12.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2094aecddc672e902cd773bad7071542f63641e01e9187c3bba4b43005e837e9"
+dependencies = [
+ "ahash 0.8.11",
+ "clap",
+ "crossbeam-channel",
+ "crossbeam-utils",
+ "dashmap",
+ "env_logger 0.11.7",
+ "indexmap 2.6.0",
+ "itoa",
+ "log",
+ "num-format",
+ "once_cell",
+ "quick-xml 0.37.3",
+ "rgb",
+ "str_stack",
+]
+
+[[package]]
 name = "influxdb-line-protocol"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3967,6 +4035,23 @@ name = "itoa"
 version = "1.0.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "540654e97a3f4470a492cd30ff187bc95d89557a903a2bbf112e2fae98104ef2"
+
+[[package]]
+name = "jemalloc_pprof"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5622af6d21ff86ed7797ef98e11b8f302da25ec69a7db9f6cde8e2e1c8df9992"
+dependencies = [
+ "anyhow",
+ "libc",
+ "mappings",
+ "once_cell",
+ "pprof_util",
+ "tempfile",
+ "tikv-jemalloc-ctl",
+ "tokio",
+ "tracing",
+]
 
 [[package]]
 name = "jobserver"
@@ -4267,7 +4352,7 @@ dependencies = [
  "byteorder",
  "csv",
  "encoding",
- "env_logger",
+ "env_logger 0.10.2",
  "glob",
  "lindera-compress",
  "lindera-core",
@@ -4365,7 +4450,7 @@ dependencies = [
  "csv",
  "encoding_rs",
  "encoding_rs_io",
- "env_logger",
+ "env_logger 0.10.2",
  "glob",
  "lindera-compress",
  "lindera-core",
@@ -4387,7 +4472,7 @@ dependencies = [
  "csv",
  "encoding_rs",
  "encoding_rs_io",
- "env_logger",
+ "env_logger 0.10.2",
  "glob",
  "lindera-core",
  "lindera-decompress",
@@ -4424,7 +4509,7 @@ dependencies = [
  "byteorder",
  "csv",
  "encoding",
- "env_logger",
+ "env_logger 0.10.2",
  "glob",
  "lindera-compress",
  "lindera-core",
@@ -4459,7 +4544,7 @@ dependencies = [
  "byteorder",
  "csv",
  "encoding",
- "env_logger",
+ "env_logger 0.10.2",
  "glob",
  "lindera-core",
  "lindera-decompress",
@@ -4534,6 +4619,19 @@ name = "lz4_flex"
 version = "0.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "75761162ae2b0e580d7e7c390558127e5f01b4194debd6221fd8c207fc80e3f5"
+
+[[package]]
+name = "mappings"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e434981a332777c2b3062652d16a55f8e74fa78e6b1882633f0d77399c84fc2a"
+dependencies = [
+ "anyhow",
+ "libc",
+ "once_cell",
+ "pprof_util",
+ "tracing",
+]
 
 [[package]]
 name = "match_cfg"
@@ -4856,6 +4954,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "num"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "35bd024e8b2ff75562e5f34e7f4905839deb4b22955ef5e73d2fea1b9813cb23"
+dependencies = [
+ "num-bigint",
+ "num-complex",
+ "num-integer",
+ "num-iter",
+ "num-rational",
+ "num-traits",
+]
+
+[[package]]
 name = "num-bigint"
 version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4880,6 +4992,15 @@ dependencies = [
  "rand 0.8.5",
  "smallvec",
  "zeroize",
+]
+
+[[package]]
+name = "num-complex"
+version = "0.4.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "73f88a1307638156682bada9d7604135552957b7818057dcef22705b4d509495"
+dependencies = [
+ "num-traits",
 ]
 
 [[package]]
@@ -5937,7 +6058,7 @@ dependencies = [
  "backtrace",
  "cfg-if",
  "findshlibs",
- "inferno",
+ "inferno 0.11.21",
  "libc",
  "log",
  "nix",
@@ -5947,6 +6068,21 @@ dependencies = [
  "symbolic-demangle",
  "tempfile",
  "thiserror 1.0.69",
+]
+
+[[package]]
+name = "pprof_util"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9fa015c78eed2130951e22c58d2095849391e73817ab2e74f71b0b9f63dd8416"
+dependencies = [
+ "anyhow",
+ "backtrace",
+ "flate2",
+ "inferno 0.12.2",
+ "num",
+ "paste",
+ "prost 0.13.3",
 ]
 
 [[package]]
@@ -6421,6 +6557,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "quick-xml"
+version = "0.37.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bf763ab1c7a3aa408be466efc86efe35ed1bd3dd74173ed39d6b0d0a6f0ba148"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
 name = "quickwit-actors"
 version = "0.8.0"
 dependencies = [
@@ -6588,7 +6733,7 @@ dependencies = [
  "bytesize",
  "coarsetime",
  "dyn-clone",
- "env_logger",
+ "env_logger 0.10.2",
  "fnv",
  "futures",
  "home",
@@ -7233,6 +7378,7 @@ dependencies = [
  "hyper 0.14.31",
  "hyper-rustls 0.24.2",
  "itertools 0.13.0",
+ "jemalloc_pprof",
  "mime_guess",
  "mockall",
  "once_cell",
@@ -9446,9 +9592,9 @@ dependencies = [
 
 [[package]]
 name = "tikv-jemalloc-ctl"
-version = "0.5.4"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "619bfed27d807b54f7f776b9430d4f8060e66ee138a28632ca898584d462c31c"
+checksum = "f21f216790c8df74ce3ab25b534e0718da5a1916719771d3fec23315c99e468b"
 dependencies = [
  "libc",
  "paste",
@@ -9457,9 +9603,9 @@ dependencies = [
 
 [[package]]
 name = "tikv-jemalloc-sys"
-version = "0.5.4+5.3.0-patched"
+version = "0.6.0+5.3.0-1-ge13ca993e8ccb9ba9847cc330696e02839f328f7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9402443cb8fd499b6f327e40565234ff34dbda27460c5b47db0db77443dd85d1"
+checksum = "cd3c60906412afa9c2b5b5a48ca6a5abe5736aec9eb48ad05037a677e52e4e2d"
 dependencies = [
  "cc",
  "libc",
@@ -9467,9 +9613,9 @@ dependencies = [
 
 [[package]]
 name = "tikv-jemallocator"
-version = "0.5.4"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "965fe0c26be5c56c94e38ba547249074803efd52adfb66de62107d95aab3eaca"
+checksum = "4cec5ff18518d81584f477e9bfdf957f5bb0979b0bac3af4ca30b5b3ae2d2865"
 dependencies = [
  "libc",
  "tikv-jemalloc-sys",

@@ -27,6 +27,7 @@ humantime = { workspace = true }
 hyper = { workspace = true }
 hyper-rustls = { workspace = true }
 itertools = { workspace = true }
+jemalloc_pprof = { workspace = true }
 mime_guess = { workspace = true }
 once_cell = { workspace = true }
 opentelemetry = { workspace = true }

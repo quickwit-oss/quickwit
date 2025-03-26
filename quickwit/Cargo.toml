@@ -235,8 +235,9 @@ tabled = { version = "0.14", features = ["color"] }
 tempfile = "3"
 thiserror = "1"
 thousands = "0.2.0"
-tikv-jemalloc-ctl = "0.5"
-tikv-jemallocator = "0.5"
+tikv-jemalloc-ctl = { version  = "0.6", features = ["stats"] }
+tikv-jemallocator = { version = "0.6", features = ["profiling", "unprefixed_malloc_on_supported_platforms"] }
+jemalloc_pprof = { version = "0.7", features = ["flamegraph"] }
 time = { version = "0.3", features = ["std", "formatting", "macros"] }
 tokio = { version = "1.40", features = ["full"] }
 tokio-metrics = { version = "0.3.1", features = ["rt"] }
@@ -365,3 +366,7 @@ debug = false
 
 [profile.release]
 lto = "thin"
+
+[profile.profiling]
+inherits = "release"
+debug = "line-tables-only"

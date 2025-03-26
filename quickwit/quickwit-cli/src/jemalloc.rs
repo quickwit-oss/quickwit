@@ -21,6 +21,10 @@ use tracing::error;
 #[global_allocator]
 pub static GLOBAL: Jemalloc = Jemalloc;
 
+#[allow(non_upper_case_globals)]
+#[export_name = "malloc_conf"]
+pub static malloc_conf: &[u8] = b"prof:true,prof_active:true,lg_prof_sample:19\0";
+
 const JEMALLOC_METRICS_POLLING_INTERVAL: Duration = Duration::from_secs(1);
 
 pub async fn jemalloc_metrics_loop() -> tikv_jemalloc_ctl::Result<()> {
