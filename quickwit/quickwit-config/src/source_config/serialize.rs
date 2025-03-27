@@ -15,6 +15,7 @@
 use std::num::NonZeroUsize;
 
 use anyhow::{bail, ensure};
+use quickwit_doc_transforms::PipelineConfig;
 use quickwit_proto::types::SourceId;
 use serde::{Deserialize, Serialize};
 
@@ -152,6 +153,7 @@ impl SourceConfigForSerialization {
             num_pipelines,
             enabled: self.enabled,
             source_params: self.source_params,
+            pipeline_config: self.pipeline,
             transform_config: self.transform,
             input_format: self.input_format,
         })
@@ -166,6 +168,7 @@ impl From<SourceConfig> for SourceConfigV0_8 {
             enabled: source_config.enabled,
             source_params: source_config.source_params,
             transform: source_config.transform_config,
+            pipeline: source_config.pipeline_config,
             input_format: source_config.input_format,
         }
     }
@@ -247,6 +250,9 @@ pub struct SourceConfigV0_8 {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transform: Option<TransformConfig>,
 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pipeline: Option<PipelineConfig>,
+
     // Denotes the input data format.
     #[serde(default)]
     pub input_format: SourceInputFormat,
@@ -269,6 +275,7 @@ impl From<SourceConfigV0_7> for SourceConfigV0_8 {
             enabled,
             source_params,
             transform,
+            pipeline: None,
             input_format,
         }
     }

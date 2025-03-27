@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use serde::Deserialize;
+use std::sync::Arc;
+
+use serde::{Serialize, Deserialize};
 use vrl::datadog_filter::Matcher;
 
 use crate::error::PipelineError;
@@ -74,22 +76,22 @@ impl Pipeline {
     }
 
     /// Build a Pipeline from a `PipelineConfig`.
-    pub fn from_pipeline_config(config: &PipelineConfig) -> Result<Self, PipelineError> {
+    pub fn try_from_pipeline_config(config: &PipelineConfig) -> Result<Self, PipelineError> {
         Self::from_step_configs(&config.pipelines[..])
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Hash, Eq, PartialEq)]
 pub struct PipelineConfig {
     #[allow(dead_code)]
     version: u64,
-    #[serde(rename = "lookupTablesRemainingSizeInKB")]
-    #[allow(dead_code)]
-    lookup_tables_remaining_size_in_kb: f64,
-    pipelines: Vec<PipelineStepConfig>,
+    // #[serde(rename = "lookupTablesRemainingSizeInKB")]
+    // #[allow(dead_code)]
+    // lookup_tables_remaining_size_in_kb: f64,
+    pipelines: Arc<Vec<PipelineStepConfig>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum PipelineStepConfig {
     #[serde(rename = "url-parser")]
@@ -233,7 +235,7 @@ pub enum PipelineStepConfig {
     },
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq, Hash)]
 /// Common fields for all pipeline steps.
 /// They are flattened into the step config.
 pub struct CommonConfig {
@@ -254,7 +256,7 @@ pub struct CommonConfig {
     pub filter: Filter,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq, Hash)]
 pub struct CategoryConfig {
     pub filter: Filter,
     pub name: String,
@@ -273,7 +275,7 @@ impl Default for CommonConfig {
     }
 }
 
-#[derive(Debug, Default, Deserialize, Clone)]
+#[derive(Debug, Default, Serialize, Deserialize, Clone, Eq, PartialEq, Hash)]
 pub struct Filter {
     #[serde(default)]
     pub query: String,

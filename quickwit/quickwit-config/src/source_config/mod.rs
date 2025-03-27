@@ -23,6 +23,7 @@ use anyhow::ensure;
 use bytes::Bytes;
 use quickwit_common::is_false;
 use quickwit_common::uri::Uri;
+use quickwit_doc_transforms::PipelineConfig;
 use quickwit_proto::metastore::SourceType;
 use quickwit_proto::types::SourceId;
 use regex::Regex;
@@ -65,6 +66,8 @@ pub struct SourceConfig {
 
     pub transform_config: Option<TransformConfig>,
 
+    pub pipeline_config: Option<PipelineConfig>,
+
     // Denotes the input data format.
     #[serde(default)]
     pub input_format: SourceInputFormat,
@@ -101,6 +104,7 @@ impl SourceConfig {
             enabled: true,
             source_params: SourceParams::IngestCli,
             transform_config: None,
+            pipeline_config: None,
             input_format: SourceInputFormat::Json,
         }
     }
@@ -113,6 +117,7 @@ impl SourceConfig {
             enabled: enable_ingest_v2(),
             source_params: SourceParams::Ingest,
             transform_config: None,
+            pipeline_config: None,
             input_format: SourceInputFormat::Json,
         }
     }
@@ -125,6 +130,7 @@ impl SourceConfig {
             enabled: !disable_ingest_v1(),
             source_params: SourceParams::IngestApi,
             transform_config: None,
+            pipeline_config: None,
             input_format: SourceInputFormat::Json,
         }
     }
@@ -140,6 +146,7 @@ impl SourceConfig {
         self.num_pipelines.hash(&mut hasher);
         self.source_params.hash(&mut hasher);
         self.transform_config.hash(&mut hasher);
+        self.pipeline_config.hash(&mut hasher);
         hasher.finish()
     }
 
@@ -151,6 +158,7 @@ impl SourceConfig {
             enabled: true,
             source_params,
             transform_config: None,
+            pipeline_config: None,
             input_format: SourceInputFormat::Json,
         }
     }
@@ -173,6 +181,8 @@ impl crate::TestableForRegression for SourceConfig {
                 vrl_script: ".message = downcase(string!(.message))".to_string(),
                 timezone: default_timezone(),
             }),
+            // TODO fixme
+            pipeline_config: None,
             input_format: SourceInputFormat::Json,
         }
     }

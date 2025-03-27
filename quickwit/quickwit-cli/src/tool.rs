@@ -419,6 +419,7 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         enabled: true,
         source_params,
         transform_config,
+        pipeline_config: None,
         input_format: args.input_format,
     };
     run_index_checklist(
@@ -609,6 +610,7 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
                 enabled: true,
                 source_params: SourceParams::Vec(VecSourceParams::default()),
                 transform_config: None,
+                pipeline_config: None,
                 input_format: SourceInputFormat::Json,
             },
             pipeline_uid: PipelineUid::random(),

@@ -31,6 +31,8 @@ pub use flatten_tags::convert_tags;
 pub use pipeline::{build_step, Pipeline, PipelineConfig, PipelineStep, PipelineStepConfig};
 pub use processed_log::{DatadogLogMsg, ProcessedLog};
 
+pub use error::PipelineError;
+
 pub type Result<T> = std::result::Result<T, error::PipelineError>;
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
