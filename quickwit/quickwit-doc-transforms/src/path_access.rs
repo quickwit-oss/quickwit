@@ -15,7 +15,7 @@
 use std::sync::OnceLock;
 
 use fnv::FnvHashSet;
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 /// Attributes that represent special fields in Datadog.
 #[allow(dead_code)]
@@ -61,6 +61,22 @@ pub fn is_core_attr(attribute: &str) -> bool {
 pub struct ParsedPath {
     pub segments: Vec<String>,
 }
+impl ParsedPath {
+    pub fn iter(&self) -> impl Iterator<Item = &str> {
+        self.segments.iter().map(|s| s.as_str())
+    }
+}
+impl AsRef<[String]> for ParsedPath {
+    fn as_ref(&self) -> &[String] {
+        &self.segments
+    }
+}
+
+impl From<&str> for ParsedPath {
+    fn from(path: &str) -> Self {
+        parse_path(path)
+    }
+}
 
 /// Splits a dotted path like `"attributes.role"` into segments `["attributes", "role"]`.
 pub fn parse_path(path_str: &str) -> ParsedPath {
@@ -71,22 +87,11 @@ pub fn parse_path(path_str: &str) -> ParsedPath {
     ParsedPath { segments }
 }
 
-/// Recursively get a **mutable reference** to a nested path, if it exists.
-pub fn get_nested_mut<'a>(root: &'a mut Value, segments: &[String]) -> Option<&'a mut Value> {
-    let mut current = root;
-    for seg in segments {
-        match current {
-            Value::Object(map) => {
-                current = map.get_mut(seg)?;
-            }
-            _ => return None,
-        }
-    }
-    Some(current)
-}
-
-/// Recursively get a **mutable reference** to a nested path, if it exists.
+/// Recursively get a reference to a nested path, if it exists.
 /// We accept serde_json::Map here as this is the type of `custom`.
+///
+/// If an array is encounterred, on our way to the value, this function
+/// simply return None.
 pub fn get_nested<'a>(
     root: &'a serde_json::Map<String, Value>,
     mut segments: impl Iterator<Item = &'a str>,
@@ -97,44 +102,31 @@ pub fn get_nested<'a>(
     let mut current = root.get(first)?;
     // Traverse the nested objects for each segment.
     for segment in segments {
-        current = match current {
-            Value::Object(map) => map.get(segment)?,
-            _ => return None,
-        };
+        current = current.as_object()?.get(segment)?;
     }
     Some(current)
 }
 
-/// Like `get_nested_mut`, but we create intermediate objects if missing.
-pub fn set_or_create_nested_mut(root: &mut serde_json::Value, segments: &[String], value: Value) {
-    let mut current = root;
-    for (i, segment) in segments.iter().enumerate() {
-        let is_last = (i + 1) == segments.len();
-        if !current.is_object() {
-            // TODO: Check how it should behave here. Should we overwrite the value?
-            *current = Value::Object(serde_json::Map::new());
-        }
-        let map = current.as_object_mut().unwrap();
-        if is_last {
-            if map.contains_key(segment) {
-                *map.get_mut(segment).unwrap() = value;
-            } else {
-                map.insert(segment.clone(), value);
-            }
-            return;
-        } else {
-            // Intermediate
-            if !map.contains_key(segment) {
-                map.insert(segment.clone(), Value::Object(serde_json::Map::new()));
-            }
-            current = map.get_mut(segment).unwrap();
-        }
-    }
-    *current = value;
+/// Remove a nested field from a serde_json Map using the `remove_nested` function.
+///
+/// This function wraps the map in a `Value::Object`, calls `remove_nested`,
+/// and then writes the modified object back into the map.
+pub fn remove_nested_from_map(map: &mut Map<String, Value>, segments: &[String]) -> Option<Value> {
+    // Temporarily take the map out and wrap it in a Value.
+    let mut root = Value::Object(std::mem::take(map));
+    let removed = remove_nested_from_json_value(&mut root, segments);
+    // Write the modified object back into the map.
+    *map = match root {
+        Value::Object(new_map) => new_map,
+        _ => unreachable!("The root must remain an object."),
+    };
+    removed
 }
 
 /// Remove a nested field at `segments`, returning the removed `Value` if any.
-pub fn remove_nested(root: &mut Value, segments: &[String]) -> Option<Value> {
+///
+/// This function will return None if it encounters an array on its way to the value.
+fn remove_nested_from_json_value(root: &mut Value, segments: &[String]) -> Option<Value> {
     if segments.is_empty() {
         return None;
     }
@@ -147,10 +139,104 @@ pub fn remove_nested(root: &mut Value, segments: &[String]) -> Option<Value> {
             _ => return None,
         }
     }
-    if let Value::Object(map) = current {
-        map.remove(segments.last().unwrap())
+    current.as_object_mut()?.remove(segments.last().unwrap())
+}
+
+
+/// Recursively traverses a JSON object.
+/// For each nested value that matches the given path, the callback is called with a reference to
+/// the value.
+///
+/// _Multiple matches_ are possible if the path contains arrays.
+pub fn traverse_in_json_obj<'a>(
+    root: &'a Map<String, Value>,
+    segments: &[String],
+    callback: &mut impl FnMut(&'a Value),
+) {
+    let Some((head, tail)) = segments.split_first() else { return; };
+    // Since the root is a map, pull the first segment to look up in the root.
+    if let Some(next_node) = root.get(head) {
+        traverse_in_json_value(next_node, &tail, callback);
+    }
+}
+
+/// Recursively traverses a Value using a slice of segments.
+/// Arrays are handled by iterating over every element with the same remaining segments.
+fn traverse_in_json_value<'a>(value: &'a Value, segments: &[String], callback: &mut impl FnMut(&'a Value)) {
+    // If the current value is an array, apply the same segments to each element.
+    if let Value::Array(arr) = value {
+        for element in arr {
+            traverse_in_json_value(element, segments, callback);
+        }
+        return;
+    }
+
+    if segments.is_empty() {
+        // Note that it is possible for a json object to be emitted here.
+        callback(value);
+        return;
+    }
+
+    // If there is another segment to process, then we expect the value to be an object.
+    if let Value::Object(map) = value {
+        traverse_in_json_obj(map, segments, callback);
+    }
+}
+
+/// Sets a value at a given dot-separated path, e.g. `a.b.c = value`.
+/// If the path does not exist, it is created. If an array is encountered along the path,
+/// the same remaining segments are applied to every element.
+/// The `segments` parameter is a slice of references to String.
+pub fn set_value_at_path_on_map(
+    root: &mut Map<String, Value>,
+    segments: &[String],
+    new_value: Value,
+) {
+    if segments.is_empty() {
+        return;
+    }
+    // Ensure the first segment exists; if not, create it as an object.
+    let first = &segments[0];
+    let child = root
+        .entry(first.clone())
+        .or_insert(Value::Object(Map::new()));
+    set_value_at_path(child, &segments[1..], new_value);
+}
+
+/// Recursively traverses a mutable JSON value using a slice of path segments.
+/// When an array is encountered, the same remaining segments are applied to every element.
+/// When no more segments remain, the current value is replaced with `new_value`.
+fn set_value_at_path(value: &mut Value, segments: &[String], new_value: Value) {
+    if segments.is_empty() {
+        // No more segments: replace the current value.
+        *value = new_value;
     } else {
-        None
+        let next_segment = &segments[0];
+        match value {
+            Value::Object(map) => {
+                // Ensure the key exists, creating an object if needed.
+                let child = map
+                    .entry(next_segment.clone())
+                    .or_insert(Value::Object(Map::new()));
+                set_value_at_path(child, &segments[1..], new_value);
+            }
+            Value::Array(arr) => {
+                // Apply to the first element in the array.
+                if let Some(element) = arr.get_mut(0) {
+                    set_value_at_path(element, segments, new_value.clone());
+                }
+            }
+            _ => {
+                // For any other type, replace it with an object and continue.
+                *value = Value::Object(Map::new());
+                if let Value::Object(map) = value {
+                    let child = map
+                        .entry(next_segment.clone())
+                        .or_insert(Value::Object(Map::new()));
+                    set_value_at_path(child, &segments[1..], new_value);
+                }
+            }
+        }
     }
 }
 
@@ -159,6 +245,171 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn test_single_segment() {
+        let mut root = Map::new();
+        let segments = vec!["key".to_string()];
+        set_value_at_path_on_map(&mut root, &segments, json!("value"));
+        // For a single-segment path, the value is directly set.
+        assert_eq!(root.get("key"), Some(&json!("value")));
+    }
+
+    #[test]
+    fn test_nested_path_creation() {
+        let mut root = Map::new();
+        let segments = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        set_value_at_path_on_map(&mut root, &segments, json!(42));
+        // Expected nested structure: { "a": { "b": { "c": 42 } } }
+        let a = root.get("a").unwrap();
+        let b = a.get("b").unwrap();
+        let c = b.get("c").unwrap();
+        assert_eq!(c, &json!(42));
+    }
+
+    #[test]
+    fn test_overwrite_existing_value() {
+        // Start with an existing nested value.
+        let mut root: Map<String, Value> = serde_json::from_value(json!({
+            "a": {
+                "b": {
+                    "c": 1
+                }
+            }
+        }))
+        .unwrap();
+        let segments = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        set_value_at_path_on_map(&mut root, &segments, json!(99));
+        // The value at "a.b.c" should now be updated to 99.
+        let c = root
+            .get("a")
+            .and_then(|v| v.get("b"))
+            .and_then(|v| v.get("c"))
+            .unwrap();
+        assert_eq!(c, &json!(99));
+    }
+
+    #[test]
+    fn test_array_handling() {
+        // "a" is an array; update the first element's nested "b" -> "c" value.
+        let mut root: Value = json!({
+            "a": [
+                { "b": { "c": 1 } },
+                { "b": { "c": 2 } }
+            ]
+        });
+        let segments = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        set_value_at_path_on_map(root.as_object_mut().unwrap(), &segments, json!(100));
+        let arr = root.get("a").and_then(|v| v.as_array()).unwrap();
+        let c = arr[0].get("b").and_then(|v| v.get("c")).unwrap();
+        assert_eq!(c, &json!(100));
+        let c = arr[1].get("b").and_then(|v| v.get("c")).unwrap();
+        assert_eq!(c, &json!(2));
+    }
+
+    #[test]
+    fn test_non_object_intermediate() {
+        // "a" starts as a non-object value (a number).
+        let mut root: Value = json!({
+            "a": 10
+        });
+        let segments = vec!["a".to_string(), "b".to_string()];
+        set_value_at_path_on_map(root.as_object_mut().unwrap(), &segments, json!("new"));
+        // "a" should be replaced with an object containing key "b" with value "new".
+        let b = root.get("a").and_then(|v| v.get("b")).unwrap();
+        assert_eq!(b, &json!("new"));
+    }
+
+    #[test]
+    fn test_traverse_with_callback_found() {
+        let data = json!({
+            "users": [
+                { "profile": { "name": "Alice", "city": "Wonderland" } },
+                { "profile": { "name": "Bob", "city": "Builderland" } }
+            ]
+        });
+        let root = data.as_object().unwrap();
+        let mut results = Vec::new();
+        let path = ["users", "profile", "city"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>();
+
+        traverse_in_json_obj(root, &path, &mut |v| {
+            results.push(v.clone());
+        });
+
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0], json!("Wonderland"));
+        assert_eq!(results[1], json!("Builderland"));
+    }
+
+    #[test]
+    fn test_traverse_with_callback_not_found() {
+        let data = json!({
+            "users": [
+                { "profile": { "name": "Alice", "city": "Wonderland" } },
+                { "profile": { "name": "Bob", "city": "Builderland" } }
+            ]
+        });
+        let root = data.as_object().unwrap();
+        let mut results = Vec::new();
+        let path = ["users", "profile", "country"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>();
+
+        traverse_in_json_obj(root, &path, &mut |v| {
+            results.push(v.clone());
+        });
+
+        // There is no "country" field, so we expect no results.
+        assert_eq!(results.len(), 0);
+    }
+
+    #[test]
+    fn test_traverse_with_callback_empty_path() {
+        let data = json!({
+            "key": "value"
+        });
+        let root = data.as_object().unwrap();
+        let mut results = Vec::new();
+        let path = vec![];
+
+        traverse_in_json_obj(root, &path, &mut |v| {
+            results.push(v.clone());
+        });
+
+        // If no segments are provided, no results should be produced.
+        assert_eq!(results.len(), 0);
+    }
+
+    #[test]
+    fn test_traverse_with_callback_nested_array() {
+        let data = json!({
+            "a": {
+                "b": [
+                    { "c": 1 },
+                    { "c": 2 },
+                    { "d": 3 }  // This one should not match
+                ]
+            }
+        });
+        let root = data.as_object().unwrap();
+        let mut results = Vec::new();
+        let path = ["a", "b", "c"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>();
+
+        traverse_in_json_obj(root, &path, &mut |v| {
+            results.push(v.clone());
+        });
+
+        assert_eq!(results.len(), 2, "{:?}", results);
+        assert_eq!(results[0], json!(1));
+        assert_eq!(results[1], json!(2));
+    }
 
     #[test]
     fn test_parse_path() {
@@ -171,43 +422,6 @@ mod tests {
         // Edge case: empty string leads to a single empty segment
         let parsed = parse_path("");
         assert_eq!(parsed.segments, vec![""]);
-    }
-
-    #[test]
-    fn test_get_nested_mut() {
-        // A nested structure
-        let mut value = json!({
-            "attributes": {
-                "role": "admin",
-                "metadata": {
-                    "enabled": true
-                }
-            }
-        });
-
-        // Should return "admin"
-        let parsed = parse_path("attributes.role");
-        let got = get_nested_mut(&mut value, &parsed.segments).unwrap();
-        assert_eq!(*got, json!("admin"));
-
-        // Modify in place
-        *got = json!("user");
-        assert_eq!(value["attributes"]["role"], "user");
-
-        let parsed = parse_path("attributes.metadata.enabled");
-        let got = get_nested_mut(&mut value, &parsed.segments).unwrap();
-        assert_eq!(*got, json!(true));
-
-        // Nonexistent field should return None
-        let parsed = parse_path("attributes.unknown");
-        assert!(get_nested_mut(&mut value, &parsed.segments).is_none());
-
-        // If an intermediate is not an object, we fail early
-        let mut value2 = json!({
-            "attributes": "not-an-object"
-        });
-        let parsed2 = parse_path("attributes.role");
-        assert!(get_nested_mut(&mut value2, &parsed2.segments).is_none());
     }
 
     #[test]
@@ -251,16 +465,16 @@ mod tests {
         let parsed = parse_path("attributes.role");
 
         // Should create intermediates and set to "admin"
-        set_or_create_nested_mut(&mut value, &parsed.segments, json!("admin"));
+        set_value_at_path(&mut value, &parsed.segments, json!("admin"));
         assert_eq!(value, json!({"attributes": {"role": "admin"}}));
 
         // Overwrite existing
-        set_or_create_nested_mut(&mut value, &parsed.segments, json!("user"));
+        set_value_at_path(&mut value, &parsed.segments, json!("user"));
         assert_eq!(value, json!({"attributes": {"role": "user"}}));
 
         // If an intermediate is not an object, it should be overwritten with an object
         let mut value2 = json!({ "attributes": "not-an-object" });
-        set_or_create_nested_mut(&mut value2, &parsed.segments, json!("test"));
+        set_value_at_path(&mut value2, &parsed.segments, json!("test"));
         assert_eq!(value2, json!({ "attributes": { "role": "test" } }));
     }
 
@@ -274,13 +488,13 @@ mod tests {
             }
         });
         let parsed = parse_path("attributes.role");
-        let removed = remove_nested(&mut value, &parsed.segments);
+        let removed = remove_nested_from_json_value(&mut value, &parsed.segments);
         assert_eq!(removed, Some(json!("admin")));
         assert_eq!(value, json!({"attributes": {"other": "stuff"}}));
 
         // Removing a non-existent field
         let parsed_missing = parse_path("attributes.missing");
-        let removed_none = remove_nested(&mut value, &parsed_missing.segments);
+        let removed_none = remove_nested_from_json_value(&mut value, &parsed_missing.segments);
         assert_eq!(removed_none, None);
 
         // Removal from top-level
@@ -288,7 +502,7 @@ mod tests {
             "top": "something",
             "another": "field"
         });
-        let removed_top = remove_nested(&mut value2, &["top".to_string()]);
+        let removed_top = remove_nested_from_json_value(&mut value2, &["top".to_string()]);
         assert_eq!(removed_top, Some(json!("something")));
         assert_eq!(value2, json!({"another": "field"}));
     }

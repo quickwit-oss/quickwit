@@ -6808,6 +6808,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
+ "serde_yaml",
  "thiserror 1.0.69",
  "time",
  "tracing",

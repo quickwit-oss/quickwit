@@ -28,10 +28,10 @@ use crate::{ProcessedLog, StringOrVec};
 /// The VRL parser implements the Datadog search syntax. It is used to match
 /// logs based on their attributes and tags.
 pub fn build_vrl_matcher(query: &str) -> Result<Box<dyn Matcher<ProcessedLog>>, PipelineError> {
-    let node = QueryNode::from_str(query).map_err(|e| PipelineError::QueryParse {
+    let query_node = QueryNode::from_str(query).map_err(|e| PipelineError::QueryParse {
         message: e.to_string(),
     })?;
-    Ok(build_matcher(&node, &FilterResolver)?)
+    Ok(build_matcher(&query_node, &FilterResolver)?)
 }
 
 #[derive(Debug, Clone, Deserialize)]
