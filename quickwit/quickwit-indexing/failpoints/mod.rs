@@ -31,6 +31,7 @@
 //! Below we test panics at different steps in the indexing pipeline.
 
 use std::path::Path;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Barrier, Mutex};
 use std::time::Duration;
 
@@ -42,7 +43,9 @@ use quickwit_common::split_file;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_indexing::actors::MergeExecutor;
 use quickwit_indexing::merge_policy::{MergeOperation, MergeTask};
-use quickwit_indexing::models::MergeScratch;
+use quickwit_indexing::models::{
+    DetachIndexingPipeline, DetachMergePipeline, MergeScratch, SpawnPipeline,
+};
 use quickwit_indexing::{get_tantivy_directory_from_split_bundle, TestSandbox};
 use quickwit_metastore::{
     ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitMetadata,
@@ -50,7 +53,7 @@ use quickwit_metastore::{
 };
 use quickwit_proto::indexing::MergePipelineId;
 use quickwit_proto::metastore::{ListSplitsRequest, MetastoreService};
-use quickwit_proto::types::{IndexUid, NodeId};
+use quickwit_proto::types::{IndexUid, NodeId, PipelineUid};
 use serde_json::Value as JsonValue;
 use tantivy::Directory;
 
@@ -342,6 +345,125 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
 
     let (exit_status, _) = merge_executor_handle.join().await;
     assert!(matches!(exit_status, ActorExitStatus::Failure(_)));
+    universe.quit().await;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_no_duplicate_merge_on_pipeline_restart() -> anyhow::Result<()> {
+    quickwit_common::setup_logging_for_tests();
+    let doc_mapper_yaml = r#"
+        field_mappings:
+          - name: body
+            type: text
+          - name: ts
+            type: datetime
+            fast: true
+        timestamp_field: ts
+        "#;
+    let indexing_setting_yaml = r#"
+        split_num_docs_target: 2500
+        merge_policy:
+          type: "limit_merge"
+          max_merge_ops: 1
+          merge_factor: 4
+          max_merge_factor: 4
+          max_finalize_merge_operations: 1
+    "#;
+    let search_fields = ["body"];
+    let index_id = "test-index-merge-duplication";
+    let mut test_index_builder = TestSandbox::create(
+        index_id,
+        doc_mapper_yaml,
+        indexing_setting_yaml,
+        &search_fields,
+    )
+    .await?;
+
+    //  0: start
+    //  1: 1st merge reached the failpoint
+    // 11: 1st merge failed
+    // 12: 2nd merge reached the failpoint
+    // 22: 2nd merge failed (we don't care about this state)
+    let state = Arc::new(AtomicU32::new(0));
+    let state_clone = state.clone();
+
+    fail::cfg_callback("before-merge-split", move || {
+        use std::sync::atomic::Ordering;
+        state_clone.fetch_add(1, Ordering::Relaxed);
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        state_clone.fetch_add(10, Ordering::Relaxed);
+        panic!("kill merge pipeline");
+    })
+    .unwrap();
+
+    let batch: Vec<JsonValue> =
+        std::iter::repeat_with(|| serde_json::json!({"body ": TEST_TEXT, "ts": 1631072713 }))
+            .take(500)
+            .collect();
+    // this sometime fails because the ingest api isn't aware of the index yet?!
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    for _ in 0..4 {
+        test_index_builder
+            .add_documents_through_api(batch.clone())
+            .await?;
+    }
+
+    let (indexing_pipeline, merge_pipeline) = test_index_builder
+        .take_indexing_and_merge_pipeline()
+        .await?;
+
+    // stop the pipeline
+    indexing_pipeline.kill().await;
+    merge_pipeline
+        .mailbox()
+        .ask(quickwit_indexing::FinishPendingMergesAndShutdownPipeline)
+        .await?;
+
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    let pipeline_id = test_index_builder
+        .indexing_service()
+        .ask_for_res(SpawnPipeline {
+            index_id: index_id.to_string(),
+            source_config: quickwit_config::SourceConfig::ingest_api_default(),
+            pipeline_uid: PipelineUid::for_test(1u128),
+        })
+        .await?;
+
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    // we shouldn't have had a 2nd split run yet (the 1st one hasn't panicked just yet)
+    assert_eq!(state.load(Ordering::Relaxed), 1);
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    assert_eq!(state.load(Ordering::Relaxed), 11);
+
+    let merge_pipeline_id = pipeline_id.merge_pipeline_id();
+    let indexing_pipeline = test_index_builder
+        .indexing_service()
+        .ask_for_res(DetachIndexingPipeline { pipeline_id })
+        .await?;
+    let merge_pipeline = test_index_builder
+        .indexing_service()
+        .ask_for_res(DetachMergePipeline {
+            pipeline_id: merge_pipeline_id,
+        })
+        .await?;
+
+    indexing_pipeline.kill().await;
+    merge_pipeline
+        .mailbox()
+        .ask(quickwit_indexing::FinishPendingMergesAndShutdownPipeline)
+        .await?;
+
+    // stoping the merge pipeline makes it recheck for possible dead merge
+    // (alternatively, it does that sooner when rebuilding the known split list)
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    // timing-wise, we can't have reached 22, but it would be logically correct to get that state
+    assert_eq!(state.load(Ordering::Relaxed), 12);
+
+    let universe = test_index_builder.universe();
+    universe.kill();
+    fail::cfg("before-merge-split", "off").unwrap();
     universe.quit().await;
 
     Ok(())

@@ -350,7 +350,8 @@ impl MergePipeline {
             self.params.merge_policy.clone(),
             merge_split_downloader_mailbox,
             self.params.merge_scheduler_service.clone(),
-        );
+        )
+        .await?;
         let (_, merge_planner_handle) = ctx
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
