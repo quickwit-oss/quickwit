@@ -749,6 +749,10 @@ impl IndexingService {
 
     /// Shuts down the pipelines with supplied ids and performs necessary cleanup.
     async fn shutdown_pipelines(&mut self, pipelines_to_shutdown: &[PipelineUid]) {
+        info!(
+            pipeline_uids=?pipelines_to_shutdown,
+            "shutdown indexing pipelines"
+        );
         let should_gc_ingest_api_queues = pipelines_to_shutdown
             .iter()
             .flat_map(|pipeline_uid| self.indexing_pipelines.get(pipeline_uid))

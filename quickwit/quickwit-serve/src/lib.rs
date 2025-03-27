@@ -169,8 +169,9 @@ static METASTORE_GRPC_CLIENT_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
 static METASTORE_GRPC_SERVER_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
     Lazy::new(|| GrpcMetricsLayer::new("metastore", "server"));
 
-static GRPC_TIMEOUT_LAYER: Lazy<TimeoutLayer> =
-    Lazy::new(|| TimeoutLayer::new(Duration::from_secs(30)));
+static GRPC_INGESTER_SERVICE_TIMEOUT: Duration = Duration::from_secs(30);
+static GRPC_INDEXING_SERVICE_TIMEOUT: Duration = Duration::from_secs(30);
+static GRPC_METASTORE_SERVICE_TIMEOUT: Duration = Duration::from_secs(10);
 
 struct QuickwitServices {
     pub node_config: Arc<NodeConfig>,
@@ -459,16 +460,13 @@ pub async fn serve_quickwit(
             {
                 bail!("could not find any metastore node in the cluster");
             }
-            // These layers applies to all the RPCs of the metastore.
-            let shared_layers = ServiceBuilder::new()
-                .layer(RetryLayer::new(RetryPolicy::from(RetryParams::standard())))
-                .layer(METASTORE_GRPC_CLIENT_METRICS_LAYER.clone())
-                .layer(tower::limit::GlobalConcurrencyLimitLayer::new(
+            MetastoreServiceClient::tower()
+                .stack_layer(TimeoutLayer::new(GRPC_METASTORE_SERVICE_TIMEOUT))
+                .stack_layer(RetryLayer::new(RetryPolicy::from(RetryParams::standard())))
+                .stack_layer(METASTORE_GRPC_CLIENT_METRICS_LAYER.clone())
+                .stack_layer(tower::limit::GlobalConcurrencyLimitLayer::new(
                     get_metastore_client_max_concurrency(),
                 ))
-                .into_inner();
-            MetastoreServiceClient::tower()
-                .stack_layer(shared_layers)
                 .build_from_balance_channel(balance_channel, grpc_config.max_message_size)
         };
     // Instantiate a control plane server if the `control-plane` role is enabled on the node.
@@ -514,11 +512,11 @@ pub async fn serve_quickwit(
         None
     };
 
-    // Setup indexer pool.
+    // Setup the indexer pool to track cluster changes.
     setup_indexer_pool(
         &node_config,
         cluster.change_stream(),
-        indexer_pool.clone(),
+        indexer_pool,
         indexing_service_opt.clone(),
     );
 
@@ -943,7 +941,7 @@ async fn setup_ingest_v2(
                     } else {
                         let ingester_service = IngesterServiceClient::tower()
                             .stack_layer(INGEST_GRPC_CLIENT_METRICS_LAYER.clone())
-                            .stack_layer(GRPC_TIMEOUT_LAYER.clone())
+                            .stack_layer(TimeoutLayer::new(GRPC_INGESTER_SERVICE_TIMEOUT))
                             .build_from_channel(
                                 node.grpc_advertise_addr(),
                                 node.channel(),
@@ -1145,7 +1143,7 @@ fn setup_indexer_pool(
                     } else {
                         let client = IndexingServiceClient::tower()
                             .stack_layer(INDEXING_GRPC_CLIENT_METRICS_LAYER.clone())
-                            .stack_layer(GRPC_TIMEOUT_LAYER.clone())
+                            .stack_layer(TimeoutLayer::new(GRPC_INDEXING_SERVICE_TIMEOUT))
                             .build_from_channel(
                                 node.grpc_advertise_addr(),
                                 node.channel(),
