@@ -17,7 +17,7 @@
           "indexed": true,
           "record": "basic",
           "stored": true,
-          "tokenizer": "raw"
+          "tokenizer": "default"
         },
         "field_mappings": [
           {
