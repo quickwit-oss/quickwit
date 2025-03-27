@@ -23,6 +23,7 @@
 // For the individual detailed API documentation however, you should refer to elastic
 // documentation.
 
+pub mod aggregations;
 mod elastic_query_dsl;
 mod error;
 mod json_literal;
