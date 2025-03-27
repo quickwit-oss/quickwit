@@ -79,7 +79,7 @@ fn render_with_json(
         }
 
         let mut found_value_in_path = false;
-        get_nested_values(json, path.as_ref(), |val| {
+        traverse_in_json_obj(json, path.as_ref(), &mut |val| {
             found_value_in_path = true;
             handle_val(val, &mut rendered_str)
         });

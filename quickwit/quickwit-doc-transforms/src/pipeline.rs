@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use serde::Deserialize;
+use vrl::datadog_filter::Matcher;
 
 use crate::error::PipelineError;
 use crate::filter::build_vrl_matcher;
@@ -33,8 +34,6 @@ pub trait PipelineStep: Send + Sync + std::fmt::Debug {
 
 #[derive(Debug)]
 pub struct Pipeline {
-    #[allow(dead_code)]
-    version: u64,
     steps: Vec<Box<dyn PipelineStep>>,
 }
 
@@ -49,9 +48,8 @@ impl PipelineStep for Pipeline {
 }
 
 impl Pipeline {
-    #[cfg(test)]
     pub fn from_steps(steps: Vec<Box<dyn PipelineStep>>) -> Self {
-        Self { steps, version: 0 }
+        Self { steps }
     }
 
     pub fn process_logs(
@@ -66,31 +64,24 @@ impl Pipeline {
     }
 
     /// Build a Pipeline from a list of typed `StepConfig`.
-    pub fn from_configs(configs: &[PipelineStepConfig]) -> Result<Self, PipelineError> {
+    pub fn from_step_configs(configs: &[PipelineStepConfig]) -> Result<Self, PipelineError> {
         let mut steps = Vec::new();
         for cfg in configs {
             let step = build_step(cfg)?;
             steps.push(step);
         }
-        Ok(Self { steps, version: 0 })
+        Ok(Self { steps })
     }
 
     /// Build a Pipeline from a `PipelineConfig`.
-    pub fn from_config(config: &PipelineConfig) -> Result<Self, PipelineError> {
-        let mut steps = Vec::new();
-        for cfg in &config.pipelines {
-            let step = build_step(cfg)?;
-            steps.push(step);
-        }
-        Ok(Self {
-            steps,
-            version: config.version,
-        })
+    pub fn from_pipeline_config(config: &PipelineConfig) -> Result<Self, PipelineError> {
+        Self::from_step_configs(&config.pipelines[..])
     }
 }
 
 #[derive(Debug, Deserialize)]
 pub struct PipelineConfig {
+    #[allow(dead_code)]
     version: u64,
     #[serde(rename = "lookupTablesRemainingSizeInKB")]
     #[allow(dead_code)]
@@ -296,6 +287,15 @@ impl From<&str> for Filter {
     }
 }
 
+fn build_vrl_matcher_from_config(
+    common: &CommonConfig,
+) -> Result<Box<dyn Matcher<ProcessedLog>>, PipelineError> {
+    if !common.enabled {
+        return Ok(Box::new(false));
+    }
+    build_vrl_matcher(&common.filter.query)
+}
+
 /// Convert a `StepConfig` into a boxed pipeline step implementation.
 pub fn build_step(cfg: &PipelineStepConfig) -> Result<Box<dyn PipelineStep>, PipelineError> {
     match cfg {
@@ -304,15 +304,13 @@ pub fn build_step(cfg: &PipelineStepConfig) -> Result<Box<dyn PipelineStep>, Pip
             processors: steps,
             ..
         } => {
-            let filter = build_vrl_matcher(&common.filter.query, common.enabled)?;
-
-            let sub_pipeline = Pipeline::from_configs(steps)?;
+            let filter = build_vrl_matcher_from_config(common)?;
+            let sub_pipeline = Pipeline::from_step_configs(steps)?;
             Ok(Box::new(FilteredStep::new(filter, sub_pipeline)))
         }
         PipelineStepConfig::Grok { common, grok } => {
-            let filter = build_vrl_matcher(&common.filter.query, common.enabled)?;
+            let filter = build_vrl_matcher_from_config(common)?;
             let grok = build_grok_parser_step(grok)?;
-
             Ok(Box::new(FilteredStep::new(filter, grok)))
         }
         PipelineStepConfig::AutoGrok { common: _ } => {
@@ -326,7 +324,7 @@ pub fn build_step(cfg: &PipelineStepConfig) -> Result<Box<dyn PipelineStep>, Pip
             target,
             preserve_original,
         } => {
-            let filter = build_vrl_matcher(&common.filter.query, common.enabled)?;
+            let filter = build_vrl_matcher_from_config(&common)?;
             let sources = sources.iter().map(AsRef::as_ref).map(parse_path).collect();
             let to_path = parse_path(target);
             let remap = AttributeRemapStep {
@@ -337,13 +335,13 @@ pub fn build_step(cfg: &PipelineStepConfig) -> Result<Box<dyn PipelineStep>, Pip
             Ok(Box::new(FilteredStep::new(filter, remap)))
         }
         PipelineStepConfig::StatusRemapper { common, sources } => {
-            let filter = build_vrl_matcher(&common.filter.query, common.enabled)?;
+            let filter = build_vrl_matcher_from_config(common)?;
             let sources = sources.iter().map(AsRef::as_ref).map(parse_path).collect();
             let remap = StatusRemapStep { sources };
             Ok(Box::new(FilteredStep::new(filter, remap)))
         }
         PipelineStepConfig::DateRemapper { common, sources } => {
-            let filter = build_vrl_matcher(&common.filter.query, common.enabled)?;
+            let filter = build_vrl_matcher_from_config(common)?;
             let sources = sources.iter().map(AsRef::as_ref).map(parse_path).collect();
             let remap = DateRemapStep { sources };
             Ok(Box::new(FilteredStep::new(filter, remap)))
@@ -354,7 +352,7 @@ pub fn build_step(cfg: &PipelineStepConfig) -> Result<Box<dyn PipelineStep>, Pip
             target,
             is_replace_missing,
         } => {
-            let filter = build_vrl_matcher(&common.filter.query, common.enabled)?;
+            let filter = build_vrl_matcher_from_config(common)?;
             let step = StringBuilderStep {
                 template: CompiledTemplateString::compile(template),
                 to_path: parse_path(target),
@@ -367,12 +365,12 @@ pub fn build_step(cfg: &PipelineStepConfig) -> Result<Box<dyn PipelineStep>, Pip
             categories,
             target,
         } => {
-            let filter = build_vrl_matcher(&common.filter.query, common.enabled)?;
+            let filter = build_vrl_matcher_from_config(common)?;
             let step = CategoryProcessorStep {
                 mappings: categories
                     .iter()
                     .map(|cat| {
-                        let filter = build_vrl_matcher(&cat.filter.query, true)?;
+                        let filter = build_vrl_matcher(&cat.filter.query)?;
                         Ok(CategoryProcessorMapping {
                             filter,
                             name: cat.name.clone(),
@@ -413,7 +411,7 @@ fn string_core_attr_remapper(
     core_attr: CoreStringAttr,
 ) -> Result<Box<dyn PipelineStep>, PipelineError> {
     let sources = sources.iter().map(AsRef::as_ref).map(parse_path).collect();
-    let filter = build_vrl_matcher(&common.filter.query, common.enabled)?;
+    let filter = build_vrl_matcher_from_config(common)?;
     let step = CoreStringAttrRemapStep { sources, core_attr };
     Ok(Box::new(FilteredStep::new(filter, step)))
 }
@@ -441,7 +439,7 @@ mod tests {
             }],
         }];
 
-        let pipeline = Pipeline::from_configs(&configs).unwrap();
+        let pipeline = Pipeline::from_step_configs(&configs).unwrap();
         let mut log = ProcessedLog::from_datadog_log_msg(make_datadog_log_msg());
         log.custom = [("a".to_string(), json!(42))].into_iter().collect();
         pipeline.apply(&mut log).unwrap();
@@ -460,7 +458,7 @@ mod tests {
                 match_rules: vec![Rule{ name: "".to_string(), rule:r#"\[%{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):date}\] %{data:level} : %{data:message}"#.to_string()  }] ,
             },
         };
-        Pipeline::from_configs(&[step_cfg]).unwrap()
+        Pipeline::from_step_configs(&[step_cfg]).unwrap()
     }
 
     #[test]

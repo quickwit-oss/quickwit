@@ -14,19 +14,19 @@
 
 mod category_processor;
 mod core_string_attr_remapper;
-mod date_remaper;
+mod date_remapper;
 pub mod grok;
 mod remap_field;
-mod status_remaper;
-mod stringbuilder;
+mod status_remapper;
+mod string_builder;
 
 pub use category_processor::*;
 pub use core_string_attr_remapper::*;
-pub use date_remaper::*;
+pub use date_remapper::*;
 pub use grok::*;
 pub use remap_field::*;
-pub use status_remaper::*;
-pub use stringbuilder::*;
+pub use status_remapper::*;
+pub use string_builder::*;
 use vrl::datadog_filter::Matcher;
 
 use crate::error::PipelineError;

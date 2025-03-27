@@ -17,7 +17,7 @@ use std::sync::OnceLock;
 
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
-use vrl::datadog_grok::parse_grok_rules::{self, GrokRule};
+use vrl::{datadog_grok::parse_grok_rules::{self, GrokRule}, value::KeyString};
 
 use crate::error::PipelineError;
 
@@ -96,24 +96,21 @@ pub(crate) fn build_grok_rules(
     support_rules: &[Rule],
     match_rules: &[Rule],
 ) -> crate::Result<Vec<GrokRule>> {
-    let mut aliases: BTreeMap<_, _> = support_rules
-        .iter()
-        .map(|sr| (sr.name.to_owned().into(), sr.rule.to_owned()))
+    let all_rules = support_rules.iter().chain(match_rules.iter());
+    let aliases: BTreeMap<KeyString, String> = all_rules
+        .map(|rule| (rule.name.clone().into(), rule.rule.clone()))
         .collect();
 
-    let patterns: Vec<_> = match_rules
+    let patterns: Vec<String> = match_rules
         .iter()
-        .map(|mr| {
-            aliases.insert(mr.name.clone().into(), mr.rule.to_owned());
-            mr.rule.to_owned()
-        })
+        .map(|match_rule| { match_rule.rule.to_owned() })
         .collect();
 
     parse_grok_rules::parse_grok_rules(&patterns, aliases)
         .map_err(|source| PipelineError::GrokCompile { source })
 }
 
-pub(crate) fn build_grok_rules_with_source(rules: &[OPGrokRules]) -> SourceToGrokPatterns {
+fn build_grok_rules_with_source(rules: &[OPGrokRules]) -> SourceToGrokPatterns {
     rules
         .iter()
         .filter_map(|rule| {

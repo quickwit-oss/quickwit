@@ -17,6 +17,6 @@ use quickwit_doc_transforms::PipelineConfig;
 #[test]
 /// This is a test to test the compatibility of the grok parser with json logs.
 fn deser_pipeline() {
-    let test_data = include_str!("bosch_pipelines.json");
+    let test_data = include_str!("test_pipeline.json");
     let _: PipelineConfig = serde_json::from_str(test_data).expect("Failed to parse JSON");
 }

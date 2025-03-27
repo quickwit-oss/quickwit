@@ -89,6 +89,9 @@ pub fn parse_path(path_str: &str) -> ParsedPath {
 
 /// Recursively get a reference to a nested path, if it exists.
 /// We accept serde_json::Map here as this is the type of `custom`.
+///
+/// If an array is encounterred, on our way to the value, this function
+/// simply return None.
 pub fn get_nested<'a>(
     root: &'a serde_json::Map<String, Value>,
     mut segments: impl Iterator<Item = &'a str>,
@@ -99,10 +102,7 @@ pub fn get_nested<'a>(
     let mut current = root.get(first)?;
     // Traverse the nested objects for each segment.
     for segment in segments {
-        current = match current {
-            Value::Object(map) => map.get(segment)?,
-            _ => return None,
-        };
+        current = current.as_object()?.get(segment)?;
     }
     Some(current)
 }
@@ -114,7 +114,7 @@ pub fn get_nested<'a>(
 pub fn remove_nested_from_map(map: &mut Map<String, Value>, segments: &[String]) -> Option<Value> {
     // Temporarily take the map out and wrap it in a Value.
     let mut root = Value::Object(std::mem::take(map));
-    let removed = remove_nested(&mut root, segments);
+    let removed = remove_nested_from_json_value(&mut root, segments);
     // Write the modified object back into the map.
     *map = match root {
         Value::Object(new_map) => new_map,
@@ -124,7 +124,9 @@ pub fn remove_nested_from_map(map: &mut Map<String, Value>, segments: &[String])
 }
 
 /// Remove a nested field at `segments`, returning the removed `Value` if any.
-pub fn remove_nested(root: &mut Value, segments: &[String]) -> Option<Value> {
+///
+/// This function will return None if it encounters an array on its way to the value.
+fn remove_nested_from_json_value(root: &mut Value, segments: &[String]) -> Option<Value> {
     if segments.is_empty() {
         return None;
     }
@@ -137,58 +139,47 @@ pub fn remove_nested(root: &mut Value, segments: &[String]) -> Option<Value> {
             _ => return None,
         }
     }
-    if let Value::Object(map) = current {
-        map.remove(segments.last().unwrap())
-    } else {
-        None
-    }
+    current.as_object_mut()?.remove(segments.last().unwrap())
 }
+
 
 /// Recursively traverses a JSON object.
 /// For each nested value that matches the given path, the callback is called with a reference to
 /// the value.
 ///
 /// _Multiple matches_ are possible if the path contains arrays.
-pub fn get_nested_values<'a, F>(
+pub fn traverse_in_json_obj<'a>(
     root: &'a Map<String, Value>,
     segments: &[String],
-    mut callback: F,
-) where
-    F: FnMut(&'a Value),
-{
-    if segments.is_empty() {
-        return;
-    }
+    callback: &mut impl FnMut(&'a Value),
+) {
+    let Some((head, tail)) = segments.split_first() else { return; };
     // Since the root is a map, pull the first segment to look up in the root.
-    let first = &segments[0];
-    if let Some(value) = root.get(first) {
-        traverse_value(value, &segments[1..], &mut callback);
+    if let Some(next_node) = root.get(head) {
+        traverse_in_json_value(next_node, &tail, callback);
     }
 }
 
 /// Recursively traverses a Value using a slice of segments.
 /// Arrays are handled by iterating over every element with the same remaining segments.
-fn traverse_value<'a, F>(value: &'a Value, segments: &[String], callback: &mut F)
-where F: FnMut(&'a Value) {
+fn traverse_in_json_value<'a>(value: &'a Value, segments: &[String], callback: &mut impl FnMut(&'a Value)) {
     // If the current value is an array, apply the same segments to each element.
     if let Value::Array(arr) = value {
         for element in arr {
-            traverse_value(element, segments, callback);
+            traverse_in_json_value(element, segments, callback);
         }
         return;
     }
 
-    // If there is another segment to process, then we expect the value to be an object.
-    if !segments.is_empty() {
-        if let Value::Object(map) = value {
-            let next = &segments[0];
-            if let Some(next_value) = map.get(next) {
-                traverse_value(next_value, &segments[1..], callback);
-            }
-        }
-    } else {
-        // No more segments left—this value is a match.
+    if segments.is_empty() {
+        // Note that it is possible for a json object to be emitted here.
         callback(value);
+        return;
+    }
+
+    // If there is another segment to process, then we expect the value to be an object.
+    if let Value::Object(map) = value {
+        traverse_in_json_obj(map, segments, callback);
     }
 }
 
@@ -344,7 +335,7 @@ mod tests {
             .map(|s| s.to_string())
             .collect::<Vec<_>>();
 
-        get_nested_values(root, &path, |v| {
+        traverse_in_json_obj(root, &path, &mut |v| {
             results.push(v.clone());
         });
 
@@ -368,7 +359,7 @@ mod tests {
             .map(|s| s.to_string())
             .collect::<Vec<_>>();
 
-        get_nested_values(root, &path, |v| {
+        traverse_in_json_obj(root, &path, &mut |v| {
             results.push(v.clone());
         });
 
@@ -385,7 +376,7 @@ mod tests {
         let mut results = Vec::new();
         let path = vec![];
 
-        get_nested_values(root, &path, |v| {
+        traverse_in_json_obj(root, &path, &mut |v| {
             results.push(v.clone());
         });
 
@@ -411,7 +402,7 @@ mod tests {
             .map(|s| s.to_string())
             .collect::<Vec<_>>();
 
-        get_nested_values(root, &path, |v| {
+        traverse_in_json_obj(root, &path, &mut |v| {
             results.push(v.clone());
         });
 
@@ -497,13 +488,13 @@ mod tests {
             }
         });
         let parsed = parse_path("attributes.role");
-        let removed = remove_nested(&mut value, &parsed.segments);
+        let removed = remove_nested_from_json_value(&mut value, &parsed.segments);
         assert_eq!(removed, Some(json!("admin")));
         assert_eq!(value, json!({"attributes": {"other": "stuff"}}));
 
         // Removing a non-existent field
         let parsed_missing = parse_path("attributes.missing");
-        let removed_none = remove_nested(&mut value, &parsed_missing.segments);
+        let removed_none = remove_nested_from_json_value(&mut value, &parsed_missing.segments);
         assert_eq!(removed_none, None);
 
         // Removal from top-level
@@ -511,7 +502,7 @@ mod tests {
             "top": "something",
             "another": "field"
         });
-        let removed_top = remove_nested(&mut value2, &["top".to_string()]);
+        let removed_top = remove_nested_from_json_value(&mut value2, &["top".to_string()]);
         assert_eq!(removed_top, Some(json!("something")));
         assert_eq!(value2, json!({"another": "field"}));
     }

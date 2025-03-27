@@ -14,6 +14,7 @@
 
 use std::collections::BTreeMap;
 
+use quickwit_common::rate_limited_error;
 use vrl::datadog_grok::parse_grok::parse_grok;
 use vrl::datadog_grok::parse_grok_rules::GrokRule;
 
@@ -31,9 +32,9 @@ pub struct GrokParserAutoStep {
 }
 
 impl PipelineStep for GrokParserAutoStep {
-    fn apply(&self, value: &mut ProcessedLog) -> crate::Result<()> {
-        let log_line = &value.message;
-        let Some(grok_rules) = self.grok_rules_by_source.get(&value.source) else {
+    fn apply(&self, processed_log: &mut ProcessedLog) -> crate::Result<()> {
+        let log_line = &processed_log.message;
+        let Some(grok_rules) = self.grok_rules_by_source.get(&processed_log.source) else {
             return Ok(());
         };
         let result = parse_grok(log_line, grok_rules);
@@ -41,14 +42,13 @@ impl PipelineStep for GrokParserAutoStep {
         use vrl::datadog_grok::parse_grok::FatalError;
         match result {
             Ok(parsed) => {
-                let json_val = vrl_value_to_serde_json(parsed.parsed)?;
                 // TODO: handle errors in parsed.internal_errors
-                // TODO: Remove clones
-
-                // The unwrap() is safe, grok always returns an object.
-                for (key, v) in json_val.as_object().unwrap() {
-                    value.custom.insert(key.clone(), v.clone());
-                }
+                let json_val = vrl_value_to_serde_json(parsed.parsed)?;
+                if let serde_json::Value::Object(json_obj) = json_val {
+                    processed_log.custom.extend(json_obj);
+                } else {
+                    rate_limited_error!(limit_per_min=10, "grok is supposed to return an object. received something else");
+                };
             }
             Err(e) => match e {
                 FatalError::NoMatch => {}

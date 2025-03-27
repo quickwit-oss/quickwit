@@ -82,6 +82,13 @@ pub fn remap_log_status(input: Value) -> LogSeverity {
             // Try Syslog severity levels
             // TODO: Should we handle floats?
             // https://en.wikipedia.org/wiki/Syslog#Severity_level
+            //
+            // The following is correct. The as_i/u64 method always
+            // return a value if the value can be coerced to the given type
+            // regardless of their internal representation.
+            //
+            // Also, serde_json Value uses a u64 representation whenever
+            // possible.
             if let Some(n) = num.as_u64() {
                 match n {
                     0 => LogSeverity::Emerg,
@@ -99,33 +106,33 @@ pub fn remap_log_status(input: Value) -> LogSeverity {
             }
         }
         // Handle strings: apply case-insensitive matching on the start of the string.
-        Value::String(s) => {
-            let lower = s.to_lowercase();
-            if lower.starts_with("emerg") || lower.starts_with("f") {
+        Value::String(mut severity_name) => {
+            severity_name.make_ascii_lowercase();
+            if severity_name.starts_with("emerg") || severity_name.starts_with("f") {
                 LogSeverity::Emerg
-            } else if lower.starts_with("a") {
+            } else if severity_name.starts_with("a") {
                 LogSeverity::Alert
-            } else if lower.starts_with("c") {
+            } else if severity_name.starts_with("c") {
                 LogSeverity::Critical
-            } else if lower.starts_with("err") {
+            } else if severity_name.starts_with("err") {
                 LogSeverity::Error
-            } else if lower.starts_with("w") {
+            } else if severity_name.starts_with("w") {
                 LogSeverity::Warning
-            } else if lower.starts_with("n") {
+            } else if severity_name.starts_with("n") {
                 LogSeverity::Notice
-            } else if lower.starts_with("i") {
+            } else if severity_name.starts_with("i") {
                 LogSeverity::Info
-            } else if lower.starts_with("d")
-                || lower.starts_with("t")
-                || lower.starts_with("v")
-                || lower.starts_with("trace")
-                || lower.starts_with("verbose")
+            } else if severity_name.starts_with("d")
+                || severity_name.starts_with("t")
+                || severity_name.starts_with("v")
+                // || severity_name.starts_with("trace")
+                // || severity_name.starts_with("verbose")
             {
                 LogSeverity::Debug
-            } else if lower.starts_with("o")
-                || lower.starts_with("s")
-                || lower == "ok"
-                || lower == "success"
+            } else if severity_name.starts_with("o")
+                || severity_name.starts_with("s")
+                // || severity_name == "ok"
+                // || severity_name == "success"
             {
                 LogSeverity::Ok
             } else {
