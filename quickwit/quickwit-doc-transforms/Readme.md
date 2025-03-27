@@ -5,7 +5,8 @@ See [datadog documentation](https://docs.datadoghq.com/logs/log_configuration/pr
 
 # TODO
 
-- Log events can be submitted up to 18 hours in the past and two hours in the future.
+- Log events can be submitted up to 18 hours in the past and two hours in the future. 
+=> Dropping events would need to be done after execting the pipelines, since the pipeline can contain date remapping.
 
 ### Filters
 * Handle more than numerical ranges in filter.rs (compare fn)
