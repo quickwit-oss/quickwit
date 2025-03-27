@@ -16,17 +16,17 @@ See [datadog documentation](https://docs.datadoghq.com/logs/log_configuration/pr
 - [ ] arithmetic-processor
 - [x] attribute-remapper
   - [ ] Missing `overrideOnConflict` 
-- [ ] category-processor
-- [ ] date-remapper
+- [x] category-processor
+- [x] date-remapper
 - [ ] geo-ip-parser
 - [x] grok-parser
-  - [ ] Add rulenames parsing in grok.rs
+  - [x] Add rulenames parsing in grok.rs
 - [ ] lookup-processor
-- [ ] message-remapper
+- [x] message-remapper
 - [x] pipeline
-- [ ] service-remapper
+- [x] service-remapper
 - [x] status-remapper
-- [ ] string-builder-processor
-- [ ] trace-id-remapper
+- [x] string-builder-processor
+- [x] trace-id-remapper
 - [ ] url-parser
 - [ ] user-agent-parser
