@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::path::PathBuf;
 use std::string::FromUtf8Error;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -39,6 +40,7 @@ use tantivy::schema::{Field, Value};
 use tantivy::{DateTime, TantivyDocument};
 use thiserror::Error;
 use tokio::runtime::Handle;
+use tracing::{error, info};
 
 #[cfg(feature = "vrl")]
 use super::vrl_processing::*;
@@ -457,13 +459,35 @@ impl DocProcessor {
         doc_mapper: Arc<DocMapper>,
         indexer_mailbox: Mailbox<Indexer>,
         transform_config_opt: Option<TransformConfig>,
-        pipeline_config_opt: Option<PipelineConfig>,
         input_format: SourceInputFormat,
     ) -> anyhow::Result<Self> {
         let timestamp_field_opt = extract_timestamp_field(&doc_mapper)?;
         if cfg!(not(feature = "vrl")) && transform_config_opt.is_some() {
             bail!("VRL is not enabled: please recompile with the `vrl` feature")
         }
+
+        // Try to deserialize pipeline config into `PipelineConfig` from the path provided in the
+        // environment variable QW_PIPELINE_CONFIG_PATH
+        //
+        let pipeline_config_opt: Option<PipelineConfig> = std::env::var("QW_PIPELINE_CONFIG_PATH")
+            .ok()
+            .and_then(|path| {
+                let pipeline_config_serialized = std::fs::read_to_string(PathBuf::from(path));
+                match pipeline_config_serialized {
+                    Ok(pipeline_config) => {
+                        info!("Successfully read pipeline config file");
+                        Some(
+                            serde_json::from_str(&pipeline_config)
+                                .expect("Failed to deserialize pipeline config"),
+                        )
+                    }
+                    Err(e) => {
+                        error!("Failed to read pipeline config file: {}", e);
+                        None
+                    }
+                }
+            });
+
         let pipeline_opt: Option<Pipeline> = pipeline_config_opt
             .map(|config| Pipeline::try_from_pipeline_config(&config))
             .transpose()?;
@@ -566,6 +590,7 @@ fn extract_timestamp_field(doc_mapper: &DocMapper) -> anyhow::Result<Option<Fiel
 }
 
 #[cfg(not(feature = "vrl"))]
+#[allow(dead_code)]
 struct VrlProgram {}
 
 #[async_trait]
