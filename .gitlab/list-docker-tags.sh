@@ -28,11 +28,11 @@ if [ -n "${CI_COMMIT_TAG-}" ]; then
     IMG_DESTINATIONS="${IMG_DESTINATIONS},${IMG_DESTINATION_BASE}:devel"
     IMG_DESTINATIONS="${IMG_DESTINATIONS},${IMG_DESTINATION_BASE}:${CI_COMMIT_TAG}"
   fi
-  if echo "$CI_COMMIT_TAG" | grep -qE "^v\d+\.\d+\.\d+-.+$"; then
+  if echo "$CI_COMMIT_TAG" | grep -qE "^v[0-9]+\.[0-9]+\.[0-9]+-.+$"; then
     # rc
     IMG_DESTINATIONS="${IMG_DESTINATIONS},${IMG_DESTINATION_BASE}:${CI_COMMIT_TAG}"
   fi
-  if echo "$CI_COMMIT_TAG" | grep -qE "^v\d+\.\d+\.\d+$"; then
+  if echo "$CI_COMMIT_TAG" | grep -qE "^v[0-9]+\.[0-9]+\.[0-9]+$"; then
     # true release
     MAJOR_MINOR_VERSION="$(echo "${CI_COMMIT_TAG}" | sed -nE 's/^(v[0-9]+\.[0-9]+)\.[0-9]+$/\1/p')"
     MAJOR_VERSION="$(echo "${CI_COMMIT_TAG}" | sed -nE 's/^(v[0-9]+)\.[0-9]+\.[0-9]+$/\1/p')"
