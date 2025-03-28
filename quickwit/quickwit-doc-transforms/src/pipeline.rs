@@ -14,7 +14,7 @@
 
 use std::sync::Arc;
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use vrl::datadog_filter::Matcher;
 
 use crate::error::PipelineError;

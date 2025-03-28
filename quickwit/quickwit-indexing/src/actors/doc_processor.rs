@@ -25,7 +25,9 @@ use quickwit_common::rate_limited_tracing::rate_limited_warn;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::{SourceInputFormat, TransformConfig};
 use quickwit_doc_mapper::{DocMapper, DocParsingError, JsonObject};
-use quickwit_doc_transforms::{Pipeline, PipelineConfig, PipelineError, PipelineStep, ProcessedLog};
+use quickwit_doc_transforms::{
+    Pipeline, PipelineConfig, PipelineError, PipelineStep, ProcessedLog,
+};
 use quickwit_opentelemetry::otlp::{
     parse_otlp_logs_json, parse_otlp_logs_protobuf, parse_otlp_spans_json,
     parse_otlp_spans_protobuf, JsonLogIterator, JsonSpanIterator, OtlpLogsError, OtlpTracesError,
@@ -95,7 +97,6 @@ pub enum DocProcessorError {
     #[cfg(feature = "vrl")]
     #[error("VRL transform error: {0}")]
     Transform(VrlTerminate),
-
 }
 
 impl From<OtlpLogsError> for DocProcessorError {
@@ -198,31 +199,38 @@ fn parse_raw_doc(
     raw_doc: Bytes,
     num_bytes: usize,
     pipeline_opt: Option<&Pipeline>,
-) -> impl Iterator<Item=Result<JsonDoc, DocProcessorError>> + '_ {
+) -> impl Iterator<Item = Result<JsonDoc, DocProcessorError>> + '_ {
     let json_doc_iter = try_into_json_docs(input_format, raw_doc, num_bytes);
     let Some(pipeline) = pipeline_opt else {
         return itertools::Either::Left(json_doc_iter);
     };
-    let json_doc_iter = json_doc_iter
-        .map(|json_doc_res: Result<JsonDoc, DocProcessorError>| {
-            let mut json_doc = json_doc_res?;
-            use serde::de::IntoDeserializer;
-            let deserializer = json_doc.json_obj.into_deserializer();
-            let Ok(mut processed_log) = ProcessedLog::deserialize(deserializer) else {
-                return Err(DocProcessorError::JsonParsing("Document was not a processed log.".to_string()));
-            };
-            if let Err(pipeline_error) = pipeline.apply(&mut processed_log) {
-                return Err(DocProcessorError::Pipeline(pipeline_error));
-            }
-            let Ok(json_value) = serde_json::to_value(processed_log) else {
-                return Err(DocProcessorError::JsonParsing("Failed to serialize processed_log into json value. This should never happen".to_string()));
-            };
-            let JsonValue::Object(json_obj) = json_value else {
-                return Err(DocProcessorError::JsonParsing("Serialized processed log was not a a json obj. This should never happen!".to_string()));
-            };
-            json_doc.json_obj = json_obj;
-            Ok(json_doc)
-        });
+    let json_doc_iter = json_doc_iter.map(|json_doc_res: Result<JsonDoc, DocProcessorError>| {
+        let mut json_doc = json_doc_res?;
+        use serde::de::IntoDeserializer;
+        let deserializer = json_doc.json_obj.into_deserializer();
+        let Ok(mut processed_log) = ProcessedLog::deserialize(deserializer) else {
+            return Err(DocProcessorError::JsonParsing(
+                "Document was not a processed log.".to_string(),
+            ));
+        };
+        if let Err(pipeline_error) = pipeline.apply(&mut processed_log) {
+            return Err(DocProcessorError::Pipeline(pipeline_error));
+        }
+        let Ok(json_value) = serde_json::to_value(processed_log) else {
+            return Err(DocProcessorError::JsonParsing(
+                "Failed to serialize processed_log into json value. This should never happen"
+                    .to_string(),
+            ));
+        };
+        let JsonValue::Object(json_obj) = json_value else {
+            return Err(DocProcessorError::JsonParsing(
+                "Serialized processed log was not a a json obj. This should never happen!"
+                    .to_string(),
+            ));
+        };
+        json_doc.json_obj = json_obj;
+        Ok(json_doc)
+    });
     return itertools::Either::Right(json_doc_iter);
 }
 
@@ -411,21 +419,21 @@ impl DocProcessorCounters {
         self.num_bytes_total.fetch_add(num_bytes, Ordering::Relaxed);
         match error {
             DocProcessorError::DocMapperParsing(_) => {
-                        self.doc_mapper_errors.record_doc(num_bytes);
-                    }
+                self.doc_mapper_errors.record_doc(num_bytes);
+            }
             DocProcessorError::JsonParsing(_) => {
-                        self.json_parse_errors.record_doc(num_bytes);
-                    }
+                self.json_parse_errors.record_doc(num_bytes);
+            }
             DocProcessorError::OltpLogsParsing(_) | DocProcessorError::OltpTracesParsing(_) => {
-                        self.otlp_parse_errors.record_doc(num_bytes);
-                    }
+                self.otlp_parse_errors.record_doc(num_bytes);
+            }
             DocProcessorError::Pipeline(_) => {
                 self.pipeline_errors.record_doc(num_bytes);
-            },
+            }
             #[cfg(feature = "vrl")]
-                    DocProcessorError::Transform(_) => {
-                        self.transform_errors.record_doc(num_bytes);
-                    }
+            DocProcessorError::Transform(_) => {
+                self.transform_errors.record_doc(num_bytes);
+            }
         };
     }
 }
@@ -457,9 +465,8 @@ impl DocProcessor {
             bail!("VRL is not enabled: please recompile with the `vrl` feature")
         }
         let pipeline_opt: Option<Pipeline> = pipeline_config_opt
-            .map(|config| {
-                Pipeline::try_from_pipeline_config(&config)
-            }).transpose()?;
+            .map(|config| Pipeline::try_from_pipeline_config(&config))
+            .transpose()?;
         Ok(DocProcessor {
             doc_mapper,
             indexer_mailbox,
@@ -504,7 +511,12 @@ impl DocProcessor {
         // #[cfg(not(feature = "vrl"))]
         // let transform_opt: Option<&mut VrlProgram> = None;
 
-        for json_doc_result in parse_raw_doc(self.input_format, raw_doc, num_bytes, self.pipeline_opt.as_ref()) {
+        for json_doc_result in parse_raw_doc(
+            self.input_format,
+            raw_doc,
+            num_bytes,
+            self.pipeline_opt.as_ref(),
+        ) {
             let processed_doc_result =
                 json_doc_result.and_then(|json_doc| self.process_json_doc(json_doc));
 
