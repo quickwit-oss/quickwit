@@ -15,6 +15,7 @@
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
+use tracing::error;
 use vrl::datadog_filter::Matcher;
 
 use crate::error::PipelineError;
@@ -69,8 +70,13 @@ impl Pipeline {
     pub fn from_step_configs(configs: &[PipelineStepConfig]) -> Result<Self, PipelineError> {
         let mut steps = Vec::new();
         for cfg in configs {
-            let step = build_step(cfg)?;
-            steps.push(step);
+            let step = build_step(cfg);
+            match step {
+                Ok(step) => steps.push(step),
+                Err(e) => {
+                    error!("Failed to build pipeline processor: {:?}", e);
+                }
+            }
         }
         Ok(Self { steps })
     }
