@@ -26,6 +26,7 @@ build_image:
         - .gitlab-ci.yml
         - Dockerfile
         - quickwit/**/*
+    - if: $CI_COMMIT_TAG
   id_tokens:
     DDSIGN_ID_TOKEN:
       aud: image-integrity
@@ -39,6 +40,12 @@ generate-docker-tag-names:
   tags: ["arch:amd64"]
   image: registry.ddbuild.io/ci/auto_inject/gitlab:current
   stage: publish
+  rules:
+    - changes:
+        - .gitlab-ci.yml
+        - Dockerfile
+        - quickwit/**/*
+    - if: $CI_COMMIT_TAG
   variables:
     IMG_DESTINATION_BASE: cloudprem
   script:
@@ -49,6 +56,12 @@ generate-docker-tag-names:
 
 publish_public_images:
   stage: publish
+  rules:
+    - changes:
+        - .gitlab-ci.yml
+        - Dockerfile
+        - quickwit/**/*
+    - if: $CI_COMMIT_TAG
   trigger:
     project: DataDog/public-images
     branch: main
