@@ -20,7 +20,9 @@ fi
 
 IMG_DESTINATIONS="${IMG_DESTINATION_BASE}:edge"
 
-if [ ! -z "${CI_COMMIT_TAG-}" ]; then
+echo CI_COMMIT_TAG="${CI_COMMIT_TAG-<none>}"
+
+if [ -n "${CI_COMMIT_TAG-}" ]; then
   if echo "$CI_COMMIT_TAG" | grep -q "^cp"; then
     # cp*
     IMG_DESTINATIONS="${IMG_DESTINATIONS},${IMG_DESTINATION_BASE}:devel"
@@ -32,8 +34,8 @@ if [ ! -z "${CI_COMMIT_TAG-}" ]; then
   fi
   if echo "$CI_COMMIT_TAG" | grep -qE "^v\d+\.\d+\.\d+$"; then
     # true release
-    MAJOR_MINOR_VERSION="$(echo ${CI_COMMIT_TAG} | sed -nE 's/^(v[0-9]+\.[0-9]+)\.[0-9]+$/\1/p')"
-    MAJOR_VERSION="$(echo ${CI_COMMIT_TAG} | sed -nE 's/^(v[0-9]+)\.[0-9]+\.[0-9]+$/\1/p')"
+    MAJOR_MINOR_VERSION="$(echo "${CI_COMMIT_TAG}" | sed -nE 's/^(v[0-9]+\.[0-9]+)\.[0-9]+$/\1/p')"
+    MAJOR_VERSION="$(echo "${CI_COMMIT_TAG}" | sed -nE 's/^(v[0-9]+)\.[0-9]+\.[0-9]+$/\1/p')"
 
     IMG_DESTINATIONS="${IMG_DESTINATIONS},${IMG_DESTINATION_BASE}:latest"
     IMG_DESTINATIONS="${IMG_DESTINATIONS},${IMG_DESTINATION_BASE}:${CI_COMMIT_TAG}"
