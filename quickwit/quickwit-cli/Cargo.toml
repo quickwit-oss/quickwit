@@ -81,6 +81,10 @@ quickwit-storage = { workspace = true, features = ["testsuite"] }
 
 [features]
 jemalloc = ["dep:tikv-jemalloc-ctl", "dep:tikv-jemallocator"]
+jemalloc-profiled = [
+  "quickwit-common/jemalloc-profiled",
+  "quickwit-serve/jemalloc-profiled"
+]
 ci-test = []
 pprof = ["quickwit-serve/pprof"]
 openssl-support = ["openssl-probe"]
@@ -126,6 +130,10 @@ release-macos-feature-vendored-set = [
   "quickwit-storage/gcs",
   "quickwit-metastore/postgres",
   "quickwit-doc-mapper/multilang",
+]
+release-heap-profiled = [
+  "release-feature-set",
+  "jemalloc-profiled"
 ]
 
 [package.metadata.cargo-machete]

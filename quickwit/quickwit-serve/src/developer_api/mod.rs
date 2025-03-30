@@ -13,14 +13,16 @@
 // limitations under the License.
 
 mod debug;
-mod log_level;
 
+#[cfg_attr(not(feature = "jemalloc-profiled"), path = "heap_prof_disabled.rs")]
+mod heap_prof;
+mod log_level;
 #[cfg_attr(not(feature = "pprof"), path = "pprof_disabled.rs")]
 mod pprof;
-
 mod server;
 
 use debug::debug_handler;
+use heap_prof::heap_prof_handlers;
 use log_level::log_level_handler;
 use pprof::pprof_handlers;
 use quickwit_cluster::Cluster;
@@ -42,7 +44,8 @@ pub(crate) fn developer_api_routes(
         .and(
             debug_handler(cluster.clone())
                 .or(log_level_handler(env_filter_reload_fn.clone()).boxed())
-                .or(pprof_handlers()),
+                .or(pprof_handlers())
+                .or(heap_prof_handlers()),
         )
         .recover(recover_fn)
 }

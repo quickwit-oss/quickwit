@@ -85,6 +85,7 @@ assert-json-diff = "2"
 async-compression = { version = "0.4", features = ["tokio", "gzip"] }
 async-speed-limit = "0.4"
 async-trait = "0.1"
+backtrace = "0.3"
 base64 = "0.22"
 binggan = { version = "0.14" }
 bytes = { version = "1", features = ["serde"] }
