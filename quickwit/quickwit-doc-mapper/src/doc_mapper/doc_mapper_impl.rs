@@ -1841,7 +1841,7 @@ mod tests {
             }"#,
             "concat",
             r#"{"some_int": 25}"#,
-            vec![25_u64.into()],
+            vec![25_i64.into()],
         );
     }
 
