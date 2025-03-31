@@ -83,19 +83,12 @@ impl Pipeline {
 
     /// Build a Pipeline from a `PipelineConfig`.
     pub fn try_from_pipeline_config(config: &PipelineConfig) -> Result<Self, PipelineError> {
-        Self::from_step_configs(&config.pipelines[..])
+        Self::from_step_configs(&config.0[..])
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Hash, Eq, PartialEq)]
-pub struct PipelineConfig {
-    #[allow(dead_code)]
-    version: u64,
-    // #[serde(rename = "lookupTablesRemainingSizeInKB")]
-    // #[allow(dead_code)]
-    // lookup_tables_remaining_size_in_kb: f64,
-    pipelines: Arc<Vec<PipelineStepConfig>>,
-}
+pub struct PipelineConfig(Arc<Vec<PipelineStepConfig>>);
 
 #[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[serde(tag = "type", rename_all = "snake_case")]

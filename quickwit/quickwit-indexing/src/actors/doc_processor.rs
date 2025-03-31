@@ -233,7 +233,7 @@ fn parse_raw_doc(
         json_doc.json_obj = json_obj;
         Ok(json_doc)
     });
-    return itertools::Either::Right(json_doc_iter);
+    itertools::Either::Right(json_doc_iter)
 }
 
 // #[cfg(not(feature = "vrl"))]

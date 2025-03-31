@@ -173,7 +173,6 @@ impl crate::TestableForRegression for SourceConfig {
                 vrl_script: ".message = downcase(string!(.message))".to_string(),
                 timezone: default_timezone(),
             }),
-            // TODO fixme
             input_format: SourceInputFormat::Json,
         }
     }
