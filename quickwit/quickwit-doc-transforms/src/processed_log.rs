@@ -25,7 +25,9 @@ use tracing::warn;
 use uuid::Uuid;
 
 use crate::normalize_field::{normalize_fields, NormalizeField};
-use crate::{convert_tags, StringOrVec};
+use crate::path_access::ParsedPath;
+use crate::transformers::StatusRemapStep;
+use crate::{convert_tags, PipelineStep, StringOrVec};
 
 // https://github.com/DataDog/datadog-agent/blob/a33248c2bc125920a9577af1e16f12298875a4ad/pkg/logs/processor/json.go#L23-L49
 #[serde_as]
@@ -183,10 +185,6 @@ impl ProcessedLog {
             if let Some(Value::String(m)) = parsed_map.remove("message") {
                 processed.message = m;
             }
-            // TODO: Check that status contains valid values (reuse status remapper transform)
-            if let Some(Value::String(s)) = parsed_map.remove("status") {
-                processed.status = s.to_lowercase();
-            }
             if let Some(val) = parsed_map.get("timestamp") {
                 try_parse_and_update_timestamp(&mut processed, val);
             }
@@ -200,6 +198,13 @@ impl ProcessedLog {
             // Rest goes to `processed.custom`
             processed.custom = parsed_map;
         }
+
+        // TODO:: We don't need to recreate this StatusRemapStep for every log.
+        let sources: Vec<ParsedPath> = ["status", "severity", "level", "syslog.severity"]
+            .iter()
+            .map(|field| ParsedPath::from(*field))
+            .collect();
+        StatusRemapStep { sources }.apply(&mut processed).unwrap();
 
         processed
     }
@@ -366,5 +371,22 @@ pub(crate) mod tests {
         // That is around 2023-09-10T14:50:00Z if milliseconds
         // We'll just check it's not the default or zero
         assert_ne!(p2.timestamp, p.timestamp);
+    }
+
+    #[test]
+    fn test_override_status_from_custom() {
+        let json = r#"{ 
+                "message": "{ \"message\": \"Overridden message\", \"severity\": \"INFO\" }",
+                "status": "error", 
+                "timestamp": 1620000000000,
+                "hostname": "test-host",
+                "service": "test-service",
+                "ddsource": "rust"
+            }"#
+        .to_string();
+        let msg: DatadogLogMsg = serde_json::from_str(&json).unwrap();
+        let msg: ProcessedLog = ProcessedLog::from_datadog_log_msg(msg);
+        assert_eq!(msg.message, "Overridden message");
+        assert_eq!(msg.status, "info");
     }
 }
