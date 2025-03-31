@@ -31,7 +31,7 @@ use tantivy::aggregation::Key as TantivyKey;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 /// The final aggegation result.
-pub struct AggregationResults(pub FxHashMap<String, AggregationResult>);
+pub struct AggregationResults(pub Vec<(String, AggregationResult)>);
 
 impl From<TantivyAggregationResults> for AggregationResults {
     fn from(value: TantivyAggregationResults) -> AggregationResults {
@@ -155,14 +155,14 @@ pub enum BucketResult {
         ///
         /// If there are holes depends on the request, if min_doc_count is 0, then there are no
         /// holes between the first and last bucket.
-        /// See [`HistogramAggregation`](super::bucket::HistogramAggregation)
+        /// See `HistogramAggregation`
         buckets: BucketEntries<BucketEntry>,
     },
     /// This is the term result
     Terms {
         /// The buckets.
         ///
-        /// See [`TermsAggregation`](super::bucket::TermsAggregation)
+        /// See `TermsAggregation`
         buckets: Vec<BucketEntry>,
         /// The number of documents that didn’t make it into to TOP N due to shard_size or size
         sum_other_doc_count: u64,
@@ -222,7 +222,7 @@ pub enum BucketEntries<T> {
     /// Vector format bucket entries
     Vec(Vec<T>),
     /// HashMap format bucket entries
-    HashMap(FxHashMap<String, T>),
+    HashMap(Vec<(String, T)>),
 }
 
 impl<T, U> From<TantivyBucketEntries<T>> for BucketEntries<U>
@@ -386,6 +386,8 @@ pub enum PercentileValues {
     /// Vector format percentile entries
     Vec(Vec<PercentileValuesVecEntry>),
     /// HashMap format percentile entries. Key is the serialized percentile
+    // we use a hashmap here because neither key nor value require conversion, almost
+    // all usage of PercentileValues will be direct conversion to TantivyPercentilesValue
     HashMap(FxHashMap<String, f64>),
 }
 
