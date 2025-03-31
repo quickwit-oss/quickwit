@@ -81,7 +81,7 @@ jobs:
           touch "/tmp/digests/${digest#sha256:}"
 
       - name: Upload digest
-        uses: actions/upload-artifact@v4.6.1
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: digest-${{ matrix.platform_suffix }}
           path: /tmp/digests/*
@@ -93,7 +93,7 @@ jobs:
     needs: [docker]
     steps:
       - name: Download digests
-        uses: actions/download-artifact@v4.1.9
+        uses: actions/download-artifact@v4.2.1
         with:
           pattern: digest-*
           path: /tmp/digests
