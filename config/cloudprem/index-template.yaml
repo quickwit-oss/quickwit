@@ -63,8 +63,8 @@ doc_mapping:
       stored: false
     # TODO: Needs to be populated
     - name: tiebreaker
-      type: u64
-      fast: false
+      type: i64
+      fast: true
       indexed: false
       stored: true
 
