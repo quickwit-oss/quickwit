@@ -44,14 +44,18 @@ pub struct JemallocProfile {
     pub realloc_size: i64,
 }
 
-pub fn start_profiling(min_alloc_size_for_backtrace: usize) -> Result<(), ()> {
+#[derive(Debug, thiserror::Error)]
+#[error("profiling unavailable")]
+pub struct Unavailable;
+
+pub fn start_profiling(min_alloc_size_for_backtrace: usize) -> Result<(), Unavailable> {
     warmup_symbol_cache();
     configure_min_alloc_size_for_backtrace(min_alloc_size_for_backtrace);
     info!(min_alloc_size_for_backtrace, "start heap profiling");
     let profiling_previously_enabled = ENABLED.swap(true, Ordering::Acquire);
     if profiling_previously_enabled {
         info!("heap profiling already running");
-        return Err(());
+        return Err(Unavailable);
     }
     ALLOC_COUNT.store(0, Ordering::SeqCst);
     ALLOC_SIZE.store(0, Ordering::SeqCst);
@@ -63,10 +67,10 @@ pub fn start_profiling(min_alloc_size_for_backtrace: usize) -> Result<(), ()> {
     Ok(())
 }
 
-pub fn stop_profiling() -> Result<JemallocProfile, ()> {
+pub fn stop_profiling() -> Result<JemallocProfile, Unavailable> {
     let profiling_previously_enabled = ENABLED.swap(false, Ordering::Release);
     if !profiling_previously_enabled {
-        return Err(());
+        return Err(Unavailable);
     }
     info!("end heap profiling");
     backtrace::clear_symbol_cache();
@@ -89,7 +93,7 @@ fn configure_min_alloc_size_for_backtrace(min_alloc_size_for_backtrace: usize) {
 fn warmup_symbol_cache() {
     backtrace::trace(|frame| {
         backtrace::resolve_frame(frame, |_| {});
-        return true;
+        true
     });
 }
 
@@ -175,7 +179,7 @@ fn dump_trace(kind: &'static str, alloc_size: usize) {
     let mut remaining_frames_to_inspect = 100;
     backtrace::trace(|frame| {
         if remaining_frames_to_inspect == 0 {
-            println!("{},{},{}", kind, alloc_size, "<max_frames_reached>");
+            println!("{},{},<max_frames_reached>", kind, alloc_size);
             return false;
         } else {
             remaining_frames_to_inspect = -1;
@@ -186,7 +190,6 @@ fn dump_trace(kind: &'static str, alloc_size: usize) {
                     if prefix_helper::is_prefix("quickwit_common::jemalloc_profiled", &symbol_name)
                     {
                         profiling_frames_skipped = true;
-                        return;
                     }
                 }
             });
@@ -246,9 +249,7 @@ mod prefix_helper {
             }
             let max_idx = (self.matched + new_slice.len()).min(self.prefix.len());
             let matched_prefix_slice = &self.prefix[self.matched..max_idx];
-            if new_slice.len() < matched_prefix_slice.len() {
-                self.failed = true;
-            } else if matched_prefix_slice != &new_slice[..matched_prefix_slice.len()] {
+            if matched_prefix_slice != &new_slice[..matched_prefix_slice.len()] {
                 self.failed = true;
             } else {
                 self.matched += matched_prefix_slice.len();
@@ -278,6 +279,7 @@ mod prefix_helper {
                 "hello",
                 ["h", "e", "l", "l", "o", "!"].iter().format("")
             ));
+            assert!(!is_prefix("hello", ["h", "i"].iter().format("")));
         }
     }
 }

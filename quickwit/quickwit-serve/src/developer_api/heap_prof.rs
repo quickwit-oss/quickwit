@@ -35,8 +35,7 @@ pub fn heap_prof_handlers(
             .and_then(move |params: ProfilerQueryParams| start_profiler_handler(params))
     };
 
-    let stop_profiler =
-        { warp::path!("heap-prof" / "stop").and_then(move || stop_profiler_handler()) };
+    let stop_profiler = { warp::path!("heap-prof" / "stop").and_then(stop_profiler_handler) };
 
     async fn start_profiler_handler(
         params: ProfilerQueryParams,
