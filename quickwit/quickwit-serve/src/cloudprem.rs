@@ -10,6 +10,7 @@ use quickwit_proto::tonic::codegen::http::{Request, Response};
 use quickwit_proto::tonic::transport::Body;
 use quickwit_proto::tonic::Status;
 use tower::{Layer, Service};
+use tracing::info;
 
 /// CA certificate used by the CloudPrem bridge.
 const CA_CERT: &str = "-----BEGIN CERTIFICATE-----
@@ -79,8 +80,22 @@ fn aws_mtls_interceptor_impl<T>(
     let verify_result = verify_client_cert(&client_cert, ca_cert_public_key);
 
     match verify_result {
-        Ok(true) => Ok(request),
-        Ok(false) => Err(Status::unauthenticated(
+        Ok(Some(cert)) => {
+            let Ok(subject) = cert
+                .subject_name()
+                .entries()
+                .map(|entry| entry.data().as_utf8().map(|entry| entry.to_string()))
+                .collect::<Result<Vec<_>, _>>()
+            else {
+                // this shouldn't happen, but if it does, it seems better to reject the query than
+                // accept an unauditable one.
+                return Err(Status::invalid_argument("unparseable subject".to_string()));
+            };
+            let subject = subject.join(", ");
+            info!(target: "audit_log", path, subject, "received request");
+            Ok(request)
+        }
+        Ok(None) => Err(Status::unauthenticated(
             "failed to verify client certificate",
         )),
         Err(error) => Err(Status::invalid_argument(error.to_string())),
@@ -90,7 +105,7 @@ fn aws_mtls_interceptor_impl<T>(
 fn verify_client_cert(
     client_cert: &[u8],
     ca_cert_public_key: &PKeyRef<Public>,
-) -> anyhow::Result<bool> {
+) -> anyhow::Result<Option<X509>> {
     let mut client_cert_pems =
         pem::parse_many(client_cert).context("failed to parse client certificate")?;
 
@@ -106,10 +121,16 @@ fn verify_client_cert(
         .pop()
         .expect("`client_cert_pems` should not be empty");
 
-    X509::from_der(client_cert_pem.contents())
-        .context("failed to parse X.509 client certificate")?
+    let x509 = X509::from_der(client_cert_pem.contents())
+        .context("failed to parse X.509 client certificate")?;
+    if x509
         .verify(ca_cert_public_key)
-        .context("failed to verify client certificate")
+        .context("failed to verify client certificate")?
+    {
+        Ok(Some(x509))
+    } else {
+        Ok(None)
+    }
 }
 
 #[derive(Clone)]
@@ -248,11 +269,11 @@ mod tests {
     #[test]
     fn test_verify_client_cert() {
         let verified = verify_client_cert(TEST_CLIENT_CERT, &CA_CERT_PUBLIC_KEY).unwrap();
-        assert!(!verified);
+        assert!(verified.is_none());
 
         let test_ca_cert_public_key = X509::from_pem(TEST_CA_CERT).unwrap().public_key().unwrap();
         let verified = verify_client_cert(TEST_CLIENT_CERT, &test_ca_cert_public_key).unwrap();
 
-        assert!(verified);
+        assert!(verified.is_some());
     }
 }
