@@ -39,7 +39,7 @@ impl From<Vec<(&'static str, Arc<dyn StorageCache>)>> for QuickwitCache {
 impl QuickwitCache {
     /// Creates a [`QuickwitCache`] with a cache on fast fields
     /// with a capacity of `fast_field_cache_capacity`.
-    pub fn new(fast_field_cache_capacity: usize) -> Self {
+    pub fn new_fast_fields(fast_field_cache_capacity: usize) -> Self {
         let mut quickwit_cache = QuickwitCache::empty();
         let fast_field_cache_counters: &'static CacheMetrics =
             &crate::STORAGE_METRICS.fast_field_cache;

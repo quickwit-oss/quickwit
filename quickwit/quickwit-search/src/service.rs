@@ -506,7 +506,7 @@ impl SearcherContext {
         let split_stream_semaphore =
             Semaphore::new(searcher_config.max_num_concurrent_split_streams);
         let fast_field_cache_capacity = searcher_config.fast_field_cache_capacity.as_u64() as usize;
-        let storage_long_term_cache = Arc::new(QuickwitCache::new(fast_field_cache_capacity));
+        let fast_fields_cache = Arc::new(QuickwitCache::new_fast_fields(fast_field_cache_capacity));
         let leaf_search_cache =
             LeafSearchCache::new(searcher_config.partial_request_cache_capacity.as_u64() as usize);
         let list_fields_cache =
@@ -518,7 +518,7 @@ impl SearcherContext {
 
         Self {
             searcher_config,
-            fast_fields_cache: storage_long_term_cache,
+            fast_fields_cache,
             search_permit_provider: leaf_search_split_semaphore,
             split_footer_cache: global_split_footer_cache,
             split_stream_semaphore,
