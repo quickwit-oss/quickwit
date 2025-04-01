@@ -2421,13 +2421,12 @@ checksum = "fea41bba32d969b513997752735605054bc0dfa92b4c56bf1189f2e174be7a10"
 
 [[package]]
 name = "domain"
-version = "0.10.3"
-source = "git+https://github.com/PSeitz/domain#3890cf180c6a4a81ce90de60e9911956bb7ccffa"
+version = "0.10.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4c84070523f8ba0f9127ff156920f27eb27b302b425efe60bf5f41ec244d1c60"
 dependencies = [
  "bytes",
  "futures-util",
- "hashbrown 0.14.5",
- "log",
  "moka",
  "octseq",
  "rand 0.8.5",
