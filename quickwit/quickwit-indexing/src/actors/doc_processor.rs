@@ -77,6 +77,7 @@ impl JsonDoc {
     }
 
     #[cfg(feature = "vrl")]
+    #[allow(dead_code)]
     pub fn try_from_vrl_doc(vrl_doc: VrlDoc) -> Result<Self, DocProcessorError> {
         let json_value = serde_json::to_value(vrl_doc.vrl_value)?;
         Self::try_from_json_value(json_value, vrl_doc.num_bytes)
@@ -132,6 +133,7 @@ impl From<FromUtf8Error> for DocProcessorError {
 }
 
 #[cfg(feature = "vrl")]
+#[allow(dead_code)]
 fn try_into_vrl_doc(
     input_format: SourceInputFormat,
     raw_doc: Bytes,
@@ -447,6 +449,7 @@ pub struct DocProcessor {
     counters: Arc<DocProcessorCounters>,
     publish_lock: PublishLock,
     #[cfg(feature = "vrl")]
+    #[allow(dead_code)]
     transform_opt: Option<VrlProgram>,
     pipeline_opt: Option<Pipeline>,
     input_format: SourceInputFormat,
