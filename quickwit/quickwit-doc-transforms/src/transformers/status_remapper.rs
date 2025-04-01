@@ -125,14 +125,13 @@ pub fn remap_log_status(input: Value) -> LogSeverity {
             } else if severity_name.starts_with("d")
                 || severity_name.starts_with("t")
                 || severity_name.starts_with("v")
-                // || severity_name.starts_with("trace")
-                // || severity_name.starts_with("verbose")
+            // || severity_name.starts_with("trace")
+            // || severity_name.starts_with("verbose")
             {
                 LogSeverity::Debug
-            } else if severity_name.starts_with("o")
-                || severity_name.starts_with("s")
-                // || severity_name == "ok"
-                // || severity_name == "success"
+            } else if severity_name.starts_with("o") || severity_name.starts_with("s")
+            // || severity_name == "ok"
+            // || severity_name == "success"
             {
                 LogSeverity::Ok
             } else {

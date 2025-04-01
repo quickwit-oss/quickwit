@@ -142,7 +142,6 @@ fn remove_nested_from_json_value(root: &mut Value, segments: &[String]) -> Optio
     current.as_object_mut()?.remove(segments.last().unwrap())
 }
 
-
 /// Recursively traverses a JSON object.
 /// For each nested value that matches the given path, the callback is called with a reference to
 /// the value.
@@ -153,16 +152,22 @@ pub fn traverse_in_json_obj<'a>(
     segments: &[String],
     callback: &mut impl FnMut(&'a Value),
 ) {
-    let Some((head, tail)) = segments.split_first() else { return; };
+    let Some((head, tail)) = segments.split_first() else {
+        return;
+    };
     // Since the root is a map, pull the first segment to look up in the root.
     if let Some(next_node) = root.get(head) {
-        traverse_in_json_value(next_node, &tail, callback);
+        traverse_in_json_value(next_node, tail, callback);
     }
 }
 
 /// Recursively traverses a Value using a slice of segments.
 /// Arrays are handled by iterating over every element with the same remaining segments.
-fn traverse_in_json_value<'a>(value: &'a Value, segments: &[String], callback: &mut impl FnMut(&'a Value)) {
+fn traverse_in_json_value<'a>(
+    value: &'a Value,
+    segments: &[String],
+    callback: &mut impl FnMut(&'a Value),
+) {
     // If the current value is an array, apply the same segments to each element.
     if let Value::Array(arr) = value {
         for element in arr {

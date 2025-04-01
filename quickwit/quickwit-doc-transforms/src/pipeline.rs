@@ -324,7 +324,7 @@ pub fn build_step(cfg: &PipelineStepConfig) -> Result<Box<dyn PipelineStep>, Pip
             target,
             preserve_original,
         } => {
-            let filter = build_vrl_matcher_from_config(&common)?;
+            let filter = build_vrl_matcher_from_config(common)?;
             let sources = sources.iter().map(AsRef::as_ref).map(parse_path).collect();
             let to_path = parse_path(target);
             let remap = AttributeRemapStep {
