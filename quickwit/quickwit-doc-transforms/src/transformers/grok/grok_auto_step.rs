@@ -47,7 +47,10 @@ impl PipelineStep for GrokParserAutoStep {
                 if let serde_json::Value::Object(json_obj) = json_val {
                     processed_log.custom.extend(json_obj);
                 } else {
-                    rate_limited_error!(limit_per_min=10, "grok is supposed to return an object. received something else");
+                    rate_limited_error!(
+                        limit_per_min = 10,
+                        "grok is supposed to return an object. received something else"
+                    );
                 };
             }
             Err(e) => match e {

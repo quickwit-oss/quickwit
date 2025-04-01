@@ -34,7 +34,8 @@ pub struct SampleResult {
 // /// This is a test to test the compatibility of the grok parser with json logs.
 // fn test_grok_parser_compat_test() {
 //     let test_data = include_str!("sample_results.json");
-//     let grok_test: Vec<GrokTest> = serde_json::from_str(test_data).expect("Failed to parse JSON");
+//     let grok_test: Vec<GrokTest> = serde_json::from_str(test_data).expect("Failed to parse
+// JSON");
 
 //     let yaml = r#"
 // type: auto-grok

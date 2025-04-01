@@ -17,7 +17,8 @@ use std::sync::OnceLock;
 
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
-use vrl::{datadog_grok::parse_grok_rules::{self, GrokRule}, value::KeyString};
+use vrl::datadog_grok::parse_grok_rules::{self, GrokRule};
+use vrl::value::KeyString;
 
 use crate::error::PipelineError;
 
@@ -103,7 +104,7 @@ pub(crate) fn build_grok_rules(
 
     let patterns: Vec<String> = match_rules
         .iter()
-        .map(|match_rule| { match_rule.rule.to_owned() })
+        .map(|match_rule| match_rule.rule.to_owned())
         .collect();
 
     parse_grok_rules::parse_grok_rules(&patterns, aliases)
