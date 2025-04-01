@@ -157,7 +157,7 @@ pub fn traverse_in_json_obj<'a>(
     };
     // Since the root is a map, pull the first segment to look up in the root.
     if let Some(next_node) = root.get(head) {
-        traverse_in_json_value(next_node, &tail, callback);
+        traverse_in_json_value(next_node, tail, callback);
     }
 }
 

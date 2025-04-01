@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use quickwit_doc_transforms::{build_step, DatadogLogMsg, PipelineStepConfig, ProcessedLog};
+use quickwit_doc_transforms::DatadogLogMsg;
+//use quickwit_doc_transforms::{build_step, DatadogLogMsg, PipelineStepConfig, ProcessedLog};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use time::OffsetDateTime;
@@ -84,34 +85,34 @@ pub struct SampleResult {
 //     assert_eq!(parsed_sources, 154);
 // }
 
-fn normalize_numbers_in_obj(value: &mut serde_json::Map<String, serde_json::Value>) {
-    for val in value.values_mut() {
-        normalize_numbers(val);
-    }
-}
+// fn normalize_numbers_in_obj(value: &mut serde_json::Map<String, serde_json::Value>) {
+//     for val in value.values_mut() {
+//         normalize_numbers(val);
+//     }
+// }
 
-fn normalize_numbers(value: &mut Value) {
-    match value {
-        Value::Number(n) => {
-            if let Some(val) = n.as_u64() {
-                *value = Value::Number(serde_json::Number::from_f64(val as f64).unwrap());
-            } else if let Some(val) = n.as_i64() {
-                *value = Value::Number(serde_json::Number::from_f64(val as f64).unwrap());
-            }
-        }
-        Value::Array(arr) => {
-            for item in arr {
-                normalize_numbers(item);
-            }
-        }
-        Value::Object(map) => {
-            for val in map.values_mut() {
-                normalize_numbers(val);
-            }
-        }
-        _ => {}
-    }
-}
+// fn normalize_numbers(value: &mut Value) {
+//     match value {
+//         Value::Number(n) => {
+//             if let Some(val) = n.as_u64() {
+//                 *value = Value::Number(serde_json::Number::from_f64(val as f64).unwrap());
+//             } else if let Some(val) = n.as_i64() {
+//                 *value = Value::Number(serde_json::Number::from_f64(val as f64).unwrap());
+//             }
+//         }
+//         Value::Array(arr) => {
+//             for item in arr {
+//                 normalize_numbers(item);
+//             }
+//         }
+//         Value::Object(map) => {
+//             for val in map.values_mut() {
+//                 normalize_numbers(val);
+//             }
+//         }
+//         _ => {}
+//     }
+// }
 
 pub fn make_datadog_log_msg() -> DatadogLogMsg {
     DatadogLogMsg {
