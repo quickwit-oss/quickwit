@@ -58,7 +58,7 @@ doc_mapping:
   # TODO: Deactivated for now, as it is not clear what it is used for
     - name: ingest_size_in_bytes
       type: u64
-      fast: false
+      fast: true
       indexed: false
       stored: false
     # TODO: Needs to be populated
