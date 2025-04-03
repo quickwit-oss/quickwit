@@ -1,17 +1,13 @@
+# Index config for the default `datadog` CloudPrem index
 version: 0.9
 
-template_id: datadog
+index_id: datadog
 
-index_id_patterns:
-  - datadog*
-
-description: Index config template for the datadog cloudprem indexes
-
-priority: 0
-
-# TODO: increase commit_timeout_secs of 5 secs after testing phase
 indexing_settings:
-  commit_timeout_secs: 5
+  commit_timeout_secs: 30
+
+search_settings:
+  default_search_fields: []
 
 # TODO: replace ALL default tokenizer with ddg tokenizer
 # There would be two tokenizers: ddg and ddg_ignore_case (for message and all)
@@ -173,7 +169,3 @@ doc_mapping:
   tag_fields: [] #  maybe add core attributes?
   timestamp_field: timestamp
   index_field_presence: true # For exists queries
-
-search_settings:
-  default_search_fields: []
-
