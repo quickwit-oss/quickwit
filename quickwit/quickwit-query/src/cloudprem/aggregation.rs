@@ -464,9 +464,9 @@ fn generate_sketch(count: u64) -> EvpAggValue {
         vec![VERSION | EMPTY, WIDTH_5_COUNT_2_11, CUTOFF]
     } else {
         let mut res: Vec<u8> = Vec::with_capacity(count as usize * 8 + 3);
-        res.copy_from_slice(&[VERSION | EXPLICIT, WIDTH_5_COUNT_2_11, CUTOFF]);
+        res.extend_from_slice(&[VERSION | EXPLICIT, WIDTH_5_COUNT_2_11, CUTOFF]);
         for i in 0..count {
-            res.copy_from_slice(&[0, 0, 0, 0, 0, 0, 0, i as u8]);
+            res.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, i as u8]);
         }
         res
     };
@@ -526,7 +526,7 @@ mod tests {
     use tantivy::aggregation::metric::*;
 
     use super::test_helpers::IntoValue;
-    use super::{aggregation_result_to_proto, to_tantivy_aggregation};
+    use super::{aggregation_result_to_proto, generate_sketch, to_tantivy_aggregation};
 
     #[test]
     fn test_count_request() {
@@ -798,5 +798,46 @@ mod tests {
 
         let res = aggregation_result_to_proto(qw_reply).unwrap();
         assert_eq!(res, expected);
+    }
+
+    #[test]
+    fn test_generate_sketch() {
+        {
+            let sketch_empty = generate_sketch(0);
+            let quickwit_proto::cloudprem::agg_value::Value::HllValue(buffer) =
+                sketch_empty.value.unwrap()
+            else {
+                panic!();
+            };
+            assert_eq!(buffer[0], 0x11); // version+empty
+            assert_eq!(buffer.len(), 3);
+            // other bytes are configuration only meaningful on sparse/full variants
+        }
+        {
+            let sketch_too_full = generate_sketch(1024);
+            let quickwit_proto::cloudprem::agg_value::Value::HllValue(buffer) =
+                sketch_too_full.value.unwrap()
+            else {
+                panic!();
+            };
+            assert_eq!(buffer[0], 0x11); // version+empty
+            assert_eq!(buffer.len(), 3);
+        }
+        {
+            let sketch_too_full = generate_sketch(5);
+            let quickwit_proto::cloudprem::agg_value::Value::HllValue(buffer) =
+                sketch_too_full.value.unwrap()
+            else {
+                panic!();
+            };
+            assert_eq!(buffer[0], 0x12); // version+explicit
+            assert_eq!(buffer.len(), 3 + 5 * 8);
+            for i in 0..5 {
+                for j in 0..6 {
+                    assert_eq!(buffer[3 + i * 8 + j], 0);
+                }
+                assert_eq!(buffer[3 + i * 8 + 7], i as u8);
+            }
+        }
     }
 }
