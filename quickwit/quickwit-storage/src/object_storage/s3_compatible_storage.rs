@@ -44,6 +44,7 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader, ReadBuf};
 use tokio::sync::Semaphore;
 use tracing::{info, instrument, warn};
 
+use crate::metrics::object_storage_get_slice_in_flight_guards;
 use crate::object_storage::MultiPartPolicy;
 use crate::storage::SendableAsync;
 use crate::{
@@ -566,6 +567,9 @@ impl S3CompatibleObjectStorage {
             self.get_object(path, range_opt.clone())
         })
         .await?;
+        // only record ranged get request as being in flight
+        let _in_flight_guards =
+            range_opt.map(|range| object_storage_get_slice_in_flight_guards(range.len()));
         let mut buf: Vec<u8> = Vec::with_capacity(cap);
         download_all(get_object_output.body, &mut buf).await?;
         Ok(buf)
