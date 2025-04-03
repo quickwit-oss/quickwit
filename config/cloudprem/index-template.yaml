@@ -45,6 +45,28 @@ doc_mapping:
         - rfc3339
         - iso8601
         - unix_timestamp
+  # TODO: Check if discovery_timestamp is used anywhere, or if we can drop it after ingestion
+    - name: discovery_timestamp
+      type: datetime
+      fast: false
+      indexed: false
+      input_formats:
+        - unix_timestamp
+        - rfc3339
+        - iso8601
+
+  # TODO: Deactivated for now, as it is not clear what it is used for
+    - name: ingest_size_in_bytes
+      type: u64
+      fast: true
+      indexed: false
+      stored: false
+    # TODO: Needs to be populated
+    - name: tiebreaker
+      type: i64
+      fast: true
+      indexed: false
+      stored: true
 
     - name: message
       type: text
@@ -76,15 +98,22 @@ doc_mapping:
 
     # The subfiels are `message` and `stack`. Are there others?
     # If all fields are clear, we can convert to object.
-    # TODO: This is unused currently in the Pomsky processing and would reside in `custom`
+    # TODO: This is unused currently in the Pomsky processing
+    # We need to move errors from custom to its own field because the tokenization is different
     - name: error
       type: json
       tokenizer: default
       record: position
-      fast: true
+      fast: false # We can use custom.error for aggregations instead
+      # downstream expects the error to be in custom.error, so we will store it only there
+      stored: false
 
     # other text like core attributes
     - name: service
+      type: text
+      tokenizer: raw
+      fast: true
+    - name: source
       type: text
       tokenizer: raw
       fast: true
@@ -130,6 +159,7 @@ doc_mapping:
       # Generally this could be extracted by a query processor
       # - tag OR tags
       - error
+      - source
       - service
       - service_type
       - status
@@ -139,6 +169,7 @@ doc_mapping:
       - custom
       tokenizer: default # +lowercase insensitive
       record: position # for phrase queries
+
   tag_fields: [] #  maybe add core attributes?
   timestamp_field: timestamp
   index_field_presence: true # For exists queries
