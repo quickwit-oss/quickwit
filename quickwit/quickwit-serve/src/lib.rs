@@ -112,6 +112,8 @@ use quickwit_search::{
 use quickwit_storage::{SplitCache, StorageResolver};
 use tcp_listener::TcpListenerResolver;
 use tokio::sync::oneshot;
+use tonic_health::server::HealthReporter;
+use tonic_health::ServingStatus;
 use tower::timeout::Timeout;
 use tower::ServiceBuilder;
 use tracing::{debug, error, info, warn};
@@ -711,12 +713,14 @@ pub async fn serve_quickwit(
             debug!("gRPC server shutdown trigger sender was dropped");
         }
     });
+    let (health_reporter, health_service) = tonic_health::server::health_reporter();
     let grpc_server = grpc::start_grpc_server(
         tcp_listener_resolver.resolve(grpc_listen_addr).await?,
         grpc_config,
         quickwit_services.clone(),
         grpc_readiness_trigger,
         grpc_shutdown_signal,
+        health_service,
     );
     // Setup and start REST server.
     let (rest_readiness_trigger_tx, rest_readiness_signal_rx) = oneshot::channel::<()>();
@@ -747,6 +751,7 @@ pub async fn serve_quickwit(
             ingester_opt.clone(),
             grpc_readiness_signal_rx,
             rest_readiness_signal_rx,
+            health_reporter,
         ),
         "node_readiness_reporting",
     );
@@ -1205,7 +1210,16 @@ async fn node_readiness_reporting_task(
     ingester_opt: Option<impl IngesterService>,
     grpc_readiness_signal_rx: oneshot::Receiver<()>,
     rest_readiness_signal_rx: oneshot::Receiver<()>,
+    mut health_reporter: HealthReporter,
 ) {
+    let mut node_ready = false;
+    cluster.set_self_node_readiness(node_ready).await;
+    // Set the initial health status to `NotServing` with "" meaning all services, as per
+    // https://github.com/grpc/grpc/blob/master/doc/health-checking.md
+    health_reporter
+        .set_service_status("", ServingStatus::NotServing)
+        .await;
+
     if grpc_readiness_signal_rx.await.is_err() {
         // the gRPC server failed.
         return;
@@ -1230,7 +1244,7 @@ async fn node_readiness_reporting_task(
     loop {
         interval.tick().await;
 
-        let node_ready = match metastore.check_connectivity().await {
+        let new_node_ready = match metastore.check_connectivity().await {
             Ok(()) => {
                 debug!(metastore_endpoints=?metastore.endpoints(), "metastore service is available");
                 true
@@ -1240,7 +1254,17 @@ async fn node_readiness_reporting_task(
                 false
             }
         };
-        cluster.set_self_node_readiness(node_ready).await;
+        if new_node_ready != node_ready {
+            node_ready = new_node_ready;
+            cluster.set_self_node_readiness(node_ready).await;
+
+            let serving_status = if node_ready {
+                ServingStatus::Serving
+            } else {
+                ServingStatus::NotServing
+            };
+            health_reporter.set_service_status("", serving_status).await;
+        }
     }
 }
 
@@ -1316,6 +1340,10 @@ mod tests {
     use quickwit_proto::types::{IndexUid, PipelineUid};
     use quickwit_search::Job;
     use tokio::sync::watch;
+    use tonic::transport::{Channel, Server};
+    use tonic_health::pb::health_client::HealthClient;
+    use tonic_health::pb::HealthCheckRequest;
+    use tonic_health::server::health_reporter;
 
     use super::*;
 
@@ -1379,14 +1407,40 @@ mod tests {
             });
         let (grpc_readiness_trigger_tx, grpc_readiness_signal_rx) = oneshot::channel();
         let (rest_readiness_trigger_tx, rest_readiness_signal_rx) = oneshot::channel();
+
+        let (health_reporter, health_service) = health_reporter();
+        let (client, server) = tokio::io::duplex(1024);
+        tokio::spawn(async move {
+            Server::builder()
+                .add_service(health_service)
+                .serve_with_incoming(tokio_stream::once(Ok::<_, std::io::Error>(server)))
+                .await
+                .unwrap();
+        });
+        let mut client_opt = Some(client);
+        let connector = tower::service_fn(move |_: http::Uri| {
+            let client = client_opt.take().unwrap();
+            async move { Ok::<_, Infallible>(client) }
+        });
+        let channel = Channel::builder("http://[::]:50051".parse().unwrap())
+            .connect_with_connector(connector)
+            .await
+            .unwrap();
+        let mut health_client = HealthClient::new(channel);
+
         tokio::spawn(node_readiness_reporting_task(
             cluster.clone(),
             MetastoreServiceClient::from_mock(mock_metastore),
             Some(mock_ingester),
             grpc_readiness_signal_rx,
             rest_readiness_signal_rx,
+            health_reporter,
         ));
         assert!(!cluster.is_self_node_ready().await);
+
+        let request = tonic::Request::new(HealthCheckRequest::default());
+        let response = health_client.check(request).await.unwrap().into_inner();
+        assert_eq!(response.status(), ServingStatus::NotServing.into());
 
         grpc_readiness_trigger_tx.send(()).unwrap();
         rest_readiness_trigger_tx.send(()).unwrap();
@@ -1397,9 +1451,17 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(25)).await;
         assert!(cluster.is_self_node_ready().await);
 
+        let request = tonic::Request::new(HealthCheckRequest::default());
+        let response = health_client.check(request).await.unwrap().into_inner();
+        assert_eq!(response.status(), ServingStatus::Serving.into());
+
         metastore_readiness_tx.send(false).unwrap();
         tokio::time::sleep(Duration::from_millis(25)).await;
         assert!(!cluster.is_self_node_ready().await);
+
+        let request = tonic::Request::new(HealthCheckRequest::default());
+        let response = health_client.check(request).await.unwrap().into_inner();
+        assert_eq!(response.status(), ServingStatus::NotServing.into());
     }
 
     #[tokio::test]

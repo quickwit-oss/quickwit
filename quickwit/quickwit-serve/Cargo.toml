@@ -47,6 +47,7 @@ tokio = { workspace = true }
 tokio-rustls = { workspace = true }
 tokio-stream = { workspace = true }
 tokio-util = { workspace = true }
+tonic-health = { workspace = true }
 tonic-reflection = { workspace = true }
 tower = { workspace = true }
 tower-http = { workspace = true }
@@ -79,11 +80,13 @@ time = { workspace = true }
 
 [dev-dependencies]
 assert-json-diff = { workspace = true }
+http = { workspace = true }
 itertools = { workspace = true }
 mockall = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true }
 tonic = { workspace = true }
+tokio-stream = { workspace = true }
 
 quickwit-actors = { workspace = true, features = ["testsuite"] }
 quickwit-cluster = { workspace = true, features = ["testsuite"] }

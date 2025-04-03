@@ -31,6 +31,7 @@ use quickwit_proto::tonic::codegen::CompressionEncoding;
 use quickwit_proto::tonic::transport::server::TcpIncoming;
 use quickwit_proto::tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
 use tokio::net::TcpListener;
+use tonic_health::pb::health_server::{Health, HealthServer};
 use tonic_reflection::server::{ServerReflection, ServerReflectionServer};
 use tracing::*;
 
@@ -45,6 +46,7 @@ pub(crate) async fn start_grpc_server(
     services: Arc<QuickwitServices>,
     readiness_trigger: BoxFutureInfaillible<()>,
     shutdown_signal: BoxFutureInfaillible<()>,
+    health_service: HealthServer<impl Health>,
 ) -> anyhow::Result<()> {
     let mut enabled_grpc_services = BTreeSet::new();
     let mut file_descriptor_sets = Vec::new();
@@ -208,9 +210,13 @@ pub(crate) async fn start_grpc_server(
     };
     let reflection_service = build_reflection_service(&file_descriptor_sets)?;
 
+    enabled_grpc_services.insert("health");
+    enabled_grpc_services.insert("reflection");
+
     let server_router = server
         .add_service(cluster_grpc_service)
         .add_service(developer_grpc_service)
+        .add_service(health_service)
         .add_service(reflection_service)
         .add_optional_service(control_plane_grpc_service)
         .add_optional_service(indexing_grpc_service)
