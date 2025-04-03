@@ -68,6 +68,7 @@ pub struct ProcessedLog {
 
     pub id: String,
     pub discovery_timestamp: i64,
+    pub tiebreaker: i64,
     pub ingest_size_in_bytes: usize,
 }
 
@@ -100,6 +101,7 @@ impl ProcessedLog {
             tag: convert_tags(&tags),
             tags,
             id: Uuid::new_v4().to_string(),
+            tiebreaker: rand::random(),
             discovery_timestamp: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
