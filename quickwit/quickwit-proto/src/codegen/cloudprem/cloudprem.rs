@@ -9,6 +9,20 @@ pub struct PingRequest {
 pub struct PingResponse {}
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SetClusterAddressRequest {
+    #[prost(int64, tag = "1")]
+    pub org_id: i64,
+    #[prost(string, tag = "2")]
+    pub address: ::prost::alloc::string::String,
+    /// the alternative name a certificate should be valid for for us to accept connecting
+    #[prost(string, tag = "3")]
+    pub authority: ::prost::alloc::string::String,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SetClusterAddressResponse {}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListRequest {
     /// this is always a com.dd.queryparser.proto.QueryNode, but we can't import logs-backend protobuf from here
     #[prost(message, optional, tag = "1")]
@@ -23,6 +37,8 @@ pub struct ListRequest {
     pub sort: ::prost::alloc::vec::Vec<SortKv>,
     #[prost(int64, tag = "6")]
     pub org_id: i64,
+    #[prost(message, optional, tag = "7")]
+    pub search_after: ::core::option::Option<EventTracker>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -170,10 +186,76 @@ pub struct TimeGrouping {
     pub time_zone: ::prost::alloc::string::String,
     #[prost(uint64, optional, tag = "4")]
     pub interval_ns: ::core::option::Option<u64>,
-    #[prost(string, optional, tag = "5")]
-    pub rollup: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(message, optional, tag = "7")]
+    pub rollup: ::core::option::Option<Rollup>,
     #[prost(message, optional, boxed, tag = "6")]
     pub child: ::core::option::Option<::prost::alloc::boxed::Box<Aggregation>>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Rollup {
+    #[prost(enumeration = "rollup::RollupType", tag = "1")]
+    pub r#type: i32,
+    #[prost(uint64, tag = "2")]
+    pub quantity: u64,
+    #[prost(string, tag = "3")]
+    pub time_zone: ::prost::alloc::string::String,
+    #[prost(string, optional, tag = "4")]
+    pub alignment: ::core::option::Option<::prost::alloc::string::String>,
+}
+/// Nested message and enum types in `Rollup`.
+pub mod rollup {
+    #[derive(
+        Clone,
+        Copy,
+        Debug,
+        PartialEq,
+        Eq,
+        Hash,
+        PartialOrd,
+        Ord,
+        ::prost::Enumeration
+    )]
+    #[repr(i32)]
+    pub enum RollupType {
+        Invalid = 0,
+        Year = 1,
+        Month = 2,
+        Week = 3,
+        Day = 4,
+        Hour = 5,
+        Minute = 6,
+    }
+    impl RollupType {
+        /// String value of the enum field names used in the ProtoBuf definition.
+        ///
+        /// The values are not transformed in any way and thus are considered stable
+        /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+        pub fn as_str_name(&self) -> &'static str {
+            match self {
+                RollupType::Invalid => "INVALID",
+                RollupType::Year => "YEAR",
+                RollupType::Month => "MONTH",
+                RollupType::Week => "WEEK",
+                RollupType::Day => "DAY",
+                RollupType::Hour => "HOUR",
+                RollupType::Minute => "MINUTE",
+            }
+        }
+        /// Creates an enum from field names used in the ProtoBuf definition.
+        pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+            match value {
+                "INVALID" => Some(Self::Invalid),
+                "YEAR" => Some(Self::Year),
+                "MONTH" => Some(Self::Month),
+                "WEEK" => Some(Self::Week),
+                "DAY" => Some(Self::Day),
+                "HOUR" => Some(Self::Hour),
+                "MINUTE" => Some(Self::Minute),
+                _ => None,
+            }
+        }
+    }
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -288,8 +370,53 @@ pub struct SortByExprAndAgg {
     pub ascending: bool,
     #[prost(message, optional, tag = "2")]
     pub expr_and_agg: ::core::option::Option<ExprAndAgg>,
-    #[prost(enumeration = "SortType", tag = "3")]
+    #[prost(enumeration = "sort_by_expr_and_agg::SortType", tag = "3")]
     pub r#type: i32,
+}
+/// Nested message and enum types in `SortByExprAndAgg`.
+pub mod sort_by_expr_and_agg {
+    #[derive(
+        Clone,
+        Copy,
+        Debug,
+        PartialEq,
+        Eq,
+        Hash,
+        PartialOrd,
+        Ord,
+        ::prost::Enumeration
+    )]
+    #[repr(i32)]
+    pub enum SortType {
+        Invalid = 0,
+        Time = 1,
+        Field = 2,
+        Metric = 3,
+    }
+    impl SortType {
+        /// String value of the enum field names used in the ProtoBuf definition.
+        ///
+        /// The values are not transformed in any way and thus are considered stable
+        /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+        pub fn as_str_name(&self) -> &'static str {
+            match self {
+                SortType::Invalid => "INVALID",
+                SortType::Time => "TIME",
+                SortType::Field => "FIELD",
+                SortType::Metric => "METRIC",
+            }
+        }
+        /// Creates an enum from field names used in the ProtoBuf definition.
+        pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+            match value {
+                "INVALID" => Some(Self::Invalid),
+                "TIME" => Some(Self::Time),
+                "FIELD" => Some(Self::Field),
+                "METRIC" => Some(Self::Metric),
+                _ => None,
+            }
+        }
+    }
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -375,38 +502,6 @@ pub struct FirstLastEntry {
     #[prost(bytes = "vec", tag = "6")]
     pub encoded_values: ::prost::alloc::vec::Vec<u8>,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum SortType {
-    Invalid = 0,
-    Time = 1,
-    Field = 2,
-    Metric = 3,
-}
-impl SortType {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            SortType::Invalid => "INVALID",
-            SortType::Time => "TIME",
-            SortType::Field => "FIELD",
-            SortType::Metric => "METRIC",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "INVALID" => Some(Self::Invalid),
-            "TIME" => Some(Self::Time),
-            "FIELD" => Some(Self::Field),
-            "METRIC" => Some(Self::Metric),
-            _ => None,
-        }
-    }
-}
 /// BEGIN quickwit-codegen
 #[allow(unused_imports)]
 use std::str::FromStr;
@@ -432,6 +527,11 @@ impl RpcName for AggregationRequest {
         "aggregate"
     }
 }
+impl RpcName for SetClusterAddressRequest {
+    fn rpc_name() -> &'static str {
+        "set_cluster_address"
+    }
+}
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait CloudPremService: std::fmt::Debug + Send + Sync + 'static {
@@ -451,6 +551,11 @@ pub trait CloudPremService: std::fmt::Debug + Send + Sync + 'static {
         &self,
         request: AggregationRequest,
     ) -> crate::cloudprem::CloudPremResult<AggregationResponse>;
+    /// Add a temporary backdoor to add cluster addresses dynamically without having to push a PR on dd-source and redeploy the bridge.
+    async fn set_cluster_address(
+        &self,
+        request: SetClusterAddressRequest,
+    ) -> crate::cloudprem::CloudPremResult<SetClusterAddressResponse>;
 }
 #[derive(Debug, Clone)]
 pub struct CloudPremServiceClient {
@@ -567,6 +672,12 @@ impl CloudPremService for CloudPremServiceClient {
     ) -> crate::cloudprem::CloudPremResult<AggregationResponse> {
         self.inner.0.aggregate(request).await
     }
+    async fn set_cluster_address(
+        &self,
+        request: SetClusterAddressRequest,
+    ) -> crate::cloudprem::CloudPremResult<SetClusterAddressResponse> {
+        self.inner.0.set_cluster_address(request).await
+    }
 }
 #[cfg(any(test, feature = "testsuite"))]
 pub mod mock_cloud_prem_service {
@@ -600,6 +711,12 @@ pub mod mock_cloud_prem_service {
             request: super::AggregationRequest,
         ) -> crate::cloudprem::CloudPremResult<super::AggregationResponse> {
             self.inner.lock().await.aggregate(request).await
+        }
+        async fn set_cluster_address(
+            &self,
+            request: super::SetClusterAddressRequest,
+        ) -> crate::cloudprem::CloudPremResult<super::SetClusterAddressResponse> {
+            self.inner.lock().await.set_cluster_address(request).await
         }
     }
 }
@@ -670,6 +787,22 @@ impl tower::Service<AggregationRequest> for InnerCloudPremServiceClient {
         Box::pin(fut)
     }
 }
+impl tower::Service<SetClusterAddressRequest> for InnerCloudPremServiceClient {
+    type Response = SetClusterAddressResponse;
+    type Error = crate::cloudprem::CloudPremError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: SetClusterAddressRequest) -> Self::Future {
+        let svc = self.clone();
+        let fut = async move { svc.0.set_cluster_address(request).await };
+        Box::pin(fut)
+    }
+}
 /// A tower service stack is a set of tower services.
 #[derive(Debug)]
 struct CloudPremServiceTowerServiceStack {
@@ -693,6 +826,11 @@ struct CloudPremServiceTowerServiceStack {
     aggregate_svc: quickwit_common::tower::BoxService<
         AggregationRequest,
         AggregationResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+    set_cluster_address_svc: quickwit_common::tower::BoxService<
+        SetClusterAddressRequest,
+        SetClusterAddressResponse,
         crate::cloudprem::CloudPremError,
     >,
 }
@@ -721,6 +859,12 @@ impl CloudPremService for CloudPremServiceTowerServiceStack {
         request: AggregationRequest,
     ) -> crate::cloudprem::CloudPremResult<AggregationResponse> {
         self.aggregate_svc.clone().ready().await?.call(request).await
+    }
+    async fn set_cluster_address(
+        &self,
+        request: SetClusterAddressRequest,
+    ) -> crate::cloudprem::CloudPremResult<SetClusterAddressResponse> {
+        self.set_cluster_address_svc.clone().ready().await?.call(request).await
     }
 }
 type PingLayer = quickwit_common::tower::BoxLayer<
@@ -763,12 +907,23 @@ type AggregateLayer = quickwit_common::tower::BoxLayer<
     AggregationResponse,
     crate::cloudprem::CloudPremError,
 >;
+type SetClusterAddressLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        SetClusterAddressRequest,
+        SetClusterAddressResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+    SetClusterAddressRequest,
+    SetClusterAddressResponse,
+    crate::cloudprem::CloudPremError,
+>;
 #[derive(Debug, Default)]
 pub struct CloudPremServiceTowerLayerStack {
     ping_layers: Vec<PingLayer>,
     list_layers: Vec<ListLayer>,
     fetch_one_layers: Vec<FetchOneLayer>,
     aggregate_layers: Vec<AggregateLayer>,
+    set_cluster_address_layers: Vec<SetClusterAddressLayer>,
 }
 impl CloudPremServiceTowerLayerStack {
     pub fn stack_layer<L>(mut self, layer: L) -> Self
@@ -873,11 +1028,38 @@ impl CloudPremServiceTowerLayerStack {
                 crate::cloudprem::CloudPremError,
             >,
         >>::Service as tower::Service<AggregationRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    SetClusterAddressRequest,
+                    SetClusterAddressResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                SetClusterAddressRequest,
+                SetClusterAddressResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service: tower::Service<
+                SetClusterAddressRequest,
+                Response = SetClusterAddressResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                SetClusterAddressRequest,
+                SetClusterAddressResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service as tower::Service<SetClusterAddressRequest>>::Future: Send + 'static,
     {
         self.ping_layers.push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.list_layers.push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.fetch_one_layers.push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.aggregate_layers.push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.set_cluster_address_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self
     }
     pub fn stack_ping_layer<L>(mut self, layer: L) -> Self
@@ -954,6 +1136,26 @@ impl CloudPremServiceTowerLayerStack {
         <L::Service as tower::Service<AggregationRequest>>::Future: Send + 'static,
     {
         self.aggregate_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_set_cluster_address_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    SetClusterAddressRequest,
+                    SetClusterAddressResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                SetClusterAddressRequest,
+                Response = SetClusterAddressResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<SetClusterAddressRequest>>::Future: Send + 'static,
+    {
+        self.set_cluster_address_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
     pub fn build<T>(self, instance: T) -> CloudPremServiceClient
@@ -1044,12 +1246,21 @@ impl CloudPremServiceTowerLayerStack {
                 quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
+        let set_cluster_address_svc = self
+            .set_cluster_address_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
+                |svc, layer| layer.layer(svc),
+            );
         let tower_svc_stack = CloudPremServiceTowerServiceStack {
             inner: inner_client,
             ping_svc,
             list_svc,
             fetch_one_svc,
             aggregate_svc,
+            set_cluster_address_svc,
         };
         CloudPremServiceClient::new(tower_svc_stack)
     }
@@ -1149,6 +1360,15 @@ where
             Response = AggregationResponse,
             Error = crate::cloudprem::CloudPremError,
             Future = BoxFuture<AggregationResponse, crate::cloudprem::CloudPremError>,
+        >
+        + tower::Service<
+            SetClusterAddressRequest,
+            Response = SetClusterAddressResponse,
+            Error = crate::cloudprem::CloudPremError,
+            Future = BoxFuture<
+                SetClusterAddressResponse,
+                crate::cloudprem::CloudPremError,
+            >,
         >,
 {
     async fn ping(
@@ -1173,6 +1393,12 @@ where
         &self,
         request: AggregationRequest,
     ) -> crate::cloudprem::CloudPremResult<AggregationResponse> {
+        self.clone().call(request).await
+    }
+    async fn set_cluster_address(
+        &self,
+        request: SetClusterAddressRequest,
+    ) -> crate::cloudprem::CloudPremResult<SetClusterAddressResponse> {
         self.clone().call(request).await
     }
 }
@@ -1266,6 +1492,20 @@ where
                 AggregationRequest::rpc_name(),
             ))
     }
+    async fn set_cluster_address(
+        &self,
+        request: SetClusterAddressRequest,
+    ) -> crate::cloudprem::CloudPremResult<SetClusterAddressResponse> {
+        self.inner
+            .clone()
+            .set_cluster_address(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                SetClusterAddressRequest::rpc_name(),
+            ))
+    }
 }
 #[derive(Debug)]
 pub struct CloudPremServiceGrpcServerAdapter {
@@ -1324,6 +1564,17 @@ for CloudPremServiceGrpcServerAdapter {
         self.inner
             .0
             .aggregate(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(crate::error::grpc_error_to_grpc_status)
+    }
+    async fn set_cluster_address(
+        &self,
+        request: tonic::Request<SetClusterAddressRequest>,
+    ) -> Result<tonic::Response<SetClusterAddressResponse>, tonic::Status> {
+        self.inner
+            .0
+            .set_cluster_address(request.into_inner())
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -1508,6 +1759,34 @@ pub mod cloud_prem_service_grpc_client {
                 .insert(GrpcMethod::new("cloudprem.CloudPremService", "Aggregate"));
             self.inner.unary(req, path, codec).await
         }
+        /// Add a temporary backdoor to add cluster addresses dynamically without having to push a PR on dd-source and redeploy the bridge.
+        pub async fn set_cluster_address(
+            &mut self,
+            request: impl tonic::IntoRequest<super::SetClusterAddressRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::SetClusterAddressResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/cloudprem.CloudPremService/SetClusterAddress",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("cloudprem.CloudPremService", "SetClusterAddress"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -1537,6 +1816,14 @@ pub mod cloud_prem_service_grpc_server {
             request: tonic::Request<super::AggregationRequest>,
         ) -> std::result::Result<
             tonic::Response<super::AggregationResponse>,
+            tonic::Status,
+        >;
+        /// Add a temporary backdoor to add cluster addresses dynamically without having to push a PR on dd-source and redeploy the bridge.
+        async fn set_cluster_address(
+            &self,
+            request: tonic::Request<super::SetClusterAddressRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::SetClusterAddressResponse>,
             tonic::Status,
         >;
     }
@@ -1779,6 +2066,52 @@ pub mod cloud_prem_service_grpc_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = AggregateSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/cloudprem.CloudPremService/SetClusterAddress" => {
+                    #[allow(non_camel_case_types)]
+                    struct SetClusterAddressSvc<T: CloudPremServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: CloudPremServiceGrpc,
+                    > tonic::server::UnaryService<super::SetClusterAddressRequest>
+                    for SetClusterAddressSvc<T> {
+                        type Response = super::SetClusterAddressResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::SetClusterAddressRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).set_cluster_address(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = SetClusterAddressSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

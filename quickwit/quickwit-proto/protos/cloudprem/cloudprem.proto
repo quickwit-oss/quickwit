@@ -19,6 +19,9 @@ service CloudPremService {
   rpc List(ListRequest) returns (ListResponse);
   rpc FetchOne(FetchOneRequest) returns (FetchOneResponse);
   rpc Aggregate(AggregationRequest) returns (AggregationResponse);
+
+  // Add a temporary backdoor to add cluster addresses dynamically without having to push a PR on dd-source and redeploy the bridge.
+  rpc SetClusterAddress(SetClusterAddressRequest) returns (SetClusterAddressResponse);
 }
 
 message PingRequest {
@@ -26,6 +29,16 @@ message PingRequest {
 }
 
 message PingResponse {}
+
+message SetClusterAddressRequest {
+  int64 org_id = 1;
+  string address = 2;
+  // the alternative name a certificate should be valid for for us to accept connecting
+  string authority = 3;
+}
+
+message SetClusterAddressResponse {
+}
 
 message ListRequest {
   // this is always a com.dd.queryparser.proto.QueryNode, but we can't import logs-backend protobuf from here
@@ -35,6 +48,7 @@ message ListRequest {
   repeated string columns = 4;
   repeated SortKV sort = 5;
   int64 org_id = 6;
+  optional EventTracker search_after = 7;
 }
 
 message SortKV {
@@ -124,8 +138,27 @@ message TimeGrouping {
   string path = 2;
   string time_zone = 3;
   optional uint64 interval_ns = 4;
-  optional string rollup = 5;
+  // string based rollup
+  reserved 5;
+  optional Rollup rollup = 7;
   Aggregation child = 6;
+}
+
+message Rollup {
+  RollupType type = 1;
+  uint64 quantity = 2;
+  string time_zone = 3;
+  optional string alignment = 4;
+
+  enum RollupType {
+    INVALID = 0;
+    YEAR = 1;
+    MONTH = 2;
+    WEEK = 3;
+    DAY = 4;
+    HOUR = 5;
+    MINUTE = 6;
+  }
 }
 
 message HistogramGroupBy {
@@ -193,21 +226,20 @@ message AggregationResult {
 
 
 message SortByExprAndAgg {
-    bool ascending = 1;
-    optional ExprAndAgg expr_and_agg = 2;
-    SortType type = 3;
-}
-
-message ExprAndAgg {
-    ExpressionNode expr = 1;
-    string agg_function = 2;
-}
-
-enum SortType {
+  bool ascending = 1;
+  optional ExprAndAgg expr_and_agg = 2;
+  SortType type = 3;
+  enum SortType {
     INVALID = 0;
     TIME = 1;
     FIELD = 2;
     METRIC = 3;
+  }
+}
+
+message ExprAndAgg {
+  ExpressionNode expr = 1;
+  string agg_function = 2;
 }
 
 message ExpressionNode {
@@ -254,9 +286,9 @@ message FirstLast {
 }
 
 message FirstLastEntry {
-    bytes sort_by = 1;
-    reserved 2, 3, 4, 5;
+  bytes sort_by = 1;
+  reserved 2, 3, 4, 5;
 
-    // This field contains an encoded FirstLastValues message.
-    bytes encoded_values = 6;
+  // This field contains an encoded FirstLastValues message.
+  bytes encoded_values = 6;
 }

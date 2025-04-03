@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use quickwit_proto::cloudprem::{
     AggregationRequest, AggregationResponse, CloudPremError, CloudPremResult, CloudPremService,
     Event, EventTracker, FetchOneRequest, FetchOneResponse, ListRequest, ListResponse, PingRequest,
-    PingResponse, Statistics,
+    PingResponse, SetClusterAddressRequest, SetClusterAddressResponse, Statistics,
 };
 use quickwit_proto::search::{CountHits, Hit, SearchRequest, SearchResponse, SortField, SortOrder};
 use quickwit_query::query_ast::{FullTextMode, FullTextParams, FullTextQuery, QueryAst};
@@ -272,6 +272,13 @@ impl CloudPremService for CloudPremServiceImpl {
             result: aggregation_result,
             statistics: Some(statistics),
         })
+    }
+
+    async fn set_cluster_address(
+        &self,
+        _: SetClusterAddressRequest,
+    ) -> Result<SetClusterAddressResponse, CloudPremError> {
+        Err(CloudPremError::Unimplemented)
     }
 }
 
