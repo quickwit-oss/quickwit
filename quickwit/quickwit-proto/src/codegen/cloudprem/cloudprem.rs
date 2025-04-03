@@ -96,8 +96,8 @@ pub struct EventTracker {
     #[prost(uint64, tag = "2")]
     pub epoch_ms: u64,
     /// An extra int to break ties.
-    #[prost(uint32, tag = "3")]
-    pub tiebreaker: u32,
+    #[prost(int32, tag = "3")]
+    pub tiebreaker: i32,
     #[prost(string, optional, tag = "4")]
     pub fragment_id: ::core::option::Option<::prost::alloc::string::String>,
     #[prost(uint64, optional, tag = "5")]

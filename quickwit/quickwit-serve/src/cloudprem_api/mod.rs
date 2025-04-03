@@ -7,7 +7,9 @@ use quickwit_proto::cloudprem::{
     Event, EventTracker, FetchOneRequest, FetchOneResponse, ListRequest, ListResponse, PingRequest,
     PingResponse, SetClusterAddressRequest, SetClusterAddressResponse, Statistics,
 };
-use quickwit_proto::search::{CountHits, Hit, SearchRequest, SearchResponse, SortField, SortOrder};
+use quickwit_proto::search::{
+    CountHits, Hit, PartialHit, SearchRequest, SearchResponse, SortField, SortOrder,
+};
 use quickwit_query::query_ast::{FullTextMode, FullTextParams, FullTextQuery, QueryAst};
 use quickwit_query::MatchAllOrNone;
 use quickwit_search::SearchService;
@@ -78,6 +80,11 @@ impl CloudPremService for CloudPremServiceImpl {
         } else {
             CountHits::Underestimate
         };
+
+        let search_after = request
+            .search_after
+            .map(|after| DEFAULT_HIT_MAPPER.event_tracker_to_partial_hit(after));
+
         let search_request = SearchRequest {
             index_id_patterns: vec![CLOUD_PREM_INDEX_ID_PATTERN.to_string()],
             query_ast: serde_json::to_string(&query_ast)
@@ -103,7 +110,7 @@ impl CloudPremService for CloudPremServiceImpl {
                 })
                 .collect(),
             scroll_ttl_secs: None,
-            search_after: None,
+            search_after,
             count_hits: count_hits.into(),
         };
 
@@ -309,8 +316,8 @@ impl HitMapper {
                 ts,
                 &[quickwit_datetime::DateTimeInputFormat::Rfc3339],
             )
-            .map(|ts| ts.into_timestamp_millis())
-            .unwrap_or(0)
+            .map(|ts| ts.into_timestamp_nanos())
+            .unwrap_or(0) as u64
         } else {
             0
         };
@@ -318,9 +325,8 @@ impl HitMapper {
         Ok(Event {
             tracker: Some(EventTracker {
                 id: event_id,
-                epoch_ms: timestamp as u64,
-                tiebreaker: 0, /* TODO get from event? or if we record ingest time with ns, use
-                                * sub ms precision? */
+                epoch_ms: timestamp / 1_000_000,
+                tiebreaker: (timestamp % 1_000_000) as i32,
                 row_number: hit
                     .partial_hit
                     .as_ref()
@@ -329,5 +335,21 @@ impl HitMapper {
             }),
             content_json: hit.json,
         })
+    }
+
+    fn event_tracker_to_partial_hit(&self, event: EventTracker) -> PartialHit {
+        let make_uint_value = |value| {
+            Some(quickwit_proto::search::SortByValue {
+                sort_value: Some(quickwit_proto::search::sort_by_value::SortValue::U64(value)),
+            })
+        };
+        PartialHit {
+            // internally we always want ns
+            sort_value: make_uint_value(event.epoch_ms * 1_000_000 + event.tiebreaker as u64),
+            sort_value2: None,
+            split_id: event.fragment_id.unwrap_or_default(),
+            segment_ord: 0,
+            doc_id: event.row_number.unwrap_or_default() as u32,
+        }
     }
 }

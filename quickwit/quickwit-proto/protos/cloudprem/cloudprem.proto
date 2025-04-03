@@ -87,7 +87,7 @@ message EventTracker {
   uint64 epoch_ms = 2;
 
   // An extra int to break ties.
-  uint32 tiebreaker = 3;
+  int32 tiebreaker = 3;
 
   optional string fragment_id = 4;
 
