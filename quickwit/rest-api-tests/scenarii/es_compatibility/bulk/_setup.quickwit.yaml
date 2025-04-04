@@ -18,7 +18,7 @@ method: POST
 api_root: http://localhost:7280/api/v1/
 endpoint: indexes/
 json:
-  version: "0.8"
+  version: "0.9"
   index_id: test-index
   doc_mapping:
     field_mappings:
@@ -33,7 +33,7 @@ method: POST
 api_root: http://localhost:7280/api/v1/
 endpoint: templates
 json:
-  version: "0.8"
+  version: "0.9"
   template_id: test-index-template
   index_id_patterns:
     - test-index-pattern-*
