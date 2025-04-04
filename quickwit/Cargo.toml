@@ -159,7 +159,7 @@ nom = "7.1.3"
 numfmt = "1.1.1"
 once_cell = "1"
 oneshot = "0.1.8"
-openssl = { version = "0.10.70", default-features = false }
+openssl = { version = "0.10.72", default-features = false }
 openssl-probe = "0.1.5"
 opentelemetry = "0.27"
 opentelemetry_sdk = { version = "0.27", features = ["rt-tokio"] }
