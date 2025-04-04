@@ -1008,19 +1008,20 @@ fn convert_to_es_search_response(
         .into_iter()
         .map(|hit| convert_hit(hit, append_shard_doc, &_source_excludes, &_source_includes))
         .collect();
-    let aggregations: Option<AggregationResults> = if let Some(aggregation_json) = resp.aggregation
-    {
-        let aggregations = AggregationResults::from_json(&aggregation_json).map_err(|_| {
-            ElasticsearchError::new(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to parse aggregation results".to_string(),
-                None,
-            )
-        })?;
-        Some(aggregations)
-    } else {
-        None
-    };
+    let aggregations: Option<AggregationResults> =
+        if let Some(aggregation_postcard) = resp.aggregation_postcard {
+            let aggregations =
+                AggregationResults::from_postcard(&aggregation_postcard).map_err(|_| {
+                    ElasticsearchError::new(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "Failed to parse aggregation results".to_string(),
+                        None,
+                    )
+                })?;
+            Some(aggregations)
+        } else {
+            None
+        };
     let num_failed_splits = resp.failed_splits.len() as u32;
     let num_successful_splits = resp.num_successful_splits as u32;
     let num_total_splits = num_successful_splits + num_failed_splits;
