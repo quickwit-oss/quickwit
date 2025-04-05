@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use bytes::{Buf, Bytes};
-use quickwit_config::{IngestApiConfig, INGEST_V2_SOURCE_ID};
+use quickwit_config::{validate_identifier, IngestApiConfig, INGEST_V2_SOURCE_ID};
 use quickwit_ingest::{
     CommitType, DocBatchBuilder, DocBatchV2Builder, FetchResponse, IngestRequest, IngestService,
     IngestServiceClient, IngestServiceError, TailRequest,
@@ -214,6 +214,14 @@ async fn ingest_v2(
     } else {
         None
     };
+
+    // Validate index id early because propagating back the right error (400)
+    // from deeper ingest layers is harder
+    if validate_identifier("", &index_id).is_err() {
+        return Err(IngestServiceError::BadRequest(
+            "invalid index_id".to_string(),
+        ));
+    }
 
     let subrequest = IngestSubrequest {
         subrequest_id: 0,
