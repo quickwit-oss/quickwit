@@ -9,7 +9,7 @@ FROM ubuntu:noble AS quickwit
 LABEL org.opencontainers.image.title="Quickwit"
 LABEL maintainer="Quickwit, Inc. <hello@quickwit.io>"
 LABEL org.opencontainers.image.vendor="Quickwit, Inc."
-LABEL org.opencontainers.image.licenses="AGPL-3.0"
+LABEL org.opencontainers.image.licenses="Apache-2.0"
 
 RUN apt-get -y update \
     && apt-get -y install ca-certificates \
