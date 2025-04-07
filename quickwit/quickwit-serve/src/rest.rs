@@ -16,10 +16,6 @@ use std::fmt::Formatter;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use hyper::http::HeaderValue;
-use hyper::server::accept::Accept;
-use hyper::server::conn::AddrIncoming;
-use hyper::{Method, StatusCode, http};
 use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_config::{disable_ingest_v1, enable_ingest_v2};
 use quickwit_search::SearchService;
@@ -31,6 +27,10 @@ use tower_http::compression::predicate::{NotForContentType, Predicate, SizeAbove
 use tower_http::cors::CorsLayer;
 use tracing::{error, info};
 use warp::filters::log::Info;
+use warp::hyper::http::HeaderValue;
+use warp::hyper::server::accept::Accept;
+use warp::hyper::server::conn::AddrIncoming;
+use warp::hyper::{Method, StatusCode, http};
 use warp::{Filter, Rejection, Reply, redirect};
 
 use crate::cluster_api::cluster_handler;
@@ -111,7 +111,7 @@ impl CompressionPredicate {
 
 impl Predicate for CompressionPredicate {
     fn should_compress<B>(&self, response: &http::Response<B>) -> bool
-    where B: hyper::body::HttpBody {
+    where B: warp::hyper::body::HttpBody {
         if let Some(size_above) = self.size_above_opt {
             size_above.should_compress(response)
         } else {
@@ -168,6 +168,7 @@ pub(crate) async fn start_rest_server(
         quickwit_services.env_filter_reload_fn.clone(),
     )
     .boxed();
+
     // `/api/v1/*` routes.
     let api_v1_root_route = api_v1_routes(quickwit_services.clone());
 
@@ -238,10 +239,11 @@ pub(crate) async fn start_rest_server(
 
     let serve_fut = async move {
         tokio::select! {
-             res = hyper::Server::builder(maybe_tls_incoming).serve(Shared::new(service)) => { res }
+             res = warp::hyper::Server::builder(maybe_tls_incoming).serve(Shared::new(service)) => { res }
              _ = shutdown_signal => { Ok(()) }
         }
     };
+
     let (serve_res, _trigger_res) = tokio::join!(serve_fut, readiness_trigger);
     serve_res?;
     Ok(())
@@ -474,7 +476,6 @@ fn build_cors(cors_origins: &[String]) -> CorsLayer {
             cors = cors.allow_origin(origins);
         };
     }
-
     cors
 }
 
@@ -488,11 +489,11 @@ mod tls {
     use std::vec::Vec;
     use std::{fs, io};
 
-    use hyper::server::accept::Accept;
-    use hyper::server::conn::{AddrIncoming, AddrStream};
     use quickwit_config::TlsConfig;
     use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
     use tokio_rustls::rustls::ServerConfig;
+    use warp::hyper::server::accept::Accept;
+    use warp::hyper::server::conn::{AddrIncoming, AddrStream};
 
     fn io_error(error: String) -> io::Error {
         io::Error::other(error)
@@ -706,8 +707,6 @@ mod tests {
     use std::pin::Pin;
     use std::task::{Context, Poll};
 
-    use http::HeaderName;
-    use hyper::{Request, Response, StatusCode};
     use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
     use quickwit_config::NodeConfig;
     use quickwit_index_management::IndexService;
@@ -718,6 +717,8 @@ mod tests {
     use quickwit_search::MockSearchService;
     use quickwit_storage::StorageResolver;
     use tower::Service;
+    use warp::http::HeaderName;
+    use warp::hyper::{Request, Response, StatusCode};
 
     use super::*;
     use crate::rest::recover_fn_final;

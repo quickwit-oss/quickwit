@@ -23,10 +23,10 @@ use std::time::Duration;
 
 use futures::stream::once;
 use futures::{Stream, StreamExt};
-use http::Uri;
 use tokio::sync::{mpsc, watch};
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
+use tonic::transport::channel::ClientTlsConfig;
+use tonic::transport::{Channel, Endpoint, Uri};
 use tower::balance::p2c::Balance;
 use tower::buffer::Buffer;
 use tower::discover::Change as TowerChange;
@@ -77,14 +77,15 @@ where K: Hash + Eq + Clone
 
 impl<K> Unpin for ChangeStreamAdapter<K> where K: Hash + Eq + Clone {}
 
-type HttpRequest = http::Request<tonic::body::BoxBody>;
-type HttpResponse = http::Response<hyper::Body>;
+type HttpRequest = http::Request<tonic::body::Body>;
+type HttpResponse = http::Response<tonic::body::Body>;
 type ChangeStream<K> = UnboundedReceiverStream<Result<TowerChange<K, Channel>, Infallible>>;
 type Discover<K> = PendingRequestsDiscover<ChangeStream<K>, CompleteOnResponse>;
-type ChannelImpl<K> = Buffer<Balance<Discover<K>, HttpRequest>, HttpRequest>;
+type ChannelImpl<K> =
+    Buffer<HttpRequest, <Balance<Discover<K>, HttpRequest> as Service<HttpRequest>>::Future>;
 
 #[derive(Clone)]
-pub struct BalanceChannel<K: Hash + Eq + Clone> {
+pub struct BalanceChannel<K: Hash + Eq + Clone + Send> {
     inner: ChannelImpl<K>,
     connection_keys_rx: watch::Receiver<HashSet<K>>,
 }
@@ -167,7 +168,7 @@ where
 }
 
 impl<K> Service<HttpRequest> for BalanceChannel<K>
-where K: Hash + Eq + Clone
+where K: Hash + Eq + Clone + Send
 {
     type Response = HttpResponse;
     type Error = BoxError;

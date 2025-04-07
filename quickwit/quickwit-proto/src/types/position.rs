@@ -230,21 +230,17 @@ impl PartialEq<Position> for &Position {
 }
 
 impl prost::Message for Position {
-    fn encode_raw<B>(&self, buf: &mut B)
-    where B: prost::bytes::BufMut {
+    fn encode_raw(&self, buf: &mut impl prost::bytes::BufMut) {
         prost::encoding::bytes::encode(1u32, &self.as_bytes(), buf);
     }
 
-    fn merge_field<B>(
+    fn merge_field(
         &mut self,
         tag: u32,
         wire_type: prost::encoding::WireType,
-        buf: &mut B,
+        buf: &mut impl prost::bytes::Buf,
         ctx: prost::encoding::DecodeContext,
-    ) -> ::core::result::Result<(), prost::DecodeError>
-    where
-        B: prost::bytes::Buf,
-    {
+    ) -> ::core::result::Result<(), prost::DecodeError> {
         const STRUCT_NAME: &str = "Position";
 
         match tag {

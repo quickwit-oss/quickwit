@@ -21,7 +21,6 @@ use bytes::Bytes;
 use elasticsearch_dsl::search::Hit as ElasticHit;
 use elasticsearch_dsl::{HitsMetadata, ShardStatistics, Source, TotalHits, TotalHitsRelation};
 use futures_util::StreamExt;
-use hyper::StatusCode;
 use itertools::Itertools;
 use quickwit_cluster::Cluster;
 use quickwit_common::truncate_str;
@@ -41,6 +40,7 @@ use quickwit_search::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use warp::hyper::StatusCode;
 use warp::reply::with_status;
 use warp::{Filter, Rejection};
 
@@ -1060,8 +1060,8 @@ pub(crate) fn str_lines(body: &str) -> impl Iterator<Item = &str> {
 
 #[cfg(test)]
 mod tests {
-    use hyper::StatusCode;
     use quickwit_proto::search::SplitSearchError;
+    use warp::hyper::StatusCode;
 
     use super::{partial_hit_from_search_after_param, *};
 

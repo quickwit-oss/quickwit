@@ -27,7 +27,7 @@ serde_json = { workspace = true }
 sqlx = { workspace = true, optional = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
-tonic = { workspace = true, features = ["tls"] }
+tonic = { workspace = true, features = ["tls-native-roots", "server", "channel"] }
 tower = { workspace = true }
 tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }

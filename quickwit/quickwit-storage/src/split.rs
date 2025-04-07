@@ -13,19 +13,17 @@
 // limitations under the License.
 
 use std::collections::HashMap;
-use std::io::{self, SeekFrom};
+use std::io;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 
 use async_trait::async_trait;
-use aws_sdk_s3::primitives::{ByteStream, SdkBody};
+use aws_sdk_s3::primitives::{ByteStream, FsBuilder, Length, SdkBody};
 use futures::{Stream, StreamExt, stream};
-use hyper::body::{Body, Bytes};
+use hyper::body::{Bytes, Frame};
 use pin_project::pin_project;
 use quickwit_common::shared_consts::SPLIT_FIELDS_FILE_NAME;
-use tokio::io::{AsyncReadExt, AsyncSeekExt};
-use tokio_util::io::ReaderStream;
 
 use crate::bundle_storage::BundleStorageFileOffsetsVersions;
 use crate::{BundleStorageFileOffsets, PutPayload, VersionedComponent};
@@ -43,7 +41,7 @@ async fn range_byte_stream_from_payloads(
     payloads: &[Box<dyn PutPayload>],
     range: Range<u64>,
 ) -> io::Result<ByteStream> {
-    let mut bytestreams: Vec<_> = Vec::new();
+    let mut bytestreams: Vec<ByteStream> = Vec::new();
 
     let payloads_and_ranges =
         chunk_payload_ranges(payloads, range.start as usize..range.end as usize);
@@ -56,8 +54,12 @@ async fn range_byte_stream_from_payloads(
         );
     }
 
-    let body = Body::wrap_stream(stream::iter(bytestreams).map(StreamAdaptor).flatten());
-    let concat_stream = ByteStream::new(SdkBody::from_body_0_4(body));
+    let body = stream::iter(bytestreams)
+        .map(StreamAdaptor)
+        .flatten()
+        .map(|result| result.map(Frame::data));
+    let stream_body = http_body_util::StreamBody::new(body);
+    let concat_stream = ByteStream::new(SdkBody::from_body_1_x(stream_body));
     Ok(concat_stream)
 }
 
@@ -115,18 +117,22 @@ impl PutPayload for FilePayload {
     async fn range_byte_stream(&self, range: Range<u64>) -> io::Result<ByteStream> {
         assert!(!range.is_empty());
         assert!(range.end <= self.len);
-        let mut file = tokio::fs::File::open(&self.path).await?;
+
+        let len = range.end - range.start;
+        let mut fs_builder = FsBuilder::new().path(&self.path);
+
         if range.start > 0 {
-            file.seek(SeekFrom::Start(range.start)).await?;
+            fs_builder = fs_builder.offset(range.start);
         }
 
-        let body = if range.end == self.len {
-            Body::wrap_stream(ReaderStream::new(file))
-        } else {
-            Body::wrap_stream(ReaderStream::new(file.take(range.end - range.start)))
-        };
+        fs_builder = fs_builder.length(Length::Exact(len));
 
-        Ok(ByteStream::new(SdkBody::from_body_0_4(body)))
+        fs_builder.build().await.map_err(|byte_stream_err| {
+            io::Error::new(
+                io::ErrorKind::Other,
+                format!("Failed to create byte stream: {}", byte_stream_err),
+            )
+        })
     }
 }
 
@@ -304,6 +310,8 @@ mod tests {
         split_streamer: &SplitPayload,
         range: Range<u64>,
     ) -> anyhow::Result<Vec<u8>> {
+        use tokio::io::AsyncReadExt as _;
+
         let mut data = Vec::new();
         split_streamer
             .range_byte_stream(range)

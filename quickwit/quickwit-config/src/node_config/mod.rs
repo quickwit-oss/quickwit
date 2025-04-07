@@ -23,7 +23,7 @@ use std::time::Duration;
 
 use anyhow::{bail, ensure};
 use bytesize::ByteSize;
-use http::HeaderMap;
+use legacy_http::HeaderMap;
 use quickwit_common::net::HostAddr;
 use quickwit_common::shared_consts::{
     DEFAULT_SHARD_BURST_LIMIT, DEFAULT_SHARD_SCALE_UP_FACTOR, DEFAULT_SHARD_THROUGHPUT_LIMIT,

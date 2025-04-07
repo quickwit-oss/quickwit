@@ -25,6 +25,7 @@ home = { workspace = true }
 hostname = { workspace = true }
 http = { workspace = true }
 hyper = { workspace = true }
+hyper-util = {workspace = true, optional=true}
 itertools = { workspace = true }
 once_cell = { workspace = true }
 pin-project = { workspace = true }
@@ -43,12 +44,12 @@ tikv-jemalloc-ctl = { workspace = true, optional = true }
 tokio = { workspace = true }
 tokio-metrics = { workspace = true }
 tokio-stream = { workspace = true }
-tonic = { workspace = true, features = ["tls"] }
+tonic = { workspace = true, features = ["tls-native-roots", "server", "channel"] }
 tower = { workspace = true }
 tracing = { workspace = true }
 
 [features]
-testsuite = []
+testsuite = ["hyper-util"]
 named_tasks = ["tokio/tracing"]
 jemalloc-profiled = [
     "named_tasks",
@@ -63,3 +64,4 @@ tempfile = { workspace = true }
 proptest = { workspace = true }
 serial_test = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
+hyper-util = { workspace = true }

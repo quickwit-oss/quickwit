@@ -87,8 +87,13 @@ async fn create_channel(client: tokio::io::DuplexStream) -> anyhow::Result<Chann
     let mut client = Some(client);
     let channel = Endpoint::try_from("http://test.server")?
         .connect_with_connector(tower::service_fn(move |_: Uri| {
-            let client = client.take();
-            async move { client.ok_or_else(|| std::io::Error::other("client already taken")) }
+            let client_opt = client.take();
+            async move {
+                let client = client_opt.ok_or_else(|| {
+                    std::io::Error::new(std::io::ErrorKind::Other, "client already taken")
+                })?;
+                std::io::Result::Ok(hyper_util::rt::TokioIo::new(client))
+            }
         }))
         .await?;
     Ok(channel)
