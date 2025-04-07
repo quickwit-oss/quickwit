@@ -121,6 +121,7 @@ fn extract_field_name(
             calc_node_bytes.type_url
         )));
     }
+    // TODO this can be cleaner once we upgrade to prost 0.12+
     let calc_node = quickwit_proto::cloudprem::CalcNode::decode(calc_node_bytes.value.as_ref())
         .context("failed decoding CalcNode")?;
 

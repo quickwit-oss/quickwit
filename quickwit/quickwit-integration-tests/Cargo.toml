@@ -24,6 +24,8 @@ aws-sdk-sqs = { workspace = true }
 futures-util = { workspace = true }
 hyper = { workspace = true }
 itertools = { workspace = true }
+prost = { workspace = true }
+prost-types = { workspace = true }
 reqwest = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
@@ -31,6 +33,7 @@ tokio = { workspace = true }
 tonic = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+urlencoding = { workspace = true }
 
 quickwit-actors = { workspace = true, features = ["testsuite"] }
 quickwit-cli = { workspace = true }
