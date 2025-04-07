@@ -53,7 +53,7 @@ impl fmt::Display for SplitSearchError {
 }
 
 impl Eq for SortByValue {}
-impl Copy for SortByValue {}
+
 impl From<SortValue> for SortByValue {
     fn from(sort_value: SortValue) -> Self {
         SortByValue {
@@ -128,7 +128,6 @@ impl SortByValue {
 // This is terrible because this means Eq, PartialEq are not really in line with Ord's
 // implementation. if in presence of NaN.
 impl Eq for SortValue {}
-impl Copy for SortValue {}
 
 impl Ord for SortValue {
     #[inline]

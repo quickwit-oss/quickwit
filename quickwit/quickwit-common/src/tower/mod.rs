@@ -31,6 +31,8 @@ mod retry;
 mod timeout;
 mod transport;
 
+use tonic::transport::Uri;
+
 use std::error;
 use std::pin::Pin;
 

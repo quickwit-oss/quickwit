@@ -23,10 +23,11 @@ use std::time::Duration;
 
 use futures::stream::once;
 use futures::{Stream, StreamExt};
-use http::Uri;
+use tonic::transport::Uri;
 use tokio::sync::{mpsc, watch};
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
+use tonic::transport::{Channel, Endpoint};
+use tonic::transport::channel::ClientTlsConfig;
 use tower::balance::p2c::Balance;
 use tower::buffer::Buffer;
 use tower::discover::Change as TowerChange;
@@ -77,11 +78,14 @@ where K: Hash + Eq + Clone
 
 impl<K> Unpin for ChangeStreamAdapter<K> where K: Hash + Eq + Clone {}
 
-type HttpRequest = http::Request<tonic::body::BoxBody>;
-type HttpResponse = http::Response<hyper::Body>;
+
+// type BoxBody = http_body_util::combinators::UnsyncBoxBody<bytes::Bytes, crate::Status>;
+// type HttpRequest = http::Request<tonic::body::BoxBody>;
+
+type HttpResponse = http::Response<tonic::body::Body>;
 type ChangeStream<K> = UnboundedReceiverStream<Result<TowerChange<K, Channel>, Infallible>>;
 type Discover<K> = PendingRequestsDiscover<ChangeStream<K>, CompleteOnResponse>;
-type ChannelImpl<K> = Buffer<Balance<Discover<K>, HttpRequest>, HttpRequest>;
+type ChannelImpl<K> = Buffer<Balance<Discover<K>, http::Request<tonic::body::Body>>, http::Request<tonic::body::Body>>;
 
 #[derive(Clone)]
 pub struct BalanceChannel<K: Hash + Eq + Clone> {
@@ -90,7 +94,7 @@ pub struct BalanceChannel<K: Hash + Eq + Clone> {
 }
 
 impl<K> BalanceChannel<K>
-where K: Hash + Eq + Send + Sync + Clone + 'static
+where K: Hash + Eq + Send + Sync + Clone + 'static,
 {
     pub fn new() -> (Self, mpsc::UnboundedSender<Change<K, Channel>>) {
         let (change_tx, change_rx) = mpsc::unbounded_channel();
@@ -166,8 +170,9 @@ where
     UnboundedReceiverStream::new(outer_stream_rx)
 }
 
-impl<K> Service<HttpRequest> for BalanceChannel<K>
-where K: Hash + Eq + Clone
+impl<K> Service<http::Request<tonic::body::Body>> for BalanceChannel<K>
+where
+    K: Hash + Eq + Clone,
 {
     type Response = HttpResponse;
     type Error = BoxError;
@@ -177,13 +182,13 @@ where K: Hash + Eq + Clone
         self.inner.poll_ready(cx)
     }
 
-    fn call(&mut self, request: HttpRequest) -> Self::Future {
+    fn call(&mut self, request: http::Request<tonic::body::Body>) -> Self::Future {
         Box::pin(self.inner.call(request))
     }
 }
 
 impl<K> fmt::Debug for BalanceChannel<K>
-where K: Hash + Eq + Clone + Send + Sync + 'static
+where K: Hash + Eq + Clone + Send + Sync + 'static,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("BalanceChannel")
