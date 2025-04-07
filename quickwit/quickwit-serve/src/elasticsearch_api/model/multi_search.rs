@@ -13,10 +13,10 @@
 // limitations under the License.
 
 use elasticsearch_dsl::ErrorCause;
-use hyper::StatusCode;
 use serde::{Deserialize, Serialize};
 use serde_with::formats::PreferMany;
 use serde_with::{serde_as, OneOrMany};
+use warp::hyper::StatusCode;
 
 use super::search_query_params::ExpandWildcards;
 use super::search_response::ElasticsearchResponse;

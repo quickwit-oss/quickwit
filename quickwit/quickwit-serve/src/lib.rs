@@ -257,6 +257,11 @@ async fn balance_channel_for_service(
     BalanceChannel::from_stream(service_change_stream)
 }
 
+fn convert_status_code_to_legacy_http(status_code: http::StatusCode) -> warp::http::StatusCode {
+    warp::http::StatusCode::from_u16(status_code.as_u16())
+        .unwrap_or(warp::http::StatusCode::INTERNAL_SERVER_ERROR)
+}
+
 async fn start_ingest_client_if_needed(
     node_config: &NodeConfig,
     universe: &Universe,
@@ -735,6 +740,7 @@ pub async fn serve_quickwit(
             debug!("REST server shutdown trigger sender was dropped");
         }
     });
+
     let rest_server = rest::start_rest_server(
         tcp_listener_resolver.resolve(rest_listen_addr).await?,
         quickwit_services,
@@ -782,6 +788,7 @@ pub async fn serve_quickwit(
             .expect("tasks running the gRPC server should not panic or be cancelled")
             .context("gRPC server failed")
     };
+
     let rest_join_handle = async move {
         spawn_named_task(rest_server, "rest_server")
             .await
@@ -792,6 +799,7 @@ pub async fn serve_quickwit(
     if let Err(err) = tokio::try_join!(grpc_join_handle, rest_join_handle) {
         error!("server failed: {err:?}");
     }
+
     let actor_exit_statuses = shutdown_handle
         .await
         .context("failed to gracefully shutdown services")?;
@@ -1210,7 +1218,7 @@ async fn node_readiness_reporting_task(
     ingester_opt: Option<impl IngesterService>,
     grpc_readiness_signal_rx: oneshot::Receiver<()>,
     rest_readiness_signal_rx: oneshot::Receiver<()>,
-    mut health_reporter: HealthReporter,
+    health_reporter: HealthReporter,
 ) {
     let mut node_ready = false;
     cluster.set_self_node_readiness(node_ready).await;
@@ -1420,12 +1428,13 @@ mod tests {
         let mut client_opt = Some(client);
         let connector = tower::service_fn(move |_: http::Uri| {
             let client = client_opt.take().unwrap();
-            async move { Ok::<_, Infallible>(client) }
+            async move { Ok::<_, Infallible>(hyper_util::rt::TokioIo::new(client)) }
         });
         let channel = Channel::builder("http://[::]:50051".parse().unwrap())
             .connect_with_connector(connector)
             .await
             .unwrap();
+
         let mut health_client = HealthClient::new(channel);
 
         tokio::spawn(node_readiness_reporting_task(

@@ -1129,7 +1129,7 @@ fn generate_grpc_client_adapter(context: &CodegenContext) -> TokenStream {
         #[async_trait::async_trait]
         impl<T> #service_name for #grpc_client_adapter_name<#grpc_client_package_name::#grpc_client_name<T>>
         where
-            T: tonic::client::GrpcService<tonic::body::BoxBody> + std::fmt::Debug + Clone + Send + Sync + 'static,
+            T: tonic::client::GrpcService<tonic::body::Body> + std::fmt::Debug + Clone + Send + Sync + 'static,
             T::ResponseBody: tonic::codegen::Body<Data = tonic::codegen::Bytes> + Send + 'static,
             <T::ResponseBody as tonic::codegen::Body>::Error: Into<tonic::codegen::StdError> + Send,
             T::Future: Send

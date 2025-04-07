@@ -19,7 +19,7 @@ use std::time::Duration;
 
 use anyhow::{bail, Context};
 use bytesize::ByteSize;
-use http::HeaderMap;
+use legacy_http::HeaderMap;
 use quickwit_common::fs::get_disk_size;
 use quickwit_common::net::{find_private_ip, get_short_hostname, Host};
 use quickwit_common::new_coolid;

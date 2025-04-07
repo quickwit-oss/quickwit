@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use hyper::header::HeaderValue;
 use once_cell::sync::Lazy;
 use quickwit_telemetry::payload::TelemetryEvent;
 use regex::Regex;
 use rust_embed::RustEmbed;
+use warp::hyper::header::HeaderValue;
 use warp::path::Tail;
 use warp::reply::Response;
 use warp::{Filter, Rejection};

@@ -15,7 +15,6 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
-use hyper::StatusCode;
 use quickwit_common::rate_limited_error;
 use quickwit_config::INGEST_V2_SOURCE_ID;
 use quickwit_ingest::IngestRequestV2Builder;
@@ -25,6 +24,7 @@ use quickwit_proto::ingest::router::{
 use quickwit_proto::ingest::CommitTypeV2;
 use quickwit_proto::types::{DocUid, IndexId};
 use serde::{Deserialize, Serialize};
+use warp::hyper::StatusCode;
 
 use super::model::ElasticException;
 use crate::elasticsearch_api::model::{BulkAction, ElasticBulkOptions, ElasticsearchError};

@@ -22,7 +22,6 @@ use std::sync::Arc;
 
 use bulk::{es_compat_bulk_handler, es_compat_index_bulk_handler};
 pub use filter::ElasticCompatibleApi;
-use hyper::StatusCode;
 use quickwit_cluster::Cluster;
 use quickwit_config::NodeConfig;
 use quickwit_index_management::IndexService;
@@ -39,6 +38,7 @@ pub use rest_handler::{
     es_compat_scroll_handler, es_compat_search_handler, es_compat_stats_handler,
 };
 use serde::{Deserialize, Serialize};
+use warp::hyper::StatusCode;
 use warp::{Filter, Rejection};
 
 use crate::elasticsearch_api::model::ElasticsearchError;

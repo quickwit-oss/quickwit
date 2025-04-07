@@ -49,6 +49,7 @@ quickwit-storage = { workspace = true }
 [dev-dependencies]
 dotenvy = { workspace = true }
 futures = { workspace = true }
+hyper-util = { workspace = true }
 md5 = { workspace = true }
 mockall = { workspace = true }
 rand = { workspace = true }
