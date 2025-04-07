@@ -432,6 +432,56 @@ fn compute_index_size(hot_directory: &HotDirectory) -> ByteSize {
     ByteSize(size_bytes)
 }
 
+fn print_jemalloc(callsite: &'static str) {
+    let epoch_mib = tikv_jemalloc_ctl::epoch::mib().unwrap();
+    let resident_mib = tikv_jemalloc_ctl::stats::resident::mib().unwrap();
+    let allocated_mib = tikv_jemalloc_ctl::stats::allocated::mib().unwrap();
+    epoch_mib.advance().unwrap();
+    println!(
+        "(dbg) {} [res={}MB,alloc={}MB]",
+        callsite,
+        resident_mib.read().unwrap() / 1024 / 1024,
+        allocated_mib.read().unwrap() / 1024 / 1024,
+    );
+}
+
+fn print_caches(callsite: &'static str) {
+    println!(
+        "(dbg) {} shortlived({:?}/{:?}MB) fastfield({:?}/{:?}MB) splitfooter({:?}/{:?}MB)",
+        callsite,
+        quickwit_storage::STORAGE_METRICS
+            .shortlived_cache
+            .in_cache_count
+            .get(),
+        quickwit_storage::STORAGE_METRICS
+            .shortlived_cache
+            .in_cache_num_bytes
+            .get()
+            / 1024
+            / 1024,
+        quickwit_storage::STORAGE_METRICS
+            .fast_field_cache
+            .in_cache_count
+            .get(),
+        quickwit_storage::STORAGE_METRICS
+            .fast_field_cache
+            .in_cache_num_bytes
+            .get()
+            / 1024
+            / 1024,
+        quickwit_storage::STORAGE_METRICS
+            .split_footer_cache
+            .in_cache_count
+            .get(),
+        quickwit_storage::STORAGE_METRICS
+            .split_footer_cache
+            .in_cache_num_bytes
+            .get()
+            / 1024
+            / 1024
+    );
+}
+
 /// Apply a leaf search on a single split.
 #[allow(clippy::too_many_arguments)]
 async fn leaf_search_single_split(
@@ -502,6 +552,13 @@ async fn leaf_search_single_split(
 
     let warmup_start = Instant::now();
     warmup(&searcher, &warmup_info).await?;
+    print_jemalloc("after warmup");
+    // println!(
+    //     "(dbg) shortlived cache totalling {}MB",
+    //     byte_range_cache.get_num_bytes() / 1024 / 1024
+    // );
+    print_caches("after_warmup");
+
     let warmup_end = Instant::now();
     let warmup_duration: Duration = warmup_end.duration_since(warmup_start);
     let warmup_size = ByteSize(byte_range_cache.get_num_bytes());
@@ -1333,6 +1390,9 @@ pub async fn leaf_search(
     doc_mapper: Arc<DocMapper>,
     aggregations_limits: AggregationLimitsGuard,
 ) -> Result<LeafSearchResponse, SearchError> {
+    println!("index_storage={index_storage:?}");
+    print_jemalloc("leaf_search start");
+    print_caches("leaf_search start");
     let num_docs: u64 = splits.iter().map(|split| split.num_docs).sum();
     let num_splits = splits.len();
     let current_span = tracing::Span::current();
@@ -1455,6 +1515,13 @@ pub async fn leaf_search(
         .leaf_search_targeted_splits
         .with_label_values(label_values)
         .observe(num_splits as f64);
+    print_jemalloc("leaf_search end");
+
+    tokio::spawn(async {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        print_jemalloc("1s after leaf_search");
+        print_caches("1s after leaf_search");
+    });
 
     Ok(leaf_search_response_reresult??)
 }

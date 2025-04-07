@@ -14,6 +14,7 @@
 
 use std::borrow::{Borrow, Cow};
 use std::collections::BTreeMap;
+use std::fmt::Debug;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -22,6 +23,8 @@ use std::sync::{Arc, Mutex};
 use tantivy::directory::OwnedBytes;
 
 use crate::metrics::CacheMetrics;
+
+// static BYTE_RANGE_CACHE_COUNT: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone, PartialOrd, Ord, PartialEq, Eq)]
 struct CacheKey<'a, T: ToOwned + ?Sized> {
@@ -61,8 +64,13 @@ struct NeedMutByteRangeCache<T: 'static + ToOwned + ?Sized> {
     cache_counters: &'static CacheMetrics,
 }
 
-impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
+impl<T: 'static + ToOwned<Owned: Debug> + ?Sized + Ord + Debug> NeedMutByteRangeCache<T> {
     fn with_infinite_capacity(cache_counters: &'static CacheMetrics) -> Self {
+        // let prev_cache_count = BYTE_RANGE_CACHE_COUNT.fetch_add(1, Ordering::SeqCst);
+        // println!(
+        //     "(dbg) ByteRangeCache created, now have {}",
+        //     prev_cache_count + 1
+        // );
         NeedMutByteRangeCache {
             cache: BTreeMap::new(),
             num_items: 0,
@@ -225,6 +233,13 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
             .filter(|(k, v)| k.tag == query.tag && range_end <= v.range_end)
     }
 
+    fn get_true_size(&self) -> u64 {
+        self.cache
+            .iter()
+            .map(|(_, v)| v.bytes.len() as u64)
+            .sum::<u64>()
+    }
+
     /// Try to merge all blocks in the given range. Fails if some bytes were not already stored.
     fn merge_ranges<'a>(
         &mut self,
@@ -301,6 +316,7 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
     fn update_counter_record_item(&mut self, num_bytes: usize) {
         self.num_items += 1;
         self.num_bytes += num_bytes as u64;
+        assert_eq!(self.get_true_size(), self.num_bytes);
         self.cache_counters.in_cache_count.inc();
         self.cache_counters.in_cache_num_bytes.add(num_bytes as i64);
     }
@@ -317,6 +333,11 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
 
 impl<T: 'static + ToOwned + ?Sized> Drop for NeedMutByteRangeCache<T> {
     fn drop(&mut self) {
+        // let prev_cache_count = BYTE_RANGE_CACHE_COUNT.fetch_sub(1, Ordering::SeqCst);
+        // println!(
+        //     "(dbg) ByteRangeCache dropped, now have {}",
+        //     prev_cache_count - 1
+        // );
         self.cache_counters
             .in_cache_count
             .sub(self.num_items as i64);
@@ -557,5 +578,35 @@ mod tests {
             assert_eq!(mutable_cache.num_bytes, 20);
             assert_eq!(mutable_cache.cache_counters.in_cache_num_bytes.get(), 20);
         }
+    }
+
+    #[test]
+    fn test_metrics_multiple_byte_range_caches() {
+        // we need to get a 'static ref to metrics, and want a dedicated metrics because we assert
+        // on it
+        static METRICS: Lazy<CacheMetrics> =
+            Lazy::new(|| CacheMetrics::for_component("byterange_cache_test"));
+
+        let cache_1 = ByteRangeCache::with_infinite_capacity(&METRICS);
+
+        let cache_2 = ByteRangeCache::with_infinite_capacity(&METRICS);
+
+        let key: std::path::PathBuf = "key".into();
+
+        assert_eq!(METRICS.in_cache_num_bytes.get(), 0);
+        cache_1.put_slice(
+            key.clone(),
+            0..5,
+            OwnedBytes::new((0..5).collect::<Vec<_>>()),
+        );
+        assert_eq!(METRICS.in_cache_num_bytes.get(), 5);
+        cache_2.put_slice(
+            key.clone(),
+            0..10,
+            OwnedBytes::new((0..10).collect::<Vec<_>>()),
+        );
+        assert_eq!(METRICS.in_cache_num_bytes.get(), 15);
+        drop(cache_1);
+        assert_eq!(METRICS.in_cache_num_bytes.get(), 10);
     }
 }
