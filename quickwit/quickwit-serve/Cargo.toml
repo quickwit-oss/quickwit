@@ -49,7 +49,7 @@ tokio-stream = { workspace = true }
 tokio-util = { workspace = true }
 tonic-health = { workspace = true }
 tonic-reflection = { workspace = true }
-tower = { workspace = true }
+tower = { workspace = true, features = ["limit"] }
 tower-http = { workspace = true }
 tracing = { workspace = true }
 utoipa = { workspace = true }

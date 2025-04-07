@@ -15,32 +15,32 @@
 #![recursion_limit = "256"]
 
 mod build_info;
-mod cluster_api;
-mod decompression;
-mod delete_task_api;
+// mod cluster_api;
+// mod decompression;
+// mod delete_task_api;
 mod developer_api;
-mod elasticsearch_api;
-mod format;
+// mod elasticsearch_api;
+// mod format;
 mod grpc;
-mod health_check_api;
-mod index_api;
-mod indexing_api;
-mod ingest_api;
-mod jaeger_api;
-mod load_shield;
+// mod health_check_api;
+// mod index_api;
+// mod indexing_api;
+// mod ingest_api;
+// mod jaeger_api;
+// mod load_shield;
 mod metrics;
-mod metrics_api;
-mod node_info_handler;
-mod openapi;
-mod otlp_api;
+// mod metrics_api;
+// mod node_info_handler;
+// mod openapi;
+// mod otlp_api;
 mod rate_modulator;
-mod rest;
-mod rest_api_response;
+// mod rest;
+// mod rest_api_response;
 mod search_api;
-pub(crate) mod simple_list;
+// pub(crate) mod simple_list;
 pub mod tcp_listener;
-mod template_api;
-mod ui_handler;
+// mod template_api;
+// mod ui_handler;
 
 use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
@@ -52,8 +52,8 @@ use std::time::Duration;
 
 use anyhow::{bail, Context};
 use bytesize::ByteSize;
-pub(crate) use decompression::Body;
-pub use format::BodyFormat;
+// pub(crate) use decompression::Body;
+// pub use format::BodyFormat;
 use futures::StreamExt;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
@@ -120,13 +120,13 @@ use tracing::{debug, error, info, warn};
 use warp::{Filter, Rejection};
 
 pub use crate::build_info::{BuildInfo, RuntimeInfo};
-pub use crate::index_api::{ListSplitsQueryParams, ListSplitsResponse};
-pub use crate::ingest_api::{RestIngestResponse, RestParseFailure};
-pub use crate::metrics::SERVE_METRICS;
+// pub use crate::index_api::{ListSplitsQueryParams, ListSplitsResponse};
+// pub use crate::ingest_api::{RestIngestResponse, RestParseFailure};
+// pub use crate::metrics::SERVE_METRICS;
 use crate::rate_modulator::RateModulator;
-#[cfg(test)]
-use crate::rest::recover_fn;
-pub use crate::search_api::{search_request_from_api_request, SearchRequestQueryString, SortBy};
+// #[cfg(test)]
+// use crate::rest::recover_fn;
+// pub use crate::search_api::{search_request_from_api_request, SearchRequestQueryString, SortBy};
 
 const READINESS_REPORTING_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
     Duration::from_millis(25)
@@ -735,12 +735,12 @@ pub async fn serve_quickwit(
             debug!("REST server shutdown trigger sender was dropped");
         }
     });
-    let rest_server = rest::start_rest_server(
-        tcp_listener_resolver.resolve(rest_listen_addr).await?,
-        quickwit_services,
-        rest_readiness_trigger,
-        rest_shutdown_signal,
-    );
+    // let rest_server = rest::start_rest_server(
+    //     tcp_listener_resolver.resolve(rest_listen_addr).await?,
+    //     quickwit_services,
+    //     rest_readiness_trigger,
+    //     rest_shutdown_signal,
+    // );
 
     // Node readiness indicates that the server is ready to receive requests.
     // Thus readiness task is started once gRPC and REST servers are started.
@@ -782,16 +782,21 @@ pub async fn serve_quickwit(
             .expect("tasks running the gRPC server should not panic or be cancelled")
             .context("gRPC server failed")
     };
-    let rest_join_handle = async move {
-        spawn_named_task(rest_server, "rest_server")
-            .await
-            .expect("tasks running the REST server should not panic or be cancelled")
-            .context("REST server failed")
-    };
+    // let rest_join_handle = async move {
+    //     spawn_named_task(rest_server, "rest_server")
+    //         .await
+    //         .expect("tasks running the REST server should not panic or be cancelled")
+    //         .context("REST server failed")
+    // };
 
-    if let Err(err) = tokio::try_join!(grpc_join_handle, rest_join_handle) {
-        error!("server failed: {err:?}");
+    // if let Err(err) = tokio::try_join!(grpc_join_handle, rest_join_handle) {
+    //     error!("server failed: {err:?}");
+    // }
+
+    if let Err(err) = grpc_join_handle.await {
+        error!("gRPC server failed: {err:?}");
     }
+
     let actor_exit_statuses = shutdown_handle
         .await
         .context("failed to gracefully shutdown services")?;
@@ -1314,18 +1319,18 @@ async fn check_cluster_configuration(
     Ok(())
 }
 
-pub mod lambda_search_api {
-    pub use crate::elasticsearch_api::{
-        es_compat_cat_indices_handler, es_compat_index_cat_indices_handler,
-        es_compat_index_count_handler, es_compat_index_field_capabilities_handler,
-        es_compat_index_multi_search_handler, es_compat_index_search_handler,
-        es_compat_index_stats_handler, es_compat_resolve_index_handler, es_compat_scroll_handler,
-        es_compat_search_handler, es_compat_stats_handler,
-    };
-    pub use crate::index_api::get_index_metadata_handler;
-    pub use crate::rest::recover_fn;
-    pub use crate::search_api::{search_get_handler, search_post_handler};
-}
+// pub mod lambda_search_api {
+//     pub use crate::elasticsearch_api::{
+//         es_compat_cat_indices_handler, es_compat_index_cat_indices_handler,
+//         es_compat_index_count_handler, es_compat_index_field_capabilities_handler,
+//         es_compat_index_multi_search_handler, es_compat_index_search_handler,
+//         es_compat_index_stats_handler, es_compat_resolve_index_handler, es_compat_scroll_handler,
+//         es_compat_search_handler, es_compat_stats_handler,
+//     };
+//     pub use crate::index_api::get_index_metadata_handler;
+//     pub use crate::rest::recover_fn;
+//     pub use crate::search_api::{search_get_handler, search_post_handler};
+// }
 
 #[cfg(test)]
 mod tests {

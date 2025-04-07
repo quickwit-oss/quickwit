@@ -15,34 +15,34 @@
 mod debug;
 mod log_level;
 
-#[cfg_attr(not(feature = "pprof"), path = "pprof_disabled.rs")]
-mod pprof;
+// #[cfg_attr(not(feature = "pprof"), path = "pprof_disabled.rs")]
+// mod pprof;
 
 mod server;
 
-use debug::debug_handler;
-use log_level::log_level_handler;
-use pprof::pprof_handlers;
-use quickwit_cluster::Cluster;
+// use debug::debug_handler;
+// use log_level::log_level_handler;
+// use pprof::pprof_handlers;
+// use quickwit_cluster::Cluster;
 pub(crate) use server::DeveloperApiServer;
-use warp::{Filter, Rejection};
+// use warp::{Filter, Rejection};
 
-use crate::rest::recover_fn;
-use crate::EnvFilterReloadFn;
+// use crate::rest::recover_fn;
+// use crate::EnvFilterReloadFn;
 
-#[derive(utoipa::OpenApi)]
-#[openapi(paths(debug::debug_handler, log_level::log_level_handler))]
-pub struct DeveloperApi;
+// #[derive(utoipa::OpenApi)]
+// #[openapi(paths(debug::debug_handler, log_level::log_level_handler))]
+// pub struct DeveloperApi;
 
-pub(crate) fn developer_api_routes(
-    cluster: Cluster,
-    env_filter_reload_fn: EnvFilterReloadFn,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path!("api" / "developer" / ..)
-        .and(
-            debug_handler(cluster.clone())
-                .or(log_level_handler(env_filter_reload_fn.clone()).boxed())
-                .or(pprof_handlers()),
-        )
-        .recover(recover_fn)
-}
+// pub(crate) fn developer_api_routes(
+//     cluster: Cluster,
+//     env_filter_reload_fn: EnvFilterReloadFn,
+// ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+//     warp::path!("api" / "developer" / ..)
+//         .and(
+//             debug_handler(cluster.clone())
+//                 .or(log_level_handler(env_filter_reload_fn.clone()).boxed())
+//                 .or(pprof_handlers()),
+//         )
+//         .recover(recover_fn)
+// }

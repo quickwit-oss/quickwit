@@ -13,15 +13,15 @@
 // limitations under the License.
 
 mod grpc_adapter;
-mod rest_handler;
+// mod rest_handler;
 
 pub use self::grpc_adapter::GrpcSearchAdapter;
-pub(crate) use self::rest_handler::{extract_index_id_patterns, extract_index_id_patterns_default};
-pub use self::rest_handler::{
-    search_get_handler, search_plan_get_handler, search_plan_post_handler, search_post_handler,
-    search_request_from_api_request, search_stream_handler, SearchApi, SearchRequestQueryString,
-    SortBy,
-};
+// pub(crate) use self::rest_handler::{extract_index_id_patterns, extract_index_id_patterns_default};
+// pub use self::rest_handler::{
+//     search_get_handler, search_plan_get_handler, search_plan_post_handler, search_post_handler,
+//     search_request_from_api_request, search_stream_handler, SearchApi, SearchRequestQueryString,
+//     SortBy,
+// };
 
 #[cfg(test)]
 mod tests {
