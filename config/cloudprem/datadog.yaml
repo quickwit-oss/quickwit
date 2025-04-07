@@ -51,7 +51,7 @@ doc_mapping:
         - rfc3339
         - iso8601
 
-  # TODO: Deactivated for now, as it is not clear what it is used for
+  # TODO: This is a special measure for metrics on logs, but unclear if this is also used in search.
     - name: ingest_size_in_bytes
       type: u64
       fast: true
