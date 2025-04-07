@@ -32,6 +32,8 @@ use quickwit_proto::tonic::transport::server::TcpIncoming;
 use quickwit_proto::tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
 use tokio::net::TcpListener;
 use tonic_health::pb::health_server::{Health, HealthServer};
+use tonic_health::pb::FILE_DESCRIPTOR_SET as HEALTH_FILE_DESCRIPTOR_SET;
+use tonic_reflection::pb::FILE_DESCRIPTOR_SET as REFLECTION_FILE_DESCRIPTOR_SET;
 use tonic_reflection::server::{ServerReflection, ServerReflectionServer};
 use tracing::*;
 
@@ -208,10 +210,12 @@ pub(crate) async fn start_grpc_server(
         DeveloperServiceClient::new(developer_service)
             .as_grpc_service(DeveloperApiServer::MAX_GRPC_MESSAGE_SIZE)
     };
-    let reflection_service = build_reflection_service(&file_descriptor_sets)?;
-
     enabled_grpc_services.insert("health");
+    file_descriptor_sets.push(HEALTH_FILE_DESCRIPTOR_SET);
+
     enabled_grpc_services.insert("reflection");
+    file_descriptor_sets.push(REFLECTION_FILE_DESCRIPTOR_SET);
+    let reflection_service = build_reflection_service(&file_descriptor_sets)?;
 
     let server_router = server
         .add_service(cluster_grpc_service)
