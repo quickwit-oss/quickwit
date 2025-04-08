@@ -22,6 +22,7 @@ use std::time::Duration;
 use anyhow::Context;
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
+use quickwit_common::metrics::GaugeGuard;
 use quickwit_metastore::SplitMetadata;
 use quickwit_proto::search::{LeafSearchResponse, PartialHit, SearchRequest, SplitSearchError};
 use quickwit_proto::types::IndexUid;
@@ -120,9 +121,14 @@ impl ScrollContext {
     }
 }
 
+struct TrackedValue {
+    value: Vec<u8>,
+    _total_size_metric_guard: GaugeGuard<'static>,
+}
+
 #[derive(Clone)]
 pub(crate) struct MiniKV {
-    ttl_with_cache: Arc<RwLock<TtlCache<Vec<u8>, Vec<u8>>>>,
+    ttl_with_cache: Arc<RwLock<TtlCache<Vec<u8>, TrackedValue>>>,
 }
 
 impl Default for MiniKV {
@@ -135,14 +141,24 @@ impl Default for MiniKV {
 
 impl MiniKV {
     pub async fn put(&self, key: Vec<u8>, payload: Vec<u8>, ttl: Duration) {
+        let mut metric_guard =
+            GaugeGuard::from_gauge(&crate::SEARCH_METRICS.search_after_cache_size_bytes);
+        metric_guard.add(payload.len() as i64);
         let mut cache_lock = self.ttl_with_cache.write().await;
-        cache_lock.insert(key, payload, ttl);
+        cache_lock.insert(
+            key,
+            TrackedValue {
+                value: payload,
+                _total_size_metric_guard: metric_guard,
+            },
+            ttl,
+        );
     }
 
     pub async fn get(&self, key: &[u8]) -> Option<Vec<u8>> {
         let cache_lock = self.ttl_with_cache.read().await;
         let search_after_context_bytes = cache_lock.get(key)?;
-        Some(search_after_context_bytes.clone())
+        Some(search_after_context_bytes.value.clone())
     }
 }
 
