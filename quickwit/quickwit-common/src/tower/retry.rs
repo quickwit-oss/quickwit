@@ -14,11 +14,7 @@
 
 use std::any::type_name;
 use std::fmt;
-use std::pin::Pin;
-use std::task::{Context, Poll};
 
-use futures::Future;
-use pin_project::pin_project;
 use tokio::time::Sleep;
 use tower::retry::{Policy, Retry};
 use tower::Layer;

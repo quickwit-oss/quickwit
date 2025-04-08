@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod debug;
-mod log_level;
+// mod debug;
+// mod log_level;
 
 // #[cfg_attr(not(feature = "pprof"), path = "pprof_disabled.rs")]
 // mod pprof;

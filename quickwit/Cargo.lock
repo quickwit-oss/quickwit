@@ -6733,7 +6733,6 @@ dependencies = [
  "quickwit-ingest",
  "quickwit-metastore",
  "quickwit-proto",
- "quickwit-rest-client",
  "quickwit-search",
  "quickwit-serve",
  "quickwit-storage",

@@ -14,7 +14,7 @@
 
 mod box_layer;
 mod box_service;
-// mod buffer;
+mod buffer;
 mod change;
 mod circuit_breaker;
 mod delay;
@@ -38,7 +38,7 @@ use std::pin::Pin;
 
 pub use box_layer::BoxLayer;
 pub use box_service::BoxService;
-// pub use buffer::{Buffer, BufferError, BufferLayer};
+pub use buffer::{Buffer, BufferError, BufferLayer};
 pub use change::Change;
 pub use circuit_breaker::{CircuitBreaker, CircuitBreakerEvaluator, CircuitBreakerLayer};
 pub use delay::{Delay, DelayLayer};

@@ -60,88 +60,88 @@ pub(super) fn debug_handler(
         .then(get_node_debug_infos)
 }
 
-async fn get_node_debug_infos(
-    cluster: Cluster,
-    query_params: DebugInfoQueryParams,
-) -> warp::reply::Response {
-    let node_id_patterns = if let Some(node_ids) = &query_params.node_ids {
-        match NodeIdGlobPatterns::try_from_comma_separated_patterns(node_ids) {
-            Ok(node_id_patterns) => node_id_patterns,
-            Err(error) => {
-                return warp::reply::with_status(
-                    format!(
-                        "failed to parse node ID glob patterns `{}`: {error}",
-                        query_params.node_ids.as_deref().unwrap_or("")
-                    ),
-                    StatusCode::BAD_REQUEST,
-                )
-                .into_response()
-            }
-        }
-    } else {
-        NodeIdGlobPatterns::default()
-    };
-    let target_roles: HashSet<QuickwitService> = if let Some(roles) = query_params.roles {
-        let target_roles_res = roles.split(',').map(|role| role.parse()).collect();
+// async fn get_node_debug_infos(
+//     cluster: Cluster,
+//     query_params: DebugInfoQueryParams,
+// ) -> warp::reply::Response {
+//     let node_id_patterns = if let Some(node_ids) = &query_params.node_ids {
+//         match NodeIdGlobPatterns::try_from_comma_separated_patterns(node_ids) {
+//             Ok(node_id_patterns) => node_id_patterns,
+//             Err(error) => {
+//                 return warp::reply::with_status(
+//                     format!(
+//                         "failed to parse node ID glob patterns `{}`: {error}",
+//                         query_params.node_ids.as_deref().unwrap_or("")
+//                     ),
+//                     StatusCode::BAD_REQUEST,
+//                 )
+//                 .into_response()
+//             }
+//         }
+//     } else {
+//         NodeIdGlobPatterns::default()
+//     };
+//     let target_roles: HashSet<QuickwitService> = if let Some(roles) = query_params.roles {
+//         let target_roles_res = roles.split(',').map(|role| role.parse()).collect();
 
-        match target_roles_res {
-            Ok(target_roles) => target_roles,
-            Err(error) => {
-                return warp::reply::with_status(
-                    format!("failed to parse roles `{roles}`: {error}"),
-                    StatusCode::BAD_REQUEST,
-                )
-                .into_response()
-            }
-        }
-    } else {
-        HashSet::new()
-    };
-    let ready_nodes = cluster.ready_nodes().await;
-    let mut debug_infos: HashMap<NodeId, JsonValue> = HashMap::with_capacity(ready_nodes.len());
+//         match target_roles_res {
+//             Ok(target_roles) => target_roles,
+//             Err(error) => {
+//                 return warp::reply::with_status(
+//                     format!("failed to parse roles `{roles}`: {error}"),
+//                     StatusCode::BAD_REQUEST,
+//                 )
+//                 .into_response()
+//             }
+//         }
+//     } else {
+//         HashSet::new()
+//     };
+//     let ready_nodes = cluster.ready_nodes().await;
+//     let mut debug_infos: HashMap<NodeId, JsonValue> = HashMap::with_capacity(ready_nodes.len());
 
-    let mut get_debug_info_futures = FuturesUnordered::new();
+//     let mut get_debug_info_futures = FuturesUnordered::new();
 
-    for ready_node in ready_nodes {
-        if node_id_patterns.matches(ready_node.node_id()) {
-            let node_id = ready_node.node_id().to_owned();
-            let client = DeveloperServiceClient::from_channel(
-                ready_node.grpc_advertise_addr(),
-                ready_node.channel(),
-                DeveloperApiServer::MAX_GRPC_MESSAGE_SIZE,
-            );
-            let roles = target_roles.iter().map(|role| role.to_string()).collect();
-            let request = GetDebugInfoRequest { roles };
-            let get_debug_info_future = async move {
-                let get_debug_info_res =
-                    timeout(Duration::from_secs(5), client.get_debug_info(request)).await;
-                (node_id, get_debug_info_res)
-            };
-            get_debug_info_futures.push(get_debug_info_future);
-        }
-    }
-    while let Some(get_debug_info_res) = get_debug_info_futures.next().await {
-        match get_debug_info_res {
-            (node_id, Ok(Ok(debug_info_response))) => {
-                match serde_json::from_slice(&debug_info_response.debug_info_json) {
-                    Ok(debug_info) => {
-                        debug_infos.insert(node_id, debug_info);
-                    }
-                    Err(error) => {
-                        error!(%node_id, %error, "failed to parse JSON debug info from node");
-                    }
-                };
-            }
-            (node_id, Ok(Err(error))) => {
-                error!(%node_id, %error, "failed to get debug info from node");
-            }
-            (node_id, Err(_elpased)) => {
-                error!(%node_id, "get debug info request timed out");
-            }
-        }
-    }
-    warp::reply::json(&debug_infos).into_response()
-}
+//     for ready_node in ready_nodes {
+//         if node_id_patterns.matches(ready_node.node_id()) {
+//             let node_id = ready_node.node_id().to_owned();
+//             let client = DeveloperServiceClient::from_channel(
+//                 ready_node.grpc_advertise_addr(),
+//                 ready_node.channel(),
+//                 DeveloperApiServer::MAX_GRPC_MESSAGE_SIZE,
+//             );
+//             let roles = target_roles.iter().map(|role| role.to_string()).collect();
+//             let request = GetDebugInfoRequest { roles };
+//             let get_debug_info_future = async move {
+//                 let get_debug_info_res =
+//                     timeout(Duration::from_secs(5), client.get_debug_info(request)).await;
+//                 (node_id, get_debug_info_res)
+//             };
+//             get_debug_info_futures.push(get_debug_info_future);
+//         }
+//     }
+//     while let Some(get_debug_info_res) = get_debug_info_futures.next().await {
+//         match get_debug_info_res {
+//             (node_id, Ok(Ok(debug_info_response))) => {
+//                 match serde_json::from_slice(&debug_info_response.debug_info_json) {
+//                     Ok(debug_info) => {
+//                         debug_infos.insert(node_id, debug_info);
+//                     }
+//                     Err(error) => {
+//                         error!(%node_id, %error, "failed to parse JSON debug info from node");
+//                     }
+//                 };
+//             }
+//             (node_id, Ok(Err(error))) => {
+//                 error!(%node_id, %error, "failed to get debug info from node");
+//             }
+//             (node_id, Err(_elpased)) => {
+//                 error!(%node_id, "get debug info request timed out");
+//             }
+//         }
+//     }
+//     warp::reply::json(&debug_infos).into_response()
+// }
 
 #[derive(Debug)]
 struct NodeIdGlobPatterns(HashSet<GlobPattern>, MatchOptions);

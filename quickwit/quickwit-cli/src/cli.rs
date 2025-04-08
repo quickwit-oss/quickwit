@@ -17,11 +17,11 @@ use clap::{arg, Arg, ArgAction, ArgMatches, Command};
 use quickwit_serve::EnvFilterReloadFn;
 use tracing::Level;
 
-use crate::index::{build_index_command, IndexCliCommand};
+// use crate::index::{build_index_command, IndexCliCommand};
 use crate::service::{build_run_command, RunCliCommand};
-use crate::source::{build_source_command, SourceCliCommand};
-use crate::split::{build_split_command, SplitCliCommand};
-use crate::tool::{build_tool_command, ToolCliCommand};
+// use crate::source::{build_source_command, SourceCliCommand};
+// use crate::split::{build_split_command, SplitCliCommand};
+// use crate::tool::{build_tool_command, ToolCliCommand};
 
 pub fn build_cli() -> Command {
     Command::new("Quickwit")
@@ -43,10 +43,10 @@ pub fn build_cli() -> Command {
             .required(false)
         )
         .subcommand(build_run_command().display_order(1))
-        .subcommand(build_index_command().display_order(2))
-        .subcommand(build_source_command().display_order(3))
-        .subcommand(build_split_command().display_order(4))
-        .subcommand(build_tool_command().display_order(5))
+        // .subcommand(build_index_command().display_order(2))
+        // .subcommand(build_source_command().display_order(3))
+        // .subcommand(build_split_command().display_order(4))
+        // .subcommand(build_tool_command().display_order(5))
         .arg_required_else_help(true)
         .disable_help_subcommand(true)
         .subcommand_required(true)
@@ -55,20 +55,20 @@ pub fn build_cli() -> Command {
 #[derive(Debug, PartialEq)]
 pub enum CliCommand {
     Run(RunCliCommand),
-    Index(IndexCliCommand),
-    Split(SplitCliCommand),
-    Source(SourceCliCommand),
-    Tool(ToolCliCommand),
+    // Index(IndexCliCommand),
+    // Split(SplitCliCommand),
+    // Source(SourceCliCommand),
+    // Tool(ToolCliCommand),
 }
 
 impl CliCommand {
     pub fn default_log_level(&self) -> Level {
         match self {
             CliCommand::Run(_) => Level::INFO,
-            CliCommand::Index(subcommand) => subcommand.default_log_level(),
-            CliCommand::Source(_) => Level::ERROR,
-            CliCommand::Split(_) => Level::ERROR,
-            CliCommand::Tool(_) => Level::ERROR,
+            // CliCommand::Index(subcommand) => subcommand.default_log_level(),
+            // CliCommand::Source(_) => Level::ERROR,
+            // CliCommand::Split(_) => Level::ERROR,
+            // CliCommand::Tool(_) => Level::ERROR,
         }
     }
 
@@ -77,22 +77,22 @@ impl CliCommand {
             .remove_subcommand()
             .context("failed to parse command")?;
         match subcommand.as_str() {
-            "index" => IndexCliCommand::parse_cli_args(submatches).map(CliCommand::Index),
+            // "index" => IndexCliCommand::parse_cli_args(submatches).map(CliCommand::Index),
             "run" => RunCliCommand::parse_cli_args(submatches).map(CliCommand::Run),
-            "source" => SourceCliCommand::parse_cli_args(submatches).map(CliCommand::Source),
-            "split" => SplitCliCommand::parse_cli_args(submatches).map(CliCommand::Split),
-            "tool" => ToolCliCommand::parse_cli_args(submatches).map(CliCommand::Tool),
+            // "source" => SourceCliCommand::parse_cli_args(submatches).map(CliCommand::Source),
+            // "split" => SplitCliCommand::parse_cli_args(submatches).map(CliCommand::Split),
+            // "tool" => ToolCliCommand::parse_cli_args(submatches).map(CliCommand::Tool),
             _ => bail!("unknown command `{subcommand}`"),
         }
     }
 
     pub async fn execute(self, env_filter_reload_fn: EnvFilterReloadFn) -> anyhow::Result<()> {
         match self {
-            CliCommand::Index(subcommand) => subcommand.execute().await,
+            // CliCommand::Index(subcommand) => subcommand.execute().await,
             CliCommand::Run(subcommand) => subcommand.execute(env_filter_reload_fn).await,
-            CliCommand::Source(subcommand) => subcommand.execute().await,
-            CliCommand::Split(subcommand) => subcommand.execute().await,
-            CliCommand::Tool(subcommand) => subcommand.execute().await,
+            // CliCommand::Source(subcommand) => subcommand.execute().await,
+            // CliCommand::Split(subcommand) => subcommand.execute().await,
+            // CliCommand::Tool(subcommand) => subcommand.execute().await,
         }
     }
 }

@@ -17,9 +17,8 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use hyper::http::HeaderValue;
-// use hyper::server::accept::Accept;
-// use hyper::server::conn::AddrIncoming;
 use hyper::{http, Method, StatusCode};
+use hyper_util::rt::{TokioExecutor, TokioIo};
 use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_config::{disable_ingest_v1, enable_ingest_v2};
 use quickwit_search::SearchService;
@@ -177,13 +176,13 @@ pub(crate) async fn start_rest_server(
     //     .recover(recover_fn)
     //     .boxed();
 
-    let extra_headers = warp::reply::with::headers(
-        quickwit_services
-            .node_config
-            .rest_config
-            .extra_headers
-            .clone(),
-    );
+    // let extra_headers = warp::reply::with::headers(
+    //     quickwit_services
+    //         .node_config
+    //         .rest_config
+    //         .extra_headers
+    //         .clone(),
+    // );
 
     // Combine all the routes together.
     // let rest_routes = api_v1_root_route
@@ -196,10 +195,11 @@ pub(crate) async fn start_rest_server(
     metrics_routes
         .with(request_counter)
         .recover(recover_fn_final)
-        .with(extra_headers)
+        // .with(extra_headers)
         .boxed();
 
-    let warp_service = warp::service(rest_routes);
+    // let warp_service = warp::service(rest_routes);
+    let warp_service = warp::service(metrics_routes);
     let compression_predicate = CompressionPredicate::from_env().and(NotForContentType::IMAGES);
     let cors = build_cors(&quickwit_services.node_config.rest_config.cors_allow_origins);
 
@@ -220,15 +220,39 @@ pub(crate) async fn start_rest_server(
         "starting REST server listening on {rest_listen_addr}"
     );
 
-    let incoming = AddrIncoming::from_listener(tcp_listener)?;
+    // let incoming = AddrIncoming::from_listener(tcp_listener)?;
+    //
 
-    let maybe_tls_incoming =
-        if let Some(tls_config) = &quickwit_services.node_config.rest_config.tls {
-            let rustls_config = tls::make_rustls_config(tls_config)?;
-            EitherIncoming::Left(tls::TlsAcceptor::new(rustls_config, incoming))
-        } else {
-            EitherIncoming::Right(incoming)
-        };
+    // TODO Readd tls
+
+    // let maybe_tls_incoming =
+    //     if let Some(tls_config) = &quickwit_services.node_config.rest_config.tls {
+    //         let rustls_config = tls::make_rustls_config(tls_config)?;
+    //         EitherIncoming::Left(tls::TlsAcceptor::new(rustls_config, incoming))
+    //     } else {
+    //         EitherIncoming::Right(incoming)
+    //     };
+
+    let serve_fut = async {
+    loop {
+        let (stream, _) = tcp_listener.accept().await?;
+        let io = TokioIo::new(stream);
+
+        tokio::task::spawn(async move {
+            let http_server_builder = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new());
+            if let Err(err) = http_server_builder
+                .serve_connection(io, service)
+                .await
+            {
+                eprintln!("Error serving connection: {:?}", err);
+            }
+        });
+    }
+    };
+
+        // let http_server_builder = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new());
+        // let connection = http_server_builder.serve_connection(io, service);
+
 
     // `graceful_shutdown()` seems to be blocking in presence of existing connections.
     // The following approach of dropping the serve supposedly is not bullet proof, but it seems to
@@ -237,12 +261,12 @@ pub(crate) async fn start_rest_server(
     // See more of the discussion here:
     // https://github.com/hyperium/hyper/issues/2386
 
-    let serve_fut = async move {
-        tokio::select! {
-             res = hyper::Server::builder(maybe_tls_incoming).serve(Shared::new(service)) => { res }
-             _ = shutdown_signal => { Ok(()) }
-        }
-    };
+    //     let serve_fut = async move {
+    //     tokio::select! {
+    //          res = hyper_util::server::legacy::Server::builder(maybe_tls_incoming).serve(Shared::new(service)) => { res }
+    //          _ = shutdown_signal => { Ok(()) }
+    //     }
+    // };
     let (serve_res, _trigger_res) = tokio::join!(serve_fut, readiness_trigger);
     serve_res?;
     Ok(())
@@ -489,11 +513,13 @@ mod tls {
     use std::vec::Vec;
     use std::{fs, io};
 
-    use hyper::server::accept::Accept;
-    use hyper::server::conn::{AddrIncoming, AddrStream};
+    // use hyper::server::accept::Accept;
+    // use hyper::server::conn::{AddrIncoming, AddrStream};
     use quickwit_config::TlsConfig;
     use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+    use tokio::net::TcpListener;
     use tokio_rustls::rustls::ServerConfig;
+    use tokio_rustls::Accept;
 
     fn error(err: String) -> io::Error {
         io::Error::new(io::ErrorKind::Other, err)
@@ -530,110 +556,110 @@ mod tls {
         Ok(rustls::PrivateKey(keys[0].clone()))
     }
 
-    pub struct TlsAcceptor {
-        config: Arc<ServerConfig>,
-        incoming: AddrIncoming,
-    }
+    // pub struct TlsAcceptor {
+    //     config: Arc<ServerConfig>,
+    //     incoming: TcpListener,
+    // }
 
-    impl TlsAcceptor {
-        pub fn new(config: Arc<ServerConfig>, incoming: AddrIncoming) -> TlsAcceptor {
-            TlsAcceptor { config, incoming }
-        }
-    }
+    // impl TlsAcceptor {
+    //     pub fn new(config: Arc<ServerConfig>, incoming: TcpListener) -> TlsAcceptor {
+    //         TlsAcceptor { config, incoming }
+    //     }
+    // }
 
-    impl Accept for TlsAcceptor {
-        type Conn = TlsStream;
-        type Error = io::Error;
+    // impl Accept for TlsAcceptor {
+    //     type Conn = TlsStream;
+    //     type Error = io::Error;
 
-        fn poll_accept(
-            self: Pin<&mut Self>,
-            cx: &mut Context<'_>,
-        ) -> Poll<Option<Result<Self::Conn, Self::Error>>> {
-            let pin = self.get_mut();
-            match ready!(Pin::new(&mut pin.incoming).poll_accept(cx)) {
-                Some(Ok(sock)) => Poll::Ready(Some(Ok(TlsStream::new(sock, pin.config.clone())))),
-                Some(Err(e)) => Poll::Ready(Some(Err(e))),
-                None => Poll::Ready(None),
-            }
-        }
-    }
+    //     fn poll_accept(
+    //         self: Pin<&mut Self>,
+    //         cx: &mut Context<'_>,
+    //     ) -> Poll<Option<Result<Self::Conn, Self::Error>>> {
+    //         let pin = self.get_mut();
+    //         match ready!(Pin::new(&mut pin.incoming).poll_accept(cx)) {
+    //             Some(Ok(sock)) => Poll::Ready(Some(Ok(TlsStream::new(sock, pin.config.clone())))),
+    //             Some(Err(e)) => Poll::Ready(Some(Err(e))),
+    //             None => Poll::Ready(None),
+    //         }
+    //     }
+    // }
 
-    enum State {
-        Handshaking(tokio_rustls::Accept<AddrStream>),
-        Streaming(tokio_rustls::server::TlsStream<AddrStream>),
-    }
+    // enum State {
+    //     Handshaking(tokio_rustls::Accept<AddrStream>),
+    //     Streaming(tokio_rustls::server::TlsStream<AddrStream>),
+    // }
 
     // tokio_rustls::server::TlsStream doesn't expose constructor methods,
     // so we have to TlsAcceptor::accept and handshake to have access to it
     // TlsStream implements AsyncRead/AsyncWrite handshaking tokio_rustls::Accept first
-    pub struct TlsStream {
-        state: State,
-    }
+    // pub struct TlsStream {
+    //     state: State,
+    // }
 
-    impl TlsStream {
-        fn new(stream: AddrStream, config: Arc<ServerConfig>) -> TlsStream {
-            let accept = tokio_rustls::TlsAcceptor::from(config).accept(stream);
-            TlsStream {
-                state: State::Handshaking(accept),
-            }
-        }
-    }
+    // impl TlsStream {
+    //     fn new(stream: AddrStream, config: Arc<ServerConfig>) -> TlsStream {
+    //         let accept = tokio_rustls::TlsAcceptor::from(config).accept(stream);
+    //         TlsStream {
+    //             state: State::Handshaking(accept),
+    //         }
+    //     }
+    // }
 
-    impl AsyncRead for TlsStream {
-        fn poll_read(
-            self: Pin<&mut Self>,
-            cx: &mut Context,
-            buf: &mut ReadBuf,
-        ) -> Poll<io::Result<()>> {
-            let pin = self.get_mut();
-            match pin.state {
-                State::Handshaking(ref mut accept) => match ready!(Pin::new(accept).poll(cx)) {
-                    Ok(mut stream) => {
-                        let result = Pin::new(&mut stream).poll_read(cx, buf);
-                        pin.state = State::Streaming(stream);
-                        result
-                    }
-                    Err(err) => Poll::Ready(Err(err)),
-                },
-                State::Streaming(ref mut stream) => Pin::new(stream).poll_read(cx, buf),
-            }
-        }
-    }
+    // impl AsyncRead for TlsStream {
+    //     fn poll_read(
+    //         self: Pin<&mut Self>,
+    //         cx: &mut Context,
+    //         buf: &mut ReadBuf,
+    //     ) -> Poll<io::Result<()>> {
+    //         let pin = self.get_mut();
+    //         match pin.state {
+    //             State::Handshaking(ref mut accept) => match ready!(Pin::new(accept).poll(cx)) {
+    //                 Ok(mut stream) => {
+    //                     let result = Pin::new(&mut stream).poll_read(cx, buf);
+    //                     pin.state = State::Streaming(stream);
+    //                     result
+    //                 }
+    //                 Err(err) => Poll::Ready(Err(err)),
+    //             },
+    //             State::Streaming(ref mut stream) => Pin::new(stream).poll_read(cx, buf),
+    //         }
+    //     }
+    // }
 
-    impl AsyncWrite for TlsStream {
-        fn poll_write(
-            self: Pin<&mut Self>,
-            cx: &mut Context<'_>,
-            buf: &[u8],
-        ) -> Poll<io::Result<usize>> {
-            let pin = self.get_mut();
-            match pin.state {
-                State::Handshaking(ref mut accept) => match ready!(Pin::new(accept).poll(cx)) {
-                    Ok(mut stream) => {
-                        let result = Pin::new(&mut stream).poll_write(cx, buf);
-                        pin.state = State::Streaming(stream);
-                        result
-                    }
-                    Err(err) => Poll::Ready(Err(err)),
-                },
-                State::Streaming(ref mut stream) => Pin::new(stream).poll_write(cx, buf),
-            }
-        }
+    // impl AsyncWrite for TlsStream {
+    //     fn poll_write(
+    //         self: Pin<&mut Self>,
+    //         cx: &mut Context<'_>,
+    //         buf: &[u8],
+    //     ) -> Poll<io::Result<usize>> {
+    //         let pin = self.get_mut();
+    //         match pin.state {
+    //             State::Handshaking(ref mut accept) => match ready!(Pin::new(accept).poll(cx)) {
+    //                 Ok(mut stream) => {
+    //                     let result = Pin::new(&mut stream).poll_write(cx, buf);
+    //                     pin.state = State::Streaming(stream);
+    //                     result
+    //                 }
+    //                 Err(err) => Poll::Ready(Err(err)),
+    //             },
+    //             State::Streaming(ref mut stream) => Pin::new(stream).poll_write(cx, buf),
+    //         }
+    //     }
 
-        fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-            match self.state {
-                State::Handshaking(_) => Poll::Ready(Ok(())),
-                State::Streaming(ref mut stream) => Pin::new(stream).poll_flush(cx),
-            }
-        }
+    //     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+    //         match self.state {
+    //             State::Handshaking(_) => Poll::Ready(Ok(())),
+    //             State::Streaming(ref mut stream) => Pin::new(stream).poll_flush(cx),
+    //         }
+    //     }
 
-        fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-            match self.state {
-                State::Handshaking(_) => Poll::Ready(Ok(())),
-                State::Streaming(ref mut stream) => Pin::new(stream).poll_shutdown(cx),
-            }
-        }
-    }
+    //     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+    //         match self.state {
+    //             State::Handshaking(_) => Poll::Ready(Ok(())),
+    //             State::Streaming(ref mut stream) => Pin::new(stream).poll_shutdown(cx),
+    //         }
+    //     }
+    // }
 
     pub fn make_rustls_config(config: &TlsConfig) -> anyhow::Result<Arc<ServerConfig>> {
         let certs = load_certs(&config.cert_path)?;
@@ -656,49 +682,49 @@ mod tls {
     }
 }
 
-enum EitherIncoming<L, R> {
-    Left(L),
-    Right(R),
-}
+// enum EitherIncoming<L, R> {
+//     Left(L),
+//     Right(R),
+// }
 
-impl<L, R> EitherIncoming<L, R> {
-    pub fn as_pin_mut(self: Pin<&mut Self>) -> EitherIncoming<Pin<&mut L>, Pin<&mut R>> {
-        // SAFETY: `get_unchecked_mut` is fine because we don't move anything.
-        // We can use `new_unchecked` because the `inner` parts are guaranteed
-        // to be pinned, as they come from `self` which is pinned, and we never
-        // offer an unpinned `&mut A` or `&mut B` through `Pin<&mut Self>`. We
-        // also don't have an implementation of `Drop`, nor manual `Unpin`.
-        unsafe {
-            match self.get_unchecked_mut() {
-                EitherIncoming::Left(inner) => EitherIncoming::Left(Pin::new_unchecked(inner)),
-                EitherIncoming::Right(inner) => EitherIncoming::Right(Pin::new_unchecked(inner)),
-            }
-        }
-    }
-}
+// impl<L, R> EitherIncoming<L, R> {
+//     pub fn as_pin_mut(self: Pin<&mut Self>) -> EitherIncoming<Pin<&mut L>, Pin<&mut R>> {
+//         // SAFETY: `get_unchecked_mut` is fine because we don't move anything.
+//         // We can use `new_unchecked` because the `inner` parts are guaranteed
+//         // to be pinned, as they come from `self` which is pinned, and we never
+//         // offer an unpinned `&mut A` or `&mut B` through `Pin<&mut Self>`. We
+//         // also don't have an implementation of `Drop`, nor manual `Unpin`.
+//         unsafe {
+//             match self.get_unchecked_mut() {
+//                 EitherIncoming::Left(inner) => EitherIncoming::Left(Pin::new_unchecked(inner)),
+//                 EitherIncoming::Right(inner) => EitherIncoming::Right(Pin::new_unchecked(inner)),
+//             }
+//         }
+//     }
+// }
 
-impl<L, R, E> Accept for EitherIncoming<L, R>
-where
-    L: Accept<Error = E>,
-    R: Accept<Error = E>,
-{
-    type Conn = tokio_util::either::Either<L::Conn, R::Conn>;
-    type Error = E;
+// impl<L, R, E> Accept for EitherIncoming<L, R>
+// where
+//     L: Accept<Error = E>,
+//     R: Accept<Error = E>,
+// {
+//     type Conn = tokio_util::either::Either<L::Conn, R::Conn>;
+//     type Error = E;
 
-    fn poll_accept(
-        self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Result<Self::Conn, Self::Error>>> {
-        match self.as_pin_mut() {
-            EitherIncoming::Left(l) => l
-                .poll_accept(cx)
-                .map(|opt| opt.map(|res| res.map(tokio_util::either::Either::Left))),
-            EitherIncoming::Right(r) => r
-                .poll_accept(cx)
-                .map(|opt| opt.map(|res| res.map(tokio_util::either::Either::Right))),
-        }
-    }
-}
+//     fn poll_accept(
+//         self: Pin<&mut Self>,
+//         cx: &mut std::task::Context<'_>,
+//     ) -> std::task::Poll<Option<Result<Self::Conn, Self::Error>>> {
+//         match self.as_pin_mut() {
+//             EitherIncoming::Left(l) => l
+//                 .poll_accept(cx)
+//                 .map(|opt| opt.map(|res| res.map(tokio_util::either::Either::Left))),
+//             EitherIncoming::Right(r) => r
+//                 .poll_accept(cx)
+//                 .map(|opt| opt.map(|res| res.map(tokio_util::either::Either::Right))),
+//         }
+//     }
+// }
 
 #[cfg(test)]
 mod tests {

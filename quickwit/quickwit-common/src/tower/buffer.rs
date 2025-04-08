@@ -17,6 +17,7 @@ use std::marker::PhantomData;
 use std::task::{Context, Poll};
 use std::{error, fmt};
 
+use futures::TryFutureExt as _;
 use tower::buffer::error::{Closed, ServiceError};
 use tower::buffer::Buffer as TowerBuffer;
 use tower::{Layer, Service};
@@ -60,6 +61,7 @@ where
 
 impl<S, R> Service<R> for Buffer<S, R>
 where
+    R: Send + 'static,
     S: Service<R>,
     S::Error: error::Error + From<BufferError> + Into<BoxError> + Clone + Send + Sync + 'static,
     S::Future: Send + 'static,
@@ -112,7 +114,10 @@ where S: Service<R>
 }
 
 impl<S, R> Clone for Buffer<S, R>
-where S: Service<R>
+where
+    S: Service<R>,
+    R: Send + 'static,
+    <S as Service<R>>::Future: Send + 'static,
 {
     fn clone(&self) -> Self {
         Self {

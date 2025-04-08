@@ -16,7 +16,7 @@
 
 mod build_info;
 // mod cluster_api;
-mod decompression;
+// mod decompression;
 // mod delete_task_api;
 mod developer_api;
 // mod elasticsearch_api;
@@ -27,15 +27,15 @@ mod grpc;
 // mod indexing_api;
 // mod ingest_api;
 // mod jaeger_api;
-mod load_shield;
+// mod load_shield;
 mod metrics;
-mod metrics_api;
+// mod metrics_api;
 // mod node_info_handler;
 // mod openapi;
 // mod otlp_api;
 mod rate_modulator;
-mod rest;
-mod rest_api_response;
+// mod rest;
+// mod rest_api_response;
 mod search_api;
 // pub(crate) mod simple_list;
 pub mod tcp_listener;
@@ -66,9 +66,7 @@ use quickwit_common::rate_limiter::RateLimiterSettings;
 use quickwit_common::retry::RetryParams;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::tower::{
-    BalanceChannel, BoxFutureInfaillible, BufferLayer, Change, CircuitBreakerEvaluator,
-    ConstantRate, EstimateRateLayer, EventListenerLayer, GrpcMetricsLayer, LoadShedLayer,
-    RateLimitLayer, RetryLayer, RetryPolicy, SmaRateEstimator, TimeoutLayer,
+    BalanceChannel, BoxFutureInfaillible, BufferLayer, Change, CircuitBreakerEvaluator, ConstantRate, EstimateRateLayer, EventListenerLayer, GrpcMetricsLayer, LoadShedLayer, RateLimitLayer, RetryLayer, RetryPolicy, SmaRateEstimator, TimeoutLayer
 };
 use quickwit_common::uri::Uri;
 use quickwit_common::{get_bool_from_env, spawn_named_task};
@@ -115,6 +113,7 @@ use tokio::sync::oneshot;
 use tonic_health::server::HealthReporter;
 use tonic_health::ServingStatus;
 use tower::timeout::Timeout;
+use tower::util::BoxCloneService;
 use tower::ServiceBuilder;
 use tracing::{debug, error, info, warn};
 use warp::{Filter, Rejection};
@@ -281,7 +280,9 @@ async fn start_ingest_client_if_needed(
         let ingest_service = IngestServiceClient::tower()
             .stack_ingest_layer(
                 ServiceBuilder::new()
+                    .check_clone()
                     .layer(EstimateRateLayer::<IngestRequest, _>::new(rate_estimator))
+                    // TODO readd buffer layer
                     .layer(BufferLayer::new(100))
                     .layer(RateLimitLayer::new(rate_modulator))
                     .into_inner(),

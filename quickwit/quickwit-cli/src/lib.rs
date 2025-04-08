@@ -31,8 +31,8 @@ use quickwit_config::{
 use quickwit_indexing::check_source_connectivity;
 use quickwit_metastore::{IndexMetadataResponseExt, MetastoreResolver};
 use quickwit_proto::metastore::{IndexMetadataRequest, MetastoreService, MetastoreServiceClient};
-use quickwit_rest_client::models::Timeout;
-use quickwit_rest_client::rest_client::{QuickwitClient, QuickwitClientBuilder, DEFAULT_BASE_URL};
+// use quickwit_rest_client::models::Timeout;
+// use quickwit_rest_client::rest_client::{QuickwitClient, QuickwitClientBuilder, DEFAULT_BASE_URL};
 use quickwit_storage::{load_file, StorageResolver};
 use reqwest::Url;
 use tabled::settings::object::Rows;
@@ -45,16 +45,17 @@ use crate::checklist::run_checklist;
 
 pub mod checklist;
 pub mod cli;
-pub mod index;
+// pub mod index;
+
 #[cfg(feature = "jemalloc")]
 pub mod jemalloc;
 pub mod logger;
 pub mod metrics;
 pub mod service;
-pub mod source;
-pub mod split;
-pub mod stats;
-pub mod tool;
+// pub mod source;
+// pub mod split;
+// pub mod stats;
+// pub mod tool;
 
 /// Throughput calculation window size.
 const THROUGHPUT_WINDOW_SIZE: usize = 5;
@@ -74,120 +75,120 @@ fn config_cli_arg() -> Arg {
         .display_order(1)
 }
 
-fn client_args() -> Vec<Arg> {
-    vec![
-        arg!(--"endpoint" <QW_CLUSTER_ENDPOINT> "Quickwit cluster endpoint.")
-            .default_value("http://127.0.0.1:7280")
-            .env("QW_CLUSTER_ENDPOINT")
-            .required(false)
-            .display_order(1)
-            .global(true),
-        Arg::new("timeout")
-            .long("timeout")
-            .help("Duration of the timeout.")
-            .required(false)
-            .global(true)
-            .display_order(2),
-        Arg::new("connect-timeout")
-            .long("connect-timeout")
-            .help("Duration of the connect timeout.")
-            .required(false)
-            .global(true)
-            .display_order(3),
-    ]
-}
+// fn client_args() -> Vec<Arg> {
+//     vec![
+//         arg!(--"endpoint" <QW_CLUSTER_ENDPOINT> "Quickwit cluster endpoint.")
+//             .default_value("http://127.0.0.1:7280")
+//             .env("QW_CLUSTER_ENDPOINT")
+//             .required(false)
+//             .display_order(1)
+//             .global(true),
+//         Arg::new("timeout")
+//             .long("timeout")
+//             .help("Duration of the timeout.")
+//             .required(false)
+//             .global(true)
+//             .display_order(2),
+//         Arg::new("connect-timeout")
+//             .long("connect-timeout")
+//             .help("Duration of the connect timeout.")
+//             .required(false)
+//             .global(true)
+//             .display_order(3),
+//     ]
+// }
 
-#[derive(Debug, Eq, PartialEq)]
-pub struct ClientArgs {
-    pub cluster_endpoint: Url,
-    pub connect_timeout: Option<Timeout>,
-    pub timeout: Option<Timeout>,
-    pub commit_timeout: Option<Timeout>,
-}
+// #[derive(Debug, Eq, PartialEq)]
+// pub struct ClientArgs {
+//     pub cluster_endpoint: Url,
+//     pub connect_timeout: Option<Timeout>,
+//     pub timeout: Option<Timeout>,
+//     pub commit_timeout: Option<Timeout>,
+// }
 
-impl Default for ClientArgs {
-    fn default() -> Self {
-        Self {
-            cluster_endpoint: Url::parse(DEFAULT_BASE_URL).unwrap(),
-            connect_timeout: None,
-            timeout: None,
-            commit_timeout: None,
-        }
-    }
-}
+// impl Default for ClientArgs {
+//     fn default() -> Self {
+//         Self {
+//             cluster_endpoint: Url::parse(DEFAULT_BASE_URL).unwrap(),
+//             connect_timeout: None,
+//             timeout: None,
+//             commit_timeout: None,
+//         }
+//     }
+// }
 
-impl ClientArgs {
-    pub fn client_builder(self) -> QuickwitClientBuilder {
-        let mut builder = QuickwitClientBuilder::new(self.cluster_endpoint);
-        if let Some(connect_timeout) = self.connect_timeout {
-            builder = builder.connect_timeout(connect_timeout);
-        }
-        if let Some(timeout) = self.timeout {
-            builder = builder.timeout(timeout);
-            builder = builder.search_timeout(timeout);
-            builder = builder.ingest_timeout(timeout);
-        }
-        if let Some(commit_timeout) = self.commit_timeout {
-            builder = builder.commit_timeout(commit_timeout);
-        }
-        builder
-    }
+// impl ClientArgs {
+//     pub fn client_builder(self) -> QuickwitClientBuilder {
+//         let mut builder = QuickwitClientBuilder::new(self.cluster_endpoint);
+//         if let Some(connect_timeout) = self.connect_timeout {
+//             builder = builder.connect_timeout(connect_timeout);
+//         }
+//         if let Some(timeout) = self.timeout {
+//             builder = builder.timeout(timeout);
+//             builder = builder.search_timeout(timeout);
+//             builder = builder.ingest_timeout(timeout);
+//         }
+//         if let Some(commit_timeout) = self.commit_timeout {
+//             builder = builder.commit_timeout(commit_timeout);
+//         }
+//         builder
+//     }
 
-    pub fn client(self) -> QuickwitClient {
-        self.client_builder().build()
-    }
+//     pub fn client(self) -> QuickwitClient {
+//         self.client_builder().build()
+//     }
 
-    pub fn parse_for_ingest(matches: &mut ArgMatches) -> anyhow::Result<Self> {
-        Self::parse_inner(matches, true)
-    }
+//     pub fn parse_for_ingest(matches: &mut ArgMatches) -> anyhow::Result<Self> {
+//         Self::parse_inner(matches, true)
+//     }
 
-    pub fn parse(matches: &mut ArgMatches) -> anyhow::Result<Self> {
-        Self::parse_inner(matches, false)
-    }
+//     pub fn parse(matches: &mut ArgMatches) -> anyhow::Result<Self> {
+//         Self::parse_inner(matches, false)
+//     }
 
-    fn parse_inner(matches: &mut ArgMatches, process_ingest: bool) -> anyhow::Result<Self> {
-        let cluster_endpoint = matches
-            .remove_one::<String>("endpoint")
-            .map(|endpoint_str| Url::from_str(&endpoint_str))
-            .expect("`endpoint` should be a required arg.")?;
-        let connect_timeout =
-            if let Some(duration) = matches.remove_one::<String>("connect-timeout") {
-                Some(parse_duration_or_none(&duration)?)
-            } else {
-                None
-            };
-        let timeout = if let Some(duration) = matches.remove_one::<String>("timeout") {
-            Some(parse_duration_or_none(&duration)?)
-        } else {
-            None
-        };
-        let commit_timeout = if process_ingest {
-            if let Some(duration) = matches.remove_one::<String>("commit-timeout") {
-                Some(parse_duration_or_none(&duration)?)
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-        Ok(Self {
-            cluster_endpoint,
-            connect_timeout,
-            timeout,
-            commit_timeout,
-        })
-    }
-}
+//     fn parse_inner(matches: &mut ArgMatches, process_ingest: bool) -> anyhow::Result<Self> {
+//         let cluster_endpoint = matches
+//             .remove_one::<String>("endpoint")
+//             .map(|endpoint_str| Url::from_str(&endpoint_str))
+//             .expect("`endpoint` should be a required arg.")?;
+//         let connect_timeout =
+//             if let Some(duration) = matches.remove_one::<String>("connect-timeout") {
+//                 Some(parse_duration_or_none(&duration)?)
+//             } else {
+//                 None
+//             };
+//         let timeout = if let Some(duration) = matches.remove_one::<String>("timeout") {
+//             Some(parse_duration_or_none(&duration)?)
+//         } else {
+//             None
+//         };
+//         let commit_timeout = if process_ingest {
+//             if let Some(duration) = matches.remove_one::<String>("commit-timeout") {
+//                 Some(parse_duration_or_none(&duration)?)
+//             } else {
+//                 None
+//             }
+//         } else {
+//             None
+//         };
+//         Ok(Self {
+//             cluster_endpoint,
+//             connect_timeout,
+//             timeout,
+//             commit_timeout,
+//         })
+//     }
+// }
 
-pub fn parse_duration_or_none(duration_with_unit_str: &str) -> anyhow::Result<Timeout> {
-    if duration_with_unit_str == "none" {
-        Ok(Timeout::none())
-    } else {
-        humantime::parse_duration(duration_with_unit_str)
-            .map(Timeout::new)
-            .context("failed to parse timeout")
-    }
-}
+// pub fn parse_duration_or_none(duration_with_unit_str: &str) -> anyhow::Result<Timeout> {
+//     if duration_with_unit_str == "none" {
+//         Ok(Timeout::none())
+//     } else {
+//         humantime::parse_duration(duration_with_unit_str)
+//             .map(Timeout::new)
+//             .context("failed to parse timeout")
+//     }
+// }
 
 pub fn start_actor_runtimes(
     runtimes_config: RuntimesConfig,
