@@ -18,9 +18,11 @@ aws-sdk-s3 = { workspace = true }
 aws-sdk-sqs = { workspace = true, optional = true }
 aws-smithy-async = { workspace = true }
 aws-smithy-runtime = { workspace = true }
+aws-smithy-http-client = { workspace = true }
 aws-types = { workspace = true }
 
 futures = { workspace = true }
+http-body-util = { workspace = true }
 hyper = { workspace = true }
 hyper-rustls = { workspace = true }
 tokio = { workspace = true }

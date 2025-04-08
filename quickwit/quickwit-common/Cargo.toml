@@ -24,6 +24,7 @@ home = { workspace = true }
 hostname = { workspace = true }
 http = { workspace = true }
 hyper = { workspace = true }
+hyper-util = {workspace = true, optional=true}
 itertools = { workspace = true }
 once_cell = { workspace = true }
 pin-project = { workspace = true }
@@ -45,7 +46,7 @@ tower = { workspace = true }
 tracing = { workspace = true }
 
 [features]
-testsuite = []
+testsuite = ["hyper-util"]
 named_tasks = ["tokio/tracing"]
 
 [dev-dependencies]

@@ -33,26 +33,26 @@ use tracing::{error, info};
 use warp::filters::log::Info;
 use warp::{redirect, Filter, Rejection, Reply};
 
-use crate::cluster_api::cluster_handler;
+// use crate::cluster_api::cluster_handler;
 use crate::decompression::{CorruptedData, UnsupportedEncoding};
-use crate::delete_task_api::delete_task_api_handlers;
-use crate::developer_api::developer_api_routes;
-use crate::elasticsearch_api::elastic_api_handlers;
-use crate::health_check_api::health_check_handlers;
-use crate::index_api::index_management_handlers;
-use crate::indexing_api::indexing_get_handler;
-use crate::ingest_api::ingest_api_handlers;
-use crate::jaeger_api::jaeger_api_handlers;
+// use crate::delete_task_api::delete_task_api_handlers;
+// use crate::developer_api::developer_api_routes;
+// use crate::elasticsearch_api::elastic_api_handlers;
+// use crate::health_check_api::health_check_handlers;
+// use crate::index_api::index_management_handlers;
+// use crate::indexing_api::indexing_get_handler;
+// use crate::ingest_api::ingest_api_handlers;
+// use crate::jaeger_api::jaeger_api_handlers;
 use crate::metrics_api::metrics_handler;
-use crate::node_info_handler::node_info_handler;
-use crate::otlp_api::otlp_ingest_api_handlers;
+// use crate::node_info_handler::node_info_handler;
+// use crate::otlp_api::otlp_ingest_api_handlers;
 use crate::rest_api_response::{RestApiError, RestApiResponse};
-use crate::search_api::{
-    search_get_handler, search_plan_get_handler, search_plan_post_handler, search_post_handler,
-    search_stream_handler,
-};
-use crate::template_api::index_template_api_handlers;
-use crate::ui_handler::ui_handler;
+// use crate::search_api::{
+//     search_get_handler, search_plan_get_handler, search_plan_post_handler, search_post_handler,
+//     search_stream_handler,
+// };
+// use crate::template_api::index_template_api_handlers;
+// use crate::ui_handler::ui_handler;
 use crate::{BodyFormat, BuildInfo, QuickwitServices, RuntimeInfo};
 
 #[derive(Debug)]
@@ -141,19 +141,19 @@ pub(crate) async fn start_rest_server(
             .inc();
     });
     // Docs routes
-    let api_doc = warp::path("openapi.json")
-        .and(warp::get())
-        .map(|| warp::reply::json(&crate::openapi::build_docs()))
-        .recover(recover_fn)
-        .boxed();
+    // let api_doc = warp::path("openapi.json")
+    //     .and(warp::get())
+    //     .map(|| warp::reply::json(&crate::openapi::build_docs()))
+    //     .recover(recover_fn)
+    //     .boxed();
 
-    // `/health/*` routes.
-    let health_check_routes = health_check_handlers(
-        quickwit_services.cluster.clone(),
-        quickwit_services.indexing_service_opt.clone(),
-        quickwit_services.janitor_service_opt.clone(),
-    )
-    .boxed();
+    // // `/health/*` routes.
+    // let health_check_routes = health_check_handlers(
+    //     quickwit_services.cluster.clone(),
+    //     quickwit_services.indexing_service_opt.clone(),
+    //     quickwit_services.janitor_service_opt.clone(),
+    // )
+    // .boxed();
 
     // `/metrics` route.
     let metrics_routes = warp::path("metrics")
@@ -162,20 +162,20 @@ pub(crate) async fn start_rest_server(
         .recover(recover_fn)
         .boxed();
 
-    // `/api/developer/*` route.
-    let developer_routes = developer_api_routes(
-        quickwit_services.cluster.clone(),
-        quickwit_services.env_filter_reload_fn.clone(),
-    )
-    .boxed();
-    // `/api/v1/*` routes.
-    let api_v1_root_route = api_v1_routes(quickwit_services.clone());
+    // // `/api/developer/*` route.
+    // let developer_routes = developer_api_routes(
+    //     quickwit_services.cluster.clone(),
+    //     quickwit_services.env_filter_reload_fn.clone(),
+    // )
+    // .boxed();
+    // // `/api/v1/*` routes.
+    // let api_v1_root_route = api_v1_routes(quickwit_services.clone());
 
-    let redirect_root_to_ui_route = warp::path::end()
-        .and(warp::get())
-        .map(|| redirect(http::Uri::from_static("/ui/search")))
-        .recover(recover_fn)
-        .boxed();
+    // let redirect_root_to_ui_route = warp::path::end()
+    //     .and(warp::get())
+    //     .map(|| redirect(http::Uri::from_static("/ui/search")))
+    //     .recover(recover_fn)
+    //     .boxed();
 
     let extra_headers = warp::reply::with::headers(
         quickwit_services
@@ -186,13 +186,14 @@ pub(crate) async fn start_rest_server(
     );
 
     // Combine all the routes together.
-    let rest_routes = api_v1_root_route
-        .or(api_doc)
-        .or(redirect_root_to_ui_route)
-        .or(ui_handler())
-        .or(health_check_routes)
-        .or(metrics_routes)
-        .or(developer_routes)
+    // let rest_routes = api_v1_root_route
+        // .or(api_doc)
+        // .or(redirect_root_to_ui_route)
+        // .or(ui_handler())
+        // .or(health_check_routes)
+        // .or(metrics_routes)
+        // .or(developer_routes)
+    metrics_routes
         .with(request_counter)
         .recover(recover_fn_final)
         .with(extra_headers)
@@ -247,80 +248,80 @@ pub(crate) async fn start_rest_server(
     Ok(())
 }
 
-fn search_routes(
-    search_service: Arc<dyn SearchService>,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    search_get_handler(search_service.clone())
-        .or(search_post_handler(search_service.clone()))
-        .or(search_plan_get_handler(search_service.clone()))
-        .or(search_plan_post_handler(search_service.clone()))
-        .or(search_stream_handler(search_service))
-        .recover(recover_fn)
-        .boxed()
-}
+// fn search_routes(
+//     search_service: Arc<dyn SearchService>,
+// ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+//     search_get_handler(search_service.clone())
+//         .or(search_post_handler(search_service.clone()))
+//         .or(search_plan_get_handler(search_service.clone()))
+//         .or(search_plan_post_handler(search_service.clone()))
+//         .or(search_stream_handler(search_service))
+//         .recover(recover_fn)
+//         .boxed()
+// }
 
-fn api_v1_routes(
-    quickwit_services: Arc<QuickwitServices>,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    let api_v1_root_url = warp::path!("api" / "v1" / ..);
-    api_v1_root_url.and(
-        elastic_api_handlers(
-            quickwit_services.cluster.clone(),
-            quickwit_services.node_config.clone(),
-            quickwit_services.search_service.clone(),
-            quickwit_services.ingest_service.clone(),
-            quickwit_services.ingest_router_service.clone(),
-            quickwit_services.metastore_client.clone(),
-            quickwit_services.index_manager.clone(),
-            !disable_ingest_v1(),
-            enable_ingest_v2(),
-        )
-        .or(cluster_handler(quickwit_services.cluster.clone()))
-        .boxed()
-        .or(node_info_handler(
-            BuildInfo::get(),
-            RuntimeInfo::get(),
-            quickwit_services.node_config.clone(),
-        ))
-        .boxed()
-        .or(indexing_get_handler(
-            quickwit_services.indexing_service_opt.clone(),
-        ))
-        .boxed()
-        .or(search_routes(quickwit_services.search_service.clone()))
-        .boxed()
-        .or(ingest_api_handlers(
-            quickwit_services.ingest_router_service.clone(),
-            quickwit_services.ingest_service.clone(),
-            quickwit_services.node_config.ingest_api_config.clone(),
-            !disable_ingest_v1(),
-            enable_ingest_v2(),
-        ))
-        .boxed()
-        .or(otlp_ingest_api_handlers(
-            quickwit_services.otlp_logs_service_opt.clone(),
-            quickwit_services.otlp_traces_service_opt.clone(),
-        ))
-        .boxed()
-        .or(index_management_handlers(
-            quickwit_services.index_manager.clone(),
-            quickwit_services.node_config.clone(),
-        ))
-        .boxed()
-        .or(delete_task_api_handlers(
-            quickwit_services.metastore_client.clone(),
-        ))
-        .boxed()
-        .or(jaeger_api_handlers(
-            quickwit_services.jaeger_service_opt.clone(),
-        ))
-        .boxed()
-        .or(index_template_api_handlers(
-            quickwit_services.metastore_client.clone(),
-        ))
-        .boxed(),
-    )
-}
+// fn api_v1_routes(
+//     quickwit_services: Arc<QuickwitServices>,
+// ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+//     let api_v1_root_url = warp::path!("api" / "v1" / ..);
+//     api_v1_root_url.and(
+//         elastic_api_handlers(
+//             quickwit_services.cluster.clone(),
+//             quickwit_services.node_config.clone(),
+//             quickwit_services.search_service.clone(),
+//             quickwit_services.ingest_service.clone(),
+//             quickwit_services.ingest_router_service.clone(),
+//             quickwit_services.metastore_client.clone(),
+//             quickwit_services.index_manager.clone(),
+//             !disable_ingest_v1(),
+//             enable_ingest_v2(),
+//         )
+//         .or(cluster_handler(quickwit_services.cluster.clone()))
+//         .boxed()
+//         .or(node_info_handler(
+//             BuildInfo::get(),
+//             RuntimeInfo::get(),
+//             quickwit_services.node_config.clone(),
+//         ))
+//         .boxed()
+//         .or(indexing_get_handler(
+//             quickwit_services.indexing_service_opt.clone(),
+//         ))
+//         .boxed()
+//         .or(search_routes(quickwit_services.search_service.clone()))
+//         .boxed()
+//         .or(ingest_api_handlers(
+//             quickwit_services.ingest_router_service.clone(),
+//             quickwit_services.ingest_service.clone(),
+//             quickwit_services.node_config.ingest_api_config.clone(),
+//             !disable_ingest_v1(),
+//             enable_ingest_v2(),
+//         ))
+//         .boxed()
+//         .or(otlp_ingest_api_handlers(
+//             quickwit_services.otlp_logs_service_opt.clone(),
+//             quickwit_services.otlp_traces_service_opt.clone(),
+//         ))
+//         .boxed()
+//         .or(index_management_handlers(
+//             quickwit_services.index_manager.clone(),
+//             quickwit_services.node_config.clone(),
+//         ))
+//         .boxed()
+//         .or(delete_task_api_handlers(
+//             quickwit_services.metastore_client.clone(),
+//         ))
+//         .boxed()
+//         .or(jaeger_api_handlers(
+//             quickwit_services.jaeger_service_opt.clone(),
+//         ))
+//         .boxed()
+//         .or(index_template_api_handlers(
+//             quickwit_services.metastore_client.clone(),
+//         ))
+//         .boxed(),
+//     )
+// }
 
 /// This function returns a formatted error based on the given rejection reason.
 ///

@@ -25,6 +25,7 @@ hex = { workspace = true }
 http-serde = { workspace = true }
 humantime = { workspace = true }
 hyper = { workspace = true }
+hyper-util = {workspace = true}
 hyper-rustls = { workspace = true }
 itertools = { workspace = true }
 mime_guess = { workspace = true }
