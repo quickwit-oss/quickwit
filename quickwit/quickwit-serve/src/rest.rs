@@ -17,8 +17,8 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use hyper::http::HeaderValue;
-use hyper::server::accept::Accept;
-use hyper::server::conn::AddrIncoming;
+// use hyper::server::accept::Accept;
+// use hyper::server::conn::AddrIncoming;
 use hyper::{http, Method, StatusCode};
 use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_config::{disable_ingest_v1, enable_ingest_v2};
@@ -111,7 +111,7 @@ impl CompressionPredicate {
 
 impl Predicate for CompressionPredicate {
     fn should_compress<B>(&self, response: &http::Response<B>) -> bool
-    where B: hyper::body::HttpBody {
+    where B: hyper::body::Body {
         if let Some(size_above) = self.size_above_opt {
             size_above.should_compress(response)
         } else {

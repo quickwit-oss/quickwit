@@ -85,10 +85,10 @@ impl<K> Unpin for ChangeStreamAdapter<K> where K: Hash + Eq + Clone {}
 type HttpResponse = http::Response<tonic::body::Body>;
 type ChangeStream<K> = UnboundedReceiverStream<Result<TowerChange<K, Channel>, Infallible>>;
 type Discover<K> = PendingRequestsDiscover<ChangeStream<K>, CompleteOnResponse>;
-type ChannelImpl<K> = Buffer<Balance<Discover<K>, http::Request<tonic::body::Body>>, http::Request<tonic::body::Body>>;
+type ChannelImpl<K> = Buffer<http::Request<tonic::body::Body>, <Balance<Discover<K>, http::Request<tonic::body::Body>> as Service<http::Request<tonic::body::Body>>>::Future >;
 
 #[derive(Clone)]
-pub struct BalanceChannel<K: Hash + Eq + Clone> {
+pub struct BalanceChannel<K: Hash + Eq + Clone + Send> {
     inner: ChannelImpl<K>,
     connection_keys_rx: watch::Receiver<HashSet<K>>,
 }
@@ -172,7 +172,7 @@ where
 
 impl<K> Service<http::Request<tonic::body::Body>> for BalanceChannel<K>
 where
-    K: Hash + Eq + Clone,
+    K: Hash + Eq + Clone + Send,
 {
     type Response = HttpResponse;
     type Error = BoxError;

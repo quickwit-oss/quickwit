@@ -250,14 +250,14 @@ tonic = { version = "0.13.0", features = ["gzip", "_tls-any", "tls-native-roots"
 tonic-build = "0.13.0"
 tonic-health = "0.13.0"
 tonic-reflection = "0.13"
-tower = { version = "0.4.13", features = [
+tower = { version = "0.5", features = [
   "balance",
   "buffer",
   "load",
   "retry",
   "util",
 ] }
-tower-http = { version = "0.4.0", features = [
+tower-http = { version = "0.6", features = [
   "compression-zstd",
   "compression-gzip",
   "cors",

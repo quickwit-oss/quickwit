@@ -17,7 +17,6 @@ use std::marker::PhantomData;
 use std::task::{Context, Poll};
 use std::{error, fmt};
 
-use futures::TryFutureExt;
 use tower::buffer::error::{Closed, ServiceError};
 use tower::buffer::Buffer as TowerBuffer;
 use tower::{Layer, Service};
@@ -37,7 +36,7 @@ pub struct Buffer<S, R>
 where S: Service<R>
 {
     bound: usize,
-    inner: TowerBuffer<S, R>,
+    inner: TowerBuffer<R, <S as Service<R>>::Future>,
 }
 
 impl<S, R> Buffer<S, R>
