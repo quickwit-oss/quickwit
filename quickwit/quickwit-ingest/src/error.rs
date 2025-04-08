@@ -17,7 +17,7 @@ use std::io;
 use mrecordlog::error::*;
 use quickwit_actors::AskError;
 use quickwit_common::rate_limited_error;
-use quickwit_common::tower::BufferError;
+// use quickwit_common::tower::BufferError;
 pub(crate) use quickwit_proto::error::{grpc_error_to_grpc_status, grpc_status_to_service_error};
 use quickwit_proto::ingest::router::{IngestFailure, IngestFailureReason};
 use quickwit_proto::ingest::{IngestV2Error, RateLimitingCause};
@@ -59,14 +59,14 @@ impl From<AskError<IngestServiceError>> for IngestServiceError {
     }
 }
 
-impl From<BufferError> for IngestServiceError {
-    fn from(error: BufferError) -> Self {
-        match error {
-            BufferError::Closed => IngestServiceError::Unavailable(error.to_string()),
-            BufferError::Unknown => IngestServiceError::Internal(error.to_string()),
-        }
-    }
-}
+// impl From<BufferError> for IngestServiceError {
+//     fn from(error: BufferError) -> Self {
+//         match error {
+//             BufferError::Closed => IngestServiceError::Unavailable(error.to_string()),
+//             BufferError::Unknown => IngestServiceError::Internal(error.to_string()),
+//         }
+//     }
+// }
 
 impl From<io::Error> for IngestServiceError {
     fn from(io_error: io::Error) -> Self {

@@ -52,13 +52,7 @@ pub async fn wait_for_server_ready(socket_addr: SocketAddr) -> anyhow::Result<()
         .path_and_query("/")
         .build()?;
 
-    // Get the host and the port
-    let host = uri.host().expect("uri has no host");
-    let port = uri.port_u16().unwrap_or(80);
-    let address = format!("{}:{}", host, port);
-
     while num_attempts < max_num_attempts {
-
         tokio::time::sleep(Duration::from_millis(50 * (num_attempts + 1))).await;
         let mut http = hyper_util::client::legacy::connect::HttpConnector::new();
         match http.call(uri.clone()).await {
