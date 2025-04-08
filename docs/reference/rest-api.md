@@ -336,7 +336,7 @@ Updates the configurations of an index. This endpoint follows PUT semantics, whi
 
 :::warning
 
-If you use the ingest or ES bulk API (V2), the old doc mapping will still be used to validate new documents that end up being persisted on existing shards (see [#5738](https://github.com/quickwit-oss/quickwit/issues/)).
+If you use the ingest or ES bulk API (V2), the old doc mapping will still be used to validate new documents that end up being persisted on existing shards (see [#5738](https://github.com/quickwit-oss/quickwit/issues/5738)).
 
 :::
 
