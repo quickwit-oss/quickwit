@@ -1,22 +1,9 @@
-// Copyright 2021-Present Datadog, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 use std::time::Duration;
 
 use prost::Message;
 use prost_types::Any;
 use quickwit_config::service::QuickwitService;
+use quickwit_datetime::{parse_date_time_str, DateTimeInputFormat};
 use quickwit_proto::cloudprem::*;
 use serde_json::Value;
 use tonic::Request;
@@ -24,6 +11,7 @@ use tonic::Request;
 use crate::test_utils::{ClusterSandbox, ClusterSandboxBuilder};
 
 const TEST_CERT: &[u8] = include_bytes!("../../test_data/test_cert_main_ca.crt");
+const TEST_DATA: &[u8] = include_bytes!("../../test_data/test_data.json");
 
 fn build_list_request(query: &QueryNode) -> ListRequest {
     let any_query = Any {
@@ -35,9 +23,38 @@ fn build_list_request(query: &QueryNode) -> ListRequest {
         num_events_to_fetch: 5,
         should_compute_count: true,
         columns: Vec::new(), // ?
-        sort: Vec::new(),    // check in staging what is always sent
+        // TODO check in staging what is sent
+        sort: vec![
+            SortKv {
+                ascending: false,
+                name: "timestamp".to_string(),
+                path: "timestamp".to_string(),
+            },
+            SortKv {
+                ascending: false,
+                name: "tiebreaker".to_string(),
+                path: "tiebreaker".to_string(),
+            },
+        ],
         org_id: 2,
     }
+}
+
+// assert two json are equal, ignoring some known issues
+#[track_caller]
+fn assert_eq_fuzzy(left: &Value, right: &Value) {
+    let mut left = left.clone();
+    let mut right = right.clone();
+    // this get converted from integer to date string
+    left.as_object_mut().unwrap().remove("discovery_timestamp");
+    right.as_object_mut().unwrap().remove("discovery_timestamp");
+    // we don't store these?
+    right
+        .as_object_mut()
+        .unwrap()
+        .remove("ingest_size_in_bytes");
+    right.as_object_mut().unwrap().remove("error");
+    assert_eq!(left, right);
 }
 
 fn authenticated_request<T>(raw_request: T) -> Request<T> {
@@ -90,13 +107,14 @@ async fn setup_env(docs: &[Value]) -> ClusterSandbox {
 }
 
 #[tokio::test]
-async fn test_simple_list() {
-    let sandbox = setup_env(&[]).await;
+async fn test_list() {
+    let data: Vec<Value> = serde_json::from_slice(TEST_DATA).unwrap();
+    let sandbox = setup_env(&data).await;
 
     let mut client = sandbox.cloudprem_client();
 
     let query_node = QueryNode {
-        node: Some(query_node::Node::All(MatchAllQueryNode {})),
+        node: Some(query_node::Node::None(MatchNoneQueryNode {})),
     };
     let request = build_list_request(&query_node);
 
@@ -108,5 +126,83 @@ async fn test_simple_list() {
     assert_eq!(res.count, 0);
     assert_eq!(res.streams, vec![Stream { events: Vec::new() }]);
 
+    let query_node = QueryNode {
+        node: Some(query_node::Node::All(MatchAllQueryNode {})),
+    };
+    let request = build_list_request(&query_node);
+
+    let res = client.list(authenticated_request(request)).await.unwrap();
+    let res = res.into_inner();
+    assert_eq!(res.count as usize, data.len());
+    assert_eq!(res.streams[0].events.len(), data.len());
+
+    let parse_res =
+        |i: usize| serde_json::from_str(&res.streams[0].events[i].content_json).unwrap();
+    let event_tracker = |i: usize| res.streams[0].events[i].tracker.as_ref().unwrap();
+
+    for (i, doc) in data.iter().enumerate() {
+        assert_eq_fuzzy(&parse_res(i), doc);
+        assert_eq!(
+            event_tracker(i).id,
+            data[i].get("id").unwrap().as_str().unwrap()
+        );
+        let timestamp_str = doc.get("timestamp").unwrap().as_str().unwrap();
+        let timestamp_ms = parse_date_time_str(timestamp_str, &[DateTimeInputFormat::Rfc3339])
+            .unwrap()
+            .into_timestamp_millis() as u64;
+        assert_eq!(event_tracker(i).epoch_ms, timestamp_ms);
+    }
+
     sandbox.shutdown().await.unwrap();
 }
+
+#[tokio::test]
+async fn test_fetch_one() {
+    let data: Vec<Value> = serde_json::from_slice(TEST_DATA).unwrap();
+    let sandbox = setup_env(&data).await;
+
+    let mut client = sandbox.cloudprem_client();
+
+    let query_node = QueryNode {
+        node: Some(query_node::Node::All(MatchAllQueryNode {})),
+    };
+    let list_request = build_list_request(&query_node);
+
+    let list_res = client
+        .list(authenticated_request(list_request))
+        .await
+        .unwrap();
+    let list_res = list_res.into_inner();
+
+    for i in 0..data.len() {
+        let mut source_event_tracker = list_res.streams[0].events[i].tracker.clone().unwrap();
+        let fetch_request = FetchOneRequest {
+            event_tracker: Some(source_event_tracker.clone()),
+            org_id: 2,
+        };
+        let fetch_res = client
+            .fetch_one(authenticated_request(fetch_request))
+            .await
+            .unwrap();
+        let fetch_res = fetch_res.into_inner();
+        assert_eq!(fetch_res.event.unwrap(), list_res.streams[0].events[i]);
+
+        // simulate the split containing our event having went through merging since we listed
+        // resutls.
+        source_event_tracker.fragment_id = Some("01JRAZ6KW4QVQESE2JCDGN3TFM".to_string());
+        let fetch_request = FetchOneRequest {
+            event_tracker: Some(source_event_tracker),
+            org_id: 2,
+        };
+        let fetch_res = client
+            .fetch_one(authenticated_request(fetch_request))
+            .await
+            .unwrap();
+        let fetch_res = fetch_res.into_inner();
+        assert_eq!(fetch_res.event.unwrap(), list_res.streams[0].events[i]);
+    }
+
+    sandbox.shutdown().await.unwrap();
+}
+
+// TODO test search after and aggregations
