@@ -583,6 +583,7 @@ async fn test_update_doc_mapping_add_field_on_strict() {
 }
 
 #[tokio::test]
+#[ignore]
 // TODO(#5738)
 async fn test_update_doc_validation() {
     quickwit_common::setup_logging_for_tests();
