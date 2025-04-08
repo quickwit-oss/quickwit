@@ -19,7 +19,7 @@ use std::time::Duration;
 use once_cell::sync::OnceCell;
 use prometheus::{Gauge, IntCounter, IntGauge};
 use tokio::runtime::Runtime;
-use tokio_metrics::{RuntimeMetrics, RuntimeMonitor};
+// use tokio_metrics::{RuntimeMetrics, RuntimeMonitor};
 
 use crate::metrics::{new_counter, new_float_gauge, new_gauge};
 
@@ -88,9 +88,9 @@ fn start_runtimes(config: RuntimesConfig) -> HashMap<RuntimeType, Runtime> {
     let disable_lifo_slot = crate::get_bool_from_env("QW_DISABLE_TOKIO_LIFO_SLOT", false);
 
     let mut blocking_runtime_builder = tokio::runtime::Builder::new_multi_thread();
-    if disable_lifo_slot {
-        blocking_runtime_builder.disable_lifo_slot();
-    }
+    // if disable_lifo_slot {
+    //     blocking_runtime_builder.disable_lifo_slot();
+    // }
     let blocking_runtime = blocking_runtime_builder
         .worker_threads(config.num_threads_blocking)
         .thread_name_fn(|| {
@@ -102,8 +102,8 @@ fn start_runtimes(config: RuntimesConfig) -> HashMap<RuntimeType, Runtime> {
         .build()
         .unwrap();
 
-    scrape_tokio_runtime_metrics(blocking_runtime.handle(), "blocking");
-    runtimes.insert(RuntimeType::Blocking, blocking_runtime);
+    // scrape_tokio_runtime_metrics(blocking_runtime.handle(), "blocking");
+    // runtimes.insert(RuntimeType::Blocking, blocking_runtime);
 
     let non_blocking_runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(config.num_threads_non_blocking)
@@ -116,8 +116,8 @@ fn start_runtimes(config: RuntimesConfig) -> HashMap<RuntimeType, Runtime> {
         .build()
         .unwrap();
 
-    scrape_tokio_runtime_metrics(non_blocking_runtime.handle(), "non_blocking");
-    runtimes.insert(RuntimeType::NonBlocking, non_blocking_runtime);
+    // scrape_tokio_runtime_metrics(non_blocking_runtime.handle(), "non_blocking");
+    // runtimes.insert(RuntimeType::NonBlocking, non_blocking_runtime);
 
     runtimes
 }
@@ -149,18 +149,18 @@ impl RuntimeType {
 }
 
 /// Spawns a background task
-pub fn scrape_tokio_runtime_metrics(handle: &tokio::runtime::Handle, label: &'static str) {
-    let runtime_monitor = RuntimeMonitor::new(handle);
-    handle.spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(1));
-        let mut prometheus_runtime_metrics = PrometheusRuntimeMetrics::new(label);
+// pub fn scrape_tokio_runtime_metrics(handle: &tokio::runtime::Handle, label: &'static str) {
+//     let runtime_monitor = RuntimeMonitor::new(handle);
+//     handle.spawn(async move {
+//         let mut interval = tokio::time::interval(Duration::from_secs(1));
+//         let mut prometheus_runtime_metrics = PrometheusRuntimeMetrics::new(label);
 
-        for tokio_runtime_metrics in runtime_monitor.intervals() {
-            interval.tick().await;
-            prometheus_runtime_metrics.update(&tokio_runtime_metrics);
-        }
-    });
-}
+//         for tokio_runtime_metrics in runtime_monitor.intervals() {
+//             interval.tick().await;
+//             prometheus_runtime_metrics.update(&tokio_runtime_metrics);
+//         }
+//     });
+// }
 
 struct PrometheusRuntimeMetrics {
     scheduled_tasks: IntGauge,
@@ -200,15 +200,15 @@ impl PrometheusRuntimeMetrics {
         }
     }
 
-    pub fn update(&mut self, runtime_metrics: &RuntimeMetrics) {
-        self.scheduled_tasks
-            .set(runtime_metrics.total_local_queue_depth as i64);
-        self.worker_busy_duration_milliseconds_total
-            .inc_by(runtime_metrics.total_busy_duration.as_millis() as u64);
-        self.worker_busy_ratio.set(runtime_metrics.busy_ratio());
-        self.worker_threads
-            .set(runtime_metrics.workers_count as i64);
-    }
+    // pub fn update(&mut self, runtime_metrics: &RuntimeMetrics) {
+    //     self.scheduled_tasks
+    //         .set(runtime_metrics.total_local_queue_depth as i64);
+    //     self.worker_busy_duration_milliseconds_total
+    //         .inc_by(runtime_metrics.total_busy_duration.as_millis() as u64);
+    //     self.worker_busy_ratio.set(runtime_metrics.busy_ratio());
+    //     self.worker_threads
+    //         .set(runtime_metrics.workers_count as i64);
+    // }
 }
 
 #[cfg(test)]

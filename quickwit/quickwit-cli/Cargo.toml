@@ -64,6 +64,7 @@ quickwit-ingest = { workspace = true }
 quickwit-metastore = { workspace = true }
 quickwit-proto = { workspace = true }
 # quickwit-rest-client = { workspace = true }
+darling = "=0.20.10"
 quickwit-search = { workspace = true }
 quickwit-serve = { workspace = true }
 quickwit-storage = { workspace = true }

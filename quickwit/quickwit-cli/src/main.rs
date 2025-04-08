@@ -25,7 +25,7 @@ use quickwit_cli::cli::{build_cli, CliCommand};
 #[cfg(feature = "jemalloc")]
 use quickwit_cli::jemalloc::start_jemalloc_metrics_loop;
 use quickwit_cli::logger::setup_logging_and_tracing;
-use quickwit_common::runtimes::scrape_tokio_runtime_metrics;
+// use quickwit_common::runtimes::scrape_tokio_runtime_metrics;
 use quickwit_serve::BuildInfo;
 use tracing::error;
 
@@ -47,7 +47,7 @@ fn main() -> anyhow::Result<()> {
         .build()
         .context("failed to start main Tokio runtime")?;
 
-    scrape_tokio_runtime_metrics(rt.handle(), "main");
+    // scrape_tokio_runtime_metrics(rt.handle(), "main");
 
     rt.block_on(main_impl())
 }

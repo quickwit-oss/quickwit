@@ -38,7 +38,7 @@ siphasher = { workspace = true }
 sysinfo = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["tracing"] }
 tokio-metrics = { workspace = true }
 tokio-stream = { workspace = true }
 tonic = { workspace = true }

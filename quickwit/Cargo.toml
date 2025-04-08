@@ -237,10 +237,10 @@ tabled = { version = "0.14", features = ["color"] }
 tempfile = "3"
 thiserror = "1"
 thousands = "0.2.0"
-tikv-jemalloc-ctl = "0.5"
-tikv-jemallocator = "0.5"
+tikv-jemalloc-ctl = "0.6"
+tikv-jemallocator = "0.6"
 time = { version = "0.3", features = ["std", "formatting", "macros"] }
-tokio = { version = "1.40", features = ["full"] }
+tokio = { version = "1.40", features = ["full", "tracing"] }
 tokio-metrics = { version = "0.3.1", features = ["rt"] }
 tokio-rustls = { version = "0.24.0", default-features = false }
 tokio-stream = { version = "0.1", features = ["sync"] }
@@ -276,6 +276,7 @@ ulid = "1.1"
 username = "0.2"
 utoipa = { version = "4.2", features = ["time", "ulid"] }
 uuid = { version = "1.10", features = ["v4", "serde"] }
+observability-pipelines-worker = { path = "/Users/paul.masurel/git/observability-pipelines-worker" }
 vrl = { version = "0.22", default-features = false, features = [
   "compiler",
   "diagnostic",
