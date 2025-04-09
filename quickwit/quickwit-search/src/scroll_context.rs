@@ -23,6 +23,7 @@ use anyhow::Context;
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
 use quickwit_common::metrics::GaugeGuard;
+use quickwit_common::shared_consts::SCROLL_BATCH_LEN;
 use quickwit_metastore::SplitMetadata;
 use quickwit_proto::search::{LeafSearchResponse, PartialHit, SearchRequest, SplitSearchError};
 use quickwit_proto::types::IndexUid;
@@ -35,14 +36,13 @@ use crate::root::IndexMetasForLeafSearch;
 use crate::service::SearcherContext;
 use crate::ClusterClient;
 
-/// Maximum capacity of the search after cache.
+/// Maximum number of contexts in the search after cache.
 ///
-/// For the moment this value is hardcoded.
 /// TODO make configurable.
 ///
 /// Assuming a search context of 1MB, this can
 /// amount to up to 1GB.
-const SCROLL_BATCH_LEN: usize = 1_000;
+const SEARCH_AFTER_CACHE_SIZE: usize = 1_000;
 
 #[derive(Serialize, Deserialize)]
 pub(crate) struct ScrollContext {
@@ -134,7 +134,7 @@ pub(crate) struct MiniKV {
 impl Default for MiniKV {
     fn default() -> MiniKV {
         MiniKV {
-            ttl_with_cache: Arc::new(RwLock::new(TtlCache::new(SCROLL_BATCH_LEN))),
+            ttl_with_cache: Arc::new(RwLock::new(TtlCache::new(SEARCH_AFTER_CACHE_SIZE))),
         }
     }
 }
