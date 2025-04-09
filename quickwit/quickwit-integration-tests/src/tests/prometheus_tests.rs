@@ -74,28 +74,35 @@ async fn test_metrics_standalone_server() {
     let metrics = parse_prometheus_metrics(&body);
     // The assertions validate some very specific metrics. Feel free to add more as needed.
     {
-        let quickwit_http_requests_total_get_metrics = filter_metrics(
+        let filtered_metrics = filter_metrics(
             &metrics,
             "quickwit_http_requests_total",
             vec![("method", "GET")],
         );
-        assert_eq!(quickwit_http_requests_total_get_metrics.len(), 1);
+        assert_eq!(filtered_metrics.len(), 1);
         // we don't know exactly how many GET requests to expect as they are used to
         // poll the node state
-        assert!(quickwit_http_requests_total_get_metrics[0].metric_value > 0.0);
+        assert!(filtered_metrics[0].metric_value > 0.0);
     }
     {
-        let quickwit_http_requests_total_post_metrics = filter_metrics(
+        let filtered_metrics = filter_metrics(
             &metrics,
             "quickwit_http_requests_total",
             vec![("method", "POST")],
         );
-        assert_eq!(quickwit_http_requests_total_post_metrics.len(), 1);
+        assert_eq!(filtered_metrics.len(), 1);
         // 2 POST requests: create index + search
-        assert_eq!(
-            quickwit_http_requests_total_post_metrics[0].metric_value,
-            2.0
+        assert_eq!(filtered_metrics[0].metric_value, 2.0);
+    }
+    {
+        let filtered_metrics = filter_metrics(
+            &metrics,
+            "quickwit_search_root_search_requests_total",
+            vec![],
         );
+        assert_eq!(filtered_metrics.len(), 1);
+        assert_eq!(filtered_metrics[0].metric_value, 1.0);
+        assert_eq!(filtered_metrics[0].labels.get("status").unwrap(), "success");
     }
     sandbox.shutdown().await.unwrap();
 }
