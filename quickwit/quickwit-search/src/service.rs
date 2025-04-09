@@ -57,7 +57,7 @@ pub struct SearchServiceImpl {
     storage_resolver: StorageResolver,
     cluster_client: ClusterClient,
     searcher_context: Arc<SearcherContext>,
-    search_after_cache: MiniKV,
+    local_kv_store: MiniKV,
 }
 
 /// Trait representing a search service.
@@ -165,7 +165,7 @@ impl SearchServiceImpl {
             storage_resolver,
             cluster_client,
             searcher_context,
-            search_after_cache: MiniKV::default(),
+            local_kv_store: MiniKV::default(),
         }
     }
 }
@@ -322,13 +322,13 @@ impl SearchService for SearchServiceImpl {
 
     async fn put_kv(&self, put_request: PutKvRequest) {
         let ttl = Duration::from_secs(put_request.ttl_secs as u64);
-        self.search_after_cache
+        self.local_kv_store
             .put(put_request.key, put_request.payload, ttl)
             .await;
     }
 
     async fn get_kv(&self, get_request: GetKvRequest) -> Option<Vec<u8>> {
-        let payload: Vec<u8> = self.search_after_cache.get(&get_request.key).await?;
+        let payload: Vec<u8> = self.local_kv_store.get(&get_request.key).await?;
         Some(payload)
     }
 

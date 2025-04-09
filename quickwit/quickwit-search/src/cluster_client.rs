@@ -191,7 +191,7 @@ impl ClusterClient {
         client.leaf_list_terms(request.clone()).await
     }
 
-    /// Attempts to store a given search context within the cluster.
+    /// Attempts to store a given key value pair within the cluster.
     ///
     /// This function may fail silently, if no clients was available.
     pub async fn put_kv(&self, key: &[u8], payload: &[u8], ttl: Duration) {
