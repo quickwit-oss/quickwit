@@ -11,6 +11,7 @@ use tonic::Request;
 use crate::test_utils::{ClusterSandbox, ClusterSandboxBuilder};
 
 const TEST_CERT: &[u8] = include_bytes!("../../test_data/test_cert_main_ca.crt");
+// this data is extracted from staging through the admin ui, and cleaned off a bit
 const TEST_DATA: &[u8] = include_bytes!("../../test_data/test_data.json");
 
 fn build_list_request(query: &QueryNode) -> ListRequest {
@@ -67,7 +68,7 @@ fn authenticated_request<T>(raw_request: T) -> Request<T> {
     request
 }
 
-async fn setup_env(docs: &[Value]) -> ClusterSandbox {
+async fn setup_env(docs: &mut [Value]) -> ClusterSandbox {
     quickwit_common::setup_logging_for_tests();
     let sandbox = ClusterSandboxBuilder::build_and_start_standalone().await;
 
@@ -100,6 +101,17 @@ async fn setup_env(docs: &[Value]) -> ClusterSandbox {
         .await
         .unwrap());
 
+    // remove unsupported field before ingestion
+    // TODO are those things we should store?
+    for doc in docs.iter_mut() {
+        let doc_obj = doc.as_object_mut().unwrap();
+        doc_obj.remove("host_id");
+        doc_obj.remove("random_draw");
+        doc_obj.remove("source_fragment_id");
+        doc_obj.remove("error_tracking");
+        doc_obj.remove("issue");
+    }
+
     sandbox.wait_for_indexing_pipelines(1).await.unwrap();
     sandbox.local_ingest("datadog", docs).await.unwrap();
 
@@ -108,8 +120,8 @@ async fn setup_env(docs: &[Value]) -> ClusterSandbox {
 
 #[tokio::test]
 async fn test_list() {
-    let data: Vec<Value> = serde_json::from_slice(TEST_DATA).unwrap();
-    let sandbox = setup_env(&data).await;
+    let mut data: Vec<Value> = serde_json::from_slice(TEST_DATA).unwrap();
+    let sandbox = setup_env(&mut data).await;
 
     let mut client = sandbox.cloudprem_client();
 
@@ -158,8 +170,8 @@ async fn test_list() {
 
 #[tokio::test]
 async fn test_fetch_one() {
-    let data: Vec<Value> = serde_json::from_slice(TEST_DATA).unwrap();
-    let sandbox = setup_env(&data).await;
+    let mut data: Vec<Value> = serde_json::from_slice(TEST_DATA).unwrap();
+    let sandbox = setup_env(&mut data).await;
 
     let mut client = sandbox.cloudprem_client();
 
