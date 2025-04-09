@@ -17,7 +17,7 @@ use std::collections::{BTreeMap, HashSet};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::rate_limited_error;
 use quickwit_proto::control_plane::{
-    GetOrCreateOpenShardsFailure, GetOrCreateOpenShardsFailureReason,
+    ControlPlaneError, GetOrCreateOpenShardsFailure, GetOrCreateOpenShardsFailureReason,
 };
 use quickwit_proto::ingest::ingester::{
     PersistFailure, PersistFailureReason, PersistRequest, PersistSuccess,
@@ -26,6 +26,7 @@ use quickwit_proto::ingest::router::{
     IngestFailure, IngestFailureReason, IngestResponseV2, IngestSubrequest, IngestSuccess,
 };
 use quickwit_proto::ingest::{IngestV2Error, RateLimitingCause};
+use quickwit_proto::metastore::MetastoreError;
 use quickwit_proto::types::{NodeId, ShardId, SubrequestId};
 use tracing::warn;
 
@@ -54,12 +55,20 @@ pub(super) struct IngestWorkbench {
 }
 
 /// Returns an iterator of pending of subrequests, sorted by sub request id.
-pub(super) fn pending_subrequests(
+///
+/// Implemented as a separate function (instead of a `IngestWorkbench` method)
+/// to allow mutable borrow of other workbench fields in the same scope.
+pub(super) fn pending_subrequests_for_attempt(
     subworkbenches: &BTreeMap<SubrequestId, IngestSubworkbench>,
+    num_workbench_attempts: usize,
 ) -> impl Iterator<Item = &IngestSubrequest> {
-    subworkbenches.values().filter_map(|subworbench| {
-        if subworbench.is_pending() {
-            Some(&subworbench.subrequest)
+    subworkbenches.values().filter_map(move |subworkbench| {
+        let subworkbench_already_attempted =
+            subworkbench.num_attempts != 0 && subworkbench.num_attempts == num_workbench_attempts;
+        if subworkbench_already_attempted {
+            None
+        } else if subworkbench.is_pending() {
+            Some(&subworkbench.subrequest)
         } else {
             None
         }
@@ -122,6 +131,7 @@ impl IngestWorkbench {
         self.num_attempts >= self.max_num_attempts
     }
 
+    /// Checks whether there are pending subrequests, regardless of the attempt number.
     fn has_no_pending_subrequests(&self) -> bool {
         self.subworkbenches
             .values()
@@ -159,6 +169,27 @@ impl IngestWorkbench {
             }
         };
         self.record_failure(open_shards_failure.subrequest_id, last_failure);
+    }
+
+    pub fn record_get_or_create_open_shards_error(
+        &mut self,
+        subrequest_id: SubrequestId,
+        open_shard_error: &ControlPlaneError,
+    ) {
+        let last_failure = match open_shard_error {
+            ControlPlaneError::Internal(_) => SubworkbenchFailure::Internal,
+            ControlPlaneError::Timeout(_) => SubworkbenchFailure::ControlPlaneUnavailable,
+            ControlPlaneError::TooManyRequests => SubworkbenchFailure::ControlPlaneUnavailable,
+            ControlPlaneError::Unavailable(_) => SubworkbenchFailure::ControlPlaneUnavailable,
+            ControlPlaneError::Metastore(metastore_error) => match metastore_error {
+                MetastoreError::Timeout(_) => SubworkbenchFailure::ControlPlaneUnavailable,
+                MetastoreError::TooManyRequests => SubworkbenchFailure::ControlPlaneUnavailable,
+                MetastoreError::Unavailable(_) => SubworkbenchFailure::ControlPlaneUnavailable,
+                // TODO: are there other metastore errors that can be considered temporary?
+                _ => SubworkbenchFailure::Internal,
+            },
+        };
+        self.record_failure(subrequest_id, last_failure);
     }
 
     pub fn record_persist_success(&mut self, persist_success: PersistSuccess) {
@@ -251,7 +282,7 @@ impl IngestWorkbench {
     ///
     /// Remaining attempts will treat the node as if it was not in the ingester pool.
     pub fn record_ingester_unavailable(&mut self, subrequest_id: SubrequestId) {
-        self.record_failure(subrequest_id, SubworkbenchFailure::Unavailable);
+        self.record_failure(subrequest_id, SubworkbenchFailure::IngesterUnavailable);
     }
 
     fn record_internal_error(&mut self, subrequest_id: SubrequestId) {
@@ -324,7 +355,7 @@ impl IngestWorkbench {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub(super) enum SubworkbenchFailure {
     // There is no entry in the routing table for this index.
     IndexNotFound,
@@ -338,7 +369,9 @@ pub(super) enum SubworkbenchFailure {
     Persist(PersistFailureReason),
     Internal,
     // The ingester is no longer in the pool or a transport error occurred.
-    Unavailable,
+    IngesterUnavailable,
+    // The control plane (or the proxied metastore) is unavailable.
+    ControlPlaneUnavailable,
     // The ingester is rate limited.
     RateLimited(RateLimitingCause),
 }
@@ -353,7 +386,8 @@ impl SubworkbenchFailure {
             Self::NoShardsAvailable => IngestFailureReason::NoShardsAvailable,
             // In our last attempt, we did not manage to reach the ingester.
             // We can consider that as a no shards available.
-            Self::Unavailable => IngestFailureReason::NoShardsAvailable,
+            Self::IngesterUnavailable => IngestFailureReason::NoShardsAvailable,
+            Self::ControlPlaneUnavailable => IngestFailureReason::Unavailable,
             Self::RateLimited(rate_limiting_cause) => match rate_limiting_cause {
                 RateLimitingCause::RouterLoadShedding => IngestFailureReason::RouterLoadShedding,
                 RateLimitingCause::LoadShedding => IngestFailureReason::RouterLoadShedding,
@@ -378,6 +412,7 @@ pub(super) struct IngestSubworkbench {
 
 impl IngestSubworkbench {
     pub fn new(subrequest: IngestSubrequest) -> Self {
+        // TODO validate index id and set failure if necessary
         Self {
             subrequest,
             ..Default::default()
@@ -399,7 +434,8 @@ impl IngestSubworkbench {
             Some(SubworkbenchFailure::Internal) => true,
             Some(SubworkbenchFailure::NoShardsAvailable) => true,
             Some(SubworkbenchFailure::Persist(_)) => true,
-            Some(SubworkbenchFailure::Unavailable) => true,
+            Some(SubworkbenchFailure::IngesterUnavailable) => true,
+            Some(SubworkbenchFailure::ControlPlaneUnavailable) => true,
             Some(SubworkbenchFailure::RateLimited(_)) => true,
             None => true,
         }
@@ -416,6 +452,12 @@ mod tests {
 
     use super::*;
 
+    fn pending_subrequests_for_current_attempt(
+        workbench: &IngestWorkbench,
+    ) -> impl Iterator<Item = &IngestSubrequest> {
+        super::pending_subrequests_for_attempt(&workbench.subworkbenches, workbench.num_attempts)
+    }
+
     #[test]
     fn test_ingest_subworkbench() {
         let subrequest = IngestSubrequest {
@@ -425,7 +467,7 @@ mod tests {
         assert!(subworkbench.is_pending());
         assert!(subworkbench.last_failure_is_transient());
 
-        subworkbench.last_failure_opt = Some(SubworkbenchFailure::Unavailable);
+        subworkbench.last_failure_opt = Some(SubworkbenchFailure::IngesterUnavailable);
         assert!(subworkbench.is_pending());
         assert!(subworkbench.last_failure_is_transient());
 
@@ -458,7 +500,7 @@ mod tests {
     }
 
     #[test]
-    fn test_ingest_workbench() {
+    fn test_ingest_workbench_max_attempts() {
         let workbench = IngestWorkbench::new(Vec::new(), 1);
         assert!(workbench.is_complete());
 
@@ -472,7 +514,10 @@ mod tests {
         workbench.new_attempt();
         assert!(workbench.is_last_attempt());
         assert!(workbench.is_complete());
+    }
 
+    #[test]
+    fn test_ingest_workbench() {
         let ingest_subrequests = vec![
             IngestSubrequest {
                 subrequest_id: 0,
@@ -484,9 +529,13 @@ mod tests {
             },
         ];
         let mut workbench = IngestWorkbench::new(ingest_subrequests, 1);
-        assert_eq!(pending_subrequests(&workbench.subworkbenches).count(), 2);
+        assert_eq!(
+            pending_subrequests_for_current_attempt(&workbench).count(),
+            2
+        );
         assert!(!workbench.is_complete());
 
+        workbench.new_attempt();
         let persist_success = PersistSuccess {
             subrequest_id: 0,
             ..Default::default()
@@ -494,9 +543,12 @@ mod tests {
         workbench.record_persist_success(persist_success);
 
         assert_eq!(workbench.num_successes, 1);
-        assert_eq!(pending_subrequests(&workbench.subworkbenches).count(), 1);
         assert_eq!(
-            pending_subrequests(&workbench.subworkbenches)
+            pending_subrequests_for_current_attempt(&workbench).count(),
+            1
+        );
+        assert_eq!(
+            pending_subrequests_for_current_attempt(&workbench)
                 .next()
                 .unwrap()
                 .subrequest_id,
@@ -514,9 +566,18 @@ mod tests {
         workbench.record_persist_failure(&persist_failure);
 
         assert_eq!(workbench.num_successes, 1);
-        assert_eq!(pending_subrequests(&workbench.subworkbenches).count(), 1);
         assert_eq!(
-            pending_subrequests(&workbench.subworkbenches)
+            pending_subrequests_for_current_attempt(&workbench).count(),
+            0
+        );
+
+        workbench.new_attempt();
+        assert_eq!(
+            pending_subrequests_for_current_attempt(&workbench).count(),
+            1
+        );
+        assert_eq!(
+            pending_subrequests_for_current_attempt(&workbench)
                 .next()
                 .unwrap()
                 .subrequest_id,
@@ -535,7 +596,10 @@ mod tests {
 
         assert!(workbench.is_complete());
         assert_eq!(workbench.num_successes, 2);
-        assert_eq!(pending_subrequests(&workbench.subworkbenches).count(), 0);
+        assert_eq!(
+            pending_subrequests_for_current_attempt(&workbench).count(),
+            0
+        );
     }
 
     #[tokio::test]
@@ -565,10 +629,14 @@ mod tests {
             },
         ];
         let mut workbench =
-            IngestWorkbench::new_with_publish_tracking(ingest_subrequests, 1, event_broker.clone());
-        assert_eq!(pending_subrequests(&workbench.subworkbenches).count(), 2);
+            IngestWorkbench::new_with_publish_tracking(ingest_subrequests, 2, event_broker.clone());
+        assert_eq!(
+            pending_subrequests_for_current_attempt(&workbench).count(),
+            2
+        );
         assert!(!workbench.is_complete());
 
+        workbench.new_attempt();
         let persist_request = PersistRequest {
             subrequests: vec![
                 PersistSubrequest {
@@ -609,7 +677,7 @@ mod tests {
         };
 
         // retry to persist shard 2
-
+        workbench.new_attempt();
         let persist_request = PersistRequest {
             subrequests: vec![PersistSubrequest {
                 subrequest_id: 1,
@@ -624,7 +692,10 @@ mod tests {
 
         assert!(workbench.is_complete());
         assert_eq!(workbench.num_successes, 2);
-        assert_eq!(pending_subrequests(&workbench.subworkbenches).count(), 0);
+        assert_eq!(
+            pending_subrequests_for_current_attempt(&workbench).count(),
+            0
+        );
 
         event_broker.publish(ShardPositionsUpdate {
             source_uid: SourceUid {
@@ -660,7 +731,8 @@ mod tests {
             },
         ];
         let mut workbench =
-            IngestWorkbench::new_with_publish_tracking(ingest_subrequests, 1, event_broker.clone());
+            IngestWorkbench::new_with_publish_tracking(ingest_subrequests, 2, event_broker.clone());
+        workbench.new_attempt();
 
         let persist_request = PersistRequest {
             subrequests: vec![
@@ -697,7 +769,10 @@ mod tests {
 
         assert!(workbench.is_complete());
         assert_eq!(workbench.num_successes, 2);
-        assert_eq!(pending_subrequests(&workbench.subworkbenches).count(), 0);
+        assert_eq!(
+            pending_subrequests_for_current_attempt(&workbench).count(),
+            0
+        );
 
         event_broker.publish(ShardPositionsUpdate {
             source_uid: SourceUid {
@@ -825,7 +900,7 @@ mod tests {
 
         assert!(matches!(
             subworkbench.last_failure_opt,
-            Some(SubworkbenchFailure::Unavailable)
+            Some(SubworkbenchFailure::IngesterUnavailable)
         ));
         assert!(subworkbench.persist_success_opt.is_none());
     }
