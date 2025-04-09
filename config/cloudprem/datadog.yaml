@@ -30,7 +30,7 @@ search_settings:
 # random_draw(f64), source_fragment_id(string), trace_id_low(string)
 
 doc_mapping:
-  mode: strict
+  mode: dynamic
   field_mappings:
     # TODO: Add RFC3164
     # With the preprocessing in Pomsky, we can actually just use one
