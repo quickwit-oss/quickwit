@@ -41,6 +41,59 @@ fn build_list_request(query: &QueryNode) -> ListRequest {
     }
 }
 
+fn build_aggregation_request(
+    query: &QueryNode,
+    aggregation: aggregation::Aggregation,
+) -> AggregationRequest {
+    let any_query = Any {
+        type_url: "type.googleapis.com/queryparser_proto.QueryNode".to_string(),
+        value: query.encode_to_vec(),
+    };
+    AggregationRequest {
+        query: Some(any_query),
+        aggregation: Some(Aggregation {
+            aggregation: Some(aggregation),
+        }),
+        org_id: 2,
+    }
+}
+
+fn agg_computes(compute_aggs: &[aggregation::Aggregation]) -> aggregation::Aggregation {
+    aggregation::Aggregation::Computes(Computes {
+        aggregation: compute_aggs
+            .iter()
+            .map(|agg| Aggregation {
+                aggregation: Some(agg.clone()),
+            })
+            .collect(),
+        time_grouping: Vec::new(),
+    })
+}
+
+fn agg_count(id: &str) -> aggregation::Aggregation {
+    aggregation::Aggregation::MetricCompute(MetricCompute {
+        expression: agg_expression_field("count"),
+        id: id.to_string(),
+        r#type: "COUNT".to_string(),
+    })
+}
+
+fn agg_expression_field(field_name: &str) -> Option<ExpressionNode> {
+    let calc_node = CalcNode {
+        calc_node: Some(calc_node::CalcNode::FieldRef(calc_node::FieldRef {
+            field_name: field_name.to_string(),
+        })),
+    };
+    let calc_node_any = Any {
+        type_url: "type.googleapis.com/calcfieldspb.CalcNode".to_string(),
+        value: calc_node.encode_to_vec(),
+    };
+
+    Some(ExpressionNode {
+        calc_node: Some(calc_node_any),
+    })
+}
+
 // assert two json are equal, ignoring some known issues
 #[track_caller]
 fn assert_eq_fuzzy(left: &Value, right: &Value) {
@@ -213,6 +266,37 @@ async fn test_fetch_one() {
         let fetch_res = fetch_res.into_inner();
         assert_eq!(fetch_res.event.unwrap(), list_res.streams[0].events[i]);
     }
+
+    sandbox.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn test_aggregation_count() {
+    let mut data: Vec<Value> = serde_json::from_slice(TEST_DATA).unwrap();
+    let sandbox = setup_env(&mut data).await;
+
+    let mut client = sandbox.cloudprem_client();
+
+    let query_node = QueryNode {
+        node: Some(query_node::Node::All(MatchAllQueryNode {})),
+    };
+
+    let agg = agg_computes(&[agg_count("count:count")]);
+    let list_request = build_aggregation_request(&query_node, agg);
+
+    let agg_res = client
+        .aggregate(authenticated_request(list_request))
+        .await
+        .unwrap();
+    let agg_res = agg_res.into_inner();
+
+    assert_eq!(agg_res.result.len(), 1);
+    assert!(agg_res.result[0].key.is_empty());
+    assert_eq!(agg_res.result[0].value.len(), 1);
+    assert_eq!(
+        agg_res.result[0].value[0].value.as_ref().unwrap(),
+        &agg_value::Value::Uint64Value(3)
+    );
 
     sandbox.shutdown().await.unwrap();
 }

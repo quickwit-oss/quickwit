@@ -225,8 +225,8 @@ fn handle_metric_compute(
     let agg = match metric_compute.r#type.as_str() {
         "COUNT" => {
             let count_agg = metric::CountAggregation {
-                // this field is never set, so we don't download anything
-                field: "__non_existing_field__".to_string(),
+                // this field is always set, and we expect it to be almost always downloaded anyway
+                field: "timestamp".to_string(),
                 missing: Some(1.0),
             };
             // TODO can we get a into() from *Aggregation to AggregationVariants instead?
@@ -553,7 +553,7 @@ mod tests {
             "count:count".to_string(),
             TantivyAgg {
                 agg: AggregationVariants::Count(CountAggregation {
-                    field: "__non_existing_field__".to_string(),
+                    field: "timestamp".to_string(),
                     missing: Some(1.0),
                 }),
                 sub_aggregation: HashMap::new(),
@@ -633,7 +633,7 @@ mod tests {
                     "count:count".to_string(),
                     TantivyAgg {
                         agg: AggregationVariants::Count(CountAggregation {
-                            field: "__non_existing_field__".to_string(),
+                            field: "timestamp".to_string(),
                             missing: Some(1.0),
                         }),
                         sub_aggregation: HashMap::new(),
@@ -750,7 +750,7 @@ mod tests {
                             "count:count:timeseries:28800000".to_string(),
                             TantivyAgg {
                                 agg: AggregationVariants::Count(CountAggregation {
-                                    field: "__non_existing_field__".to_string(),
+                                    field: "timestamp".to_string(),
                                     missing: Some(1.0),
                                 }),
                                 sub_aggregation: HashMap::new(),
