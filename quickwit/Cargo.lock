@@ -6946,10 +6946,13 @@ dependencies = [
  "futures-util",
  "hyper 0.14.32",
  "itertools 0.13.0",
+ "prost 0.11.9",
+ "prost-types 0.11.9",
  "quickwit-actors",
  "quickwit-cli",
  "quickwit-common",
  "quickwit-config",
+ "quickwit-datetime",
  "quickwit-indexing",
  "quickwit-metastore",
  "quickwit-opentelemetry",
@@ -6964,6 +6967,7 @@ dependencies = [
  "tonic 0.9.2",
  "tracing",
  "tracing-subscriber",
+ "urlencoding",
 ]
 
 [[package]]
