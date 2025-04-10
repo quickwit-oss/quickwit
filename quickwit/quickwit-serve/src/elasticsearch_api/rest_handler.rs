@@ -890,7 +890,7 @@ async fn es_compat_index_multi_search(
     let max_concurrent_searches =
         multi_search_params.max_concurrent_searches.unwrap_or(10) as usize;
     let search_responses = futures::stream::iter(futures)
-        .buffer_unordered(max_concurrent_searches)
+        .buffered(max_concurrent_searches)
         .collect::<Vec<_>>()
         .await;
     let responses = search_responses
