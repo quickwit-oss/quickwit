@@ -203,7 +203,7 @@ impl Queue for SqsQueue {
 async fn preconfigured_builder() -> anyhow::Result<Builder> {
     let aws_config = get_aws_config().await;
 
-    let mut sqs_config = Config::builder().behavior_version(BehaviorVersion::v2024_03_28());
+    let mut sqs_config = Config::builder().behavior_version(aws_behavior_version());
     sqs_config.set_retry_config(aws_config.retry_config().cloned());
     sqs_config.set_credentials_provider(aws_config.credentials_provider());
     sqs_config.set_http_client(aws_config.http_client());
