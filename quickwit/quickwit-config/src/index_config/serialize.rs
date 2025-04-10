@@ -68,18 +68,17 @@ pub fn load_index_config_from_user_config(
 ///
 /// Ensures that the new configuration is valid in itself and compared to the
 /// current index config. If the new configuration omits some fields, the
-/// default values will be used, not those of the current index config. The only
-/// exception is the index_uri because it cannot be updated.
+/// default values will be used, not those of the current index config.
 pub fn load_index_config_update(
     config_format: ConfigFormat,
     index_config_bytes: &[u8],
-    current_index_parent_dir: &Uri,
+    default_index_root_uri: &Uri,
     current_index_config: &IndexConfig,
 ) -> anyhow::Result<IndexConfig> {
     let mut new_index_config = load_index_config_from_user_config(
         config_format,
         index_config_bytes,
-        current_index_parent_dir,
+        default_index_root_uri,
     )?;
     ensure!(
         current_index_config.index_id == new_index_config.index_id,

@@ -89,8 +89,11 @@ pub fn index_management_handlers(
     // Indexes handlers.
     get_index_metadata_handler(index_service.metastore())
         .or(list_indexes_metadata_handler(index_service.metastore()))
-        .or(create_index_handler(index_service.clone(), node_config))
-        .or(update_index_handler(index_service.metastore()))
+        .or(create_index_handler(
+            index_service.clone(),
+            node_config.clone(),
+        ))
+        .or(update_index_handler(index_service.metastore(), node_config))
         .or(clear_index_handler(index_service.clone()))
         .or(delete_index_handler(index_service.clone()))
         .boxed()
