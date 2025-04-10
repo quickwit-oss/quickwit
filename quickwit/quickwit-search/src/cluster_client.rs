@@ -193,7 +193,10 @@ impl ClusterClient {
 
     /// Attempts to store a given key value pair within the cluster.
     ///
-    /// This function may fail silently, if no clients was available.
+    /// Tries to replicate the pair to [`TARGET_NUM_REPLICATION`] nodes, but this function may fail
+    /// silently (e.g if no client was available). Even in case of success, this storage is not
+    /// persistent. For instance during a rolling upgrade, all replicas will be lost as there is no
+    /// mechanism to maintain the replication count.
     pub async fn put_kv(&self, key: &[u8], payload: &[u8], ttl: Duration) {
         let clients: Vec<SearchServiceClient> = self
             .search_job_placer
@@ -216,8 +219,8 @@ impl ClusterClient {
         // course, this may still result in the replication over more nodes, but this is not
         // a problem.
         //
-        // The requests are made in a concurrent manner, up to two at a time. As soon as 2 requests
-        // are successful, we stop.
+        // The requests are made in a concurrent manner, up to TARGET_NUM_REPLICATION at a time. As
+        // soon as TARGET_NUM_REPLICATION requests are successful, we stop.
         let put_kv_futs = clients
             .into_iter()
             .map(|client| replicate_kv_to_one_server(client, key, payload, ttl));
