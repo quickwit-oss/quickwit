@@ -17,7 +17,7 @@
 use bytesize::ByteSize;
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
-    exponential_buckets, linear_buckets, new_counter, new_counter_vec, new_gauge_vec,
+    exponential_buckets, linear_buckets, new_counter, new_counter_vec, new_gauge, new_gauge_vec,
     new_histogram, new_histogram_vec, Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge,
 };
 
@@ -34,6 +34,7 @@ pub struct SearchMetrics {
     pub leaf_search_single_split_tasks_pending: IntGauge,
     pub leaf_search_single_split_tasks_ongoing: IntGauge,
     pub leaf_search_single_split_warmup_num_bytes: Histogram,
+    pub searcher_local_kv_store_size_bytes: IntGauge,
 }
 
 impl Default for SearchMetrics {
@@ -145,6 +146,13 @@ impl Default for SearchMetrics {
                 "search",
                 &[],
                 ["affinity"],
+            ),
+            searcher_local_kv_store_size_bytes: new_gauge(
+                "searcher_local_kv_store_size_bytes",
+                "Size of the searcher kv store in bytes. This store is used to cache scroll \
+                 contexts.",
+                "search",
+                &[],
             ),
         }
     }
