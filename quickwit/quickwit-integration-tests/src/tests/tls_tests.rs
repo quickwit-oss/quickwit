@@ -58,6 +58,8 @@ async fn test_tls_rest() {
             .len(),
         0
     );
+
+    sandbox.shutdown().await.unwrap();
 }
 
 #[tokio::test]
