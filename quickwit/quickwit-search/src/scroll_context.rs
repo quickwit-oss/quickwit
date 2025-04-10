@@ -38,8 +38,6 @@ use crate::ClusterClient;
 
 /// Maximum number of values in the local search KV store.
 ///
-/// Currently this store is only used for caching scroll contexts.
-///
 /// TODO make configurable.
 ///
 /// Assuming a search context of 1MB, this can
@@ -128,6 +126,13 @@ struct TrackedValue {
     _total_size_metric_guard: GaugeGuard<'static>,
 }
 
+/// In memory key value store with TTL and limited size.
+///
+/// Once the capacity [LOCAL_KV_CACHE_SIZE] is reached, the oldest entries are
+/// removed.
+///
+/// Currently this store is only used for caching scroll contexts. Using it for
+/// other purposes is risky as use cases would compete for its capacity.
 #[derive(Clone)]
 pub(crate) struct MiniKV {
     ttl_with_cache: Arc<RwLock<TtlCache<Vec<u8>, TrackedValue>>>,
