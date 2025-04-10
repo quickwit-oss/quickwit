@@ -24,7 +24,7 @@ use crate::{
     SourceParams,
 };
 
-type SourceConfigForSerialization = SourceConfigV0_8;
+type SourceConfigForSerialization = SourceConfigV0_9;
 
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
@@ -32,7 +32,7 @@ type SourceConfigForSerialization = SourceConfigV0_8;
 pub enum VersionedSourceConfig {
     #[serde(rename = "0.9")]
     #[serde(alias = "0.8")]
-    V0_8(SourceConfigV0_8),
+    V0_9(SourceConfigV0_9),
     // Retro compatibility.
     #[serde(rename = "0.7")]
     V0_7(SourceConfigV0_7),
@@ -42,7 +42,7 @@ impl From<VersionedSourceConfig> for SourceConfigForSerialization {
     fn from(versioned_source_config: VersionedSourceConfig) -> Self {
         match versioned_source_config {
             VersionedSourceConfig::V0_7(v0_7) => v0_7.into(),
-            VersionedSourceConfig::V0_8(v0_8) => v0_8,
+            VersionedSourceConfig::V0_9(v0_9) => v0_9,
         }
     }
 }
@@ -102,7 +102,7 @@ impl SourceConfigForSerialization {
             validate_identifier("source", &self.source_id)?;
         }
         let num_pipelines = NonZeroUsize::new(self.num_pipelines)
-            .ok_or_else(|| anyhow::anyhow!("`desired_num_pipelines` must be strictly positive"))?;
+            .ok_or_else(|| anyhow::anyhow!("`num_pipelines` must be strictly positive"))?;
         match &self.source_params {
             SourceParams::Stdin => {
                 bail!(
@@ -158,9 +158,9 @@ impl SourceConfigForSerialization {
     }
 }
 
-impl From<SourceConfig> for SourceConfigV0_8 {
+impl From<SourceConfig> for SourceConfigV0_9 {
     fn from(source_config: SourceConfig) -> Self {
-        SourceConfigV0_8 {
+        SourceConfigV0_9 {
             source_id: source_config.source_id,
             num_pipelines: source_config.num_pipelines.get(),
             enabled: source_config.enabled,
@@ -173,7 +173,7 @@ impl From<SourceConfig> for SourceConfigV0_8 {
 
 impl From<SourceConfig> for VersionedSourceConfig {
     fn from(source_config: SourceConfig) -> Self {
-        VersionedSourceConfig::V0_8(source_config.into())
+        VersionedSourceConfig::V0_9(source_config.into())
     }
 }
 
@@ -181,7 +181,7 @@ impl TryFrom<VersionedSourceConfig> for SourceConfig {
     type Error = anyhow::Error;
 
     fn try_from(versioned_source_config: VersionedSourceConfig) -> anyhow::Result<Self> {
-        let v1: SourceConfigV0_8 = versioned_source_config.into();
+        let v1: SourceConfigV0_9 = versioned_source_config.into();
         v1.validate_and_build()
     }
 }
@@ -230,7 +230,7 @@ pub struct SourceConfigV0_7 {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
-pub struct SourceConfigV0_8 {
+pub struct SourceConfigV0_9 {
     #[schema(value_type = String)]
     pub source_id: SourceId,
 
@@ -252,7 +252,7 @@ pub struct SourceConfigV0_8 {
     pub input_format: SourceInputFormat,
 }
 
-impl From<SourceConfigV0_7> for SourceConfigV0_8 {
+impl From<SourceConfigV0_7> for SourceConfigV0_9 {
     fn from(source_config_v0_7: SourceConfigV0_7) -> Self {
         let SourceConfigV0_7 {
             source_id,
@@ -263,7 +263,7 @@ impl From<SourceConfigV0_7> for SourceConfigV0_8 {
             transform,
             input_format,
         } = source_config_v0_7;
-        SourceConfigV0_8 {
+        SourceConfigV0_9 {
             source_id,
             num_pipelines: desired_num_pipelines,
             enabled,
