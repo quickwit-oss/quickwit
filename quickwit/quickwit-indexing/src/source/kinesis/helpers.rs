@@ -12,15 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use aws_sdk_kinesis::config::{BehaviorVersion, Region, SharedAsyncSleep};
+use aws_sdk_kinesis::config::{Region, SharedAsyncSleep};
 use aws_sdk_kinesis::{Client, Config};
-use quickwit_aws::{get_aws_config, DEFAULT_AWS_REGION};
+use quickwit_aws::{aws_behavior_version, get_aws_config, DEFAULT_AWS_REGION};
 use quickwit_config::RegionOrEndpoint;
 
 pub async fn get_kinesis_client(region_or_endpoint: RegionOrEndpoint) -> anyhow::Result<Client> {
     let aws_config = get_aws_config().await;
 
-    let mut kinesis_config = Config::builder().behavior_version(BehaviorVersion::v2024_03_28());
+    let mut kinesis_config = Config::builder().behavior_version(aws_behavior_version());
     kinesis_config.set_retry_config(aws_config.retry_config().cloned());
     kinesis_config.set_credentials_provider(aws_config.credentials_provider());
     kinesis_config.set_http_client(aws_config.http_client());

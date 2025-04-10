@@ -22,6 +22,7 @@ use opendal::Operator;
 use quickwit_common::uri::Uri;
 use tokio::io::{AsyncRead, AsyncWriteExt};
 
+use crate::metrics::object_storage_get_slice_in_flight_guards;
 use crate::storage::SendableAsync;
 use crate::{
     BulkDeleteError, OwnedBytes, PutPayload, Storage, StorageError, StorageErrorKind,
@@ -96,7 +97,11 @@ impl Storage for OpendalStorage {
 
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
         let path = path.as_os_str().to_string_lossy();
+        let size = range.len();
         let range = range.start as u64..range.end as u64;
+        // Unlike other object store implementations, in flight requests are
+        // recorded before issuing the query to the object store.
+        let _inflight_guards = object_storage_get_slice_in_flight_guards(size);
         let storage_content = self.op.read_with(&path).range(range).await?;
 
         Ok(OwnedBytes::new(storage_content))

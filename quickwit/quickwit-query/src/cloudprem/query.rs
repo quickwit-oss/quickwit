@@ -18,7 +18,7 @@ const EVP_DEFAULT_FIELD: &str = "_default_";
 const QW_DEFAULT_FIELD: &str = "default";
 
 pub fn parse_query(raw_message: prost_types::Any) -> Result<QueryNode, DecodeError> {
-    // TODO validate type url?
+    // TODO this can be cleaner once we upgrade to prost 0.12+
     QueryNode::decode(raw_message.value.as_ref())
 }
 

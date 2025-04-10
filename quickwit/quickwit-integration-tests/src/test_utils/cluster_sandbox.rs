@@ -30,6 +30,7 @@ use quickwit_common::uri::Uri as QuickwitUri;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::NodeConfig;
 use quickwit_metastore::{MetastoreResolver, SplitState};
+use quickwit_proto::cloudprem::cloud_prem_service_grpc_client::CloudPremServiceGrpcClient;
 use quickwit_proto::jaeger::storage::v1::span_reader_plugin_client::SpanReaderPluginClient;
 use quickwit_proto::opentelemetry::proto::collector::logs::v1::logs_service_client::LogsServiceClient;
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_client::TraceServiceClient;
@@ -340,6 +341,10 @@ impl ClusterSandbox {
 
     pub fn jaeger_client(&self) -> SpanReaderPluginClient<tonic::transport::Channel> {
         SpanReaderPluginClient::new(self.channel(QuickwitService::Searcher))
+    }
+
+    pub fn cloudprem_client(&self) -> CloudPremServiceGrpcClient<tonic::transport::Channel> {
+        CloudPremServiceGrpcClient::new(self.channel(QuickwitService::Searcher))
     }
 
     pub fn logs_client(&self) -> LogsServiceClient<tonic::transport::Channel> {
