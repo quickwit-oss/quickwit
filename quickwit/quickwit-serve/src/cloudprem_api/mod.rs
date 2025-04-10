@@ -292,11 +292,13 @@ impl CloudPremService for CloudPremServiceImpl {
 struct HitMapper {
     id_field: &'static str,
     ts_field: &'static str,
+    tiebreaker_field: &'static str,
 }
 
 const DEFAULT_HIT_MAPPER: HitMapper = HitMapper {
     id_field: "id",
     ts_field: "timestamp",
+    tiebreaker_field: "tiebreaker",
 };
 
 impl HitMapper {
@@ -316,8 +318,15 @@ impl HitMapper {
                 ts,
                 &[quickwit_datetime::DateTimeInputFormat::Rfc3339],
             )
-            .map(|ts| ts.into_timestamp_nanos())
+            .map(|ts| ts.into_timestamp_millis())
             .unwrap_or(0) as u64
+        } else {
+            0
+        };
+
+        let tiebreaker = if let Some(JsonValue::Number(tiebreaker)) = map.get(self.tiebreaker_field)
+        {
+            tiebreaker.as_i64().unwrap_or_default() as i32
         } else {
             0
         };
@@ -325,8 +334,8 @@ impl HitMapper {
         Ok(Event {
             tracker: Some(EventTracker {
                 id: event_id,
-                epoch_ms: timestamp / 1_000_000,
-                tiebreaker: (timestamp % 1_000_000) as i32,
+                epoch_ms: timestamp,
+                tiebreaker,
                 row_number: hit
                     .partial_hit
                     .as_ref()
@@ -343,10 +352,16 @@ impl HitMapper {
                 sort_value: Some(quickwit_proto::search::sort_by_value::SortValue::U64(value)),
             })
         };
+        let make_int_value = |value| {
+            Some(quickwit_proto::search::SortByValue {
+                sort_value: Some(quickwit_proto::search::sort_by_value::SortValue::I64(value)),
+            })
+        };
+        // this assumes all requests are sorted by timestamp+tiebreaker
+        // the timestamps we provide must be ms unless with force ns in doc mapping
         PartialHit {
-            // internally we always want ns
-            sort_value: make_uint_value(event.epoch_ms * 1_000_000 + event.tiebreaker as u64),
-            sort_value2: None,
+            sort_value: make_uint_value(event.epoch_ms),
+            sort_value2: make_int_value(event.tiebreaker.into()),
             split_id: event.fragment_id.unwrap_or_default(),
             segment_ord: 0,
             doc_id: event.row_number.unwrap_or_default() as u32,
