@@ -41,6 +41,7 @@ doc_mapping:
         - rfc3339
         - iso8601
         - unix_timestamp
+      fast_precision: milliseconds
   # TODO: Check if discovery_timestamp is used anywhere, or if we can drop it after ingestion
     - name: discovery_timestamp
       type: datetime

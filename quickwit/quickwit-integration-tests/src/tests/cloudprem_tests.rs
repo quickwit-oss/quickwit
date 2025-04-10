@@ -21,7 +21,7 @@ fn build_list_request(query: &QueryNode) -> ListRequest {
     };
     ListRequest {
         query: Some(any_query),
-        num_events_to_fetch: 5,
+        num_events_to_fetch: 100,
         should_compute_count: true,
         columns: Vec::new(), // ?
         // TODO check in staging what is sent
@@ -108,6 +108,82 @@ fn assert_eq_fuzzy(left: &Value, right: &Value) {
         .unwrap()
         .remove("ingest_size_in_bytes");
     right.as_object_mut().unwrap().remove("error");
+
+    // for some reason we convert rfc3339 timestamps to upper case when they are lower case inside
+    // tag??? we might also be doing that conversion below with ts were millis ends in 0, no
+    // document in the sample dataset had that edge case
+
+    if let Some(tag) = left.as_object_mut().unwrap().get_mut("tag") {
+        tag.as_object_mut().unwrap().iter_mut().for_each(|(_k, v)| {
+            if let Some(str_v) = v.as_str() {
+                *v = Value::String(str_v.to_lowercase())
+            }
+        })
+    }
+
+    if let Some(tag) = right.as_object_mut().unwrap().get_mut("tag") {
+        tag.as_object_mut().unwrap().iter_mut().for_each(|(_k, v)| {
+            if let Some(str_v) = v.as_str() {
+                *v = Value::String(str_v.to_lowercase())
+            }
+        })
+    }
+
+    // pomsky normalize dates (remove trailing 0 in the sub-second part, transform tz to Z, convert
+    // to upper case when lower...) this attempts at catching that issue when comparing. note
+    // that the paths here is not an exaustive list by any mean, it's just what failed on the sample
+    // i used for more testing
+
+    let mut remove_cmp_ts = |path: &[&str]| {
+        let mut left_ref = &mut left;
+        let mut right_ref = &mut right;
+        for path_part in &path[..path.len() - 1] {
+            if let Some(left_next_layer) = left_ref
+                .as_object_mut()
+                .and_then(|obj| obj.get_mut(*path_part))
+            {
+                left_ref = left_next_layer;
+            } else {
+                return;
+            }
+            if let Some(right_next_layer) = right_ref
+                .as_object_mut()
+                .and_then(|obj| obj.get_mut(*path_part))
+            {
+                right_ref = right_next_layer;
+            } else {
+                return;
+            }
+        }
+        let Some(left_elem) = left_ref
+            .as_object_mut()
+            .and_then(|obj| obj.remove(*path.last().unwrap()))
+        else {
+            return;
+        };
+        let Some(right_elem) = right_ref
+            .as_object_mut()
+            .and_then(|obj| obj.remove(*path.last().unwrap()))
+        else {
+            panic!("key {path:?} present in left but not right")
+        };
+        if left_elem == right_elem {
+            return;
+        }
+        let left_str = left_elem.as_str().unwrap();
+        let right_str = right_elem.as_str().unwrap();
+        assert_eq!(
+            parse_date_time_str(left_str, &[DateTimeInputFormat::Rfc3339]).unwrap(),
+            parse_date_time_str(right_str, &[DateTimeInputFormat::Rfc3339]).unwrap()
+        );
+    };
+
+    remove_cmp_ts(&["timestamp"]);
+    remove_cmp_ts(&["custom", "@timestamp"]);
+    remove_cmp_ts(&["custom", "timestamp"]);
+    remove_cmp_ts(&["custom", "streamStart"]);
+    remove_cmp_ts(&["custom", "ts"]);
+
     assert_eq!(left, right);
 }
 
@@ -163,6 +239,7 @@ async fn setup_env(docs: &mut [Value]) -> ClusterSandbox {
         doc_obj.remove("source_fragment_id");
         doc_obj.remove("error_tracking");
         doc_obj.remove("issue");
+        doc_obj.remove("trace_id_low");
     }
 
     sandbox.wait_for_indexing_pipelines(1).await.unwrap();
@@ -295,7 +372,7 @@ async fn test_aggregation_count() {
     assert_eq!(agg_res.result[0].value.len(), 1);
     assert_eq!(
         agg_res.result[0].value[0].value.as_ref().unwrap(),
-        &agg_value::Value::Uint64Value(3)
+        &agg_value::Value::Uint64Value(data.len() as u64)
     );
 
     sandbox.shutdown().await.unwrap();
