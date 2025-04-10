@@ -68,21 +68,17 @@ pub fn load_index_config_from_user_config(
 ///
 /// Ensures that the new configuration is valid in itself and compared to the
 /// current index config. If the new configuration omits some fields, the
-/// default values will be used, not those of the current index config. The only
-/// exception is the index_uri because it cannot be updated.
+/// default values will be used, not those of the current index config.
 pub fn load_index_config_update(
     config_format: ConfigFormat,
     index_config_bytes: &[u8],
+    default_index_root_uri: &Uri,
     current_index_config: &IndexConfig,
 ) -> anyhow::Result<IndexConfig> {
-    let current_index_parent_dir = &current_index_config
-        .index_uri
-        .parent()
-        .expect("index URI should have a parent");
     let mut new_index_config = load_index_config_from_user_config(
         config_format,
         index_config_bytes,
-        current_index_parent_dir,
+        default_index_root_uri,
     )?;
     ensure!(
         current_index_config.index_id == new_index_config.index_id,
@@ -355,10 +351,11 @@ mod test {
             index_id: hdfs-logs
             doc_mapping: {}
         "#;
+        let default_root = Uri::for_test("s3://mybucket");
         let original_config: IndexConfig = load_index_config_from_user_config(
             ConfigFormat::Yaml,
             original_config_yaml.as_bytes(),
-            &Uri::for_test("s3://mybucket"),
+            &default_root,
         )
         .unwrap();
         {
@@ -371,6 +368,7 @@ mod test {
             let updated_config = load_index_config_update(
                 ConfigFormat::Yaml,
                 updated_config_yaml.as_bytes(),
+                &default_root,
                 &original_config,
             )
             .unwrap();
@@ -387,6 +385,7 @@ mod test {
             let updated_config = load_index_config_update(
                 ConfigFormat::Yaml,
                 updated_config_yaml.as_bytes(),
+                &default_root,
                 &original_config,
             )
             .unwrap();
@@ -403,6 +402,7 @@ mod test {
             let load_error = load_index_config_update(
                 ConfigFormat::Yaml,
                 updated_config_yaml.as_bytes(),
+                &default_root,
                 &original_config,
             )
             .unwrap_err();
@@ -432,10 +432,11 @@ mod test {
                 period: 90 days
                 schedule: daily
         "#;
+        let default_root = Uri::for_test("s3://mybucket");
         let original_config: IndexConfig = load_index_config_from_user_config(
             ConfigFormat::Yaml,
             original_config_yaml.as_bytes(),
-            &Uri::for_test("s3://mybucket"),
+            &default_root,
         )
         .unwrap();
 
@@ -452,6 +453,7 @@ mod test {
         let updated_config = load_index_config_update(
             ConfigFormat::Yaml,
             updated_config_yaml.as_bytes(),
+            &default_root,
             &original_config,
         )
         .unwrap();
@@ -473,10 +475,11 @@ mod test {
             index_id: hdfs-logs
             doc_mapping: {}
         "#;
+        let default_root = Uri::for_test("s3://mybucket");
         let original_config: IndexConfig = load_index_config_from_user_config(
             ConfigFormat::Yaml,
             original_config_yaml.as_bytes(),
-            &Uri::for_test("s3://mybucket"),
+            &default_root,
         )
         .unwrap();
 
@@ -493,6 +496,7 @@ mod test {
         let updated_config = load_index_config_update(
             ConfigFormat::Yaml,
             updated_config_yaml.as_bytes(),
+            &default_root,
             &original_config,
         )
         .unwrap();
@@ -513,10 +517,11 @@ mod test {
                       type: datetime
                       fast: true
         "#;
+        let default_root = Uri::for_test("s3://mybucket");
         let original_config: IndexConfig = load_index_config_from_user_config(
             ConfigFormat::Yaml,
             original_config_yaml.as_bytes(),
-            &Uri::for_test("s3://mybucket"),
+            &default_root,
         )
         .unwrap();
 
@@ -539,6 +544,7 @@ mod test {
         load_index_config_update(
             ConfigFormat::Yaml,
             updated_config_yaml.as_bytes(),
+            &default_root,
             &original_config,
         )
         .expect_err("mapping changed but uid fixed should error");
@@ -556,6 +562,7 @@ mod test {
         load_index_config_update(
             ConfigFormat::Yaml,
             updated_config_yaml.as_bytes(),
+            &default_root,
             &original_config,
         )
         .expect_err("timestamp field removed should error");
@@ -575,6 +582,7 @@ mod test {
         load_index_config_update(
             ConfigFormat::Yaml,
             updated_config_yaml.as_bytes(),
+            &default_root,
             &original_config,
         )
         .expect_err("field required for timestamp is absent");
@@ -595,6 +603,7 @@ mod test {
         load_index_config_update(
             ConfigFormat::Yaml,
             updated_config_yaml.as_bytes(),
+            &default_root,
             &original_config,
         )
         .expect_err("field required for default search is absent");
