@@ -174,8 +174,9 @@ static METASTORE_GRPC_CLIENT_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
 static METASTORE_GRPC_SERVER_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
     Lazy::new(|| GrpcMetricsLayer::new("metastore", "server"));
 
-static GRPC_TIMEOUT_LAYER: Lazy<TimeoutLayer> =
-    Lazy::new(|| TimeoutLayer::new(Duration::from_secs(30)));
+static GRPC_INGESTER_SERVICE_TIMEOUT: Duration = Duration::from_secs(30);
+static GRPC_INDEXING_SERVICE_TIMEOUT: Duration = Duration::from_secs(30);
+static GRPC_METASTORE_SERVICE_TIMEOUT: Duration = Duration::from_secs(10);
 
 struct QuickwitServices {
     pub node_config: Arc<NodeConfig>,
@@ -464,16 +465,13 @@ pub async fn serve_quickwit(
             {
                 bail!("could not find any metastore node in the cluster");
             }
-            // These layers applies to all the RPCs of the metastore.
-            let shared_layers = ServiceBuilder::new()
-                .layer(RetryLayer::new(RetryPolicy::from(RetryParams::standard())))
-                .layer(METASTORE_GRPC_CLIENT_METRICS_LAYER.clone())
-                .layer(tower::limit::GlobalConcurrencyLimitLayer::new(
+            MetastoreServiceClient::tower()
+                .stack_layer(TimeoutLayer::new(GRPC_METASTORE_SERVICE_TIMEOUT))
+                .stack_layer(RetryLayer::new(RetryPolicy::from(RetryParams::standard())))
+                .stack_layer(METASTORE_GRPC_CLIENT_METRICS_LAYER.clone())
+                .stack_layer(tower::limit::GlobalConcurrencyLimitLayer::new(
                     get_metastore_client_max_concurrency(),
                 ))
-                .into_inner();
-            MetastoreServiceClient::tower()
-                .stack_layer(shared_layers)
                 .build_from_balance_channel(balance_channel, grpc_config.max_message_size)
         };
     // Instantiate a control plane server if the `control-plane` role is enabled on the node.
@@ -519,11 +517,11 @@ pub async fn serve_quickwit(
         None
     };
 
-    // Setup indexer pool.
+    // Setup the indexer pool to track cluster changes.
     setup_indexer_pool(
         &node_config,
         cluster.change_stream(),
-        indexer_pool.clone(),
+        indexer_pool,
         indexing_service_opt.clone(),
     );
 
@@ -861,7 +859,6 @@ async fn setup_ingest_v2(
 ) -> anyhow::Result<(IngestRouter, IngestRouterServiceClient, Option<Ingester>)> {
     // Instantiate ingest router.
     let self_node_id: NodeId = cluster.self_node_id().into();
-    let content_length_limit = node_config.ingest_api_config.content_length_limit;
     let replication_factor = node_config
         .ingest_api_config
         .replication_factor()
@@ -883,15 +880,10 @@ async fn setup_ingest_v2(
         .stack_layer(INGEST_GRPC_SERVER_METRICS_LAYER.clone())
         .build(ingest_router.clone());
 
-    // We compute the burst limit as something a bit larger than the content length limit, because
-    // we actually rewrite the `\n-delimited format into a tiny bit larger buffer, where the
-    // line length is prefixed.
-    let burst_limit = (content_length_limit.as_u64() * 3 / 2).clamp(10_000_000, 200_000_000);
-
     let rate_limit =
         ConstantRate::bytes_per_sec(node_config.ingest_api_config.shard_throughput_limit);
     let rate_limiter_settings = RateLimiterSettings {
-        burst_limit,
+        burst_limit: node_config.ingest_api_config.shard_burst_limit.as_u64(),
         rate_limit,
         // Refill every 100ms.
         refill_period: Duration::from_millis(100),
@@ -957,7 +949,7 @@ async fn setup_ingest_v2(
                     } else {
                         let ingester_service = IngesterServiceClient::tower()
                             .stack_layer(INGEST_GRPC_CLIENT_METRICS_LAYER.clone())
-                            .stack_layer(GRPC_TIMEOUT_LAYER.clone())
+                            .stack_layer(TimeoutLayer::new(GRPC_INGESTER_SERVICE_TIMEOUT))
                             .build_from_channel(
                                 node.grpc_advertise_addr(),
                                 node.channel(),
@@ -1072,6 +1064,7 @@ async fn setup_control_plane(
         default_index_root_uri,
         replication_factor,
         shard_throughput_limit: ingest_api_config.shard_throughput_limit,
+        shard_scale_up_factor: ingest_api_config.shard_scale_up_factor,
     };
     let (control_plane_mailbox, _control_plane_handle, mut readiness_rx) = ControlPlane::spawn(
         universe,
@@ -1158,7 +1151,7 @@ fn setup_indexer_pool(
                     } else {
                         let client = IndexingServiceClient::tower()
                             .stack_layer(INDEXING_GRPC_CLIENT_METRICS_LAYER.clone())
-                            .stack_layer(GRPC_TIMEOUT_LAYER.clone())
+                            .stack_layer(TimeoutLayer::new(GRPC_INDEXING_SERVICE_TIMEOUT))
                             .build_from_channel(
                                 node.grpc_advertise_addr(),
                                 node.channel(),

@@ -108,6 +108,14 @@ As the react UI is embedded in the rust binary, we need to build the react app b
 
 The following Quickwit installation command `curl -L https://install.quickwit.io | sh` always installs the latest stable version of quickwit. To make it easier in installing and testing new (alpha, beta, rc) releases, you can manually pull and execute the script as `./install.sh --allow-any-latest-version`. This will force the script to install any latest available release package.
 
+## Tracking licenses
+
+We keep track of the licenses used by the open source crates used by this project using
+[`rust-license-tool`](https://github.com/DataDog/rust-license-tool). The listing is checked every
+time CI is run. To update the listing, install the tool with `cargo install --git
+https://github.com/DataDog/rust-license-tool` and then run `dd-rust-license-tool write`. If there are
+any errors, you may need to update the listing of exceptions in `license-tool.toml`.
+
 # Documentation
 
 Quickwit documentation is located in the docs directory.

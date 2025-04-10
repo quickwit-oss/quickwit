@@ -17,6 +17,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Weak};
 
 use once_cell::sync::OnceCell;
+use quickwit_common::rate_limited_error;
 use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_config::{build_doc_mapper, DocMapping, SearchSettings};
 use quickwit_doc_mapper::DocMapper;
@@ -86,6 +87,11 @@ fn validate_document(
         ));
     };
     if let Err(error) = doc_mapper.validate_json_obj(&json_obj) {
+        rate_limited_error!(
+            limit_per_min = 6,
+            "failed to validate JSON document: {}",
+            error
+        );
         return Err((ParseFailureReason::InvalidSchema, error.to_string()));
     }
     Ok(())

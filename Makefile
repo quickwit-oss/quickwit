@@ -93,7 +93,7 @@ archive:
 	@mkdir -p "./quickwit-${BINARY_VERSION}/config"
 	@mkdir -p "./quickwit-${BINARY_VERSION}/qwdata"
 	@cp ./config/quickwit.yaml "./quickwit-${BINARY_VERSION}/config"
-	@cp ./LICENSE_AGPLv3.0.txt "./quickwit-${BINARY_VERSION}"
+	@cp ./LICENSE "./quickwit-${BINARY_VERSION}"
 	@cp "${BINARY_FILE}" "./quickwit-${BINARY_VERSION}"
 	@tar -czf "${ARCHIVE_NAME}.tar.gz" "./quickwit-${BINARY_VERSION}"
 	@rm -rf "./quickwit-${BINARY_VERSION}"
