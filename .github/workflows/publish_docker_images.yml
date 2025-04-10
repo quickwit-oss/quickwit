@@ -53,7 +53,7 @@ jobs:
             org.opencontainers.image.title=Quickwit
             maintainer=Quickwit, Inc. <hello@quickwit.io>
             org.opencontainers.image.vendor=Quickwit, Inc.
-            org.opencontainers.image.licenses=AGPL-3.0
+            org.opencontainers.image.licenses=Apache-2.0
 
       - name: Retrieve commit date, hash, and tags
         run: |
