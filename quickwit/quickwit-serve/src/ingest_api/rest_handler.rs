@@ -215,11 +215,11 @@ async fn ingest_v2(
         None
     };
 
-    // Validate index id early because propagating back the right error (400)
+    // Validate index ID early because propagating back the right error (400)
     // from deeper ingest layers is harder
     if validate_identifier("", &index_id).is_err() {
         return Err(IngestServiceError::BadRequest(
-            "invalid index_id".to_string(),
+            "invalid index ID".to_string(),
         ));
     }
 

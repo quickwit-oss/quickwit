@@ -123,7 +123,7 @@ pub(crate) async fn elastic_bulk_ingest_v2(
                 )
             })?;
 
-        // Validate index id early because propagating back the right error (400)
+        // Validate index ID early because propagating back the right error (400)
         // from deeper ingest layers is harder
         if validate_identifier("", &index_id).is_err() {
             let invalid_item = make_invalid_index_id_item(index_id.clone(), meta.es_doc_id);
