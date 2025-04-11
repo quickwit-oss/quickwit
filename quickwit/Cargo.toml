@@ -200,10 +200,12 @@ rdkafka = { version = "0.33", default-features = false, features = [
 ] }
 regex = "1.10.0"
 regex-syntax = "0.8"
-reqwest = { version = "0.11", default-features = false, features = [
+reqwest = { version = "0.12", default-features = false, features = [
   "json",
   "rustls-tls",
 ] }
+reqwest-middleware = "0.4"
+reqwest-retry = "0.7"
 rust-embed = "6.8.1"
 rustls = "0.21"
 rustls-pemfile = "1.0.0"
@@ -304,8 +306,8 @@ azure_storage_blobs = { version = "0.13.0", default-features = false, features =
   "enable_reqwest_rustls",
 ] }
 
-opendal = { version = "0.44", default-features = false }
-reqsign = { version = "0.14", default-features = false }
+opendal = { version = "0.53", default-features = false }
+reqsign = { version = "0.16", default-features = false }
 
 quickwit-actors = { path = "quickwit-actors" }
 quickwit-aws = { path = "quickwit-aws" }
@@ -316,10 +318,10 @@ quickwit-codegen-example = { path = "quickwit-codegen/example" }
 quickwit-common = { path = "quickwit-common" }
 quickwit-config = { path = "quickwit-config" }
 quickwit-control-plane = { path = "quickwit-control-plane" }
-quickwit-index-management = { path = "quickwit-index-management" }
 quickwit-datetime = { path = "quickwit-datetime" }
 quickwit-directories = { path = "quickwit-directories" }
 quickwit-doc-mapper = { path = "quickwit-doc-mapper" }
+quickwit-index-management = { path = "quickwit-index-management" }
 quickwit-indexing = { path = "quickwit-indexing" }
 quickwit-ingest = { path = "quickwit-ingest" }
 quickwit-integration-tests = { path = "quickwit-integration-tests" }

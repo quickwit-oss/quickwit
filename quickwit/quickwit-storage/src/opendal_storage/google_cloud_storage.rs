@@ -55,14 +55,6 @@ impl StorageFactory for GoogleCloudStorageFactory {
 pub fn new_emulated_google_cloud_storage(
     uri: &Uri,
 ) -> Result<OpendalStorage, StorageResolverError> {
-    let (bucket, root) = parse_google_uri(uri).expect("must be valid google uri");
-
-    let mut cfg = opendal::services::Gcs::default();
-    cfg.bucket(&bucket);
-    cfg.root(&root.to_string_lossy());
-    // The default port for the fake gcs server is 4443.
-    cfg.endpoint("http://127.0.0.1:4443");
-
     #[derive(Debug)]
     struct DummyTokenLoader;
     #[async_trait]
@@ -75,7 +67,13 @@ pub fn new_emulated_google_cloud_storage(
             )))
         }
     }
-    cfg.customed_token_loader(Box::new(DummyTokenLoader));
+    let (bucket, root) = parse_google_uri(uri).expect("must be valid google uri");
+
+    let cfg = opendal::services::Gcs::default()
+        .bucket(&bucket)
+        .root(&root.to_string_lossy())
+        .endpoint("http://127.0.0.1:4443")
+        .customized_token_loader(Box::new(DummyTokenLoader));
 
     let store = OpendalStorage::new_google_cloud_storage(uri.clone(), cfg)?;
     Ok(store)
@@ -90,14 +88,14 @@ fn from_uri(
         StorageResolverError::InvalidUri(message)
     })?;
 
-    let mut cfg = opendal::services::Gcs::default();
+    let mut cfg = opendal::services::Gcs::default()
+        .bucket(&bucket_name)
+        .root(&prefix.to_string_lossy());
+
     if let Some(credential_path) = google_cloud_storage_config.resolve_credential_path() {
         info!(path=%credential_path, "fetching google cloud storage credentials from path");
-        cfg.credential_path(&credential_path);
+        cfg = cfg.credential_path(&credential_path);
     }
-    cfg.bucket(&bucket_name);
-    cfg.root(&prefix.to_string_lossy());
-
     let store = OpendalStorage::new_google_cloud_storage(uri.clone(), cfg)?;
     Ok(store)
 }
