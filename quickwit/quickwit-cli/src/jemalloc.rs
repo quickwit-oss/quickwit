@@ -19,6 +19,10 @@ use tikv_jemallocator::Jemalloc;
 use tracing::error;
 
 #[global_allocator]
+#[cfg(feature = "jemalloc-profiled")]
+pub static GLOBAL: quickwit_common::jemalloc_profiled::JemallocProfiled =
+    quickwit_common::jemalloc_profiled::JemallocProfiled(Jemalloc);
+#[cfg(not(feature = "jemalloc-profiled"))]
 pub static GLOBAL: Jemalloc = Jemalloc;
 
 const JEMALLOC_METRICS_POLLING_INTERVAL: Duration = Duration::from_secs(1);
