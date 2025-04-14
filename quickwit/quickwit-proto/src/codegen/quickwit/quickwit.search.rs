@@ -224,9 +224,9 @@ pub struct SearchResponse {
     /// The searcherrors that occurred formatted as string.
     #[prost(string, repeated, tag = "4")]
     pub errors: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    /// Serialized aggregation response
-    #[prost(string, optional, tag = "5")]
-    pub aggregation: ::core::option::Option<::prost::alloc::string::String>,
+    /// Postcard-encoded aggregation response
+    #[prost(bytes = "vec", optional, tag = "9")]
+    pub aggregation_postcard: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
     /// Scroll Id (only set if scroll_secs was set in the request)
     #[prost(string, optional, tag = "6")]
     pub scroll_id: ::core::option::Option<::prost::alloc::string::String>,
