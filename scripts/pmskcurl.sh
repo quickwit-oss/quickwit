@@ -3,7 +3,16 @@
 set -euo pipefail
 
 export VAULT_ADDR=https://vault.us1.staging.dog/
-SCRIPT_DIR="$(dirname -- "${BASH_SOURCE[0]}")"
+
+SOURCE="${BASH_SOURCE[0]}"
+
+while [ -h "$SOURCE" ]; do
+  DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+
+SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 
 PROTO_DIR="${SCRIPT_DIR}/../quickwit/quickwit-proto/protos/cloudprem"
 
