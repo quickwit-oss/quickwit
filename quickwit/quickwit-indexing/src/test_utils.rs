@@ -14,21 +14,22 @@
 
 use std::num::NonZeroUsize;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use bytes::Bytes;
 use quickwit_actors::{Mailbox, Universe};
-use quickwit_cluster::{create_cluster_for_test, ChannelTransport};
+use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri;
 use quickwit_config::{
-    build_doc_mapper, ConfigFormat, IndexConfig, IndexerConfig, IngestApiConfig, MetastoreConfigs,
-    SourceConfig, SourceInputFormat, SourceParams, VecSourceParams, INGEST_API_SOURCE_ID,
+    ConfigFormat, INGEST_API_SOURCE_ID, IndexConfig, IndexerConfig, IngestApiConfig,
+    MetastoreConfigs, SourceConfig, SourceInputFormat, SourceParams, VecSourceParams,
+    build_doc_mapper,
 };
 use quickwit_doc_mapper::DocMapper;
-use quickwit_ingest::{init_ingest_api, IngesterPool, QUEUES_DIR_NAME};
+use quickwit_ingest::{IngesterPool, QUEUES_DIR_NAME, init_ingest_api};
 use quickwit_metastore::{
     CreateIndexRequestExt, MetastoreResolver, Split, SplitMetadata, SplitState,
 };

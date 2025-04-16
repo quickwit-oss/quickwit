@@ -26,21 +26,21 @@ mod state;
 mod store_operations;
 
 use core::fmt;
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use futures::StreamExt;
 use futures::future::try_join_all;
 use futures::stream::FuturesUnordered;
-use futures::StreamExt;
 use itertools::Itertools;
 use quickwit_common::ServiceStream;
 use quickwit_config::IndexTemplate;
 use quickwit_proto::metastore::{
-    serde_utils, AcquireShardsRequest, AcquireShardsResponse, AddSourceRequest, CreateIndexRequest,
+    AcquireShardsRequest, AcquireShardsResponse, AddSourceRequest, CreateIndexRequest,
     CreateIndexResponse, CreateIndexTemplateRequest, DeleteIndexRequest,
     DeleteIndexTemplatesRequest, DeleteQuery, DeleteShardsRequest, DeleteShardsResponse,
     DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, EmptyResponse, EntityKind,
@@ -55,7 +55,7 @@ use quickwit_proto::metastore::{
     MetastoreService, MetastoreServiceStream, OpenShardSubrequest, OpenShardsRequest,
     OpenShardsResponse, PruneShardsRequest, PublishSplitsRequest, ResetSourceCheckpointRequest,
     StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest, UpdateSourceRequest,
-    UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
+    UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse, serde_utils,
 };
 use quickwit_proto::types::{IndexId, IndexUid};
 use quickwit_storage::Storage;
@@ -67,14 +67,14 @@ use self::file_backed_index::FileBackedIndex;
 pub use self::file_backed_metastore_factory::FileBackedMetastoreFactory;
 use self::index_id_matcher::IndexIdMatcher;
 use self::lazy_file_backed_index::LazyFileBackedIndex;
-use self::manifest::{load_or_create_manifest, save_manifest, MANIFEST_FILE_NAME};
+use self::manifest::{MANIFEST_FILE_NAME, load_or_create_manifest, save_manifest};
 use self::state::MetastoreState;
 use self::store_operations::{delete_index, index_exists, load_index, put_index};
 use super::{
     AddSourceRequestExt, CreateIndexRequestExt, IndexMetadataResponseExt,
     IndexesMetadataResponseExt, ListIndexesMetadataResponseExt, ListSplitsRequestExt,
-    ListSplitsResponseExt, PublishSplitsRequestExt, StageSplitsRequestExt, UpdateIndexRequestExt,
-    UpdateSourceRequestExt, STREAM_SPLITS_CHUNK_SIZE,
+    ListSplitsResponseExt, PublishSplitsRequestExt, STREAM_SPLITS_CHUNK_SIZE,
+    StageSplitsRequestExt, UpdateIndexRequestExt, UpdateSourceRequestExt,
 };
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{IndexMetadata, ListSplitsQuery, MetastoreServiceExt, Split, SplitState};
@@ -1283,9 +1283,9 @@ mod tests {
     use super::store_operations::{metastore_filepath, put_index_given_index_id};
     use super::*;
     use crate::metastore::MetastoreServiceStreamSplitsExt;
-    use crate::tests::shard::ReadWriteShardsForTest;
     use crate::tests::DefaultForTest;
-    use crate::{metastore_test_suite, IndexMetadata, ListSplitsQuery, SplitMetadata, SplitState};
+    use crate::tests::shard::ReadWriteShardsForTest;
+    use crate::{IndexMetadata, ListSplitsQuery, SplitMetadata, SplitState, metastore_test_suite};
 
     #[async_trait]
     impl ReadWriteShardsForTest for FileBackedMetastore {
@@ -1504,8 +1504,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_file_backed_metastore_get_index_checks_for_inconsistent_index_id(
-    ) -> MetastoreResult<()> {
+    async fn test_file_backed_metastore_get_index_checks_for_inconsistent_index_id()
+    -> MetastoreResult<()> {
         let storage = Arc::new(RamStorage::default());
         let index_id = "test-index";
         let index_metadata =
@@ -1898,8 +1898,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_file_backed_metastore_create_index_when_storage_failing_before_last_indexes_states_put(
-    ) {
+    async fn test_file_backed_metastore_create_index_when_storage_failing_before_last_indexes_states_put()
+     {
         let mut mock_storage = MockStorage::default();
         let ram_storage = RamStorage::default();
         let ram_storage_clone = ram_storage.clone();
@@ -1998,8 +1998,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_file_backed_metastore_delete_index_storage_failing_before_last_indexes_states_put(
-    ) {
+    async fn test_file_backed_metastore_delete_index_storage_failing_before_last_indexes_states_put()
+     {
         let mut mock_storage = MockStorage::default();
         let ram_storage = RamStorage::default();
         let ram_storage_clone = ram_storage.clone();
@@ -2325,10 +2325,12 @@ mod tests {
             assert_eq!(state.templates.len(), 1);
             state.template_matcher.find_match("test-index-foo").unwrap();
 
-            assert!(state
-                .template_matcher
-                .find_match("test-index-bar")
-                .is_none());
+            assert!(
+                state
+                    .template_matcher
+                    .find_match("test-index-bar")
+                    .is_none()
+            );
         }
     }
 }

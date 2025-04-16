@@ -15,7 +15,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use quickwit_config::{IndexConfig, IndexTemplate, SourceConfig, TestableForRegression};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;

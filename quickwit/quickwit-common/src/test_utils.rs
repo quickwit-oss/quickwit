@@ -16,8 +16,8 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use futures::Future;
-use hyper::service::Service;
 use hyper::Uri;
+use hyper::service::Service;
 use tokio::time::error::Elapsed;
 
 pub async fn wait_until_predicate<Fut>(

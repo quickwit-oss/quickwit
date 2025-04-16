@@ -13,14 +13,14 @@
 // limitations under the License.
 
 use serde::{Deserialize, Serialize};
+use tantivy::Term;
 use tantivy::query::PhrasePrefixQuery as TantivyPhrasePrefixQuery;
 use tantivy::schema::{Field, FieldType, Schema as TantivySchema};
-use tantivy::Term;
 
 use crate::query_ast::tantivy_query_ast::TantivyQueryAst;
 use crate::query_ast::{BuildTantivyAst, FullTextParams, QueryAst};
 use crate::tokenizers::TokenizerManager;
-use crate::{find_field_or_hit_dynamic, InvalidQuery};
+use crate::{InvalidQuery, find_field_or_hit_dynamic};
 
 /// The PhraseQuery node is meant to be tokenized and searched.
 ///
@@ -120,7 +120,7 @@ impl BuildTantivyAst for PhrasePrefixQuery {
         let (_, terms) = match self.get_terms(schema, tokenizer_manager) {
             Ok(res) => res,
             Err(InvalidQuery::FieldDoesNotExist { .. }) if self.lenient => {
-                return Ok(TantivyQueryAst::match_none())
+                return Ok(TantivyQueryAst::match_none());
             }
             Err(e) => return Err(e),
         };

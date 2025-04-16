@@ -14,8 +14,8 @@
 
 use serde::Deserialize;
 
-use crate::elastic_query_dsl::one_field_map::OneFieldMap;
 use crate::elastic_query_dsl::ConvertibleToQueryAst;
+use crate::elastic_query_dsl::one_field_map::OneFieldMap;
 use crate::query_ast::{QueryAst, RegexQuery as AstRegexQuery};
 
 #[derive(Deserialize, Debug, Default, Eq, PartialEq, Clone)]

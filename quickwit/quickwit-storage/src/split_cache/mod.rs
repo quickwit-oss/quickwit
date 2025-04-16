@@ -35,7 +35,7 @@ use ulid::Ulid;
 use crate::file_descriptor_cache::{FileDescriptorCache, SplitFile};
 use crate::split_cache::download_task::spawn_download_task;
 use crate::split_cache::split_table::SplitTable;
-use crate::{wrap_storage_with_cache, Storage, StorageCache};
+use crate::{Storage, StorageCache, wrap_storage_with_cache};
 
 /// On disk Cache of splits for searchers.
 ///

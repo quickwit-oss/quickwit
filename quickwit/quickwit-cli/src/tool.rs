@@ -13,44 +13,44 @@
 // limitations under the License.
 
 use std::collections::{HashSet, VecDeque};
-use std::io::{stdout, IsTerminal, Stdout, Write};
+use std::io::{IsTerminal, Stdout, Write, stdout};
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
 use std::{env, fmt, io};
 
-use anyhow::{bail, Context};
-use clap::{arg, ArgMatches, Command};
+use anyhow::{Context, bail};
+use clap::{ArgMatches, Command, arg};
 use colored::{ColoredString, Colorize};
 use humantime::format_duration;
 use quickwit_actors::{ActorExitStatus, ActorHandle, Mailbox, Universe};
 use quickwit_cluster::{
-    make_client_tls_config, ChannelTransport, Cluster, ClusterMember, FailureDetectorConfig,
+    ChannelTransport, Cluster, ClusterMember, FailureDetectorConfig, make_client_tls_config,
 };
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{
-    IndexerConfig, NodeConfig, SourceConfig, SourceInputFormat, SourceParams, TransformConfig,
-    VecSourceParams, CLI_SOURCE_ID,
+    CLI_SOURCE_ID, IndexerConfig, NodeConfig, SourceConfig, SourceInputFormat, SourceParams,
+    TransformConfig, VecSourceParams,
 };
-use quickwit_index_management::{clear_cache_directory, IndexService};
+use quickwit_index_management::{IndexService, clear_cache_directory};
+use quickwit_indexing::IndexingPipeline;
 use quickwit_indexing::actors::{IndexingService, MergePipeline, MergeSchedulerService};
 use quickwit_indexing::models::{
     DetachIndexingPipeline, DetachMergePipeline, IndexingStatistics, SpawnPipeline,
 };
-use quickwit_indexing::IndexingPipeline;
 use quickwit_ingest::IngesterPool;
 use quickwit_metastore::IndexMetadataResponseExt;
 use quickwit_proto::indexing::CpuCapacity;
 use quickwit_proto::metastore::{IndexMetadataRequest, MetastoreService, MetastoreServiceClient};
 use quickwit_proto::search::{CountHits, SearchResponse};
 use quickwit_proto::types::{IndexId, PipelineUid, SourceId, SplitId};
-use quickwit_search::{single_node_search, SearchResponseRest};
+use quickwit_search::{SearchResponseRest, single_node_search};
 use quickwit_serve::{
-    search_request_from_api_request, BodyFormat, SearchRequestQueryString, SortBy,
+    BodyFormat, SearchRequestQueryString, SortBy, search_request_from_api_request,
 };
 use quickwit_storage::{BundleStorage, Storage};
 use thousands::Separable;
@@ -58,8 +58,8 @@ use tracing::{debug, info};
 
 use crate::checklist::{GREEN_COLOR, RED_COLOR};
 use crate::{
-    config_cli_arg, get_resolvers, load_node_config, run_index_checklist, start_actor_runtimes,
-    THROUGHPUT_WINDOW_SIZE,
+    THROUGHPUT_WINDOW_SIZE, config_cli_arg, get_resolvers, load_node_config, run_index_checklist,
+    start_actor_runtimes,
 };
 
 pub fn build_tool_command() -> Command {

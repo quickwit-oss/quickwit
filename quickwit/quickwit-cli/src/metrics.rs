@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use once_cell::sync::Lazy;
-use quickwit_common::metrics::{new_histogram_vec, HistogramVec};
+use quickwit_common::metrics::{HistogramVec, new_histogram_vec};
 
 pub struct CliMetrics {
     pub thread_unpark_duration_microseconds: HistogramVec<0>,

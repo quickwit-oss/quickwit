@@ -14,7 +14,7 @@
 
 use std::collections::HashSet;
 
-use anyhow::{ensure, Context};
+use anyhow::{Context, ensure};
 use quickwit_common::uri::Uri;
 use quickwit_doc_mapper::DocMapperBuilder;
 use quickwit_proto::types::{DocMappingUid, IndexId};
@@ -23,8 +23,8 @@ use tracing::info;
 
 use super::validate_index_config;
 use crate::{
-    validate_identifier, ConfigFormat, DocMapping, IndexConfig, IndexingSettings, RetentionPolicy,
-    SearchSettings,
+    ConfigFormat, DocMapping, IndexConfig, IndexingSettings, RetentionPolicy, SearchSettings,
+    validate_identifier,
 };
 
 /// Alias for the latest serialization format.

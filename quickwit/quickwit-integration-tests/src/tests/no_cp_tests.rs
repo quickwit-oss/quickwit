@@ -14,8 +14,8 @@
 
 //! Tests for cluster configurations without a control plane.
 
-use quickwit_config::service::QuickwitService;
 use quickwit_config::ConfigFormat;
+use quickwit_config::service::QuickwitService;
 use quickwit_rest_client::error::{ApiError, Error as RestClientError};
 use quickwit_serve::SearchRequestQueryString;
 
@@ -27,7 +27,7 @@ fn initialize_tests() {
     // we are keeping it that way
 
     quickwit_common::setup_logging_for_tests();
-    unsafe { std::env::set_var("QW_ENABLE_INGEST_V2", "true")};
+    unsafe { std::env::set_var("QW_ENABLE_INGEST_V2", "true") };
 }
 
 #[tokio::test]

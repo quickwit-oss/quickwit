@@ -332,9 +332,9 @@ pub fn query_ast_from_user_text(user_text: &str, default_fields: Option<Vec<Stri
 mod tests {
     use crate::query_ast::tantivy_query_ast::TantivyQueryAst;
     use crate::query_ast::{
-        query_ast_from_user_text, BoolQuery, BuildTantivyAst, QueryAst, UserInputQuery,
+        BoolQuery, BuildTantivyAst, QueryAst, UserInputQuery, query_ast_from_user_text,
     };
-    use crate::{create_default_quickwit_tokenizer_manager, BooleanOperand, InvalidQuery};
+    use crate::{BooleanOperand, InvalidQuery, create_default_quickwit_tokenizer_manager};
 
     #[test]
     fn test_user_query_not_parsed() {

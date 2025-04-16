@@ -21,7 +21,7 @@ use colored::Colorize;
 use opentelemetry::global;
 use quickwit_cli::busy_detector;
 use quickwit_cli::checklist::RED_COLOR;
-use quickwit_cli::cli::{build_cli, CliCommand};
+use quickwit_cli::cli::{CliCommand, build_cli};
 #[cfg(feature = "jemalloc")]
 use quickwit_cli::jemalloc::start_jemalloc_metrics_loop;
 use quickwit_cli::logger::setup_logging_and_tracing;
@@ -128,7 +128,8 @@ mod tests {
     use std::time::Duration;
 
     use bytesize::ByteSize;
-    use quickwit_cli::cli::{build_cli, CliCommand};
+    use quickwit_cli::ClientArgs;
+    use quickwit_cli::cli::{CliCommand, build_cli};
     use quickwit_cli::index::{
         ClearIndexArgs, CreateIndexArgs, DeleteIndexArgs, DescribeIndexArgs, IndexCliCommand,
         IngestDocsArgs, SearchIndexArgs,
@@ -138,7 +139,6 @@ mod tests {
         ExtractSplitArgs, GarbageCollectIndexArgs, LocalIngestDocsArgs, LocalSearchArgs, MergeArgs,
         ToolCliCommand,
     };
-    use quickwit_cli::ClientArgs;
     use quickwit_common::uri::Uri;
     use quickwit_config::SourceInputFormat;
     use quickwit_rest_client::models::Timeout;
@@ -748,8 +748,8 @@ mod tests {
     #[test]
     fn test_parse_no_color() {
         // SAFETY: this test may not be entirely sound if not run with nextest or --test-threads=1
-        // as this is only a test, and it would be extremly inconvenient to run it in a different way,
-        // we are keeping it that way
+        // as this is only a test, and it would be extremly inconvenient to run it in a different
+        // way, we are keeping it that way
 
         let previous_no_color_res = std::env::var("NO_COLOR");
         {

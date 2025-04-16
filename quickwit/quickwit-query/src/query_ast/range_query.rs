@@ -21,11 +21,11 @@ use tantivy::schema::Schema as TantivySchema;
 use tantivy::tokenizer::TextAnalyzer;
 use tantivy::{DateTime, Term};
 
-use super::tantivy_query_ast::TantivyBoolQuery;
 use super::QueryAst;
+use super::tantivy_query_ast::TantivyBoolQuery;
 use crate::json_literal::InterpretUserInput;
-use crate::query_ast::tantivy_query_ast::TantivyQueryAst;
 use crate::query_ast::BuildTantivyAst;
+use crate::query_ast::tantivy_query_ast::TantivyQueryAst;
 use crate::tokenizers::TokenizerManager;
 use crate::{InvalidQuery, JsonLiteral};
 
@@ -285,12 +285,12 @@ fn map_bound<TFrom, TTo>(bound: &Bound<TFrom>, transform: impl Fn(&TFrom) -> TTo
 mod tests {
     use std::ops::Bound;
 
-    use tantivy::schema::{DateOptions, DateTimePrecision, Schema, FAST, STORED, TEXT};
+    use tantivy::schema::{DateOptions, DateTimePrecision, FAST, STORED, Schema, TEXT};
 
     use super::RangeQuery;
     use crate::query_ast::BuildTantivyAst;
     use crate::{
-        create_default_quickwit_tokenizer_manager, InvalidQuery, JsonLiteral, MatchAllOrNone,
+        InvalidQuery, JsonLiteral, MatchAllOrNone, create_default_quickwit_tokenizer_manager,
     };
 
     fn make_schema(dynamic_mode: bool) -> Schema {

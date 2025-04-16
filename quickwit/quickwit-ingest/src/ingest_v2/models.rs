@@ -194,7 +194,7 @@ impl IngesterShard {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_config::{build_doc_mapper, DocMapping, SearchSettings};
+    use quickwit_config::{DocMapping, SearchSettings, build_doc_mapper};
 
     use super::*;
 

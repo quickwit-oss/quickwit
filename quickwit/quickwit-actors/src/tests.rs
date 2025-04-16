@@ -155,10 +155,12 @@ async fn test_ping_actor() {
     // No peers. This one will have no impact.
     let ping_recv_mailbox = ping_recv_mailbox.clone();
     assert!(ping_sender_mailbox.send_message(Ping).await.is_ok());
-    assert!(ping_sender_mailbox
-        .send_message(AddPeer(ping_recv_mailbox.clone()))
-        .await
-        .is_ok());
+    assert!(
+        ping_sender_mailbox
+            .send_message(AddPeer(ping_recv_mailbox.clone()))
+            .await
+            .is_ok()
+    );
     assert_eq!(
         ping_sender_handle.process_pending_and_observe().await,
         Observation {
@@ -292,16 +294,20 @@ async fn test_pause_actor() {
     for _ in 0u32..1000u32 {
         assert!(ping_mailbox.send_message(Ping).await.is_ok());
     }
-    assert!(ping_mailbox
-        .send_message_with_high_priority(Command::Pause)
-        .is_ok());
+    assert!(
+        ping_mailbox
+            .send_message_with_high_priority(Command::Pause)
+            .is_ok()
+    );
     let first_state = ping_handle.observe().await.state;
     assert!(first_state < 1000);
     let second_state = ping_handle.observe().await.state;
     assert_eq!(first_state, second_state);
-    assert!(ping_mailbox
-        .send_message_with_high_priority(Command::Resume)
-        .is_ok());
+    assert!(
+        ping_mailbox
+            .send_message_with_high_priority(Command::Resume)
+            .is_ok()
+    );
     let end_state = ping_handle.process_pending_and_observe().await.state;
     assert_eq!(end_state, 1000);
     universe.assert_quit().await;

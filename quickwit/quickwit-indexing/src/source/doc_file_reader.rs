@@ -18,15 +18,15 @@ use std::path::Path;
 use anyhow::Context;
 use async_compression::tokio::bufread::GzipDecoder;
 use bytes::Bytes;
-use quickwit_common::uri::Uri;
 use quickwit_common::Progress;
+use quickwit_common::uri::Uri;
 use quickwit_metastore::checkpoint::PartitionId;
 use quickwit_proto::metastore::SourceType;
 use quickwit_proto::types::Position;
 use quickwit_storage::StorageResolver;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, BufReader};
 
-use super::{BatchBuilder, BATCH_NUM_BYTES_LIMIT};
+use super::{BATCH_NUM_BYTES_LIMIT, BatchBuilder};
 
 pub struct FileRecord {
     pub next_offset: u64,
@@ -168,7 +168,7 @@ impl ObjectUriBatchReader {
                     reader: DocFileReader::empty(),
                     current_offset: 0,
                     is_eof: true,
-                })
+                });
             }
         };
         let reader = DocFileReader::from_uri(storage_resolver, uri, current_offset).await?;

@@ -15,30 +15,30 @@
 use std::sync::Arc;
 
 use quickwit_config::NodeConfig;
-use quickwit_doc_mapper::{analyze_text, TokenizerConfig};
+use quickwit_doc_mapper::{TokenizerConfig, analyze_text};
 use quickwit_index_management::{IndexService, IndexServiceError};
-use quickwit_query::query_ast::{query_ast_from_user_text, QueryAst};
-use serde::de::DeserializeOwned;
+use quickwit_query::query_ast::{QueryAst, query_ast_from_user_text};
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use tracing::warn;
 use warp::{Filter, Rejection};
 
 use super::get_index_metadata_handler;
 use super::index_resource::{
-    __path_clear_index, __path_create_index, __path_delete_index, __path_list_indexes_metadata,
-    __path_update_index, clear_index_handler, create_index_handler, delete_index_handler,
-    describe_index_handler, list_indexes_metadata_handler, update_index_handler, IndexStats,
-    __path_describe_index,
+    __path_clear_index, __path_create_index, __path_delete_index, __path_describe_index,
+    __path_list_indexes_metadata, __path_update_index, IndexStats, clear_index_handler,
+    create_index_handler, delete_index_handler, describe_index_handler,
+    list_indexes_metadata_handler, update_index_handler,
 };
 use super::source_resource::{
     __path_create_source, __path_delete_source, __path_reset_source_checkpoint,
-    __path_toggle_source, __path_update_source, create_source_handler, delete_source_handler,
-    get_source_handler, get_source_shards_handler, reset_source_checkpoint_handler,
-    toggle_source_handler, update_source_handler, ToggleSource,
+    __path_toggle_source, __path_update_source, ToggleSource, create_source_handler,
+    delete_source_handler, get_source_handler, get_source_shards_handler,
+    reset_source_checkpoint_handler, toggle_source_handler, update_source_handler,
 };
 use super::split_resource::{
-    __path_list_splits, __path_mark_splits_for_deletion, list_splits_handler,
-    mark_splits_for_deletion_handler, SplitsForDeletion,
+    __path_list_splits, __path_mark_splits_for_deletion, SplitsForDeletion, list_splits_handler,
+    mark_splits_for_deletion_handler,
 };
 use crate::format::extract_format_from_qs;
 use crate::rest::recover_fn;
@@ -77,8 +77,8 @@ pub fn log_failure<T, E: std::fmt::Display>(
     }
 }
 
-pub fn json_body<T: DeserializeOwned + Send>(
-) -> impl Filter<Extract = (T,), Error = warp::Rejection> + Clone {
+pub fn json_body<T: DeserializeOwned + Send>()
+-> impl Filter<Extract = (T,), Error = warp::Rejection> + Clone {
     warp::body::content_length_limit(1024 * 1024).and(warp::body::json())
 }
 
@@ -173,15 +173,15 @@ struct ParseQueryRequest {
     pub search_fields: Option<Vec<String>>,
 }
 
-fn parse_query_request_filter(
-) -> impl Filter<Extract = (ParseQueryRequest,), Error = Rejection> + Clone {
+fn parse_query_request_filter()
+-> impl Filter<Extract = (ParseQueryRequest,), Error = Rejection> + Clone {
     warp::path!("parse-query")
         .and(warp::post())
         .and(warp::body::json())
 }
 
-fn parse_query_request_handler(
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+fn parse_query_request_handler()
+-> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     parse_query_request_filter()
         .then(parse_query_request)
         .and(extract_format_from_qs())
@@ -211,15 +211,15 @@ mod tests {
     use std::ops::{Bound, RangeInclusive};
 
     use assert_json_diff::assert_json_include;
-    use quickwit_common::uri::Uri;
     use quickwit_common::ServiceStream;
+    use quickwit_common::uri::Uri;
     use quickwit_config::{
-        NodeConfig, SourceParams, VecSourceParams, CLI_SOURCE_ID, INGEST_API_SOURCE_ID,
+        CLI_SOURCE_ID, INGEST_API_SOURCE_ID, NodeConfig, SourceParams, VecSourceParams,
     };
-    use quickwit_indexing::{mock_split, MockSplitBuilder};
+    use quickwit_indexing::{MockSplitBuilder, mock_split};
     use quickwit_metastore::{
-        metastore_for_test, IndexMetadata, IndexMetadataResponseExt,
-        ListIndexesMetadataResponseExt, ListSplitsRequestExt, ListSplitsResponseExt, SplitState,
+        IndexMetadata, IndexMetadataResponseExt, ListIndexesMetadataResponseExt,
+        ListSplitsRequestExt, ListSplitsResponseExt, SplitState, metastore_for_test,
     };
     use quickwit_proto::metastore::{
         DeleteSourceRequest, EmptyResponse, EntityKind, IndexMetadataRequest,
@@ -308,9 +308,11 @@ mod tests {
                     && list_split_query.time_range.end == Bound::Excluded(20)
                     && list_split_query.create_timestamp.end == Bound::Excluded(2)
                 {
-                    let splits = vec![MockSplitBuilder::new("split_1")
-                        .with_index_uid(&index_uid)
-                        .build()];
+                    let splits = vec![
+                        MockSplitBuilder::new("split_1")
+                            .with_index_uid(&index_uid)
+                            .build(),
+                    ];
                     let splits = ListSplitsResponse::try_from_splits(splits).unwrap();
                     return Ok(ServiceStream::from(vec![Ok(splits)]));
                 }

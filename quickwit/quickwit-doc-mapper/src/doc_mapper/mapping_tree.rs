@@ -21,11 +21,11 @@ use anyhow::bail;
 use itertools::Itertools;
 use serde_json::Value as JsonValue;
 use serde_json_borrow::{Map as BorrowedJsonMap, Value as BorrowedJsonValue};
+use tantivy::TantivyDocument as Document;
 use tantivy::schema::{
     BytesOptions, DateOptions, Field, IntoIpv6Addr, IpAddrOptions, JsonObjectOptions,
     NumericOptions, OwnedValue as TantivyValue, SchemaBuilder, TextOptions,
 };
-use tantivy::TantivyDocument as Document;
 
 use super::date_time_type::QuickwitDateTimeOptions;
 use super::field_mapping_entry::QuickwitBoolOptions;
@@ -1327,22 +1327,22 @@ fn build_mapping_from_field_type<'a>(
 mod tests {
     use std::net::IpAddr;
 
-    use serde_json::{json, Value as JsonValue};
+    use serde_json::{Value as JsonValue, json};
     use tantivy::schema::{Field, IntoIpv6Addr, OwnedValue as TantivyValue, Value};
     use tantivy::{DateTime, TantivyDocument as Document};
-    use time::macros::datetime;
     use time::OffsetDateTime;
+    use time::macros::datetime;
 
     use super::{
-        add_key_to_vec_map, extract_val_from_tantivy_val, JsonValueIterator, LeafType,
-        MapOrArrayIter, MappingLeaf,
+        JsonValueIterator, LeafType, MapOrArrayIter, MappingLeaf, add_key_to_vec_map,
+        extract_val_from_tantivy_val,
     };
+    use crate::Cardinality;
     use crate::doc_mapper::date_time_type::QuickwitDateTimeOptions;
     use crate::doc_mapper::field_mapping_entry::{
         BinaryFormat, QuickwitBoolOptions, QuickwitBytesOptions, QuickwitIpAddrOptions,
         QuickwitNumericOptions, QuickwitTextOptions,
     };
-    use crate::Cardinality;
 
     #[test]
     fn test_field_name_from_field_path() {

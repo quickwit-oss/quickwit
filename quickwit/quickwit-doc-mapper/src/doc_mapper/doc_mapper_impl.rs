@@ -15,7 +15,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroU32;
 
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use fnv::FnvHashSet;
 use quickwit_proto::types::DocMappingUid;
 use quickwit_query::create_default_quickwit_tokenizer_manager;
@@ -24,25 +24,25 @@ use quickwit_query::tokenizers::TokenizerManager;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
 use serde_json_borrow::Map as BorrowedJsonMap;
-use tantivy::query::Query;
-use tantivy::schema::{Field, FieldType, OwnedValue as TantivyValue, Schema, INDEXED, STORED};
 use tantivy::TantivyDocument as Document;
+use tantivy::query::Query;
+use tantivy::schema::{Field, FieldType, INDEXED, OwnedValue as TantivyValue, STORED, Schema};
 
+use super::DocMapperBuilder;
 use super::field_mapping_entry::RAW_TOKENIZER_NAME;
 use super::field_presence::populate_field_presence;
 use super::tantivy_val_to_json::tantivy_value_to_json;
-use super::DocMapperBuilder;
 use crate::doc_mapper::mapping_tree::{
-    build_field_path_from_str, build_mapping_tree, map_primitive_json_to_tantivy,
-    JsonValueIterator, MappingNode, MappingNodeRoot,
+    JsonValueIterator, MappingNode, MappingNodeRoot, build_field_path_from_str, build_mapping_tree,
+    map_primitive_json_to_tantivy,
 };
 use crate::doc_mapper::{FieldMappingType, JsonObject, Partition};
 use crate::query_builder::build_query;
 use crate::routing_expression::RoutingExpr;
 use crate::{
-    Cardinality, DocMapping, DocParsingError, Mode, ModeType, NamedField, QueryParserError,
-    TokenizerEntry, WarmupInfo, DOCUMENT_SIZE_FIELD_NAME, DYNAMIC_FIELD_NAME,
-    FIELD_PRESENCE_FIELD_NAME, SOURCE_FIELD_NAME,
+    Cardinality, DOCUMENT_SIZE_FIELD_NAME, DYNAMIC_FIELD_NAME, DocMapping, DocParsingError,
+    FIELD_PRESENCE_FIELD_NAME, Mode, ModeType, NamedField, QueryParserError, SOURCE_FIELD_NAME,
+    TokenizerEntry, WarmupInfo,
 };
 
 const FIELD_PRESENCE_FIELD: Field = Field::from_field_id(0u32);
@@ -711,7 +711,7 @@ mod tests {
     use itertools::Itertools;
     use quickwit_common::PathHasher;
     use quickwit_query::query_ast::query_ast_from_user_text;
-    use serde_json::{self, json, Value as JsonValue};
+    use serde_json::{self, Value as JsonValue, json};
     use tantivy::schema::{
         FieldType, IndexRecordOption, OwnedValue as TantivyValue, OwnedValue, Type, Value,
     };
@@ -719,7 +719,7 @@ mod tests {
     use super::DocMapper;
     use crate::doc_mapper::field_mapping_entry::{DEFAULT_TOKENIZER_NAME, RAW_TOKENIZER_NAME};
     use crate::{
-        DocMapperBuilder, DocParsingError, DOCUMENT_SIZE_FIELD_NAME, DYNAMIC_FIELD_NAME,
+        DOCUMENT_SIZE_FIELD_NAME, DYNAMIC_FIELD_NAME, DocMapperBuilder, DocParsingError,
         FIELD_PRESENCE_FIELD_NAME, SOURCE_FIELD_NAME,
     };
 
@@ -831,21 +831,15 @@ mod tests {
         let timestamp_field = schema.get_field("timestamp").unwrap();
         let body_field = schema.get_field("body").unwrap();
         let attributes_field = schema.get_field("attributes.server").unwrap();
-        assert!(
-            !field_presences.contains(&PathHasher::hash_path(&[&timestamp_field
-                .field_id()
-                .to_le_bytes()[..]]))
-        );
-        assert!(
-            field_presences.contains(&PathHasher::hash_path(&[&body_field
-                .field_id()
-                .to_le_bytes()[..]]))
-        );
-        assert!(
-            field_presences.contains(&PathHasher::hash_path(&[&attributes_field
-                .field_id()
-                .to_le_bytes()[..]]))
-        );
+        assert!(!field_presences.contains(&PathHasher::hash_path(&[
+            &timestamp_field.field_id().to_le_bytes()[..]
+        ])));
+        assert!(field_presences.contains(&PathHasher::hash_path(&[
+            &body_field.field_id().to_le_bytes()[..]
+        ])));
+        assert!(field_presences.contains(&PathHasher::hash_path(&[
+            &attributes_field.field_id().to_le_bytes()[..]
+        ])));
     }
 
     #[test]
@@ -1203,9 +1197,11 @@ mod tests {
         let deser_err = serde_json::from_str::<DocMapperBuilder>(doc_mapper)
             .err()
             .unwrap();
-        assert!(deser_err
-            .to_string()
-            .contains("the following fields are reserved for Quickwit internal usage"));
+        assert!(
+            deser_err
+                .to_string()
+                .contains("the following fields are reserved for Quickwit internal usage")
+        );
     }
 
     #[test]
@@ -1306,16 +1302,12 @@ mod tests {
         assert_eq!(field_presences.len(), 2);
         let city_field = schema.get_field("city").unwrap();
         let image_field = schema.get_field("image").unwrap();
-        assert!(
-            field_presences.contains(&PathHasher::hash_path(&[&city_field
-                .field_id()
-                .to_le_bytes()]))
-        );
-        assert!(
-            field_presences.contains(&PathHasher::hash_path(&[&image_field
-                .field_id()
-                .to_le_bytes()]))
-        );
+        assert!(field_presences.contains(&PathHasher::hash_path(&[
+            &city_field.field_id().to_le_bytes()
+        ])));
+        assert!(field_presences.contains(&PathHasher::hash_path(&[
+            &image_field.field_id().to_le_bytes()
+        ])));
     }
 
     #[test]
@@ -1565,9 +1557,11 @@ mod tests {
         }"#,
         )
         .unwrap();
-        assert!(default_doc_mapper
-            .doc_from_json_str(r#"{ "some_obj": { "child_a": "hello" } }"#)
-            .is_ok());
+        assert!(
+            default_doc_mapper
+                .doc_from_json_str(r#"{ "some_obj": { "child_a": "hello" } }"#)
+                .is_ok()
+        );
         let parsing_err = default_doc_mapper
             .doc_from_json_str(r#"{ "some_obj": { "child_a": "hello", "child_b": 6 } }"#)
             .err()
@@ -1613,13 +1607,15 @@ mod tests {
             r#"{ "mode": "dynamic" }"#,
             DYNAMIC_FIELD_NAME,
             r#"{ "a": { "b": 5, "c": 6 } }"#,
-            vec![json!({
-                "a": {
-                    "b": 5,
-                    "c": 6
-                }
-            })
-            .into()],
+            vec![
+                json!({
+                    "a": {
+                        "b": 5,
+                        "c": 6
+                    }
+                })
+                .into(),
+            ],
         );
     }
 
@@ -1643,15 +1639,17 @@ mod tests {
             }"#,
             DYNAMIC_FIELD_NAME,
             r#"{ "some_obj": { "child_a": "", "child_b": {"c": 3} }, "some_obj2": 4 }"#,
-            vec![json!({
-                "some_obj": {
-                    "child_b": {
-                        "c": 3
-                    }
-                },
-                "some_obj2": 4
-            })
-            .into()],
+            vec![
+                json!({
+                    "some_obj": {
+                        "child_b": {
+                            "c": 3
+                        }
+                    },
+                    "some_obj2": 4
+                })
+                .into(),
+            ],
         );
     }
 
@@ -1675,17 +1673,20 @@ mod tests {
             }"#,
             "some_obj.json_obj",
             r#"{ "some_obj": { "json_obj": {"hello": 2} } }"#,
-            vec![json!({
-                "hello": 2
-            })
-            .into()],
+            vec![
+                json!({
+                    "hello": 2
+                })
+                .into(),
+            ],
         );
     }
 
     #[test]
     fn test_reject_invalid_concatenate_field() {
-        assert!(serde_json::from_str::<DocMapper>(
-            r#"{
+        assert!(
+            serde_json::from_str::<DocMapper>(
+                r#"{
                 "field_mappings": [
                     {
                         "name": "concat",
@@ -1694,12 +1695,14 @@ mod tests {
                     }
                 ]
             }"#
-        )
-        .unwrap_err()
-        .to_string()
-        .contains("uses an unknown field"));
-        assert!(serde_json::from_str::<DocMapper>(
-            r#"{
+            )
+            .unwrap_err()
+            .to_string()
+            .contains("uses an unknown field")
+        );
+        assert!(
+            serde_json::from_str::<DocMapper>(
+                r#"{
                 "field_mappings": [
                     {
                         "name": "concat",
@@ -1709,12 +1712,16 @@ mod tests {
                 ],
                 "mode": "strict"
             }"#
-        )
-        .unwrap_err()
-        .to_string()
-        .contains("concatenate field has `include_dynamic_fields` set, but index isn't dynamic"));
-        assert!(serde_json::from_str::<DocMapper>(
-            r#"{
+            )
+            .unwrap_err()
+            .to_string()
+            .contains(
+                "concatenate field has `include_dynamic_fields` set, but index isn't dynamic"
+            )
+        );
+        assert!(
+            serde_json::from_str::<DocMapper>(
+                r#"{
                 "field_mappings": [
                     {
                         "name": "concat",
@@ -1722,10 +1729,11 @@ mod tests {
                     }
                 ]
             }"#
-        )
-        .unwrap_err()
-        .to_string()
-        .contains("concatenate type must have at least one sub-field"));
+            )
+            .unwrap_err()
+            .to_string()
+            .contains("concatenate type must have at least one sub-field")
+        );
     }
 
     #[test]
@@ -2281,10 +2289,12 @@ mod tests {
             }
             _ => panic!("Expected a text field"),
         }
-        assert!(mapper
-            .tokenizer_manager()
-            .get_tokenizer("my_tokenizer")
-            .is_some());
+        assert!(
+            mapper
+                .tokenizer_manager()
+                .get_tokenizer("my_tokenizer")
+                .is_some()
+        );
     }
 
     #[test]

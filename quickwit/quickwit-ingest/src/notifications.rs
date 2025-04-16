@@ -105,8 +105,8 @@ impl Notification {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::AtomicUsize;
     use std::sync::Arc;
+    use std::sync::atomic::AtomicUsize;
 
     use crate::notifications::Notifications;
 

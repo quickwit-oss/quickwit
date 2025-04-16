@@ -181,11 +181,7 @@ macro_rules! ignore_error_kind {
 pub const fn div_ceil_u32(lhs: u32, rhs: u32) -> u32 {
     let d = lhs / rhs;
     let r = lhs % rhs;
-    if r > 0 {
-        d + 1
-    } else {
-        d
-    }
+    if r > 0 { d + 1 } else { d }
 }
 
 #[inline]
@@ -305,14 +301,14 @@ mod tests {
     #[test]
     fn test_get_from_env() {
         // SAFETY: this test may not be entirely sound if not run with nextest or --test-threads=1
-        // as this is only a test, and it would be extremly inconvenient to run it in a different way,
-        // we are keeping it that way
+        // as this is only a test, and it would be extremly inconvenient to run it in a different
+        // way, we are keeping it that way
 
         const TEST_KEY: &str = "TEST_KEY";
         assert_eq!(super::get_from_env(TEST_KEY, 10), 10);
         unsafe { std::env::set_var(TEST_KEY, "15") };
         assert_eq!(super::get_from_env(TEST_KEY, 10), 15);
-        unsafe{ std::env::set_var(TEST_KEY, "1invalidnumber") };
+        unsafe { std::env::set_var(TEST_KEY, "1invalidnumber") };
         assert_eq!(super::get_from_env(TEST_KEY, 10), 10);
     }
 

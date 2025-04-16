@@ -25,15 +25,15 @@ use quickwit_proto::ingest::Shard;
 use quickwit_serve::{
     ListSplitsQueryParams, ListSplitsResponse, RestIngestResponse, SearchRequestQueryString,
 };
-use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
+use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
 use reqwest::tls::Certificate;
 use reqwest::{Client, ClientBuilder, Method, StatusCode, Url};
 use serde::Serialize;
 use serde_json::json;
 
+use crate::BatchLineReader;
 use crate::error::Error;
 use crate::models::{ApiResponse, IngestSource, SearchResponseRestClient, Timeout};
-use crate::BatchLineReader;
 
 pub const DEFAULT_BASE_URL: &str = "http://127.0.0.1:7280";
 pub const DEFAULT_CONTENT_TYPE: &str = "application/json";

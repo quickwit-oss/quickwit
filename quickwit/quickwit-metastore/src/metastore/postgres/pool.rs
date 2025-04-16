@@ -16,8 +16,8 @@ use futures::future::BoxFuture;
 use futures::stream::BoxStream;
 use quickwit_common::metrics::GaugeGuard;
 use sqlx::database::HasStatement;
-use sqlx::pool::maybe::MaybePoolConnection;
 use sqlx::pool::PoolConnection;
+use sqlx::pool::maybe::MaybePoolConnection;
 use sqlx::{
     Acquire, Database, Describe, Either, Error, Execute, Executor, Pool, Postgres, Transaction,
 };

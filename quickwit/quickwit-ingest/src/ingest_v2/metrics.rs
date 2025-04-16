@@ -15,8 +15,8 @@
 use mrecordlog::ResourceUsage;
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
-    exponential_buckets, linear_buckets, new_counter_vec, new_gauge, new_gauge_vec, new_histogram,
-    new_histogram_vec, Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec,
+    Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec, exponential_buckets,
+    linear_buckets, new_counter_vec, new_gauge, new_gauge_vec, new_histogram, new_histogram_vec,
 };
 
 // Counter vec counting the different outcomes of ingest requests as

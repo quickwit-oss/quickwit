@@ -18,11 +18,11 @@ use quickwit_datetime::StrptimeParser;
 use serde::Deserialize;
 use time::format_description::well_known::Rfc3339;
 
-use crate::elastic_query_dsl::one_field_map::OneFieldMap;
+use crate::JsonLiteral;
 use crate::elastic_query_dsl::ConvertibleToQueryAst;
+use crate::elastic_query_dsl::one_field_map::OneFieldMap;
 use crate::not_nan_f32::NotNaNf32;
 use crate::query_ast::QueryAst;
-use crate::JsonLiteral;
 
 #[derive(Deserialize, Debug, Default, Eq, PartialEq, Clone)]
 #[serde(deny_unknown_fields)]
@@ -108,9 +108,9 @@ mod tests {
     use std::ops::Bound;
 
     use super::{RangeQuery as ElasticRangeQuery, RangeQueryParams as ElasticRangeQueryParams};
+    use crate::JsonLiteral;
     use crate::elastic_query_dsl::ConvertibleToQueryAst;
     use crate::query_ast::{QueryAst, RangeQuery};
-    use crate::JsonLiteral;
 
     #[test]
     fn test_date_range_query_with_format() {

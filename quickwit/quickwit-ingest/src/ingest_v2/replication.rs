@@ -19,12 +19,12 @@ use bytesize::ByteSize;
 use futures::{Future, StreamExt};
 use mrecordlog::error::CreateQueueError;
 use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
-use quickwit_common::{rate_limited_warn, ServiceStream};
+use quickwit_common::{ServiceStream, rate_limited_warn};
 use quickwit_proto::ingest::ingester::{
-    ack_replication_message, syn_replication_message, AckReplicationMessage, IngesterStatus,
-    InitReplicaRequest, InitReplicaResponse, ReplicateFailure, ReplicateFailureReason,
-    ReplicateRequest, ReplicateResponse, ReplicateSubrequest, ReplicateSuccess,
-    SynReplicationMessage,
+    AckReplicationMessage, IngesterStatus, InitReplicaRequest, InitReplicaResponse,
+    ReplicateFailure, ReplicateFailureReason, ReplicateRequest, ReplicateResponse,
+    ReplicateSubrequest, ReplicateSuccess, SynReplicationMessage, ack_replication_message,
+    syn_replication_message,
 };
 use quickwit_proto::ingest::{CommitTypeV2, IngestV2Error, IngestV2Result, Shard, ShardState};
 use quickwit_proto::types::{NodeId, Position, QueueId};
@@ -37,7 +37,7 @@ use super::metrics::report_wal_usage;
 use super::models::IngesterShard;
 use super::mrecordlog_utils::check_enough_capacity;
 use super::state::IngesterState;
-use crate::ingest_v2::mrecordlog_utils::{append_non_empty_doc_batch, AppendDocBatchError};
+use crate::ingest_v2::mrecordlog_utils::{AppendDocBatchError, append_non_empty_doc_batch};
 use crate::metrics::INGEST_METRICS;
 use crate::{estimate_size, with_lock_metrics};
 
@@ -764,7 +764,7 @@ mod tests {
 
     use quickwit_proto::ingest::ingester::{ReplicateSubrequest, ReplicateSuccess};
     use quickwit_proto::ingest::{DocBatchV2, Shard};
-    use quickwit_proto::types::{queue_id, IndexUid, ShardId};
+    use quickwit_proto::types::{IndexUid, ShardId, queue_id};
 
     use super::*;
 

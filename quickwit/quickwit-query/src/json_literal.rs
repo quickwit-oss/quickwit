@@ -17,7 +17,7 @@ use std::str::FromStr;
 
 use base64::Engine;
 use once_cell::sync::OnceCell;
-use quickwit_datetime::{parse_date_time_str, parse_timestamp, DateTimeInputFormat};
+use quickwit_datetime::{DateTimeInputFormat, parse_date_time_str, parse_timestamp};
 use serde::{Deserialize, Serialize};
 use tantivy::schema::IntoIpv6Addr;
 
@@ -216,8 +216,8 @@ mod tests {
     use tantivy::DateTime;
     use time::macros::datetime;
 
-    use crate::json_literal::InterpretUserInput;
     use crate::JsonLiteral;
+    use crate::json_literal::InterpretUserInput;
 
     #[test]
     fn test_interpret_str_u64() {

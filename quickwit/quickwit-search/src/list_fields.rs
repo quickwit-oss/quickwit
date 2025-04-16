@@ -26,8 +26,8 @@ use quickwit_common::uri::Uri;
 use quickwit_metastore::SplitMetadata;
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_proto::search::{
-    deserialize_split_fields, LeafListFieldsRequest, ListFields, ListFieldsEntryResponse,
-    ListFieldsRequest, ListFieldsResponse, SplitIdAndFooterOffsets,
+    LeafListFieldsRequest, ListFields, ListFieldsEntryResponse, ListFieldsRequest,
+    ListFieldsResponse, SplitIdAndFooterOffsets, deserialize_split_fields,
 };
 use quickwit_proto::types::{IndexId, IndexUid};
 use quickwit_storage::Storage;
@@ -35,7 +35,7 @@ use quickwit_storage::Storage;
 use crate::leaf::open_split_bundle;
 use crate::search_job_placer::group_jobs_by_index_id;
 use crate::service::SearcherContext;
-use crate::{list_relevant_splits, resolve_index_patterns, ClusterClient, SearchError, SearchJob};
+use crate::{ClusterClient, SearchError, SearchJob, list_relevant_splits, resolve_index_patterns};
 
 /// Get the list of splits for the request which we need to scan.
 pub async fn get_fields_from_split(
@@ -91,10 +91,12 @@ fn merge_same_field_group(
 ) -> ListFieldsEntryResponse {
     // Make sure all fields have the same name and type in current_group
     assert!(!current_group.is_empty());
-    assert!(current_group
-        .windows(2)
-        .all(|window| window[0].field_name == window[1].field_name
-            && window[0].field_type == window[1].field_type));
+    assert!(
+        current_group
+            .windows(2)
+            .all(|window| window[0].field_name == window[1].field_name
+                && window[0].field_type == window[1].field_type)
+    );
 
     if current_group.len() == 1 {
         return current_group.pop().unwrap();

@@ -12,20 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use tantivy::Term;
 use tantivy::json_utils::convert_to_fast_value_and_append_to_json_term;
 use tantivy::query::TermQuery as TantivyTermQuery;
 use tantivy::schema::{
     Field, FieldEntry, FieldType, IndexRecordOption, JsonObjectOptions, Schema as TantivySchema,
     Type,
 };
-use tantivy::Term;
 
+use crate::InvalidQuery;
+use crate::MatchAllOrNone::MatchNone as TantivyEmptyQuery;
 use crate::json_literal::InterpretUserInput;
 use crate::query_ast::full_text_query::FullTextParams;
 use crate::query_ast::tantivy_query_ast::{TantivyBoolQuery, TantivyQueryAst};
 use crate::tokenizers::TokenizerManager;
-use crate::InvalidQuery;
-use crate::MatchAllOrNone::MatchNone as TantivyEmptyQuery;
 
 pub(crate) const DYNAMIC_FIELD_NAME: &str = "_dynamic";
 

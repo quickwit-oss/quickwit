@@ -18,7 +18,7 @@ use futures_util::StreamExt;
 use quickwit_config::service::QuickwitService;
 use quickwit_metastore::SplitState;
 use quickwit_opentelemetry::otlp::{
-    make_resource_spans_for_test, OTEL_LOGS_INDEX_ID, OTEL_TRACES_INDEX_ID,
+    OTEL_LOGS_INDEX_ID, OTEL_TRACES_INDEX_ID, make_resource_spans_for_test,
 };
 use quickwit_proto::jaeger::storage::v1::{
     FindTraceIDsRequest, GetOperationsRequest, GetServicesRequest, GetTraceRequest, Operation,
@@ -26,8 +26,8 @@ use quickwit_proto::jaeger::storage::v1::{
 };
 use quickwit_proto::opentelemetry::proto::collector::logs::v1::ExportLogsServiceRequest;
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::ExportTraceServiceRequest;
-use quickwit_proto::opentelemetry::proto::common::v1::any_value::Value;
 use quickwit_proto::opentelemetry::proto::common::v1::AnyValue;
+use quickwit_proto::opentelemetry::proto::common::v1::any_value::Value;
 use quickwit_proto::opentelemetry::proto::logs::v1::{LogRecord, ResourceLogs, ScopeLogs};
 use quickwit_proto::opentelemetry::proto::trace::v1::{ResourceSpans, ScopeSpans, Span};
 use tonic::codec::CompressionEncoding;

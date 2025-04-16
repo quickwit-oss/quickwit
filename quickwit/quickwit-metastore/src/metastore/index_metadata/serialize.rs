@@ -18,9 +18,9 @@ use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_proto::types::IndexUid;
 use serde::{self, Deserialize, Serialize};
 
+use crate::IndexMetadata;
 use crate::checkpoint::IndexCheckpoint;
 use crate::split_metadata::utc_now_timestamp;
-use crate::IndexMetadata;
 
 #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(tag = "version")]

@@ -20,8 +20,8 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use futures::future::{BoxFuture, FutureExt};
 use futures::StreamExt;
+use futures::future::{BoxFuture, FutureExt};
 use quickwit_common::ignore_error_kind;
 use quickwit_common::uri::Uri;
 use quickwit_config::StorageBackend;

@@ -192,7 +192,7 @@ mod tests {
 
     use futures::future::ready;
 
-    use super::{retry_with_mockable_sleep, MockableSleep, RetryParams, Retryable};
+    use super::{MockableSleep, RetryParams, Retryable, retry_with_mockable_sleep};
 
     #[derive(Debug, Eq, PartialEq)]
     pub enum Retry<E> {

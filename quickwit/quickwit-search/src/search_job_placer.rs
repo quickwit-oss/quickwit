@@ -20,13 +20,13 @@ use std::net::SocketAddr;
 
 use anyhow::bail;
 use async_trait::async_trait;
+use quickwit_common::SocketAddrLegacyHash;
 use quickwit_common::pubsub::EventSubscriber;
 use quickwit_common::rendezvous_hasher::{node_affinity, sort_by_rendez_vous_hash};
-use quickwit_common::SocketAddrLegacyHash;
 use quickwit_proto::search::{ReportSplit, ReportSplitsRequest};
 use tracing::{info, warn};
 
-use crate::{SearchJob, SearchServiceClient, SearcherPool, SEARCH_METRICS};
+use crate::{SEARCH_METRICS, SearchJob, SearchServiceClient, SearcherPool};
 
 /// Job.
 /// The unit in which distributed search is performed.
@@ -309,7 +309,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{searcher_pool_for_test, MockSearchService, SearchJob};
+    use crate::{MockSearchService, SearchJob, searcher_pool_for_test};
 
     #[test]
     fn test_group_by_1() {
@@ -368,10 +368,12 @@ mod tests {
         {
             let searcher_pool = SearcherPool::default();
             let search_job_placer = SearchJobPlacer::new(searcher_pool);
-            assert!(search_job_placer
-                .assign_jobs::<SearchJob>(Vec::new(), &HashSet::new())
-                .await
-                .is_err());
+            assert!(
+                search_job_placer
+                    .assign_jobs::<SearchJob>(Vec::new(), &HashSet::new())
+                    .await
+                    .is_err()
+            );
         }
         {
             let searcher_pool =

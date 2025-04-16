@@ -19,8 +19,8 @@ use std::sync::Arc;
 use anyhow::Context;
 use quickwit_cluster::cluster_grpc_server;
 use quickwit_common::tower::BoxFutureInfaillible;
-use quickwit_config::service::QuickwitService;
 use quickwit_config::GrpcConfig;
+use quickwit_config::service::QuickwitService;
 use quickwit_proto::developer::DeveloperServiceClient;
 use quickwit_proto::indexing::IndexingServiceClient;
 use quickwit_proto::jaeger::storage::v1::span_reader_plugin_server::SpanReaderPluginServer;
@@ -31,15 +31,15 @@ use quickwit_proto::tonic::codegen::CompressionEncoding;
 use quickwit_proto::tonic::transport::server::TcpIncoming;
 use quickwit_proto::tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
 use tokio::net::TcpListener;
-use tonic_health::pb::health_server::{Health, HealthServer};
 use tonic_health::pb::FILE_DESCRIPTOR_SET as HEALTH_FILE_DESCRIPTOR_SET;
+use tonic_health::pb::health_server::{Health, HealthServer};
 use tonic_reflection::pb::FILE_DESCRIPTOR_SET as REFLECTION_FILE_DESCRIPTOR_SET;
 use tonic_reflection::server::{ServerReflection, ServerReflectionServer};
 use tracing::*;
 
 use crate::developer_api::DeveloperApiServer;
 use crate::search_api::GrpcSearchAdapter;
-use crate::{QuickwitServices, INDEXING_GRPC_SERVER_METRICS_LAYER};
+use crate::{INDEXING_GRPC_SERVER_METRICS_LAYER, QuickwitServices};
 
 /// Starts and binds gRPC services to `grpc_listen_addr`.
 pub(crate) async fn start_grpc_server(

@@ -14,6 +14,7 @@
 
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
+use tantivy::Term;
 use tantivy::query::{
     PhrasePrefixQuery as TantivyPhrasePrefixQuery, PhraseQuery as TantivyPhraseQuery,
     TermQuery as TantivyTermQuery,
@@ -23,13 +24,12 @@ use tantivy::schema::{
     TextFieldIndexing,
 };
 use tantivy::tokenizer::{TextAnalyzer, TokenStream};
-use tantivy::Term;
 
 use crate::query_ast::tantivy_query_ast::{TantivyBoolQuery, TantivyQueryAst};
 use crate::query_ast::utils::full_text_query;
 use crate::query_ast::{BuildTantivyAst, QueryAst};
 use crate::tokenizers::TokenizerManager;
-use crate::{find_field_or_hit_dynamic, BooleanOperand, InvalidQuery, MatchAllOrNone};
+use crate::{BooleanOperand, InvalidQuery, MatchAllOrNone, find_field_or_hit_dynamic};
 
 #[derive(Serialize, Deserialize, Debug, Eq, PartialEq, Clone)]
 #[serde(deny_unknown_fields)]
@@ -308,7 +308,7 @@ mod tests {
 
     use crate::query_ast::tantivy_query_ast::TantivyQueryAst;
     use crate::query_ast::{BuildTantivyAst, FullTextMode, FullTextQuery};
-    use crate::{create_default_quickwit_tokenizer_manager, BooleanOperand};
+    use crate::{BooleanOperand, create_default_quickwit_tokenizer_manager};
 
     #[test]
     fn test_zero_terms() {

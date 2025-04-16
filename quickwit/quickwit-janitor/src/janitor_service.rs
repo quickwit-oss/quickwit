@@ -16,7 +16,7 @@ use async_trait::async_trait;
 use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, ActorState, Handler, Healthz,
 };
-use serde_json::{json, Value as JsonValue};
+use serde_json::{Value as JsonValue, json};
 
 use crate::actors::{DeleteTaskService, GarbageCollector, RetentionPolicyExecutor};
 

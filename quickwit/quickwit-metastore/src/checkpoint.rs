@@ -13,8 +13,8 @@
 // limitations under the License.
 
 use std::cmp::Ordering;
-use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
+use std::collections::btree_map::Entry;
 use std::fmt;
 use std::iter::FromIterator;
 use std::ops::Range;
@@ -776,24 +776,34 @@ mod tests {
     #[test]
     fn test_index_checkpoint() {
         let mut index_checkpoint = IndexCheckpoint::default();
-        assert!(index_checkpoint
-            .source_checkpoint("missing_source")
-            .is_none());
+        assert!(
+            index_checkpoint
+                .source_checkpoint("missing_source")
+                .is_none()
+        );
         index_checkpoint.add_source("existing_source_with_empty_checkpoint");
-        assert!(index_checkpoint
-            .source_checkpoint("existing_source_with_empty_checkpoint")
-            .is_some());
+        assert!(
+            index_checkpoint
+                .source_checkpoint("existing_source_with_empty_checkpoint")
+                .is_some()
+        );
         index_checkpoint.remove_source("missing_source"); //< we just check this does not fail
-        assert!(index_checkpoint
-            .source_checkpoint("missing_source")
-            .is_none());
-        assert!(index_checkpoint
-            .source_checkpoint("existing_source_with_empty_checkpoint")
-            .is_some());
+        assert!(
+            index_checkpoint
+                .source_checkpoint("missing_source")
+                .is_none()
+        );
+        assert!(
+            index_checkpoint
+                .source_checkpoint("existing_source_with_empty_checkpoint")
+                .is_some()
+        );
         index_checkpoint.remove_source("existing_source_with_empty_checkpoint"); //< we just check this does not fail
-        assert!(index_checkpoint
-            .source_checkpoint("existing_source_with_empty_checkpoint")
-            .is_none());
+        assert!(
+            index_checkpoint
+                .source_checkpoint("existing_source_with_empty_checkpoint")
+                .is_none()
+        );
     }
 
     #[test]

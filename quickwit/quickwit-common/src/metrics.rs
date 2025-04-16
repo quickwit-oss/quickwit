@@ -16,12 +16,12 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::OnceLock;
 
 use once_cell::sync::Lazy;
-pub use prometheus::{
-    exponential_buckets, linear_buckets, Histogram, HistogramTimer,
-    HistogramVec as PrometheusHistogramVec, IntCounter, IntCounterVec as PrometheusIntCounterVec,
-    IntGauge, IntGaugeVec as PrometheusIntGaugeVec,
-};
 use prometheus::{Gauge, HistogramOpts, Opts, TextEncoder};
+pub use prometheus::{
+    Histogram, HistogramTimer, HistogramVec as PrometheusHistogramVec, IntCounter,
+    IntCounterVec as PrometheusIntCounterVec, IntGauge, IntGaugeVec as PrometheusIntGaugeVec,
+    exponential_buckets, linear_buckets,
+};
 
 #[derive(Clone)]
 pub struct HistogramVec<const N: usize> {

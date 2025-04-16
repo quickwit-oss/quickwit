@@ -15,12 +15,12 @@
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use async_trait::async_trait;
 use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, ActorState, Handler, Mailbox,
 };
-use serde_json::{json, Value as JsonValue};
+use serde_json::{Value as JsonValue, json};
 
 use super::Queue;
 use crate::source::SourceContext;

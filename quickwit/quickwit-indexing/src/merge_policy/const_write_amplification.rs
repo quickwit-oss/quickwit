@@ -15,8 +15,8 @@
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
 
-use quickwit_config::merge_policy_config::ConstWriteAmplificationMergePolicyConfig;
 use quickwit_config::IndexingSettings;
+use quickwit_config::merge_policy_config::ConstWriteAmplificationMergePolicyConfig;
 use quickwit_metastore::{SplitMaturity, SplitMetadata};
 use time::OffsetDateTime;
 use tracing::info;
@@ -275,9 +275,9 @@ mod tests {
     use time::OffsetDateTime;
 
     use super::ConstWriteAmplificationMergePolicy;
-    use crate::merge_policy::tests::create_splits;
-    use crate::merge_policy::MergeOperation;
     use crate::MergePolicy;
+    use crate::merge_policy::MergeOperation;
+    use crate::merge_policy::tests::create_splits;
 
     #[test]
     fn test_split_is_mature() {

@@ -19,7 +19,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{ensure, Context};
+use anyhow::{Context, ensure};
 use bytesize::ByteSize;
 use chrono::Utc;
 use cron::Schedule;
@@ -525,8 +525,8 @@ mod tests {
     use quickwit_doc_mapper::ModeType;
 
     use super::*;
-    use crate::merge_policy_config::MergePolicyConfig;
     use crate::ConfigFormat;
+    use crate::merge_policy_config::MergePolicyConfig;
 
     fn get_index_config_filepath(index_config_filename: &str) -> String {
         format!(
@@ -734,10 +734,12 @@ mod tests {
         )
         .unwrap_err();
         println!("{parsing_config_error:?}");
-        assert!(parsing_config_error
-            .root_cause()
-            .to_string()
-            .contains("failed to parse human-readable duration `x`"));
+        assert!(
+            parsing_config_error
+                .root_cause()
+                .to_string()
+                .contains("failed to parse human-readable duration `x`")
+        );
     }
 
     #[test]

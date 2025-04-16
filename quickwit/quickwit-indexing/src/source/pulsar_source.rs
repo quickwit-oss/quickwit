@@ -16,7 +16,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::time::{Duration, Instant};
 
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use async_trait::async_trait;
 use bytes::Bytes;
 use futures::StreamExt;
@@ -31,14 +31,14 @@ use quickwit_config::{PulsarSourceAuth, PulsarSourceParams};
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
 use quickwit_proto::metastore::SourceType;
 use quickwit_proto::types::{IndexUid, Position};
-use serde_json::{json, Value as JsonValue};
+use serde_json::{Value as JsonValue, json};
 use tokio::time;
 use tracing::{debug, info, warn};
 
 use crate::actors::DocProcessor;
 use crate::source::{
-    BatchBuilder, Source, SourceActor, SourceContext, SourceRuntime, TypedSourceFactory,
-    BATCH_NUM_BYTES_LIMIT, EMIT_BATCHES_TIMEOUT,
+    BATCH_NUM_BYTES_LIMIT, BatchBuilder, EMIT_BATCHES_TIMEOUT, Source, SourceActor, SourceContext,
+    SourceRuntime, TypedSourceFactory,
 };
 
 type PulsarConsumer = Consumer<PulsarMessage, TokioExecutor>;
@@ -445,7 +445,7 @@ mod pulsar_broker_tests {
     use std::ops::Range;
 
     use futures::future::join_all;
-    use quickwit_actors::{ActorHandle, Inbox, Universe, HEARTBEAT};
+    use quickwit_actors::{ActorHandle, HEARTBEAT, Inbox, Universe};
     use quickwit_common::rand::append_random_suffix;
     use quickwit_config::{SourceConfig, SourceInputFormat, SourceParams};
     use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpointDelta};
@@ -457,7 +457,7 @@ mod pulsar_broker_tests {
     use crate::source::pulsar_source::{msg_id_from_position, msg_id_to_position};
     use crate::source::test_setup_helper::setup_index;
     use crate::source::tests::SourceRuntimeBuilder;
-    use crate::source::{quickwit_supported_sources, RawDocBatch, SuggestTruncate};
+    use crate::source::{RawDocBatch, SuggestTruncate, quickwit_supported_sources};
 
     static PULSAR_URI: &str = "pulsar://localhost:6650";
     static PULSAR_ADMIN_URI: &str = "http://localhost:8081";

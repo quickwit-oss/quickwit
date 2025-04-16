@@ -16,8 +16,8 @@ use anyhow::ensure;
 use heck::{ToSnakeCase, ToUpperCamelCase};
 use proc_macro2::TokenStream;
 use prost_build::{Comments, Method, Service, ServiceGenerator};
-use quote::{quote, ToTokens};
-use syn::{parse_quote, Ident};
+use quote::{ToTokens, quote};
+use syn::{Ident, parse_quote};
 
 use crate::ProstConfig;
 
