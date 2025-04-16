@@ -43,6 +43,7 @@ use quickwit_serve::{
     serve_quickwit, ListSplitsQueryParams, RestIngestResponse, SearchRequestQueryString,
 };
 use quickwit_storage::StorageResolver;
+use rand::Rng;
 use reqwest::Url;
 use serde_json::Value;
 use tempfile::TempDir;
@@ -480,13 +481,20 @@ impl ClusterSandbox {
             .ok_or(anyhow::anyhow!("No indexer node found"))?;
         // NodeConfig cannot be serialized, we write our own simplified config
         let mut tmp_config_file = tempfile::Builder::new().suffix(".yaml").tempfile().unwrap();
+        // we suffix data_dir with a random slug to save us from multiple local ingestion trying to
+        // concurrently do something, and cleanup the directory to start a new ingestion.
+        let data_dir = test_conf
+            .0
+            .data_dir_path
+            .join(rand::thread_rng().gen::<u64>().to_string());
+        tokio::fs::create_dir(&data_dir).await?;
         let node_config = format!(
             r#"
                 version: 0.8
                 metastore_uri: {}
                 data_dir: {:?}
                 "#,
-            test_conf.0.metastore_uri, test_conf.0.data_dir_path
+            test_conf.0.metastore_uri, data_dir
         );
         tmp_config_file.write_all(node_config.as_bytes())?;
         tmp_config_file.flush()?;
