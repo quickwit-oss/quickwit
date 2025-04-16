@@ -486,6 +486,7 @@ impl std::fmt::Debug for SearcherContext {
 }
 
 impl SearcherContext {
+    /// Create a default SearcherContext
     #[cfg(test)]
     pub fn for_test() -> SearcherContext {
         let searcher_config = SearcherConfig::default();

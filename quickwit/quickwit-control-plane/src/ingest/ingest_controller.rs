@@ -762,7 +762,7 @@ impl IngestController {
 
         let source_uids_with_multiplicity = shards_per_source
             .iter()
-            .flat_map(|(source_uid, count)| std::iter::repeat(source_uid).take(*count));
+            .flat_map(|(source_uid, count)| std::iter::repeat_n(source_uid, *count));
 
         let mut init_shard_subrequests: Vec<InitShardSubrequest> = Vec::new();
 

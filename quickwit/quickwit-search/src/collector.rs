@@ -176,7 +176,7 @@ impl SortingFieldExtractorComponent {
             SortingFieldExtractorComponent::FastField { sort_column, .. } => {
                 sort_column.first(doc_id)
             }
-            SortingFieldExtractorComponent::Score { .. } => Some((score as f64).to_u64()),
+            SortingFieldExtractorComponent::Score => Some((score as f64).to_u64()),
         }
     }
 

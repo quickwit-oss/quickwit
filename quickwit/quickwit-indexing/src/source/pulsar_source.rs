@@ -527,10 +527,7 @@ mod pulsar_broker_tests {
 
     impl TopicData {
         fn num_bytes(&self) -> usize {
-            self.messages
-                .iter()
-                .map(|v| v.as_bytes().len())
-                .sum::<usize>()
+            self.messages.iter().map(|v| v.len()).sum::<usize>()
         }
 
         fn len(&self) -> usize {

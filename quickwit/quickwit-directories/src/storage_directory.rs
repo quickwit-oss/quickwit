@@ -61,8 +61,7 @@ impl FileHandle for StorageDirectoryFileHandle {
         let object_bytes = self
             .storage_directory
             .get_slice(&self.path, byte_range)
-            .await
-            .map_err(Into::<io::Error>::into)?;
+            .await?;
         Ok(object_bytes)
     }
 }

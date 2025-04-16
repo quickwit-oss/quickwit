@@ -174,6 +174,10 @@ impl FileBackedMetastore {
         self.polling_interval_opt = polling_interval_opt;
     }
 
+    /// Return the underlying storage.
+    ///
+    /// This is only build in tests to verify the metastore did indeed store what it should.
+    /// It shouldn't be relied uppon elsewhere as to not break abstractions.
     #[cfg(test)]
     pub fn storage(&self) -> Arc<dyn Storage> {
         self.storage.clone()
@@ -467,8 +471,9 @@ impl MetastoreService for FileBackedMetastore {
         vec![self.storage.uri().clone()]
     }
 
-    /// -------------------------------------------------------------------------------
-    /// Mutations over the high-level index.
+    // -------------------------------------------------------------------------------
+    // Mutations over the high-level index.
+
     async fn create_index(
         &self,
         request: CreateIndexRequest,
@@ -629,8 +634,8 @@ impl MetastoreService for FileBackedMetastore {
         delete_result.map(|_| EmptyResponse {})
     }
 
-    /// -------------------------------------------------------------------------------
-    /// Mutations over a single index
+    // -------------------------------------------------------------------------------
+    // Mutations over a single index
 
     async fn stage_splits(&self, request: StageSplitsRequest) -> MetastoreResult<EmptyResponse> {
         let index_uid = request.index_uid().clone();
@@ -781,8 +786,8 @@ impl MetastoreService for FileBackedMetastore {
         Ok(EmptyResponse {})
     }
 
-    /// -------------------------------------------------------------------------------
-    /// Read-only accessors
+    // -------------------------------------------------------------------------------
+    // Read-only accessors
 
     /// Streams of splits for the given request.
     /// No error is returned if any of the requested `index_uid` does not exist.
@@ -976,8 +981,8 @@ impl MetastoreService for FileBackedMetastore {
         Ok(response)
     }
 
-    /// -------------------------------------------------------------------------------
-    /// Delete tasks
+    // -------------------------------------------------------------------------------
+    // Delete tasks
 
     async fn last_delete_opstamp(
         &self,

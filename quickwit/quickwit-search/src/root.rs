@@ -88,6 +88,7 @@ pub struct SearchJob {
 }
 
 impl SearchJob {
+    /// Create a fake job from a split_id (used for hashing), and a cost.
     #[cfg(test)]
     pub fn for_test(split_id: &str, cost: usize) -> SearchJob {
         use std::str::FromStr;

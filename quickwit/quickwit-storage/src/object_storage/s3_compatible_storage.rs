@@ -577,7 +577,7 @@ impl S3CompatibleObjectStorage {
 
     /// Bulk delete implementation based on the DeleteObject API:
     /// <https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObject.html>
-    async fn bulk_delete_single<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
+    async fn bulk_delete_single(&self, paths: &[&Path]) -> Result<(), BulkDeleteError> {
         let mut successes = Vec::with_capacity(paths.len());
         let mut failures = HashMap::new();
 
@@ -615,7 +615,7 @@ impl S3CompatibleObjectStorage {
 
     /// Bulk delete implementation based on the DeleteObjects API, also called Multi-Object Delete
     /// API: <https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html>
-    async fn bulk_delete_multi<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
+    async fn bulk_delete_multi(&self, paths: &[&Path]) -> Result<(), BulkDeleteError> {
         let _permit = REQUEST_SEMAPHORE.acquire().await;
 
         let delete_requests: Vec<(&[&Path], Delete)> = self

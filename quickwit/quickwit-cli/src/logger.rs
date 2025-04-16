@@ -183,7 +183,7 @@ enum FieldFormat {
     Json(JsonFields),
 }
 
-impl<'a> FormatFields<'a> for FieldFormat {
+impl FormatFields<'_> for FieldFormat {
     fn format_fields<R: RecordFields>(&self, writer: Writer<'_>, fields: R) -> fmt::Result {
         match self {
             FieldFormat::Default(default_fields) => default_fields.format_fields(writer, fields),

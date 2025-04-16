@@ -38,10 +38,10 @@ use crate::service::SearcherContext;
 use crate::{list_relevant_splits, resolve_index_patterns, ClusterClient, SearchError, SearchJob};
 
 /// Get the list of splits for the request which we need to scan.
-pub async fn get_fields_from_split<'a>(
+pub async fn get_fields_from_split(
     searcher_context: &SearcherContext,
     index_id: IndexId,
-    split_and_footer_offsets: &'a SplitIdAndFooterOffsets,
+    split_and_footer_offsets: &SplitIdAndFooterOffsets,
     index_storage: Arc<dyn Storage>,
 ) -> anyhow::Result<Box<dyn Iterator<Item = ListFieldsEntryResponse> + Send>> {
     if let Some(list_fields) = searcher_context

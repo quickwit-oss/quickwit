@@ -249,11 +249,11 @@ impl QuickwitClient {
         IndexClient::new(&self.transport, self.timeout)
     }
 
-    pub fn splits<'a>(&'a self, index_id: &'a str) -> SplitClient {
+    pub fn splits<'a>(&'a self, index_id: &'a str) -> SplitClient<'a, 'a> {
         SplitClient::new(&self.transport, self.timeout, index_id)
     }
 
-    pub fn sources<'a>(&'a self, index_id: &'a str) -> SourceClient {
+    pub fn sources<'a>(&'a self, index_id: &'a str) -> SourceClient<'a> {
         SourceClient::new(&self.transport, self.timeout, index_id)
     }
 

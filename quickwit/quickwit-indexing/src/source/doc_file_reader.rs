@@ -65,7 +65,7 @@ impl SkipReader {
 
     /// Reads a line and peeks into the readers buffer. Returns the number of
     /// bytes read and true the end of the file is reached.
-    async fn read_line_and_peek<'a>(&mut self, buf: &'a mut String) -> io::Result<(usize, bool)> {
+    async fn read_line_and_peek(&mut self, buf: &mut String) -> io::Result<(usize, bool)> {
         if self.num_bytes_to_skip > 0 {
             self.skip().await?;
         }

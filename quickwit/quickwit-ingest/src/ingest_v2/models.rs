@@ -201,7 +201,7 @@ mod tests {
     impl IngesterShard {
         #[track_caller]
         pub fn assert_is_solo(&self) {
-            assert!(matches!(self.shard_type, IngesterShardType::Solo { .. }))
+            assert!(matches!(self.shard_type, IngesterShardType::Solo))
         }
 
         #[track_caller]
