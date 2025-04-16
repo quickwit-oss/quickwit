@@ -20,7 +20,7 @@ use std::hash::Hash;
 use std::path::{Component, Path, PathBuf};
 use std::str::FromStr;
 
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use once_cell::sync::OnceCell;
 use regex::Regex;
 use serde::de::Error;
@@ -585,9 +585,11 @@ mod tests {
             Uri::for_test("file:///foo/bar").parent().unwrap(),
             "file:///foo"
         );
-        assert!(Uri::for_test("postgres://localhost:5432/db")
-            .parent()
-            .is_none());
+        assert!(
+            Uri::for_test("postgres://localhost:5432/db")
+                .parent()
+                .is_none()
+        );
 
         assert!(Uri::for_test("ram:///").parent().is_none());
         assert_eq!(Uri::for_test("ram:///foo").parent().unwrap(), "ram:///");
@@ -616,12 +618,16 @@ mod tests {
         );
         assert!(Uri::for_test("azure://account/").parent().is_none());
         assert!(Uri::for_test("azure://account").parent().is_none());
-        assert!(Uri::for_test("azure://account/container/")
-            .parent()
-            .is_none());
-        assert!(Uri::for_test("azure://account/container")
-            .parent()
-            .is_none());
+        assert!(
+            Uri::for_test("azure://account/container/")
+                .parent()
+                .is_none()
+        );
+        assert!(
+            Uri::for_test("azure://account/container")
+                .parent()
+                .is_none()
+        );
         assert_eq!(
             Uri::for_test("azure://account/container/foo")
                 .parent()
@@ -671,9 +677,11 @@ mod tests {
             Uri::for_test("file:///foo/").file_name().unwrap(),
             Path::new("foo")
         );
-        assert!(Uri::for_test("postgres://localhost:5432/db")
-            .file_name()
-            .is_none());
+        assert!(
+            Uri::for_test("postgres://localhost:5432/db")
+                .file_name()
+                .is_none()
+        );
 
         assert!(Uri::for_test("ram:///").file_name().is_none());
         assert_eq!(
@@ -696,12 +704,16 @@ mod tests {
         );
         assert!(Uri::for_test("azure://account").file_name().is_none());
         assert!(Uri::for_test("azure://account/").file_name().is_none());
-        assert!(Uri::for_test("azure://account/container")
-            .file_name()
-            .is_none());
-        assert!(Uri::for_test("azure://account/container/")
-            .file_name()
-            .is_none());
+        assert!(
+            Uri::for_test("azure://account/container")
+                .file_name()
+                .is_none()
+        );
+        assert!(
+            Uri::for_test("azure://account/container/")
+                .file_name()
+                .is_none()
+        );
         assert_eq!(
             Uri::for_test("azure://account/container/foo")
                 .file_name()
@@ -742,12 +754,16 @@ mod tests {
             Path::new("/foo")
         );
         assert!(Uri::for_test("s3://bucket/").filepath().is_none());
-        assert!(Uri::for_test("azure://account/container/")
-            .filepath()
-            .is_none());
-        assert!(Uri::for_test("azure://account/container/foo.json")
-            .filepath()
-            .is_none());
+        assert!(
+            Uri::for_test("azure://account/container/")
+                .filepath()
+                .is_none()
+        );
+        assert!(
+            Uri::for_test("azure://account/container/foo.json")
+                .filepath()
+                .is_none()
+        );
         assert!(Uri::for_test("gs://bucket/").filepath().is_none());
     }
 

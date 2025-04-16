@@ -21,7 +21,7 @@ use quickwit_common::Progress;
 use quickwit_proto::metastore::SourceType;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
-use super::{BatchBuilder, BATCH_NUM_BYTES_LIMIT};
+use super::{BATCH_NUM_BYTES_LIMIT, BatchBuilder};
 use crate::actors::DocProcessor;
 use crate::source::{Source, SourceContext, SourceRuntime, TypedSourceFactory};
 

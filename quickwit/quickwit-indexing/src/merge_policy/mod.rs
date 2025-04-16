@@ -23,14 +23,14 @@ use std::sync::Arc;
 pub(crate) use const_write_amplification::ConstWriteAmplificationMergePolicy;
 use itertools::Itertools;
 pub use nop_merge_policy::NopMergePolicy;
-use quickwit_config::merge_policy_config::MergePolicyConfig;
 use quickwit_config::IndexingSettings;
+use quickwit_config::merge_policy_config::MergePolicyConfig;
 use quickwit_metastore::{SplitMaturity, SplitMetadata};
 use quickwit_proto::types::SplitId;
 use serde::Serialize;
 pub(crate) use stable_log_merge_policy::StableLogMergePolicy;
 use tantivy::TrackedObject;
-use tracing::{info_span, Span};
+use tracing::{Span, info_span};
 
 use crate::actors::MergePermit;
 use crate::new_split_id;
@@ -228,10 +228,10 @@ pub mod tests {
 
     use super::*;
     use crate::actors::{
-        merge_split_attrs, MergePlanner, MergeSchedulerService, MergeSplitDownloader,
-        RunFinalizeMergePolicyAndQuit,
+        MergePlanner, MergeSchedulerService, MergeSplitDownloader, RunFinalizeMergePolicyAndQuit,
+        merge_split_attrs,
     };
-    use crate::models::{create_split_metadata, NewSplits};
+    use crate::models::{NewSplits, create_split_metadata};
 
     fn pow_of_10(n: usize) -> usize {
         10usize.pow(n as u32)

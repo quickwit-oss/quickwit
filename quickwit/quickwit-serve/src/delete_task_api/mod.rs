@@ -14,4 +14,4 @@
 
 mod handler;
 
-pub use handler::{delete_task_api_handlers, DeleteTaskApi};
+pub use handler::{DeleteTaskApi, delete_task_api_handlers};

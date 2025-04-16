@@ -18,11 +18,11 @@ use async_trait::async_trait;
 use futures::TryStreamExt;
 use quickwit_proto::error::convert_to_grpc_result;
 use quickwit_proto::search::{
-    search_service_server as grpc, GetKvRequest, GetKvResponse, LeafListFieldsRequest,
-    LeafSearchStreamRequest, LeafSearchStreamResponse, ListFieldsRequest, ListFieldsResponse,
-    ReportSplitsRequest, ReportSplitsResponse,
+    GetKvRequest, GetKvResponse, LeafListFieldsRequest, LeafSearchStreamRequest,
+    LeafSearchStreamResponse, ListFieldsRequest, ListFieldsResponse, ReportSplitsRequest,
+    ReportSplitsResponse, search_service_server as grpc,
 };
-use quickwit_proto::{set_parent_span_from_request_metadata, tonic, GrpcServiceError};
+use quickwit_proto::{GrpcServiceError, set_parent_span_from_request_metadata, tonic};
 use quickwit_search::SearchService;
 use tracing::instrument;
 

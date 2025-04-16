@@ -19,8 +19,8 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use predicates::str;
-use quickwit_cli::service::RunCliCommand;
 use quickwit_cli::ClientArgs;
+use quickwit_cli::service::RunCliCommand;
 use quickwit_common::net::find_available_tcp_port;
 use quickwit_common::test_utils::wait_for_server_ready;
 use quickwit_common::uri::Uri;
@@ -30,7 +30,7 @@ use quickwit_proto::metastore::{IndexMetadataRequest, MetastoreService, Metastor
 use quickwit_proto::types::IndexId;
 use quickwit_storage::{Storage, StorageResolver};
 use reqwest::Url;
-use tempfile::{tempdir, TempDir};
+use tempfile::{TempDir, tempdir};
 use tracing::error;
 
 pub const PACKAGE_BIN_NAME: &str = "quickwit";

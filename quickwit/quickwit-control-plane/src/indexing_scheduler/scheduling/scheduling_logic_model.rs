@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
+use std::collections::btree_map::Entry;
 use std::num::NonZeroU32;
 
 use quickwit_proto::indexing::CpuCapacity;
@@ -89,9 +89,11 @@ impl SchedulingProblem {
         indexer_cpu_capacities: Vec<CpuCapacity>,
     ) -> SchedulingProblem {
         assert!(!indexer_cpu_capacities.is_empty());
-        assert!(indexer_cpu_capacities
-            .iter()
-            .all(|cpu_capacity| cpu_capacity.cpu_millis() > 0));
+        assert!(
+            indexer_cpu_capacities
+                .iter()
+                .all(|cpu_capacity| cpu_capacity.cpu_millis() > 0)
+        );
         // TODO assert for affinity.
         SchedulingProblem {
             sources: Vec::new(),

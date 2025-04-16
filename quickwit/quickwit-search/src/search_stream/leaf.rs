@@ -33,9 +33,9 @@ use tantivy::{DateTime, ReloadPolicy, Searcher};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::*;
 
-use super::collector::{PartionnedFastFieldCollector, PartitionValues};
 use super::FastFieldCollector;
-use crate::filters::{create_timestamp_filter_builder, TimestampFilterBuilder};
+use super::collector::{PartionnedFastFieldCollector, PartitionValues};
+use crate::filters::{TimestampFilterBuilder, create_timestamp_filter_builder};
 use crate::leaf::{open_index_with_caches, rewrite_start_end_time_bounds, warmup};
 use crate::service::SearcherContext;
 use crate::{Result, SearchError};
@@ -614,8 +614,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_leaf_search_stream_with_string_fast_field_should_return_proper_error(
-    ) -> anyhow::Result<()> {
+    async fn test_leaf_search_stream_with_string_fast_field_should_return_proper_error()
+    -> anyhow::Result<()> {
         let index_id = "single-node-simple-string-fast-field";
         let doc_mapping_yaml = r#"
             field_mappings:
@@ -669,8 +669,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_leaf_search_stream_to_partitioned_clickhouse_binary_output_with_filtering(
-    ) -> anyhow::Result<()> {
+    async fn test_leaf_search_stream_to_partitioned_clickhouse_binary_output_with_filtering()
+    -> anyhow::Result<()> {
         let index_id = "single-node-simple-2";
         let doc_mapping_yaml = r#"
             field_mappings:

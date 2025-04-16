@@ -22,13 +22,13 @@ use anyhow::Context;
 use futures_util::future;
 use itertools::Itertools;
 use quickwit_actors::ActorExitStatus;
-use quickwit_cli::tool::{local_ingest_docs_cli, LocalIngestDocsArgs};
+use quickwit_cli::tool::{LocalIngestDocsArgs, local_ingest_docs_cli};
 use quickwit_common::new_coolid;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::test_utils::wait_until_predicate;
 use quickwit_common::uri::Uri as QuickwitUri;
-use quickwit_config::service::QuickwitService;
 use quickwit_config::NodeConfig;
+use quickwit_config::service::QuickwitService;
 use quickwit_metastore::{MetastoreResolver, SplitState};
 use quickwit_proto::jaeger::storage::v1::span_reader_plugin_client::SpanReaderPluginClient;
 use quickwit_proto::opentelemetry::proto::collector::logs::v1::logs_service_client::LogsServiceClient;
@@ -36,11 +36,11 @@ use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_cl
 use quickwit_proto::types::NodeId;
 use quickwit_rest_client::models::IngestSource;
 use quickwit_rest_client::rest_client::{
-    CommitType, QuickwitClient, QuickwitClientBuilder, DEFAULT_BASE_URL,
+    CommitType, DEFAULT_BASE_URL, QuickwitClient, QuickwitClientBuilder,
 };
 use quickwit_serve::tcp_listener::for_tests::TestTcpListenerResolver;
 use quickwit_serve::{
-    serve_quickwit, ListSplitsQueryParams, RestIngestResponse, SearchRequestQueryString,
+    ListSplitsQueryParams, RestIngestResponse, SearchRequestQueryString, serve_quickwit,
 };
 use quickwit_storage::StorageResolver;
 use reqwest::Url;

@@ -83,12 +83,14 @@ async fn test_update_doc_mapping_restart_indexing_pipeline() {
         .await
         .unwrap();
 
-    assert!(sandbox
-        .rest_client(QuickwitService::Indexer)
-        .node_health()
-        .is_live()
-        .await
-        .unwrap());
+    assert!(
+        sandbox
+            .rest_client(QuickwitService::Indexer)
+            .node_health()
+            .is_live()
+            .await
+            .unwrap()
+    );
 
     // Wait until indexing pipelines are started.
     sandbox.wait_for_indexing_pipelines(1).await.unwrap();

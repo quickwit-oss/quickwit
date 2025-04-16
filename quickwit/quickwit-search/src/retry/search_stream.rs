@@ -75,8 +75,8 @@ mod tests {
     };
     use tokio::sync::mpsc::error::SendError;
 
-    use crate::retry::search_stream::{LeafSearchStreamRetryPolicy, SuccessfulSplitIds};
     use crate::retry::RetryPolicy;
+    use crate::retry::search_stream::{LeafSearchStreamRetryPolicy, SuccessfulSplitIds};
 
     #[tokio::test]
     async fn test_retry_policy_search_stream_should_not_retry_on_send_error() {

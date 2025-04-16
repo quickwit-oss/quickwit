@@ -25,10 +25,10 @@ use quickwit_common::io::{IoControls, IoControlsAccess};
 use quickwit_common::uri::Uri;
 use quickwit_metastore::SplitMetadata;
 use quickwit_storage::{PutPayload, Storage, StorageResult};
-use tantivy::directory::{Advice, MmapDirectory};
 use tantivy::Directory;
+use tantivy::directory::{Advice, MmapDirectory};
 use time::OffsetDateTime;
-use tracing::{debug, info_span, instrument, Instrument};
+use tracing::{Instrument, debug, info_span, instrument};
 
 use super::IndexingSplitCache;
 use crate::get_tantivy_directory_from_split_bundle;
@@ -269,10 +269,12 @@ mod tests {
                 .store_split(&split_metadata1, &split1_dir, Box::new(b"1234".to_vec()))
                 .await?;
             assert!(!split1_dir.try_exists()?);
-            assert!(split_cache_dir
-                .path()
-                .join(format!("{split_id1}.split"))
-                .try_exists()?);
+            assert!(
+                split_cache_dir
+                    .path()
+                    .join(format!("{split_id1}.split"))
+                    .try_exists()?
+            );
             let local_store_stats = split_store.inspect_split_cache().await;
             assert_eq!(local_store_stats.len(), 1);
             assert_eq!(
@@ -289,10 +291,12 @@ mod tests {
                 .store_split(&split_metadata2, &split2_dir, Box::new(b"567".to_vec()))
                 .await?;
             assert!(!split2_dir.try_exists()?);
-            assert!(split_cache_dir
-                .path()
-                .join(format!("{split_id2}.split"))
-                .try_exists()?);
+            assert!(
+                split_cache_dir
+                    .path()
+                    .join(format!("{split_id2}.split"))
+                    .try_exists()?
+            );
         }
 
         let local_store_stats = split_store.inspect_split_cache().await;
@@ -361,10 +365,12 @@ mod tests {
                 )
                 .await?;
             assert!(!split_path.try_exists()?);
-            assert!(split_cache_dir
-                .path()
-                .join(format!("{split_id1}.split"))
-                .try_exists()?);
+            assert!(
+                split_cache_dir
+                    .path()
+                    .join(format!("{split_id1}.split"))
+                    .try_exists()?
+            );
             let split_cache_stats = split_store.inspect_split_cache().await;
             assert_eq!(split_cache_stats.len(), 1);
             assert_eq!(
@@ -386,10 +392,12 @@ mod tests {
                 )
                 .await?;
             assert!(!split_path.try_exists()?);
-            assert!(split_cache_dir
-                .path()
-                .join(format!("{split_id2}.split"))
-                .try_exists()?);
+            assert!(
+                split_cache_dir
+                    .path()
+                    .join(format!("{split_id2}.split"))
+                    .try_exists()?
+            );
             let split_cache_stats = split_store.inspect_split_cache().await;
             assert_eq!(split_cache_stats.len(), 1);
             assert_eq!(

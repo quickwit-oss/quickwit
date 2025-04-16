@@ -16,9 +16,9 @@ use std::collections::HashSet;
 use std::num::NonZeroUsize;
 use std::path::Path;
 
-use anyhow::{bail, Context};
-use chitchat::transport::ChannelTransport;
+use anyhow::{Context, bail};
 use chitchat::FailureDetectorConfig;
+use chitchat::transport::ChannelTransport;
 use quickwit_actors::{ActorHandle, Mailbox, Universe};
 use quickwit_cluster::{Cluster, ClusterMember};
 use quickwit_common::pubsub::EventBroker;
@@ -27,14 +27,14 @@ use quickwit_common::uri::Uri;
 use quickwit_config::merge_policy_config::MergePolicyConfig;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{
-    load_index_config_from_user_config, ConfigFormat, IndexConfig, NodeConfig, SourceConfig,
-    SourceInputFormat, SourceParams, TransformConfig,
+    ConfigFormat, IndexConfig, NodeConfig, SourceConfig, SourceInputFormat, SourceParams,
+    TransformConfig, load_index_config_from_user_config,
 };
+use quickwit_indexing::IndexingPipeline;
 use quickwit_indexing::actors::{IndexingService, MergePipeline, MergeSchedulerService};
 use quickwit_indexing::models::{DetachIndexingPipeline, DetachMergePipeline, SpawnPipeline};
-use quickwit_indexing::IndexingPipeline;
 use quickwit_ingest::IngesterPool;
-use quickwit_janitor::{start_janitor_service, JanitorService};
+use quickwit_janitor::{JanitorService, start_janitor_service};
 use quickwit_metastore::{
     AddSourceRequestExt, CreateIndexRequestExt, CreateIndexResponseExt, IndexMetadata,
     IndexMetadataResponseExt,

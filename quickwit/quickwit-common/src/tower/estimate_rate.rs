@@ -16,8 +16,8 @@ use std::marker::PhantomData;
 use std::task::{Context, Poll};
 use std::time::Instant;
 
-use tower::load::completion::TrackCompletionFuture;
 use tower::load::CompleteOnResponse;
+use tower::load::completion::TrackCompletionFuture;
 use tower::{Layer, Service};
 
 use super::{Cost, RateEstimator};
@@ -121,8 +121,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::Duration;
 
     use tower::ServiceExt;

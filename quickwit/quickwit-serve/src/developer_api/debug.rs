@@ -15,8 +15,8 @@
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
-use futures::stream::FuturesUnordered;
 use futures::StreamExt;
+use futures::stream::FuturesUnordered;
 use glob::{MatchOptions, Pattern as GlobPattern};
 use hyper::StatusCode;
 use quickwit_cluster::Cluster;
@@ -75,7 +75,7 @@ async fn get_node_debug_infos(
                     ),
                     StatusCode::BAD_REQUEST,
                 )
-                .into_response()
+                .into_response();
             }
         }
     } else {
@@ -91,7 +91,7 @@ async fn get_node_debug_infos(
                     format!("failed to parse roles `{roles}`: {error}"),
                     StatusCode::BAD_REQUEST,
                 )
-                .into_response()
+                .into_response();
             }
         }
     } else {
@@ -183,7 +183,7 @@ impl NodeIdGlobPatterns {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_cluster::{create_cluster_for_test, ChannelTransport};
+    use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
 
     use super::*;
 

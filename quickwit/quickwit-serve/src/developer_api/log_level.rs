@@ -17,7 +17,7 @@ use serde::Deserialize;
 use tracing::{error, info};
 use warp::{Filter, Rejection};
 
-use crate::{with_arg, EnvFilterReloadFn};
+use crate::{EnvFilterReloadFn, with_arg};
 
 #[derive(Deserialize)]
 struct EnvFilter {

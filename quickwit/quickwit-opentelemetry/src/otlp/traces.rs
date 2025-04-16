@@ -13,17 +13,17 @@
 // limitations under the License.
 
 use std::cmp::{Ord, Ordering, PartialEq, PartialOrd};
-use std::collections::{btree_set, BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, btree_set};
 use std::str::FromStr;
 
 use async_trait::async_trait;
 use prost::Message;
 use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_common::uri::Uri;
-use quickwit_config::{load_index_config_from_user_config, ConfigFormat, IndexConfig};
+use quickwit_config::{ConfigFormat, IndexConfig, load_index_config_from_user_config};
 use quickwit_ingest::{CommitType, JsonDocBatchV2Builder};
-use quickwit_proto::ingest::router::IngestRouterServiceClient;
 use quickwit_proto::ingest::DocBatchV2;
+use quickwit_proto::ingest::router::IngestRouterServiceClient;
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_server::TraceService;
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::{
     ExportTracePartialSuccess, ExportTraceServiceRequest, ExportTraceServiceResponse,
@@ -38,14 +38,14 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use tonic::{Request, Response, Status};
 use tracing::field::Empty;
-use tracing::{error, instrument, warn, Span as RuntimeSpan};
+use tracing::{Span as RuntimeSpan, error, instrument, warn};
 
 use super::{
-    extract_otel_index_id_from_metadata, ingest_doc_batch_v2, is_zero, OtelSignal,
-    TryFromSpanIdError, TryFromTraceIdError,
+    OtelSignal, TryFromSpanIdError, TryFromTraceIdError, extract_otel_index_id_from_metadata,
+    ingest_doc_batch_v2, is_zero,
 };
 use crate::otlp::metrics::OTLP_SERVICE_METRICS;
-use crate::otlp::{extract_attributes, SpanId, TraceId};
+use crate::otlp::{SpanId, TraceId, extract_attributes};
 
 pub const OTEL_TRACES_INDEX_ID: &str = "otel-traces-v0_9";
 pub const OTEL_TRACES_INDEX_ID_PATTERN: &str = "otel-traces-v0_*";
@@ -915,7 +915,7 @@ pub fn parse_otlp_spans_protobuf(
 
 #[cfg(test)]
 mod tests {
-    use quickwit_metastore::{metastore_for_test, CreateIndexRequestExt};
+    use quickwit_metastore::{CreateIndexRequestExt, metastore_for_test};
     use quickwit_proto::metastore::{CreateIndexRequest, MetastoreService};
     use quickwit_proto::opentelemetry::proto::common::v1::any_value::Value as OtlpAnyValueValue;
     use quickwit_proto::opentelemetry::proto::common::v1::{

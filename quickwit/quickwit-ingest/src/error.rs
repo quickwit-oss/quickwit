@@ -22,7 +22,7 @@ pub(crate) use quickwit_proto::error::{grpc_error_to_grpc_status, grpc_status_to
 use quickwit_proto::ingest::router::{IngestFailure, IngestFailureReason};
 use quickwit_proto::ingest::{IngestV2Error, RateLimitingCause};
 use quickwit_proto::types::IndexId;
-use quickwit_proto::{tonic, GrpcServiceError, ServiceError, ServiceErrorCode};
+use quickwit_proto::{GrpcServiceError, ServiceError, ServiceErrorCode, tonic};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, thiserror::Error, Serialize, Deserialize)]

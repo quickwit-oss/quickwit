@@ -17,24 +17,24 @@ use std::{env, fmt};
 
 use anyhow::Context;
 use opentelemetry::trace::TracerProvider;
-use opentelemetry::{global, KeyValue};
+use opentelemetry::{KeyValue, global};
 use opentelemetry_sdk::propagation::TraceContextPropagator;
 use opentelemetry_sdk::trace::BatchConfigBuilder;
-use opentelemetry_sdk::{trace, Resource};
+use opentelemetry_sdk::{Resource, trace};
 use quickwit_common::{get_bool_from_env, get_from_env_opt};
 use quickwit_serve::{BuildInfo, EnvFilterReloadFn};
 use time::format_description::BorrowedFormatItem;
 use tracing::{Event, Level, Subscriber};
+use tracing_subscriber::EnvFilter;
 use tracing_subscriber::field::RecordFields;
+use tracing_subscriber::fmt::FmtContext;
 use tracing_subscriber::fmt::format::{
     DefaultFields, Format, FormatEvent, FormatFields, Full, Json, JsonFields, Writer,
 };
 use tracing_subscriber::fmt::time::UtcTime;
-use tracing_subscriber::fmt::FmtContext;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::registry::LookupSpan;
-use tracing_subscriber::EnvFilter;
 
 use crate::QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY;
 #[cfg(feature = "tokio-console")]
@@ -183,7 +183,7 @@ enum FieldFormat {
     Json(JsonFields),
 }
 
-impl<'a> FormatFields<'a> for FieldFormat {
+impl FormatFields<'_> for FieldFormat {
     fn format_fields<R: RecordFields>(&self, writer: Writer<'_>, fields: R) -> fmt::Result {
         match self {
             FieldFormat::Default(default_fields) => default_fields.format_fields(writer, fields),

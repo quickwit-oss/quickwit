@@ -146,7 +146,7 @@ mod tests {
 
     use assert_json_diff::assert_json_include;
     use mockall::predicate;
-    use quickwit_cluster::{create_cluster_for_test, ChannelTransport, Cluster};
+    use quickwit_cluster::{ChannelTransport, Cluster, create_cluster_for_test};
     use quickwit_config::NodeConfig;
     use quickwit_index_management::IndexService;
     use quickwit_ingest::{IngestApiService, IngestServiceClient};
@@ -160,9 +160,9 @@ mod tests {
 
     use super::elastic_api_handlers;
     use super::model::ElasticsearchError;
+    use crate::BuildInfo;
     use crate::elasticsearch_api::rest_handler::es_compat_cluster_info_handler;
     use crate::rest::recover_fn;
-    use crate::BuildInfo;
 
     fn ingest_service_client() -> IngestServiceClient {
         let universe = quickwit_actors::Universe::new();
@@ -332,11 +332,13 @@ mod tests {
             .await;
         assert_eq!(resp.status(), 400);
         let es_error: ElasticsearchError = serde_json::from_slice(resp.body()).unwrap();
-        assert!(es_error
-            .error
-            .reason
-            .unwrap()
-            .starts_with("Invalid argument: failed to parse request header"));
+        assert!(
+            es_error
+                .error
+                .reason
+                .unwrap()
+                .starts_with("Invalid argument: failed to parse request header")
+        );
     }
 
     #[tokio::test]
@@ -370,11 +372,13 @@ mod tests {
             .await;
         assert_eq!(resp.status(), 400);
         let es_error: ElasticsearchError = serde_json::from_slice(resp.body()).unwrap();
-        assert!(es_error
-            .error
-            .reason
-            .unwrap()
-            .starts_with("Invalid argument: failed to parse request body"));
+        assert!(
+            es_error
+                .error
+                .reason
+                .unwrap()
+                .starts_with("Invalid argument: failed to parse request body")
+        );
     }
 
     #[tokio::test]
@@ -407,11 +411,13 @@ mod tests {
             .await;
         assert_eq!(resp.status(), 400);
         let es_error: ElasticsearchError = serde_json::from_slice(resp.body()).unwrap();
-        assert!(es_error
-            .error
-            .reason
-            .unwrap()
-            .starts_with("Invalid argument: expect request body after request header"));
+        assert!(
+            es_error
+                .error
+                .reason
+                .unwrap()
+                .starts_with("Invalid argument: expect request body after request header")
+        );
     }
 
     #[tokio::test]

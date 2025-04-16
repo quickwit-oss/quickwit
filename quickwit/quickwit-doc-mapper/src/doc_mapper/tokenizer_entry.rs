@@ -146,8 +146,8 @@ pub struct RegexTokenizerOption {
 #[cfg(test)]
 mod tests {
     use super::{NgramTokenizerOption, TokenizerType};
-    use crate::doc_mapper::RegexTokenizerOption;
     use crate::TokenizerEntry;
+    use crate::doc_mapper::RegexTokenizerOption;
 
     #[test]
     fn test_deserialize_tokenizer_entry() {
@@ -205,10 +205,12 @@ mod tests {
             "#,
             );
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("unknown field `abc`"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("unknown field `abc`")
+        );
     }
 
     #[test]

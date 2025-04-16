@@ -15,7 +15,7 @@
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use futures::{ready, Future};
+use futures::{Future, ready};
 use pin_project::pin_project;
 use tower::{Layer, Service};
 
@@ -108,8 +108,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Duration;
 
     use async_trait::async_trait;
@@ -147,11 +147,7 @@ mod tests {
         let layer = EventListenerLayer::new(event_broker);
 
         let mut service = layer.layer(tower::service_fn(|request: MyEvent| async move {
-            if request.return_ok {
-                Ok(())
-            } else {
-                Err(())
-            }
+            if request.return_ok { Ok(()) } else { Err(()) }
         }));
         let request = MyEvent { return_ok: false };
         service.call(request).await.unwrap_err();

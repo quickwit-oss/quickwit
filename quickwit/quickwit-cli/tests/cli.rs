@@ -21,20 +21,20 @@ use std::path::Path;
 
 use anyhow::Result;
 use clap::error::ErrorKind;
-use helpers::{uri_from_path, TestEnv, TestStorageType};
+use helpers::{TestEnv, TestStorageType, uri_from_path};
 use quickwit_cli::checklist::ChecklistError;
 use quickwit_cli::cli::build_cli;
 use quickwit_cli::index::{
-    create_index_cli, delete_index_cli, search_index, update_index_cli, CreateIndexArgs,
-    DeleteIndexArgs, SearchIndexArgs, UpdateIndexArgs,
+    CreateIndexArgs, DeleteIndexArgs, SearchIndexArgs, UpdateIndexArgs, create_index_cli,
+    delete_index_cli, search_index, update_index_cli,
 };
 use quickwit_cli::tool::{
-    garbage_collect_index_cli, local_ingest_docs_cli, GarbageCollectIndexArgs, LocalIngestDocsArgs,
+    GarbageCollectIndexArgs, LocalIngestDocsArgs, garbage_collect_index_cli, local_ingest_docs_cli,
 };
 use quickwit_common::fs::get_cache_directory_path;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri;
-use quickwit_config::{RetentionPolicy, SourceInputFormat, CLI_SOURCE_ID};
+use quickwit_config::{CLI_SOURCE_ID, RetentionPolicy, SourceInputFormat};
 use quickwit_metastore::{
     ListSplitsRequestExt, MetastoreResolver, MetastoreServiceExt, MetastoreServiceStreamSplitsExt,
     SplitMetadata, SplitState, StageSplitsRequestExt,
@@ -43,10 +43,10 @@ use quickwit_proto::metastore::{
     DeleteSplitsRequest, EntityKind, IndexMetadataRequest, ListSplitsRequest,
     MarkSplitsForDeletionRequest, MetastoreError, MetastoreService, StageSplitsRequest,
 };
-use serde_json::{json, Number, Value};
-use tokio::time::{sleep, Duration};
+use serde_json::{Number, Value, json};
+use tokio::time::{Duration, sleep};
 
-use crate::helpers::{create_test_env, upload_test_file, PACKAGE_BIN_NAME};
+use crate::helpers::{PACKAGE_BIN_NAME, create_test_env, upload_test_file};
 
 async fn create_logs_index(test_env: &TestEnv) -> anyhow::Result<()> {
     let args = CreateIndexArgs {

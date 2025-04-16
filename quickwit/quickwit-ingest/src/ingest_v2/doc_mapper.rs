@@ -19,7 +19,7 @@ use std::sync::{Arc, Weak};
 use once_cell::sync::OnceCell;
 use quickwit_common::rate_limited_error;
 use quickwit_common::thread_pool::run_cpu_intensive;
-use quickwit_config::{build_doc_mapper, DocMapping, SearchSettings};
+use quickwit_config::{DocMapping, SearchSettings, build_doc_mapper};
 use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::ingest::{
     DocBatchV2, IngestV2Error, IngestV2Result, ParseFailure, ParseFailureReason,
@@ -201,11 +201,13 @@ mod tests {
         assert_eq!(Arc::strong_count(&doc_mapper), 1);
 
         drop(doc_mapper);
-        assert!(doc_mappers
-            .get(&doc_mapping_uid)
-            .unwrap()
-            .upgrade()
-            .is_none());
+        assert!(
+            doc_mappers
+                .get(&doc_mapping_uid)
+                .unwrap()
+                .upgrade()
+                .is_none()
+        );
 
         let error = get_or_try_build_doc_mapper(&mut doc_mappers, doc_mapping_uid, "").unwrap_err();
         assert!(

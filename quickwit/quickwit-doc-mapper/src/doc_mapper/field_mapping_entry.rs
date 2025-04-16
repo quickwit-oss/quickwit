@@ -16,7 +16,7 @@ use std::borrow::Cow;
 use std::convert::TryFrom;
 
 use anyhow::bail;
-use base64::prelude::{Engine, BASE64_STANDARD};
+use base64::prelude::{BASE64_STANDARD, Engine};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -27,7 +27,7 @@ use tantivy::schema::{
 };
 
 use super::date_time_type::QuickwitDateTimeOptions;
-use super::{default_as_true, FieldMappingType};
+use super::{FieldMappingType, default_as_true};
 use crate::doc_mapper::field_mapping_type::QuickwitFieldType;
 use crate::{Cardinality, QW_RESERVED_FIELD_NAMES};
 
@@ -920,39 +920,53 @@ mod tests {
     use tantivy::schema::{IndexRecordOption, JsonObjectOptions, TextOptions};
 
     use super::*;
-    use crate::doc_mapper::{FastFieldOptions, FieldMappingType};
     use crate::Cardinality;
+    use crate::doc_mapper::{FastFieldOptions, FieldMappingType};
 
     #[test]
     fn test_validate_field_mapping_name() {
-        assert!(validate_field_mapping_name("")
-            .unwrap_err()
-            .to_string()
-            .contains("is empty"));
-        assert!(validate_field_mapping_name(&"a".repeat(256))
-            .unwrap_err()
-            .to_string()
-            .contains("is too long"));
-        assert!(validate_field_mapping_name("0")
-            .unwrap_err()
-            .to_string()
-            .contains("must start with"));
-        assert!(validate_field_mapping_name(".my-field")
-            .unwrap_err()
-            .to_string()
-            .contains("must not start with"));
-        assert!(validate_field_mapping_name("_source")
-            .unwrap_err()
-            .to_string()
-            .contains("are reserved for Quickwit"));
-        assert!(validate_field_mapping_name("_dynamic")
-            .unwrap_err()
-            .to_string()
-            .contains("are reserved for Quickwit"));
-        assert!(validate_field_mapping_name("my-field!")
-            .unwrap_err()
-            .to_string()
-            .contains("illegal characters"));
+        assert!(
+            validate_field_mapping_name("")
+                .unwrap_err()
+                .to_string()
+                .contains("is empty")
+        );
+        assert!(
+            validate_field_mapping_name(&"a".repeat(256))
+                .unwrap_err()
+                .to_string()
+                .contains("is too long")
+        );
+        assert!(
+            validate_field_mapping_name("0")
+                .unwrap_err()
+                .to_string()
+                .contains("must start with")
+        );
+        assert!(
+            validate_field_mapping_name(".my-field")
+                .unwrap_err()
+                .to_string()
+                .contains("must not start with")
+        );
+        assert!(
+            validate_field_mapping_name("_source")
+                .unwrap_err()
+                .to_string()
+                .contains("are reserved for Quickwit")
+        );
+        assert!(
+            validate_field_mapping_name("_dynamic")
+                .unwrap_err()
+                .to_string()
+                .contains("are reserved for Quickwit")
+        );
+        assert!(
+            validate_field_mapping_name("my-field!")
+                .unwrap_err()
+                .to_string()
+                .contains("illegal characters")
+        );
         assert!(validate_field_mapping_name("_my_field").is_ok());
         assert!(validate_field_mapping_name("-my-field").is_ok());
         assert!(validate_field_mapping_name("my-field").is_ok());
@@ -1119,10 +1133,12 @@ mod tests {
     "#,
         );
         assert!(mapping_entry.is_err());
-        assert!(mapping_entry
-            .unwrap_err()
-            .to_string()
-            .contains("error while parsing field `my_field_name`: unknown field `blub`"));
+        assert!(
+            mapping_entry
+                .unwrap_err()
+                .to_string()
+                .contains("error while parsing field `my_field_name`: unknown field `blub`")
+        );
         Ok(())
     }
 
@@ -1285,17 +1301,19 @@ mod tests {
 
     #[test]
     fn test_deserialize_i64_mapping_with_invalid_name() {
-        assert!(serde_json::from_str::<FieldMappingEntry>(
-            r#"
+        assert!(
+            serde_json::from_str::<FieldMappingEntry>(
+                r#"
             {
                 "name": "this is not ok",
                 "type": "i64"
             }
             "#,
-        )
-        .unwrap_err()
-        .to_string()
-        .contains("illegal characters"));
+            )
+            .unwrap_err()
+            .to_string()
+            .contains("illegal characters")
+        );
     }
 
     #[test]

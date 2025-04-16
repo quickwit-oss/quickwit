@@ -17,7 +17,7 @@ use std::sync::Arc;
 use bytes::Bytes;
 use quickwit_common::uri::Uri;
 use quickwit_config::{
-    load_index_config_update, validate_index_id_pattern, ConfigFormat, NodeConfig,
+    ConfigFormat, NodeConfig, load_index_config_update, validate_index_id_pattern,
 };
 use quickwit_index_management::{IndexService, IndexServiceError};
 use quickwit_metastore::{

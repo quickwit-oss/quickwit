@@ -21,7 +21,7 @@ use quickwit_proto::metastore::{
 };
 use quickwit_proto::search::SearchRequest;
 use quickwit_proto::types::{IndexId, IndexUid};
-use quickwit_query::query_ast::{query_ast_from_user_text, QueryAst};
+use quickwit_query::query_ast::{QueryAst, query_ast_from_user_text};
 use serde::Deserialize;
 use warp::{Filter, Rejection};
 

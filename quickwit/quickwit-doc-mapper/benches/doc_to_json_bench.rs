@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use binggan::plugins::*;
-use binggan::{black_box, BenchRunner, PeakMemAlloc, INSTRUMENTED_SYSTEM};
+use binggan::{BenchRunner, INSTRUMENTED_SYSTEM, PeakMemAlloc, black_box};
 use quickwit_doc_mapper::DocMapper;
 use tantivy::TantivyDocument;
 

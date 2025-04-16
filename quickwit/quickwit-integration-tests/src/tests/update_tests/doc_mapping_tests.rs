@@ -18,7 +18,7 @@ use std::time::Duration;
 use quickwit_config::service::QuickwitService;
 use quickwit_rest_client::models::IngestSource;
 use quickwit_rest_client::rest_client::CommitType;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use super::assert_hits_unordered;
 use crate::test_utils::ClusterSandboxBuilder;
@@ -68,12 +68,14 @@ async fn validate_search_across_doc_mapping_updates(
         .await
         .unwrap();
 
-    assert!(sandbox
-        .rest_client(QuickwitService::Indexer)
-        .node_health()
-        .is_live()
-        .await
-        .unwrap());
+    assert!(
+        sandbox
+            .rest_client(QuickwitService::Indexer)
+            .node_health()
+            .is_live()
+            .await
+            .unwrap()
+    );
 
     // Wait until indexing pipelines are started.
     sandbox.wait_for_indexing_pipelines(1).await.unwrap();
@@ -636,12 +638,14 @@ async fn test_update_doc_validation() {
         .await
         .unwrap();
 
-    assert!(sandbox
-        .rest_client(QuickwitService::Indexer)
-        .node_health()
-        .is_live()
-        .await
-        .unwrap());
+    assert!(
+        sandbox
+            .rest_client(QuickwitService::Indexer)
+            .node_health()
+            .is_live()
+            .await
+            .unwrap()
+    );
 
     // Wait until indexing pipelines are started.
     sandbox.wait_for_indexing_pipelines(1).await.unwrap();

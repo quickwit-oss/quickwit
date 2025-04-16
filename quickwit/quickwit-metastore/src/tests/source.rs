@@ -477,14 +477,16 @@ pub async fn test_metastore_reset_checkpoint<
             .await
             .unwrap();
     }
-    assert!(!metastore
-        .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
-        .await
-        .unwrap()
-        .deserialize_index_metadata()
-        .unwrap()
-        .checkpoint
-        .is_empty());
+    assert!(
+        !metastore
+            .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
+            .await
+            .unwrap()
+            .deserialize_index_metadata()
+            .unwrap()
+            .checkpoint
+            .is_empty()
+    );
 
     metastore
         .reset_source_checkpoint(ResetSourceCheckpointRequest {
@@ -500,15 +502,19 @@ pub async fn test_metastore_reset_checkpoint<
         .unwrap()
         .deserialize_index_metadata()
         .unwrap();
-    assert!(index_metadata
-        .checkpoint
-        .source_checkpoint(&source_ids[0])
-        .is_none());
+    assert!(
+        index_metadata
+            .checkpoint
+            .source_checkpoint(&source_ids[0])
+            .is_none()
+    );
 
-    assert!(index_metadata
-        .checkpoint
-        .source_checkpoint(&source_ids[1])
-        .is_some());
+    assert!(
+        index_metadata
+            .checkpoint
+            .source_checkpoint(&source_ids[1])
+            .is_some()
+    );
 
     assert!(matches!(
         metastore
@@ -540,14 +546,16 @@ pub async fn test_metastore_reset_checkpoint<
         .await
         .unwrap();
 
-    assert!(metastore
-        .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
-        .await
-        .unwrap()
-        .deserialize_index_metadata()
-        .unwrap()
-        .checkpoint
-        .is_empty());
+    assert!(
+        metastore
+            .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
+            .await
+            .unwrap()
+            .deserialize_index_metadata()
+            .unwrap()
+            .checkpoint
+            .is_empty()
+    );
 
     cleanup_index(&mut metastore, index_uid).await;
 }

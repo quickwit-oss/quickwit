@@ -48,7 +48,7 @@ use crate::root::fetch_docs_phase;
 use crate::scroll_context::{MiniKV, ScrollContext, ScrollKeyAndStartOffset};
 use crate::search_permit_provider::SearchPermitProvider;
 use crate::search_stream::{leaf_search_stream, root_search_stream};
-use crate::{fetch_docs, root_search, search_plan, ClusterClient, SearchError};
+use crate::{ClusterClient, SearchError, fetch_docs, root_search, search_plan};
 
 #[derive(Clone)]
 /// The search service implementation.
@@ -486,6 +486,7 @@ impl std::fmt::Debug for SearcherContext {
 }
 
 impl SearcherContext {
+    /// Create a default SearcherContext
     #[cfg(test)]
     pub fn for_test() -> SearcherContext {
         let searcher_config = SearcherConfig::default();

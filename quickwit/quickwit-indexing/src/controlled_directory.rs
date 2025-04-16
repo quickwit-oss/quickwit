@@ -19,13 +19,13 @@ use std::sync::Arc;
 use std::{fmt, io};
 
 use arc_swap::ArcSwap;
-use quickwit_common::io::{ControlledWrite, IoControls, IoControlsAccess};
 use quickwit_common::ProtectedZoneGuard;
+use quickwit_common::io::{ControlledWrite, IoControls, IoControlsAccess};
+use tantivy::Directory;
 use tantivy::directory::error::{DeleteError, OpenReadError, OpenWriteError};
 use tantivy::directory::{
     AntiCallToken, FileHandle, TerminatingWrite, WatchCallback, WatchHandle, WritePtr,
 };
-use tantivy::Directory;
 
 /// Buffer capacity.
 ///

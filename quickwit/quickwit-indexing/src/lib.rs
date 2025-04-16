@@ -31,7 +31,7 @@ pub use crate::actors::{
 };
 pub use crate::controlled_directory::ControlledDirectory;
 use crate::models::IndexingStatistics;
-pub use crate::split_store::{get_tantivy_directory_from_split_bundle, IndexingSplitStore};
+pub use crate::split_store::{IndexingSplitStore, get_tantivy_directory_from_split_bundle};
 
 pub mod actors;
 mod controlled_directory;
@@ -45,7 +45,7 @@ mod test_utils;
 
 use quickwit_proto::indexing::CpuCapacity;
 #[cfg(any(test, feature = "testsuite"))]
-pub use test_utils::{mock_split, mock_split_meta, MockSplitBuilder, TestSandbox};
+pub use test_utils::{MockSplitBuilder, TestSandbox, mock_split, mock_split_meta};
 
 use self::merge_policy::MergePolicy;
 pub use self::source::check_source_connectivity;

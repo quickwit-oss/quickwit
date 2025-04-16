@@ -18,22 +18,22 @@ use std::collections::HashSet;
 use std::str::FromStr;
 
 use anyhow::Context;
-use clap::{arg, Arg, ArgMatches};
-use dialoguer::theme::ColorfulTheme;
+use clap::{Arg, ArgMatches, arg};
 use dialoguer::Confirm;
+use dialoguer::theme::ColorfulTheme;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{
-    ConfigFormat, MetastoreConfigs, NodeConfig, SourceConfig, StorageConfigs,
-    DEFAULT_QW_CONFIG_PATH,
+    ConfigFormat, DEFAULT_QW_CONFIG_PATH, MetastoreConfigs, NodeConfig, SourceConfig,
+    StorageConfigs,
 };
 use quickwit_indexing::check_source_connectivity;
 use quickwit_metastore::{IndexMetadataResponseExt, MetastoreResolver};
 use quickwit_proto::metastore::{IndexMetadataRequest, MetastoreService, MetastoreServiceClient};
 use quickwit_rest_client::models::Timeout;
-use quickwit_rest_client::rest_client::{QuickwitClient, QuickwitClientBuilder, DEFAULT_BASE_URL};
-use quickwit_storage::{load_file, StorageResolver};
+use quickwit_rest_client::rest_client::{DEFAULT_BASE_URL, QuickwitClient, QuickwitClientBuilder};
+use quickwit_storage::{StorageResolver, load_file};
 use reqwest::Url;
 use tabled::settings::object::Rows;
 use tabled::settings::panel::Header;

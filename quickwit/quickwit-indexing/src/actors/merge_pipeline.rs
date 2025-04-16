@@ -17,13 +17,13 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use quickwit_actors::{
-    Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Inbox, Mailbox,
-    SpawnContext, Supervisable, HEARTBEAT,
+    Actor, ActorContext, ActorExitStatus, ActorHandle, HEARTBEAT, Handler, Health, Inbox, Mailbox,
+    SpawnContext, Supervisable,
 };
+use quickwit_common::KillSwitch;
 use quickwit_common::io::{IoControls, Limiter};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::TempDirectory;
-use quickwit_common::KillSwitch;
 use quickwit_config::RetentionPolicy;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::{
@@ -581,8 +581,8 @@ mod tests {
     use std::sync::Arc;
 
     use quickwit_actors::{ActorExitStatus, Universe};
-    use quickwit_common::temp_dir::TempDirectory;
     use quickwit_common::ServiceStream;
+    use quickwit_common::temp_dir::TempDirectory;
     use quickwit_doc_mapper::default_doc_mapper_for_test;
     use quickwit_metastore::ListSplitsRequestExt;
     use quickwit_proto::indexing::MergePipelineId;
@@ -590,10 +590,10 @@ mod tests {
     use quickwit_proto::types::{IndexUid, NodeId};
     use quickwit_storage::RamStorage;
 
+    use crate::IndexingSplitStore;
     use crate::actors::merge_pipeline::{MergePipeline, MergePipelineParams};
     use crate::actors::{MergePlanner, Publisher};
     use crate::merge_policy::default_merge_policy;
-    use crate::IndexingSplitStore;
 
     #[tokio::test]
     async fn test_merge_pipeline_simple() -> anyhow::Result<()> {

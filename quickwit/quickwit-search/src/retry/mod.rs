@@ -82,7 +82,7 @@ mod tests {
 
     use quickwit_proto::search::{FetchDocsResponse, SplitIdAndFooterOffsets};
 
-    use crate::retry::{retry_client, DefaultRetryPolicy, RetryPolicy};
+    use crate::retry::{DefaultRetryPolicy, RetryPolicy, retry_client};
     use crate::{
         MockSearchService, SearchError, SearchJobPlacer, SearchServiceClient, SearcherPool,
     };

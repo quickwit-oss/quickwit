@@ -20,7 +20,7 @@ use std::pin::Pin;
 
 use async_trait::async_trait;
 use aws_sdk_s3::primitives::{ByteStream, SdkBody};
-use futures::{stream, Stream, StreamExt};
+use futures::{Stream, StreamExt, stream};
 use hyper::body::{Body, Bytes};
 use pin_project::pin_project;
 use quickwit_common::shared_consts::SPLIT_FIELDS_FILE_NAME;

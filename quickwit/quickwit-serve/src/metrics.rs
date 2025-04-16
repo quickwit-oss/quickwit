@@ -14,8 +14,8 @@
 
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
-    new_counter, new_counter_vec, new_gauge_vec, new_histogram_vec, HistogramVec, IntCounter,
-    IntCounterVec, IntGaugeVec,
+    HistogramVec, IntCounter, IntCounterVec, IntGaugeVec, new_counter, new_counter_vec,
+    new_gauge_vec, new_histogram_vec,
 };
 
 pub struct ServeMetrics {

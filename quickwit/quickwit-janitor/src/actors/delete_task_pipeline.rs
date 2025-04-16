@@ -283,13 +283,13 @@ mod tests {
     use quickwit_actors::{Handler, Universe};
     use quickwit_common::pubsub::EventBroker;
     use quickwit_common::temp_dir::TempDirectory;
-    use quickwit_indexing::actors::MergeSchedulerService;
     use quickwit_indexing::TestSandbox;
+    use quickwit_indexing::actors::MergeSchedulerService;
     use quickwit_metastore::{ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitState};
     use quickwit_proto::metastore::{DeleteQuery, ListSplitsRequest, MetastoreService};
     use quickwit_proto::search::{LeafSearchRequest, LeafSearchResponse};
     use quickwit_search::{
-        searcher_pool_for_test, MockSearchService, SearchError, SearchJobPlacer,
+        MockSearchService, SearchError, SearchJobPlacer, searcher_pool_for_test,
     };
 
     use super::{ActorContext, ActorExitStatus, DeleteTaskPipeline, OBSERVE_PIPELINE_INTERVAL};

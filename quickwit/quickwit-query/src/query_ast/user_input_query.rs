@@ -308,7 +308,7 @@ mod tests {
     use crate::query_ast::{
         BoolQuery, BuildTantivyAst, FullTextMode, FullTextQuery, QueryAst, UserInputQuery,
     };
-    use crate::{create_default_quickwit_tokenizer_manager, BooleanOperand, InvalidQuery};
+    use crate::{BooleanOperand, InvalidQuery, create_default_quickwit_tokenizer_manager};
 
     #[test]
     fn test_user_input_query_not_parsed_error() {

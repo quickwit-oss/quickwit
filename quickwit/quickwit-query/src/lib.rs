@@ -40,8 +40,8 @@ pub use tantivy::query::Query as TantivyQuery;
 #[cfg(feature = "multilang")]
 pub use tokenizers::MultiLangTokenizer;
 pub use tokenizers::{
-    create_default_quickwit_tokenizer_manager, get_quickwit_fastfield_normalizer_manager,
-    CodeTokenizer, DEFAULT_REMOVE_TOKEN_LENGTH,
+    CodeTokenizer, DEFAULT_REMOVE_TOKEN_LENGTH, create_default_quickwit_tokenizer_manager,
+    get_quickwit_fastfield_normalizer_manager,
 };
 
 #[derive(Serialize, Deserialize, Debug, Default, Copy, Clone, Eq, PartialEq)]
