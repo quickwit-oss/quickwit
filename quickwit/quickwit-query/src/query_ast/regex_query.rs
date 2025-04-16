@@ -62,7 +62,7 @@ impl RegexQuery {
         let field_type = field_entry.field_type();
 
         match field_type {
-            FieldType::Str(ref text_options) => {
+            FieldType::Str(text_options) => {
                 text_options.get_indexing_options().ok_or_else(|| {
                     InvalidQuery::SchemaError(format!(
                         "field {} is not full-text searchable",

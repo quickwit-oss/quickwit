@@ -611,7 +611,7 @@ impl DocMapper {
                         map.insert(segment.to_string(), serde_json::Map::new().into());
                         map.get_mut(&**segment).unwrap()
                     };
-                    let JsonValue::Object(ref mut inner_map) = obj else {
+                    let JsonValue::Object(inner_map) = obj else {
                         continue 'field;
                     };
                     map = inner_map;

@@ -304,7 +304,7 @@ impl IndexingPipeline {
         skip_all,
         fields(
             index=%self.params.pipeline_id.index_uid.index_id,
-            gen=self.generation()
+            r#gen=self.generation()
         ))]
     async fn spawn_pipeline(&mut self, ctx: &ActorContext<Self>) -> anyhow::Result<()> {
         let _spawn_pipeline_permit = ctx

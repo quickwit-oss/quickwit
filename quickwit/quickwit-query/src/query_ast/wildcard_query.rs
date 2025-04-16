@@ -123,7 +123,7 @@ impl WildcardQuery {
         let sub_query_parts = parse_wildcard_query(&self.value);
 
         match field_type {
-            FieldType::Str(ref text_options) => {
+            FieldType::Str(text_options) => {
                 let text_field_indexing = text_options.get_indexing_options().ok_or_else(|| {
                     InvalidQuery::SchemaError(format!(
                         "field {} is not full-text searchable",

@@ -679,7 +679,7 @@ fn filter_source(
     fn remove_path(value: &mut serde_json::Value, path: &str) {
         for (prefix, suffix) in generate_path_variants_with_suffix(path) {
             match value {
-                serde_json::Value::Object(ref mut map) => {
+                serde_json::Value::Object(map) => {
                     if let Some(suffix) = suffix {
                         if let Some(sub_value) = map.get_mut(prefix) {
                             remove_path(sub_value, suffix);

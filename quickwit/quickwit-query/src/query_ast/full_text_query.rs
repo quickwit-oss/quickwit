@@ -283,7 +283,7 @@ impl FullTextQuery {
                 let (_pos, term) = terms.pop()?;
                 Some(term)
             }
-            FieldType::JsonObject(ref json_options) => {
+            FieldType::JsonObject(json_options) => {
                 let mut terms = self
                     .params
                     .tokenize_text_into_terms_json(

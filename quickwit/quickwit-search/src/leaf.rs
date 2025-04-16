@@ -1072,7 +1072,7 @@ impl CanSplitDoBetter {
                 // In this case there is no sort order, we order by split id.
                 // If the the first split has enough documents, we can convert the other queries to
                 // count only queries
-                for (_split, ref mut request) in split_with_req.iter_mut().skip(min_required_splits)
+                for (_split, request) in split_with_req.iter_mut().skip(min_required_splits)
                 {
                     disable_search_request_hits(request);
                 }
@@ -1099,7 +1099,7 @@ impl CanSplitDoBetter {
                     .max()
                     // if min_required_splits is 0, we choose a value that disables all splits
                     .unwrap_or(i64::MIN);
-                for (split, ref mut request) in split_with_req.iter_mut().skip(min_required_splits)
+                for (split, request) in split_with_req.iter_mut().skip(min_required_splits)
                 {
                     if split.timestamp_start() > biggest_end_timestamp {
                         disable_search_request_hits(request);
@@ -1120,7 +1120,7 @@ impl CanSplitDoBetter {
                     .min()
                     // if min_required_splits is 0, we choose a value that disables all splits
                     .unwrap_or(i64::MAX);
-                for (split, ref mut request) in split_with_req.iter_mut().skip(min_required_splits)
+                for (split, request) in split_with_req.iter_mut().skip(min_required_splits)
                 {
                     if split.timestamp_end() < smallest_start_timestamp {
                         disable_search_request_hits(request);

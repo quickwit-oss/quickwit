@@ -166,7 +166,7 @@ fn compute_query_with_field(
             let term = Term::from_field_ip_addr(field, ip_v6);
             Ok(make_term_query(term))
         }
-        FieldType::JsonObject(ref json_options) => compute_tantivy_ast_query_for_json(
+        FieldType::JsonObject(json_options) => compute_tantivy_ast_query_for_json(
             field,
             json_path,
             value,

@@ -147,6 +147,11 @@ mod tests {
     #[tokio::test]
     #[serial_test::file_serial(with_env)]
     async fn test_ingest() -> anyhow::Result<()> {
+        // SAFETY: this test may not be entirely sound if not run with nextest or --test-threads=1
+        // as this is only a test, and it would be extremly inconvenient to run it in a different
+        // way, we are keeping it that way
+        // file_serial may not be enough, given other tests not ran serially could read env
+
         quickwit_common::setup_logging_for_tests();
         let bucket = "quickwit-integration-tests";
         let prefix = new_coolid("lambda-ingest-test");
@@ -174,12 +179,14 @@ mod tests {
         .await;
 
         // TODO use dependency injection instead of lazy static for env configs
-        std::env::set_var("QW_LAMBDA_METASTORE_BUCKET", bucket);
-        std::env::set_var("QW_LAMBDA_INDEX_BUCKET", bucket);
-        std::env::set_var("QW_LAMBDA_METASTORE_PREFIX", &prefix);
-        std::env::set_var("QW_LAMBDA_INDEX_PREFIX", &prefix);
-        std::env::set_var("QW_LAMBDA_INDEX_CONFIG_URI", config_uri.as_str());
-        std::env::set_var("QW_LAMBDA_INDEX_ID", "lambda-test");
+        unsafe {
+            std::env::set_var("QW_LAMBDA_METASTORE_BUCKET", bucket);
+            std::env::set_var("QW_LAMBDA_INDEX_BUCKET", bucket);
+            std::env::set_var("QW_LAMBDA_METASTORE_PREFIX", &prefix);
+            std::env::set_var("QW_LAMBDA_INDEX_PREFIX", &prefix);
+            std::env::set_var("QW_LAMBDA_INDEX_CONFIG_URI", config_uri.as_str());
+            std::env::set_var("QW_LAMBDA_INDEX_ID", "lambda-test");
+        }
 
         // first ingestion creates the index metadata
         let test_data_1 = br#"{"timestamp": 1724140899, "field1": "value1"}"#;
@@ -242,12 +249,14 @@ mod tests {
             assert_eq!(stats.num_docs, 1);
         }
 
-        std::env::remove_var("QW_LAMBDA_METASTORE_BUCKET");
-        std::env::remove_var("QW_LAMBDA_INDEX_BUCKET");
-        std::env::remove_var("QW_LAMBDA_METASTORE_PREFIX");
-        std::env::remove_var("QW_LAMBDA_INDEX_PREFIX");
-        std::env::remove_var("QW_LAMBDA_INDEX_CONFIG_URI");
-        std::env::remove_var("QW_LAMBDA_INDEX_ID");
+        unsafe {
+            std::env::remove_var("QW_LAMBDA_METASTORE_BUCKET");
+            std::env::remove_var("QW_LAMBDA_INDEX_BUCKET");
+            std::env::remove_var("QW_LAMBDA_METASTORE_PREFIX");
+            std::env::remove_var("QW_LAMBDA_INDEX_PREFIX");
+            std::env::remove_var("QW_LAMBDA_INDEX_CONFIG_URI");
+            std::env::remove_var("QW_LAMBDA_INDEX_ID");
+        }
 
         Ok(())
     }

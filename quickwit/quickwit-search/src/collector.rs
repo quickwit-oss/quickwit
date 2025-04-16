@@ -641,7 +641,7 @@ enum QuickwitIncrementalAggregations {
 impl QuickwitIncrementalAggregations {
     fn add(&mut self, intermediate_result: Vec<u8>) -> tantivy::Result<()> {
         match self {
-            QuickwitIncrementalAggregations::FindTraceIdsAggregation(collector, ref mut state) => {
+            QuickwitIncrementalAggregations::FindTraceIdsAggregation(collector, state) => {
                 let fruits: Vec<Span> =
                     postcard::from_bytes(&intermediate_result).map_err(map_error)?;
                 state.push(fruits);

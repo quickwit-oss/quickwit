@@ -772,18 +772,18 @@ impl MappingNode {
     /// Finds the field mapping type for a given field path in the mapping tree.
     /// Dots in `field_path_as_str` define the boundaries between field names.
     /// If a dot is part of a field name, it must be escaped with '\'.
-    pub fn find_field_mapping_leaf(
-        &mut self,
+    pub fn find_field_mapping_leaf<'a>(
+        &'a mut self,
         field_path_as_str: &str,
-    ) -> Option<impl Iterator<Item = &mut MappingLeaf>> {
+    ) -> Option<impl Iterator<Item = &'a mut MappingLeaf> + use<'a>> {
         let field_path = build_field_path_from_str(field_path_as_str);
         self.internal_find_field_mapping_leaf(&field_path)
     }
 
-    fn internal_find_field_mapping_leaf(
-        &mut self,
+    fn internal_find_field_mapping_leaf<'a>(
+        &'a mut self,
         field_path: &[String],
-    ) -> Option<impl Iterator<Item = &mut MappingLeaf>> {
+    ) -> Option<impl Iterator<Item = &'a mut MappingLeaf> + use<'a>> {
         let (first_path_fragment, sub_field_path) = field_path.split_first()?;
         let child_tree = self.branches.get_mut(first_path_fragment)?;
         match (child_tree, sub_field_path.is_empty()) {

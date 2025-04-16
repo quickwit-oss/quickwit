@@ -385,7 +385,7 @@ impl ControlPlane {
     ///
     /// This method returns a future that can be awaited to ensure that the relevant rebuild plan
     /// operation has been executed.
-    fn rebuild_plan_debounced(&mut self, ctx: &ActorContext<Self>) -> impl Future<Output = ()> {
+    fn rebuild_plan_debounced(&mut self, ctx: &ActorContext<Self>) -> impl Future<Output = ()> + use<> {
         let next_rebuild_waiter = self
             .indexing_scheduler
             .next_rebuild_tracker

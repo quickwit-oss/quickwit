@@ -147,7 +147,7 @@ impl SearchJobPlacer {
         &self,
         mut jobs: Vec<J>,
         excluded_addrs: &HashSet<SocketAddr>,
-    ) -> anyhow::Result<impl Iterator<Item = (SearchServiceClient, Vec<J>)>> {
+    ) -> anyhow::Result<impl Iterator<Item = (SearchServiceClient, Vec<J>)> + use<J>> {
         let mut all_nodes = self.searcher_pool.pairs();
 
         if all_nodes.is_empty() {

@@ -339,15 +339,19 @@ mod tests {
     #[ignore]
     #[tokio::test]
     async fn test_enabling_and_disabling_telemetry() {
+        // SAFETY: this test may not be entirely sound if not run with nextest or --test-threads=1
+        // as this is only a test, and it would be extremly inconvenient to run it in a different way,
+        // we are keeping it that way
+
         // We group the two in a single test to ensure it happens on the same thread.
-        env::set_var(crate::DISABLE_TELEMETRY_ENV_KEY, "");
+        unsafe { env::set_var(crate::DISABLE_TELEMETRY_ENV_KEY, "") };
         assert_eq!(
             TelemetrySender::from_quickwit_info(QuickwitTelemetryInfo::default())
                 .inner
                 .is_disabled(),
             true
         );
-        env::remove_var(crate::DISABLE_TELEMETRY_ENV_KEY);
+        unsafe { env::remove_var(crate::DISABLE_TELEMETRY_ENV_KEY) };
         assert_eq!(
             TelemetrySender::from_quickwit_info(QuickwitTelemetryInfo::default())
                 .inner

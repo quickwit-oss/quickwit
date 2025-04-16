@@ -275,8 +275,8 @@ impl BuildTantivyAst for RangeQuery {
 
 fn map_bound<TFrom, TTo>(bound: &Bound<TFrom>, transform: impl Fn(&TFrom) -> TTo) -> Bound<TTo> {
     match bound {
-        Bound::Excluded(ref from_val) => Bound::Excluded(transform(from_val)),
-        Bound::Included(ref from_val) => Bound::Included(transform(from_val)),
+        Bound::Excluded(from_val) => Bound::Excluded(transform(from_val)),
+        Bound::Included(from_val) => Bound::Included(transform(from_val)),
         Bound::Unbounded => Bound::Unbounded,
     }
 }

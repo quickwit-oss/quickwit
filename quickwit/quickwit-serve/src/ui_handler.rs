@@ -45,7 +45,7 @@ async fn serve_file(path: Tail) -> Result<impl warp::Reply, Rejection> {
     serve_impl(path.as_str()).await
 }
 
-async fn serve_impl(path: &str) -> Result<impl warp::Reply, Rejection> {
+async fn serve_impl(path: &str) -> Result<impl warp::Reply + use<>, Rejection> {
     static PATH_PTN: Lazy<Regex> = Lazy::new(|| Regex::new(PATH_PATTERN).unwrap());
     let path_to_file = if PATH_PTN.is_match(path) {
         path

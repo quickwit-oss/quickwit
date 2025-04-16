@@ -118,7 +118,7 @@ unsafe fn serde_json_preserve_order_canary(
     val: serde_json::Map<String, serde_json::Value>,
 ) -> std::collections::BTreeMap<String, serde_json::Value> {
     use std::mem::transmute as assert_serde_json__preserve_order__disabled;
-    assert_serde_json__preserve_order__disabled(val)
+    unsafe { assert_serde_json__preserve_order__disabled(val) }
 }
 
 #[cfg(any(test, feature = "testsuite", feature = "integration-testsuite"))]
