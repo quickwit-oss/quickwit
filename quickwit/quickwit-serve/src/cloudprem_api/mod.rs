@@ -5,9 +5,11 @@ use async_trait::async_trait;
 use quickwit_proto::cloudprem::{
     AggregationRequest, AggregationResponse, CloudPremError, CloudPremResult, CloudPremService,
     Event, EventTracker, FetchOneRequest, FetchOneResponse, ListRequest, ListResponse, PingRequest,
-    PingResponse, Statistics,
+    PingResponse, SetClusterAddressRequest, SetClusterAddressResponse, Statistics,
 };
-use quickwit_proto::search::{CountHits, Hit, SearchRequest, SearchResponse, SortField, SortOrder};
+use quickwit_proto::search::{
+    CountHits, Hit, PartialHit, SearchRequest, SearchResponse, SortField, SortOrder,
+};
 use quickwit_query::query_ast::{FullTextMode, FullTextParams, FullTextQuery, QueryAst};
 use quickwit_query::MatchAllOrNone;
 use quickwit_search::SearchService;
@@ -78,6 +80,11 @@ impl CloudPremService for CloudPremServiceImpl {
         } else {
             CountHits::Underestimate
         };
+
+        let search_after = request
+            .search_after
+            .map(|after| DEFAULT_HIT_MAPPER.event_tracker_to_partial_hit(after));
+
         let search_request = SearchRequest {
             index_id_patterns: vec![CLOUD_PREM_INDEX_ID_PATTERN.to_string()],
             query_ast: serde_json::to_string(&query_ast)
@@ -103,7 +110,7 @@ impl CloudPremService for CloudPremServiceImpl {
                 })
                 .collect(),
             scroll_ttl_secs: None,
-            search_after: None,
+            search_after,
             count_hits: count_hits.into(),
         };
 
@@ -273,16 +280,25 @@ impl CloudPremService for CloudPremServiceImpl {
             statistics: Some(statistics),
         })
     }
+
+    async fn set_cluster_address(
+        &self,
+        _: SetClusterAddressRequest,
+    ) -> Result<SetClusterAddressResponse, CloudPremError> {
+        Err(CloudPremError::Unimplemented)
+    }
 }
 
 struct HitMapper {
     id_field: &'static str,
     ts_field: &'static str,
+    tiebreaker_field: &'static str,
 }
 
 const DEFAULT_HIT_MAPPER: HitMapper = HitMapper {
     id_field: "id",
     ts_field: "timestamp",
+    tiebreaker_field: "tiebreaker",
 };
 
 impl HitMapper {
@@ -303,7 +319,14 @@ impl HitMapper {
                 &[quickwit_datetime::DateTimeInputFormat::Rfc3339],
             )
             .map(|ts| ts.into_timestamp_millis())
-            .unwrap_or(0)
+            .unwrap_or(0) as u64
+        } else {
+            0
+        };
+
+        let tiebreaker = if let Some(JsonValue::Number(tiebreaker)) = map.get(self.tiebreaker_field)
+        {
+            tiebreaker.as_i64().unwrap_or_default() as i32
         } else {
             0
         };
@@ -311,9 +334,8 @@ impl HitMapper {
         Ok(Event {
             tracker: Some(EventTracker {
                 id: event_id,
-                epoch_ms: timestamp as u64,
-                tiebreaker: 0, /* TODO get from event? or if we record ingest time with ns, use
-                                * sub ms precision? */
+                epoch_ms: timestamp,
+                tiebreaker,
                 row_number: hit
                     .partial_hit
                     .as_ref()
@@ -322,5 +344,27 @@ impl HitMapper {
             }),
             content_json: hit.json,
         })
+    }
+
+    fn event_tracker_to_partial_hit(&self, event: EventTracker) -> PartialHit {
+        let make_uint_value = |value| {
+            Some(quickwit_proto::search::SortByValue {
+                sort_value: Some(quickwit_proto::search::sort_by_value::SortValue::U64(value)),
+            })
+        };
+        let make_int_value = |value| {
+            Some(quickwit_proto::search::SortByValue {
+                sort_value: Some(quickwit_proto::search::sort_by_value::SortValue::I64(value)),
+            })
+        };
+        // this assumes all requests are sorted by timestamp+tiebreaker
+        // the timestamps we provide must be ms unless with force ns in doc mapping
+        PartialHit {
+            sort_value: make_uint_value(event.epoch_ms),
+            sort_value2: make_int_value(event.tiebreaker.into()),
+            split_id: event.fragment_id.unwrap_or_default(),
+            segment_ord: 0,
+            doc_id: event.row_number.unwrap_or_default() as u32,
+        }
     }
 }

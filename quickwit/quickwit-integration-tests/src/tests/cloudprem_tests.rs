@@ -37,6 +37,7 @@ fn build_list_request(query: &QueryNode) -> ListRequest {
                 path: "tiebreaker".to_string(),
             },
         ],
+        search_after: None,
         org_id: 2,
     }
 }
@@ -293,6 +294,39 @@ async fn test_list() {
             .unwrap()
             .into_timestamp_millis() as u64;
         assert_eq!(event_tracker(i).epoch_ms, timestamp_ms);
+    }
+
+    sandbox.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn test_search_after() {
+    let mut data: Vec<Value> = serde_json::from_slice(TEST_DATA).unwrap();
+    let sandbox = setup_env(&mut data).await;
+
+    let mut client = sandbox.cloudprem_client();
+
+    let query_node = QueryNode {
+        node: Some(query_node::Node::All(MatchAllQueryNode {})),
+    };
+    let mut request = build_list_request(&query_node);
+
+    let res = client
+        .list(authenticated_request(request.clone()))
+        .await
+        .unwrap();
+    let res = res.into_inner();
+    let events = &res.streams[0].events;
+
+    for (i, event) in events.iter().enumerate() {
+        request.search_after = event.tracker.clone();
+
+        let after_res = client
+            .list(authenticated_request(request.clone()))
+            .await
+            .unwrap();
+        let after_res = after_res.into_inner();
+        assert_eq!(after_res.streams[0].events, &events[i + 1..]);
     }
 
     sandbox.shutdown().await.unwrap();

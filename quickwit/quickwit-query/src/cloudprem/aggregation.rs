@@ -3,9 +3,10 @@ use std::collections::HashMap;
 use anyhow::Context;
 use prost::Message;
 use quickwit_proto::cloudprem::aggregation::Aggregation as AggregationNode;
+use quickwit_proto::cloudprem::rollup::RollupType;
 use quickwit_proto::cloudprem::{
     AggValue as EvpAggValue, Aggregation as EvpAggregation,
-    AggregationResult as EvpAggregationResult, CloudPremError,
+    AggregationResult as EvpAggregationResult, CloudPremError, Rollup,
 };
 use tantivy::aggregation::agg_req::{
     Aggregation as TantivyAggregation, AggregationVariants, Aggregations as TantivyAggregations,
@@ -181,14 +182,15 @@ fn handle_time_group_by(
     time_grouping: quickwit_proto::cloudprem::TimeGrouping,
     start_ts_secs: i64,
 ) -> Result<(String, TantivyAggregation), InvalidQuery> {
-    let (interval, offset) = if let Some(interval_ns) = time_grouping.interval_ns {
-        let interval_ms = interval_ns / 1_000_000;
-        (format!("{interval_ms}ms"), None)
-    } else if let Some(rollup) = time_grouping.rollup {
-        rollup_to_interval(&rollup, &time_grouping.time_zone, start_ts_secs)?
-    } else {
-        return Err(missing_required("time_grouping.interval_ns"));
-    };
+    let (interval, offset): (String, Option<String>) =
+        if let Some(interval_ns) = time_grouping.interval_ns {
+            let interval_ms = interval_ns / 1_000_000;
+            (format!("{interval_ms}ms"), None)
+        } else if let Some(rollup) = time_grouping.rollup {
+            rollup_to_interval(&rollup, start_ts_secs)?
+        } else {
+            return Err(missing_required("time_grouping.interval_ns"));
+        };
 
     let terms_agg = bucket::DateHistogramAggregationReq {
         field: time_grouping.path, /* TODO is this correct?, or should we hardcode to
@@ -288,42 +290,32 @@ fn handle_metric_compute(
 /// Additionally, daylight saving is *not* supported
 /// Leap seconds *should* be handled for free by the fact we use unix ts
 fn rollup_to_interval(
-    rollup: &str,
-    timezone: &str,
+    rollup: &Rollup,
     ts_secs: i64,
 ) -> Result<(String, Option<String>), InvalidQuery> {
-    // TODO i made a misstake in the rollup protobuf, it looked like an enum in java, but it
-    // actually has other fields, so this code is wrong until we fix java + protobuf
-    let offset_seconds = timezone_and_ts_to_offset(timezone, ts_secs)?;
+    let offset_seconds = timezone_and_ts_to_offset(&rollup.time_zone, ts_secs)?;
 
-    let res = match rollup {
-        "YEAR" | "MONTH" => {
+    let (base_interval_sec, base_offset_sec) = match rollup.r#type() {
+        RollupType::Invalid | RollupType::Year | RollupType::Month => {
             return Err(unsupported_query_error(&format!(
-                "time aggregation with rollup {rollup}"
+                "time aggregation with rollup {rollup:?}"
             )));
         }
-        "WEEK" => {
+        RollupType::Week => {
             // 1970-01-01 was a thursday, we need to add 4 days to be on monday
-            let offset = (4 * 24 * 60 * 60 + offset_seconds).rem_euclid(7 * 24 * 60 * 60);
-            ("7d".to_string(), Some(format!("{offset}s")))
+            let offset = 4 * 24 * 3600 + offset_seconds;
+            (7 * 24 * 3600, offset)
         }
-        "DAY" => {
-            let offset = offset_seconds.rem_euclid(24 * 60 * 60);
-            ("1d".to_string(), Some(format!("{offset}s")))
-        }
-        "HOUR" => {
-            let offset = offset_seconds.rem_euclid(60 * 60);
-            ("1h".to_string(), Some(format!("{offset}s")))
-        }
-        "MINUTE" => {
-            let offset = offset_seconds.rem_euclid(60);
-            ("1m".to_string(), Some(format!("{offset}s")))
-        }
-        other => {
-            return Err(anyhow::anyhow!("invalid rollup: {other}").into());
-        }
+        RollupType::Day => (24 * 3600, offset_seconds),
+        RollupType::Hour => (3600, offset_seconds),
+        RollupType::Minute => (60, offset_seconds),
     };
-    Ok(res)
+    let interval_sec = base_interval_sec * rollup.quantity;
+    // cast is safe for intervals under 68 years
+    // TODO handle alignment, unsure what the syntax is
+    let offset_sec = base_offset_sec.rem_euclid(interval_sec as i32);
+
+    Ok((format!("{interval_sec}s"), Some(format!("{offset_sec}s"))))
 }
 
 fn timezone_and_ts_to_offset(timezone: &str, ts_secs: i64) -> Result<i32, InvalidQuery> {
@@ -521,13 +513,16 @@ mod tests {
 
     use prost_types::Any;
     use quickwit_proto::cloudprem::aggregation::Aggregation as AggregationEnum;
+    use quickwit_proto::cloudprem::sort_by_expr_and_agg::SortType;
     use quickwit_proto::cloudprem::*;
     use tantivy::aggregation::agg_req::{Aggregation as TantivyAgg, AggregationVariants};
     use tantivy::aggregation::bucket::*;
     use tantivy::aggregation::metric::*;
 
     use super::test_helpers::IntoValue;
-    use super::{aggregation_result_to_proto, generate_sketch, to_tantivy_aggregation};
+    use super::{
+        aggregation_result_to_proto, generate_sketch, rollup_to_interval, to_tantivy_aggregation,
+    };
 
     #[test]
     fn test_count_request() {
@@ -840,5 +835,91 @@ mod tests {
                 assert_eq!(buffer[3 + i * 8 + 7], i as u8);
             }
         }
+    }
+
+    #[test]
+    fn test_rollup() {
+        rollup_to_interval(
+            &Rollup {
+                r#type: 0, // invalid
+                quantity: 3,
+                time_zone: "UTC".to_string(),
+                alignment: None,
+            },
+            0,
+        )
+        .unwrap_err();
+        rollup_to_interval(
+            &Rollup {
+                r#type: 1, // year
+                quantity: 3,
+                time_zone: "UTC".to_string(),
+                alignment: None,
+            },
+            0,
+        )
+        .unwrap_err();
+        rollup_to_interval(
+            &Rollup {
+                r#type: 2, // month
+                quantity: 3,
+                time_zone: "UTC".to_string(),
+                alignment: None,
+            },
+            0,
+        )
+        .unwrap_err();
+
+        let (interval, offset) = rollup_to_interval(
+            &Rollup {
+                r#type: 3, // week
+                quantity: 3,
+                time_zone: "UTC".to_string(),
+                alignment: None,
+            },
+            0,
+        )
+        .unwrap();
+        assert_eq!(interval, format!("{}s", 3 * 7 * 24 * 60 * 60));
+        assert_eq!(offset.unwrap(), format!("{}s", 4 * 24 * 60 * 60)); // 4 days from thurdsay to monday
+
+        let (interval, offset) = rollup_to_interval(
+            &Rollup {
+                r#type: 4, // day
+                quantity: 3,
+                time_zone: "UTC".to_string(),
+                alignment: None,
+            },
+            0,
+        )
+        .unwrap();
+        assert_eq!(interval, format!("{}s", 3 * 24 * 60 * 60));
+        assert_eq!(offset.unwrap(), "0s");
+
+        let (interval, offset) = rollup_to_interval(
+            &Rollup {
+                r#type: 5, // hour
+                quantity: 3,
+                time_zone: "UTC".to_string(),
+                alignment: None,
+            },
+            0,
+        )
+        .unwrap();
+        assert_eq!(interval, format!("{}s", 3 * 60 * 60));
+        assert_eq!(offset.unwrap(), "0s");
+
+        let (interval, offset) = rollup_to_interval(
+            &Rollup {
+                r#type: 6, // minute
+                quantity: 3,
+                time_zone: "UTC".to_string(),
+                alignment: None,
+            },
+            0,
+        )
+        .unwrap();
+        assert_eq!(interval, format!("{}s", 3 * 60));
+        assert_eq!(offset.unwrap(), "0s");
     }
 }
