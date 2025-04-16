@@ -182,14 +182,15 @@ fn handle_time_group_by(
     time_grouping: quickwit_proto::cloudprem::TimeGrouping,
     start_ts_secs: i64,
 ) -> Result<(String, TantivyAggregation), InvalidQuery> {
-    let (interval, offset) = if let Some(interval_ns) = time_grouping.interval_ns {
-        let interval_ms = interval_ns / 1_000_000;
-        (format!("{interval_ms}ms"), None)
-    } else if let Some(rollup) = time_grouping.rollup {
-        rollup_to_interval(&rollup, start_ts_secs)?
-    } else {
-        return Err(missing_required("time_grouping.interval_ns"));
-    };
+    let (interval, offset): (String, Option<String>) =
+        if let Some(interval_ns) = time_grouping.interval_ns {
+            let interval_ms = interval_ns / 1_000_000;
+            (format!("{interval_ms}ms"), None)
+        } else if let Some(rollup) = time_grouping.rollup {
+            rollup_to_interval(&rollup, start_ts_secs)?
+        } else {
+            return Err(missing_required("time_grouping.interval_ns"));
+        };
 
     let terms_agg = bucket::DateHistogramAggregationReq {
         field: time_grouping.path, /* TODO is this correct?, or should we hardcode to
