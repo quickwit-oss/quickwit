@@ -21,6 +21,7 @@ use itertools::Itertools;
 use quickwit_common::get_bool_from_env;
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, EnumMap};
+use tracing::warn;
 
 /// Lists the storage backends supported by Quickwit.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -88,6 +89,9 @@ impl StorageConfigs {
     }
 
     pub fn validate(&self) -> anyhow::Result<()> {
+        for storage_config in self.0.iter() {
+            storage_config.validate()?;
+        }
         let backends: Vec<StorageBackend> = self
             .0
             .iter()
@@ -211,6 +215,14 @@ impl StorageConfig {
             _ => None,
         }
     }
+
+    pub fn validate(&self) -> anyhow::Result<()> {
+        if let StorageConfig::S3(config) = self {
+            config.validate()
+        } else {
+            Ok(())
+        }
+    }
 }
 
 impl From<AzureStorageConfig> for StorageConfig {
@@ -308,6 +320,8 @@ impl fmt::Debug for AzureStorageConfig {
     }
 }
 
+const MAX_S3_HASH_PREFIX_CARDINALITY: usize = 16usize.pow(3);
+
 #[derive(Clone, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct S3StorageConfig {
@@ -329,9 +343,30 @@ pub struct S3StorageConfig {
     pub disable_multi_object_delete: bool,
     #[serde(default)]
     pub disable_multipart_upload: bool,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "lower_than_2")]
+    pub hash_prefix_cardinality: usize,
+}
+
+fn lower_than_2(n: &usize) -> bool {
+    *n < 2
 }
 
 impl S3StorageConfig {
+    fn validate(&self) -> anyhow::Result<()> {
+        if self.hash_prefix_cardinality == 1 {
+            warn!("A hash prefix of 1 will be ignored");
+        }
+        if self.hash_prefix_cardinality > MAX_S3_HASH_PREFIX_CARDINALITY {
+            anyhow::bail!(
+                "hash_prefix_cardinality can take values of at most \
+                 {MAX_S3_HASH_PREFIX_CARDINALITY}, currently set to {}",
+                self.hash_prefix_cardinality
+            );
+        }
+        Ok(())
+    }
+
     fn apply_flavor(&mut self) {
         match self.flavor {
             Some(StorageBackendFlavor::DigitalOcean) => {
@@ -378,7 +413,7 @@ impl S3StorageConfig {
 }
 
 impl fmt::Debug for S3StorageConfig {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("S3StorageConfig")
             .field("access_key_id", &self.access_key_id)
             .field(

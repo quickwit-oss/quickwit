@@ -64,7 +64,7 @@ pub mod s3_storage_test_suite {
             S3CompatibleObjectStorage::from_uri(&s3_storage_config, &storage_uri)
                 .await
                 .unwrap()
-                .with_prefix(PathBuf::from("test-s3-compatible-storage"));
+                .with_prefix("test-s3-compatible-storage".to_string());
 
         quickwit_storage::storage_test_single_part_upload(&mut object_storage)
             .await
