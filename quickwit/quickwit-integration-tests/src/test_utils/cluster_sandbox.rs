@@ -486,7 +486,7 @@ impl ClusterSandbox {
         let data_dir = test_conf
             .0
             .data_dir_path
-            .join(rand::thread_rng().gen::<u64>().to_string());
+            .join(rand::thread_rng().r#gen::<u64>().to_string());
         tokio::fs::create_dir(&data_dir).await?;
         let node_config = format!(
             r#"
