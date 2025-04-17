@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 use self::ingester::{PersistFailureReason, ReplicateFailureReason};
 use self::router::IngestFailureReason;
 use super::GrpcServiceError;
-use crate::types::{queue_id, DocUid, NodeIdRef, Position, QueueId, ShardId, SourceUid};
+use crate::types::{DocUid, NodeIdRef, Position, QueueId, ShardId, SourceUid, queue_id};
 use crate::{ServiceError, ServiceErrorCode};
 
 pub mod ingester;

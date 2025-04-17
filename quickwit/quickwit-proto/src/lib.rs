@@ -20,8 +20,8 @@ use std::cmp::Ordering;
 
 use ::opentelemetry::global;
 use ::opentelemetry::propagation::{Extractor, Injector};
-use tonic::service::Interceptor;
 use tonic::Status;
+use tonic::service::Interceptor;
 use tracing::Span;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 

@@ -43,7 +43,7 @@ use quickwit_common::temp_dir::TempDirectory;
 use quickwit_indexing::actors::MergeExecutor;
 use quickwit_indexing::merge_policy::{MergeOperation, MergeTask};
 use quickwit_indexing::models::MergeScratch;
-use quickwit_indexing::{get_tantivy_directory_from_split_bundle, TestSandbox};
+use quickwit_indexing::{TestSandbox, get_tantivy_directory_from_split_bundle};
 use quickwit_metastore::{
     ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitMetadata,
     SplitState,

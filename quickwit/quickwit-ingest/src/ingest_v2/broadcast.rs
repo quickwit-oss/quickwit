@@ -22,7 +22,7 @@ use quickwit_common::shared_consts::INGESTER_PRIMARY_SHARDS_PREFIX;
 use quickwit_common::sorted_iter::{KeyDiff, SortedByKeyIterator};
 use quickwit_common::tower::{ConstantRate, Rate};
 use quickwit_proto::ingest::ShardState;
-use quickwit_proto::types::{split_queue_id, NodeId, QueueId, ShardId, SourceUid};
+use quickwit_proto::types::{NodeId, QueueId, ShardId, SourceUid, split_queue_id};
 use serde::{Deserialize, Serialize, Serializer};
 use tokio::task::JoinHandle;
 use tracing::{debug, warn};
@@ -441,14 +441,14 @@ pub async fn setup_local_shards_update_listener(
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Instant;
 
-    use quickwit_cluster::{create_cluster_for_test, ChannelTransport};
+    use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
     use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
     use quickwit_proto::ingest::ShardState;
-    use quickwit_proto::types::{queue_id, IndexUid, Position};
+    use quickwit_proto::types::{IndexUid, Position, queue_id};
 
     use super::*;
     use crate::ingest_v2::models::IngesterShard;

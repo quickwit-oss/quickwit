@@ -17,7 +17,7 @@
 use std::hash::Hasher;
 use std::str::FromStr;
 
-use anyhow::{bail, ensure, Context};
+use anyhow::{Context, bail, ensure};
 use json_comments::StripComments;
 use once_cell::sync::Lazy;
 use quickwit_common::get_bool_from_env;
@@ -44,21 +44,21 @@ pub use cluster_config::ClusterConfig;
 // See #2048
 use index_config::serialize::{IndexConfigV0_8, VersionedIndexConfig};
 pub use index_config::{
-    build_doc_mapper, load_index_config_from_user_config, load_index_config_update, IndexConfig,
-    IndexingResources, IndexingSettings, RetentionPolicy, SearchSettings,
+    IndexConfig, IndexingResources, IndexingSettings, RetentionPolicy, SearchSettings,
+    build_doc_mapper, load_index_config_from_user_config, load_index_config_update,
 };
 pub use quickwit_doc_mapper::DocMapping;
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use serde_json::Value as JsonValue;
 use siphasher::sip::SipHasher;
 use source_config::FileSourceParamsForSerde;
 pub use source_config::{
-    load_source_config_from_user_config, load_source_config_update, FileSourceMessageType,
-    FileSourceNotification, FileSourceParams, FileSourceSqs, KafkaSourceParams,
-    KinesisSourceParams, PubSubSourceParams, PulsarSourceAuth, PulsarSourceParams,
-    RegionOrEndpoint, SourceConfig, SourceInputFormat, SourceParams, TransformConfig,
-    VecSourceParams, VoidSourceParams, CLI_SOURCE_ID, INGEST_API_SOURCE_ID, INGEST_V2_SOURCE_ID,
+    CLI_SOURCE_ID, FileSourceMessageType, FileSourceNotification, FileSourceParams, FileSourceSqs,
+    INGEST_API_SOURCE_ID, INGEST_V2_SOURCE_ID, KafkaSourceParams, KinesisSourceParams,
+    PubSubSourceParams, PulsarSourceAuth, PulsarSourceParams, RegionOrEndpoint, SourceConfig,
+    SourceInputFormat, SourceParams, TransformConfig, VecSourceParams, VoidSourceParams,
+    load_source_config_from_user_config, load_source_config_update,
 };
 use tracing::warn;
 
@@ -71,8 +71,8 @@ pub use crate::metastore_config::{
     MetastoreBackend, MetastoreConfig, MetastoreConfigs, PostgresMetastoreConfig,
 };
 pub use crate::node_config::{
-    GrpcConfig, IndexerConfig, IngestApiConfig, JaegerConfig, NodeConfig, RestConfig,
-    SearcherConfig, SplitCacheLimits, StorageTimeoutPolicy, TlsConfig, DEFAULT_QW_CONFIG_PATH,
+    DEFAULT_QW_CONFIG_PATH, GrpcConfig, IndexerConfig, IngestApiConfig, JaegerConfig, NodeConfig,
+    RestConfig, SearcherConfig, SplitCacheLimits, StorageTimeoutPolicy, TlsConfig,
 };
 use crate::source_config::serialize::{SourceConfigV0_7, SourceConfigV0_8, VersionedSourceConfig};
 pub use crate::storage_config::{
@@ -314,10 +314,12 @@ mod tests {
         validate_identifier("cluster", "f-_").unwrap();
         validate_identifier("index", "foo.bar").unwrap();
 
-        assert!(validate_identifier("cluster", "foo!")
-            .unwrap_err()
-            .to_string()
-            .contains("cluster ID `foo!` is invalid"));
+        assert!(
+            validate_identifier("cluster", "foo!")
+                .unwrap_err()
+                .to_string()
+                .contains("cluster ID `foo!` is invalid")
+        );
     }
 
     #[test]
@@ -327,10 +329,12 @@ mod tests {
         validate_index_id_pattern("ab", false).unwrap_err();
         validate_index_id_pattern("", false).unwrap_err();
         validate_index_id_pattern("**", false).unwrap_err();
-        assert!(validate_index_id_pattern("foo!", false)
-            .unwrap_err()
-            .to_string()
-            .contains("index ID pattern `foo!` is invalid:"));
+        assert!(
+            validate_index_id_pattern("foo!", false)
+                .unwrap_err()
+                .to_string()
+                .contains("index ID pattern `foo!` is invalid:")
+        );
         validate_index_id_pattern("-abc", true).unwrap();
         validate_index_id_pattern("-abc", false).unwrap_err();
     }

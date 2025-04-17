@@ -18,8 +18,8 @@ use std::ops::{Range, RangeInclusive};
 use quickwit_proto::types::{DocMappingUid, IndexUid, SplitId};
 use serde::{Deserialize, Serialize};
 
-use crate::split_metadata::{utc_now_timestamp, SplitMaturity};
 use crate::SplitMetadata;
+use crate::split_metadata::{SplitMaturity, utc_now_timestamp};
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 pub(crate) struct SplitMetadataV0_8 {

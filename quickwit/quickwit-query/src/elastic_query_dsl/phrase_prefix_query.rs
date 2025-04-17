@@ -14,12 +14,12 @@
 
 use serde::Deserialize;
 
+use crate::MatchAllOrNone;
 use crate::elastic_query_dsl::one_field_map::OneFieldMap;
 use crate::elastic_query_dsl::{
-    default_max_expansions, ConvertibleToQueryAst, ElasticQueryDslInner,
+    ConvertibleToQueryAst, ElasticQueryDslInner, default_max_expansions,
 };
 use crate::query_ast::{self, FullTextMode, FullTextParams, QueryAst};
-use crate::MatchAllOrNone;
 
 pub(crate) type MatchPhrasePrefixQuery = OneFieldMap<MatchPhrasePrefixQueryParams>;
 

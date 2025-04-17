@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
+use criterion::{Criterion, Throughput, black_box, criterion_group, criterion_main};
 use quickwit_query::CodeTokenizer;
 use tantivy::tokenizer::{RegexTokenizer, TextAnalyzer, Token, TokenStream};
 

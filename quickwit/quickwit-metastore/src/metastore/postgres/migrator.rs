@@ -153,8 +153,8 @@ mod tests {
     use std::time::Duration;
 
     use quickwit_common::uri::Uri;
-    use sqlx::migrate::Migrate;
     use sqlx::Acquire;
+    use sqlx::migrate::Migrate;
 
     use super::{get_migrations, run_migrations};
     use crate::metastore::postgres::utils::establish_connection;

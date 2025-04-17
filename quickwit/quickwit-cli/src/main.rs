@@ -21,7 +21,7 @@ use colored::Colorize;
 use opentelemetry::global;
 use quickwit_cli::busy_detector;
 use quickwit_cli::checklist::RED_COLOR;
-use quickwit_cli::cli::{build_cli, CliCommand};
+use quickwit_cli::cli::{CliCommand, build_cli};
 #[cfg(feature = "jemalloc")]
 use quickwit_cli::jemalloc::start_jemalloc_metrics_loop;
 use quickwit_cli::logger::setup_logging_and_tracing;
@@ -128,7 +128,8 @@ mod tests {
     use std::time::Duration;
 
     use bytesize::ByteSize;
-    use quickwit_cli::cli::{build_cli, CliCommand};
+    use quickwit_cli::ClientArgs;
+    use quickwit_cli::cli::{CliCommand, build_cli};
     use quickwit_cli::index::{
         ClearIndexArgs, CreateIndexArgs, DeleteIndexArgs, DescribeIndexArgs, IndexCliCommand,
         IngestDocsArgs, SearchIndexArgs,
@@ -138,7 +139,6 @@ mod tests {
         ExtractSplitArgs, GarbageCollectIndexArgs, LocalIngestDocsArgs, LocalSearchArgs, MergeArgs,
         ToolCliCommand,
     };
-    use quickwit_cli::ClientArgs;
     use quickwit_common::uri::Uri;
     use quickwit_config::SourceInputFormat;
     use quickwit_rest_client::models::Timeout;
@@ -747,9 +747,13 @@ mod tests {
 
     #[test]
     fn test_parse_no_color() {
+        // SAFETY: this test may not be entirely sound if not run with nextest or --test-threads=1
+        // as this is only a test, and it would be extremly inconvenient to run it in a different
+        // way, we are keeping it that way
+
         let previous_no_color_res = std::env::var("NO_COLOR");
         {
-            std::env::set_var("NO_COLOR", "whatever_interpreted_as_true");
+            unsafe { std::env::set_var("NO_COLOR", "whatever_interpreted_as_true") };
             let app = build_cli().no_binary_name(true);
             let matches = app.try_get_matches_from(["run"]).unwrap();
             let no_color = matches.get_flag("no-color");
@@ -757,7 +761,7 @@ mod tests {
         }
         {
             // empty string is false.
-            std::env::set_var("NO_COLOR", "");
+            unsafe { std::env::set_var("NO_COLOR", "") };
             let app = build_cli().no_binary_name(true);
             let matches = app.try_get_matches_from(["run"]).unwrap();
             let no_color = matches.get_flag("no-color");
@@ -771,7 +775,7 @@ mod tests {
             assert!(no_color);
         }
         if let Ok(previous_no_color) = previous_no_color_res {
-            std::env::set_var("NO_COLOR", previous_no_color);
+            unsafe { std::env::set_var("NO_COLOR", previous_no_color) };
         }
     }
 }

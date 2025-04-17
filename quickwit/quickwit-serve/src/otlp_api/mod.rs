@@ -13,5 +13,5 @@
 // limitations under the License.
 
 mod rest_handler;
-pub(crate) use rest_handler::otlp_ingest_api_handlers;
 pub use rest_handler::OtlpApi;
+pub(crate) use rest_handler::otlp_ingest_api_handlers;

@@ -16,9 +16,9 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use tantivy::Directory;
 use tantivy::directory::error::{DeleteError, OpenReadError, OpenWriteError};
 use tantivy::directory::{FileHandle, WatchHandle};
-use tantivy::Directory;
 
 /// A union directory takes a bunch of directories and stacks them, similarly to UnionFS.
 /// The resulting directory is a virtual view of the union of the different directories.

@@ -17,19 +17,19 @@ use std::time::Instant;
 
 use hyper::StatusCode;
 use quickwit_common::rate_limited_error;
-use quickwit_config::{validate_identifier, INGEST_V2_SOURCE_ID};
+use quickwit_config::{INGEST_V2_SOURCE_ID, validate_identifier};
 use quickwit_ingest::IngestRequestV2Builder;
+use quickwit_proto::ingest::CommitTypeV2;
 use quickwit_proto::ingest::router::{
     IngestFailureReason, IngestResponseV2, IngestRouterService, IngestRouterServiceClient,
 };
-use quickwit_proto::ingest::CommitTypeV2;
 use quickwit_proto::types::{DocUid, IndexId};
 use serde::{Deserialize, Serialize};
 
 use super::model::ElasticException;
+use crate::Body;
 use crate::elasticsearch_api::model::{BulkAction, ElasticBulkOptions, ElasticsearchError};
 use crate::ingest_api::lines;
-use crate::Body;
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub(crate) struct ElasticBulkResponse {

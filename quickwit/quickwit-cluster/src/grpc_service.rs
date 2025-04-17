@@ -17,7 +17,7 @@ use std::net::SocketAddr;
 use bytesize::ByteSize;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
-use quickwit_common::tower::{make_channel, GrpcMetricsLayer};
+use quickwit_common::tower::{GrpcMetricsLayer, make_channel};
 use quickwit_proto::cluster::cluster_service_grpc_server::ClusterServiceGrpcServer;
 use quickwit_proto::cluster::{
     ChitchatId as ProtoChitchatId, ClusterError, ClusterResult, ClusterService,

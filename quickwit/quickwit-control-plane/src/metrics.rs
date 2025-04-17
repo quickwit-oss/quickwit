@@ -14,7 +14,7 @@
 
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
-    new_counter, new_gauge, new_gauge_vec, IntCounter, IntGauge, IntGaugeVec,
+    IntCounter, IntGauge, IntGaugeVec, new_counter, new_gauge, new_gauge_vec,
 };
 
 #[derive(Debug, Clone, Copy)]

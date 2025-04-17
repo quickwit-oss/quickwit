@@ -14,14 +14,14 @@
 
 use std::time::Duration;
 
+use aws_config::BehaviorVersion;
 use aws_config::retry::RetryConfig;
 use aws_config::stalled_stream_protection::StalledStreamProtectionConfig;
-use aws_config::BehaviorVersion;
 pub use aws_smithy_async::rt::sleep::TokioSleep;
 use aws_smithy_runtime::client::http::hyper_014::HyperClientBuilder;
 use aws_types::region::Region;
-use hyper::client::HttpConnector;
 use hyper::Client as HyperClient;
+use hyper::client::HttpConnector;
 use hyper_rustls::HttpsConnectorBuilder;
 use tokio::sync::OnceCell;
 

@@ -36,7 +36,7 @@ use tracing::{debug, error, info, instrument};
 use crate::leaf::open_index_with_caches;
 use crate::search_job_placer::group_jobs_by_index_id;
 use crate::search_permit_provider::compute_initial_memory_allocation;
-use crate::{resolve_index_patterns, ClusterClient, SearchError, SearchJob, SearcherContext};
+use crate::{ClusterClient, SearchError, SearchJob, SearcherContext, resolve_index_patterns};
 
 /// Performs a distributed list terms.
 /// 1. Sends leaf request over gRPC to multiple leaf nodes.

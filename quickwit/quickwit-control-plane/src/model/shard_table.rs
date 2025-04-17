@@ -1050,9 +1050,11 @@ mod tests {
             index_uid: index_uid.clone(),
             source_id: source_id.clone(),
         };
-        assert!(shard_table
-            .acquire_scaling_permits(&source_uid, ScalingMode::Up(1))
-            .is_none());
+        assert!(
+            shard_table
+                .acquire_scaling_permits(&source_uid, ScalingMode::Up(1))
+                .is_none()
+        );
 
         shard_table.add_source(&index_uid, &source_id);
 
@@ -1063,9 +1065,11 @@ mod tests {
             .scaling_up_rate_limiter
             .available_permits();
 
-        assert!(shard_table
-            .acquire_scaling_permits(&source_uid, ScalingMode::Up(1))
-            .unwrap());
+        assert!(
+            shard_table
+                .acquire_scaling_permits(&source_uid, ScalingMode::Up(1))
+                .unwrap()
+        );
 
         let new_available_permits = shard_table
             .table_entries
@@ -1088,9 +1092,11 @@ mod tests {
             index_uid: index_uid.clone(),
             source_id: source_id.clone(),
         };
-        assert!(shard_table
-            .acquire_scaling_permits(&source_uid, ScalingMode::Down)
-            .is_none());
+        assert!(
+            shard_table
+                .acquire_scaling_permits(&source_uid, ScalingMode::Down)
+                .is_none()
+        );
 
         shard_table.add_source(&index_uid, &source_id);
 
@@ -1101,9 +1107,11 @@ mod tests {
             .scaling_down_rate_limiter
             .available_permits();
 
-        assert!(shard_table
-            .acquire_scaling_permits(&source_uid, ScalingMode::Down)
-            .unwrap());
+        assert!(
+            shard_table
+                .acquire_scaling_permits(&source_uid, ScalingMode::Down)
+                .unwrap()
+        );
 
         let new_available_permits = shard_table
             .table_entries
@@ -1135,9 +1143,11 @@ mod tests {
             .scaling_up_rate_limiter
             .available_permits();
 
-        assert!(shard_table
-            .acquire_scaling_permits(&source_uid, ScalingMode::Up(1))
-            .unwrap());
+        assert!(
+            shard_table
+                .acquire_scaling_permits(&source_uid, ScalingMode::Up(1))
+                .unwrap()
+        );
 
         shard_table.release_scaling_permits(&source_uid, ScalingMode::Up(1));
 
@@ -1171,9 +1181,11 @@ mod tests {
             .scaling_up_rate_limiter
             .available_permits();
 
-        assert!(shard_table
-            .acquire_scaling_permits(&source_uid, ScalingMode::Down)
-            .unwrap());
+        assert!(
+            shard_table
+                .acquire_scaling_permits(&source_uid, ScalingMode::Down)
+                .unwrap()
+        );
 
         shard_table.release_scaling_permits(&source_uid, ScalingMode::Down);
 
@@ -1208,9 +1220,11 @@ mod tests {
             &[&node1, &node2]
         );
         // If the shard is not listed, we do not panic but just return an empty list.
-        assert!(shard_locations
-            .get_shard_locations(&unlisted_shard)
-            .is_empty());
+        assert!(
+            shard_locations
+                .get_shard_locations(&unlisted_shard)
+                .is_empty()
+        );
     }
 
     #[test]

@@ -34,11 +34,11 @@ use quickwit_config::{
 };
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore::{
-    serde_utils, AddSourceRequest, CreateIndexRequest, CreateIndexResponse, DeleteTask,
-    IndexMetadataFailure, IndexMetadataRequest, IndexMetadataResponse, IndexesMetadataResponse,
+    AddSourceRequest, CreateIndexRequest, CreateIndexResponse, DeleteTask, IndexMetadataFailure,
+    IndexMetadataRequest, IndexMetadataResponse, IndexesMetadataResponse,
     ListIndexesMetadataResponse, ListSplitsRequest, ListSplitsResponse, MetastoreError,
     MetastoreResult, MetastoreService, MetastoreServiceClient, MetastoreServiceStream,
-    PublishSplitsRequest, StageSplitsRequest, UpdateIndexRequest, UpdateSourceRequest,
+    PublishSplitsRequest, StageSplitsRequest, UpdateIndexRequest, UpdateSourceRequest, serde_utils,
 };
 use quickwit_proto::types::{IndexUid, NodeId, SplitId};
 use time::OffsetDateTime;

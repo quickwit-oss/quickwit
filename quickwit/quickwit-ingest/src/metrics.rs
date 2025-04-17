@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use once_cell::sync::Lazy;
-use quickwit_common::metrics::{new_counter, new_counter_vec, new_gauge, IntCounter, IntGauge};
+use quickwit_common::metrics::{IntCounter, IntGauge, new_counter, new_counter_vec, new_gauge};
 
 pub struct IngestMetrics {
     pub ingested_docs_bytes_valid: IntCounter,

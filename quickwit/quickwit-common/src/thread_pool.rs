@@ -21,7 +21,7 @@ use prometheus::IntGauge;
 use tokio::sync::oneshot;
 use tracing::error;
 
-use crate::metrics::{new_gauge_vec, GaugeGuard, IntGaugeVec, OwnedGaugeGuard};
+use crate::metrics::{GaugeGuard, IntGaugeVec, OwnedGaugeGuard, new_gauge_vec};
 
 /// An executor backed by a thread pool to run CPU-intensive tasks.
 ///
@@ -167,8 +167,8 @@ static THREAD_POOL_METRICS: Lazy<ThreadPoolMetrics> = Lazy::new(ThreadPoolMetric
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::Duration;
 
     use super::*;

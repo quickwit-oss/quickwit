@@ -18,7 +18,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use async_trait::async_trait;
 use fail::fail_point;
 use itertools::Itertools;
@@ -594,7 +594,7 @@ mod tests {
 
     use super::*;
     use crate::merge_policy::{MergeOperation, MergeTask};
-    use crate::{get_tantivy_directory_from_split_bundle, new_split_id, TestSandbox};
+    use crate::{TestSandbox, get_tantivy_directory_from_split_bundle, new_split_id};
 
     #[tokio::test]
     async fn test_merge_executor() -> anyhow::Result<()> {

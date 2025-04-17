@@ -338,8 +338,8 @@ mod tests {
         let mut rng = rand::thread_rng();
         let template = "A".repeat(100);
         for _ in 0..10000 {
-            let rand_bytes = rng.gen::<usize>() % 4;
-            let parts_num = rng.gen::<usize>() % 10;
+            let rand_bytes = rng.r#gen::<usize>() % 4;
+            let parts_num = rng.r#gen::<usize>() % 10;
             let mut builder = Builder::default();
             builder.rand_bytes(rand_bytes);
             let mut max_size = 0;
@@ -360,7 +360,7 @@ mod tests {
                 }
             };
             let limit_threshold = parts_num + separator_count + rand_bytes;
-            if parts_num > 0 && rng.gen::<bool>() {
+            if parts_num > 0 && rng.r#gen::<bool>() {
                 builder.max_length(rand::random::<usize>() % limit_threshold);
                 assert_eq!(
                     "the filename limit is too small",

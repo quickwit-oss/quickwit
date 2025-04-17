@@ -40,7 +40,7 @@ impl RebuildNotifier {
     ///
     /// If an ongoing build T exists, it will not resolve upon build T's completion.
     /// It will only be resolved upon build T+1's completion, or any subsequent build.
-    pub fn next_rebuild_waiter(&mut self) -> impl std::future::Future<Output = ()> {
+    pub fn next_rebuild_waiter(&mut self) -> impl std::future::Future<Output = ()> + use<> {
         let mut generation_processed_rx = self.generation_processed_rx.clone();
         let current_generation = self.generation;
         async move {

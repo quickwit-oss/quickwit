@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use aws_sdk_kinesis::Client as KinesisClient;
 use aws_sdk_kinesis::operation::get_records::GetRecordsOutput;
 use aws_sdk_kinesis::types::{Shard, ShardIteratorType};
-use aws_sdk_kinesis::Client as KinesisClient;
 use quickwit_aws::retry::aws_retry;
 use quickwit_common::retry::RetryParams;
 
@@ -119,7 +119,7 @@ pub(crate) mod tests {
     use std::collections::BTreeSet;
     use std::time::Duration;
 
-    use anyhow::{anyhow, Context};
+    use anyhow::{Context, anyhow};
     use aws_sdk_kinesis::types::StreamDescription;
 
     use super::*;
@@ -296,8 +296,8 @@ mod kinesis_localstack_tests {
         create_stream, delete_stream, describe_stream, list_streams, wait_for_stream_status,
     };
     use crate::source::kinesis::helpers::tests::{
-        get_localstack_client, make_shard_id, put_records_into_shards, setup, teardown,
-        wait_for_active_stream, DEFAULT_RETRY_PARAMS,
+        DEFAULT_RETRY_PARAMS, get_localstack_client, make_shard_id, put_records_into_shards, setup,
+        teardown, wait_for_active_stream,
     };
 
     #[ignore]
@@ -326,9 +326,11 @@ mod kinesis_localstack_tests {
             Duration::from_secs(1),
         )
         .await;
-        assert!(!list_streams(&kinesis_client, None, None,)
-            .await?
-            .contains(&stream_name));
+        assert!(
+            !list_streams(&kinesis_client, None, None,)
+                .await?
+                .contains(&stream_name)
+        );
         Ok(())
     }
 

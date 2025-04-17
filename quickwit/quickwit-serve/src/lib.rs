@@ -50,7 +50,7 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use bytesize::ByteSize;
 pub(crate) use decompression::Body;
 pub use format::BodyFormat;
@@ -59,7 +59,7 @@ use itertools::Itertools;
 use once_cell::sync::Lazy;
 use quickwit_actors::{ActorExitStatus, Mailbox, SpawnContext, Universe};
 use quickwit_cluster::{
-    start_cluster_service, Cluster, ClusterChange, ClusterChangeStream, ListenerHandle,
+    Cluster, ClusterChange, ClusterChangeStream, ListenerHandle, start_cluster_service,
 };
 use quickwit_common::pubsub::{EventBroker, EventSubscriptionHandle};
 use quickwit_common::rate_limiter::RateLimiterSettings;
@@ -81,12 +81,12 @@ use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::models::ShardPositionsService;
 use quickwit_indexing::start_indexing_service;
 use quickwit_ingest::{
-    get_idle_shard_timeout, setup_local_shards_update_listener, start_ingest_api_service,
-    wait_for_ingester_decommission, wait_for_ingester_status, GetMemoryCapacity, IngestRequest,
-    IngestRouter, IngestServiceClient, Ingester, IngesterPool, LocalShardsUpdate,
+    GetMemoryCapacity, IngestRequest, IngestRouter, IngestServiceClient, Ingester, IngesterPool,
+    LocalShardsUpdate, get_idle_shard_timeout, setup_local_shards_update_listener,
+    start_ingest_api_service, wait_for_ingester_decommission, wait_for_ingester_status,
 };
 use quickwit_jaeger::JaegerService;
-use quickwit_janitor::{start_janitor_service, JanitorService};
+use quickwit_janitor::{JanitorService, start_janitor_service};
 use quickwit_metastore::{
     ControlPlaneMetastore, ListIndexesMetadataResponseExt, MetastoreResolver,
 };
@@ -106,16 +106,16 @@ use quickwit_proto::metastore::{
 use quickwit_proto::search::ReportSplitsRequest;
 use quickwit_proto::types::NodeId;
 use quickwit_search::{
-    create_search_client_from_channel, start_searcher_service, SearchJobPlacer, SearchService,
-    SearchServiceClient, SearcherContext, SearcherPool,
+    SearchJobPlacer, SearchService, SearchServiceClient, SearcherContext, SearcherPool,
+    create_search_client_from_channel, start_searcher_service,
 };
 use quickwit_storage::{SplitCache, StorageResolver};
 use tcp_listener::TcpListenerResolver;
 use tokio::sync::oneshot;
-use tonic_health::server::HealthReporter;
 use tonic_health::ServingStatus;
-use tower::timeout::Timeout;
+use tonic_health::server::HealthReporter;
 use tower::ServiceBuilder;
+use tower::timeout::Timeout;
 use tracing::{debug, error, info, warn};
 use warp::{Filter, Rejection};
 
@@ -126,7 +126,7 @@ pub use crate::metrics::SERVE_METRICS;
 use crate::rate_modulator::RateModulator;
 #[cfg(test)]
 use crate::rest::recover_fn;
-pub use crate::search_api::{search_request_from_api_request, SearchRequestQueryString, SortBy};
+pub use crate::search_api::{SearchRequestQueryString, SortBy, search_request_from_api_request};
 
 const READINESS_REPORTING_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
     Duration::from_millis(25)
@@ -1329,11 +1329,11 @@ pub mod lambda_search_api {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_cluster::{create_cluster_for_test, ChannelTransport, ClusterNode};
-    use quickwit_common::uri::Uri;
+    use quickwit_cluster::{ChannelTransport, ClusterNode, create_cluster_for_test};
     use quickwit_common::ServiceStream;
+    use quickwit_common::uri::Uri;
     use quickwit_config::SearcherConfig;
-    use quickwit_metastore::{metastore_for_test, IndexMetadata};
+    use quickwit_metastore::{IndexMetadata, metastore_for_test};
     use quickwit_proto::indexing::IndexingTask;
     use quickwit_proto::ingest::ingester::{MockIngesterService, ObservationMessage};
     use quickwit_proto::metastore::{ListIndexesMetadataResponse, MockMetastoreService};
@@ -1341,8 +1341,8 @@ mod tests {
     use quickwit_search::Job;
     use tokio::sync::watch;
     use tonic::transport::{Channel, Server};
-    use tonic_health::pb::health_client::HealthClient;
     use tonic_health::pb::HealthCheckRequest;
+    use tonic_health::pb::health_client::HealthClient;
     use tonic_health::server::health_reporter;
 
     use super::*;

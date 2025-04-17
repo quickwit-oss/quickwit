@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use binggan::plugins::*;
-use binggan::{BenchRunner, PeakMemAlloc, INSTRUMENTED_SYSTEM};
+use binggan::{BenchRunner, INSTRUMENTED_SYSTEM, PeakMemAlloc};
 use quickwit_doc_mapper::RoutingExpr;
 use serde_json::Value as JsonValue;
 

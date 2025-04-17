@@ -29,7 +29,6 @@ use crate::{Actor, ActorContext, ActorExitStatus};
 /// queue with a single type.
 /// Before appending, we capture the right handler implementation
 /// in the form of a `Box<dyn Envelope>`, and append that to the queue.
-
 pub struct Envelope<A> {
     handler_envelope: Box<dyn EnvelopeT<A>>,
     _no_advance_time_guard: Option<NoAdvanceTimeGuard>,

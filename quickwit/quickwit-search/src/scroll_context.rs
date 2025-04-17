@@ -20,8 +20,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
-use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
+use base64::prelude::BASE64_STANDARD;
 use quickwit_common::metrics::GaugeGuard;
 use quickwit_common::shared_consts::SCROLL_BATCH_LEN;
 use quickwit_metastore::SplitMetadata;
@@ -32,9 +32,9 @@ use tokio::sync::RwLock;
 use ttl_cache::TtlCache;
 use ulid::Ulid;
 
+use crate::ClusterClient;
 use crate::root::IndexMetasForLeafSearch;
 use crate::service::SearcherContext;
-use crate::ClusterClient;
 
 /// Maximum number of values in the local search KV store.
 ///

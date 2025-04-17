@@ -18,5 +18,5 @@ mod rest_handler;
 pub use response::{RestIngestResponse, RestParseFailure};
 #[cfg(test)]
 pub(crate) use rest_handler::tests::setup_ingest_v1_service;
-pub(crate) use rest_handler::{ingest_api_handlers, lines};
 pub use rest_handler::{IngestApi, IngestApiSchemas};
+pub(crate) use rest_handler::{ingest_api_handlers, lines};

@@ -23,9 +23,9 @@ use std::time::Instant;
 use anyhow::bail;
 use fnv::{FnvHashMap, FnvHashSet};
 use futures::StreamExt;
-use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::Progress;
-use quickwit_config::{enable_ingest_v2, IndexConfig, SourceConfig, INGEST_V2_SOURCE_ID};
+use quickwit_common::pretty::PrettyDisplay;
+use quickwit_config::{INGEST_V2_SOURCE_ID, IndexConfig, SourceConfig, enable_ingest_v2};
 use quickwit_ingest::ShardInfos;
 use quickwit_metastore::{AddSourceRequestExt, IndexMetadata, ListIndexesMetadataResponseExt};
 use quickwit_proto::control_plane::ControlPlaneResult;
@@ -563,7 +563,7 @@ impl ControlPlaneModel {
 #[cfg(test)]
 mod tests {
     use metastore::EmptyResponse;
-    use quickwit_config::{SourceConfig, SourceParams, TransformConfig, INGEST_V2_SOURCE_ID};
+    use quickwit_config::{INGEST_V2_SOURCE_ID, SourceConfig, SourceParams, TransformConfig};
     use quickwit_metastore::IndexMetadata;
     use quickwit_proto::ingest::{Shard, ShardState};
     use quickwit_proto::metastore::{ListIndexesMetadataResponse, MockMetastoreService};

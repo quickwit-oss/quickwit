@@ -16,16 +16,16 @@ use std::collections::HashSet;
 use std::pin::pin;
 use std::str::FromStr;
 
-use clap::{arg, ArgAction, ArgMatches, Command};
+use clap::{ArgAction, ArgMatches, Command, arg};
 use colored::Colorize;
 use futures::future::select;
 use itertools::Itertools;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::{Protocol, Uri};
-use quickwit_config::service::QuickwitService;
 use quickwit_config::NodeConfig;
+use quickwit_config::service::QuickwitService;
 use quickwit_serve::tcp_listener::DefaultTcpListenerResolver;
-use quickwit_serve::{serve_quickwit, BuildInfo, EnvFilterReloadFn};
+use quickwit_serve::{BuildInfo, EnvFilterReloadFn, serve_quickwit};
 use quickwit_telemetry::payload::{QuickwitFeature, QuickwitTelemetryInfo, TelemetryEvent};
 use tokio::signal;
 use tracing::{debug, info};
@@ -180,7 +180,7 @@ fn quickwit_telemetry_info(config: &NodeConfig) -> QuickwitTelemetryInfo {
 mod tests {
 
     use super::*;
-    use crate::cli::{build_cli, CliCommand};
+    use crate::cli::{CliCommand, build_cli};
 
     #[test]
     fn test_parse_service_run_args_all_services() -> anyhow::Result<()> {

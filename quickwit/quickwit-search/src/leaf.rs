@@ -32,11 +32,11 @@ use quickwit_proto::search::{
 use quickwit_query::query_ast::{BoolQuery, QueryAst, QueryAstTransformer, RangeQuery, TermQuery};
 use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_storage::{
-    wrap_storage_with_cache, BundleStorage, ByteRangeCache, MemorySizedCache, OwnedBytes,
-    SplitCache, Storage, StorageResolver, TimeoutAndRetryStorage,
+    BundleStorage, ByteRangeCache, MemorySizedCache, OwnedBytes, SplitCache, Storage,
+    StorageResolver, TimeoutAndRetryStorage, wrap_storage_with_cache,
 };
-use tantivy::aggregation::agg_req::{AggregationVariants, Aggregations};
 use tantivy::aggregation::AggregationLimitsGuard;
+use tantivy::aggregation::agg_req::{AggregationVariants, Aggregations};
 use tantivy::directory::FileSlice;
 use tantivy::fastfield::FastFieldReaders;
 use tantivy::schema::Field;
@@ -44,11 +44,11 @@ use tantivy::{DateTime, Index, ReloadPolicy, Searcher, TantivyError, Term};
 use tokio::task::JoinError;
 use tracing::*;
 
-use crate::collector::{make_collector_for_split, make_merge_collector, IncrementalCollector};
+use crate::collector::{IncrementalCollector, make_collector_for_split, make_merge_collector};
 use crate::metrics::SEARCH_METRICS;
 use crate::root::is_metadata_count_request_with_ast;
-use crate::search_permit_provider::{compute_initial_memory_allocation, SearchPermit};
-use crate::service::{deserialize_doc_mapper, SearcherContext};
+use crate::search_permit_provider::{SearchPermit, compute_initial_memory_allocation};
+use crate::service::{SearcherContext, deserialize_doc_mapper};
 use crate::{QuickwitAggregations, SearchError};
 
 #[instrument(skip_all)]
@@ -1072,8 +1072,7 @@ impl CanSplitDoBetter {
                 // In this case there is no sort order, we order by split id.
                 // If the the first split has enough documents, we can convert the other queries to
                 // count only queries
-                for (_split, ref mut request) in split_with_req.iter_mut().skip(min_required_splits)
-                {
+                for (_split, request) in split_with_req.iter_mut().skip(min_required_splits) {
                     disable_search_request_hits(request);
                 }
             }
@@ -1099,8 +1098,7 @@ impl CanSplitDoBetter {
                     .max()
                     // if min_required_splits is 0, we choose a value that disables all splits
                     .unwrap_or(i64::MIN);
-                for (split, ref mut request) in split_with_req.iter_mut().skip(min_required_splits)
-                {
+                for (split, request) in split_with_req.iter_mut().skip(min_required_splits) {
                     if split.timestamp_start() > biggest_end_timestamp {
                         disable_search_request_hits(request);
                     }
@@ -1120,8 +1118,7 @@ impl CanSplitDoBetter {
                     .min()
                     // if min_required_splits is 0, we choose a value that disables all splits
                     .unwrap_or(i64::MAX);
-                for (split, ref mut request) in split_with_req.iter_mut().skip(min_required_splits)
-                {
+                for (split, request) in split_with_req.iter_mut().skip(min_required_splits) {
                     if split.timestamp_end() < smallest_start_timestamp {
                         disable_search_request_hits(request);
                     }
@@ -1529,12 +1526,12 @@ mod tests {
 
     use bytes::BufMut;
     use quickwit_directories::write_hotcache;
-    use rand::{thread_rng, Rng};
+    use rand::{Rng, thread_rng};
+    use tantivy::TantivyDocument;
     use tantivy::directory::RamDirectory;
     use tantivy::schema::{
         BytesOptions, FieldEntry, Schema, TextFieldIndexing, TextOptions, Value,
     };
-    use tantivy::TantivyDocument;
 
     use super::*;
 
@@ -1800,12 +1797,14 @@ mod tests {
                     ..BoolQuery::default()
                 })],
                 // time bound
-                filter: vec![RangeQuery {
-                    field: "timestamp".to_string(),
-                    lower_bound: Bound::Included(1_700_002_000_000_000_000u64.into()),
-                    upper_bound: Bound::Unbounded,
-                }
-                .into()],
+                filter: vec![
+                    RangeQuery {
+                        field: "timestamp".to_string(),
+                        lower_bound: Bound::Included(1_700_002_000_000_000_000u64.into()),
+                        upper_bound: Bound::Unbounded,
+                    }
+                    .into(),
+                ],
                 ..BoolQuery::default()
             }),
         );

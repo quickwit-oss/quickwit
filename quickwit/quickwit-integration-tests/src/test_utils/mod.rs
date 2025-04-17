@@ -15,4 +15,4 @@
 mod cluster_sandbox;
 mod shutdown;
 
-pub(crate) use cluster_sandbox::{ingest, ClusterSandbox, ClusterSandboxBuilder};
+pub(crate) use cluster_sandbox::{ClusterSandbox, ClusterSandboxBuilder, ingest};

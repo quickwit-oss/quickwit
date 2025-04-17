@@ -17,8 +17,8 @@ use std::time::Duration;
 use futures_util::FutureExt;
 use itertools::Itertools;
 use quickwit_common::test_utils::wait_until_predicate;
-use quickwit_config::service::QuickwitService;
 use quickwit_config::ConfigFormat;
+use quickwit_config::service::QuickwitService;
 use quickwit_indexing::actors::INDEXING_DIR_NAME;
 use quickwit_metastore::SplitState;
 use quickwit_proto::ingest::ParseFailureReason;
@@ -29,7 +29,7 @@ use quickwit_serve::{ListSplitsQueryParams, RestIngestResponse, RestParseFailure
 use serde_json::json;
 
 use crate::ingest_json;
-use crate::test_utils::{ingest, ClusterSandboxBuilder};
+use crate::test_utils::{ClusterSandboxBuilder, ingest};
 
 /// Ingesting on a freshly re-created index sometimes fails, see #5430
 #[tokio::test]

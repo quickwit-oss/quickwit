@@ -19,19 +19,19 @@ use std::sync::Arc;
 use hyper::http::HeaderValue;
 use hyper::server::accept::Accept;
 use hyper::server::conn::AddrIncoming;
-use hyper::{http, Method, StatusCode};
+use hyper::{Method, StatusCode, http};
 use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_config::{disable_ingest_v1, enable_ingest_v2};
 use quickwit_search::SearchService;
 use tokio::net::TcpListener;
-use tower::make::Shared;
 use tower::ServiceBuilder;
-use tower_http::compression::predicate::{NotForContentType, Predicate, SizeAbove};
+use tower::make::Shared;
 use tower_http::compression::CompressionLayer;
+use tower_http::compression::predicate::{NotForContentType, Predicate, SizeAbove};
 use tower_http::cors::CorsLayer;
 use tracing::{error, info};
 use warp::filters::log::Info;
-use warp::{redirect, Filter, Rejection, Reply};
+use warp::{Filter, Rejection, Reply, redirect};
 
 use crate::cluster_api::cluster_handler;
 use crate::decompression::{CorruptedData, UnsupportedEncoding};
@@ -484,7 +484,7 @@ mod tls {
     use std::future::Future;
     use std::pin::Pin;
     use std::sync::Arc;
-    use std::task::{ready, Context, Poll};
+    use std::task::{Context, Poll, ready};
     use std::vec::Vec;
     use std::{fs, io};
 
@@ -707,7 +707,7 @@ mod tests {
 
     use http::HeaderName;
     use hyper::{Request, Response, StatusCode};
-    use quickwit_cluster::{create_cluster_for_test, ChannelTransport};
+    use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
     use quickwit_config::NodeConfig;
     use quickwit_index_management::IndexService;
     use quickwit_ingest::{IngestApiService, IngestServiceClient};

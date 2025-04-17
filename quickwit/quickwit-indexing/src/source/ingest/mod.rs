@@ -24,14 +24,14 @@ use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::retry::RetryParams;
 use quickwit_ingest::{
-    decoded_mrecords, FetchStreamError, IngesterPool, MRecord, MultiFetchStream,
+    FetchStreamError, IngesterPool, MRecord, MultiFetchStream, decoded_mrecords,
 };
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
-use quickwit_proto::ingest::ingester::{
-    fetch_message, FetchEof, FetchPayload, IngesterService, TruncateShardsRequest,
-    TruncateShardsSubrequest,
-};
 use quickwit_proto::ingest::IngestV2Error;
+use quickwit_proto::ingest::ingester::{
+    FetchEof, FetchPayload, IngesterService, TruncateShardsRequest, TruncateShardsSubrequest,
+    fetch_message,
+};
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsResponse, MetastoreService, MetastoreServiceClient,
     SourceType,
@@ -46,8 +46,8 @@ use tracing::{debug, error, info, warn};
 use ulid::Ulid;
 
 use super::{
-    BatchBuilder, Source, SourceContext, SourceRuntime, TypedSourceFactory, BATCH_NUM_BYTES_LIMIT,
-    EMIT_BATCHES_TIMEOUT,
+    BATCH_NUM_BYTES_LIMIT, BatchBuilder, EMIT_BATCHES_TIMEOUT, Source, SourceContext,
+    SourceRuntime, TypedSourceFactory,
 };
 use crate::actors::DocProcessor;
 use crate::models::{LocalShardPositionsUpdate, NewPublishLock, NewPublishToken, PublishLock};
@@ -518,10 +518,11 @@ impl Source for IngestSource {
 
         // As enforced by `reset_if_needed`, at this point, all currently assigned shards should be
         // in the new_assigned_shards.
-        debug_assert!(self
-            .assigned_shards
-            .keys()
-            .all(|shard_id| new_assigned_shard_ids.contains(shard_id)));
+        debug_assert!(
+            self.assigned_shards
+                .keys()
+                .all(|shard_id| new_assigned_shard_ids.contains(shard_id))
+        );
 
         if self.assigned_shards.len() == new_assigned_shard_ids.len() {
             // Nothing to do.
@@ -662,15 +663,15 @@ impl Source for IngestSource {
 mod tests {
     use std::iter::once;
     use std::path::PathBuf;
-    use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
+    use std::sync::atomic::AtomicBool;
 
     use bytesize::ByteSize;
     use itertools::Itertools;
     use quickwit_actors::{ActorContext, Universe};
+    use quickwit_common::ServiceStream;
     use quickwit_common::metrics::MEMORY_METRICS;
     use quickwit_common::stream_utils::InFlightValue;
-    use quickwit_common::ServiceStream;
     use quickwit_config::{IndexingSettings, SourceConfig, SourceParams};
     use quickwit_proto::indexing::IndexingPipelineId;
     use quickwit_proto::ingest::ingester::{

@@ -24,14 +24,14 @@ use quickwit_proto::search::{
 };
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tokio::sync::mpsc::error::SendError;
-use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
+use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{debug, error, info, warn};
 
 use crate::retry::search::LeafSearchRetryPolicy;
 use crate::retry::search_stream::{LeafSearchStreamRetryPolicy, SuccessfulSplitIds};
-use crate::retry::{retry_client, DefaultRetryPolicy, RetryPolicy};
-use crate::{merge_resource_stats_it, SearchError, SearchJobPlacer, SearchServiceClient};
+use crate::retry::{DefaultRetryPolicy, RetryPolicy, retry_client};
+use crate::{SearchError, SearchJobPlacer, SearchServiceClient, merge_resource_stats_it};
 
 /// Maximum number of put requests emitted to perform a replicated given PUT KV.
 const MAX_PUT_KV_ATTEMPTS: usize = 6;
@@ -386,7 +386,7 @@ mod tests {
 
     use super::*;
     use crate::root::SearchJob;
-    use crate::{searcher_pool_for_test, MockSearchService};
+    use crate::{MockSearchService, searcher_pool_for_test};
 
     fn mock_partial_hit(split_id: &str, sort_value: u64, doc_id: u32) -> PartialHit {
         PartialHit {

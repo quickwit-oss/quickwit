@@ -17,7 +17,7 @@ use std::fmt::Display;
 use std::str::FromStr;
 
 use anyhow::bail;
-use enum_iterator::{all, Sequence};
+use enum_iterator::{Sequence, all};
 use itertools::Itertools;
 use serde::Serialize;
 

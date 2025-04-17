@@ -256,8 +256,8 @@ impl ActorJoinHandle {
 mod tests {
     use std::time::Duration;
 
-    use crate::tests::PingReceiverActor;
     use crate::Universe;
+    use crate::tests::PingReceiverActor;
 
     #[tokio::test]
     async fn test_registry() {

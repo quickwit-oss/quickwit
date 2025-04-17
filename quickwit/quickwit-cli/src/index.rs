@@ -20,9 +20,9 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
 
-use anyhow::{anyhow, bail, Context};
+use anyhow::{Context, anyhow, bail};
 use bytesize::ByteSize;
-use clap::{arg, Arg, ArgAction, ArgMatches, Command};
+use clap::{Arg, ArgAction, ArgMatches, Command, arg};
 use colored::Colorize;
 use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
@@ -36,16 +36,16 @@ use quickwit_proto::types::IndexId;
 use quickwit_rest_client::models::{IngestSource, SearchResponseRestClient};
 use quickwit_rest_client::rest_client::{CommitType, IngestEvent};
 use quickwit_serve::{ListSplitsQueryParams, SearchRequestQueryString, SortBy};
-use quickwit_storage::{load_file, StorageResolver};
+use quickwit_storage::{StorageResolver, load_file};
 use tabled::settings::object::{FirstRow, Rows, Segment};
 use tabled::settings::panel::Footer;
 use tabled::settings::{Alignment, Disable, Format, Modify, Panel, Rotate, Style};
 use tabled::{Table, Tabled};
-use tracing::{debug, Level};
+use tracing::{Level, debug};
 
 use crate::checklist::{GREEN_COLOR, RED_COLOR};
 use crate::stats::{mean, percentile, std_deviation};
-use crate::{client_args, make_table, prompt_confirmation, ClientArgs};
+use crate::{ClientArgs, client_args, make_table, prompt_confirmation};
 
 pub fn build_index_command() -> Command {
     Command::new("index")

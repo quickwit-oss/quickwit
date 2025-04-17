@@ -28,16 +28,16 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
+pub use async_speed_limit::Limiter;
 use async_speed_limit::clock::StandardClock;
 use async_speed_limit::limiter::Consume;
-pub use async_speed_limit::Limiter;
 use bytesize::ByteSize;
 use once_cell::sync::Lazy;
 use pin_project::pin_project;
 use prometheus::IntCounter;
 use tokio::io::AsyncWrite;
 
-use crate::metrics::{new_counter_vec, IntCounterVec};
+use crate::metrics::{IntCounterVec, new_counter_vec};
 use crate::{KillSwitch, Progress, ProtectedZoneGuard};
 
 // Max 1MB at a time.
@@ -346,7 +346,7 @@ mod tests {
     use std::time::Duration;
 
     use bytesize::ByteSize;
-    use tokio::io::{sink, AsyncWriteExt};
+    use tokio::io::{AsyncWriteExt, sink};
     use tokio::time::Instant;
 
     use crate::io::{IoControls, IoControlsAccess};
