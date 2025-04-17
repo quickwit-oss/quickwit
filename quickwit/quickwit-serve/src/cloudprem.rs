@@ -139,7 +139,7 @@ pub(crate) struct AwsMtlsInterceptor<'a, S> {
     ca_cert_public_key: &'a PKeyRef<Public>,
 }
 
-impl<'a, S> Service<Request<Body>> for AwsMtlsInterceptor<'a, S>
+impl<S> Service<Request<Body>> for AwsMtlsInterceptor<'_, S>
 where S: Service<Request<Body>, Response = Response<BoxBody>>
 {
     type Response = S::Response;
