@@ -15,13 +15,13 @@
 use anyhow::Context;
 use once_cell::sync::OnceCell;
 use opentelemetry::trace::TracerProvider as _;
-use opentelemetry::{global, KeyValue};
+use opentelemetry::{KeyValue, global};
 use opentelemetry_otlp::{WithExportConfig, WithHttpConfig};
 use opentelemetry_sdk::propagation::TraceContextPropagator;
 use opentelemetry_sdk::trace::{BatchConfigBuilder, TracerProvider};
-use opentelemetry_sdk::{trace, Resource};
+use opentelemetry_sdk::{Resource, trace};
 use quickwit_serve::BuildInfo;
-use tracing::{debug, Level};
+use tracing::{Level, debug};
 use tracing_subscriber::fmt::format::{FmtSpan, JsonFields};
 use tracing_subscriber::fmt::time::UtcTime;
 use tracing_subscriber::layer::SubscriberExt;

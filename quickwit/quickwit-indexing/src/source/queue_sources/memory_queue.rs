@@ -22,8 +22,8 @@ use async_trait::async_trait;
 use quickwit_storage::OwnedBytes;
 use ulid::Ulid;
 
-use super::message::{MessageMetadata, RawMessage};
 use super::Queue;
+use super::message::{MessageMetadata, RawMessage};
 
 #[derive(Default)]
 struct InnerState {

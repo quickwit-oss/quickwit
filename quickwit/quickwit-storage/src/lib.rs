@@ -63,7 +63,7 @@ pub use self::bundle_storage::{BundleStorage, BundleStorageFileOffsets};
 #[cfg(any(test, feature = "testsuite"))]
 pub use self::cache::MockStorageCache;
 pub use self::cache::{
-    wrap_storage_with_cache, ByteRangeCache, MemorySizedCache, QuickwitCache, StorageCache,
+    ByteRangeCache, MemorySizedCache, QuickwitCache, StorageCache, wrap_storage_with_cache,
 };
 pub use self::local_file_storage::{LocalFileStorage, LocalFileStorageFactory};
 #[cfg(feature = "azure")]
@@ -71,10 +71,10 @@ pub use self::object_storage::{AzureBlobStorage, AzureBlobStorageFactory};
 pub use self::object_storage::{
     MultiPartPolicy, S3CompatibleObjectStorage, S3CompatibleObjectStorageFactory,
 };
-#[cfg(all(feature = "gcs", feature = "integration-testsuite"))]
-pub use self::opendal_storage::new_emulated_google_cloud_storage;
 #[cfg(feature = "gcs")]
 pub use self::opendal_storage::GoogleCloudStorageFactory;
+#[cfg(all(feature = "gcs", feature = "integration-testsuite"))]
+pub use self::opendal_storage::new_emulated_google_cloud_storage;
 pub use self::ram_storage::{RamStorage, RamStorageBuilder};
 pub use self::split::{SplitPayload, SplitPayloadBuilder};
 #[cfg(any(test, feature = "testsuite"))]
@@ -118,7 +118,7 @@ unsafe fn serde_json_preserve_order_canary(
     val: serde_json::Map<String, serde_json::Value>,
 ) -> std::collections::BTreeMap<String, serde_json::Value> {
     use std::mem::transmute as assert_serde_json__preserve_order__disabled;
-    assert_serde_json__preserve_order__disabled(val)
+    unsafe { assert_serde_json__preserve_order__disabled(val) }
 }
 
 #[cfg(any(test, feature = "testsuite", feature = "integration-testsuite"))]

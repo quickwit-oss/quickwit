@@ -15,8 +15,8 @@
 use std::env;
 use std::process::Command;
 
-use time::macros::format_description;
 use time::OffsetDateTime;
+use time::macros::format_description;
 
 fn main() {
     println!(

@@ -18,10 +18,10 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
-use futures::{stream, StreamExt};
+use futures::{StreamExt, stream};
 use quickwit_actors::{Actor, ActorContext, Handler};
 use quickwit_common::shared_consts::split_deletion_grace_period;
-use quickwit_index_management::{run_garbage_collect, GcMetrics};
+use quickwit_index_management::{GcMetrics, run_garbage_collect};
 use quickwit_metastore::ListIndexesMetadataResponseExt;
 use quickwit_proto::metastore::{
     ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
@@ -231,8 +231,8 @@ mod tests {
     use std::sync::Arc;
 
     use quickwit_actors::Universe;
-    use quickwit_common::shared_consts::split_deletion_grace_period;
     use quickwit_common::ServiceStream;
+    use quickwit_common::shared_consts::split_deletion_grace_period;
     use quickwit_metastore::{
         IndexMetadata, ListSplitsRequestExt, ListSplitsResponseExt, Split, SplitMetadata,
         SplitState,
@@ -649,10 +649,14 @@ mod tests {
                     SplitState::Staged => {
                         let index_uids = query.index_uids.unwrap();
                         assert_eq!(index_uids.len(), 2);
-                        assert!(["test-index-1", "test-index-2"]
-                            .contains(&index_uids[0].index_id.as_ref()));
-                        assert!(["test-index-1", "test-index-2"]
-                            .contains(&index_uids[1].index_id.as_ref()));
+                        assert!(
+                            ["test-index-1", "test-index-2"]
+                                .contains(&index_uids[0].index_id.as_ref())
+                        );
+                        assert!(
+                            ["test-index-1", "test-index-2"]
+                                .contains(&index_uids[1].index_id.as_ref())
+                        );
                         let mut splits = make_splits("test-index-1", &["a"], SplitState::Staged);
                         splits.append(&mut make_splits("test-index-2", &["a"], SplitState::Staged));
                         splits

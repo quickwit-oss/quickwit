@@ -321,7 +321,7 @@ mod tests {
     use std::time::Duration;
 
     use quickwit_actors::Universe;
-    use quickwit_cluster::{create_cluster_for_test, ChannelTransport};
+    use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
     use quickwit_common::pubsub::EventBroker;
     use quickwit_proto::types::IndexUid;
 

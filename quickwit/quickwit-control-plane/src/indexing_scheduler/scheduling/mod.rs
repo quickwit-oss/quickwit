@@ -745,14 +745,13 @@ mod tests {
 
     use fnv::FnvHashMap;
     use itertools::Itertools;
-    use quickwit_proto::indexing::{mcpu, CpuCapacity, IndexingTask};
+    use quickwit_proto::indexing::{CpuCapacity, IndexingTask, mcpu};
     use quickwit_proto::types::{IndexUid, NodeId, PipelineUid, ShardId, SourceUid};
     use rand::seq::SliceRandom;
 
     use super::{
-        build_physical_indexing_plan,
-        convert_scheduling_solution_to_physical_plan_single_node_single_source, SourceToSchedule,
-        SourceToScheduleType,
+        SourceToSchedule, SourceToScheduleType, build_physical_indexing_plan,
+        convert_scheduling_solution_to_physical_plan_single_node_single_source,
     };
     use crate::indexing_plan::PhysicalIndexingPlan;
     use crate::indexing_scheduler::get_shard_locality_metrics;

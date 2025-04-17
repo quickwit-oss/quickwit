@@ -20,8 +20,8 @@ use futures::ready;
 use tokio::time::{Instant, Sleep};
 use tower::{Layer, Service};
 
-use super::rate::Rate;
 use super::Cost;
+use super::rate::Rate;
 
 /// Enforces a rate limit on the quantity of work the underlying
 /// service can handle over a period of time. This implementation is a generalization of
@@ -183,8 +183,8 @@ where T: Rate
 #[cfg(test)]
 mod tests {
 
-    use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::Duration;
 
     use futures::future::join_all;

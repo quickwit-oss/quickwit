@@ -13,8 +13,8 @@
 // limitations under the License.
 
 use std::cmp::Reverse;
-use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
+use std::collections::btree_map::Entry;
 
 use itertools::Itertools;
 use quickwit_proto::indexing::CpuCapacity;

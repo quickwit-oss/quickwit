@@ -5441,7 +5441,7 @@ where
             ))
     }
     async fn check_connectivity(&self) -> anyhow::Result<()> {
-        if self.connection_addrs_rx.borrow().len() == 0 {
+        if self.connection_addrs_rx.borrow().is_empty() {
             anyhow::bail!("no server currently available")
         }
         Ok(())

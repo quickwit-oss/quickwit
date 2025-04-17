@@ -15,10 +15,10 @@
 use serde::Deserialize;
 
 use super::{ElasticQueryDslInner, StringOrStructForSerialization};
-use crate::elastic_query_dsl::match_query::MatchQueryParams;
-use crate::elastic_query_dsl::{default_max_expansions, ConvertibleToQueryAst};
-use crate::query_ast::{FullTextParams, FullTextQuery, QueryAst};
 use crate::OneFieldMap;
+use crate::elastic_query_dsl::match_query::MatchQueryParams;
+use crate::elastic_query_dsl::{ConvertibleToQueryAst, default_max_expansions};
+use crate::query_ast::{FullTextParams, FullTextQuery, QueryAst};
 
 /// `MatchBoolPrefixQuery` as defined in
 /// <https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-match-bool-prefix-query.html>

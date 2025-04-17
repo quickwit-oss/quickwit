@@ -20,8 +20,8 @@ use flate2::read::{MultiGzDecoder, ZlibDecoder};
 use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
 use quickwit_common::thread_pool::run_cpu_intensive;
 use thiserror::Error;
-use warp::reject::Reject;
 use warp::Filter;
+use warp::reject::Reject;
 
 use crate::load_shield::{LoadShield, LoadShieldPermit};
 

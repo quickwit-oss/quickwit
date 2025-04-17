@@ -14,9 +14,9 @@
 
 use fnv::FnvHashSet;
 use quickwit_common::PathHasher;
+use tantivy::Document;
 use tantivy::schema::document::{ReferenceValue, ReferenceValueLeaf};
 use tantivy::schema::{FieldType, Schema, Value};
-use tantivy::Document;
 
 /// Populates the field presence for a document.
 ///
@@ -123,8 +123,8 @@ impl SubfieldsPopulator {
 
 #[cfg(test)]
 mod tests {
-    use tantivy::schema::*;
     use tantivy::TantivyDocument;
+    use tantivy::schema::*;
 
     use super::*;
 

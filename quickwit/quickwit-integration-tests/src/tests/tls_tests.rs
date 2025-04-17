@@ -106,12 +106,14 @@ async fn test_tls_grpc() {
         .await
         .unwrap();
 
-    assert!(sandbox
-        .rest_client(QuickwitService::Indexer)
-        .node_health()
-        .is_live()
-        .await
-        .unwrap());
+    assert!(
+        sandbox
+            .rest_client(QuickwitService::Indexer)
+            .node_health()
+            .is_live()
+            .await
+            .unwrap()
+    );
 
     // Assert that at least 1 indexing pipelines is successfully started
     sandbox.wait_for_indexing_pipelines(1).await.unwrap();

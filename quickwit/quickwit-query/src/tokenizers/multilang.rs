@@ -13,12 +13,12 @@
 // limitations under the License.
 
 use lindera_core::mode::Mode;
-use lindera_dictionary::{load_dictionary_from_config, DictionaryConfig, DictionaryKind};
+use lindera_dictionary::{DictionaryConfig, DictionaryKind, load_dictionary_from_config};
 use lindera_tokenizer::token::Token as LinderaToken;
 use lindera_tokenizer::tokenizer::Tokenizer as LinderaTokenizer;
 use once_cell::sync::Lazy;
 use tantivy::tokenizer::{SimpleTokenStream, SimpleTokenizer, Token, TokenStream, Tokenizer};
-use whichlang::{detect_language, Lang};
+use whichlang::{Lang, detect_language};
 
 // Note(fmassot): we use `lindera_tokenizer::tokenizer::Tokenizer` and not
 // `use lindera_tantivy::tokenizer::LinderaTokenizer` to avoid
@@ -211,7 +211,7 @@ impl TokenStream for LinderaTokenStream<'_> {
 mod tests {
     use tantivy::tokenizer::{Token, TokenStream, Tokenizer};
 
-    use super::{get_language_from_prefix, MultiLangTokenizer, MultiLanguageTokenStream};
+    use super::{MultiLangTokenizer, MultiLanguageTokenStream, get_language_from_prefix};
 
     fn test_helper(mut tokenizer: MultiLanguageTokenStream) -> Vec<Token> {
         let mut tokens: Vec<Token> = Vec::new();

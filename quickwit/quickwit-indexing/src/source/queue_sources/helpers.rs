@@ -17,8 +17,8 @@ use std::time::Duration;
 
 use futures::future::BoxFuture;
 
-use super::message::RawMessage;
 use super::Queue;
+use super::message::RawMessage;
 
 type ReceiveResult = anyhow::Result<Vec<RawMessage>>;
 

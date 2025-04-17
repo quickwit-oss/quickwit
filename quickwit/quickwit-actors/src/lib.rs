@@ -42,7 +42,7 @@ pub(crate) mod scheduler;
 mod spawn_builder;
 mod supervisor;
 
-pub use scheduler::{start_scheduler, SchedulerClient};
+pub use scheduler::{SchedulerClient, start_scheduler};
 
 #[cfg(test)]
 pub(crate) mod tests;

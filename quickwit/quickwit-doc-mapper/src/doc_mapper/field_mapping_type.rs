@@ -16,11 +16,11 @@ use tantivy::schema::Type;
 
 use super::date_time_type::QuickwitDateTimeOptions;
 use super::field_mapping_entry::QuickwitBoolOptions;
+use crate::Cardinality;
 use crate::doc_mapper::field_mapping_entry::{
     QuickwitBytesOptions, QuickwitConcatenateOptions, QuickwitIpAddrOptions, QuickwitJsonOptions,
     QuickwitNumericOptions, QuickwitObjectOptions, QuickwitTextOptions,
 };
-use crate::Cardinality;
 
 /// A `FieldMappingType` defines the type and indexing options
 /// of a mapping field.

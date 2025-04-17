@@ -15,10 +15,10 @@
 use std::collections::HashSet;
 use std::iter::FromIterator;
 use std::mem;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use async_trait::async_trait;
 use fail::fail_point;
 use itertools::Itertools;
@@ -35,15 +35,15 @@ use quickwit_proto::types::{IndexUid, PublishToken};
 use quickwit_storage::SplitPayloadBuilder;
 use serde::Serialize;
 use tokio::sync::oneshot::Sender;
-use tokio::sync::{oneshot, Semaphore, SemaphorePermit};
-use tracing::{debug, info, instrument, warn, Instrument, Span};
+use tokio::sync::{Semaphore, SemaphorePermit, oneshot};
+use tracing::{Instrument, Span, debug, info, instrument, warn};
 
-use crate::actors::sequencer::{Sequencer, SequencerCommand};
 use crate::actors::Publisher;
+use crate::actors::sequencer::{Sequencer, SequencerCommand};
 use crate::merge_policy::{MergePolicy, MergeTask};
 use crate::metrics::INDEXER_METRICS;
 use crate::models::{
-    create_split_metadata, EmptySplit, PackagedSplit, PackagedSplitBatch, PublishLock, SplitsUpdate,
+    EmptySplit, PackagedSplit, PackagedSplitBatch, PublishLock, SplitsUpdate, create_split_metadata,
 };
 use crate::split_store::IndexingSplitStore;
 
@@ -526,7 +526,7 @@ mod tests {
     use tokio::sync::oneshot;
 
     use super::*;
-    use crate::merge_policy::{default_merge_policy, NopMergePolicy};
+    use crate::merge_policy::{NopMergePolicy, default_merge_policy};
     use crate::models::{SplitAttrs, SplitsUpdate};
 
     #[tokio::test]

@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use once_cell::sync::Lazy;
-use quickwit_common::metrics::{new_gauge, IntGauge};
+use quickwit_common::metrics::{IntGauge, new_gauge};
 
 #[derive(Clone)]
 pub(super) struct PostgresMetrics {

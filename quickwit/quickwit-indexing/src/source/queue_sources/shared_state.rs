@@ -16,7 +16,7 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use quickwit_metastore::checkpoint::PartitionId;
 use quickwit_proto::metastore::{
     AcquireShardsRequest, MetastoreService, MetastoreServiceClient, OpenShardSubrequest,

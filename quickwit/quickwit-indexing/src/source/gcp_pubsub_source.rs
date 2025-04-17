@@ -28,11 +28,11 @@ use quickwit_config::PubSubSourceParams;
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
 use quickwit_proto::metastore::SourceType;
 use quickwit_proto::types::Position;
-use serde_json::{json, Value as JsonValue};
+use serde_json::{Value as JsonValue, json};
 use tokio::time;
 use tracing::{debug, info, warn};
 
-use super::{SourceActor, BATCH_NUM_BYTES_LIMIT, EMIT_BATCHES_TIMEOUT};
+use super::{BATCH_NUM_BYTES_LIMIT, EMIT_BATCHES_TIMEOUT, SourceActor};
 use crate::actors::DocProcessor;
 use crate::source::{BatchBuilder, Source, SourceContext, SourceRuntime, TypedSourceFactory};
 

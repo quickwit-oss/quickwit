@@ -76,14 +76,14 @@ pub use service::SearcherContext;
 use tantivy::DocAddress;
 
 pub use crate::client::{
-    create_search_client_from_channel, create_search_client_from_grpc_addr, SearchServiceClient,
+    SearchServiceClient, create_search_client_from_channel, create_search_client_from_grpc_addr,
 };
 pub use crate::cluster_client::ClusterClient;
-pub use crate::error::{parse_grpc_error, SearchError};
+pub use crate::error::{SearchError, parse_grpc_error};
 use crate::fetch_docs::fetch_docs;
 pub use crate::root::{
-    check_all_index_metadata_found, jobs_to_leaf_request, root_search, search_plan,
-    IndexMetasForLeafSearch, SearchJob,
+    IndexMetasForLeafSearch, SearchJob, check_all_index_metadata_found, jobs_to_leaf_request,
+    root_search, search_plan,
 };
 pub use crate::search_job_placer::{Job, SearchJobPlacer};
 pub use crate::search_response_rest::{

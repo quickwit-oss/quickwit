@@ -16,11 +16,11 @@ use std::num::NonZeroUsize;
 use std::ops::Deref;
 use std::time::Duration;
 
-use anyhow::{ensure, Context};
+use anyhow::{Context, ensure};
 use humantime::parse_duration;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use serde_with::{serde_as, EnumMap};
+use serde_with::{EnumMap, serde_as};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -292,11 +292,13 @@ mod tests {
         let metastore_configs: MetastoreConfigs =
             serde_yaml::from_str(metastore_configs_yaml).unwrap();
 
-        let expected_metastore_configs = MetastoreConfigs(vec![PostgresMetastoreConfig {
-            max_connections: NonZeroUsize::new(12).unwrap(),
-            ..Default::default()
-        }
-        .into()]);
+        let expected_metastore_configs = MetastoreConfigs(vec![
+            PostgresMetastoreConfig {
+                max_connections: NonZeroUsize::new(12).unwrap(),
+                ..Default::default()
+            }
+            .into(),
+        ]);
         assert_eq!(metastore_configs, expected_metastore_configs);
     }
 
@@ -317,11 +319,13 @@ mod tests {
         let error = metastore_configs.validate().unwrap_err();
         assert!(error.to_string().contains("defined multiple times"));
 
-        let metastore_configs = MetastoreConfigs(vec![PostgresMetastoreConfig {
-            acquire_connection_timeout: "15".to_string(),
-            ..Default::default()
-        }
-        .into()]);
+        let metastore_configs = MetastoreConfigs(vec![
+            PostgresMetastoreConfig {
+                acquire_connection_timeout: "15".to_string(),
+                ..Default::default()
+            }
+            .into(),
+        ]);
         let error = metastore_configs.validate().unwrap_err();
         assert!(error.to_string().contains("`acquire_connection_timeout`"));
     }
@@ -402,14 +406,18 @@ mod tests {
                 pg_metastore_config.acquire_connection_timeout().unwrap(),
                 Duration::from_secs(15)
             );
-            assert!(pg_metastore_config
-                .idle_connection_timeout_opt()
-                .unwrap()
-                .is_none());
-            assert!(pg_metastore_config
-                .max_connection_lifetime_opt()
-                .unwrap()
-                .is_none(),);
+            assert!(
+                pg_metastore_config
+                    .idle_connection_timeout_opt()
+                    .unwrap()
+                    .is_none()
+            );
+            assert!(
+                pg_metastore_config
+                    .max_connection_lifetime_opt()
+                    .unwrap()
+                    .is_none(),
+            );
         }
     }
 }

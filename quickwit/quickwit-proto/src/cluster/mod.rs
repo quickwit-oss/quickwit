@@ -17,8 +17,8 @@ use quickwit_common::tower::MakeLoadShedError;
 use serde::{Deserialize, Serialize};
 use thiserror;
 
-use crate::error::{ServiceError, ServiceErrorCode};
 use crate::GrpcServiceError;
+use crate::error::{ServiceError, ServiceErrorCode};
 
 include!("../codegen/quickwit/quickwit.cluster.rs");
 

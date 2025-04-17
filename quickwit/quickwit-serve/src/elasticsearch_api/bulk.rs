@@ -24,14 +24,14 @@ use quickwit_proto::ingest::router::IngestRouterServiceClient;
 use quickwit_proto::types::IndexId;
 use warp::{Filter, Rejection};
 
-use super::bulk_v2::{elastic_bulk_ingest_v2, ElasticBulkResponse};
+use super::bulk_v2::{ElasticBulkResponse, elastic_bulk_ingest_v2};
 use crate::elasticsearch_api::filter::{elastic_bulk_filter, elastic_index_bulk_filter};
 use crate::elasticsearch_api::make_elastic_api_response;
 use crate::elasticsearch_api::model::{BulkAction, ElasticBulkOptions, ElasticsearchError};
 use crate::format::extract_format_from_qs;
 use crate::ingest_api::lines;
 use crate::rest::recover_fn;
-use crate::{with_arg, Body};
+use crate::{Body, with_arg};
 
 /// POST `_elastic/_bulk`
 pub fn es_compat_bulk_handler(

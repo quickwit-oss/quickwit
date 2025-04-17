@@ -20,8 +20,8 @@ use std::task::{Context, Poll};
 use futures::Future;
 use pin_project::pin_project;
 use tokio::time::Sleep;
-use tower::retry::{Policy, Retry};
 use tower::Layer;
+use tower::retry::{Policy, Retry};
 use tracing::debug;
 
 use crate::retry::{RetryParams, Retryable};
@@ -130,7 +130,7 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
 
-    use futures::future::{ready, Ready};
+    use futures::future::{Ready, ready};
     use tower::{Layer, Service, ServiceExt};
 
     use super::*;

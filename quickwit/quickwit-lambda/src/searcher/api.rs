@@ -17,8 +17,8 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
 use http::Method;
-use quickwit_config::service::QuickwitService;
 use quickwit_config::SearcherConfig;
+use quickwit_config::service::QuickwitService;
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_search::{
     ClusterClient, SearchJobPlacer, SearchService, SearchServiceClient, SearchServiceImpl,
@@ -28,9 +28,9 @@ use quickwit_serve::lambda_search_api::*;
 use quickwit_storage::StorageResolver;
 use quickwit_telemetry::payload::{QuickwitFeature, QuickwitTelemetryInfo, TelemetryEvent};
 use tracing::{error, info};
+use warp::Filter;
 use warp::filters::path::FullPath;
 use warp::reject::Rejection;
-use warp::Filter;
 
 use crate::searcher::environment::CONFIGURATION_TEMPLATE;
 use crate::utils::load_node_config;
@@ -107,8 +107,8 @@ fn v1_searcher_api(
         })
 }
 
-pub async fn setup_searcher_api(
-) -> anyhow::Result<impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone> {
+pub async fn setup_searcher_api()
+-> anyhow::Result<impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone> {
     let (node_config, storage_resolver, metastore) =
         load_node_config(CONFIGURATION_TEMPLATE).await?;
 

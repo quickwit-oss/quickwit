@@ -15,12 +15,12 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
-use tantivy::schema::Schema as TantivySchema;
 use tantivy::Term;
+use tantivy::schema::Schema as TantivySchema;
 
+use crate::InvalidQuery;
 use crate::query_ast::{BuildTantivyAst, QueryAst, TantivyQueryAst, TermQuery};
 use crate::tokenizers::TokenizerManager;
-use crate::InvalidQuery;
 
 /// TermSetQuery matches the same document set as if it was a union of
 /// the equivalent set of TermQueries.

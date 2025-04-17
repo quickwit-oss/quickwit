@@ -23,16 +23,16 @@ use http::Uri;
 use quickwit_proto::search::{
     GetKvRequest, LeafSearchStreamResponse, PutKvRequest, ReportSplitsRequest,
 };
+use quickwit_proto::tonic::Request;
 use quickwit_proto::tonic::codegen::InterceptedService;
 use quickwit_proto::tonic::transport::{Channel, Endpoint};
-use quickwit_proto::tonic::Request;
-use quickwit_proto::{tonic, SpanContextInterceptor};
+use quickwit_proto::{SpanContextInterceptor, tonic};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tower::timeout::Timeout;
-use tracing::{info_span, warn, Instrument};
+use tracing::{Instrument, info_span, warn};
 
-use crate::error::parse_grpc_error;
 use crate::SearchService;
+use crate::error::parse_grpc_error;
 
 /// Impl is an enumeration that meant to manage Quickwit's search service client types.
 #[derive(Clone)]

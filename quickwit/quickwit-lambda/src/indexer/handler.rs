@@ -14,10 +14,10 @@
 
 use lambda_runtime::{Error, LambdaEvent};
 use serde_json::Value;
-use tracing::{debug_span, error, info, info_span, Instrument};
+use tracing::{Instrument, debug_span, error, info, info_span};
 
 use super::environment::{DISABLE_JANITOR, DISABLE_MERGE, INDEX_CONFIG_URI};
-use super::ingest::{ingest, IngestArgs};
+use super::ingest::{IngestArgs, ingest};
 use super::model::IndexerEvent;
 use crate::environment::INDEX_ID;
 use crate::logger;

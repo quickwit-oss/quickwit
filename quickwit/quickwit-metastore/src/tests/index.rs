@@ -23,8 +23,8 @@
 use quickwit_common::rand::append_random_suffix;
 use quickwit_config::merge_policy_config::{MergePolicyConfig, StableLogMergePolicyConfig};
 use quickwit_config::{
-    IndexConfig, IndexingSettings, RetentionPolicy, SearchSettings, SourceConfig, CLI_SOURCE_ID,
-    INGEST_V2_SOURCE_ID,
+    CLI_SOURCE_ID, INGEST_V2_SOURCE_ID, IndexConfig, IndexingSettings, RetentionPolicy,
+    SearchSettings, SourceConfig,
 };
 use quickwit_doc_mapper::{Cardinality, FieldMappingEntry, FieldMappingType, QuickwitJsonOptions};
 use quickwit_proto::metastore::{

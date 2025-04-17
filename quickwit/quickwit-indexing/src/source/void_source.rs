@@ -15,7 +15,7 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
-use quickwit_actors::{ActorExitStatus, Mailbox, HEARTBEAT};
+use quickwit_actors::{ActorExitStatus, HEARTBEAT, Mailbox};
 use quickwit_config::VoidSourceParams;
 use serde_json::Value as JsonValue;
 
@@ -72,7 +72,7 @@ mod tests {
 
     use super::*;
     use crate::source::tests::SourceRuntimeBuilder;
-    use crate::source::{quickwit_supported_sources, SourceActor, SourceConfig};
+    use crate::source::{SourceActor, SourceConfig, quickwit_supported_sources};
 
     #[tokio::test]
     async fn test_void_source_loading() {

@@ -88,11 +88,13 @@ mod tests {
         tokio::fs::File::create(subfile_path).await?;
 
         empty_dir(temp_dir.path()).await?;
-        assert!(tokio::fs::read_dir(temp_dir.path())
-            .await?
-            .next_entry()
-            .await?
-            .is_none());
+        assert!(
+            tokio::fs::read_dir(temp_dir.path())
+                .await?
+                .next_entry()
+                .await?
+                .is_none()
+        );
         Ok(())
     }
 }

@@ -14,8 +14,8 @@
 
 pub(crate) mod serialize;
 
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 
 use quickwit_common::uri::Uri;
 use quickwit_config::{

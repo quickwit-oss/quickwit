@@ -41,11 +41,11 @@ use time::OffsetDateTime;
 #[cfg(any(test, feature = "testsuite"))]
 pub use crate::change::for_test::*;
 pub use crate::change::{ClusterChange, ClusterChangeStream, ClusterChangeStreamFactory};
+pub use crate::cluster::{Cluster, ClusterSnapshot, NodeIdSchema};
 #[cfg(any(test, feature = "testsuite"))]
 pub use crate::cluster::{
     create_cluster_for_test, create_cluster_for_test_with_id, grpc_addr_from_listen_addr_for_test,
 };
-pub use crate::cluster::{Cluster, ClusterSnapshot, NodeIdSchema};
 pub use crate::member::{ClusterMember, INDEXING_CPU_CAPACITY_KEY};
 pub use crate::node::ClusterNode;
 

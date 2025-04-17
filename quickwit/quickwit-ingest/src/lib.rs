@@ -30,7 +30,7 @@ mod queue;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 pub use doc_batch::*;
 pub use error::IngestServiceError;
 pub use ingest_api_service::{GetMemoryCapacity, GetPartitionId, IngestApiService};

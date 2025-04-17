@@ -15,8 +15,8 @@
 use std::time::Duration;
 
 use itertools::Itertools;
-use time::format_description::well_known::{Iso8601, Rfc2822, Rfc3339};
 use time::OffsetDateTime;
+use time::format_description::well_known::{Iso8601, Rfc2822, Rfc3339};
 
 use super::date_time_format::DateTimeInputFormat;
 use crate::TantivyDateTime;
@@ -176,12 +176,12 @@ pub fn parse_timestamp(timestamp: i64) -> Result<TantivyDateTime, String> {
 
 #[cfg(test)]
 mod tests {
-    use time::macros::datetime;
     use time::Month;
+    use time::macros::datetime;
 
     use super::*;
-    use crate::date_time_format::infer_year;
     use crate::StrptimeParser;
+    use crate::date_time_format::infer_year;
 
     #[test]
     fn test_parse_iso8601() {

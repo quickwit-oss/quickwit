@@ -871,9 +871,11 @@ mod tests {
             "#;
             let error = load_source_config_from_user_config(ConfigFormat::Json, content.as_bytes())
                 .unwrap_err();
-            assert!(error
-                .to_string()
-                .contains("`desired_num_pipelines` must be"));
+            assert!(
+                error
+                    .to_string()
+                    .contains("`desired_num_pipelines` must be")
+            );
         }
         // {
         //     let content = r#"

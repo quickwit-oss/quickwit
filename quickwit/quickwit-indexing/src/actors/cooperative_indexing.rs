@@ -17,7 +17,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use once_cell::sync::Lazy;
-use quickwit_proto::indexing::{CpuCapacity, PipelineMetrics, PIPELINE_FULL_CAPACITY};
+use quickwit_proto::indexing::{CpuCapacity, PIPELINE_FULL_CAPACITY, PipelineMetrics};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::Instant;
 

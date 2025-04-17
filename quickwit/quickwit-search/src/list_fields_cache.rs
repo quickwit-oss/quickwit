@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use quickwit_proto::search::{
-    deserialize_split_fields, serialize_split_fields, ListFields, SplitIdAndFooterOffsets,
+    ListFields, SplitIdAndFooterOffsets, deserialize_split_fields, serialize_split_fields,
 };
 use quickwit_proto::types::SplitId;
 use quickwit_storage::{MemorySizedCache, OwnedBytes};

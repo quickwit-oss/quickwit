@@ -67,9 +67,9 @@ mod tests {
     };
     use quickwit_query::query_ast::qast_json_helper;
 
-    use crate::retry::search::LeafSearchRetryPolicy;
-    use crate::retry::RetryPolicy;
     use crate::SearchError;
+    use crate::retry::RetryPolicy;
+    use crate::retry::search::LeafSearchRetryPolicy;
 
     fn mock_leaf_search_request() -> LeafSearchRequest {
         let search_request = SearchRequest {

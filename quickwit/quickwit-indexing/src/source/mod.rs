@@ -98,8 +98,8 @@ use quickwit_config::{
     FileSourceNotification, FileSourceParams, IndexingSettings, SourceConfig, SourceParams,
 };
 use quickwit_ingest::IngesterPool;
-use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
 use quickwit_metastore::IndexMetadataResponseExt;
+use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::{
     IndexMetadataRequest, MetastoreError, MetastoreResult, MetastoreService,
@@ -571,8 +571,8 @@ mod tests {
     use std::num::NonZeroUsize;
 
     use quickwit_config::{SourceInputFormat, VecSourceParams};
-    use quickwit_metastore::checkpoint::IndexCheckpointDelta;
     use quickwit_metastore::IndexMetadata;
+    use quickwit_metastore::checkpoint::IndexCheckpointDelta;
     use quickwit_proto::metastore::{IndexMetadataResponse, MockMetastoreService};
     use quickwit_proto::types::NodeId;
 

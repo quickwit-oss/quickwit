@@ -17,15 +17,15 @@ mod error;
 #[path = "codegen/hello.rs"]
 mod hello;
 
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::StreamExt;
-use quickwit_common::uri::Uri;
 use quickwit_common::ServiceStream;
+use quickwit_common::uri::Uri;
 use tower::{Layer, Service};
 
 pub use crate::error::HelloError;
@@ -168,8 +168,8 @@ mod tests {
     use tonic::transport::{Endpoint, Server};
 
     use super::*;
-    use crate::hello::hello_grpc_server::HelloGrpcServer;
     use crate::hello::MockHello;
+    use crate::hello::hello_grpc_server::HelloGrpcServer;
     use crate::hello_grpc_client::HelloGrpcClient;
     use crate::{CounterLayer, GoodbyeRequest, GoodbyeResponse};
 
@@ -425,11 +425,13 @@ mod tests {
         actor_client.check_connectivity().await.unwrap();
         assert_eq!(
             actor_client.endpoints(),
-            vec![Uri::from_str(&format!(
-                "actor://localhost/{}",
-                actor_mailbox.actor_instance_id()
-            ))
-            .unwrap()]
+            vec![
+                Uri::from_str(&format!(
+                    "actor://localhost/{}",
+                    actor_mailbox.actor_instance_id()
+                ))
+                .unwrap()
+            ]
         );
 
         let (ping_stream_tx, ping_stream) = ServiceStream::new_bounded(1);

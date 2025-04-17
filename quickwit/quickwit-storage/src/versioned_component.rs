@@ -187,10 +187,12 @@ mod tests {
             let mut payload = OwnedBytes::new(buf_clone);
             let fake_component_err =
                 FakeComponentCodec::try_read_component(&mut payload).unwrap_err();
-            assert!(fake_component_err
-                .to_string()
-                .to_lowercase()
-                .contains("magic number"));
+            assert!(
+                fake_component_err
+                    .to_string()
+                    .to_lowercase()
+                    .contains("magic number")
+            );
         }
         {
             let mut buf_clone = buf;

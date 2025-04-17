@@ -13,8 +13,8 @@
 // limitations under the License.
 
 use std::fmt;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[derive(Debug, Clone, Copy, thiserror::Error)]
 #[error("failed to reserve requested memory capacity. current capacity: {0}")]

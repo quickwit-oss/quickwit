@@ -47,7 +47,7 @@ use quickwit_proto::types::PublishToken;
 pub use raw_doc_batch::RawDocBatch;
 pub(crate) use shard_positions::LocalShardPositionsUpdate;
 pub use shard_positions::ShardPositionsService;
-pub use split_attrs::{create_split_metadata, SplitAttrs};
+pub use split_attrs::{SplitAttrs, create_split_metadata};
 
 #[derive(Debug)]
 pub struct NewPublishToken(pub PublishToken);

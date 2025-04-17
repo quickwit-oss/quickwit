@@ -20,12 +20,12 @@ use once_cell::sync::Lazy;
 use quickwit_common::uri::{Protocol, Uri};
 use quickwit_config::{StorageBackend, StorageConfigs};
 
-use crate::local_file_storage::LocalFileStorageFactory;
-use crate::ram_storage::RamStorageFactory;
 #[cfg(feature = "azure")]
 use crate::AzureBlobStorageFactory;
 #[cfg(feature = "gcs")]
 use crate::GoogleCloudStorageFactory;
+use crate::local_file_storage::LocalFileStorageFactory;
+use crate::ram_storage::RamStorageFactory;
 use crate::{S3CompatibleObjectStorageFactory, Storage, StorageFactory, StorageResolverError};
 
 /// Returns the [`Storage`] instance associated with the protocol of a URI. The actual creation of

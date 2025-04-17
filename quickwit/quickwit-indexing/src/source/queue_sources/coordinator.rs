@@ -28,12 +28,12 @@ use quickwit_storage::StorageResolver;
 use serde::Serialize;
 use ulid::Ulid;
 
+use super::Queue;
 use super::helpers::QueueReceiver;
 use super::local_state::QueueLocalState;
 use super::message::{MessageType, PreProcessingError, ReadyMessage};
-use super::shared_state::{checkpoint_messages, QueueSharedState};
-use super::visibility::{spawn_visibility_task, VisibilitySettings};
-use super::Queue;
+use super::shared_state::{QueueSharedState, checkpoint_messages};
+use super::visibility::{VisibilitySettings, spawn_visibility_task};
 use crate::actors::DocProcessor;
 use crate::models::{NewPublishLock, NewPublishToken, PublishLock};
 use crate::source::{SourceContext, SourceRuntime};
@@ -327,11 +327,11 @@ mod tests {
 
     use super::*;
     use crate::models::RawDocBatch;
-    use crate::source::doc_file_reader::file_test_helpers::{generate_dummy_doc_file, DUMMY_DOC};
+    use crate::source::doc_file_reader::file_test_helpers::{DUMMY_DOC, generate_dummy_doc_file};
     use crate::source::queue_sources::memory_queue::MemoryQueueForTests;
     use crate::source::queue_sources::message::PreProcessedPayload;
     use crate::source::queue_sources::shared_state::shared_state_for_tests::init_state;
-    use crate::source::{SourceActor, BATCH_NUM_BYTES_LIMIT};
+    use crate::source::{BATCH_NUM_BYTES_LIMIT, SourceActor};
 
     fn setup_coordinator(
         queue: Arc<MemoryQueueForTests>,

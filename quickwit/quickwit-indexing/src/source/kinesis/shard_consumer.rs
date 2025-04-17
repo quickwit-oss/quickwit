@@ -19,11 +19,11 @@ use async_trait::async_trait;
 use aws_sdk_kinesis::types::Record;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Mailbox};
 use quickwit_common::retry::RetryParams;
-use serde_json::{json, Value as JsonValue};
+use serde_json::{Value as JsonValue, json};
 use tokio::sync::mpsc;
 
-use crate::source::kinesis::api::{get_records, get_shard_iterator};
 use crate::source::SourceContext;
+use crate::source::kinesis::api::{get_records, get_shard_iterator};
 
 #[derive(Debug)]
 pub(super) enum ShardConsumerMessage {
@@ -243,7 +243,7 @@ mod tests {
     use super::*;
     use crate::source::kinesis::api::tests::{merge_shards, split_shard};
     use crate::source::kinesis::helpers::tests::{
-        make_shard_id, put_records_into_shards, setup, teardown, DEFAULT_RETRY_PARAMS,
+        DEFAULT_RETRY_PARAMS, make_shard_id, put_records_into_shards, setup, teardown,
     };
 
     async fn drain_messages(

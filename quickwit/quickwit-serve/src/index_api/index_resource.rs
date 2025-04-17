@@ -17,7 +17,7 @@ use std::sync::Arc;
 use bytes::Bytes;
 use quickwit_common::uri::Uri;
 use quickwit_config::{
-    load_index_config_update, validate_index_id_pattern, ConfigFormat, NodeConfig,
+    ConfigFormat, NodeConfig, load_index_config_update, validate_index_id_pattern,
 };
 use quickwit_index_management::{IndexService, IndexServiceError};
 use quickwit_metastore::{
@@ -286,6 +286,7 @@ pub async fn create_index(
 
 pub fn update_index_handler(
     metastore: MetastoreServiceClient,
+    node_config: Arc<NodeConfig>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path!("indexes" / String)
         .and(warp::put())
@@ -293,6 +294,7 @@ pub fn update_index_handler(
         .and(warp::body::content_length_limit(1024 * 1024))
         .and(warp::filters::body::bytes())
         .and(with_arg(metastore))
+        .and(with_arg(node_config))
         .then(update_index)
         .map(log_failure("failed to update index"))
         .and(extract_format_from_qs())
@@ -325,6 +327,7 @@ pub async fn update_index(
     config_format: ConfigFormat,
     index_config_bytes: Bytes,
     metastore: MetastoreServiceClient,
+    node_config: Arc<NodeConfig>,
 ) -> Result<IndexMetadata, IndexServiceError> {
     info!(index_id = %target_index_id, "update-index");
 
@@ -336,9 +339,13 @@ pub async fn update_index(
     let index_uid = current_index_metadata.index_uid.clone();
     let current_index_config = current_index_metadata.into_index_config();
 
-    let new_index_config =
-        load_index_config_update(config_format, &index_config_bytes, &current_index_config)
-            .map_err(IndexServiceError::InvalidConfig)?;
+    let new_index_config = load_index_config_update(
+        config_format,
+        &index_config_bytes,
+        &node_config.default_index_root_uri,
+        &current_index_config,
+    )
+    .map_err(IndexServiceError::InvalidConfig)?;
 
     let update_request = UpdateIndexRequest::try_from_updates(
         index_uid,

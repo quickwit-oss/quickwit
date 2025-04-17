@@ -13,10 +13,10 @@
 // limitations under the License.
 
 use std::string::FromUtf8Error;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use async_trait::async_trait;
 use bytes::Bytes;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
@@ -26,8 +26,8 @@ use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::{SourceInputFormat, TransformConfig};
 use quickwit_doc_mapper::{DocMapper, DocParsingError, JsonObject};
 use quickwit_opentelemetry::otlp::{
-    parse_otlp_logs_json, parse_otlp_logs_protobuf, parse_otlp_spans_json,
-    parse_otlp_spans_protobuf, JsonLogIterator, JsonSpanIterator, OtlpLogsError, OtlpTracesError,
+    JsonLogIterator, JsonSpanIterator, OtlpLogsError, OtlpTracesError, parse_otlp_logs_json,
+    parse_otlp_logs_protobuf, parse_otlp_spans_json, parse_otlp_spans_protobuf,
 };
 use quickwit_proto::types::{IndexId, SourceId};
 use serde::Serialize;
@@ -627,19 +627,19 @@ mod tests {
     use prost::Message;
     use quickwit_actors::Universe;
     use quickwit_common::uri::Uri;
-    use quickwit_config::{build_doc_mapper, SearchSettings};
-    use quickwit_doc_mapper::{default_doc_mapper_for_test, DocMapper};
+    use quickwit_config::{SearchSettings, build_doc_mapper};
+    use quickwit_doc_mapper::{DocMapper, default_doc_mapper_for_test};
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
     use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
     use quickwit_proto::opentelemetry::proto::collector::logs::v1::ExportLogsServiceRequest;
     use quickwit_proto::opentelemetry::proto::collector::trace::v1::ExportTraceServiceRequest;
-    use quickwit_proto::opentelemetry::proto::common::v1::any_value::Value as OtlpAnyValueValue;
     use quickwit_proto::opentelemetry::proto::common::v1::AnyValue as OtlpAnyValue;
+    use quickwit_proto::opentelemetry::proto::common::v1::any_value::Value as OtlpAnyValueValue;
     use quickwit_proto::opentelemetry::proto::logs::v1::{LogRecord, ResourceLogs, ScopeLogs};
     use quickwit_proto::opentelemetry::proto::trace::v1::{ResourceSpans, ScopeSpans, Span};
     use serde_json::Value as JsonValue;
-    use tantivy::schema::NamedFieldDocument;
     use tantivy::Document;
+    use tantivy::schema::NamedFieldDocument;
 
     use super::*;
     use crate::models::{PublishLock, RawDocBatch};
@@ -1166,8 +1166,8 @@ mod tests_vrl {
     use quickwit_actors::Universe;
     use quickwit_doc_mapper::default_doc_mapper_for_test;
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
-    use tantivy::schema::NamedFieldDocument;
     use tantivy::Document;
+    use tantivy::schema::NamedFieldDocument;
 
     use super::*;
 

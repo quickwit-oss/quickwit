@@ -21,9 +21,9 @@ use quickwit_common::temp_dir::TempDirectory;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::types::{DocMappingUid, IndexUid, PublishToken};
-use tantivy::directory::MmapDirectory;
 use tantivy::IndexBuilder;
-use tracing::{instrument, Span};
+use tantivy::directory::MmapDirectory;
+use tracing::{Span, instrument};
 
 use crate::controlled_directory::ControlledDirectory;
 use crate::merge_policy::MergeTask;

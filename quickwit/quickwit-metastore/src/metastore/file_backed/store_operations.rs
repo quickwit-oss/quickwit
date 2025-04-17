@@ -14,7 +14,7 @@
 
 use std::path::{Path, PathBuf};
 
-use quickwit_proto::metastore::{serde_utils, EntityKind, MetastoreError, MetastoreResult};
+use quickwit_proto::metastore::{EntityKind, MetastoreError, MetastoreResult, serde_utils};
 use quickwit_storage::{Storage, StorageError, StorageErrorKind};
 
 use crate::metastore::file_backed::file_backed_index::FileBackedIndex;

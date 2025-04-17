@@ -19,7 +19,7 @@ use std::time::Duration;
 
 use quickwit_common::uri::Uri;
 use quickwit_proto::metastore::{MetastoreError, MetastoreResult};
-use sea_query::{any, Expr, Func, Order, SelectStatement};
+use sea_query::{Expr, Func, Order, SelectStatement, any};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{ConnectOptions, Postgres};
 use tracing::error;

@@ -14,7 +14,7 @@
 
 use aws_sdk_kinesis::config::{Region, SharedAsyncSleep};
 use aws_sdk_kinesis::{Client, Config};
-use quickwit_aws::{aws_behavior_version, get_aws_config, DEFAULT_AWS_REGION};
+use quickwit_aws::{DEFAULT_AWS_REGION, aws_behavior_version, get_aws_config};
 use quickwit_config::RegionOrEndpoint;
 
 pub async fn get_kinesis_client(region_or_endpoint: RegionOrEndpoint) -> anyhow::Result<Client> {
@@ -51,9 +51,9 @@ pub(crate) mod tests {
     use std::time::Duration;
 
     use anyhow::bail;
+    use aws_sdk_kinesis::Client as KinesisClient;
     use aws_sdk_kinesis::primitives::Blob;
     use aws_sdk_kinesis::types::{PutRecordsRequestEntry, StreamStatus};
-    use aws_sdk_kinesis::Client as KinesisClient;
     use once_cell::sync::Lazy;
     use quickwit_common::rand::append_random_suffix;
     use quickwit_common::retry::RetryParams;

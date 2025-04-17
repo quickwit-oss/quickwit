@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
+use std::collections::btree_map::Entry;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -24,8 +24,8 @@ use bytesize::ByteSize;
 use quickwit_common::split_file;
 use quickwit_directories::BundleDirectory;
 use quickwit_storage::StorageResult;
-use tantivy::directory::MmapDirectory;
 use tantivy::Directory;
+use tantivy::directory::MmapDirectory;
 use tokio::sync::Mutex;
 use tracing::{debug, error, warn};
 use ulid::Ulid;
@@ -510,8 +510,8 @@ mod tests {
     use bytesize::ByteSize;
     use quickwit_directories::BundleDirectory;
     use quickwit_storage::{PutPayload, SplitPayloadBuilder};
-    use tantivy::directory::FileSlice;
     use tantivy::Directory;
+    use tantivy::directory::FileSlice;
     use tempfile::tempdir;
     use tokio::fs;
     use ulid::Ulid;
@@ -731,10 +731,12 @@ mod tests {
         {
             let split_dir = temp_dir_in.path().join(format!("scratch_{split_id}"));
             tokio::fs::create_dir(&split_dir).await.unwrap();
-            assert!(local_store
-                .move_into_cache(&split_id, &split_dir)
-                .await
-                .unwrap());
+            assert!(
+                local_store
+                    .move_into_cache(&split_id, &split_dir)
+                    .await
+                    .unwrap()
+            );
             assert!(!split_dir.try_exists().unwrap());
         }
         {

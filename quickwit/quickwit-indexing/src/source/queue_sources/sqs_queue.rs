@@ -15,14 +15,14 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use async_trait::async_trait;
 use aws_sdk_sqs::config::{Builder, Region, SharedAsyncSleep};
 use aws_sdk_sqs::types::{DeleteMessageBatchRequestEntry, MessageSystemAttributeName};
 use aws_sdk_sqs::{Client, Config};
 use itertools::Itertools;
-use quickwit_aws::retry::{aws_retry, AwsRetryable};
-use quickwit_aws::{aws_behavior_version, get_aws_config, DEFAULT_AWS_REGION};
+use quickwit_aws::retry::{AwsRetryable, aws_retry};
+use quickwit_aws::{DEFAULT_AWS_REGION, aws_behavior_version, get_aws_config};
 use quickwit_common::rate_limited_error;
 use quickwit_common::retry::RetryParams;
 use quickwit_storage::OwnedBytes;

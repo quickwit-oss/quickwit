@@ -22,8 +22,8 @@ pub use serialize::{IndexTemplateV0_8, VersionedIndexTemplate};
 
 use crate::index_config::validate_index_config;
 use crate::{
-    validate_identifier, validate_index_id_pattern, DocMapping, IndexConfig, IndexingSettings,
-    RetentionPolicy, SearchSettings,
+    DocMapping, IndexConfig, IndexingSettings, RetentionPolicy, SearchSettings,
+    validate_identifier, validate_index_id_pattern,
 };
 
 pub type IndexTemplateId = String;
@@ -288,8 +288,10 @@ mod tests {
             evaluation_schedule: "".to_string(),
         });
         let error = index_template.validate().unwrap_err();
-        assert!(error
-            .to_string()
-            .contains("failed to parse retention period"));
+        assert!(
+            error
+                .to_string()
+                .contains("failed to parse retention period")
+        );
     }
 }

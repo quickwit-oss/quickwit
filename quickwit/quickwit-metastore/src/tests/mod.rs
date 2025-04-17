@@ -161,6 +161,7 @@ async fn cleanup_index(metastore: &mut dyn MetastoreServiceExt, index_uid: Index
         .unwrap();
 }
 
+/// macro used to generate a testsuite for an implementation of Metastore
 #[macro_export]
 macro_rules! metastore_test_suite {
     ($metastore_type:ty) => {

@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
+use std::collections::btree_map::Entry;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -28,8 +28,8 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic::transport::{Channel, ClientTlsConfig};
 use tracing::{info, warn};
 
-use crate::member::NodeStateExt;
 use crate::ClusterNode;
+use crate::member::NodeStateExt;
 
 /// Describes a change in the cluster.
 #[derive(Debug, Clone)]

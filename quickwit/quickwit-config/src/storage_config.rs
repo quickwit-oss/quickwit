@@ -20,7 +20,7 @@ use anyhow::ensure;
 use itertools::Itertools;
 use quickwit_common::get_bool_from_env;
 use serde::{Deserialize, Serialize};
-use serde_with::{serde_as, EnumMap};
+use serde_with::{EnumMap, serde_as};
 
 /// Lists the storage backends supported by Quickwit.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]

@@ -16,13 +16,13 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Instant;
 
-use futures::{ready, Future};
+use futures::{Future, ready};
 use pin_project::{pin_project, pinned_drop};
 use prometheus::exponential_buckets;
 use tower::{Layer, Service};
 
 use crate::metrics::{
-    new_counter_vec, new_gauge_vec, new_histogram_vec, HistogramVec, IntCounterVec, IntGaugeVec,
+    HistogramVec, IntCounterVec, IntGaugeVec, new_counter_vec, new_gauge_vec, new_histogram_vec,
 };
 
 pub trait RpcName {

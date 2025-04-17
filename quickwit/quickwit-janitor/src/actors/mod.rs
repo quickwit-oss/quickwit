@@ -18,6 +18,6 @@ mod delete_task_service;
 mod garbage_collector;
 mod retention_policy_executor;
 
-pub use delete_task_service::{DeleteTaskService, DELETE_SERVICE_TASK_DIR_NAME};
+pub use delete_task_service::{DELETE_SERVICE_TASK_DIR_NAME, DeleteTaskService};
 pub use garbage_collector::GarbageCollector;
 pub use retention_policy_executor::RetentionPolicyExecutor;

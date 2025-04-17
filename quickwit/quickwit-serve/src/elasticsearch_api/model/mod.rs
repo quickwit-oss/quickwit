@@ -32,8 +32,8 @@ pub use cat_indices::{
 };
 pub use error::{ElasticException, ElasticsearchError};
 pub use field_capability::{
-    build_list_field_request_for_es_api, convert_to_es_field_capabilities_response,
     FieldCapabilityQueryParams, FieldCapabilityRequestBody, FieldCapabilityResponse,
+    build_list_field_request_for_es_api, convert_to_es_field_capabilities_response,
 };
 pub use multi_search::{
     MultiSearchHeader, MultiSearchQueryParams, MultiSearchResponse, MultiSearchSingleResponse,

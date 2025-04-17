@@ -21,8 +21,8 @@ use std::{fmt, io};
 use async_trait::async_trait;
 use quickwit_common::uri::Uri;
 use quickwit_storage::{OwnedBytes, Storage};
-use tantivy::directory::error::OpenReadError;
 use tantivy::directory::FileHandle;
+use tantivy::directory::error::OpenReadError;
 use tantivy::{Directory, HasLen};
 use tracing::{error, instrument};
 
@@ -61,8 +61,7 @@ impl FileHandle for StorageDirectoryFileHandle {
         let object_bytes = self
             .storage_directory
             .get_slice(&self.path, byte_range)
-            .await
-            .map_err(Into::<io::Error>::into)?;
+            .await?;
         Ok(object_bytes)
     }
 }

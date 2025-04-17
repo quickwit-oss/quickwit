@@ -23,16 +23,16 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, Qu
 use quickwit_common::extract_time_range;
 use quickwit_common::uri::Uri;
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
-use quickwit_indexing::actors::{schedule_merge, MergeSchedulerService, MergeSplitDownloader};
+use quickwit_indexing::actors::{MergeSchedulerService, MergeSplitDownloader, schedule_merge};
 use quickwit_indexing::merge_policy::MergeOperation;
-use quickwit_metastore::{split_tag_filter, split_time_range_filter, ListSplitsResponseExt, Split};
+use quickwit_metastore::{ListSplitsResponseExt, Split, split_tag_filter, split_time_range_filter};
 use quickwit_proto::metastore::{
     DeleteTask, LastDeleteOpstampRequest, ListDeleteTasksRequest, ListStaleSplitsRequest,
     MetastoreResult, MetastoreService, MetastoreServiceClient, UpdateSplitsDeleteOpstampRequest,
 };
 use quickwit_proto::search::SearchRequest;
 use quickwit_proto::types::IndexUid;
-use quickwit_search::{jobs_to_leaf_request, IndexMetasForLeafSearch, SearchJob, SearchJobPlacer};
+use quickwit_search::{IndexMetasForLeafSearch, SearchJob, SearchJobPlacer, jobs_to_leaf_request};
 use serde::Serialize;
 use tantivy::Inventory;
 use tracing::{debug, info};
@@ -420,15 +420,15 @@ impl Handler<PlanDeleteLoop> for DeleteTaskPlanner {
 #[cfg(test)]
 mod tests {
     use quickwit_config::build_doc_mapper;
-    use quickwit_indexing::merge_policy::MergeTask;
     use quickwit_indexing::TestSandbox;
+    use quickwit_indexing::merge_policy::MergeTask;
     use quickwit_metastore::{
         IndexMetadataResponseExt, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt,
         SplitMetadata,
     };
     use quickwit_proto::metastore::{DeleteQuery, IndexMetadataRequest, ListSplitsRequest};
     use quickwit_proto::search::{LeafSearchRequest, LeafSearchResponse};
-    use quickwit_search::{searcher_pool_for_test, MockSearchService};
+    use quickwit_search::{MockSearchService, searcher_pool_for_test};
 
     use super::*;
 
@@ -574,11 +574,13 @@ mod tests {
         // operation.
         drop(downloader_msgs.into_iter().next().unwrap());
         // Check planner state is inline.
-        assert!(delete_planner_handle
-            .observe()
-            .await
-            .ongoing_delete_operations
-            .is_empty());
+        assert!(
+            delete_planner_handle
+                .observe()
+                .await
+                .ongoing_delete_operations
+                .is_empty()
+        );
 
         // Trigger operations planning.
         delete_planner_mailbox

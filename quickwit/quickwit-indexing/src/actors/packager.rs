@@ -17,7 +17,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use async_trait::async_trait;
 use fail::fail_point;
 use itertools::Itertools;
@@ -25,10 +25,10 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, Qu
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_directories::write_hotcache;
-use quickwit_doc_mapper::tag_pruning::append_to_tag_set;
 use quickwit_doc_mapper::NamedField;
+use quickwit_doc_mapper::tag_pruning::append_to_tag_set;
 use quickwit_proto::search::{
-    serialize_split_fields, ListFieldType, ListFields, ListFieldsEntryResponse,
+    ListFieldType, ListFields, ListFieldsEntryResponse, serialize_split_fields,
 };
 use tantivy::index::FieldMetadata;
 use tantivy::schema::{FieldType, Type};
@@ -382,11 +382,11 @@ mod tests {
 
     use quickwit_actors::{ObservationType, Universe};
     use quickwit_metastore::checkpoint::IndexCheckpointDelta;
-    use quickwit_proto::search::{deserialize_split_fields, ListFieldsEntryResponse};
+    use quickwit_proto::search::{ListFieldsEntryResponse, deserialize_split_fields};
     use quickwit_proto::types::{DocMappingUid, IndexUid, NodeId};
     use tantivy::directory::MmapDirectory;
-    use tantivy::schema::{NumericOptions, Schema, Type, FAST, STRING, TEXT};
-    use tantivy::{doc, DateTime, IndexBuilder, IndexSettings};
+    use tantivy::schema::{FAST, NumericOptions, STRING, Schema, TEXT, Type};
+    use tantivy::{DateTime, IndexBuilder, IndexSettings, doc};
     use tracing::Span;
 
     use super::*;
