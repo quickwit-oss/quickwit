@@ -18,8 +18,8 @@ use std::fmt::Debug;
 
 use anyhow::Context;
 use quickwit_actors::AskError;
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use tonic::metadata::BinaryMetadataValue;
 use tracing::{error, warn};
 

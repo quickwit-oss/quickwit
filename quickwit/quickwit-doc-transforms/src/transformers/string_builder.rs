@@ -14,10 +14,10 @@
 
 use serde_json::{Map, Value};
 
+use crate::ProcessedLog;
 use crate::error::PipelineError;
 use crate::path_access::*;
 use crate::pipeline::*;
-use crate::ProcessedLog;
 
 /// A step that constructs a string from a template and writes it to a field.
 ///

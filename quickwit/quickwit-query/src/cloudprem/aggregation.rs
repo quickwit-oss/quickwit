@@ -472,8 +472,8 @@ fn generate_sketch(count: u64) -> EvpAggValue {
 #[cfg(test)]
 mod test_helpers {
 
-    use quickwit_proto::cloudprem::agg_value::Value;
     use quickwit_proto::cloudprem::AggValue;
+    use quickwit_proto::cloudprem::agg_value::Value;
 
     // this module is here to make tests easier to read and write
     pub trait IntoValue {

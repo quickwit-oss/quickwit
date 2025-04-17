@@ -143,8 +143,8 @@ mod tests {
     use std::path::Path;
     use std::sync::Arc;
 
-    use tantivy::directory::RamDirectory;
     use tantivy::Directory;
+    use tantivy::directory::RamDirectory;
 
     use super::CachingDirectory;
     use crate::DebugProxyDirectory;

@@ -15,13 +15,13 @@
 use std::cmp::Ordering;
 use std::ops::Range;
 
-use quickwit_config::merge_policy_config::StableLogMergePolicyConfig;
 use quickwit_config::IndexingSettings;
+use quickwit_config::merge_policy_config::StableLogMergePolicyConfig;
 use quickwit_metastore::{SplitMaturity, SplitMetadata};
 use time::OffsetDateTime;
 use tracing::debug;
 
-use crate::merge_policy::{splits_short_debug, MergeOperation, MergePolicy};
+use crate::merge_policy::{MergeOperation, MergePolicy, splits_short_debug};
 
 /// `StableLogMergePolicy` is a rather naive implementation optimized
 /// for splits produced by a rather stable stream of splits,

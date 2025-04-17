@@ -18,9 +18,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
+use crate::OwnedBytes;
 use crate::cache::{MemorySizedCache, StorageCache};
 use crate::metrics::CacheMetrics;
-use crate::OwnedBytes;
 
 const FULL_SLICE: Range<usize> = 0..usize::MAX;
 

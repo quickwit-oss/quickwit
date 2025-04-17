@@ -27,8 +27,8 @@ use quickwit_cluster::Cluster;
 pub(crate) use server::DeveloperApiServer;
 use warp::{Filter, Rejection};
 
-use crate::rest::recover_fn;
 use crate::EnvFilterReloadFn;
+use crate::rest::recover_fn;
 
 #[derive(utoipa::OpenApi)]
 #[openapi(paths(debug::debug_handler, log_level::log_level_handler))]

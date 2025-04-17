@@ -15,7 +15,7 @@
 use std::str::FromStr;
 
 use serde::Deserialize;
-use vrl::datadog_filter::{build_matcher, regex as vrl_regex, Filter, Matcher, Resolver, Run};
+use vrl::datadog_filter::{Filter, Matcher, Resolver, Run, build_matcher, regex as vrl_regex};
 use vrl::datadog_search_syntax::{Comparison, ComparisonValue, Field as VRLField, QueryNode};
 
 use crate::default_field_search::matches;
@@ -306,7 +306,7 @@ mod vrl_matcher_tests {
     use serde_json::json;
     use time::OffsetDateTime;
 
-    use super::{build_vrl_matcher, ProcessedLog};
+    use super::{ProcessedLog, build_vrl_matcher};
     use crate::StringOrVec; // if that’s your local enum for tags
 
     /// Helper to build a sample ProcessedLog

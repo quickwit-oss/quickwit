@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::ProcessedLog;
 use crate::error::PipelineError;
 use crate::path_access::*;
 use crate::pipeline::*;
-use crate::ProcessedLog;
 
 /// A step that copies a value from `custom` to a new location, optionally removing the original.
 #[derive(Debug)]

@@ -120,7 +120,7 @@ impl QuickwitDateTimeOptions {
                 return Err(format!(
                     "failed to parse datetime: expected a float, integer, or string, got \
                      `{json_value}`"
-                ))
+                ));
             }
         };
         Ok(TantivyValue::Date(date_time))

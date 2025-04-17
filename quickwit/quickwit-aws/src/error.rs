@@ -48,7 +48,7 @@ fn is_retryable(meta: &aws_sdk_s3::error::ErrorMetadata) -> bool {
         THROTTLING_ERRORS.contains(&code)
             || TRANSIENT_ERRORS.contains(&code)
             || code == "InternalError" // this is somehow not considered transient, despite the
-                                       // associated error message containing "Please try again."
+    // associated error message containing "Please try again."
     } else {
         false
     }

@@ -17,10 +17,10 @@ use std::fmt::{Display, Formatter};
 
 use serde_json::Value;
 
+use crate::ProcessedLog;
 use crate::error::PipelineError;
 use crate::path_access::*;
 use crate::pipeline::*;
-use crate::ProcessedLog;
 
 /// A step that remaps one nested path to a new location, optionally removing the original.
 ///

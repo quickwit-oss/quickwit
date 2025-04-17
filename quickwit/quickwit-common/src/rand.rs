@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use rand::distributions::Alphanumeric;
 use rand::Rng;
+use rand::distributions::Alphanumeric;
 
 /// Appends a random suffix composed of a hyphen and five random alphanumeric characters.
 pub fn append_random_suffix(string: &str) -> String {

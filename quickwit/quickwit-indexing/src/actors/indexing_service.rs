@@ -31,8 +31,8 @@ use quickwit_common::io::Limiter;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::{io, temp_dir};
 use quickwit_config::{
-    build_doc_mapper, indexing_pipeline_params_fingerprint, IndexConfig, IndexerConfig,
-    SourceConfig, INGEST_API_SOURCE_ID,
+    INGEST_API_SOURCE_ID, IndexConfig, IndexerConfig, SourceConfig, build_doc_mapper,
+    indexing_pipeline_params_fingerprint,
 };
 use quickwit_ingest::{
     DropQueueRequest, GetPartitionId, IngestApiService, IngesterPool, ListQueuesRequest,
@@ -1011,18 +1011,18 @@ mod tests {
     use std::path::Path;
     use std::time::Duration;
 
-    use quickwit_actors::{Health, ObservationType, Supervisable, Universe, HEARTBEAT};
-    use quickwit_cluster::{create_cluster_for_test, ChannelTransport};
-    use quickwit_common::rand::append_random_suffix;
+    use quickwit_actors::{HEARTBEAT, Health, ObservationType, Supervisable, Universe};
+    use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
     use quickwit_common::ServiceStream;
+    use quickwit_common::rand::append_random_suffix;
     use quickwit_config::{
         IngestApiConfig, KafkaSourceParams, SourceConfig, SourceInputFormat, SourceParams,
         VecSourceParams,
     };
-    use quickwit_ingest::{init_ingest_api, CreateQueueIfNotExistsRequest};
+    use quickwit_ingest::{CreateQueueIfNotExistsRequest, init_ingest_api};
     use quickwit_metastore::{
-        metastore_for_test, AddSourceRequestExt, CreateIndexRequestExt,
-        ListIndexesMetadataResponseExt, Split,
+        AddSourceRequestExt, CreateIndexRequestExt, ListIndexesMetadataResponseExt, Split,
+        metastore_for_test,
     };
     use quickwit_proto::indexing::IndexingTask;
     use quickwit_proto::metastore::{

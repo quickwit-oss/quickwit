@@ -16,9 +16,9 @@ use serde::{Deserialize, Serialize};
 use tantivy::schema::Schema as TantivySchema;
 
 use super::{BuildTantivyAst, TantivyQueryAst};
+use crate::InvalidQuery;
 use crate::query_ast::QueryAst;
 use crate::tokenizers::TokenizerManager;
-use crate::InvalidQuery;
 
 /// # Unsupported features
 /// - minimum_should_match

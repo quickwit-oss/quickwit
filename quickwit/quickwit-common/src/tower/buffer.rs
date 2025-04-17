@@ -18,8 +18,8 @@ use std::task::{Context, Poll};
 use std::{error, fmt};
 
 use futures::TryFutureExt;
-use tower::buffer::error::{Closed, ServiceError};
 use tower::buffer::Buffer as TowerBuffer;
+use tower::buffer::error::{Closed, ServiceError};
 use tower::{Layer, Service};
 
 use super::{BoxError, BoxFuture};

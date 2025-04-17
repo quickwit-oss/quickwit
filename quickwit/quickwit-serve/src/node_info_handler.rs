@@ -19,7 +19,7 @@ use serde_json::json;
 use warp::{Filter, Rejection};
 
 use crate::rest::recover_fn;
-use crate::{with_arg, BuildInfo, RuntimeInfo};
+use crate::{BuildInfo, RuntimeInfo, with_arg};
 
 #[derive(utoipa::OpenApi)]
 #[openapi(paths(node_version_handler, node_config_handler,))]

@@ -23,9 +23,9 @@ use futures::Future;
 use quickwit_common::pretty::PrettyDisplay;
 use quickwit_proto::cluster::{ClusterService, ClusterServiceClient, FetchClusterStateRequest};
 use rand::seq::IteratorRandom;
-use tokio::sync::{watch, Mutex};
-use tokio_stream::wrappers::WatchStream;
+use tokio::sync::{Mutex, watch};
 use tokio_stream::StreamExt;
+use tokio_stream::wrappers::WatchStream;
 use tonic::transport::ClientTlsConfig;
 use tracing::{info, warn};
 

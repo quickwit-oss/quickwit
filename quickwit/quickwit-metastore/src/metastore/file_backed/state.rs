@@ -21,10 +21,10 @@ use quickwit_proto::metastore::MetastoreResult;
 use quickwit_proto::types::IndexId;
 use quickwit_storage::Storage;
 
+use super::LazyIndexStatus;
 use super::index_template_matcher::IndexTemplateMatcher;
 use super::lazy_file_backed_index::LazyFileBackedIndex;
 use super::manifest::{IndexStatus, Manifest};
-use super::LazyIndexStatus;
 
 #[derive(Default)]
 pub(super) struct MetastoreState {

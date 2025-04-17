@@ -30,13 +30,13 @@ mod routing_table;
 mod state;
 mod workbench;
 
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::ops::{Add, AddAssign};
 use std::time::Duration;
 use std::{env, fmt};
 
-pub use broadcast::{setup_local_shards_update_listener, LocalShardsUpdate, ShardInfo, ShardInfos};
+pub use broadcast::{LocalShardsUpdate, ShardInfo, ShardInfos, setup_local_shards_update_listener};
 use bytes::buf::Writer;
 use bytes::{BufMut, BytesMut};
 use bytesize::ByteSize;
@@ -50,9 +50,9 @@ use tracing::{error, info};
 use workbench::pending_subrequests;
 
 pub use self::fetch::{FetchStreamError, MultiFetchStream};
-pub use self::ingester::{wait_for_ingester_decommission, wait_for_ingester_status, Ingester};
+pub use self::ingester::{Ingester, wait_for_ingester_decommission, wait_for_ingester_status};
 use self::mrecord::MRECORD_HEADER_LEN;
-pub use self::mrecord::{decoded_mrecords, MRecord};
+pub use self::mrecord::{MRecord, decoded_mrecords};
 pub use self::router::IngestRouter;
 
 pub type IngesterPool = Pool<NodeId, IngesterServiceClient>;

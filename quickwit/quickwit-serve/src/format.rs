@@ -78,8 +78,8 @@ struct FormatQueryString {
     pub format: BodyFormat,
 }
 
-pub(crate) fn extract_format_from_qs(
-) -> impl Filter<Extract = (BodyFormat,), Error = Rejection> + Clone {
+pub(crate) fn extract_format_from_qs()
+-> impl Filter<Extract = (BodyFormat,), Error = Rejection> + Clone {
     serde_qs::warp::query::<FormatQueryString>(serde_qs::Config::default())
         .map(|format_qs: FormatQueryString| format_qs.format)
 }
@@ -93,8 +93,8 @@ pub(crate) struct UnsupportedMediaType;
 
 impl warp::reject::Reject for UnsupportedMediaType {}
 
-pub(crate) fn extract_config_format(
-) -> impl Filter<Extract = (ConfigFormat,), Error = Rejection> + Copy {
+pub(crate) fn extract_config_format()
+-> impl Filter<Extract = (ConfigFormat,), Error = Rejection> + Copy {
     warp::filters::header::optional::<mime_guess::Mime>(CONTENT_TYPE.as_str()).and_then(
         |mime_opt: Option<mime_guess::Mime>| {
             if let Some(mime) = mime_opt {

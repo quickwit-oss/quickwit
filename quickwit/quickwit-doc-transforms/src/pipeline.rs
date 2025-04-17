@@ -22,9 +22,9 @@ use crate::processed_log::ProcessedLog;
 use crate::transformers::grok_auto_step::build_grok_parser_auto_step;
 use crate::transformers::grok_rules::LogsProcessingGrokRules;
 use crate::transformers::{
-    build_grok_parser_step, AttributeRemapStep, CategoryProcessorMapping, CategoryProcessorStep,
-    CompiledTemplateString, CoreStringAttr, CoreStringAttrRemapStep, DateRemapStep, FilteredStep,
-    StatusRemapStep, StringBuilderStep,
+    AttributeRemapStep, CategoryProcessorMapping, CategoryProcessorStep, CompiledTemplateString,
+    CoreStringAttr, CoreStringAttrRemapStep, DateRemapStep, FilteredStep, StatusRemapStep,
+    StringBuilderStep, build_grok_parser_step,
 };
 
 /// Trait for steps in the pipeline. Each step mutates a `ProcessedLog`.

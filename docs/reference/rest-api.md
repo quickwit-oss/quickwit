@@ -348,7 +348,7 @@ Updating the doc mapping doesn't reindex existing data. Queries and results are 
 |---------------------|--------------------|-----------------------------------------------------------------------------------------------------------------------|---------------------------------------|
 | `version`           | `String`           | Config format version, use the same as your Quickwit version.                                                         | _required_                            |
 | `index_id`          | `String`           | Index ID, must be the same index as in the request URI.                                                               | _required_                            |
-| `index_uri`         | `String`           | Defines where the index files are stored. Cannot be updated.                                                          | `{current_index_uri}`                 |
+| `index_uri`         | `String`           | Defines where the index files are stored. Cannot be updated.                                                          | `{default_index_root_uri}/{index_id}`                 |
 | `doc_mapping`       | `DocMapping`       | Doc mapping object as specified in the [index config docs](../configuration/index-config.md#doc-mapping).             | _required_                            |
 | `indexing_settings` | `IndexingSettings` | Indexing settings object as specified in the [index config docs](../configuration/index-config.md#indexing-settings). |                                       |
 | `search_settings`   | `SearchSettings`   | Search settings object as specified in the [index config docs](../configuration/index-config.md#search-settings).     |                                       |

@@ -17,9 +17,9 @@ use std::any::type_name;
 use bytes::Bytes;
 use quickwit_config::{ConfigFormat, IndexTemplate, IndexTemplateId, VersionedIndexTemplate};
 use quickwit_proto::metastore::{
-    serde_utils, CreateIndexTemplateRequest, DeleteIndexTemplatesRequest, GetIndexTemplateRequest,
+    CreateIndexTemplateRequest, DeleteIndexTemplatesRequest, GetIndexTemplateRequest,
     ListIndexTemplatesRequest, MetastoreError, MetastoreResult, MetastoreService,
-    MetastoreServiceClient,
+    MetastoreServiceClient, serde_utils,
 };
 use serde_json::Value as JsonValue;
 use warp::reject::Rejection;

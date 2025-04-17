@@ -15,8 +15,8 @@
 use std::fmt;
 
 use itertools::Itertools;
-use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_metastore::SplitMetadata;
+use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_proto::types::{IndexUid, PublishToken};
 use tracing::Span;
 

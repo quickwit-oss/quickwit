@@ -67,14 +67,18 @@ mod tests {
             default_doc_mapper_builder.doc_mapping.mode.mode_type(),
             ModeType::Dynamic
         );
-        assert!(default_doc_mapper_builder
-            .doc_mapping
-            .field_mappings
-            .is_empty());
-        assert!(default_doc_mapper_builder
-            .doc_mapping
-            .timestamp_field
-            .is_none());
+        assert!(
+            default_doc_mapper_builder
+                .doc_mapping
+                .field_mappings
+                .is_empty()
+        );
+        assert!(
+            default_doc_mapper_builder
+                .doc_mapping
+                .timestamp_field
+                .is_none()
+        );
         assert!(default_doc_mapper_builder.doc_mapping.tag_fields.is_empty());
         assert_eq!(default_doc_mapper_builder.doc_mapping.store_source, false);
         assert!(default_doc_mapper_builder.default_search_fields.is_empty());

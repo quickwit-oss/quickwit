@@ -211,10 +211,10 @@ mod tests {
     use super::*;
     use crate::models::RawDocBatch;
     use crate::source::doc_file_reader::file_test_helpers::{
-        generate_dummy_doc_file, generate_index_doc_file, DUMMY_DOC,
+        DUMMY_DOC, generate_dummy_doc_file, generate_index_doc_file,
     };
     use crate::source::tests::SourceRuntimeBuilder;
-    use crate::source::{SourceActor, BATCH_NUM_BYTES_LIMIT};
+    use crate::source::{BATCH_NUM_BYTES_LIMIT, SourceActor};
 
     #[tokio::test]
     async fn test_file_source() {
@@ -408,13 +408,13 @@ mod localstack_tests {
 
     use super::*;
     use crate::models::RawDocBatch;
+    use crate::source::SourceActor;
     use crate::source::doc_file_reader::file_test_helpers::generate_dummy_doc_file;
     use crate::source::queue_sources::sqs_queue::test_helpers::{
         create_queue, get_localstack_sqs_client, send_message,
     };
     use crate::source::test_setup_helper::setup_index;
     use crate::source::tests::SourceRuntimeBuilder;
-    use crate::source::SourceActor;
 
     #[tokio::test]
     async fn test_file_source_sqs_notifications() {

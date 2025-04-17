@@ -10,8 +10,8 @@ use quickwit_proto::cloudprem::{
 use quickwit_proto::search::{
     CountHits, Hit, PartialHit, SearchRequest, SearchResponse, SortField, SortOrder,
 };
-use quickwit_query::query_ast::{FullTextMode, FullTextParams, FullTextQuery, QueryAst};
 use quickwit_query::MatchAllOrNone;
+use quickwit_query::query_ast::{FullTextMode, FullTextParams, FullTextQuery, QueryAst};
 use quickwit_search::SearchService;
 use serde_json::Value as JsonValue;
 use tracing::{debug, error, info, warn};

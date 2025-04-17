@@ -128,10 +128,12 @@ mod tests {
         {
             let env_vars = HashMap::new();
             let rest_listen_port = ConfigValue::<usize, QW_REST_LISTEN_PORT>::none();
-            assert!(rest_listen_port
-                .resolve_optional(&env_vars)
-                .unwrap()
-                .is_none());
+            assert!(
+                rest_listen_port
+                    .resolve_optional(&env_vars)
+                    .unwrap()
+                    .is_none()
+            );
         }
         {
             let env_vars = HashMap::new();
@@ -231,10 +233,12 @@ mod tests {
         assert_eq!(config.cluster_id.resolve(&env_vars).unwrap(), "qw-cluster");
         assert_eq!(config.node_id.resolve(&env_vars).unwrap(), "default-node");
         assert_eq!(config.rest_listen_port.resolve(&env_vars).unwrap(), 1234);
-        assert!(config
-            .gossip_listen_port
-            .resolve_optional(&env_vars)
-            .unwrap()
-            .is_none());
+        assert!(
+            config
+                .gossip_listen_port
+                .resolve_optional(&env_vars)
+                .unwrap()
+                .is_none()
+        );
     }
 }

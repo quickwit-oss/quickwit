@@ -20,8 +20,8 @@ use quote::quote;
 use syn::parse::{Parse, ParseStream, Parser};
 use syn::punctuated::Punctuated;
 use syn::{
-    parenthesized, Attribute, Error, Field, Fields, FieldsNamed, Ident, ItemStruct, Meta, Path,
-    Token, Visibility,
+    Attribute, Error, Field, Fields, FieldsNamed, Ident, ItemStruct, Meta, Path, Token, Visibility,
+    parenthesized,
 };
 
 #[proc_macro_attribute]

@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::fmt;
 
 use itertools::Itertools;
@@ -23,7 +23,7 @@ use quickwit_proto::metastore::{
     EntityKind, ListShardsSubrequest, ListShardsSubresponse, MetastoreError, MetastoreResult,
     OpenShardSubrequest, OpenShardSubresponse, PruneShardsRequest,
 };
-use quickwit_proto::types::{queue_id, IndexUid, Position, PublishToken, ShardId, SourceId};
+use quickwit_proto::types::{IndexUid, Position, PublishToken, ShardId, SourceId, queue_id};
 use time::OffsetDateTime;
 use tracing::{info, warn};
 

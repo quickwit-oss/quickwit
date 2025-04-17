@@ -136,11 +136,13 @@ impl Universe {
     /// This is useful for testing purposes to detect failed asserts in actors.
     #[cfg(any(test, feature = "testsuite"))]
     pub async fn assert_quit(self) {
-        assert!(!self
-            .quit()
-            .await
-            .values()
-            .any(|status| matches!(status, ActorExitStatus::Panicked)));
+        assert!(
+            !self
+                .quit()
+                .await
+                .values()
+                .any(|status| matches!(status, ActorExitStatus::Panicked))
+        );
     }
 }
 
@@ -253,11 +255,13 @@ mod tests {
         let actor_with_schedule = CountingMinutesActor::default();
         let (_mailbox, handler) = universe.spawn_builder().spawn(actor_with_schedule);
         assert!(matches!(handler.quit().await, (ActorExitStatus::Quit, 1)));
-        assert!(!universe
-            .quit()
-            .await
-            .values()
-            .any(|status| matches!(status, ActorExitStatus::Panicked)));
+        assert!(
+            !universe
+                .quit()
+                .await
+                .values()
+                .any(|status| matches!(status, ActorExitStatus::Panicked))
+        );
     }
 
     #[tokio::test]
@@ -267,11 +271,13 @@ mod tests {
         let actor_with_schedule = CountingMinutesActor::default();
         let (_mailbox, _handler) = universe.spawn_builder().spawn(panicking_actor);
         let (_mailbox, _handler) = universe.spawn_builder().spawn(actor_with_schedule);
-        assert!(universe
-            .quit()
-            .await
-            .values()
-            .any(|status| matches!(status, ActorExitStatus::Panicked)));
+        assert!(
+            universe
+                .quit()
+                .await
+                .values()
+                .any(|status| matches!(status, ActorExitStatus::Panicked))
+        );
     }
 
     #[tokio::test]

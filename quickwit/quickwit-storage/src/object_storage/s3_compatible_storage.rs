@@ -19,9 +19,10 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::{fmt, io};
 
-use anyhow::{anyhow, Context as AnyhhowContext};
+use anyhow::{Context as AnyhhowContext, anyhow};
 use async_trait::async_trait;
 use aws_credential_types::provider::SharedCredentialsProvider;
+use aws_sdk_s3::Client as S3Client;
 use aws_sdk_s3::config::{Credentials, Region};
 use aws_sdk_s3::error::{ProvideErrorMetadata, SdkError};
 use aws_sdk_s3::operation::delete_objects::DeleteObjectsOutput;
@@ -29,11 +30,10 @@ use aws_sdk_s3::operation::get_object::{GetObjectError, GetObjectOutput};
 use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::types::builders::ObjectIdentifierBuilder;
 use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart, Delete, ObjectIdentifier};
-use aws_sdk_s3::Client as S3Client;
-use base64::prelude::{Engine, BASE64_STANDARD};
-use futures::{stream, StreamExt};
+use base64::prelude::{BASE64_STANDARD, Engine};
+use futures::{StreamExt, stream};
 use once_cell::sync::{Lazy, OnceCell};
-use quickwit_aws::retry::{aws_retry, AwsRetryable};
+use quickwit_aws::retry::{AwsRetryable, aws_retry};
 use quickwit_aws::{aws_behavior_version, get_aws_config};
 use quickwit_common::retry::{Retry, RetryParams};
 use quickwit_common::uri::Uri;
@@ -48,8 +48,8 @@ use crate::metrics::object_storage_get_slice_in_flight_guards;
 use crate::object_storage::MultiPartPolicy;
 use crate::storage::SendableAsync;
 use crate::{
-    BulkDeleteError, DeleteFailure, OwnedBytes, Storage, StorageError, StorageErrorKind,
-    StorageResolverError, StorageResult, STORAGE_METRICS,
+    BulkDeleteError, DeleteFailure, OwnedBytes, STORAGE_METRICS, Storage, StorageError,
+    StorageErrorKind, StorageResolverError, StorageResult,
 };
 
 /// Semaphore to limit the number of concurrent requests to the object store. Some object stores
@@ -577,7 +577,7 @@ impl S3CompatibleObjectStorage {
 
     /// Bulk delete implementation based on the DeleteObject API:
     /// <https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObject.html>
-    async fn bulk_delete_single<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
+    async fn bulk_delete_single(&self, paths: &[&Path]) -> Result<(), BulkDeleteError> {
         let mut successes = Vec::with_capacity(paths.len());
         let mut failures = HashMap::new();
 
@@ -615,7 +615,7 @@ impl S3CompatibleObjectStorage {
 
     /// Bulk delete implementation based on the DeleteObjects API, also called Multi-Object Delete
     /// API: <https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html>
-    async fn bulk_delete_multi<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
+    async fn bulk_delete_multi(&self, paths: &[&Path]) -> Result<(), BulkDeleteError> {
         let _permit = REQUEST_SEMAPHORE.acquire().await;
 
         let delete_requests: Vec<(&[&Path], Delete)> = self
@@ -888,7 +888,7 @@ mod tests {
     use aws_sdk_s3::primitives::SdkBody;
     use aws_smithy_runtime::client::http::test_util::{ReplayEvent, StaticReplayClient};
     use bytes::Bytes;
-    use hyper::{http, Body};
+    use hyper::{Body, http};
     use quickwit_aws::aws_behavior_version;
     use quickwit_common::chunk_range;
     use quickwit_common::uri::Uri;

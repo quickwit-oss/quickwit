@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use async_trait::async_trait;
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Universe};
 
 #[derive(Default)]

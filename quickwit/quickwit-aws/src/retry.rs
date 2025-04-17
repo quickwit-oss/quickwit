@@ -16,7 +16,7 @@ use std::fmt::Debug;
 
 use futures::{Future, TryFutureExt};
 use quickwit_common::retry::{
-    retry_with_mockable_sleep, Retry, RetryParams, Retryable, TokioSleep,
+    Retry, RetryParams, Retryable, TokioSleep, retry_with_mockable_sleep,
 };
 
 pub trait AwsRetryable {

@@ -14,7 +14,7 @@
 
 use serde::Deserialize;
 use serde_with::formats::PreferMany;
-use serde_with::{serde_as, DefaultOnNull, OneOrMany};
+use serde_with::{DefaultOnNull, OneOrMany, serde_as};
 
 use crate::elastic_query_dsl::{ConvertibleToQueryAst, ElasticQueryDslInner};
 use crate::not_nan_f32::NotNaNf32;
@@ -172,11 +172,11 @@ impl From<BoolQuery> for ElasticQueryDslInner {
 #[cfg(test)]
 mod tests {
     use super::parse_percentage;
+    use crate::elastic_query_dsl::ConvertibleToQueryAst;
     use crate::elastic_query_dsl::bool_query::{
         BoolQuery, MinimumShouldMatch, MinimumShouldMatchResolved,
     };
     use crate::elastic_query_dsl::term_query::term_query_from_field_value;
-    use crate::elastic_query_dsl::ConvertibleToQueryAst;
     use crate::query_ast::QueryAst;
 
     #[test]
@@ -314,9 +314,11 @@ mod tests {
                 .unwrap(),
             MinimumShouldMatchResolved::Min(7)
         );
-        assert!(MinimumShouldMatch::Str("-30!".to_string())
-            .resolve(10)
-            .is_err());
+        assert!(
+            MinimumShouldMatch::Str("-30!".to_string())
+                .resolve(10)
+                .is_err()
+        );
         assert_eq!(
             MinimumShouldMatch::Int(10).resolve(11).unwrap(),
             MinimumShouldMatchResolved::Min(10)

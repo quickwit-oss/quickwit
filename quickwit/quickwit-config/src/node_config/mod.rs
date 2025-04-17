@@ -274,7 +274,7 @@ impl StorageTimeoutPolicy {
         };
         let timeout = Duration::from_millis(self.timeout_millis)
             + Duration::from_secs_f64(min_download_time_secs);
-        std::iter::repeat(timeout).take(self.max_num_retries + 1)
+        std::iter::repeat_n(timeout, self.max_num_retries + 1)
     }
 }
 

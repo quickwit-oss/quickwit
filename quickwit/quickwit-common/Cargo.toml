@@ -40,7 +40,7 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-metrics = { workspace = true }
 tokio-stream = { workspace = true }
-tonic = { workspace = true }
+tonic = { workspace = true, features = ["tls"] }
 tower = { workspace = true }
 tracing = { workspace = true }
 

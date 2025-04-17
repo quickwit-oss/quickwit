@@ -15,11 +15,11 @@
 use vrl::datadog_grok::parse_grok::parse_grok;
 use vrl::datadog_grok::parse_grok_rules::GrokRule;
 
-use super::grok_rules::{build_grok_rules, LogsProcessingGrokRules};
+use super::grok_rules::{LogsProcessingGrokRules, build_grok_rules};
+use crate::ProcessedLog;
 use crate::error::PipelineError;
 use crate::pipeline::*;
 use crate::transformers::vrl_value_to_serde_json;
-use crate::ProcessedLog;
 
 #[derive(Debug)]
 pub struct GrokParserStep {
@@ -69,9 +69,9 @@ pub fn build_grok_parser_step(
 mod tests {
 
     use super::*;
+    use crate::ProcessedLog;
     use crate::pipeline::Pipeline;
     use crate::processed_log::tests::make_datadog_log_msg;
-    use crate::ProcessedLog;
 
     #[test]
     fn test_vrl_grok_step() -> Result<(), Box<dyn std::error::Error>> {

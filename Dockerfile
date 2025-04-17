@@ -40,11 +40,11 @@ RUN rustup toolchain install
 
 RUN echo "Building workspace with feature(s) '$CARGO_FEATURES' and profile '$CARGO_PROFILE'" \
     && RUSTFLAGS="--cfg tokio_unstable" \
-        cargo build \
-        -p quickwit-cli \
-        --features $CARGO_FEATURES \
-        --bin quickwit \
-        $(test "$CARGO_PROFILE" = "release" && echo "--release") \
+    cargo build \
+    -p quickwit-cli \
+    --features $CARGO_FEATURES \
+    --bin quickwit \
+    $(test "$CARGO_PROFILE" = "release" && echo "--release") \
     && echo "Copying binaries to /quickwit/bin" \
     && mkdir -p /quickwit/bin \
     && find target/$CARGO_PROFILE -maxdepth 1 -perm /a+x -type f -exec mv {} /quickwit/bin \;

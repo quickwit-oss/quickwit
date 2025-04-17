@@ -14,7 +14,7 @@
 
 use std::time::Duration;
 
-use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 
 fn is_zero(value: &usize) -> bool {
     *value == 0

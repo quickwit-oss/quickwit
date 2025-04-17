@@ -21,8 +21,8 @@ use bytes::Bytes;
 use bytesize::ByteSize;
 use quickwit_actors::Mailbox;
 use quickwit_cluster::Cluster;
-use quickwit_config::service::QuickwitService;
 use quickwit_config::NodeConfig;
+use quickwit_config::service::QuickwitService;
 use quickwit_control_plane::control_plane::{ControlPlane, GetDebugInfo};
 use quickwit_ingest::{IngestRouter, Ingester};
 use quickwit_proto::developer::{
@@ -118,7 +118,7 @@ impl DeveloperService for DeveloperApiServer {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_cluster::{create_cluster_for_test, ChannelTransport};
+    use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
     use serde_json::Value as JsonValue;
 
     use super::*;

@@ -201,8 +201,8 @@ mod tests {
 
     use std::ops::Range;
     use std::path::PathBuf;
-    use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicU32, Ordering};
     use std::time::Duration;
 
     use once_cell::sync::OnceCell;

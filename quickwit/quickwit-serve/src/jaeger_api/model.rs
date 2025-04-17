@@ -14,13 +14,13 @@
 
 use std::collections::HashMap;
 
-use base64::prelude::{Engine, BASE64_STANDARD};
+use base64::prelude::{BASE64_STANDARD, Engine};
 use hyper::StatusCode;
 use itertools::Itertools;
 use prost_types::{Duration, Timestamp};
 use quickwit_proto::jaeger::api_v2::{KeyValue, Log, Process, Span, SpanRef, ValueType};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use serde_with::serde_as;
 
 pub(super) const DEFAULT_NUMBER_OF_TRACES: i32 = 20;
@@ -341,7 +341,7 @@ fn convert_duration_to_microsecs(duration: Duration) -> i64 {
 mod tests {
     use quickwit_proto::jaeger::api_v2::Log;
 
-    use crate::jaeger_api::model::{build_jaeger_traces, JaegerSpan};
+    use crate::jaeger_api::model::{JaegerSpan, build_jaeger_traces};
 
     #[test]
     fn test_convert_grpc_jaeger_spans_into_jaeger_ui_model() {

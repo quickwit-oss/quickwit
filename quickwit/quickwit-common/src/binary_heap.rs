@@ -218,11 +218,7 @@ mod tests {
         impl SortKeyMapper<u32> for Mapper {
             type Key = u32;
             fn get_sort_key(&self, value: &u32) -> u32 {
-                if self.0 {
-                    u32::MAX - value
-                } else {
-                    *value
-                }
+                if self.0 { u32::MAX - value } else { *value }
             }
         }
         let mut top_k = TopK::new(2, Mapper(false));

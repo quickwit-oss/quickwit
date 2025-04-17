@@ -15,9 +15,9 @@
 use serde_json::Value as JsonValue;
 use tantivy::schema::OwnedValue as TantivyValue;
 
+use super::BinaryFormat;
 use super::field_mapping_entry::{NumericOutputFormat, QuickwitNumericOptions};
 use super::mapping_tree::LeafType;
-use super::BinaryFormat;
 
 pub(crate) trait NumToJson {
     fn to_json(&self, output_format: NumericOutputFormat) -> Option<JsonValue>;

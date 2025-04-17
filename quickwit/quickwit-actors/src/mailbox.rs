@@ -23,7 +23,7 @@ use quickwit_common::metrics::{GaugeGuard, IntCounter, IntGauge};
 use tokio::sync::oneshot;
 
 use crate::channel_with_priority::{Receiver, Sender, TrySendError};
-use crate::envelope::{wrap_in_envelope, Envelope};
+use crate::envelope::{Envelope, wrap_in_envelope};
 use crate::scheduler::SchedulerClient;
 use crate::{Actor, AskError, Command, DeferableReplyHandler, QueueCapacity, RecvError, SendError};
 

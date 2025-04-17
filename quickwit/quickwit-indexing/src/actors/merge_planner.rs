@@ -27,11 +27,11 @@ use time::OffsetDateTime;
 use tracing::{info, warn};
 
 use super::MergeSchedulerService;
-use crate::actors::merge_scheduler_service::schedule_merge;
+use crate::MergePolicy;
 use crate::actors::MergeSplitDownloader;
+use crate::actors::merge_scheduler_service::schedule_merge;
 use crate::merge_policy::MergeOperation;
 use crate::models::NewSplits;
-use crate::MergePolicy;
 
 #[derive(Debug)]
 pub(crate) struct RunFinalizeMergePolicyAndQuit;
@@ -361,10 +361,10 @@ mod tests {
 
     use itertools::Itertools;
     use quickwit_actors::{ActorExitStatus, Command, QueueCapacity, Universe};
+    use quickwit_config::IndexingSettings;
     use quickwit_config::merge_policy_config::{
         ConstWriteAmplificationMergePolicyConfig, MergePolicyConfig, StableLogMergePolicyConfig,
     };
-    use quickwit_config::IndexingSettings;
     use quickwit_metastore::{SplitMaturity, SplitMetadata};
     use quickwit_proto::indexing::MergePipelineId;
     use quickwit_proto::types::{DocMappingUid, IndexUid, NodeId};
@@ -372,7 +372,7 @@ mod tests {
 
     use crate::actors::MergePlanner;
     use crate::merge_policy::{
-        merge_policy_from_settings, MergePolicy, MergeTask, StableLogMergePolicy,
+        MergePolicy, MergeTask, StableLogMergePolicy, merge_policy_from_settings,
     };
     use crate::models::NewSplits;
 
@@ -485,24 +485,33 @@ mod tests {
 
             let first_merge_operation = merge_operations.next().unwrap();
             assert_eq!(first_merge_operation.splits.len(), 4);
-            assert!(first_merge_operation
-                .splits
-                .iter()
-                .all(|split| split.partition_id == 1 && split.doc_mapping_uid == doc_mapping_uid1));
+            assert!(
+                first_merge_operation
+                    .splits
+                    .iter()
+                    .all(|split| split.partition_id == 1
+                        && split.doc_mapping_uid == doc_mapping_uid1)
+            );
 
             let second_merge_operation = merge_operations.next().unwrap();
             assert_eq!(second_merge_operation.splits.len(), 3);
-            assert!(second_merge_operation
-                .splits
-                .iter()
-                .all(|split| split.partition_id == 1 && split.doc_mapping_uid == doc_mapping_uid2));
+            assert!(
+                second_merge_operation
+                    .splits
+                    .iter()
+                    .all(|split| split.partition_id == 1
+                        && split.doc_mapping_uid == doc_mapping_uid2)
+            );
 
             let third_merge_operation = merge_operations.next().unwrap();
             assert_eq!(third_merge_operation.splits.len(), 3);
-            assert!(third_merge_operation
-                .splits
-                .iter()
-                .all(|split| split.partition_id == 2 && split.doc_mapping_uid == doc_mapping_uid1));
+            assert!(
+                third_merge_operation
+                    .splits
+                    .iter()
+                    .all(|split| split.partition_id == 2
+                        && split.doc_mapping_uid == doc_mapping_uid1)
+            );
         }
         universe.assert_quit().await;
 

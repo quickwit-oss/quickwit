@@ -55,7 +55,6 @@ impl NodeShutdownHandle {
     }
 
     /// Initiate node shutdown and wait for it to complete
-
     pub(crate) async fn shutdown(
         self,
     ) -> anyhow::Result<HashMap<std::string::String, ActorExitStatus>> {

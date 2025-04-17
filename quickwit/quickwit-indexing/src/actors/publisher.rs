@@ -254,25 +254,27 @@ mod tests {
         );
         let (publisher_mailbox, publisher_handle) = universe.spawn_builder().spawn(publisher);
 
-        assert!(publisher_mailbox
-            .send_message(SplitsUpdate {
-                index_uid: ref_index_uid.clone(),
-                new_splits: vec![SplitMetadata {
-                    split_id: "split".to_string(),
-                    ..Default::default()
-                }],
-                replaced_split_ids: Vec::new(),
-                checkpoint_delta_opt: Some(IndexCheckpointDelta {
-                    source_id: "source".to_string(),
-                    source_delta: SourceCheckpointDelta::from_range(1..3),
-                }),
-                publish_lock: PublishLock::default(),
-                publish_token_opt: None,
-                merge_task: None,
-                parent_span: tracing::Span::none(),
-            })
-            .await
-            .is_ok());
+        assert!(
+            publisher_mailbox
+                .send_message(SplitsUpdate {
+                    index_uid: ref_index_uid.clone(),
+                    new_splits: vec![SplitMetadata {
+                        split_id: "split".to_string(),
+                        ..Default::default()
+                    }],
+                    replaced_split_ids: Vec::new(),
+                    checkpoint_delta_opt: Some(IndexCheckpointDelta {
+                        source_id: "source".to_string(),
+                        source_delta: SourceCheckpointDelta::from_range(1..3),
+                    }),
+                    publish_lock: PublishLock::default(),
+                    publish_token_opt: None,
+                    merge_task: None,
+                    parent_span: tracing::Span::none(),
+                })
+                .await
+                .is_ok()
+        );
 
         let publisher_observation = publisher_handle.process_pending_and_observe().await.state;
         assert_eq!(publisher_observation.num_published_splits, 1);
@@ -330,22 +332,24 @@ mod tests {
         );
         let (publisher_mailbox, publisher_handle) = universe.spawn_builder().spawn(publisher);
 
-        assert!(publisher_mailbox
-            .send_message(SplitsUpdate {
-                index_uid: ref_index_uid.clone(),
-                new_splits: Vec::new(),
-                replaced_split_ids: Vec::new(),
-                checkpoint_delta_opt: Some(IndexCheckpointDelta {
-                    source_id: "source".to_string(),
-                    source_delta: SourceCheckpointDelta::from_range(1..3),
-                }),
-                publish_lock: PublishLock::default(),
-                publish_token_opt: None,
-                merge_task: None,
-                parent_span: tracing::Span::none(),
-            })
-            .await
-            .is_ok());
+        assert!(
+            publisher_mailbox
+                .send_message(SplitsUpdate {
+                    index_uid: ref_index_uid.clone(),
+                    new_splits: Vec::new(),
+                    replaced_split_ids: Vec::new(),
+                    checkpoint_delta_opt: Some(IndexCheckpointDelta {
+                        source_id: "source".to_string(),
+                        source_delta: SourceCheckpointDelta::from_range(1..3),
+                    }),
+                    publish_lock: PublishLock::default(),
+                    publish_token_opt: None,
+                    merge_task: None,
+                    parent_span: tracing::Span::none(),
+                })
+                .await
+                .is_ok()
+        );
 
         let publisher_observation = publisher_handle.process_pending_and_observe().await.state;
         assert_eq!(publisher_observation.num_published_splits, 0);
@@ -410,10 +414,12 @@ mod tests {
             merge_task: None,
             parent_span: Span::none(),
         };
-        assert!(publisher_mailbox
-            .send_message(publisher_message)
-            .await
-            .is_ok());
+        assert!(
+            publisher_mailbox
+                .send_message(publisher_message)
+                .await
+                .is_ok()
+        );
         let publisher_observation = publisher_handle.process_pending_and_observe().await.state;
         assert_eq!(publisher_observation.num_published_splits, 0);
         assert_eq!(publisher_observation.num_replace_operations, 1);

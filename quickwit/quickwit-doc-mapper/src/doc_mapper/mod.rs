@@ -41,12 +41,12 @@ pub(crate) use field_mapping_entry::{
 pub(crate) use field_mapping_entry::{QuickwitNumericOptions, QuickwitTextOptions};
 pub use field_mapping_type::FieldMappingType;
 use serde_json::Value as JsonValue;
-use tantivy::schema::{Field, FieldType};
 use tantivy::Term;
-pub use tokenizer_entry::{analyze_text, TokenizerConfig, TokenizerEntry};
+use tantivy::schema::{Field, FieldType};
 pub(crate) use tokenizer_entry::{
     NgramTokenizerOption, RegexTokenizerOption, TokenFilterType, TokenizerType,
 };
+pub use tokenizer_entry::{TokenizerConfig, TokenizerEntry, analyze_text};
 
 /// Function used with serde to initialize boolean value at true if there is no value in json.
 fn default_as_true() -> bool {
@@ -183,14 +183,14 @@ mod tests {
     use std::collections::{HashMap, HashSet};
     use std::ops::Bound;
 
-    use quickwit_query::query_ast::{query_ast_from_user_text, UserInputQuery};
     use quickwit_query::BooleanOperand;
+    use quickwit_query::query_ast::{UserInputQuery, query_ast_from_user_text};
     use tantivy::schema::{Field, FieldType, Term};
 
     use super::*;
     use crate::{
-        Cardinality, DocMapper, DocMapperBuilder, DocParsingError, FieldMappingEntry, TermRange,
-        WarmupInfo, DYNAMIC_FIELD_NAME,
+        Cardinality, DYNAMIC_FIELD_NAME, DocMapper, DocMapperBuilder, DocParsingError,
+        FieldMappingEntry, TermRange, WarmupInfo,
     };
 
     const JSON_DEFAULT_DOC_MAPPER: &str = r#"
@@ -393,11 +393,13 @@ mod tests {
         }"#;
         let doc_mapper = serde_json::from_str::<DocMapper>(JSON_CONFIG_VALUE).unwrap();
         {
-            assert!(test_validate_doc_aux(
-                &doc_mapper,
-                r#"{ "body": "toto", "timestamp": "2024-01-01T01:01:01Z"}"#
-            )
-            .is_ok());
+            assert!(
+                test_validate_doc_aux(
+                    &doc_mapper,
+                    r#"{ "body": "toto", "timestamp": "2024-01-01T01:01:01Z"}"#
+                )
+                .is_ok()
+            );
         }
         {
             assert!(matches!(
@@ -410,11 +412,13 @@ mod tests {
             ));
         }
         {
-            assert!(test_validate_doc_aux(
-                &doc_mapper,
-                r#"{ "response_time": "2.3", "timestamp": "2024-01-01T01:01:01Z"}"#
-            )
-            .is_ok(),);
+            assert!(
+                test_validate_doc_aux(
+                    &doc_mapper,
+                    r#"{ "response_time": "2.3", "timestamp": "2024-01-01T01:01:01Z"}"#
+                )
+                .is_ok(),
+            );
         }
         {
             // coercion disabled
@@ -438,11 +442,13 @@ mod tests {
             ));
         }
         {
-            assert!(test_validate_doc_aux(
-                &doc_mapper,
-                r#"{"attributes": {"numbers": [-2]}, "timestamp": "2024-01-01T01:01:01Z"}"#
-            )
-            .is_ok());
+            assert!(
+                test_validate_doc_aux(
+                    &doc_mapper,
+                    r#"{"attributes": {"numbers": [-2]}, "timestamp": "2024-01-01T01:01:01Z"}"#
+                )
+                .is_ok()
+            );
         }
     }
 
@@ -498,11 +504,13 @@ mod tests {
         }"#;
         let doc_mapper = serde_json::from_str::<DocMapper>(JSON_CONFIG_TS_AT_ROOT).unwrap();
         {
-            assert!(test_validate_doc_aux(
-                &doc_mapper,
-                r#"{ "body": "toto", "timestamp": "2024-01-01T01:01:01Z"}"#
-            )
-            .is_ok());
+            assert!(
+                test_validate_doc_aux(
+                    &doc_mapper,
+                    r#"{ "body": "toto", "timestamp": "2024-01-01T01:01:01Z"}"#
+                )
+                .is_ok()
+            );
         }
         {
             assert!(matches!(
@@ -530,11 +538,13 @@ mod tests {
 
         let doc_mapper = serde_json::from_str::<DocMapper>(JSON_CONFIG_TS_WITH_DOT).unwrap();
         {
-            assert!(test_validate_doc_aux(
-                &doc_mapper,
-                r#"{ "body": "toto", "timestamp.now": "2024-01-01T01:01:01Z"}"#
-            )
-            .is_ok());
+            assert!(
+                test_validate_doc_aux(
+                    &doc_mapper,
+                    r#"{ "body": "toto", "timestamp.now": "2024-01-01T01:01:01Z"}"#
+                )
+                .is_ok()
+            );
         }
         {
             assert!(matches!(
@@ -559,11 +569,13 @@ mod tests {
 
         let doc_mapper = serde_json::from_str::<DocMapper>(JSON_CONFIG_TS_NESTED).unwrap();
         {
-            assert!(test_validate_doc_aux(
-                &doc_mapper,
-                r#"{ "body": "toto", "doc":{"timestamp": "2024-01-01T01:01:01Z"}}"#
-            )
-            .is_ok());
+            assert!(
+                test_validate_doc_aux(
+                    &doc_mapper,
+                    r#"{ "body": "toto", "doc":{"timestamp": "2024-01-01T01:01:01Z"}}"#
+                )
+                .is_ok()
+            );
         }
         {
             assert!(matches!(
@@ -746,11 +758,13 @@ mod tests {
         for (field, regex) in expected_automatons {
             let field = Field::from_field_id(field);
             let automaton = Automaton::Regex(None, regex.to_string());
-            assert!(wi_base
-                .automatons_grouped_by_field
-                .get(&field)
-                .unwrap()
-                .contains(&automaton));
+            assert!(
+                wi_base
+                    .automatons_grouped_by_field
+                    .get(&field)
+                    .unwrap()
+                    .contains(&automaton)
+            );
         }
 
         // merge is idempotent

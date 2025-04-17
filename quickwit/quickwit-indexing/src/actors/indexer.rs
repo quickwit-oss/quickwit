@@ -46,11 +46,11 @@ use tantivy::tokenizer::TokenizerManager;
 use tantivy::{DateTime, IndexBuilder, IndexSettings};
 use tokio::runtime::Handle;
 use tokio::sync::Semaphore;
-use tracing::{info, info_span, warn, Span};
+use tracing::{Span, info, info_span, warn};
 use ulid::Ulid;
 
-use crate::actors::cooperative_indexing::{CooperativeIndexingCycle, CooperativeIndexingPeriod};
 use crate::actors::IndexSerializer;
+use crate::actors::cooperative_indexing::{CooperativeIndexingCycle, CooperativeIndexingPeriod};
 use crate::models::{
     CommitTrigger, EmptySplit, IndexedSplitBatchBuilder, IndexedSplitBuilder, NewPublishLock,
     NewPublishToken, ProcessedDoc, ProcessedDocBatch, PublishLock,
@@ -707,16 +707,16 @@ mod tests {
     use std::time::Duration;
 
     use quickwit_actors::Universe;
-    use quickwit_doc_mapper::{default_doc_mapper_for_test, DocMapper};
+    use quickwit_doc_mapper::{DocMapper, default_doc_mapper_for_test};
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
     use quickwit_proto::metastore::{
         EmptyResponse, LastDeleteOpstampResponse, MockMetastoreService,
     };
     use quickwit_proto::types::{IndexUid, NodeId, PipelineUid};
-    use tantivy::{doc, DateTime};
+    use tantivy::{DateTime, doc};
 
     use super::*;
-    use crate::actors::indexer::{record_timestamp, IndexerCounters};
+    use crate::actors::indexer::{IndexerCounters, record_timestamp};
 
     #[test]
     fn test_record_timestamp() {

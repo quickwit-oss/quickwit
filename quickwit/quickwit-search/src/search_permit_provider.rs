@@ -306,7 +306,7 @@ impl Future for SearchPermitFuture {
 
 #[cfg(test)]
 mod tests {
-    use std::iter::repeat;
+    use std::iter::repeat_n;
     use std::time::Duration;
 
     use futures::StreamExt;
@@ -320,7 +320,7 @@ mod tests {
         let permit_provider = SearchPermitProvider::new(1, ByteSize::mb(100));
         let mut all_futures = Vec::new();
         let first_batch_of_permits = permit_provider
-            .get_permits(repeat(ByteSize::mb(10)).take(10))
+            .get_permits(repeat_n(ByteSize::mb(10), 10))
             .await;
         assert_eq!(first_batch_of_permits.len(), 10);
         all_futures.extend(
@@ -331,7 +331,7 @@ mod tests {
         );
 
         let second_batch_of_permits = permit_provider
-            .get_permits(repeat(ByteSize::mb(10)).take(10))
+            .get_permits(repeat_n(ByteSize::mb(10), 10))
             .await;
         assert_eq!(second_batch_of_permits.len(), 10);
         all_futures.extend(
@@ -410,7 +410,7 @@ mod tests {
     async fn test_memory_budget() {
         let permit_provider = SearchPermitProvider::new(100, ByteSize::mb(100));
         let mut permit_futs = permit_provider
-            .get_permits(repeat(ByteSize::mb(10)).take(14))
+            .get_permits(repeat_n(ByteSize::mb(10), 14))
             .await;
         let mut remaining_permit_futs = permit_futs.split_off(10).into_iter();
         assert_eq!(remaining_permit_futs.len(), 4);
@@ -440,7 +440,7 @@ mod tests {
     async fn test_warmup_slot() {
         let permit_provider = SearchPermitProvider::new(10, ByteSize::mb(100));
         let mut permit_futs = permit_provider
-            .get_permits(repeat(ByteSize::mb(1)).take(16))
+            .get_permits(repeat_n(ByteSize::mb(1), 16))
             .await;
         let mut remaining_permit_futs = permit_futs.split_off(10).into_iter();
         assert_eq!(remaining_permit_futs.len(), 6);

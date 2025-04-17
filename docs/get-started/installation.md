@@ -32,7 +32,7 @@ Support of aarch64 is currently experimental.
 <RenderIf condition={useDocsVersion().version == 'current'}>
 
 Version: nightly - 
-License: [AGPL V3](https://github.com/quickwit-oss/quickwit/blob/main/LICENSE.md) -
+License: [Apache 2.0](https://github.com/quickwit-oss/quickwit/blob/main/LICENSE) -
 Downloads `.tar.gz`:
 - [Linux ARM64](https://github.com/quickwit-oss/quickwit/releases/download/nightly/quickwit-nightly-aarch64-unknown-linux-gnu.tar.gz)
 - [Linux x86_64](https://github.com/quickwit-oss/quickwit/releases/download/nightly/quickwit-nightly-x86_64-unknown-linux-gnu.tar.gz)
@@ -45,7 +45,7 @@ Downloads `.tar.gz`:
 <RenderIf condition={useDocsVersion().version != 'current'}>
 
 version: 0.8.1 - [Release notes](https://github.com/quickwit-oss/quickwit/releases/tag/v0.8.1) - [Changelog](https://github.com/quickwit-oss/quickwit/blob/main/CHANGELOG.md)
-License: [AGPL V3](https://github.com/quickwit-oss/quickwit/blob/main/LICENSE.md)
+License: [Apache 2.0](https://github.com/quickwit-oss/quickwit/blob/main/LICENSE)
 Downloads `.tar.gz`:
 - [Linux ARM64](https://github.com/quickwit-oss/quickwit/releases/download/v0.8.1/quickwit-v0.8.1-aarch64-unknown-linux-gnu.tar.gz)
 - [Linux x86_64](https://github.com/quickwit-oss/quickwit/releases/download/v0.8.1/quickwit-v0.8.1-x86_64-unknown-linux-gnu.tar.gz)
@@ -150,13 +150,13 @@ Once installed or extracted, all of Quickwit's installation files can be found i
 quickwit-{version}
     ├── config
     │   └── quickwit.yaml
-    ├── LICENSE_AGPLv3.0.txt
+    ├── LICENSE
     ├── quickwit
     └── qwdata
 ```
 
 - `config/quickwit.yaml`: is the default configuration file.
-- `LICENSE_AGPLv3.0.txt`: the license file.
+- `LICENSE`: the license file.
 - `quickwit`: the quickwit executable binary.
 - `qwdata/`: the default data directory.
 
@@ -176,4 +176,3 @@ docker run --rm --platform linux/amd64 quickwit/quickwit --version
 ```
 
 To get the full gist of this, follow the [Quickstart guide](./quickstart.md).
-

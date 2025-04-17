@@ -28,11 +28,11 @@ use tantivy::schema::document::CompactDocValue;
 use tantivy::schema::{Document as DocumentTrait, Field, TantivyDocument, Value};
 use tantivy::snippet::SnippetGenerator;
 use tantivy::{ReloadPolicy, Score, Searcher, Term};
-use tracing::{error, Instrument};
+use tracing::{Instrument, error};
 
 use crate::leaf::open_index_with_caches;
 use crate::service::SearcherContext;
-use crate::{convert_document_to_json_string, GlobalDocAddress};
+use crate::{GlobalDocAddress, convert_document_to_json_string};
 
 const SNIPPET_MAX_NUM_CHARS: usize = 150;
 

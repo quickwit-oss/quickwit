@@ -1,14 +1,14 @@
 use std::sync::LazyLock;
 use std::task::{Context as TaskContext, Poll};
 
-use anyhow::{bail, Context};
-use futures::future::{ready, Either, Ready};
+use anyhow::{Context, bail};
+use futures::future::{Either, Ready, ready};
 use openssl::pkey::{PKey, PKeyRef, Public};
 use openssl::x509::X509;
+use quickwit_proto::tonic::Status;
 use quickwit_proto::tonic::body::BoxBody;
 use quickwit_proto::tonic::codegen::http::{Request, Response};
 use quickwit_proto::tonic::transport::Body;
-use quickwit_proto::tonic::Status;
 use tower::{Layer, Service};
 use tracing::info;
 
@@ -139,7 +139,7 @@ pub(crate) struct AwsMtlsInterceptor<'a, S> {
     ca_cert_public_key: &'a PKeyRef<Public>,
 }
 
-impl<'a, S> Service<Request<Body>> for AwsMtlsInterceptor<'a, S>
+impl<S> Service<Request<Body>> for AwsMtlsInterceptor<'_, S>
 where S: Service<Request<Body>, Response = Response<BoxBody>>
 {
     type Response = S::Response;

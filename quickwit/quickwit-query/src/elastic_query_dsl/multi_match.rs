@@ -14,7 +14,7 @@
 
 use serde::Deserialize;
 use serde_with::formats::PreferMany;
-use serde_with::{serde_as, OneOrMany};
+use serde_with::{OneOrMany, serde_as};
 
 use super::LeniencyBool;
 use crate::elastic_query_dsl::bool_query::BoolQuery;

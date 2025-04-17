@@ -27,8 +27,8 @@ use tokio_stream::StreamMap;
 use tracing::*;
 
 use crate::cluster_client::ClusterClient;
-use crate::root::{refine_start_end_timestamp_from_ast, SearchJob};
-use crate::{list_relevant_splits, SearchError};
+use crate::root::{SearchJob, refine_start_end_timestamp_from_ast};
+use crate::{SearchError, list_relevant_splits};
 
 /// Perform a distributed search stream.
 #[instrument(skip(metastore, cluster_client))]
@@ -138,7 +138,7 @@ mod tests {
     use tokio_stream::wrappers::UnboundedReceiverStream;
 
     use super::*;
-    use crate::{searcher_pool_for_test, MockSearchService, SearchJobPlacer};
+    use crate::{MockSearchService, SearchJobPlacer, searcher_pool_for_test};
 
     #[tokio::test]
     async fn test_root_search_stream_single_split() -> anyhow::Result<()> {
@@ -156,9 +156,11 @@ mod tests {
             Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
         });
         mock_metastore.expect_list_splits().returning(move |_| {
-            let splits = vec![MockSplitBuilder::new("split1")
-                .with_index_uid(&index_uid)
-                .build()];
+            let splits = vec![
+                MockSplitBuilder::new("split1")
+                    .with_index_uid(&index_uid)
+                    .build(),
+            ];
             let splits = ListSplitsResponse::try_from_splits(splits).unwrap();
             Ok(ServiceStream::from(vec![Ok(splits)]))
         });
@@ -214,9 +216,11 @@ mod tests {
             Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
         });
         mock_metastore.expect_list_splits().returning(move |_| {
-            let splits = vec![MockSplitBuilder::new("split1")
-                .with_index_uid(&index_uid)
-                .build()];
+            let splits = vec![
+                MockSplitBuilder::new("split1")
+                    .with_index_uid(&index_uid)
+                    .build(),
+            ];
             let splits = ListSplitsResponse::try_from_splits(splits).unwrap();
             Ok(ServiceStream::from(vec![Ok(splits)]))
         });
@@ -331,9 +335,11 @@ mod tests {
             Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
         });
         mock_metastore.expect_list_splits().returning(move |_| {
-            let splits = vec![MockSplitBuilder::new("split")
-                .with_index_uid(&index_uid)
-                .build()];
+            let splits = vec![
+                MockSplitBuilder::new("split")
+                    .with_index_uid(&index_uid)
+                    .build(),
+            ];
             let splits = ListSplitsResponse::try_from_splits(splits).unwrap();
             Ok(ServiceStream::from(vec![Ok(splits)]))
         });
@@ -341,35 +347,39 @@ mod tests {
         let searcher_pool = searcher_pool_for_test([("127.0.0.1:1001", MockSearchService::new())]);
         let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let metastore = MetastoreServiceClient::from_mock(mock_metastore);
-        assert!(root_search_stream(
-            quickwit_proto::search::SearchStreamRequest {
-                index_id: "test-index".to_string(),
-                query_ast: qast_json_helper(r#"invalid_field:"test""#, &[]),
-                fast_field: "timestamp".to_string(),
-                output_format: OutputFormat::Csv as i32,
-                partition_by_field: Some("timestamp".to_string()),
-                ..Default::default()
-            },
-            metastore.clone(),
-            ClusterClient::new(search_job_placer.clone()),
-        )
-        .await
-        .is_err());
+        assert!(
+            root_search_stream(
+                quickwit_proto::search::SearchStreamRequest {
+                    index_id: "test-index".to_string(),
+                    query_ast: qast_json_helper(r#"invalid_field:"test""#, &[]),
+                    fast_field: "timestamp".to_string(),
+                    output_format: OutputFormat::Csv as i32,
+                    partition_by_field: Some("timestamp".to_string()),
+                    ..Default::default()
+                },
+                metastore.clone(),
+                ClusterClient::new(search_job_placer.clone()),
+            )
+            .await
+            .is_err()
+        );
 
-        assert!(root_search_stream(
-            quickwit_proto::search::SearchStreamRequest {
-                index_id: "test-index".to_string(),
-                query_ast: qast_json_helper("test", &["invalid_field"]),
-                fast_field: "timestamp".to_string(),
-                output_format: OutputFormat::Csv as i32,
-                partition_by_field: Some("timestamp".to_string()),
-                ..Default::default()
-            },
-            metastore,
-            ClusterClient::new(search_job_placer.clone()),
-        )
-        .await
-        .is_err());
+        assert!(
+            root_search_stream(
+                quickwit_proto::search::SearchStreamRequest {
+                    index_id: "test-index".to_string(),
+                    query_ast: qast_json_helper("test", &["invalid_field"]),
+                    fast_field: "timestamp".to_string(),
+                    output_format: OutputFormat::Csv as i32,
+                    partition_by_field: Some("timestamp".to_string()),
+                    ..Default::default()
+                },
+                metastore,
+                ClusterClient::new(search_job_placer.clone()),
+            )
+            .await
+            .is_err()
+        );
 
         Ok(())
     }

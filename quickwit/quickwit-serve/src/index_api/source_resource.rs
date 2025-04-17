@@ -14,8 +14,8 @@
 
 use bytes::Bytes;
 use quickwit_config::{
-    load_source_config_from_user_config, load_source_config_update, ConfigFormat, FileSourceParams,
-    SourceConfig, SourceParams, CLI_SOURCE_ID, INGEST_API_SOURCE_ID,
+    CLI_SOURCE_ID, ConfigFormat, FileSourceParams, INGEST_API_SOURCE_ID, SourceConfig,
+    SourceParams, load_source_config_from_user_config, load_source_config_update,
 };
 use quickwit_index_management::{IndexService, IndexServiceError};
 use quickwit_metastore::IndexMetadataResponseExt;

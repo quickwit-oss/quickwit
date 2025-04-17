@@ -12,16 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use anyhow::{bail, Context};
-use clap::{arg, Arg, ArgAction, ArgMatches, Command};
+use anyhow::{Context, bail};
+use clap::{Arg, ArgAction, ArgMatches, Command, arg};
 use quickwit_serve::EnvFilterReloadFn;
 use tracing::Level;
 
-use crate::index::{build_index_command, IndexCliCommand};
-use crate::service::{build_run_command, RunCliCommand};
-use crate::source::{build_source_command, SourceCliCommand};
-use crate::split::{build_split_command, SplitCliCommand};
-use crate::tool::{build_tool_command, ToolCliCommand};
+use crate::index::{IndexCliCommand, build_index_command};
+use crate::service::{RunCliCommand, build_run_command};
+use crate::source::{SourceCliCommand, build_source_command};
+use crate::split::{SplitCliCommand, build_split_command};
+use crate::tool::{ToolCliCommand, build_tool_command};
 
 pub fn build_cli() -> Command {
     Command::new("Quickwit")

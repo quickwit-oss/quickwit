@@ -17,13 +17,13 @@ use std::sync::Arc;
 use anyhow::Context;
 pub use prefix::{AutomatonQuery, JsonPathPrefix};
 use serde::{Deserialize, Serialize};
-use tantivy::schema::{Field, FieldType, Schema as TantivySchema};
 use tantivy::Term;
+use tantivy::schema::{Field, FieldType, Schema as TantivySchema};
 
 use super::{BuildTantivyAst, QueryAst};
 use crate::query_ast::TantivyQueryAst;
 use crate::tokenizers::TokenizerManager;
-use crate::{find_field_or_hit_dynamic, InvalidQuery};
+use crate::{InvalidQuery, find_field_or_hit_dynamic};
 
 /// A Regex query
 #[derive(PartialEq, Eq, Debug, Serialize, Deserialize, Clone)]
@@ -62,7 +62,7 @@ impl RegexQuery {
         let field_type = field_entry.field_type();
 
         match field_type {
-            FieldType::Str(ref text_options) => {
+            FieldType::Str(text_options) => {
                 text_options.get_indexing_options().ok_or_else(|| {
                     InvalidQuery::SchemaError(format!(
                         "field {} is not full-text searchable",

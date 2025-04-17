@@ -216,7 +216,7 @@ mod tests {
     use quickwit_proto::metastore::{
         DeleteIndexRequest, DeleteQuery, ListDeleteTasksRequest, MetastoreService,
     };
-    use quickwit_search::{searcher_pool_for_test, MockSearchService, SearchJobPlacer};
+    use quickwit_search::{MockSearchService, SearchJobPlacer, searcher_pool_for_test};
     use quickwit_storage::StorageResolver;
 
     use super::{DeleteTaskService, UPDATE_PIPELINES_INTERVAL};

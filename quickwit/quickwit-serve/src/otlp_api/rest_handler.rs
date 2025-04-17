@@ -23,7 +23,7 @@ use quickwit_proto::opentelemetry::proto::collector::trace::v1::{
     ExportTraceServiceRequest, ExportTraceServiceResponse,
 };
 use quickwit_proto::types::IndexId;
-use quickwit_proto::{tonic, ServiceError, ServiceErrorCode};
+use quickwit_proto::{ServiceError, ServiceErrorCode, tonic};
 use serde::{self, Serialize};
 use tracing::error;
 use warp::{Filter, Rejection};
@@ -31,7 +31,7 @@ use warp::{Filter, Rejection};
 use crate::decompression::get_body_bytes;
 use crate::rest::recover_fn;
 use crate::rest_api_response::into_rest_api_response;
-use crate::{require, with_arg, Body, BodyFormat};
+use crate::{Body, BodyFormat, require, with_arg};
 
 #[derive(utoipa::OpenApi)]
 #[openapi(paths(
@@ -246,12 +246,12 @@ async fn otlp_ingest_traces(
 mod tests {
     use std::io::Write;
 
-    use flate2::write::GzEncoder;
     use flate2::Compression;
+    use flate2::write::GzEncoder;
     use prost::Message;
     use quickwit_ingest::CommitType;
     use quickwit_opentelemetry::otlp::{
-        make_resource_spans_for_test, OtlpGrpcLogsService, OtlpGrpcTracesService,
+        OtlpGrpcLogsService, OtlpGrpcTracesService, make_resource_spans_for_test,
     };
     use quickwit_proto::ingest::router::{
         IngestResponseV2, IngestRouterServiceClient, IngestSuccess, MockIngestRouterService,

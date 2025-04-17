@@ -13,8 +13,8 @@
 // limitations under the License.
 
 use std::fmt::Debug;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use tokio::sync::{Mutex, MutexGuard};
 
@@ -106,9 +106,11 @@ mod tests {
         assert!(lock.is_alive());
 
         let guard = lock.acquire().await.unwrap();
-        assert!(timeout(Duration::from_millis(50), lock.kill())
-            .await
-            .is_err());
+        assert!(
+            timeout(Duration::from_millis(50), lock.kill())
+                .await
+                .is_err()
+        );
         drop(guard);
 
         lock.kill().await;

@@ -16,7 +16,7 @@ use std::fmt;
 use std::marker::PhantomData;
 
 use serde::de::{MapAccess, Visitor};
-use serde::{de, Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, de};
 
 /// The point of `StringOrStructForSerialization` is to support
 /// the two following formats for various queries.

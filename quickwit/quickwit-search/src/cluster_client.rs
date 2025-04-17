@@ -24,14 +24,14 @@ use quickwit_proto::search::{
 };
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tokio::sync::mpsc::error::SendError;
-use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
+use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{debug, error, info, warn};
 
 use crate::retry::search::LeafSearchRetryPolicy;
 use crate::retry::search_stream::{LeafSearchStreamRetryPolicy, SuccessfulSplitIds};
-use crate::retry::{retry_client, DefaultRetryPolicy, RetryPolicy};
-use crate::{merge_resource_stats_it, SearchError, SearchJobPlacer, SearchServiceClient};
+use crate::retry::{DefaultRetryPolicy, RetryPolicy, retry_client};
+use crate::{SearchError, SearchJobPlacer, SearchServiceClient, merge_resource_stats_it};
 
 /// Maximum number of put requests emitted to perform a replicated given PUT KV.
 const MAX_PUT_KV_ATTEMPTS: usize = 6;
@@ -191,9 +191,12 @@ impl ClusterClient {
         client.leaf_list_terms(request.clone()).await
     }
 
-    /// Attempts to store a given search context within the cluster.
+    /// Attempts to store a given key value pair within the cluster.
     ///
-    /// This function may fail silently, if no clients was available.
+    /// Tries to replicate the pair to [`TARGET_NUM_REPLICATION`] nodes, but this function may fail
+    /// silently (e.g if no client was available). Even in case of success, this storage is not
+    /// persistent. For instance during a rolling upgrade, all replicas will be lost as there is no
+    /// mechanism to maintain the replication count.
     pub async fn put_kv(&self, key: &[u8], payload: &[u8], ttl: Duration) {
         let clients: Vec<SearchServiceClient> = self
             .search_job_placer
@@ -216,8 +219,8 @@ impl ClusterClient {
         // course, this may still result in the replication over more nodes, but this is not
         // a problem.
         //
-        // The requests are made in a concurrent manner, up to two at a time. As soon as 2 requests
-        // are successful, we stop.
+        // The requests are made in a concurrent manner, up to TARGET_NUM_REPLICATION at a time. As
+        // soon as TARGET_NUM_REPLICATION requests are successful, we stop.
         let put_kv_futs = clients
             .into_iter()
             .map(|client| replicate_kv_to_one_server(client, key, payload, ttl));
@@ -383,7 +386,7 @@ mod tests {
 
     use super::*;
     use crate::root::SearchJob;
-    use crate::{searcher_pool_for_test, MockSearchService};
+    use crate::{MockSearchService, searcher_pool_for_test};
 
     fn mock_partial_hit(split_id: &str, sort_value: u64, doc_id: u32) -> PartialHit {
         PartialHit {

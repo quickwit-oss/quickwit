@@ -104,7 +104,7 @@ impl RetryParams {
         let delay_ms = (self.base_delay.as_millis() as u64)
             .saturating_mul(2u64.saturating_pow(num_attempts as u32 - 1));
         let capped_delay_ms = delay_ms.min(self.max_delay.as_millis() as u64);
-        let half_delay_ms = (capped_delay_ms + 1) / 2;
+        let half_delay_ms = capped_delay_ms.div_ceil(2);
         let jitter_range = half_delay_ms..capped_delay_ms + 1;
         let jittered_delay_ms = rand::thread_rng().gen_range(jitter_range);
         Duration::from_millis(jittered_delay_ms)
@@ -192,7 +192,7 @@ mod tests {
 
     use futures::future::ready;
 
-    use super::{retry_with_mockable_sleep, MockableSleep, RetryParams, Retryable};
+    use super::{MockableSleep, RetryParams, Retryable, retry_with_mockable_sleep};
 
     #[derive(Debug, Eq, PartialEq)]
     pub enum Retry<E> {

@@ -15,7 +15,7 @@
 use std::collections::HashMap;
 use std::io::BufRead;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use new_string_template::template::Template;
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -95,22 +95,34 @@ mod test {
 
     #[test]
     fn test_template_render() {
+        // SAFETY: this test may not be entirely sound if not run with nextest or --test-threads=1
+        // as this is only a test, and it would be extremly inconvenient to run it in a different
+        // way, we are keeping it that way
+
         let config_content = b"metastore_uri: ${TEST_TEMPLATE_RENDER_ENV_VAR_PLEASE_DONT_NOTICE}";
-        env::set_var(
-            "TEST_TEMPLATE_RENDER_ENV_VAR_PLEASE_DONT_NOTICE",
-            "s3://test-bucket/metastore",
-        );
+        unsafe {
+            env::set_var(
+                "TEST_TEMPLATE_RENDER_ENV_VAR_PLEASE_DONT_NOTICE",
+                "s3://test-bucket/metastore",
+            )
+        };
         let rendered = render_config(config_content).unwrap();
-        std::env::remove_var("TEST_TEMPLATE_RENDER_ENV_VAR_PLEASE_DONT_NOTICE");
+        unsafe { std::env::remove_var("TEST_TEMPLATE_RENDER_ENV_VAR_PLEASE_DONT_NOTICE") };
         assert_eq!(rendered, "metastore_uri: s3://test-bucket/metastore");
     }
 
     #[test]
     fn test_template_render_supports_whitespaces() {
-        env::set_var(
-            "TEST_TEMPLATE_RENDER_WHITESPACE_QW_TEST",
-            "s3://test-bucket/metastore",
-        );
+        // SAFETY: this test may not be entirely sound if not run with nextest or --test-threads=1
+        // as this is only a test, and it would be extremly inconvenient to run it in a different
+        // way, we are keeping it that way
+
+        unsafe {
+            env::set_var(
+                "TEST_TEMPLATE_RENDER_WHITESPACE_QW_TEST",
+                "s3://test-bucket/metastore",
+            )
+        };
         {
             let config_content = b"metastore_uri: ${  TEST_TEMPLATE_RENDER_WHITESPACE_QW_TEST  }";
             let rendered = render_config(config_content).unwrap();
@@ -142,28 +154,42 @@ mod test {
 
     #[test]
     fn test_template_render_with_default_use_env() {
+        // SAFETY: this test may not be entirely sound if not run with nextest or --test-threads=1
+        // as this is only a test, and it would be extremly inconvenient to run it in a different
+        // way, we are keeping it that way
+
         let config_content =
             b"metastore_uri: ${TEST_TEMPLATE_RENDER_ENV_VAR_DEFAULT_USE_ENV:-s3://test-bucket/wrongbucket}";
-        env::set_var(
-            "TEST_TEMPLATE_RENDER_ENV_VAR_DEFAULT_USE_ENV",
-            "s3://test-bucket/metastore",
-        );
+        unsafe {
+            env::set_var(
+                "TEST_TEMPLATE_RENDER_ENV_VAR_DEFAULT_USE_ENV",
+                "s3://test-bucket/metastore",
+            )
+        };
         let rendered = render_config(config_content).unwrap();
-        std::env::remove_var("TEST_TEMPLATE_RENDER_ENV_VAR_DEFAULT_USE_ENV");
+        unsafe { std::env::remove_var("TEST_TEMPLATE_RENDER_ENV_VAR_DEFAULT_USE_ENV") };
         assert_eq!(rendered, "metastore_uri: s3://test-bucket/metastore");
     }
 
     #[test]
     fn test_template_render_with_multiple_vars_per_line() {
+        // SAFETY: this test may not be entirely sound if not run with nextest or --test-threads=1
+        // as this is only a test, and it would be extremly inconvenient to run it in a different
+        // way, we are keeping it that way
+
         let config_content =
             b"metastore_uri: s3://${RENDER_MULTIPLE_BUCKET}/${RENDER_MULTIPLE_PREFIX:-index}#polling_interval=${RENDER_MULTIPLE_INTERVAL}s";
-        env::set_var("RENDER_MULTIPLE_BUCKET", "test-bucket");
-        env::set_var("RENDER_MULTIPLE_PREFIX", "metastore");
-        env::set_var("RENDER_MULTIPLE_INTERVAL", "30");
+        unsafe {
+            env::set_var("RENDER_MULTIPLE_BUCKET", "test-bucket");
+            env::set_var("RENDER_MULTIPLE_PREFIX", "metastore");
+            env::set_var("RENDER_MULTIPLE_INTERVAL", "30");
+        }
         let rendered = render_config(config_content).unwrap();
-        std::env::remove_var("RENDER_MULTIPLE_BUCKET");
-        std::env::remove_var("RENDER_MULTIPLE_PREFIX");
-        std::env::remove_var("RENDER_MULTIPLE_INTERVAL");
+        unsafe {
+            std::env::remove_var("RENDER_MULTIPLE_BUCKET");
+            std::env::remove_var("RENDER_MULTIPLE_PREFIX");
+            std::env::remove_var("RENDER_MULTIPLE_INTERVAL");
+        }
         assert_eq!(
             rendered,
             "metastore_uri: s3://test-bucket/metastore#polling_interval=30s"

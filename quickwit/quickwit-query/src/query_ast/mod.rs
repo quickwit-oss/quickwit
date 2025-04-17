@@ -41,8 +41,8 @@ pub use regex_query::{AutomatonQuery, JsonPathPrefix, RegexQuery};
 use tantivy_query_ast::TantivyQueryAst;
 pub use term_query::TermQuery;
 pub use term_set_query::TermSetQuery;
-pub use user_input_query::UserInputQuery;
 pub(crate) use user_input_query::DEFAULT_PHRASE_QUERY_MAX_EXPANSION;
+pub use user_input_query::UserInputQuery;
 pub use visitor::{QueryAstTransformer, QueryAstVisitor};
 pub use wildcard_query::WildcardQuery;
 
@@ -333,9 +333,9 @@ pub fn query_ast_from_user_text(user_text: &str, default_fields: Option<Vec<Stri
 mod tests {
     use crate::query_ast::tantivy_query_ast::TantivyQueryAst;
     use crate::query_ast::{
-        query_ast_from_user_text, BoolQuery, BuildTantivyAst, QueryAst, UserInputQuery,
+        BoolQuery, BuildTantivyAst, QueryAst, UserInputQuery, query_ast_from_user_text,
     };
-    use crate::{create_default_quickwit_tokenizer_manager, BooleanOperand, InvalidQuery};
+    use crate::{BooleanOperand, InvalidQuery, create_default_quickwit_tokenizer_manager};
 
     #[test]
     fn test_user_query_not_parsed() {

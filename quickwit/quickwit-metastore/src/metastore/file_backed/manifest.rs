@@ -18,7 +18,7 @@ use std::path::Path;
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexTemplate, IndexTemplateId};
-use quickwit_proto::metastore::{serde_utils, MetastoreError, MetastoreResult};
+use quickwit_proto::metastore::{MetastoreError, MetastoreResult, serde_utils};
 use quickwit_proto::types::{DocMappingUid, IndexId};
 use quickwit_storage::{OwnedBytes, Storage, StorageError, StorageErrorKind, StorageResult};
 use serde::{Deserialize, Serialize};

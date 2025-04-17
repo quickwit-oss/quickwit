@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::ProcessedLog;
 use crate::error::PipelineError;
 use crate::path_access::*;
 use crate::pipeline::*;
 use crate::processed_log::try_parse_and_update_timestamp;
-use crate::ProcessedLog;
 
 /// A step that tries to parse a timestamp and set it as the log's timestamp.
 #[derive(Debug)]

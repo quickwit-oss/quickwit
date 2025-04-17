@@ -13,8 +13,8 @@
 // limitations under the License.
 
 use std::cmp::Reverse;
-use std::collections::binary_heap::PeekMut;
 use std::collections::BinaryHeap;
+use std::collections::binary_heap::PeekMut;
 use std::sync::Arc;
 
 use anyhow::Context;
@@ -415,12 +415,14 @@ mod tests {
                 merge_task2.merge_operation.splits[0].footer_offsets.end,
                 3_000_000
             );
-            assert!(timeout(
-                Duration::from_millis(200),
-                merge_split_downloader_inbox.recv_typed_message::<MergeTask>()
-            )
-            .await
-            .is_err());
+            assert!(
+                timeout(
+                    Duration::from_millis(200),
+                    merge_split_downloader_inbox.recv_typed_message::<MergeTask>()
+                )
+                .await
+                .is_err()
+            );
         }
         {
             let merge_task: MergeTask = merge_split_downloader_inbox

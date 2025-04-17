@@ -15,15 +15,15 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use serde::{Deserialize, Serialize};
-use tantivy::schema::{Field, FieldType, Schema as TantivySchema};
 use tantivy::Term;
+use tantivy::schema::{Field, FieldType, Schema as TantivySchema};
 
 use super::{BuildTantivyAst, QueryAst};
 use crate::query_ast::{AutomatonQuery, JsonPathPrefix, TantivyQueryAst};
 use crate::tokenizers::TokenizerManager;
-use crate::{find_field_or_hit_dynamic, InvalidQuery};
+use crate::{InvalidQuery, find_field_or_hit_dynamic};
 
 /// A Wildcard query allows to match 'bond' with a query like 'b*d'.
 #[derive(PartialEq, Eq, Debug, Serialize, Deserialize, Clone)]
@@ -123,7 +123,7 @@ impl WildcardQuery {
         let sub_query_parts = parse_wildcard_query(&self.value);
 
         match field_type {
-            FieldType::Str(ref text_options) => {
+            FieldType::Str(text_options) => {
                 let text_field_indexing = text_options.get_indexing_options().ok_or_else(|| {
                     InvalidQuery::SchemaError(format!(
                         "field {} is not full-text searchable",
@@ -180,7 +180,7 @@ impl BuildTantivyAst for WildcardQuery {
         let (field, path, regex) = match self.to_regex(schema, tokenizer_manager) {
             Ok(res) => res,
             Err(InvalidQuery::FieldDoesNotExist { .. }) if self.lenient => {
-                return Ok(TantivyQueryAst::match_none())
+                return Ok(TantivyQueryAst::match_none());
             }
             Err(e) => return Err(e),
         };

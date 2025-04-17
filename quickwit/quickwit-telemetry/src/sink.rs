@@ -15,8 +15,8 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
-use reqwest::redirect::Policy;
 use reqwest::Client;
+use reqwest::redirect::Policy;
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::payload::TelemetryPayload;

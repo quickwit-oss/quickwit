@@ -22,8 +22,8 @@ use std::{fmt, io};
 use async_trait::async_trait;
 use azure_core::error::ErrorKind;
 use azure_core::{Pageable, StatusCode};
-use azure_storage::prelude::*;
 use azure_storage::Error as AzureError;
+use azure_storage::prelude::*;
 use azure_storage_blobs::blob::operations::GetBlobResponse;
 use azure_storage_blobs::prelude::*;
 use bytes::Bytes;
@@ -31,7 +31,7 @@ use futures::io::{Error as FutureError, ErrorKind as FutureErrorKind};
 use futures::stream::{StreamExt, TryStreamExt};
 use md5::Digest;
 use once_cell::sync::OnceCell;
-use quickwit_common::retry::{retry, RetryParams, Retryable};
+use quickwit_common::retry::{RetryParams, Retryable, retry};
 use quickwit_common::uri::Uri;
 use quickwit_common::{chunk_range, ignore_error_kind, into_u64_range};
 use quickwit_config::{AzureStorageConfig, StorageBackend};
@@ -47,8 +47,8 @@ use crate::debouncer::DebouncedStorage;
 use crate::metrics::object_storage_get_slice_in_flight_guards;
 use crate::storage::SendableAsync;
 use crate::{
-    BulkDeleteError, DeleteFailure, MultiPartPolicy, PutPayload, Storage, StorageError,
-    StorageErrorKind, StorageFactory, StorageResolverError, StorageResult, STORAGE_METRICS,
+    BulkDeleteError, DeleteFailure, MultiPartPolicy, PutPayload, STORAGE_METRICS, Storage,
+    StorageError, StorageErrorKind, StorageFactory, StorageResolverError, StorageResult,
 };
 
 /// Azure object storage resolver.

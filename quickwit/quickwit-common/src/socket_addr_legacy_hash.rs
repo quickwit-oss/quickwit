@@ -33,7 +33,7 @@ use std::net::SocketAddr;
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub struct SocketAddrLegacyHash<'a>(pub &'a SocketAddr);
 
-impl<'a> std::hash::Hash for SocketAddrLegacyHash<'a> {
+impl std::hash::Hash for SocketAddrLegacyHash<'_> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         std::mem::discriminant(self.0).hash(state);
         match self.0 {

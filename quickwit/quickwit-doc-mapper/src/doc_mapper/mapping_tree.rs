@@ -21,11 +21,11 @@ use anyhow::bail;
 use itertools::Itertools;
 use serde_json::Value as JsonValue;
 use serde_json_borrow::{Map as BorrowedJsonMap, Value as BorrowedJsonValue};
+use tantivy::TantivyDocument as Document;
 use tantivy::schema::{
     BytesOptions, DateOptions, Field, IntoIpv6Addr, IpAddrOptions, JsonObjectOptions,
     NumericOptions, OwnedValue as TantivyValue, SchemaBuilder, TextOptions,
 };
-use tantivy::TantivyDocument as Document;
 
 use super::date_time_type::QuickwitDateTimeOptions;
 use super::field_mapping_entry::QuickwitBoolOptions;
@@ -772,18 +772,18 @@ impl MappingNode {
     /// Finds the field mapping type for a given field path in the mapping tree.
     /// Dots in `field_path_as_str` define the boundaries between field names.
     /// If a dot is part of a field name, it must be escaped with '\'.
-    pub fn find_field_mapping_leaf(
-        &mut self,
+    pub fn find_field_mapping_leaf<'a>(
+        &'a mut self,
         field_path_as_str: &str,
-    ) -> Option<impl Iterator<Item = &mut MappingLeaf>> {
+    ) -> Option<impl Iterator<Item = &'a mut MappingLeaf> + use<'a>> {
         let field_path = build_field_path_from_str(field_path_as_str);
         self.internal_find_field_mapping_leaf(&field_path)
     }
 
-    fn internal_find_field_mapping_leaf(
-        &mut self,
+    fn internal_find_field_mapping_leaf<'a>(
+        &'a mut self,
         field_path: &[String],
-    ) -> Option<impl Iterator<Item = &mut MappingLeaf>> {
+    ) -> Option<impl Iterator<Item = &'a mut MappingLeaf> + use<'a>> {
         let (first_path_fragment, sub_field_path) = field_path.split_first()?;
         let child_tree = self.branches.get_mut(first_path_fragment)?;
         match (child_tree, sub_field_path.is_empty()) {
@@ -1327,22 +1327,22 @@ fn build_mapping_from_field_type<'a>(
 mod tests {
     use std::net::IpAddr;
 
-    use serde_json::{json, Value as JsonValue};
+    use serde_json::{Value as JsonValue, json};
     use tantivy::schema::{Field, IntoIpv6Addr, OwnedValue as TantivyValue, Value};
     use tantivy::{DateTime, TantivyDocument as Document};
-    use time::macros::datetime;
     use time::OffsetDateTime;
+    use time::macros::datetime;
 
     use super::{
-        add_key_to_vec_map, extract_val_from_tantivy_val, JsonValueIterator, LeafType,
-        MapOrArrayIter, MappingLeaf,
+        JsonValueIterator, LeafType, MapOrArrayIter, MappingLeaf, add_key_to_vec_map,
+        extract_val_from_tantivy_val,
     };
+    use crate::Cardinality;
     use crate::doc_mapper::date_time_type::QuickwitDateTimeOptions;
     use crate::doc_mapper::field_mapping_entry::{
         BinaryFormat, QuickwitBoolOptions, QuickwitBytesOptions, QuickwitIpAddrOptions,
         QuickwitNumericOptions, QuickwitTextOptions,
     };
-    use crate::Cardinality;
 
     #[test]
     fn test_field_name_from_field_path() {

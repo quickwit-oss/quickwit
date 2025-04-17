@@ -14,4 +14,4 @@
 
 mod rest_handler;
 
-pub(crate) use rest_handler::{index_template_api_handlers, IndexTemplateApi};
+pub(crate) use rest_handler::{IndexTemplateApi, index_template_api_handlers};

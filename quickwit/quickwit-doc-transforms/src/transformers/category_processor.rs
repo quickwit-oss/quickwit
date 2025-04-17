@@ -15,10 +15,10 @@
 use serde_json::Value;
 use vrl::datadog_filter::Matcher;
 
+use crate::ProcessedLog;
 use crate::error::PipelineError;
 use crate::path_access::*;
 use crate::pipeline::*;
-use crate::ProcessedLog;
 
 /// A step that copies a value from `custom` to a new location, optionally removing the original.
 #[derive(Debug)]

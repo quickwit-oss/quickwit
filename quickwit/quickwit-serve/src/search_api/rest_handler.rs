@@ -16,25 +16,25 @@ use std::convert::TryFrom;
 use std::sync::Arc;
 
 use futures::stream::StreamExt;
-use hyper::header::HeaderValue;
 use hyper::HeaderMap;
+use hyper::header::HeaderValue;
 use percent_encoding::percent_decode_str;
 use quickwit_config::validate_index_id_pattern;
+use quickwit_proto::ServiceError;
 use quickwit_proto::search::{CountHits, OutputFormat, SortField, SortOrder};
 use quickwit_proto::types::IndexId;
-use quickwit_proto::ServiceError;
 use quickwit_query::query_ast::query_ast_from_user_text;
 use quickwit_search::{SearchError, SearchPlanResponseRest, SearchResponseRest, SearchService};
-use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 use serde_json::Value as JsonValue;
 use tracing::info;
-use warp::hyper::header::CONTENT_TYPE;
 use warp::hyper::StatusCode;
-use warp::{reply, Filter, Rejection, Reply};
+use warp::hyper::header::CONTENT_TYPE;
+use warp::{Filter, Rejection, Reply, reply};
 
 use crate::rest_api_response::into_rest_api_response;
 use crate::simple_list::{from_simple_list, to_simple_list};
-use crate::{with_arg, BodyFormat};
+use crate::{BodyFormat, with_arg};
 
 #[derive(utoipa::OpenApi)]
 #[openapi(
@@ -321,16 +321,16 @@ async fn search_endpoint(
     Ok(search_response_rest)
 }
 
-fn search_get_filter(
-) -> impl Filter<Extract = (Vec<String>, SearchRequestQueryString), Error = Rejection> + Clone {
+fn search_get_filter()
+-> impl Filter<Extract = (Vec<String>, SearchRequestQueryString), Error = Rejection> + Clone {
     warp::path!(String / "search")
         .and_then(extract_index_id_patterns)
         .and(warp::get())
         .and(serde_qs::warp::query(serde_qs::Config::default()))
 }
 
-fn search_post_filter(
-) -> impl Filter<Extract = (Vec<String>, SearchRequestQueryString), Error = Rejection> + Clone {
+fn search_post_filter()
+-> impl Filter<Extract = (Vec<String>, SearchRequestQueryString), Error = Rejection> + Clone {
     warp::path!(String / "search")
         .and_then(extract_index_id_patterns)
         .and(warp::post())
@@ -338,16 +338,16 @@ fn search_post_filter(
         .and(warp::body::json())
 }
 
-fn search_plan_get_filter(
-) -> impl Filter<Extract = (Vec<String>, SearchRequestQueryString), Error = Rejection> + Clone {
+fn search_plan_get_filter()
+-> impl Filter<Extract = (Vec<String>, SearchRequestQueryString), Error = Rejection> + Clone {
     warp::path!(String / "search-plan")
         .and_then(extract_index_id_patterns)
         .and(warp::get())
         .and(serde_qs::warp::query(serde_qs::Config::default()))
 }
 
-fn search_plan_post_filter(
-) -> impl Filter<Extract = (Vec<String>, SearchRequestQueryString), Error = Rejection> + Clone {
+fn search_plan_post_filter()
+-> impl Filter<Extract = (Vec<String>, SearchRequestQueryString), Error = Rejection> + Clone {
     warp::path!(String / "search-plan")
         .and_then(extract_index_id_patterns)
         .and(warp::post())
@@ -612,8 +612,8 @@ async fn search_stream(
     reply::with_header(reply, CONTENT_TYPE, content_type)
 }
 
-fn search_stream_filter(
-) -> impl Filter<Extract = (String, SearchStreamRequestQueryString), Error = Rejection> + Clone {
+fn search_stream_filter()
+-> impl Filter<Extract = (String, SearchStreamRequestQueryString), Error = Rejection> + Clone {
     warp::path!(String / "search" / "stream")
         .and(warp::get())
         .and(serde_qs::warp::query(serde_qs::Config::default()))
@@ -625,7 +625,7 @@ mod tests {
     use bytes::Bytes;
     use mockall::predicate;
     use quickwit_search::{MockSearchService, SearchError};
-    use serde_json::{json, Value as JsonValue};
+    use serde_json::{Value as JsonValue, json};
 
     use super::*;
     use crate::recover_fn;
@@ -1034,12 +1034,14 @@ mod tests {
             .await;
         assert_eq!(resp.status(), 400);
         let resp_json: JsonValue = serde_json::from_slice(resp.body()).unwrap();
-        assert!(resp_json
-            .get("message")
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .contains("unknown field `end_unix_timestamp`"));
+        assert!(
+            resp_json
+                .get("message")
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .contains("unknown field `end_unix_timestamp`")
+        );
     }
 
     #[tokio::test]

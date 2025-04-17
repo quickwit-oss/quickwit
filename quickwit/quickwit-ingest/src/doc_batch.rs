@@ -165,7 +165,6 @@ impl DocBatchBuilder {
 }
 
 /// A wrapper around batch builder that can add a Serialize structs
-
 pub struct JsonDocBatchBuilder {
     index_id: IndexId,
     doc_buffer: Writer<BytesMut>,

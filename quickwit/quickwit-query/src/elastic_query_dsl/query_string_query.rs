@@ -15,10 +15,10 @@
 use serde::Deserialize;
 
 use super::LeniencyBool;
+use crate::BooleanOperand;
 use crate::elastic_query_dsl::ConvertibleToQueryAst;
 use crate::not_nan_f32::NotNaNf32;
 use crate::query_ast::UserInputQuery;
-use crate::BooleanOperand;
 
 #[derive(Deserialize, Debug, Eq, PartialEq, Clone)]
 #[serde(deny_unknown_fields)]
@@ -61,9 +61,9 @@ impl ConvertibleToQueryAst for QueryStringQuery {
 
 #[cfg(test)]
 mod tests {
+    use crate::BooleanOperand;
     use crate::elastic_query_dsl::{ConvertibleToQueryAst, QueryStringQuery};
     use crate::query_ast::{QueryAst, UserInputQuery};
-    use crate::BooleanOperand;
 
     #[test]
     fn test_build_query_string_query_with_fields_non_empty() {
