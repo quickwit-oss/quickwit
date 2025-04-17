@@ -88,8 +88,8 @@ async-trait = "0.1"
 base64 = "0.22"
 binggan = { version = "0.14" }
 bytes = { version = "1", features = ["serde"] }
-bytesize = { version = "1.3.0", features = ["serde"] }
-bytestring = "1.3.0"
+bytesize = { version = "1.3.3", features = ["serde"] }
+bytestring = "1.4.0"
 chitchat = { git = "https://github.com/quickwit-oss/chitchat.git", rev = "13968f0" }
 chrono = { version = "0.4", default-features = false, features = [
   "clock",
@@ -97,7 +97,7 @@ chrono = { version = "0.4", default-features = false, features = [
 ] }
 clap = { version = "4.5.0", features = ["env", "string"] }
 coarsetime = "0.1.33"
-colored = "2.1.0"
+colored = "2.2.0"
 console-subscriber = "0.1.8"
 criterion = { version = "0.5", features = ["async_tokio"] }
 cron = "0.12.0"
@@ -117,13 +117,13 @@ google-cloud-auth = "0.12.0"
 google-cloud-gax = "0.15.0"
 google-cloud-googleapis = { version = "0.10.0", features = ["pubsub"] }
 google-cloud-pubsub = "0.18.0"
-heck = "0.4.1"
+heck = "0.5.0"
 hex = "0.4.3"
 home = "0.5.4"
-hostname = "0.3"
-http = "0.2.9"
-http-serde = "1.1.2"
-humantime = "2.1.0"
+hostname = "0.4"
+http = "1.1.0"
+http-serde = "2.1.1"
+humantime = "2.2.0"
 hyper = { version = "0.14", features = [
   "client",
   "http1",
@@ -132,10 +132,10 @@ hyper = { version = "0.14", features = [
   "stream",
   "tcp",
 ] }
-hyper-rustls = "0.24"
-indexmap = { version = "2.1.0", features = ["serde"] }
+hyper-rustls = "0.27"
+indexmap = { version = "2.9.0", features = ["serde"] }
 indicatif = "0.17.3"
-itertools = "0.13"
+itertools = "0.14"
 json_comments = "0.2"
 libz-sys = "1.1.8"
 lru = "0.13"
@@ -168,7 +168,7 @@ ouroboros = "0.18.0"
 percent-encoding = "2.3.1"
 pin-project = "1.1.0"
 pnet = { version = "0.33.0", features = ["std"] }
-postcard = { version = "1.0.4", features = [
+postcard = { version = "1.1.1", features = [
   "use-std",
 ], default-features = false }
 predicates = "3"
@@ -177,18 +177,18 @@ pprof = { version = "0.13", features = ["flamegraph"] }
 proc-macro2 = "1.0.50"
 prometheus = { version = "0.13", features = ["process"] }
 proptest = "1"
-prost = { version = "0.11.6", default-features = false, features = [
+prost = { version = "0.13.3", default-features = false, features = [
   "prost-derive",
 ] }
 prost-build = "0.11.6"
-prost-types = "0.11.6"
+prost-types = "0.13.3"
 pulsar = { version = "6.3", default-features = false, features = [
   "auth-oauth2",
   "compression",
   "tokio-runtime",
 ] }
 quote = "1.0.23"
-rand = "0.8"
+rand = "0.9"
 rand_distr = "0.4"
 rayon = "1.10"
 rdkafka = { version = "0.33", default-features = false, features = [
@@ -200,13 +200,13 @@ rdkafka = { version = "0.33", default-features = false, features = [
 ] }
 regex = "1.10.0"
 regex-syntax = "0.8"
-reqwest = { version = "0.11", default-features = false, features = [
+reqwest = { version = "0.12", default-features = false, features = [
   "json",
   "rustls-tls",
 ] }
 rust-embed = "6.8.1"
-rustls = "0.21"
-rustls-pemfile = "1.0.0"
+rustls = "0.23"
+rustls-pemfile = "2.2.0"
 sea-query = { version = "0.30" }
 sea-query-binder = { version = "0.5", features = [
   "runtime-tokio-rustls",
@@ -217,7 +217,7 @@ serde = { version = "1.0.184", features = ["derive", "rc"] }
 serde_json = "1.0"
 serde_json_borrow = "0.5"
 serde_qs = { version = "0.12", features = ["warp"] }
-serde_with = "3.9.0"
+serde_with = "3.12.0"
 serde_yaml = "0.9"
 serial_test = { version = "3.1.1", features = ["file_locks"] }
 siphasher = "0.3"
@@ -229,26 +229,26 @@ sqlx = { version = "0.7", features = [
   "time",
 ] }
 syn = { version = "2.0.11", features = ["extra-traits", "full", "parsing"] }
-sync_wrapper = "0.1.2"
+sync_wrapper = "1.0.2"
 sysinfo = "0.33.1"
 tabled = { version = "0.14", features = ["color"] }
 tempfile = "3"
-thiserror = "1"
+thiserror = "2"
 thousands = "0.2.0"
 tikv-jemalloc-ctl = "0.5"
 tikv-jemallocator = "0.5"
 time = { version = "0.3", features = ["std", "formatting", "macros"] }
-tokio = { version = "1.40", features = ["full"] }
+tokio = { version = "1.44", features = ["full"] }
 tokio-metrics = { version = "0.3.1", features = ["rt"] }
-tokio-rustls = { version = "0.24.0", default-features = false }
+tokio-rustls = { version = "0.26.1", default-features = false }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-util = { version = "0.7", features = ["full"] }
 toml = "0.7.6"
-tonic = { version = "0.9.0", features = ["gzip"] }
+tonic = { version = "0.12.3", features = ["gzip"] }
 tonic-build = "0.9.0"
 tonic-health = "0.9.0"
 tonic-reflection = "0.9" 
-tower = { version = "0.4.13", features = [
+tower = { version = "0.5.2", features = [
   "balance",
   "buffer",
   "load",
@@ -270,10 +270,10 @@ tracing-subscriber = { version = "0.3", features = [
 ] }
 ttl_cache = "0.5"
 typetag = "0.2"
-ulid = "1.1"
+ulid = "1.2"
 username = "0.2"
 utoipa = { version = "4.2", features = ["time", "ulid"] }
-uuid = { version = "1.10", features = ["v4", "serde"] }
+uuid = { version = "1.16", features = ["v4", "serde"] }
 vrl = { version = "0.22", default-features = false, features = [
   "compiler",
   "diagnostic",
