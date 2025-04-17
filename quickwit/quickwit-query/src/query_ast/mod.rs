@@ -41,8 +41,8 @@ pub use regex_query::{AutomatonQuery, JsonPathPrefix, RegexQuery};
 use tantivy_query_ast::TantivyQueryAst;
 pub use term_query::TermQuery;
 pub use term_set_query::TermSetQuery;
-pub use user_input_query::UserInputQuery;
 pub(crate) use user_input_query::DEFAULT_PHRASE_QUERY_MAX_EXPANSION;
+pub use user_input_query::UserInputQuery;
 pub use visitor::{QueryAstTransformer, QueryAstVisitor};
 pub use wildcard_query::WildcardQuery;
 

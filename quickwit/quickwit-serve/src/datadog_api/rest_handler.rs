@@ -16,10 +16,10 @@ use quickwit_common::rate_limited_error;
 use quickwit_config::INGEST_V2_SOURCE_ID;
 use quickwit_doc_transforms::{DatadogLogMsg, ProcessedLog};
 use quickwit_ingest::DocBatchV2Builder;
+use quickwit_proto::ingest::CommitTypeV2;
 use quickwit_proto::ingest::router::{
     IngestRequestV2, IngestRouterService, IngestRouterServiceClient, IngestSubrequest,
 };
-use quickwit_proto::ingest::CommitTypeV2;
 use quickwit_proto::types::{DocUidGenerator, IndexId};
 use quickwit_proto::{ServiceError, ServiceErrorCode};
 use serde::{self, Serialize};
@@ -28,7 +28,7 @@ use warp::{Filter, Rejection};
 
 use crate::decompression::get_body_bytes;
 use crate::rest_api_response::into_rest_api_response;
-use crate::{with_arg, Body, BodyFormat};
+use crate::{Body, BodyFormat, with_arg};
 
 const DATADOG_INDEX_ID: &str = "datadog";
 

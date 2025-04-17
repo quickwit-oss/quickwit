@@ -14,5 +14,5 @@
 
 mod rest_handler;
 
-pub(crate) use rest_handler::datadog_ingest_api_handlers;
 pub use rest_handler::DatadogApi;
+pub(crate) use rest_handler::datadog_ingest_api_handlers;

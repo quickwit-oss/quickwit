@@ -3,7 +3,7 @@ use std::time::Duration;
 use prost::Message;
 use prost_types::Any;
 use quickwit_config::service::QuickwitService;
-use quickwit_datetime::{parse_date_time_str, DateTimeInputFormat};
+use quickwit_datetime::{DateTimeInputFormat, parse_date_time_str};
 use quickwit_proto::cloudprem::*;
 use serde_json::Value;
 use tonic::Request;
@@ -224,12 +224,14 @@ async fn setup_env(docs: &mut [Value]) -> ClusterSandbox {
         .await
         .unwrap();
 
-    assert!(sandbox
-        .rest_client(QuickwitService::Indexer)
-        .node_health()
-        .is_live()
-        .await
-        .unwrap());
+    assert!(
+        sandbox
+            .rest_client(QuickwitService::Indexer)
+            .node_health()
+            .is_live()
+            .await
+            .unwrap()
+    );
 
     // remove unsupported field before ingestion
     // TODO are those things we should store?

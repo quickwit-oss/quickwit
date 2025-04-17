@@ -93,7 +93,7 @@ pub fn to_quickwit_query(cloudprem_query: QueryNode) -> Result<QueryAst, Invalid
                 }
                 .into(),
                 BooleanOperator::InvalidBooleanOperator => {
-                    return Err(missing_required("boolean.operator"))
+                    return Err(missing_required("boolean.operator"));
                 }
             }
         }
@@ -144,7 +144,7 @@ pub fn to_quickwit_query(cloudprem_query: QueryNode) -> Result<QueryAst, Invalid
                 ComparisonOperator::Gt => (Bound::Excluded(value), Bound::Unbounded),
                 ComparisonOperator::Gte => (Bound::Included(value), Bound::Unbounded),
                 ComparisonOperator::InvalidComparisonOperator => {
-                    return Err(missing_required("comparison.operator"))
+                    return Err(missing_required("comparison.operator"));
                 }
             };
             RangeQuery {
@@ -159,10 +159,12 @@ pub fn to_quickwit_query(cloudprem_query: QueryNode) -> Result<QueryAst, Invalid
         }
         .into(),
         Node::Missing(missing_query) => BoolQuery {
-            must_not: vec![FieldPresenceQuery {
-                field: map_field_name(missing_query.attribute),
-            }
-            .into()],
+            must_not: vec![
+                FieldPresenceQuery {
+                    field: map_field_name(missing_query.attribute),
+                }
+                .into(),
+            ],
             ..BoolQuery::default()
         }
         .into(),
@@ -236,10 +238,10 @@ pub fn to_quickwit_query(cloudprem_query: QueryNode) -> Result<QueryAst, Invalid
                 },
                 SearchQueryMode::WesQuoted => FullTextMode::Phrase { slop: 0 },
                 SearchQueryMode::WesPrefix => {
-                    return Err(unsupported_query_error("WES prefix query"))
+                    return Err(unsupported_query_error("WES prefix query"));
                 }
                 SearchQueryMode::WesGlob => {
-                    return Err(unsupported_query_error("WES globing query"))
+                    return Err(unsupported_query_error("WES globing query"));
                 }
             };
             let string_pattern = if let Some(pattern) = search_query.structured_text {

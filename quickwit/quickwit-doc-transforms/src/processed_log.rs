@@ -15,19 +15,19 @@
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use quickwit_datetime::{parse_date_time_str, parse_timestamp, DateTimeInputFormat};
+use quickwit_datetime::{DateTimeInputFormat, parse_date_time_str, parse_timestamp};
 use serde::{self, Deserialize, Serialize};
 use serde_json::Value;
 use serde_with::formats::CommaSeparator;
-use serde_with::{serde_as, StringWithSeparator};
+use serde_with::{StringWithSeparator, serde_as};
 use time::OffsetDateTime;
 use tracing::warn;
 use uuid::Uuid;
 
-use crate::normalize_field::{normalize_fields, NormalizeField};
+use crate::normalize_field::{NormalizeField, normalize_fields};
 use crate::path_access::ParsedPath;
 use crate::transformers::StatusRemapStep;
-use crate::{convert_tags, PipelineStep, StringOrVec};
+use crate::{PipelineStep, StringOrVec, convert_tags};
 
 // https://github.com/DataDog/datadog-agent/blob/a33248c2bc125920a9577af1e16f12298875a4ad/pkg/logs/processor/json.go#L23-L49
 #[serde_as]
@@ -245,7 +245,7 @@ pub(crate) mod tests {
     use serde_json::Value;
     use time::OffsetDateTime;
 
-    use crate::processed_log::{try_parse_and_update_timestamp, DatadogLogMsg};
+    use crate::processed_log::{DatadogLogMsg, try_parse_and_update_timestamp};
     use crate::{ProcessedLog, StringOrVec};
 
     /// Helper to build an `DatadogLogMsg`.

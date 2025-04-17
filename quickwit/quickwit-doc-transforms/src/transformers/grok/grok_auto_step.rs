@@ -19,10 +19,10 @@ use vrl::datadog_grok::parse_grok::parse_grok;
 use vrl::datadog_grok::parse_grok_rules::GrokRule;
 
 use super::grok_rules::get_grok_rules_by_source;
+use crate::ProcessedLog;
 use crate::error::PipelineError;
 use crate::pipeline::*;
 use crate::transformers::vrl_value_to_serde_json;
-use crate::ProcessedLog;
 
 #[derive(Debug)]
 /// The GrokParserAutoStep is a pipeline step that applies grok parsing to the log message based
