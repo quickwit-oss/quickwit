@@ -7206,6 +7206,7 @@ dependencies = [
  "itertools 0.13.0",
  "mockall",
  "once_cell",
+ "pin-project",
  "postcard",
  "proptest",
  "prost 0.11.9",
