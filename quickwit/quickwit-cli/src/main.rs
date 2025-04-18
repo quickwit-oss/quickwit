@@ -69,7 +69,9 @@ fn register_build_info_metric() {
 
 async fn main_impl() -> anyhow::Result<()> {
     #[cfg(feature = "openssl-support")]
-    openssl_probe::init_ssl_cert_env_vars();
+    unsafe {
+        openssl_probe::init_openssl_env_vars()
+    };
     register_build_info_metric();
 
     let about_text = about_text();
@@ -226,6 +228,8 @@ mod tests {
             "wikipedia",
             "--endpoint",
             "http://127.0.0.1:8000",
+            "--retries",
+            "2",
         ])?;
         let command = CliCommand::parse_cli_args(matches)?;
         assert!(matches!(
@@ -243,6 +247,7 @@ mod tests {
                 && client_args.connect_timeout.is_none()
                 && client_args.commit_timeout.is_none()
                 && client_args.cluster_endpoint == Url::from_str("http://127.0.0.1:8000").unwrap()
+                && client_args.num_retries == 2
         ));
 
         let app = build_cli().no_binary_name(true);
@@ -272,6 +277,7 @@ mod tests {
                         && client_args.timeout.is_none()
                         && client_args.connect_timeout.is_none()
                         && client_args.commit_timeout.is_none()
+                        && client_args.num_retries == 0
                         && batch_size_limit == ByteSize::mb(8)
         ));
 
@@ -301,6 +307,7 @@ mod tests {
                     && client_args.timeout.is_none()
                     && client_args.connect_timeout.is_none()
                     && client_args.commit_timeout.is_none()
+                    && client_args.num_retries == 0
                     && batch_size_limit == ByteSize::kb(4)
         ));
 
@@ -331,6 +338,7 @@ mod tests {
                         && client_args.timeout == Some(Timeout::from_secs(10))
                         && client_args.connect_timeout == Some(Timeout::from_secs(2))
                         && client_args.commit_timeout.is_none()
+                        && client_args.num_retries == 0
         ));
 
         let app = build_cli().no_binary_name(true);
