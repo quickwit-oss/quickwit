@@ -942,11 +942,6 @@ fn is_simple_all_query(search_request: &SearchRequest) -> bool {
         return false;
     }
 
-    // TODO: Update the logic to handle start_timestamp end_timestamp ranges
-    if search_request.start_timestamp.is_some() || search_request.end_timestamp.is_some() {
-        return false;
-    }
-
     let Ok(query_ast) = serde_json::from_str(&search_request.query_ast) else {
         return false;
     };
@@ -1000,6 +995,26 @@ impl CanSplitDoBetter {
         }
     }
 
+    fn is_contained(split: &SplitIdAndFooterOffsets, search_request: &SearchRequest) -> bool {
+        if let Some(start) = search_request.start_timestamp {
+            let Some(split_start) = split.timestamp_start else {
+                return false;
+            };
+            if split_start < start {
+                return false;
+            }
+        }
+        if let Some(end) = search_request.end_timestamp {
+            let Some(split_end) = split.timestamp_end else {
+                return false;
+            };
+            if split_end >= end {
+                return false;
+            }
+        }
+        true
+    }
+
     /// Optimize the order in which splits will get processed based on how it can skip the most
     /// splits.
     ///
@@ -1009,18 +1024,29 @@ impl CanSplitDoBetter {
     /// are the most likely to fill our Top K.
     /// In the future, as split get more metadata per column, we may be able to do this more than
     /// just for timestamp and "unsorted" request.
-    fn optimize_split_order(&self, splits: &mut [SplitIdAndFooterOffsets]) {
+    ///
+    /// To skip splits in time ranged queries, we sort the splits first by whether they are
+    /// contained in the search request time range.
+    fn optimize_split_order(
+        &self,
+        splits: &mut [SplitIdAndFooterOffsets],
+        search_request: &SearchRequest,
+    ) {
         match self {
             CanSplitDoBetter::SplitIdHigher(_) => {
                 splits.sort_unstable_by(|a, b| b.split_id.cmp(&a.split_id))
             }
             CanSplitDoBetter::SplitTimestampHigher(_)
             | CanSplitDoBetter::FindTraceIdsAggregation(_) => {
-                splits.sort_unstable_by_key(|split| std::cmp::Reverse(split.timestamp_end()))
+                splits.sort_unstable_by_key(|split| {
+                    let contained = Self::is_contained(split, search_request);
+                    (!contained, std::cmp::Reverse(split.timestamp_end()))
+                })
             }
-            CanSplitDoBetter::SplitTimestampLower(_) => {
-                splits.sort_unstable_by_key(|split| split.timestamp_start())
-            }
+            CanSplitDoBetter::SplitTimestampLower(_) => splits.sort_unstable_by_key(|split| {
+                let contained = Self::is_contained(split, search_request);
+                (!contained, split.timestamp_start())
+            }),
             CanSplitDoBetter::Uninformative => (),
         }
     }
@@ -1034,7 +1060,7 @@ impl CanSplitDoBetter {
         request: Arc<SearchRequest>,
         mut splits: Vec<SplitIdAndFooterOffsets>,
     ) -> Result<Vec<(SplitIdAndFooterOffsets, SearchRequest)>, SearchError> {
-        self.optimize_split_order(&mut splits);
+        self.optimize_split_order(&mut splits, &request);
 
         if !is_simple_all_query(&request) {
             // no optimization opportunity here.
@@ -1049,6 +1075,8 @@ impl CanSplitDoBetter {
         // Calculate the number of splits which are guaranteed to deliver enough documents.
         let min_required_splits = splits
             .iter()
+            // splits are sorted by whether they are contained in the request time range
+            .filter(|split| Self::is_contained(split, &request))
             .map(|split| split.num_docs)
             // computing the partial sum
             .scan(0u64, |partial_sum: &mut u64, num_docs_in_split: u64| {
