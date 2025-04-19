@@ -1519,10 +1519,8 @@ impl ExtractTimestampRange<'_> {
             // a match_none, but the visitor doesn't allow mutation.
             lower_bound = lower_bound.saturating_add(1);
         }
-        self.start_timestamp = Some(
-            self.start_timestamp
-                .map_or(lower_bound, |current| current.max(lower_bound)),
-        );
+
+        self.start_timestamp = self.start_timestamp.max(Some(lower_bound));
     }
 
     fn update_end_timestamp(&mut self, upper_bound: &quickwit_query::JsonLiteral, included: bool) {
@@ -1537,10 +1535,9 @@ impl ExtractTimestampRange<'_> {
             // a match_none, but the visitor doesn't allow mutation.
             upper_bound = upper_bound.saturating_add(1);
         }
-        self.end_timestamp = Some(
-            self.end_timestamp
-                .map_or(upper_bound, |current| current.min(upper_bound)),
-        );
+
+        let new_end_timestamp = self.end_timestamp.unwrap_or(upper_bound).min(upper_bound);
+        self.end_timestamp = Some(new_end_timestamp);
     }
 }
 
