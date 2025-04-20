@@ -76,10 +76,10 @@ pub(crate) fn extract_start_end_timestamp_from_ast(
 /// `end_timestamp` is to be interpreted as Exclusive (or Unbounded)
 /// In other word, this is a `[start_timestamp..end_timestamp)` interval.
 #[derive(Debug, Clone)]
-struct ExtractTimestampRange<'a> {
-    timestamp_field: &'a str,
-    start_timestamp: Bound<DateTime>,
-    end_timestamp: Bound<DateTime>,
+pub(crate) struct ExtractTimestampRange<'a> {
+    pub(crate) timestamp_field: &'a str,
+    pub(crate) start_timestamp: Bound<DateTime>,
+    pub(crate) end_timestamp: Bound<DateTime>,
 }
 
 impl ExtractTimestampRange<'_> {
