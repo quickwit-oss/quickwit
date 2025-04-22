@@ -59,6 +59,8 @@ pub struct GrpcConfig {
     pub max_message_size: ByteSize,
     #[serde(default)]
     pub tls: Option<TlsConfig>,
+    #[serde(default)]
+    pub mtls_header: Option<String>,
 }
 
 impl GrpcConfig {
@@ -81,6 +83,7 @@ impl Default for GrpcConfig {
         Self {
             max_message_size: Self::default_max_message_size(),
             tls: None,
+            mtls_header: None,
         }
     }
 }
@@ -734,12 +737,14 @@ mod tests {
         let grpc_config = GrpcConfig {
             max_message_size: ByteSize::mb(1),
             tls: None,
+            mtls_header: None,
         };
         assert!(grpc_config.validate().is_ok());
 
         let grpc_config = GrpcConfig {
             max_message_size: ByteSize::kb(1),
             tls: None,
+            mtls_header: None,
         };
         assert!(grpc_config.validate().is_err());
     }

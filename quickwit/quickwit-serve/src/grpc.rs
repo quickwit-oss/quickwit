@@ -266,7 +266,9 @@ pub(crate) async fn start_grpc_server(
     let reflection_service = build_reflection_service(&file_descriptor_sets)?;
 
     let server_router = server
-        .layer(AwsMtlsInterceptorLayer::for_cloudprem_bridge())
+        .layer(AwsMtlsInterceptorLayer::for_cloudprem_bridge(
+            grpc_config.mtls_header,
+        ))
         .add_service(cluster_grpc_service)
         .add_service(developer_grpc_service)
         .add_service(health_service)
