@@ -8,6 +8,9 @@ See [datadog documentation](https://docs.datadoghq.com/logs/log_configuration/pr
 - Log events can be submitted up to 18 hours in the past and two hours in the future. 
 => Dropping events would need to be done after execting the pipelines, since the pipeline can contain date remapping.
 
+- [ ] check how to handle arrays in remove_nested_from_map
+- [ ] check how to handle arrays in get_nested_values
+
 ### Filters
 * Handle more than numerical ranges in filter.rs (compare fn)
 * Do field normalization after JSON parsing

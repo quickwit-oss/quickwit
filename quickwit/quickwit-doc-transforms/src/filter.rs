@@ -338,6 +338,7 @@ mod vrl_matcher_tests {
             tag: tag_map,
             trace_id: None,
             span_id: None,
+            tiebreaker: 0,
             custom: custom_map,
             id: "abcd1234".to_string(),
             discovery_timestamp: 0,

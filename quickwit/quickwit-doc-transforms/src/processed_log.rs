@@ -47,6 +47,7 @@ pub struct DatadogLogMsg {
 }
 
 /// The final enriched struct we want to produce.
+///  TODO fix the confusing name (ProcessedDoc)
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ProcessedLog {
     pub message: String,
@@ -67,6 +68,7 @@ pub struct ProcessedLog {
 
     pub id: String,
     pub discovery_timestamp: i64,
+    pub tiebreaker: i64,
     pub ingest_size_in_bytes: usize,
 }
 
@@ -99,6 +101,7 @@ impl ProcessedLog {
             tag: convert_tags(&tags),
             tags,
             id: Uuid::new_v4().to_string(),
+            tiebreaker: rand::random(),
             discovery_timestamp: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
@@ -267,9 +270,9 @@ pub(crate) mod tests {
 
     #[test]
     fn test_deserialize_datadog_log_msg() {
-        let json = r#"{ 
-                "message": "Overridden message", 
-                "status": "info", 
+        let json = r#"{
+                "message": "Overridden message",
+                "status": "info",
                 "ddtags": "env:dev,region:us-east",
                 "timestamp": 1620000000000,
                 "hostname": "test-host",
@@ -293,9 +296,9 @@ pub(crate) mod tests {
     fn test_deserialize_datadog_log_msg_with_no_tags() {
         // Test with no tags
         // unclear if tags is optional or not
-        let json = r#"{ 
-                "message": "Overridden message", 
-                "status": "info", 
+        let json = r#"{
+                "message": "Overridden message",
+                "status": "info",
                 "timestamp": 1620000000000,
                 "hostname": "test-host",
                 "service": "test-service",

@@ -13,7 +13,6 @@
 // limitations under the License.
 
 use quickwit_doc_transforms::DatadogLogMsg;
-//use quickwit_doc_transforms::{build_step, DatadogLogMsg, PipelineStepConfig, ProcessedLog};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use time::OffsetDateTime;

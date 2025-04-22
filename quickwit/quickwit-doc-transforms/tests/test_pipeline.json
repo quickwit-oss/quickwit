@@ -1,7 +1,4 @@
-{
-  "version": 3845,
-  "lookupTablesRemainingSizeInKB": 95.091,
-  "pipelines": [
+[
     {
       "type": "pipeline",
       "id": "AAAAAAAAAAAAAAAAAAAAAA",
@@ -26098,11 +26095,4 @@
       "writeProcessorsAccess": false,
       "writeProcessorsRoles": []
     }
-  ],
-  "writeProcessorsGlobalRoles": [
-    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-  ],
-  "locked": true
-}
+]

@@ -44,7 +44,7 @@ pub struct OPGrokRules {
     pub samples: Vec<Sample>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Hash)]
 pub struct Rule {
     pub name: String,
     pub rule: String,
@@ -56,7 +56,7 @@ pub struct Sample {
     pub result: Value,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[serde(rename_all = "camelCase")]
 pub struct LogsProcessingGrokRules {
     // Use a custom deserializer to transform the multiline string into Vec<Rule>
