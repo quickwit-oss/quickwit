@@ -17,9 +17,11 @@ use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 use std::time::Duration;
 
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
+use bytesize::ByteSize;
 use http::HeaderMap;
-use quickwit_common::net::{find_private_ip, get_short_hostname, Host};
+use quickwit_common::fs::get_disk_size;
+use quickwit_common::net::{Host, find_private_ip, get_short_hostname};
 use quickwit_common::new_coolid;
 use quickwit_common::uri::Uri;
 use quickwit_proto::types::NodeId;
@@ -33,8 +35,8 @@ use crate::service::QuickwitService;
 use crate::storage_config::StorageConfigs;
 use crate::templating::render_config;
 use crate::{
-    validate_identifier, validate_node_id, ConfigFormat, IndexerConfig, IngestApiConfig,
-    JaegerConfig, MetastoreConfigs, NodeConfig, SearcherConfig, TlsConfig,
+    ConfigFormat, IndexerConfig, IngestApiConfig, JaegerConfig, MetastoreConfigs, NodeConfig,
+    SearcherConfig, TlsConfig, validate_identifier, validate_node_id,
 };
 
 pub const DEFAULT_CLUSTER_ID: &str = "quickwit-default-cluster";
@@ -338,7 +340,59 @@ fn validate(node_config: &NodeConfig) -> anyhow::Result<()> {
     if node_config.peer_seeds.is_empty() {
         warn!("peer seeds are empty");
     }
+    validate_disk_usage(node_config);
     Ok(())
+}
+
+/// A list of all the known disk budgets
+///
+/// External disk usage and unbounded disk usages, e.g the indexing workbench
+/// (indexing/) and the delete task workbench (delete_task_service/) are not included.
+#[derive(Default, Debug)]
+struct ExpectedDiskUsage {
+    // indexer / ingester
+    split_store_max_num_bytes: Option<ByteSize>,
+    max_queue_disk_usage: Option<ByteSize>,
+    // searcher
+    split_cache: Option<ByteSize>,
+}
+
+impl ExpectedDiskUsage {
+    fn from_config(node_config: &NodeConfig) -> Self {
+        let mut expected = Self::default();
+        if node_config.is_service_enabled(QuickwitService::Indexer) {
+            expected.max_queue_disk_usage =
+                Some(node_config.ingest_api_config.max_queue_disk_usage);
+            expected.split_store_max_num_bytes =
+                Some(node_config.indexer_config.split_store_max_num_bytes);
+        }
+        if node_config.is_service_enabled(QuickwitService::Searcher) {
+            expected.split_cache = node_config
+                .searcher_config
+                .split_cache
+                .map(|limits| limits.max_num_bytes);
+        }
+        expected
+    }
+
+    fn total(&self) -> ByteSize {
+        self.split_store_max_num_bytes.unwrap_or_default()
+            + self.max_queue_disk_usage.unwrap_or_default()
+            + self.split_cache.unwrap_or_default()
+    }
+}
+
+fn validate_disk_usage(node_config: &NodeConfig) {
+    if let Some(volume_size) = get_disk_size(&node_config.data_dir_path) {
+        let expected_disk_usage = ExpectedDiskUsage::from_config(node_config);
+        if expected_disk_usage.total() > volume_size {
+            warn!(
+                ?volume_size,
+                ?expected_disk_usage,
+                "data dir volume too small"
+            );
+        }
+    }
 }
 
 #[cfg(test)]
@@ -664,8 +718,10 @@ mod tests {
         )
         .await
         .unwrap_err();
-        assert!(format!("{parsing_error:?}")
-            .contains("unknown field `max_num_concurrent_split_searches_with_typo`"));
+        assert!(
+            format!("{parsing_error:?}")
+                .contains("unknown field `max_num_concurrent_split_searches_with_typo`")
+        );
     }
 
     #[tokio::test]
@@ -1001,13 +1057,15 @@ mod tests {
             node_id: 1
             metastore_uri: ''
         "#;
-            assert!(load_node_config_with_env(
-                ConfigFormat::Yaml,
-                config_yaml.as_bytes(),
-                &Default::default()
-            )
-            .await
-            .is_err());
+            assert!(
+                load_node_config_with_env(
+                    ConfigFormat::Yaml,
+                    config_yaml.as_bytes(),
+                    &Default::default()
+                )
+                .await
+                .is_err()
+            );
         }
         {
             let config_yaml = r#"
@@ -1016,13 +1074,15 @@ mod tests {
             metastore_uri: postgres://username:password@host:port/db
             default_index_root_uri: ''
         "#;
-            assert!(load_node_config_with_env(
-                ConfigFormat::Yaml,
-                config_yaml.as_bytes(),
-                &Default::default()
-            )
-            .await
-            .is_err());
+            assert!(
+                load_node_config_with_env(
+                    ConfigFormat::Yaml,
+                    config_yaml.as_bytes(),
+                    &Default::default()
+                )
+                .await
+                .is_err()
+            );
         }
     }
 
@@ -1102,9 +1162,11 @@ mod tests {
             max_trace_duration_secs: 0
         "#;
         let error = serde_yaml::from_str::<JaegerConfig>(jaeger_config_yaml).unwrap_err();
-        assert!(error
-            .to_string()
-            .contains("max_trace_duration_secs: invalid value: integer `0`"))
+        assert!(
+            error
+                .to_string()
+                .contains("max_trace_duration_secs: invalid value: integer `0`")
+        )
     }
 
     #[tokio::test]

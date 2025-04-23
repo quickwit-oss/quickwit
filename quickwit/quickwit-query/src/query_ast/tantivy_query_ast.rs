@@ -382,7 +382,7 @@ mod tests {
     use tantivy::query::{EmptyQuery, TermQuery};
 
     use super::TantivyBoolQuery;
-    use crate::query_ast::tantivy_query_ast::{remove_with_guard, MatchAllOrNone, TantivyQueryAst};
+    use crate::query_ast::tantivy_query_ast::{MatchAllOrNone, TantivyQueryAst, remove_with_guard};
 
     fn term(val: &str) -> TantivyQueryAst {
         use tantivy::schema::{Field, Term};

@@ -349,9 +349,9 @@ pub struct SplitIdAndFooterOffsets {
 /// For instance:
 /// - it may contain a _source and a _dynamic field.
 /// - since tantivy has no notion of cardinality,
-///    all fields are arrays.
+///   all fields are arrays.
 /// - since tantivy has no notion of object, the object is
-///    flattened by concatenating the path to the root.
+///   flattened by concatenating the path to the root.
 ///
 /// See  `quickwit_search::convert_leaf_hit`
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]

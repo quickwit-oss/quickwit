@@ -106,7 +106,7 @@ impl TryFrom<HashMap<String, TermQueryValue>> for TermQuery {
             return Err("TermQuery must have exactly one entry");
         }
         Ok(TermQuery::from(map.into_iter().next().unwrap())) // unwrap justified by the if
-                                                             // statementabove.
+        // statementabove.
     }
 }
 
@@ -121,7 +121,7 @@ impl From<TermQuery> for HashMap<String, TermQueryValue> {
 
 #[cfg(test)]
 mod tests {
-    use tantivy::schema::{Schema, INDEXED};
+    use tantivy::schema::{INDEXED, Schema};
 
     use crate::create_default_quickwit_tokenizer_manager;
     use crate::query_ast::{BuildTantivyAst, TermQuery};

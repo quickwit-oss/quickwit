@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use bytes::Bytes;
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use quickwit_actors::{ActorHandle, Mailbox, Universe};
 use quickwit_config::{SourceInputFormat, TransformConfig};
 use quickwit_doc_mapper::DocMapper;

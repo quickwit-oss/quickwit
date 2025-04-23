@@ -18,7 +18,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use async_trait::async_trait;
 use fail::fail_point;
 use itertools::Itertools;
@@ -42,7 +42,7 @@ use tantivy::index::SegmentId;
 use tantivy::tokenizer::TokenizerManager;
 use tantivy::{DateTime, Directory, Index, IndexMeta, IndexWriter, SegmentReader};
 use tokio::runtime::Handle;
-use tracing::{debug, info, instrument, warn};
+use tracing::{debug, error, info, instrument, warn};
 
 use crate::actors::Packager;
 use crate::controlled_directory::ControlledDirectory;
@@ -90,16 +90,35 @@ impl Handler<MergeScratch> for MergeExecutor {
         let start = Instant::now();
         let merge_task = merge_scratch.merge_task;
         let indexed_split_opt: Option<IndexedSplit> = match merge_task.operation_type {
-            MergeOperationType::Merge => Some(
-                self.process_merge(
-                    merge_task.merge_split_id.clone(),
-                    merge_task.splits.clone(),
-                    merge_scratch.tantivy_dirs,
-                    merge_scratch.merge_scratch_directory,
-                    ctx,
-                )
-                .await?,
-            ),
+            MergeOperationType::Merge => {
+                let merge_res = self
+                    .process_merge(
+                        merge_task.merge_split_id.clone(),
+                        merge_task.splits.clone(),
+                        merge_scratch.tantivy_dirs,
+                        merge_scratch.merge_scratch_directory,
+                        ctx,
+                    )
+                    .await;
+                match merge_res {
+                    Ok(indexed_split) => Some(indexed_split),
+                    Err(err) => {
+                        // A failure in a merge is a bit special.
+                        //
+                        // Instead of failing the pipeline, we just log it.
+                        // The idea is to limit the risk associated with a potential split of death.
+                        //
+                        // Such a split is now not tracked by the merge planner and won't undergo a
+                        // merge until the merge pipeline is restarted.
+                        //
+                        // With a merge policy that marks splits as mature after a day or so, this
+                        // limits the noise associated to those failed
+                        // merges.
+                        error!(task=?merge_task, err=?err, "failed to merge splits");
+                        return Ok(());
+                    }
+                }
+            }
             MergeOperationType::DeleteAndMerge => {
                 assert_eq!(
                     merge_task.splits.len(),
@@ -540,7 +559,7 @@ impl MergeExecutor {
 
         debug!(segment_ids=?segment_ids,"merging-segments");
         // TODO it would be nice if tantivy could let us run the merge in the current thread.
-        index_writer.merge(&segment_ids).wait()?;
+        index_writer.merge(&segment_ids).await?;
 
         Ok(output_directory)
     }
@@ -575,7 +594,7 @@ mod tests {
 
     use super::*;
     use crate::merge_policy::{MergeOperation, MergeTask};
-    use crate::{get_tantivy_directory_from_split_bundle, new_split_id, TestSandbox};
+    use crate::{TestSandbox, get_tantivy_directory_from_split_bundle, new_split_id};
 
     #[tokio::test]
     async fn test_merge_executor() -> anyhow::Result<()> {

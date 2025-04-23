@@ -19,8 +19,8 @@ use std::sync::Arc;
 use anyhow::Context;
 use quickwit_cluster::cluster_grpc_server;
 use quickwit_common::tower::BoxFutureInfaillible;
-use quickwit_config::service::QuickwitService;
 use quickwit_config::GrpcConfig;
+use quickwit_config::service::QuickwitService;
 use quickwit_proto::developer::DeveloperServiceClient;
 use quickwit_proto::indexing::IndexingServiceClient;
 use quickwit_proto::jaeger::storage::v1::span_reader_plugin_server::SpanReaderPluginServer;
@@ -31,12 +31,15 @@ use quickwit_proto::tonic::codegen::CompressionEncoding;
 use quickwit_proto::tonic::transport::server::TcpIncoming;
 use quickwit_proto::tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
 use tokio::net::TcpListener;
+use tonic_health::pb::FILE_DESCRIPTOR_SET as HEALTH_FILE_DESCRIPTOR_SET;
+use tonic_health::pb::health_server::{Health, HealthServer};
+use tonic_reflection::pb::FILE_DESCRIPTOR_SET as REFLECTION_FILE_DESCRIPTOR_SET;
 use tonic_reflection::server::{ServerReflection, ServerReflectionServer};
 use tracing::*;
 
 use crate::developer_api::DeveloperApiServer;
 use crate::search_api::GrpcSearchAdapter;
-use crate::{QuickwitServices, INDEXING_GRPC_SERVER_METRICS_LAYER};
+use crate::{INDEXING_GRPC_SERVER_METRICS_LAYER, QuickwitServices};
 
 /// Starts and binds gRPC services to `grpc_listen_addr`.
 pub(crate) async fn start_grpc_server(
@@ -45,6 +48,7 @@ pub(crate) async fn start_grpc_server(
     services: Arc<QuickwitServices>,
     readiness_trigger: BoxFutureInfaillible<()>,
     shutdown_signal: BoxFutureInfaillible<()>,
+    health_service: HealthServer<impl Health>,
 ) -> anyhow::Result<()> {
     let mut enabled_grpc_services = BTreeSet::new();
     let mut file_descriptor_sets = Vec::new();
@@ -206,11 +210,17 @@ pub(crate) async fn start_grpc_server(
         DeveloperServiceClient::new(developer_service)
             .as_grpc_service(DeveloperApiServer::MAX_GRPC_MESSAGE_SIZE)
     };
+    enabled_grpc_services.insert("health");
+    file_descriptor_sets.push(HEALTH_FILE_DESCRIPTOR_SET);
+
+    enabled_grpc_services.insert("reflection");
+    file_descriptor_sets.push(REFLECTION_FILE_DESCRIPTOR_SET);
     let reflection_service = build_reflection_service(&file_descriptor_sets)?;
 
     let server_router = server
         .add_service(cluster_grpc_service)
         .add_service(developer_grpc_service)
+        .add_service(health_service)
         .add_service(reflection_service)
         .add_optional_service(control_plane_grpc_service)
         .add_optional_service(indexing_grpc_service)

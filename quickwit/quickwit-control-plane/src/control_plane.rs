@@ -31,7 +31,7 @@ use quickwit_cluster::{
 };
 use quickwit_common::pubsub::EventSubscriber;
 use quickwit_common::uri::Uri;
-use quickwit_common::{shared_consts, Progress};
+use quickwit_common::{Progress, shared_consts};
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{ClusterConfig, IndexConfig, IndexTemplate, SourceConfig};
 use quickwit_ingest::{IngesterPool, LocalShardsUpdate};
@@ -42,25 +42,25 @@ use quickwit_proto::control_plane::{
 };
 use quickwit_proto::indexing::ShardPositionsUpdate;
 use quickwit_proto::metastore::{
-    serde_utils, AddSourceRequest, CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest,
+    AddSourceRequest, CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest,
     DeleteShardsRequest, DeleteSourceRequest, EmptyResponse, FindIndexTemplateMatchesRequest,
     IndexMetadataResponse, IndexTemplateMatch, MetastoreError, MetastoreResult, MetastoreService,
     MetastoreServiceClient, PruneShardsRequest, ToggleSourceRequest, UpdateIndexRequest,
-    UpdateSourceRequest,
+    UpdateSourceRequest, serde_utils,
 };
 use quickwit_proto::types::{IndexId, IndexUid, NodeId, ShardId, SourceId, SourceUid};
 use serde::Serialize;
-use serde_json::{json, Value as JsonValue};
+use serde_json::{Value as JsonValue, json};
 use tokio::sync::watch;
 use tracing::{debug, error, info};
 
+use crate::IndexerPool;
 use crate::cooldown_map::{CooldownMap, CooldownStatus};
 use crate::debouncer::Debouncer;
 use crate::indexing_scheduler::{IndexingScheduler, IndexingSchedulerState};
-use crate::ingest::ingest_controller::{IngestControllerStats, RebalanceShardsCallback};
 use crate::ingest::IngestController;
+use crate::ingest::ingest_controller::{IngestControllerStats, RebalanceShardsCallback};
 use crate::model::ControlPlaneModel;
-use crate::IndexerPool;
 
 /// Interval between two controls (or checks) of the desired plan VS running plan.
 pub(crate) const CONTROL_PLAN_LOOP_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
@@ -167,6 +167,7 @@ impl ControlPlane {
                     ingester_pool.clone(),
                     replication_factor,
                     shard_throughput_limit_mib,
+                    cluster_config.shard_scale_up_factor,
                 );
 
                 let readiness_tx = readiness_tx.clone();
@@ -384,7 +385,10 @@ impl ControlPlane {
     ///
     /// This method returns a future that can be awaited to ensure that the relevant rebuild plan
     /// operation has been executed.
-    fn rebuild_plan_debounced(&mut self, ctx: &ActorContext<Self>) -> impl Future<Output = ()> {
+    fn rebuild_plan_debounced(
+        &mut self,
+        ctx: &ActorContext<Self>,
+    ) -> impl Future<Output = ()> + use<> {
         let next_rebuild_waiter = self
             .indexing_scheduler
             .next_rebuild_tracker
@@ -1121,7 +1125,7 @@ mod tests {
     use quickwit_actors::{AskError, Observe, SupervisorMetrics};
     use quickwit_cluster::ClusterChangeStreamFactoryForTest;
     use quickwit_config::{
-        IndexConfig, KafkaSourceParams, SourceParams, CLI_SOURCE_ID, INGEST_V2_SOURCE_ID,
+        CLI_SOURCE_ID, INGEST_V2_SOURCE_ID, IndexConfig, KafkaSourceParams, SourceParams,
     };
     use quickwit_indexing::IndexingService;
     use quickwit_metastore::{
@@ -1277,7 +1281,7 @@ mod tests {
             .expect_list_indexes_metadata()
             .return_once(move |_| {
                 Ok(ListIndexesMetadataResponse::for_test(vec![
-                    index_metadata.clone()
+                    index_metadata.clone(),
                 ]))
             });
         mock_metastore
@@ -1378,7 +1382,7 @@ mod tests {
             .expect_list_indexes_metadata()
             .return_once(move |_| {
                 Ok(ListIndexesMetadataResponse::for_test(vec![
-                    index_metadata.clone()
+                    index_metadata.clone(),
                 ]))
             });
         mock_metastore
@@ -1780,7 +1784,7 @@ mod tests {
             move |list_indexes_request: ListIndexesMetadataRequest| {
                 assert_eq!(list_indexes_request, ListIndexesMetadataRequest::all());
                 Ok(ListIndexesMetadataResponse::for_test(vec![
-                    index_0_clone.clone()
+                    index_0_clone.clone(),
                 ]))
             },
         );
@@ -2010,7 +2014,7 @@ mod tests {
             move |list_indexes_request: ListIndexesMetadataRequest| {
                 assert_eq!(list_indexes_request, ListIndexesMetadataRequest::all());
                 Ok(ListIndexesMetadataResponse::for_test(vec![
-                    index_0_clone.clone()
+                    index_0_clone.clone(),
                 ]))
             },
         );
@@ -2101,7 +2105,7 @@ mod tests {
             .returning(move |list_indexes_request: ListIndexesMetadataRequest| {
                 assert_eq!(list_indexes_request, ListIndexesMetadataRequest::all());
                 Ok(ListIndexesMetadataResponse::for_test(vec![
-                    index_0_clone.clone()
+                    index_0_clone.clone(),
                 ]))
             });
         mock_metastore
@@ -2232,7 +2236,7 @@ mod tests {
             move |list_indexes_request: ListIndexesMetadataRequest| {
                 assert_eq!(list_indexes_request, ListIndexesMetadataRequest::all());
                 Ok(ListIndexesMetadataResponse::for_test(vec![
-                    index_0_clone.clone()
+                    index_0_clone.clone(),
                 ]))
             },
         );

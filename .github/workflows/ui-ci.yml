@@ -25,7 +25,7 @@ jobs:
           - name: Cypress run
             command: |
               sudo apt-get -y install protobuf-compiler
-              rustup show
+              rustup show active-toolchain || rustup toolchain install
               CI=false yarn --cwd quickwit-ui build
               RUSTFLAGS="--cfg tokio_unstable" cargo build --features=postgres
               mkdir qwdata

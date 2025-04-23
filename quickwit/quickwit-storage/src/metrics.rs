@@ -16,8 +16,8 @@
 
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
-    new_counter, new_counter_vec, new_gauge, new_histogram_vec, Histogram, IntCounter,
-    IntCounterVec, IntGauge,
+    GaugeGuard, Histogram, IntCounter, IntCounterVec, IntGauge, new_counter, new_counter_vec,
+    new_gauge, new_histogram_vec,
 };
 
 /// Counters associated to storage operations.
@@ -32,6 +32,8 @@ pub struct StorageMetrics {
     pub get_slice_timeout_all_timeouts: IntCounter,
     pub object_storage_get_total: IntCounter,
     pub object_storage_get_errors_total: IntCounterVec<1>,
+    pub object_storage_get_slice_in_flight_count: IntGauge,
+    pub object_storage_get_slice_in_flight_num_bytes: IntGauge,
     pub object_storage_put_total: IntCounter,
     pub object_storage_put_parts: IntCounter,
     pub object_storage_download_num_bytes: IntCounter,
@@ -97,7 +99,8 @@ impl Default for StorageMetrics {
             get_slice_timeout_all_timeouts,
             object_storage_get_total: new_counter(
                 "object_storage_gets_total",
-                "Number of objects fetched.",
+                "Number of objects fetched. Might be lower than get_slice_timeout_outcome if \
+                 queries are debounced.",
                 "storage",
                 &[],
             ),
@@ -107,6 +110,19 @@ impl Default for StorageMetrics {
                 "storage",
                 &[],
                 ["code"],
+            ),
+            object_storage_get_slice_in_flight_count: new_gauge(
+                "object_storage_get_slice_in_flight_count",
+                "Number of GetObject for which the memory was allocated but the download is still \
+                 in progress.",
+                "storage",
+                &[],
+            ),
+            object_storage_get_slice_in_flight_num_bytes: new_gauge(
+                "object_storage_get_slice_in_flight_num_bytes",
+                "Memory allocated for GetObject requests that are still in progress.",
+                "storage",
+                &[],
             ),
             object_storage_put_total: new_counter(
                 "object_storage_puts_total",
@@ -212,3 +228,16 @@ pub static STORAGE_METRICS: Lazy<StorageMetrics> = Lazy::new(StorageMetrics::def
 #[cfg(test)]
 pub static CACHE_METRICS_FOR_TESTS: Lazy<CacheMetrics> =
     Lazy::new(|| CacheMetrics::for_component("fortest"));
+
+pub fn object_storage_get_slice_in_flight_guards(
+    get_request_size: usize,
+) -> (GaugeGuard<'static>, GaugeGuard<'static>) {
+    let mut bytes_guard = GaugeGuard::from_gauge(
+        &crate::STORAGE_METRICS.object_storage_get_slice_in_flight_num_bytes,
+    );
+    bytes_guard.add(get_request_size as i64);
+    let mut count_guard =
+        GaugeGuard::from_gauge(&crate::STORAGE_METRICS.object_storage_get_slice_in_flight_count);
+    count_guard.add(1);
+    (bytes_guard, count_guard)
+}

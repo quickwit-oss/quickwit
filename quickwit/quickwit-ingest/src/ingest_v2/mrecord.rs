@@ -40,7 +40,7 @@ pub enum MRecord {
 }
 
 impl MRecord {
-    pub fn encode(&self) -> impl Buf {
+    pub fn encode(&self) -> impl Buf + use<> {
         match &self {
             Self::Doc(doc) => DOC_HEADER_V0.chain(doc.clone()),
             Self::Commit => COMMIT_HEADER_V0.chain(Bytes::new()),

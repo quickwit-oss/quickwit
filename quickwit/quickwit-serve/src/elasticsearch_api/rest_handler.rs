@@ -25,7 +25,7 @@ use hyper::StatusCode;
 use itertools::Itertools;
 use quickwit_cluster::Cluster;
 use quickwit_common::truncate_str;
-use quickwit_config::{validate_index_id_pattern, NodeConfig};
+use quickwit_config::{NodeConfig, validate_index_id_pattern};
 use quickwit_index_management::IndexService;
 use quickwit_metastore::*;
 use quickwit_proto::metastore::MetastoreServiceClient;
@@ -34,10 +34,10 @@ use quickwit_proto::search::{
     SortDatetimeFormat,
 };
 use quickwit_proto::types::IndexUid;
-use quickwit_query::query_ast::{BoolQuery, QueryAst, UserInputQuery};
 use quickwit_query::BooleanOperand;
+use quickwit_query::query_ast::{BoolQuery, QueryAst, UserInputQuery};
 use quickwit_search::{
-    list_all_splits, resolve_index_patterns, AggregationResults, SearchError, SearchService,
+    AggregationResults, SearchError, SearchService, list_all_splits, resolve_index_patterns,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -53,19 +53,19 @@ use super::filter::{
     elastic_scroll_filter, elastic_stats_filter, elasticsearch_filter,
 };
 use super::model::{
-    build_list_field_request_for_es_api, convert_to_es_field_capabilities_response,
     CatIndexQueryParams, DeleteQueryParams, ElasticsearchCatIndexResponse, ElasticsearchError,
     ElasticsearchResolveIndexEntryResponse, ElasticsearchResolveIndexResponse,
     ElasticsearchResponse, ElasticsearchStatsResponse, FieldCapabilityQueryParams,
     FieldCapabilityRequestBody, FieldCapabilityResponse, MultiSearchHeader, MultiSearchQueryParams,
     MultiSearchResponse, MultiSearchSingleResponse, ScrollQueryParams, SearchBody,
     SearchQueryParams, SearchQueryParamsCount, StatsResponseEntry,
+    build_list_field_request_for_es_api, convert_to_es_field_capabilities_response,
 };
-use super::{make_elastic_api_response, TrackTotalHits};
+use super::{TrackTotalHits, make_elastic_api_response};
 use crate::format::BodyFormat;
 use crate::rest::recover_fn;
 use crate::rest_api_response::{RestApiError, RestApiResponse};
-use crate::{with_arg, BuildInfo};
+use crate::{BuildInfo, with_arg};
 
 /// Elastic compatible cluster info handler.
 pub fn es_compat_cluster_info_handler(
@@ -679,7 +679,7 @@ fn filter_source(
     fn remove_path(value: &mut serde_json::Value, path: &str) {
         for (prefix, suffix) in generate_path_variants_with_suffix(path) {
             match value {
-                serde_json::Value::Object(ref mut map) => {
+                serde_json::Value::Object(map) => {
                     if let Some(suffix) = suffix {
                         if let Some(sub_value) = map.get_mut(prefix) {
                             remove_path(sub_value, suffix);
@@ -890,7 +890,7 @@ async fn es_compat_index_multi_search(
     let max_concurrent_searches =
         multi_search_params.max_concurrent_searches.unwrap_or(10) as usize;
     let search_responses = futures::stream::iter(futures)
-        .buffer_unordered(max_concurrent_searches)
+        .buffered(max_concurrent_searches)
         .collect::<Vec<_>>()
         .await;
     let responses = search_responses

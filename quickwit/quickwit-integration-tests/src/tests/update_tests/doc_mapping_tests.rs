@@ -12,10 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::fmt::Write;
 use std::time::Duration;
 
 use quickwit_config::service::QuickwitService;
-use serde_json::{json, Value};
+use quickwit_rest_client::models::IngestSource;
+use quickwit_rest_client::rest_client::CommitType;
+use serde_json::{Value, json};
 
 use super::assert_hits_unordered;
 use crate::test_utils::ClusterSandboxBuilder;
@@ -30,7 +33,6 @@ async fn validate_search_across_doc_mapping_updates(
     ingest_after_update: &[Value],
     query_and_expect: &[(&str, Result<&[Value], ()>)],
 ) {
-    quickwit_common::setup_logging_for_tests();
     let sandbox = ClusterSandboxBuilder::build_and_start_standalone().await;
 
     {
@@ -66,12 +68,14 @@ async fn validate_search_across_doc_mapping_updates(
         .await
         .unwrap();
 
-    assert!(sandbox
-        .rest_client(QuickwitService::Indexer)
-        .node_health()
-        .is_live()
-        .await
-        .unwrap());
+    assert!(
+        sandbox
+            .rest_client(QuickwitService::Indexer)
+            .node_health()
+            .is_live()
+            .await
+            .unwrap()
+    );
 
     // Wait until indexing pipelines are started.
     sandbox.wait_for_indexing_pipelines(1).await.unwrap();
@@ -578,4 +582,134 @@ async fn test_update_doc_mapping_add_field_on_strict() {
         ],
     )
     .await;
+}
+
+#[tokio::test]
+#[ignore]
+// TODO(#5738)
+async fn test_update_doc_validation() {
+    quickwit_common::setup_logging_for_tests();
+    let index_id = "update-doc-validation";
+    let sandbox = ClusterSandboxBuilder::default()
+        .add_node([
+            QuickwitService::Searcher,
+            QuickwitService::Metastore,
+            QuickwitService::Indexer,
+            QuickwitService::ControlPlane,
+            QuickwitService::Janitor,
+        ])
+        .build_and_start()
+        .await;
+
+    {
+        // Wait for indexer to fully start.
+        // The starting time is a bit long for a cluster.
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        let indexing_service_counters = sandbox
+            .rest_client(QuickwitService::Indexer)
+            .node_stats()
+            .indexing()
+            .await
+            .unwrap();
+        assert_eq!(indexing_service_counters.num_running_pipelines, 0);
+    }
+
+    // Create index
+    sandbox
+        .rest_client(QuickwitService::Indexer)
+        .indexes()
+        .create(
+            json!({
+                "version": "0.8",
+                "index_id": index_id,
+                "doc_mapping": {
+                    "field_mappings": [
+                        {"name": "body", "type": "u64"}
+                    ]
+                },
+                "indexing_settings": {
+                    "commit_timeout_secs": 1
+                },
+            })
+            .to_string(),
+            quickwit_config::ConfigFormat::Json,
+            false,
+        )
+        .await
+        .unwrap();
+
+    assert!(
+        sandbox
+            .rest_client(QuickwitService::Indexer)
+            .node_health()
+            .is_live()
+            .await
+            .unwrap()
+    );
+
+    // Wait until indexing pipelines are started.
+    sandbox.wait_for_indexing_pipelines(1).await.unwrap();
+
+    let unsigned_payload = (0..20).fold(String::new(), |mut buffer, id| {
+        writeln!(&mut buffer, "{{\"body\": {id}}}").unwrap();
+        buffer
+    });
+
+    let unsigned_response = sandbox
+        .rest_client(QuickwitService::Indexer)
+        .ingest(
+            index_id,
+            IngestSource::Str(unsigned_payload.clone()),
+            None,
+            None,
+            CommitType::Auto,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(unsigned_response.num_rejected_docs.unwrap(), 0);
+
+    sandbox
+        .rest_client(QuickwitService::Searcher)
+        .indexes()
+        .update(
+            index_id,
+            json!({
+                "version": "0.8",
+                "index_id": index_id,
+                "doc_mapping": {
+                    "field_mappings": [
+                        {"name": "body", "type": "i64"}
+                    ]
+                },
+                "indexing_settings": {
+                    "commit_timeout_secs": 1,
+                },
+            })
+            .to_string(),
+            quickwit_config::ConfigFormat::Json,
+        )
+        .await
+        .unwrap();
+
+    let signed_payload = (-20..0).fold(String::new(), |mut buffer, id| {
+        writeln!(&mut buffer, "{{\"body\": {id}}}").unwrap();
+        buffer
+    });
+
+    let signed_response = sandbox
+        .rest_client(QuickwitService::Indexer)
+        .ingest(
+            index_id,
+            IngestSource::Str(signed_payload.clone()),
+            None,
+            None,
+            CommitType::Auto,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(signed_response.num_rejected_docs.unwrap(), 0);
+
+    sandbox.shutdown().await.unwrap();
 }

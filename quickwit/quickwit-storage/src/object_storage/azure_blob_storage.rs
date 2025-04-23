@@ -22,8 +22,8 @@ use std::{fmt, io};
 use async_trait::async_trait;
 use azure_core::error::ErrorKind;
 use azure_core::{Pageable, StatusCode};
-use azure_storage::prelude::*;
 use azure_storage::Error as AzureError;
+use azure_storage::prelude::*;
 use azure_storage_blobs::blob::operations::GetBlobResponse;
 use azure_storage_blobs::prelude::*;
 use bytes::Bytes;
@@ -31,7 +31,7 @@ use futures::io::{Error as FutureError, ErrorKind as FutureErrorKind};
 use futures::stream::{StreamExt, TryStreamExt};
 use md5::Digest;
 use once_cell::sync::OnceCell;
-use quickwit_common::retry::{retry, RetryParams, Retryable};
+use quickwit_common::retry::{RetryParams, Retryable, retry};
 use quickwit_common::uri::Uri;
 use quickwit_common::{chunk_range, ignore_error_kind, into_u64_range};
 use quickwit_config::{AzureStorageConfig, StorageBackend};
@@ -44,10 +44,11 @@ use tokio_util::io::StreamReader;
 use tracing::{instrument, warn};
 
 use crate::debouncer::DebouncedStorage;
+use crate::metrics::object_storage_get_slice_in_flight_guards;
 use crate::storage::SendableAsync;
 use crate::{
-    BulkDeleteError, DeleteFailure, MultiPartPolicy, PutPayload, Storage, StorageError,
-    StorageErrorKind, StorageFactory, StorageResolverError, StorageResult, STORAGE_METRICS,
+    BulkDeleteError, DeleteFailure, MultiPartPolicy, PutPayload, STORAGE_METRICS, Storage,
+    StorageError, StorageErrorKind, StorageFactory, StorageResolverError, StorageResult,
 };
 
 /// Azure object storage resolver.
@@ -194,18 +195,21 @@ impl AzureBlobStorage {
     ) -> StorageResult<Vec<u8>> {
         let name = self.blob_name(path);
         let capacity = range_opt.as_ref().map(Range::len).unwrap_or(0);
-
         retry(&self.retry_params, || async {
-            let mut response_stream = if let Some(range) = range_opt.as_ref() {
-                self.container_client
+            let (mut response_stream, _in_flight_guards) = if let Some(range) = range_opt.as_ref() {
+                let stream = self
+                    .container_client
                     .blob_client(&name)
                     .get()
                     .range(range.clone())
-                    .into_stream()
+                    .into_stream();
+                // only record ranged get request as being in flight
+                let in_flight_guards = object_storage_get_slice_in_flight_guards(capacity);
+                (stream, Some(in_flight_guards))
             } else {
-                self.container_client.blob_client(&name).get().into_stream()
+                let stream = self.container_client.blob_client(&name).get().into_stream();
+                (stream, None)
             };
-
             let mut buf: Vec<u8> = Vec::with_capacity(capacity);
             download_all(&mut response_stream, &mut buf).await?;
 

@@ -50,7 +50,7 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use bytesize::ByteSize;
 pub(crate) use decompression::Body;
 pub use format::BodyFormat;
@@ -59,7 +59,7 @@ use itertools::Itertools;
 use once_cell::sync::Lazy;
 use quickwit_actors::{ActorExitStatus, Mailbox, SpawnContext, Universe};
 use quickwit_cluster::{
-    start_cluster_service, Cluster, ClusterChange, ClusterChangeStream, ListenerHandle,
+    Cluster, ClusterChange, ClusterChangeStream, ListenerHandle, start_cluster_service,
 };
 use quickwit_common::pubsub::{EventBroker, EventSubscriptionHandle};
 use quickwit_common::rate_limiter::RateLimiterSettings;
@@ -81,12 +81,12 @@ use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::models::ShardPositionsService;
 use quickwit_indexing::start_indexing_service;
 use quickwit_ingest::{
-    get_idle_shard_timeout, setup_local_shards_update_listener, start_ingest_api_service,
-    wait_for_ingester_decommission, wait_for_ingester_status, GetMemoryCapacity, IngestRequest,
-    IngestRouter, IngestServiceClient, Ingester, IngesterPool, LocalShardsUpdate,
+    GetMemoryCapacity, IngestRequest, IngestRouter, IngestServiceClient, Ingester, IngesterPool,
+    LocalShardsUpdate, get_idle_shard_timeout, setup_local_shards_update_listener,
+    start_ingest_api_service, wait_for_ingester_decommission, wait_for_ingester_status,
 };
 use quickwit_jaeger::JaegerService;
-use quickwit_janitor::{start_janitor_service, JanitorService};
+use quickwit_janitor::{JanitorService, start_janitor_service};
 use quickwit_metastore::{
     ControlPlaneMetastore, ListIndexesMetadataResponseExt, MetastoreResolver,
 };
@@ -106,14 +106,16 @@ use quickwit_proto::metastore::{
 use quickwit_proto::search::ReportSplitsRequest;
 use quickwit_proto::types::NodeId;
 use quickwit_search::{
-    create_search_client_from_channel, start_searcher_service, SearchJobPlacer, SearchService,
-    SearchServiceClient, SearcherContext, SearcherPool,
+    SearchJobPlacer, SearchService, SearchServiceClient, SearcherContext, SearcherPool,
+    create_search_client_from_channel, start_searcher_service,
 };
 use quickwit_storage::{SplitCache, StorageResolver};
 use tcp_listener::TcpListenerResolver;
 use tokio::sync::oneshot;
-use tower::timeout::Timeout;
+use tonic_health::ServingStatus;
+use tonic_health::server::HealthReporter;
 use tower::ServiceBuilder;
+use tower::timeout::Timeout;
 use tracing::{debug, error, info, warn};
 use warp::{Filter, Rejection};
 
@@ -124,7 +126,7 @@ pub use crate::metrics::SERVE_METRICS;
 use crate::rate_modulator::RateModulator;
 #[cfg(test)]
 use crate::rest::recover_fn;
-pub use crate::search_api::{search_request_from_api_request, SearchRequestQueryString, SortBy};
+pub use crate::search_api::{SearchRequestQueryString, SortBy, search_request_from_api_request};
 
 const READINESS_REPORTING_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
     Duration::from_millis(25)
@@ -169,8 +171,9 @@ static METASTORE_GRPC_CLIENT_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
 static METASTORE_GRPC_SERVER_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
     Lazy::new(|| GrpcMetricsLayer::new("metastore", "server"));
 
-static GRPC_TIMEOUT_LAYER: Lazy<TimeoutLayer> =
-    Lazy::new(|| TimeoutLayer::new(Duration::from_secs(30)));
+static GRPC_INGESTER_SERVICE_TIMEOUT: Duration = Duration::from_secs(30);
+static GRPC_INDEXING_SERVICE_TIMEOUT: Duration = Duration::from_secs(30);
+static GRPC_METASTORE_SERVICE_TIMEOUT: Duration = Duration::from_secs(10);
 
 struct QuickwitServices {
     pub node_config: Arc<NodeConfig>,
@@ -459,16 +462,13 @@ pub async fn serve_quickwit(
             {
                 bail!("could not find any metastore node in the cluster");
             }
-            // These layers applies to all the RPCs of the metastore.
-            let shared_layers = ServiceBuilder::new()
-                .layer(RetryLayer::new(RetryPolicy::from(RetryParams::standard())))
-                .layer(METASTORE_GRPC_CLIENT_METRICS_LAYER.clone())
-                .layer(tower::limit::GlobalConcurrencyLimitLayer::new(
+            MetastoreServiceClient::tower()
+                .stack_layer(TimeoutLayer::new(GRPC_METASTORE_SERVICE_TIMEOUT))
+                .stack_layer(RetryLayer::new(RetryPolicy::from(RetryParams::standard())))
+                .stack_layer(METASTORE_GRPC_CLIENT_METRICS_LAYER.clone())
+                .stack_layer(tower::limit::GlobalConcurrencyLimitLayer::new(
                     get_metastore_client_max_concurrency(),
                 ))
-                .into_inner();
-            MetastoreServiceClient::tower()
-                .stack_layer(shared_layers)
                 .build_from_balance_channel(balance_channel, grpc_config.max_message_size)
         };
     // Instantiate a control plane server if the `control-plane` role is enabled on the node.
@@ -514,11 +514,11 @@ pub async fn serve_quickwit(
         None
     };
 
-    // Setup indexer pool.
+    // Setup the indexer pool to track cluster changes.
     setup_indexer_pool(
         &node_config,
         cluster.change_stream(),
-        indexer_pool.clone(),
+        indexer_pool,
         indexing_service_opt.clone(),
     );
 
@@ -713,12 +713,14 @@ pub async fn serve_quickwit(
             debug!("gRPC server shutdown trigger sender was dropped");
         }
     });
+    let (health_reporter, health_service) = tonic_health::server::health_reporter();
     let grpc_server = grpc::start_grpc_server(
         tcp_listener_resolver.resolve(grpc_listen_addr).await?,
         grpc_config,
         quickwit_services.clone(),
         grpc_readiness_trigger,
         grpc_shutdown_signal,
+        health_service,
     );
     // Setup and start REST server.
     let (rest_readiness_trigger_tx, rest_readiness_signal_rx) = oneshot::channel::<()>();
@@ -749,6 +751,7 @@ pub async fn serve_quickwit(
             ingester_opt.clone(),
             grpc_readiness_signal_rx,
             rest_readiness_signal_rx,
+            health_reporter,
         ),
         "node_readiness_reporting",
     );
@@ -853,7 +856,6 @@ async fn setup_ingest_v2(
 ) -> anyhow::Result<(IngestRouter, IngestRouterServiceClient, Option<Ingester>)> {
     // Instantiate ingest router.
     let self_node_id: NodeId = cluster.self_node_id().into();
-    let content_length_limit = node_config.ingest_api_config.content_length_limit;
     let replication_factor = node_config
         .ingest_api_config
         .replication_factor()
@@ -875,15 +877,10 @@ async fn setup_ingest_v2(
         .stack_layer(INGEST_GRPC_SERVER_METRICS_LAYER.clone())
         .build(ingest_router.clone());
 
-    // We compute the burst limit as something a bit larger than the content length limit, because
-    // we actually rewrite the `\n-delimited format into a tiny bit larger buffer, where the
-    // line length is prefixed.
-    let burst_limit = (content_length_limit.as_u64() * 3 / 2).clamp(10_000_000, 200_000_000);
-
     let rate_limit =
         ConstantRate::bytes_per_sec(node_config.ingest_api_config.shard_throughput_limit);
     let rate_limiter_settings = RateLimiterSettings {
-        burst_limit,
+        burst_limit: node_config.ingest_api_config.shard_burst_limit.as_u64(),
         rate_limit,
         // Refill every 100ms.
         refill_period: Duration::from_millis(100),
@@ -949,7 +946,7 @@ async fn setup_ingest_v2(
                     } else {
                         let ingester_service = IngesterServiceClient::tower()
                             .stack_layer(INGEST_GRPC_CLIENT_METRICS_LAYER.clone())
-                            .stack_layer(GRPC_TIMEOUT_LAYER.clone())
+                            .stack_layer(TimeoutLayer::new(GRPC_INGESTER_SERVICE_TIMEOUT))
                             .build_from_channel(
                                 node.grpc_advertise_addr(),
                                 node.channel(),
@@ -1064,6 +1061,7 @@ async fn setup_control_plane(
         default_index_root_uri,
         replication_factor,
         shard_throughput_limit: ingest_api_config.shard_throughput_limit,
+        shard_scale_up_factor: ingest_api_config.shard_scale_up_factor,
     };
     let (control_plane_mailbox, _control_plane_handle, mut readiness_rx) = ControlPlane::spawn(
         universe,
@@ -1150,7 +1148,7 @@ fn setup_indexer_pool(
                     } else {
                         let client = IndexingServiceClient::tower()
                             .stack_layer(INDEXING_GRPC_CLIENT_METRICS_LAYER.clone())
-                            .stack_layer(GRPC_TIMEOUT_LAYER.clone())
+                            .stack_layer(TimeoutLayer::new(GRPC_INDEXING_SERVICE_TIMEOUT))
                             .build_from_channel(
                                 node.grpc_advertise_addr(),
                                 node.channel(),
@@ -1212,7 +1210,16 @@ async fn node_readiness_reporting_task(
     ingester_opt: Option<impl IngesterService>,
     grpc_readiness_signal_rx: oneshot::Receiver<()>,
     rest_readiness_signal_rx: oneshot::Receiver<()>,
+    mut health_reporter: HealthReporter,
 ) {
+    let mut node_ready = false;
+    cluster.set_self_node_readiness(node_ready).await;
+    // Set the initial health status to `NotServing` with "" meaning all services, as per
+    // https://github.com/grpc/grpc/blob/master/doc/health-checking.md
+    health_reporter
+        .set_service_status("", ServingStatus::NotServing)
+        .await;
+
     if grpc_readiness_signal_rx.await.is_err() {
         // the gRPC server failed.
         return;
@@ -1237,7 +1244,7 @@ async fn node_readiness_reporting_task(
     loop {
         interval.tick().await;
 
-        let node_ready = match metastore.check_connectivity().await {
+        let new_node_ready = match metastore.check_connectivity().await {
             Ok(()) => {
                 debug!(metastore_endpoints=?metastore.endpoints(), "metastore service is available");
                 true
@@ -1247,7 +1254,17 @@ async fn node_readiness_reporting_task(
                 false
             }
         };
-        cluster.set_self_node_readiness(node_ready).await;
+        if new_node_ready != node_ready {
+            node_ready = new_node_ready;
+            cluster.set_self_node_readiness(node_ready).await;
+
+            let serving_status = if node_ready {
+                ServingStatus::Serving
+            } else {
+                ServingStatus::NotServing
+            };
+            health_reporter.set_service_status("", serving_status).await;
+        }
     }
 }
 
@@ -1312,17 +1329,21 @@ pub mod lambda_search_api {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_cluster::{create_cluster_for_test, ChannelTransport, ClusterNode};
-    use quickwit_common::uri::Uri;
+    use quickwit_cluster::{ChannelTransport, ClusterNode, create_cluster_for_test};
     use quickwit_common::ServiceStream;
+    use quickwit_common::uri::Uri;
     use quickwit_config::SearcherConfig;
-    use quickwit_metastore::{metastore_for_test, IndexMetadata};
+    use quickwit_metastore::{IndexMetadata, metastore_for_test};
     use quickwit_proto::indexing::IndexingTask;
     use quickwit_proto::ingest::ingester::{MockIngesterService, ObservationMessage};
     use quickwit_proto::metastore::{ListIndexesMetadataResponse, MockMetastoreService};
     use quickwit_proto::types::{IndexUid, PipelineUid};
     use quickwit_search::Job;
     use tokio::sync::watch;
+    use tonic::transport::{Channel, Server};
+    use tonic_health::pb::HealthCheckRequest;
+    use tonic_health::pb::health_client::HealthClient;
+    use tonic_health::server::health_reporter;
 
     use super::*;
 
@@ -1386,14 +1407,40 @@ mod tests {
             });
         let (grpc_readiness_trigger_tx, grpc_readiness_signal_rx) = oneshot::channel();
         let (rest_readiness_trigger_tx, rest_readiness_signal_rx) = oneshot::channel();
+
+        let (health_reporter, health_service) = health_reporter();
+        let (client, server) = tokio::io::duplex(1024);
+        tokio::spawn(async move {
+            Server::builder()
+                .add_service(health_service)
+                .serve_with_incoming(tokio_stream::once(Ok::<_, std::io::Error>(server)))
+                .await
+                .unwrap();
+        });
+        let mut client_opt = Some(client);
+        let connector = tower::service_fn(move |_: http::Uri| {
+            let client = client_opt.take().unwrap();
+            async move { Ok::<_, Infallible>(client) }
+        });
+        let channel = Channel::builder("http://[::]:50051".parse().unwrap())
+            .connect_with_connector(connector)
+            .await
+            .unwrap();
+        let mut health_client = HealthClient::new(channel);
+
         tokio::spawn(node_readiness_reporting_task(
             cluster.clone(),
             MetastoreServiceClient::from_mock(mock_metastore),
             Some(mock_ingester),
             grpc_readiness_signal_rx,
             rest_readiness_signal_rx,
+            health_reporter,
         ));
         assert!(!cluster.is_self_node_ready().await);
+
+        let request = tonic::Request::new(HealthCheckRequest::default());
+        let response = health_client.check(request).await.unwrap().into_inner();
+        assert_eq!(response.status(), ServingStatus::NotServing.into());
 
         grpc_readiness_trigger_tx.send(()).unwrap();
         rest_readiness_trigger_tx.send(()).unwrap();
@@ -1404,9 +1451,17 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(25)).await;
         assert!(cluster.is_self_node_ready().await);
 
+        let request = tonic::Request::new(HealthCheckRequest::default());
+        let response = health_client.check(request).await.unwrap().into_inner();
+        assert_eq!(response.status(), ServingStatus::Serving.into());
+
         metastore_readiness_tx.send(false).unwrap();
         tokio::time::sleep(Duration::from_millis(25)).await;
         assert!(!cluster.is_self_node_ready().await);
+
+        let request = tonic::Request::new(HealthCheckRequest::default());
+        let response = health_client.check(request).await.unwrap().into_inner();
+        assert_eq!(response.status(), ServingStatus::NotServing.into());
     }
 
     #[tokio::test]

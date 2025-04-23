@@ -20,11 +20,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use fnv::FnvHashSet;
-use futures::stream::FuturesUnordered;
 use futures::StreamExt;
+use futures::stream::FuturesUnordered;
 use quickwit_actors::Mailbox;
-use quickwit_common::pretty::PrettySample;
 use quickwit_common::Progress;
+use quickwit_common::pretty::PrettySample;
 use quickwit_ingest::{IngesterPool, LeaderId, LocalShardsUpdate};
 use quickwit_proto::control_plane::{
     AdviseResetShardsRequest, AdviseResetShardsResponse, GetOrCreateOpenShardsFailureReason,
@@ -40,17 +40,17 @@ use quickwit_proto::ingest::{
     Shard, ShardIdPosition, ShardIdPositions, ShardIds, ShardPKey, ShardState,
 };
 use quickwit_proto::metastore::{
-    serde_utils, MetastoreResult, MetastoreService, MetastoreServiceClient, OpenShardSubrequest,
-    OpenShardsRequest, OpenShardsResponse,
+    MetastoreResult, MetastoreService, MetastoreServiceClient, OpenShardSubrequest,
+    OpenShardsRequest, OpenShardsResponse, serde_utils,
 };
 use quickwit_proto::types::{IndexUid, NodeId, NodeIdRef, Position, ShardId, SourceUid};
 use rand::rngs::ThreadRng;
 use rand::seq::SliceRandom;
-use rand::{thread_rng, Rng, RngCore};
+use rand::{Rng, RngCore, thread_rng};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, OwnedMutexGuard};
 use tokio::task::JoinHandle;
-use tracing::{debug, enabled, error, info, warn, Level};
+use tracing::{Level, debug, enabled, error, info, warn};
 use ulid::Ulid;
 
 use super::scaling_arbiter::ScalingArbiter;
@@ -285,6 +285,7 @@ impl IngestController {
         ingester_pool: IngesterPool,
         replication_factor: usize,
         max_shard_ingestion_throughput_mib_per_sec: f32,
+        shard_scale_up_factor: f32,
     ) -> Self {
         IngestController {
             metastore,
@@ -294,6 +295,7 @@ impl IngestController {
             stats: IngestControllerStats::default(),
             scaling_arbiter: ScalingArbiter::with_max_shard_ingestion_throughput_mib_per_sec(
                 max_shard_ingestion_throughput_mib_per_sec,
+                shard_scale_up_factor,
             ),
         }
     }
@@ -396,12 +398,13 @@ impl IngestController {
         };
 
         match scaling_mode {
-            ScalingMode::Up => {
+            ScalingMode::Up(shards) => {
                 self.try_scale_up_shards(
                     local_shards_update.source_uid,
                     shard_stats,
                     model,
                     progress,
+                    shards,
                 )
                 .await?;
             }
@@ -670,18 +673,19 @@ impl IngestController {
         shard_stats: ShardStats,
         model: &mut ControlPlaneModel,
         progress: &Progress,
+        num_shards_to_open: usize,
     ) -> MetastoreResult<()> {
         if !model
-            .acquire_scaling_permits(&source_uid, ScalingMode::Up)
+            .acquire_scaling_permits(&source_uid, ScalingMode::Up(num_shards_to_open))
             .unwrap_or(false)
         {
             return Ok(());
         }
-        let new_num_open_shards = shard_stats.num_open_shards + 1;
-        let new_shard_source_uids: HashMap<SourceUid, usize> =
-            HashMap::from_iter([(source_uid.clone(), 1)]);
+        let new_num_open_shards = shard_stats.num_open_shards + num_shards_to_open;
+        let new_shards_per_source: HashMap<SourceUid, usize> =
+            HashMap::from_iter([(source_uid.clone(), num_shards_to_open)]);
         let successful_source_uids_res = self
-            .try_open_shards(new_shard_source_uids, model, &Default::default(), progress)
+            .try_open_shards(new_shards_per_source, model, &Default::default(), progress)
             .await;
 
         match successful_source_uids_res {
@@ -691,7 +695,7 @@ impl IngestController {
                 if successful_source_uids.is_empty() {
                     // We did not manage to create the shard.
                     // We can release our permit.
-                    model.release_scaling_permits(&source_uid, ScalingMode::Up);
+                    model.release_scaling_permits(&source_uid, ScalingMode::Up(num_shards_to_open));
                     warn!(
                         index_uid=%source_uid.index_uid,
                         source_id=%source_uid.source_id,
@@ -715,7 +719,7 @@ impl IngestController {
                     source_id=%source_uid.source_id,
                     "scaling up number of shards to {new_num_open_shards} failed: {metastore_error:?}"
                 );
-                model.release_scaling_permits(&source_uid, ScalingMode::Up);
+                model.release_scaling_permits(&source_uid, ScalingMode::Up(num_shards_to_open));
                 Err(metastore_error)
             }
         }
@@ -739,12 +743,12 @@ impl IngestController {
     /// The number of successfully open shards is returned.
     async fn try_open_shards(
         &mut self,
-        source_uids: HashMap<SourceUid, usize>,
+        shards_per_source: HashMap<SourceUid, usize>,
         model: &mut ControlPlaneModel,
         unavailable_leaders: &FnvHashSet<NodeId>,
         progress: &Progress,
     ) -> MetastoreResult<HashMap<SourceUid, usize>> {
-        let num_shards: usize = source_uids.values().sum();
+        let num_shards: usize = shards_per_source.values().sum();
 
         if num_shards == 0 {
             return Ok(HashMap::new());
@@ -756,9 +760,9 @@ impl IngestController {
             return Ok(HashMap::new());
         };
 
-        let source_uids_with_multiplicity = source_uids
+        let source_uids_with_multiplicity = shards_per_source
             .iter()
-            .flat_map(|(source_uid, count)| std::iter::repeat(source_uid).take(*count));
+            .flat_map(|(source_uid, count)| std::iter::repeat_n(source_uid, *count));
 
         let mut init_shard_subrequests: Vec<InitShardSubrequest> = Vec::new();
 
@@ -1230,15 +1234,15 @@ mod tests {
 
     use std::collections::BTreeSet;
     use std::str::FromStr;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     use itertools::Itertools;
     use quickwit_actors::Universe;
     use quickwit_common::setup_logging_for_tests;
     use quickwit_common::shared_consts::DEFAULT_SHARD_THROUGHPUT_LIMIT;
     use quickwit_common::tower::DelayLayer;
-    use quickwit_config::{DocMapping, SourceConfig, INGEST_V2_SOURCE_ID};
+    use quickwit_config::{DocMapping, INGEST_V2_SOURCE_ID, SourceConfig};
     use quickwit_ingest::{RateMibPerSec, ShardInfo};
     use quickwit_metastore::IndexMetadata;
     use quickwit_proto::control_plane::GetOrCreateOpenShardsSubrequest;
@@ -1347,6 +1351,7 @@ mod tests {
             ingester_pool.clone(),
             replication_factor,
             TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+            1.001,
         );
 
         let mut model = ControlPlaneModel::default();
@@ -1532,6 +1537,7 @@ mod tests {
             ingester_pool,
             replication_factor,
             TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+            1.001,
         );
 
         let mut model = ControlPlaneModel::default();
@@ -1574,6 +1580,7 @@ mod tests {
             ingester_pool,
             replication_factor,
             TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+            1.001,
         );
         let mut model = ControlPlaneModel::default();
 
@@ -1624,6 +1631,7 @@ mod tests {
             ingester_pool.clone(),
             replication_factor,
             TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+            1.001,
         );
 
         let mut model = ControlPlaneModel::default();
@@ -1806,6 +1814,7 @@ mod tests {
             ingester_pool.clone(),
             replication_factor,
             TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+            1.001,
         );
 
         let ingester_id_0 = NodeId::from("test-ingester-0");
@@ -2029,6 +2038,7 @@ mod tests {
             ingester_pool.clone(),
             replication_factor,
             TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+            1.001,
         );
 
         let index_uid = IndexUid::for_test("test-index", 0);
@@ -2166,6 +2176,7 @@ mod tests {
             ingester_pool.clone(),
             replication_factor,
             TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+            1.001,
         );
 
         let index_uid = IndexUid::for_test("test-index", 0);
@@ -2363,6 +2374,7 @@ mod tests {
             ingester_pool.clone(),
             replication_factor,
             TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+            1.001,
         );
 
         let index_uid = IndexUid::for_test("test-index", 0);
@@ -2487,6 +2499,7 @@ mod tests {
             ingester_pool.clone(),
             replication_factor,
             TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+            1.001,
         );
 
         let index_uid = IndexUid::for_test("test-index", 0);
@@ -2510,9 +2523,9 @@ mod tests {
 
         let progress = Progress::default();
 
-        // Test could not find leader.
+        // Test could not find leader because no ingester in pool
         controller
-            .try_scale_up_shards(source_uid.clone(), shard_stats, &mut model, &progress)
+            .try_scale_up_shards(source_uid.clone(), shard_stats, &mut model, &progress, 1)
             .await
             .unwrap();
 
@@ -2564,21 +2577,21 @@ mod tests {
 
         // Test failed to open shards.
         controller
-            .try_scale_up_shards(source_uid.clone(), shard_stats, &mut model, &progress)
+            .try_scale_up_shards(source_uid.clone(), shard_stats, &mut model, &progress, 1)
             .await
             .unwrap();
         assert_eq!(model.all_shards().count(), 0);
 
         // Test failed to init shards.
         controller
-            .try_scale_up_shards(source_uid.clone(), shard_stats, &mut model, &progress)
+            .try_scale_up_shards(source_uid.clone(), shard_stats, &mut model, &progress, 1)
             .await
             .unwrap_err();
         assert_eq!(model.all_shards().count(), 0);
 
         // Test successfully opened shard.
         controller
-            .try_scale_up_shards(source_uid.clone(), shard_stats, &mut model, &progress)
+            .try_scale_up_shards(source_uid.clone(), shard_stats, &mut model, &progress, 1)
             .await
             .unwrap();
         assert_eq!(
@@ -2598,6 +2611,7 @@ mod tests {
             ingester_pool.clone(),
             replication_factor,
             TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+            1.001,
         );
 
         let index_uid = IndexUid::for_test("test-index", 0);
@@ -2824,6 +2838,7 @@ mod tests {
             ingester_pool.clone(),
             replication_factor,
             TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+            1.001,
         );
 
         let index_uid = IndexUid::for_test("test-index", 0);
@@ -2907,6 +2922,7 @@ mod tests {
             ingester_pool,
             replication_factor,
             TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+            1.001,
         );
 
         let mut model = ControlPlaneModel::default();
@@ -2982,6 +2998,7 @@ mod tests {
             ingester_pool.clone(),
             replication_factor,
             TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+            1.001,
         );
 
         let closed_shards = controller.close_shards(Vec::new()).await;
@@ -3138,6 +3155,7 @@ mod tests {
             ingester_pool.clone(),
             replication_factor,
             TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+            1.001,
         );
 
         let mut model = ControlPlaneModel::default();

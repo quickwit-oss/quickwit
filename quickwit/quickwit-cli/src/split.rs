@@ -14,19 +14,19 @@
 
 use std::str::FromStr;
 
-use anyhow::{bail, Context};
-use clap::{arg, ArgMatches, Command};
+use anyhow::{Context, bail};
+use clap::{ArgMatches, Command, arg};
 use colored::Colorize;
 use itertools::Itertools;
 use quickwit_metastore::{Split, SplitState};
 use quickwit_proto::types::{IndexId, SplitId};
 use quickwit_serve::ListSplitsQueryParams;
 use tabled::{Table, Tabled};
-use time::{format_description, Date, OffsetDateTime, PrimitiveDateTime};
+use time::{Date, OffsetDateTime, PrimitiveDateTime, format_description};
 use tracing::debug;
 
 use crate::checklist::GREEN_COLOR;
-use crate::{client_args, make_table, prompt_confirmation, ClientArgs};
+use crate::{ClientArgs, client_args, make_table, prompt_confirmation};
 
 pub fn build_split_command() -> Command {
     Command::new("split")
@@ -479,7 +479,7 @@ mod tests {
     use time::macros::datetime;
 
     use super::*;
-    use crate::cli::{build_cli, CliCommand};
+    use crate::cli::{CliCommand, build_cli};
 
     #[test]
     fn test_parse_list_split_args() -> anyhow::Result<()> {

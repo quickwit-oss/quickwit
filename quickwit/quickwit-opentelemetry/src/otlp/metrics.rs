@@ -14,7 +14,7 @@
 
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
-    exponential_buckets, new_counter_vec, new_histogram_vec, HistogramVec, IntCounterVec,
+    HistogramVec, IntCounterVec, exponential_buckets, new_counter_vec, new_histogram_vec,
 };
 
 pub struct OtlpServiceMetrics {

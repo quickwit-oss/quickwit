@@ -357,8 +357,8 @@ mod serde_datetime {
 
 #[cfg(test)]
 mod tests {
-    use tantivy::time::OffsetDateTime;
     use tantivy::DateTime;
+    use tantivy::time::OffsetDateTime;
 
     use super::*;
     use crate::collector::QuickwitAggregations;

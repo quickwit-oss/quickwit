@@ -420,7 +420,7 @@ mod tests {
     use quickwit_config::IngestApiConfig;
 
     use super::*;
-    use crate::{init_ingest_api, DocBatch, DocBatchBuilder};
+    use crate::{DocBatch, DocBatchBuilder, init_ingest_api};
 
     #[test]
     fn test_ingest_request_cost() {

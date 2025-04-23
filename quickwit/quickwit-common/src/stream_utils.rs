@@ -17,7 +17,7 @@ use std::fmt;
 use std::pin::Pin;
 
 use bytesize::ByteSize;
-use futures::{stream, Stream, StreamExt, TryStreamExt};
+use futures::{Stream, StreamExt, TryStreamExt, stream};
 use prometheus::IntGauge;
 use tokio::sync::{mpsc, watch};
 use tokio_stream::wrappers::{ReceiverStream, UnboundedReceiverStream, WatchStream};
@@ -265,7 +265,7 @@ impl<T> TrackedSender<T> {
         self.sender
             .send(InFlightValue::new(value, value_size, self.gauge))
             .await
-            .map_err(|send_error| mpsc::error::SendError(send_error.0 .0))
+            .map_err(|send_error| mpsc::error::SendError(send_error.0.0))
     }
 }
 
@@ -278,7 +278,7 @@ impl<T> TrackedUnboundedSender<T> {
     pub fn send(&self, value: T, value_size: ByteSize) -> Result<(), mpsc::error::SendError<T>> {
         self.sender
             .send(InFlightValue::new(value, value_size, self.gauge))
-            .map_err(|send_error| mpsc::error::SendError(send_error.0 .0))
+            .map_err(|send_error| mpsc::error::SendError(send_error.0.0))
     }
 }
 

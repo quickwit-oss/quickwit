@@ -17,8 +17,8 @@ use std::collections::HashMap;
 use quickwit_proto::search::{ListFieldType, ListFieldsEntryResponse, ListFieldsResponse};
 use serde::{Deserialize, Serialize};
 
-use super::search_query_params::*;
 use super::ElasticsearchError;
+use super::search_query_params::*;
 use crate::simple_list::{from_simple_list, to_simple_list};
 
 #[serde_with::skip_serializing_none]

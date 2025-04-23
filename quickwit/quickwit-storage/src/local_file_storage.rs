@@ -20,14 +20,15 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use futures::future::{BoxFuture, FutureExt};
 use futures::StreamExt;
+use futures::future::{BoxFuture, FutureExt};
 use quickwit_common::ignore_error_kind;
 use quickwit_common::uri::Uri;
 use quickwit_config::StorageBackend;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tracing::warn;
 
+use crate::metrics::object_storage_get_slice_in_flight_guards;
 use crate::storage::SendableAsync;
 use crate::{
     BulkDeleteError, DebouncedStorage, DeleteFailure, OwnedBytes, Storage, StorageError,
@@ -214,6 +215,7 @@ impl Storage for LocalFileStorage {
             // step, as there would be if using tokio async File.
             let mut file = std::fs::File::open(full_path)?;
             file.seek(SeekFrom::Start(range.start as u64))?;
+            let _in_flight_guards = object_storage_get_slice_in_flight_guards(range.len());
             let mut content_bytes: Vec<u8> = Vec::with_capacity(range.len());
             #[allow(clippy::uninit_vec)]
             unsafe {

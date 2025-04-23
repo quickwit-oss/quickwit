@@ -18,13 +18,13 @@ use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpListener};
 use std::str::FromStr;
 
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use itertools::Itertools;
 use once_cell::sync::OnceCell;
 use pnet::datalink::{self, NetworkInterface};
 use pnet::ipnetwork::IpNetwork;
 use serde::{Deserialize, Serialize, Serializer};
-use tokio::net::{lookup_host, ToSocketAddrs};
+use tokio::net::{ToSocketAddrs, lookup_host};
 
 /// Represents a host, i.e. an IP address (`127.0.0.1`) or a hostname (`localhost`).
 #[derive(Clone, Debug, Eq, PartialEq)]

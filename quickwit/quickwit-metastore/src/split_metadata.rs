@@ -22,7 +22,7 @@ use std::time::Duration;
 use bytesize::ByteSize;
 use quickwit_proto::types::{DocMappingUid, IndexUid, SourceId, SplitId};
 use serde::{Deserialize, Serialize};
-use serde_with::{serde_as, DurationMilliSeconds};
+use serde_with::{DurationMilliSeconds, serde_as};
 use time::OffsetDateTime;
 
 use crate::split_metadata_version::VersionedSplitMetadata;

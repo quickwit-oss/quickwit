@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
-use sea_query::{all, Cond, Expr};
+use sea_query::{Cond, Expr, all};
 
 // We use dollar-quoted strings in PostgreSQL.
 //

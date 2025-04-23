@@ -118,9 +118,11 @@ mod tests {
             r#"{"my_field": {"query": "my_query", "wrong_param": 2}}"#,
         )
         .unwrap_err();
-        assert!(deser_error
-            .to_string()
-            .contains("unknown field `wrong_param`"));
+        assert!(
+            deser_error
+                .to_string()
+                .contains("unknown field `wrong_param`")
+        );
     }
 
     #[test]

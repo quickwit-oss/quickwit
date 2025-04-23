@@ -16,8 +16,8 @@ use futures::future::BoxFuture;
 use futures::stream::BoxStream;
 use quickwit_common::metrics::GaugeGuard;
 use sqlx::database::HasStatement;
-use sqlx::pool::maybe::MaybePoolConnection;
 use sqlx::pool::PoolConnection;
+use sqlx::pool::maybe::MaybePoolConnection;
 use sqlx::{
     Acquire, Database, Describe, Either, Error, Execute, Executor, Pool, Postgres, Transaction,
 };
@@ -76,7 +76,7 @@ impl<'a, DB: Database> Acquire<'a> for &TrackedPool<DB> {
     }
 }
 
-impl<'p, DB: Database> Executor<'p> for &'_ TrackedPool<DB>
+impl<DB: Database> Executor<'_> for &TrackedPool<DB>
 where for<'c> &'c mut DB::Connection: Executor<'c, Database = DB>
 {
     type Database = DB;

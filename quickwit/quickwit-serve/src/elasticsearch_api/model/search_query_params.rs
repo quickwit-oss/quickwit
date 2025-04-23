@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 
 use super::super::TrackTotalHits;
 use super::MultiSearchHeader;
-use crate::elasticsearch_api::model::{default_elasticsearch_sort_order, SortField};
+use crate::elasticsearch_api::model::{SortField, default_elasticsearch_sort_order};
 use crate::simple_list::{from_simple_list, to_simple_list};
 
 #[serde_with::skip_serializing_none]

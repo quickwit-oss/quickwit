@@ -12,18 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use quickwit_common::shared_consts::FIELD_PRESENCE_FIELD_NAME;
 use quickwit_common::PathHasher;
+use quickwit_common::shared_consts::FIELD_PRESENCE_FIELD_NAME;
 use serde::{Deserialize, Serialize};
-use tantivy::schema::{Field, FieldEntry, IndexRecordOption, Schema as TantivySchema};
 use tantivy::Term;
+use tantivy::schema::{Field, FieldEntry, IndexRecordOption, Schema as TantivySchema};
 
 use super::tantivy_query_ast::TantivyBoolQuery;
-use super::utils::{find_subfields, DYNAMIC_FIELD_NAME};
+use super::utils::{DYNAMIC_FIELD_NAME, find_subfields};
 use crate::query_ast::tantivy_query_ast::TantivyQueryAst;
 use crate::query_ast::{BuildTantivyAst, QueryAst};
 use crate::tokenizers::TokenizerManager;
-use crate::{find_field_or_hit_dynamic, BooleanOperand, InvalidQuery};
+use crate::{BooleanOperand, InvalidQuery, find_field_or_hit_dynamic};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct FieldPresenceQuery {

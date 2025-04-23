@@ -21,7 +21,7 @@ use colored::Colorize;
 use opentelemetry::global;
 use quickwit_cli::busy_detector;
 use quickwit_cli::checklist::RED_COLOR;
-use quickwit_cli::cli::{build_cli, CliCommand};
+use quickwit_cli::cli::{CliCommand, build_cli};
 #[cfg(feature = "jemalloc")]
 use quickwit_cli::jemalloc::start_jemalloc_metrics_loop;
 use quickwit_cli::logger::setup_logging_and_tracing;
@@ -69,7 +69,9 @@ fn register_build_info_metric() {
 
 async fn main_impl() -> anyhow::Result<()> {
     #[cfg(feature = "openssl-support")]
-    openssl_probe::init_ssl_cert_env_vars();
+    unsafe {
+        openssl_probe::init_openssl_env_vars()
+    };
     register_build_info_metric();
 
     let about_text = about_text();
@@ -128,7 +130,8 @@ mod tests {
     use std::time::Duration;
 
     use bytesize::ByteSize;
-    use quickwit_cli::cli::{build_cli, CliCommand};
+    use quickwit_cli::ClientArgs;
+    use quickwit_cli::cli::{CliCommand, build_cli};
     use quickwit_cli::index::{
         ClearIndexArgs, CreateIndexArgs, DeleteIndexArgs, DescribeIndexArgs, IndexCliCommand,
         IngestDocsArgs, SearchIndexArgs,
@@ -138,7 +141,6 @@ mod tests {
         ExtractSplitArgs, GarbageCollectIndexArgs, LocalIngestDocsArgs, LocalSearchArgs, MergeArgs,
         ToolCliCommand,
     };
-    use quickwit_cli::ClientArgs;
     use quickwit_common::uri::Uri;
     use quickwit_config::SourceInputFormat;
     use quickwit_rest_client::models::Timeout;
@@ -226,6 +228,8 @@ mod tests {
             "wikipedia",
             "--endpoint",
             "http://127.0.0.1:8000",
+            "--retries",
+            "2",
         ])?;
         let command = CliCommand::parse_cli_args(matches)?;
         assert!(matches!(
@@ -243,6 +247,7 @@ mod tests {
                 && client_args.connect_timeout.is_none()
                 && client_args.commit_timeout.is_none()
                 && client_args.cluster_endpoint == Url::from_str("http://127.0.0.1:8000").unwrap()
+                && client_args.num_retries == 2
         ));
 
         let app = build_cli().no_binary_name(true);
@@ -272,6 +277,7 @@ mod tests {
                         && client_args.timeout.is_none()
                         && client_args.connect_timeout.is_none()
                         && client_args.commit_timeout.is_none()
+                        && client_args.num_retries == 0
                         && batch_size_limit == ByteSize::mb(8)
         ));
 
@@ -301,6 +307,7 @@ mod tests {
                     && client_args.timeout.is_none()
                     && client_args.connect_timeout.is_none()
                     && client_args.commit_timeout.is_none()
+                    && client_args.num_retries == 0
                     && batch_size_limit == ByteSize::kb(4)
         ));
 
@@ -331,6 +338,7 @@ mod tests {
                         && client_args.timeout == Some(Timeout::from_secs(10))
                         && client_args.connect_timeout == Some(Timeout::from_secs(2))
                         && client_args.commit_timeout.is_none()
+                        && client_args.num_retries == 0
         ));
 
         let app = build_cli().no_binary_name(true);
@@ -747,9 +755,13 @@ mod tests {
 
     #[test]
     fn test_parse_no_color() {
+        // SAFETY: this test may not be entirely sound if not run with nextest or --test-threads=1
+        // as this is only a test, and it would be extremly inconvenient to run it in a different
+        // way, we are keeping it that way
+
         let previous_no_color_res = std::env::var("NO_COLOR");
         {
-            std::env::set_var("NO_COLOR", "whatever_interpreted_as_true");
+            unsafe { std::env::set_var("NO_COLOR", "whatever_interpreted_as_true") };
             let app = build_cli().no_binary_name(true);
             let matches = app.try_get_matches_from(["run"]).unwrap();
             let no_color = matches.get_flag("no-color");
@@ -757,7 +769,7 @@ mod tests {
         }
         {
             // empty string is false.
-            std::env::set_var("NO_COLOR", "");
+            unsafe { std::env::set_var("NO_COLOR", "") };
             let app = build_cli().no_binary_name(true);
             let matches = app.try_get_matches_from(["run"]).unwrap();
             let no_color = matches.get_flag("no-color");
@@ -771,7 +783,7 @@ mod tests {
             assert!(no_color);
         }
         if let Ok(previous_no_color) = previous_no_color_res {
-            std::env::set_var("NO_COLOR", previous_no_color);
+            unsafe { std::env::set_var("NO_COLOR", previous_no_color) };
         }
     }
 }

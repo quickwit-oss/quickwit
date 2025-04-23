@@ -14,14 +14,14 @@
 
 use std::time::Duration;
 
+use aws_config::BehaviorVersion;
 use aws_config::retry::RetryConfig;
 use aws_config::stalled_stream_protection::StalledStreamProtectionConfig;
-use aws_config::BehaviorVersion;
 pub use aws_smithy_async::rt::sleep::TokioSleep;
 use aws_smithy_runtime::client::http::hyper_014::HyperClientBuilder;
 use aws_types::region::Region;
-use hyper::client::HttpConnector;
 use hyper::Client as HyperClient;
+use hyper::client::HttpConnector;
 use hyper_rustls::HttpsConnectorBuilder;
 use tokio::sync::OnceCell;
 
@@ -58,7 +58,7 @@ pub async fn get_aws_config() -> &'static aws_config::SdkConfig {
                 .hyper_builder(hyper_client_builder)
                 .build(https_connector);
 
-            aws_config::defaults(BehaviorVersion::v2024_03_28())
+            aws_config::defaults(aws_behavior_version())
                 .stalled_stream_protection(StalledStreamProtectionConfig::enabled().build())
                 .http_client(hyper_client)
                 // Currently handle this ourselves so probably best for now to leave it as is.
@@ -68,4 +68,9 @@ pub async fn get_aws_config() -> &'static aws_config::SdkConfig {
                 .await
         })
         .await
+}
+
+/// Returns the AWS behavior version.
+pub fn aws_behavior_version() -> BehaviorVersion {
+    BehaviorVersion::v2025_01_17()
 }

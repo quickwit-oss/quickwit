@@ -18,10 +18,10 @@ use anyhow::{bail, ensure};
 use quickwit_proto::types::SourceId;
 use serde::{Deserialize, Serialize};
 
-use super::{TransformConfig, RESERVED_SOURCE_IDS};
+use super::{RESERVED_SOURCE_IDS, TransformConfig};
 use crate::{
-    validate_identifier, ConfigFormat, FileSourceParams, SourceConfig, SourceInputFormat,
-    SourceParams,
+    ConfigFormat, FileSourceParams, SourceConfig, SourceInputFormat, SourceParams,
+    validate_identifier,
 };
 
 type SourceConfigForSerialization = SourceConfigV0_8;

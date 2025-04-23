@@ -24,15 +24,15 @@ use std::task::{Context, Poll};
 
 use anyhow::anyhow;
 use http::header::Entry;
-use lambda_http::http::response::Parts;
 use lambda_http::http::HeaderValue;
+use lambda_http::http::response::Parts;
 use lambda_http::{
-    lambda_runtime, Adapter, Body as LambdaBody, Error as LambdaError, Request, RequestExt,
-    Response, Service,
+    Adapter, Body as LambdaBody, Error as LambdaError, Request, RequestExt, Response, Service,
+    lambda_runtime,
 };
-use mime_guess::{mime, Mime};
+use mime_guess::{Mime, mime};
 use once_cell::sync::Lazy;
-use tracing::{info_span, Instrument};
+use tracing::{Instrument, info_span};
 use warp::hyper::Body as WarpBody;
 pub use {lambda_http, warp};
 

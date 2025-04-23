@@ -334,6 +334,12 @@ Updates the configurations of an index. This endpoint follows PUT semantics, whi
 - The indexing settings update is automatically picked up by the indexer nodes once the control plane emits a new indexing plan.
 - The doc mapping update is automatically picked up by the indexer nodes once the control plane emit a new indexing plan.
 
+:::warning
+
+If you use the ingest or ES bulk API (V2), the old doc mapping will still be used to validate new documents that end up being persisted on existing shards (see [#5738](https://github.com/quickwit-oss/quickwit/issues/5738)).
+
+:::
+
 Updating the doc mapping doesn't reindex existing data. Queries and results are mapped on a best-effort basis when querying older splits. For more details, check [the reference](updating-mapper.md) out.
 
 #### PUT payload
@@ -342,7 +348,7 @@ Updating the doc mapping doesn't reindex existing data. Queries and results are 
 |---------------------|--------------------|-----------------------------------------------------------------------------------------------------------------------|---------------------------------------|
 | `version`           | `String`           | Config format version, use the same as your Quickwit version.                                                         | _required_                            |
 | `index_id`          | `String`           | Index ID, must be the same index as in the request URI.                                                               | _required_                            |
-| `index_uri`         | `String`           | Defines where the index files are stored. Cannot be updated.                                                          | `{current_index_uri}`                 |
+| `index_uri`         | `String`           | Defines where the index files are stored. Cannot be updated.                                                          | `{default_index_root_uri}/{index_id}`                 |
 | `doc_mapping`       | `DocMapping`       | Doc mapping object as specified in the [index config docs](../configuration/index-config.md#doc-mapping).             | _required_                            |
 | `indexing_settings` | `IndexingSettings` | Indexing settings object as specified in the [index config docs](../configuration/index-config.md#indexing-settings). |                                       |
 | `search_settings`   | `SearchSettings`   | Search settings object as specified in the [index config docs](../configuration/index-config.md#search-settings).     |                                       |

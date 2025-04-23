@@ -13,9 +13,9 @@
 // limitations under the License.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use quickwit_config::{IndexConfig, IndexTemplate, SourceConfig, TestableForRegression};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -76,6 +76,8 @@ where T: TestableForRegression + std::fmt::Debug {
     Ok(())
 }
 
+/// For each pair of `x.json` and `x.expected.json` in `test_dir`, assert that the deserialized
+/// versions are equal according to `T::assert_equality`.
 fn test_backward_compatibility<T>(test_dir: &Path) -> anyhow::Result<()>
 where T: TestableForRegression + std::fmt::Debug {
     for entry in
@@ -83,7 +85,9 @@ where T: TestableForRegression + std::fmt::Debug {
     {
         let entry = entry?;
         let path = entry.path();
-        if path.to_string_lossy().ends_with(".expected.json") {
+        if path.to_string_lossy().ends_with(".expected.json")
+            || path.to_string_lossy().ends_with(".modified.json")
+        {
             continue;
         }
         test_backward_compatibility_single_case::<T>(&path)
@@ -107,11 +111,18 @@ where for<'a> T: std::fmt::Debug + Serialize + Deserialize<'a> {
     println!("---\nwith {:?}", expected_new_json_value);
     let mut expected_new_json = serde_json::to_string_pretty(&expected_new_json_value)?;
     expected_new_json.push('\n');
-    std::fs::write(expected_path, expected_new_json.as_bytes())?;
+    std::fs::write(
+        expected_path.with_extension("modified.json"),
+        expected_new_json.as_bytes(),
+    )?;
     Ok(true)
 }
 
-fn test_and_update_expected_files<T>(test_dir: &Path) -> anyhow::Result<()>
+/// For versions different (older) than the current [GLOBAL_QUICKWIT_RESOURCE_VERSION],
+/// assert whether the expected.json files need to be changed.
+///
+/// Returns the proposed updated files (xxx.expected.modified.json).
+fn test_and_update_old_expected_files<T>(test_dir: &Path) -> anyhow::Result<Vec<PathBuf>>
 where for<'a> T: std::fmt::Debug + Deserialize<'a> + Serialize {
     let mut updated_expected_files = Vec::new();
     for entry in fs::read_dir(test_dir)? {
@@ -120,75 +131,72 @@ where for<'a> T: std::fmt::Debug + Deserialize<'a> + Serialize {
         if !path.to_string_lossy().ends_with(".expected.json") {
             continue;
         }
+        if path.to_string_lossy().ends_with(&format!(
+            "v{GLOBAL_QUICKWIT_RESOURCE_VERSION}.expected.json"
+        )) {
+            continue;
+        }
         if test_and_update_expected_files_single_case::<T>(&path)
             .with_context(|| format!("test filepath {}", path.display()))?
         {
-            updated_expected_files.push(path);
+            updated_expected_files.push(path.with_extension("modified.json"));
         }
     }
-    assert!(
-        updated_expected_files.is_empty(),
-        "The following expected files need to be updated. {updated_expected_files:?}"
-    );
-    Ok(())
+    Ok(updated_expected_files)
 }
 
-fn test_and_create_new_test<T>(test_dir: &Path, sample: T) -> anyhow::Result<()>
+/// Asserts whether the serialized version of the `sample` is the same as the existing
+/// `v{GLOBAL_QUICKWIT_RESOURCE_VERSION}.json`.
+///
+/// Returns the created serialized files if they didn't exist (x.json and x.expected.json) or the
+/// proposed updated files (.modified.json) if they changed.
+///
+/// Both generated files have identical contents.
+fn test_and_create_new_test<T>(test_dir: &Path, sample: T) -> anyhow::Result<Vec<PathBuf>>
 where for<'a> T: Serialize {
     let sample_json_value = serde_json::to_value(&sample)?;
-    let version: &str = sample_json_value
-        .as_object()
-        .unwrap()
-        .get("version")
-        .expect("missing version")
-        .as_str()
-        .expect("version should be a string");
     let mut sample_json = serde_json::to_string_pretty(&sample_json_value)?;
     sample_json.push('\n');
-    let test_name = format!("v{version}");
-    let file_regression_test_path_str = format!("{}/{}.json", test_dir.display(), test_name);
-    let file_regression_expected_path_str =
-        format!("{}/{}.expected.json", test_dir.display(), test_name);
 
-    let file_regression_test_path = Path::new(&file_regression_test_path_str);
+    let file_regression_test_path_str = format!(
+        "{}/v{GLOBAL_QUICKWIT_RESOURCE_VERSION}.json",
+        test_dir.display()
+    );
+    let mut file_regression_test_path = PathBuf::from(file_regression_test_path_str);
+
     let (changes_detected, file_created) = if file_regression_test_path.try_exists()? {
-        let expected_old_json_value: JsonValue = deserialize_json_file(file_regression_test_path)?;
+        let expected_old_json_value: JsonValue = deserialize_json_file(&file_regression_test_path)?;
         let expected_new_json_value: JsonValue = serde_json::from_str(&sample_json)?;
         (expected_old_json_value != expected_new_json_value, false)
     } else {
         (false, true)
     };
 
-    if changes_detected || file_created {
-        std::fs::write(
-            file_regression_test_path_str.clone(),
-            sample_json.as_bytes(),
-        )?;
-        std::fs::write(
-            file_regression_expected_path_str.clone(),
-            sample_json.as_bytes(),
-        )?;
-        if file_created {
-            panic!(
-                "The following files need to be added: {file_regression_test_path_str:?} and \
-                 {file_regression_expected_path_str:?}"
-            )
-        } else {
-            panic!(
-                "The following files need to be updated: {file_regression_test_path_str:?} and \
-                 {file_regression_expected_path_str:?}"
-            )
-        }
+    let mut file_regression_expected_path =
+        file_regression_test_path.with_extension("expected.json");
+
+    if !file_created {
+        file_regression_test_path = file_regression_test_path.with_extension("modified.json");
+        file_regression_expected_path =
+            file_regression_expected_path.with_extension("modified.json")
     }
-    Ok(())
+
+    if changes_detected || file_created {
+        std::fs::write(&file_regression_test_path, sample_json.as_bytes())?;
+        std::fs::write(&file_regression_expected_path, sample_json.as_bytes())?;
+        Ok(vec![
+            file_regression_test_path,
+            file_regression_expected_path,
+        ])
+    } else {
+        Ok(vec![])
+    }
 }
 
 /// This helper function scans the `test-data/{test_name}`
 /// for JSON deserialization regression tests and runs them sequentially.
 ///
 /// - `test_name` is just the subdirectory name, for the type being test.
-/// - `test` is a function asserting the equality of the deserialized version and the expected
-///   version.
 pub(crate) fn test_json_backward_compatibility_helper<T>(test_name: &str) -> anyhow::Result<()>
 where T: TestableForRegression + std::fmt::Debug {
     let sample_instance: T = T::sample_for_regression();
@@ -196,10 +204,22 @@ where T: TestableForRegression + std::fmt::Debug {
 
     let test_dir = Path::new("test-data").join(test_name);
     test_backward_compatibility::<T>(&test_dir).context("backward-compatibility")?;
-    test_and_update_expected_files::<T>(&test_dir).context("test-and-update")?;
+    let updated_files =
+        test_and_update_old_expected_files::<T>(&test_dir).context("test-and-update")?;
 
-    test_and_create_new_test::<T>(&test_dir, sample_instance)
+    let mut updated_or_new_files = test_and_create_new_test::<T>(&test_dir, sample_instance)
         .context("test-and-create-new-test")?;
+
+    updated_or_new_files.extend(updated_files);
+
+    if !updated_or_new_files.is_empty() {
+        panic!(
+            "Some files have been updated or created. Please check the diff and replace their \
+             counterparts when appropriate: {:?}",
+            updated_or_new_files
+        );
+    }
+
     Ok(())
 }
 
@@ -239,4 +259,156 @@ fn test_file_backed_metastore_manifest_backward_compatibility() {
 fn test_index_template_global_version() {
     let sample_instance = IndexTemplate::sample_for_regression();
     test_global_version(&sample_instance).unwrap();
+}
+
+/// Testing the tests
+///
+/// A simplified example that helps understanding the backward compatibility tests.
+#[cfg(test)]
+mod tests {
+    use std::panic::catch_unwind;
+
+    use serde_json::json;
+
+    use super::*;
+
+    #[derive(Serialize, Deserialize, Debug, Clone)]
+    #[serde(into = "VersionedTestEntity")]
+    #[serde(from = "VersionedTestEntity")]
+    struct TestEntity {
+        field_already_in_0_7: u16,
+        field_added_in_0_8: u16,
+    }
+
+    #[derive(Serialize, Deserialize, Debug, Clone)]
+    struct TestEntityV0_8 {
+        field_already_in_0_7: u16,
+        field_added_in_0_8: u16,
+    }
+
+    #[derive(Deserialize, Debug, Clone)]
+    struct TestEntityV0_7 {
+        field_already_in_0_7: u16,
+    }
+
+    #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
+    #[serde(tag = "version")]
+    enum VersionedTestEntity {
+        #[serde(rename = "0.9")]
+        #[serde(alias = "0.8")]
+        V0_8(TestEntityV0_8),
+        #[serde(alias = "0.7", skip_serializing)]
+        V0_7(TestEntityV0_7),
+    }
+
+    impl From<VersionedTestEntity> for TestEntity {
+        fn from(versioned_test_entity: VersionedTestEntity) -> Self {
+            match versioned_test_entity {
+                VersionedTestEntity::V0_8(v0_9) => TestEntity {
+                    field_added_in_0_8: v0_9.field_added_in_0_8,
+                    field_already_in_0_7: v0_9.field_already_in_0_7,
+                },
+                VersionedTestEntity::V0_7(v0_7) => TestEntity {
+                    field_already_in_0_7: v0_7.field_already_in_0_7,
+                    field_added_in_0_8: 1,
+                },
+            }
+        }
+    }
+
+    impl From<TestEntity> for VersionedTestEntity {
+        fn from(test_entity: TestEntity) -> Self {
+            VersionedTestEntity::V0_8(TestEntityV0_8 {
+                field_added_in_0_8: test_entity.field_added_in_0_8,
+                field_already_in_0_7: test_entity.field_already_in_0_7,
+            })
+        }
+    }
+
+    impl TestableForRegression for TestEntity {
+        fn sample_for_regression() -> Self {
+            TestEntity {
+                field_added_in_0_8: 43,
+                field_already_in_0_7: 42,
+            }
+        }
+
+        fn assert_equality(&self, other: &Self) {
+            assert_eq!(self.field_added_in_0_8, other.field_added_in_0_8);
+            assert_eq!(self.field_already_in_0_7, other.field_already_in_0_7);
+        }
+    }
+
+    #[test]
+    fn test_test_json_backward_compatibility_helper_create() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_path = temp_dir.path();
+
+        let json_sample_0_7 = json!({"version": "0.7", "field_already_in_0_7": 42});
+        let json_sample_0_8 = json!({"version": GLOBAL_QUICKWIT_RESOURCE_VERSION,
+"field_already_in_0_7": 42, "field_added_in_0_8": 43});
+
+        let json_sample_0_7_str = serde_json::to_string_pretty(&json_sample_0_7).unwrap();
+        let json_sample_0_8_str = serde_json::to_string_pretty(&json_sample_0_8).unwrap();
+
+        std::fs::write(temp_path.join("v0.7.json"), json_sample_0_7_str.as_bytes()).unwrap();
+        std::fs::write(
+            temp_path.join("v0.7.expected.json"),
+            json_sample_0_7_str.as_bytes(),
+        )
+        .unwrap();
+        std::fs::write(temp_path.join("v0.8.json"), json_sample_0_8_str.as_bytes()).unwrap();
+        std::fs::write(
+            temp_path.join("v0.8.expected.json"),
+            json_sample_0_8_str.as_bytes(),
+        )
+        .unwrap();
+
+        let test_panic = catch_unwind(|| {
+            test_json_backward_compatibility_helper::<TestEntity>(&temp_path.to_string_lossy())
+                .unwrap();
+        });
+        let test_panic_msg = format!(
+            "{:?}",
+            test_panic.unwrap_err().downcast::<String>().unwrap()
+        );
+        let latest_version_filename = format!("v{GLOBAL_QUICKWIT_RESOURCE_VERSION}.json");
+        let latest_version_expected_filename =
+            format!("v{GLOBAL_QUICKWIT_RESOURCE_VERSION}.expected.json");
+        assert!(test_panic_msg.contains(&latest_version_filename));
+        assert!(test_panic_msg.contains(&latest_version_expected_filename));
+        assert!(test_panic_msg.contains("v0.7.expected.modified.json"));
+
+        // assert on the directory
+        let nb_files = fs::read_dir(temp_path).unwrap().count();
+        assert_eq!(nb_files, 4 + 3);
+        let created_last_version =
+            deserialize_json_file::<JsonValue>(&temp_path.join(latest_version_filename)).unwrap();
+        assert_eq!(created_last_version, json_sample_0_8);
+        let created_expected_last_version =
+            deserialize_json_file::<JsonValue>(&temp_path.join(latest_version_expected_filename))
+                .unwrap();
+        assert_eq!(created_expected_last_version, json_sample_0_8);
+        let created_expected_modified_0_7 =
+            deserialize_json_file::<JsonValue>(&temp_path.join("v0.7.expected.modified.json"))
+                .unwrap();
+        assert_eq!(
+            created_expected_modified_0_7,
+            json!({
+                "version": GLOBAL_QUICKWIT_RESOURCE_VERSION,
+                "field_already_in_0_7": 42,
+                // use TestEntity::From<VersionedTestEntity>
+                "field_added_in_0_8": 1,
+            })
+        );
+
+        // assert idempotency
+        let test_panic = catch_unwind(|| {
+            test_json_backward_compatibility_helper::<TestEntity>(&temp_path.to_string_lossy())
+                .unwrap();
+        });
+        test_panic.unwrap_err();
+        let nb_files = fs::read_dir(temp_path).unwrap().count();
+        assert_eq!(nb_files, 4 + 3);
+    }
 }

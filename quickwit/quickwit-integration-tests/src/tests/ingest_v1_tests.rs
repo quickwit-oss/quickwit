@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use quickwit_config::service::QuickwitService;
 use quickwit_config::ConfigFormat;
+use quickwit_config::service::QuickwitService;
 use quickwit_metastore::SplitState;
 use quickwit_rest_client::rest_client::CommitType;
 use serde_json::json;
 
 use crate::ingest_json;
-use crate::test_utils::{ingest, ClusterSandboxBuilder};
+use crate::test_utils::{ClusterSandboxBuilder, ingest};
 
 // TODO(#5604)
 

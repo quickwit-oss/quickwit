@@ -23,10 +23,10 @@ use lru::LruCache;
 use tokio::time::Instant;
 use tracing::{error, warn};
 
+use crate::OwnedBytes;
 use crate::cache::slice_address::{SliceAddress, SliceAddressKey, SliceAddressRef};
 use crate::cache::stored_item::StoredItem;
 use crate::metrics::CacheMetrics;
-use crate::OwnedBytes;
 
 /// We do not evict anything that has been accessed in the last 60s.
 ///

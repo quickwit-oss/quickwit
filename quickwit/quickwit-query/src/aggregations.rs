@@ -14,6 +14,7 @@
 
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
+use tantivy::aggregation::Key as TantivyKey;
 use tantivy::aggregation::agg_result::{
     AggregationResult as TantivyAggregationResult, AggregationResults as TantivyAggregationResults,
     BucketEntries as TantivyBucketEntries, BucketEntry as TantivyBucketEntry,
@@ -25,7 +26,6 @@ use tantivy::aggregation::metric::{
     PercentilesMetricResult as TantivyPercentilesMetricResult, SingleMetricResult, Stats,
     TopHitsMetricResult,
 };
-use tantivy::aggregation::Key as TantivyKey;
 
 // hopefully all From in this module are no-ops, otherwise, this is a very sad situation
 

@@ -19,8 +19,8 @@ use quickwit_doc_mapper::DocMapperApiSchemas;
 use quickwit_indexing::IndexingApiSchemas;
 use quickwit_janitor::JanitorApiSchemas;
 use quickwit_metastore::MetastoreApiSchemas;
-use utoipa::openapi::Tag;
 use utoipa::OpenApi;
+use utoipa::openapi::Tag;
 
 use crate::cluster_api::ClusterApi;
 use crate::delete_task_api::DeleteTaskApi;

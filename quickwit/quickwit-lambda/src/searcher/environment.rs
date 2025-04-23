@@ -33,14 +33,21 @@ mod tests {
     #[tokio::test]
     #[serial_test::file_serial(with_env)]
     async fn test_load_config() {
+        // SAFETY: this test may not be entirely sound if not run with nextest or --test-threads=1
+        // as this is only a test, and it would be extremly inconvenient to run it in a different
+        // way, we are keeping it that way
+        // file_serial may not be enough, given other tests not ran serially could read env
+
         let bucket = "mock-test-bucket";
-        std::env::set_var("QW_LAMBDA_METASTORE_BUCKET", bucket);
-        std::env::set_var("QW_LAMBDA_INDEX_BUCKET", bucket);
-        std::env::set_var(
-            "QW_LAMBDA_INDEX_CONFIG_URI",
-            "s3://mock-index-config-bucket",
-        );
-        std::env::set_var("QW_LAMBDA_INDEX_ID", "lambda-test");
+        unsafe {
+            std::env::set_var("QW_LAMBDA_METASTORE_BUCKET", bucket);
+            std::env::set_var("QW_LAMBDA_INDEX_BUCKET", bucket);
+            std::env::set_var(
+                "QW_LAMBDA_INDEX_CONFIG_URI",
+                "s3://mock-index-config-bucket",
+            );
+            std::env::set_var("QW_LAMBDA_INDEX_ID", "lambda-test");
+        }
 
         let node_config = NodeConfig::load(ConfigFormat::Yaml, CONFIGURATION_TEMPLATE.as_bytes())
             .await
@@ -63,9 +70,11 @@ mod tests {
             ByteSize::mb(64)
         );
 
-        std::env::remove_var("QW_LAMBDA_METASTORE_BUCKET");
-        std::env::remove_var("QW_LAMBDA_INDEX_BUCKET");
-        std::env::remove_var("QW_LAMBDA_INDEX_CONFIG_URI");
-        std::env::remove_var("QW_LAMBDA_INDEX_ID");
+        unsafe {
+            std::env::remove_var("QW_LAMBDA_METASTORE_BUCKET");
+            std::env::remove_var("QW_LAMBDA_INDEX_BUCKET");
+            std::env::remove_var("QW_LAMBDA_INDEX_CONFIG_URI");
+            std::env::remove_var("QW_LAMBDA_INDEX_ID");
+        }
     }
 }

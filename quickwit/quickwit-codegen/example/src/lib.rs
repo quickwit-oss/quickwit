@@ -17,15 +17,15 @@ mod error;
 #[path = "codegen/hello.rs"]
 mod hello;
 
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::StreamExt;
-use quickwit_common::uri::Uri;
 use quickwit_common::ServiceStream;
+use quickwit_common::uri::Uri;
 use tower::{Layer, Service};
 
 pub use crate::error::HelloError;
@@ -162,14 +162,14 @@ mod tests {
 
     use bytesize::ByteSize;
     use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Universe};
-    use quickwit_common::tower::{BalanceChannel, Change};
+    use quickwit_common::tower::{BalanceChannel, Change, TimeoutLayer};
     use tokio::sync::mpsc::error::TrySendError;
     use tokio_stream::StreamExt;
     use tonic::transport::{Endpoint, Server};
 
     use super::*;
-    use crate::hello::hello_grpc_server::HelloGrpcServer;
     use crate::hello::MockHello;
+    use crate::hello::hello_grpc_server::HelloGrpcServer;
     use crate::hello_grpc_client::HelloGrpcClient;
     use crate::{CounterLayer, GoodbyeRequest, GoodbyeResponse};
 
@@ -425,11 +425,13 @@ mod tests {
         actor_client.check_connectivity().await.unwrap();
         assert_eq!(
             actor_client.endpoints(),
-            vec![Uri::from_str(&format!(
-                "actor://localhost/{}",
-                actor_mailbox.actor_instance_id()
-            ))
-            .unwrap()]
+            vec![
+                Uri::from_str(&format!(
+                    "actor://localhost/{}",
+                    actor_mailbox.actor_instance_id()
+                ))
+                .unwrap()
+            ]
         );
 
         let (ping_stream_tx, ping_stream) = ServiceStream::new_bounded(1);
@@ -766,5 +768,62 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(error, HelloError::Timeout(_)));
+    }
+
+    #[tokio::test]
+    async fn test_balanced_channel_timeout_with_server_crash() {
+        let addr_str = "127.0.0.1:11112";
+        let addr: SocketAddr = addr_str.parse().unwrap();
+        // We want to abruptly stop a server without even sending the connection
+        // RST packet. Simply dropping the tonic Server is not enough, so we
+        // spawn a thread and freeze it with thread::park().
+        std::thread::spawn(move || {
+            let server_fut = async {
+                let hello = HelloImpl {
+                    // delay the response so that the server freezes in the middle of the request
+                    delay: Duration::from_millis(1000),
+                };
+                let grpc_server_adapter = HelloGrpcServerAdapter::new(hello);
+                let grpc_server = HelloGrpcServer::new(grpc_server_adapter);
+                tokio::select! {
+                    // wait just enough to let the client perform its request
+                    _ = tokio::time::sleep(Duration::from_millis(100)) => {}
+                    _ = Server::builder().add_service(grpc_server).serve(addr) => {}
+                };
+                std::thread::park();
+                println!("Thread unparked, unexpected");
+            };
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(server_fut);
+        });
+
+        // create a client that will try to connect to the server
+        let (balance_channel, balance_channel_tx) = BalanceChannel::new();
+        let channel = Endpoint::from_str(&format!("http://{addr_str}"))
+            .unwrap()
+            .connect_lazy();
+        balance_channel_tx
+            .send(Change::Insert(addr, channel))
+            .unwrap();
+
+        let grpc_client = HelloClient::tower()
+            // this test hangs forever if we comment out the TimeoutLayer, which
+            // shows that a request without explicit timeout might hang forever
+            .stack_layer(TimeoutLayer::new(Duration::from_secs(3)))
+            .build_from_balance_channel(balance_channel, ByteSize::mib(1));
+
+        let response_fut = async move {
+            grpc_client
+                .hello(HelloRequest {
+                    name: "World".to_string(),
+                })
+                .await
+        };
+        response_fut
+            .await
+            .expect_err("should have timed out at the client level");
     }
 }

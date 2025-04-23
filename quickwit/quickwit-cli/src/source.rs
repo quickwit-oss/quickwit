@@ -14,21 +14,21 @@
 
 use std::str::FromStr;
 
-use anyhow::{bail, Context};
-use clap::{arg, ArgMatches, Command};
+use anyhow::{Context, bail};
+use clap::{ArgMatches, Command, arg};
 use colored::Colorize;
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
-use quickwit_config::{validate_identifier, ConfigFormat, SourceConfig};
+use quickwit_config::{ConfigFormat, SourceConfig, validate_identifier};
 use quickwit_metastore::checkpoint::SourceCheckpoint;
 use quickwit_proto::types::{IndexId, SourceId};
-use quickwit_storage::{load_file, StorageResolver};
+use quickwit_storage::{StorageResolver, load_file};
 use serde_json::Value as JsonValue;
 use tabled::{Table, Tabled};
 use tracing::debug;
 
 use crate::checklist::GREEN_COLOR;
-use crate::{client_args, make_table, prompt_confirmation, ClientArgs};
+use crate::{ClientArgs, client_args, make_table, prompt_confirmation};
 
 pub fn build_source_command() -> Command {
     Command::new("source")
@@ -617,7 +617,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::cli::{build_cli, CliCommand};
+    use crate::cli::{CliCommand, build_cli};
 
     #[test]
     fn test_flatten_json() {
@@ -810,12 +810,10 @@ mod tests {
 
     #[test]
     fn test_make_describe_source_tables() {
-        assert!(make_describe_source_tables(
-            SourceCheckpoint::default(),
-            [],
-            "source-does-not-exist"
-        )
-        .is_err());
+        assert!(
+            make_describe_source_tables(SourceCheckpoint::default(), [], "source-does-not-exist")
+                .is_err()
+        );
 
         let checkpoint: SourceCheckpoint = vec![("shard-000", ""), ("shard-001", "1234567890")]
             .into_iter()

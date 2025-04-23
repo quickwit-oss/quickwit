@@ -19,22 +19,22 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::{fmt, io};
 
-use anyhow::{anyhow, Context as AnyhhowContext};
+use anyhow::{Context as AnyhhowContext, anyhow};
 use async_trait::async_trait;
 use aws_credential_types::provider::SharedCredentialsProvider;
-use aws_sdk_s3::config::{BehaviorVersion, Credentials, Region};
+use aws_sdk_s3::Client as S3Client;
+use aws_sdk_s3::config::{Credentials, Region};
 use aws_sdk_s3::error::{ProvideErrorMetadata, SdkError};
 use aws_sdk_s3::operation::delete_objects::DeleteObjectsOutput;
 use aws_sdk_s3::operation::get_object::{GetObjectError, GetObjectOutput};
 use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::types::builders::ObjectIdentifierBuilder;
 use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart, Delete, ObjectIdentifier};
-use aws_sdk_s3::Client as S3Client;
-use base64::prelude::{Engine, BASE64_STANDARD};
-use futures::{stream, StreamExt};
+use base64::prelude::{BASE64_STANDARD, Engine};
+use futures::{StreamExt, stream};
 use once_cell::sync::{Lazy, OnceCell};
-use quickwit_aws::get_aws_config;
-use quickwit_aws::retry::{aws_retry, AwsRetryable};
+use quickwit_aws::retry::{AwsRetryable, aws_retry};
+use quickwit_aws::{aws_behavior_version, get_aws_config};
 use quickwit_common::retry::{Retry, RetryParams};
 use quickwit_common::uri::Uri;
 use quickwit_common::{chunk_range, into_u64_range};
@@ -44,11 +44,12 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader, ReadBuf};
 use tokio::sync::Semaphore;
 use tracing::{info, instrument, warn};
 
+use crate::metrics::object_storage_get_slice_in_flight_guards;
 use crate::object_storage::MultiPartPolicy;
 use crate::storage::SendableAsync;
 use crate::{
-    BulkDeleteError, DeleteFailure, OwnedBytes, Storage, StorageError, StorageErrorKind,
-    StorageResolverError, StorageResult, STORAGE_METRICS,
+    BulkDeleteError, DeleteFailure, OwnedBytes, STORAGE_METRICS, Storage, StorageError,
+    StorageErrorKind, StorageResolverError, StorageResult,
 };
 
 /// Semaphore to limit the number of concurrent requests to the object store. Some object stores
@@ -128,7 +129,7 @@ pub async fn create_s3_client(s3_storage_config: &S3StorageConfig) -> S3Client {
         get_credentials_provider(s3_storage_config).or(aws_config.credentials_provider());
     let region = get_region(s3_storage_config).or(aws_config.region().cloned());
     let mut s3_config = aws_sdk_s3::Config::builder()
-        .behavior_version(BehaviorVersion::v2024_03_28())
+        .behavior_version(aws_behavior_version())
         .region(region);
 
     if let Some(identity_cache) = aws_config.identity_cache() {
@@ -566,6 +567,9 @@ impl S3CompatibleObjectStorage {
             self.get_object(path, range_opt.clone())
         })
         .await?;
+        // only record ranged get request as being in flight
+        let _in_flight_guards =
+            range_opt.map(|range| object_storage_get_slice_in_flight_guards(range.len()));
         let mut buf: Vec<u8> = Vec::with_capacity(cap);
         download_all(get_object_output.body, &mut buf).await?;
         Ok(buf)
@@ -573,7 +577,7 @@ impl S3CompatibleObjectStorage {
 
     /// Bulk delete implementation based on the DeleteObject API:
     /// <https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObject.html>
-    async fn bulk_delete_single<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
+    async fn bulk_delete_single(&self, paths: &[&Path]) -> Result<(), BulkDeleteError> {
         let mut successes = Vec::with_capacity(paths.len());
         let mut failures = HashMap::new();
 
@@ -611,7 +615,7 @@ impl S3CompatibleObjectStorage {
 
     /// Bulk delete implementation based on the DeleteObjects API, also called Multi-Object Delete
     /// API: <https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html>
-    async fn bulk_delete_multi<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
+    async fn bulk_delete_multi(&self, paths: &[&Path]) -> Result<(), BulkDeleteError> {
         let _permit = REQUEST_SEMAPHORE.acquire().await;
 
         let delete_requests: Vec<(&[&Path], Delete)> = self
@@ -880,11 +884,12 @@ mod tests {
 
     use std::path::PathBuf;
 
-    use aws_sdk_s3::config::{BehaviorVersion, Credentials, Region};
+    use aws_sdk_s3::config::{Credentials, Region};
     use aws_sdk_s3::primitives::SdkBody;
     use aws_smithy_runtime::client::http::test_util::{ReplayEvent, StaticReplayClient};
     use bytes::Bytes;
-    use hyper::{http, Body};
+    use hyper::{Body, http};
+    use quickwit_aws::aws_behavior_version;
     use quickwit_common::chunk_range;
     use quickwit_common::uri::Uri;
 
@@ -947,9 +952,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_s3_compatible_storage_relative_path() {
-        let sdk_config = aws_config::defaults(aws_config::BehaviorVersion::v2024_03_28())
-            .load()
-            .await;
+        let sdk_config = aws_config::defaults(aws_behavior_version()).load().await;
         let s3_client = S3Client::new(&sdk_config);
         let uri = Uri::for_test("s3://bucket/indexes");
         let bucket = "bucket".to_string();
@@ -1000,7 +1003,7 @@ mod tests {
         ]);
         let credentials = Credentials::new("mock_key", "mock_secret", None, None, "mock_provider");
         let config = aws_sdk_s3::Config::builder()
-            .behavior_version(BehaviorVersion::v2024_03_28())
+            .behavior_version(aws_behavior_version())
             .region(Some(Region::new("Foo")))
             .http_client(client.clone())
             .credentials_provider(credentials)
@@ -1041,7 +1044,7 @@ mod tests {
         )]);
         let credentials = Credentials::new("mock_key", "mock_secret", None, None, "mock_provider");
         let config = aws_sdk_s3::Config::builder()
-            .behavior_version(BehaviorVersion::v2024_03_28())
+            .behavior_version(aws_behavior_version())
             .region(Some(Region::new("Foo")))
             .http_client(client.clone())
             .credentials_provider(credentials)
@@ -1123,7 +1126,7 @@ mod tests {
         ]);
         let credentials = Credentials::new("mock_key", "mock_secret", None, None, "mock_provider");
         let config = aws_sdk_s3::Config::builder()
-            .behavior_version(BehaviorVersion::v2024_03_28())
+            .behavior_version(aws_behavior_version())
             .region(Some(Region::new("Foo")))
             .http_client(client)
             .credentials_provider(credentials)
@@ -1216,7 +1219,7 @@ mod tests {
         ]);
         let credentials = Credentials::new("mock_key", "mock_secret", None, None, "mock_provider");
         let config = aws_sdk_s3::Config::builder()
-            .behavior_version(BehaviorVersion::v2024_03_28())
+            .behavior_version(aws_behavior_version())
             .region(Some(Region::new("Foo")))
             .http_client(client)
             .credentials_provider(credentials)

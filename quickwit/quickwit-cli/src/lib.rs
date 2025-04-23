@@ -18,22 +18,22 @@ use std::collections::HashSet;
 use std::str::FromStr;
 
 use anyhow::Context;
-use clap::{arg, Arg, ArgMatches};
-use dialoguer::theme::ColorfulTheme;
+use clap::{Arg, ArgMatches, arg};
 use dialoguer::Confirm;
+use dialoguer::theme::ColorfulTheme;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{
-    ConfigFormat, MetastoreConfigs, NodeConfig, SourceConfig, StorageConfigs,
-    DEFAULT_QW_CONFIG_PATH,
+    ConfigFormat, DEFAULT_QW_CONFIG_PATH, MetastoreConfigs, NodeConfig, SourceConfig,
+    StorageConfigs,
 };
 use quickwit_indexing::check_source_connectivity;
 use quickwit_metastore::{IndexMetadataResponseExt, MetastoreResolver};
 use quickwit_proto::metastore::{IndexMetadataRequest, MetastoreService, MetastoreServiceClient};
 use quickwit_rest_client::models::Timeout;
-use quickwit_rest_client::rest_client::{QuickwitClient, QuickwitClientBuilder, DEFAULT_BASE_URL};
-use quickwit_storage::{load_file, StorageResolver};
+use quickwit_rest_client::rest_client::{DEFAULT_BASE_URL, QuickwitClient, QuickwitClientBuilder};
+use quickwit_storage::{StorageResolver, load_file};
 use reqwest::Url;
 use tabled::settings::object::Rows;
 use tabled::settings::panel::Header;
@@ -94,6 +94,16 @@ fn client_args() -> Vec<Arg> {
             .required(false)
             .global(true)
             .display_order(3),
+        Arg::new("retries")
+            .long("retries")
+            .help(
+                "Maximum number of retries for transient errors. Default value is 0. The total \
+                 number of attempts will be `1 + RETRIES`.",
+            )
+            .required(false)
+            .global(true)
+            .default_value("0")
+            .display_order(4),
     ]
 }
 
@@ -103,6 +113,7 @@ pub struct ClientArgs {
     pub connect_timeout: Option<Timeout>,
     pub timeout: Option<Timeout>,
     pub commit_timeout: Option<Timeout>,
+    pub num_retries: u32,
 }
 
 impl Default for ClientArgs {
@@ -112,6 +123,7 @@ impl Default for ClientArgs {
             connect_timeout: None,
             timeout: None,
             commit_timeout: None,
+            num_retries: 0,
         }
     }
 }
@@ -130,7 +142,7 @@ impl ClientArgs {
         if let Some(commit_timeout) = self.commit_timeout {
             builder = builder.commit_timeout(commit_timeout);
         }
-        builder
+        builder.num_retries(self.num_retries)
     }
 
     pub fn client(self) -> QuickwitClient {
@@ -149,7 +161,7 @@ impl ClientArgs {
         let cluster_endpoint = matches
             .remove_one::<String>("endpoint")
             .map(|endpoint_str| Url::from_str(&endpoint_str))
-            .expect("`endpoint` should be a required arg.")?;
+            .expect("`endpoint` should be a required arg")?;
         let connect_timeout =
             if let Some(duration) = matches.remove_one::<String>("connect-timeout") {
                 Some(parse_duration_or_none(&duration)?)
@@ -170,11 +182,16 @@ impl ClientArgs {
         } else {
             None
         };
+        let num_retries = matches
+            .remove_one::<String>("retries")
+            .map(|retries| retries.parse::<u32>())
+            .expect("`retries` should have a default value")?;
         Ok(Self {
             cluster_endpoint,
             connect_timeout,
             timeout,
             commit_timeout,
+            num_retries,
         })
     }
 }

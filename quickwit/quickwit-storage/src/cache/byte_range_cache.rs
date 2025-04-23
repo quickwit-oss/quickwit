@@ -401,8 +401,8 @@ mod tests {
     use proptest::prelude::*;
 
     use super::ByteRangeCache;
-    use crate::metrics::{CacheMetrics, CACHE_METRICS_FOR_TESTS};
     use crate::OwnedBytes;
+    use crate::metrics::{CACHE_METRICS_FOR_TESTS, CacheMetrics};
 
     #[derive(Debug)]
     enum Operation {
