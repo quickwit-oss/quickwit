@@ -207,6 +207,7 @@ reqwest = { version = "0.12", default-features = false, features = [
 reqwest-middleware = "0.4"
 reqwest-retry = "0.7"
 rust-embed = "6.8.1"
+rustc-hash = "2.1.1"
 rustls = "0.21"
 rustls-pemfile = "1.0.0"
 sea-query = { version = "0.30" }
