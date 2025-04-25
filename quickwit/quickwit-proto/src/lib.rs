@@ -105,6 +105,12 @@ pub mod opentelemetry {
     }
 }
 
+pub(crate) mod quickwit {
+    // Cloudprem wants this module here, and it's easier to give it than to edit codegen so it
+    // search in the right place
+    pub use crate::search;
+}
+
 impl TryFrom<search::SearchStreamRequest> for search::SearchRequest {
     type Error = anyhow::Error;
 
