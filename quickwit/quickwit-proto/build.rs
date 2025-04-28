@@ -190,7 +190,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Codegen::builder()
         .with_prost_config(cloudprem_prost_config)
         .with_protos(&["protos/cloudprem/cloudprem.proto"])
-        .with_includes(&["protos"])
+        .with_includes(&["protos", "protos/quickwit"])
         .with_output_dir("src/codegen/cloudprem")
         .with_result_type_path("crate::cloudprem::CloudPremResult")
         .with_error_type_path("crate::cloudprem::CloudPremError")

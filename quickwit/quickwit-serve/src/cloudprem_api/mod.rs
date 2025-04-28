@@ -287,6 +287,24 @@ impl CloudPremService for CloudPremServiceImpl {
     ) -> Result<SetClusterAddressResponse, CloudPremError> {
         Err(CloudPremError::Unimplemented)
     }
+
+    async fn root_search(
+        &self,
+        mut search_request: SearchRequest,
+    ) -> Result<SearchResponse, CloudPremError> {
+        // we don't want to ever access customer data here, that has to go through properly audited
+        // channels
+        let safe_pattern_char = |c: char| c.is_ascii_alphanumeric() || c == '-' || c == '.';
+
+        search_request.index_id_patterns.retain(|pattern| {
+            pattern.starts_with("otel-") && pattern.chars().all(safe_pattern_char)
+        });
+
+        self.search_service
+            .root_search(search_request)
+            .await
+            .map_err(Into::into)
+    }
 }
 
 struct HitMapper {
