@@ -11,7 +11,18 @@ use tonic::Request;
 use crate::test_utils::{ClusterSandbox, ClusterSandboxBuilder};
 
 const TEST_CERT: &[u8] = include_bytes!("../../test_data/test_cert_main_ca.crt");
+
 // this data is extracted from staging through the admin ui, and cleaned off a bit
+//
+// to generate a larger dataset, go to https://logs-admin.us1.staging.dog/web/#/query/replayer ,
+// select the `sample list` example. configure a limit (n of logs to retrieve). Add
+// `random_draw:>0.99` to the filter (or other chance of your choosing) so as to get random logs,
+// and not a burst from a single service.
+// copy the result to a file.
+// run `jq -r .list.events[].content $your_file | jq -sc . > test_data.json` to convert to the
+// right format
+// some tests are written as to work with any dataset smaller than 100 elems (configurable),
+// others may assert on values specific to the provided dataset
 const TEST_DATA: &[u8] = include_bytes!("../../test_data/test_data.json");
 
 fn build_list_request(query: &QueryNode) -> ListRequest {
@@ -71,15 +82,44 @@ fn agg_computes(compute_aggs: &[aggregation::Aggregation]) -> aggregation::Aggre
     })
 }
 
+fn agg_group_by(
+    expression: Option<ExpressionNode>,
+    child: aggregation::Aggregation,
+) -> aggregation::Aggregation {
+    aggregation::Aggregation::AttributeGroupBy(Box::new(AttributeGroupBy {
+        expression,
+        limit: 100,
+        sort: None, // not implemented
+        missing: None,
+        total: None,
+        child: Some(Box::new(Aggregation {
+            aggregation: Some(child),
+        })),
+    }))
+}
+
+fn agg_time_grouping(child: aggregation::Aggregation) -> aggregation::Aggregation {
+    aggregation::Aggregation::TimeGroupBy(Box::new(TimeGrouping {
+        output: "timeagg".to_string(),
+        path: "timestamp".to_string(),
+        time_zone: String::new(),
+        interval_ns: Some(1_000_000_000 * 10),
+        rollup: None,
+        child: Some(Box::new(Aggregation {
+            aggregation: Some(child),
+        })),
+    }))
+}
+
 fn agg_count(id: &str) -> aggregation::Aggregation {
     aggregation::Aggregation::MetricCompute(MetricCompute {
-        expression: agg_expression_field("count"),
+        expression: expression_field("count"),
         id: id.to_string(),
         r#type: "COUNT".to_string(),
     })
 }
 
-fn agg_expression_field(field_name: &str) -> Option<ExpressionNode> {
+fn expression_field(field_name: &str) -> Option<ExpressionNode> {
     let calc_node = CalcNode {
         calc_node: Some(calc_node::CalcNode::FieldRef(calc_node::FieldRef {
             field_name: field_name.to_string(),
@@ -414,4 +454,130 @@ async fn test_aggregation_count() {
     sandbox.shutdown().await.unwrap();
 }
 
-// TODO test search after and aggregations
+#[tokio::test]
+async fn test_aggregation_group_by_count() {
+    let mut data: Vec<Value> = serde_json::from_slice(TEST_DATA).unwrap();
+    let sandbox = setup_env(&mut data).await;
+
+    let mut client = sandbox.cloudprem_client();
+
+    let query_node = QueryNode {
+        node: Some(query_node::Node::All(MatchAllQueryNode {})),
+    };
+
+    let agg = agg_group_by(
+        expression_field("status"),
+        agg_computes(&[agg_count("count:count")]),
+    );
+    let list_request = build_aggregation_request(&query_node, agg);
+
+    let agg_res = client
+        .aggregate(authenticated_request(list_request))
+        .await
+        .unwrap();
+    let agg_res = agg_res.into_inner();
+
+    assert_eq!(agg_res.result.len(), 2);
+    for bucket in agg_res.result {
+        assert_eq!(bucket.key.len(), 1);
+        assert_eq!(bucket.value.len(), 1);
+
+        let expected_count = match &*bucket.key[0] {
+            "ok" => 2,
+            "error" => 1,
+            other => panic!("unexpected bucket key: {other}"),
+        };
+        assert_eq!(
+            bucket.value[0].value.as_ref().unwrap(),
+            &agg_value::Value::Uint64Value(expected_count)
+        );
+    }
+
+    sandbox.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn test_aggregation_time_grouping_count() {
+    let mut data: Vec<Value> = serde_json::from_slice(TEST_DATA).unwrap();
+    let sandbox = setup_env(&mut data).await;
+
+    let mut client = sandbox.cloudprem_client();
+
+    let query_node = QueryNode {
+        node: Some(query_node::Node::All(MatchAllQueryNode {})),
+    };
+
+    let agg = agg_time_grouping(agg_computes(&[agg_count("count:count")]));
+    let list_request = build_aggregation_request(&query_node, agg);
+
+    let agg_res = client
+        .aggregate(authenticated_request(list_request))
+        .await
+        .unwrap();
+    let agg_res = agg_res.into_inner();
+
+    assert_eq!(agg_res.result.len(), 2);
+    for bucket in agg_res.result {
+        assert_eq!(bucket.key.len(), 1);
+        assert_eq!(bucket.value.len(), 1);
+
+        let expected_count = match &*bucket.key[0] {
+            "2025-04-08T08:12:40Z" => 2,
+            "2025-04-08T08:12:50Z" => 1,
+            other => panic!("unexpected bucket key: {other}"),
+        };
+        assert_eq!(
+            bucket.value[0].value.as_ref().unwrap(),
+            &agg_value::Value::Uint64Value(expected_count)
+        );
+    }
+
+    sandbox.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn test_aggregation_group_and_time_grouping_count() {
+    let mut data: Vec<Value> = serde_json::from_slice(TEST_DATA).unwrap();
+    let sandbox = setup_env(&mut data).await;
+
+    let mut client = sandbox.cloudprem_client();
+
+    let query_node = QueryNode {
+        node: Some(query_node::Node::All(MatchAllQueryNode {})),
+    };
+
+    let agg = agg_group_by(
+        expression_field("status"),
+        agg_time_grouping(agg_computes(&[agg_count("count:count")])),
+    );
+    let list_request = build_aggregation_request(&query_node, agg);
+
+    let agg_res = client
+        .aggregate(authenticated_request(list_request))
+        .await
+        .unwrap();
+    let agg_res = dbg!(agg_res.into_inner());
+
+    assert_eq!(agg_res.result.len(), 3);
+    for bucket in agg_res.result {
+        assert_eq!(bucket.key.len(), 2);
+        assert_eq!(bucket.value.len(), 1);
+
+        assert!(
+            [
+                vec!["ok".to_string(), "2025-04-08T08:12:40Z".to_string()],
+                vec!["error".to_string(), "2025-04-08T08:12:40Z".to_string()],
+                vec!["ok".to_string(), "2025-04-08T08:12:50Z".to_string()],
+            ]
+            .contains(&bucket.key),
+            "unexpected key: {:?}",
+            bucket.key
+        );
+        assert_eq!(
+            bucket.value[0].value.as_ref().unwrap(),
+            &agg_value::Value::Uint64Value(1)
+        );
+    }
+
+    sandbox.shutdown().await.unwrap();
+}
