@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use std::num::NonZeroUsize;
+use std::ops::RangeInclusive;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -251,8 +252,16 @@ pub struct MockSplitBuilder {
 
 impl MockSplitBuilder {
     pub fn new(split_id: &str) -> Self {
+        Self::new_with_time_range(split_id, Some(121000..=130198))
+    }
+
+    pub fn new_with_time_range(split_id: &str, time_range: Option<RangeInclusive<i64>>) -> Self {
         Self {
-            split_metadata: mock_split_meta(split_id, &IndexUid::for_test("test-index", 0)),
+            split_metadata: mock_split_meta(
+                split_id,
+                &IndexUid::for_test("test-index", 0),
+                time_range,
+            ),
         }
     }
 
@@ -277,14 +286,18 @@ pub fn mock_split(split_id: &str) -> Split {
 }
 
 /// Mock split meta helper.
-pub fn mock_split_meta(split_id: &str, index_uid: &IndexUid) -> SplitMetadata {
+pub fn mock_split_meta(
+    split_id: &str,
+    index_uid: &IndexUid,
+    time_range: Option<RangeInclusive<i64>>,
+) -> SplitMetadata {
     SplitMetadata {
         index_uid: index_uid.clone(),
         split_id: split_id.to_string(),
         partition_id: 13u64,
         num_docs: if split_id == "split1" { 1_000_000 } else { 10 },
         uncompressed_docs_size_in_bytes: 256,
-        time_range: Some(121000..=130198),
+        time_range,
         create_timestamp: 0,
         footer_offsets: 700..800,
         ..Default::default()

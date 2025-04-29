@@ -5060,4 +5060,111 @@ mod tests {
         assert_eq!(search_response.failed_splits.len(), 1);
         Ok(())
     }
+
+    #[tokio::test]
+    async fn test_count_from_metastore_in_contained_time_range() -> anyhow::Result<()> {
+        let search_request = quickwit_proto::search::SearchRequest {
+            start_timestamp: Some(122_000),
+            end_timestamp: Some(129_000),
+            index_id_patterns: vec!["test-index".to_string()],
+            query_ast: serde_json::to_string(&QueryAst::MatchAll)
+                .expect("MatchAll should be JSON serializable."),
+            max_hits: 0,
+            ..Default::default()
+        };
+
+        let index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
+        let index_uid = index_metadata.index_uid.clone();
+
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore
+            .expect_list_indexes_metadata()
+            .returning(move |_q| {
+                Ok(ListIndexesMetadataResponse::for_test(vec![
+                    index_metadata.clone(),
+                ]))
+            });
+        mock_metastore.expect_list_splits().returning(move |_req| {
+            let splits = vec![
+                MockSplitBuilder::new_with_time_range("split_before", Some(100_000..=110_000))
+                    .with_index_uid(&index_uid)
+                    .build(),
+                MockSplitBuilder::new_with_time_range(
+                    "split_overlap_start",
+                    Some(120_000..=123_000),
+                )
+                .with_index_uid(&index_uid)
+                .build(),
+                MockSplitBuilder::new_with_time_range("split_overlap_end", Some(128_000..=140_000))
+                    .with_index_uid(&index_uid)
+                    .build(),
+                MockSplitBuilder::new_with_time_range(
+                    "split_covering_whole",
+                    Some(100_000..=200_000),
+                )
+                .with_index_uid(&index_uid)
+                .build(),
+                MockSplitBuilder::new_with_time_range("split_inside", Some(124_000..=126_000))
+                    .with_index_uid(&index_uid)
+                    .build(),
+            ];
+            let resp = ListSplitsResponse::try_from_splits(splits).unwrap();
+            Ok(ServiceStream::from(vec![Ok(resp)]))
+        });
+
+        let mut mock_search = MockSearchService::new();
+        mock_search
+            .expect_leaf_search()
+            .withf(|leaf_search_req| {
+                let mut expected = HashSet::new();
+
+                // Notice split_inside is not included.
+                expected.insert("split_before");
+                expected.insert("split_covering_whole");
+                expected.insert("split_overlap_end");
+                expected.insert("split_overlap_start");
+
+                leaf_search_req.leaf_requests.len() == 1
+                    && leaf_search_req.leaf_requests[0]
+                        .split_offsets
+                        .iter()
+                        .map(|s| s.split_id.as_str())
+                        .collect::<HashSet<&str>>()
+                        == expected
+            })
+            .times(1)
+            .returning(|_| {
+                Ok(quickwit_proto::search::LeafSearchResponse {
+                    num_hits: 5,
+                    partial_hits: vec![],
+                    failed_splits: Vec::new(),
+                    num_attempted_splits: 0,
+                    ..Default::default()
+                })
+            });
+        mock_search.expect_fetch_docs().returning(|fetch_req| {
+            Ok(quickwit_proto::search::FetchDocsResponse {
+                hits: get_doc_for_fetch_req(fetch_req),
+            })
+        });
+
+        let searcher_pool = searcher_pool_for_test([("127.0.0.1:1001", mock_search)]);
+        let search_job_placer = SearchJobPlacer::new(searcher_pool);
+        let cluster_client = ClusterClient::new(search_job_placer);
+
+        let ctx = SearcherContext::for_test();
+        let resp = root_search(
+            &ctx,
+            search_request,
+            MetastoreServiceClient::from_mock(mock_metastore),
+            &cluster_client,
+        )
+        .await?;
+
+        assert_eq!(resp.num_hits, 15);
+        assert_eq!(resp.hits.len(), 0);
+        assert_eq!(resp.num_successful_splits, 1);
+
+        Ok(())
+    }
 }
