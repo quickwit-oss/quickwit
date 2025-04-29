@@ -27,6 +27,8 @@ jobs:
             platform: linux/arm64
             platform_suffix: arm64
     runs-on: ${{ matrix.os }}
+    environment:
+      name: production
     steps:
       - name: Checkout
         uses: actions/checkout@v4
