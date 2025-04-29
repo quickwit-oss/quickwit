@@ -1,0 +1,41 @@
+[package]
+name = "quickwit-remote-api"
+description = "REST API server hitting a remote cluster"
+
+version.workspace = true
+edition.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+repository.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "quickwit"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+bytes = { workspace = true }
+bytesize = { workspace = true }
+futures = { workspace = true }
+http = { workspace = true }
+hyper = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+tonic = { workspace = true }
+tower = { workspace = true }
+warp = { workspace = true }
+
+quickwit-config = { workspace = true }
+quickwit-jaeger = { workspace = true }
+quickwit-proto = { workspace = true }
+quickwit-search = { workspace = true }
+quickwit-serve = { workspace = true }
+
+[build-dependencies]
+
+[dev-dependencies]
+
+[features]

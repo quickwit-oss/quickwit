@@ -7414,6 +7414,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "quickwit-remote-api"
+version = "0.8.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "bytes",
+ "bytesize",
+ "futures",
+ "http 0.2.12",
+ "hyper 0.14.32",
+ "quickwit-common",
+ "quickwit-config",
+ "quickwit-jaeger",
+ "quickwit-proto",
+ "quickwit-search",
+ "quickwit-serve",
+ "tokio",
+ "tokio-stream",
+ "tonic 0.9.2",
+ "tower 0.4.13",
+ "warp",
+]
+
+[[package]]
 name = "quickwit-rest-client"
 version = "0.8.0"
 dependencies = [

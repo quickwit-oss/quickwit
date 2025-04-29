@@ -252,7 +252,7 @@ pub(crate) async fn start_rest_server(
     Ok(())
 }
 
-fn search_routes(
+pub fn search_routes(
     search_service: Arc<dyn SearchService>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     search_get_handler(search_service.clone())
