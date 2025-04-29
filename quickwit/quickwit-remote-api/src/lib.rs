@@ -41,5 +41,7 @@ pub async fn run_server(
 
     let search_service = CloudPremRootSearchService::new(target, proxy_addr, tls_config).await?;
 
+    tracing::info!("Client ready, server listening on 127.0.0.1:7380");
+
     rest_server(Arc::new(search_service), listener).await
 }

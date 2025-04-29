@@ -61,7 +61,9 @@ impl CloudPremRootSearchService {
             .origin(origin_uri);
 
         if let Some(tls_config) = tls_config {
-            endpoint = endpoint.tls_config(tls_config).expect("sadness TODO");
+            endpoint = endpoint
+                .tls_config(tls_config)
+                .context("failed to load tls configuration")?;
         }
         let channel = endpoint.connect_lazy();
 
