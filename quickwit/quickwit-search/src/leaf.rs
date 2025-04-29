@@ -942,11 +942,6 @@ fn is_simple_all_query(search_request: &SearchRequest) -> bool {
         return false;
     }
 
-    // TODO: Update the logic to handle start_timestamp end_timestamp ranges
-    if search_request.start_timestamp.is_some() || search_request.end_timestamp.is_some() {
-        return false;
-    }
-
     let Ok(query_ast) = serde_json::from_str(&search_request.query_ast) else {
         return false;
     };
@@ -1000,6 +995,29 @@ impl CanSplitDoBetter {
         }
     }
 
+    fn is_split_contained_in_search_time_range(
+        split: &SplitIdAndFooterOffsets,
+        search_request: &SearchRequest,
+    ) -> bool {
+        if let Some(start) = search_request.start_timestamp {
+            let Some(split_start) = split.timestamp_start else {
+                return false;
+            };
+            if split_start < start {
+                return false;
+            }
+        }
+        if let Some(end) = search_request.end_timestamp {
+            let Some(split_end) = split.timestamp_end else {
+                return false;
+            };
+            if split_end >= end {
+                return false;
+            }
+        }
+        true
+    }
+
     fn to_splits_with_request(
         splits: Vec<SplitIdAndFooterOffsets>,
         request: Arc<SearchRequest>,
@@ -1012,23 +1030,31 @@ impl CanSplitDoBetter {
     }
 
     /// Calculate the number of splits which are guaranteed to deliver enough documents.
+    ///
+    /// If there's a time range and not enough splits contain at least the number of requested
+    /// documents, return None.
     fn get_min_required_splits(
         splits: &[SplitIdAndFooterOffsets],
         request: &SearchRequest,
-    ) -> usize {
+    ) -> Option<usize> {
         let num_requested_docs = request.start_offset + request.max_hits;
 
-        splits
-            .into_iter()
-            .map(|split| split.num_docs)
-            // computing the partial sum
-            .scan(0u64, |partial_sum: &mut u64, num_docs_in_split: u64| {
-                *partial_sum += num_docs_in_split;
-                Some(*partial_sum)
-            })
-            .take_while(|partial_sum| *partial_sum < num_requested_docs)
-            .count()
-            + 1
+        let mut min_required_splits = 0;
+        let mut partial_sum = 0;
+
+        for split in splits.iter() {
+            min_required_splits += 1;
+            if !Self::is_split_contained_in_search_time_range(split, request) {
+                continue;
+            }
+
+            partial_sum += split.num_docs;
+            if partial_sum >= num_requested_docs {
+                return Some(min_required_splits);
+            }
+        }
+
+        None
     }
 
     fn optimize_split_id_higher(
@@ -1042,7 +1068,11 @@ impl CanSplitDoBetter {
             return Ok(Self::to_splits_with_request(splits, request));
         }
 
-        let min_required_splits = Self::get_min_required_splits(&splits, &request);
+        let Some(min_required_splits) = Self::get_min_required_splits(&splits, &request) else {
+            // not enough splits contained in time range.
+            return Ok(Self::to_splits_with_request(splits, request));
+        };
+
         let mut split_with_req = Self::to_splits_with_request(splits, request);
 
         // In this case there is no sort order, we order by split id.
@@ -1066,7 +1096,11 @@ impl CanSplitDoBetter {
             return Ok(Self::to_splits_with_request(splits, request));
         }
 
-        let min_required_splits = Self::get_min_required_splits(&splits, &request);
+        let Some(min_required_splits) = Self::get_min_required_splits(&splits, &request) else {
+            // not enough splits contained in time range.
+            return Ok(Self::to_splits_with_request(splits, request));
+        };
+
         let mut split_with_req = Self::to_splits_with_request(splits, request);
 
         // We order by timestamp desc. split_with_req is sorted by timestamp_end desc.
@@ -1102,7 +1136,11 @@ impl CanSplitDoBetter {
             return Ok(Self::to_splits_with_request(splits, request));
         }
 
-        let min_required_splits = Self::get_min_required_splits(&splits, &request);
+        let Some(min_required_splits) = Self::get_min_required_splits(&splits, &request) else {
+            // not enough splits contained in time range.
+            return Ok(Self::to_splits_with_request(splits, request));
+        };
+
         let mut split_with_req = Self::to_splits_with_request(splits, request);
 
         // We order by timestamp asc. split_with_req is sorted by timestamp_start.
