@@ -478,11 +478,16 @@ impl DocProcessor {
                 let pipeline_config_serialized = std::fs::read_to_string(PathBuf::from(path));
                 match pipeline_config_serialized {
                     Ok(pipeline_config) => {
-                        info!("Successfully read pipeline config file");
-                        Some(
-                            serde_json::from_str(&pipeline_config)
-                                .expect("Failed to deserialize pipeline config"),
-                        )
+                        match serde_json::from_str::<PipelineConfig>(&pipeline_config) {
+                            Ok(pipeline_config) => {
+                                info!("Successfully read and deserialized pipeline config file");
+                                Some(pipeline_config)
+                            }
+                            Err(e) => {
+                                error!("Failed to deserialize pipeline config: {}", e);
+                                None
+                            }
+                        }
                     }
                     Err(e) => {
                         error!("Failed to read pipeline config file: {}", e);
