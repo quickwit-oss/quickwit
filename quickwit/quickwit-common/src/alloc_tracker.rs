@@ -16,9 +16,8 @@ use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::sync::Mutex;
 
+use bytesize::ByteSize;
 use once_cell::sync::Lazy;
-
-const DEFAULT_REPORTING_INTERVAL: u64 = 1024 * 1024 * 1024;
 
 static ALLOCATION_TRACKER: Lazy<Mutex<Allocations>> =
     Lazy::new(|| Mutex::new(Allocations::default()));
@@ -26,14 +25,20 @@ static ALLOCATION_TRACKER: Lazy<Mutex<Allocations>> =
 #[derive(Debug)]
 struct Allocation {
     pub callsite_hash: u64,
-    pub size: u64,
+    pub size: ByteSize,
 }
 
 #[derive(Debug, Copy, Clone)]
 pub struct Statistic {
     pub count: u64,
-    pub size: u64,
-    pub last_print: u64,
+    pub size: ByteSize,
+    pub last_report: ByteSize,
+}
+
+#[derive(Debug)]
+enum Status {
+    Started { reporting_interval: ByteSize },
+    Stopped,
 }
 
 /// WARN:
@@ -43,8 +48,7 @@ pub struct Statistic {
 struct Allocations {
     memory_locations: HashMap<usize, Allocation>,
     callsite_statistics: HashMap<u64, Statistic>,
-    is_started: bool,
-    reporting_interval: u64,
+    status: Status,
 }
 
 impl Default for Allocations {
@@ -52,23 +56,18 @@ impl Default for Allocations {
         Self {
             memory_locations: HashMap::with_capacity(128 * 1024),
             callsite_statistics: HashMap::with_capacity(32 * 1024),
-            is_started: false,
-            reporting_interval: DEFAULT_REPORTING_INTERVAL,
+            status: Status::Stopped,
         }
     }
 }
 
-// pub fn log_dump() {
-//     tracing::info!(allocations=?ALLOCATION_TRACKER.lock().unwrap(), "dump");
-// }
-
-pub fn init(alloc_size_triggering_backtrace: Option<u64>) {
+pub fn init(reporting_interval_bytes: u64) {
     let mut guard = ALLOCATION_TRACKER.lock().unwrap();
     guard.memory_locations.clear();
     guard.callsite_statistics.clear();
-    guard.is_started = true;
-    guard.reporting_interval =
-        alloc_size_triggering_backtrace.unwrap_or(DEFAULT_REPORTING_INTERVAL);
+    guard.status = Status::Started {
+        reporting_interval: ByteSize(reporting_interval_bytes),
+    }
 }
 
 pub enum AllocRecordingResponse {
@@ -86,11 +85,15 @@ pub enum AllocRecordingResponse {
 /// allocated size is reported.
 ///
 /// WARN: this function should not allocate!
-pub fn record_allocation(callsite_hash: u64, size: u64, ptr: *mut u8) -> AllocRecordingResponse {
+pub fn record_allocation(
+    callsite_hash: u64,
+    size_bytes: u64,
+    ptr: *mut u8,
+) -> AllocRecordingResponse {
     let mut guard = ALLOCATION_TRACKER.lock().unwrap();
-    if !guard.is_started {
+    let Status::Started { reporting_interval } = guard.status else {
         return AllocRecordingResponse::NotStarted;
-    }
+    };
     if guard.memory_locations.capacity() == guard.memory_locations.len() {
         return AllocRecordingResponse::TrackerFull("memory_locations");
     }
@@ -101,26 +104,25 @@ pub fn record_allocation(callsite_hash: u64, size: u64, ptr: *mut u8) -> AllocRe
         ptr as usize,
         Allocation {
             callsite_hash,
-            size,
+            size: ByteSize(size_bytes),
         },
     );
-    let reporting_interval = guard.reporting_interval;
     let entry = guard
         .callsite_statistics
         .entry(callsite_hash)
         .and_modify(|stat| {
             stat.count += 1;
-            stat.size += size;
+            stat.size += size_bytes;
         })
         .or_insert(Statistic {
             count: 1,
-            size,
-            last_print: 0,
+            size: ByteSize(size_bytes),
+            last_report: ByteSize(0),
         });
-    let new_threshold_exceeded = entry.size > (entry.last_print + reporting_interval);
+    let new_threshold_exceeded = entry.size > (entry.last_report + reporting_interval);
     if new_threshold_exceeded {
         let reported_statistic = *entry;
-        entry.last_print = entry.size;
+        entry.last_report = entry.size;
         AllocRecordingResponse::ThresholdExceeded(reported_statistic)
     } else {
         AllocRecordingResponse::ThresholdNotExceeded
@@ -130,7 +132,7 @@ pub fn record_allocation(callsite_hash: u64, size: u64, ptr: *mut u8) -> AllocRe
 /// WARN: this function should not allocate!
 pub fn record_deallocation(ptr: *mut u8) {
     let mut guard = ALLOCATION_TRACKER.lock().unwrap();
-    if !guard.is_started {
+    if let Status::Stopped = guard.status {
         return;
     }
     let Some(Allocation {
@@ -143,8 +145,10 @@ pub fn record_deallocation(ptr: *mut u8) {
         return;
     };
     if let Entry::Occupied(mut content) = guard.callsite_statistics.entry(callsite_hash) {
-        content.get_mut().count -= 1;
-        content.get_mut().size -= size;
+        let new_size_bytes = content.get().size.0.saturating_sub(size.0);
+        let new_count = content.get().count.saturating_sub(1);
+        content.get_mut().count = new_count;
+        content.get_mut().size = ByteSize(new_size_bytes);
         if content.get().count == 0 {
             content.remove();
         }
@@ -159,7 +163,7 @@ mod tests {
     #[test]
     #[serial_test::file_serial]
     fn test_record_allocation_and_deallocation() {
-        init(Some(2000));
+        init(2000);
         let callsite_hash_1 = 777;
 
         let ptr_1 = 0x1 as *mut u8;
@@ -175,8 +179,8 @@ mod tests {
             panic!("Expected ThresholdExceeded response");
         };
         assert_eq!(statistic.count, 2);
-        assert_eq!(statistic.size, 3000);
-        assert_eq!(statistic.last_print, 0);
+        assert_eq!(statistic.size, ByteSize(3000));
+        assert_eq!(statistic.last_report, ByteSize(0));
 
         record_deallocation(ptr_2);
 
@@ -201,7 +205,7 @@ mod tests {
     #[test]
     #[serial_test::file_serial]
     fn test_tracker_full() {
-        init(Some(1024 * 1024 * 1024));
+        init(1024 * 1024 * 1024);
         let memory_locations_capacity = ALLOCATION_TRACKER
             .lock()
             .unwrap()
