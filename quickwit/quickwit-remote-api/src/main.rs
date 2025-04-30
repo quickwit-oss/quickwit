@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 
 use anyhow::Context;
 use clap::Parser;
-use quickwit_remote_api::{make_client_tls_config, run_server};
+use quickwit_remote_api::{get_mtls_header, make_client_tls_config, run_server};
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::prelude::*;
 
@@ -39,11 +39,18 @@ pub async fn main() -> anyhow::Result<()> {
         .try_init()
         .context("failed to register tracing subscriber")?;
 
-    let tls_config = match (args.cert, args.key) {
-        (Some(cert), Some(key)) => Some(make_client_tls_config(&cert, &key, &args.target)?),
-        (None, None) => None,
-        _ => anyhow::bail!("either both --cert and --key must be set, or neither"),
+    let (tls_config, mtls_header) = match (args.cert, args.key) {
+        (Some(cert), Some(key)) => (
+            Some(make_client_tls_config(&cert, &key, &args.target)?),
+            None,
+        ),
+        (Some(cert), None) => (None, Some(get_mtls_header(&cert)?)),
+        (None, Some(_key)) => anyhow::bail!("if --key is set, --cert must be set too"),
+        (None, None) => {
+            tracing::info!("auth disabled, this is likely to fail");
+            (None, None)
+        }
     };
 
-    run_server(&args.target, args.proxy_addr, tls_config).await
+    run_server(&args.target, args.proxy_addr, tls_config, mtls_header).await
 }

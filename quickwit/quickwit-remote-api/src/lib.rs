@@ -32,16 +32,24 @@ pub fn make_client_tls_config(
     Ok(tls)
 }
 
+pub fn get_mtls_header(cert_path: &str) -> anyhow::Result<String> {
+    let cert = std::fs::read_to_string(cert_path)?;
+
+    Ok(urlencoding::encode(&cert).to_string())
+}
+
 pub async fn run_server(
     target: &str,
     proxy_addr: Option<SocketAddr>,
     tls_config: Option<ClientTlsConfig>,
+    mtls_header: Option<String>,
 ) -> anyhow::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:7380").await?;
 
-    let search_service = CloudPremRootSearchService::new(target, proxy_addr, tls_config).await?;
+    let search_service =
+        CloudPremRootSearchService::new(target, proxy_addr, tls_config, mtls_header).await?;
 
     tracing::info!("Client ready, server listening on 127.0.0.1:7380");
 
-    rest_server(Arc::new(search_service), listener).await
+    tokio::try_join!(rest_server(Arc::new(search_service), listener),).map(|_| ())
 }

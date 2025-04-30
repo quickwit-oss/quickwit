@@ -6,7 +6,10 @@ use anyhow::Context;
 use async_trait::async_trait;
 use bytes::Bytes;
 use bytesize::ByteSize;
-use quickwit_proto::cloudprem::{CloudPremService, CloudPremServiceClient, PingRequest};
+use quickwit_proto::cloudprem::{
+    CloudPremService, CloudPremServiceClient, CloudPremServiceGrpcClientAdapter, PingRequest,
+    cloud_prem_service_grpc_client,
+};
 use quickwit_proto::search::{
     FetchDocsRequest, FetchDocsResponse, GetKvRequest, LeafListFieldsRequest, LeafListTermsRequest,
     LeafListTermsResponse, LeafSearchRequest, LeafSearchResponse, LeafSearchStreamRequest,
@@ -16,6 +19,8 @@ use quickwit_proto::search::{
 };
 use quickwit_search::SearchService;
 use tokio_stream::wrappers::UnboundedReceiverStream;
+use tonic::Request;
+use tonic::metadata::{Ascii, MetadataValue};
 use tonic::transport::{ClientTlsConfig, Endpoint, Uri};
 
 const MAX_MESSAGE_SIZE: ByteSize = ByteSize::mib(1);
@@ -27,7 +32,11 @@ impl CloudPremRootSearchService {
         target: &str,
         proxy_addr: Option<SocketAddr>,
         tls_config: Option<ClientTlsConfig>,
+        mtls_header: Option<String>,
     ) -> anyhow::Result<Self> {
+        let mtls_header: Option<MetadataValue<Ascii>> = mtls_header
+            .map(|mtls_header| mtls_header.parse())
+            .transpose()?;
         let scheme = if tls_config.is_some() {
             "https"
         } else {
@@ -42,33 +51,53 @@ impl CloudPremRootSearchService {
                 .next()
                 .context("failed to resolve target")?
         };
-        let connect_uri = Uri::builder()
-            .scheme(scheme)
-            .authority(target_addr.to_string())
-            .path_and_query("/")
-            .build()
-            .expect("provided arguments should be valid");
 
-        let origin_uri = Uri::builder()
-            .scheme(scheme)
-            .authority(target.to_string())
-            .path_and_query("/")
-            .build()
-            .expect("provided arguments should be valid");
+        let channel = {
+            let connect_uri = Uri::builder()
+                .scheme(scheme)
+                .authority(target_addr.to_string())
+                .path_and_query("/")
+                .build()
+                .expect("provided arguments should be valid");
 
-        let mut endpoint = Endpoint::from(connect_uri)
-            .connect_timeout(Duration::from_secs(5))
-            .origin(origin_uri);
+            let origin_uri = Uri::builder()
+                .scheme(scheme)
+                .authority(target.to_string())
+                .path_and_query("/")
+                .build()
+                .expect("provided arguments should be valid");
 
-        if let Some(tls_config) = tls_config {
-            endpoint = endpoint
-                .tls_config(tls_config)
-                .context("failed to load tls configuration")?;
-        }
-        let channel = endpoint.connect_lazy();
+            let mut endpoint = Endpoint::from(connect_uri)
+                .connect_timeout(Duration::from_secs(5))
+                .origin(origin_uri);
 
-        let cloudprem_client =
-            CloudPremServiceClient::from_channel(target_addr, channel, MAX_MESSAGE_SIZE);
+            if let Some(tls_config) = tls_config {
+                endpoint = endpoint
+                    .tls_config(tls_config)
+                    .context("failed to load tls configuration")?;
+            }
+            endpoint.connect().await?
+        };
+
+        let cloudprem_client = {
+            let (_, connection_keys_watcher) =
+                tokio::sync::watch::channel(std::collections::HashSet::from_iter([target_addr]));
+            let client =
+                cloud_prem_service_grpc_client::CloudPremServiceGrpcClient::with_interceptor(
+                    channel,
+                    move |mut req: Request<()>| {
+                        if let Some(mtls_header) = &mtls_header {
+                            req.metadata_mut()
+                                .insert("x-amzn-mtls-clientcert", mtls_header.clone());
+                        }
+                        Ok(req)
+                    },
+                )
+                .max_decoding_message_size(MAX_MESSAGE_SIZE.0 as usize)
+                .max_encoding_message_size(MAX_MESSAGE_SIZE.0 as usize);
+            let adapter = CloudPremServiceGrpcClientAdapter::new(client, connection_keys_watcher);
+            CloudPremServiceClient::new(adapter)
+        };
 
         cloudprem_client.ping(PingRequest { org_id: 0 }).await?;
 
