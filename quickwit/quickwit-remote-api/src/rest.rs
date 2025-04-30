@@ -44,12 +44,8 @@ pub async fn rest_server(
 
     let incoming = AddrIncoming::from_listener(tcp_listener)?;
 
-    let serve_fut = async move {
-        tokio::select! {
-             res = hyper::Server::builder(incoming).serve(Shared::new(service)) => { res }
-             //_ = shutdown_signal => { Ok(()) }
-        }
-    };
-    serve_fut.await?;
+    hyper::Server::builder(incoming)
+        .serve(Shared::new(service))
+        .await?;
     Ok(())
 }

@@ -1,10 +1,12 @@
 mod grpc_client;
+mod grpc_server;
 mod rest;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
 
 use grpc_client::CloudPremRootSearchService;
+use grpc_server::grpc_server;
 use rest::rest_server;
 use tokio::net::TcpListener;
 use tonic::transport::{Certificate, ClientTlsConfig, Identity};
@@ -44,12 +46,18 @@ pub async fn run_server(
     tls_config: Option<ClientTlsConfig>,
     mtls_header: Option<String>,
 ) -> anyhow::Result<()> {
-    let listener = TcpListener::bind("127.0.0.1:7380").await?;
+    let rest_listener = TcpListener::bind("127.0.0.1:7380").await?;
+    let grpc_listener = TcpListener::bind("127.0.0.1:7381").await?;
 
-    let search_service =
-        CloudPremRootSearchService::new(target, proxy_addr, tls_config, mtls_header).await?;
+    let search_service = Arc::new(
+        CloudPremRootSearchService::new(target, proxy_addr, tls_config, mtls_header).await?,
+    );
 
-    tracing::info!("Client ready, server listening on 127.0.0.1:7380");
+    tracing::info!("Client ready, server listening on 127.0.0.1:7380 and 127.0.0.1:7381");
 
-    tokio::try_join!(rest_server(Arc::new(search_service), listener),).map(|_| ())
+    tokio::try_join!(
+        rest_server(search_service.clone(), rest_listener),
+        grpc_server(search_service, grpc_listener),
+    )
+    .map(|_| ())
 }

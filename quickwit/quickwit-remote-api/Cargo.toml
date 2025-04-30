@@ -11,7 +11,7 @@ authors.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "quickwit"
+name = "remote-api"
 path = "src/main.rs"
 
 [dependencies]
