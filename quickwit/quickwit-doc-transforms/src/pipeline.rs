@@ -15,7 +15,7 @@
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
-use tracing::error;
+use tracing::warn;
 use vrl::datadog_filter::Matcher;
 
 use crate::error::PipelineError;
@@ -74,7 +74,7 @@ impl Pipeline {
             match step {
                 Ok(step) => steps.push(step),
                 Err(e) => {
-                    error!("Failed to build pipeline processor: {:?}", e);
+                    warn!("failed to build pipeline processor: {:?}", e);
                 }
             }
         }
