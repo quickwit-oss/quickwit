@@ -573,7 +573,8 @@ async fn test_cmd_update_index() {
         index_metadata.index_config.retention_policy_opt,
         Some(RetentionPolicy {
             retention_period: String::from("1 week"),
-            evaluation_schedule: String::from("daily")
+            evaluation_schedule: String::from("daily"),
+            jitter_secs: None,
         })
     );
 
