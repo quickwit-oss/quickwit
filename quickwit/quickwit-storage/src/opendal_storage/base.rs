@@ -148,7 +148,7 @@ impl Storage for OpendalStorage {
         #[cfg(feature = "integration-testsuite")]
         {
             let storage_info = self.op.info();
-            if storage_info.name() == "sample-bucket"
+            if storage_info.name().starts_with("sample-bucket")
                 && storage_info.scheme() == opendal::Scheme::Gcs
             {
                 let mut bulk_error = BulkDeleteError::default();

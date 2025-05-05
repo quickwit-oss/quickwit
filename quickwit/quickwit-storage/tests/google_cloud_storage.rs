@@ -16,29 +16,79 @@
 // to Fake GCS Server (the emulated google cloud storage environment)
 
 #[cfg(all(feature = "integration-testsuite", feature = "gcs"))]
-#[tokio::test]
 #[cfg_attr(not(feature = "ci-test"), ignore)]
-async fn google_cloud_storage_test_suite() -> anyhow::Result<()> {
+mod tests {
     use std::str::FromStr;
 
     use anyhow::Context;
+    use quickwit_common::rand::append_random_suffix;
+    use quickwit_common::setup_logging_for_tests;
     use quickwit_common::uri::Uri;
-    use quickwit_storage::new_emulated_google_cloud_storage;
-    let _ = tracing_subscriber::fmt::try_init();
+    use quickwit_storage::{DummyTokenLoader, new_emulated_google_cloud_storage};
+    use reqsign::GoogleTokenLoad;
 
-    let mut object_storage =
-        new_emulated_google_cloud_storage(&Uri::from_str("gs://sample-bucket")?)?;
-    quickwit_storage::storage_test_suite(&mut object_storage).await?;
+    pub async fn sign_gcs_requet(req: &mut reqwest::Request) -> anyhow::Result<()> {
+        let client = reqwest::Client::new();
+        let token = DummyTokenLoader
+            .load(client.clone())
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("Failed to obtain authentication token"))?;
 
-    let mut object_storage = new_emulated_google_cloud_storage(&Uri::from_str(
-        "gs://sample-bucket/integration-tests/test-azure-compatible-storage",
-    )?)?;
-    quickwit_storage::storage_test_single_part_upload(&mut object_storage)
-        .await
-        .context("test single-part upload failed")?;
+        let signer = reqsign::GoogleSigner::new("storage");
+        signer.sign(req, &token)?;
 
-    quickwit_storage::storage_test_multi_part_upload(&mut object_storage)
-        .await
-        .context("test multipart upload failed")?;
-    Ok(())
+        Ok(())
+    }
+
+    async fn create_gcs_bucket(bucket_name: &str) -> anyhow::Result<()> {
+        let client = reqwest::Client::new();
+        let url = "http://127.0.0.1:4443/storage/v1/b";
+        let mut request = client
+            .post(url)
+            .body(serde_json::to_vec(&serde_json::json!({
+                "name": bucket_name,
+                // "location": "us-central1",
+                // "storageClass": "STANDARD",
+            }))?)
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .build()?;
+
+        sign_gcs_requet(&mut request).await?;
+
+        let response = client.execute(request).await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            anyhow::bail!("Failed to create bucket: {}", error_text);
+        };
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn google_cloud_storage_test_suite() -> anyhow::Result<()> {
+        setup_logging_for_tests();
+
+        let bucket_name = append_random_suffix("sample-bucket").to_lowercase();
+        create_gcs_bucket(bucket_name.as_str())
+            .await
+            .context("Failed to create test GCS bucket")?;
+
+        let mut object_storage =
+            new_emulated_google_cloud_storage(&Uri::from_str(&format!("gs://{bucket_name}"))?)?;
+
+        quickwit_storage::storage_test_suite(&mut object_storage).await?;
+
+        let mut object_storage = new_emulated_google_cloud_storage(&Uri::from_str(&format!(
+            "gs://{bucket_name}/integration-tests/test-gcs-storage"
+        ))?)?;
+
+        quickwit_storage::storage_test_single_part_upload(&mut object_storage)
+            .await
+            .context("test single-part upload failed")?;
+
+        quickwit_storage::storage_test_multi_part_upload(&mut object_storage)
+            .await
+            .context("test multipart upload failed")?;
+        Ok(())
+    }
 }
