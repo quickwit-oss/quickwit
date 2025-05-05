@@ -32,6 +32,9 @@ pub enum PipelineError {
         source: vrl::path::PathParseError,
     },
 
+    #[error("Unsupported pipeline type: {typ}")]
+    UnsupportedType { typ: String },
+
     #[error("Other pipeline error: {error}")]
     Other { error: String },
 

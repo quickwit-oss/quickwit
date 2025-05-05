@@ -394,15 +394,15 @@ pub fn build_step(cfg: &PipelineStepConfig) -> Result<Box<dyn PipelineStep>, Pip
         PipelineStepConfig::ServiceRemapper { common, sources } => {
             string_core_attr_remapper(common, sources, CoreStringAttr::Service)
         }
-        _ => Ok(Box::new(DummyStep)),
-    }
-}
-
-#[derive(Debug)]
-struct DummyStep;
-impl PipelineStep for DummyStep {
-    fn apply(&self, _value: &mut ProcessedLog) -> Result<(), PipelineError> {
-        Ok(())
+        _ => {
+            let val = serde_json::to_value(cfg).map_err(|e| PipelineError::Other {
+                error: format!("Failed to serialize step config: {}", e),
+            })?;
+            let step_type = val.get("type").and_then(|t| t.as_str()).unwrap();
+            Err(PipelineError::UnsupportedType {
+                typ: step_type.to_string(),
+            })
+        }
     }
 }
 
