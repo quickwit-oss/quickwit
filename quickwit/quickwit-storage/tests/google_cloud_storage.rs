@@ -86,9 +86,13 @@ mod tests {
             .await
             .context("test single-part upload failed")?;
 
-        quickwit_storage::storage_test_multi_part_upload(&mut object_storage)
-            .await
-            .context("test multipart upload failed")?;
+        // TODO: Uncomment storage_test_multi_part_upload when the XML API is
+        // supported in the emulated GCS server
+        // (https://github.com/fsouza/fake-gcs-server/pull/1164)
+
+        // quickwit_storage::storage_test_multi_part_upload(&mut object_storage)
+        //     .await
+        //     .context("test multipart upload failed")?;
         Ok(())
     }
 }
