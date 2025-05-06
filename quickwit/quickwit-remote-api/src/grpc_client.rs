@@ -119,6 +119,13 @@ impl SearchService for CloudPremRootSearchService {
         self.0.root_search(request).await.map_err(Into::into)
     }
 
+    async fn root_list_terms(
+        &self,
+        request: ListTermsRequest,
+    ) -> quickwit_search::Result<ListTermsResponse> {
+        self.0.root_list_terms(request).await.map_err(Into::into)
+    }
+
     async fn leaf_search(
         &self,
         request: LeafSearchRequest,
@@ -145,12 +152,6 @@ impl SearchService for CloudPremRootSearchService {
     ) -> quickwit_search::Result<
         UnboundedReceiverStream<quickwit_search::Result<LeafSearchStreamResponse>>,
     > {
-        unimplemented(request)
-    }
-    async fn root_list_terms(
-        &self,
-        request: ListTermsRequest,
-    ) -> quickwit_search::Result<ListTermsResponse> {
         unimplemented(request)
     }
     async fn leaf_list_terms(
