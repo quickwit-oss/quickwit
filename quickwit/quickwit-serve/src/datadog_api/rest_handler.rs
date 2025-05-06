@@ -36,15 +36,30 @@ const DATADOG_INDEX_ID: &str = "datadog";
 #[openapi(paths(datadog_logs,))]
 pub struct DatadogApi;
 
-pub(crate) fn datadog_ingest_api_handlers(
+pub(crate) fn datadog_api_handlers(
     ingest_router: IngestRouterServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    datadog_logs(ingest_router.clone()).boxed()
+    datadog_healthcheck()
+        .or(datadog_logs(ingest_router.clone()))
+        .boxed()
+}
+
+#[utoipa::path(get, tag = "Datadog Healthcheck Endpoint", path = "/api/v1/validate")]
+pub(crate) fn datadog_healthcheck()
+-> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    datadog_healthcheck_filter()
+        .then(|| async move { warp::reply::with_status("ok", warp::http::StatusCode::OK) })
+        .boxed()
+}
+
+pub(crate) fn datadog_healthcheck_filter() -> impl Filter<Extract = (), Error = Rejection> + Clone {
+    let path_filter = warp::path!("api" / "v1" / "validate");
+    path_filter.and(warp::get())
 }
 
 /// Based on vector agent logs endpoint:
 /// https://github.com/vectordotdev/vector/blob/450de36904f3d1524057e8cdb736941194da8d22/src/sources/datadog_agent/mod.rs#L499
-pub(crate) fn datadog_filter() -> impl Filter<Extract = (Body,), Error = Rejection> + Clone {
+pub(crate) fn datadog_logs_filter() -> impl Filter<Extract = (Body,), Error = Rejection> + Clone {
     let path_filter = warp::path!("api" / "v1" / "input")
         .or(warp::path!("api" / "v2" / "logs"))
         .unify();
@@ -72,7 +87,7 @@ pub(crate) fn datadog_filter() -> impl Filter<Extract = (Body,), Error = Rejecti
 pub(crate) fn datadog_logs(
     ingest_router: IngestRouterServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    datadog_filter()
+    datadog_logs_filter()
         .and(with_arg(ingest_router))
         .and(warp::post())
         .then(|body, ingest_router| async move {
