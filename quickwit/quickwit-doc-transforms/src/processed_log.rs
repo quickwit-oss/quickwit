@@ -32,17 +32,19 @@ use crate::{PipelineStep, StringOrVec, convert_tags};
 // https://github.com/DataDog/datadog-agent/blob/a33248c2bc125920a9577af1e16f12298875a4ad/pkg/logs/processor/json.go#L23-L49
 #[serde_as]
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct DatadogLogMsg {
     pub message: String,
     pub status: Option<String>,
     #[serde(with = "time::serde::timestamp::milliseconds")]
     pub timestamp: OffsetDateTime,
+    #[serde(alias = "host")]
     pub hostname: String,
     pub service: String,
+    #[serde(alias = "source")]
     pub ddsource: String,
     #[serde_as(as = "StringWithSeparator::<CommaSeparator, String>")]
     #[serde(default)]
+    #[serde(alias = "tags")]
     pub ddtags: Vec<String>,
 }
 
