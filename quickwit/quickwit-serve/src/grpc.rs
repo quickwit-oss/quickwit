@@ -41,7 +41,7 @@ use tonic_reflection::server::{ServerReflection, ServerReflectionServer};
 use tracing::*;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
-use crate::cloudprem::AwsMtlsInterceptorLayer;
+use crate::cloudprem::MtlsHeaderInterceptorLayer;
 use crate::cloudprem_api::CloudPremServiceImpl;
 use crate::developer_api::DeveloperApiServer;
 use crate::search_api::GrpcSearchAdapter;
@@ -266,7 +266,7 @@ pub(crate) async fn start_grpc_server(
     let reflection_service = build_reflection_service(&file_descriptor_sets)?;
 
     let server_router = server
-        .layer(AwsMtlsInterceptorLayer::for_cloudprem_bridge(
+        .layer(MtlsHeaderInterceptorLayer::for_cloudprem_bridge(
             grpc_config.mtls_header,
         ))
         .add_service(cluster_grpc_service)
