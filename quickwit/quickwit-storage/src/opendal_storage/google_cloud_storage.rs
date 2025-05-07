@@ -83,7 +83,7 @@ pub mod test_config_helpers {
             .bucket(&bucket)
             .root(&root.to_string_lossy())
             .endpoint(LOCAL_GCP_EMULATOR_ENDPOINT)
-            .customized_token_loader(Box::new(test_config_helpers::DummyTokenLoader));
+            .customized_token_loader(Box::new(DummyTokenLoader));
         let store = OpendalStorage::new_google_cloud_storage(uri.clone(), cfg)?;
         Ok(store)
     }
