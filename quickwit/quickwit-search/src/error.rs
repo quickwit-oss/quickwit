@@ -202,3 +202,18 @@ impl From<SearchError> for quickwit_proto::cloudprem::CloudPremError {
         }
     }
 }
+
+impl From<quickwit_proto::cloudprem::CloudPremError> for SearchError {
+    fn from(err: quickwit_proto::cloudprem::CloudPremError) -> Self {
+        use quickwit_proto::cloudprem::CloudPremError;
+        match err {
+            CloudPremError::InvalidQuery(msg) => Self::InvalidQuery(msg),
+            CloudPremError::Internal(msg) => Self::Internal(msg),
+            CloudPremError::Unavailable(msg) => Self::Unavailable(msg),
+            CloudPremError::Timeout(msg) => Self::Timeout(msg),
+            CloudPremError::TooManyRequests => Self::TooManyRequests,
+            CloudPremError::DocumentNotFound { .. } => Self::Internal(err.to_string()),
+            CloudPremError::Unimplemented => Self::Internal("unimplented".to_string()),
+        }
+    }
+}

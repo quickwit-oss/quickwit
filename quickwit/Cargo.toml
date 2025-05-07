@@ -30,6 +30,7 @@ members = [
   "quickwit-opentelemetry",
   "quickwit-proto",
   "quickwit-query",
+  "quickwit-remote-api",
   "quickwit-rest-client",
   "quickwit-search",
   "quickwit-serve",
