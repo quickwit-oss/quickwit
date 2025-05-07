@@ -29,7 +29,7 @@ use quickwit_proto::search::{
     CountHits, LeafSearchRequest, LeafSearchResponse, PartialHit, ResourceStats, SearchRequest,
     SortOrder, SortValue, SplitIdAndFooterOffsets, SplitSearchError,
 };
-use quickwit_query::query_ast::{BoolQuery, QueryAst, QueryAstTransformer, RangeQuery, TermQuery};
+use quickwit_query::query_ast::{BoolQuery, QueryAst, QueryAstTransformer, RangeQuery};
 use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_storage::{
     BundleStorage, ByteRangeCache, MemorySizedCache, OwnedBytes, SplitCache, Storage,
@@ -45,6 +45,7 @@ use tokio::task::JoinError;
 use tracing::*;
 
 use crate::collector::{IncrementalCollector, make_collector_for_split, make_merge_collector};
+use crate::extract_timestamp_range::ExtractTimestampRange;
 use crate::metrics::SEARCH_METRICS;
 use crate::root::is_metadata_count_request_with_ast;
 use crate::search_permit_provider::{SearchPermit, compute_initial_memory_allocation};
@@ -639,58 +640,6 @@ pub fn map_bound<T, U>(bound: Bound<T>, f: impl FnOnce(T) -> U) -> Bound<U> {
     }
 }
 
-// returns the max of left and right, that isn't unbounded. Useful for making
-// the intersection of lower bound of ranges
-fn max_bound<T: Ord + Copy>(left: Bound<T>, right: Bound<T>) -> Bound<T> {
-    use Bound::*;
-    match (left, right) {
-        (Unbounded, right) => right,
-        (left, Unbounded) => left,
-        (Included(left), Included(right)) => Included(left.max(right)),
-        (Excluded(left), Excluded(right)) => Excluded(left.max(right)),
-        (excluded_total @ Excluded(excluded), included_total @ Included(included)) => {
-            if included > excluded {
-                included_total
-            } else {
-                excluded_total
-            }
-        }
-        (included_total @ Included(included), excluded_total @ Excluded(excluded)) => {
-            if included > excluded {
-                included_total
-            } else {
-                excluded_total
-            }
-        }
-    }
-}
-
-// returns the min of left and right, that isn't unbounded. Useful for making
-// the intersection of upper bound of ranges
-fn min_bound<T: Ord + Copy>(left: Bound<T>, right: Bound<T>) -> Bound<T> {
-    use Bound::*;
-    match (left, right) {
-        (Unbounded, right) => right,
-        (left, Unbounded) => left,
-        (Included(left), Included(right)) => Included(left.min(right)),
-        (Excluded(left), Excluded(right)) => Excluded(left.min(right)),
-        (excluded_total @ Excluded(excluded), included_total @ Included(included)) => {
-            if included < excluded {
-                included_total
-            } else {
-                excluded_total
-            }
-        }
-        (included_total @ Included(included), excluded_total @ Excluded(excluded)) => {
-            if included < excluded {
-                included_total
-            } else {
-                excluded_total
-            }
-        }
-    }
-}
-
 /// remove timestamp range that would be present both in QueryAst and SearchRequest
 ///
 /// this can save us from doing double the work in some cases, and help with the partial request
@@ -716,7 +665,7 @@ fn remove_redundant_timestamp_range(
         .map(Bound::Excluded)
         .unwrap_or(Bound::Unbounded);
 
-    let mut visitor = RemoveTimestampRange {
+    let mut visitor = ExtractTimestampRange {
         timestamp_field,
         start_timestamp,
         end_timestamp,
@@ -808,106 +757,6 @@ fn remove_redundant_timestamp_range(
     search_request.query_ast = serde_json::to_string(&new_ast).unwrap();
     search_request.start_timestamp = None;
     search_request.end_timestamp = None;
-}
-
-/// Remove all `must` and `filter timestamp ranges, and summarize them
-#[derive(Debug, Clone)]
-struct RemoveTimestampRange<'a> {
-    timestamp_field: &'a str,
-    start_timestamp: Bound<DateTime>,
-    end_timestamp: Bound<DateTime>,
-}
-
-impl RemoveTimestampRange<'_> {
-    fn update_start_timestamp(
-        &mut self,
-        lower_bound: &quickwit_query::JsonLiteral,
-        included: bool,
-    ) {
-        use quickwit_query::InterpretUserInput;
-        let Some(lower_bound) = DateTime::interpret_json(lower_bound) else {
-            // we shouldn't be able to get here, we would have errored much earlier in root search
-            warn!("unparsable time bound in leaf search: {lower_bound:?}");
-            return;
-        };
-        let bound = if included {
-            Bound::Included(lower_bound)
-        } else {
-            Bound::Excluded(lower_bound)
-        };
-
-        self.start_timestamp = max_bound(self.start_timestamp, bound);
-    }
-
-    fn update_end_timestamp(&mut self, upper_bound: &quickwit_query::JsonLiteral, included: bool) {
-        use quickwit_query::InterpretUserInput;
-        let Some(upper_bound) = DateTime::interpret_json(upper_bound) else {
-            // we shouldn't be able to get here, we would have errored much earlier in root search
-            warn!("unparsable time bound in leaf search: {upper_bound:?}");
-            return;
-        };
-        let bound = if included {
-            Bound::Included(upper_bound)
-        } else {
-            Bound::Excluded(upper_bound)
-        };
-
-        self.end_timestamp = min_bound(self.end_timestamp, bound);
-    }
-}
-
-impl QueryAstTransformer for RemoveTimestampRange<'_> {
-    type Err = std::convert::Infallible;
-
-    fn transform_bool(&mut self, mut bool_query: BoolQuery) -> Result<Option<QueryAst>, Self::Err> {
-        // we only want to visit sub-queries which are strict (positive) requirements
-        bool_query.must = bool_query
-            .must
-            .into_iter()
-            .filter_map(|query_ast| self.transform(query_ast).transpose())
-            .collect::<Result<Vec<_>, _>>()?;
-        bool_query.filter = bool_query
-            .filter
-            .into_iter()
-            .filter_map(|query_ast| self.transform(query_ast).transpose())
-            .collect::<Result<Vec<_>, _>>()?;
-
-        Ok(Some(QueryAst::Bool(bool_query)))
-    }
-
-    fn transform_range(&mut self, range_query: RangeQuery) -> Result<Option<QueryAst>, Self::Err> {
-        if range_query.field == self.timestamp_field {
-            match range_query.lower_bound {
-                Bound::Included(lower_bound) => {
-                    self.update_start_timestamp(&lower_bound, true);
-                }
-                Bound::Excluded(lower_bound) => {
-                    self.update_start_timestamp(&lower_bound, false);
-                }
-                Bound::Unbounded => (),
-            };
-
-            match range_query.upper_bound {
-                Bound::Included(upper_bound) => {
-                    self.update_end_timestamp(&upper_bound, true);
-                }
-                Bound::Excluded(upper_bound) => {
-                    self.update_end_timestamp(&upper_bound, false);
-                }
-                Bound::Unbounded => (),
-            };
-
-            Ok(Some(QueryAst::MatchAll))
-        } else {
-            Ok(Some(range_query.into()))
-        }
-    }
-
-    fn transform_term(&mut self, term_query: TermQuery) -> Result<Option<QueryAst>, Self::Err> {
-        // TODO we could remove query bounds, this point query surely is more precise, and it
-        // doesn't require loading a fastfield
-        Ok(Some(QueryAst::Term(term_query)))
-    }
 }
 
 pub(crate) fn rewrite_start_end_time_bounds(
