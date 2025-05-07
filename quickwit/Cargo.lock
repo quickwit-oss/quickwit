@@ -7446,6 +7446,7 @@ dependencies = [
  "lindera-dictionary",
  "lindera-tokenizer",
  "once_cell",
+ "postcard",
  "proptest",
  "prost 0.11.9",
  "prost-types 0.11.9",

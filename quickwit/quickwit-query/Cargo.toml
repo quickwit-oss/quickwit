@@ -21,6 +21,7 @@ lindera-core = { workspace = true, optional = true }
 lindera-dictionary = { workspace = true, optional = true }
 lindera-tokenizer = { workspace = true, optional = true }
 once_cell = { workspace = true }
+postcard = { workspace = true }
 prost = { workspace = true }
 prost-types = { workspace = true }
 regex = { workspace = true }

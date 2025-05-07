@@ -263,7 +263,7 @@ impl CloudPremService for CloudPremServiceImpl {
 
         tracing::trace!("request result: {response:?}");
         let aggregation_result = quickwit_query::cloudprem::aggregation_result_to_proto(
-            &response.aggregation.ok_or_else(|| {
+            &response.aggregation_postcard.ok_or_else(|| {
                 CloudPremError::Internal("request generated no aggregation result".to_string())
             })?,
         )?;
