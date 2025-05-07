@@ -26,8 +26,8 @@ use tokio_util::compat::{FuturesAsyncReadCompatExt, FuturesAsyncWriteCompatExt};
 use crate::metrics::object_storage_get_slice_in_flight_guards;
 use crate::storage::SendableAsync;
 use crate::{
-    BulkDeleteError, OwnedBytes, PutPayload, Storage, StorageError, StorageErrorKind,
-    StorageResolverError, StorageResult,
+    BulkDeleteError, MultiPartPolicy, OwnedBytes, PutPayload, Storage, StorageError,
+    StorageErrorKind, StorageResolverError, StorageResult,
 };
 
 /// OpenDAL based storage implementation.
@@ -35,11 +35,10 @@ use crate::{
 ///
 /// - Implement REQUEST_SEMAPHORE to control the concurrency.
 /// - Implement STORAGE_METRICS for metrics.
-/// - Add multipart_policy to control write at once or via multiple.
-#[derive(Clone)]
 pub struct OpendalStorage {
     uri: Uri,
     op: Operator,
+    multipart_policy: MultiPartPolicy,
 }
 
 impl fmt::Debug for OpendalStorage {
@@ -58,7 +57,16 @@ impl OpendalStorage {
         cfg: opendal::services::Gcs,
     ) -> Result<Self, StorageResolverError> {
         let op = Operator::new(cfg)?.finish();
-        Ok(Self { uri, op })
+        Ok(Self {
+            uri,
+            op,
+            // limits are the same as on S3
+            multipart_policy: MultiPartPolicy::default(),
+        })
+    }
+
+    pub fn set_policy(&mut self, multipart_policy: MultiPartPolicy) {
+        self.multipart_policy = multipart_policy;
     }
 }
 
@@ -69,10 +77,6 @@ impl Storage for OpendalStorage {
         Ok(())
     }
 
-    /// # TODO
-    ///
-    /// We can implement something like `multipart_policy` determine whether to use copy.
-    /// If the payload is small enough, we can call `op.write()` at once.
     async fn put(&self, path: &Path, payload: Box<dyn PutPayload>) -> StorageResult<()> {
         let path = path.as_os_str().to_string_lossy();
         let mut payload_reader = payload.byte_stream().await?.into_async_read();
@@ -80,6 +84,7 @@ impl Storage for OpendalStorage {
         let mut storage_writer = self
             .op
             .writer_with(&path)
+            .chunk(self.multipart_policy.part_num_bytes(payload.len()) as usize)
             .await?
             .into_futures_async_write()
             .compat_write();
@@ -148,7 +153,7 @@ impl Storage for OpendalStorage {
         #[cfg(feature = "integration-testsuite")]
         {
             let storage_info = self.op.info();
-            if storage_info.name() == "sample-bucket"
+            if storage_info.name().starts_with("sample-bucket")
                 && storage_info.scheme() == opendal::Scheme::Gcs
             {
                 let mut bulk_error = BulkDeleteError::default();
