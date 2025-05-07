@@ -537,6 +537,11 @@ impl RpcName for super::quickwit::search::SearchRequest {
         "root_search"
     }
 }
+impl RpcName for super::quickwit::search::ListTermsRequest {
+    fn rpc_name() -> &'static str {
+        "root_list_terms"
+    }
+}
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait CloudPremService: std::fmt::Debug + Send + Sync + 'static {
@@ -566,6 +571,10 @@ pub trait CloudPremService: std::fmt::Debug + Send + Sync + 'static {
         &self,
         request: super::quickwit::search::SearchRequest,
     ) -> crate::cloudprem::CloudPremResult<super::quickwit::search::SearchResponse>;
+    async fn root_list_terms(
+        &self,
+        request: super::quickwit::search::ListTermsRequest,
+    ) -> crate::cloudprem::CloudPremResult<super::quickwit::search::ListTermsResponse>;
 }
 #[derive(Debug, Clone)]
 pub struct CloudPremServiceClient {
@@ -694,6 +703,12 @@ impl CloudPremService for CloudPremServiceClient {
     ) -> crate::cloudprem::CloudPremResult<super::quickwit::search::SearchResponse> {
         self.inner.0.root_search(request).await
     }
+    async fn root_list_terms(
+        &self,
+        request: super::quickwit::search::ListTermsRequest,
+    ) -> crate::cloudprem::CloudPremResult<super::quickwit::search::ListTermsResponse> {
+        self.inner.0.root_list_terms(request).await
+    }
 }
 #[cfg(any(test, feature = "testsuite"))]
 pub mod mock_cloud_prem_service {
@@ -741,6 +756,14 @@ pub mod mock_cloud_prem_service {
             super::super::quickwit::search::SearchResponse,
         > {
             self.inner.lock().await.root_search(request).await
+        }
+        async fn root_list_terms(
+            &self,
+            request: super::super::quickwit::search::ListTermsRequest,
+        ) -> crate::cloudprem::CloudPremResult<
+            super::super::quickwit::search::ListTermsResponse,
+        > {
+            self.inner.lock().await.root_list_terms(request).await
         }
     }
 }
@@ -844,6 +867,26 @@ for InnerCloudPremServiceClient {
         Box::pin(fut)
     }
 }
+impl tower::Service<super::quickwit::search::ListTermsRequest>
+for InnerCloudPremServiceClient {
+    type Response = super::quickwit::search::ListTermsResponse;
+    type Error = crate::cloudprem::CloudPremError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(
+        &mut self,
+        request: super::quickwit::search::ListTermsRequest,
+    ) -> Self::Future {
+        let svc = self.clone();
+        let fut = async move { svc.0.root_list_terms(request).await };
+        Box::pin(fut)
+    }
+}
 /// A tower service stack is a set of tower services.
 #[derive(Debug)]
 struct CloudPremServiceTowerServiceStack {
@@ -877,6 +920,11 @@ struct CloudPremServiceTowerServiceStack {
     root_search_svc: quickwit_common::tower::BoxService<
         super::quickwit::search::SearchRequest,
         super::quickwit::search::SearchResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+    root_list_terms_svc: quickwit_common::tower::BoxService<
+        super::quickwit::search::ListTermsRequest,
+        super::quickwit::search::ListTermsResponse,
         crate::cloudprem::CloudPremError,
     >,
 }
@@ -917,6 +965,12 @@ impl CloudPremService for CloudPremServiceTowerServiceStack {
         request: super::quickwit::search::SearchRequest,
     ) -> crate::cloudprem::CloudPremResult<super::quickwit::search::SearchResponse> {
         self.root_search_svc.clone().ready().await?.call(request).await
+    }
+    async fn root_list_terms(
+        &self,
+        request: super::quickwit::search::ListTermsRequest,
+    ) -> crate::cloudprem::CloudPremResult<super::quickwit::search::ListTermsResponse> {
+        self.root_list_terms_svc.clone().ready().await?.call(request).await
     }
 }
 type PingLayer = quickwit_common::tower::BoxLayer<
@@ -979,6 +1033,16 @@ type RootSearchLayer = quickwit_common::tower::BoxLayer<
     super::quickwit::search::SearchResponse,
     crate::cloudprem::CloudPremError,
 >;
+type RootListTermsLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        super::quickwit::search::ListTermsRequest,
+        super::quickwit::search::ListTermsResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+    super::quickwit::search::ListTermsRequest,
+    super::quickwit::search::ListTermsResponse,
+    crate::cloudprem::CloudPremError,
+>;
 #[derive(Debug, Default)]
 pub struct CloudPremServiceTowerLayerStack {
     ping_layers: Vec<PingLayer>,
@@ -987,6 +1051,7 @@ pub struct CloudPremServiceTowerLayerStack {
     aggregate_layers: Vec<AggregateLayer>,
     set_cluster_address_layers: Vec<SetClusterAddressLayer>,
     root_search_layers: Vec<RootSearchLayer>,
+    root_list_terms_layers: Vec<RootListTermsLayer>,
 }
 impl CloudPremServiceTowerLayerStack {
     pub fn stack_layer<L>(mut self, layer: L) -> Self
@@ -1143,6 +1208,33 @@ impl CloudPremServiceTowerLayerStack {
         >>::Service as tower::Service<
             super::quickwit::search::SearchRequest,
         >>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    super::quickwit::search::ListTermsRequest,
+                    super::quickwit::search::ListTermsResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                super::quickwit::search::ListTermsRequest,
+                super::quickwit::search::ListTermsResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service: tower::Service<
+                super::quickwit::search::ListTermsRequest,
+                Response = super::quickwit::search::ListTermsResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                super::quickwit::search::ListTermsRequest,
+                super::quickwit::search::ListTermsResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service as tower::Service<
+            super::quickwit::search::ListTermsRequest,
+        >>::Future: Send + 'static,
     {
         self.ping_layers.push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.list_layers.push(quickwit_common::tower::BoxLayer::new(layer.clone()));
@@ -1151,6 +1243,8 @@ impl CloudPremServiceTowerLayerStack {
         self.set_cluster_address_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.root_search_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.root_list_terms_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self
     }
@@ -1271,6 +1365,27 @@ impl CloudPremServiceTowerLayerStack {
         self.root_search_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
+    pub fn stack_root_list_terms_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    super::quickwit::search::ListTermsRequest,
+                    super::quickwit::search::ListTermsResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                super::quickwit::search::ListTermsRequest,
+                Response = super::quickwit::search::ListTermsResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<
+            super::quickwit::search::ListTermsRequest,
+        >>::Future: Send + 'static,
+    {
+        self.root_list_terms_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
     pub fn build<T>(self, instance: T) -> CloudPremServiceClient
     where
         T: CloudPremService,
@@ -1375,6 +1490,14 @@ impl CloudPremServiceTowerLayerStack {
                 quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
+        let root_list_terms_svc = self
+            .root_list_terms_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
+                |svc, layer| layer.layer(svc),
+            );
         let tower_svc_stack = CloudPremServiceTowerServiceStack {
             inner: inner_client,
             ping_svc,
@@ -1383,6 +1506,7 @@ impl CloudPremServiceTowerLayerStack {
             aggregate_svc,
             set_cluster_address_svc,
             root_search_svc,
+            root_list_terms_svc,
         };
         CloudPremServiceClient::new(tower_svc_stack)
     }
@@ -1500,6 +1624,15 @@ where
                 super::quickwit::search::SearchResponse,
                 crate::cloudprem::CloudPremError,
             >,
+        >
+        + tower::Service<
+            super::quickwit::search::ListTermsRequest,
+            Response = super::quickwit::search::ListTermsResponse,
+            Error = crate::cloudprem::CloudPremError,
+            Future = BoxFuture<
+                super::quickwit::search::ListTermsResponse,
+                crate::cloudprem::CloudPremError,
+            >,
         >,
 {
     async fn ping(
@@ -1536,6 +1669,12 @@ where
         &self,
         request: super::quickwit::search::SearchRequest,
     ) -> crate::cloudprem::CloudPremResult<super::quickwit::search::SearchResponse> {
+        self.clone().call(request).await
+    }
+    async fn root_list_terms(
+        &self,
+        request: super::quickwit::search::ListTermsRequest,
+    ) -> crate::cloudprem::CloudPremResult<super::quickwit::search::ListTermsResponse> {
         self.clone().call(request).await
     }
 }
@@ -1657,6 +1796,20 @@ where
                 super::quickwit::search::SearchRequest::rpc_name(),
             ))
     }
+    async fn root_list_terms(
+        &self,
+        request: super::quickwit::search::ListTermsRequest,
+    ) -> crate::cloudprem::CloudPremResult<super::quickwit::search::ListTermsResponse> {
+        self.inner
+            .clone()
+            .root_list_terms(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                super::quickwit::search::ListTermsRequest::rpc_name(),
+            ))
+    }
 }
 #[derive(Debug)]
 pub struct CloudPremServiceGrpcServerAdapter {
@@ -1740,6 +1893,20 @@ for CloudPremServiceGrpcServerAdapter {
         self.inner
             .0
             .root_search(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(crate::error::grpc_error_to_grpc_status)
+    }
+    async fn root_list_terms(
+        &self,
+        request: tonic::Request<super::quickwit::search::ListTermsRequest>,
+    ) -> Result<
+        tonic::Response<super::quickwit::search::ListTermsResponse>,
+        tonic::Status,
+    > {
+        self.inner
+            .0
+            .root_list_terms(request.into_inner())
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -1980,6 +2147,33 @@ pub mod cloud_prem_service_grpc_client {
                 .insert(GrpcMethod::new("cloudprem.CloudPremService", "RootSearch"));
             self.inner.unary(req, path, codec).await
         }
+        pub async fn root_list_terms(
+            &mut self,
+            request: impl tonic::IntoRequest<
+                super::super::quickwit::search::ListTermsRequest,
+            >,
+        ) -> std::result::Result<
+            tonic::Response<super::super::quickwit::search::ListTermsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/cloudprem.CloudPremService/RootListTerms",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("cloudprem.CloudPremService", "RootListTerms"));
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -2025,6 +2219,13 @@ pub mod cloud_prem_service_grpc_server {
             request: tonic::Request<super::super::quickwit::search::SearchRequest>,
         ) -> std::result::Result<
             tonic::Response<super::super::quickwit::search::SearchResponse>,
+            tonic::Status,
+        >;
+        async fn root_list_terms(
+            &self,
+            request: tonic::Request<super::super::quickwit::search::ListTermsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::quickwit::search::ListTermsResponse>,
             tonic::Status,
         >;
     }
@@ -2360,6 +2561,55 @@ pub mod cloud_prem_service_grpc_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = RootSearchSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/cloudprem.CloudPremService/RootListTerms" => {
+                    #[allow(non_camel_case_types)]
+                    struct RootListTermsSvc<T: CloudPremServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: CloudPremServiceGrpc,
+                    > tonic::server::UnaryService<
+                        super::super::quickwit::search::ListTermsRequest,
+                    > for RootListTermsSvc<T> {
+                        type Response = super::super::quickwit::search::ListTermsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::super::quickwit::search::ListTermsRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).root_list_terms(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = RootListTermsSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

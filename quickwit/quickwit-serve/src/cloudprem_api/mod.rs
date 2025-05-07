@@ -8,7 +8,8 @@ use quickwit_proto::cloudprem::{
     PingResponse, SetClusterAddressRequest, SetClusterAddressResponse, Statistics,
 };
 use quickwit_proto::search::{
-    CountHits, Hit, PartialHit, SearchRequest, SearchResponse, SortField, SortOrder,
+    CountHits, Hit, ListTermsRequest, ListTermsResponse, PartialHit, SearchRequest, SearchResponse,
+    SortField, SortOrder,
 };
 use quickwit_query::MatchAllOrNone;
 use quickwit_query::query_ast::{FullTextMode, FullTextParams, FullTextQuery, QueryAst};
@@ -294,17 +295,32 @@ impl CloudPremService for CloudPremServiceImpl {
     ) -> Result<SearchResponse, CloudPremError> {
         // we don't want to ever access customer data here, that has to go through properly audited
         // channels
-        let safe_pattern_char = |c: char| c.is_ascii_alphanumeric() || c == '-' || c == '.';
-
-        search_request.index_id_patterns.retain(|pattern| {
-            pattern.starts_with("otel-") && pattern.chars().all(safe_pattern_char)
-        });
-
+        filter_safe_indexes(&mut search_request.index_id_patterns);
         self.search_service
             .root_search(search_request)
             .await
             .map_err(Into::into)
     }
+
+    async fn root_list_terms(
+        &self,
+        mut list_terms_request: ListTermsRequest,
+    ) -> Result<ListTermsResponse, CloudPremError> {
+        // we don't want to ever access customer data here, that has to go through properly audited
+        // channels
+        filter_safe_indexes(&mut list_terms_request.index_id_patterns);
+        self.search_service
+            .root_list_terms(list_terms_request)
+            .await
+            .map_err(Into::into)
+    }
+}
+
+fn filter_safe_indexes(index_id_patterns: &mut Vec<String>) {
+    let safe_pattern_char = |c: char| c.is_ascii_alphanumeric() || "-._*".contains(c);
+
+    index_id_patterns
+        .retain(|pattern| pattern.starts_with("otel-") && pattern.chars().all(safe_pattern_char));
 }
 
 struct HitMapper {
