@@ -1383,17 +1383,20 @@ async fn test_single_node_aggregation() -> anyhow::Result<()> {
         test_sandbox.storage_resolver(),
     )
     .await?;
-    let agg_res_json: JsonValue = serde_json::from_str(&single_node_result.aggregation.unwrap())?;
+    let agg_res_struct =
+        AggregationResults::from_postcard(&single_node_result.aggregation_postcard.unwrap())?;
+    let agg_res_json = serde_json::to_string(&agg_res_struct)?;
+    let agg_res_parsed_json: JsonValue = serde_json::from_str(&agg_res_json)?;
     assert_eq!(
-        agg_res_json["expensive_colors"]["buckets"][0]["key"],
+        agg_res_parsed_json["expensive_colors"]["buckets"][0]["key"],
         "white"
     );
     assert_eq!(
-        agg_res_json["expensive_colors"]["buckets"][1]["key"],
+        agg_res_parsed_json["expensive_colors"]["buckets"][1]["key"],
         "blue"
     );
     assert_eq!(
-        agg_res_json["expensive_colors"]["buckets"][2]["key"],
+        agg_res_parsed_json["expensive_colors"]["buckets"][2]["key"],
         "green"
     );
     assert!(single_node_result.elapsed_time_micros > 10);
@@ -1831,8 +1834,8 @@ async fn test_single_node_find_trace_ids_collector() {
         )
         .await
         .unwrap();
-        let aggregation = single_node_result.aggregation.unwrap();
-        let trace_ids: Vec<Span> = serde_json::from_str(&aggregation).unwrap();
+        let aggregation_postcard = single_node_result.aggregation_postcard.unwrap();
+        let trace_ids: Vec<Span> = postcard::from_bytes(&aggregation_postcard).unwrap();
         assert_eq!(trace_ids.len(), 3);
 
         assert_eq!(trace_ids[0].trace_id, qux_trace_id);

@@ -157,7 +157,7 @@ services:
       - all
       - fake-gcs-server
     volumes:
-      - fake_gcs_server_data:/data/sample-bucket
+      - fake_gcs_server_data:/data
     command: -scheme http
 
   grafana:

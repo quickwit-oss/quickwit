@@ -69,6 +69,8 @@ static SPAWN_PIPELINE_SEMAPHORE: Semaphore = Semaphore::const_new(10);
 #[derive(Debug, Clone, Copy)]
 pub struct FinishPendingMergesAndShutdownPipeline;
 
+pub const SUPERVISE_LOOP_INTERVAL: Duration = Duration::from_secs(1);
+
 struct MergePipelineHandles {
     merge_planner: ActorHandle<MergePlanner>,
     merge_split_downloader: ActorHandle<MergeSplitDownloader>,
@@ -480,7 +482,7 @@ impl Handler<SuperviseLoop> for MergePipeline {
     ) -> Result<(), ActorExitStatus> {
         self.perform_observe().await;
         self.perform_health_check(ctx).await?;
-        ctx.schedule_self_msg(Duration::from_secs(1), supervise_loop_token);
+        ctx.schedule_self_msg(SUPERVISE_LOOP_INTERVAL, supervise_loop_token);
         Ok(())
     }
 }

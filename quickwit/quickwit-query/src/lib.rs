@@ -24,6 +24,7 @@
 // documentation.
 
 pub mod cloudprem;
+pub mod aggregations;
 mod elastic_query_dsl;
 mod error;
 mod json_literal;

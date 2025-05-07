@@ -12,6 +12,8 @@ jobs:
   build-cross-images:
     name: Publish cross images
     runs-on: ubuntu-latest
+    environment:
+        name: production
     steps:
       - name: Check out the repo
         uses: actions/checkout@v4
