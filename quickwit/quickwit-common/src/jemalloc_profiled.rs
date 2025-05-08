@@ -19,7 +19,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use bytesize::ByteSize;
 use tikv_jemallocator::Jemalloc;
-use tracing::{error, info};
+use tracing::{error, info, trace};
 
 use crate::alloc_tracker::{self, AllocRecordingResponse};
 
@@ -166,24 +166,22 @@ unsafe impl GlobalAlloc for JemallocProfiled {
 /// Warning: stdout allocates a buffer on first use.
 #[inline]
 fn print_backtrace(callsite_hash: u64, stat: alloc_tracker::Statistic) {
-    {
-        let mut lock = std::io::stdout().lock();
-        let _ = writeln!(
-            &mut lock,
-            "htrk callsite={} allocs={} size={}",
-            callsite_hash, stat.count, stat.size
-        );
-        backtrace::trace(|frame| {
-            backtrace::resolve_frame(frame, |symbol| {
-                if let Some(symbole_name) = symbol.name() {
-                    let _ = writeln!(&mut lock, "{}", symbole_name);
-                } else {
-                    let _ = writeln!(&mut lock, "symb failed");
-                }
-            });
-            true
+    let mut lock = std::io::stdout().lock();
+    let _ = writeln!(
+        &mut lock,
+        "htrk callsite={} allocs={} size={}",
+        callsite_hash, stat.count, stat.size,
+    );
+    backtrace::trace(|frame| {
+        backtrace::resolve_frame(frame, |symbol| {
+            if let Some(symbole_name) = symbol.name() {
+                let _ = writeln!(&mut lock, "{}", symbole_name);
+            } else {
+                let _ = writeln!(&mut lock, "symb failed");
+            }
         });
-    }
+        true
+    });
 }
 
 #[inline]
@@ -206,8 +204,13 @@ fn track_alloc_call(ptr: *mut u8, layout: Layout) {
 
         match recording_response {
             AllocRecordingResponse::ThresholdExceeded(stat_for_trace) => {
+                // print both a backtrace and a Tokio tracing log
                 // warning: stdout might allocate a buffer on first use
                 print_backtrace(callsite_hash, stat_for_trace);
+                // for this to generate a complete trace:
+                // - tokio/tracing feature must be enabled
+                // - the tracing fmt subscriber filter must keep all spans for this event
+                trace!(callsite=callsite_hash,allocs=stat_for_trace.count,size=%stat_for_trace.size, "htrk");
             }
             AllocRecordingResponse::TrackerFull(table_name) => {
                 // this message might be displayed multiple times but that's fine

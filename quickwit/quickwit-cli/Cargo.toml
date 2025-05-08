@@ -133,7 +133,8 @@ release-macos-feature-vendored-set = [
 ]
 release-heap-profiled = [
   "release-feature-set",
-  "jemalloc-profiled"
+  "jemalloc-profiled",
+  "tokio/tracing",
 ]
 
 [package.metadata.cargo-machete]
