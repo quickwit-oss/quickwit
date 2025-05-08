@@ -16,9 +16,13 @@
 
 mod coolid;
 
+#[cfg(feature = "jemalloc-profiled")]
+pub(crate) mod alloc_tracker;
 pub mod binary_heap;
 pub mod fs;
 pub mod io;
+#[cfg(feature = "jemalloc-profiled")]
+pub mod jemalloc_profiled;
 mod kill_switch;
 pub mod metrics;
 pub mod net;
