@@ -17,6 +17,7 @@ use std::sync::OnceLock;
 
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
+use tracing::warn;
 use vrl::datadog_grok::parse_grok_rules::{self, GrokRule};
 use vrl::value::KeyString;
 
@@ -102,13 +103,25 @@ pub(crate) fn build_grok_rules(
         .map(|rule| (rule.name.clone().into(), rule.rule.clone()))
         .collect();
 
-    let patterns: Vec<String> = match_rules
-        .iter()
-        .map(|match_rule| match_rule.rule.to_owned())
-        .collect();
+    // We call every rule separate to filter out the ones that are not valid.
+    let mut rules = Vec::new();
+    for rule in match_rules.iter() {
+        let parsed_rule =
+            parse_grok_rules::parse_grok_rules(&[rule.rule.to_string()], aliases.clone());
+        match parsed_rule {
+            Ok(parsed) => rules.extend_from_slice(&parsed),
+            Err(err) => {
+                warn!("Failed to parse grok rule {}: {}", rule.rule, err);
+            }
+        }
+    }
 
-    parse_grok_rules::parse_grok_rules(&patterns, aliases)
-        .map_err(|source| PipelineError::GrokCompile { source })
+    if rules.is_empty() {
+        return Err(PipelineError::GrokParse {
+            message: "No valid grok rules found".to_string(),
+        });
+    }
+    Ok(rules)
 }
 
 fn build_grok_rules_with_source(rules: &[OPGrokRules]) -> SourceToGrokPatterns {
