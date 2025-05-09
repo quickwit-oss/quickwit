@@ -103,7 +103,7 @@ pub(crate) fn build_grok_rules(
         .map(|rule| (rule.name.clone().into(), rule.rule.clone()))
         .collect();
 
-    // We call every rule seperate to filter out the ones that are not valid.
+    // We call every rule separate to filter out the ones that are not valid.
     let mut rules = Vec::new();
     for rule in match_rules.iter() {
         let parsed_rule =

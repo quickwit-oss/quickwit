@@ -607,7 +607,7 @@ mod vrl_matcher_tests {
 
         assert!(check_query("127.0.0.1", &log));
         assert!(!check_query("127.0.0..1", &log));
-        // ':' is a token seperator for this query
+        // ':' is a token separator for this query
         assert!(!check_query("\"127:0:0:1\"", &log));
     }
 
