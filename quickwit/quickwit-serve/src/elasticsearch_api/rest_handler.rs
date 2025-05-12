@@ -151,7 +151,7 @@ pub fn es_compat_stats_handler(
 }
 
 /// Check if the parameter is a known query parameter to reject
-fn is_unsuppported_qp(param: &str) -> bool {
+fn is_unsupported_qp(param: &str) -> bool {
     ["wait_for_status", "timeout", "level"].contains(&param)
 }
 
@@ -180,7 +180,7 @@ async fn es_compat_cluster_health(
     query_params: HashMap<String, String>,
     cluster: Cluster,
 ) -> impl warp::Reply {
-    if let Some(invalid_param) = query_params.keys().find(|key| is_unsuppported_qp(key)) {
+    if let Some(invalid_param) = query_params.keys().find(|key| is_unsupported_qp(key)) {
         let error_body = warp::reply::json(&json!({
             "error": "Unsupported parameter.",
             "param": invalid_param
@@ -881,7 +881,7 @@ async fn es_compat_index_multi_search(
                         append_shard_doc,
                         _source_excludes,
                         _source_includes,
-                        true, //< allow_partial_results. Set to to true to match ES's behavior.
+                        true, //< allow_partial_results. Set to true to match ES's behavior.
                     )?;
                 search_response_rest.took = elapsed.as_millis() as u32;
                 Ok::<_, ElasticsearchError>(search_response_rest)
@@ -1037,7 +1037,7 @@ fn convert_to_es_search_response(
         },
         aggregations,
         scroll_id: resp.scroll_id,
-        // There is not concept of shards here, but use this to convey split search failures.
+        // There is no concept of shards here, but use this to convey split search failures.
         shards: ShardStatistics {
             total: num_total_splits,
             successful: num_successful_splits,

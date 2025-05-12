@@ -225,7 +225,7 @@ impl<A: Actor> ActorContext<A> {
     /// If the reply is important, chances are the `.ask(...)` method is
     /// more indicated.
     ///
-    /// Droppping the receiver channel will not cancel the
+    /// Dropping the receiver channel will not cancel the
     /// processing of the message. It is a very common usage.
     /// In fact most actors are expected to send message in a
     /// fire-and-forget fashion.
