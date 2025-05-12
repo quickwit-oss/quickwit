@@ -19,6 +19,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use bytes::Bytes;
 use bytesize::ByteSize;
+use prometheus::proto::MetricType;
 use quickwit_actors::Mailbox;
 use quickwit_cluster::Cluster;
 use quickwit_config::NodeConfig;
@@ -26,7 +27,8 @@ use quickwit_config::service::QuickwitService;
 use quickwit_control_plane::control_plane::{ControlPlane, GetDebugInfo};
 use quickwit_ingest::{IngestRouter, Ingester};
 use quickwit_proto::developer::{
-    DeveloperError, DeveloperResult, DeveloperService, GetDebugInfoRequest, GetDebugInfoResponse,
+    Counter, DeveloperError, DeveloperResult, DeveloperService, GetDebugInfoRequest,
+    GetDebugInfoResponse, MetricTag, PullMetricsResponse,
 };
 use serde_json::json;
 
@@ -114,6 +116,65 @@ impl DeveloperService for DeveloperApiServer {
         };
         Ok(response)
     }
+
+    async fn pull_metrics(
+        &self,
+        _: quickwit_proto::developer::PullMetricsRequest,
+    ) -> DeveloperResult<PullMetricsResponse> {
+        let mut metric_families_proto = Vec::new();
+        for mut metric_family in prometheus::default_registry().gather() {
+            if metric_family.get_field_type() != MetricType::COUNTER {
+                continue;
+            }
+            let metric_family_name = metric_family.take_name();
+            let mut counters_proto: Vec<Counter> = Vec::new();
+            for mut metric in metric_family.take_metric() {
+                if !metric.has_counter() {
+                    continue;
+                }
+                let counter = metric.get_counter();
+                let Some(counter_value) = safe_f64_to_u64_truncate(counter.get_value()) else {
+                    continue;
+                };
+                let tags: Vec<MetricTag> = metric
+                    .take_label()
+                    .into_iter()
+                    .map(|mut label| MetricTag {
+                        key: label.take_name(),
+                        value: label.take_value(),
+                    })
+                    .collect();
+                counters_proto.push(Counter {
+                    tags,
+                    value: counter_value,
+                });
+            }
+            let metric_family_proto = quickwit_proto::developer::MetricFamily {
+                name: metric_family_name.to_string(),
+                counters: counters_proto,
+            };
+            metric_families_proto.push(metric_family_proto);
+        }
+        Ok(PullMetricsResponse {
+            metric_families: metric_families_proto,
+        })
+    }
+}
+
+fn safe_f64_to_u64_truncate(val: f64) -> Option<u64> {
+    if !val.is_finite() {
+        return None;
+    }
+    if val.fract() != 0.0 {
+        return None;
+    }
+    if val < 0.0 {
+        return None;
+    }
+    if val > u64::MAX as f64 {
+        return None;
+    }
+    Some(val as u64)
 }
 
 #[cfg(test)]

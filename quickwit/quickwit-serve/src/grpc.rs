@@ -235,7 +235,8 @@ pub(crate) async fn start_grpc_server(
         file_descriptor_sets.push(quickwit_proto::cloudprem::CLOUDPREM_FILE_DESCRIPTOR_SET);
 
         let search_service = services.search_service.clone();
-        let cloudprem_service_impl = CloudPremServiceImpl::from(search_service);
+        let cloudprem_service_impl =
+            CloudPremServiceImpl::new(search_service, services.cluster.clone());
         Some(
             CloudPremServiceClient::tower()
                 .build(cloudprem_service_impl)

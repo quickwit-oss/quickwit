@@ -1,28 +1,44 @@
 use std::fmt;
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
+use futures::stream::FuturesUnordered;
+use quickwit_cluster::{Cluster, ClusterNode};
+use quickwit_proto::ServiceError as _;
 use quickwit_proto::cloudprem::{
     AggregationRequest, AggregationResponse, CloudPremError, CloudPremResult, CloudPremService,
-    Event, EventTracker, FetchOneRequest, FetchOneResponse, ListRequest, ListResponse, PingRequest,
-    PingResponse, SetClusterAddressRequest, SetClusterAddressResponse, Statistics,
+    Event, EventTracker, FetchOneRequest, FetchOneResponse, ListRequest, ListResponse, NodeMetrics,
+    PingRequest, PingResponse, PullClusterMetricsResponse, SetClusterAddressRequest,
+    SetClusterAddressResponse, Statistics,
+};
+use quickwit_proto::developer::{
+    DeveloperService as _, DeveloperServiceClient, MetricFamily, PullMetricsRequest,
+    PullMetricsResponse,
 };
 use quickwit_proto::search::{
     CountHits, Hit, ListTermsRequest, ListTermsResponse, PartialHit, SearchRequest, SearchResponse,
     SortField, SortOrder,
 };
+use quickwit_proto::tonic::codec::CompressionEncoding;
 use quickwit_query::MatchAllOrNone;
 use quickwit_query::query_ast::{BoolQuery, FullTextMode, FullTextParams, FullTextQuery, QueryAst};
 use quickwit_search::SearchService;
 use serde_json::Value as JsonValue;
+use tokio_stream::StreamExt as _;
 use tracing::{debug, error, info, warn};
+
+use crate::developer_api::DeveloperApiServer;
 
 // TODO this should become configurable and sent by EVP
 const CLOUD_PREM_INDEX_ID_PATTERN: &str = "datadog*";
 
+const PULL_METRICS_TIMEOUT: Duration = Duration::from_secs(1);
+
 #[allow(dead_code)]
 pub struct CloudPremServiceImpl {
     search_service: Arc<dyn SearchService>,
+    cluster: Cluster,
 }
 
 impl fmt::Debug for CloudPremServiceImpl {
@@ -31,9 +47,12 @@ impl fmt::Debug for CloudPremServiceImpl {
     }
 }
 
-impl From<Arc<dyn SearchService>> for CloudPremServiceImpl {
-    fn from(search_service: Arc<dyn SearchService>) -> Self {
-        CloudPremServiceImpl { search_service }
+impl CloudPremServiceImpl {
+    pub fn new(search_service: Arc<dyn SearchService>, cluster: Cluster) -> Self {
+        CloudPremServiceImpl {
+            search_service,
+            cluster,
+        }
     }
 }
 
@@ -332,6 +351,60 @@ impl CloudPremService for CloudPremServiceImpl {
             .root_list_terms(list_terms_request)
             .await
             .map_err(Into::into)
+    }
+
+    async fn pull_cluster_metrics(
+        &self,
+        _request: quickwit_proto::cloudprem::PullClusterMetricsRequest,
+    ) -> CloudPremResult<quickwit_proto::cloudprem::PullClusterMetricsResponse> {
+        let ready_nodes = self.cluster.ready_nodes().await;
+
+        let mut pull_metrics_futures = FuturesUnordered::new();
+        let mut node_metrics: Vec<quickwit_proto::cloudprem::NodeMetrics> =
+            Vec::with_capacity(ready_nodes.len());
+
+        for ready_node in ready_nodes {
+            let pull_metrics_fut = async move { build_node_metric_future(ready_node).await };
+            pull_metrics_futures.push(pull_metrics_fut);
+        }
+
+        while let Some(single_node_metrics) = pull_metrics_futures.next().await {
+            node_metrics.push(single_node_metrics);
+        }
+        Ok(PullClusterMetricsResponse { node_metrics })
+    }
+}
+
+async fn build_node_metric_future(ready_node: ClusterNode) -> NodeMetrics {
+    let node_id = ready_node.node_id().to_owned();
+    let client = DeveloperServiceClient::from_channel(
+        ready_node.grpc_advertise_addr(),
+        ready_node.channel(),
+        DeveloperApiServer::MAX_GRPC_MESSAGE_SIZE,
+        Some(CompressionEncoding::Zstd),
+    );
+    let pull_metrics_result = tokio::time::timeout(
+        PULL_METRICS_TIMEOUT,
+        client.pull_metrics(PullMetricsRequest {}),
+    )
+    .await;
+    let metric_families_res: Result<Vec<MetricFamily>, http::StatusCode> = match pull_metrics_result
+    {
+        Ok(Ok(PullMetricsResponse { metric_families })) => Ok(metric_families),
+        Err(_) => Err(http::StatusCode::REQUEST_TIMEOUT),
+        Ok(Err(err)) => Err(err.error_code().http_status_code()),
+    };
+    let status_code: http::StatusCode = metric_families_res
+        .as_ref()
+        .err()
+        .cloned()
+        .unwrap_or(http::StatusCode::OK);
+    let metric_families = metric_families_res.unwrap_or_default();
+    NodeMetrics {
+        node_id: node_id.to_string(),
+        status_code: status_code.as_u16() as u32,
+        metric_tags: Vec::new(),
+        metric_families,
     }
 }
 

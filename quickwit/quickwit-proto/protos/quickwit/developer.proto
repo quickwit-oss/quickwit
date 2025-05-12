@@ -18,8 +18,7 @@ package quickwit.developer;
 
 service DeveloperService {
   rpc GetDebugInfo(GetDebugInfoRequest) returns (GetDebugInfoResponse);
-
-  // rpc SetLogLevel(SetLogLevelRequest) returns (SetLogLevelResponse);
+  rpc PullMetrics(PullMetricsRequest) returns (PullMetricsResponse);
 }
 
 message GetDebugInfoRequest {
@@ -29,4 +28,25 @@ message GetDebugInfoRequest {
 
 message GetDebugInfoResponse {
   bytes debug_info_json = 1;
+}
+
+message PullMetricsRequest {}
+
+message PullMetricsResponse {
+    repeated MetricFamily metric_families = 1;
+}
+
+message MetricFamily {
+    string name = 1;
+    repeated Counter counters = 2;
+}
+
+message Counter {
+    repeated MetricTag tags = 1;
+    uint64 value = 2;
+}
+
+message MetricTag {
+    string key = 1;
+    string value = 2;
 }
