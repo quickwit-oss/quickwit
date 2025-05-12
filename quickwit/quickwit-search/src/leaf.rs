@@ -1070,7 +1070,7 @@ impl CanSplitDoBetter {
         match self {
             CanSplitDoBetter::SplitIdHigher(_) => {
                 // In this case there is no sort order, we order by split id.
-                // If the the first split has enough documents, we can convert the other queries to
+                // If the first split has enough documents, we can convert the other queries to
                 // count only queries
                 for (_split, request) in split_with_req.iter_mut().skip(min_required_splits) {
                     disable_search_request_hits(request);

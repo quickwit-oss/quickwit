@@ -7,7 +7,7 @@ locally to test the postgres metastore implementation.
 
 `docker-compose up postgres`
 
-It's data is saved in the tmp directory, and
+Its data is saved in the tmp directory, and
 is not necessarily cleaned up between two runs.
 
 You can execute `make rm-postgres` to remove the

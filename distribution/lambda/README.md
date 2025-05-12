@@ -43,11 +43,11 @@ pipenv install
 ### Example stacks
 
 Provided demonstration setups:
-- HDFS example data: index the the [HDFS
+- HDFS example data: index the [HDFS
   dataset](https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants-10000.json)
   by triggering the Quickwit lambda manually.
 - Mock Data generator: start a mock data generator lambda that pushes mock JSON
-  data every X minutes to S3. Those file trigger the Quickwit indexer lambda
+  data every X minutes to S3. Those files trigger the Quickwit indexer lambda
   automatically.
 
 ### Deploy and run
@@ -56,7 +56,7 @@ The Makefile is a useful entrypoint to show how the Lambda deployment can used.
 
 Configure your shell and AWS account:
 ```bash
-# replace with you AWS account ID and preferred region
+# replace with your AWS account ID and preferred region
 export CDK_ACCOUNT=123456789
 export CDK_REGION=us-east-1
 make bootstrap
@@ -131,7 +131,7 @@ SEARCHER_API_KEY=my-at-least-20-char-long-key make deploy-mock-data
 > deployment, the key should be fetched from something like [AWS Secrets
 > Manager](https://docs.aws.amazon.com/cdk/v2/guide/get_secrets_manager_value.html).
 
-Note that the response is always gzipped compressed, regardless the
+Note that the response is always gzipped compressed, regardless of the
 `Accept-Encoding` request header:
 
 ```bash

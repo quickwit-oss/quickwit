@@ -123,7 +123,7 @@ async fn test_update_doc_mapping_restart_indexing_pipeline() {
 
     // we ingest again, this might end up with the new or old doc mapping depending on how quickly
     // the pipeline gets killed and restarted (in practice as this cluster is very lightly loaded,
-    // it will almost always kill the pipeline before these documents are commited)
+    // it will almost always kill the pipeline before these documents are committed)
     sandbox
         .rest_client(QuickwitService::Indexer)
         .ingest(

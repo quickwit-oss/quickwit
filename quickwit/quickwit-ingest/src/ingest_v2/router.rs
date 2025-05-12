@@ -155,7 +155,7 @@ impl IngestRouter {
     }
 
     /// Inspects the shard table for each subrequest and returns the appropriate
-    /// [`GetOrCreateOpenShardsRequest`] request if open shards do not exist for all the them.
+    /// [`GetOrCreateOpenShardsRequest`] request if open shards do not exist for all of them.
     async fn make_get_or_create_open_shard_request(
         &self,
         workbench: &mut IngestWorkbench,
