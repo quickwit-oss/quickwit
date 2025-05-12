@@ -225,7 +225,7 @@ The timezone name format specifier (`%Z`) is not supported currently.
 - `unix_timestamp`: parse float and integer numbers to Unix timestamps. Floating-point values are converted to timestamps expressed in seconds. Integer values are converted to Unix timestamps whose precision, determined in `seconds`, `milliseconds`, `microseconds`, or `nanoseconds`, is inferred from the number of input digits. Internally, datetimes are converted to UTC (if the time zone is specified) and stored as *i64* integers. As a result, Quickwit only supports timestamp values ranging from `Apr 13, 1972 23:59:55` to `Mar 16, 2242 12:56:31`.
 
 :::warning
-Converting timestamps from float to integer values may occurs with a loss of precision.
+Converting timestamps from float to integer values may occur with a loss of precision.
 :::
 
 When a `datetime` field is stored as a fast field, the `fast_precision` parameter indicates the precision used to truncate the values before encoding, which improves compression (truncation here means zeroing). The `fast_precision` parameter can take the following values: `seconds`, `milliseconds`, `microseconds`, or `nanoseconds`. It only affects what is stored in fast fields when a `datetime` field is marked as "fast". Finally, operations on `datetime` fast fields, e.g. via aggregations, need to be done at the nanosecond level.
@@ -365,7 +365,7 @@ fast:
 | `description` | Optional description for the field. | `None` |
 | `stored`    | Whether value is stored in the document store | `true` |
 | `indexed`   | Whether value is indexed | `true` |
-| `fast`     | Whether value is stored in a fast field. The default behaviour for text in the JSON is to store the text unchanged. An normalizer can be configured via `normalizer: lowercase`. ([See normalizers](#description-of-available-normalizers)) for a list of available normalizers. | `false` |
+| `fast`     | Whether value is stored in a fast field. The default behaviour for text in the JSON is to store the text unchanged. A normalizer can be configured via `normalizer: lowercase`. ([See normalizers](#description-of-available-normalizers)) for a list of available normalizers. | `false` |
 | `tokenizer` | **Only affects strings in the json object**. Name of the `Tokenizer`, choices between `raw`, `default`, `en_stem` and `chinese_compatible` | `raw` |
 | `record`    | **Only affects strings in the json object**. Describes the amount of information indexed, choices between `basic`, `freq` and `position` | `basic` |
 | `expand_dots`    | If true, json keys containing a `.` should be expanded. For instance, if `expand_dots` is set to true, `{"k8s.node.id": "node-2"}` will be indexed as if it was `{"k8s": {"node": {"id": "node2"}}}`. The benefit is that escaping the `.` will not be required at query time. In other words, `k8s.node.id:node2` will match the document. This does not impact the way the document is stored.  | `true` |
@@ -418,7 +418,7 @@ field_mappings:
 #### concatenate
 
 Quickwit supports mapping the content of multiple fields to a single one. This can be more efficient at query time than
-searching through dozens of `default_search_fields`. It also allow querying inside a json field without knowing the path
+searching through dozens of `default_search_fields`. It also allows querying inside a json field without knowing the path
 to the field being searched.
 
 ```yaml
@@ -438,7 +438,7 @@ At query time, concatenate fields don't support range queries.
 Only the following types are supported inside a concatenate field: text, bool, i64, u64, f64, json. Other types are rejected
 at index creation, or silently discarded during indexation if they are found inside a json field.
 Adding an object field to a concatenate field doesn't automatically add its subfields (yet).
-<!-- typing is made so it wouldn't be too hard do add, as well as things like params_* matching all fields which starts name with params_ , but the feature isn't implemented yet -->
+<!-- typing is made so it wouldn't be too hard to add, as well as things like params_* matching all fields which starts name with params_ , but the feature isn't implemented yet -->
 It isn't possible to add subfields from a json field to a concatenate field. For instance if `attributes` is a json field, it's not possible to add only `attributes.color` to a concatenate field.
 
 For json fields and dynamic fields, the path is not indexed, only values are. For instance, given the following document:
@@ -507,7 +507,7 @@ When the `dynamic_mapping` is set as indexed (default), fields mapped through
 dynamic mode can be searched by targeting the path needed to access them from
 the root of the JSON object.
 
-For instance, in a entirely schemaless settings, a minimal index configuration could be:
+For instance, in an entirely schemaless settings, a minimal index configuration could be:
 
 ```yaml
 version: 0.7

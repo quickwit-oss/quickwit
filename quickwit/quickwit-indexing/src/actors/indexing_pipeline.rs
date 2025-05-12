@@ -945,7 +945,7 @@ mod tests {
             .process_pending_and_observe()
             .await;
         assert_eq!(obs.generation, 1);
-        // Let's shutdown the indexer, this will trigger the the indexing pipeline failure and the
+        // Let's shutdown the indexer, this will trigger the indexing pipeline failure and the
         // restart.
         let indexer = universe.get::<Indexer>().into_iter().next().unwrap();
         let _ = indexer.ask(Command::Quit).await;

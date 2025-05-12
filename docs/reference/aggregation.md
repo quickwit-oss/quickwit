@@ -5,7 +5,7 @@ sidebar_position: 30
 
 An aggregation summarizes your data as statistics on buckets or metrics.
 
-Aggregations can provide answer to questions like:
+Aggregations can provide answers to questions like:
 
 - What is the average price of all sold articles?
 - How many errors with status code 500 do we have per day?
@@ -182,7 +182,7 @@ The returned format is currently fixed at `RFC3339`.
 
 By default buckets are returned between the min and max value of the documents, including empty buckets. Setting `min_doc_count > 0` will filter empty buckets.
 
-The value range of the buckets can bet extended via [`extended_bounds`](#extended_bounds) or limit the range via [`hard_bounds`](#hard_bounds).
+The value range of the buckets can be extended via [`extended_bounds`](#extended_bounds) or limit the range via [`hard_bounds`](#hard_bounds).
 
 #### Example
 
@@ -222,7 +222,7 @@ The interval to chunk your data range. Each bucket spans a value range of [0..in
 Intervals implicitly defines an absolute grid of buckets `[interval * k, interval * (k + 1))`.
 Offset makes it possible to shift this grid into `[offset + interval * k, offset + interval (k + 1))`. Offset has to be in the range [0, interval).
 
-As an example, if there are two documents with value 8 and 12 and interval 10.0, they would fall into the buckets with the key 0 and 10. With offset 5 and interval 10, they would both fall into the bucket with they key 5 and the range [5..15)
+As an example, if there are two documents with value 8 and 12 and interval 10.0, they would fall into the buckets with the key 0 and 10. With offset 5 and interval 10, they would both fall into the bucket with the key 5 and the range [5..15)
 
 ```json
 {
@@ -381,7 +381,7 @@ Offset makes it possible to shift this grid into `[offset + interval * k, offset
 
 This is especially useful when using `fixed_interval`, to shift the first bucket e.g. at the start of the year.
 
-The `offset` parameter is has the same syntax as the `fixed_interval` parameter, but also allows for negative values.
+The `offset` parameter has the same syntax as the `fixed_interval` parameter, but also allows for negative values.
 
 ###### **min_doc_count**
 
@@ -508,7 +508,7 @@ term-count.
 
 Even with a larger `shard_size` value, doc_count values for a terms aggregation may be
 approximate. As a result, any sub-aggregations on the terms aggregation may also be approximate.
-`sum_other_doc_count` is the number of documents that didn’t make it into the the top size
+`sum_other_doc_count` is the number of documents that didn’t make it into the top size
 terms. If this is greater than 0, the terms agg had to throw away some
 buckets, either because they didn’t fit into `size` on the root node or they didn’t fit into
 `shard_size` on the leaf node.
@@ -907,7 +907,7 @@ The default value is 2.
 
 ### Sum
 
-A single-value metric aggregation that that sums up numeric values that are that are extracted from the aggregated documents.
+A single-value metric aggregation that sums up numeric values that are that are extracted from the aggregated documents.
 Supported field types are `u64`, `f64`, `i64`, and `datetime`.
 
 **Request**

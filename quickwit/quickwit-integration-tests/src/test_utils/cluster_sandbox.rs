@@ -165,7 +165,7 @@ impl ClusterSandboxBuilder {
     }
 }
 
-/// Intermediate state where the ports of all the the test cluster nodes have
+/// Intermediate state where the ports of all the test cluster nodes have
 /// been reserved and the configurations have been generated.
 pub struct ResolvedClusterConfig {
     temp_dir: TempDir,
