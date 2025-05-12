@@ -47,6 +47,8 @@ use crate::developer_api::DeveloperApiServer;
 use crate::search_api::GrpcSearchAdapter;
 use crate::{INDEXING_GRPC_SERVER_METRICS_LAYER, QuickwitServices};
 
+const DISABLE_CERTIFICATE_VERIFICATION_ENV_KEY: &str = "CP_DISABLE_CERTIFICATE_VERIFICATION";
+
 struct HttpHeadersCarrier<'a>(&'a HeaderMap);
 
 impl Extractor for HttpHeadersCarrier<'_> {
@@ -265,8 +267,18 @@ pub(crate) async fn start_grpc_server(
     file_descriptor_sets.push(REFLECTION_FILE_DESCRIPTOR_SET);
     let reflection_service = build_reflection_service(&file_descriptor_sets)?;
 
+    let disable_security = quickwit_common::get_bool_from_env(DISABLE_CERTIFICATE_VERIFICATION_ENV_KEY, false);
+    let aws_mtls_interceptor_layer_opt: Option<AwsMtlsInterceptorLayer<'static>> =
+        if disable_security {
+            tracing::warn!("mTLS client certificate verification disabled");
+            None
+        } else {
+            tracing::info!("mTLS client certificate verification enabled");
+            Some(AwsMtlsInterceptorLayer::for_cloudprem_bridge())
+        };
+
     let server_router = server
-        .layer(AwsMtlsInterceptorLayer::for_cloudprem_bridge())
+        .layer(tower::util::option_layer(aws_mtls_interceptor_layer_opt))
         .add_service(cluster_grpc_service)
         .add_service(developer_grpc_service)
         .add_service(health_service)
