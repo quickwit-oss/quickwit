@@ -84,8 +84,8 @@ fn get_preprocessing_pipeline() -> &'static Pipeline {
 
 // The preprocessing pipeline is used to remap fields from custom to core attributes.
 fn create_preprocessing_pipeline() -> Pipeline {
-    let string_remap = |parth: &[&str], core_attr| {
-        let sources: Vec<ParsedPath> = parth.iter().map(|field| ParsedPath::from(*field)).collect();
+    let string_remap = |path: &[&str], core_attr| {
+        let sources: Vec<ParsedPath> = path.iter().map(|field| ParsedPath::from(*field)).collect();
         Box::new(CoreStringAttrRemapStep { sources, core_attr })
     };
 
@@ -233,7 +233,7 @@ pub fn try_parse_and_update_timestamp(processed: &mut ProcessedLog, ts_val: &Val
 #[cfg(test)]
 pub(crate) mod tests {
 
-    use serde_json::Value;
+    use serde_json::{Value, json};
     use time::OffsetDateTime;
 
     use crate::ProcessedLog;
@@ -367,18 +367,38 @@ pub(crate) mod tests {
 
     #[test]
     fn test_override_status_from_custom() {
-        let json = r#"{ 
-                "message": "{ \"message\": \"Overridden message\", \"severity\": \"INFO\" }",
-                "status": "error", 
-                "timestamp": 1620000000000,
-                "hostname": "test-host",
-                "service": "test-service",
-                "ddsource": "rust"
-            }"#
-        .to_string();
-        let msg: DatadogLogMsg = serde_json::from_str(&json).unwrap();
+        let json_msg = json!({
+            "message": "Overridden message",
+            "status": "error",
+            "hostname": "overwrite-host",
+            "Timestamp": "2021-01-01T00:00:00Z",
+            "dd": {
+                "span_id": "99999",
+                "trace_id": "12345",
+                "service": "overwrite-service",
+            }
+        });
+        let json = json!({
+            "message": serde_json::to_string(&json_msg).unwrap(),
+            "status": "info",
+            "timestamp": 1620000000000i64,
+            "hostname": "test-host",
+            "service": "test-service",
+            "ddsource": "rust"
+        });
+
+        let msg: DatadogLogMsg =
+            serde_json::from_str(&serde_json::to_string(&json).unwrap()).unwrap();
         let msg: ProcessedLog = ProcessedLog::from_datadog_log_msg(msg);
         assert_eq!(msg.message, "Overridden message");
-        assert_eq!(msg.status, "info");
+        assert_eq!(msg.status, "error");
+        assert_eq!(msg.trace_id, Some("12345".to_string()));
+        assert_eq!(msg.span_id, Some("99999".to_string()));
+        assert_eq!(msg.service, "overwrite-service");
+        assert_eq!(msg.host, "overwrite-host");
+        assert_eq!(
+            msg.timestamp,
+            OffsetDateTime::from_unix_timestamp(1609459200).unwrap()
+        );
     }
 }
