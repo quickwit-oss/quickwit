@@ -31,6 +31,8 @@ pub enum CoreStringAttr {
     Service,
     TraceId,
     SpanId,
+    // Only used in preprocessing
+    Host,
 }
 
 impl PipelineStep for CoreStringAttrRemapStep {
@@ -54,6 +56,9 @@ impl PipelineStep for CoreStringAttrRemapStep {
                         }
                         CoreStringAttr::SpanId => {
                             value.span_id = Some(from_val.to_string());
+                        }
+                        CoreStringAttr::Host => {
+                            value.host = from_val.to_string();
                         }
                     }
                 }

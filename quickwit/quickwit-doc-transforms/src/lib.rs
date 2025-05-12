@@ -19,7 +19,6 @@ mod default_field_search;
 mod error;
 mod filter;
 mod flatten_tags;
-mod normalize_field;
 mod path_access;
 mod pipeline;
 mod processed_log;
@@ -28,7 +27,7 @@ mod transformers;
 
 pub use error::PipelineError;
 pub use flatten_tags::convert_tags;
-pub use pipeline::{Pipeline, PipelineConfig, PipelineStep, PipelineStepConfig, build_step};
+pub use pipeline::{build_step, Pipeline, PipelineConfig, PipelineStep, PipelineStepConfig};
 pub use processed_log::{DatadogLogMsg, ProcessedLog};
 
 pub type Result<T> = std::result::Result<T, error::PipelineError>;

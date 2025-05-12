@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use std::collections::HashMap;
+use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use quickwit_datetime::{DateTimeInputFormat, parse_date_time_str, parse_timestamp};
@@ -24,11 +25,12 @@ use time::OffsetDateTime;
 use tracing::warn;
 use uuid::Uuid;
 
-use crate::normalize_field::{NormalizeField, normalize_fields};
 use crate::path_access::ParsedPath;
 use crate::string_or_vec::StringOrVec;
-use crate::transformers::StatusRemapStep;
-use crate::{PipelineStep, convert_tags};
+use crate::transformers::{
+    CoreStringAttr, CoreStringAttrRemapStep, DateRemapStep, StatusRemapStep,
+};
+use crate::{Pipeline, PipelineStep, convert_tags};
 
 // https://github.com/DataDog/datadog-agent/blob/a33248c2bc125920a9577af1e16f12298875a4ad/pkg/logs/processor/json.go#L23-L49
 #[serde_as]
@@ -75,6 +77,72 @@ pub struct ProcessedLog {
     pub ingest_size_in_bytes: usize,
 }
 
+static PREPROCESSING_PIPELINE: OnceLock<Pipeline> = OnceLock::new();
+fn get_preprocessing_pipeline() -> &'static Pipeline {
+    PREPROCESSING_PIPELINE.get_or_init(create_preprocessing_pipeline)
+}
+
+// The preprocessing pipeline is used to remap fields from custom to core attributes.
+fn create_preprocessing_pipeline() -> Pipeline {
+    let string_remap = |parth: &[&str], core_attr| {
+        let sources: Vec<ParsedPath> = parth.iter().map(|field| ParsedPath::from(*field)).collect();
+        Box::new(CoreStringAttrRemapStep { sources, core_attr })
+    };
+
+    let steps: Vec<Box<dyn PipelineStep>> = vec![
+        Box::new(DateRemapStep {
+            sources: [
+                "@timestamp",
+                "timestamp",
+                "_timestamp",
+                "Timestamp",
+                "eventTime",
+                "date",
+                "published_date",
+                "syslog.timestamp",
+                "time",
+            ]
+            .iter()
+            .map(|field| ParsedPath::from(*field))
+            .collect(),
+        }),
+        Box::new(StatusRemapStep {
+            sources: ["status", "severity", "level", "syslog.severity"]
+                .iter()
+                .map(|field| ParsedPath::from(*field))
+                .collect(),
+        }),
+        string_remap(
+            &["dd.service", "service", "syslog.appname"],
+            CoreStringAttr::Service,
+        ),
+        string_remap(
+            &[
+                "span_id",
+                "dd.span_id",
+                "contextmap.dd.span_id",
+                "named_tags.dd.span_id",
+                "syslog.span_id",
+            ],
+            CoreStringAttr::SpanId,
+        ),
+        string_remap(
+            &["dd.trace_id", "trace_id", "syslog.trace_id"],
+            CoreStringAttr::TraceId,
+        ),
+        string_remap(
+            &["message", "dd.message", "syslog.message"],
+            CoreStringAttr::Message,
+        ),
+        string_remap(
+            &["host", "hostname", "syslog.hostname"],
+            CoreStringAttr::Host,
+        ),
+    ];
+
+    Pipeline::from_steps(steps)
+}
+
 impl ProcessedLog {
     pub fn get_core_string_field_by_name(&self, field: &str) -> Option<&str> {
         match field {
@@ -114,103 +182,20 @@ impl ProcessedLog {
             custom: Default::default(),
         };
 
-        let fields = vec![
-            NormalizeField::from_comma_sep(
-                "@timestamp, timestamp, _timestamp, Timestamp, eventTime, date, published_date, \
-                 syslog.timestamp, time",
-                "timestamp",
-                false,
-            ),
-            NormalizeField::from_comma_sep("host, syslog.hostname, hostname", "host", false),
-            NormalizeField::from_comma_sep("service, syslog.appname, dd.service", "service", false),
-            NormalizeField::from_comma_sep(
-                "dd.trace_id, contextMap.dd.trace_id, named_tags.dd.trace_id, trace_id, traceID, \
-                 traceId",
-                "trace_id",
-                false,
-            ),
-            NormalizeField::from_comma_sep(
-                "span_id, dd.span_id, contextMap.dd.span_id, named_tags.dd.span_id",
-                "span_id",
-                false,
-            ),
-            NormalizeField::from_comma_sep("message, msg, log", "message", false),
-        ];
-
-        // Apply normalization
-        // TODO: Do this after the JSON parsing, so we can move all these fields to core.
-        normalize_fields(
-            &mut processed,
-            &fields,
-            |processed: &mut ProcessedLog, alias, val| {
-                match alias {
-                    "timestamp" => {
-                        try_parse_and_update_timestamp(processed, &val);
-                    }
-                    "host" => {
-                        if let Some(s) = val.as_str() {
-                            processed.host = s.to_owned();
-                        }
-                    }
-                    "service" => {
-                        if let Some(s) = val.as_str() {
-                            processed.service = s.to_owned();
-                        }
-                    }
-                    "trace_id" => {
-                        if let Some(s) = val.as_str() {
-                            processed.trace_id = Some(s.to_owned());
-                        }
-                    }
-                    "span_id" => {
-                        if let Some(s) = val.as_str() {
-                            processed.span_id = Some(s.to_owned());
-                        }
-                    }
-                    "message" => {
-                        if let Some(s) = val.as_str() {
-                            processed.message = s.to_owned();
-                        }
-                    }
-                    _ => {
-                        warn!("unhandled alias: {alias}");
-                        // Any other field, just copy it over
-                        processed.custom.insert(alias.to_owned(), val);
-                    }
-                }
-            },
-        );
-
         // Try to parse `processed.message` as JSON
-        //    If it's valid JSON object, move some attributes to core.
-        if let Ok(mut parsed_map) =
+        //    If it's a JSON object, move some attributes to core via the preprocessing pipeline.
+        if let Ok(parsed_map) =
             serde_json::from_str::<serde_json::Map<String, Value>>(&processed.message)
         {
-            // Move known fields out of the parsed JSON into `processed`
-            // e.g. if the nested JSON has "message", "status", "timestamp", override them:
-            if let Some(Value::String(m)) = parsed_map.remove("message") {
-                processed.message = m;
-            }
-            if let Some(val) = parsed_map.get("timestamp") {
-                try_parse_and_update_timestamp(&mut processed, val);
-            }
-            if let Some(Value::String(h)) = parsed_map.remove("hostname") {
-                processed.host = h;
-            }
-            if let Some(Value::String(svc)) = parsed_map.remove("service") {
-                processed.service = svc;
-            }
-
-            // Rest goes to `processed.custom`
             processed.custom = parsed_map;
+            match get_preprocessing_pipeline().apply(&mut processed) {
+                Ok(_) => {}
+                Err(err) => {
+                    // This should not happen, but if it does, we log the error.
+                    warn!("Failed to apply preprocessing pipeline: {}", err);
+                }
+            }
         }
-
-        // TODO:: We don't need to recreate this StatusRemapStep for every log.
-        let sources: Vec<ParsedPath> = ["status", "severity", "level", "syslog.severity"]
-            .iter()
-            .map(|field| ParsedPath::from(*field))
-            .collect();
-        StatusRemapStep { sources }.apply(&mut processed).unwrap();
 
         processed
     }
