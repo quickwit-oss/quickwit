@@ -1032,6 +1032,7 @@ mod tests {
     };
 
     use super::*;
+    use crate::actors::merge_pipeline::SUPERVISE_LOOP_INTERVAL;
 
     async fn spawn_indexing_service_for_test(
         data_dir_path: &Path,
@@ -1605,7 +1606,7 @@ mod tests {
         let observation = indexing_server_handle.process_pending_and_observe().await;
         assert_eq!(observation.num_running_pipelines, 0);
         assert_eq!(observation.num_running_merge_pipelines, 0);
-        universe.sleep(*HEARTBEAT).await;
+        universe.sleep(SUPERVISE_LOOP_INTERVAL).await;
         // Check that the merge pipeline is also shut down as they are no more indexing pipeilne on
         // the index.
         assert!(universe.get_one::<MergePipeline>().is_none());

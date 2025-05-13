@@ -21,6 +21,7 @@ lindera-core = { workspace = true, optional = true }
 lindera-dictionary = { workspace = true, optional = true }
 lindera-tokenizer = { workspace = true, optional = true }
 once_cell = { workspace = true }
+postcard = { workspace = true }
 prost = { workspace = true }
 prost-types = { workspace = true }
 regex = { workspace = true }
@@ -31,6 +32,7 @@ tantivy = { workspace = true }
 tantivy-fst = { workspace = true }
 time = { workspace = true }
 thiserror = { workspace = true }
+rustc-hash = { workspace = true }
 whichlang = { workspace = true, optional = true }
 
 quickwit-common = { workspace = true }

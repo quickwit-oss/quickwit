@@ -13,28 +13,27 @@
 // limitations under the License.
 
 use std::convert::TryFrom;
-use std::io;
 
 use quickwit_common::truncate_str;
 use quickwit_proto::search::SearchResponse;
+use quickwit_query::aggregations::AggregationResults as AggregationResultsProxy;
 use quickwit_query::query_ast::QueryAst;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::error::SearchError;
 
-/// A lightweight serializable representation of aggregation results.
-///
-/// We use `serde_json_borrow` here to avoid unnecessary
-/// allocations. On large aggregation results with tens of thousands of
-/// entries this has a significant impact compared to `serde_json`.
+/// A classic ES aggregation result ast
+// TODO previously, we were using zero-copy when possible, which we are no longer doing:
+// is that problematic? How can we return to zero/low-copy without it being painful?
 #[derive(Serialize, PartialEq, Debug)]
-pub struct AggregationResults(serde_json_borrow::OwnedValue);
+pub struct AggregationResults(tantivy::aggregation::agg_result::AggregationResults);
 
 impl AggregationResults {
-    /// Parse an aggregation result form a serialized JSON string.
-    pub fn from_json(json_str: &str) -> io::Result<Self> {
-        serde_json_borrow::OwnedValue::from_str(json_str).map(Self)
+    /// Parse an ES aggregation result ast from our non-ambiguous postcard format
+    pub fn from_postcard(postcard_bytes: &[u8]) -> anyhow::Result<Self> {
+        let aggregation_result: AggregationResultsProxy = postcard::from_bytes(postcard_bytes)?;
+        Ok(AggregationResults(aggregation_result.into()))
     }
 }
 
@@ -94,13 +93,14 @@ impl TryFrom<SearchResponse> for SearchResponseRest {
             None
         };
 
-        let aggregations_opt = if let Some(aggregation_json) = search_response.aggregation {
-            let aggregation = AggregationResults::from_json(&aggregation_json)
-                .map_err(|err| SearchError::Internal(err.to_string()))?;
-            Some(aggregation)
-        } else {
-            None
-        };
+        let aggregations_opt =
+            if let Some(aggregation_postcard) = search_response.aggregation_postcard {
+                let aggregation = AggregationResults::from_postcard(&aggregation_postcard)
+                    .map_err(|err| SearchError::Internal(err.to_string()))?;
+                Some(aggregation)
+            } else {
+                None
+            };
 
         Ok(SearchResponseRest {
             num_hits: search_response.num_hits,

@@ -49,7 +49,6 @@ use tracing::{debug, info_span, instrument};
 
 use crate::cluster_client::ClusterClient;
 use crate::collector::{QuickwitAggregations, make_merge_collector};
-use crate::find_trace_ids_collector::Span;
 use crate::metrics::SEARCH_METRICS;
 use crate::scroll_context::{ScrollContext, ScrollKeyAndStartOffset};
 use crate::search_job_placer::{Job, group_by, group_jobs_by_index_id};
@@ -989,18 +988,18 @@ async fn root_search_aux(
     )
     .await?;
 
-    let mut aggregation_result_json_opt = finalize_aggregation_if_any(
+    let mut aggregation_result_postcard_opt = finalize_aggregation_if_any(
         &search_request,
         first_phase_result.intermediate_aggregation_result,
         searcher_context,
     )?;
     // In case there is no index, we don't want the response to contain any aggregation structure
     if indexes_metas_for_leaf_search.is_empty() {
-        aggregation_result_json_opt = None;
+        aggregation_result_postcard_opt = None;
     }
 
     Ok(SearchResponse {
-        aggregation: aggregation_result_json_opt,
+        aggregation_postcard: aggregation_result_postcard_opt,
         num_hits: first_phase_result.num_hits,
         hits,
         elapsed_time_micros: 0u64,
@@ -1017,17 +1016,11 @@ fn finalize_aggregation(
     intermediate_aggregation_result_bytes_opt: Option<Vec<u8>>,
     aggregations: QuickwitAggregations,
     searcher_context: &SearcherContext,
-) -> crate::Result<Option<String>> {
+) -> crate::Result<Option<Vec<u8>>> {
     let merge_aggregation_result = match aggregations {
         QuickwitAggregations::FindTraceIdsAggregation(_) => {
-            let Some(intermediate_aggregation_result_bytes) =
-                intermediate_aggregation_result_bytes_opt
-            else {
-                return Ok(None);
-            };
             // The merge collector has already merged the intermediate results.
-            let aggs: Vec<Span> = postcard::from_bytes(&intermediate_aggregation_result_bytes)?;
-            serde_json::to_string(&aggs)?
+            return Ok(intermediate_aggregation_result_bytes_opt);
         }
         QuickwitAggregations::TantivyAggregations(aggregations) => {
             let intermediate_aggregation_results =
@@ -1043,7 +1036,9 @@ fn finalize_aggregation(
                 };
             let final_aggregation_results: AggregationResults = intermediate_aggregation_results
                 .into_final_result(aggregations, searcher_context.get_aggregation_limits())?;
-            serde_json::to_string(&final_aggregation_results)?
+            let final_aggregation_proxy: quickwit_query::aggregations::AggregationResults =
+                final_aggregation_results.into();
+            postcard::to_stdvec(&final_aggregation_proxy)?
         }
     };
     Ok(Some(merge_aggregation_result))
@@ -1053,17 +1048,17 @@ fn finalize_aggregation_if_any(
     search_request: &SearchRequest,
     intermediate_aggregation_result_bytes_opt: Option<Vec<u8>>,
     searcher_context: &SearcherContext,
-) -> crate::Result<Option<String>> {
+) -> crate::Result<Option<Vec<u8>>> {
     let Some(aggregations_json) = search_request.aggregation_request.as_ref() else {
         return Ok(None);
     };
     let aggregations: QuickwitAggregations = serde_json::from_str(aggregations_json)?;
-    let aggregation_result_json = finalize_aggregation(
+    let aggregation_result_postcard = finalize_aggregation(
         intermediate_aggregation_result_bytes_opt,
         aggregations,
         searcher_context,
     )?;
-    Ok(aggregation_result_json)
+    Ok(aggregation_result_postcard)
 }
 
 /// Checks that all of the index researched as found.

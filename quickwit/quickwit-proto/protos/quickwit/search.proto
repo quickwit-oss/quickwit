@@ -289,8 +289,11 @@ message SearchResponse {
   // The searcherrors that occurred formatted as string.
   repeated string errors = 4;
 
-  // Serialized aggregation response
-  optional string aggregation = 5;
+  // used to be json-encoded aggregation
+  reserved 5;
+
+  // Postcard-encoded aggregation response
+  optional bytes aggregation_postcard = 9;
 
   // Scroll Id (only set if scroll_secs was set in the request)
   optional string scroll_id = 6;
