@@ -111,7 +111,7 @@ pub(crate) fn build_grok_rules(
         match parsed_rule {
             Ok(parsed) => rules.extend_from_slice(&parsed),
             Err(err) => {
-                warn!("Failed to parse grok rule {}: {}", rule.rule, err);
+                warn!("failed to parse grok rule {}: {}", rule.rule, err);
             }
         }
     }
