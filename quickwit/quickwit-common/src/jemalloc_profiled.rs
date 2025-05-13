@@ -51,6 +51,12 @@ pub fn start_profiling(
     min_alloc_bytes_for_profiling: Option<u64>,
     alloc_bytes_triggering_backtrace: Option<u64>,
 ) {
+    #[cfg(miri)]
+    warn!(
+        "heap profiling is not supported with Miri because in that case the `backtrace` crate \
+         allocates"
+    );
+
     // Call backtrace once to warmup symbolization allocations (~30MB)
     backtrace::trace(|frame| {
         backtrace::resolve_frame(frame, |_| {});
@@ -63,16 +69,19 @@ pub fn start_profiling(
 
     let min_alloc_bytes_for_profiling =
         min_alloc_bytes_for_profiling.unwrap_or(DEFAULT_MIN_ALLOC_BYTES_FOR_PROFILING);
-    // Use strong ordering to make sure all threads see these changes in this order
-    MIN_ALLOC_BYTES_FOR_PROFILING.store(min_alloc_bytes_for_profiling, Ordering::SeqCst);
-    let previously_enabled = ENABLED.swap(true, Ordering::SeqCst);
 
+    // stdout() might allocate a buffer on first use. If the first allocation
+    // tracked comes from stdout, it will trigger a deadlock. Logging here
+    // guarantees that it doesn't happen.
     info!(
         min_alloc_for_profiling = %ByteSize(min_alloc_bytes_for_profiling),
         alloc_triggering_backtrace = %ByteSize(alloc_bytes_triggering_backtrace),
-        previously_enabled,
         "heap profiling running"
     );
+
+    // Use strong ordering to make sure all threads see these changes in this order
+    MIN_ALLOC_BYTES_FOR_PROFILING.store(min_alloc_bytes_for_profiling, Ordering::SeqCst);
+    ENABLED.store(true, Ordering::SeqCst);
 }
 
 /// Stops measuring heap allocations.
@@ -91,6 +100,8 @@ pub fn stop_profiling() {
 /// The tracking routines are called only when [ENABLED] is set to true (calling
 /// [start_profiling()]), but we don't enforce any synchronization (we load it with
 /// Ordering::Relaxed) because it's fine to miss or record extra allocation events.
+///
+/// It's important to ensure that no allocations are performed inside the allocator!
 pub struct JemallocProfiled(pub Jemalloc);
 
 unsafe impl GlobalAlloc for JemallocProfiled {
@@ -130,7 +141,7 @@ unsafe impl GlobalAlloc for JemallocProfiled {
     }
 }
 
-/// Uses backtrace::trace() which does allocate
+/// Warning: stdout allocates a buffer on first use.
 #[inline]
 fn print_backtrace(callsite_hash: u64, stat: alloc_tracker::Statistic) {
     {
@@ -153,7 +164,6 @@ fn print_backtrace(callsite_hash: u64, stat: alloc_tracker::Statistic) {
     }
 }
 
-/// Uses backtrace::trace() which does allocate
 #[inline]
 fn backtrace_hash() -> u64 {
     let mut hasher = fnv::FnvHasher::default();
@@ -164,22 +174,22 @@ fn backtrace_hash() -> u64 {
     hasher.finish()
 }
 
-/// Warning: allocating inside this function can cause a deadlock.
+/// Warning: allocating inside this function can cause an error (abort, panic or even deadlock).
 #[cold]
 fn track_alloc_call(ptr: *mut u8, layout: Layout) {
     if layout.size() >= MIN_ALLOC_BYTES_FOR_PROFILING.load(Ordering::Relaxed) as usize {
-        // warning: backtrace_hash() allocates
         let callsite_hash = backtrace_hash();
         let recording_response =
             alloc_tracker::record_allocation(callsite_hash, layout.size() as u64, ptr);
 
         match recording_response {
             AllocRecordingResponse::ThresholdExceeded(stat_for_trace) => {
-                // warning: print_backtrace() allocates
+                // warning: stdout might allocate a buffer on first use
                 print_backtrace(callsite_hash, stat_for_trace);
             }
             AllocRecordingResponse::TrackerFull(table_name) => {
                 // this message might be displayed multiple times but that's fine
+                // warning: stdout might allocate a buffer on first use
                 error!("heap profiling stopped, {table_name} full");
                 ENABLED.store(false, Ordering::Relaxed);
             }
@@ -189,7 +199,7 @@ fn track_alloc_call(ptr: *mut u8, layout: Layout) {
     }
 }
 
-/// Warning: allocating inside this function can cause a deadlock.
+/// Warning: allocating inside this function can cause an error (abort, panic or even deadlock).
 #[cold]
 fn track_dealloc_call(ptr: *mut u8, layout: Layout) {
     if layout.size() >= MIN_ALLOC_BYTES_FOR_PROFILING.load(Ordering::Relaxed) as usize {
