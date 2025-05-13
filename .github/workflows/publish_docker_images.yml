@@ -62,6 +62,11 @@ jobs:
           echo "QW_COMMIT_DATE=$(TZ=UTC0 git log -1 --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_ENV
           echo "QW_COMMIT_HASH=$(git rev-parse HEAD)" >> $GITHUB_ENV
           echo "QW_COMMIT_TAGS=$(git tag --points-at HEAD | tr '\n' ',')" >> $GITHUB_ENV
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref_type }}" == "tag" && "${GITHUB_REF#refs/tags/}" == *"jemprof"* ]]; then
+            echo "CARGO_FEATURES=release-jemalloc-profiled" >> $GITHUB_ENV
+          else
+            echo "CARGO_FEATURES=release-feature-set" >> $GITHUB_ENV
+          fi
 
       - name: Build and push image
         uses: docker/build-push-action@v6
@@ -73,6 +78,7 @@ jobs:
             QW_COMMIT_DATE=${{ env.QW_COMMIT_DATE }}
             QW_COMMIT_HASH=${{ env.QW_COMMIT_HASH }}
             QW_COMMIT_TAGS=${{ env.QW_COMMIT_TAGS }}
+            CARGO_FEATURES=${{ env.CARGO_FEATURES }}
           labels: ${{ steps.meta.outputs.labels }}
           outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=true,name-canonical=true,push=true
 

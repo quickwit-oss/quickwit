@@ -133,7 +133,7 @@ release-macos-feature-vendored-set = [
   "quickwit-metastore/postgres",
   "quickwit-doc-mapper/multilang",
 ]
-release-heap-profiled = [
+release-jemalloc-profiled = [
   "release-feature-set",
   "jemalloc-profiled",
 ]
