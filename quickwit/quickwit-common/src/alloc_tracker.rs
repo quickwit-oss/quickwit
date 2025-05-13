@@ -14,13 +14,8 @@
 
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
-use std::sync::Mutex;
 
 use bytesize::ByteSize;
-use once_cell::sync::Lazy;
-
-static ALLOCATION_TRACKER: Lazy<Mutex<Allocations>> =
-    Lazy::new(|| Mutex::new(Allocations::default()));
 
 #[derive(Debug)]
 struct Allocation {
@@ -29,14 +24,14 @@ struct Allocation {
 }
 
 #[derive(Debug, Copy, Clone)]
-pub struct Statistic {
+pub struct AllocStat {
     pub count: u64,
     pub size: ByteSize,
     pub last_report: ByteSize,
 }
 
 #[derive(Debug)]
-enum Status {
+enum TrackerStatus {
     Started { reporting_interval: ByteSize },
     Stopped,
 }
@@ -45,33 +40,33 @@ enum Status {
 /// - keys and values in these maps should not allocate!
 /// - we assume HashMaps don't allocate if their capacity is not exceeded
 #[derive(Debug)]
-struct Allocations {
+pub struct Allocations {
     memory_locations: HashMap<usize, Allocation>,
-    callsite_statistics: HashMap<u64, Statistic>,
-    status: Status,
+    max_tracked_memory_locations: usize,
+    callsite_statistics: HashMap<u64, AllocStat>,
+    max_tracked_callsites: usize,
+    status: TrackerStatus,
 }
 
 impl Default for Allocations {
     fn default() -> Self {
+        let max_tracked_memory_locations = 128 * 1024;
+        let max_tracked_callsites = 32 * 1024;
+        // TODO: We use a load factor of 0.5 to avoid resizing. There is no
+        // strict guarantee with std::collections::HashMap that it's enough, but
+        // it seems to be the case in practice (see test_tracker_full).
         Self {
-            memory_locations: HashMap::with_capacity(128 * 1024),
-            callsite_statistics: HashMap::with_capacity(32 * 1024),
-            status: Status::Stopped,
+            memory_locations: HashMap::with_capacity(2 * max_tracked_memory_locations),
+            max_tracked_memory_locations,
+            callsite_statistics: HashMap::with_capacity(2 * max_tracked_callsites),
+            max_tracked_callsites,
+            status: TrackerStatus::Stopped,
         }
     }
 }
 
-pub fn init(reporting_interval_bytes: u64) {
-    let mut guard = ALLOCATION_TRACKER.lock().unwrap();
-    guard.memory_locations.clear();
-    guard.callsite_statistics.clear();
-    guard.status = Status::Started {
-        reporting_interval: ByteSize(reporting_interval_bytes),
-    }
-}
-
 pub enum AllocRecordingResponse {
-    ThresholdExceeded(Statistic),
+    ThresholdExceeded(AllocStat),
     ThresholdNotExceeded,
     TrackerFull(&'static str),
     NotStarted,
@@ -79,139 +74,149 @@ pub enum AllocRecordingResponse {
 
 pub enum ReallocRecordingResponse {
     ThresholdExceeded {
-        statistics: Statistic,
+        statistics: AllocStat,
         callsite_hash: u64,
     },
     ThresholdNotExceeded,
     NotStarted,
 }
 
-/// Records an allocation and occasionally reports the cumulated allocation size
-/// for the provided callsite_hash.
-///
-/// Every time a the total allocated size with the same callsite_hash
-/// exceeds the previous reported value by at least reporting_interval, that
-/// allocated size is reported.
-///
-/// WARN: this function should not allocate!
-pub fn record_allocation(
-    callsite_hash: u64,
-    size_bytes: u64,
-    ptr: *mut u8,
-) -> AllocRecordingResponse {
-    let mut guard = ALLOCATION_TRACKER.lock().unwrap();
-    let Status::Started { reporting_interval } = guard.status else {
-        return AllocRecordingResponse::NotStarted;
-    };
-    if guard.memory_locations.capacity() == guard.memory_locations.len() {
-        return AllocRecordingResponse::TrackerFull("memory_locations");
+impl Allocations {
+    pub fn init(&mut self, reporting_interval_bytes: u64) {
+        self.memory_locations.clear();
+        self.callsite_statistics.clear();
+        self.status = TrackerStatus::Started {
+            reporting_interval: ByteSize(reporting_interval_bytes),
+        }
     }
-    if guard.callsite_statistics.capacity() == guard.callsite_statistics.len() {
-        return AllocRecordingResponse::TrackerFull("memory_locations");
-    }
-    guard.memory_locations.insert(
-        ptr as usize,
-        Allocation {
-            callsite_hash,
-            size: ByteSize(size_bytes),
-        },
-    );
-    let entry = guard
-        .callsite_statistics
-        .entry(callsite_hash)
-        .and_modify(|stat| {
-            stat.count += 1;
-            stat.size += size_bytes;
-        })
-        .or_insert(Statistic {
-            count: 1,
-            size: ByteSize(size_bytes),
-            last_report: ByteSize(0),
-        });
-    let new_threshold_exceeded = entry.size > (entry.last_report + reporting_interval);
-    if new_threshold_exceeded {
-        let reported_statistic = *entry;
-        entry.last_report = entry.size;
-        AllocRecordingResponse::ThresholdExceeded(reported_statistic)
-    } else {
-        AllocRecordingResponse::ThresholdNotExceeded
-    }
-}
 
-/// Updates the the memory location and size of an existing allocation. Only
-/// update the statistics if the original allocation was recorded.
-pub fn record_reallocation(
-    new_size_bytes: u64,
-    old_ptr: *mut u8,
-    new_ptr: *mut u8,
-) -> ReallocRecordingResponse {
-    let mut guard = ALLOCATION_TRACKER.lock().unwrap();
-    let Status::Started { reporting_interval } = guard.status else {
-        return ReallocRecordingResponse::NotStarted;
-    };
-    let (callsite_hash, old_size_bytes) = if old_ptr != new_ptr {
-        let Some(old_alloc) = guard.memory_locations.remove(&(old_ptr as usize)) else {
-            return ReallocRecordingResponse::ThresholdNotExceeded;
+    /// Records an allocation and occasionally reports the cumulated allocation size
+    /// for the provided callsite_hash.
+    ///
+    /// Every time a the total allocated size with the same callsite_hash
+    /// exceeds the previous reported value by at least reporting_interval, that
+    /// allocated size is reported.
+    ///
+    /// WARN: this function should not allocate!
+    pub fn record_allocation(
+        &mut self,
+        callsite_hash: u64,
+        size_bytes: u64,
+        ptr: *mut u8,
+    ) -> AllocRecordingResponse {
+        let TrackerStatus::Started { reporting_interval } = self.status else {
+            return AllocRecordingResponse::NotStarted;
         };
-        guard.memory_locations.insert(
-            new_ptr as usize,
+        if self.max_tracked_memory_locations == self.memory_locations.len() {
+            return AllocRecordingResponse::TrackerFull("memory_locations");
+        }
+        if self.max_tracked_callsites == self.callsite_statistics.len() {
+            return AllocRecordingResponse::TrackerFull("memory_locations");
+        }
+        self.memory_locations.insert(
+            ptr as usize,
             Allocation {
-                callsite_hash: old_alloc.callsite_hash,
-                size: ByteSize(new_size_bytes),
+                callsite_hash,
+                size: ByteSize(size_bytes),
             },
         );
-        (old_alloc.callsite_hash, old_alloc.size.0)
-    } else {
-        let Some(alloc) = guard.memory_locations.get_mut(&(old_ptr as usize)) else {
+        let entry = self
+            .callsite_statistics
+            .entry(callsite_hash)
+            .and_modify(|stat| {
+                stat.count += 1;
+                stat.size += size_bytes;
+            })
+            .or_insert(AllocStat {
+                count: 1,
+                size: ByteSize(size_bytes),
+                last_report: ByteSize(0),
+            });
+        let new_threshold_exceeded = entry.size >= (entry.last_report + reporting_interval);
+        if new_threshold_exceeded {
+            let reported_statistic = *entry;
+            entry.last_report = entry.size;
+            AllocRecordingResponse::ThresholdExceeded(reported_statistic)
+        } else {
+            AllocRecordingResponse::ThresholdNotExceeded
+        }
+    }
+
+    /// Updates the the memory location and size of an existing allocation. Only
+    /// update the statistics if the original allocation was recorded.
+    pub fn record_reallocation(
+        &mut self,
+        new_size_bytes: u64,
+        old_ptr: *mut u8,
+        new_ptr: *mut u8,
+    ) -> ReallocRecordingResponse {
+        let TrackerStatus::Started { reporting_interval } = self.status else {
+            return ReallocRecordingResponse::NotStarted;
+        };
+        let (callsite_hash, old_size_bytes) = if old_ptr != new_ptr {
+            let Some(old_alloc) = self.memory_locations.remove(&(old_ptr as usize)) else {
+                return ReallocRecordingResponse::ThresholdNotExceeded;
+            };
+            self.memory_locations.insert(
+                new_ptr as usize,
+                Allocation {
+                    callsite_hash: old_alloc.callsite_hash,
+                    size: ByteSize(new_size_bytes),
+                },
+            );
+            (old_alloc.callsite_hash, old_alloc.size.0)
+        } else {
+            let Some(alloc) = self.memory_locations.get_mut(&(old_ptr as usize)) else {
+                return ReallocRecordingResponse::ThresholdNotExceeded;
+            };
+            let old_size_bytes = alloc.size.0;
+            alloc.size = ByteSize(new_size_bytes);
+            (alloc.callsite_hash, old_size_bytes)
+        };
+
+        let delta = new_size_bytes as i64 - old_size_bytes as i64;
+
+        let Some(current_stat) = self.callsite_statistics.get_mut(&callsite_hash) else {
+            // tables are inconsistent, this should not happen
             return ReallocRecordingResponse::ThresholdNotExceeded;
         };
-        alloc.size = ByteSize(new_size_bytes);
-        (alloc.callsite_hash, alloc.size.0)
-    };
-
-    let delta = new_size_bytes as i64 - old_size_bytes as i64;
-
-    let Some(current_stat) = guard.callsite_statistics.get_mut(&callsite_hash) else {
-        // tables are inconsistent, this should not happen
-        return ReallocRecordingResponse::ThresholdNotExceeded;
-    };
-    current_stat.size = ByteSize((current_stat.size.0 as i64 + delta) as u64);
-    let new_threshold_exceeded =
-        current_stat.size > (current_stat.last_report + reporting_interval);
-    if new_threshold_exceeded {
-        let reported_statistic = *current_stat;
-        current_stat.last_report = current_stat.size;
-        ReallocRecordingResponse::ThresholdExceeded {
-            statistics: reported_statistic,
-            callsite_hash,
+        current_stat.size = ByteSize((current_stat.size.0 as i64 + delta) as u64);
+        let new_threshold_exceeded =
+            current_stat.size >= (current_stat.last_report + reporting_interval);
+        if new_threshold_exceeded {
+            let reported_statistic = *current_stat;
+            current_stat.last_report = current_stat.size;
+            ReallocRecordingResponse::ThresholdExceeded {
+                statistics: reported_statistic,
+                callsite_hash,
+            }
+        } else {
+            ReallocRecordingResponse::ThresholdNotExceeded
         }
-    } else {
-        ReallocRecordingResponse::ThresholdNotExceeded
     }
-}
 
-/// WARN: this function should not allocate!
-pub fn record_deallocation(ptr: *mut u8) {
-    let mut guard = ALLOCATION_TRACKER.lock().unwrap();
-    if let Status::Stopped = guard.status {
-        return;
-    }
-    let Some(Allocation {
-        size,
-        callsite_hash,
-        ..
-    }) = guard.memory_locations.remove(&(ptr as usize))
-    else {
-        // this was allocated before the tracking started
-        return;
-    };
-    if let Entry::Occupied(mut content) = guard.callsite_statistics.entry(callsite_hash) {
-        let new_size_bytes = content.get().size.0.saturating_sub(size.0);
-        let new_count = content.get().count.saturating_sub(1);
-        content.get_mut().count = new_count;
-        content.get_mut().size = ByteSize(new_size_bytes);
-        if content.get().count == 0 {
-            content.remove();
+    /// WARN: this function should not allocate!
+    pub fn record_deallocation(&mut self, ptr: *mut u8) {
+        if let TrackerStatus::Stopped = self.status {
+            return;
+        }
+        let Some(Allocation {
+            size,
+            callsite_hash,
+            ..
+        }) = self.memory_locations.remove(&(ptr as usize))
+        else {
+            // this was allocated before the tracking started
+            return;
+        };
+        if let Entry::Occupied(mut content) = self.callsite_statistics.entry(callsite_hash) {
+            let new_size_bytes = content.get().size.0.saturating_sub(size.0);
+            let new_count = content.get().count.saturating_sub(1);
+            content.get_mut().count = new_count;
+            content.get_mut().size = ByteSize(new_size_bytes);
+            if content.get().count == 0 {
+                content.remove();
+            }
         }
     }
 }
@@ -220,21 +225,25 @@ pub fn record_deallocation(ptr: *mut u8) {
 mod tests {
     use super::*;
 
+    fn as_ptr(i: usize) -> *mut u8 {
+        i as *mut u8
+    }
+
     #[test]
-    #[serial_test::file_serial]
     fn test_record_allocation_and_deallocation() {
-        init(2000);
+        let mut allocations = Allocations::default();
+        allocations.init(2000);
         let callsite_hash_1 = 777;
 
-        let ptr_1 = 0x1 as *mut u8;
-        let response = record_allocation(callsite_hash_1, 1500, ptr_1);
+        let ptr_1 = as_ptr(1);
+        let response = allocations.record_allocation(callsite_hash_1, 1500, ptr_1);
         assert!(matches!(
             response,
             AllocRecordingResponse::ThresholdNotExceeded
         ));
 
-        let ptr_2 = 0x2 as *mut u8;
-        let response = record_allocation(callsite_hash_1, 1500, ptr_2);
+        let ptr_2 = as_ptr(2);
+        let response = allocations.record_allocation(callsite_hash_1, 1500, ptr_2);
         let AllocRecordingResponse::ThresholdExceeded(statistic) = response else {
             panic!("Expected ThresholdExceeded response");
         };
@@ -242,11 +251,11 @@ mod tests {
         assert_eq!(statistic.size, ByteSize(3000));
         assert_eq!(statistic.last_report, ByteSize(0));
 
-        record_deallocation(ptr_2);
+        allocations.record_deallocation(ptr_2);
 
         // the threshold was already crossed
-        let ptr_3 = 0x3 as *mut u8;
-        let response = record_allocation(callsite_hash_1, 1500, ptr_3);
+        let ptr_3 = as_ptr(3);
+        let response = allocations.record_allocation(callsite_hash_1, 1500, ptr_3);
         assert!(matches!(
             response,
             AllocRecordingResponse::ThresholdNotExceeded
@@ -254,8 +263,8 @@ mod tests {
 
         // this is a brand new call site with different statistics
         let callsite_hash_2 = 42;
-        let ptr_3 = 0x3 as *mut u8;
-        let response = record_allocation(callsite_hash_2, 1500, ptr_3);
+        let ptr_4 = as_ptr(4);
+        let response = allocations.record_allocation(callsite_hash_2, 1500, ptr_4);
         assert!(matches!(
             response,
             AllocRecordingResponse::ThresholdNotExceeded
@@ -263,20 +272,20 @@ mod tests {
     }
 
     #[test]
-    #[serial_test::file_serial]
     fn test_record_allocation_and_reallocation() {
-        init(2000);
+        let mut allocations = Allocations::default();
+        allocations.init(2000);
         let callsite_hash_1 = 777;
 
-        let ptr_1 = 0x1 as *mut u8;
-        let response = record_allocation(callsite_hash_1, 1500, ptr_1);
+        let ptr_1 = as_ptr(1);
+        let response = allocations.record_allocation(callsite_hash_1, 1500, ptr_1);
         assert!(matches!(
             response,
             AllocRecordingResponse::ThresholdNotExceeded
         ));
 
-        let ptr_2 = 0x2 as *mut u8;
-        let response = record_allocation(callsite_hash_1, 1500, ptr_2);
+        let ptr_2 = as_ptr(2);
+        let response = allocations.record_allocation(callsite_hash_1, 1500, ptr_2);
         let AllocRecordingResponse::ThresholdExceeded(statistic) = response else {
             panic!("Expected ThresholdExceeded response");
         };
@@ -284,82 +293,143 @@ mod tests {
         assert_eq!(statistic.size, ByteSize(3000));
         assert_eq!(statistic.last_report, ByteSize(0));
 
-        record_reallocation(2000, ptr_1, ptr_1);
+        // alloc grows a little bit
+        let response = allocations.record_reallocation(2000, ptr_1, ptr_1);
         assert!(matches!(
             response,
-            AllocRecordingResponse::ThresholdNotExceeded
+            ReallocRecordingResponse::ThresholdNotExceeded
         ));
 
-        record_reallocation(3000, ptr_1, ptr_1);
+        // alloc grows a lot
+        let response = allocations.record_reallocation(4000, ptr_1, ptr_1);
+        let ReallocRecordingResponse::ThresholdExceeded {
+            statistics,
+            callsite_hash,
+        } = response
+        else {
+            panic!("Expected ThresholdExceeded response");
+        };
+        assert_eq!(statistics.count, 2);
+        assert_eq!(statistics.size, ByteSize(5500));
+        assert_eq!(statistics.last_report, ByteSize(3000));
+        assert_eq!(callsite_hash, callsite_hash_1);
+
+        // alloc grows a little bit and moves
+        let ptr_3 = as_ptr(3);
+        let response = allocations.record_reallocation(4500, ptr_1, ptr_3);
         assert!(matches!(
             response,
-            AllocRecordingResponse::ThresholdNotExceeded
+            ReallocRecordingResponse::ThresholdNotExceeded
         ));
 
-        let ptr_3 = 0x3 as *mut u8;
-        record_reallocation(1500, ptr_1, ptr_3);
-        assert!(matches!(
-            response,
-            AllocRecordingResponse::ThresholdNotExceeded
-        ));
+        // alloc grows a lot and moves
+        let ptr_4 = as_ptr(4);
+        let response = allocations.record_reallocation(6000, ptr_3, ptr_4);
+        let ReallocRecordingResponse::ThresholdExceeded {
+            statistics,
+            callsite_hash,
+        } = response
+        else {
+            panic!("Expected ThresholdExceeded response");
+        };
+        assert_eq!(statistics.count, 2);
+        assert_eq!(statistics.size, ByteSize(7500));
+        assert_eq!(statistics.last_report, ByteSize(5500));
+        assert_eq!(callsite_hash, callsite_hash_1);
 
         // once an existing allocation moved, it's previous location can be re-allocated
-        let response = record_allocation(callsite_hash_1, 1500, ptr_1);
+        let response = allocations.record_allocation(callsite_hash_1, 2000, ptr_1);
+        let AllocRecordingResponse::ThresholdExceeded(statistics) = response else {
+            panic!("Expected ThresholdExceeded response");
+        };
+        assert_eq!(statistics.count, 3);
+        assert_eq!(statistics.size, ByteSize(9500));
+        assert_eq!(statistics.last_report, ByteSize(7500));
+        assert_eq!(callsite_hash, callsite_hash_1);
+
+        // reallocation is ignored on unknown allocation
+        let ptr_404 = as_ptr(404);
+        let response = allocations.record_reallocation(10000, ptr_404, ptr_404);
         assert!(matches!(
             response,
-            AllocRecordingResponse::ThresholdNotExceeded
+            ReallocRecordingResponse::ThresholdNotExceeded
         ));
     }
 
     #[test]
-    #[serial_test::file_serial]
     fn test_tracker_full() {
-        init(1024 * 1024 * 1024);
-        let memory_locations_capacity = ALLOCATION_TRACKER
-            .lock()
-            .unwrap()
-            .memory_locations
-            .capacity();
+        let mut allocations = Allocations::default();
+        allocations.init(1024 * 1024 * 1024);
+        let max_tracked_locations = allocations.max_tracked_memory_locations;
 
-        for i in 0..memory_locations_capacity {
-            let ptr = (i + 1) as *mut u8;
-            let response = record_allocation(777, 10, ptr);
+        // Track a first allocation. This one is not removed thoughout this test.
+        let first_location_ptr = as_ptr(1);
+        let response = allocations.record_allocation(777, 10, first_location_ptr);
+        assert!(matches!(
+            response,
+            AllocRecordingResponse::ThresholdNotExceeded
+        ));
+        let ref_addr = allocations
+            .memory_locations
+            .get(&(first_location_ptr as usize))
+            .unwrap() as *const Allocation;
+        // Assert that no hashmap resize occurs by tracking the address
+        // stability of the first value. Using HashMap::capacity() proved not to
+        // be reliable (unclear spec).
+        let assert_locations_map_didnt_move = |allocations: &Allocations, loc: &str| {
+            assert_eq!(
+                allocations
+                    .memory_locations
+                    .get(&(first_location_ptr as usize))
+                    .unwrap() as *const Allocation,
+                ref_addr,
+                "{loc}",
+            );
+        };
+
+        // fill the table
+        let moving_ptr_range = (first_location_ptr as usize + 1)
+            ..(first_location_ptr as usize + max_tracked_locations);
+        for i in moving_ptr_range.clone() {
+            let ptr = as_ptr(i);
+            let response = allocations.record_allocation(777, 10, ptr);
             assert!(matches!(
                 response,
                 AllocRecordingResponse::ThresholdNotExceeded
             ));
+            assert_locations_map_didnt_move(&allocations, "fill");
         }
+        assert_eq!(allocations.memory_locations.len(), max_tracked_locations);
 
-        // the map is full
-
-        let response = record_allocation(777, 10, (memory_locations_capacity + 1) as *mut u8);
+        // the table is full, no more allocation is tracked
+        let response = allocations.record_allocation(777, 10, as_ptr(moving_ptr_range.end));
         assert!(matches!(
             response,
             AllocRecordingResponse::TrackerFull("memory_locations")
         ));
-        // make sure that the map didn't grow
-        let current_memory_locations_capacity = ALLOCATION_TRACKER
-            .lock()
-            .unwrap()
-            .memory_locations
-            .capacity();
-        assert_eq!(current_memory_locations_capacity, memory_locations_capacity);
+        assert_locations_map_didnt_move(&allocations, "full");
 
-        let response = record_reallocation(
-            10,
-            std::ptr::null_mut::<u8>(),
-            (memory_locations_capacity + 1) as *mut u8,
-        );
+        // run a heavy insert/remove workload
+        let last_location = 10 * max_tracked_locations;
+        for i in moving_ptr_range.end..=last_location {
+            let removed_ptr = as_ptr(i - 1);
+            allocations.record_deallocation(removed_ptr);
+            let inserted_ptr = as_ptr(i);
+            let response = allocations.record_allocation(888, 10, inserted_ptr);
+            assert!(matches!(
+                response,
+                AllocRecordingResponse::ThresholdNotExceeded
+            ));
+            assert_locations_map_didnt_move(&allocations, "reinsert");
+        }
+
+        // reallocations are fine because they don't create an entry in the map
+        let response =
+            allocations.record_reallocation(10, as_ptr(last_location), as_ptr(last_location + 1));
         assert!(matches!(
             response,
             ReallocRecordingResponse::ThresholdNotExceeded,
         ));
-        // make sure that the map didn't grow
-        let current_memory_locations_capacity = ALLOCATION_TRACKER
-            .lock()
-            .unwrap()
-            .memory_locations
-            .capacity();
-        assert_eq!(current_memory_locations_capacity, memory_locations_capacity);
+        assert_locations_map_didnt_move(&allocations, "realloc");
     }
 }
