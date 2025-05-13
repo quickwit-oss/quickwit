@@ -14,17 +14,18 @@
 
 use std::alloc::{GlobalAlloc, Layout};
 use std::hash::Hasher;
-use std::io::Write;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use bytesize::ByteSize;
 use tikv_jemallocator::Jemalloc;
 use tracing::{error, info, trace};
 
-use crate::alloc_tracker::{self, AllocRecordingResponse};
+use crate::alloc_tracker::{self, AllocRecordingResponse, ReallocRecordingResponse};
 
 const DEFAULT_MIN_ALLOC_BYTES_FOR_PROFILING: u64 = 64 * 1024;
 const DEFAULT_REPORTING_INTERVAL_BYTES: u64 = 1024 * 1024 * 1024;
+
+pub const JEMALLOC_PROFILER_TARGET: &str = "jemprof";
 
 /// Atomics are used to communicate configurations between the start/stop
 /// endpoints and the JemallocProfiled allocator wrapper.
@@ -163,28 +164,17 @@ unsafe impl GlobalAlloc for JemallocProfiled {
     }
 }
 
-/// Warning: stdout allocates a buffer on first use.
-#[inline]
-fn print_backtrace(callsite_hash: u64, stat: alloc_tracker::Statistic) {
-    let mut lock = std::io::stdout().lock();
-    let _ = writeln!(
-        &mut lock,
-        "htrk callsite={} allocs={} size={}",
-        callsite_hash, stat.count, stat.size,
-    );
-    backtrace::trace(|frame| {
-        backtrace::resolve_frame(frame, |symbol| {
-            if let Some(symbole_name) = symbol.name() {
-                let _ = writeln!(&mut lock, "{}", symbole_name);
-            } else {
-                let _ = writeln!(&mut lock, "symb failed");
-            }
-        });
-        true
-    });
+/// Prints both a backtrace and a Tokio tracing log
+///
+/// Warning: stdout might allocate a buffer on first use
+fn identify_callsite(callsite_hash: u64, stat: alloc_tracker::Statistic) {
+    // to generate a complete trace:
+    // - tokio/tracing feature must be enabled, otherwise un-instrumented tasks will not propagate
+    //   spans
+    // - the tracing fmt subscriber filter must keep all spans for this event (at least debug)
+    trace!(target: JEMALLOC_PROFILER_TARGET, callsite=callsite_hash, allocs=stat.count, size=%stat.size);
 }
 
-#[inline]
 fn backtrace_hash() -> u64 {
     let mut hasher = fnv::FnvHasher::default();
     backtrace::trace(|frame| {
@@ -204,13 +194,7 @@ fn track_alloc_call(ptr: *mut u8, layout: Layout) {
 
         match recording_response {
             AllocRecordingResponse::ThresholdExceeded(stat_for_trace) => {
-                // print both a backtrace and a Tokio tracing log
-                // warning: stdout might allocate a buffer on first use
-                print_backtrace(callsite_hash, stat_for_trace);
-                // for this to generate a complete trace:
-                // - tokio/tracing feature must be enabled
-                // - the tracing fmt subscriber filter must keep all spans for this event
-                trace!(callsite=callsite_hash,allocs=stat_for_trace.count,size=%stat_for_trace.size, "htrk");
+                identify_callsite(callsite_hash, stat_for_trace);
             }
             AllocRecordingResponse::TrackerFull(table_name) => {
                 // this message might be displayed multiple times but that's fine
@@ -232,14 +216,30 @@ fn track_dealloc_call(ptr: *mut u8, layout: Layout) {
     }
 }
 
+/// Warning: allocating inside this function can cause an error (abort, panic or even deadlock).
 #[cold]
 fn track_realloc_call(
-    _old_ptr: *mut u8,
-    _new_pointer: *mut u8,
-    _current_layout: Layout,
-    _new_size: usize,
+    old_ptr: *mut u8,
+    new_pointer: *mut u8,
+    current_layout: Layout,
+    new_size: usize,
 ) {
-    // TODO handle realloc
+    if current_layout.size() >= FLAGS.min_alloc_bytes_for_profiling.load(Ordering::Relaxed) as usize
+    {
+        let recording_response =
+            alloc_tracker::record_reallocation(new_size as u64, old_ptr, new_pointer);
+
+        match recording_response {
+            ReallocRecordingResponse::ThresholdExceeded {
+                statistics,
+                callsite_hash,
+            } => {
+                identify_callsite(callsite_hash, statistics);
+            }
+            ReallocRecordingResponse::ThresholdNotExceeded => {}
+            ReallocRecordingResponse::NotStarted => {}
+        }
+    }
 }
 
 #[cfg(test)]
