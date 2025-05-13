@@ -34,6 +34,7 @@ pub mod merge_policy_config;
 mod metastore_config;
 mod node_config;
 mod qw_env_vars;
+pub(crate) mod serde_utils;
 pub mod service;
 mod source_config;
 mod storage_config;
@@ -71,8 +72,9 @@ pub use crate::metastore_config::{
     MetastoreBackend, MetastoreConfig, MetastoreConfigs, PostgresMetastoreConfig,
 };
 pub use crate::node_config::{
-    DEFAULT_QW_CONFIG_PATH, GrpcConfig, IndexerConfig, IngestApiConfig, JaegerConfig, NodeConfig,
-    RestConfig, SearcherConfig, SplitCacheLimits, StorageTimeoutPolicy, TlsConfig,
+    DEFAULT_QW_CONFIG_PATH, GrpcConfig, IndexerConfig, IngestApiConfig, JaegerConfig,
+    KeepAliveConfig, NodeConfig, RestConfig, SearcherConfig, SplitCacheLimits,
+    StorageTimeoutPolicy, TlsConfig,
 };
 use crate::source_config::serialize::{SourceConfigV0_7, SourceConfigV0_8, VersionedSourceConfig};
 pub use crate::storage_config::{

@@ -21,12 +21,12 @@ use std::time::{Duration, Instant};
 use chitchat::{Chitchat, ChitchatId, NodeState, VersionedValue};
 use futures::Future;
 use quickwit_common::pretty::PrettyDisplay;
+use quickwit_common::tower::ClientGrpcConfig;
 use quickwit_proto::cluster::{ClusterService, ClusterServiceClient, FetchClusterStateRequest};
 use rand::seq::IteratorRandom;
 use tokio::sync::{Mutex, watch};
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::WatchStream;
-use tonic::transport::ClientTlsConfig;
 use tracing::{info, warn};
 
 use crate::grpc_service::cluster_grpc_client;
@@ -42,7 +42,7 @@ pub(crate) async fn spawn_catchup_callback_task(
     weak_chitchat: Weak<Mutex<Chitchat>>,
     live_nodes_rx: watch::Receiver<BTreeMap<ChitchatId, NodeState>>,
     mut catchup_callback_rx: watch::Receiver<()>,
-    tls_config: Option<ClientTlsConfig>,
+    client_grpc_config: ClientGrpcConfig,
 ) {
     let catchup_callback_future = async move {
         let mut interval = tokio::time::interval(Duration::from_secs(60));
@@ -57,8 +57,7 @@ pub(crate) async fn spawn_catchup_callback_task(
                 &self_chitchat_id,
                 chitchat,
                 live_nodes_rx.clone(),
-                cluster_grpc_client,
-                tls_config.clone(),
+                |socket_addr| cluster_grpc_client(socket_addr, client_grpc_config.clone()),
             )
             .await;
 
@@ -72,15 +71,14 @@ pub(crate) async fn spawn_catchup_callback_task(
     tokio::spawn(catchup_callback_future);
 }
 
-async fn perform_grpc_gossip_rounds<Factory, Fut>(
+async fn perform_grpc_gossip_rounds<ClusterServiceClientFactory, Fut>(
     cluster_id: String,
     self_chitchat_id: &ChitchatId,
     chitchat: Arc<Mutex<Chitchat>>,
     live_nodes_rx: watch::Receiver<BTreeMap<ChitchatId, NodeState>>,
-    grpc_client_factory: Factory,
-    tls_client_config: Option<ClientTlsConfig>,
+    grpc_client_factory: ClusterServiceClientFactory,
 ) where
-    Factory: Fn(SocketAddr, Option<ClientTlsConfig>) -> Fut,
+    ClusterServiceClientFactory: Fn(SocketAddr) -> Fut,
     Fut: Future<Output = ClusterServiceClient>,
 {
     wait_for_gossip_candidates(
@@ -101,8 +99,7 @@ async fn perform_grpc_gossip_rounds<Factory, Fut>(
     info!("pulling cluster state from node(s): {node_ids:?}");
 
     for (node_id, grpc_advertise_addr) in zip(node_ids, grpc_advertise_addrs) {
-        let cluster_client =
-            grpc_client_factory(grpc_advertise_addr, tls_client_config.clone()).await;
+        let cluster_client = grpc_client_factory(grpc_advertise_addr).await;
 
         let request = FetchClusterStateRequest {
             cluster_id: cluster_id.clone(),
@@ -272,7 +269,7 @@ mod tests {
         let self_chitchat_id = cluster.self_chitchat_id();
         let chitchat = cluster.chitchat().await;
 
-        let grpc_client_factory = |_: SocketAddr, _: Option<_>| {
+        let grpc_client_factory = |_: SocketAddr| {
             Box::pin(async {
                 let mut mock_cluster_service = MockClusterService::new();
                 mock_cluster_service
@@ -336,7 +333,6 @@ mod tests {
             chitchat.clone(),
             live_nodes_rx,
             grpc_client_factory,
-            None,
         )
         .await;
 
