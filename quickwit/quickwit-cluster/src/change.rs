@@ -21,11 +21,11 @@ use chitchat::{ChitchatId, NodeState};
 use futures::Stream;
 use pin_project::pin_project;
 use quickwit_common::sorted_iter::{KeyDiff, SortedByKeyIterator};
-use quickwit_common::tower::{make_channel, warmup_channel};
+use quickwit_common::tower::{ClientGrpcConfig, make_channel, warmup_channel};
 use quickwit_proto::types::NodeId;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tonic::transport::{Channel, ClientTlsConfig};
+use tonic::transport::Channel;
 use tracing::{info, warn};
 
 use crate::ClusterNode;
@@ -74,7 +74,7 @@ pub(crate) async fn compute_cluster_change_events(
     previous_nodes: &mut BTreeMap<NodeId, ClusterNode>,
     previous_node_states: &BTreeMap<ChitchatId, NodeState>,
     new_node_states: &BTreeMap<ChitchatId, NodeState>,
-    tls_config: Option<&ClientTlsConfig>,
+    client_grpc_config: &ClientGrpcConfig,
 ) -> Vec<ClusterChange> {
     let mut cluster_events = Vec::new();
 
@@ -91,7 +91,7 @@ pub(crate) async fn compute_cluster_change_events(
                     chitchat_id,
                     node_state,
                     previous_nodes,
-                    tls_config,
+                    client_grpc_config.clone(),
                 )
                 .await;
 
@@ -136,7 +136,7 @@ async fn compute_cluster_change_events_on_added(
     new_chitchat_id: &ChitchatId,
     new_node_state: &NodeState,
     previous_nodes: &mut BTreeMap<NodeId, ClusterNode>,
-    tls_config: Option<&ClientTlsConfig>,
+    client_grpc_config: ClientGrpcConfig,
 ) -> Vec<ClusterChange> {
     let is_self_node = self_chitchat_id == new_chitchat_id;
     let new_node_id: NodeId = new_chitchat_id.node_id.clone().into();
@@ -169,7 +169,7 @@ async fn compute_cluster_change_events_on_added(
         new_chitchat_id,
         new_node_state,
         is_self_node,
-        tls_config,
+        &client_grpc_config,
     )
     .await
     else {
@@ -304,11 +304,11 @@ async fn try_new_node(
     chitchat_id: &ChitchatId,
     node_state: &NodeState,
     is_self_node: bool,
-    tls_config: Option<&ClientTlsConfig>,
+    grpc_config: &ClientGrpcConfig,
 ) -> Option<ClusterNode> {
     match node_state.grpc_advertise_addr() {
         Ok(socket_addr) => {
-            let channel = make_channel(socket_addr, tls_config.cloned()).await;
+            let channel = make_channel(socket_addr, grpc_config.clone()).await;
             try_new_node_with_channel(cluster_id, chitchat_id, node_state, channel, is_self_node)
         }
         Err(error) => {
@@ -448,7 +448,7 @@ pub(crate) mod tests {
                 &new_chitchat_id,
                 &new_node_state,
                 &mut previous_nodes,
-                None,
+                Default::default(),
             )
             .await;
             assert!(events.is_empty());
@@ -471,7 +471,7 @@ pub(crate) mod tests {
                 &new_chitchat_id,
                 &new_node_state,
                 &mut previous_nodes,
-                None,
+                Default::default(),
             )
             .await;
             assert!(events.is_empty());
@@ -500,7 +500,7 @@ pub(crate) mod tests {
                 &new_chitchat_id,
                 &new_node_state,
                 &mut previous_nodes,
-                None,
+                Default::default(),
             )
             .await;
 
@@ -523,7 +523,7 @@ pub(crate) mod tests {
                 &rejoined_chitchat_id,
                 &new_node_state,
                 &mut previous_nodes,
-                None,
+                Default::default(),
             )
             .await;
             assert_eq!(events.len(), 2);
@@ -552,7 +552,7 @@ pub(crate) mod tests {
                 &new_chitchat_id,
                 &new_node_state,
                 &mut previous_nodes,
-                None,
+                Default::default(),
             )
             .await;
             assert!(events.is_empty());
@@ -577,7 +577,7 @@ pub(crate) mod tests {
                 &new_chitchat_id,
                 &new_node_state,
                 &mut previous_nodes,
-                None,
+                Default::default(),
             )
             .await;
             assert_eq!(events.len(), 1);
@@ -908,7 +908,7 @@ pub(crate) mod tests {
                 &mut previous_nodes,
                 &previous_node_states,
                 &new_node_states,
-                None,
+                &Default::default(),
             )
             .await;
             assert!(events.is_empty());
@@ -938,7 +938,7 @@ pub(crate) mod tests {
                 &mut previous_nodes,
                 &previous_node_states,
                 &new_node_states,
-                None,
+                &Default::default(),
             )
             .await;
             assert!(events.is_empty());
@@ -956,7 +956,7 @@ pub(crate) mod tests {
                 &mut previous_nodes,
                 &previous_node_states,
                 &new_node_states,
-                None,
+                &Default::default(),
             )
             .await;
             assert_eq!(events.len(), 1);
@@ -971,7 +971,7 @@ pub(crate) mod tests {
                 &mut previous_nodes,
                 &new_node_states,
                 &new_node_states,
-                None,
+                &Default::default(),
             )
             .await;
             assert_eq!(events.len(), 0);
@@ -1004,7 +1004,7 @@ pub(crate) mod tests {
                 &mut previous_nodes,
                 &previous_node_states,
                 &new_node_states,
-                None,
+                &Default::default(),
             )
             .await;
             assert_eq!(events.len(), 1);
@@ -1024,7 +1024,7 @@ pub(crate) mod tests {
                 &mut previous_nodes,
                 &previous_node_states,
                 &new_node_states,
-                None,
+                &Default::default(),
             )
             .await;
             assert_eq!(events.len(), 1);

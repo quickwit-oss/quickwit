@@ -17,7 +17,7 @@ use std::net::SocketAddr;
 use bytesize::ByteSize;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
-use quickwit_common::tower::{GrpcMetricsLayer, make_channel};
+use quickwit_common::tower::{ClientGrpcConfig, GrpcMetricsLayer, make_channel};
 use quickwit_proto::cluster::cluster_service_grpc_server::ClusterServiceGrpcServer;
 use quickwit_proto::cluster::{
     ChitchatId as ProtoChitchatId, ClusterError, ClusterResult, ClusterService,
@@ -25,7 +25,6 @@ use quickwit_proto::cluster::{
     FetchClusterStateResponse, NodeState as ProtoNodeState, VersionedKeyValue,
 };
 use tonic::async_trait;
-use tonic::transport::ClientTlsConfig;
 
 use crate::Cluster;
 
@@ -38,9 +37,9 @@ static CLUSTER_GRPC_SERVER_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
 
 pub(crate) async fn cluster_grpc_client(
     socket_addr: SocketAddr,
-    tls_config: Option<ClientTlsConfig>,
+    client_grpc_config: ClientGrpcConfig,
 ) -> ClusterServiceClient {
-    let channel = make_channel(socket_addr, tls_config).await;
+    let channel = make_channel(socket_addr, client_grpc_config).await;
 
     ClusterServiceClient::tower()
         .stack_layer(CLUSTER_GRPC_CLIENT_METRICS_LAYER.clone())

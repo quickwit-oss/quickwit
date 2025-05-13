@@ -26,6 +26,7 @@ use chitchat::{
     FailureDetectorConfig, KeyChangeEvent, ListenerHandle, NodeState, spawn_chitchat,
 };
 use itertools::Itertools;
+use quickwit_common::tower::ClientGrpcConfig;
 use quickwit_proto::indexing::{IndexingPipelineId, IndexingTask, PipelineMetrics};
 use quickwit_proto::types::{NodeId, NodeIdRef, PipelineUid, ShardId};
 use serde::{Deserialize, Serialize};
@@ -33,7 +34,6 @@ use tokio::sync::{Mutex, RwLock, mpsc, watch};
 use tokio::time::timeout;
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::WatchStream;
-use tonic::transport::ClientTlsConfig;
 use tracing::{info, warn};
 
 use crate::change::{ClusterChange, ClusterChangeStreamFactory, compute_cluster_change_events};
@@ -62,9 +62,10 @@ pub struct Cluster {
     self_chitchat_id: ChitchatId,
     /// Socket address (UDP) the node listens on for receiving gossip messages.
     pub gossip_listen_addr: SocketAddr,
-    // TODO this should become an ArcSwap<ClienTlsConfig> or something so that
-    // some task can watch for new certificates and update this (hot reloading)
-    tls_config: Option<ClientTlsConfig>,
+    // TODO this object contains a tls config. We might want to change it to a
+    // ArcSwap<ClientGrpcConfig> or something so that some task can watch for new certificates
+    // and update this (hot reloading)
+    client_grpc_config: ClientGrpcConfig,
     gossip_interval: Duration,
     inner: Arc<RwLock<InnerCluster>>,
 }
@@ -115,7 +116,7 @@ impl Cluster {
         gossip_interval: Duration,
         failure_detector_config: FailureDetectorConfig,
         transport: &dyn Transport,
-        tls_config: Option<ClientTlsConfig>,
+        client_grpc_config: ClientGrpcConfig,
     ) -> anyhow::Result<Self> {
         info!(
             cluster_id=%cluster_id,
@@ -186,7 +187,7 @@ impl Cluster {
             weak_chitchat,
             live_nodes_rx,
             catchup_callback_rx.clone(),
-            tls_config.clone(),
+            client_grpc_config.clone(),
         )
         .await;
 
@@ -204,7 +205,7 @@ impl Cluster {
             gossip_listen_addr,
             gossip_interval,
             inner: Arc::new(RwLock::new(inner)),
-            tls_config,
+            client_grpc_config,
         };
         spawn_change_stream_task(cluster.clone()).await;
         Ok(cluster)
@@ -560,7 +561,7 @@ fn chitchat_kv_to_indexing_task(key: &str, value: &str) -> Option<IndexingTask> 
 async fn spawn_change_stream_task(cluster: Cluster) {
     let cluster_guard = cluster.inner.read().await;
     let cluster_id = cluster_guard.cluster_id.clone();
-    let tls_config = cluster.tls_config.clone();
+    let client_grpc_config = cluster.client_grpc_config.clone();
     let self_chitchat_id = cluster_guard.self_chitchat_id.clone();
     let chitchat = cluster_guard.chitchat_handle.chitchat();
     let weak_cluster = Arc::downgrade(&cluster.inner);
@@ -584,7 +585,7 @@ async fn spawn_change_stream_task(cluster: Cluster) {
                 previous_live_nodes,
                 &previous_live_node_states,
                 &new_live_node_states,
-                tls_config.as_ref(),
+                &client_grpc_config,
             )
             .await;
             if !events.is_empty() {
@@ -701,7 +702,7 @@ pub async fn create_cluster_for_test_with_id(
         Duration::from_millis(25),
         failure_detector_config,
         transport,
-        None,
+        Default::default(),
     )
     .await?;
     cluster.set_self_node_readiness(self_node_readiness).await;
