@@ -1,0 +1,101 @@
+use std::collections::BTreeSet;
+use std::error::Error;
+use std::sync::Arc;
+
+use quickwit_common::tower::BoxFutureInfaillible;
+use quickwit_config::GrpcConfig;
+use quickwit_config::service::QuickwitService;
+use quickwit_proto::cloudprem::CloudPremServiceClient;
+use quickwit_proto::tonic::transport::Server;
+use quickwit_proto::tonic::transport::server::TcpIncoming;
+use tokio::net::TcpListener;
+use tracing::*;
+use tracing_opentelemetry::OpenTelemetrySpanExt;
+
+use super::auth::AwsMtlsInterceptorLayer;
+use super::service::CloudPremServiceImpl;
+use crate::QuickwitServices;
+use crate::grpc::HttpHeadersCarrier;
+/// Starts and binds gRPC services to `grpc_listen_addr`.
+pub(crate) async fn start_cloudprem_server(
+    tcp_listener: TcpListener,
+    grpc_config: GrpcConfig,
+    services: Arc<QuickwitServices>,
+    readiness_trigger: BoxFutureInfaillible<()>,
+    shutdown_signal: BoxFutureInfaillible<()>,
+) -> anyhow::Result<()> {
+    let mut enabled_grpc_services = BTreeSet::new();
+    let mut file_descriptor_sets = Vec::new();
+
+    let server = Server::builder().trace_fn(|request| {
+        let method = request.method();
+        let path = request.uri().path();
+        let span = tracing::span!(tracing::Level::INFO, "grpc-request", %method, %path);
+
+        let parent_context = opentelemetry::global::get_text_map_propagator(|propagator| {
+            propagator.extract(&HttpHeadersCarrier(request.headers()))
+        });
+        span.set_parent(parent_context);
+        span
+    });
+
+    /*
+     * TODO this could be used to do standalone CloudPrem (with no reverse proxy),
+     * but we need to emit the header the rest of the code except (or not put the auth
+     * layer, but then we also loose auditing capabilities)
+    if let Some(tls_config) = grpc_config.tls {
+        let cert = std::fs::read_to_string(tls_config.cert_path)?;
+        let key = std::fs::read_to_string(tls_config.key_path)?;
+        let identity = Identity::from_pem(cert, key);
+
+        let mut tls = ServerTlsConfig::new().identity(identity);
+
+        if tls_config.validate_client {
+            let ca_cert = std::fs::read_to_string(tls_config.ca_path)?;
+            let ca_cert = Certificate::from_pem(ca_cert);
+            tls = tls.client_ca_root(ca_cert);
+        }
+        // TODO using this builtin method means we have no way of hot-reloading certificates
+        // (i.e. the process must be restarted every time its certificate expires)
+        // to do better, we'd need to wra the TcpListener with something that does (m)TLS
+        // and that we control, however it would be somewhat painful, and more error prone
+        server = server.tls_config(tls)?;
+    }
+    */
+
+    let cloudprem_grpc_service = if services
+        .node_config
+        .is_service_enabled(QuickwitService::Searcher)
+    {
+        enabled_grpc_services.insert("cloudprem");
+        file_descriptor_sets.push(quickwit_proto::cloudprem::CLOUDPREM_FILE_DESCRIPTOR_SET);
+
+        let search_service = services.search_service.clone();
+        let cloudprem_service_impl = CloudPremServiceImpl::from(search_service);
+        Some(
+            CloudPremServiceClient::tower()
+                .build(cloudprem_service_impl)
+                .as_grpc_service(grpc_config.max_message_size),
+        )
+    } else {
+        None
+    };
+
+    let server_router = server
+        .layer(AwsMtlsInterceptorLayer::for_cloudprem_port())
+        .add_optional_service(cloudprem_grpc_service);
+
+    let grpc_listen_addr = tcp_listener.local_addr()?;
+    info!(
+        enabled_grpc_services=?enabled_grpc_services,
+        grpc_listen_addr=?grpc_listen_addr,
+        "starting gRPC server listening on {grpc_listen_addr}"
+    );
+    // nodelay=true and keepalive=None are the default values for Server::builder()
+    let tcp_incoming = TcpIncoming::from_listener(tcp_listener, true, None)
+        .map_err(|err: Box<dyn Error + Send + Sync>| anyhow::anyhow!(err))?;
+    let serve_fut = server_router.serve_with_incoming_shutdown(tcp_incoming, shutdown_signal);
+    let (serve_res, _trigger_res) = tokio::join!(serve_fut, readiness_trigger);
+    serve_res?;
+    Ok(())
+}

@@ -1,17 +1,3 @@
-// Copyright 2021-Present Datadog, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 use std::collections::BTreeSet;
 use std::error::Error;
 use std::sync::Arc;
@@ -41,15 +27,14 @@ use tonic_reflection::server::{ServerReflection, ServerReflectionServer};
 use tracing::*;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
-use crate::cloudprem::AwsMtlsInterceptorLayer;
-use crate::cloudprem_api::CloudPremServiceImpl;
+use crate::cloudprem::{AwsMtlsInterceptorLayer, CloudPremServiceImpl};
 use crate::developer_api::DeveloperApiServer;
 use crate::search_api::GrpcSearchAdapter;
 use crate::{INDEXING_GRPC_SERVER_METRICS_LAYER, QuickwitServices};
 
 const DISABLE_CERTIFICATE_VERIFICATION_ENV_KEY: &str = "CP_DISABLE_CERTIFICATE_VERIFICATION";
 
-struct HttpHeadersCarrier<'a>(&'a HeaderMap);
+pub(crate) struct HttpHeadersCarrier<'a>(pub &'a HeaderMap);
 
 impl Extractor for HttpHeadersCarrier<'_> {
     fn get(&self, key: &str) -> Option<&str> {
@@ -275,7 +260,7 @@ pub(crate) async fn start_grpc_server(
             None
         } else {
             tracing::info!("mTLS client certificate verification enabled");
-            Some(AwsMtlsInterceptorLayer::for_cloudprem_bridge())
+            Some(AwsMtlsInterceptorLayer::for_grpc_port())
         };
 
     let server_router = server

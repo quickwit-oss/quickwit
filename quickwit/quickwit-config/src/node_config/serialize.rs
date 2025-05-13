@@ -178,6 +178,7 @@ struct NodeConfigBuilder {
     rest_listen_port: Option<u16>,
     gossip_listen_port: ConfigValue<u16, QW_GOSSIP_LISTEN_PORT>,
     grpc_listen_port: ConfigValue<u16, QW_GRPC_LISTEN_PORT>,
+    cloudprem_listen_port: ConfigValue<u16, QW_CLOUDPREM_LISTEN_PORT>,
     gossip_interval_ms: ConfigValue<u32, QW_GOSSIP_INTERVAL_MS>,
     #[serde(default)]
     peer_seeds: ConfigValue<List, QW_PEER_SEEDS>,
@@ -192,6 +193,9 @@ struct NodeConfigBuilder {
     #[serde(rename = "grpc")]
     #[serde(default)]
     grpc_config: GrpcConfig,
+    #[serde(rename = "cloudprem_grpc")]
+    #[serde(default)]
+    cloudprem_grpc_config: GrpcConfig,
     #[serde(rename = "storage")]
     #[serde(default)]
     storage_configs: StorageConfigs,
@@ -248,6 +252,7 @@ impl NodeConfigBuilder {
             .build_and_validate(listen_ip, env_vars)?;
 
         self.grpc_config.validate()?;
+        self.cloudprem_grpc_config.validate()?;
 
         let gossip_listen_port = self
             .gossip_listen_port
@@ -260,6 +265,12 @@ impl NodeConfigBuilder {
             .resolve_optional(env_vars)?
             .unwrap_or(rest_config.listen_addr.port() + 1);
         let grpc_listen_addr = SocketAddr::new(listen_ip, grpc_listen_port);
+
+        let cloudprem_listen_port = self
+            .cloudprem_listen_port
+            .resolve_optional(env_vars)?
+            .unwrap_or(rest_config.listen_addr.port() + 2);
+        let cloudprem_listen_addr = SocketAddr::new(listen_ip, cloudprem_listen_port);
 
         let advertise_address = self.advertise_address.resolve_optional(env_vars)?;
         let advertise_host = advertise_address
@@ -308,6 +319,7 @@ impl NodeConfigBuilder {
             enabled_services,
             gossip_listen_addr,
             grpc_listen_addr,
+            cloudprem_listen_addr,
             gossip_advertise_addr,
             grpc_advertise_addr,
             gossip_interval,
@@ -317,6 +329,7 @@ impl NodeConfigBuilder {
             default_index_root_uri,
             rest_config,
             grpc_config: self.grpc_config,
+            cloudprem_grpc_config: self.cloudprem_grpc_config,
             metastore_configs: self.metastore_configs,
             storage_configs: self.storage_configs,
             indexer_config: self.indexer_config,
@@ -406,6 +419,7 @@ impl Default for NodeConfigBuilder {
             rest_listen_port: None,
             gossip_listen_port: ConfigValue::none(),
             grpc_listen_port: ConfigValue::none(),
+            cloudprem_listen_port: ConfigValue::none(),
             gossip_interval_ms: ConfigValue::none(),
             advertise_address: ConfigValue::none(),
             peer_seeds: ConfigValue::with_default(List::default()),
@@ -414,6 +428,7 @@ impl Default for NodeConfigBuilder {
             default_index_root_uri: ConfigValue::none(),
             rest_config_builder: RestConfigBuilder::default(),
             grpc_config: GrpcConfig::default(),
+            cloudprem_grpc_config: GrpcConfig::default(),
             storage_configs: StorageConfigs::default(),
             metastore_configs: MetastoreConfigs::default(),
             indexer_config: IndexerConfig::default(),
@@ -482,6 +497,10 @@ pub fn node_config_for_tests_from_ports(
         .with_port(grpc_listen_port)
         .to_socket_addr()
         .expect("default host should be an IP address");
+    let cloudprem_listen_addr = listen_address
+        .with_port(grpc_listen_port + 1)
+        .to_socket_addr()
+        .expect("default host should be an IP address");
 
     let data_dir_uri = default_data_dir_uri().unwrap();
     let data_dir_path = data_dir_uri
@@ -504,6 +523,7 @@ pub fn node_config_for_tests_from_ports(
         grpc_advertise_addr: grpc_listen_addr,
         gossip_listen_addr,
         grpc_listen_addr,
+        cloudprem_listen_addr,
         gossip_interval: Duration::from_millis(25u64),
         peer_seeds: Vec::new(),
         data_dir_path,
@@ -511,6 +531,7 @@ pub fn node_config_for_tests_from_ports(
         default_index_root_uri,
         rest_config,
         grpc_config: GrpcConfig::default(),
+        cloudprem_grpc_config: GrpcConfig::default(),
         storage_configs: StorageConfigs::default(),
         metastore_configs: MetastoreConfigs::default(),
         indexer_config: IndexerConfig::default(),
