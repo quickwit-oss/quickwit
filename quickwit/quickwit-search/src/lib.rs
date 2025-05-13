@@ -20,6 +20,7 @@
 mod client;
 mod cluster_client;
 mod collector;
+mod extract_timestamp_range;
 mod error;
 mod fetch_docs;
 mod filters;
