@@ -15,21 +15,23 @@
 use std::alloc::{GlobalAlloc, Layout};
 use std::hash::Hasher;
 use std::io::Write;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
+use bytesize::ByteSize;
 use tikv_jemallocator::Jemalloc;
 use tracing::{error, info};
 
 use crate::alloc_tracker::{self, AllocRecordingResponse};
 
-const DEFAULT_MIN_ALLOC_SIZE_FOR_PROFILING: usize = 256 * 1024;
+const DEFAULT_MIN_ALLOC_BYTES_FOR_PROFILING: u64 = 256 * 1024;
+const DEFAULT_REPORTING_INTERVAL_BYTES: u64 = 1024 * 1024 * 1024;
 
 // Atomics are used to communicate configurations between the start/stop
 // endpoints and the JemallocProfiled allocator wrapper.
 
 /// The minimum allocation size that is recorded by the tracker.
-static MIN_ALLOC_SIZE_FOR_PROFILING: AtomicUsize =
-    AtomicUsize::new(DEFAULT_MIN_ALLOC_SIZE_FOR_PROFILING);
+static MIN_ALLOC_BYTES_FOR_PROFILING: AtomicU64 =
+    AtomicU64::new(DEFAULT_MIN_ALLOC_BYTES_FOR_PROFILING);
 
 /// Whether the profiling is started or not.
 static ENABLED: AtomicBool = AtomicBool::new(false);
@@ -38,16 +40,16 @@ static ENABLED: AtomicBool = AtomicBool::new(false);
 ///
 /// This function uses a wrapper around the global Jemalloc allocator to
 /// instrument it. Each time an allocation bigger than
-/// min_alloc_size_for_profiling is performed, it is recorded in a map and the
-/// statistics for its call site are updated.
+/// min_alloc_bytes_for_profiling is performed, it is recorded in a map and
+/// the statistics for its call site are updated.
 ///
 /// During profiling, the statistics per call site are used to log when specific
-/// thresholds are exceeded. For each call site, the allocated memory is
-/// logged (with a backtrace) every time it exceeds the last logged allocated
-/// memory by at least alloc_size_triggering_backtrace.
+/// thresholds are exceeded. For each call site, the allocated memory is logged
+/// (with a backtrace) every time it exceeds the last logged allocated memory by
+/// at least alloc_bytes_triggering_backtrace.
 pub fn start_profiling(
-    min_alloc_size_for_profiling: Option<usize>,
-    alloc_size_triggering_backtrace: Option<u64>,
+    min_alloc_bytes_for_profiling: Option<u64>,
+    alloc_bytes_triggering_backtrace: Option<u64>,
 ) {
     // Call backtrace once to warmup symbolization allocations (~30MB)
     backtrace::trace(|frame| {
@@ -55,17 +57,21 @@ pub fn start_profiling(
         true
     });
 
-    alloc_tracker::init(alloc_size_triggering_backtrace);
+    let alloc_bytes_triggering_backtrace =
+        alloc_bytes_triggering_backtrace.unwrap_or(DEFAULT_REPORTING_INTERVAL_BYTES);
+    alloc_tracker::init(alloc_bytes_triggering_backtrace);
 
-    let min_alloc_size_for_profiling =
-        min_alloc_size_for_profiling.unwrap_or(DEFAULT_MIN_ALLOC_SIZE_FOR_PROFILING);
+    let min_alloc_bytes_for_profiling =
+        min_alloc_bytes_for_profiling.unwrap_or(DEFAULT_MIN_ALLOC_BYTES_FOR_PROFILING);
     // Use strong ordering to make sure all threads see these changes in this order
-    MIN_ALLOC_SIZE_FOR_PROFILING.store(min_alloc_size_for_profiling, Ordering::SeqCst);
+    MIN_ALLOC_BYTES_FOR_PROFILING.store(min_alloc_bytes_for_profiling, Ordering::SeqCst);
     let previously_enabled = ENABLED.swap(true, Ordering::SeqCst);
 
     info!(
-        min_alloc_size_for_profiling,
-        alloc_size_triggering_backtrace, previously_enabled, "heap profiling running"
+        min_alloc_for_profiling = %ByteSize(min_alloc_bytes_for_profiling),
+        alloc_triggering_backtrace = %ByteSize(alloc_bytes_triggering_backtrace),
+        previously_enabled,
+        "heap profiling running"
     );
 }
 
@@ -75,11 +81,9 @@ pub fn start_profiling(
 pub fn stop_profiling() {
     // Use strong ordering to make sure all threads see these changes in this order
     let previously_enabled = ENABLED.swap(false, Ordering::SeqCst);
-    MIN_ALLOC_SIZE_FOR_PROFILING.store(DEFAULT_MIN_ALLOC_SIZE_FOR_PROFILING, Ordering::SeqCst);
+    MIN_ALLOC_BYTES_FOR_PROFILING.store(DEFAULT_MIN_ALLOC_BYTES_FOR_PROFILING, Ordering::SeqCst);
 
     info!(previously_enabled, "heap profiling stopped");
-    // alloc_tracker::log_dump();
-    // backtrace::clear_symbol_cache();
 }
 
 /// Wraps the Jemalloc global allocator calls with tracking routines.
@@ -126,16 +130,15 @@ unsafe impl GlobalAlloc for JemallocProfiled {
     }
 }
 
+/// Uses backtrace::trace() which does allocate
 #[inline]
 fn print_backtrace(callsite_hash: u64, stat: alloc_tracker::Statistic) {
     {
         let mut lock = std::io::stdout().lock();
         let _ = writeln!(
             &mut lock,
-            "htrk callsite={} allocs={} size={}MiB",
-            callsite_hash,
-            stat.count,
-            stat.size / 1024 / 1024
+            "htrk callsite={} allocs={} size={}",
+            callsite_hash, stat.count, stat.size
         );
         backtrace::trace(|frame| {
             backtrace::resolve_frame(frame, |symbol| {
@@ -150,6 +153,7 @@ fn print_backtrace(callsite_hash: u64, stat: alloc_tracker::Statistic) {
     }
 }
 
+/// Uses backtrace::trace() which does allocate
 #[inline]
 fn backtrace_hash() -> u64 {
     let mut hasher = fnv::FnvHasher::default();
@@ -160,22 +164,23 @@ fn backtrace_hash() -> u64 {
     hasher.finish()
 }
 
+/// Warning: allocating inside this function can cause a deadlock.
 #[cold]
 fn track_alloc_call(ptr: *mut u8, layout: Layout) {
-    if layout.size() > MIN_ALLOC_SIZE_FOR_PROFILING.load(Ordering::Relaxed) {
+    if layout.size() >= MIN_ALLOC_BYTES_FOR_PROFILING.load(Ordering::Relaxed) as usize {
+        // warning: backtrace_hash() allocates
         let callsite_hash = backtrace_hash();
         let recording_response =
             alloc_tracker::record_allocation(callsite_hash, layout.size() as u64, ptr);
 
         match recording_response {
             AllocRecordingResponse::ThresholdExceeded(stat_for_trace) => {
+                // warning: print_backtrace() allocates
                 print_backtrace(callsite_hash, stat_for_trace);
-                // Could we use tracing to caracterize the call site here?
-                // tracing::info!(size = alloc_size_for_trace, "large alloc");
             }
-            AllocRecordingResponse::TrackerFull(reason) => {
+            AllocRecordingResponse::TrackerFull(table_name) => {
                 // this message might be displayed multiple times but that's fine
-                error!("{reason} full, profiling stopped");
+                error!("heap profiling stopped, {table_name} full");
                 ENABLED.store(false, Ordering::Relaxed);
             }
             AllocRecordingResponse::ThresholdNotExceeded => {}
@@ -184,9 +189,10 @@ fn track_alloc_call(ptr: *mut u8, layout: Layout) {
     }
 }
 
+/// Warning: allocating inside this function can cause a deadlock.
 #[cold]
 fn track_dealloc_call(ptr: *mut u8, layout: Layout) {
-    if layout.size() > MIN_ALLOC_SIZE_FOR_PROFILING.load(Ordering::Relaxed) {
+    if layout.size() >= MIN_ALLOC_BYTES_FOR_PROFILING.load(Ordering::Relaxed) as usize {
         alloc_tracker::record_deallocation(ptr);
     }
 }
