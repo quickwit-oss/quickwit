@@ -106,6 +106,9 @@ quickwit-storage = { workspace = true, features = ["testsuite"] }
 pprof = [
   "dep:pprof"
 ]
+jemalloc-profiled = [
+  "quickwit-common/jemalloc-profiled"
+]
 testsuite = []
 sqs-for-tests = [
   "quickwit-indexing/sqs",
