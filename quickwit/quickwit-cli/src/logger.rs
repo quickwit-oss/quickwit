@@ -27,6 +27,7 @@ use time::format_description::BorrowedFormatItem;
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::field::RecordFields;
+use tracing_subscriber::filter::filter_fn;
 use tracing_subscriber::fmt::FmtContext;
 use tracing_subscriber::fmt::format::{
     DefaultFields, Format, FormatEvent, FormatFields, Full, Json, JsonFields, Writer,
@@ -40,6 +41,14 @@ use crate::QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY;
 #[cfg(feature = "tokio-console")]
 use crate::QW_ENABLE_TOKIO_CONSOLE_ENV_KEY;
 
+fn startup_env_filter(level: Level) -> anyhow::Result<EnvFilter> {
+    let env_filter = env::var("RUST_LOG")
+        .map(|_| EnvFilter::from_default_env())
+        .or_else(|_| EnvFilter::try_new(format!("quickwit={level},tantivy=WARN")))
+        .context("failed to set up tracing env filter")?;
+    Ok(env_filter)
+}
+
 pub fn setup_logging_and_tracing(
     level: Level,
     ansi_colors: bool,
@@ -52,13 +61,10 @@ pub fn setup_logging_and_tracing(
             return Ok(quickwit_serve::do_nothing_env_filter_reload_fn());
         }
     }
-    let env_filter = env::var("RUST_LOG")
-        .map(|_| EnvFilter::from_default_env())
-        .or_else(|_| EnvFilter::try_new(format!("quickwit={level},tantivy=WARN")))
-        .context("failed to set up tracing env filter")?;
     global::set_text_map_propagator(TraceContextPropagator::new());
-    let (reloadable_env_filter, reload_handle) = tracing_subscriber::reload::Layer::new(env_filter);
-    let registry = tracing_subscriber::registry().with(reloadable_env_filter);
+    let (reloadable_env_filter, reload_handle) =
+        tracing_subscriber::reload::Layer::new(startup_env_filter(level)?);
+    let registry = tracing_subscriber::registry();
     // Note on disabling ANSI characters: setting the ansi boolean on event format is insufficient.
     // It is thus set on layers, see https://github.com/tokio-rs/tracing/issues/1817
     if get_bool_from_env(QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY, false) {
@@ -90,6 +96,7 @@ pub fn setup_logging_and_tracing(
         let fmt_fields = event_format.format_fields();
 
         registry
+            .with(reloadable_env_filter)
             .with(telemetry_layer)
             .with(
                 tracing_subscriber::fmt::layer()
@@ -102,17 +109,44 @@ pub fn setup_logging_and_tracing(
     } else {
         let event_format = EventFormat::get_from_env();
         let fmt_fields = event_format.format_fields();
-
-        registry
+        #[cfg(not(feature = "jemalloc-profiled"))]
+        let registry = registry.with(reloadable_env_filter).with(
+            tracing_subscriber::fmt::layer()
+                .event_format(event_format)
+                .fmt_fields(fmt_fields)
+                .with_ansi(ansi_colors),
+        );
+        // the heap profiler disables the env filter reloading because it seemed
+        // to overwrite the profiling filter
+        #[cfg(feature = "jemalloc-profiled")]
+        let registry = registry
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .event_format(EventFormat::get_from_env())
+                    .fmt_fields(EventFormat::get_from_env().format_fields())
+                    .with_ansi(ansi_colors)
+                    .with_filter(filter_fn(|metadata| {
+                        metadata.is_span()
+                            || (metadata.is_event()
+                                && metadata.level() == &Level::TRACE
+                                && metadata
+                                    .target()
+                                    .starts_with("quickwit_common::jemalloc_profiled"))
+                    })),
+            )
             .with(
                 tracing_subscriber::fmt::layer()
                     .event_format(event_format)
                     .fmt_fields(fmt_fields)
-                    .with_ansi(ansi_colors),
-            )
+                    .with_ansi(ansi_colors)
+                    .with_filter(startup_env_filter(level)?),
+            );
+
+        registry
             .try_init()
             .context("failed to register tracing subscriber")?;
     }
+
     Ok(Arc::new(move |env_filter_def: &str| {
         let new_env_filter = EnvFilter::try_new(env_filter_def)?;
         reload_handle.reload(new_env_filter)?;
