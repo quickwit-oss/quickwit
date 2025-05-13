@@ -15,8 +15,6 @@
 #![allow(clippy::bool_assert_comparison)]
 #![deny(clippy::disallowed_methods)]
 
-use serde::{Deserialize, Serialize};
-
 mod default_field_search;
 mod error;
 mod filter;
@@ -25,6 +23,7 @@ mod normalize_field;
 mod path_access;
 mod pipeline;
 mod processed_log;
+mod string_or_vec;
 mod transformers;
 
 pub use error::PipelineError;
@@ -33,19 +32,3 @@ pub use pipeline::{Pipeline, PipelineConfig, PipelineStep, PipelineStepConfig, b
 pub use processed_log::{DatadogLogMsg, ProcessedLog};
 
 pub type Result<T> = std::result::Result<T, error::PipelineError>;
-
-#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
-#[serde(untagged)]
-pub enum StringOrVec {
-    String(String),
-    Vec(Vec<String>),
-}
-
-impl StringOrVec {
-    pub fn contains(&self, value: &str) -> bool {
-        match self {
-            StringOrVec::String(val) => val == value,
-            StringOrVec::Vec(vec) => vec.iter().any(|elem| *elem == value),
-        }
-    }
-}

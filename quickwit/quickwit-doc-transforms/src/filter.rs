@@ -18,10 +18,11 @@ use serde::Deserialize;
 use vrl::datadog_filter::{Filter, Matcher, Resolver, Run, build_matcher, regex as vrl_regex};
 use vrl::datadog_search_syntax::{Comparison, ComparisonValue, Field as VRLField, QueryNode};
 
+use crate::ProcessedLog;
 use crate::default_field_search::matches;
 use crate::error::PipelineError;
 use crate::path_access::get_nested;
-use crate::{ProcessedLog, StringOrVec};
+use crate::string_or_vec::StringOrVec;
 
 /// Parses a query using the VRL parser.
 ///
@@ -307,7 +308,7 @@ mod vrl_matcher_tests {
     use time::OffsetDateTime;
 
     use super::{ProcessedLog, build_vrl_matcher};
-    use crate::StringOrVec; // if that’s your local enum for tags
+    use crate::string_or_vec::StringOrVec; // if that’s your local enum for tags
 
     /// Helper to build a sample ProcessedLog
     fn make_log() -> ProcessedLog {

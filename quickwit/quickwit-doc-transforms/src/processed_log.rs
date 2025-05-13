@@ -26,8 +26,9 @@ use uuid::Uuid;
 
 use crate::normalize_field::{NormalizeField, normalize_fields};
 use crate::path_access::ParsedPath;
+use crate::string_or_vec::StringOrVec;
 use crate::transformers::StatusRemapStep;
-use crate::{PipelineStep, StringOrVec, convert_tags};
+use crate::{PipelineStep, convert_tags};
 
 // https://github.com/DataDog/datadog-agent/blob/a33248c2bc125920a9577af1e16f12298875a4ad/pkg/logs/processor/json.go#L23-L49
 #[serde_as]
@@ -250,8 +251,9 @@ pub(crate) mod tests {
     use serde_json::Value;
     use time::OffsetDateTime;
 
+    use crate::ProcessedLog;
     use crate::processed_log::{DatadogLogMsg, try_parse_and_update_timestamp};
-    use crate::{ProcessedLog, StringOrVec};
+    use crate::string_or_vec::StringOrVec;
 
     /// Helper to build an `DatadogLogMsg`.
     pub fn make_datadog_log_msg() -> DatadogLogMsg {
