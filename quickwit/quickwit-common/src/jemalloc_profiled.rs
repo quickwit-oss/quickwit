@@ -23,30 +23,45 @@ use tracing::{error, info};
 
 use crate::alloc_tracker::{self, AllocRecordingResponse};
 
-const DEFAULT_MIN_ALLOC_BYTES_FOR_PROFILING: u64 = 256 * 1024;
+const DEFAULT_MIN_ALLOC_BYTES_FOR_PROFILING: u64 = 64 * 1024;
 const DEFAULT_REPORTING_INTERVAL_BYTES: u64 = 1024 * 1024 * 1024;
 
-// Atomics are used to communicate configurations between the start/stop
-// endpoints and the JemallocProfiled allocator wrapper.
+/// Atomics are used to communicate configurations between the start/stop
+/// endpoints and the JemallocProfiled allocator wrapper.
+///
+/// The flags are padded to avoid false sharing of the CPU cache line between
+/// threads. 128 bytes is the cache line size on x86_64 and arm64.
+#[repr(align(128))]
+struct Flags {
+    /// The minimum allocation size that is recorded by the tracker.
+    min_alloc_bytes_for_profiling: AtomicU64,
+    /// Whether the profiling is started or not.
+    enabled: AtomicBool,
+}
 
-/// The minimum allocation size that is recorded by the tracker.
-static MIN_ALLOC_BYTES_FOR_PROFILING: AtomicU64 =
-    AtomicU64::new(DEFAULT_MIN_ALLOC_BYTES_FOR_PROFILING);
-
-/// Whether the profiling is started or not.
-static ENABLED: AtomicBool = AtomicBool::new(false);
+static FLAGS: Flags = Flags {
+    min_alloc_bytes_for_profiling: AtomicU64::new(DEFAULT_MIN_ALLOC_BYTES_FOR_PROFILING),
+    enabled: AtomicBool::new(false),
+};
 
 /// Starts measuring heap allocations and logs important leaks.
 ///
 /// This function uses a wrapper around the global Jemalloc allocator to
-/// instrument it. Each time an allocation bigger than
-/// min_alloc_bytes_for_profiling is performed, it is recorded in a map and
-/// the statistics for its call site are updated.
+/// instrument it.
+///
+/// Each time an allocation bigger than min_alloc_bytes_for_profiling is
+/// performed, it is recorded in a map and the statistics for its call site are
+/// updated. Tracking allocations is costly because it requires acquiring a
+/// global mutex. Setting a reasonable value for min_alloc_bytes_for_profiling
+/// is crucial. For instance for a search aggregation request, tracking every
+/// allocations (min_alloc_bytes_for_profiling=1) is typically 100x slower than
+/// using a minimum of 64kB.
 ///
 /// During profiling, the statistics per call site are used to log when specific
 /// thresholds are exceeded. For each call site, the allocated memory is logged
 /// (with a backtrace) every time it exceeds the last logged allocated memory by
-/// at least alloc_bytes_triggering_backtrace.
+/// at least alloc_bytes_triggering_backtrace. This logging interval should
+/// usually be set to a value of at least 500MB to limit the logging verbosity.
 pub fn start_profiling(
     min_alloc_bytes_for_profiling: Option<u64>,
     alloc_bytes_triggering_backtrace: Option<u64>,
@@ -80,8 +95,10 @@ pub fn start_profiling(
     );
 
     // Use strong ordering to make sure all threads see these changes in this order
-    MIN_ALLOC_BYTES_FOR_PROFILING.store(min_alloc_bytes_for_profiling, Ordering::SeqCst);
-    ENABLED.store(true, Ordering::SeqCst);
+    FLAGS
+        .min_alloc_bytes_for_profiling
+        .store(min_alloc_bytes_for_profiling, Ordering::SeqCst);
+    FLAGS.enabled.store(true, Ordering::SeqCst);
 }
 
 /// Stops measuring heap allocations.
@@ -89,8 +106,10 @@ pub fn start_profiling(
 /// The allocation tracking tables and the symbol cache are not cleared.
 pub fn stop_profiling() {
     // Use strong ordering to make sure all threads see these changes in this order
-    let previously_enabled = ENABLED.swap(false, Ordering::SeqCst);
-    MIN_ALLOC_BYTES_FOR_PROFILING.store(DEFAULT_MIN_ALLOC_BYTES_FOR_PROFILING, Ordering::SeqCst);
+    let previously_enabled = FLAGS.enabled.swap(false, Ordering::SeqCst);
+    FLAGS
+        .min_alloc_bytes_for_profiling
+        .store(DEFAULT_MIN_ALLOC_BYTES_FOR_PROFILING, Ordering::SeqCst);
 
     info!(previously_enabled, "heap profiling stopped");
 }
@@ -108,7 +127,7 @@ unsafe impl GlobalAlloc for JemallocProfiled {
     #[inline]
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let ptr = unsafe { self.0.alloc(layout) };
-        if ENABLED.load(Ordering::Relaxed) {
+        if FLAGS.enabled.load(Ordering::Relaxed) {
             track_alloc_call(ptr, layout);
         }
         ptr
@@ -117,7 +136,7 @@ unsafe impl GlobalAlloc for JemallocProfiled {
     #[inline]
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
         let ptr = unsafe { self.0.alloc_zeroed(layout) };
-        if ENABLED.load(Ordering::Relaxed) {
+        if FLAGS.enabled.load(Ordering::Relaxed) {
             track_alloc_call(ptr, layout);
         }
         ptr
@@ -125,7 +144,7 @@ unsafe impl GlobalAlloc for JemallocProfiled {
 
     #[inline]
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        if ENABLED.load(Ordering::Relaxed) {
+        if FLAGS.enabled.load(Ordering::Relaxed) {
             track_dealloc_call(ptr, layout);
         }
         unsafe { self.0.dealloc(ptr, layout) }
@@ -134,7 +153,7 @@ unsafe impl GlobalAlloc for JemallocProfiled {
     #[inline]
     unsafe fn realloc(&self, old_ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
         let new_ptr = unsafe { self.0.realloc(old_ptr, layout, new_size) };
-        if ENABLED.load(Ordering::Relaxed) {
+        if FLAGS.enabled.load(Ordering::Relaxed) {
             track_realloc_call(old_ptr, new_ptr, layout, new_size);
         }
         new_ptr
@@ -177,7 +196,7 @@ fn backtrace_hash() -> u64 {
 /// Warning: allocating inside this function can cause an error (abort, panic or even deadlock).
 #[cold]
 fn track_alloc_call(ptr: *mut u8, layout: Layout) {
-    if layout.size() >= MIN_ALLOC_BYTES_FOR_PROFILING.load(Ordering::Relaxed) as usize {
+    if layout.size() >= FLAGS.min_alloc_bytes_for_profiling.load(Ordering::Relaxed) as usize {
         let callsite_hash = backtrace_hash();
         let recording_response =
             alloc_tracker::record_allocation(callsite_hash, layout.size() as u64, ptr);
@@ -191,7 +210,7 @@ fn track_alloc_call(ptr: *mut u8, layout: Layout) {
                 // this message might be displayed multiple times but that's fine
                 // warning: stdout might allocate a buffer on first use
                 error!("heap profiling stopped, {table_name} full");
-                ENABLED.store(false, Ordering::Relaxed);
+                FLAGS.enabled.store(false, Ordering::Relaxed);
             }
             AllocRecordingResponse::ThresholdNotExceeded => {}
             AllocRecordingResponse::NotStarted => {}
@@ -202,7 +221,7 @@ fn track_alloc_call(ptr: *mut u8, layout: Layout) {
 /// Warning: allocating inside this function can cause an error (abort, panic or even deadlock).
 #[cold]
 fn track_dealloc_call(ptr: *mut u8, layout: Layout) {
-    if layout.size() >= MIN_ALLOC_BYTES_FOR_PROFILING.load(Ordering::Relaxed) as usize {
+    if layout.size() >= FLAGS.min_alloc_bytes_for_profiling.load(Ordering::Relaxed) as usize {
         alloc_tracker::record_deallocation(ptr);
     }
 }
