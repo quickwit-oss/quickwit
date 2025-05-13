@@ -192,11 +192,30 @@ where K: Hash + Eq + Clone + Send + Sync + 'static
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct KeepAliveConfig {
+    pub interval: Duration,
+    pub timeout: Duration,
+}
+
+#[derive(Clone, Default)]
+pub struct ClientGrpcConfig {
+    pub keep_alive_opt: Option<KeepAliveConfig>,
+    pub tls_config_opt: Option<ClientTlsConfig>,
+}
+
 /// Creates a channel from a socket address.
 ///
 /// The function is marked as `async` because it requires an executor (`connect_lazy`).
-pub async fn make_channel(socket_addr: SocketAddr, tls_config: Option<ClientTlsConfig>) -> Channel {
-    let scheme = if tls_config.is_some() {
+pub async fn make_channel(
+    socket_addr: SocketAddr,
+    client_grpc_config: ClientGrpcConfig,
+) -> Channel {
+    let ClientGrpcConfig {
+        keep_alive_opt,
+        tls_config_opt,
+    } = client_grpc_config;
+    let scheme = if tls_config_opt.is_some() {
         "https"
     } else {
         "http"
@@ -208,8 +227,14 @@ pub async fn make_channel(socket_addr: SocketAddr, tls_config: Option<ClientTlsC
         .build()
         .expect("provided arguments should be valid");
     let mut endpoint = Endpoint::from(uri).connect_timeout(Duration::from_secs(5));
-    if let Some(tls_config) = tls_config {
+    if let Some(tls_config) = tls_config_opt {
         endpoint = endpoint.tls_config(tls_config).expect("sadness TODO");
+    }
+    if let Some(keep_alive) = keep_alive_opt {
+        endpoint = endpoint
+            .keep_alive_while_idle(true)
+            .http2_keep_alive_interval(keep_alive.interval)
+            .keep_alive_timeout(keep_alive.timeout);
     }
     endpoint.connect_lazy()
 }

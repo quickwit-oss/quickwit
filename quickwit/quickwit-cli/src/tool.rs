@@ -26,7 +26,7 @@ use colored::{ColoredString, Colorize};
 use humantime::format_duration;
 use quickwit_actors::{ActorExitStatus, ActorHandle, Mailbox, Universe};
 use quickwit_cluster::{
-    ChannelTransport, Cluster, ClusterMember, FailureDetectorConfig, make_client_tls_config,
+    ChannelTransport, Cluster, ClusterMember, FailureDetectorConfig, make_client_grpc_config,
 };
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::runtimes::RuntimesConfig;
@@ -939,6 +939,7 @@ async fn create_empty_cluster(config: &NodeConfig) -> anyhow::Result<Cluster> {
         indexing_cpu_capacity: CpuCapacity::zero(),
         indexing_tasks: Vec::new(),
     };
+    let client_grpc_config = make_client_grpc_config(&config.grpc_config)?;
     let cluster = Cluster::join(
         config.cluster_id.clone(),
         self_node,
@@ -947,12 +948,7 @@ async fn create_empty_cluster(config: &NodeConfig) -> anyhow::Result<Cluster> {
         config.gossip_interval,
         FailureDetectorConfig::default(),
         &ChannelTransport::default(),
-        config
-            .grpc_config
-            .tls
-            .as_ref()
-            .map(make_client_tls_config)
-            .transpose()?,
+        client_grpc_config,
     )
     .await?;
 
