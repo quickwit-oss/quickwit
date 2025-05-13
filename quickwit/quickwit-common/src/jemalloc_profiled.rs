@@ -37,11 +37,14 @@ struct Flags {
     min_alloc_bytes_for_profiling: AtomicU64,
     /// Whether the profiling is started or not.
     enabled: AtomicBool,
+    /// Padding to make sure we fill the cache line.
+    _padding: [u8; 119], // 128 (align) - 8 (u64) - 1 (bool)
 }
 
 static FLAGS: Flags = Flags {
     min_alloc_bytes_for_profiling: AtomicU64::new(DEFAULT_MIN_ALLOC_BYTES_FOR_PROFILING),
     enabled: AtomicBool::new(false),
+    _padding: [0; 119],
 };
 
 /// Starts measuring heap allocations and logs important leaks.
@@ -234,4 +237,14 @@ fn track_realloc_call(
     _new_size: usize,
 ) {
     // TODO handle realloc
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_size_of_flags() {
+        assert_eq!(std::mem::size_of::<Flags>(), 128);
+    }
 }
