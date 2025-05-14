@@ -178,10 +178,11 @@ unsafe impl GlobalAlloc for JemallocProfiled {
 ///
 /// Warning: stdout might allocate a buffer on first use
 fn identify_callsite(callsite_hash: u64, stat: AllocStat) {
-    // to generate a complete trace:
+    // To generate a complete trace:
     // - tokio/tracing feature must be enabled, otherwise un-instrumented tasks will not propagate
-    //   spans
-    // - the tracing fmt subscriber filter must keep all spans for this event (at least debug)
+    //   parent spans
+    // - the tracing fmt subscriber filter must keep all spans for this event (TRACE level)
+    // See the logger configuration for more details.
     trace!(target: JEMALLOC_PROFILER_TARGET, callsite=callsite_hash, allocs=stat.count, size=%stat.size);
 }
 
