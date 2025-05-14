@@ -12,16 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::future::Future;
 use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::task::{Context, Poll, ready};
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use pin_project::{pin_project, pinned_drop};
 use quickwit_common::uri::Uri;
 use quickwit_config::SearcherConfig;
 use quickwit_doc_mapper::DocMapper;
@@ -46,7 +43,7 @@ use crate::leaf_cache::LeafSearchCache;
 use crate::list_fields::{leaf_list_fields, root_list_fields};
 use crate::list_fields_cache::ListFieldsCache;
 use crate::list_terms::{leaf_list_terms, root_list_terms};
-use crate::metrics::SEARCH_METRICS;
+use crate::metrics_trackers::LeafSearchMetricsFuture;
 use crate::root::fetch_docs_phase;
 use crate::scroll_context::{MiniKV, ScrollContext, ScrollKeyAndStartOffset};
 use crate::search_permit_provider::SearchPermitProvider;
@@ -529,55 +526,5 @@ impl SearcherContext {
     /// Returns the shared instance to track the aggregation memory usage.
     pub fn get_aggregation_limits(&self) -> AggregationLimitsGuard {
         self.aggregation_limit.clone()
-    }
-}
-
-/// Wrapper around the search future to track metrics.
-#[pin_project(PinnedDrop)]
-struct LeafSearchMetricsFuture<F>
-where F: Future<Output = Result<LeafSearchResponse, SearchError>>
-{
-    #[pin]
-    tracked: F,
-    start: Instant,
-    targeted_splits: usize,
-    status: Option<&'static str>,
-}
-
-#[pinned_drop]
-impl<F> PinnedDrop for LeafSearchMetricsFuture<F>
-where F: Future<Output = Result<LeafSearchResponse, SearchError>>
-{
-    fn drop(self: Pin<&mut Self>) {
-        let label_values = [self.status.unwrap_or("cancelled")];
-        SEARCH_METRICS
-            .leaf_search_requests_total
-            .with_label_values(label_values)
-            .inc();
-        SEARCH_METRICS
-            .leaf_search_request_duration_seconds
-            .with_label_values(label_values)
-            .observe(self.start.elapsed().as_secs_f64());
-        SEARCH_METRICS
-            .leaf_search_targeted_splits
-            .with_label_values(label_values)
-            .observe(self.targeted_splits as f64);
-    }
-}
-
-impl<F> Future for LeafSearchMetricsFuture<F>
-where F: Future<Output = Result<LeafSearchResponse, SearchError>>
-{
-    type Output = Result<LeafSearchResponse, SearchError>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.project();
-        let response = ready!(this.tracked.poll(cx));
-        *this.status = if response.is_ok() {
-            Some("success")
-        } else {
-            Some("error")
-        };
-        Poll::Ready(Ok(response?))
     }
 }

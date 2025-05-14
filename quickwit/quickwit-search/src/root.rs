@@ -13,17 +13,13 @@
 // limitations under the License.
 
 use std::collections::{HashMap, HashSet};
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::task::{Context as TaskContext, Poll, ready};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use futures::future::try_join_all;
 use itertools::Itertools;
-use pin_project::{pin_project, pinned_drop};
 use quickwit_common::pretty::PrettySample;
 use quickwit_common::shared_consts;
 use quickwit_common::uri::Uri;
@@ -49,12 +45,11 @@ use tantivy::aggregation::agg_result::AggregationResults;
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tantivy::collector::Collector;
 use tantivy::schema::{Field, FieldEntry, FieldType, Schema};
-use tokio::time::Instant;
 use tracing::{debug, info_span, instrument};
 
 use crate::cluster_client::ClusterClient;
 use crate::collector::{QuickwitAggregations, make_merge_collector};
-use crate::metrics::SEARCH_METRICS;
+use crate::metrics_trackers::{RootSearchMetricsFuture, RootSearchMetricsStep};
 use crate::scroll_context::{ScrollContext, ScrollKeyAndStartOffset};
 use crate::search_job_placer::{Job, group_by, group_jobs_by_index_id};
 use crate::search_response_rest::StorageRequestCount;
@@ -959,7 +954,7 @@ fn get_sort_field_datetime_format(
 }
 
 /// Performs a distributed search.
-/// 1. Sends leaf request over gRPC to multiple leaf nodes.
+/// 1. Sends leaf requests over gRPC to multiple leaf nodes.
 /// 2. Merges the search results.
 /// 3. Sends fetch docs requests to multiple leaf nodes.
 /// 4. Builds the response with docs and returns.
@@ -1184,7 +1179,7 @@ async fn plan_splits_for_root_search(
 }
 
 /// Performs a distributed search.
-/// 1. Sends leaf request over gRPC to multiple leaf nodes.
+/// 1. Sends leaf requests over gRPC to multiple leaf nodes.
 /// 2. Merges the search results.
 /// 3. Sends fetch docs requests to multiple leaf nodes.
 /// 4. Builds the response with docs and returns.
@@ -1195,7 +1190,7 @@ pub async fn root_search(
     mut metastore: MetastoreServiceClient,
     cluster_client: &ClusterClient,
 ) -> crate::Result<SearchResponse> {
-    let start_instant = tokio::time::Instant::now();
+    let start_instant = Instant::now();
 
     let (split_metadatas, indexes_meta_for_leaf_search) = RootSearchMetricsFuture {
         start: start_instant,
@@ -1222,7 +1217,7 @@ pub async fn root_search(
         ),
         is_success: None,
         step: RootSearchMetricsStep::Exec {
-            targeted_splits: num_splits,
+            num_targeted_splits: num_splits,
         },
     }
     .await;
@@ -1758,69 +1753,6 @@ pub fn jobs_to_fetch_docs_requests(
         },
     )?;
     Ok(fetch_docs_requests)
-}
-
-enum RootSearchMetricsStep {
-    Plan,
-    Exec { targeted_splits: usize },
-}
-
-/// Wrapper around the plan and search futures to track metrics.
-#[pin_project(PinnedDrop)]
-struct RootSearchMetricsFuture<F> {
-    #[pin]
-    tracked: F,
-    start: Instant,
-    step: RootSearchMetricsStep,
-    is_success: Option<bool>,
-}
-
-#[pinned_drop]
-impl<F> PinnedDrop for RootSearchMetricsFuture<F> {
-    fn drop(self: Pin<&mut Self>) {
-        let (targeted_splits, status) = match (&self.step, self.is_success) {
-            // is is a partial success, actual success is recorded during the search step
-            (RootSearchMetricsStep::Plan, Some(true)) => return,
-            (RootSearchMetricsStep::Plan, Some(false)) => (0, "plan-error"),
-            (RootSearchMetricsStep::Plan, None) => (0, "plan-cancelled"),
-            (RootSearchMetricsStep::Exec { targeted_splits }, Some(true)) => {
-                (*targeted_splits, "success")
-            }
-            (RootSearchMetricsStep::Exec { targeted_splits }, Some(false)) => {
-                (*targeted_splits, "error")
-            }
-            (RootSearchMetricsStep::Exec { targeted_splits }, None) => {
-                (*targeted_splits, "cancelled")
-            }
-        };
-
-        let label_values = [status];
-        SEARCH_METRICS
-            .root_search_requests_total
-            .with_label_values(label_values)
-            .inc();
-        SEARCH_METRICS
-            .root_search_request_duration_seconds
-            .with_label_values(label_values)
-            .observe(self.start.elapsed().as_secs_f64());
-        SEARCH_METRICS
-            .root_search_targeted_splits
-            .with_label_values(label_values)
-            .observe(targeted_splits as f64);
-    }
-}
-
-impl<F, R, E> Future for RootSearchMetricsFuture<F>
-where F: Future<Output = Result<R, E>>
-{
-    type Output = Result<R, E>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut TaskContext<'_>) -> Poll<Self::Output> {
-        let this = self.project();
-        let response = ready!(this.tracked.poll(cx));
-        *this.is_success = Some(response.is_ok());
-        Poll::Ready(Ok(response?))
-    }
 }
 
 #[cfg(test)]

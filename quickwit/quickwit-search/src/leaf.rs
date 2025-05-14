@@ -1174,7 +1174,7 @@ impl CanSplitDoBetter {
     }
 }
 
-/// Searches multiple splits, potentially in multiple indices, sitting on different storages and
+/// Searches multiple splits, potentially in multiple indexes, sitting on different storages and
 /// having different doc mappings.
 #[instrument(skip_all, fields(index = ?leaf_search_request.search_request.as_ref().unwrap().index_id_patterns))]
 pub async fn multi_index_leaf_search(
@@ -1299,7 +1299,7 @@ fn disable_search_request_hits(search_request: &mut SearchRequest) {
     search_request.sort_fields.clear();
 }
 
-/// Searches multiple splits from a specific index and a single doc mapping
+/// Searches multiple splits for a specific index and a single doc mapping
 ///
 /// The leaf search collects all kind of information, and returns a set of
 /// [PartialHit](quickwit_proto::search::PartialHit) candidates. The root will be in
