@@ -21,7 +21,6 @@ use opentelemetry::{KeyValue, global};
 use opentelemetry_sdk::propagation::TraceContextPropagator;
 use opentelemetry_sdk::trace::BatchConfigBuilder;
 use opentelemetry_sdk::{Resource, trace};
-use quickwit_common::jemalloc_profiled::JEMALLOC_PROFILER_TARGET;
 use quickwit_common::{get_bool_from_env, get_from_env_opt};
 use quickwit_serve::{BuildInfo, EnvFilterReloadFn};
 use time::format_description::BorrowedFormatItem;
@@ -129,7 +128,8 @@ pub fn setup_logging_and_tracing(
                         metadata.is_span()
                             || (metadata.is_event()
                                 && metadata.level() == &Level::TRACE
-                                && metadata.target() == JEMALLOC_PROFILER_TARGET)
+                                && metadata.target()
+                                    == quickwit_common::jemalloc_profiled::JEMALLOC_PROFILER_TARGET)
                     })),
             )
             .with(

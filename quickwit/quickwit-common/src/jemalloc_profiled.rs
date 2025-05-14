@@ -14,13 +14,17 @@
 
 use std::alloc::{GlobalAlloc, Layout};
 use std::hash::Hasher;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use bytesize::ByteSize;
+use once_cell::sync::Lazy;
 use tikv_jemallocator::Jemalloc;
 use tracing::{error, info, trace};
 
-use crate::alloc_tracker::{self, AllocRecordingResponse, ReallocRecordingResponse};
+use crate::alloc_tracker::{
+    AllocRecordingResponse, AllocStat, Allocations, ReallocRecordingResponse,
+};
 
 const DEFAULT_MIN_ALLOC_BYTES_FOR_PROFILING: u64 = 64 * 1024;
 const DEFAULT_REPORTING_INTERVAL_BYTES: u64 = 1024 * 1024 * 1024;
@@ -47,6 +51,9 @@ static FLAGS: Flags = Flags {
     enabled: AtomicBool::new(false),
     _padding: [0; 119],
 };
+
+static ALLOCATION_TRACKER: Lazy<Mutex<Allocations>> =
+    Lazy::new(|| Mutex::new(Allocations::default()));
 
 /// Starts measuring heap allocations and logs important leaks.
 ///
@@ -84,7 +91,10 @@ pub fn start_profiling(
 
     let alloc_bytes_triggering_backtrace =
         alloc_bytes_triggering_backtrace.unwrap_or(DEFAULT_REPORTING_INTERVAL_BYTES);
-    alloc_tracker::init(alloc_bytes_triggering_backtrace);
+    ALLOCATION_TRACKER
+        .lock()
+        .unwrap()
+        .init(alloc_bytes_triggering_backtrace);
 
     let min_alloc_bytes_for_profiling =
         min_alloc_bytes_for_profiling.unwrap_or(DEFAULT_MIN_ALLOC_BYTES_FOR_PROFILING);
@@ -167,7 +177,7 @@ unsafe impl GlobalAlloc for JemallocProfiled {
 /// Prints both a backtrace and a Tokio tracing log
 ///
 /// Warning: stdout might allocate a buffer on first use
-fn identify_callsite(callsite_hash: u64, stat: alloc_tracker::Statistic) {
+fn identify_callsite(callsite_hash: u64, stat: AllocStat) {
     // to generate a complete trace:
     // - tokio/tracing feature must be enabled, otherwise un-instrumented tasks will not propagate
     //   spans
@@ -189,8 +199,11 @@ fn backtrace_hash() -> u64 {
 fn track_alloc_call(ptr: *mut u8, layout: Layout) {
     if layout.size() >= FLAGS.min_alloc_bytes_for_profiling.load(Ordering::Relaxed) as usize {
         let callsite_hash = backtrace_hash();
-        let recording_response =
-            alloc_tracker::record_allocation(callsite_hash, layout.size() as u64, ptr);
+        let recording_response = ALLOCATION_TRACKER.lock().unwrap().record_allocation(
+            callsite_hash,
+            layout.size() as u64,
+            ptr,
+        );
 
         match recording_response {
             AllocRecordingResponse::ThresholdExceeded(stat_for_trace) => {
@@ -212,7 +225,7 @@ fn track_alloc_call(ptr: *mut u8, layout: Layout) {
 #[cold]
 fn track_dealloc_call(ptr: *mut u8, layout: Layout) {
     if layout.size() >= FLAGS.min_alloc_bytes_for_profiling.load(Ordering::Relaxed) as usize {
-        alloc_tracker::record_deallocation(ptr);
+        ALLOCATION_TRACKER.lock().unwrap().record_deallocation(ptr);
     }
 }
 
@@ -226,8 +239,11 @@ fn track_realloc_call(
 ) {
     if current_layout.size() >= FLAGS.min_alloc_bytes_for_profiling.load(Ordering::Relaxed) as usize
     {
-        let recording_response =
-            alloc_tracker::record_reallocation(new_size as u64, old_ptr, new_pointer);
+        let recording_response = ALLOCATION_TRACKER.lock().unwrap().record_reallocation(
+            new_size as u64,
+            old_ptr,
+            new_pointer,
+        );
 
         match recording_response {
             ReallocRecordingResponse::ThresholdExceeded {
