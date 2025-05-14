@@ -14,6 +14,7 @@ license.workspace = true
 anyhow = { workspace = true }
 async-speed-limit = { workspace = true }
 async-trait = { workspace = true }
+backtrace = { workspace = true, optional = true }
 bytesize = { workspace = true }
 coarsetime = { workspace = true }
 dyn-clone = { workspace = true }
@@ -37,6 +38,8 @@ siphasher = { workspace = true }
 sysinfo = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
+tikv-jemallocator = { workspace = true, optional = true }
+tikv-jemalloc-ctl = { workspace = true, optional = true }
 tokio = { workspace = true }
 tokio-metrics = { workspace = true }
 tokio-stream = { workspace = true }
@@ -47,9 +50,16 @@ tracing = { workspace = true }
 [features]
 testsuite = []
 named_tasks = ["tokio/tracing"]
+jemalloc-profiled = [
+    "named_tasks",
+    "dep:backtrace",
+    "dep:tikv-jemallocator",
+    "dep:tikv-jemalloc-ctl"
+]
 
 [dev-dependencies]
 serde_json = { workspace = true }
 tempfile = { workspace = true }
 proptest = { workspace = true }
+serial_test = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
