@@ -38,7 +38,7 @@ use tantivy::aggregation::AggregationLimitsGuard;
 use tokio::sync::{Semaphore, oneshot};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
-use crate::leaf::multi_leaf_search;
+use crate::leaf::multi_index_leaf_search;
 use crate::leaf_cache::LeafSearchCache;
 use crate::list_fields::{leaf_list_fields, root_list_fields};
 use crate::list_fields_cache::ListFieldsCache;
@@ -204,7 +204,7 @@ impl SearchService for SearchServiceImpl {
             .map(|req| req.split_offsets.len())
             .sum::<usize>();
         let completion_tx = start_leaf_search_metric_recording(num_splits).await;
-        let leaf_search_response_result = multi_leaf_search(
+        let leaf_search_response_result = multi_index_leaf_search(
             self.searcher_context.clone(),
             leaf_search_request,
             &self.storage_resolver,

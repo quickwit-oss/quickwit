@@ -1174,9 +1174,10 @@ impl CanSplitDoBetter {
     }
 }
 
-/// `multi_leaf_search` searches multiple indices and multiple splits.
+/// Searches multiple splits, potentially in multiple indices, sitting on different storages and
+/// having different doc mappings.
 #[instrument(skip_all, fields(index = ?leaf_search_request.search_request.as_ref().unwrap().index_id_patterns))]
-pub async fn multi_leaf_search(
+pub async fn multi_index_leaf_search(
     searcher_context: Arc<SearcherContext>,
     leaf_search_request: LeafSearchRequest,
     storage_resolver: &StorageResolver,
@@ -1224,18 +1225,25 @@ pub async fn multi_leaf_search(
             })?
             .clone();
 
-        let leaf_request_future = tokio::spawn(
-            resolve_storage_and_leaf_search(
-                searcher_context.clone(),
-                search_request.clone(),
-                index_uri,
-                storage_resolver.clone(),
-                leaf_search_request_ref.split_offsets,
-                doc_mapper,
-                aggregation_limits.clone(),
-            )
-            .in_current_span(),
-        );
+        let leaf_request_future = tokio::spawn({
+            let storage_resolver = storage_resolver.clone();
+            let searcher_context = searcher_context.clone();
+            let search_request = search_request.clone();
+            let aggregation_limits = aggregation_limits.clone();
+            async move {
+                let storage = storage_resolver.resolve(&index_uri).await?;
+                single_doc_mapping_leaf_search(
+                    searcher_context,
+                    search_request,
+                    storage,
+                    leaf_search_request_ref.split_offsets,
+                    doc_mapper,
+                    aggregation_limits,
+                )
+                .await
+            }
+            .in_current_span()
+        });
         leaf_request_tasks.push(leaf_request_future);
     }
 
@@ -1268,29 +1276,6 @@ pub async fn multi_leaf_search(
         .context("failed to merge split search responses")?
 }
 
-/// Resolves storage and calls leaf_search
-#[allow(clippy::too_many_arguments)]
-async fn resolve_storage_and_leaf_search(
-    searcher_context: Arc<SearcherContext>,
-    search_request: Arc<SearchRequest>,
-    index_uri: quickwit_common::uri::Uri,
-    storage_resolver: StorageResolver,
-    splits: Vec<SplitIdAndFooterOffsets>,
-    doc_mapper: Arc<DocMapper>,
-    aggregations_limits: AggregationLimitsGuard,
-) -> crate::Result<LeafSearchResponse> {
-    let storage = storage_resolver.resolve(&index_uri).await?;
-    leaf_search(
-        searcher_context.clone(),
-        search_request.clone(),
-        storage.clone(),
-        splits,
-        doc_mapper,
-        aggregations_limits,
-    )
-    .await
-}
-
 /// Optimizes the search_request based on CanSplitDoBetter
 /// Returns true if the split can return better results
 fn check_optimize_search_request(
@@ -1314,14 +1299,14 @@ fn disable_search_request_hits(search_request: &mut SearchRequest) {
     search_request.sort_fields.clear();
 }
 
-/// `leaf` step of search.
+/// Searches multiple splits from a specific index and a single doc mapping
 ///
 /// The leaf search collects all kind of information, and returns a set of
 /// [PartialHit](quickwit_proto::search::PartialHit) candidates. The root will be in
 /// charge to consolidate, identify the actual final top hits to display, and
 /// fetch the actual documents to convert the partial hits into actual Hits.
 #[instrument(skip_all, fields(index = ?request.index_id_patterns))]
-pub async fn leaf_search(
+pub async fn single_doc_mapping_leaf_search(
     searcher_context: Arc<SearcherContext>,
     request: Arc<SearchRequest>,
     index_storage: Arc<dyn Storage>,
