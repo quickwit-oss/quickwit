@@ -15,7 +15,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use futures::future::try_join_all;
@@ -49,7 +49,7 @@ use tracing::{debug, info_span, instrument};
 
 use crate::cluster_client::ClusterClient;
 use crate::collector::{QuickwitAggregations, make_merge_collector};
-use crate::metrics::SEARCH_METRICS;
+use crate::metrics_trackers::{RootSearchMetricsFuture, RootSearchMetricsStep};
 use crate::scroll_context::{ScrollContext, ScrollKeyAndStartOffset};
 use crate::search_job_placer::{Job, group_by, group_jobs_by_index_id};
 use crate::search_response_rest::StorageRequestCount;
@@ -954,7 +954,7 @@ fn get_sort_field_datetime_format(
 }
 
 /// Performs a distributed search.
-/// 1. Sends leaf request over gRPC to multiple leaf nodes.
+/// 1. Sends leaf requests over gRPC to multiple leaf nodes.
 /// 2. Merges the search results.
 /// 3. Sends fetch docs requests to multiple leaf nodes.
 /// 4. Builds the response with docs and returns.
@@ -1142,19 +1142,11 @@ async fn refine_and_list_matches(
     Ok(split_metadatas)
 }
 
-/// Performs a distributed search.
-/// 1. Sends leaf request over gRPC to multiple leaf nodes.
-/// 2. Merges the search results.
-/// 3. Sends fetch docs requests to multiple leaf nodes.
-/// 4. Builds the response with docs and returns.
-#[instrument(skip_all)]
-pub async fn root_search(
-    searcher_context: &SearcherContext,
-    mut search_request: SearchRequest,
-    mut metastore: MetastoreServiceClient,
-    cluster_client: &ClusterClient,
-) -> crate::Result<SearchResponse> {
-    let start_instant = tokio::time::Instant::now();
+/// Fetches the list of splits and their metadata from the metastore
+async fn plan_splits_for_root_search(
+    search_request: &mut SearchRequest,
+    metastore: &mut MetastoreServiceClient,
+) -> crate::Result<(Vec<SplitMetadata>, IndexesMetasForLeafSearch)> {
     let list_indexes_metadatas_request = ListIndexesMetadataRequest {
         index_id_patterns: search_request.index_id_patterns.clone(),
     };
@@ -1167,30 +1159,45 @@ pub async fn root_search(
     check_all_index_metadata_found(&indexes_metadata[..], &search_request.index_id_patterns[..])?;
 
     if indexes_metadata.is_empty() {
-        // We go through root_search_aux instead of directly
-        // returning an empty response to make sure we generate
-        // a (pretty useless) scroll id if requested.
-        let mut search_response = root_search_aux(
-            searcher_context,
-            &HashMap::default(),
-            search_request,
-            Vec::new(),
-            cluster_client,
-        )
-        .await?;
-        search_response.elapsed_time_micros = start_instant.elapsed().as_micros() as u64;
-        return Ok(search_response);
+        return Ok((Vec::new(), HashMap::default()));
     }
 
-    let request_metadata = validate_request_and_build_metadata(&indexes_metadata, &search_request)?;
+    let request_metadata = validate_request_and_build_metadata(&indexes_metadata, search_request)?;
     let split_metadatas = refine_and_list_matches(
-        &mut metastore,
-        &mut search_request,
+        metastore,
+        search_request,
         indexes_metadata,
         request_metadata.query_ast_resolved,
         request_metadata.sort_fields_is_datetime,
         request_metadata.timestamp_field_opt,
     )
+    .await?;
+    Ok((
+        split_metadatas,
+        request_metadata.indexes_meta_for_leaf_search,
+    ))
+}
+
+/// Performs a distributed search.
+/// 1. Sends leaf requests over gRPC to multiple leaf nodes.
+/// 2. Merges the search results.
+/// 3. Sends fetch docs requests to multiple leaf nodes.
+/// 4. Builds the response with docs and returns.
+#[instrument(skip_all)]
+pub async fn root_search(
+    searcher_context: &SearcherContext,
+    mut search_request: SearchRequest,
+    mut metastore: MetastoreServiceClient,
+    cluster_client: &ClusterClient,
+) -> crate::Result<SearchResponse> {
+    let start_instant = Instant::now();
+
+    let (split_metadatas, indexes_meta_for_leaf_search) = RootSearchMetricsFuture {
+        start: start_instant,
+        tracked: plan_splits_for_root_search(&mut search_request, &mut metastore),
+        is_success: None,
+        step: RootSearchMetricsStep::Plan,
+    }
     .await?;
 
     let num_docs: usize = split_metadatas.iter().map(|split| split.num_docs).sum();
@@ -1199,38 +1206,25 @@ pub async fn root_search(
     current_span.record("num_docs", num_docs);
     current_span.record("num_splits", num_splits);
 
-    let mut search_response_result = root_search_aux(
-        searcher_context,
-        &request_metadata.indexes_meta_for_leaf_search,
-        search_request,
-        split_metadatas,
-        cluster_client,
-    )
+    let mut search_response_result = RootSearchMetricsFuture {
+        start: start_instant,
+        tracked: root_search_aux(
+            searcher_context,
+            &indexes_meta_for_leaf_search,
+            search_request,
+            split_metadatas,
+            cluster_client,
+        ),
+        is_success: None,
+        step: RootSearchMetricsStep::Exec {
+            num_targeted_splits: num_splits,
+        },
+    }
     .await;
 
-    let elapsed = start_instant.elapsed();
-
     if let Ok(search_response) = &mut search_response_result {
-        search_response.elapsed_time_micros = elapsed.as_micros() as u64;
+        search_response.elapsed_time_micros = start_instant.elapsed().as_micros() as u64;
     }
-
-    let label_values = if search_response_result.is_ok() {
-        ["success"]
-    } else {
-        ["error"]
-    };
-    SEARCH_METRICS
-        .root_search_requests_total
-        .with_label_values(label_values)
-        .inc();
-    SEARCH_METRICS
-        .root_search_request_duration_seconds
-        .with_label_values(label_values)
-        .observe(elapsed.as_secs_f64());
-    SEARCH_METRICS
-        .root_search_targeted_splits
-        .with_label_values(label_values)
-        .observe(num_splits as f64);
 
     search_response_result
 }

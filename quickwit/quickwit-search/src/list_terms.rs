@@ -39,7 +39,7 @@ use crate::search_permit_provider::compute_initial_memory_allocation;
 use crate::{ClusterClient, SearchError, SearchJob, SearcherContext, resolve_index_patterns};
 
 /// Performs a distributed list terms.
-/// 1. Sends leaf request over gRPC to multiple leaf nodes.
+/// 1. Sends leaf requests over gRPC to multiple leaf nodes.
 /// 2. Merges the search results.
 /// 3. Builds the response and returns.
 /// this is much simpler than `root_search` as it doesn't need to get actual docs.
