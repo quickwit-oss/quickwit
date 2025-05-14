@@ -19,7 +19,6 @@ mod default_field_search;
 mod error;
 mod filter;
 mod flatten_tags;
-mod normalize_field;
 mod path_access;
 mod pipeline;
 mod processed_log;
