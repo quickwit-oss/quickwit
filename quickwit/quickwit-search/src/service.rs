@@ -12,13 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::future::Future;
 use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::task::{Context, Poll, ready};
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use bytes::Bytes;
+use pin_project::{pin_project, pinned_drop};
 use quickwit_common::uri::Uri;
 use quickwit_config::SearcherConfig;
 use quickwit_doc_mapper::DocMapper;
@@ -35,7 +38,7 @@ use quickwit_storage::{
     MemorySizedCache, QuickwitCache, SplitCache, StorageCache, StorageResolver,
 };
 use tantivy::aggregation::AggregationLimitsGuard;
-use tokio::sync::{Semaphore, oneshot};
+use tokio::sync::Semaphore;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
 use crate::leaf::multi_index_leaf_search;
@@ -203,17 +206,18 @@ impl SearchService for SearchServiceImpl {
             .iter()
             .map(|req| req.split_offsets.len())
             .sum::<usize>();
-        let completion_tx = start_leaf_search_metric_recording(num_splits).await;
-        let leaf_search_response_result = multi_index_leaf_search(
-            self.searcher_context.clone(),
-            leaf_search_request,
-            &self.storage_resolver,
-        )
-        .await;
 
-        completion_tx.send(leaf_search_response_result.is_ok()).ok();
-
-        leaf_search_response_result
+        LeafSearchMetricsFuture {
+            tracked: multi_index_leaf_search(
+                self.searcher_context.clone(),
+                leaf_search_request,
+                &self.storage_resolver,
+            ),
+            start: Instant::now(),
+            targeted_splits: num_splits,
+            status: None,
+        }
+        .await
     }
 
     async fn fetch_docs(
@@ -528,20 +532,24 @@ impl SearcherContext {
     }
 }
 
-/// Spawns a task that records leaf search metrics either
-/// - when the result is received through the returned channel (success or failure)
-/// - the returned channels are dropped (cancelled)
-#[must_use]
-async fn start_leaf_search_metric_recording(num_splits: usize) -> oneshot::Sender<bool> {
-    let (completion_tx, completion_rx) = tokio::sync::oneshot::channel();
-    let start = Instant::now();
+/// Wrapper around the search future to track metrics.
+#[pin_project(PinnedDrop)]
+struct LeafSearchMetricsFuture<F>
+where F: Future<Output = Result<LeafSearchResponse, SearchError>>
+{
+    #[pin]
+    tracked: F,
+    start: Instant,
+    targeted_splits: usize,
+    status: Option<&'static str>,
+}
 
-    tokio::spawn(async move {
-        let label_values = if let Ok(is_success) = completion_rx.await {
-            if is_success { ["success"] } else { ["error"] }
-        } else {
-            ["cancelled"]
-        };
+#[pinned_drop]
+impl<F> PinnedDrop for LeafSearchMetricsFuture<F>
+where F: Future<Output = Result<LeafSearchResponse, SearchError>>
+{
+    fn drop(self: Pin<&mut Self>) {
+        let label_values = [self.status.unwrap_or("cancelled")];
         SEARCH_METRICS
             .leaf_search_requests_total
             .with_label_values(label_values)
@@ -549,12 +557,27 @@ async fn start_leaf_search_metric_recording(num_splits: usize) -> oneshot::Sende
         SEARCH_METRICS
             .leaf_search_request_duration_seconds
             .with_label_values(label_values)
-            .observe(start.elapsed().as_secs_f64());
+            .observe(self.start.elapsed().as_secs_f64());
         SEARCH_METRICS
             .leaf_search_targeted_splits
             .with_label_values(label_values)
-            .observe(num_splits as f64);
-    });
+            .observe(self.targeted_splits as f64);
+    }
+}
 
-    completion_tx
+impl<F> Future for LeafSearchMetricsFuture<F>
+where F: Future<Output = Result<LeafSearchResponse, SearchError>>
+{
+    type Output = Result<LeafSearchResponse, SearchError>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+        let response = ready!(this.tracked.poll(cx));
+        *this.status = if response.is_ok() {
+            Some("success")
+        } else {
+            Some("error")
+        };
+        Poll::Ready(Ok(response?))
+    }
 }
