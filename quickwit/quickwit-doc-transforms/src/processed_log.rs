@@ -13,10 +13,12 @@
 // limitations under the License.
 
 use std::collections::HashMap;
+use std::ops::{Deref, DerefMut};
 use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use quickwit_datetime::{DateTimeInputFormat, parse_date_time_str, parse_timestamp};
+use serde::ser::SerializeStruct;
 use serde::{self, Deserialize, Serialize};
 use serde_json::Value;
 use serde_with::formats::CommaSeparator;
@@ -62,11 +64,12 @@ pub struct ProcessedLog {
     pub host: String,
     pub service: String,
     pub source: String,
-    pub tags: Vec<String>,
+
     /// E.g.
     /// tags:["env:dev", "region:us-east", "region:east"] =>
     /// tag: { "env": "dev", "region": ["us-east", "east"] }
-    pub tag: HashMap<String, StringOrVec>,
+    #[serde(flatten)]
+    pub tag: TagField,
     pub trace_id: Option<String>,
     pub span_id: Option<String>,
     pub custom: serde_json::Map<String, serde_json::Value>,
@@ -75,6 +78,57 @@ pub struct ProcessedLog {
     pub discovery_timestamp: i64,
     pub tiebreaker: i64,
     pub ingest_size_in_bytes: usize,
+}
+
+/// Special struct that serializes two different ways:
+/// tags:["env:dev", "region:us-east", "region:east"] =>
+/// tag: { "env": "dev", "region": ["us-east", "east"] }
+#[derive(Clone, Debug, Deserialize)]
+pub struct TagField {
+    pub tag: HashMap<String, StringOrVec>,
+}
+impl From<HashMap<String, StringOrVec>> for TagField {
+    fn from(tag: HashMap<String, StringOrVec>) -> Self {
+        TagField { tag }
+    }
+}
+impl TagField {
+    fn tags_vec(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        for (k, v) in &self.tag {
+            match v {
+                StringOrVec::String(s) => out.push(format!("{k}:{s}")),
+                StringOrVec::Vec(list) => {
+                    out.extend(list.iter().map(|s| format!("{k}:{s}")));
+                }
+            }
+        }
+        out.sort();
+        out
+    }
+}
+
+impl Serialize for TagField {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where S: serde::Serializer {
+        let mut st = serializer.serialize_struct("TagField", 2)?;
+        st.serialize_field("tag", &self.tag)?;
+        st.serialize_field("tags", &self.tags_vec())?;
+        st.end()
+    }
+}
+
+impl DerefMut for TagField {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.tag
+    }
+}
+impl Deref for TagField {
+    type Target = HashMap<String, StringOrVec>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.tag
+    }
 }
 
 static PREPROCESSING_PIPELINE: OnceLock<Pipeline> = OnceLock::new();
@@ -169,8 +223,7 @@ impl ProcessedLog {
             host: msg.hostname,
             service: msg.service,
             source: msg.ddsource,
-            tag: convert_tags(&tags),
-            tags,
+            tag: convert_tags(&tags).into(),
             id: Uuid::new_v4().to_string(),
             tiebreaker: rand::random(),
             discovery_timestamp: SystemTime::now()
