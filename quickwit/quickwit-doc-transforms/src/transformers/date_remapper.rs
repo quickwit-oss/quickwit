@@ -56,9 +56,7 @@ mod tests {
             .insert("timestamp".to_string(), json!("2021-01-01T00:00:00Z"));
 
         let step = DateRemapStep {
-            sources: vec![ParsedPath {
-                segments: vec!["timestamp".into()],
-            }],
+            sources: vec!["timestamp".into()],
         };
 
         step.apply(&mut log).unwrap();

@@ -60,6 +60,7 @@ pub fn is_core_attr(attribute: &str) -> bool {
 #[derive(Debug, Clone)]
 pub struct ParsedPath {
     pub segments: Vec<String>,
+    pub original: String,
 }
 impl ParsedPath {
     pub fn iter(&self) -> impl Iterator<Item = &str> {
@@ -84,7 +85,10 @@ pub fn parse_path(path_str: &str) -> ParsedPath {
         .split('.')
         .map(|s| s.to_string())
         .collect::<Vec<_>>();
-    ParsedPath { segments }
+    ParsedPath {
+        segments,
+        original: path_str.to_string(),
+    }
 }
 
 /// Recursively get a reference to a nested path, if it exists.

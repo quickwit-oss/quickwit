@@ -82,9 +82,7 @@ mod tests {
 
         // Create the RemapStep
         let step = CoreStringAttrRemapStep {
-            sources: vec![ParsedPath {
-                segments: vec!["foo".into()],
-            }],
+            sources: vec!["foo".into()],
             core_attr: CoreStringAttr::Message,
         };
 

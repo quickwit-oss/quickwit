@@ -159,11 +159,11 @@ pub enum PipelineStepConfig {
     ///     "sources": [
     ///         "dd.env"
     ///     ],
-    ///     "sourceType": "attribute",
+    ///     "source_type": "attribute",
     ///     "target": "env",
-    ///     "targetType": "tag",
-    ///     "preserveSource": true,
-    ///     "overrideOnConflict": false
+    ///     "target_type": "tag",
+    ///     "preserve_source": true,
+    ///     "override_on_conflict": false
     /// }
     AttributeRemapper {
         #[serde(flatten)]
@@ -171,8 +171,22 @@ pub enum PipelineStepConfig {
         sources: Vec<String>,
         target: String,
         #[serde(default)]
-        #[serde(rename = "preserveSource")]
-        preserve_original: bool,
+        #[serde(alias = "preserveSource")]
+        preserve_source: bool,
+        /// Override or not the target element if already set,
+        #[serde(alias = "overrideOnConflict")]
+        override_on_conflict: bool,
+        #[serde(default)]
+        #[serde(alias = "sourceType")]
+        source_type: AttrRemapperTargetType,
+        #[serde(default)]
+        #[serde(alias = "targetType")]
+        target_type: AttrRemapperTargetType,
+        /// If the target_type of the remapper is attribute, try to cast the value to a new
+        /// specific type. Not used for tags.
+        #[serde(default)]
+        #[serde(alias = "targetFormat")]
+        target_format: AttrRemapperTargetFormat,
     },
     /// Status remapper: remap a status field to a new location.
     /// Serde rename to `status-remapper` to keep compatible with logs pipelines
@@ -198,6 +212,7 @@ pub enum PipelineStepConfig {
         template: String,
         target: String,
         #[serde(default)]
+        #[serde(alias = "isReplaceMissing")]
         is_replace_missing: bool,
     },
     /// Copies a string value from `custom` to message field.
@@ -232,6 +247,30 @@ pub enum PipelineStepConfig {
         common: CommonConfig,
         sources: Vec<String>,
     },
+}
+
+#[derive(Default, Clone, Copy, Debug, Serialize, Deserialize, Eq, PartialEq, Hash)]
+pub enum AttrRemapperTargetFormat {
+    #[default]
+    #[serde(rename = "auto")]
+    Auto,
+    #[serde(rename = "string")]
+    Str,
+    #[serde(rename = "integer")]
+    Integer,
+    #[serde(rename = "double")]
+    Double,
+}
+
+#[derive(Default, Clone, Copy, Debug, Serialize, Deserialize, Eq, PartialEq, Hash)]
+pub enum AttrRemapperTargetType {
+    /// A tag target.
+    #[serde(rename = "tag")]
+    Tag,
+    /// An attribute target.
+    #[default]
+    #[serde(rename = "attribute")]
+    Attribute,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq, Hash)]
@@ -323,7 +362,11 @@ pub fn build_step(cfg: &PipelineStepConfig) -> Result<Box<dyn PipelineStep>, Pip
             common,
             sources,
             target,
-            preserve_original,
+            preserve_source: preserve_original,
+            override_on_conflict,
+            source_type,
+            target_type,
+            target_format,
         } => {
             let filter = build_vrl_matcher_from_config(common)?;
             let sources = sources.iter().map(AsRef::as_ref).map(parse_path).collect();
@@ -332,6 +375,10 @@ pub fn build_step(cfg: &PipelineStepConfig) -> Result<Box<dyn PipelineStep>, Pip
                 sources,
                 to_path,
                 preserve_original: *preserve_original,
+                source_type: *source_type,
+                target_type: *target_type,
+                override_if_exists: *override_on_conflict,
+                target_format: *target_format,
             };
             Ok(Box::new(FilteredStep::new(filter, remap)))
         }
@@ -436,7 +483,11 @@ mod tests {
                 common: Default::default(),
                 sources: vec!["a".to_string()],
                 target: "b.c".to_string(),
-                preserve_original: false,
+                preserve_source: false,
+                source_type: AttrRemapperTargetType::Attribute,
+                target_type: AttrRemapperTargetType::Attribute,
+                override_on_conflict: false,
+                target_format: AttrRemapperTargetFormat::Auto,
             }],
         }];
 
@@ -528,7 +579,11 @@ overrideOnConflict: false
                 common,
                 sources: from,
                 target: to,
-                preserve_original,
+                preserve_source: preserve_original,
+                override_on_conflict: _,
+                source_type: _,
+                target_type: _,
+                target_format: _,
             } => {
                 // The filter is defaulted to an empty string.
                 assert_eq!(common.filter.query, "");

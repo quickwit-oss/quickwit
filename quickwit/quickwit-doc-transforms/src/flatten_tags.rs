@@ -14,7 +14,7 @@
 
 use std::collections::HashMap;
 
-use crate::StringOrVec;
+use crate::string_or_vec::StringOrVec;
 
 pub fn convert_tags(orig: &[String]) -> HashMap<String, StringOrVec> {
     let mut object_map: HashMap<String, StringOrVec> = HashMap::new();
