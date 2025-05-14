@@ -13,13 +13,17 @@
 // limitations under the License.
 
 use std::collections::{HashMap, HashSet};
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::task::{Context as TaskContext, Poll, ready};
 use std::time::Duration;
 
 use anyhow::Context;
 use futures::future::try_join_all;
 use itertools::Itertools;
+use pin_project::{pin_project, pinned_drop};
 use quickwit_common::pretty::PrettySample;
 use quickwit_common::shared_consts;
 use quickwit_common::uri::Uri;
@@ -45,7 +49,7 @@ use tantivy::aggregation::agg_result::AggregationResults;
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tantivy::collector::Collector;
 use tantivy::schema::{Field, FieldEntry, FieldType, Schema};
-use tokio::sync::oneshot;
+use tokio::time::Instant;
 use tracing::{debug, info_span, instrument};
 
 use crate::cluster_client::ClusterClient;
@@ -1143,6 +1147,42 @@ async fn refine_and_list_matches(
     Ok(split_metadatas)
 }
 
+/// Fetches the list of splits and their metadata from the metastore
+async fn plan_splits_for_root_search(
+    search_request: &mut SearchRequest,
+    metastore: &mut MetastoreServiceClient,
+) -> crate::Result<(Vec<SplitMetadata>, IndexesMetasForLeafSearch)> {
+    let list_indexes_metadatas_request = ListIndexesMetadataRequest {
+        index_id_patterns: search_request.index_id_patterns.clone(),
+    };
+    let indexes_metadata: Vec<IndexMetadata> = metastore
+        .list_indexes_metadata(list_indexes_metadatas_request)
+        .await?
+        .deserialize_indexes_metadata()
+        .await?;
+
+    check_all_index_metadata_found(&indexes_metadata[..], &search_request.index_id_patterns[..])?;
+
+    if indexes_metadata.is_empty() {
+        return Ok((Vec::new(), HashMap::default()));
+    }
+
+    let request_metadata = validate_request_and_build_metadata(&indexes_metadata, search_request)?;
+    let split_metadatas = refine_and_list_matches(
+        metastore,
+        search_request,
+        indexes_metadata,
+        request_metadata.query_ast_resolved,
+        request_metadata.sort_fields_is_datetime,
+        request_metadata.timestamp_field_opt,
+    )
+    .await?;
+    Ok((
+        split_metadatas,
+        request_metadata.indexes_meta_for_leaf_search,
+    ))
+}
+
 /// Performs a distributed search.
 /// 1. Sends leaf request over gRPC to multiple leaf nodes.
 /// 2. Merges the search results.
@@ -1156,47 +1196,13 @@ pub async fn root_search(
     cluster_client: &ClusterClient,
 ) -> crate::Result<SearchResponse> {
     let start_instant = tokio::time::Instant::now();
-    let (search_result_sender, target_split_sender) =
-        start_root_search_metric_recording(start_instant).await;
-    let list_indexes_metadatas_request = ListIndexesMetadataRequest {
-        index_id_patterns: search_request.index_id_patterns.clone(),
-    };
-    let indexes_metadata: Vec<IndexMetadata> = metastore
-        .list_indexes_metadata(list_indexes_metadatas_request)
-        .await?
-        .deserialize_indexes_metadata()
-        .await?;
 
-    check_all_index_metadata_found(&indexes_metadata[..], &search_request.index_id_patterns[..])?;
-
-    if indexes_metadata.is_empty() {
-        // We go through root_search_aux instead of directly
-        // returning an empty response to make sure we generate
-        // a (pretty useless) scroll id if requested.
-        let search_response_result = root_search_aux(
-            searcher_context,
-            &HashMap::default(),
-            search_request,
-            Vec::new(),
-            cluster_client,
-        )
-        .await;
-        target_split_sender.send(0).ok();
-        search_result_sender
-            .send(search_response_result.is_ok())
-            .ok();
-        return search_response_result;
+    let (split_metadatas, indexes_meta_for_leaf_search) = RootSearchMetricsFuture {
+        start: start_instant,
+        tracked: plan_splits_for_root_search(&mut search_request, &mut metastore),
+        is_success: None,
+        step: RootSearchMetricsStep::Plan,
     }
-
-    let request_metadata = validate_request_and_build_metadata(&indexes_metadata, &search_request)?;
-    let split_metadatas = refine_and_list_matches(
-        &mut metastore,
-        &mut search_request,
-        indexes_metadata,
-        request_metadata.query_ast_resolved,
-        request_metadata.sort_fields_is_datetime,
-        request_metadata.timestamp_field_opt,
-    )
     .await?;
 
     let num_docs: usize = split_metadatas.iter().map(|split| split.num_docs).sum();
@@ -1204,26 +1210,26 @@ pub async fn root_search(
     let current_span = tracing::Span::current();
     current_span.record("num_docs", num_docs);
     current_span.record("num_splits", num_splits);
-    target_split_sender.send(num_splits).ok();
 
-    let mut search_response_result = root_search_aux(
-        searcher_context,
-        &request_metadata.indexes_meta_for_leaf_search,
-        search_request,
-        split_metadatas,
-        cluster_client,
-    )
+    let mut search_response_result = RootSearchMetricsFuture {
+        start: start_instant,
+        tracked: root_search_aux(
+            searcher_context,
+            &indexes_meta_for_leaf_search,
+            search_request,
+            split_metadatas,
+            cluster_client,
+        ),
+        is_success: None,
+        step: RootSearchMetricsStep::Exec {
+            targeted_splits: num_splits,
+        },
+    }
     .await;
 
-    let elapsed = start_instant.elapsed();
-
     if let Ok(search_response) = &mut search_response_result {
-        search_response.elapsed_time_micros = elapsed.as_micros() as u64;
+        search_response.elapsed_time_micros = start_instant.elapsed().as_micros() as u64;
     }
-
-    search_result_sender
-        .send(search_response_result.is_ok())
-        .ok();
 
     search_response_result
 }
@@ -1754,27 +1760,41 @@ pub fn jobs_to_fetch_docs_requests(
     Ok(fetch_docs_requests)
 }
 
-/// Spawns a task that records root search metrics either
-/// - when results are received through the returned channels (success or failure)
-/// - the returned channels are dropped (cancelled)
-#[must_use]
-async fn start_root_search_metric_recording(
-    start_instant: tokio::time::Instant,
-) -> (oneshot::Sender<bool>, oneshot::Sender<usize>) {
-    let (completion_tx, completion_rx) = oneshot::channel();
-    let (target_split_tx, target_split_rx) = oneshot::channel();
-    tokio::spawn(async move {
-        let (completion_res, target_split_res) = tokio::join!(completion_rx, target_split_rx);
+enum RootSearchMetricsStep {
+    Plan,
+    Exec { targeted_splits: usize },
+}
 
-        let (label_values, num_splits) = match (completion_res, target_split_res) {
-            (Ok(true), Ok(num_splits)) => (["success"], num_splits),
-            (Ok(false), Ok(num_splits)) => (["error"], num_splits),
-            (Err(_), Ok(num_splits)) => (["cancelled"], num_splits),
-            (Err(_), Err(_)) => (["planning-failed"], 0),
-            // Should not happen, num split is resolved before the query
-            (Ok(_), Err(_)) => (["unexpected"], 0),
+/// Wrapper around the plan and search futures to track metrics.
+#[pin_project(PinnedDrop)]
+struct RootSearchMetricsFuture<F> {
+    #[pin]
+    tracked: F,
+    start: Instant,
+    step: RootSearchMetricsStep,
+    is_success: Option<bool>,
+}
+
+#[pinned_drop]
+impl<F> PinnedDrop for RootSearchMetricsFuture<F> {
+    fn drop(self: Pin<&mut Self>) {
+        let (targeted_splits, status) = match (&self.step, self.is_success) {
+            // is is a partial success, actual success is recorded during the search step
+            (RootSearchMetricsStep::Plan, Some(true)) => return,
+            (RootSearchMetricsStep::Plan, Some(false)) => (0, "plan-error"),
+            (RootSearchMetricsStep::Plan, None) => (0, "plan-cancelled"),
+            (RootSearchMetricsStep::Exec { targeted_splits }, Some(true)) => {
+                (*targeted_splits, "success")
+            }
+            (RootSearchMetricsStep::Exec { targeted_splits }, Some(false)) => {
+                (*targeted_splits, "error")
+            }
+            (RootSearchMetricsStep::Exec { targeted_splits }, None) => {
+                (*targeted_splits, "cancelled")
+            }
         };
 
+        let label_values = [status];
         SEARCH_METRICS
             .root_search_requests_total
             .with_label_values(label_values)
@@ -1782,13 +1802,25 @@ async fn start_root_search_metric_recording(
         SEARCH_METRICS
             .root_search_request_duration_seconds
             .with_label_values(label_values)
-            .observe(start_instant.elapsed().as_secs_f64());
+            .observe(self.start.elapsed().as_secs_f64());
         SEARCH_METRICS
             .root_search_targeted_splits
             .with_label_values(label_values)
-            .observe(num_splits as f64);
-    });
-    (completion_tx, target_split_tx)
+            .observe(targeted_splits as f64);
+    }
+}
+
+impl<F, R, E> Future for RootSearchMetricsFuture<F>
+where F: Future<Output = Result<R, E>>
+{
+    type Output = Result<R, E>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut TaskContext<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+        let response = ready!(this.tracked.poll(cx));
+        *this.is_success = Some(response.is_ok());
+        Poll::Ready(Ok(response?))
+    }
 }
 
 #[cfg(test)]
