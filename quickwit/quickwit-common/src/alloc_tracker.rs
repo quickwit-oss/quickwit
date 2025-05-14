@@ -90,11 +90,11 @@ impl Allocations {
         }
     }
 
-    /// Records an allocation and occasionally reports the cumulated allocation size
-    /// for the provided callsite_hash.
+    /// Records an allocation and occasionally reports the cumulated allocation
+    /// size for the provided callsite_hash.
     ///
-    /// Every time a the total allocated size with the same callsite_hash
-    /// exceeds the previous reported value by at least reporting_interval, that
+    /// Every time the total allocated size for a given callsite_hash exceeds
+    /// the previous reported value by at least reporting_interval, the new total
     /// allocated size is reported.
     ///
     /// WARN: this function should not allocate!
@@ -111,7 +111,7 @@ impl Allocations {
             return AllocRecordingResponse::TrackerFull("memory_locations");
         }
         if self.max_tracked_callsites == self.callsite_statistics.len() {
-            return AllocRecordingResponse::TrackerFull("memory_locations");
+            return AllocRecordingResponse::TrackerFull("tracked_callsites");
         }
         self.memory_locations.insert(
             ptr as usize,
@@ -144,6 +144,8 @@ impl Allocations {
 
     /// Updates the the memory location and size of an existing allocation. Only
     /// update the statistics if the original allocation was recorded.
+    ///
+    /// WARN: this function should not allocate!
     pub fn record_reallocation(
         &mut self,
         new_size_bytes: u64,

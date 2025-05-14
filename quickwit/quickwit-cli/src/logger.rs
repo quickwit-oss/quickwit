@@ -213,6 +213,9 @@ impl FormatFields<'_> for FieldFormat {
 }
 
 /// Logger configurations specific to the jemalloc profiler.
+///
+/// A custom event formatter is used to print the backtrace of the
+/// profiling events.
 #[cfg(feature = "jemalloc-profiled")]
 pub(super) mod jemalloc_profiled {
     use std::fmt;
@@ -232,8 +235,8 @@ pub(super) mod jemalloc_profiled {
 
     /// An event formatter specific to the memory profiler output.
     ///
-    /// Besides printing the spans and the fields of the tracing event, it also
-    /// displays a backtrace.
+    /// Also displays a backtrace after spans and the fields of the tracing
+    /// event (into separate lines).
     struct ProfilingFormat {
         time_formatter: UtcTime<Vec<BorrowedFormatItem<'static>>>,
     }
@@ -298,10 +301,7 @@ pub(super) mod jemalloc_profiled {
     }
 
     fn profiler_tracing_filter(metadata: &Metadata) -> bool {
-        metadata.is_span()
-            || (metadata.is_event()
-                && metadata.level() == &Level::TRACE
-                && metadata.target() == JEMALLOC_PROFILER_TARGET)
+        metadata.is_span() || (metadata.is_event() && metadata.target() == JEMALLOC_PROFILER_TARGET)
     }
 
     /// Configures the regular logging layer and a specific layer that gathers

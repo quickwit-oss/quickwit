@@ -29,10 +29,12 @@ use crate::alloc_tracker::{
 const DEFAULT_MIN_ALLOC_BYTES_FOR_PROFILING: u64 = 64 * 1024;
 const DEFAULT_REPORTING_INTERVAL_BYTES: u64 = 1024 * 1024 * 1024;
 
+/// This custom target name is used to filter profiling events in the tracing
+/// subscriber. It is also included in the printed log.
 pub const JEMALLOC_PROFILER_TARGET: &str = "jemprof";
 
 /// Atomics are used to communicate configurations between the start/stop
-/// endpoints and the JemallocProfiled allocator wrapper.
+/// endpoints and the [JemallocProfiled] allocator wrapper.
 ///
 /// The flags are padded to avoid false sharing of the CPU cache line between
 /// threads. 128 bytes is the cache line size on x86_64 and arm64.
@@ -130,11 +132,13 @@ pub fn stop_profiling() {
 
 /// Wraps the Jemalloc global allocator calls with tracking routines.
 ///
-/// The tracking routines are called only when [ENABLED] is set to true (calling
-/// [start_profiling()]), but we don't enforce any synchronization (we load it with
-/// Ordering::Relaxed) because it's fine to miss or record extra allocation events.
+/// The tracking routines are called only when FLAGS.enabled is set to true
+/// (calling [start_profiling()]). We load it with [Ordering::Relaxed] because
+/// it's fine to miss or record extra allocation events and prefer limiting the
+/// performance impact when profiling is not enabled.
 ///
-/// It's important to ensure that no allocations are performed inside the allocator!
+/// Note: It's important to ensure that no allocations are performed inside the
+/// allocator! It can cause an abort, a panic or even a deadlock.
 pub struct JemallocProfiled(pub Jemalloc);
 
 unsafe impl GlobalAlloc for JemallocProfiled {
@@ -176,13 +180,13 @@ unsafe impl GlobalAlloc for JemallocProfiled {
 
 /// Prints both a backtrace and a Tokio tracing log
 ///
-/// Warning: stdout might allocate a buffer on first use
+/// Warning: stdout writer might allocate a buffer on first use
 fn identify_callsite(callsite_hash: u64, stat: AllocStat) {
     // To generate a complete trace:
     // - tokio/tracing feature must be enabled, otherwise un-instrumented tasks will not propagate
     //   parent spans
-    // - the tracing fmt subscriber filter must keep all spans for this event (TRACE level)
-    // See the logger configuration for more details.
+    // - the tracing fmt subscriber filter must keep all spans for this event (TRACE level). See the
+    //   logger configuration for more details.
     trace!(target: JEMALLOC_PROFILER_TARGET, callsite=callsite_hash, allocs=stat.count, size=%stat.size);
 }
 
@@ -195,7 +199,7 @@ fn backtrace_hash() -> u64 {
     hasher.finish()
 }
 
-/// Warning: allocating inside this function can cause an error (abort, panic or even deadlock).
+/// Warning: this function should not allocate!
 #[cold]
 fn track_alloc_call(ptr: *mut u8, layout: Layout) {
     if layout.size() >= FLAGS.min_alloc_bytes_for_profiling.load(Ordering::Relaxed) as usize {
@@ -212,7 +216,7 @@ fn track_alloc_call(ptr: *mut u8, layout: Layout) {
             }
             AllocRecordingResponse::TrackerFull(table_name) => {
                 // this message might be displayed multiple times but that's fine
-                // warning: stdout might allocate a buffer on first use
+                // warning: stdout writer might allocate a buffer on first use
                 error!("heap profiling stopped, {table_name} full");
                 FLAGS.enabled.store(false, Ordering::Relaxed);
             }
@@ -222,7 +226,7 @@ fn track_alloc_call(ptr: *mut u8, layout: Layout) {
     }
 }
 
-/// Warning: allocating inside this function can cause an error (abort, panic or even deadlock).
+/// Warning: this function should not allocate!
 #[cold]
 fn track_dealloc_call(ptr: *mut u8, layout: Layout) {
     if layout.size() >= FLAGS.min_alloc_bytes_for_profiling.load(Ordering::Relaxed) as usize {
@@ -230,20 +234,15 @@ fn track_dealloc_call(ptr: *mut u8, layout: Layout) {
     }
 }
 
-/// Warning: allocating inside this function can cause an error (abort, panic or even deadlock).
+/// Warning: this function should not allocate!
 #[cold]
-fn track_realloc_call(
-    old_ptr: *mut u8,
-    new_pointer: *mut u8,
-    current_layout: Layout,
-    new_size: usize,
-) {
+fn track_realloc_call(old_ptr: *mut u8, new_ptr: *mut u8, current_layout: Layout, new_size: usize) {
     if current_layout.size() >= FLAGS.min_alloc_bytes_for_profiling.load(Ordering::Relaxed) as usize
     {
         let recording_response = ALLOCATION_TRACKER.lock().unwrap().record_reallocation(
             new_size as u64,
             old_ptr,
-            new_pointer,
+            new_ptr,
         );
 
         match recording_response {
