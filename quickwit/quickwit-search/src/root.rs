@@ -1204,7 +1204,7 @@ pub async fn root_search(
     let current_span = tracing::Span::current();
     current_span.record("num_docs", num_docs);
     current_span.record("num_splits", num_splits);
-    target_split_sender.send(0).ok();
+    target_split_sender.send(num_splits).ok();
 
     let mut search_response_result = root_search_aux(
         searcher_context,
@@ -1761,17 +1761,19 @@ pub fn jobs_to_fetch_docs_requests(
 async fn start_root_search_metric_recording(
     start_instant: tokio::time::Instant,
 ) -> (oneshot::Sender<bool>, oneshot::Sender<usize>) {
-    let (completion_tx, completion_rx) = tokio::sync::oneshot::channel();
-    let (target_split_tx, target_split_rx) = tokio::sync::oneshot::channel();
+    let (completion_tx, completion_rx) = oneshot::channel();
+    let (target_split_tx, target_split_rx) = oneshot::channel();
     tokio::spawn(async move {
         let (completion_res, target_split_res) = tokio::join!(completion_rx, target_split_rx);
-        let label_values = if let Ok(is_success) = completion_res {
-            if is_success { ["success"] } else { ["error"] }
-        } else {
-            ["cancelled"]
-        };
 
-        let num_splits = target_split_res.unwrap_or(0);
+        let (label_values, num_splits) = match (completion_res, target_split_res) {
+            (Ok(true), Ok(num_splits)) => (["success"], num_splits),
+            (Ok(false), Ok(num_splits)) => (["error"], num_splits),
+            (Err(_), Ok(num_splits)) => (["cancelled"], num_splits),
+            (Err(_), Err(_)) => (["planning-failed"], 0),
+            // Should not happen, num split is resolved before the query
+            (Ok(_), Err(_)) => (["unexpected"], 0),
+        };
 
         SEARCH_METRICS
             .root_search_requests_total
