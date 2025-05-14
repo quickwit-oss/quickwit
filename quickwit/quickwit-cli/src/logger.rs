@@ -40,6 +40,8 @@ use crate::QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY;
 #[cfg(feature = "tokio-console")]
 use crate::QW_ENABLE_TOKIO_CONSOLE_ENV_KEY;
 
+/// Load the default logging filter from the environment. The filter can later
+/// be updated using the result callback of [setup_logging_and_tracing].
 fn startup_env_filter(level: Level) -> anyhow::Result<EnvFilter> {
     let env_filter = env::var("RUST_LOG")
         .map(|_| EnvFilter::from_default_env())
@@ -115,30 +117,14 @@ pub fn setup_logging_and_tracing(
                 .fmt_fields(fmt_fields)
                 .with_ansi(ansi_colors),
         );
-        // The the jemalloc profiler formatter disables the env filter reloading
-        // because the layer seemed to overwrite the TRACE level span filter.
         #[cfg(feature = "jemalloc-profiled")]
-        let registry = registry
-            .with(
-                tracing_subscriber::fmt::layer()
-                    .event_format(jemalloc_profiled::ProfilingFormat::default())
-                    .fmt_fields(DefaultFields::new())
-                    .with_ansi(ansi_colors)
-                    .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
-                        metadata.is_span()
-                            || (metadata.is_event()
-                                && metadata.level() == &Level::TRACE
-                                && metadata.target()
-                                    == quickwit_common::jemalloc_profiled::JEMALLOC_PROFILER_TARGET)
-                    })),
-            )
-            .with(
-                tracing_subscriber::fmt::layer()
-                    .event_format(event_format)
-                    .fmt_fields(fmt_fields)
-                    .with_ansi(ansi_colors)
-                    .with_filter(startup_env_filter(level)?),
-            );
+        let registry = jemalloc_profiled::configure_registry(
+            registry,
+            event_format,
+            fmt_fields,
+            ansi_colors,
+            level,
+        )?;
 
         registry
             .try_init()
@@ -226,25 +212,29 @@ impl FormatFields<'_> for FieldFormat {
     }
 }
 
+/// Logger configurations specific to the jemalloc profiler.
 #[cfg(feature = "jemalloc-profiled")]
 pub(super) mod jemalloc_profiled {
     use std::fmt;
 
     use quickwit_common::jemalloc_profiled::JEMALLOC_PROFILER_TARGET;
     use time::format_description::BorrowedFormatItem;
-    use tracing::{Event, Subscriber};
-    use tracing_subscriber::fmt::format::Writer;
+    use tracing::{Event, Level, Metadata, Subscriber};
+    use tracing_subscriber::Layer;
+    use tracing_subscriber::filter::filter_fn;
+    use tracing_subscriber::fmt::format::{DefaultFields, Writer};
     use tracing_subscriber::fmt::time::{FormatTime, UtcTime};
     use tracing_subscriber::fmt::{FmtContext, FormatEvent, FormatFields, FormattedFields};
+    use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::registry::LookupSpan;
 
-    use super::time_formatter;
+    use super::{EventFormat, FieldFormat, startup_env_filter, time_formatter};
 
     /// An event formatter specific to the memory profiler output.
     ///
     /// Besides printing the spans and the fields of the tracing event, it also
     /// displays a backtrace.
-    pub struct ProfilingFormat {
+    struct ProfilingFormat {
         time_formatter: UtcTime<Vec<BorrowedFormatItem<'static>>>,
     }
 
@@ -305,5 +295,45 @@ pub(super) mod jemalloc_profiled {
             });
             Ok(())
         }
+    }
+
+    fn profiler_tracing_filter(metadata: &Metadata) -> bool {
+        metadata.is_span()
+            || (metadata.is_event()
+                && metadata.level() == &Level::TRACE
+                && metadata.target() == JEMALLOC_PROFILER_TARGET)
+    }
+
+    /// Configures the regular logging layer and a specific layer that gathers
+    /// extra debug information for the jemalloc profiler.
+    ///
+    /// The the jemalloc profiler formatter disables the env filter reloading
+    /// because the [tracing_subscriber::reload::Layer] seems to overwrite the
+    /// TRACE level span filter even though it's applied to a separate layer.
+    pub(super) fn configure_registry<S>(
+        registry: S,
+        event_format: EventFormat<'static>,
+        fmt_fields: FieldFormat,
+        ansi_colors: bool,
+        level: Level,
+    ) -> anyhow::Result<impl Subscriber + for<'span> LookupSpan<'span>>
+    where
+        S: Subscriber + for<'span> LookupSpan<'span>,
+    {
+        Ok(registry
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .event_format(ProfilingFormat::default())
+                    .fmt_fields(DefaultFields::new())
+                    .with_ansi(ansi_colors)
+                    .with_filter(filter_fn(profiler_tracing_filter)),
+            )
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .event_format(event_format)
+                    .fmt_fields(fmt_fields)
+                    .with_ansi(ansi_colors)
+                    .with_filter(startup_env_filter(level)?),
+            ))
     }
 }
