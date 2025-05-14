@@ -142,7 +142,7 @@ impl Allocations {
         }
     }
 
-    /// Updates the the memory location and size of an existing allocation. Only
+    /// Updates the memory location and size of an existing allocation. Only
     /// update the statistics if the original allocation was recorded.
     ///
     /// WARN: this function should not allocate!
