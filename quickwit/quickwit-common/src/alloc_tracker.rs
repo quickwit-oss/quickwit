@@ -77,6 +77,15 @@ pub enum AllocRecordingResponse {
     NotStarted,
 }
 
+pub enum ReallocRecordingResponse {
+    ThresholdExceeded {
+        statistics: Statistic,
+        callsite_hash: u64,
+    },
+    ThresholdNotExceeded,
+    NotStarted,
+}
+
 /// Records an allocation and occasionally reports the cumulated allocation size
 /// for the provided callsite_hash.
 ///
@@ -129,6 +138,58 @@ pub fn record_allocation(
     }
 }
 
+/// Updates the the memory location and size of an existing allocation. Only
+/// update the statistics if the original allocation was recorded.
+pub fn record_reallocation(
+    new_size_bytes: u64,
+    old_ptr: *mut u8,
+    new_ptr: *mut u8,
+) -> ReallocRecordingResponse {
+    let mut guard = ALLOCATION_TRACKER.lock().unwrap();
+    let Status::Started { reporting_interval } = guard.status else {
+        return ReallocRecordingResponse::NotStarted;
+    };
+    let (callsite_hash, old_size_bytes) = if old_ptr != new_ptr {
+        let Some(old_alloc) = guard.memory_locations.remove(&(old_ptr as usize)) else {
+            return ReallocRecordingResponse::ThresholdNotExceeded;
+        };
+        guard.memory_locations.insert(
+            new_ptr as usize,
+            Allocation {
+                callsite_hash: old_alloc.callsite_hash,
+                size: ByteSize(new_size_bytes),
+            },
+        );
+        (old_alloc.callsite_hash, old_alloc.size.0)
+    } else {
+        let Some(alloc) = guard.memory_locations.get_mut(&(old_ptr as usize)) else {
+            return ReallocRecordingResponse::ThresholdNotExceeded;
+        };
+        alloc.size = ByteSize(new_size_bytes);
+        (alloc.callsite_hash, alloc.size.0)
+    };
+
+    let delta = new_size_bytes as i64 - old_size_bytes as i64;
+
+    let Some(current_stat) = guard.callsite_statistics.get_mut(&callsite_hash) else {
+        // tables are inconsistent, this should not happen
+        return ReallocRecordingResponse::ThresholdNotExceeded;
+    };
+    current_stat.size = ByteSize((current_stat.size.0 as i64 + delta) as u64);
+    let new_threshold_exceeded =
+        current_stat.size > (current_stat.last_report + reporting_interval);
+    if new_threshold_exceeded {
+        let reported_statistic = *current_stat;
+        current_stat.last_report = current_stat.size;
+        ReallocRecordingResponse::ThresholdExceeded {
+            statistics: reported_statistic,
+            callsite_hash,
+        }
+    } else {
+        ReallocRecordingResponse::ThresholdNotExceeded
+    }
+}
+
 /// WARN: this function should not allocate!
 pub fn record_deallocation(ptr: *mut u8) {
     let mut guard = ALLOCATION_TRACKER.lock().unwrap();
@@ -157,7 +218,6 @@ pub fn record_deallocation(ptr: *mut u8) {
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
 
     #[test]
@@ -204,6 +264,55 @@ mod tests {
 
     #[test]
     #[serial_test::file_serial]
+    fn test_record_allocation_and_reallocation() {
+        init(2000);
+        let callsite_hash_1 = 777;
+
+        let ptr_1 = 0x1 as *mut u8;
+        let response = record_allocation(callsite_hash_1, 1500, ptr_1);
+        assert!(matches!(
+            response,
+            AllocRecordingResponse::ThresholdNotExceeded
+        ));
+
+        let ptr_2 = 0x2 as *mut u8;
+        let response = record_allocation(callsite_hash_1, 1500, ptr_2);
+        let AllocRecordingResponse::ThresholdExceeded(statistic) = response else {
+            panic!("Expected ThresholdExceeded response");
+        };
+        assert_eq!(statistic.count, 2);
+        assert_eq!(statistic.size, ByteSize(3000));
+        assert_eq!(statistic.last_report, ByteSize(0));
+
+        record_reallocation(2000, ptr_1, ptr_1);
+        assert!(matches!(
+            response,
+            AllocRecordingResponse::ThresholdNotExceeded
+        ));
+
+        record_reallocation(3000, ptr_1, ptr_1);
+        assert!(matches!(
+            response,
+            AllocRecordingResponse::ThresholdNotExceeded
+        ));
+
+        let ptr_3 = 0x3 as *mut u8;
+        record_reallocation(1500, ptr_1, ptr_3);
+        assert!(matches!(
+            response,
+            AllocRecordingResponse::ThresholdNotExceeded
+        ));
+
+        // once an existing allocation moved, it's previous location can be re-allocated
+        let response = record_allocation(callsite_hash_1, 1500, ptr_1);
+        assert!(matches!(
+            response,
+            AllocRecordingResponse::ThresholdNotExceeded
+        ));
+    }
+
+    #[test]
+    #[serial_test::file_serial]
     fn test_tracker_full() {
         init(1024 * 1024 * 1024);
         let memory_locations_capacity = ALLOCATION_TRACKER
@@ -220,10 +329,30 @@ mod tests {
                 AllocRecordingResponse::ThresholdNotExceeded
             ));
         }
+
+        // the map is full
+
         let response = record_allocation(777, 10, (memory_locations_capacity + 1) as *mut u8);
         assert!(matches!(
             response,
             AllocRecordingResponse::TrackerFull("memory_locations")
+        ));
+        // make sure that the map didn't grow
+        let current_memory_locations_capacity = ALLOCATION_TRACKER
+            .lock()
+            .unwrap()
+            .memory_locations
+            .capacity();
+        assert_eq!(current_memory_locations_capacity, memory_locations_capacity);
+
+        let response = record_reallocation(
+            10,
+            std::ptr::null_mut::<u8>(),
+            (memory_locations_capacity + 1) as *mut u8,
+        );
+        assert!(matches!(
+            response,
+            ReallocRecordingResponse::ThresholdNotExceeded,
         ));
         // make sure that the map didn't grow
         let current_memory_locations_capacity = ALLOCATION_TRACKER

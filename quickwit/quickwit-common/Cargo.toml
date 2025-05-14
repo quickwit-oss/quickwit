@@ -51,6 +51,7 @@ tracing = { workspace = true }
 testsuite = []
 named_tasks = ["tokio/tracing"]
 jemalloc-profiled = [
+    "named_tasks",
     "dep:backtrace",
     "dep:tikv-jemallocator",
     "dep:tikv-jemalloc-ctl"

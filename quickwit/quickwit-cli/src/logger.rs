@@ -21,13 +21,13 @@ use opentelemetry::{KeyValue, global};
 use opentelemetry_sdk::propagation::TraceContextPropagator;
 use opentelemetry_sdk::trace::BatchConfigBuilder;
 use opentelemetry_sdk::{Resource, trace};
+use quickwit_common::jemalloc_profiled::JEMALLOC_PROFILER_TARGET;
 use quickwit_common::{get_bool_from_env, get_from_env_opt};
 use quickwit_serve::{BuildInfo, EnvFilterReloadFn};
 use time::format_description::BorrowedFormatItem;
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::field::RecordFields;
-use tracing_subscriber::filter::filter_fn;
 use tracing_subscriber::fmt::FmtContext;
 use tracing_subscriber::fmt::format::{
     DefaultFields, Format, FormatEvent, FormatFields, Full, Json, JsonFields, Writer,
@@ -116,22 +116,20 @@ pub fn setup_logging_and_tracing(
                 .fmt_fields(fmt_fields)
                 .with_ansi(ansi_colors),
         );
-        // the heap profiler disables the env filter reloading because it seemed
-        // to overwrite the profiling filter
+        // The the jemalloc profiler formatter disables the env filter reloading
+        // because the layer seemed to overwrite the TRACE level span filter.
         #[cfg(feature = "jemalloc-profiled")]
         let registry = registry
             .with(
                 tracing_subscriber::fmt::layer()
-                    .event_format(EventFormat::get_from_env())
-                    .fmt_fields(EventFormat::get_from_env().format_fields())
+                    .event_format(jemalloc_profiled::ProfilingFormat::default())
+                    .fmt_fields(DefaultFields::new())
                     .with_ansi(ansi_colors)
-                    .with_filter(filter_fn(|metadata| {
+                    .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
                         metadata.is_span()
                             || (metadata.is_event()
                                 && metadata.level() == &Level::TRACE
-                                && metadata
-                                    .target()
-                                    .starts_with("quickwit_common::jemalloc_profiled"))
+                                && metadata.target() == JEMALLOC_PROFILER_TARGET)
                     })),
             )
             .with(
@@ -154,6 +152,16 @@ pub fn setup_logging_and_tracing(
     }))
 }
 
+/// We do not rely on the RFC3339 implementation, because it has a nanosecond precision.
+/// See discussion here: https://github.com/time-rs/time/discussions/418
+fn time_formatter() -> UtcTime<Vec<BorrowedFormatItem<'static>>> {
+    let time_format = time::format_description::parse(
+        "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z",
+    )
+    .expect("time format description should be valid");
+    UtcTime::new(time_format)
+}
+
 enum EventFormat<'a> {
     Full(Format<Full, UtcTime<Vec<BorrowedFormatItem<'a>>>>),
     Json(Format<Json>),
@@ -170,17 +178,9 @@ impl EventFormat<'_> {
             let json_format = tracing_subscriber::fmt::format().json();
             EventFormat::Json(json_format)
         } else {
-            // We do not rely on the RFC3339 implementation, because it has a nanosecond precision.
-            // See discussion here: https://github.com/time-rs/time/discussions/418
-            let timer_format = time::format_description::parse(
-                "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z",
-            )
-            .expect("time format description should be valid");
-            let timer = UtcTime::new(timer_format);
-
             let full_format = tracing_subscriber::fmt::format()
                 .with_target(true)
-                .with_timer(timer);
+                .with_timer(time_formatter());
 
             EventFormat::Full(full_format)
         }
@@ -222,6 +222,88 @@ impl FormatFields<'_> for FieldFormat {
         match self {
             FieldFormat::Default(default_fields) => default_fields.format_fields(writer, fields),
             FieldFormat::Json(json_fields) => json_fields.format_fields(writer, fields),
+        }
+    }
+}
+
+#[cfg(feature = "jemalloc-profiled")]
+pub(super) mod jemalloc_profiled {
+    use std::fmt;
+
+    use quickwit_common::jemalloc_profiled::JEMALLOC_PROFILER_TARGET;
+    use time::format_description::BorrowedFormatItem;
+    use tracing::{Event, Subscriber};
+    use tracing_subscriber::fmt::format::Writer;
+    use tracing_subscriber::fmt::time::{FormatTime, UtcTime};
+    use tracing_subscriber::fmt::{FmtContext, FormatEvent, FormatFields, FormattedFields};
+    use tracing_subscriber::registry::LookupSpan;
+
+    use super::time_formatter;
+
+    /// An event formatter specific to the memory profiler output.
+    ///
+    /// Besides printing the spans and the fields of the tracing event, it also
+    /// displays a backtrace.
+    pub struct ProfilingFormat {
+        time_formatter: UtcTime<Vec<BorrowedFormatItem<'static>>>,
+    }
+
+    impl Default for ProfilingFormat {
+        fn default() -> Self {
+            Self {
+                time_formatter: time_formatter(),
+            }
+        }
+    }
+
+    impl<S, N> FormatEvent<S, N> for ProfilingFormat
+    where
+        S: Subscriber + for<'a> LookupSpan<'a>,
+        N: for<'a> FormatFields<'a> + 'static,
+    {
+        fn format_event(
+            &self,
+            ctx: &FmtContext<'_, S, N>,
+            mut writer: Writer<'_>,
+            event: &Event<'_>,
+        ) -> fmt::Result {
+            self.time_formatter.format_time(&mut writer)?;
+            write!(writer, " {JEMALLOC_PROFILER_TARGET} ")?;
+            if let Some(scope) = ctx.event_scope() {
+                let mut seen = false;
+
+                for span in scope.from_root() {
+                    write!(writer, "{}", span.metadata().name())?;
+                    seen = true;
+
+                    let ext = span.extensions();
+                    if let Some(fields) = &ext.get::<FormattedFields<N>>() {
+                        if !fields.is_empty() {
+                            write!(writer, "{{{}}}:", fields)?;
+                        }
+                    }
+                }
+
+                if seen {
+                    writer.write_char(' ')?;
+                }
+            };
+
+            ctx.format_fields(writer.by_ref(), event)?;
+            writeln!(writer)?;
+
+            // Print a backtrace to help idenify the callsite
+            backtrace::trace(|frame| {
+                backtrace::resolve_frame(frame, |symbol| {
+                    if let Some(symbole_name) = symbol.name() {
+                        let _ = writeln!(writer, "{}", symbole_name);
+                    } else {
+                        let _ = writeln!(writer, "symb failed");
+                    }
+                });
+                true
+            });
+            Ok(())
         }
     }
 }

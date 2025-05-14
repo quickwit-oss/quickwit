@@ -6745,6 +6745,7 @@ name = "quickwit-cli"
 version = "0.8.0"
 dependencies = [
  "anyhow",
+ "backtrace",
  "bytesize",
  "chrono",
  "clap",

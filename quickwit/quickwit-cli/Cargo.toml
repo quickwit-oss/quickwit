@@ -22,6 +22,7 @@ path = "src/generate_markdown.rs"
 
 [dependencies]
 anyhow = { workspace = true }
+backtrace = { workspace = true, optional = true }
 bytesize = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
@@ -82,6 +83,7 @@ quickwit-storage = { workspace = true, features = ["testsuite"] }
 [features]
 jemalloc = ["dep:tikv-jemalloc-ctl", "dep:tikv-jemallocator"]
 jemalloc-profiled = [
+  "dep:backtrace",
   "quickwit-common/jemalloc-profiled",
   "quickwit-serve/jemalloc-profiled"
 ]
@@ -134,7 +136,6 @@ release-macos-feature-vendored-set = [
 release-heap-profiled = [
   "release-feature-set",
   "jemalloc-profiled",
-  "tokio/tracing",
 ]
 
 [package.metadata.cargo-machete]
