@@ -35,7 +35,7 @@ use quickwit_storage::{
     MemorySizedCache, QuickwitCache, SplitCache, StorageCache, StorageResolver,
 };
 use tantivy::aggregation::AggregationLimitsGuard;
-use tokio::sync::Semaphore;
+use tokio::sync::{Semaphore, oneshot};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
 use crate::leaf::multi_leaf_search;
@@ -198,7 +198,12 @@ impl SearchService for SearchServiceImpl {
         if leaf_search_request.search_request.is_none() {
             return Err(SearchError::Internal("no search request".to_string()));
         }
-        let start = Instant::now();
+        let num_splits = leaf_search_request
+            .leaf_requests
+            .iter()
+            .map(|req| req.split_offsets.len())
+            .sum::<usize>();
+        let completion_tx = start_leaf_search_metric_recording(num_splits).await;
         let leaf_search_response_result = multi_leaf_search(
             self.searcher_context.clone(),
             leaf_search_request,
@@ -206,20 +211,7 @@ impl SearchService for SearchServiceImpl {
         )
         .await;
 
-        let elapsed = start.elapsed().as_secs_f64();
-        let label_values = if leaf_search_response_result.is_ok() {
-            ["success"]
-        } else {
-            ["error"]
-        };
-        SEARCH_METRICS
-            .leaf_search_requests_total
-            .with_label_values(label_values)
-            .inc();
-        SEARCH_METRICS
-            .leaf_search_request_duration_seconds
-            .with_label_values(label_values)
-            .observe(elapsed);
+        completion_tx.send(leaf_search_response_result.is_ok()).ok();
 
         leaf_search_response_result
     }
@@ -534,4 +526,35 @@ impl SearcherContext {
     pub fn get_aggregation_limits(&self) -> AggregationLimitsGuard {
         self.aggregation_limit.clone()
     }
+}
+
+/// Spawns a task that records leaf search metrics either
+/// - when the result is received through the returned channel (success or failure)
+/// - the returned channels are dropped (cancelled)
+#[must_use]
+async fn start_leaf_search_metric_recording(num_splits: usize) -> oneshot::Sender<bool> {
+    let (completion_tx, completion_rx) = tokio::sync::oneshot::channel();
+    let start = Instant::now();
+
+    tokio::spawn(async move {
+        let label_values = if let Ok(is_success) = completion_rx.await {
+            if is_success { ["success"] } else { ["error"] }
+        } else {
+            ["cancelled"]
+        };
+        SEARCH_METRICS
+            .leaf_search_requests_total
+            .with_label_values(label_values)
+            .inc();
+        SEARCH_METRICS
+            .leaf_search_request_duration_seconds
+            .with_label_values(label_values)
+            .observe(start.elapsed().as_secs_f64());
+        SEARCH_METRICS
+            .leaf_search_targeted_splits
+            .with_label_values(label_values)
+            .observe(num_splits as f64);
+    });
+
+    completion_tx
 }

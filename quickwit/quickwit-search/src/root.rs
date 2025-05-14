@@ -45,6 +45,7 @@ use tantivy::aggregation::agg_result::AggregationResults;
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tantivy::collector::Collector;
 use tantivy::schema::{Field, FieldEntry, FieldType, Schema};
+use tokio::sync::oneshot;
 use tracing::{debug, info_span, instrument};
 
 use crate::cluster_client::ClusterClient;
@@ -1155,6 +1156,8 @@ pub async fn root_search(
     cluster_client: &ClusterClient,
 ) -> crate::Result<SearchResponse> {
     let start_instant = tokio::time::Instant::now();
+    let (search_result_sender, target_split_sender) =
+        start_root_search_metric_recording(start_instant).await;
     let list_indexes_metadatas_request = ListIndexesMetadataRequest {
         index_id_patterns: search_request.index_id_patterns.clone(),
     };
@@ -1170,16 +1173,19 @@ pub async fn root_search(
         // We go through root_search_aux instead of directly
         // returning an empty response to make sure we generate
         // a (pretty useless) scroll id if requested.
-        let mut search_response = root_search_aux(
+        let search_response_result = root_search_aux(
             searcher_context,
             &HashMap::default(),
             search_request,
             Vec::new(),
             cluster_client,
         )
-        .await?;
-        search_response.elapsed_time_micros = start_instant.elapsed().as_micros() as u64;
-        return Ok(search_response);
+        .await;
+        target_split_sender.send(0).ok();
+        search_result_sender
+            .send(search_response_result.is_ok())
+            .ok();
+        return search_response_result;
     }
 
     let request_metadata = validate_request_and_build_metadata(&indexes_metadata, &search_request)?;
@@ -1198,6 +1204,7 @@ pub async fn root_search(
     let current_span = tracing::Span::current();
     current_span.record("num_docs", num_docs);
     current_span.record("num_splits", num_splits);
+    target_split_sender.send(0).ok();
 
     let mut search_response_result = root_search_aux(
         searcher_context,
@@ -1214,23 +1221,9 @@ pub async fn root_search(
         search_response.elapsed_time_micros = elapsed.as_micros() as u64;
     }
 
-    let label_values = if search_response_result.is_ok() {
-        ["success"]
-    } else {
-        ["error"]
-    };
-    SEARCH_METRICS
-        .root_search_requests_total
-        .with_label_values(label_values)
-        .inc();
-    SEARCH_METRICS
-        .root_search_request_duration_seconds
-        .with_label_values(label_values)
-        .observe(elapsed.as_secs_f64());
-    SEARCH_METRICS
-        .root_search_targeted_splits
-        .with_label_values(label_values)
-        .observe(num_splits as f64);
+    search_result_sender
+        .send(search_response_result.is_ok())
+        .ok();
 
     search_response_result
 }
@@ -1759,6 +1752,41 @@ pub fn jobs_to_fetch_docs_requests(
         },
     )?;
     Ok(fetch_docs_requests)
+}
+
+/// Spawns a task that records root search metrics either
+/// - when results are received through the returned channels (success or failure)
+/// - the returned channels are dropped (cancelled)
+#[must_use]
+async fn start_root_search_metric_recording(
+    start_instant: tokio::time::Instant,
+) -> (oneshot::Sender<bool>, oneshot::Sender<usize>) {
+    let (completion_tx, completion_rx) = tokio::sync::oneshot::channel();
+    let (target_split_tx, target_split_rx) = tokio::sync::oneshot::channel();
+    tokio::spawn(async move {
+        let (completion_res, target_split_res) = tokio::join!(completion_rx, target_split_rx);
+        let label_values = if let Ok(is_success) = completion_res {
+            if is_success { ["success"] } else { ["error"] }
+        } else {
+            ["cancelled"]
+        };
+
+        let num_splits = target_split_res.unwrap_or(0);
+
+        SEARCH_METRICS
+            .root_search_requests_total
+            .with_label_values(label_values)
+            .inc();
+        SEARCH_METRICS
+            .root_search_request_duration_seconds
+            .with_label_values(label_values)
+            .observe(start_instant.elapsed().as_secs_f64());
+        SEARCH_METRICS
+            .root_search_targeted_splits
+            .with_label_values(label_values)
+            .observe(num_splits as f64);
+    });
+    (completion_tx, target_split_tx)
 }
 
 #[cfg(test)]

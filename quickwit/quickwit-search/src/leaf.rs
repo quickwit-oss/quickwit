@@ -45,7 +45,6 @@ use tokio::task::JoinError;
 use tracing::*;
 
 use crate::collector::{IncrementalCollector, make_collector_for_split, make_merge_collector};
-use crate::metrics::SEARCH_METRICS;
 use crate::root::is_metadata_count_request_with_ast;
 use crate::search_permit_provider::{SearchPermit, compute_initial_memory_allocation};
 use crate::service::{SearcherContext, deserialize_doc_mapper};
@@ -1443,15 +1442,6 @@ pub async fn leaf_search(
             .instrument(info_span!("incremental_merge_intermediate"))
             .await
             .context("failed to merge split search responses");
-
-    let label_values = match leaf_search_response_reresult {
-        Ok(Ok(_)) => ["success"],
-        _ => ["error"],
-    };
-    SEARCH_METRICS
-        .leaf_search_targeted_splits
-        .with_label_values(label_values)
-        .observe(num_splits as f64);
 
     Ok(leaf_search_response_reresult??)
 }
