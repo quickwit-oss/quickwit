@@ -243,25 +243,32 @@ fn handle_metric_compute(
             AggregationVariants::Cardinality(cardinality)
         }
         "SUM" => {
-            let cardinality = metric::SumAggregation {
+            let sum = metric::SumAggregation {
                 field,
                 missing: None,
             };
-            AggregationVariants::Sum(cardinality)
+            AggregationVariants::Sum(sum)
         }
         "MAX" => {
-            let cardinality = metric::MaxAggregation {
+            let max = metric::MaxAggregation {
                 field,
                 missing: None,
             };
-            AggregationVariants::Max(cardinality)
+            AggregationVariants::Max(max)
         }
         "MIN" => {
-            let cardinality = metric::MinAggregation {
+            let min = metric::MinAggregation {
                 field,
                 missing: None,
             };
-            AggregationVariants::Min(cardinality)
+            AggregationVariants::Min(min)
+        }
+        "AVG" => {
+            let avg = metric::AverageAggregation {
+                field,
+                missing: None,
+            };
+            AggregationVariants::Average(avg)
         }
         other => {
             return Err(InvalidQuery::Other(anyhow::anyhow!(
@@ -362,7 +369,7 @@ impl ResultMapper {
         state: &EvpAggregationResult,
     ) -> Result<(), CloudPremError> {
         let mut to_emit = None;
-        for (key, agg) in agg_result.0 {
+        for (_key, agg) in agg_result.0 {
             match agg {
                 TantivyAggregationResult::BucketResult(bucket_result) => {
                     use tantivy::aggregation::agg_result::BucketResult;
@@ -400,22 +407,30 @@ impl ResultMapper {
                 TantivyAggregationResult::MetricResult(metric_result) => {
                     use tantivy::aggregation::agg_result::MetricResult;
                     // TODO we need to guarantee the order of append somehow
-                    let last_value = match metric_result {
+
+                    let to_emit_mut = to_emit.get_or_insert_with(|| state.clone());
+
+                    match metric_result {
                         MetricResult::Count(metric_res)
                         | MetricResult::Min(metric_res)
                         | MetricResult::Max(metric_res)
-                        | MetricResult::Sum(metric_res)
-                        | MetricResult::Cardinality(metric_res) => {
-                            metric_res.value.unwrap_or_default() as u64
+                        | MetricResult::Sum(metric_res) => {
+                            to_emit_mut.value.push(u64_to_agg_value(
+                                metric_res.value.unwrap_or_default() as u64,
+                            ));
+                        }
+                        MetricResult::Cardinality(cardinality) => {
+                            to_emit_mut.value.push(generate_sketch(
+                                cardinality.value.unwrap_or_default() as u64,
+                            ));
+                        }
+                        MetricResult::Average(avg) => {
+                            to_emit_mut
+                                .value
+                                .push(generate_avg(avg.value.unwrap_or_default()));
                         }
                         _ => return Err(CloudPremError::Unimplemented),
                     };
-                    let to_emit_mut = to_emit.get_or_insert_with(|| state.clone());
-                    if key.contains("cardinality") {
-                        to_emit_mut.value.push(generate_sketch(last_value));
-                    } else {
-                        to_emit_mut.value.push(u64_to_agg_value(last_value));
-                    }
                 }
             }
         }
@@ -469,6 +484,19 @@ fn generate_sketch(count: u64) -> EvpAggValue {
 
     EvpAggValue {
         value: Some(quickwit_proto::cloudprem::agg_value::Value::HllValue(hll)),
+    }
+}
+
+fn generate_avg(avg_float: f64) -> EvpAggValue {
+    // this result is non-mergeable, but it's alright otherwise
+    let avg_value = quickwit_proto::cloudprem::Avg {
+        sum: avg_float,
+        count: 1,
+    };
+    EvpAggValue {
+        value: Some(quickwit_proto::cloudprem::agg_value::Value::AvgValue(
+            avg_value,
+        )),
     }
 }
 
