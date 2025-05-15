@@ -462,7 +462,12 @@ async fn leaf_search_single_split(
     // This may be the case for AllQuery with a sort by date and time filter, where the current
     // split can't have better results.
     //
-    if is_metadata_count_request_with_ast(&query_ast, &search_request) {
+    if is_metadata_count_request_with_ast(
+        &query_ast,
+        &search_request,
+        split.timestamp_start,
+        split.timestamp_end,
+    ) {
         return Ok(get_leaf_resp_from_count(split.num_docs));
     }
 
@@ -534,7 +539,12 @@ async fn leaf_search_single_split(
                 check_optimize_search_request(&mut search_request, &split, &split_filter);
                 collector.update_search_param(&search_request);
                 let mut leaf_search_response: LeafSearchResponse =
-                    if is_metadata_count_request_with_ast(&query_ast, &search_request) {
+                    if is_metadata_count_request_with_ast(
+                        &query_ast,
+                        &search_request,
+                        split.timestamp_start,
+                        split.timestamp_end,
+                    ) {
                         get_leaf_resp_from_count(searcher.num_docs())
                     } else if collector.is_count_only() {
                         let count = query.count(&searcher)? as u64;
