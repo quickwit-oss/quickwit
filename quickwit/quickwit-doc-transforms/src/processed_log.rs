@@ -55,7 +55,7 @@ pub struct DatadogLogMsg {
 
 /// The final enriched struct we want to produce.
 ///  TODO fix the confusing name (ProcessedDoc)
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct ProcessedLog {
     pub message: String,
     pub status: String,
@@ -83,7 +83,7 @@ pub struct ProcessedLog {
 /// Special struct that serializes two different ways:
 /// tags:["env:dev", "region:us-east", "region:east"] =>
 /// tag: { "env": "dev", "region": ["us-east", "east"] }
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug)]
 pub struct TagField {
     pub tag: HashMap<String, StringOrVec>,
 }

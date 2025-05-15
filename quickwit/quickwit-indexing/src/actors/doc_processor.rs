@@ -27,7 +27,7 @@ use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::{SourceInputFormat, TransformConfig};
 use quickwit_doc_mapper::{DocMapper, DocParsingError, JsonObject};
 use quickwit_doc_transforms::{
-    Pipeline, PipelineConfig, PipelineError, PipelineStep, ProcessedLog,
+    DatadogLogMsg, Pipeline, PipelineConfig, PipelineError, PipelineStep, ProcessedLog,
 };
 use quickwit_opentelemetry::otlp::{
     JsonLogIterator, JsonSpanIterator, OtlpLogsError, OtlpTracesError, parse_otlp_logs_json,
@@ -212,11 +212,13 @@ fn parse_raw_doc(
         let mut json_doc = json_doc_res?;
         use serde::de::IntoDeserializer;
         let deserializer = json_doc.json_obj.into_deserializer();
-        let Ok(mut processed_log) = ProcessedLog::deserialize(deserializer) else {
+        let Ok(doc) = DatadogLogMsg::deserialize(deserializer) else {
             return Err(DocProcessorError::JsonParsing(
-                "Document was not a processed log.".to_string(),
+                "Document was not a DatadogLogMsg.".to_string(),
             ));
         };
+        let mut processed_log = ProcessedLog::from_datadog_log_msg(doc);
+
         if let Err(pipeline_error) = pipeline.apply(&mut processed_log) {
             return Err(DocProcessorError::Pipeline(pipeline_error));
         }
