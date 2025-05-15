@@ -46,7 +46,7 @@ pub(crate) async fn start_cloudprem_server(
     /*
      * TODO this could be used to do standalone CloudPrem (with no reverse proxy),
      * but we need to emit the header the rest of the code except (or not put the auth
-     * layer, but then we also loose auditing capabilities)
+     * layer, but then we also lose auditing capabilities)
     if let Some(tls_config) = grpc_config.tls {
         let cert = std::fs::read_to_string(tls_config.cert_path)?;
         let key = std::fs::read_to_string(tls_config.key_path)?;
@@ -61,7 +61,7 @@ pub(crate) async fn start_cloudprem_server(
         }
         // TODO using this builtin method means we have no way of hot-reloading certificates
         // (i.e. the process must be restarted every time its certificate expires)
-        // to do better, we'd need to wra the TcpListener with something that does (m)TLS
+        // to do better, we'd need to wrap the TcpListener with something that does (m)TLS
         // and that we control, however it would be somewhat painful, and more error prone
         server = server.tls_config(tls)?;
     }
