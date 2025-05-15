@@ -118,12 +118,17 @@ impl ClusterSandboxBuilder {
             let socket: SocketAddr = ([127, 0, 0, 1], 0u16).into();
             let rest_tcp_listener = TcpListener::bind(socket).await.unwrap();
             let grpc_tcp_listener = TcpListener::bind(socket).await.unwrap();
+            let cloudprem_tcp_listener = TcpListener::bind(socket).await.unwrap();
             let mut config = NodeConfig::for_test_from_ports(
                 rest_tcp_listener.local_addr().unwrap().port(),
                 grpc_tcp_listener.local_addr().unwrap().port(),
+                cloudprem_tcp_listener.local_addr().unwrap().port(),
             );
             tcp_listener_resolver.add_listener(rest_tcp_listener).await;
             tcp_listener_resolver.add_listener(grpc_tcp_listener).await;
+            tcp_listener_resolver
+                .add_listener(cloudprem_tcp_listener)
+                .await;
             config.indexer_config.enable_otlp_endpoint = node_builder.enable_otlp;
             config.enabled_services.clone_from(&node_builder.services);
             config.jaeger_config.enable_endpoint = true;

@@ -16,6 +16,10 @@ use super::auth::AwsMtlsInterceptorLayer;
 use super::service::CloudPremServiceImpl;
 use crate::QuickwitServices;
 use crate::grpc::HttpHeadersCarrier;
+
+pub(crate) const DISABLE_CERTIFICATE_VERIFICATION_ENV_KEY: &str =
+    "CP_DISABLE_CERTIFICATE_VERIFICATION";
+
 /// Starts and binds gRPC services to `grpc_listen_addr`.
 pub(crate) async fn start_cloudprem_server(
     tcp_listener: TcpListener,
@@ -81,8 +85,19 @@ pub(crate) async fn start_cloudprem_server(
         None
     };
 
+    let disable_security =
+        quickwit_common::get_bool_from_env(DISABLE_CERTIFICATE_VERIFICATION_ENV_KEY, false);
+    let aws_mtls_interceptor_layer_opt: Option<AwsMtlsInterceptorLayer<'static>> =
+        if disable_security {
+            tracing::warn!("mTLS client certificate verification disabled");
+            None
+        } else {
+            tracing::info!("mTLS client certificate verification enabled");
+            Some(AwsMtlsInterceptorLayer::for_cloudprem_port())
+        };
+
     let server_router = server
-        .layer(AwsMtlsInterceptorLayer::for_cloudprem_port())
+        .layer(tower::util::option_layer(aws_mtls_interceptor_layer_opt))
         .add_optional_service(cloudprem_grpc_service);
 
     let grpc_listen_addr = tcp_listener.local_addr()?;

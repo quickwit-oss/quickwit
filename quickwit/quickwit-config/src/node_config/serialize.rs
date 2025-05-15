@@ -481,6 +481,7 @@ impl RestConfigBuilder {
 pub fn node_config_for_tests_from_ports(
     rest_listen_port: u16,
     grpc_listen_port: u16,
+    cloudprem_listen_port: u16,
 ) -> NodeConfig {
     let node_id = NodeId::new(default_node_id().unwrap());
     let enabled_services = QuickwitService::supported_services();
@@ -498,7 +499,7 @@ pub fn node_config_for_tests_from_ports(
         .to_socket_addr()
         .expect("default host should be an IP address");
     let cloudprem_listen_addr = listen_address
-        .with_port(grpc_listen_port + 1)
+        .with_port(cloudprem_listen_port)
         .to_socket_addr()
         .expect("default host should be an IP address");
 

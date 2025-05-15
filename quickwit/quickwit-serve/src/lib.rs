@@ -680,6 +680,7 @@ pub async fn serve_quickwit(
     };
 
     let grpc_listen_addr = node_config.grpc_listen_addr;
+    let cloudprem_listen_addr = node_config.cloudprem_listen_addr;
     let rest_listen_addr = node_config.rest_config.listen_addr;
     let quickwit_services: Arc<QuickwitServices> = Arc::new(QuickwitServices {
         node_config: Arc::new(node_config),
@@ -739,7 +740,7 @@ pub async fn serve_quickwit(
         }
     });
     let cloudprem_server = cloudprem::start_cloudprem_server(
-        tcp_listener_resolver.resolve(grpc_listen_addr).await?,
+        tcp_listener_resolver.resolve(cloudprem_listen_addr).await?,
         cloudprem_grpc_config,
         quickwit_services.clone(),
         cloudprem_readiness_trigger,
