@@ -23,7 +23,7 @@ use tonic::Request;
 use tonic::metadata::{Ascii, MetadataValue};
 use tonic::transport::{ClientTlsConfig, Endpoint, Uri};
 
-const MAX_MESSAGE_SIZE: ByteSize = ByteSize::mib(1);
+const MAX_MESSAGE_SIZE: ByteSize = ByteSize::mib(5);
 
 pub struct CloudPremRootSearchService(CloudPremServiceClient);
 

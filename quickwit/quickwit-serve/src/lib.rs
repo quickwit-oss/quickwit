@@ -16,7 +16,6 @@
 
 mod build_info;
 mod cloudprem;
-mod cloudprem_api;
 mod cluster_api;
 mod datadog_api;
 mod decompression;
@@ -24,7 +23,7 @@ mod delete_task_api;
 mod developer_api;
 mod elasticsearch_api;
 mod format;
-mod grpc;
+pub(crate) mod grpc;
 mod health_check_api;
 mod index_api;
 mod indexing_api;
@@ -406,6 +405,7 @@ pub async fn serve_quickwit(
     let ingester_pool = IngesterPool::default();
     let universe = Universe::new();
     let grpc_config = node_config.grpc_config.clone();
+    let cloudprem_grpc_config = node_config.cloudprem_grpc_config.clone();
 
     // Instantiate a metastore "server" if the `metastore` role is enabled on the node.
     let metastore_server_opt: Option<MetastoreServiceClient> =
@@ -680,6 +680,7 @@ pub async fn serve_quickwit(
     };
 
     let grpc_listen_addr = node_config.grpc_listen_addr;
+    let cloudprem_listen_addr = node_config.cloudprem_listen_addr;
     let rest_listen_addr = node_config.rest_config.listen_addr;
     let quickwit_services: Arc<QuickwitServices> = Arc::new(QuickwitServices {
         node_config: Arc::new(node_config),
@@ -725,6 +726,26 @@ pub async fn serve_quickwit(
         grpc_shutdown_signal,
         health_service,
     );
+    // Setup and start cloudprem gRPC server.
+    let (cloudprem_readiness_trigger_tx, cloudprem_readiness_signal_rx) = oneshot::channel::<()>();
+    let cloudprem_readiness_trigger = Box::pin(async move {
+        if cloudprem_readiness_trigger_tx.send(()).is_err() {
+            debug!("CloudPrem gRPC server readiness signal receiver was dropped");
+        }
+    });
+    let (cloudprem_shutdown_trigger_tx, cloudprem_shutdown_signal_rx) = oneshot::channel::<()>();
+    let cloudprem_shutdown_signal = Box::pin(async move {
+        if cloudprem_shutdown_signal_rx.await.is_err() {
+            debug!("CloudPrem gRPC server shutdown trigger sender was dropped");
+        }
+    });
+    let cloudprem_server = cloudprem::start_cloudprem_server(
+        tcp_listener_resolver.resolve(cloudprem_listen_addr).await?,
+        cloudprem_grpc_config,
+        quickwit_services.clone(),
+        cloudprem_readiness_trigger,
+        cloudprem_shutdown_signal,
+    );
     // Setup and start REST server.
     let (rest_readiness_trigger_tx, rest_readiness_signal_rx) = oneshot::channel::<()>();
     let rest_readiness_trigger = Box::pin(async move {
@@ -753,6 +774,7 @@ pub async fn serve_quickwit(
             metastore_through_control_plane,
             ingester_opt.clone(),
             grpc_readiness_signal_rx,
+            cloudprem_readiness_signal_rx,
             rest_readiness_signal_rx,
             health_reporter,
         ),
@@ -774,6 +796,9 @@ pub async fn serve_quickwit(
         if grpc_shutdown_trigger_tx.send(()).is_err() {
             debug!("gRPC server shutdown signal receiver was dropped");
         }
+        if cloudprem_shutdown_trigger_tx.send(()).is_err() {
+            debug!("CloudPrem gRPC server shutdown signal receiver was dropped");
+        }
         if rest_shutdown_trigger_tx.send(()).is_err() {
             debug!("REST server shutdown signal receiver was dropped");
         }
@@ -785,6 +810,12 @@ pub async fn serve_quickwit(
             .expect("tasks running the gRPC server should not panic or be cancelled")
             .context("gRPC server failed")
     };
+    let cloudprem_join_handle = async move {
+        spawn_named_task(cloudprem_server, "cloudprem_server")
+            .await
+            .expect("tasks running the CloudPrem gRPC server should not panic or be cancelled")
+            .context("CloudPrem gRPC server failed")
+    };
     let rest_join_handle = async move {
         spawn_named_task(rest_server, "rest_server")
             .await
@@ -792,7 +823,7 @@ pub async fn serve_quickwit(
             .context("REST server failed")
     };
 
-    if let Err(err) = tokio::try_join!(grpc_join_handle, rest_join_handle) {
+    if let Err(err) = tokio::try_join!(grpc_join_handle, cloudprem_join_handle, rest_join_handle) {
         error!("server failed: {err:?}");
     }
     let actor_exit_statuses = shutdown_handle
@@ -1212,6 +1243,7 @@ async fn node_readiness_reporting_task(
     metastore: MetastoreServiceClient,
     ingester_opt: Option<impl IngesterService>,
     grpc_readiness_signal_rx: oneshot::Receiver<()>,
+    cloudprem_readiness_signal_rx: oneshot::Receiver<()>,
     rest_readiness_signal_rx: oneshot::Receiver<()>,
     mut health_reporter: HealthReporter,
 ) {
@@ -1225,6 +1257,10 @@ async fn node_readiness_reporting_task(
 
     if grpc_readiness_signal_rx.await.is_err() {
         // the gRPC server failed.
+        return;
+    };
+    if cloudprem_readiness_signal_rx.await.is_err() {
+        // the CloudPrem gRPC server failed.
         return;
     };
     info!("gRPC server is ready");
@@ -1409,6 +1445,7 @@ mod tests {
                 Ok(observation_stream)
             });
         let (grpc_readiness_trigger_tx, grpc_readiness_signal_rx) = oneshot::channel();
+        let (cloudprem_readiness_trigger_tx, cloudprem_readiness_signal_rx) = oneshot::channel();
         let (rest_readiness_trigger_tx, rest_readiness_signal_rx) = oneshot::channel();
 
         let (health_reporter, health_service) = health_reporter();
@@ -1436,6 +1473,7 @@ mod tests {
             MetastoreServiceClient::from_mock(mock_metastore),
             Some(mock_ingester),
             grpc_readiness_signal_rx,
+            cloudprem_readiness_signal_rx,
             rest_readiness_signal_rx,
             health_reporter,
         ));
@@ -1446,6 +1484,7 @@ mod tests {
         assert_eq!(response.status(), ServingStatus::NotServing.into());
 
         grpc_readiness_trigger_tx.send(()).unwrap();
+        cloudprem_readiness_trigger_tx.send(()).unwrap();
         rest_readiness_trigger_tx.send(()).unwrap();
         assert!(!cluster.is_self_node_ready().await);
 
