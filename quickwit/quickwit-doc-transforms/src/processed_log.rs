@@ -454,4 +454,37 @@ pub(crate) mod tests {
             OffsetDateTime::from_unix_timestamp(1609459200).unwrap()
         );
     }
+    #[test]
+    fn test_processed_log_tag_serialization() {
+        use serde_json::Value;
+
+        let mut msg = make_datadog_log_msg();
+        msg.ddtags = vec![
+            "env:dev".to_string(),
+            "region:us-east".to_string(),
+            "region:east".to_string(),
+        ];
+
+        let processed = ProcessedLog::from_datadog_log_msg(msg);
+
+        // Serialize to JSON
+        let json = serde_json::to_value(&processed).expect("serialize ProcessedLog");
+        let obj = json
+            .as_object()
+            .expect("ProcessedLog JSON should be an object");
+
+        let raw = obj.get("tag").and_then(Value::as_object).unwrap();
+        assert_eq!(raw.get("env").unwrap(), "dev");
+        assert_eq!(
+            raw.get("region").unwrap(),
+            &Value::Array(vec![
+                Value::String("us-east".into()),
+                Value::String("east".into())
+            ])
+        );
+
+        let tags = obj.get("tags").and_then(Value::as_array).unwrap();
+        let tags_str: Vec<_> = tags.iter().map(|v| v.as_str().unwrap()).collect();
+        assert_eq!(tags_str, vec!["env:dev", "region:east", "region:us-east"]);
+    }
 }
