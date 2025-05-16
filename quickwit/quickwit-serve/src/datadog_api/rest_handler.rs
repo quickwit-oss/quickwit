@@ -14,7 +14,7 @@
 
 use quickwit_common::rate_limited_error;
 use quickwit_config::INGEST_V2_SOURCE_ID;
-use quickwit_doc_transforms::{DatadogLogMsg, ProcessedLog};
+use quickwit_doc_transforms::DatadogLogMsg;
 use quickwit_ingest::DocBatchV2Builder;
 use quickwit_proto::ingest::CommitTypeV2;
 use quickwit_proto::ingest::router::{
@@ -157,10 +157,9 @@ async fn datadog_ingest_logs(
         let mut doc_uid_generator = DocUidGenerator::default();
 
         for doc in messages {
-            let processed_log = ProcessedLog::from_datadog_log_msg(doc);
             doc_batch_builder.add_doc(
                 doc_uid_generator.next_doc_uid(),
-                serde_json::to_string(&processed_log).unwrap().as_bytes(),
+                serde_json::to_string(&doc).unwrap().as_bytes(),
             );
         }
         Ok(doc_batch_builder.build())

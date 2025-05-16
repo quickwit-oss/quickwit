@@ -554,6 +554,7 @@ pub struct NodeConfig {
     pub enabled_services: HashSet<QuickwitService>,
     pub gossip_listen_addr: SocketAddr,
     pub grpc_listen_addr: SocketAddr,
+    pub cloudprem_listen_addr: SocketAddr,
     pub gossip_advertise_addr: SocketAddr,
     pub grpc_advertise_addr: SocketAddr,
     pub gossip_interval: Duration,
@@ -563,6 +564,7 @@ pub struct NodeConfig {
     pub default_index_root_uri: Uri,
     pub rest_config: RestConfig,
     pub grpc_config: GrpcConfig,
+    pub cloudprem_grpc_config: GrpcConfig,
     pub storage_configs: StorageConfigs,
     pub metastore_configs: MetastoreConfigs,
     pub indexer_config: IndexerConfig,
@@ -624,12 +626,20 @@ impl NodeConfig {
     /// Uses the default ports without ensuring that they are available.
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test() -> Self {
-        serialize::node_config_for_tests_from_ports(7280, 7281)
+        serialize::node_config_for_tests_from_ports(7280, 7281, 7282)
     }
 
     #[cfg(any(test, feature = "testsuite"))]
-    pub fn for_test_from_ports(rest_listen_port: u16, grpc_listen_port: u16) -> Self {
-        serialize::node_config_for_tests_from_ports(rest_listen_port, grpc_listen_port)
+    pub fn for_test_from_ports(
+        rest_listen_port: u16,
+        grpc_listen_port: u16,
+        cloudprem_listen_port: u16,
+    ) -> Self {
+        serialize::node_config_for_tests_from_ports(
+            rest_listen_port,
+            grpc_listen_port,
+            cloudprem_listen_port,
+        )
     }
 }
 
