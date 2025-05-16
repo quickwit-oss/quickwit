@@ -21,4 +21,6 @@ KV_PATH=kv/data/k8s/rapid-event-platform/cloudprem-bridge/dev-tls-cert
 ddtool auth login
 KV_VAL=$(vault read -format json "$KV_PATH")
 
+trap 'kill $(jobs -p)' EXIT
+
 cargo run --bin remote-api -- --key <(echo "$KV_VAL" | jq -r '.data.data.key') --cert <(echo "$KV_VAL" | jq -r '.data.data.cert') "$@"
