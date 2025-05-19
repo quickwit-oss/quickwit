@@ -214,7 +214,8 @@ impl ProcessedLog {
         let ingest_size_in_bytes = serde_json::to_string(&msg)
             .map(|s| s.len())
             .unwrap_or_default();
-        let tags = msg.ddtags;
+        let mut tags = msg.ddtags;
+        tags.push(format!("source:{}", msg.ddsource));
         let mut processed = ProcessedLog {
             message: msg.message,
             ingest_size_in_bytes,
@@ -395,6 +396,9 @@ pub(crate) mod tests {
         );
         let tag_region = processed.tag.get("region").unwrap();
         assert_eq!(tag_region, &StringOrVec::String("us-east".to_string()));
+
+        let source_tag = processed.tag.get("source").unwrap();
+        assert_eq!(source_tag, &StringOrVec::String("rust".to_string()),);
     }
 
     /// Test that integer timestamps are interpreted as seconds or milliseconds
@@ -485,6 +489,9 @@ pub(crate) mod tests {
 
         let tags = obj.get("tags").and_then(Value::as_array).unwrap();
         let tags_str: Vec<_> = tags.iter().map(|v| v.as_str().unwrap()).collect();
-        assert_eq!(tags_str, vec!["env:dev", "region:east", "region:us-east"]);
+        assert_eq!(
+            tags_str,
+            vec!["env:dev", "region:east", "region:us-east", "source:rust"]
+        );
     }
 }
