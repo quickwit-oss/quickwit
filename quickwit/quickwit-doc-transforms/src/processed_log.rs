@@ -216,6 +216,7 @@ impl ProcessedLog {
             .unwrap_or_default();
         let mut tags = msg.ddtags;
         tags.push(format!("source:{}", msg.ddsource));
+        tags.push(format!("service:{}", msg.service));
         let mut processed = ProcessedLog {
             message: msg.message,
             ingest_size_in_bytes,
@@ -491,7 +492,13 @@ pub(crate) mod tests {
         let tags_str: Vec<_> = tags.iter().map(|v| v.as_str().unwrap()).collect();
         assert_eq!(
             tags_str,
-            vec!["env:dev", "region:east", "region:us-east", "source:rust"]
+            vec![
+                "env:dev",
+                "region:east",
+                "region:us-east",
+                "service:test-service",
+                "source:rust",
+            ]
         );
     }
 }
