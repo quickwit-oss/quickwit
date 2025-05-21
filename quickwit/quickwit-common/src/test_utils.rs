@@ -58,17 +58,15 @@ pub async fn wait_for_server_ready(socket_addr: SocketAddr) -> anyhow::Result<()
             Ok(_) => break,
             Err(_) => {
                 println!(
-                    "Failed to connect to `{}` failed, retrying {}/{}",
-                    socket_addr,
+                    "failed to connect to `{socket_addr}` failed, retrying {}/{max_num_attempts}",
                     num_attempts + 1,
-                    max_num_attempts
                 );
                 num_attempts += 1;
             }
         }
     }
     if num_attempts == max_num_attempts {
-        anyhow::bail!("too many attempts to connect to `{}`", socket_addr);
+        anyhow::bail!("too many attempts to connect to `{socket_addr}`");
     }
     Ok(())
 }

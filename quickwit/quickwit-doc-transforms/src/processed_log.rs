@@ -253,9 +253,9 @@ impl ProcessedLog {
             processed.custom = parsed_map;
             match get_preprocessing_pipeline().apply(&mut processed) {
                 Ok(_) => {}
-                Err(err) => {
+                Err(error) => {
                     // This should not happen, but if it does, we log the error.
-                    warn!("Failed to apply preprocessing pipeline: {}", err);
+                    warn!(%error, "failed to apply preprocessing pipeline");
                 }
             }
         }

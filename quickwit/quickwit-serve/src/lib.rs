@@ -730,13 +730,13 @@ pub async fn serve_quickwit(
     let (cloudprem_readiness_trigger_tx, cloudprem_readiness_signal_rx) = oneshot::channel::<()>();
     let cloudprem_readiness_trigger = Box::pin(async move {
         if cloudprem_readiness_trigger_tx.send(()).is_err() {
-            debug!("CloudPrem gRPC server readiness signal receiver was dropped");
+            debug!("cloudprem gRPC server readiness signal receiver was dropped");
         }
     });
     let (cloudprem_shutdown_trigger_tx, cloudprem_shutdown_signal_rx) = oneshot::channel::<()>();
     let cloudprem_shutdown_signal = Box::pin(async move {
         if cloudprem_shutdown_signal_rx.await.is_err() {
-            debug!("CloudPrem gRPC server shutdown trigger sender was dropped");
+            debug!("cloudprem gRPC server shutdown trigger sender was dropped");
         }
     });
     let cloudprem_server = cloudprem::start_cloudprem_server(
@@ -797,7 +797,7 @@ pub async fn serve_quickwit(
             debug!("gRPC server shutdown signal receiver was dropped");
         }
         if cloudprem_shutdown_trigger_tx.send(()).is_err() {
-            debug!("CloudPrem gRPC server shutdown signal receiver was dropped");
+            debug!("cloudprem gRPC server shutdown signal receiver was dropped");
         }
         if rest_shutdown_trigger_tx.send(()).is_err() {
             debug!("REST server shutdown signal receiver was dropped");
