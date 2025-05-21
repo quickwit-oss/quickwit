@@ -36,6 +36,22 @@ build_image:
       # and a signed image to pomsky for internal deployments
     - scripts/image-tool.sh --push --sign --repo pomsky
 
+verify_version:
+  image: $DOCKER_CI_IMAGE
+  stage: build
+  tags:
+    - arch:arm64
+  rules:
+    - if: $CI_COMMIT_TAG
+  script:
+    - |
+      if echo "$CI_COMMIT_TAG" | grep -qE "^v[0-9]+\.[0-9]+\.[0-9]+$"; then
+          CARGO_PKG_VERSION=$(cat quickwit/Cargo.toml | sed -nE 's/^version = "(.*)"/\1/p')
+          if [ "$CI_COMMIT_TAG" != v"$CARGO_PKG_VERSION" ]; then
+              exit 1
+          fi
+      fi
+
 generate-docker-tag-names:
   tags: ["arch:amd64"]
   image: registry.ddbuild.io/ci/auto_inject/gitlab:current
