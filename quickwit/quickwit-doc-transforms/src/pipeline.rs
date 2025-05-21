@@ -642,12 +642,12 @@ sources:
             .custom
             .insert("http".to_string(), json!({"status_category": "warn"}));
         step.apply(&mut agent_log).unwrap();
-        assert_eq!(agent_log.status, "warning");
+        assert_eq!(agent_log.status, "warn");
 
         let mut agent_log = ProcessedLog::from_datadog_log_msg(make_datadog_log_msg());
         agent_log.custom.insert("level".to_string(), "warn".into());
         step.apply(&mut agent_log).unwrap();
-        assert_eq!(agent_log.status, "warning");
+        assert_eq!(agent_log.status, "warn");
 
         let mut agent_log = ProcessedLog::from_datadog_log_msg(make_datadog_log_msg());
         step.apply(&mut agent_log).unwrap();
