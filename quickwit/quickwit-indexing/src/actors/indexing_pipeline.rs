@@ -18,6 +18,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
+use heck::ToUpperCamelCase;
 use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, HEARTBEAT, Handler, Health, Mailbox,
     QueueCapacity, Supervisable,
@@ -325,9 +326,17 @@ impl IndexingPipeline {
             root_dir=%self.params.indexing_directory.path().display(),
             "spawning indexing pipeline",
         );
+        let source_actor_name = format!(
+            "{}Source",
+            self.params
+                .source_config
+                .source_type()
+                .as_str()
+                .to_upper_camel_case()
+        );
         let (source_mailbox, source_inbox) = ctx
             .spawn_ctx()
-            .create_mailbox::<SourceActor>("SourceActor", QueueCapacity::Unbounded);
+            .create_mailbox::<SourceActor>(source_actor_name, QueueCapacity::Unbounded);
 
         // Publisher
         let publisher = Publisher::new(

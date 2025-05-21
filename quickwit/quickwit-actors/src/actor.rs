@@ -109,7 +109,11 @@ pub trait Actor: Send + Sized + 'static {
     /// It does not need to be "instance-unique", and can be the name of
     /// the actor implementation.
     fn name(&self) -> String {
-        type_name::<Self>().to_string()
+        type_name::<Self>()
+            .rsplit("::")
+            .next()
+            .expect("iterator should contain at least one element")
+            .to_string()
     }
 
     /// The runner method makes it possible to decide the environment
