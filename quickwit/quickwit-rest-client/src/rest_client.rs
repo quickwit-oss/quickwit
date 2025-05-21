@@ -599,17 +599,22 @@ impl<'a> SourceClient<'a> {
         source_id: &str,
         source_config_input: impl AsRef<[u8]>,
         config_format: ConfigFormat,
+        create: bool,
     ) -> Result<SourceConfig, Error> {
         let header_map = header_from_config_format(config_format);
         let source_config_bytes = Bytes::copy_from_slice(source_config_input.as_ref());
+        let mut query_params = HashMap::new();
+        if create {
+            query_params.insert("create", "true");
+        }
         let path = format!("{}/{source_id}", self.sources_root_url());
         let response = self
             .transport
-            .send::<()>(
+            .send(
                 Method::PUT,
                 &path,
                 Some(header_map),
-                None,
+                Some(&query_params),
                 Some(source_config_bytes),
                 self.timeout,
             )
@@ -1223,7 +1228,7 @@ mod test {
         assert_eq!(
             qw_client
                 .sources("my-index")
-                .update("my-source-1", "", ConfigFormat::Yaml)
+                .update("my-source-1", "", ConfigFormat::Yaml, false)
                 .await
                 .unwrap(),
             source_config

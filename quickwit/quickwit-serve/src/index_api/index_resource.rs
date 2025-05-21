@@ -362,7 +362,7 @@ pub async fn update_index(
                 &node_config.default_index_root_uri,
             )
             .map_err(IndexServiceError::InvalidConfig)?;
-            if index_config.index_id != target_index_id.clone() {
+            if index_config.index_id != target_index_id {
                 return Err(IndexServiceError::InvalidConfig(anyhow::anyhow!(
                     "`index_id` in config file does not match index_id from query path"
                 )));
