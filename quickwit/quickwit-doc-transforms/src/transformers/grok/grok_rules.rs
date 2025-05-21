@@ -58,11 +58,13 @@ pub struct Sample {
 }
 
 #[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Hash)]
-#[serde(rename_all = "camelCase")]
 pub struct LogsProcessingGrokRules {
     // Use a custom deserializer to transform the multiline string into Vec<Rule>
+    #[serde(alias = "supportRules")]
     #[serde(deserialize_with = "parse_rules_from_str")]
+    #[serde(default)]
     pub support_rules: Vec<Rule>,
+    #[serde(alias = "matchRules")]
     #[serde(deserialize_with = "parse_rules_from_str")]
     pub match_rules: Vec<Rule>,
 }
@@ -157,6 +159,28 @@ mod tests {
         assert_eq!(rules.support_rules[0].rule, "%{date(\"yyyy-MM-dd\")}");
         assert_eq!(rules.support_rules[1].name, "_context");
         assert_eq!(rules.support_rules[1].rule, "%{notSpace}");
+
+        // Validate match rules.
+        assert_eq!(rules.match_rules.len(), 2);
+        assert_eq!(rules.match_rules[0].name, "mongo.test1");
+        assert_eq!(rules.match_rules[0].rule, "%{_timestamp}");
+        assert_eq!(rules.match_rules[1].name, "mongo.test2");
+        assert_eq!(rules.match_rules[1].rule, "%{_context}");
+    }
+
+    #[test]
+    fn test_simple_grok_rules_no_support_rules() {
+        let json_data = r#"
+        {
+            "matchRules": "mongo.test1 %{_timestamp}\nmongo.test2 %{_context}\n"
+        }
+        "#;
+
+        let rules: LogsProcessingGrokRules =
+            serde_json::from_str(json_data).expect("Failed to parse GrokRules JSON");
+
+        // Validate support rules.
+        assert_eq!(rules.support_rules.len(), 0);
 
         // Validate match rules.
         assert_eq!(rules.match_rules.len(), 2);
