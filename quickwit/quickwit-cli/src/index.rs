@@ -77,7 +77,7 @@ pub fn build_index_command() -> Command {
                     .display_order(2)
                     .required(true),
                 arg!(--"create" "Create the index if it does not already exists.")
-                    .display_order(2)
+                    .display_order(3)
                     .required(false),
             ])
         )

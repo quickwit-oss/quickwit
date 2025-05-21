@@ -327,7 +327,19 @@ The response is the index metadata of the created index, and the content type is
 PUT api/v1/indexes/<index id>
 ```
 
-Updates the configurations of an index. This endpoint follows PUT semantics, which means that all the fields of the current configuration are replaced by the values specified in this request or the associated defaults. In particular, if the field is optional (e.g. `retention_policy`), omitting it will delete the associated configuration. If the new configuration file contains updates that cannot be applied, the request fails, and none of the updates are applied. The API accepts JSON with `content-type: application/json` and YAML with `content-type: application/yaml`.
+#### Path variable
+
+| Variable      | Description   |
+| ------------- | ------------- |
+| `index id`    | The index id  |
+
+#### Query parameters
+
+| Variable  | Type   | Description                                   | Default value |
+|-----------|--------|-----------------------------------------------|---------------|
+| `create`  | `bool` | Create the index if it doesn't already exists | `false`       |
+
+Update the configurations of an index. This endpoint follows PUT semantics, which means that all the fields of the current configuration are replaced by the values specified in this request or the associated defaults. In particular, if the field is optional (e.g. `retention_policy`), omitting it will delete the associated configuration. If the new configuration file contains updates that cannot be applied, the request fails, and none of the updates are applied. The API accepts JSON with `content-type: application/json` and YAML with `content-type: application/yaml`.
 
 - The retention policy update is automatically picked up by the janitor service on its next state refresh.
 - The search settings update is automatically picked up by searcher nodes when the next query is executed.
@@ -644,6 +656,19 @@ The response is the created source config, and the content type is `application/
 ```
 PUT api/v1/indexes/<index id>/sources/<source id>
 ```
+
+#### Path variable
+
+| Variable      | Description   |
+| ------------- | ------------- |
+| `index id`    | The index id  |
+| `source id`   | The source id  |
+
+#### Query parameters
+
+| Variable  | Type   | Description                                   | Default value |
+|-----------|--------|-----------------------------------------------|---------------|
+| `create`  | `bool` | Create the index if it doesn't already exists | `false`       |
 
 Update a source by posting a source config JSON payload.
 

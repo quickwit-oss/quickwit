@@ -298,7 +298,6 @@ fn update_index_qp() -> impl Filter<Extract = (UpdateQueryParams,), Error = Reje
 }
 
 pub fn update_index_handler(
-    metastore: MetastoreServiceClient,
     index_service: IndexService,
     node_config: Arc<NodeConfig>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
@@ -308,7 +307,6 @@ pub fn update_index_handler(
         .and(update_index_qp())
         .and(warp::body::content_length_limit(1024 * 1024))
         .and(warp::filters::body::bytes())
-        .and(with_arg(metastore))
         .and(with_arg(index_service))
         .and(with_arg(node_config))
         .then(update_index)
@@ -344,12 +342,12 @@ pub async fn update_index(
     config_format: ConfigFormat,
     query_params: UpdateQueryParams,
     index_config_bytes: Bytes,
-    metastore: MetastoreServiceClient,
     mut index_service: IndexService,
     node_config: Arc<NodeConfig>,
 ) -> Result<IndexMetadata, IndexServiceError> {
     info!(index_id = %target_index_id, "update-index");
 
+    let metastore = index_service.metastore();
     let index_metadata_request = IndexMetadataRequest::for_index_id(target_index_id.to_string());
     let current_index_metadata_res = metastore.index_metadata(index_metadata_request).await;
 
@@ -370,8 +368,8 @@ pub async fn update_index(
             info!(index_id = %index_config.index_id, "create-index-on-update");
             match index_service.create_index(index_config, false).await {
                 Err(IndexServiceError::Metastore(MetastoreError::AlreadyExists(_))) => {
-                    // if the index was created just after we tried to update it, try to update as
-                    // if nothing happened. buf if it get deleted again before we update it, just
+                    // Ff the index was created just after we tried to update it, try to update as
+                    // if nothing happened. But if it gets deleted again before we update it, just
                     // error out
                     let index_metadata_request =
                         IndexMetadataRequest::for_index_id(target_index_id.to_string());
