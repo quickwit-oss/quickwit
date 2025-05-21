@@ -419,17 +419,22 @@ impl<'a> IndexClient<'a> {
         index_id: &str,
         index_config: impl AsRef<[u8]>,
         config_format: ConfigFormat,
+        create: bool,
     ) -> Result<IndexMetadata, Error> {
         let header_map = header_from_config_format(config_format);
         let body = Bytes::copy_from_slice(index_config.as_ref());
+        let mut query_params = HashMap::new();
+        if create {
+            query_params.insert("create", "true");
+        }
         let path = format!("indexes/{index_id}");
         let response = self
             .transport
-            .send::<()>(
+            .send(
                 Method::PUT,
                 &path,
                 Some(header_map),
-                None,
+                Some(&query_params),
                 Some(body),
                 self.timeout,
             )

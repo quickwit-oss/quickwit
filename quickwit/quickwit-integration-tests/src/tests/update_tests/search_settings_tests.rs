@@ -120,6 +120,7 @@ async fn test_update_search_settings_on_multi_nodes_cluster() {
               default_search_fields: [title, body]
             "#,
             quickwit_config::ConfigFormat::Yaml,
+            false,
         )
         .await
         .unwrap();
