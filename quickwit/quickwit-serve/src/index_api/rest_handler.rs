@@ -93,7 +93,11 @@ pub fn index_management_handlers(
             index_service.clone(),
             node_config.clone(),
         ))
-        .or(update_index_handler(index_service.metastore(), node_config))
+        .or(update_index_handler(
+            index_service.metastore(),
+            index_service.clone(),
+            node_config,
+        ))
         .or(clear_index_handler(index_service.clone()))
         .or(delete_index_handler(index_service.clone()))
         .boxed()
