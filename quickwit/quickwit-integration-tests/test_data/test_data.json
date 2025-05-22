@@ -5,7 +5,6 @@
     "source_fragment_id": "01961475-a2be-4e18-bf19-c84acfbc677f",
     "service": "kube-apiserver-audit",
     "host": "i-0e2bc0882fd4bab5d",
-    "id": "AZYUdZ7AAAChfoidt-iJYwBg",
     "status": "ok",
     "message": "{\"auditID\":\"1686a08d-4730-4581-a559-94a6ee816846\",\"userAgent\":\"kube-apiserver/v1.31.6 (linux/arm64) kubernetes/3c30f23\",\"requestObject\":{\"metadata\":{\"uid\":\"aa75998c-5b59-41fa-aae9-87e76bece90a\",\"resourceVersion\":\"21707135714\",\"name\":\"managed-resource-quotas\",\"namespace\":\"mortar\",\"labels\":{\"resource-quotas-manager\":{\"datadoghq\":{\"com/managed\":\"true\"}},\"team\":\"compute\"}},\"apiVersion\":\"v1\",\"kind\":\"ResourceQuota\"}}",
     "timestamp": 1744099972211
@@ -21,7 +20,6 @@
     "source_fragment_id": "01961475-8a55-4d6e-a662-3d236eaea2a3",
     "service": "kafka",
     "host": "i-09843350a1f9a16f1",
-    "id": "AZYUdZEJAAChfoidt-h-2AG_",
     "error_tracking": {
       "process_on_errors_track": true,
       "fingerprints": {
@@ -42,7 +40,6 @@
     "source_fragment_id": "01961475-83c7-4dde-b96f-6964ba86d923",
     "service": "ingress-edge-pool0",
     "host": "i-0efe8c6ad5691d688",
-    "id": "AZYUdXTZAAAk1Ee2wEwZjgN2",
     "status": "ok",
     "message": "{\"date\":\"2025-04-08T08:12:43.691Z\",\"duration\":{\"total\":2},\"upstream\":{\"tx_duration\":1,\"tls\":{\"cipher\":\"TLS_AES_128_GCM_SHA256\",\"version\":\"TLSv1.3\"},\"retry\":1},\"rbac\":{\"org_id_vpce_rbacenforced_engine_result\":\"allowed\",\"shadow_engine_result\":\"allowed\",\"enforced_engine_result\":\"allowed\"},\"downstream\":{\"local-port\":443,\"direct-local-port\":8033,\"tx_duration\":0,\"remote-port\":52346,\"direct-remote-port\":44234,\"tls\":{\"cipher\":\"ECDHE-ECDSA-AES256-GCM-SHA384\",\"version\":\"TLSv1.2\",\"session-id\":\"b0bbe3910a4b9c26821d234b10fc79f2d91b7e6750cf506b3644e9c11bdd3dd8\"},\"rcv_duration\":0},\"http\":{\"dd_internal_edge_authn_status\":\"authenticated\",\"status_code\":202,\"method\":\"POST\",\"x-forwarded-proto\":\"https\",\"useragent\":\"datadog-agent/7.66.0-devel+git.307.37bed2e\",\"useragent_details\":{\"os\":{\"family\":\"Other\"},\"browser\":{\"family\":\"Other\"},\"device\":{\"family\":\"Other\",\"category\":\"Other\"}},\"url\":\"/api/v1/collector\",\"protocol\":\"HTTP/1.1\",\"url_details\":{\"path\":\"/api/v1/collector\"},\"status_category\":\"OK\",\"authority\":\"process.datad0g.com.\",\"host\":\"process.datad0g.com.\",\"header\":{\"x-datadog-sampling-priority\":\"-1\",\"x-frontend-service\":\"process\"},\"listener_port\":8033,\"dd_internal_edge_org_id\":\"2\",\"dd_internal_edge_api_key_type\":\"ak\"},\"lua\":{\"codes\":\"---U-\",\"log\":\"\"},\"network\":{\"bytes_written\":12,\"ip\":{\"attributes\":[{\"source\":[\"@parsed_request_headers.x_client_ip\",\"@downstream.remote-address\",\"@http.x-forwarded-for\"]},{\"source\":[\"@downstream.direct-remote-address\"]}]},\"bytes_read\":5328}}",
     "timestamp": 1744099963691
