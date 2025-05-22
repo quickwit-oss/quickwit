@@ -785,14 +785,12 @@ impl IndexStats {
             tables.push(size_stats_table);
         }
 
-        let table = Table::builder(tables.into_iter().map(|table| table.to_string()))
+        Table::builder(tables.into_iter().map(|table| table.to_string()))
             .build()
             .with(Modify::new(Segment::all()).with(Alignment::center_vertical()))
             .with(Disable::row(FirstRow))
             .with(Style::empty())
-            .to_string();
-
-        table
+            .to_string()
     }
 }
 

@@ -166,6 +166,7 @@ pub(crate) async fn elastic_bulk_ingest_v2(
     )
 }
 
+#[allow(clippy::result_large_err)]
 fn make_elastic_bulk_response_v2(
     ingest_response_v2: IngestResponseV2,
     mut per_subrequest_doc_handles: HashMap<u32, Vec<DocHandle>>,
@@ -348,6 +349,7 @@ fn make_elastic_bulk_response_v2(
     Ok(bulk_response)
 }
 
+#[allow(clippy::result_large_err)]
 fn remove_doc_handles(
     per_subrequest_doc_handles: &mut HashMap<u32, Vec<DocHandle>>,
     subrequest_id: u32,

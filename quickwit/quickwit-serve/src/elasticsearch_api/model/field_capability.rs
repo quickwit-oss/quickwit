@@ -179,6 +179,7 @@ pub fn convert_to_es_field_capabilities_response(
     FieldCapabilityResponse { indices, fields }
 }
 
+#[allow(clippy::result_large_err)]
 pub fn build_list_field_request_for_es_api(
     index_id_patterns: Vec<String>,
     search_params: FieldCapabilityQueryParams,

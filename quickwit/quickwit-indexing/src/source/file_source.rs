@@ -30,7 +30,7 @@ use crate::source::{Source, SourceContext, SourceRuntime, TypedSourceFactory};
 
 enum FileSourceState {
     #[cfg(feature = "queue-sources")]
-    Notification(QueueCoordinator),
+    Notification(Box<QueueCoordinator>),
     Filepath {
         batch_reader: ObjectUriBatchReader,
         num_bytes_processed: u64,
@@ -180,7 +180,7 @@ impl TypedSourceFactory for FileSourceFactory {
             )) => {
                 let coordinator =
                     QueueCoordinator::try_from_sqs_config(sqs_config, source_runtime).await?;
-                FileSourceState::Notification(coordinator)
+                FileSourceState::Notification(Box::new(coordinator))
             }
             #[cfg(not(feature = "sqs"))]
             FileSourceParams::Notifications(quickwit_config::FileSourceNotification::Sqs(_)) => {

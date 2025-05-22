@@ -785,11 +785,10 @@ mod kafka_broker_tests {
     }
 
     fn create_admin_client() -> AdminClient<DefaultClientContext> {
-        let admin_client = ClientConfig::new()
+        ClientConfig::new()
             .set("bootstrap.servers", "localhost:9092")
             .create()
-            .unwrap();
-        admin_client
+            .unwrap()
     }
 
     async fn create_topic(

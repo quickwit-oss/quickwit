@@ -494,33 +494,34 @@ mod tls {
     use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
     use tokio_rustls::rustls::ServerConfig;
 
-    fn error(err: String) -> io::Error {
-        io::Error::new(io::ErrorKind::Other, err)
+    fn io_error(error: String) -> io::Error {
+        io::Error::other(error)
     }
 
     // Load public certificate from file.
     fn load_certs(filename: &str) -> io::Result<Vec<rustls::Certificate>> {
         // Open certificate file.
-        let certfile =
-            fs::read(filename).map_err(|e| error(format!("failed to open {}: {}", filename, e)))?;
+        let certfile = fs::read(filename)
+            .map_err(|error| io_error(format!("failed to open {filename}: {error}")))?;
 
         // Load and return certificate.
         let certs = rustls_pemfile::certs(&mut certfile.as_ref())
-            .map_err(|_| error("failed to load certificate".into()))?;
+            .map_err(|_| io_error("failed to load certificate".to_string()))?;
         Ok(certs.into_iter().map(rustls::Certificate).collect())
     }
 
     // Load private key from file.
     fn load_private_key(filename: &str) -> io::Result<rustls::PrivateKey> {
         // Open keyfile.
-        let keyfile =
-            fs::read(filename).map_err(|e| error(format!("failed to open {}: {}", filename, e)))?;
+        let keyfile = fs::read(filename)
+            .map_err(|error| io_error(format!("failed to open {filename}: {error}")))?;
 
         // Load and return a single private key.
         let keys = rustls_pemfile::pkcs8_private_keys(&mut keyfile.as_ref())
-            .map_err(|_| error("failed to load private key".into()))?;
+            .map_err(|_| io_error("failed to load private key".to_string()))?;
+
         if keys.len() != 1 {
-            return Err(error(format!(
+            return Err(io_error(format!(
                 "expected a single private key, got {}",
                 keys.len()
             )));
@@ -648,7 +649,7 @@ mod tls {
             .with_safe_defaults()
             .with_no_client_auth()
             .with_single_cert(certs, key)
-            .map_err(|e| error(format!("{}", e)))?;
+            .map_err(|error| io_error(error.to_string()))?;
         // Configure ALPN to accept HTTP/2, HTTP/1.1, and HTTP/1.0 in that order.
         cfg.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec(), b"http/1.0".to_vec()];
         Ok(Arc::new(cfg))

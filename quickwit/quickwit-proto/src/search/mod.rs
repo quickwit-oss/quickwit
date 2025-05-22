@@ -263,6 +263,7 @@ pub fn deserialize_split_fields<R: Read>(mut reader: R) -> io::Result<ListFields
 }
 
 /// Reads the Split fields from a stream of bytes
+#[allow(clippy::unbuffered_bytes)]
 fn read_split_fields_from_zstd<R: Read>(reader: R) -> io::Result<ListFields> {
     let all_bytes: Vec<_> = reader.bytes().collect::<io::Result<_>>()?;
     let serialized_list_fields: ListFields = prost::Message::decode(&all_bytes[..])?;

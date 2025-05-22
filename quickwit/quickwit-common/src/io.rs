@@ -125,10 +125,7 @@ impl IoControls {
 
     pub fn check_if_alive(&self) -> io::Result<ProtectedZoneGuard> {
         if self.kill_switch.is_dead() {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                "Directory kill switch was activated.",
-            ));
+            return Err(io::Error::other("directory kill switch was activated"));
         }
         let guard = self.progress.protect_zone();
         Ok(guard)
