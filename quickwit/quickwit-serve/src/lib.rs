@@ -463,8 +463,8 @@ pub async fn serve_quickwit(
                 bail!("could not find any metastore node in the cluster");
             }
             MetastoreServiceClient::tower()
-                .stack_layer(TimeoutLayer::new(GRPC_METASTORE_SERVICE_TIMEOUT))
                 .stack_layer(RetryLayer::new(RetryPolicy::from(RetryParams::standard())))
+                .stack_layer(TimeoutLayer::new(GRPC_METASTORE_SERVICE_TIMEOUT))
                 .stack_layer(METASTORE_GRPC_CLIENT_METRICS_LAYER.clone())
                 .stack_layer(tower::limit::GlobalConcurrencyLimitLayer::new(
                     get_metastore_client_max_concurrency(),
