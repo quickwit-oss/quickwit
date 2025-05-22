@@ -72,7 +72,7 @@ pub struct LogsProcessingGrokRules {
 /// Custom deserializer for fields that are multiline rules strings.
 pub fn parse_rules_from_str<'de, D>(deserializer: D) -> Result<Vec<Rule>, D::Error>
 where D: Deserializer<'de> {
-    let s: String = Deserialize::deserialize(deserializer)?;
+    let s: String = Deserialize::deserialize(deserializer).unwrap_or("".to_string());
     Ok(parse_rules(&s))
 }
 
@@ -172,6 +172,29 @@ mod tests {
     fn test_simple_grok_rules_no_support_rules() {
         let json_data = r#"
         {
+            "matchRules": "mongo.test1 %{_timestamp}\nmongo.test2 %{_context}\n"
+        }
+        "#;
+
+        let rules: LogsProcessingGrokRules =
+            serde_json::from_str(json_data).expect("Failed to parse GrokRules JSON");
+
+        // Validate support rules.
+        assert_eq!(rules.support_rules.len(), 0);
+
+        // Validate match rules.
+        assert_eq!(rules.match_rules.len(), 2);
+        assert_eq!(rules.match_rules[0].name, "mongo.test1");
+        assert_eq!(rules.match_rules[0].rule, "%{_timestamp}");
+        assert_eq!(rules.match_rules[1].name, "mongo.test2");
+        assert_eq!(rules.match_rules[1].rule, "%{_context}");
+    }
+
+    #[test]
+    fn test_simple_grok_rules_support_rules_null() {
+        let json_data = r#"
+        {
+            "supportRules": null,
             "matchRules": "mongo.test1 %{_timestamp}\nmongo.test2 %{_context}\n"
         }
         "#;
