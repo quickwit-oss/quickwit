@@ -7190,6 +7190,7 @@ dependencies = [
  "quickwit-common",
  "quickwit-config",
  "quickwit-datetime",
+ "quickwit-doc-transforms",
  "quickwit-indexing",
  "quickwit-metastore",
  "quickwit-opentelemetry",

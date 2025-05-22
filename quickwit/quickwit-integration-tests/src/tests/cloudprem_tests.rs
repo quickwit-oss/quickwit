@@ -4,6 +4,7 @@ use prost::Message;
 use prost_types::Any;
 use quickwit_config::service::QuickwitService;
 use quickwit_datetime::{DateTimeInputFormat, parse_date_time_str};
+use quickwit_doc_transforms::DatadogLogMsg;
 use quickwit_proto::cloudprem::*;
 use serde_json::Value;
 use tonic::Request;
@@ -272,17 +273,15 @@ async fn setup_env(docs: &mut [Value]) -> ClusterSandbox {
             .await
             .unwrap()
     );
-
-    // remove unsupported field before ingestion
-    // TODO are those things we should store?
-    for doc in docs.iter_mut() {
-        let doc_obj = doc.as_object_mut().unwrap();
-        doc_obj.remove("host_id");
-        doc_obj.remove("random_draw");
-        doc_obj.remove("source_fragment_id");
-        doc_obj.remove("error_tracking");
-        doc_obj.remove("issue");
-        doc_obj.remove("trace_id_low");
+    // Check if docs can be serialized from json::Value to DatadogLogMsg
+    for doc in docs.iter() {
+        serde_json::from_value::<DatadogLogMsg>(doc.clone()).unwrap_or_else(|e| {
+            panic!(
+                "{}: failed to deserialize doc {} to DatadogLogMsg",
+                e,
+                serde_json::to_string_pretty(doc).unwrap()
+            )
+        });
     }
 
     sandbox.wait_for_indexing_pipelines(1).await.unwrap();

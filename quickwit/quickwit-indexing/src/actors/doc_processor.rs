@@ -509,7 +509,7 @@ impl DocProcessor {
                 load_pipeline_config_from_env().or(Some(PipelineConfig::default()))
             } else {
                 info!(
-                    "processing disabled for otel indexes: {}",
+                    "processing disabled for indexes not starting with datadog: {}",
                     index_id.as_str()
                 );
                 None
