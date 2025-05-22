@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::ops::Bound;
+use std::ops::{Bound, RangeBounds};
 
 use prost::Message;
 use quickwit_proto::search::{
@@ -83,7 +83,7 @@ struct CacheKey {
     request: SearchRequest,
     /// The effective time range of the request, that is, the intersection of the timerange
     /// requested, and the timerange covered by the split.
-    merged_time_range: Range,
+    merged_time_range: HalfOpenRange,
 }
 
 impl CacheKey {
@@ -91,8 +91,8 @@ impl CacheKey {
         split_info: SplitIdAndFooterOffsets,
         mut search_request: SearchRequest,
     ) -> Self {
-        let split_time_range = Range::from_bounds(split_info.time_range());
-        let request_time_range = Range::from_bounds(search_request.time_range());
+        let split_time_range = HalfOpenRange::from_bounds(split_info.time_range());
+        let request_time_range = HalfOpenRange::from_bounds(search_request.time_range());
         let merged_time_range = request_time_range.intersect(&split_time_range);
 
         search_request.start_timestamp = None;
@@ -110,20 +110,22 @@ impl CacheKey {
 }
 
 /// A (half-open) range bounded inclusively below and exclusively above [start..end).
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct Range {
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+struct HalfOpenRange {
     start: i64,
     end: Option<i64>,
 }
 
-impl Range {
-    /// Create a Range from bounds.
-    fn from_bounds(range: impl std::ops::RangeBounds<i64>) -> Self {
-        let empty_range = Range {
+impl HalfOpenRange {
+    fn empty_range() -> HalfOpenRange {
+        HalfOpenRange {
             start: 0,
             end: Some(0),
-        };
+        }
+    }
 
+    /// Create a Range from bounds.
+    fn from_bounds(range: impl RangeBounds<i64>) -> Self {
         let start = match range.start_bound() {
             Bound::Included(start) => *start,
             Bound::Excluded(start) => {
@@ -131,7 +133,7 @@ impl Range {
                 if let Some(start) = start.checked_add(1) {
                     start
                 } else {
-                    return empty_range;
+                    return Self::empty_range();
                 }
             }
             Bound::Unbounded => i64::MIN,
@@ -143,44 +145,45 @@ impl Range {
             Bound::Unbounded => None,
         };
 
-        Range { start, end }
+        HalfOpenRange { start, end }.normalize()
+    }
+
+    fn is_empty(self) -> bool {
+        !self.contains(&self.start)
     }
 
     /// Normalize empty ranges to be 0..0
-    fn normalize(self) -> Range {
-        let empty_range = Range {
-            start: 0,
-            end: Some(0),
-        };
-        match self {
-            Range {
-                start,
-                end: Some(end),
-            } if start >= end => empty_range,
-            any => any,
+    fn normalize(self) -> HalfOpenRange {
+        if self.is_empty() {
+            Self::empty_range()
+        } else {
+            self
         }
     }
 
     /// Return the intersection of self and other.
-    fn intersect(&self, other: &Range) -> Range {
+    fn intersect(&self, other: &HalfOpenRange) -> HalfOpenRange {
         let start = self.start.max(other.start);
-
         let end = match (self.end, other.end) {
             (Some(this), Some(other)) => Some(this.min(other)),
             (Some(this), None) => Some(this),
             (None, other) => other,
         };
-        Range { start, end }.normalize()
+        HalfOpenRange { start, end }.normalize()
     }
 }
 
-impl std::ops::RangeBounds<i64> for Range {
+impl RangeBounds<i64> for HalfOpenRange {
     fn start_bound(&self) -> Bound<&i64> {
         Bound::Included(&self.start)
     }
 
     fn end_bound(&self) -> Bound<&i64> {
-        self.end.as_ref().map_or(Bound::Unbounded, Bound::Excluded)
+        if let Some(end_bound) = &self.end {
+            Bound::Excluded(end_bound)
+        } else {
+            Bound::Unbounded
+        }
     }
 }
 

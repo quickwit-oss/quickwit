@@ -40,11 +40,13 @@ impl JanitorService {
     }
 
     fn is_healthy(&self) -> bool {
-        self.delete_task_service_handle
-            .as_ref()
-            .is_none_or(|delete_task_service_handle| {
+        let delete_task_is_not_failure: bool =
+            if let Some(delete_task_service_handle) = &self.delete_task_service_handle {
                 delete_task_service_handle.state() != ActorState::Failure
-            })
+            } else {
+                true
+            };
+        delete_task_is_not_failure
             && self.garbage_collector_handle.state() != ActorState::Failure
             && self.retention_policy_executor_handle.state() != ActorState::Failure
     }
