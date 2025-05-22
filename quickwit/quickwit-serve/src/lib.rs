@@ -104,6 +104,7 @@ use quickwit_proto::metastore::{
     MetastoreServiceClient,
 };
 use quickwit_proto::search::ReportSplitsRequest;
+use quickwit_proto::tonic::codec::CompressionEncoding;
 use quickwit_proto::types::NodeId;
 use quickwit_search::{
     SearchJobPlacer, SearchService, SearchServiceClient, SearcherContext, SearcherPool,
@@ -298,6 +299,8 @@ async fn start_ingest_client_if_needed(
         let ingest_service = IngestServiceClient::from_balance_channel(
             balance_channel,
             node_config.grpc_config.max_message_size,
+            &[],
+            None,
         );
         Ok(ingest_service)
     }
@@ -364,7 +367,12 @@ async fn start_control_plane_if_needed(
         let control_plane_server_opt = None;
         let control_plane_client = ControlPlaneServiceClient::tower()
             .stack_layer(CP_GRPC_CLIENT_METRICS_LAYER.clone())
-            .build_from_balance_channel(balance_channel, node_config.grpc_config.max_message_size);
+            .build_from_balance_channel(
+                balance_channel,
+                node_config.grpc_config.max_message_size,
+                &[],
+                None,
+            );
         Ok((control_plane_server_opt, control_plane_client))
     }
 }
@@ -450,32 +458,33 @@ pub async fn serve_quickwit(
             None
         };
     // Instantiate a metastore client, either local if available or remote otherwise.
-    let metastore_client: MetastoreServiceClient =
-        if let Some(metastore_server) = &metastore_server_opt {
-            metastore_server.clone()
-        } else {
-            info!("connecting to metastore");
+    let metastore_client: MetastoreServiceClient = if let Some(metastore_server) =
+        &metastore_server_opt
+    {
+        metastore_server.clone()
+    } else {
+        info!("connecting to metastore");
 
-            let balance_channel =
-                balance_channel_for_service(&cluster, QuickwitService::Metastore).await;
+        let balance_channel =
+            balance_channel_for_service(&cluster, QuickwitService::Metastore).await;
 
-            if !balance_channel
-                .wait_for(Duration::from_secs(300), |connections| {
-                    !connections.is_empty()
-                })
-                .await
-            {
-                bail!("could not find any metastore node in the cluster");
-            }
-            MetastoreServiceClient::tower()
-                .stack_layer(RetryLayer::new(RetryPolicy::from(RetryParams::standard())))
-                .stack_layer(TimeoutLayer::new(GRPC_METASTORE_SERVICE_TIMEOUT))
-                .stack_layer(METASTORE_GRPC_CLIENT_METRICS_LAYER.clone())
-                .stack_layer(tower::limit::GlobalConcurrencyLimitLayer::new(
-                    get_metastore_client_max_concurrency(),
-                ))
-                .build_from_balance_channel(balance_channel, grpc_config.max_message_size)
-        };
+        if !balance_channel
+            .wait_for(Duration::from_secs(300), |connections| {
+                !connections.is_empty()
+            })
+            .await
+        {
+            bail!("could not find any metastore node in the cluster");
+        }
+        MetastoreServiceClient::tower()
+            .stack_layer(RetryLayer::new(RetryPolicy::from(RetryParams::standard())))
+            .stack_layer(TimeoutLayer::new(GRPC_METASTORE_SERVICE_TIMEOUT))
+            .stack_layer(METASTORE_GRPC_CLIENT_METRICS_LAYER.clone())
+            .stack_layer(tower::limit::GlobalConcurrencyLimitLayer::new(
+                get_metastore_client_max_concurrency(),
+            ))
+            .build_from_balance_channel(balance_channel, grpc_config.max_message_size, &[], None)
+    };
     // Instantiate a control plane server if the `control-plane` role is enabled on the node.
     // Otherwise, instantiate a control plane client.
     let (control_plane_server_opt, control_plane_client) = start_control_plane_if_needed(
@@ -959,6 +968,8 @@ async fn setup_ingest_v2(
                                 node.grpc_advertise_addr(),
                                 node.channel(),
                                 max_message_size,
+                                &[CompressionEncoding::Gzip],
+                                Some(CompressionEncoding::Gzip),
                             );
                         Some(Change::Insert(node_id, ingester_service))
                     }
@@ -1161,6 +1172,8 @@ fn setup_indexer_pool(
                                 node.grpc_advertise_addr(),
                                 node.channel(),
                                 max_message_size,
+                                &[],
+                                None,
                             );
                         let change = Change::Insert(
                             node_id.clone(),

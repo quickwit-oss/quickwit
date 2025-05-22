@@ -132,13 +132,23 @@ impl ClusterServiceClient {
         addr: std::net::SocketAddr,
         channel: tonic::transport::Channel,
         max_message_size: bytesize::ByteSize,
+        accept_compression_encodings: &[tonic::codec::CompressionEncoding],
+        send_compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
     ) -> Self {
         let (_, connection_keys_watcher) = tokio::sync::watch::channel(
             std::collections::HashSet::from_iter([addr]),
         );
-        let client = cluster_service_grpc_client::ClusterServiceGrpcClient::new(channel)
+        let mut client = cluster_service_grpc_client::ClusterServiceGrpcClient::new(
+                channel,
+            )
             .max_decoding_message_size(max_message_size.0 as usize)
             .max_encoding_message_size(max_message_size.0 as usize);
+        for accept_compression_encoding in accept_compression_encodings {
+            client = client.accept_compressed(*accept_compression_encoding);
+        }
+        if let Some(send_compression_encoding) = send_compression_encoding_opt {
+            client = client.send_compressed(send_compression_encoding);
+        }
         let adapter = ClusterServiceGrpcClientAdapter::new(
             client,
             connection_keys_watcher,
@@ -148,13 +158,21 @@ impl ClusterServiceClient {
     pub fn from_balance_channel(
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
         max_message_size: bytesize::ByteSize,
+        accept_compression_encodings: &[tonic::codec::CompressionEncoding],
+        send_compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
     ) -> ClusterServiceClient {
         let connection_keys_watcher = balance_channel.connection_keys_watcher();
-        let client = cluster_service_grpc_client::ClusterServiceGrpcClient::new(
+        let mut client = cluster_service_grpc_client::ClusterServiceGrpcClient::new(
                 balance_channel,
             )
             .max_decoding_message_size(max_message_size.0 as usize)
             .max_encoding_message_size(max_message_size.0 as usize);
+        for accept_compression_encoding in accept_compression_encodings {
+            client = client.accept_compressed(*accept_compression_encoding);
+        }
+        if let Some(send_compression_encoding) = send_compression_encoding_opt {
+            client = client.send_compressed(send_compression_encoding);
+        }
         let adapter = ClusterServiceGrpcClientAdapter::new(
             client,
             connection_keys_watcher,
@@ -327,8 +345,16 @@ impl ClusterServiceTowerLayerStack {
         addr: std::net::SocketAddr,
         channel: tonic::transport::Channel,
         max_message_size: bytesize::ByteSize,
+        accept_compression_encodings: &[tonic::codec::CompressionEncoding],
+        send_compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
     ) -> ClusterServiceClient {
-        let client = ClusterServiceClient::from_channel(addr, channel, max_message_size);
+        let client = ClusterServiceClient::from_channel(
+            addr,
+            channel,
+            max_message_size,
+            accept_compression_encodings,
+            send_compression_encoding_opt,
+        );
         let inner_client = client.inner;
         self.build_from_inner_client(inner_client)
     }
@@ -336,10 +362,14 @@ impl ClusterServiceTowerLayerStack {
         self,
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
         max_message_size: bytesize::ByteSize,
+        accept_compression_encodings: &[tonic::codec::CompressionEncoding],
+        send_compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
     ) -> ClusterServiceClient {
         let client = ClusterServiceClient::from_balance_channel(
             balance_channel,
             max_message_size,
+            accept_compression_encodings,
+            send_compression_encoding_opt,
         );
         let inner_client = client.inner;
         self.build_from_inner_client(inner_client)

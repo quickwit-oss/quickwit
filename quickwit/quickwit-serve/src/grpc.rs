@@ -125,7 +125,9 @@ pub(crate) async fn start_grpc_server(
 
         let ingest_router_service = services
             .ingest_router_service
-            .as_grpc_service(grpc_config.max_message_size);
+            .as_grpc_service(grpc_config.max_message_size)
+            .accept_compressed(CompressionEncoding::Gzip)
+            .send_compressed(CompressionEncoding::Gzip);
         Some(ingest_router_service)
     } else {
         None
@@ -134,7 +136,11 @@ pub(crate) async fn start_grpc_server(
     let ingester_grpc_service = if let Some(ingester_service) = services.ingester_service() {
         enabled_grpc_services.insert("ingester");
         file_descriptor_sets.push(quickwit_proto::ingest::INGEST_FILE_DESCRIPTOR_SET);
-        Some(ingester_service.as_grpc_service(grpc_config.max_message_size))
+        let ingester_grpc_service = ingester_service
+            .as_grpc_service(grpc_config.max_message_size)
+            .accept_compressed(CompressionEncoding::Gzip)
+            .send_compressed(CompressionEncoding::Gzip);
+        Some(ingester_grpc_service)
     } else {
         None
     };
