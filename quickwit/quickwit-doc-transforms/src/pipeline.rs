@@ -87,7 +87,7 @@ impl Pipeline {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Hash, Eq, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Hash, Eq, PartialEq, Default)]
 pub struct PipelineConfig(Arc<Vec<PipelineStepConfig>>);
 
 #[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Hash)]

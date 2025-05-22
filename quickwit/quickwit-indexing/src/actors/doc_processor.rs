@@ -505,7 +505,8 @@ impl DocProcessor {
         // environment variable QW_PIPELINE_CONFIG_PATH
         let pipeline_config_opt: Option<PipelineConfig> = if !index_id.as_str().starts_with("otel-")
         {
-            load_pipeline_config_from_env()
+            // Add Fallback to empty pipeline, so still have the preprocessing enabled
+            load_pipeline_config_from_env().or(Some(PipelineConfig::default()))
         } else {
             info!(
                 "processing disabled for otel indexes: {}",
