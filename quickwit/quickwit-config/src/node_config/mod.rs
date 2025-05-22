@@ -29,7 +29,7 @@ use quickwit_common::shared_consts::{
     DEFAULT_SHARD_BURST_LIMIT, DEFAULT_SHARD_SCALE_UP_FACTOR, DEFAULT_SHARD_THROUGHPUT_LIMIT,
 };
 use quickwit_common::uri::Uri;
-use quickwit_proto::indexing::CpuCapacity;
+use quickwit_proto::indexing::{CpuCapacity, PIPELINE_THROUGHPUT};
 use quickwit_proto::types::NodeId;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
@@ -439,6 +439,10 @@ impl IngestApiConfig {
 
     fn validate(&self) -> anyhow::Result<()> {
         self.replication_factor()?;
+        ensure!(
+            self.shard_throughput_limit <= PIPELINE_THROUGHPUT,
+            "shard_throughput_limit must be less than {PIPELINE_THROUGHPUT}"
+        );
         ensure!(
             self.max_queue_disk_usage > ByteSize::mib(256),
             "max_queue_disk_usage must be at least 256 MiB, got `{}`",
