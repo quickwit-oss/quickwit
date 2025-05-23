@@ -61,17 +61,17 @@ pub(crate) const AWS_MTLS_HEADER: &str = "X-Amzn-Mtls-Clientcert";
 ///
 /// This interceptor parses and verifies the CloudPrem bridge client certificate.
 ///
-/// Some load balances support terminating mTLS connections and forwarding the client certificate
+/// Some load balancers support terminating mTLS connections and forwarding the client certificate
 /// as a header. They can also carry intermediate certificates, but in the context of CloudPrem,
 /// we always expect exactly one certificate.
 ///
-/// The AWS ALB is such a load balancer, it forward URL-encoded certs in the
+/// The AWS ALB is such a load balancer, it forwards URL-encoded certs in the
 /// `X-Amzn-Mtls-Clientcert` header. https://docs.aws.amazon.com/elasticloadbalancing/latest/application/mutual-authentication.html
 ///
-/// Traefik also support this feature, and forward certs stripped from newlines in the
+/// Traefik also supports this feature, and forwards certs stripped from newlines in the
 /// `X-Forwarded-Tls-Client-Cert` header. https://doc.traefik.io/traefik/middlewares/http/passtlsclientcert/
 ///
-/// Newlines are always ignored and decoding of a document containing no `%` leaves content
+/// Newlines are always ignored and decoding a document containing no `%` leaves content
 /// unmodified, so we can trivially support both those cases by always URL-decoding received
 /// certificates.
 fn mtls_header_interceptor_impl<T>(
