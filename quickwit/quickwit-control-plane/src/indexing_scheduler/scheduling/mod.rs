@@ -177,16 +177,20 @@ fn compute_max_num_shards_per_pipeline(source_type: &SourceToScheduleType) -> No
             NonZeroU32::new(MAX_LOAD_PER_PIPELINE.cpu_millis() / load_per_shard.get())
                 .unwrap_or_else(|| {
                     // We throttle shard at ingestion to ensure that a shard does not
-                    // exceed 5MB/s.
+                    // exceed shard_throughput_limit.
                     //
-                    // This value has been chosen to make sure that one full pipeline
-                    // should always be able to handle the load of one shard.
+                    // This value defaults at 5MB/s and must be chosen to make sure
+                    // that one full pipeline should always be able to handle the load
+                    // of one shard.
                     //
                     // However it is possible for the system to take more than this
                     // when it is playing catch up.
                     //
                     // This is a transitory state, and not a problem per se.
-                    warn!("load per shard is higher than `MAX_LOAD_PER_PIPELINE`");
+                    warn!(
+                        load=%load_per_shard,
+                        "load per shard is higher than `MAX_LOAD_PER_PIPELINE`"
+                    );
                     NonZeroU32::MIN // also colloquially known as `1`
                 })
         }
