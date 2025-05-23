@@ -35,18 +35,21 @@ pub fn heap_prof_handlers()
 
     async fn start_profiler_handler(
         params: ProfilerQueryParams,
-    ) -> Result<hyper::Response<hyper::Body>, warp::Rejection> {
+    ) -> Result<warp::hyper::Response<warp::hyper::Body>, warp::Rejection> {
         start_profiling(params.min_alloc_size, params.backtrace_every);
-        let resp = warp::reply::with_status("Heap profiling started", warp::http::StatusCode::OK)
-            .into_response();
-        Ok(resp)
+        let response =
+            warp::reply::with_status("Heap profiling started", warp::http::StatusCode::OK)
+                .into_response();
+        Ok(response)
     }
 
-    async fn stop_profiler_handler() -> Result<hyper::Response<hyper::Body>, warp::Rejection> {
+    async fn stop_profiler_handler()
+    -> Result<warp::hyper::Response<warp::hyper::Body>, warp::Rejection> {
         stop_profiling();
-        let resp = warp::reply::with_status("Heap profiling stopped", warp::http::StatusCode::OK)
-            .into_response();
-        Ok(resp)
+        let response =
+            warp::reply::with_status("Heap profiling stopped", warp::http::StatusCode::OK)
+                .into_response();
+        Ok(response)
     }
 
     start_profiler.or(stop_profiler)

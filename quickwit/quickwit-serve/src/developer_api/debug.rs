@@ -18,7 +18,6 @@ use std::time::Duration;
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 use glob::{MatchOptions, Pattern as GlobPattern};
-use hyper::StatusCode;
 use quickwit_cluster::Cluster;
 use quickwit_config::service::QuickwitService;
 use quickwit_proto::developer::{DeveloperService, DeveloperServiceClient, GetDebugInfoRequest};
@@ -27,6 +26,7 @@ use serde::Deserialize;
 use serde_json::Value as JsonValue;
 use tokio::time::timeout;
 use tracing::error;
+use warp::hyper::StatusCode;
 use warp::{Filter, Rejection, Reply};
 
 use super::DeveloperApiServer;

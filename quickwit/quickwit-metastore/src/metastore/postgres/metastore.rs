@@ -1850,7 +1850,7 @@ mod tests {
                     source_id,
                     update_timestamp,
                 } = shard;
-                let shard_state_name = ShardState::from_i32(shard_state)
+                let shard_state_name = ShardState::try_from(shard_state)
                     .unwrap()
                     .as_json_str_name();
                 let update_timestamp = OffsetDateTime::from_unix_timestamp(update_timestamp)

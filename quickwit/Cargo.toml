@@ -108,9 +108,9 @@ dyn-clone = "1.0.10"
 enum-iterator = "1.5"
 env_logger = "0.10"
 fail = "0.5"
+flate2 = "1.0"
 flume = "0.11"
 fnv = "1"
-flate2 = "1.0"
 futures = "0.3"
 futures-util = { version = "0.3.25", default-features = false }
 glob = "0.3"
@@ -122,24 +122,19 @@ heck = "0.4.1"
 hex = "0.4.3"
 home = "0.5.4"
 hostname = "0.3"
-http = "0.2.9"
+http = "1.3"
+http-body-util = "0.1.3"
 http-serde = "1.1.2"
 humantime = "2.1.0"
-hyper = { version = "0.14", features = [
-  "client",
-  "http1",
-  "http2",
-  "server",
-  "stream",
-  "tcp",
-] }
+hyper = { version = "1.6", features = ["client", "http1", "http2", "server"] }
 hyper-rustls = "0.24"
+hyper-util = { version = "0.1", features = ["full"] }
 indexmap = { version = "2.1.0", features = ["serde"] }
 indicatif = "0.17.3"
 itertools = "0.13"
 json_comments = "0.2"
+legacy-http = { version = "0.2.9", package = "http" }
 libz-sys = "1.1.8"
-lru = "0.13"
 lindera-core = "0.27.0"
 lindera-dictionary = "0.27.0"
 lindera-tokenizer = { version = "0.27.0", features = [
@@ -150,6 +145,7 @@ lindera-tokenizer = { version = "0.27.0", features = [
   "ko-dic-compress",
   "ko-dic",
 ] }
+lru = "0.13"
 matches = "0.1.9"
 md5 = "0.7"
 mime_guess = "2.0.4"
@@ -172,17 +168,17 @@ pnet = { version = "0.33.0", features = ["std"] }
 postcard = { version = "1.0.4", features = [
   "use-std",
 ], default-features = false }
+pprof = { version = "0.13", features = ["flamegraph"] }
 predicates = "3"
 prettyplease = "0.2.0"
-pprof = { version = "0.13", features = ["flamegraph"] }
 proc-macro2 = "1.0.50"
 prometheus = { version = "0.13", features = ["process"] }
 proptest = "1"
-prost = { version = "0.11.6", default-features = false, features = [
+prost = { version = "0.13", default-features = false, features = [
   "prost-derive",
 ] }
-prost-build = "0.11.6"
-prost-types = "0.11.6"
+prost-build = "0.13"
+prost-types = "0.13"
 pulsar = { version = "6.3", default-features = false, features = [
   "auth-oauth2",
   "compression",
@@ -248,20 +244,25 @@ tokio-rustls = { version = "0.24.0", default-features = false }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-util = { version = "0.7", features = ["full"] }
 toml = "0.7.6"
-tonic = { version = "0.9.0", features = ["gzip"] }
-tonic-build = "0.9.0"
-tonic-health = "0.9.0"
-tonic-reflection = "0.9" 
-tower = { version = "0.4.13", features = [
+tonic = { version = "0.13.0", features = [
+  "gzip",
+  "_tls-any",
+  "tls-native-roots",
+] }
+tonic-build = "0.13.0"
+tonic-health = "0.13.0"
+tonic-reflection = "0.13"
+tower = { version = "0.5", features = [
   "balance",
   "buffer",
   "load",
   "retry",
   "util",
 ] }
-tower-http = { version = "0.4.0", features = [
-  "compression-zstd",
+# legacy version because of warp
+tower-http = { version = "0.4", features = [
   "compression-gzip",
+  "compression-zstd",
   "cors",
 ] }
 tracing = "0.1"
@@ -286,7 +287,7 @@ vrl = { version = "0.22", default-features = false, features = [
 ] }
 warp = "0.3"
 whichlang = "0.1"
-wiremock = "0.5"
+wiremock = "0.6"
 zstd = "0.13.0"
 
 aws-config = "1.5.4"
@@ -296,8 +297,12 @@ aws-sdk-kinesis = "1.37"
 aws-sdk-s3 = "=1.62"
 aws-sdk-sqs = "1.36"
 aws-smithy-async = "1.2"
+aws-smithy-http-client = { version = "1.0" }
 aws-smithy-runtime = "1.6.2"
-aws-smithy-types = { version = "1.2", features = ["byte-stream-poll-next"] }
+aws-smithy-types = { version = "1.2", features = [
+  "byte-stream-poll-next",
+  "http-body-1-x",
+] }
 aws-types = "1.3.3"
 
 azure_core = { version = "0.13.0", features = ["enable_reqwest_rustls"] }
