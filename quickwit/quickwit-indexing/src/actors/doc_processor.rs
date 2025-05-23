@@ -503,16 +503,17 @@ impl DocProcessor {
 
         // Try to deserialize pipeline config into `PipelineConfig` from the path provided in the
         // environment variable QW_PIPELINE_CONFIG_PATH
-        let pipeline_config_opt: Option<PipelineConfig> = if !index_id.as_str().starts_with("otel-")
-        {
-            load_pipeline_config_from_env()
-        } else {
-            info!(
-                "processing disabled for otel indexes: {}",
-                index_id.as_str()
-            );
-            None
-        };
+        let pipeline_config_opt: Option<PipelineConfig> =
+            if index_id.as_str().starts_with("datadog") {
+                // Add Fallback to empty pipeline, so still have the preprocessing enabled
+                load_pipeline_config_from_env().or(Some(PipelineConfig::default()))
+            } else {
+                info!(
+                    "processing disabled for indexes not starting with datadog: {}",
+                    index_id.as_str()
+                );
+                None
+            };
         let pipeline_opt: Option<Pipeline> = pipeline_config_opt
             .map(|config| Pipeline::try_from_pipeline_config(&config))
             .transpose()?;
