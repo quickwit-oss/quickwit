@@ -60,8 +60,6 @@ pub struct GrpcConfig {
     pub max_message_size: ByteSize,
     #[serde(default)]
     pub tls: Option<TlsConfig>,
-    #[serde(default)]
-    pub mtls_header: Option<String>,
     // If set, keeps idle connection alive by periodically perform a
     // keep alive ping request.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -120,7 +118,6 @@ impl Default for GrpcConfig {
         Self {
             max_message_size: Self::default_max_message_size(),
             tls: None,
-            mtls_header: None,
             keep_alive: None,
         }
     }
@@ -550,7 +547,22 @@ impl Default for JaegerConfig {
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CloudPremConfig {
+    #[serde(default)]
+    pub mtls_header: Option<String>,
+    #[serde(flatten, default)]
+    pub grpc_config: GrpcConfig,
+}
+
+impl CloudPremConfig {
+    pub fn validate(&self) -> anyhow::Result<()> {
+        self.grpc_config.validate()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct NodeConfig {
     pub cluster_id: String,
     pub node_id: NodeId,
@@ -567,7 +579,7 @@ pub struct NodeConfig {
     pub default_index_root_uri: Uri,
     pub rest_config: RestConfig,
     pub grpc_config: GrpcConfig,
-    pub cloudprem_grpc_config: GrpcConfig,
+    pub cloudprem_config: CloudPremConfig,
     pub storage_configs: StorageConfigs,
     pub metastore_configs: MetastoreConfigs,
     pub indexer_config: IndexerConfig,
@@ -824,7 +836,6 @@ mod tests {
         let grpc_config = GrpcConfig {
             max_message_size: ByteSize::mb(1),
             tls: None,
-            mtls_header: None,
             keep_alive: None,
         };
         assert!(grpc_config.validate().is_ok());
@@ -832,7 +843,6 @@ mod tests {
         let grpc_config = GrpcConfig {
             max_message_size: ByteSize::kb(1),
             tls: None,
-            mtls_header: None,
             keep_alive: None,
         };
         assert!(grpc_config.validate().is_err());

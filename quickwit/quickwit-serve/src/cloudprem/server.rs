@@ -3,7 +3,7 @@ use std::error::Error;
 use std::sync::Arc;
 
 use quickwit_common::tower::BoxFutureInfaillible;
-use quickwit_config::GrpcConfig;
+use quickwit_config::CloudPremConfig;
 use quickwit_config::service::QuickwitService;
 use quickwit_proto::cloudprem::CloudPremServiceClient;
 use quickwit_proto::tonic::transport::Server;
@@ -23,13 +23,14 @@ pub(crate) const DISABLE_CERTIFICATE_VERIFICATION_ENV_KEY: &str =
 /// Starts and binds gRPC services to `grpc_listen_addr`.
 pub(crate) async fn start_cloudprem_server(
     tcp_listener: TcpListener,
-    grpc_config: GrpcConfig,
+    cloudprem_config: CloudPremConfig,
     services: Arc<QuickwitServices>,
     readiness_trigger: BoxFutureInfaillible<()>,
     shutdown_signal: BoxFutureInfaillible<()>,
 ) -> anyhow::Result<()> {
     let mut enabled_grpc_services = BTreeSet::new();
     let mut file_descriptor_sets = Vec::new();
+    let grpc_config = cloudprem_config.grpc_config;
 
     let server = Server::builder().trace_fn(|request| {
         let method = request.method();
@@ -94,7 +95,7 @@ pub(crate) async fn start_cloudprem_server(
         } else {
             tracing::info!("mTLS client certificate verification enabled");
             Some(MtlsHeaderInterceptorLayer::for_cloudprem_port(
-                grpc_config.mtls_header,
+                cloudprem_config.mtls_header,
             ))
         };
 

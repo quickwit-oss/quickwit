@@ -28,7 +28,7 @@ use quickwit_proto::types::NodeId;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
-use super::{GrpcConfig, RestConfig};
+use super::{CloudPremConfig, GrpcConfig, RestConfig};
 use crate::config_value::ConfigValue;
 use crate::qw_env_vars::*;
 use crate::service::QuickwitService;
@@ -193,9 +193,9 @@ struct NodeConfigBuilder {
     #[serde(rename = "grpc")]
     #[serde(default)]
     grpc_config: GrpcConfig,
-    #[serde(rename = "cloudprem_grpc")]
+    #[serde(rename = "cloudprem")]
     #[serde(default)]
-    cloudprem_grpc_config: GrpcConfig,
+    cloudprem_config: CloudPremConfig,
     #[serde(rename = "storage")]
     #[serde(default)]
     storage_configs: StorageConfigs,
@@ -252,7 +252,7 @@ impl NodeConfigBuilder {
             .build_and_validate(listen_ip, env_vars)?;
 
         self.grpc_config.validate()?;
-        self.cloudprem_grpc_config.validate()?;
+        self.cloudprem_config.validate()?;
 
         let gossip_listen_port = self
             .gossip_listen_port
@@ -329,7 +329,7 @@ impl NodeConfigBuilder {
             default_index_root_uri,
             rest_config,
             grpc_config: self.grpc_config,
-            cloudprem_grpc_config: self.cloudprem_grpc_config,
+            cloudprem_config: self.cloudprem_config,
             metastore_configs: self.metastore_configs,
             storage_configs: self.storage_configs,
             indexer_config: self.indexer_config,
@@ -428,7 +428,7 @@ impl Default for NodeConfigBuilder {
             default_index_root_uri: ConfigValue::none(),
             rest_config_builder: RestConfigBuilder::default(),
             grpc_config: GrpcConfig::default(),
-            cloudprem_grpc_config: GrpcConfig::default(),
+            cloudprem_config: CloudPremConfig::default(),
             storage_configs: StorageConfigs::default(),
             metastore_configs: MetastoreConfigs::default(),
             indexer_config: IndexerConfig::default(),
@@ -532,7 +532,7 @@ pub fn node_config_for_tests_from_ports(
         default_index_root_uri,
         rest_config,
         grpc_config: GrpcConfig::default(),
-        cloudprem_grpc_config: GrpcConfig::default(),
+        cloudprem_config: CloudPremConfig::default(),
         storage_configs: StorageConfigs::default(),
         metastore_configs: MetastoreConfigs::default(),
         indexer_config: IndexerConfig::default(),
@@ -1346,5 +1346,54 @@ mod tests {
         .unwrap_err()
         .to_string();
         assert!(error_message.contains("replication factor"));
+    }
+
+    #[tokio::test]
+    async fn test_config_cloudprem() {
+        let config_yaml = r#"
+                version: 0.8
+                cloudprem:
+                  mtls_header: my-header
+                  max_message_size: 30MiB
+            "#;
+        let config = load_node_config_with_env(
+            ConfigFormat::Yaml,
+            config_yaml.as_bytes(),
+            &HashMap::default(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            config,
+            NodeConfig {
+                cloudprem_config: CloudPremConfig {
+                    mtls_header: Some("my-header".to_string()),
+                    grpc_config: GrpcConfig {
+                        max_message_size: ByteSize::mib(30),
+                        tls: None,
+                        keep_alive: None,
+                    },
+                },
+                ..NodeConfigBuilder::default()
+                    .build_and_validate(&HashMap::new())
+                    .await
+                    .unwrap()
+            }
+        );
+
+        let config_yaml = r#"
+                version: 0.8
+                cloudprem:
+                  mtls_header: my-header
+                  max_message_size: 30MiB
+                  unknown: true
+            "#;
+        load_node_config_with_env(
+            ConfigFormat::Yaml,
+            config_yaml.as_bytes(),
+            &HashMap::default(),
+        )
+        .await
+        .unwrap_err();
     }
 }
