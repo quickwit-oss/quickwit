@@ -17,11 +17,11 @@ bytesize = { workspace = true }
 chrono = { workspace = true }
 cron = { workspace = true }
 enum-iterator = { workspace = true }
-legacy-http = { workspace = true }
 http-serde = { workspace = true }
 humantime = { workspace = true }
 itertools = { workspace = true }
 json_comments = { workspace = true }
+legacy-http = { workspace = true }
 new_string_template = { workspace = true }
 once_cell = { workspace = true }
 regex = { workspace = true }

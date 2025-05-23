@@ -15,7 +15,7 @@
 use std::time::Duration;
 
 use hyper::{Method, Request, StatusCode};
-use hyper_util::rt::{TokioExecutor, TokioIo};
+use hyper_util::rt::TokioExecutor;
 use quickwit_config::service::QuickwitService;
 use quickwit_serve::SearchRequestQueryString;
 

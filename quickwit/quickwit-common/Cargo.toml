@@ -25,7 +25,7 @@ home = { workspace = true }
 hostname = { workspace = true }
 http = { workspace = true }
 hyper = { workspace = true }
-hyper-util = {workspace = true, optional=true}
+hyper-util = { workspace = true, optional = true }
 itertools = { workspace = true }
 once_cell = { workspace = true }
 pin-project = { workspace = true }
@@ -39,12 +39,16 @@ siphasher = { workspace = true }
 sysinfo = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
-tikv-jemallocator = { workspace = true, optional = true }
 tikv-jemalloc-ctl = { workspace = true, optional = true }
+tikv-jemallocator = { workspace = true, optional = true }
 tokio = { workspace = true }
 tokio-metrics = { workspace = true }
 tokio-stream = { workspace = true }
-tonic = { workspace = true, features = ["tls-native-roots", "server", "channel"] }
+tonic = { workspace = true, features = [
+    "tls-native-roots",
+    "server",
+    "channel",
+] }
 tower = { workspace = true }
 tracing = { workspace = true }
 
@@ -55,13 +59,13 @@ jemalloc-profiled = [
     "named_tasks",
     "dep:backtrace",
     "dep:tikv-jemallocator",
-    "dep:tikv-jemalloc-ctl"
+    "dep:tikv-jemalloc-ctl",
 ]
 
 [dev-dependencies]
-serde_json = { workspace = true }
-tempfile = { workspace = true }
-proptest = { workspace = true }
-serial_test = { workspace = true }
-tokio = { workspace = true, features = ["test-util"] }
 hyper-util = { workspace = true }
+proptest = { workspace = true }
+serde_json = { workspace = true }
+serial_test = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }

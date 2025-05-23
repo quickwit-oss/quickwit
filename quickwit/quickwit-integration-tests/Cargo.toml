@@ -13,7 +13,7 @@ license.workspace = true
 [features]
 sqs-localstack-tests = [
     "quickwit-indexing/sqs",
-    "quickwit-indexing/sqs-localstack-tests"
+    "quickwit-indexing/sqs-localstack-tests",
 ]
 
 [dependencies]

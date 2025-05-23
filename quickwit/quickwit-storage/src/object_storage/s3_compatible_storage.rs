@@ -887,7 +887,6 @@ mod tests {
     use aws_sdk_s3::config::{Credentials, Region};
     use aws_sdk_s3::primitives::SdkBody;
     use aws_smithy_runtime::client::http::test_util::{ReplayEvent, StaticReplayClient};
-    use hyper::body::Bytes;
     use hyper::http;
     use quickwit_aws::aws_behavior_version;
     use quickwit_common::chunk_range;

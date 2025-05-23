@@ -124,15 +124,12 @@ impl PutPayload for FilePayload {
         if range.start > 0 {
             fs_builder = fs_builder.offset(range.start);
         }
-
         fs_builder = fs_builder.length(Length::Exact(len));
 
-        fs_builder.build().await.map_err(|byte_stream_err| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                format!("Failed to create byte stream: {}", byte_stream_err),
-            )
-        })
+        fs_builder
+            .build()
+            .await
+            .map_err(|error| io::Error::other(format!("failed to create byte stream: {error}")))
     }
 }
 

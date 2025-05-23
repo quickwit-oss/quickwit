@@ -84,14 +84,13 @@ async fn create_channel(client: tokio::io::DuplexStream) -> anyhow::Result<Chann
     use http::Uri;
     use quickwit_proto::tonic::transport::Endpoint;
 
-    let mut client = Some(client);
+    let mut outer_client_opt = Some(client);
     let channel = Endpoint::try_from("http://test.server")?
         .connect_with_connector(tower::service_fn(move |_: Uri| {
-            let client_opt = client.take();
+            let inner_client_opt = outer_client_opt.take();
             async move {
-                let client = client_opt.ok_or_else(|| {
-                    std::io::Error::new(std::io::ErrorKind::Other, "client already taken")
-                })?;
+                let client = inner_client_opt
+                    .ok_or_else(|| std::io::Error::other("client already taken"))?;
                 std::io::Result::Ok(hyper_util::rt::TokioIo::new(client))
             }
         }))
