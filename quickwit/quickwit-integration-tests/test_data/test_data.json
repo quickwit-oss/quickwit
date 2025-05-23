@@ -2,7 +2,6 @@
   {
     "source": "kubernetes.audit",
     "tags": "team:compute,env:staging,service:kube-apiserver,service:kube-apiserver-audit",
-    "source_fragment_id": "01961475-a2be-4e18-bf19-c84acfbc677f",
     "service": "kube-apiserver-audit",
     "host": "i-0e2bc0882fd4bab5d",
     "status": "ok",
@@ -12,32 +11,15 @@
   {
     "source": "kafka",
     "message": "{\"logger\":{\"name\":\"org.apache.kafka.storage.internals.log.LogDirFailureChannel\"},\"error\":{\"stack\":\"java.nio.file.FileSystemException: /data/kafka/replication-offset-checkpoint: Too many open files\\n\\tat java.base/sun.nio.fs.UnixException.translateToIOException(UnixException.java:100)\\n\\tat java.base/sun.nio.fs.UnixException.rethrowAsIOException(UnixException.java:106)\\n\\t\",\"file\":\"java.base/sun.nio.fs.UnixException.java\",\"kind\":\"java.nio.file.FileSystemException\",\"message\":\"/data/kafka/replication-offset-checkpoint: Too many open files\"},\"timestamp\":1744099968799,\"status\":\"ERROR\"}",
-    "error": {
-      "fingerprint": "v10.E5AD8A8BA75000A299EE4A9966C1E68A",
-      "id": "1686a368-3d3d-4af0-acb8-b7a1451cf4eb"
-    },
     "tags": "service:kafka,env:staging,filename:1135.log,team:streams",
-    "source_fragment_id": "01961475-8a55-4d6e-a662-3d236eaea2a3",
     "service": "kafka",
     "host": "i-09843350a1f9a16f1",
-    "error_tracking": {
-      "process_on_errors_track": true,
-      "fingerprints": {
-        "stable": {
-          "materials": "[{\"name\":\"SERVICE\",\"location\":{\"source\":\"EVENT\",\"path\":\"service\",\"ranges\":[[0,5]]}},{\"name\":\"ERROR_TYPE\",\"location\":{\"source\":\"EVENT\",\"path\":\"custom.error.kind\",\"ranges\":[[0,33]]}},{\"name\":\"ERROR_MESSAGE\",\"location\":{\"source\":\"EVENT\",\"path\":\"custom.error.message\",\"ranges\":[[43,46],[47,51],[52,56],[57,62]]}},{\"name\":\"STACK_FRAME\",\"location\":{\"source\":\"EVENT\",\"path\":\"custom.error.stack\",\"ranges\":[[98,183]]}}]",
-          "source": "datadog",
-          "value": "E5AD8A8BA75000A299EE4A9966C1E68A",
-          "version": 10
-        }
-      }
-    },
     "status": "error",
     "timestamp": 1744099968799
   },
   {
     "source": "envoy",
     "tags": "team:fabric-gateways,env:staging,service:ingress-edge-pool0",
-    "source_fragment_id": "01961475-83c7-4dde-b96f-6964ba86d923",
     "service": "ingress-edge-pool0",
     "host": "i-0efe8c6ad5691d688",
     "status": "ok",

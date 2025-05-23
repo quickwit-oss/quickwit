@@ -76,7 +76,7 @@ pub struct ProcessedLog {
 
     pub id: String,
     pub discovery_timestamp: i64,
-    pub tiebreaker: i64,
+    pub tiebreaker: i32,
     pub ingest_size_in_bytes: usize,
 }
 
