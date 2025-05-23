@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::path::PathBuf;
+use std::path::Path;
 use std::string::FromUtf8Error;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -27,7 +27,7 @@ use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::{SourceInputFormat, TransformConfig};
 use quickwit_doc_mapper::{DocMapper, DocParsingError, JsonObject};
 use quickwit_doc_transforms::{
-    Pipeline, PipelineConfig, PipelineError, PipelineStep, ProcessedLog,
+    DatadogLogMsg, Pipeline, PipelineConfig, PipelineError, PipelineStep, ProcessedLog,
 };
 use quickwit_opentelemetry::otlp::{
     JsonLogIterator, JsonSpanIterator, OtlpLogsError, OtlpTracesError, parse_otlp_logs_json,
@@ -212,11 +212,13 @@ fn parse_raw_doc(
         let mut json_doc = json_doc_res?;
         use serde::de::IntoDeserializer;
         let deserializer = json_doc.json_obj.into_deserializer();
-        let Ok(mut processed_log) = ProcessedLog::deserialize(deserializer) else {
+        let Ok(doc) = DatadogLogMsg::deserialize(deserializer) else {
             return Err(DocProcessorError::JsonParsing(
-                "Document was not a processed log.".to_string(),
+                "Document was not a DatadogLogMsg.".to_string(),
             ));
         };
+        let mut processed_log = ProcessedLog::from_datadog_log_msg(doc);
+
         if let Err(pipeline_error) = pipeline.apply(&mut processed_log) {
             return Err(DocProcessorError::Pipeline(pipeline_error));
         }
@@ -455,6 +457,36 @@ pub struct DocProcessor {
     input_format: SourceInputFormat,
 }
 
+fn load_pipeline_config_from_env() -> Option<PipelineConfig> {
+    let qw_pipeline_config_path = std::env::var("QW_PIPELINE_CONFIG_PATH").ok()?;
+    let pipeline_config_serialized = std::fs::read_to_string(Path::new(&qw_pipeline_config_path));
+    match pipeline_config_serialized {
+        Ok(pipeline_config) => match serde_json::from_str::<PipelineConfig>(&pipeline_config) {
+            Ok(pipeline_config) => {
+                info!(
+                    "Successfully read and deserialized pipeline config file {}",
+                    qw_pipeline_config_path
+                );
+                Some(pipeline_config)
+            }
+            Err(e) => {
+                error!(
+                    "Failed to deserialize pipeline config {} from path {}",
+                    e, qw_pipeline_config_path
+                );
+                None
+            }
+        },
+        Err(e) => {
+            error!(
+                "Failed to read pipeline config file: {} from path {}",
+                e, qw_pipeline_config_path
+            );
+            None
+        }
+    }
+}
+
 impl DocProcessor {
     pub fn try_new(
         index_id: IndexId,
@@ -471,26 +503,16 @@ impl DocProcessor {
 
         // Try to deserialize pipeline config into `PipelineConfig` from the path provided in the
         // environment variable QW_PIPELINE_CONFIG_PATH
-        //
-        let pipeline_config_opt: Option<PipelineConfig> = std::env::var("QW_PIPELINE_CONFIG_PATH")
-            .ok()
-            .and_then(|path| {
-                let pipeline_config_serialized = std::fs::read_to_string(PathBuf::from(path));
-                match pipeline_config_serialized {
-                    Ok(pipeline_config) => {
-                        info!("Successfully read pipeline config file");
-                        Some(
-                            serde_json::from_str(&pipeline_config)
-                                .expect("Failed to deserialize pipeline config"),
-                        )
-                    }
-                    Err(e) => {
-                        error!("Failed to read pipeline config file: {}", e);
-                        None
-                    }
-                }
-            });
-
+        let pipeline_config_opt: Option<PipelineConfig> = if !index_id.as_str().starts_with("otel-")
+        {
+            load_pipeline_config_from_env()
+        } else {
+            info!(
+                "processing disabled for otel indexes: {}",
+                index_id.as_str()
+            );
+            None
+        };
         let pipeline_opt: Option<Pipeline> = pipeline_config_opt
             .map(|config| Pipeline::try_from_pipeline_config(&config))
             .transpose()?;

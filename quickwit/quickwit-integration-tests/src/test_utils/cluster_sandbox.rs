@@ -44,6 +44,7 @@ use quickwit_serve::{
     ListSplitsQueryParams, RestIngestResponse, SearchRequestQueryString, serve_quickwit,
 };
 use quickwit_storage::StorageResolver;
+use rand::Rng;
 use reqwest::Url;
 use serde_json::Value;
 use tempfile::TempDir;
@@ -117,12 +118,17 @@ impl ClusterSandboxBuilder {
             let socket: SocketAddr = ([127, 0, 0, 1], 0u16).into();
             let rest_tcp_listener = TcpListener::bind(socket).await.unwrap();
             let grpc_tcp_listener = TcpListener::bind(socket).await.unwrap();
+            let cloudprem_tcp_listener = TcpListener::bind(socket).await.unwrap();
             let mut config = NodeConfig::for_test_from_ports(
                 rest_tcp_listener.local_addr().unwrap().port(),
                 grpc_tcp_listener.local_addr().unwrap().port(),
+                cloudprem_tcp_listener.local_addr().unwrap().port(),
             );
             tcp_listener_resolver.add_listener(rest_tcp_listener).await;
             tcp_listener_resolver.add_listener(grpc_tcp_listener).await;
+            tcp_listener_resolver
+                .add_listener(cloudprem_tcp_listener)
+                .await;
             config.indexer_config.enable_otlp_endpoint = node_builder.enable_otlp;
             config.enabled_services.clone_from(&node_builder.services);
             config.jaeger_config.enable_endpoint = true;
@@ -165,7 +171,7 @@ impl ClusterSandboxBuilder {
     }
 }
 
-/// Intermediate state where the ports of all the the test cluster nodes have
+/// Intermediate state where the ports of all the test cluster nodes have
 /// been reserved and the configurations have been generated.
 pub struct ResolvedClusterConfig {
     temp_dir: TempDir,
@@ -485,13 +491,20 @@ impl ClusterSandbox {
             .ok_or(anyhow::anyhow!("No indexer node found"))?;
         // NodeConfig cannot be serialized, we write our own simplified config
         let mut tmp_config_file = tempfile::Builder::new().suffix(".yaml").tempfile().unwrap();
+        // we suffix data_dir with a random slug to save us from multiple local ingestion trying to
+        // concurrently do something, and cleanup the directory to start a new ingestion.
+        let data_dir = test_conf
+            .0
+            .data_dir_path
+            .join(rand::thread_rng().r#gen::<u64>().to_string());
+        tokio::fs::create_dir(&data_dir).await?;
         let node_config = format!(
             r#"
                 version: 0.8
                 metastore_uri: {}
                 data_dir: {:?}
                 "#,
-            test_conf.0.metastore_uri, test_conf.0.data_dir_path
+            test_conf.0.metastore_uri, data_dir
         );
         tmp_config_file.write_all(node_config.as_bytes())?;
         tmp_config_file.flush()?;

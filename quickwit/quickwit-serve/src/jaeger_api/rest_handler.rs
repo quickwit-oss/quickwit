@@ -53,7 +53,7 @@ pub(crate) struct JaegerApi;
 /// This is where all Jaeger handlers
 /// should be registered.
 /// Request are executed on the `otel-traces-v0_*` indexes.
-pub(crate) fn jaeger_api_handlers(
+pub fn jaeger_api_handlers(
     jaeger_service_opt: Option<JaegerService>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     jaeger_services_handler(jaeger_service_opt.clone())
@@ -477,7 +477,7 @@ mod tests {
                     hits: Vec::new(),
                     elapsed_time_micros: 0,
                     errors: Vec::new(),
-                    aggregation: None,
+                    aggregation_postcard: None,
                     scroll_id: None,
                     failed_splits: Vec::new(),
                     num_successful_splits: 1,
@@ -510,7 +510,7 @@ mod tests {
                     hits: Vec::new(),
                     elapsed_time_micros: 0,
                     errors: Vec::new(),
-                    aggregation: None,
+                    aggregation_postcard: None,
                     scroll_id: None,
                     failed_splits: Vec::new(),
                     num_successful_splits: 1,

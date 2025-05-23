@@ -11,8 +11,11 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
+anyhow = { workspace = true }
 bytes = { workspace = true }
 reqwest = { workspace = true }
+reqwest-middleware = { workspace = true }
+reqwest-retry = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -30,6 +33,7 @@ quickwit-search = { workspace = true }
 quickwit-serve = { workspace = true }
 
 [dev-dependencies]
+http = { workspace = true }
 wiremock = { workspace = true }
 
 quickwit-config = { workspace = true, features = ["testsuite"] }

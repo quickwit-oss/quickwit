@@ -110,6 +110,7 @@ cipher,https://github.com/RustCrypto/traits,MIT OR Apache-2.0,RustCrypto Develop
 clang-sys,https://github.com/KyleMayes/clang-sys,Apache-2.0,Kyle Mayes <kyle@mayeses.com>
 clap,https://github.com/clap-rs/clap,MIT OR Apache-2.0,The clap Authors
 clap_builder,https://github.com/clap-rs/clap,MIT OR Apache-2.0,The clap_builder Authors
+clap_derive,https://github.com/clap-rs/clap,MIT OR Apache-2.0,The clap_derive Authors
 clap_lex,https://github.com/clap-rs/clap,MIT OR Apache-2.0,The clap_lex Authors
 cmac,https://github.com/RustCrypto/MACs,MIT OR Apache-2.0,RustCrypto Developers
 coarsetime,https://github.com/jedisct1/rust-coarsetime,ISC,Frank Denis <github@pureftpd.org>
@@ -182,7 +183,7 @@ enum-iterator,https://github.com/stephaneyfx/enum-iterator,MIT,Stephane Raux <st
 enum-iterator-derive,https://github.com/stephaneyfx/enum-iterator,0BSD,Stephane Raux <stephaneyfx@gmail.com>
 env_logger,https://github.com/rust-cli/env_logger,MIT OR Apache-2.0,The env_logger Authors
 equivalent,https://github.com/indexmap-rs/equivalent,Apache-2.0 OR MIT,The equivalent Authors
-errno,https://github.com/lambda-fairy/rust-errno,MIT OR Apache-2.0,Chris Wong <lambda.fairy@gmail.com>
+errno,https://github.com/lambda-fairy/rust-errno,MIT OR Apache-2.0,"Chris Wong <lambda.fairy@gmail.com>, Dan Gohman <dev@sunfishcode.online>"
 event-listener,https://github.com/smol-rs/event-listener,Apache-2.0 OR MIT,Stjepan Glavina <stjepang@gmail.com>
 event-listener,https://github.com/smol-rs/event-listener,Apache-2.0 OR MIT,"Stjepan Glavina <stjepang@gmail.com>, John Nunley <dev@notgull.net>"
 event-listener-strategy,https://github.com/smol-rs/event-listener-strategy,Apache-2.0 OR MIT,John Nunley <dev@notgull.net>
@@ -223,7 +224,7 @@ glob,https://github.com/rust-lang/glob,MIT OR Apache-2.0,The Rust Project Develo
 grok,https://github.com/daschl/grok,Apache-2.0,Michael Nitschinger <michael@nitschinger.at>
 group,https://github.com/zkcrypto/group,MIT OR Apache-2.0,"Sean Bowe <ewillbefull@gmail.com>, Jack Grigg <jack@z.cash>"
 h2,https://github.com/hyperium/h2,MIT,"Carl Lerche <me@carllerche.com>, Sean McArthur <sean@seanmonstar.com>"
-half,https://github.com/starkat99/half-rs,MIT OR Apache-2.0,Kathryn Long <squeeself@gmail.com>
+half,https://github.com/VoidStarKat/half-rs,MIT OR Apache-2.0,Kathryn Long <squeeself@gmail.com>
 hashbrown,https://github.com/rust-lang/hashbrown,MIT OR Apache-2.0,Amanieu d'Antras <amanieu@gmail.com>
 headers,https://github.com/hyperium/headers,MIT,Sean McArthur <sean@seanmonstar.com>
 heck,https://github.com/withoutboats/heck,MIT OR Apache-2.0,The heck Authors
@@ -232,6 +233,7 @@ hermit-abi,https://github.com/hermit-os/hermit-rs,MIT OR Apache-2.0,Stefan Lanke
 hex,https://github.com/KokaKiwi/rust-hex,MIT OR Apache-2.0,KokaKiwi <kokakiwi@kokakiwi.net>
 hmac,https://github.com/RustCrypto/MACs,MIT OR Apache-2.0,RustCrypto Developers
 home,https://github.com/rust-lang/cargo,MIT OR Apache-2.0,Brian Anderson <andersrb@gmail.com>
+hostname,https://github.com/svartalf/hostname,MIT,The hostname Authors
 hostname,https://github.com/svartalf/hostname,MIT,"fengcen <fengcen.love@gmail.com>, svartalf <self@svartalf.info>"
 htmlescape,https://github.com/veddan/rust-htmlescape,Apache-2.0  OR  MIT  OR  MPL-2.0,Viktor Dahl <pazaconyoman@gmail.com>
 http,https://github.com/hyperium/http,MIT OR Apache-2.0,"Alex Crichton <alex@alexcrichton.com>, Carl Lerche <me@carllerche.com>, Sean McArthur <sean@seanmonstar.com>"
@@ -371,6 +373,7 @@ overload,https://github.com/danaugrs/overload,MIT,Daniel Salvadori <danaugrs@gma
 ownedbytes,https://github.com/quickwit-oss/tantivy,MIT,"Paul Masurel <paul@quickwit.io>, Pascal Seitz <pascal@quickwit.io>"
 p256,https://github.com/RustCrypto/elliptic-curves/tree/master/p256,Apache-2.0 OR MIT,RustCrypto Developers
 parking,https://github.com/smol-rs/parking,Apache-2.0 OR MIT,"Stjepan Glavina <stjepang@gmail.com>, The Rust Project Developers"
+parking_lot,https://github.com/Amanieu/parking_lot,Apache-2.0 OR MIT,Amanieu d'Antras <amanieu@gmail.com>
 parking_lot,https://github.com/Amanieu/parking_lot,MIT OR Apache-2.0,Amanieu d'Antras <amanieu@gmail.com>
 parse-size,https://github.com/kennytm/parse-size,MIT,kennytm <kennytm@gmail.com>
 parse-zoneinfo,https://github.com/chronotope/chrono-tz,MIT,The parse-zoneinfo Authors
@@ -450,7 +453,9 @@ regex-syntax,https://github.com/rust-lang/regex,MIT OR Apache-2.0,The Rust Proje
 regex-syntax,https://github.com/rust-lang/regex/tree/master/regex-syntax,MIT OR Apache-2.0,"The Rust Project Developers, Andrew Gallant <jamslam@gmail.com>"
 rend,https://github.com/djkoloski/rend,MIT,David Koloski <djkoloski@gmail.com>
 reqwest,https://github.com/seanmonstar/reqwest,MIT OR Apache-2.0,Sean McArthur <sean@seanmonstar.com>
+reqwest-middleware,https://github.com/TrueLayer/reqwest-middleware,MIT OR Apache-2.0,Rodrigo Gryzinski <rodrigo.gryzinski@truelayer.com>
 retain_mut,https://github.com/upsuper/retain_mut,MIT,Xidorn Quan <me@upsuper.org>
+retry-policies,https://github.com/TrueLayer/retry-policies,MIT OR Apache-2.0,Luca Palmieri <lpalmieri@truelayer.com>
 rfc6979,https://github.com/RustCrypto/signatures/tree/master/rfc6979,Apache-2.0 OR MIT,RustCrypto Developers
 ring,https://github.com/briansmith/ring,Apache-2.0 AND ISC,The ring Authors
 rkyv,https://github.com/rkyv/rkyv,MIT,David Koloski <djkoloski@gmail.com>
@@ -528,7 +533,6 @@ sync_wrapper,https://github.com/Actyx/sync_wrapper,Apache-2.0,Actyx AG <develope
 synstructure,https://github.com/mystor/synstructure,MIT,Nika Layzell <nika@thelayzells.com>
 sysinfo,https://github.com/GuillaumeGomez/sysinfo,MIT,Guillaume Gomez <guillaume1.gomez@gmail.com>
 syslog_loose,https://github.com/FungusHumungus/syslog-loose,MIT,Stephen Wakely <fungus.humungus@gmail.com>
-system-configuration,https://github.com/mullvad/system-configuration-rs,MIT OR Apache-2.0,Mullvad VPN
 tabled,https://github.com/zhiburt/tabled,MIT,Maxim Zhiburt <zhiburt@gmail.com>
 tagptr,https://github.com/oliver-giersch/tagptr,MIT OR Apache-2.0,Oliver Giersch
 tantivy,https://github.com/quickwit-oss/tantivy,MIT,Paul Masurel <paul.masurel@gmail.com>
@@ -616,6 +620,7 @@ wasm-bindgen-futures,https://github.com/rustwasm/wasm-bindgen/tree/master/crates
 wasm-bindgen-macro,https://github.com/rustwasm/wasm-bindgen/tree/master/crates/macro,MIT OR Apache-2.0,The wasm-bindgen Developers
 wasm-bindgen-macro-support,https://github.com/rustwasm/wasm-bindgen/tree/master/crates/macro-support,MIT OR Apache-2.0,The wasm-bindgen Developers
 wasm-bindgen-shared,https://github.com/rustwasm/wasm-bindgen/tree/master/crates/shared,MIT OR Apache-2.0,The wasm-bindgen Developers
+wasm-timer,https://github.com/tomaka/wasm-timer,MIT,Pierre Krieger <pierre.krieger1708@gmail.com>
 web-sys,https://github.com/rustwasm/wasm-bindgen/tree/master/crates/web-sys,MIT OR Apache-2.0,The wasm-bindgen Developers
 web-time,https://github.com/daxpedda/web-time,MIT OR Apache-2.0,The web-time Authors
 webpki-roots,https://github.com/rustls/webpki-roots,MPL-2.0,The webpki-roots Authors
@@ -626,7 +631,6 @@ winapi,https://github.com/retep998/winapi-rs,MIT OR Apache-2.0,Peter Atashian <r
 winapi-util,https://github.com/BurntSushi/winapi-util,Unlicense OR MIT,Andrew Gallant <jamslam@gmail.com>
 windows,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
 winnow,https://github.com/winnow-rs/winnow,MIT,The winnow Authors
-winreg,https://github.com/gentoo90/winreg-rs,MIT,Igor Shaula <gentoo90@gmail.com>
 wit-bindgen-rt,https://github.com/bytecodealliance/wit-bindgen,Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT,The wit-bindgen-rt Authors
 woothee,https://github.com/woothee/woothee-rust,Apache-2.0,hhatto <hhatto.jp@gmail.com>
 write16,https://github.com/hsivonen/write16,Apache-2.0 OR MIT,The write16 Authors

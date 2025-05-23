@@ -79,7 +79,7 @@ pub(crate) enum VersionedXXXXXX {
 - run the backward compatibility tests (see below)
 - for older versions, check the diff between the `xxx.expected.modified.json` files created and the matching `xxx.expected.json` files. 
 If the changes are acceptable, replace the content of the `xxx.expected.json` files and commit them.
-- check the the `yyyy.json` that was created for the new version and commit it along with the `yyyy.expected.json` file (identical).
+- check the `yyyy.json` that was created for the new version and commit it along with the `yyyy.expected.json` file (identical).
 - possibly update the generation of the default XXXX instance used for regression. It is in the function `TestableForRegression::sample_for_regression`.
 
 
@@ -117,7 +117,7 @@ the CI will catch it.
 
 #### Adding a new test case.
 
-If the serialization format changes, an new version should be created and the unit test will
+If the serialization format changes, a new version should be created and the unit test will
 automatically add a new unit test generated from the sample tested objects.
 Concretely, it will just write two files `XXXX.json` and `XXXX.expected.json` for each model.
 

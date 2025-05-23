@@ -23,6 +23,7 @@
 // For the individual detailed API documentation however, you should refer to elastic
 // documentation.
 
+pub mod aggregations;
 pub mod cloudprem;
 mod elastic_query_dsl;
 mod error;

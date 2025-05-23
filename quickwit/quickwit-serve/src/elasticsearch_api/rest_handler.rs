@@ -151,7 +151,7 @@ pub fn es_compat_stats_handler(
 }
 
 /// Check if the parameter is a known query parameter to reject
-fn is_unsuppported_qp(param: &str) -> bool {
+fn is_unsupported_qp(param: &str) -> bool {
     ["wait_for_status", "timeout", "level"].contains(&param)
 }
 
@@ -180,7 +180,7 @@ async fn es_compat_cluster_health(
     query_params: HashMap<String, String>,
     cluster: Cluster,
 ) -> impl warp::Reply {
-    if let Some(invalid_param) = query_params.keys().find(|key| is_unsuppported_qp(key)) {
+    if let Some(invalid_param) = query_params.keys().find(|key| is_unsupported_qp(key)) {
         let error_body = warp::reply::json(&json!({
             "error": "Unsupported parameter.",
             "param": invalid_param
@@ -881,7 +881,7 @@ async fn es_compat_index_multi_search(
                         append_shard_doc,
                         _source_excludes,
                         _source_includes,
-                        true, //< allow_partial_results. Set to to true to match ES's behavior.
+                        true, //< allow_partial_results. Set to true to match ES's behavior.
                     )?;
                 search_response_rest.took = elapsed.as_millis() as u32;
                 Ok::<_, ElasticsearchError>(search_response_rest)
@@ -1008,19 +1008,20 @@ fn convert_to_es_search_response(
         .into_iter()
         .map(|hit| convert_hit(hit, append_shard_doc, &_source_excludes, &_source_includes))
         .collect();
-    let aggregations: Option<AggregationResults> = if let Some(aggregation_json) = resp.aggregation
-    {
-        let aggregations = AggregationResults::from_json(&aggregation_json).map_err(|_| {
-            ElasticsearchError::new(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to parse aggregation results".to_string(),
-                None,
-            )
-        })?;
-        Some(aggregations)
-    } else {
-        None
-    };
+    let aggregations: Option<AggregationResults> =
+        if let Some(aggregation_postcard) = resp.aggregation_postcard {
+            let aggregations =
+                AggregationResults::from_postcard(&aggregation_postcard).map_err(|_| {
+                    ElasticsearchError::new(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "Failed to parse aggregation results".to_string(),
+                        None,
+                    )
+                })?;
+            Some(aggregations)
+        } else {
+            None
+        };
     let num_failed_splits = resp.failed_splits.len() as u32;
     let num_successful_splits = resp.num_successful_splits as u32;
     let num_total_splits = num_successful_splits + num_failed_splits;
@@ -1036,7 +1037,7 @@ fn convert_to_es_search_response(
         },
         aggregations,
         scroll_id: resp.scroll_id,
-        // There is not concept of shards here, but use this to convey split search failures.
+        // There is no concept of shards here, but use this to convey split search failures.
         shards: ShardStatistics {
             total: num_total_splits,
             successful: num_successful_splits,

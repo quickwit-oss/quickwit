@@ -22,7 +22,7 @@ use warp::reply::with_status;
 /// other bits of information attached.
 ///
 /// If a crate plans to encompass different schemas, handlers, etc...
-/// Then it should have it's own specific API group.
+/// Then it should have its own specific API group.
 pub struct MetricsApi;
 
 #[utoipa::path(

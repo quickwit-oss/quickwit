@@ -35,6 +35,7 @@ use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
 use crate::node_config::serialize::load_node_config_with_env;
+use crate::serde_utils::DurationAsStr;
 use crate::service::QuickwitService;
 use crate::storage_config::StorageConfigs;
 use crate::{ConfigFormat, MetastoreConfigs};
@@ -61,6 +62,42 @@ pub struct GrpcConfig {
     pub tls: Option<TlsConfig>,
     #[serde(default)]
     pub mtls_header: Option<String>,
+    // If set, keeps idle connection alive by periodically perform a
+    // keep alive ping request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keep_alive: Option<KeepAliveConfig>,
+}
+
+fn default_http2_keep_alive_interval() -> DurationAsStr {
+    DurationAsStr::try_from("10s".to_string()).unwrap()
+}
+
+fn default_keep_alive_timeout() -> DurationAsStr {
+    DurationAsStr::try_from("5s".to_string()).unwrap()
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct KeepAliveConfig {
+    // Set the HTTP/2 KEEP_ALIVE_INTERVAL. This is the time the connection
+    // should be idle before sending a keepalive ping.
+    #[serde(default = "default_http2_keep_alive_interval")]
+    pub interval: DurationAsStr,
+
+    // Set the HTTP/2 KEEP_ALIVE_TIMEOUT. This is the time to wait for an ACK
+    // after sending a keepalive ping. If the server doesn't respond within
+    // this time, the connection might be considered dead.
+    // Tonic uses hyper's default (20 seconds) if not set.
+    #[serde(default = "default_keep_alive_timeout")]
+    pub timeout: DurationAsStr,
+}
+
+impl From<KeepAliveConfig> for quickwit_common::tower::KeepAliveConfig {
+    fn from(val: KeepAliveConfig) -> Self {
+        quickwit_common::tower::KeepAliveConfig {
+            interval: *val.interval,
+            timeout: *val.timeout,
+        }
+    }
 }
 
 impl GrpcConfig {
@@ -84,6 +121,7 @@ impl Default for GrpcConfig {
             max_message_size: Self::default_max_message_size(),
             tls: None,
             mtls_header: None,
+            keep_alive: None,
         }
     }
 }
@@ -519,6 +557,7 @@ pub struct NodeConfig {
     pub enabled_services: HashSet<QuickwitService>,
     pub gossip_listen_addr: SocketAddr,
     pub grpc_listen_addr: SocketAddr,
+    pub cloudprem_listen_addr: SocketAddr,
     pub gossip_advertise_addr: SocketAddr,
     pub grpc_advertise_addr: SocketAddr,
     pub gossip_interval: Duration,
@@ -528,6 +567,7 @@ pub struct NodeConfig {
     pub default_index_root_uri: Uri,
     pub rest_config: RestConfig,
     pub grpc_config: GrpcConfig,
+    pub cloudprem_grpc_config: GrpcConfig,
     pub storage_configs: StorageConfigs,
     pub metastore_configs: MetastoreConfigs,
     pub indexer_config: IndexerConfig,
@@ -589,12 +629,20 @@ impl NodeConfig {
     /// Uses the default ports without ensuring that they are available.
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test() -> Self {
-        serialize::node_config_for_tests_from_ports(7280, 7281)
+        serialize::node_config_for_tests_from_ports(7280, 7281, 7282)
     }
 
     #[cfg(any(test, feature = "testsuite"))]
-    pub fn for_test_from_ports(rest_listen_port: u16, grpc_listen_port: u16) -> Self {
-        serialize::node_config_for_tests_from_ports(rest_listen_port, grpc_listen_port)
+    pub fn for_test_from_ports(
+        rest_listen_port: u16,
+        grpc_listen_port: u16,
+        cloudprem_listen_port: u16,
+    ) -> Self {
+        serialize::node_config_for_tests_from_ports(
+            rest_listen_port,
+            grpc_listen_port,
+            cloudprem_listen_port,
+        )
     }
 }
 
@@ -715,8 +763,47 @@ mod tests {
         }
     }
 
+    #[track_caller]
+    fn test_keepalive_config_serialization_aux(
+        keep_alive_json: serde_json::Value,
+        expected: quickwit_common::tower::KeepAliveConfig,
+    ) {
+        let keep_alive_config: KeepAliveConfig =
+            serde_json::from_value(keep_alive_json.clone()).unwrap();
+        let keep_alive_deser: quickwit_common::tower::KeepAliveConfig =
+            keep_alive_config.clone().into();
+        assert_eq!(&keep_alive_deser, &expected);
+        let keep_alive_config_deser_ser = serde_json::to_value(keep_alive_config).unwrap();
+        let keep_alive_config_deser_ser_deser: KeepAliveConfig =
+            serde_json::from_value(keep_alive_config_deser_ser).unwrap();
+        let keep_alive_config_deser_ser_deser: quickwit_common::tower::KeepAliveConfig =
+            keep_alive_config_deser_ser_deser.into();
+        assert_eq!(&keep_alive_config_deser_ser_deser, &expected);
+    }
+
     #[test]
-    fn test_grpc_config_serialization() {
+    fn test_keepalive_config_serialization() {
+        test_keepalive_config_serialization_aux(
+            serde_json::json!({}),
+            quickwit_common::tower::KeepAliveConfig {
+                interval: Duration::from_secs(10),
+                timeout: Duration::from_secs(5),
+            },
+        );
+        test_keepalive_config_serialization_aux(
+            serde_json::json!({
+                "interval": "3s",
+                "timeout": "1s",
+            }),
+            quickwit_common::tower::KeepAliveConfig {
+                interval: Duration::from_secs(3),
+                timeout: Duration::from_secs(1),
+            },
+        );
+    }
+
+    #[test]
+    fn test_grpc_config_serialization_default() {
         let grpc_config: GrpcConfig = serde_json::from_str(r#"{}"#).unwrap();
         assert_eq!(
             grpc_config.max_message_size,
@@ -738,6 +825,7 @@ mod tests {
             max_message_size: ByteSize::mb(1),
             tls: None,
             mtls_header: None,
+            keep_alive: None,
         };
         assert!(grpc_config.validate().is_ok());
 
@@ -745,6 +833,7 @@ mod tests {
             max_message_size: ByteSize::kb(1),
             tls: None,
             mtls_header: None,
+            keep_alive: None,
         };
         assert!(grpc_config.validate().is_err());
     }

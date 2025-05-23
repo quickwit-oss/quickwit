@@ -13,9 +13,12 @@
 // limitations under the License.
 
 use std::collections::HashMap;
+use std::ops::{Deref, DerefMut};
+use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use quickwit_datetime::{DateTimeInputFormat, parse_date_time_str, parse_timestamp};
+use serde::ser::SerializeStruct;
 use serde::{self, Deserialize, Serialize};
 use serde_json::Value;
 use serde_with::formats::CommaSeparator;
@@ -24,31 +27,35 @@ use time::OffsetDateTime;
 use tracing::warn;
 use uuid::Uuid;
 
-use crate::normalize_field::{NormalizeField, normalize_fields};
 use crate::path_access::ParsedPath;
-use crate::transformers::StatusRemapStep;
-use crate::{PipelineStep, StringOrVec, convert_tags};
+use crate::string_or_vec::StringOrVec;
+use crate::transformers::{
+    CoreStringAttr, CoreStringAttrRemapStep, DateRemapStep, StatusRemapStep,
+};
+use crate::{Pipeline, PipelineStep, convert_tags};
 
 // https://github.com/DataDog/datadog-agent/blob/a33248c2bc125920a9577af1e16f12298875a4ad/pkg/logs/processor/json.go#L23-L49
 #[serde_as]
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct DatadogLogMsg {
     pub message: String,
     pub status: Option<String>,
     #[serde(with = "time::serde::timestamp::milliseconds")]
     pub timestamp: OffsetDateTime,
+    #[serde(alias = "host")]
     pub hostname: String,
     pub service: String,
+    #[serde(alias = "source")]
     pub ddsource: String,
     #[serde_as(as = "StringWithSeparator::<CommaSeparator, String>")]
     #[serde(default)]
+    #[serde(alias = "tags")]
     pub ddtags: Vec<String>,
 }
 
 /// The final enriched struct we want to produce.
 ///  TODO fix the confusing name (ProcessedDoc)
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct ProcessedLog {
     pub message: String,
     pub status: String,
@@ -57,11 +64,12 @@ pub struct ProcessedLog {
     pub host: String,
     pub service: String,
     pub source: String,
-    pub tags: Vec<String>,
+
     /// E.g.
     /// tags:["env:dev", "region:us-east", "region:east"] =>
     /// tag: { "env": "dev", "region": ["us-east", "east"] }
-    pub tag: HashMap<String, StringOrVec>,
+    #[serde(flatten)]
+    pub tag: TagField,
     pub trace_id: Option<String>,
     pub span_id: Option<String>,
     pub custom: serde_json::Map<String, serde_json::Value>,
@@ -70,6 +78,123 @@ pub struct ProcessedLog {
     pub discovery_timestamp: i64,
     pub tiebreaker: i64,
     pub ingest_size_in_bytes: usize,
+}
+
+/// Special struct that serializes two different ways:
+/// tags:["env:dev", "region:us-east", "region:east"] =>
+/// tag: { "env": "dev", "region": ["us-east", "east"] }
+#[derive(Clone, Debug)]
+pub struct TagField {
+    pub tag: HashMap<String, StringOrVec>,
+}
+impl From<HashMap<String, StringOrVec>> for TagField {
+    fn from(tag: HashMap<String, StringOrVec>) -> Self {
+        TagField { tag }
+    }
+}
+impl TagField {
+    fn tags_vec(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        for (k, v) in &self.tag {
+            match v {
+                StringOrVec::String(s) => out.push(format!("{k}:{s}")),
+                StringOrVec::Vec(list) => {
+                    out.extend(list.iter().map(|s| format!("{k}:{s}")));
+                }
+            }
+        }
+        out.sort();
+        out
+    }
+}
+
+impl Serialize for TagField {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where S: serde::Serializer {
+        let mut st = serializer.serialize_struct("TagField", 2)?;
+        st.serialize_field("tag", &self.tag)?;
+        st.serialize_field("tags", &self.tags_vec())?;
+        st.end()
+    }
+}
+
+impl DerefMut for TagField {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.tag
+    }
+}
+impl Deref for TagField {
+    type Target = HashMap<String, StringOrVec>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.tag
+    }
+}
+
+static PREPROCESSING_PIPELINE: OnceLock<Pipeline> = OnceLock::new();
+fn get_preprocessing_pipeline() -> &'static Pipeline {
+    PREPROCESSING_PIPELINE.get_or_init(create_preprocessing_pipeline)
+}
+
+// The preprocessing pipeline is used to remap fields from custom to core attributes.
+fn create_preprocessing_pipeline() -> Pipeline {
+    let string_remap = |path: &[&str], core_attr| {
+        let sources: Vec<ParsedPath> = path.iter().map(|field| ParsedPath::from(*field)).collect();
+        Box::new(CoreStringAttrRemapStep { sources, core_attr })
+    };
+
+    let steps: Vec<Box<dyn PipelineStep>> = vec![
+        Box::new(DateRemapStep {
+            sources: [
+                "@timestamp",
+                "timestamp",
+                "_timestamp",
+                "Timestamp",
+                "eventTime",
+                "date",
+                "published_date",
+                "syslog.timestamp",
+                "time",
+            ]
+            .iter()
+            .map(|field| ParsedPath::from(*field))
+            .collect(),
+        }),
+        Box::new(StatusRemapStep {
+            sources: ["status", "severity", "level", "syslog.severity"]
+                .iter()
+                .map(|field| ParsedPath::from(*field))
+                .collect(),
+        }),
+        string_remap(
+            &["dd.service", "service", "syslog.appname"],
+            CoreStringAttr::Service,
+        ),
+        string_remap(
+            &[
+                "span_id",
+                "dd.span_id",
+                "contextmap.dd.span_id",
+                "named_tags.dd.span_id",
+                "syslog.span_id",
+            ],
+            CoreStringAttr::SpanId,
+        ),
+        string_remap(
+            &["dd.trace_id", "trace_id", "syslog.trace_id"],
+            CoreStringAttr::TraceId,
+        ),
+        string_remap(
+            &["message", "dd.message", "syslog.message"],
+            CoreStringAttr::Message,
+        ),
+        string_remap(
+            &["host", "hostname", "syslog.hostname"],
+            CoreStringAttr::Host,
+        ),
+    ];
+
+    Pipeline::from_steps(steps)
 }
 
 impl ProcessedLog {
@@ -89,7 +214,9 @@ impl ProcessedLog {
         let ingest_size_in_bytes = serde_json::to_string(&msg)
             .map(|s| s.len())
             .unwrap_or_default();
-        let tags = msg.ddtags;
+        let mut tags = msg.ddtags;
+        tags.push(format!("source:{}", msg.ddsource));
+        tags.push(format!("service:{}", msg.service));
         let mut processed = ProcessedLog {
             message: msg.message,
             ingest_size_in_bytes,
@@ -98,8 +225,7 @@ impl ProcessedLog {
             host: msg.hostname,
             service: msg.service,
             source: msg.ddsource,
-            tag: convert_tags(&tags),
-            tags,
+            tag: convert_tags(&tags).into(),
             id: Uuid::new_v4().to_string(),
             tiebreaker: rand::random(),
             discovery_timestamp: SystemTime::now()
@@ -111,103 +237,20 @@ impl ProcessedLog {
             custom: Default::default(),
         };
 
-        let fields = vec![
-            NormalizeField::from_comma_sep(
-                "@timestamp, timestamp, _timestamp, Timestamp, eventTime, date, published_date, \
-                 syslog.timestamp, time",
-                "timestamp",
-                false,
-            ),
-            NormalizeField::from_comma_sep("host, syslog.hostname, hostname", "host", false),
-            NormalizeField::from_comma_sep("service, syslog.appname, dd.service", "service", false),
-            NormalizeField::from_comma_sep(
-                "dd.trace_id, contextMap.dd.trace_id, named_tags.dd.trace_id, trace_id, traceID, \
-                 traceId",
-                "trace_id",
-                false,
-            ),
-            NormalizeField::from_comma_sep(
-                "span_id, dd.span_id, contextMap.dd.span_id, named_tags.dd.span_id",
-                "span_id",
-                false,
-            ),
-            NormalizeField::from_comma_sep("message, msg, log", "message", false),
-        ];
-
-        // Apply normalization
-        // TODO: Do this after the JSON parsing, so we can move all these fields to core.
-        normalize_fields(
-            &mut processed,
-            &fields,
-            |processed: &mut ProcessedLog, alias, val| {
-                match alias {
-                    "timestamp" => {
-                        try_parse_and_update_timestamp(processed, &val);
-                    }
-                    "host" => {
-                        if let Some(s) = val.as_str() {
-                            processed.host = s.to_owned();
-                        }
-                    }
-                    "service" => {
-                        if let Some(s) = val.as_str() {
-                            processed.service = s.to_owned();
-                        }
-                    }
-                    "trace_id" => {
-                        if let Some(s) = val.as_str() {
-                            processed.trace_id = Some(s.to_owned());
-                        }
-                    }
-                    "span_id" => {
-                        if let Some(s) = val.as_str() {
-                            processed.span_id = Some(s.to_owned());
-                        }
-                    }
-                    "message" => {
-                        if let Some(s) = val.as_str() {
-                            processed.message = s.to_owned();
-                        }
-                    }
-                    _ => {
-                        warn!("unhandled alias: {alias}");
-                        // Any other field, just copy it over
-                        processed.custom.insert(alias.to_owned(), val);
-                    }
-                }
-            },
-        );
-
         // Try to parse `processed.message` as JSON
-        //    If it's valid JSON object, move some attributes to core.
-        if let Ok(mut parsed_map) =
+        //    If it's a JSON object, move some attributes to core via the preprocessing pipeline.
+        if let Ok(parsed_map) =
             serde_json::from_str::<serde_json::Map<String, Value>>(&processed.message)
         {
-            // Move known fields out of the parsed JSON into `processed`
-            // e.g. if the nested JSON has "message", "status", "timestamp", override them:
-            if let Some(Value::String(m)) = parsed_map.remove("message") {
-                processed.message = m;
-            }
-            if let Some(val) = parsed_map.get("timestamp") {
-                try_parse_and_update_timestamp(&mut processed, val);
-            }
-            if let Some(Value::String(h)) = parsed_map.remove("hostname") {
-                processed.host = h;
-            }
-            if let Some(Value::String(svc)) = parsed_map.remove("service") {
-                processed.service = svc;
-            }
-
-            // Rest goes to `processed.custom`
             processed.custom = parsed_map;
+            match get_preprocessing_pipeline().apply(&mut processed) {
+                Ok(_) => {}
+                Err(err) => {
+                    // This should not happen, but if it does, we log the error.
+                    warn!("Failed to apply preprocessing pipeline: {}", err);
+                }
+            }
         }
-
-        // TODO:: We don't need to recreate this StatusRemapStep for every log.
-        let sources: Vec<ParsedPath> = ["status", "severity", "level", "syslog.severity"]
-            .iter()
-            .map(|field| ParsedPath::from(*field))
-            .collect();
-        StatusRemapStep { sources }.apply(&mut processed).unwrap();
 
         processed
     }
@@ -245,11 +288,12 @@ pub fn try_parse_and_update_timestamp(processed: &mut ProcessedLog, ts_val: &Val
 #[cfg(test)]
 pub(crate) mod tests {
 
-    use serde_json::Value;
+    use serde_json::{Value, json};
     use time::OffsetDateTime;
 
+    use crate::ProcessedLog;
     use crate::processed_log::{DatadogLogMsg, try_parse_and_update_timestamp};
-    use crate::{ProcessedLog, StringOrVec};
+    use crate::string_or_vec::StringOrVec;
 
     /// Helper to build an `DatadogLogMsg`.
     pub fn make_datadog_log_msg() -> DatadogLogMsg {
@@ -353,6 +397,9 @@ pub(crate) mod tests {
         );
         let tag_region = processed.tag.get("region").unwrap();
         assert_eq!(tag_region, &StringOrVec::String("us-east".to_string()));
+
+        let source_tag = processed.tag.get("source").unwrap();
+        assert_eq!(source_tag, &StringOrVec::String("rust".to_string()),);
     }
 
     /// Test that integer timestamps are interpreted as seconds or milliseconds
@@ -378,18 +425,80 @@ pub(crate) mod tests {
 
     #[test]
     fn test_override_status_from_custom() {
-        let json = r#"{ 
-                "message": "{ \"message\": \"Overridden message\", \"severity\": \"INFO\" }",
-                "status": "error", 
-                "timestamp": 1620000000000,
-                "hostname": "test-host",
-                "service": "test-service",
-                "ddsource": "rust"
-            }"#
-        .to_string();
-        let msg: DatadogLogMsg = serde_json::from_str(&json).unwrap();
+        let json_msg = json!({
+            "message": "Overridden message",
+            "status": "error",
+            "hostname": "overwrite-host",
+            "Timestamp": "2021-01-01T00:00:00Z",
+            "dd": {
+                "span_id": "99999",
+                "trace_id": "12345",
+                "service": "overwrite-service",
+            }
+        });
+        let json = json!({
+            "message": serde_json::to_string(&json_msg).unwrap(),
+            "status": "info",
+            "timestamp": 1620000000000i64,
+            "hostname": "test-host",
+            "service": "test-service",
+            "ddsource": "rust"
+        });
+
+        let msg: DatadogLogMsg =
+            serde_json::from_str(&serde_json::to_string(&json).unwrap()).unwrap();
         let msg: ProcessedLog = ProcessedLog::from_datadog_log_msg(msg);
         assert_eq!(msg.message, "Overridden message");
-        assert_eq!(msg.status, "info");
+        assert_eq!(msg.status, "error");
+        assert_eq!(msg.trace_id, Some("12345".to_string()));
+        assert_eq!(msg.span_id, Some("99999".to_string()));
+        assert_eq!(msg.service, "overwrite-service");
+        assert_eq!(msg.host, "overwrite-host");
+        assert_eq!(
+            msg.timestamp,
+            OffsetDateTime::from_unix_timestamp(1609459200).unwrap()
+        );
+    }
+    #[test]
+    fn test_processed_log_tag_serialization() {
+        use serde_json::Value;
+
+        let mut msg = make_datadog_log_msg();
+        msg.ddtags = vec![
+            "env:dev".to_string(),
+            "region:us-east".to_string(),
+            "region:east".to_string(),
+        ];
+
+        let processed = ProcessedLog::from_datadog_log_msg(msg);
+
+        // Serialize to JSON
+        let json = serde_json::to_value(&processed).expect("serialize ProcessedLog");
+        let obj = json
+            .as_object()
+            .expect("ProcessedLog JSON should be an object");
+
+        let raw = obj.get("tag").and_then(Value::as_object).unwrap();
+        assert_eq!(raw.get("env").unwrap(), "dev");
+        assert_eq!(
+            raw.get("region").unwrap(),
+            &Value::Array(vec![
+                Value::String("us-east".into()),
+                Value::String("east".into())
+            ])
+        );
+
+        let tags = obj.get("tags").and_then(Value::as_array).unwrap();
+        let tags_str: Vec<_> = tags.iter().map(|v| v.as_str().unwrap()).collect();
+        assert_eq!(
+            tags_str,
+            vec![
+                "env:dev",
+                "region:east",
+                "region:us-east",
+                "service:test-service",
+                "source:rust",
+            ]
+        );
     }
 }

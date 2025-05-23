@@ -35,7 +35,6 @@ use std::sync::{Arc, Barrier, Mutex};
 use std::time::Duration;
 
 use fail::FailScenario;
-use quickwit_actors::ActorExitStatus;
 use quickwit_common::io::IoControls;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::split_file;
@@ -310,7 +309,7 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
         merge_packager_mailbox,
     );
 
-    let (merge_executor_mailbox, merge_executor_handle) =
+    let (merge_executor_mailbox, _merge_executor_handle) =
         universe.spawn_builder().spawn(merge_executor);
 
     // We want to make sure that the processing of the message gets
@@ -334,14 +333,15 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
         after_universe_kill_clone.wait();
     })
     .unwrap();
+    fail::cfg(
+        "after-merge-split",
+        "panic(merge should be failed by directory kill switch)",
+    )
+    .unwrap();
     merge_executor_mailbox.send_message(merge_scratch).await?;
     before_universe_kill.wait();
     universe.kill();
     after_universe_kill.wait();
-    fail::cfg("before-merge-split", "off").unwrap();
-
-    let (exit_status, _) = merge_executor_handle.join().await;
-    assert!(matches!(exit_status, ActorExitStatus::Failure(_)));
     universe.quit().await;
 
     Ok(())

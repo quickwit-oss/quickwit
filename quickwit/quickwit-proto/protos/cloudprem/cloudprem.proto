@@ -13,6 +13,7 @@ option java_multiple_files = false;
 option java_outer_classname = "CloudPremProto";
 
 import "google/protobuf/any.proto";
+import "search.proto";
 
 service CloudPremService {
   rpc Ping(PingRequest) returns (PingResponse);
@@ -22,6 +23,10 @@ service CloudPremService {
 
   // Add a temporary backdoor to add cluster addresses dynamically without having to push a PR on dd-source and redeploy the bridge.
   rpc SetClusterAddress(SetClusterAddressRequest) returns (SetClusterAddressResponse);
+
+  // These are endpoints to use the capabilities of the underlying quickwit searcher
+  rpc RootSearch(quickwit.search.SearchRequest) returns (quickwit.search.SearchResponse);
+  rpc RootListTerms(quickwit.search.ListTermsRequest) returns (quickwit.search.ListTermsResponse);
 }
 
 message PingRequest {

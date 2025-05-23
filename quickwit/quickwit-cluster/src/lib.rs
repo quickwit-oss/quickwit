@@ -32,8 +32,9 @@ use chitchat::{ChitchatMessage, Serializable};
 pub use chitchat::{FailureDetectorConfig, KeyChangeEvent, ListenerHandle};
 pub use grpc_service::cluster_grpc_server;
 use quickwit_common::metrics::IntCounter;
+use quickwit_common::tower::ClientGrpcConfig;
 use quickwit_config::service::QuickwitService;
-use quickwit_config::{NodeConfig, TlsConfig};
+use quickwit_config::{GrpcConfig, NodeConfig, TlsConfig};
 use quickwit_proto::indexing::CpuCapacity;
 use quickwit_proto::tonic::transport::{Certificate, ClientTlsConfig, Identity};
 use time::OffsetDateTime;
@@ -147,6 +148,7 @@ pub async fn start_cluster_service(node_config: &NodeConfig) -> anyhow::Result<C
         dead_node_grace_period: Duration::from_secs(2 * 60 * 60), // 2 hours
         ..Default::default()
     };
+    let client_grpc_config = make_client_grpc_config(&node_config.grpc_config)?;
     let cluster = Cluster::join(
         cluster_id,
         self_node,
@@ -155,12 +157,7 @@ pub async fn start_cluster_service(node_config: &NodeConfig) -> anyhow::Result<C
         node_config.gossip_interval,
         failure_detector_config,
         &CountingUdpTransport,
-        node_config
-            .grpc_config
-            .tls
-            .as_ref()
-            .map(make_client_tls_config)
-            .transpose()?,
+        client_grpc_config,
     )
     .await?;
     if node_config
@@ -174,7 +171,19 @@ pub async fn start_cluster_service(node_config: &NodeConfig) -> anyhow::Result<C
     Ok(cluster)
 }
 
-pub fn make_client_tls_config(tls_config: &TlsConfig) -> anyhow::Result<ClientTlsConfig> {
+pub fn make_client_grpc_config(grpc_config: &GrpcConfig) -> anyhow::Result<ClientGrpcConfig> {
+    let tls_config_opt = grpc_config
+        .tls
+        .as_ref()
+        .map(make_client_tls_config)
+        .transpose()?;
+    Ok(ClientGrpcConfig {
+        keep_alive_opt: grpc_config.keep_alive.clone().map(Into::into),
+        tls_config_opt,
+    })
+}
+
+fn make_client_tls_config(tls_config: &TlsConfig) -> anyhow::Result<ClientTlsConfig> {
     let pem = std::fs::read_to_string(&tls_config.ca_path)?;
     let ca = Certificate::from_pem(pem);
     let mut tls = ClientTlsConfig::new().ca_certificate(ca);

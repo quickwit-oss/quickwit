@@ -106,4 +106,17 @@ mod tests {
 
         assert!(res.is_err());
     }
+
+    #[test]
+    fn test_vrl_grok_partial_success() {
+        let grok = r#"{
+            "supportRules": "",
+            "matchRules": "time (??\n_date time=%{TIME:time} ip=%{IP:ip}\n"
+        }"#;
+        let grok_rules: LogsProcessingGrokRules = serde_json::from_str(grok).unwrap();
+        let res = build_grok_parser_step(&grok_rules).unwrap();
+
+        // Only one rule should be compiled
+        assert!(res.grok_rules.len() == 1);
+    }
 }

@@ -40,7 +40,7 @@ impl ServiceError for CloudPremError {
         match self {
             Self::InvalidQuery(_) => ServiceErrorCode::BadRequest,
             Self::Internal(error_msg) => {
-                rate_limited_error!(limit_per_min = 6, "ingest internal error: {error_msg}");
+                rate_limited_error!(limit_per_min = 6, "cloudprem internal error: {error_msg}");
                 ServiceErrorCode::Internal
             }
             Self::Unavailable(_) => ServiceErrorCode::Unavailable,

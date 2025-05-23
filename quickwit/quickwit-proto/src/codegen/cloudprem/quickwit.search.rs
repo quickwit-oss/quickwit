@@ -1,0 +1,4389 @@
+/// / Scroll Request
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ScrollRequest {
+    /// / The `scroll_id` is the given in the response of a search request including a scroll.
+    #[prost(string, tag = "1")]
+    pub scroll_id: ::prost::alloc::string::String,
+    #[prost(uint32, optional, tag = "2")]
+    pub scroll_ttl_secs: ::core::option::Option<u32>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PutKvRequest {
+    #[prost(bytes = "vec", tag = "1")]
+    pub key: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "2")]
+    pub payload: ::prost::alloc::vec::Vec<u8>,
+    #[prost(uint32, tag = "3")]
+    pub ttl_secs: u32,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PutKvResponse {}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetKvRequest {
+    #[prost(bytes = "vec", tag = "1")]
+    pub key: ::prost::alloc::vec::Vec<u8>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetKvResponse {
+    #[prost(bytes = "vec", optional, tag = "1")]
+    pub payload: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ReportSplit {
+    /// Split id (ULID format `01HAV29D4XY3D462FS3D8K5Q2H`)
+    #[prost(string, tag = "2")]
+    pub split_id: ::prost::alloc::string::String,
+    /// The storage uri. This URI does NOT include the split id.
+    #[prost(string, tag = "1")]
+    pub storage_uri: ::prost::alloc::string::String,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ReportSplitsRequest {
+    #[prost(message, repeated, tag = "1")]
+    pub report_splits: ::prost::alloc::vec::Vec<ReportSplit>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ReportSplitsResponse {}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListFieldsRequest {
+    /// Index ID patterns
+    #[prost(string, repeated, tag = "1")]
+    pub index_id_patterns: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Optional limit query to a list of fields
+    /// Wildcard expressions are supported.
+    #[prost(string, repeated, tag = "2")]
+    pub fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Time filter, expressed in seconds since epoch.
+    /// That filter is to be interpreted as the semi-open interval:
+    /// [start_timestamp, end_timestamp).
+    #[prost(int64, optional, tag = "3")]
+    pub start_timestamp: ::core::option::Option<i64>,
+    #[prost(int64, optional, tag = "4")]
+    pub end_timestamp: ::core::option::Option<i64>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct LeafListFieldsRequest {
+    /// The index id
+    #[prost(string, tag = "1")]
+    pub index_id: ::prost::alloc::string::String,
+    /// The index uri
+    #[prost(string, tag = "2")]
+    pub index_uri: ::prost::alloc::string::String,
+    /// Index split ids to apply the query on.
+    /// This ids are resolved from the index_uri defined in the search_request.
+    #[prost(message, repeated, tag = "3")]
+    pub split_offsets: ::prost::alloc::vec::Vec<SplitIdAndFooterOffsets>,
+    /// Optional limit query to a list of fields
+    /// Wildcard expressions are supported.
+    #[prost(string, repeated, tag = "4")]
+    pub fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListFieldsResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub fields: ::prost::alloc::vec::Vec<ListFieldsEntryResponse>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListFieldsEntryResponse {
+    #[prost(string, tag = "1")]
+    pub field_name: ::prost::alloc::string::String,
+    #[prost(enumeration = "ListFieldType", tag = "2")]
+    pub field_type: i32,
+    /// The index ids the field exists
+    #[prost(string, repeated, tag = "3")]
+    pub index_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// True means the field is searchable (indexed) in at least some indices.
+    /// False means the field is not searchable in any indices.
+    #[prost(bool, tag = "4")]
+    pub searchable: bool,
+    /// True means the field is aggregatable (fast) in at least some indices.
+    /// False means the field is not aggregatable in any indices.
+    #[prost(bool, tag = "5")]
+    pub aggregatable: bool,
+    /// The index ids the field exists, but is not searchable.
+    #[prost(string, repeated, tag = "6")]
+    pub non_searchable_index_ids: ::prost::alloc::vec::Vec<
+        ::prost::alloc::string::String,
+    >,
+    /// The index ids the field exists, but is not aggregatable
+    #[prost(string, repeated, tag = "7")]
+    pub non_aggregatable_index_ids: ::prost::alloc::vec::Vec<
+        ::prost::alloc::string::String,
+    >,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListFields {
+    #[prost(message, repeated, tag = "1")]
+    pub fields: ::prost::alloc::vec::Vec<ListFieldsEntryResponse>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SearchRequest {
+    /// Index ID patterns
+    #[prost(string, repeated, tag = "1")]
+    pub index_id_patterns: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Json object representing Quickwit's QueryAst.
+    #[prost(string, tag = "13")]
+    pub query_ast: ::prost::alloc::string::String,
+    /// Time filter, expressed in seconds since epoch.
+    /// That filter is to be interpreted as the semi-open interval:
+    /// [start_timestamp, end_timestamp).
+    #[prost(int64, optional, tag = "4")]
+    pub start_timestamp: ::core::option::Option<i64>,
+    #[prost(int64, optional, tag = "5")]
+    pub end_timestamp: ::core::option::Option<i64>,
+    /// Maximum number of hits to return.
+    #[prost(uint64, tag = "6")]
+    pub max_hits: u64,
+    /// First hit to return. Together with max_hits, this parameter
+    /// can be used for pagination.
+    ///
+    /// E.g.
+    /// The results with rank [start_offset..start_offset + max_hits) are returned.
+    #[prost(uint64, tag = "7")]
+    pub start_offset: u64,
+    /// json serialized aggregation_request
+    #[prost(string, optional, tag = "11")]
+    pub aggregation_request: ::core::option::Option<::prost::alloc::string::String>,
+    /// Fields to extract snippet on
+    #[prost(string, repeated, tag = "12")]
+    pub snippet_fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Optional sort by one or more fields (limited to 2 at the moment).
+    #[prost(message, repeated, tag = "14")]
+    pub sort_fields: ::prost::alloc::vec::Vec<SortField>,
+    /// If set, the search response will include a search id
+    /// that will make it possible to paginate through the results
+    /// in a consistent manner.
+    #[prost(uint32, optional, tag = "15")]
+    pub scroll_ttl_secs: ::core::option::Option<u32>,
+    /// Document with sort tuple smaller or equal to this are discarded to
+    /// enable pagination.
+    /// If split_id is empty, no comparison with _shard_doc should be done
+    #[prost(message, optional, tag = "16")]
+    pub search_after: ::core::option::Option<PartialHit>,
+    #[prost(enumeration = "CountHits", tag = "17")]
+    pub count_hits: i32,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SortField {
+    #[prost(string, tag = "1")]
+    pub field_name: ::prost::alloc::string::String,
+    #[prost(enumeration = "SortOrder", tag = "2")]
+    pub sort_order: i32,
+    /// Optional sort value format for datetime field only.
+    /// If none, the default output format for datetime field is
+    /// unix_timestamp_nanos.
+    #[prost(enumeration = "SortDatetimeFormat", optional, tag = "3")]
+    pub sort_datetime_format: ::core::option::Option<i32>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SearchResponse {
+    /// Number of hits matching the query.
+    #[prost(uint64, tag = "1")]
+    pub num_hits: u64,
+    /// Matched hits
+    #[prost(message, repeated, tag = "2")]
+    pub hits: ::prost::alloc::vec::Vec<Hit>,
+    /// Elapsed time to perform the request. This time is measured
+    /// server-side and expressed in microseconds.
+    #[prost(uint64, tag = "3")]
+    pub elapsed_time_micros: u64,
+    /// The searcherrors that occurred formatted as string.
+    #[prost(string, repeated, tag = "4")]
+    pub errors: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Postcard-encoded aggregation response
+    #[prost(bytes = "vec", optional, tag = "9")]
+    pub aggregation_postcard: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
+    /// Scroll Id (only set if scroll_secs was set in the request)
+    #[prost(string, optional, tag = "6")]
+    pub scroll_id: ::core::option::Option<::prost::alloc::string::String>,
+    /// Returns the list of splits for which search failed.
+    /// For the moment, the cause is unknown.
+    ///
+    /// It is up to the caller to decide whether to interpret
+    /// this as an overall failure or to present the partial results
+    /// to the end user.
+    #[prost(message, repeated, tag = "7")]
+    pub failed_splits: ::prost::alloc::vec::Vec<SplitSearchError>,
+    /// Total number of successful splits searched.
+    #[prost(uint64, tag = "8")]
+    pub num_successful_splits: u64,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SearchPlanResponse {
+    #[prost(string, tag = "1")]
+    pub result: ::prost::alloc::string::String,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SplitSearchError {
+    /// The searcherror that occurred formatted as string.
+    #[prost(string, tag = "1")]
+    pub error: ::prost::alloc::string::String,
+    /// Split id that failed.
+    #[prost(string, tag = "2")]
+    pub split_id: ::prost::alloc::string::String,
+    /// Flag to indicate if the error can be considered a retryable error
+    #[prost(bool, tag = "3")]
+    pub retryable_error: bool,
+}
+/// / A LeafSearchRequest can span multiple indices.
+/// /
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct LeafSearchRequest {
+    /// Search request. This is a perfect copy of the original search request
+    /// that was sent to root apart from the start_offset, max_hits params and index_id_patterns.
+    /// index_id_patterns contains the actual index ids queried on that leaf.
+    #[prost(message, optional, tag = "1")]
+    pub search_request: ::core::option::Option<SearchRequest>,
+    /// List of leaf requests, one per index.
+    #[prost(message, repeated, tag = "7")]
+    pub leaf_requests: ::prost::alloc::vec::Vec<LeafRequestRef>,
+    /// List of unique doc_mappers serialized as json.
+    #[prost(string, repeated, tag = "8")]
+    pub doc_mappers: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// List of index uris
+    /// Index URI. The index URI defines the location of the storage that contains the
+    /// split files.
+    #[prost(string, repeated, tag = "9")]
+    pub index_uris: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ResourceStats {
+    #[prost(uint64, tag = "1")]
+    pub short_lived_cache_num_bytes: u64,
+    #[prost(uint64, tag = "2")]
+    pub split_num_docs: u64,
+    #[prost(uint64, tag = "3")]
+    pub warmup_microsecs: u64,
+    #[prost(uint64, tag = "4")]
+    pub cpu_thread_pool_wait_microsecs: u64,
+    #[prost(uint64, tag = "5")]
+    pub cpu_microsecs: u64,
+}
+/// / LeafRequestRef references data in LeafSearchRequest to deduplicate data.
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct LeafRequestRef {
+    /// The ordinal of the doc_mapper in `LeafSearchRequest.doc_mappers`
+    #[prost(uint32, tag = "1")]
+    pub doc_mapper_ord: u32,
+    /// The ordinal of the index uri in LeafSearchRequest.index_uris
+    #[prost(uint32, tag = "2")]
+    pub index_uri_ord: u32,
+    /// Index split ids to apply the query on.
+    /// This ids are resolved from the index_uri defined in the search_request.
+    #[prost(message, repeated, tag = "3")]
+    pub split_offsets: ::prost::alloc::vec::Vec<SplitIdAndFooterOffsets>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SplitIdAndFooterOffsets {
+    /// Index split id to apply the query on.
+    /// This id is resolved from the index_uri defined in the search_request.
+    #[prost(string, tag = "1")]
+    pub split_id: ::prost::alloc::string::String,
+    /// The offset of the start of footer in the split bundle. The footer contains the file bundle metadata and the hotcache.
+    #[prost(uint64, tag = "2")]
+    pub split_footer_start: u64,
+    /// The offset of the end of the footer in split bundle. The footer contains the file bundle metadata and the hotcache.
+    #[prost(uint64, tag = "3")]
+    pub split_footer_end: u64,
+    /// The lowest timestamp appearing in the split, in seconds since epoch
+    #[prost(int64, optional, tag = "4")]
+    pub timestamp_start: ::core::option::Option<i64>,
+    /// The highest timestamp appearing in the split, in seconds since epoch
+    #[prost(int64, optional, tag = "5")]
+    pub timestamp_end: ::core::option::Option<i64>,
+    /// The number of docs in the split
+    #[prost(uint64, tag = "6")]
+    pub num_docs: u64,
+}
+/// Hits returned by a FetchDocRequest.
+///
+/// The json that is joined is the raw tantivy json doc.
+/// It is very different from a quickwit json doc.
+///
+/// For instance:
+/// - it may contain a _source and a _dynamic field.
+/// - since tantivy has no notion of cardinality,
+///   all fields are arrays.
+/// - since tantivy has no notion of object, the object is
+///   flattened by concatenating the path to the root.
+///
+/// See  `quickwit_search::convert_leaf_hit`
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct LeafHit {
+    /// The actual content of the hit/
+    #[prost(string, tag = "1")]
+    pub leaf_json: ::prost::alloc::string::String,
+    /// The partial hit (ie: the sorting field + the document address)
+    #[prost(message, optional, tag = "2")]
+    pub partial_hit: ::core::option::Option<PartialHit>,
+    /// A snippet of the matching content
+    #[prost(string, optional, tag = "3")]
+    pub leaf_snippet_json: ::core::option::Option<::prost::alloc::string::String>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Hit {
+    /// The actual content of the hit
+    #[prost(string, tag = "1")]
+    pub json: ::prost::alloc::string::String,
+    /// The partial hit (ie: the sorting field + the document address)
+    #[prost(message, optional, tag = "2")]
+    pub partial_hit: ::core::option::Option<PartialHit>,
+    /// A snippet of the matching content
+    #[prost(string, optional, tag = "3")]
+    pub snippet: ::core::option::Option<::prost::alloc::string::String>,
+    /// The index id of the hit
+    #[prost(string, tag = "4")]
+    pub index_id: ::prost::alloc::string::String,
+}
+/// A partial hit, is a hit for which we have not fetch the content yet.
+/// Instead, it holds a document_uri which is enough information to
+/// go and fetch the actual document data, by performing a `get_doc(...)`
+/// request.
+///
+/// Value of the sorting key for the given document.
+///
+/// Quickwit only computes top-K of this sorting field.
+/// If the user requested for a bottom-K of a given fast field, then quickwit simply
+/// emits an decreasing mapping of this fast field.
+///
+/// In case of a tie, quickwit uses the increasing order of
+/// - the split_id,
+/// - the segment_ord,
+/// - the doc id.
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PartialHit {
+    #[prost(message, optional, tag = "10")]
+    pub sort_value: ::core::option::Option<SortByValue>,
+    #[prost(message, optional, tag = "11")]
+    pub sort_value2: ::core::option::Option<SortByValue>,
+    #[prost(string, tag = "2")]
+    pub split_id: ::prost::alloc::string::String,
+    /// (segment_ord, doc) form a tantivy DocAddress, which is sufficient to identify a document
+    /// within a split
+    #[prost(uint32, tag = "3")]
+    pub segment_ord: u32,
+    /// The DocId identifies a unique document at the scale of a tantivy segment.
+    #[prost(uint32, tag = "4")]
+    pub doc_id: u32,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SortByValue {
+    #[prost(oneof = "sort_by_value::SortValue", tags = "1, 2, 3, 4")]
+    pub sort_value: ::core::option::Option<sort_by_value::SortValue>,
+}
+/// Nested message and enum types in `SortByValue`.
+pub mod sort_by_value {
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum SortValue {
+        #[prost(uint64, tag = "1")]
+        U64(u64),
+        #[prost(int64, tag = "2")]
+        I64(i64),
+        #[prost(double, tag = "3")]
+        F64(f64),
+        #[prost(bool, tag = "4")]
+        Boolean(bool),
+    }
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct LeafSearchResponse {
+    /// Total number of documents matched by the query.
+    #[prost(uint64, tag = "1")]
+    pub num_hits: u64,
+    /// List of the best top-K candidates for the given leaf query.
+    #[prost(message, repeated, tag = "2")]
+    pub partial_hits: ::prost::alloc::vec::Vec<PartialHit>,
+    /// The list of splits that failed. LeafSearchResponse can be an aggregation of results, so there may be multiple.
+    #[prost(message, repeated, tag = "3")]
+    pub failed_splits: ::prost::alloc::vec::Vec<SplitSearchError>,
+    /// Total number of attempt to search into splits.
+    /// We do have:
+    /// `num_splits_requested == num_successful_splits + num_failed_splits.len()`
+    /// But we do not necessarily have:
+    /// `num_splits_requested = num_attempted_splits because of retries.`
+    #[prost(uint64, tag = "4")]
+    pub num_attempted_splits: u64,
+    /// Total number of successful splits searched.
+    #[prost(uint64, tag = "7")]
+    pub num_successful_splits: u64,
+    /// postcard serialized intermediate aggregation_result.
+    #[prost(bytes = "vec", optional, tag = "6")]
+    pub intermediate_aggregation_result: ::core::option::Option<
+        ::prost::alloc::vec::Vec<u8>,
+    >,
+    #[prost(message, optional, tag = "8")]
+    pub resource_stats: ::core::option::Option<ResourceStats>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SnippetRequest {
+    #[prost(string, repeated, tag = "1")]
+    pub snippet_fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(string, tag = "2")]
+    pub query_ast_resolved: ::prost::alloc::string::String,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct FetchDocsRequest {
+    /// Request fetching the content of a given list of partial_hits.
+    #[prost(message, repeated, tag = "1")]
+    pub partial_hits: ::prost::alloc::vec::Vec<PartialHit>,
+    /// Split footer offsets. They are required for fetch docs to
+    /// fetch the document content in two reads, when the footer is not
+    /// cached.
+    #[prost(message, repeated, tag = "3")]
+    pub split_offsets: ::prost::alloc::vec::Vec<SplitIdAndFooterOffsets>,
+    /// Index URI. The index URI defines the location of the storage that contains the
+    /// split files.
+    #[prost(string, tag = "4")]
+    pub index_uri: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "7")]
+    pub snippet_request: ::core::option::Option<SnippetRequest>,
+    /// `DocMapper` as json serialized trait.
+    #[prost(string, tag = "6")]
+    pub doc_mapper: ::prost::alloc::string::String,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct FetchDocsResponse {
+    /// List of complete hits.
+    #[prost(message, repeated, tag = "1")]
+    pub hits: ::prost::alloc::vec::Vec<LeafHit>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListTermsRequest {
+    /// Index ID patterns
+    #[prost(string, repeated, tag = "1")]
+    pub index_id_patterns: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Field to search on
+    #[prost(string, tag = "3")]
+    pub field: ::prost::alloc::string::String,
+    /// Time filter
+    #[prost(int64, optional, tag = "4")]
+    pub start_timestamp: ::core::option::Option<i64>,
+    #[prost(int64, optional, tag = "5")]
+    pub end_timestamp: ::core::option::Option<i64>,
+    /// Maximum number of hits to return.
+    #[prost(uint64, optional, tag = "6")]
+    pub max_hits: ::core::option::Option<u64>,
+    /// start_key is included, end_key is excluded
+    #[prost(bytes = "vec", optional, tag = "7")]
+    pub start_key: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
+    #[prost(bytes = "vec", optional, tag = "8")]
+    pub end_key: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListTermsResponse {
+    /// Number of hits matching the query.
+    #[prost(uint64, tag = "1")]
+    pub num_hits: u64,
+    /// Matched hits
+    #[prost(bytes = "vec", repeated, tag = "2")]
+    pub terms: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+    /// Elapsed time to perform the request. This time is measured
+    /// server-side and expressed in microseconds.
+    #[prost(uint64, tag = "3")]
+    pub elapsed_time_micros: u64,
+    /// The searcherrors that occurred formatted as string.
+    #[prost(string, repeated, tag = "4")]
+    pub errors: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct LeafListTermsRequest {
+    /// Search request. This is a perfect copy of the original list request,
+    #[prost(message, optional, tag = "1")]
+    pub list_terms_request: ::core::option::Option<ListTermsRequest>,
+    /// Index split ids to apply the query on.
+    /// This ids are resolved from the index_uri defined in the search_request.
+    #[prost(message, repeated, tag = "2")]
+    pub split_offsets: ::prost::alloc::vec::Vec<SplitIdAndFooterOffsets>,
+    /// Index URI. The index URI defines the location of the storage that contains the
+    /// split files.
+    #[prost(string, tag = "3")]
+    pub index_uri: ::prost::alloc::string::String,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct LeafListTermsResponse {
+    /// Total number of documents matched by the query.
+    #[prost(uint64, tag = "1")]
+    pub num_hits: u64,
+    /// List of the first K terms the given leaf query.
+    #[prost(bytes = "vec", repeated, tag = "2")]
+    pub terms: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+    /// The list of splits that failed. LeafSearchResponse can be an aggregation of results, so there may be multiple.
+    #[prost(message, repeated, tag = "3")]
+    pub failed_splits: ::prost::alloc::vec::Vec<SplitSearchError>,
+    /// Total number of single split search attempted.
+    #[prost(uint64, tag = "4")]
+    pub num_attempted_splits: u64,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SearchStreamRequest {
+    /// Index ID
+    #[prost(string, tag = "1")]
+    pub index_id: ::prost::alloc::string::String,
+    /// Quickwit Query AST encoded in Json
+    #[prost(string, tag = "11")]
+    pub query_ast: ::prost::alloc::string::String,
+    /// The time filter is interpreted as a semi-open interval. [start, end)
+    #[prost(int64, optional, tag = "4")]
+    pub start_timestamp: ::core::option::Option<i64>,
+    #[prost(int64, optional, tag = "5")]
+    pub end_timestamp: ::core::option::Option<i64>,
+    /// Name of the fast field to extract
+    #[prost(string, tag = "6")]
+    pub fast_field: ::prost::alloc::string::String,
+    /// The output format
+    #[prost(enumeration = "OutputFormat", tag = "7")]
+    pub output_format: i32,
+    /// The field by which we want to partition
+    #[prost(string, optional, tag = "9")]
+    pub partition_by_field: ::core::option::Option<::prost::alloc::string::String>,
+    /// Fields to extract snippet on.
+    #[prost(string, repeated, tag = "10")]
+    pub snippet_fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct LeafSearchStreamRequest {
+    /// Stream request. This is a perfect copy of the original stream request,
+    /// that was sent to root.
+    #[prost(message, optional, tag = "1")]
+    pub request: ::core::option::Option<SearchStreamRequest>,
+    /// Index split ids to apply the query on.
+    /// This ids are resolved from the index_uri defined in the stream request.
+    #[prost(message, repeated, tag = "2")]
+    pub split_offsets: ::prost::alloc::vec::Vec<SplitIdAndFooterOffsets>,
+    /// `DocMapper` as json serialized trait.
+    #[prost(string, tag = "5")]
+    pub doc_mapper: ::prost::alloc::string::String,
+    /// Index URI. The index URI defines the location of the storage that contains the
+    /// split files.
+    #[prost(string, tag = "6")]
+    pub index_uri: ::prost::alloc::string::String,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct LeafSearchStreamResponse {
+    /// Row of data serialized in bytes.
+    #[prost(bytes = "vec", tag = "1")]
+    pub data: ::prost::alloc::vec::Vec<u8>,
+    /// Split id.
+    #[prost(string, tag = "2")]
+    pub split_id: ::prost::alloc::string::String,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ListFieldType {
+    Str = 0,
+    U64 = 1,
+    I64 = 2,
+    F64 = 3,
+    Bool = 4,
+    Date = 5,
+    Facet = 6,
+    Bytes = 7,
+    IpAddr = 8,
+    Json = 9,
+}
+impl ListFieldType {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            ListFieldType::Str => "STR",
+            ListFieldType::U64 => "U64",
+            ListFieldType::I64 => "I64",
+            ListFieldType::F64 => "F64",
+            ListFieldType::Bool => "BOOL",
+            ListFieldType::Date => "DATE",
+            ListFieldType::Facet => "FACET",
+            ListFieldType::Bytes => "BYTES",
+            ListFieldType::IpAddr => "IP_ADDR",
+            ListFieldType::Json => "JSON",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "STR" => Some(Self::Str),
+            "U64" => Some(Self::U64),
+            "I64" => Some(Self::I64),
+            "F64" => Some(Self::F64),
+            "BOOL" => Some(Self::Bool),
+            "DATE" => Some(Self::Date),
+            "FACET" => Some(Self::Facet),
+            "BYTES" => Some(Self::Bytes),
+            "IP_ADDR" => Some(Self::IpAddr),
+            "JSON" => Some(Self::Json),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum CountHits {
+    /// Count all hits, querying all splits.
+    CountAll = 0,
+    /// Give an underestimate of the number of hits, possibly skipping entire
+    /// splits if they are otherwise not needed to fulfull a query.
+    Underestimate = 1,
+}
+impl CountHits {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            CountHits::CountAll => "COUNT_ALL",
+            CountHits::Underestimate => "UNDERESTIMATE",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "COUNT_ALL" => Some(Self::CountAll),
+            "UNDERESTIMATE" => Some(Self::Underestimate),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum SortOrder {
+    /// Ascending order.
+    Asc = 0,
+    /// Descending order.
+    ///
+    /// < This will be the default value;
+    Desc = 1,
+}
+impl SortOrder {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            SortOrder::Asc => "ASC",
+            SortOrder::Desc => "DESC",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "ASC" => Some(Self::Asc),
+            "DESC" => Some(Self::Desc),
+            _ => None,
+        }
+    }
+}
+/// Sort value format for datetime field.
+/// We keep an enum with only one format
+/// for future extension.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum SortDatetimeFormat {
+    UnixTimestampMillis = 0,
+    UnixTimestampNanos = 1,
+}
+impl SortDatetimeFormat {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            SortDatetimeFormat::UnixTimestampMillis => "UNIX_TIMESTAMP_MILLIS",
+            SortDatetimeFormat::UnixTimestampNanos => "UNIX_TIMESTAMP_NANOS",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "UNIX_TIMESTAMP_MILLIS" => Some(Self::UnixTimestampMillis),
+            "UNIX_TIMESTAMP_NANOS" => Some(Self::UnixTimestampNanos),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum OutputFormat {
+    /// Comma Separated Values format (<https://datatracker.ietf.org/doc/html/rfc4180>).
+    /// The delimiter is `,`.
+    ///
+    /// < This will be the default value
+    Csv = 0,
+    /// Format data by row in ClickHouse binary format.
+    /// <https://clickhouse.tech/docs/en/interfaces/formats/#rowbinary>
+    ClickHouseRowBinary = 1,
+}
+impl OutputFormat {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            OutputFormat::Csv => "CSV",
+            OutputFormat::ClickHouseRowBinary => "CLICK_HOUSE_ROW_BINARY",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "CSV" => Some(Self::Csv),
+            "CLICK_HOUSE_ROW_BINARY" => Some(Self::ClickHouseRowBinary),
+            _ => None,
+        }
+    }
+}
+/// BEGIN quickwit-codegen
+#[allow(unused_imports)]
+use std::str::FromStr;
+use tower::{Layer, Service, ServiceExt};
+use quickwit_common::tower::RpcName;
+impl RpcName for SearchRequest {
+    fn rpc_name() -> &'static str {
+        "root_search"
+    }
+}
+impl RpcName for LeafSearchRequest {
+    fn rpc_name() -> &'static str {
+        "leaf_search"
+    }
+}
+impl RpcName for FetchDocsRequest {
+    fn rpc_name() -> &'static str {
+        "fetch_docs"
+    }
+}
+impl RpcName for LeafSearchStreamRequest {
+    fn rpc_name() -> &'static str {
+        "leaf_search_stream"
+    }
+}
+impl RpcName for ListTermsRequest {
+    fn rpc_name() -> &'static str {
+        "root_list_terms"
+    }
+}
+impl RpcName for LeafListTermsRequest {
+    fn rpc_name() -> &'static str {
+        "leaf_list_terms"
+    }
+}
+impl RpcName for ScrollRequest {
+    fn rpc_name() -> &'static str {
+        "scroll"
+    }
+}
+impl RpcName for PutKvRequest {
+    fn rpc_name() -> &'static str {
+        "put_kv"
+    }
+}
+impl RpcName for GetKvRequest {
+    fn rpc_name() -> &'static str {
+        "get_kv"
+    }
+}
+impl RpcName for ReportSplitsRequest {
+    fn rpc_name() -> &'static str {
+        "report_splits"
+    }
+}
+impl RpcName for ListFieldsRequest {
+    fn rpc_name() -> &'static str {
+        "list_fields"
+    }
+}
+impl RpcName for LeafListFieldsRequest {
+    fn rpc_name() -> &'static str {
+        "leaf_list_fields"
+    }
+}
+impl RpcName for SearchRequest {
+    fn rpc_name() -> &'static str {
+        "search_plan"
+    }
+}
+pub type SearchServiceStream<T> = quickwit_common::ServiceStream<
+    crate::cloudprem::CloudPremResult<T>,
+>;
+#[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
+#[async_trait::async_trait]
+pub trait SearchService: std::fmt::Debug + Send + Sync + 'static {
+    /// Root search API.
+    /// This RPC identifies the set of splits on which the query should run on,
+    /// and dispatch the several calls to `LeafSearch`.
+    ///
+    /// It is also in charge of merging back the results.
+    async fn root_search(
+        &self,
+        request: SearchRequest,
+    ) -> crate::cloudprem::CloudPremResult<SearchResponse>;
+    /// Perform a leaf search on a given set of splits.
+    ///
+    /// It is like a regular search except that:
+    /// - the node should perform the search locally instead of dispatching
+    ///   it to other nodes.
+    /// - it should be applied on the given subset of splits
+    /// - Hit content is not fetched, and we instead return so called `PartialHit`.
+    async fn leaf_search(
+        &self,
+        request: LeafSearchRequest,
+    ) -> crate::cloudprem::CloudPremResult<LeafSearchResponse>;
+    #[doc = "/ Fetches the documents contents from the document store."]
+    #[doc = "/ This methods takes `PartialHit`s and returns `Hit`s."]
+    async fn fetch_docs(
+        &self,
+        request: FetchDocsRequest,
+    ) -> crate::cloudprem::CloudPremResult<FetchDocsResponse>;
+    /// Perform a leaf stream on a given set of splits.
+    async fn leaf_search_stream(
+        &self,
+        request: LeafSearchStreamRequest,
+    ) -> crate::cloudprem::CloudPremResult<
+        SearchServiceStream<LeafSearchStreamResponse>,
+    >;
+    /// Root list terms API.
+    /// This RPC identifies the set of splits on which the query should run on,
+    /// and dispatches the several calls to `LeafListTerms`.
+    ///
+    /// It is also in charge of merging back the results.
+    async fn root_list_terms(
+        &self,
+        request: ListTermsRequest,
+    ) -> crate::cloudprem::CloudPremResult<ListTermsResponse>;
+    /// Performs a leaf list terms on a given set of splits.
+    ///
+    /// It is like a regular list term except that:
+    /// - the node should perform the listing locally instead of dispatching
+    ///   it to other nodes.
+    /// - it should be applied on the given subset of splits
+    async fn leaf_list_terms(
+        &self,
+        request: LeafListTermsRequest,
+    ) -> crate::cloudprem::CloudPremResult<LeafListTermsResponse>;
+    /// Performs a scroll request.
+    async fn scroll(
+        &self,
+        request: ScrollRequest,
+    ) -> crate::cloudprem::CloudPremResult<SearchResponse>;
+    /// gRPC request used to store a key in the local storage of the targeted node.
+    /// This RPC is used in the mini distributed immutable KV store embedded in quickwit.
+    async fn put_kv(
+        &self,
+        request: PutKvRequest,
+    ) -> crate::cloudprem::CloudPremResult<PutKvResponse>;
+    /// Gets a key from the local storage of the targeted node.
+    /// This RPC is used in the mini distributed immutable KV store embedded in quickwit.
+    async fn get_kv(
+        &self,
+        request: GetKvRequest,
+    ) -> crate::cloudprem::CloudPremResult<GetKvResponse>;
+    async fn report_splits(
+        &self,
+        request: ReportSplitsRequest,
+    ) -> crate::cloudprem::CloudPremResult<ReportSplitsResponse>;
+    async fn list_fields(
+        &self,
+        request: ListFieldsRequest,
+    ) -> crate::cloudprem::CloudPremResult<ListFieldsResponse>;
+    async fn leaf_list_fields(
+        &self,
+        request: LeafListFieldsRequest,
+    ) -> crate::cloudprem::CloudPremResult<ListFieldsResponse>;
+    /// Describe how a search would be processed.
+    async fn search_plan(
+        &self,
+        request: SearchRequest,
+    ) -> crate::cloudprem::CloudPremResult<SearchPlanResponse>;
+}
+#[derive(Debug, Clone)]
+pub struct SearchServiceClient {
+    inner: InnerSearchServiceClient,
+}
+#[derive(Debug, Clone)]
+struct InnerSearchServiceClient(std::sync::Arc<dyn SearchService>);
+impl SearchServiceClient {
+    pub fn new<T>(instance: T) -> Self
+    where
+        T: SearchService,
+    {
+        #[cfg(any(test, feature = "testsuite"))]
+        assert!(
+            std::any::TypeId::of:: < T > () != std::any::TypeId::of:: < MockSearchService
+            > (),
+            "`MockSearchService` must be wrapped in a `MockSearchServiceWrapper`: use `SearchServiceClient::from_mock(mock)` to instantiate the client"
+        );
+        Self {
+            inner: InnerSearchServiceClient(std::sync::Arc::new(instance)),
+        }
+    }
+    pub fn as_grpc_service(
+        &self,
+        max_message_size: bytesize::ByteSize,
+    ) -> search_service_grpc_server::SearchServiceGrpcServer<
+        SearchServiceGrpcServerAdapter,
+    > {
+        let adapter = SearchServiceGrpcServerAdapter::new(self.clone());
+        search_service_grpc_server::SearchServiceGrpcServer::new(adapter)
+            .max_decoding_message_size(max_message_size.0 as usize)
+            .max_encoding_message_size(max_message_size.0 as usize)
+    }
+    pub fn from_channel(
+        addr: std::net::SocketAddr,
+        channel: tonic::transport::Channel,
+        max_message_size: bytesize::ByteSize,
+    ) -> Self {
+        let (_, connection_keys_watcher) = tokio::sync::watch::channel(
+            std::collections::HashSet::from_iter([addr]),
+        );
+        let client = search_service_grpc_client::SearchServiceGrpcClient::new(channel)
+            .max_decoding_message_size(max_message_size.0 as usize)
+            .max_encoding_message_size(max_message_size.0 as usize);
+        let adapter = SearchServiceGrpcClientAdapter::new(
+            client,
+            connection_keys_watcher,
+        );
+        Self::new(adapter)
+    }
+    pub fn from_balance_channel(
+        balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
+        max_message_size: bytesize::ByteSize,
+    ) -> SearchServiceClient {
+        let connection_keys_watcher = balance_channel.connection_keys_watcher();
+        let client = search_service_grpc_client::SearchServiceGrpcClient::new(
+                balance_channel,
+            )
+            .max_decoding_message_size(max_message_size.0 as usize)
+            .max_encoding_message_size(max_message_size.0 as usize);
+        let adapter = SearchServiceGrpcClientAdapter::new(
+            client,
+            connection_keys_watcher,
+        );
+        Self::new(adapter)
+    }
+    pub fn from_mailbox<A>(mailbox: quickwit_actors::Mailbox<A>) -> Self
+    where
+        A: quickwit_actors::Actor + std::fmt::Debug + Send + 'static,
+        SearchServiceMailbox<A>: SearchService,
+    {
+        SearchServiceClient::new(SearchServiceMailbox::new(mailbox))
+    }
+    pub fn tower() -> SearchServiceTowerLayerStack {
+        SearchServiceTowerLayerStack::default()
+    }
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn from_mock(mock: MockSearchService) -> Self {
+        let mock_wrapper = mock_search_service::MockSearchServiceWrapper {
+            inner: tokio::sync::Mutex::new(mock),
+        };
+        Self::new(mock_wrapper)
+    }
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn mocked() -> Self {
+        Self::from_mock(MockSearchService::new())
+    }
+}
+#[async_trait::async_trait]
+impl SearchService for SearchServiceClient {
+    async fn root_search(
+        &self,
+        request: SearchRequest,
+    ) -> crate::cloudprem::CloudPremResult<SearchResponse> {
+        self.inner.0.root_search(request).await
+    }
+    async fn leaf_search(
+        &self,
+        request: LeafSearchRequest,
+    ) -> crate::cloudprem::CloudPremResult<LeafSearchResponse> {
+        self.inner.0.leaf_search(request).await
+    }
+    async fn fetch_docs(
+        &self,
+        request: FetchDocsRequest,
+    ) -> crate::cloudprem::CloudPremResult<FetchDocsResponse> {
+        self.inner.0.fetch_docs(request).await
+    }
+    async fn leaf_search_stream(
+        &self,
+        request: LeafSearchStreamRequest,
+    ) -> crate::cloudprem::CloudPremResult<
+        SearchServiceStream<LeafSearchStreamResponse>,
+    > {
+        self.inner.0.leaf_search_stream(request).await
+    }
+    async fn root_list_terms(
+        &self,
+        request: ListTermsRequest,
+    ) -> crate::cloudprem::CloudPremResult<ListTermsResponse> {
+        self.inner.0.root_list_terms(request).await
+    }
+    async fn leaf_list_terms(
+        &self,
+        request: LeafListTermsRequest,
+    ) -> crate::cloudprem::CloudPremResult<LeafListTermsResponse> {
+        self.inner.0.leaf_list_terms(request).await
+    }
+    async fn scroll(
+        &self,
+        request: ScrollRequest,
+    ) -> crate::cloudprem::CloudPremResult<SearchResponse> {
+        self.inner.0.scroll(request).await
+    }
+    async fn put_kv(
+        &self,
+        request: PutKvRequest,
+    ) -> crate::cloudprem::CloudPremResult<PutKvResponse> {
+        self.inner.0.put_kv(request).await
+    }
+    async fn get_kv(
+        &self,
+        request: GetKvRequest,
+    ) -> crate::cloudprem::CloudPremResult<GetKvResponse> {
+        self.inner.0.get_kv(request).await
+    }
+    async fn report_splits(
+        &self,
+        request: ReportSplitsRequest,
+    ) -> crate::cloudprem::CloudPremResult<ReportSplitsResponse> {
+        self.inner.0.report_splits(request).await
+    }
+    async fn list_fields(
+        &self,
+        request: ListFieldsRequest,
+    ) -> crate::cloudprem::CloudPremResult<ListFieldsResponse> {
+        self.inner.0.list_fields(request).await
+    }
+    async fn leaf_list_fields(
+        &self,
+        request: LeafListFieldsRequest,
+    ) -> crate::cloudprem::CloudPremResult<ListFieldsResponse> {
+        self.inner.0.leaf_list_fields(request).await
+    }
+    async fn search_plan(
+        &self,
+        request: SearchRequest,
+    ) -> crate::cloudprem::CloudPremResult<SearchPlanResponse> {
+        self.inner.0.search_plan(request).await
+    }
+}
+#[cfg(any(test, feature = "testsuite"))]
+pub mod mock_search_service {
+    use super::*;
+    #[derive(Debug)]
+    pub struct MockSearchServiceWrapper {
+        pub(super) inner: tokio::sync::Mutex<MockSearchService>,
+    }
+    #[async_trait::async_trait]
+    impl SearchService for MockSearchServiceWrapper {
+        async fn root_search(
+            &self,
+            request: super::SearchRequest,
+        ) -> crate::cloudprem::CloudPremResult<super::SearchResponse> {
+            self.inner.lock().await.root_search(request).await
+        }
+        async fn leaf_search(
+            &self,
+            request: super::LeafSearchRequest,
+        ) -> crate::cloudprem::CloudPremResult<super::LeafSearchResponse> {
+            self.inner.lock().await.leaf_search(request).await
+        }
+        async fn fetch_docs(
+            &self,
+            request: super::FetchDocsRequest,
+        ) -> crate::cloudprem::CloudPremResult<super::FetchDocsResponse> {
+            self.inner.lock().await.fetch_docs(request).await
+        }
+        async fn leaf_search_stream(
+            &self,
+            request: super::LeafSearchStreamRequest,
+        ) -> crate::cloudprem::CloudPremResult<
+            SearchServiceStream<super::LeafSearchStreamResponse>,
+        > {
+            self.inner.lock().await.leaf_search_stream(request).await
+        }
+        async fn root_list_terms(
+            &self,
+            request: super::ListTermsRequest,
+        ) -> crate::cloudprem::CloudPremResult<super::ListTermsResponse> {
+            self.inner.lock().await.root_list_terms(request).await
+        }
+        async fn leaf_list_terms(
+            &self,
+            request: super::LeafListTermsRequest,
+        ) -> crate::cloudprem::CloudPremResult<super::LeafListTermsResponse> {
+            self.inner.lock().await.leaf_list_terms(request).await
+        }
+        async fn scroll(
+            &self,
+            request: super::ScrollRequest,
+        ) -> crate::cloudprem::CloudPremResult<super::SearchResponse> {
+            self.inner.lock().await.scroll(request).await
+        }
+        async fn put_kv(
+            &self,
+            request: super::PutKvRequest,
+        ) -> crate::cloudprem::CloudPremResult<super::PutKvResponse> {
+            self.inner.lock().await.put_kv(request).await
+        }
+        async fn get_kv(
+            &self,
+            request: super::GetKvRequest,
+        ) -> crate::cloudprem::CloudPremResult<super::GetKvResponse> {
+            self.inner.lock().await.get_kv(request).await
+        }
+        async fn report_splits(
+            &self,
+            request: super::ReportSplitsRequest,
+        ) -> crate::cloudprem::CloudPremResult<super::ReportSplitsResponse> {
+            self.inner.lock().await.report_splits(request).await
+        }
+        async fn list_fields(
+            &self,
+            request: super::ListFieldsRequest,
+        ) -> crate::cloudprem::CloudPremResult<super::ListFieldsResponse> {
+            self.inner.lock().await.list_fields(request).await
+        }
+        async fn leaf_list_fields(
+            &self,
+            request: super::LeafListFieldsRequest,
+        ) -> crate::cloudprem::CloudPremResult<super::ListFieldsResponse> {
+            self.inner.lock().await.leaf_list_fields(request).await
+        }
+        async fn search_plan(
+            &self,
+            request: super::SearchRequest,
+        ) -> crate::cloudprem::CloudPremResult<super::SearchPlanResponse> {
+            self.inner.lock().await.search_plan(request).await
+        }
+    }
+}
+pub type BoxFuture<T, E> = std::pin::Pin<
+    Box<dyn std::future::Future<Output = Result<T, E>> + Send + 'static>,
+>;
+impl tower::Service<SearchRequest> for InnerSearchServiceClient {
+    type Response = SearchResponse;
+    type Error = crate::cloudprem::CloudPremError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: SearchRequest) -> Self::Future {
+        let svc = self.clone();
+        let fut = async move { svc.0.root_search(request).await };
+        Box::pin(fut)
+    }
+}
+impl tower::Service<LeafSearchRequest> for InnerSearchServiceClient {
+    type Response = LeafSearchResponse;
+    type Error = crate::cloudprem::CloudPremError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: LeafSearchRequest) -> Self::Future {
+        let svc = self.clone();
+        let fut = async move { svc.0.leaf_search(request).await };
+        Box::pin(fut)
+    }
+}
+impl tower::Service<FetchDocsRequest> for InnerSearchServiceClient {
+    type Response = FetchDocsResponse;
+    type Error = crate::cloudprem::CloudPremError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: FetchDocsRequest) -> Self::Future {
+        let svc = self.clone();
+        let fut = async move { svc.0.fetch_docs(request).await };
+        Box::pin(fut)
+    }
+}
+impl tower::Service<LeafSearchStreamRequest> for InnerSearchServiceClient {
+    type Response = SearchServiceStream<LeafSearchStreamResponse>;
+    type Error = crate::cloudprem::CloudPremError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: LeafSearchStreamRequest) -> Self::Future {
+        let svc = self.clone();
+        let fut = async move { svc.0.leaf_search_stream(request).await };
+        Box::pin(fut)
+    }
+}
+impl tower::Service<ListTermsRequest> for InnerSearchServiceClient {
+    type Response = ListTermsResponse;
+    type Error = crate::cloudprem::CloudPremError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: ListTermsRequest) -> Self::Future {
+        let svc = self.clone();
+        let fut = async move { svc.0.root_list_terms(request).await };
+        Box::pin(fut)
+    }
+}
+impl tower::Service<LeafListTermsRequest> for InnerSearchServiceClient {
+    type Response = LeafListTermsResponse;
+    type Error = crate::cloudprem::CloudPremError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: LeafListTermsRequest) -> Self::Future {
+        let svc = self.clone();
+        let fut = async move { svc.0.leaf_list_terms(request).await };
+        Box::pin(fut)
+    }
+}
+impl tower::Service<ScrollRequest> for InnerSearchServiceClient {
+    type Response = SearchResponse;
+    type Error = crate::cloudprem::CloudPremError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: ScrollRequest) -> Self::Future {
+        let svc = self.clone();
+        let fut = async move { svc.0.scroll(request).await };
+        Box::pin(fut)
+    }
+}
+impl tower::Service<PutKvRequest> for InnerSearchServiceClient {
+    type Response = PutKvResponse;
+    type Error = crate::cloudprem::CloudPremError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: PutKvRequest) -> Self::Future {
+        let svc = self.clone();
+        let fut = async move { svc.0.put_kv(request).await };
+        Box::pin(fut)
+    }
+}
+impl tower::Service<GetKvRequest> for InnerSearchServiceClient {
+    type Response = GetKvResponse;
+    type Error = crate::cloudprem::CloudPremError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: GetKvRequest) -> Self::Future {
+        let svc = self.clone();
+        let fut = async move { svc.0.get_kv(request).await };
+        Box::pin(fut)
+    }
+}
+impl tower::Service<ReportSplitsRequest> for InnerSearchServiceClient {
+    type Response = ReportSplitsResponse;
+    type Error = crate::cloudprem::CloudPremError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: ReportSplitsRequest) -> Self::Future {
+        let svc = self.clone();
+        let fut = async move { svc.0.report_splits(request).await };
+        Box::pin(fut)
+    }
+}
+impl tower::Service<ListFieldsRequest> for InnerSearchServiceClient {
+    type Response = ListFieldsResponse;
+    type Error = crate::cloudprem::CloudPremError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: ListFieldsRequest) -> Self::Future {
+        let svc = self.clone();
+        let fut = async move { svc.0.list_fields(request).await };
+        Box::pin(fut)
+    }
+}
+impl tower::Service<LeafListFieldsRequest> for InnerSearchServiceClient {
+    type Response = ListFieldsResponse;
+    type Error = crate::cloudprem::CloudPremError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: LeafListFieldsRequest) -> Self::Future {
+        let svc = self.clone();
+        let fut = async move { svc.0.leaf_list_fields(request).await };
+        Box::pin(fut)
+    }
+}
+impl tower::Service<SearchRequest> for InnerSearchServiceClient {
+    type Response = SearchPlanResponse;
+    type Error = crate::cloudprem::CloudPremError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: SearchRequest) -> Self::Future {
+        let svc = self.clone();
+        let fut = async move { svc.0.search_plan(request).await };
+        Box::pin(fut)
+    }
+}
+/// A tower service stack is a set of tower services.
+#[derive(Debug)]
+struct SearchServiceTowerServiceStack {
+    #[allow(dead_code)]
+    inner: InnerSearchServiceClient,
+    root_search_svc: quickwit_common::tower::BoxService<
+        SearchRequest,
+        SearchResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+    leaf_search_svc: quickwit_common::tower::BoxService<
+        LeafSearchRequest,
+        LeafSearchResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+    fetch_docs_svc: quickwit_common::tower::BoxService<
+        FetchDocsRequest,
+        FetchDocsResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+    leaf_search_stream_svc: quickwit_common::tower::BoxService<
+        LeafSearchStreamRequest,
+        SearchServiceStream<LeafSearchStreamResponse>,
+        crate::cloudprem::CloudPremError,
+    >,
+    root_list_terms_svc: quickwit_common::tower::BoxService<
+        ListTermsRequest,
+        ListTermsResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+    leaf_list_terms_svc: quickwit_common::tower::BoxService<
+        LeafListTermsRequest,
+        LeafListTermsResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+    scroll_svc: quickwit_common::tower::BoxService<
+        ScrollRequest,
+        SearchResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+    put_kv_svc: quickwit_common::tower::BoxService<
+        PutKvRequest,
+        PutKvResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+    get_kv_svc: quickwit_common::tower::BoxService<
+        GetKvRequest,
+        GetKvResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+    report_splits_svc: quickwit_common::tower::BoxService<
+        ReportSplitsRequest,
+        ReportSplitsResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+    list_fields_svc: quickwit_common::tower::BoxService<
+        ListFieldsRequest,
+        ListFieldsResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+    leaf_list_fields_svc: quickwit_common::tower::BoxService<
+        LeafListFieldsRequest,
+        ListFieldsResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+    search_plan_svc: quickwit_common::tower::BoxService<
+        SearchRequest,
+        SearchPlanResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+}
+#[async_trait::async_trait]
+impl SearchService for SearchServiceTowerServiceStack {
+    async fn root_search(
+        &self,
+        request: SearchRequest,
+    ) -> crate::cloudprem::CloudPremResult<SearchResponse> {
+        self.root_search_svc.clone().ready().await?.call(request).await
+    }
+    async fn leaf_search(
+        &self,
+        request: LeafSearchRequest,
+    ) -> crate::cloudprem::CloudPremResult<LeafSearchResponse> {
+        self.leaf_search_svc.clone().ready().await?.call(request).await
+    }
+    async fn fetch_docs(
+        &self,
+        request: FetchDocsRequest,
+    ) -> crate::cloudprem::CloudPremResult<FetchDocsResponse> {
+        self.fetch_docs_svc.clone().ready().await?.call(request).await
+    }
+    async fn leaf_search_stream(
+        &self,
+        request: LeafSearchStreamRequest,
+    ) -> crate::cloudprem::CloudPremResult<
+        SearchServiceStream<LeafSearchStreamResponse>,
+    > {
+        self.leaf_search_stream_svc.clone().ready().await?.call(request).await
+    }
+    async fn root_list_terms(
+        &self,
+        request: ListTermsRequest,
+    ) -> crate::cloudprem::CloudPremResult<ListTermsResponse> {
+        self.root_list_terms_svc.clone().ready().await?.call(request).await
+    }
+    async fn leaf_list_terms(
+        &self,
+        request: LeafListTermsRequest,
+    ) -> crate::cloudprem::CloudPremResult<LeafListTermsResponse> {
+        self.leaf_list_terms_svc.clone().ready().await?.call(request).await
+    }
+    async fn scroll(
+        &self,
+        request: ScrollRequest,
+    ) -> crate::cloudprem::CloudPremResult<SearchResponse> {
+        self.scroll_svc.clone().ready().await?.call(request).await
+    }
+    async fn put_kv(
+        &self,
+        request: PutKvRequest,
+    ) -> crate::cloudprem::CloudPremResult<PutKvResponse> {
+        self.put_kv_svc.clone().ready().await?.call(request).await
+    }
+    async fn get_kv(
+        &self,
+        request: GetKvRequest,
+    ) -> crate::cloudprem::CloudPremResult<GetKvResponse> {
+        self.get_kv_svc.clone().ready().await?.call(request).await
+    }
+    async fn report_splits(
+        &self,
+        request: ReportSplitsRequest,
+    ) -> crate::cloudprem::CloudPremResult<ReportSplitsResponse> {
+        self.report_splits_svc.clone().ready().await?.call(request).await
+    }
+    async fn list_fields(
+        &self,
+        request: ListFieldsRequest,
+    ) -> crate::cloudprem::CloudPremResult<ListFieldsResponse> {
+        self.list_fields_svc.clone().ready().await?.call(request).await
+    }
+    async fn leaf_list_fields(
+        &self,
+        request: LeafListFieldsRequest,
+    ) -> crate::cloudprem::CloudPremResult<ListFieldsResponse> {
+        self.leaf_list_fields_svc.clone().ready().await?.call(request).await
+    }
+    async fn search_plan(
+        &self,
+        request: SearchRequest,
+    ) -> crate::cloudprem::CloudPremResult<SearchPlanResponse> {
+        self.search_plan_svc.clone().ready().await?.call(request).await
+    }
+}
+type RootSearchLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        SearchRequest,
+        SearchResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+    SearchRequest,
+    SearchResponse,
+    crate::cloudprem::CloudPremError,
+>;
+type LeafSearchLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        LeafSearchRequest,
+        LeafSearchResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+    LeafSearchRequest,
+    LeafSearchResponse,
+    crate::cloudprem::CloudPremError,
+>;
+type FetchDocsLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        FetchDocsRequest,
+        FetchDocsResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+    FetchDocsRequest,
+    FetchDocsResponse,
+    crate::cloudprem::CloudPremError,
+>;
+type LeafSearchStreamLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        LeafSearchStreamRequest,
+        SearchServiceStream<LeafSearchStreamResponse>,
+        crate::cloudprem::CloudPremError,
+    >,
+    LeafSearchStreamRequest,
+    SearchServiceStream<LeafSearchStreamResponse>,
+    crate::cloudprem::CloudPremError,
+>;
+type RootListTermsLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        ListTermsRequest,
+        ListTermsResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+    ListTermsRequest,
+    ListTermsResponse,
+    crate::cloudprem::CloudPremError,
+>;
+type LeafListTermsLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        LeafListTermsRequest,
+        LeafListTermsResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+    LeafListTermsRequest,
+    LeafListTermsResponse,
+    crate::cloudprem::CloudPremError,
+>;
+type ScrollLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        ScrollRequest,
+        SearchResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+    ScrollRequest,
+    SearchResponse,
+    crate::cloudprem::CloudPremError,
+>;
+type PutKvLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        PutKvRequest,
+        PutKvResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+    PutKvRequest,
+    PutKvResponse,
+    crate::cloudprem::CloudPremError,
+>;
+type GetKvLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        GetKvRequest,
+        GetKvResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+    GetKvRequest,
+    GetKvResponse,
+    crate::cloudprem::CloudPremError,
+>;
+type ReportSplitsLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        ReportSplitsRequest,
+        ReportSplitsResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+    ReportSplitsRequest,
+    ReportSplitsResponse,
+    crate::cloudprem::CloudPremError,
+>;
+type ListFieldsLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        ListFieldsRequest,
+        ListFieldsResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+    ListFieldsRequest,
+    ListFieldsResponse,
+    crate::cloudprem::CloudPremError,
+>;
+type LeafListFieldsLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        LeafListFieldsRequest,
+        ListFieldsResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+    LeafListFieldsRequest,
+    ListFieldsResponse,
+    crate::cloudprem::CloudPremError,
+>;
+type SearchPlanLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        SearchRequest,
+        SearchPlanResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+    SearchRequest,
+    SearchPlanResponse,
+    crate::cloudprem::CloudPremError,
+>;
+#[derive(Debug, Default)]
+pub struct SearchServiceTowerLayerStack {
+    root_search_layers: Vec<RootSearchLayer>,
+    leaf_search_layers: Vec<LeafSearchLayer>,
+    fetch_docs_layers: Vec<FetchDocsLayer>,
+    leaf_search_stream_layers: Vec<LeafSearchStreamLayer>,
+    root_list_terms_layers: Vec<RootListTermsLayer>,
+    leaf_list_terms_layers: Vec<LeafListTermsLayer>,
+    scroll_layers: Vec<ScrollLayer>,
+    put_kv_layers: Vec<PutKvLayer>,
+    get_kv_layers: Vec<GetKvLayer>,
+    report_splits_layers: Vec<ReportSplitsLayer>,
+    list_fields_layers: Vec<ListFieldsLayer>,
+    leaf_list_fields_layers: Vec<LeafListFieldsLayer>,
+    search_plan_layers: Vec<SearchPlanLayer>,
+}
+impl SearchServiceTowerLayerStack {
+    pub fn stack_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    SearchRequest,
+                    SearchResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                SearchRequest,
+                SearchResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service: tower::Service<
+                SearchRequest,
+                Response = SearchResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                SearchRequest,
+                SearchResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service as tower::Service<SearchRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    LeafSearchRequest,
+                    LeafSearchResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                LeafSearchRequest,
+                LeafSearchResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service: tower::Service<
+                LeafSearchRequest,
+                Response = LeafSearchResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                LeafSearchRequest,
+                LeafSearchResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service as tower::Service<LeafSearchRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    FetchDocsRequest,
+                    FetchDocsResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                FetchDocsRequest,
+                FetchDocsResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service: tower::Service<
+                FetchDocsRequest,
+                Response = FetchDocsResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                FetchDocsRequest,
+                FetchDocsResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service as tower::Service<FetchDocsRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    LeafSearchStreamRequest,
+                    SearchServiceStream<LeafSearchStreamResponse>,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                LeafSearchStreamRequest,
+                SearchServiceStream<LeafSearchStreamResponse>,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service: tower::Service<
+                LeafSearchStreamRequest,
+                Response = SearchServiceStream<LeafSearchStreamResponse>,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                LeafSearchStreamRequest,
+                SearchServiceStream<LeafSearchStreamResponse>,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service as tower::Service<LeafSearchStreamRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    ListTermsRequest,
+                    ListTermsResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                ListTermsRequest,
+                ListTermsResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service: tower::Service<
+                ListTermsRequest,
+                Response = ListTermsResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                ListTermsRequest,
+                ListTermsResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service as tower::Service<ListTermsRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    LeafListTermsRequest,
+                    LeafListTermsResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                LeafListTermsRequest,
+                LeafListTermsResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service: tower::Service<
+                LeafListTermsRequest,
+                Response = LeafListTermsResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                LeafListTermsRequest,
+                LeafListTermsResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service as tower::Service<LeafListTermsRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    ScrollRequest,
+                    SearchResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                ScrollRequest,
+                SearchResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service: tower::Service<
+                ScrollRequest,
+                Response = SearchResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                ScrollRequest,
+                SearchResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service as tower::Service<ScrollRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    PutKvRequest,
+                    PutKvResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                PutKvRequest,
+                PutKvResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service: tower::Service<
+                PutKvRequest,
+                Response = PutKvResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                PutKvRequest,
+                PutKvResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service as tower::Service<PutKvRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    GetKvRequest,
+                    GetKvResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                GetKvRequest,
+                GetKvResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service: tower::Service<
+                GetKvRequest,
+                Response = GetKvResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                GetKvRequest,
+                GetKvResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service as tower::Service<GetKvRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    ReportSplitsRequest,
+                    ReportSplitsResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                ReportSplitsRequest,
+                ReportSplitsResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service: tower::Service<
+                ReportSplitsRequest,
+                Response = ReportSplitsResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                ReportSplitsRequest,
+                ReportSplitsResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service as tower::Service<ReportSplitsRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    ListFieldsRequest,
+                    ListFieldsResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                ListFieldsRequest,
+                ListFieldsResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service: tower::Service<
+                ListFieldsRequest,
+                Response = ListFieldsResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                ListFieldsRequest,
+                ListFieldsResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service as tower::Service<ListFieldsRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    LeafListFieldsRequest,
+                    ListFieldsResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                LeafListFieldsRequest,
+                ListFieldsResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service: tower::Service<
+                LeafListFieldsRequest,
+                Response = ListFieldsResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                LeafListFieldsRequest,
+                ListFieldsResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service as tower::Service<LeafListFieldsRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    SearchRequest,
+                    SearchPlanResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                SearchRequest,
+                SearchPlanResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service: tower::Service<
+                SearchRequest,
+                Response = SearchPlanResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                SearchRequest,
+                SearchPlanResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service as tower::Service<SearchRequest>>::Future: Send + 'static,
+    {
+        self.root_search_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.leaf_search_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.fetch_docs_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.leaf_search_stream_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.root_list_terms_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.leaf_list_terms_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.scroll_layers.push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.put_kv_layers.push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.get_kv_layers.push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.report_splits_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.list_fields_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.leaf_list_fields_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.search_plan_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self
+    }
+    pub fn stack_root_search_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    SearchRequest,
+                    SearchResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                SearchRequest,
+                Response = SearchResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<SearchRequest>>::Future: Send + 'static,
+    {
+        self.root_search_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_leaf_search_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    LeafSearchRequest,
+                    LeafSearchResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                LeafSearchRequest,
+                Response = LeafSearchResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<LeafSearchRequest>>::Future: Send + 'static,
+    {
+        self.leaf_search_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_fetch_docs_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    FetchDocsRequest,
+                    FetchDocsResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                FetchDocsRequest,
+                Response = FetchDocsResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<FetchDocsRequest>>::Future: Send + 'static,
+    {
+        self.fetch_docs_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_leaf_search_stream_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    LeafSearchStreamRequest,
+                    SearchServiceStream<LeafSearchStreamResponse>,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                LeafSearchStreamRequest,
+                Response = SearchServiceStream<LeafSearchStreamResponse>,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<LeafSearchStreamRequest>>::Future: Send + 'static,
+    {
+        self.leaf_search_stream_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_root_list_terms_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    ListTermsRequest,
+                    ListTermsResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                ListTermsRequest,
+                Response = ListTermsResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<ListTermsRequest>>::Future: Send + 'static,
+    {
+        self.root_list_terms_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_leaf_list_terms_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    LeafListTermsRequest,
+                    LeafListTermsResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                LeafListTermsRequest,
+                Response = LeafListTermsResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<LeafListTermsRequest>>::Future: Send + 'static,
+    {
+        self.leaf_list_terms_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_scroll_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    ScrollRequest,
+                    SearchResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                ScrollRequest,
+                Response = SearchResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<ScrollRequest>>::Future: Send + 'static,
+    {
+        self.scroll_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_put_kv_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    PutKvRequest,
+                    PutKvResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                PutKvRequest,
+                Response = PutKvResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<PutKvRequest>>::Future: Send + 'static,
+    {
+        self.put_kv_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_get_kv_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    GetKvRequest,
+                    GetKvResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                GetKvRequest,
+                Response = GetKvResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<GetKvRequest>>::Future: Send + 'static,
+    {
+        self.get_kv_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_report_splits_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    ReportSplitsRequest,
+                    ReportSplitsResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                ReportSplitsRequest,
+                Response = ReportSplitsResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<ReportSplitsRequest>>::Future: Send + 'static,
+    {
+        self.report_splits_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_list_fields_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    ListFieldsRequest,
+                    ListFieldsResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                ListFieldsRequest,
+                Response = ListFieldsResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<ListFieldsRequest>>::Future: Send + 'static,
+    {
+        self.list_fields_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_leaf_list_fields_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    LeafListFieldsRequest,
+                    ListFieldsResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                LeafListFieldsRequest,
+                Response = ListFieldsResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<LeafListFieldsRequest>>::Future: Send + 'static,
+    {
+        self.leaf_list_fields_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_search_plan_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    SearchRequest,
+                    SearchPlanResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                SearchRequest,
+                Response = SearchPlanResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<SearchRequest>>::Future: Send + 'static,
+    {
+        self.search_plan_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn build<T>(self, instance: T) -> SearchServiceClient
+    where
+        T: SearchService,
+    {
+        let inner_client = InnerSearchServiceClient(std::sync::Arc::new(instance));
+        self.build_from_inner_client(inner_client)
+    }
+    pub fn build_from_channel(
+        self,
+        addr: std::net::SocketAddr,
+        channel: tonic::transport::Channel,
+        max_message_size: bytesize::ByteSize,
+    ) -> SearchServiceClient {
+        let client = SearchServiceClient::from_channel(addr, channel, max_message_size);
+        let inner_client = client.inner;
+        self.build_from_inner_client(inner_client)
+    }
+    pub fn build_from_balance_channel(
+        self,
+        balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
+        max_message_size: bytesize::ByteSize,
+    ) -> SearchServiceClient {
+        let client = SearchServiceClient::from_balance_channel(
+            balance_channel,
+            max_message_size,
+        );
+        let inner_client = client.inner;
+        self.build_from_inner_client(inner_client)
+    }
+    pub fn build_from_mailbox<A>(
+        self,
+        mailbox: quickwit_actors::Mailbox<A>,
+    ) -> SearchServiceClient
+    where
+        A: quickwit_actors::Actor + std::fmt::Debug + Send + 'static,
+        SearchServiceMailbox<A>: SearchService,
+    {
+        let inner_client = InnerSearchServiceClient(
+            std::sync::Arc::new(SearchServiceMailbox::new(mailbox)),
+        );
+        self.build_from_inner_client(inner_client)
+    }
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn build_from_mock(self, mock: MockSearchService) -> SearchServiceClient {
+        let client = SearchServiceClient::from_mock(mock);
+        let inner_client = client.inner;
+        self.build_from_inner_client(inner_client)
+    }
+    fn build_from_inner_client(
+        self,
+        inner_client: InnerSearchServiceClient,
+    ) -> SearchServiceClient {
+        let root_search_svc = self
+            .root_search_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let leaf_search_svc = self
+            .leaf_search_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let fetch_docs_svc = self
+            .fetch_docs_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let leaf_search_stream_svc = self
+            .leaf_search_stream_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let root_list_terms_svc = self
+            .root_list_terms_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let leaf_list_terms_svc = self
+            .leaf_list_terms_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let scroll_svc = self
+            .scroll_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let put_kv_svc = self
+            .put_kv_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let get_kv_svc = self
+            .get_kv_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let report_splits_svc = self
+            .report_splits_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let list_fields_svc = self
+            .list_fields_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let leaf_list_fields_svc = self
+            .leaf_list_fields_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let search_plan_svc = self
+            .search_plan_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let tower_svc_stack = SearchServiceTowerServiceStack {
+            inner: inner_client,
+            root_search_svc,
+            leaf_search_svc,
+            fetch_docs_svc,
+            leaf_search_stream_svc,
+            root_list_terms_svc,
+            leaf_list_terms_svc,
+            scroll_svc,
+            put_kv_svc,
+            get_kv_svc,
+            report_splits_svc,
+            list_fields_svc,
+            leaf_list_fields_svc,
+            search_plan_svc,
+        };
+        SearchServiceClient::new(tower_svc_stack)
+    }
+}
+#[derive(Debug, Clone)]
+struct MailboxAdapter<A: quickwit_actors::Actor, E> {
+    inner: quickwit_actors::Mailbox<A>,
+    phantom: std::marker::PhantomData<E>,
+}
+impl<A, E> std::ops::Deref for MailboxAdapter<A, E>
+where
+    A: quickwit_actors::Actor,
+{
+    type Target = quickwit_actors::Mailbox<A>;
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+#[derive(Debug)]
+pub struct SearchServiceMailbox<A: quickwit_actors::Actor> {
+    inner: MailboxAdapter<A, crate::cloudprem::CloudPremError>,
+}
+impl<A: quickwit_actors::Actor> SearchServiceMailbox<A> {
+    pub fn new(instance: quickwit_actors::Mailbox<A>) -> Self {
+        let inner = MailboxAdapter {
+            inner: instance,
+            phantom: std::marker::PhantomData,
+        };
+        Self { inner }
+    }
+}
+impl<A: quickwit_actors::Actor> Clone for SearchServiceMailbox<A> {
+    fn clone(&self) -> Self {
+        let inner = MailboxAdapter {
+            inner: self.inner.clone(),
+            phantom: std::marker::PhantomData,
+        };
+        Self { inner }
+    }
+}
+impl<A, M, T, E> tower::Service<M> for SearchServiceMailbox<A>
+where
+    A: quickwit_actors::Actor
+        + quickwit_actors::DeferableReplyHandler<M, Reply = Result<T, E>> + Send
+        + 'static,
+    M: std::fmt::Debug + Send + 'static,
+    T: Send + 'static,
+    E: std::fmt::Debug + Send + 'static,
+    crate::cloudprem::CloudPremError: From<quickwit_actors::AskError<E>>,
+{
+    type Response = T;
+    type Error = crate::cloudprem::CloudPremError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        //! This does not work with balance middlewares such as `tower::balance::pool::Pool` because
+        //! this always returns `Poll::Ready`. The fix is to acquire a permit from the
+        //! mailbox in `poll_ready` and consume it in `call`.
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, message: M) -> Self::Future {
+        let mailbox = self.inner.clone();
+        let fut = async move {
+            mailbox.ask_for_res(message).await.map_err(|error| error.into())
+        };
+        Box::pin(fut)
+    }
+}
+#[async_trait::async_trait]
+impl<A> SearchService for SearchServiceMailbox<A>
+where
+    A: quickwit_actors::Actor + std::fmt::Debug,
+    SearchServiceMailbox<
+        A,
+    >: tower::Service<
+            SearchRequest,
+            Response = SearchResponse,
+            Error = crate::cloudprem::CloudPremError,
+            Future = BoxFuture<SearchResponse, crate::cloudprem::CloudPremError>,
+        >
+        + tower::Service<
+            LeafSearchRequest,
+            Response = LeafSearchResponse,
+            Error = crate::cloudprem::CloudPremError,
+            Future = BoxFuture<LeafSearchResponse, crate::cloudprem::CloudPremError>,
+        >
+        + tower::Service<
+            FetchDocsRequest,
+            Response = FetchDocsResponse,
+            Error = crate::cloudprem::CloudPremError,
+            Future = BoxFuture<FetchDocsResponse, crate::cloudprem::CloudPremError>,
+        >
+        + tower::Service<
+            LeafSearchStreamRequest,
+            Response = SearchServiceStream<LeafSearchStreamResponse>,
+            Error = crate::cloudprem::CloudPremError,
+            Future = BoxFuture<
+                SearchServiceStream<LeafSearchStreamResponse>,
+                crate::cloudprem::CloudPremError,
+            >,
+        >
+        + tower::Service<
+            ListTermsRequest,
+            Response = ListTermsResponse,
+            Error = crate::cloudprem::CloudPremError,
+            Future = BoxFuture<ListTermsResponse, crate::cloudprem::CloudPremError>,
+        >
+        + tower::Service<
+            LeafListTermsRequest,
+            Response = LeafListTermsResponse,
+            Error = crate::cloudprem::CloudPremError,
+            Future = BoxFuture<LeafListTermsResponse, crate::cloudprem::CloudPremError>,
+        >
+        + tower::Service<
+            ScrollRequest,
+            Response = SearchResponse,
+            Error = crate::cloudprem::CloudPremError,
+            Future = BoxFuture<SearchResponse, crate::cloudprem::CloudPremError>,
+        >
+        + tower::Service<
+            PutKvRequest,
+            Response = PutKvResponse,
+            Error = crate::cloudprem::CloudPremError,
+            Future = BoxFuture<PutKvResponse, crate::cloudprem::CloudPremError>,
+        >
+        + tower::Service<
+            GetKvRequest,
+            Response = GetKvResponse,
+            Error = crate::cloudprem::CloudPremError,
+            Future = BoxFuture<GetKvResponse, crate::cloudprem::CloudPremError>,
+        >
+        + tower::Service<
+            ReportSplitsRequest,
+            Response = ReportSplitsResponse,
+            Error = crate::cloudprem::CloudPremError,
+            Future = BoxFuture<ReportSplitsResponse, crate::cloudprem::CloudPremError>,
+        >
+        + tower::Service<
+            ListFieldsRequest,
+            Response = ListFieldsResponse,
+            Error = crate::cloudprem::CloudPremError,
+            Future = BoxFuture<ListFieldsResponse, crate::cloudprem::CloudPremError>,
+        >
+        + tower::Service<
+            LeafListFieldsRequest,
+            Response = ListFieldsResponse,
+            Error = crate::cloudprem::CloudPremError,
+            Future = BoxFuture<ListFieldsResponse, crate::cloudprem::CloudPremError>,
+        >
+        + tower::Service<
+            SearchRequest,
+            Response = SearchPlanResponse,
+            Error = crate::cloudprem::CloudPremError,
+            Future = BoxFuture<SearchPlanResponse, crate::cloudprem::CloudPremError>,
+        >,
+{
+    async fn root_search(
+        &self,
+        request: SearchRequest,
+    ) -> crate::cloudprem::CloudPremResult<SearchResponse> {
+        self.clone().call(request).await
+    }
+    async fn leaf_search(
+        &self,
+        request: LeafSearchRequest,
+    ) -> crate::cloudprem::CloudPremResult<LeafSearchResponse> {
+        self.clone().call(request).await
+    }
+    async fn fetch_docs(
+        &self,
+        request: FetchDocsRequest,
+    ) -> crate::cloudprem::CloudPremResult<FetchDocsResponse> {
+        self.clone().call(request).await
+    }
+    async fn leaf_search_stream(
+        &self,
+        request: LeafSearchStreamRequest,
+    ) -> crate::cloudprem::CloudPremResult<
+        SearchServiceStream<LeafSearchStreamResponse>,
+    > {
+        self.clone().call(request).await
+    }
+    async fn root_list_terms(
+        &self,
+        request: ListTermsRequest,
+    ) -> crate::cloudprem::CloudPremResult<ListTermsResponse> {
+        self.clone().call(request).await
+    }
+    async fn leaf_list_terms(
+        &self,
+        request: LeafListTermsRequest,
+    ) -> crate::cloudprem::CloudPremResult<LeafListTermsResponse> {
+        self.clone().call(request).await
+    }
+    async fn scroll(
+        &self,
+        request: ScrollRequest,
+    ) -> crate::cloudprem::CloudPremResult<SearchResponse> {
+        self.clone().call(request).await
+    }
+    async fn put_kv(
+        &self,
+        request: PutKvRequest,
+    ) -> crate::cloudprem::CloudPremResult<PutKvResponse> {
+        self.clone().call(request).await
+    }
+    async fn get_kv(
+        &self,
+        request: GetKvRequest,
+    ) -> crate::cloudprem::CloudPremResult<GetKvResponse> {
+        self.clone().call(request).await
+    }
+    async fn report_splits(
+        &self,
+        request: ReportSplitsRequest,
+    ) -> crate::cloudprem::CloudPremResult<ReportSplitsResponse> {
+        self.clone().call(request).await
+    }
+    async fn list_fields(
+        &self,
+        request: ListFieldsRequest,
+    ) -> crate::cloudprem::CloudPremResult<ListFieldsResponse> {
+        self.clone().call(request).await
+    }
+    async fn leaf_list_fields(
+        &self,
+        request: LeafListFieldsRequest,
+    ) -> crate::cloudprem::CloudPremResult<ListFieldsResponse> {
+        self.clone().call(request).await
+    }
+    async fn search_plan(
+        &self,
+        request: SearchRequest,
+    ) -> crate::cloudprem::CloudPremResult<SearchPlanResponse> {
+        self.clone().call(request).await
+    }
+}
+#[derive(Debug, Clone)]
+pub struct SearchServiceGrpcClientAdapter<T> {
+    inner: T,
+    #[allow(dead_code)]
+    connection_addrs_rx: tokio::sync::watch::Receiver<
+        std::collections::HashSet<std::net::SocketAddr>,
+    >,
+}
+impl<T> SearchServiceGrpcClientAdapter<T> {
+    pub fn new(
+        instance: T,
+        connection_addrs_rx: tokio::sync::watch::Receiver<
+            std::collections::HashSet<std::net::SocketAddr>,
+        >,
+    ) -> Self {
+        Self {
+            inner: instance,
+            connection_addrs_rx,
+        }
+    }
+}
+#[async_trait::async_trait]
+impl<T> SearchService
+for SearchServiceGrpcClientAdapter<
+    search_service_grpc_client::SearchServiceGrpcClient<T>,
+>
+where
+    T: tonic::client::GrpcService<tonic::body::BoxBody> + std::fmt::Debug + Clone + Send
+        + Sync + 'static,
+    T::ResponseBody: tonic::codegen::Body<Data = tonic::codegen::Bytes> + Send + 'static,
+    <T::ResponseBody as tonic::codegen::Body>::Error: Into<tonic::codegen::StdError>
+        + Send,
+    T::Future: Send,
+{
+    async fn root_search(
+        &self,
+        request: SearchRequest,
+    ) -> crate::cloudprem::CloudPremResult<SearchResponse> {
+        self.inner
+            .clone()
+            .root_search(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                SearchRequest::rpc_name(),
+            ))
+    }
+    async fn leaf_search(
+        &self,
+        request: LeafSearchRequest,
+    ) -> crate::cloudprem::CloudPremResult<LeafSearchResponse> {
+        self.inner
+            .clone()
+            .leaf_search(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                LeafSearchRequest::rpc_name(),
+            ))
+    }
+    async fn fetch_docs(
+        &self,
+        request: FetchDocsRequest,
+    ) -> crate::cloudprem::CloudPremResult<FetchDocsResponse> {
+        self.inner
+            .clone()
+            .fetch_docs(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                FetchDocsRequest::rpc_name(),
+            ))
+    }
+    async fn leaf_search_stream(
+        &self,
+        request: LeafSearchStreamRequest,
+    ) -> crate::cloudprem::CloudPremResult<
+        SearchServiceStream<LeafSearchStreamResponse>,
+    > {
+        self.inner
+            .clone()
+            .leaf_search_stream(request)
+            .await
+            .map(|response| {
+                let streaming: tonic::Streaming<_> = response.into_inner();
+                let stream = quickwit_common::ServiceStream::from(streaming);
+                stream
+                    .map_err(|status| crate::error::grpc_status_to_service_error(
+                        status,
+                        LeafSearchStreamRequest::rpc_name(),
+                    ))
+            })
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                LeafSearchStreamRequest::rpc_name(),
+            ))
+    }
+    async fn root_list_terms(
+        &self,
+        request: ListTermsRequest,
+    ) -> crate::cloudprem::CloudPremResult<ListTermsResponse> {
+        self.inner
+            .clone()
+            .root_list_terms(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                ListTermsRequest::rpc_name(),
+            ))
+    }
+    async fn leaf_list_terms(
+        &self,
+        request: LeafListTermsRequest,
+    ) -> crate::cloudprem::CloudPremResult<LeafListTermsResponse> {
+        self.inner
+            .clone()
+            .leaf_list_terms(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                LeafListTermsRequest::rpc_name(),
+            ))
+    }
+    async fn scroll(
+        &self,
+        request: ScrollRequest,
+    ) -> crate::cloudprem::CloudPremResult<SearchResponse> {
+        self.inner
+            .clone()
+            .scroll(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                ScrollRequest::rpc_name(),
+            ))
+    }
+    async fn put_kv(
+        &self,
+        request: PutKvRequest,
+    ) -> crate::cloudprem::CloudPremResult<PutKvResponse> {
+        self.inner
+            .clone()
+            .put_kv(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                PutKvRequest::rpc_name(),
+            ))
+    }
+    async fn get_kv(
+        &self,
+        request: GetKvRequest,
+    ) -> crate::cloudprem::CloudPremResult<GetKvResponse> {
+        self.inner
+            .clone()
+            .get_kv(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                GetKvRequest::rpc_name(),
+            ))
+    }
+    async fn report_splits(
+        &self,
+        request: ReportSplitsRequest,
+    ) -> crate::cloudprem::CloudPremResult<ReportSplitsResponse> {
+        self.inner
+            .clone()
+            .report_splits(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                ReportSplitsRequest::rpc_name(),
+            ))
+    }
+    async fn list_fields(
+        &self,
+        request: ListFieldsRequest,
+    ) -> crate::cloudprem::CloudPremResult<ListFieldsResponse> {
+        self.inner
+            .clone()
+            .list_fields(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                ListFieldsRequest::rpc_name(),
+            ))
+    }
+    async fn leaf_list_fields(
+        &self,
+        request: LeafListFieldsRequest,
+    ) -> crate::cloudprem::CloudPremResult<ListFieldsResponse> {
+        self.inner
+            .clone()
+            .leaf_list_fields(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                LeafListFieldsRequest::rpc_name(),
+            ))
+    }
+    async fn search_plan(
+        &self,
+        request: SearchRequest,
+    ) -> crate::cloudprem::CloudPremResult<SearchPlanResponse> {
+        self.inner
+            .clone()
+            .search_plan(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                SearchRequest::rpc_name(),
+            ))
+    }
+}
+#[derive(Debug)]
+pub struct SearchServiceGrpcServerAdapter {
+    inner: InnerSearchServiceClient,
+}
+impl SearchServiceGrpcServerAdapter {
+    pub fn new<T>(instance: T) -> Self
+    where
+        T: SearchService,
+    {
+        Self {
+            inner: InnerSearchServiceClient(std::sync::Arc::new(instance)),
+        }
+    }
+}
+#[async_trait::async_trait]
+impl search_service_grpc_server::SearchServiceGrpc for SearchServiceGrpcServerAdapter {
+    async fn root_search(
+        &self,
+        request: tonic::Request<SearchRequest>,
+    ) -> Result<tonic::Response<SearchResponse>, tonic::Status> {
+        self.inner
+            .0
+            .root_search(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(crate::error::grpc_error_to_grpc_status)
+    }
+    async fn leaf_search(
+        &self,
+        request: tonic::Request<LeafSearchRequest>,
+    ) -> Result<tonic::Response<LeafSearchResponse>, tonic::Status> {
+        self.inner
+            .0
+            .leaf_search(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(crate::error::grpc_error_to_grpc_status)
+    }
+    async fn fetch_docs(
+        &self,
+        request: tonic::Request<FetchDocsRequest>,
+    ) -> Result<tonic::Response<FetchDocsResponse>, tonic::Status> {
+        self.inner
+            .0
+            .fetch_docs(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(crate::error::grpc_error_to_grpc_status)
+    }
+    type LeafSearchStreamStream = quickwit_common::ServiceStream<
+        tonic::Result<LeafSearchStreamResponse>,
+    >;
+    async fn leaf_search_stream(
+        &self,
+        request: tonic::Request<LeafSearchStreamRequest>,
+    ) -> Result<tonic::Response<Self::LeafSearchStreamStream>, tonic::Status> {
+        self.inner
+            .0
+            .leaf_search_stream(request.into_inner())
+            .await
+            .map(|stream| tonic::Response::new(
+                stream.map_err(crate::error::grpc_error_to_grpc_status),
+            ))
+            .map_err(crate::error::grpc_error_to_grpc_status)
+    }
+    async fn root_list_terms(
+        &self,
+        request: tonic::Request<ListTermsRequest>,
+    ) -> Result<tonic::Response<ListTermsResponse>, tonic::Status> {
+        self.inner
+            .0
+            .root_list_terms(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(crate::error::grpc_error_to_grpc_status)
+    }
+    async fn leaf_list_terms(
+        &self,
+        request: tonic::Request<LeafListTermsRequest>,
+    ) -> Result<tonic::Response<LeafListTermsResponse>, tonic::Status> {
+        self.inner
+            .0
+            .leaf_list_terms(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(crate::error::grpc_error_to_grpc_status)
+    }
+    async fn scroll(
+        &self,
+        request: tonic::Request<ScrollRequest>,
+    ) -> Result<tonic::Response<SearchResponse>, tonic::Status> {
+        self.inner
+            .0
+            .scroll(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(crate::error::grpc_error_to_grpc_status)
+    }
+    async fn put_kv(
+        &self,
+        request: tonic::Request<PutKvRequest>,
+    ) -> Result<tonic::Response<PutKvResponse>, tonic::Status> {
+        self.inner
+            .0
+            .put_kv(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(crate::error::grpc_error_to_grpc_status)
+    }
+    async fn get_kv(
+        &self,
+        request: tonic::Request<GetKvRequest>,
+    ) -> Result<tonic::Response<GetKvResponse>, tonic::Status> {
+        self.inner
+            .0
+            .get_kv(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(crate::error::grpc_error_to_grpc_status)
+    }
+    async fn report_splits(
+        &self,
+        request: tonic::Request<ReportSplitsRequest>,
+    ) -> Result<tonic::Response<ReportSplitsResponse>, tonic::Status> {
+        self.inner
+            .0
+            .report_splits(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(crate::error::grpc_error_to_grpc_status)
+    }
+    async fn list_fields(
+        &self,
+        request: tonic::Request<ListFieldsRequest>,
+    ) -> Result<tonic::Response<ListFieldsResponse>, tonic::Status> {
+        self.inner
+            .0
+            .list_fields(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(crate::error::grpc_error_to_grpc_status)
+    }
+    async fn leaf_list_fields(
+        &self,
+        request: tonic::Request<LeafListFieldsRequest>,
+    ) -> Result<tonic::Response<ListFieldsResponse>, tonic::Status> {
+        self.inner
+            .0
+            .leaf_list_fields(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(crate::error::grpc_error_to_grpc_status)
+    }
+    async fn search_plan(
+        &self,
+        request: tonic::Request<SearchRequest>,
+    ) -> Result<tonic::Response<SearchPlanResponse>, tonic::Status> {
+        self.inner
+            .0
+            .search_plan(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(crate::error::grpc_error_to_grpc_status)
+    }
+}
+/// Generated client implementations.
+pub mod search_service_grpc_client {
+    #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
+    use tonic::codegen::*;
+    use tonic::codegen::http::Uri;
+    #[derive(Debug, Clone)]
+    pub struct SearchServiceGrpcClient<T> {
+        inner: tonic::client::Grpc<T>,
+    }
+    impl SearchServiceGrpcClient<tonic::transport::Channel> {
+        /// Attempt to create a new client by connecting to a given endpoint.
+        pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
+        where
+            D: TryInto<tonic::transport::Endpoint>,
+            D::Error: Into<StdError>,
+        {
+            let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
+            Ok(Self::new(conn))
+        }
+    }
+    impl<T> SearchServiceGrpcClient<T>
+    where
+        T: tonic::client::GrpcService<tonic::body::BoxBody>,
+        T::Error: Into<StdError>,
+        T::ResponseBody: Body<Data = Bytes> + Send + 'static,
+        <T::ResponseBody as Body>::Error: Into<StdError> + Send,
+    {
+        pub fn new(inner: T) -> Self {
+            let inner = tonic::client::Grpc::new(inner);
+            Self { inner }
+        }
+        pub fn with_origin(inner: T, origin: Uri) -> Self {
+            let inner = tonic::client::Grpc::with_origin(inner, origin);
+            Self { inner }
+        }
+        pub fn with_interceptor<F>(
+            inner: T,
+            interceptor: F,
+        ) -> SearchServiceGrpcClient<InterceptedService<T, F>>
+        where
+            F: tonic::service::Interceptor,
+            T::ResponseBody: Default,
+            T: tonic::codegen::Service<
+                http::Request<tonic::body::BoxBody>,
+                Response = http::Response<
+                    <T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody,
+                >,
+            >,
+            <T as tonic::codegen::Service<
+                http::Request<tonic::body::BoxBody>,
+            >>::Error: Into<StdError> + Send + Sync,
+        {
+            SearchServiceGrpcClient::new(InterceptedService::new(inner, interceptor))
+        }
+        /// Compress requests with the given encoding.
+        ///
+        /// This requires the server to support it otherwise it might respond with an
+        /// error.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.send_compressed(encoding);
+            self
+        }
+        /// Enable decompressing responses.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.accept_compressed(encoding);
+            self
+        }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_decoding_message_size(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_encoding_message_size(limit);
+            self
+        }
+        /// Root search API.
+        /// This RPC identifies the set of splits on which the query should run on,
+        /// and dispatch the several calls to `LeafSearch`.
+        ///
+        /// It is also in charge of merging back the results.
+        pub async fn root_search(
+            &mut self,
+            request: impl tonic::IntoRequest<super::SearchRequest>,
+        ) -> std::result::Result<tonic::Response<super::SearchResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.search.SearchService/RootSearch",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("quickwit.search.SearchService", "RootSearch"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// Perform a leaf search on a given set of splits.
+        ///
+        /// It is like a regular search except that:
+        /// - the node should perform the search locally instead of dispatching
+        ///   it to other nodes.
+        /// - it should be applied on the given subset of splits
+        /// - Hit content is not fetched, and we instead return so called `PartialHit`.
+        pub async fn leaf_search(
+            &mut self,
+            request: impl tonic::IntoRequest<super::LeafSearchRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::LeafSearchResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.search.SearchService/LeafSearch",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("quickwit.search.SearchService", "LeafSearch"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// / Fetches the documents contents from the document store.
+        /// / This methods takes `PartialHit`s and returns `Hit`s.
+        pub async fn fetch_docs(
+            &mut self,
+            request: impl tonic::IntoRequest<super::FetchDocsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::FetchDocsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.search.SearchService/FetchDocs",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("quickwit.search.SearchService", "FetchDocs"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// Perform a leaf stream on a given set of splits.
+        pub async fn leaf_search_stream(
+            &mut self,
+            request: impl tonic::IntoRequest<super::LeafSearchStreamRequest>,
+        ) -> std::result::Result<
+            tonic::Response<tonic::codec::Streaming<super::LeafSearchStreamResponse>>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.search.SearchService/LeafSearchStream",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("quickwit.search.SearchService", "LeafSearchStream"),
+                );
+            self.inner.server_streaming(req, path, codec).await
+        }
+        /// Root list terms API.
+        /// This RPC identifies the set of splits on which the query should run on,
+        /// and dispatches the several calls to `LeafListTerms`.
+        ///
+        /// It is also in charge of merging back the results.
+        pub async fn root_list_terms(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ListTermsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListTermsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.search.SearchService/RootListTerms",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("quickwit.search.SearchService", "RootListTerms"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Performs a leaf list terms on a given set of splits.
+        ///
+        /// It is like a regular list term except that:
+        /// - the node should perform the listing locally instead of dispatching
+        ///   it to other nodes.
+        /// - it should be applied on the given subset of splits
+        pub async fn leaf_list_terms(
+            &mut self,
+            request: impl tonic::IntoRequest<super::LeafListTermsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::LeafListTermsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.search.SearchService/LeafListTerms",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("quickwit.search.SearchService", "LeafListTerms"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Performs a scroll request.
+        pub async fn scroll(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ScrollRequest>,
+        ) -> std::result::Result<tonic::Response<super::SearchResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.search.SearchService/Scroll",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("quickwit.search.SearchService", "Scroll"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// gRPC request used to store a key in the local storage of the targeted node.
+        /// This RPC is used in the mini distributed immutable KV store embedded in quickwit.
+        pub async fn put_kv(
+            &mut self,
+            request: impl tonic::IntoRequest<super::PutKvRequest>,
+        ) -> std::result::Result<tonic::Response<super::PutKvResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.search.SearchService/PutKV",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("quickwit.search.SearchService", "PutKV"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// Gets a key from the local storage of the targeted node.
+        /// This RPC is used in the mini distributed immutable KV store embedded in quickwit.
+        pub async fn get_kv(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetKvRequest>,
+        ) -> std::result::Result<tonic::Response<super::GetKvResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.search.SearchService/GetKV",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("quickwit.search.SearchService", "GetKV"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn report_splits(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ReportSplitsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ReportSplitsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.search.SearchService/ReportSplits",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("quickwit.search.SearchService", "ReportSplits"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn list_fields(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ListFieldsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListFieldsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.search.SearchService/ListFields",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("quickwit.search.SearchService", "ListFields"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn leaf_list_fields(
+            &mut self,
+            request: impl tonic::IntoRequest<super::LeafListFieldsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListFieldsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.search.SearchService/LeafListFields",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("quickwit.search.SearchService", "LeafListFields"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Describe how a search would be processed.
+        pub async fn search_plan(
+            &mut self,
+            request: impl tonic::IntoRequest<super::SearchRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::SearchPlanResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.search.SearchService/SearchPlan",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("quickwit.search.SearchService", "SearchPlan"));
+            self.inner.unary(req, path, codec).await
+        }
+    }
+}
+/// Generated server implementations.
+pub mod search_service_grpc_server {
+    #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
+    use tonic::codegen::*;
+    /// Generated trait containing gRPC methods that should be implemented for use with SearchServiceGrpcServer.
+    #[async_trait]
+    pub trait SearchServiceGrpc: Send + Sync + 'static {
+        /// Root search API.
+        /// This RPC identifies the set of splits on which the query should run on,
+        /// and dispatch the several calls to `LeafSearch`.
+        ///
+        /// It is also in charge of merging back the results.
+        async fn root_search(
+            &self,
+            request: tonic::Request<super::SearchRequest>,
+        ) -> std::result::Result<tonic::Response<super::SearchResponse>, tonic::Status>;
+        /// Perform a leaf search on a given set of splits.
+        ///
+        /// It is like a regular search except that:
+        /// - the node should perform the search locally instead of dispatching
+        ///   it to other nodes.
+        /// - it should be applied on the given subset of splits
+        /// - Hit content is not fetched, and we instead return so called `PartialHit`.
+        async fn leaf_search(
+            &self,
+            request: tonic::Request<super::LeafSearchRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::LeafSearchResponse>,
+            tonic::Status,
+        >;
+        /// / Fetches the documents contents from the document store.
+        /// / This methods takes `PartialHit`s and returns `Hit`s.
+        async fn fetch_docs(
+            &self,
+            request: tonic::Request<super::FetchDocsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::FetchDocsResponse>,
+            tonic::Status,
+        >;
+        /// Server streaming response type for the LeafSearchStream method.
+        type LeafSearchStreamStream: futures_core::Stream<
+                Item = std::result::Result<
+                    super::LeafSearchStreamResponse,
+                    tonic::Status,
+                >,
+            >
+            + Send
+            + 'static;
+        /// Perform a leaf stream on a given set of splits.
+        async fn leaf_search_stream(
+            &self,
+            request: tonic::Request<super::LeafSearchStreamRequest>,
+        ) -> std::result::Result<
+            tonic::Response<Self::LeafSearchStreamStream>,
+            tonic::Status,
+        >;
+        /// Root list terms API.
+        /// This RPC identifies the set of splits on which the query should run on,
+        /// and dispatches the several calls to `LeafListTerms`.
+        ///
+        /// It is also in charge of merging back the results.
+        async fn root_list_terms(
+            &self,
+            request: tonic::Request<super::ListTermsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListTermsResponse>,
+            tonic::Status,
+        >;
+        /// Performs a leaf list terms on a given set of splits.
+        ///
+        /// It is like a regular list term except that:
+        /// - the node should perform the listing locally instead of dispatching
+        ///   it to other nodes.
+        /// - it should be applied on the given subset of splits
+        async fn leaf_list_terms(
+            &self,
+            request: tonic::Request<super::LeafListTermsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::LeafListTermsResponse>,
+            tonic::Status,
+        >;
+        /// Performs a scroll request.
+        async fn scroll(
+            &self,
+            request: tonic::Request<super::ScrollRequest>,
+        ) -> std::result::Result<tonic::Response<super::SearchResponse>, tonic::Status>;
+        /// gRPC request used to store a key in the local storage of the targeted node.
+        /// This RPC is used in the mini distributed immutable KV store embedded in quickwit.
+        async fn put_kv(
+            &self,
+            request: tonic::Request<super::PutKvRequest>,
+        ) -> std::result::Result<tonic::Response<super::PutKvResponse>, tonic::Status>;
+        /// Gets a key from the local storage of the targeted node.
+        /// This RPC is used in the mini distributed immutable KV store embedded in quickwit.
+        async fn get_kv(
+            &self,
+            request: tonic::Request<super::GetKvRequest>,
+        ) -> std::result::Result<tonic::Response<super::GetKvResponse>, tonic::Status>;
+        async fn report_splits(
+            &self,
+            request: tonic::Request<super::ReportSplitsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ReportSplitsResponse>,
+            tonic::Status,
+        >;
+        async fn list_fields(
+            &self,
+            request: tonic::Request<super::ListFieldsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListFieldsResponse>,
+            tonic::Status,
+        >;
+        async fn leaf_list_fields(
+            &self,
+            request: tonic::Request<super::LeafListFieldsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListFieldsResponse>,
+            tonic::Status,
+        >;
+        /// Describe how a search would be processed.
+        async fn search_plan(
+            &self,
+            request: tonic::Request<super::SearchRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::SearchPlanResponse>,
+            tonic::Status,
+        >;
+    }
+    #[derive(Debug)]
+    pub struct SearchServiceGrpcServer<T: SearchServiceGrpc> {
+        inner: _Inner<T>,
+        accept_compression_encodings: EnabledCompressionEncodings,
+        send_compression_encodings: EnabledCompressionEncodings,
+        max_decoding_message_size: Option<usize>,
+        max_encoding_message_size: Option<usize>,
+    }
+    struct _Inner<T>(Arc<T>);
+    impl<T: SearchServiceGrpc> SearchServiceGrpcServer<T> {
+        pub fn new(inner: T) -> Self {
+            Self::from_arc(Arc::new(inner))
+        }
+        pub fn from_arc(inner: Arc<T>) -> Self {
+            let inner = _Inner(inner);
+            Self {
+                inner,
+                accept_compression_encodings: Default::default(),
+                send_compression_encodings: Default::default(),
+                max_decoding_message_size: None,
+                max_encoding_message_size: None,
+            }
+        }
+        pub fn with_interceptor<F>(
+            inner: T,
+            interceptor: F,
+        ) -> InterceptedService<Self, F>
+        where
+            F: tonic::service::Interceptor,
+        {
+            InterceptedService::new(Self::new(inner), interceptor)
+        }
+        /// Enable decompressing requests with the given encoding.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.accept_compression_encodings.enable(encoding);
+            self
+        }
+        /// Compress responses with the given encoding, if the client supports it.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.send_compression_encodings.enable(encoding);
+            self
+        }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.max_decoding_message_size = Some(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.max_encoding_message_size = Some(limit);
+            self
+        }
+    }
+    impl<T, B> tonic::codegen::Service<http::Request<B>> for SearchServiceGrpcServer<T>
+    where
+        T: SearchServiceGrpc,
+        B: Body + Send + 'static,
+        B::Error: Into<StdError> + Send + 'static,
+    {
+        type Response = http::Response<tonic::body::BoxBody>;
+        type Error = std::convert::Infallible;
+        type Future = BoxFuture<Self::Response, Self::Error>;
+        fn poll_ready(
+            &mut self,
+            _cx: &mut Context<'_>,
+        ) -> Poll<std::result::Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+        fn call(&mut self, req: http::Request<B>) -> Self::Future {
+            let inner = self.inner.clone();
+            match req.uri().path() {
+                "/quickwit.search.SearchService/RootSearch" => {
+                    #[allow(non_camel_case_types)]
+                    struct RootSearchSvc<T: SearchServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: SearchServiceGrpc,
+                    > tonic::server::UnaryService<super::SearchRequest>
+                    for RootSearchSvc<T> {
+                        type Response = super::SearchResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::SearchRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move { (*inner).root_search(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = RootSearchSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.search.SearchService/LeafSearch" => {
+                    #[allow(non_camel_case_types)]
+                    struct LeafSearchSvc<T: SearchServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: SearchServiceGrpc,
+                    > tonic::server::UnaryService<super::LeafSearchRequest>
+                    for LeafSearchSvc<T> {
+                        type Response = super::LeafSearchResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::LeafSearchRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move { (*inner).leaf_search(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = LeafSearchSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.search.SearchService/FetchDocs" => {
+                    #[allow(non_camel_case_types)]
+                    struct FetchDocsSvc<T: SearchServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: SearchServiceGrpc,
+                    > tonic::server::UnaryService<super::FetchDocsRequest>
+                    for FetchDocsSvc<T> {
+                        type Response = super::FetchDocsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::FetchDocsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move { (*inner).fetch_docs(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = FetchDocsSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.search.SearchService/LeafSearchStream" => {
+                    #[allow(non_camel_case_types)]
+                    struct LeafSearchStreamSvc<T: SearchServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: SearchServiceGrpc,
+                    > tonic::server::ServerStreamingService<
+                        super::LeafSearchStreamRequest,
+                    > for LeafSearchStreamSvc<T> {
+                        type Response = super::LeafSearchStreamResponse;
+                        type ResponseStream = T::LeafSearchStreamStream;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::ResponseStream>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::LeafSearchStreamRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).leaf_search_stream(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = LeafSearchStreamSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.server_streaming(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.search.SearchService/RootListTerms" => {
+                    #[allow(non_camel_case_types)]
+                    struct RootListTermsSvc<T: SearchServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: SearchServiceGrpc,
+                    > tonic::server::UnaryService<super::ListTermsRequest>
+                    for RootListTermsSvc<T> {
+                        type Response = super::ListTermsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ListTermsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).root_list_terms(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = RootListTermsSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.search.SearchService/LeafListTerms" => {
+                    #[allow(non_camel_case_types)]
+                    struct LeafListTermsSvc<T: SearchServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: SearchServiceGrpc,
+                    > tonic::server::UnaryService<super::LeafListTermsRequest>
+                    for LeafListTermsSvc<T> {
+                        type Response = super::LeafListTermsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::LeafListTermsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).leaf_list_terms(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = LeafListTermsSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.search.SearchService/Scroll" => {
+                    #[allow(non_camel_case_types)]
+                    struct ScrollSvc<T: SearchServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: SearchServiceGrpc,
+                    > tonic::server::UnaryService<super::ScrollRequest>
+                    for ScrollSvc<T> {
+                        type Response = super::SearchResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ScrollRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move { (*inner).scroll(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = ScrollSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.search.SearchService/PutKV" => {
+                    #[allow(non_camel_case_types)]
+                    struct PutKVSvc<T: SearchServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: SearchServiceGrpc,
+                    > tonic::server::UnaryService<super::PutKvRequest> for PutKVSvc<T> {
+                        type Response = super::PutKvResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::PutKvRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move { (*inner).put_kv(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = PutKVSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.search.SearchService/GetKV" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetKVSvc<T: SearchServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: SearchServiceGrpc,
+                    > tonic::server::UnaryService<super::GetKvRequest> for GetKVSvc<T> {
+                        type Response = super::GetKvResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetKvRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move { (*inner).get_kv(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = GetKVSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.search.SearchService/ReportSplits" => {
+                    #[allow(non_camel_case_types)]
+                    struct ReportSplitsSvc<T: SearchServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: SearchServiceGrpc,
+                    > tonic::server::UnaryService<super::ReportSplitsRequest>
+                    for ReportSplitsSvc<T> {
+                        type Response = super::ReportSplitsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ReportSplitsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).report_splits(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = ReportSplitsSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.search.SearchService/ListFields" => {
+                    #[allow(non_camel_case_types)]
+                    struct ListFieldsSvc<T: SearchServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: SearchServiceGrpc,
+                    > tonic::server::UnaryService<super::ListFieldsRequest>
+                    for ListFieldsSvc<T> {
+                        type Response = super::ListFieldsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ListFieldsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move { (*inner).list_fields(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = ListFieldsSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.search.SearchService/LeafListFields" => {
+                    #[allow(non_camel_case_types)]
+                    struct LeafListFieldsSvc<T: SearchServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: SearchServiceGrpc,
+                    > tonic::server::UnaryService<super::LeafListFieldsRequest>
+                    for LeafListFieldsSvc<T> {
+                        type Response = super::ListFieldsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::LeafListFieldsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).leaf_list_fields(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = LeafListFieldsSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.search.SearchService/SearchPlan" => {
+                    #[allow(non_camel_case_types)]
+                    struct SearchPlanSvc<T: SearchServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: SearchServiceGrpc,
+                    > tonic::server::UnaryService<super::SearchRequest>
+                    for SearchPlanSvc<T> {
+                        type Response = super::SearchPlanResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::SearchRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move { (*inner).search_plan(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = SearchPlanSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                _ => {
+                    Box::pin(async move {
+                        Ok(
+                            http::Response::builder()
+                                .status(200)
+                                .header("grpc-status", "12")
+                                .header("content-type", "application/grpc")
+                                .body(empty_body())
+                                .unwrap(),
+                        )
+                    })
+                }
+            }
+        }
+    }
+    impl<T: SearchServiceGrpc> Clone for SearchServiceGrpcServer<T> {
+        fn clone(&self) -> Self {
+            let inner = self.inner.clone();
+            Self {
+                inner,
+                accept_compression_encodings: self.accept_compression_encodings,
+                send_compression_encodings: self.send_compression_encodings,
+                max_decoding_message_size: self.max_decoding_message_size,
+                max_encoding_message_size: self.max_encoding_message_size,
+            }
+        }
+    }
+    impl<T: SearchServiceGrpc> Clone for _Inner<T> {
+        fn clone(&self) -> Self {
+            Self(Arc::clone(&self.0))
+        }
+    }
+    impl<T: std::fmt::Debug> std::fmt::Debug for _Inner<T> {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{:?}", self.0)
+        }
+    }
+    impl<T: SearchServiceGrpc> tonic::server::NamedService
+    for SearchServiceGrpcServer<T> {
+        const NAME: &'static str = "quickwit.search.SearchService";
+    }
+}

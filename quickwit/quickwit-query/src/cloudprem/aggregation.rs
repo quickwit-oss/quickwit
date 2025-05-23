@@ -18,6 +18,7 @@ use tantivy::aggregation::{bucket, metric};
 
 use super::{missing_required, unsupported_query_error};
 use crate::InvalidQuery;
+use crate::aggregations::AggregationResults as QuickwitAggregationResults;
 
 const CALC_NODE_TYPE_URL: &str = "type.googleapis.com/calcfieldspb.CalcNode";
 
@@ -242,25 +243,32 @@ fn handle_metric_compute(
             AggregationVariants::Cardinality(cardinality)
         }
         "SUM" => {
-            let cardinality = metric::SumAggregation {
+            let sum = metric::SumAggregation {
                 field,
                 missing: None,
             };
-            AggregationVariants::Sum(cardinality)
+            AggregationVariants::Sum(sum)
         }
         "MAX" => {
-            let cardinality = metric::MaxAggregation {
+            let max = metric::MaxAggregation {
                 field,
                 missing: None,
             };
-            AggregationVariants::Max(cardinality)
+            AggregationVariants::Max(max)
         }
         "MIN" => {
-            let cardinality = metric::MinAggregation {
+            let min = metric::MinAggregation {
                 field,
                 missing: None,
             };
-            AggregationVariants::Min(cardinality)
+            AggregationVariants::Min(min)
+        }
+        "AVG" => {
+            let avg = metric::AverageAggregation {
+                field,
+                missing: None,
+            };
+            AggregationVariants::Average(avg)
         }
         other => {
             return Err(InvalidQuery::Other(anyhow::anyhow!(
@@ -331,17 +339,17 @@ fn timezone_and_ts_to_offset(timezone: &str, ts_secs: i64) -> Result<i32, Invali
 }
 
 pub fn aggregation_result_to_proto(
-    result_json: &str,
+    result_postcard: &[u8],
 ) -> Result<Vec<EvpAggregationResult>, CloudPremError> {
-    let aggregations: TantivyAggregationResults =
-        serde_json::from_str(result_json).map_err(|err| {
+    let aggregations: QuickwitAggregationResults =
+        postcard::from_bytes(result_postcard).map_err(|err| {
             CloudPremError::Internal(format!("failed to deserialize agg result: {err}"))
         })?;
 
     let mut mapper = ResultMapper {
         results: Vec::new(),
     };
-    mapper.consume_agg(aggregations)?;
+    mapper.consume_agg(aggregations.into())?;
     Ok(mapper.results)
 }
 
@@ -361,7 +369,7 @@ impl ResultMapper {
         state: &EvpAggregationResult,
     ) -> Result<(), CloudPremError> {
         let mut to_emit = None;
-        for (key, agg) in agg_result.0 {
+        for (_key, agg) in agg_result.0 {
             match agg {
                 TantivyAggregationResult::BucketResult(bucket_result) => {
                     use tantivy::aggregation::agg_result::BucketResult;
@@ -399,20 +407,30 @@ impl ResultMapper {
                 TantivyAggregationResult::MetricResult(metric_result) => {
                     use tantivy::aggregation::agg_result::MetricResult;
                     // TODO we need to guarantee the order of append somehow
-                    let last_value = match metric_result {
-                        MetricResult::Count(count) => count.value.unwrap_or_default() as u64,
-                        // TODO our ast is widely ambiguous, and while we ask for a count, it gets
-                        // parsed back as something else entirely. For now we only support counts,
-                        // but we will *have to* do better
-                        MetricResult::Average(count) => count.value.unwrap_or_default() as u64,
+
+                    let to_emit_mut = to_emit.get_or_insert_with(|| state.clone());
+
+                    match metric_result {
+                        MetricResult::Count(metric_res)
+                        | MetricResult::Min(metric_res)
+                        | MetricResult::Max(metric_res)
+                        | MetricResult::Sum(metric_res) => {
+                            to_emit_mut.value.push(u64_to_agg_value(
+                                metric_res.value.unwrap_or_default() as u64,
+                            ));
+                        }
+                        MetricResult::Cardinality(cardinality) => {
+                            to_emit_mut.value.push(generate_sketch(
+                                cardinality.value.unwrap_or_default() as u64,
+                            ));
+                        }
+                        MetricResult::Average(avg) => {
+                            to_emit_mut
+                                .value
+                                .push(generate_avg(avg.value.unwrap_or_default()));
+                        }
                         _ => return Err(CloudPremError::Unimplemented),
                     };
-                    let to_emit_mut = to_emit.get_or_insert_with(|| state.clone());
-                    if key.contains("cardinality") {
-                        to_emit_mut.value.push(generate_sketch(last_value));
-                    } else {
-                        to_emit_mut.value.push(u64_to_agg_value(last_value));
-                    }
                 }
             }
         }
@@ -469,6 +487,19 @@ fn generate_sketch(count: u64) -> EvpAggValue {
     }
 }
 
+fn generate_avg(avg_float: f64) -> EvpAggValue {
+    // this result is non-mergeable, but it's alright otherwise
+    let avg_value = quickwit_proto::cloudprem::Avg {
+        sum: avg_float,
+        count: 1,
+    };
+    EvpAggValue {
+        value: Some(quickwit_proto::cloudprem::agg_value::Value::AvgValue(
+            avg_value,
+        )),
+    }
+}
+
 #[cfg(test)]
 mod test_helpers {
 
@@ -522,6 +553,11 @@ mod tests {
     use super::test_helpers::IntoValue;
     use super::{
         aggregation_result_to_proto, generate_sketch, rollup_to_interval, to_tantivy_aggregation,
+    };
+    use crate::aggregations::{
+        AggregationResult as QuickwitAggregationResult,
+        AggregationResults as QuickwitAggregationResults, BucketEntries, BucketEntry, BucketResult,
+        Key, MetricResult,
     };
 
     #[test]
@@ -767,32 +803,80 @@ mod tests {
         assert_eq!(res, expected);
     }
 
+    fn metric<F, V, U>(key: &str, metric_kind: F, value: V) -> QuickwitAggregationResults
+    where
+        F: Fn(U) -> MetricResult,
+        U: From<V>,
+    {
+        QuickwitAggregationResults(vec![(
+            key.to_string(),
+            QuickwitAggregationResult::MetricResult(metric_kind(value.into())),
+        )])
+    }
+
+    fn terms(key: &str, buckets: Vec<BucketEntry>) -> QuickwitAggregationResults {
+        QuickwitAggregationResults(vec![(
+            key.to_string(),
+            QuickwitAggregationResult::BucketResult(BucketResult::Terms {
+                buckets,
+                sum_other_doc_count: 0,
+                doc_count_error_upper_bound: Some(0),
+            }),
+        )])
+    }
+
+    fn histogram(key: &str, buckets: Vec<BucketEntry>) -> QuickwitAggregationResults {
+        QuickwitAggregationResults(vec![(
+            key.to_string(),
+            QuickwitAggregationResult::BucketResult(BucketResult::Histogram {
+                buckets: BucketEntries::Vec(buckets),
+            }),
+        )])
+    }
+
     #[test]
     fn test_count_response() {
-        let qw_reply = "{\"count:count\":{\"value\":2.0}}";
+        let qw_reply =
+            postcard::to_stdvec(&metric("count:count", MetricResult::Count, 2.0)).unwrap();
         let expected = vec![AggregationResult {
             key: vec![],
             value: vec![2u64.to_value()],
         }];
 
-        let res = aggregation_result_to_proto(qw_reply).unwrap();
+        let res = aggregation_result_to_proto(&qw_reply).unwrap();
         assert_eq!(res, expected);
     }
 
     #[test]
     fn test_map_reply_admin_test() {
-        let qw_reply = "{\"status\":{\"buckets\":[{\"key\":\"info\",\"doc_count\":2,\"time:\
-                        28800000\":{\"buckets\":[{\"key_as_string\":\"2025-01-30T08:00:00Z\",\"\
-                        key\":1738224000000.0,\"doc_count\":2,\"count:count:timeseries:28800000\":\
-                        {\"value\":2.0}}]}}],\"sum_other_doc_count\":0,\"\
-                        doc_count_error_upper_bound\":0}}";
-
+        let qw_reply = postcard::to_stdvec(&terms(
+            "status",
+            vec![BucketEntry {
+                key_as_string: None,
+                key: Key::Str("info".to_string()),
+                doc_count: 2,
+                sub_aggregation: histogram(
+                    "time:28800000",
+                    vec![BucketEntry {
+                        key_as_string: Some("2025-01-30T08:00:00Z".to_string()),
+                        key: Key::F64(1738224000000.0),
+                        doc_count: 2,
+                        sub_aggregation: metric(
+                            "count:count:timeseries:28800000",
+                            MetricResult::Count,
+                            2.0,
+                        ),
+                    }],
+                ),
+            }],
+        ))
+        .unwrap();
         let expected = vec![AggregationResult {
             key: vec!["info".to_string(), "2025-01-30T08:00:00Z".to_string()],
             value: vec![2u64.to_value()],
         }];
 
-        let res = aggregation_result_to_proto(qw_reply).unwrap();
+        let res = aggregation_result_to_proto(&qw_reply).unwrap();
         assert_eq!(res, expected);
     }
 

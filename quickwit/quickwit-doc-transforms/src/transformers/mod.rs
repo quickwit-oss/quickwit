@@ -12,19 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod attribute_remap;
 mod category_processor;
 mod core_string_attr_remapper;
 mod date_remapper;
 pub mod grok;
-mod remap_field;
 mod status_remapper;
 mod string_builder;
 
+pub use attribute_remap::*;
 pub use category_processor::*;
 pub use core_string_attr_remapper::*;
 pub use date_remapper::*;
 pub use grok::*;
-pub use remap_field::*;
 pub use status_remapper::*;
 pub use string_builder::*;
 use vrl::datadog_filter::Matcher;

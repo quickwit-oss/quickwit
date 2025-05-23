@@ -62,47 +62,47 @@ pub enum LogSeverity {
 impl Display for LogSeverity {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match self {
-            LogSeverity::Emerg => write!(f, "emerg"),
+            LogSeverity::Emerg => write!(f, "emergency"),
             LogSeverity::Alert => write!(f, "alert"),
             LogSeverity::Critical => write!(f, "critical"),
             LogSeverity::Error => write!(f, "error"),
-            LogSeverity::Warning => write!(f, "warning"),
+            LogSeverity::Warning => write!(f, "warn"),
             LogSeverity::Notice => write!(f, "notice"),
             LogSeverity::Info => write!(f, "info"),
             LogSeverity::Debug => write!(f, "debug"),
-            LogSeverity::Ok => write!(f, "OK"),
+            LogSeverity::Ok => write!(f, "ok"),
         }
     }
 }
 
 // According to http://docs.datadoghq.com/logs/log_configuration/processors/?tab=api#log-status-remapper
+// and https://github.com/DataDog/logs-backend/blob/8ca107d04d6fbca6ef00702ab474aa841c1da748/domains/event-platform/libs/processing/processing-common/src/main/java/com/dd/logs/processing/processors/StatusRemapper.java
+//
 pub fn remap_log_status(input: Value) -> LogSeverity {
     match input {
         Value::Number(num) => {
             // Try Syslog severity levels
-            // TODO: Should we handle floats?
             // https://en.wikipedia.org/wiki/Syslog#Severity_level
             //
-            // The following is correct. The as_i/u64 method always
-            // return a value if the value can be coerced to the given type
-            // regardless of their internal representation.
-            //
-            // Also, serde_json Value uses a u64 representation whenever
-            // possible.
-            if let Some(n) = num.as_u64() {
-                match n {
-                    0 => LogSeverity::Emerg,
-                    1 => LogSeverity::Alert,
-                    2 => LogSeverity::Critical,
-                    3 => LogSeverity::Error,
-                    4 => LogSeverity::Warning,
-                    5 => LogSeverity::Notice,
-                    6 => LogSeverity::Info,
-                    7 => LogSeverity::Debug,
-                    _ => LogSeverity::Info,
-                }
+            let n: i64 = if let Some(i) = num.as_i64() {
+                i
+            } else if let Some(u) = num.as_u64() {
+                u as i64
+            } else if let Some(f) = num.as_f64() {
+                f.trunc() as i64
             } else {
-                LogSeverity::Info
+                -1 // Invalid number, default to Info
+            };
+            match n {
+                0 => LogSeverity::Emerg,
+                1 => LogSeverity::Alert,
+                2 => LogSeverity::Critical,
+                3 => LogSeverity::Error,
+                4 => LogSeverity::Warning,
+                5 => LogSeverity::Notice,
+                6 => LogSeverity::Info,
+                7 => LogSeverity::Debug,
+                _ => LogSeverity::Info,
             }
         }
         // Handle strings: apply case-insensitive matching on the start of the string.
@@ -114,7 +114,7 @@ pub fn remap_log_status(input: Value) -> LogSeverity {
                 LogSeverity::Alert
             } else if severity_name.starts_with("c") {
                 LogSeverity::Critical
-            } else if severity_name.starts_with("err") {
+            } else if severity_name.starts_with("err") || severity_name == "e" {
                 LogSeverity::Error
             } else if severity_name.starts_with("w") {
                 LogSeverity::Warning

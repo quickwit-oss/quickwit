@@ -17,6 +17,7 @@ use std::sync::OnceLock;
 
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
+use tracing::warn;
 use vrl::datadog_grok::parse_grok_rules::{self, GrokRule};
 use vrl::value::KeyString;
 
@@ -57,11 +58,13 @@ pub struct Sample {
 }
 
 #[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Hash)]
-#[serde(rename_all = "camelCase")]
 pub struct LogsProcessingGrokRules {
     // Use a custom deserializer to transform the multiline string into Vec<Rule>
+    #[serde(alias = "supportRules")]
     #[serde(deserialize_with = "parse_rules_from_str")]
+    #[serde(default)]
     pub support_rules: Vec<Rule>,
+    #[serde(alias = "matchRules")]
     #[serde(deserialize_with = "parse_rules_from_str")]
     pub match_rules: Vec<Rule>,
 }
@@ -69,7 +72,7 @@ pub struct LogsProcessingGrokRules {
 /// Custom deserializer for fields that are multiline rules strings.
 pub fn parse_rules_from_str<'de, D>(deserializer: D) -> Result<Vec<Rule>, D::Error>
 where D: Deserializer<'de> {
-    let s: String = Deserialize::deserialize(deserializer)?;
+    let s: String = Deserialize::deserialize(deserializer).unwrap_or("".to_string());
     Ok(parse_rules(&s))
 }
 
@@ -102,13 +105,25 @@ pub(crate) fn build_grok_rules(
         .map(|rule| (rule.name.clone().into(), rule.rule.clone()))
         .collect();
 
-    let patterns: Vec<String> = match_rules
-        .iter()
-        .map(|match_rule| match_rule.rule.to_owned())
-        .collect();
+    // We call every rule separate to filter out the ones that are not valid.
+    let mut rules = Vec::new();
+    for rule in match_rules.iter() {
+        let parsed_rule =
+            parse_grok_rules::parse_grok_rules(&[rule.rule.to_string()], aliases.clone());
+        match parsed_rule {
+            Ok(parsed) => rules.extend_from_slice(&parsed),
+            Err(err) => {
+                warn!("failed to parse grok rule {}: {}", rule.rule, err);
+            }
+        }
+    }
 
-    parse_grok_rules::parse_grok_rules(&patterns, aliases)
-        .map_err(|source| PipelineError::GrokCompile { source })
+    if rules.is_empty() {
+        return Err(PipelineError::GrokParse {
+            message: "No valid grok rules found".to_string(),
+        });
+    }
+    Ok(rules)
 }
 
 fn build_grok_rules_with_source(rules: &[OPGrokRules]) -> SourceToGrokPatterns {
@@ -144,6 +159,51 @@ mod tests {
         assert_eq!(rules.support_rules[0].rule, "%{date(\"yyyy-MM-dd\")}");
         assert_eq!(rules.support_rules[1].name, "_context");
         assert_eq!(rules.support_rules[1].rule, "%{notSpace}");
+
+        // Validate match rules.
+        assert_eq!(rules.match_rules.len(), 2);
+        assert_eq!(rules.match_rules[0].name, "mongo.test1");
+        assert_eq!(rules.match_rules[0].rule, "%{_timestamp}");
+        assert_eq!(rules.match_rules[1].name, "mongo.test2");
+        assert_eq!(rules.match_rules[1].rule, "%{_context}");
+    }
+
+    #[test]
+    fn test_simple_grok_rules_no_support_rules() {
+        let json_data = r#"
+        {
+            "matchRules": "mongo.test1 %{_timestamp}\nmongo.test2 %{_context}\n"
+        }
+        "#;
+
+        let rules: LogsProcessingGrokRules =
+            serde_json::from_str(json_data).expect("Failed to parse GrokRules JSON");
+
+        // Validate support rules.
+        assert_eq!(rules.support_rules.len(), 0);
+
+        // Validate match rules.
+        assert_eq!(rules.match_rules.len(), 2);
+        assert_eq!(rules.match_rules[0].name, "mongo.test1");
+        assert_eq!(rules.match_rules[0].rule, "%{_timestamp}");
+        assert_eq!(rules.match_rules[1].name, "mongo.test2");
+        assert_eq!(rules.match_rules[1].rule, "%{_context}");
+    }
+
+    #[test]
+    fn test_simple_grok_rules_support_rules_null() {
+        let json_data = r#"
+        {
+            "supportRules": null,
+            "matchRules": "mongo.test1 %{_timestamp}\nmongo.test2 %{_context}\n"
+        }
+        "#;
+
+        let rules: LogsProcessingGrokRules =
+            serde_json::from_str(json_data).expect("Failed to parse GrokRules JSON");
+
+        // Validate support rules.
+        assert_eq!(rules.support_rules.len(), 0);
 
         // Validate match rules.
         assert_eq!(rules.match_rules.len(), 2);

@@ -474,7 +474,7 @@ fn assign_shards(
     let mut shard_to_indexer: HashMap<ShardId, String> =
         HashMap::with_capacity(missing_shards.len());
 
-    // In a first pass we first assign as many shards on the their hosting nodes as possible.
+    // In a first pass we first assign as many shards on their hosting nodes as possible.
     let mut remaining_missing_shards: Vec<ShardId> = Vec::new();
     for shard_id in missing_shards {
         // As a heuristic, we pick the first node hosting the shard that is available.

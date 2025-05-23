@@ -9,7 +9,7 @@ set -u
 
 PAYLOAD="AAAAAAA="
 
-STATUS=$(echo $PAYLOAD | base64 -d | curl "https://$1:443/cloudprem.CloudPremService/Ping" -H "Content-Type: application/x-protobuf"  --http2-prior-knowledge --data-binary @- -v -O /dev/null 2>&1| sed -nE 's/.*(grpc-[a-z]*: [0-9a-zA-W%])/\1/p')
+STATUS=$(echo $PAYLOAD | base64 -d | curl "https://$1:443/cloudprem.CloudPremService/Ping" -H "Content-Type: application/x-protobuf"  --http2-prior-knowledge --data-binary @- -qv -o /dev/null 2>&1| sed -nE 's/.*(grpc-[a-z]*: [0-9a-zA-W%])/\1/p')
 
 if [[ "$STATUS" = *"grpc-status: 0"* ]]; then
   echo "request accepted as authenticated"

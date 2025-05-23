@@ -18,10 +18,11 @@ use serde::Deserialize;
 use vrl::datadog_filter::{Filter, Matcher, Resolver, Run, build_matcher, regex as vrl_regex};
 use vrl::datadog_search_syntax::{Comparison, ComparisonValue, Field as VRLField, QueryNode};
 
+use crate::ProcessedLog;
 use crate::default_field_search::matches;
 use crate::error::PipelineError;
 use crate::path_access::get_nested;
-use crate::{ProcessedLog, StringOrVec};
+use crate::string_or_vec::StringOrVec;
 
 /// Parses a query using the VRL parser.
 ///
@@ -301,49 +302,37 @@ where F: Fn(&str, bool) -> bool + Clone + 'static + Send + Sync {
 
 #[cfg(test)]
 mod vrl_matcher_tests {
-    use std::collections::HashMap;
 
     use serde_json::json;
     use time::OffsetDateTime;
 
     use super::{ProcessedLog, build_vrl_matcher};
-    use crate::StringOrVec; // if that’s your local enum for tags
+    use crate::processed_log::tests::make_datadog_log_msg;
 
     /// Helper to build a sample ProcessedLog
     fn make_log() -> ProcessedLog {
+        let mut msg = make_datadog_log_msg();
+        msg.status = Some("info".to_string());
+        msg.message = "[2025-03-10T10:58:38.384+0000][31740.749s][511][info][gc,cpu   ] GC(18381) \
+                       User=0.15s Sys=0.00s Real=0.02s hello"
+            .to_string();
+        msg.timestamp = OffsetDateTime::now_utc();
+        msg.hostname = "myhost".to_string();
+        msg.service = "myservice".to_string();
+        msg.ddsource = "mysource".to_string();
+
+        msg.ddtags.push("env:dev".to_string());
+        msg.ddtags.push("region:us-east".to_string());
+        msg.ddtags.push("region:east".to_string());
+
+        let mut processed_log = ProcessedLog::from_datadog_log_msg(msg);
         let mut custom_map = serde_json::Map::new();
         custom_map.insert("user_id".to_string(), json!("1234"));
         custom_map.insert("float_val".to_string(), json!(3.10f64));
         custom_map.insert("nested".to_string(), json!({"level": "over9000"}));
+        processed_log.custom = custom_map.clone();
 
-        let mut tag_map = HashMap::new();
-        // "env" => "dev"
-        tag_map.insert("env".to_string(), StringOrVec::String("dev".to_string()));
-        // "region" => ["us-east", "east"]
-        tag_map.insert(
-            "region".to_string(),
-            StringOrVec::Vec(vec!["us-east".to_string(), "east".to_string()]),
-        );
-
-        ProcessedLog {
-            message: "[2025-03-10T10:58:38.384+0000][31740.749s][511][info][gc,cpu   ] GC(18381) \
-                      User=0.15s Sys=0.00s Real=0.02s hello"
-                .to_string(),
-            status: "info".to_string(),
-            timestamp: OffsetDateTime::now_utc(),
-            host: "myhost".to_string(),
-            service: "myservice".to_string(),
-            source: "mysource".to_string(),
-            tags: vec!["env:dev".to_string(), "region:us-east".to_string()],
-            tag: tag_map,
-            trace_id: None,
-            span_id: None,
-            tiebreaker: 0,
-            custom: custom_map,
-            id: "abcd1234".to_string(),
-            discovery_timestamp: 0,
-            ingest_size_in_bytes: 42,
-        }
+        processed_log
     }
 
     fn check_query(query: &str, log: &ProcessedLog) -> bool {
@@ -471,6 +460,12 @@ mod vrl_matcher_tests {
             &log
         ));
         assert!(!check_query("source:(othersource OR datadog-agent)", &log));
+    }
+
+    #[test]
+    fn test_source_simple() {
+        let log = make_log();
+        assert!(check_query("source:mysource", &log));
     }
 
     #[test]
@@ -607,7 +602,7 @@ mod vrl_matcher_tests {
 
         assert!(check_query("127.0.0.1", &log));
         assert!(!check_query("127.0.0..1", &log));
-        // ':' is a token seperator for this query
+        // ':' is a token separator for this query
         assert!(!check_query("\"127:0:0:1\"", &log));
     }
 
