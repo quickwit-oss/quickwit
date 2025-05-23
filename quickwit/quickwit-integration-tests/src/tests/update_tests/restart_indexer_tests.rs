@@ -157,6 +157,7 @@ async fn test_update_doc_mapping_restart_indexing_pipeline() {
             })
             .to_string(),
             quickwit_config::ConfigFormat::Json,
+            false,
         )
         .await
         .unwrap();

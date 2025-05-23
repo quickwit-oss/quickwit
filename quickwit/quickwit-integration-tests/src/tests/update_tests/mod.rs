@@ -59,6 +59,7 @@ async fn assert_hits_unordered(
     }
 }
 
+mod create_on_update;
 mod doc_mapping_tests;
 mod restart_indexer_tests;
 mod search_settings_tests;

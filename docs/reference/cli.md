@@ -199,6 +199,7 @@ quickwit index update
 |-----------------|-------------|
 | `--index` | ID of the target index |
 | `--index-config` | Location of the index config file. |
+| `--create` | Create the index if it doesn't exist. |
 ### index clear
 
 Clears an index: deletes all splits and resets checkpoint.  
@@ -514,6 +515,7 @@ quickwit source update
 | `--index` | ID of the target index |
 | `--source` | ID of the source |
 | `--source-config` | Path to source config file. Please, refer to the documentation for more details. |
+| `--create` | Create the source if it doesn't exist. |
 ### source enable
 
 Enables a source for an index.  

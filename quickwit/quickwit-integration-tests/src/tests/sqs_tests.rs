@@ -349,7 +349,7 @@ async fn test_update_source_multi_node_cluster() {
     sandbox
         .rest_client(QuickwitService::Metastore)
         .sources(index_id)
-        .update(source_id, source_config_input, ConfigFormat::Yaml)
+        .update(source_id, source_config_input, ConfigFormat::Yaml, false)
         .await
         .unwrap();
 
