@@ -1,6 +1,17 @@
 disallowed-methods = [
-    "std::path::Path::exists"
+    # This function is not sound because it does not return a Result
+    "std::path::Path::exists",
+    # These functions hurt readability (according to Paul)
+    "std::option::Option::is_some_and",
+    "std::option::Option::is_none_or",
+    "std::option::Option::xor",
+    # "std::option::Option::and_then",
+    # .map(..).unwrap_or(..) or let Some(..) else {..}
+    "std::option::Option::map_or",
+    # .map(..).unwrap_or_else(..) or let Some(..) else {..}
+    "std::option::Option::map_or_else",
 ]
+
 ignore-interior-mutability = [
     "bytes::Bytes",
     "bytestring::ByteString",
