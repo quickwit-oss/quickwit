@@ -7039,7 +7039,6 @@ dependencies = [
  "fnv",
  "quickwit-common",
  "quickwit-datetime",
- "quickwit-query",
  "rand 0.8.5",
  "serde",
  "serde_json",
