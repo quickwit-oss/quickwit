@@ -126,8 +126,8 @@ pub(crate) async fn start_grpc_server(
         let ingest_router_service = services
             .ingest_router_service
             .as_grpc_service(grpc_config.max_message_size)
-            .accept_compressed(CompressionEncoding::Gzip)
-            .send_compressed(CompressionEncoding::Gzip);
+            .accept_compressed(CompressionEncoding::Zstd)
+            .send_compressed(CompressionEncoding::Zstd);
         Some(ingest_router_service)
     } else {
         None
@@ -138,8 +138,8 @@ pub(crate) async fn start_grpc_server(
         file_descriptor_sets.push(quickwit_proto::ingest::INGEST_FILE_DESCRIPTOR_SET);
         let ingester_grpc_service = ingester_service
             .as_grpc_service(grpc_config.max_message_size)
-            .accept_compressed(CompressionEncoding::Gzip)
-            .send_compressed(CompressionEncoding::Gzip);
+            .accept_compressed(CompressionEncoding::Zstd)
+            .send_compressed(CompressionEncoding::Zstd);
         Some(ingester_grpc_service)
     } else {
         None
@@ -166,7 +166,8 @@ pub(crate) async fn start_grpc_server(
         if let Some(otlp_traces_service) = services.otlp_traces_service_opt.clone() {
             enabled_grpc_services.insert("otlp-traces");
             let trace_service = TraceServiceServer::new(otlp_traces_service)
-                .accept_compressed(CompressionEncoding::Gzip);
+                .accept_compressed(CompressionEncoding::Gzip)
+                .accept_compressed(CompressionEncoding::Zstd);
             Some(trace_service)
         } else {
             None
@@ -175,7 +176,8 @@ pub(crate) async fn start_grpc_server(
         if let Some(otlp_logs_service) = services.otlp_logs_service_opt.clone() {
             enabled_grpc_services.insert("otlp-logs");
             let logs_service = LogsServiceServer::new(otlp_logs_service)
-                .accept_compressed(CompressionEncoding::Gzip);
+                .accept_compressed(CompressionEncoding::Gzip)
+                .accept_compressed(CompressionEncoding::Zstd);
             Some(logs_service)
         } else {
             None
@@ -214,6 +216,8 @@ pub(crate) async fn start_grpc_server(
 
         DeveloperServiceClient::new(developer_service)
             .as_grpc_service(DeveloperApiServer::MAX_GRPC_MESSAGE_SIZE)
+            .accept_compressed(CompressionEncoding::Zstd)
+            .send_compressed(CompressionEncoding::Zstd)
     };
     enabled_grpc_services.insert("health");
     file_descriptor_sets.push(HEALTH_FILE_DESCRIPTOR_SET);

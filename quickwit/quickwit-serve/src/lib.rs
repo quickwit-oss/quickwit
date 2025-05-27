@@ -968,8 +968,8 @@ async fn setup_ingest_v2(
                                 node.grpc_advertise_addr(),
                                 node.channel(),
                                 max_message_size,
-                                &[CompressionEncoding::Gzip],
-                                Some(CompressionEncoding::Gzip),
+                                &[CompressionEncoding::Zstd],
+                                Some(CompressionEncoding::Zstd),
                             );
                         Some(Change::Insert(node_id, ingester_service))
                     }

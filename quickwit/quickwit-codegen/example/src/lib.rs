@@ -373,8 +373,8 @@ mod tests {
         let grpc_server_adapter = HelloGrpcServerAdapter::new(HelloImpl::default());
         let grpc_server: HelloGrpcServer<HelloGrpcServerAdapter> =
             HelloGrpcServer::new(grpc_server_adapter)
-                .accept_compressed(CompressionEncoding::Gzip)
-                .send_compressed(CompressionEncoding::Gzip);
+                .accept_compressed(CompressionEncoding::Zstd)
+                .send_compressed(CompressionEncoding::Zstd);
         let addr: SocketAddr = "127.0.0.1:33333".parse().unwrap();
 
         tokio::spawn({
@@ -394,8 +394,8 @@ mod tests {
         let grpc_client = HelloClient::from_balance_channel(
             channel,
             MAX_GRPC_MESSAGE_SIZE,
-            &[CompressionEncoding::Gzip],
-            Some(CompressionEncoding::Gzip),
+            &[CompressionEncoding::Zstd],
+            Some(CompressionEncoding::Zstd),
         );
 
         assert_eq!(
