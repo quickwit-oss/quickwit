@@ -47,7 +47,7 @@ futures = { workspace = true }
 mockall = { workspace = true }
 
 [build-dependencies]
-glob = "0.3.1"
+glob = "0.3.2"
 prost-build = { workspace = true }
 tonic-build = { workspace = true }
 
