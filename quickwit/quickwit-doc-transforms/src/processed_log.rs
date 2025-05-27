@@ -160,6 +160,14 @@ fn create_preprocessing_pipeline() -> Pipeline {
             .map(|field| ParsedPath::from(*field))
             .collect(),
         }),
+        string_remap(
+            &["host", "syslog.hostname", "hostname"],
+            CoreStringAttr::Host,
+        ),
+        string_remap(
+            &["dd.service", "service", "syslog.appname"],
+            CoreStringAttr::Service,
+        ),
         Box::new(StatusRemapStep {
             sources: ["status", "severity", "level", "syslog.severity"]
                 .iter()
@@ -167,30 +175,30 @@ fn create_preprocessing_pipeline() -> Pipeline {
                 .collect(),
         }),
         string_remap(
-            &["dd.service", "service", "syslog.appname"],
-            CoreStringAttr::Service,
+            &[
+                "dd.trace_id",
+                "contextMap.dd.trace_id",
+                "named_tags.dd.trace_id",
+                "trace_id",
+                "traceID",
+                "traceId",
+                "syslog.trace_id",
+            ],
+            CoreStringAttr::TraceId,
         ),
         string_remap(
             &[
                 "span_id",
                 "dd.span_id",
-                "contextmap.dd.span_id",
+                "contextMap.dd.span_id",
                 "named_tags.dd.span_id",
                 "syslog.span_id",
             ],
             CoreStringAttr::SpanId,
         ),
         string_remap(
-            &["dd.trace_id", "trace_id", "syslog.trace_id"],
-            CoreStringAttr::TraceId,
-        ),
-        string_remap(
-            &["message", "dd.message", "syslog.message"],
+            &["message", "dd.message", "syslog.message", "msg", "log"],
             CoreStringAttr::Message,
-        ),
-        string_remap(
-            &["host", "hostname", "syslog.hostname"],
-            CoreStringAttr::Host,
         ),
     ];
 
