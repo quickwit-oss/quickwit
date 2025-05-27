@@ -1568,9 +1568,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.23"
+version = "1.2.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f4ac86a9e5bc1e2b3449ab9d7d3a6a405e3d1bb28d7b9be8614f55846ae3766"
+checksum = "16595d3be041c03b09d08d0858631facccee9221e579704070e6e9e4915d3bc7"
 dependencies = [
  "jobserver",
  "libc",
@@ -1968,9 +1968,9 @@ dependencies = [
 
 [[package]]
 name = "core-foundation"
-version = "0.10.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b55271e5c8c478ad3f38ad24ef34923091e0548492a266d19b3c0b4d82574c63"
+checksum = "b2a6cd9ae233e7f62ba4e9353e81a88df7fc8a5987b8d445b4d90c879bd156f6"
 dependencies = [
  "core-foundation-sys",
  "libc",
@@ -3759,6 +3759,7 @@ dependencies = [
  "http 1.3.1",
  "hyper 1.6.0",
  "hyper-util",
+ "log",
  "rustls 0.23.27",
  "rustls-native-certs 0.8.1",
  "rustls-pki-types",
@@ -3808,12 +3809,13 @@ dependencies = [
 
 [[package]]
 name = "hyper-util"
-version = "0.1.12"
+version = "0.1.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf9f1e950e0d9d1d3c47184416723cf29c0d1f93bd8cccf37e4beb6b44f31710"
+checksum = "b1c293b6b3d21eca78250dc7dbebd6b9210ec5530e038cbfe0661b5c47ab06e8"
 dependencies = [
  "bytes",
  "futures-channel",
+ "futures-core",
  "futures-util",
  "http 1.3.1",
  "http-body 1.0.1",
@@ -4366,9 +4368,9 @@ checksum = "d750af042f7ef4f724306de029d18836c26c1765a54a6a3f094cbd23a7267ffa"
 
 [[package]]
 name = "libloading"
-version = "0.8.7"
+version = "0.8.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a793df0d7afeac54f95b471d3af7f0d4fb975699f972341a4b76988d49cdf0c"
+checksum = "07033963ba89ebaf1584d767badaa2e8fcec21aedea6b8c0346d487d49c28667"
 dependencies = [
  "cfg-if",
  "windows-targets 0.53.0",
@@ -4871,13 +4873,13 @@ dependencies = [
 
 [[package]]
 name = "mio"
-version = "1.0.3"
+version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2886843bf800fba2e3377cff24abf6379b4c4d5c6681eaf9ea5b0d15090450bd"
+checksum = "78bed444cc8a2160f01cbcf811ef18cac863ad68ae8ca62092e8db51d51c761c"
 dependencies = [
  "libc",
  "wasi 0.11.0+wasi-snapshot-preview1",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5296,11 +5298,11 @@ checksum = "b4ce411919553d3f9fa53a0880544cda985a112117a0444d5ff1e870a893d6ea"
 
 [[package]]
 name = "onig"
-version = "6.4.0"
+version = "6.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8c4b31c8722ad9171c6d77d3557db078cab2bd50afcc9d09c8b315c59df8ca4f"
+checksum = "336b9c63443aceef14bea841b899035ae3abe89b7c486aaf4c5bd8aafedac3f0"
 dependencies = [
- "bitflags 1.3.2",
+ "bitflags 2.9.1",
  "libc",
  "once_cell",
  "onig_sys",
@@ -5308,9 +5310,9 @@ dependencies = [
 
 [[package]]
 name = "onig_sys"
-version = "69.8.1"
+version = "69.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b829e3d7e9cc74c7e315ee8edb185bf4190da5acde74afd7fc59c35b1f086e7"
+checksum = "c7f86c6eef3d6df15f23bcfb6af487cbd2fed4e5581d58d5bf1f5f8b7f6727dc"
 dependencies = [
  "cc",
  "pkg-config",
@@ -5330,9 +5332,9 @@ checksum = "c08d65885ee38876c4f86fa503fb49d7b507c2b62552df7c70b2fce627e06381"
 
 [[package]]
 name = "opendal"
-version = "0.53.2"
+version = "0.53.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "11ff9e9656d1cb3c58582ea18e6d9e71076a7ab2614207821d1242d7da2daed5"
+checksum = "f947c4efbca344c1a125753366033c8107f552b2e3f8251815ed1908f116ca3e"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5906,7 +5908,7 @@ version = "0.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67eabc2ef2a60eb7faa00097bd1ffdb5bd28e62bf39990626a582201b7a754e5"
 dependencies = [
- "siphasher 1.0.1",
+ "siphasher",
 ]
 
 [[package]]
@@ -6495,9 +6497,9 @@ checksum = "106dd99e98437432fed6519dedecfade6a06a73bb7b2a1e019fdd2bee5778d94"
 
 [[package]]
 name = "psl"
-version = "2.1.111"
+version = "2.1.112"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ded4a997d0aee186c0a763ba1ba0cc0a14bd4c2d427a4e8e8c9b8683dc8f1254"
+checksum = "1c6b4c497a0c6bfb466f75167c728b1a861b0cdc39de9c35b877208a270a9590"
 dependencies = [
  "psl-types",
 ]
@@ -6635,8 +6637,8 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "sync_wrapper 0.1.2",
- "thiserror 1.0.69",
+ "sync_wrapper 1.0.2",
+ "thiserror 2.0.12",
  "tokio",
  "tracing",
 ]
@@ -6657,7 +6659,7 @@ dependencies = [
  "futures",
  "http-body-util",
  "hyper 1.6.0",
- "hyper-rustls 0.24.2",
+ "hyper-rustls 0.27.6",
  "quickwit-common",
  "tokio",
 ]
@@ -6677,7 +6679,7 @@ dependencies = [
  "futures",
  "humantime",
  "indicatif",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "numfmt",
  "once_cell",
  "openssl-probe",
@@ -6704,7 +6706,7 @@ dependencies = [
  "serde_json",
  "tabled",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.12",
  "thousands",
  "tikv-jemalloc-ctl",
  "tikv-jemallocator",
@@ -6725,7 +6727,7 @@ dependencies = [
  "bytesize",
  "chitchat",
  "futures",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "once_cell",
  "pin-project",
  "quickwit-common",
@@ -6748,7 +6750,7 @@ version = "0.8.0"
 dependencies = [
  "anyhow",
  "futures",
- "heck 0.4.1",
+ "heck 0.5.0",
  "prettyplease",
  "proc-macro2",
  "prost-build",
@@ -6774,7 +6776,7 @@ dependencies = [
  "quickwit-common",
  "quickwit-proto",
  "serde",
- "thiserror 1.0.69",
+ "thiserror 2.0.12",
  "tokio",
  "tokio-stream",
  "tonic 0.13.1",
@@ -6801,7 +6803,7 @@ dependencies = [
  "http 1.3.1",
  "hyper 1.6.0",
  "hyper-util",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "once_cell",
  "pin-project",
  "pnet",
@@ -6813,10 +6815,10 @@ dependencies = [
  "serde",
  "serde_json",
  "serial_test",
- "siphasher 0.3.11",
+ "siphasher",
  "sysinfo",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.12",
  "tikv-jemalloc-ctl",
  "tikv-jemallocator",
  "tokio",
@@ -6840,7 +6842,7 @@ dependencies = [
  "http 0.2.12",
  "http-serde 1.1.3",
  "humantime",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "json_comments",
  "new_string_template",
  "once_cell",
@@ -6852,7 +6854,7 @@ dependencies = [
  "serde_json",
  "serde_with",
  "serde_yaml",
- "siphasher 0.3.11",
+ "siphasher",
  "tokio",
  "toml",
  "tracing",
@@ -6869,7 +6871,7 @@ dependencies = [
  "bytesize",
  "fnv",
  "futures",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "lru 0.13.0",
  "mockall",
  "once_cell",
@@ -6898,7 +6900,7 @@ name = "quickwit-datetime"
 version = "0.8.0"
 dependencies = [
  "anyhow",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "serde",
  "serde_json",
  "tantivy",
@@ -6933,7 +6935,7 @@ dependencies = [
  "fnv",
  "hex",
  "indexmap 2.9.0",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "matches",
  "nom",
  "once_cell",
@@ -6947,9 +6949,9 @@ dependencies = [
  "serde_json",
  "serde_json_borrow",
  "serde_yaml",
- "siphasher 0.3.11",
+ "siphasher",
  "tantivy",
- "thiserror 1.0.69",
+ "thiserror 2.0.12",
  "time",
  "tracing",
  "utoipa",
@@ -6962,14 +6964,14 @@ dependencies = [
  "anyhow",
  "futures",
  "futures-util",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "quickwit-common",
  "quickwit-config",
  "quickwit-indexing",
  "quickwit-metastore",
  "quickwit-proto",
  "quickwit-storage",
- "thiserror 1.0.69",
+ "thiserror 2.0.12",
  "time",
  "tokio",
  "tracing",
@@ -6996,7 +6998,7 @@ dependencies = [
  "google-cloud-gax",
  "google-cloud-googleapis",
  "google-cloud-pubsub",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "libz-sys",
  "mockall",
  "once_cell",
@@ -7028,7 +7030,7 @@ dependencies = [
  "serde_json",
  "tantivy",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.12",
  "time",
  "tokio",
  "tracing",
@@ -7049,7 +7051,7 @@ dependencies = [
  "fail",
  "futures",
  "http 1.3.1",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "mockall",
  "mrecordlog",
  "once_cell",
@@ -7067,7 +7069,7 @@ dependencies = [
  "serde_json",
  "serde_json_borrow",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.12",
  "tokio",
  "tonic 0.13.1",
  "tower 0.5.2",
@@ -7085,7 +7087,7 @@ dependencies = [
  "futures-util",
  "hyper 1.6.0",
  "hyper-util",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "quickwit-actors",
  "quickwit-cli",
  "quickwit-common",
@@ -7112,7 +7114,7 @@ name = "quickwit-jaeger"
 version = "0.8.0"
 dependencies = [
  "async-trait",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "once_cell",
  "postcard",
  "prost 0.13.5",
@@ -7147,7 +7149,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "futures",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "mockall",
  "once_cell",
  "quickwit-actors",
@@ -7165,7 +7167,7 @@ dependencies = [
  "serde_json",
  "tantivy",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.12",
  "time",
  "tokio",
  "tracing",
@@ -7239,7 +7241,7 @@ dependencies = [
  "futures",
  "http 1.3.1",
  "hyper-util",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "md5",
  "mockall",
  "once_cell",
@@ -7261,7 +7263,7 @@ dependencies = [
  "serial_test",
  "sqlx",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.12",
  "time",
  "tokio",
  "tokio-stream",
@@ -7288,7 +7290,7 @@ dependencies = [
  "quickwit-proto",
  "serde",
  "serde_json",
- "thiserror 1.0.69",
+ "thiserror 2.0.12",
  "time",
  "tokio",
  "tonic 0.13.1",
@@ -7319,7 +7321,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
- "thiserror 1.0.69",
+ "thiserror 2.0.12",
  "tokio",
  "tonic 0.13.1",
  "tonic-build",
@@ -7353,7 +7355,7 @@ dependencies = [
  "serde_with",
  "tantivy",
  "tantivy-fst",
- "thiserror 1.0.69",
+ "thiserror 2.0.12",
  "time",
  "whichlang",
 ]
@@ -7379,7 +7381,7 @@ dependencies = [
  "reqwest-retry",
  "serde",
  "serde_json",
- "thiserror 1.0.69",
+ "thiserror 2.0.12",
  "tokio",
  "tracing",
  "wiremock",
@@ -7398,7 +7400,7 @@ dependencies = [
  "fnv",
  "futures",
  "http 1.3.1",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "mockall",
  "once_cell",
  "pin-project",
@@ -7422,7 +7424,7 @@ dependencies = [
  "serde_json_borrow",
  "tantivy",
  "tantivy-fst",
- "thiserror 1.0.69",
+ "thiserror 2.0.12",
  "tokio",
  "tokio-stream",
  "tower 0.5.2",
@@ -7452,9 +7454,9 @@ dependencies = [
  "http-serde 1.1.3",
  "humantime",
  "hyper 1.6.0",
- "hyper-rustls 0.24.2",
+ "hyper-rustls 0.27.6",
  "hyper-util",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "mime_guess",
  "mockall",
  "once_cell",
@@ -7490,7 +7492,7 @@ dependencies = [
  "serde_qs 0.12.0",
  "serde_with",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.12",
  "time",
  "tokio",
  "tokio-rustls 0.24.1",
@@ -7547,7 +7549,7 @@ dependencies = [
  "serde_json",
  "tantivy",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.12",
  "tokio",
  "tokio-stream",
  "tokio-util",
@@ -8628,7 +8630,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "271720403f46ca04f7ba6f55d438f8bd878d6b8ca0a1046e8228c4145bcbb316"
 dependencies = [
  "bitflags 2.9.1",
- "core-foundation 0.10.0",
+ "core-foundation 0.10.1",
  "core-foundation-sys",
  "libc",
  "security-framework-sys",
@@ -8976,12 +8978,6 @@ dependencies = [
 
 [[package]]
 name = "siphasher"
-version = "0.3.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38b58827f4464d87d377d175e90bf58eb00fd8716ff0a62f80356b5e61555d0d"
-
-[[package]]
-name = "siphasher"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "56199f7ddabf13fe5074ce809e7d3f42b42ae711800501b5b16ea82ad029c39d"
@@ -9061,9 +9057,9 @@ checksum = "1b6b67fb9a61334225b5b790716f609cd58395f895b3fe8b328786812a40bc3b"
 
 [[package]]
 name = "socket2"
-version = "0.5.9"
+version = "0.5.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f5fd57c80058a56cf5c777ab8a126398ece8e442983605d280a44ce79d0edef"
+checksum = "e22376abed350d73dd1cd119b57ffccad95b4e585a7cda43e286245ce23c0678"
 dependencies = [
  "libc",
  "windows-sys 0.52.0",
@@ -9887,9 +9883,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.45.0"
+version = "1.45.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2513ca694ef9ede0fb23fe71a4ee4107cb102b9dc1930f6d0fd77aae068ae165"
+checksum = "75ef51a33ef1da925cea3e4eb122833cb377c61439ca401b770f54902b806779"
 dependencies = [
  "backtrace",
  "bytes",
