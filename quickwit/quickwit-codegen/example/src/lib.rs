@@ -167,6 +167,7 @@ mod tests {
     use tokio_stream::StreamExt;
     use tonic::codec::CompressionEncoding;
     use tonic::transport::{Endpoint, Server};
+    use tonic::{Code, Status};
 
     use super::*;
     use crate::hello::MockHello;
@@ -356,10 +357,59 @@ mod tests {
 
     #[tokio::test]
     async fn test_hello_codegen_grpc_with_compression() {
+        #[derive(Debug, Clone)]
         struct CheckCompression<S> {
             inner: S,
         }
 
+        impl<S, ReqBody, ResBody> Service<http::Request<ReqBody>> for CheckCompression<S>
+        where
+            S: Service<http::Request<ReqBody>, Response = http::Response<ResBody>>
+                + Clone
+                + Send
+                + 'static,
+            S::Future: Send + 'static,
+            ReqBody: Send + 'static,
+        {
+            type Response = S::Response;
+            type Error = S::Error;
+            type Future = BoxFuture<Self::Response, Self::Error>;
+
+            fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+                self.inner.poll_ready(cx)
+            }
+
+            fn call(&mut self, request: http::Request<ReqBody>) -> Self::Future {
+                let Some(grpc_encoding) = request.headers().get("grpc-encoding") else {
+                    panic!("request should be compressed");
+                };
+                assert!(grpc_encoding.to_str().unwrap().contains("zstd"));
+
+                let Some(grpc_accept_encoding) = request.headers().get("grpc-accept-encoding")
+                else {
+                    panic!("client should accept compressed responses");
+                };
+                assert!(grpc_accept_encoding.to_str().unwrap().contains("zstd"));
+                let fut = self.inner.call(request);
+
+                Box::pin(async move {
+                    let response = fut.await?;
+                    let grpc_status_code = Status::from_header_map(response.headers())
+                        .map(|status| status.code())
+                        .unwrap_or(Code::Ok);
+
+                    if grpc_status_code == Code::Ok {
+                        let Some(grpc_encoding) = response.headers().get("grpc-encoding") else {
+                            panic!("response should be compressed");
+                        };
+                        assert!(grpc_encoding.to_str().unwrap().contains("zstd"));
+                    }
+                    Ok(response)
+                })
+            }
+        }
+
+        #[derive(Debug, Clone)]
         struct CheckCompressionLayer;
 
         impl<S> Layer<S> for CheckCompressionLayer {
@@ -380,7 +430,7 @@ mod tests {
         tokio::spawn({
             async move {
                 Server::builder()
-                    // .layer(CheckCompressionLayer)
+                    .layer(CheckCompressionLayer)
                     .add_service(grpc_server)
                     .serve(addr)
                     .await
