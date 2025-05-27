@@ -1,0 +1,97 @@
+id: extrahop
+metric_id: extrahop
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url
+    source: log
+pipeline:
+  type: pipeline
+  name: ExtraHop
+  enabled: true
+  filter:
+    query: "source:extrahop"
+  processors:
+    - type: pipeline
+      name: Detection
+      enabled: true
+      filter:
+        query: "service:detection"
+      processors:
+        - type: category-processor
+          name: Define `risk_status` from the `risk_score`
+          enabled: true
+          categories:
+            - filter:
+                query: "@risk_score:[1 TO 30]"
+              name: info
+            - filter:
+                query: "@risk_score:[31 TO 79]"
+              name: warning
+            - filter:
+                query: "@risk_score:[80 TO 99]"
+              name: critical
+          target: risk_status
+        - type: date-remapper
+          name: Define `mod_time` as the official date of the log
+          enabled: true
+          sources:
+            - mod_time
+        - type: attribute-remapper
+          name: Map `status` to `detection_status`
+          enabled: true
+          sources:
+            - status
+          sourceType: attribute
+          target: detection_status
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `title` to `detection_title`
+          enabled: true
+          sources:
+            - title
+          sourceType: attribute
+          target: detection_title
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: status-remapper
+          name: Define `risk_status` as the official status of the log
+          enabled: true
+          sources:
+            - risk_status
+        - type: message-remapper
+          name: Define `detection_title` as the official message of the log
+          enabled: true
+          sources:
+            - detection_title
+    - type: pipeline
+      name: Investigation
+      enabled: true
+      filter:
+        query: "service:investigation"
+      processors:
+        - type: date-remapper
+          name: Define `update_time` as the official date of the log
+          enabled: true
+          sources:
+            - update_time
+        - type: message-remapper
+          name: Define `name` as the official message of the log
+          enabled: true
+          sources:
+            - name
+    - type: attribute-remapper
+      name: Map `url` to `http.url`
+      enabled: true
+      sources:
+        - url
+      sourceType: attribute
+      target: http.url
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false

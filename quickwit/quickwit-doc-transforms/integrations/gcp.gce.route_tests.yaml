@@ -1,0 +1,520 @@
+id: "gcp.gce.route"
+tests:
+ -
+  sample: |-
+    {
+      "data" : {
+        "severity" : "NOTICE",
+        "logName" : "projects/test-271317/logs/cloudaudit.googleapis.com%2Factivity",
+        "resource" : {
+          "type" : "gce_route",
+          "labels" : {
+            "route_id" : "9189267949975478697",
+            "project_id" : "test-271317"
+          }
+        },
+        "protoPayload" : {
+          "requestMetadata" : {
+            "requestAttributes" : {
+              "time" : "2020-04-02T17:22:15.123Z"
+            },
+            "callerSuppliedUserAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)",
+            "callerIp" : "67.243.209.244"
+          },
+          "request" : {
+            "nextHopGateway" : "projects/test-271317/global/gateways/default-internet-gateway",
+            "@type" : "type.googleapis.com/compute.routes.insert",
+            "name" : "example-route",
+            "destRange" : "192.168.1.0/24",
+            "priority" : "1000",
+            "network" : "projects/test-271317/global/networks/default"
+          },
+          "authenticationInfo" : {
+            "principalEmail" : "test@testemail.com"
+          },
+          "authorizationInfo" : [ {
+            "permission" : "compute.routes.create",
+            "resourceAttributes" : {
+              "service" : "compute",
+              "name" : "projects/test-271317/global/routes/example-route",
+              "type" : "compute.routes"
+            },
+            "granted" : true
+          }, {
+            "permission" : "compute.networks.updatePolicy",
+            "resourceAttributes" : {
+              "service" : "compute",
+              "name" : "projects/test-271317/global/networks/default",
+              "type" : "compute.networks"
+            },
+            "granted" : true
+          } ],
+          "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+          "response" : {
+            "targetId" : "9189267949975478697",
+            "@type" : "type.googleapis.com/operation",
+            "selfLink" : "https://www.googleapis.com/compute/beta/projects/test-271317/global/operations/operation-1585848134262-5a2520ab5dcf1-974c390e-0fb9a5a6",
+            "insertTime" : "2020-04-02T10:22:14.842-07:00",
+            "selfLinkWithId" : "https://www.googleapis.com/compute/beta/projects/test-271317/global/operations/2934436660821860777",
+            "targetLink" : "https://www.googleapis.com/compute/beta/projects/test-271317/global/routes/example-route",
+            "name" : "operation-1585848134262-5a2520ab5dcf1-974c390e-0fb9a5a6",
+            "progress" : "0",
+            "operationType" : "insert",
+            "startTime" : "2020-04-02T10:22:14.868-07:00",
+            "id" : "2934436660821860777",
+            "user" : "justin@justinmassey.com",
+            "status" : "RUNNING"
+          },
+          "methodName" : "beta.compute.routes.insert",
+          "resourceName" : "projects/test-271317/global/routes/example-route",
+          "serviceName" : "compute.googleapis.com",
+          "resourceLocation" : {
+            "currentLocations" : [ "global" ]
+          }
+        },
+        "receiveTimestamp" : "2020-04-02T17:22:15.351218023Z",
+        "operation" : {
+          "producer" : "compute.googleapis.com",
+          "id" : "operation-1585848134262-5a2520ab5dcf1-974c390e-0fb9a5a6",
+          "first" : true
+        },
+        "insertId" : "-m6w0nle1fv0y",
+        "timestamp" : "2020-04-02T17:22:14.348Z"
+      }
+    }
+  result:
+    custom:
+      data:
+        insertId: "-m6w0nle1fv0y"
+        logName: "projects/test-271317/logs/cloudaudit.googleapis.com%2Factivity"
+        operation:
+          first: true
+          id: "operation-1585848134262-5a2520ab5dcf1-974c390e-0fb9a5a6"
+          producer: "compute.googleapis.com"
+        protoPayload:
+          '@type': "type.googleapis.com/google.cloud.audit.AuditLog"
+          authenticationInfo:
+            principalEmail: "test@testemail.com"
+          authorizationInfo:
+           -
+            permission: "compute.routes.create"
+            resourceAttributes:
+              service: "compute"
+              name: "projects/test-271317/global/routes/example-route"
+              type: "compute.routes"
+            granted: true
+           -
+            permission: "compute.networks.updatePolicy"
+            resourceAttributes:
+              service: "compute"
+              name: "projects/test-271317/global/networks/default"
+              type: "compute.networks"
+            granted: true
+          request:
+            '@type': "type.googleapis.com/compute.routes.insert"
+            destRange: "192.168.1.0/24"
+            name: "example-route"
+            network: "projects/test-271317/global/networks/default"
+            nextHopGateway: "projects/test-271317/global/gateways/default-internet-gateway"
+            priority: "1000"
+          requestMetadata:
+            requestAttributes:
+              time: "2020-04-02T17:22:15.123Z"
+          resourceLocation:
+            currentLocations:
+             - "global"
+          resourceName: "projects/test-271317/global/routes/example-route"
+          response:
+            '@type': "type.googleapis.com/operation"
+            id: "2934436660821860777"
+            insertTime: "2020-04-02T10:22:14.842-07:00"
+            name: "operation-1585848134262-5a2520ab5dcf1-974c390e-0fb9a5a6"
+            operationType: "insert"
+            progress: "0"
+            selfLink: "https://www.googleapis.com/compute/beta/projects/test-271317/global/operations/operation-1585848134262-5a2520ab5dcf1-974c390e-0fb9a5a6"
+            selfLinkWithId: "https://www.googleapis.com/compute/beta/projects/test-271317/global/operations/2934436660821860777"
+            startTime: "2020-04-02T10:22:14.868-07:00"
+            status: "RUNNING"
+            targetId: "9189267949975478697"
+            targetLink: "https://www.googleapis.com/compute/beta/projects/test-271317/global/routes/example-route"
+            user: "justin@justinmassey.com"
+          serviceName: "compute.googleapis.com"
+        receiveTimestamp: "2020-04-02T17:22:15.351218023Z"
+        resource:
+          labels:
+            project_id: "test-271317"
+            route_id: "9189267949975478697"
+          type: "gce_route"
+        severity: "NOTICE"
+        timestamp: "2020-04-02T17:22:14.348Z"
+      evt:
+        name: "beta.compute.routes.insert"
+      http:
+        useragent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "80"
+            minor: "0"
+            patch: "3987"
+            patch_minor: "149"
+          device:
+            brand: "Apple"
+            category: "Desktop"
+            family: "Mac"
+            model: "Mac"
+          os:
+            family: "Mac OS X"
+            major: "10"
+            minor: "14"
+            patch: "1"
+      network:
+        client:
+          geoip: {}
+          ip: "67.243.209.244"
+      usr:
+        email: "test@testemail.com"
+        id: "test@testemail.com"
+    message: |-
+      {
+        "data" : {
+          "severity" : "NOTICE",
+          "logName" : "projects/test-271317/logs/cloudaudit.googleapis.com%2Factivity",
+          "resource" : {
+            "type" : "gce_route",
+            "labels" : {
+              "route_id" : "9189267949975478697",
+              "project_id" : "test-271317"
+            }
+          },
+          "protoPayload" : {
+            "requestMetadata" : {
+              "requestAttributes" : {
+                "time" : "2020-04-02T17:22:15.123Z"
+              },
+              "callerSuppliedUserAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)",
+              "callerIp" : "67.243.209.244"
+            },
+            "request" : {
+              "nextHopGateway" : "projects/test-271317/global/gateways/default-internet-gateway",
+              "@type" : "type.googleapis.com/compute.routes.insert",
+              "name" : "example-route",
+              "destRange" : "192.168.1.0/24",
+              "priority" : "1000",
+              "network" : "projects/test-271317/global/networks/default"
+            },
+            "authenticationInfo" : {
+              "principalEmail" : "test@testemail.com"
+            },
+            "authorizationInfo" : [ {
+              "permission" : "compute.routes.create",
+              "resourceAttributes" : {
+                "service" : "compute",
+                "name" : "projects/test-271317/global/routes/example-route",
+                "type" : "compute.routes"
+              },
+              "granted" : true
+            }, {
+              "permission" : "compute.networks.updatePolicy",
+              "resourceAttributes" : {
+                "service" : "compute",
+                "name" : "projects/test-271317/global/networks/default",
+                "type" : "compute.networks"
+              },
+              "granted" : true
+            } ],
+            "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+            "response" : {
+              "targetId" : "9189267949975478697",
+              "@type" : "type.googleapis.com/operation",
+              "selfLink" : "https://www.googleapis.com/compute/beta/projects/test-271317/global/operations/operation-1585848134262-5a2520ab5dcf1-974c390e-0fb9a5a6",
+              "insertTime" : "2020-04-02T10:22:14.842-07:00",
+              "selfLinkWithId" : "https://www.googleapis.com/compute/beta/projects/test-271317/global/operations/2934436660821860777",
+              "targetLink" : "https://www.googleapis.com/compute/beta/projects/test-271317/global/routes/example-route",
+              "name" : "operation-1585848134262-5a2520ab5dcf1-974c390e-0fb9a5a6",
+              "progress" : "0",
+              "operationType" : "insert",
+              "startTime" : "2020-04-02T10:22:14.868-07:00",
+              "id" : "2934436660821860777",
+              "user" : "justin@justinmassey.com",
+              "status" : "RUNNING"
+            },
+            "methodName" : "beta.compute.routes.insert",
+            "resourceName" : "projects/test-271317/global/routes/example-route",
+            "serviceName" : "compute.googleapis.com",
+            "resourceLocation" : {
+              "currentLocations" : [ "global" ]
+            }
+          },
+          "receiveTimestamp" : "2020-04-02T17:22:15.351218023Z",
+          "operation" : {
+            "producer" : "compute.googleapis.com",
+            "id" : "operation-1585848134262-5a2520ab5dcf1-974c390e-0fb9a5a6",
+            "first" : true
+          },
+          "insertId" : "-m6w0nle1fv0y",
+          "timestamp" : "2020-04-02T17:22:14.348Z"
+        }
+      }
+    service: "compute.googleapis.com"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1585848134348
+ -
+  sample: |-
+    {
+      "severity" : "NOTICE",
+      "logName" : "projects/test-271317/logs/cloudaudit.googleapis.com%2Factivity",
+      "resource" : {
+        "type" : "gce_route",
+        "labels" : {
+          "route_id" : "9189267949975478697",
+          "project_id" : "test-271317"
+        }
+      },
+      "protoPayload" : {
+        "requestMetadata" : {
+          "requestAttributes" : {
+            "time" : "2020-04-02T17:22:15.123Z"
+          },
+          "callerSuppliedUserAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)",
+          "callerIp" : "67.243.209.244"
+        },
+        "request" : {
+          "nextHopGateway" : "projects/test-271317/global/gateways/default-internet-gateway",
+          "@type" : "type.googleapis.com/compute.routes.insert",
+          "name" : "example-route",
+          "destRange" : "192.168.1.0/24",
+          "priority" : "1000",
+          "network" : "projects/test-271317/global/networks/default"
+        },
+        "authenticationInfo" : {
+          "principalEmail" : "test@testemail.com"
+        },
+        "authorizationInfo" : [ {
+          "permission" : "compute.routes.create",
+          "resourceAttributes" : {
+            "service" : "compute",
+            "name" : "projects/test-271317/global/routes/example-route",
+            "type" : "compute.routes"
+          },
+          "granted" : true
+        }, {
+          "permission" : "compute.networks.updatePolicy",
+          "resourceAttributes" : {
+            "service" : "compute",
+            "name" : "projects/test-271317/global/networks/default",
+            "type" : "compute.networks"
+          },
+          "granted" : true
+        } ],
+        "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+        "response" : {
+          "targetId" : "9189267949975478697",
+          "@type" : "type.googleapis.com/operation",
+          "selfLink" : "https://www.googleapis.com/compute/beta/projects/test-271317/global/operations/operation-1585848134262-5a2520ab5dcf1-974c390e-0fb9a5a6",
+          "insertTime" : "2020-04-02T10:22:14.842-07:00",
+          "selfLinkWithId" : "https://www.googleapis.com/compute/beta/projects/test-271317/global/operations/2934436660821860777",
+          "targetLink" : "https://www.googleapis.com/compute/beta/projects/test-271317/global/routes/example-route",
+          "name" : "operation-1585848134262-5a2520ab5dcf1-974c390e-0fb9a5a6",
+          "progress" : "0",
+          "operationType" : "insert",
+          "startTime" : "2020-04-02T10:22:14.868-07:00",
+          "id" : "2934436660821860777",
+          "user" : "justin@justinmassey.com",
+          "status" : "RUNNING"
+        },
+        "methodName" : "beta.compute.routes.insert",
+        "resourceName" : "projects/test-271317/global/routes/example-route",
+        "serviceName" : "compute.googleapis.com",
+        "resourceLocation" : {
+          "currentLocations" : [ "global" ]
+        }
+      },
+      "receiveTimestamp" : "2020-04-02T17:22:15.351218023Z",
+      "operation" : {
+        "producer" : "compute.googleapis.com",
+        "id" : "operation-1585848134262-5a2520ab5dcf1-974c390e-0fb9a5a6",
+        "first" : true
+      },
+      "insertId" : "-m6w0nle1fv0y",
+      "timestamp" : "2020-04-02T17:22:14.348Z"
+    }
+  result:
+    custom:
+      evt:
+        name: "beta.compute.routes.insert"
+      http:
+        useragent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "80"
+            minor: "0"
+            patch: "3987"
+            patch_minor: "149"
+          device:
+            brand: "Apple"
+            category: "Desktop"
+            family: "Mac"
+            model: "Mac"
+          os:
+            family: "Mac OS X"
+            major: "10"
+            minor: "14"
+            patch: "1"
+      insertId: "-m6w0nle1fv0y"
+      logName: "projects/test-271317/logs/cloudaudit.googleapis.com%2Factivity"
+      network:
+        client:
+          geoip: {}
+          ip: "67.243.209.244"
+      operation:
+        first: true
+        id: "operation-1585848134262-5a2520ab5dcf1-974c390e-0fb9a5a6"
+        producer: "compute.googleapis.com"
+      protoPayload:
+        '@type': "type.googleapis.com/google.cloud.audit.AuditLog"
+        authenticationInfo:
+          principalEmail: "test@testemail.com"
+        authorizationInfo:
+         -
+          permission: "compute.routes.create"
+          resourceAttributes:
+            service: "compute"
+            name: "projects/test-271317/global/routes/example-route"
+            type: "compute.routes"
+          granted: true
+         -
+          permission: "compute.networks.updatePolicy"
+          resourceAttributes:
+            service: "compute"
+            name: "projects/test-271317/global/networks/default"
+            type: "compute.networks"
+          granted: true
+        request:
+          '@type': "type.googleapis.com/compute.routes.insert"
+          destRange: "192.168.1.0/24"
+          name: "example-route"
+          network: "projects/test-271317/global/networks/default"
+          nextHopGateway: "projects/test-271317/global/gateways/default-internet-gateway"
+          priority: "1000"
+        requestMetadata:
+          requestAttributes:
+            time: "2020-04-02T17:22:15.123Z"
+        resourceLocation:
+          currentLocations:
+           - "global"
+        resourceName: "projects/test-271317/global/routes/example-route"
+        response:
+          '@type': "type.googleapis.com/operation"
+          id: "2934436660821860777"
+          insertTime: "2020-04-02T10:22:14.842-07:00"
+          name: "operation-1585848134262-5a2520ab5dcf1-974c390e-0fb9a5a6"
+          operationType: "insert"
+          progress: "0"
+          selfLink: "https://www.googleapis.com/compute/beta/projects/test-271317/global/operations/operation-1585848134262-5a2520ab5dcf1-974c390e-0fb9a5a6"
+          selfLinkWithId: "https://www.googleapis.com/compute/beta/projects/test-271317/global/operations/2934436660821860777"
+          startTime: "2020-04-02T10:22:14.868-07:00"
+          status: "RUNNING"
+          targetId: "9189267949975478697"
+          targetLink: "https://www.googleapis.com/compute/beta/projects/test-271317/global/routes/example-route"
+          user: "justin@justinmassey.com"
+        serviceName: "compute.googleapis.com"
+      receiveTimestamp: "2020-04-02T17:22:15.351218023Z"
+      resource:
+        labels:
+          project_id: "test-271317"
+          route_id: "9189267949975478697"
+        type: "gce_route"
+      severity: "NOTICE"
+      timestamp: "2020-04-02T17:22:14.348Z"
+      usr:
+        email: "test@testemail.com"
+        id: "test@testemail.com"
+    message: |-
+      {
+        "severity" : "NOTICE",
+        "logName" : "projects/test-271317/logs/cloudaudit.googleapis.com%2Factivity",
+        "resource" : {
+          "type" : "gce_route",
+          "labels" : {
+            "route_id" : "9189267949975478697",
+            "project_id" : "test-271317"
+          }
+        },
+        "protoPayload" : {
+          "requestMetadata" : {
+            "requestAttributes" : {
+              "time" : "2020-04-02T17:22:15.123Z"
+            },
+            "callerSuppliedUserAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)",
+            "callerIp" : "67.243.209.244"
+          },
+          "request" : {
+            "nextHopGateway" : "projects/test-271317/global/gateways/default-internet-gateway",
+            "@type" : "type.googleapis.com/compute.routes.insert",
+            "name" : "example-route",
+            "destRange" : "192.168.1.0/24",
+            "priority" : "1000",
+            "network" : "projects/test-271317/global/networks/default"
+          },
+          "authenticationInfo" : {
+            "principalEmail" : "test@testemail.com"
+          },
+          "authorizationInfo" : [ {
+            "permission" : "compute.routes.create",
+            "resourceAttributes" : {
+              "service" : "compute",
+              "name" : "projects/test-271317/global/routes/example-route",
+              "type" : "compute.routes"
+            },
+            "granted" : true
+          }, {
+            "permission" : "compute.networks.updatePolicy",
+            "resourceAttributes" : {
+              "service" : "compute",
+              "name" : "projects/test-271317/global/networks/default",
+              "type" : "compute.networks"
+            },
+            "granted" : true
+          } ],
+          "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+          "response" : {
+            "targetId" : "9189267949975478697",
+            "@type" : "type.googleapis.com/operation",
+            "selfLink" : "https://www.googleapis.com/compute/beta/projects/test-271317/global/operations/operation-1585848134262-5a2520ab5dcf1-974c390e-0fb9a5a6",
+            "insertTime" : "2020-04-02T10:22:14.842-07:00",
+            "selfLinkWithId" : "https://www.googleapis.com/compute/beta/projects/test-271317/global/operations/2934436660821860777",
+            "targetLink" : "https://www.googleapis.com/compute/beta/projects/test-271317/global/routes/example-route",
+            "name" : "operation-1585848134262-5a2520ab5dcf1-974c390e-0fb9a5a6",
+            "progress" : "0",
+            "operationType" : "insert",
+            "startTime" : "2020-04-02T10:22:14.868-07:00",
+            "id" : "2934436660821860777",
+            "user" : "justin@justinmassey.com",
+            "status" : "RUNNING"
+          },
+          "methodName" : "beta.compute.routes.insert",
+          "resourceName" : "projects/test-271317/global/routes/example-route",
+          "serviceName" : "compute.googleapis.com",
+          "resourceLocation" : {
+            "currentLocations" : [ "global" ]
+          }
+        },
+        "receiveTimestamp" : "2020-04-02T17:22:15.351218023Z",
+        "operation" : {
+          "producer" : "compute.googleapis.com",
+          "id" : "operation-1585848134262-5a2520ab5dcf1-974c390e-0fb9a5a6",
+          "first" : true
+        },
+        "insertId" : "-m6w0nle1fv0y",
+        "timestamp" : "2020-04-02T17:22:14.348Z"
+      }
+    service: "compute.googleapis.com"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1585848134348
+

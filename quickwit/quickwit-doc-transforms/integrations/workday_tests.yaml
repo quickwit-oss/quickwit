@@ -1,0 +1,80 @@
+id: "workday"
+tests:
+ -
+  sample: |-
+    {
+      "requestTime" : "2023-08-26T07:00:00.000Z",
+      "deviceType" : "Desktop",
+      "userActivityEntryCount" : "919060234",
+      "ipAddress" : "1.1.1.1",
+      "userAgent" : "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36",
+      "sessionId" : "5",
+      "systemAccount" : "test@test.com",
+      "activityAction" : "READ",
+      "taskId" : "5",
+      "target" : {
+        "id" : "111111122222",
+        "descriptor" : "test",
+        "href" : "string"
+      },
+      "taskDisplayName" : "Reading froma book"
+    }
+  result:
+    custom:
+      deviceType: "Desktop"
+      evt:
+        category: "READ"
+        name: "Reading froma book"
+      http:
+        useragent: "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome Mobile"
+            major: "114"
+            minor: "0"
+            patch: "0"
+            patch_minor: "0"
+          device:
+            brand: "Generic_Android"
+            category: "Mobile"
+            family: "K"
+            model: "K"
+          os:
+            family: "Android"
+            major: "10"
+      network:
+        client:
+          geoip: {}
+          ip: "1.1.1.1"
+      requestTime: "2023-08-26T07:00:00.000Z"
+      sessionId: "5"
+      target:
+        descriptor: "test"
+        href: "string"
+        id: "111111122222"
+      taskId: "5"
+      userActivityEntryCount: "919060234"
+      usr:
+        email: "test@test.com"
+    message: |-
+      {
+        "requestTime" : "2023-08-26T07:00:00.000Z",
+        "deviceType" : "Desktop",
+        "userActivityEntryCount" : "919060234",
+        "ipAddress" : "1.1.1.1",
+        "userAgent" : "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36",
+        "sessionId" : "5",
+        "systemAccount" : "test@test.com",
+        "activityAction" : "READ",
+        "taskId" : "5",
+        "target" : {
+          "id" : "111111122222",
+          "descriptor" : "test",
+          "href" : "string"
+        },
+        "taskDisplayName" : "Reading froma book"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1693033200000
+

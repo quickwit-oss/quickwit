@@ -1,0 +1,2209 @@
+id: intercom
+tests:
+  - sample: |-
+      {
+        "data" : {
+          "item" : {
+            "read" : true,
+            "topics" : {
+              "total_count" : 0,
+              "type" : "topic.list"
+            },
+            "created_at" : 1726135184,
+            "conversation_parts" : {
+              "total_count" : 1,
+              "conversation_parts" : [ {
+                "updated_at" : 1726135185,
+                "redacted" : false,
+                "author" : {
+                  "name" : "Fin",
+                  "id" : "1234567",
+                  "type" : "bot",
+                  "email" : "operator+abcdefgh@intercom.io"
+                },
+                "created_at" : 1726135185,
+                "part_type" : "language_detection_details",
+                "id" : "123",
+                "notified_at" : 1726135185,
+                "type" : "conversation_part"
+              } ],
+              "type" : "conversation_part.list"
+            },
+            "waiting_since" : 1726135184,
+            "source" : {
+              "redacted" : false,
+              "subject" : "",
+              "author" : {
+                "id" : "a3f9de4278b2c016e5d4f309",
+                "type" : "lead",
+                "email" : ""
+              },
+              "id" : "1234567890",
+              "type" : "conversation",
+              "body" : "<p>Hello</p>",
+              "delivered_as" : "customer_initiated",
+              "url" : "http://localhost:3001/"
+            },
+            "type" : "conversation",
+            "priority" : "not_priority",
+            "tags" : {
+              "type" : "tag.list"
+            },
+            "custom_attributes" : {
+              "Copilot used" : false
+            },
+            "teammates" : {
+              "type" : "admin.list"
+            },
+            "updated_at" : 1726135185,
+            "ai_agent_participated" : false,
+            "first_contact_reply" : {
+              "created_at" : 1726135184,
+              "type" : "conversation",
+              "url" : "http://localhost:3001/"
+            },
+            "id" : "73",
+            "state" : "open",
+            "linked_objects" : {
+              "total_count" : 0,
+              "has_more" : false,
+              "type" : "list"
+            },
+            "contacts" : {
+              "type" : "contact.list",
+              "contacts" : [ {
+                "external_id" : "7a8e4d1b-9c23-4f8d-91b2-e3c4d5678f90",
+                "id" : "a3f9de4278b2c016e5d4f309",
+                "type" : "contact"
+              } ]
+            },
+            "open" : true,
+            "statistics" : {
+              "last_contact_reply_at" : "2024-09-12T09:59:44.000Z",
+              "count_assignments" : 0,
+              "count_conversation_parts" : 2,
+              "first_contact_reply_at" : "2024-09-12T09:59:44.000Z",
+              "type" : "conversation_statistics",
+              "count_reopens" : 0
+            }
+          },
+          "type" : "notification_event_data"
+        },
+        "delivery_attempts" : 1,
+        "first_sent_at" : 1726135186,
+        "topic" : "conversation.user.created",
+        "created_at" : 1726135186,
+        "id" : "notif_7b3e81c1-6f92-4c8d-b345-9f5a2c1d8e12",
+        "type" : "notification_event",
+        "app_id" : "abcdefgh",
+        "delivered_at" : 0,
+        "delivery_status" : "pending"
+      }
+    service: "conversation"
+    result:
+      custom:
+        app_id: "abcdefgh"
+        created_at: 1726135186
+        data:
+          item:
+            ai_agent_participated: false
+            contacts:
+              contacts:
+               -
+                external_id: "7a8e4d1b-9c23-4f8d-91b2-e3c4d5678f90"
+                id: "a3f9de4278b2c016e5d4f309"
+                type: "contact"
+              type: "contact.list"
+            conversation_parts:
+              conversation_parts:
+               -
+                updated_at: 1726135185
+                redacted: false
+                author:
+                  name: "Fin"
+                  id: "1234567"
+                  type: "bot"
+                  email: "operator+abcdefgh@intercom.io"
+                created_at: 1726135185
+                part_type: "language_detection_details"
+                id: "123"
+                notified_at: 1726135185
+                type: "conversation_part"
+              total_count: 1
+              type: "conversation_part.list"
+            created_at: 1726135184
+            custom_attributes:
+              copilot_used: false
+            first_contact_reply:
+              created_at: 1726135184
+              type: "conversation"
+              url: "http://localhost:3001/"
+            id: "73"
+            linked_objects:
+              has_more: false
+              total_count: 0
+              type: "list"
+            open: true
+            priority: "not_priority"
+            read: true
+            source:
+              author:
+                email: ""
+                id: "a3f9de4278b2c016e5d4f309"
+                type: "lead"
+              body: "<p>Hello</p>"
+              delivered_as: "customer_initiated"
+              id: "1234567890"
+              redacted: false
+              subject: ""
+              type: "conversation"
+              url: "http://localhost:3001/"
+            state: "open"
+            statistics:
+              count_assignments: 0
+              count_conversation_parts: 2
+              count_reopens: 0
+              first_contact_reply_at: "2024-09-12T09:59:44.000Z"
+              last_contact_reply_at: "2024-09-12T09:59:44.000Z"
+              type: "conversation_statistics"
+            tags:
+              type: "tag.list"
+            teammates:
+              type: "admin.list"
+            topics:
+              total_count: 0
+              type: "topic.list"
+            type: "conversation"
+            updated_at: 1726135185
+            waiting_since: 1726135184
+          type: "notification_event_data"
+        delivered_at: 0
+        delivery_attempts: 1
+        delivery_status: "pending"
+        first_sent_at: 1726135186
+        id: "notif_7b3e81c1-6f92-4c8d-b345-9f5a2c1d8e12"
+        service: "conversation"
+        topic: "conversation.user.created"
+        type: "notification_event"
+        updated_at_ms: 1.726135185E12
+        usr:
+          email: ""
+          id: "a3f9de4278b2c016e5d4f309"
+      message: |-
+        {
+          "data" : {
+            "item" : {
+              "read" : true,
+              "topics" : {
+                "total_count" : 0,
+                "type" : "topic.list"
+              },
+              "created_at" : 1726135184,
+              "conversation_parts" : {
+                "total_count" : 1,
+                "conversation_parts" : [ {
+                  "updated_at" : 1726135185,
+                  "redacted" : false,
+                  "author" : {
+                    "name" : "Fin",
+                    "id" : "1234567",
+                    "type" : "bot",
+                    "email" : "operator+abcdefgh@intercom.io"
+                  },
+                  "created_at" : 1726135185,
+                  "part_type" : "language_detection_details",
+                  "id" : "123",
+                  "notified_at" : 1726135185,
+                  "type" : "conversation_part"
+                } ],
+                "type" : "conversation_part.list"
+              },
+              "waiting_since" : 1726135184,
+              "source" : {
+                "redacted" : false,
+                "subject" : "",
+                "author" : {
+                  "id" : "a3f9de4278b2c016e5d4f309",
+                  "type" : "lead",
+                  "email" : ""
+                },
+                "id" : "1234567890",
+                "type" : "conversation",
+                "body" : "<p>Hello</p>",
+                "delivered_as" : "customer_initiated",
+                "url" : "http://localhost:3001/"
+              },
+              "type" : "conversation",
+              "priority" : "not_priority",
+              "tags" : {
+                "type" : "tag.list"
+              },
+              "custom_attributes" : {
+                "Copilot used" : false
+              },
+              "teammates" : {
+                "type" : "admin.list"
+              },
+              "updated_at" : 1726135185,
+              "ai_agent_participated" : false,
+              "first_contact_reply" : {
+                "created_at" : 1726135184,
+                "type" : "conversation",
+                "url" : "http://localhost:3001/"
+              },
+              "id" : "73",
+              "state" : "open",
+              "linked_objects" : {
+                "total_count" : 0,
+                "has_more" : false,
+                "type" : "list"
+              },
+              "contacts" : {
+                "type" : "contact.list",
+                "contacts" : [ {
+                  "external_id" : "7a8e4d1b-9c23-4f8d-91b2-e3c4d5678f90",
+                  "id" : "a3f9de4278b2c016e5d4f309",
+                  "type" : "contact"
+                } ]
+              },
+              "open" : true,
+              "statistics" : {
+                "last_contact_reply_at" : "2024-09-12T09:59:44.000Z",
+                "count_assignments" : 0,
+                "count_conversation_parts" : 2,
+                "first_contact_reply_at" : "2024-09-12T09:59:44.000Z",
+                "type" : "conversation_statistics",
+                "count_reopens" : 0
+              }
+            },
+            "type" : "notification_event_data"
+          },
+          "delivery_attempts" : 1,
+          "first_sent_at" : 1726135186,
+          "topic" : "conversation.user.created",
+          "created_at" : 1726135186,
+          "id" : "notif_7b3e81c1-6f92-4c8d-b345-9f5a2c1d8e12",
+          "type" : "notification_event",
+          "app_id" : "abcdefgh",
+          "delivered_at" : 0,
+          "delivery_status" : "pending"
+        }
+      service: "conversation"
+      tags:
+       - "source:LOGS_SOURCE"
+      timestamp: 1726135185000
+  - sample: >-
+      {
+        "data" : {
+          "item" : {
+            "metadata" : {
+              "update_by_name" : "ABC",
+              "auto_changed" : false,
+              "reassign_conversations" : false,
+              "away_mode" : false,
+              "source" : "admin update from web - Admin id: 1234567",
+              "update_by" : 1234567
+            },
+            "performed_by" : {
+              "ip" : "185.64.148.0",
+              "id" : "1234567",
+              "type" : "admin",
+              "email" : "abc@xyz.com"
+            },
+            "activity_type" : "admin_away_mode_change",
+            "created_at" : 1726135744,
+            "activity_description" : "ABC turned their away mode off and did not reassign their conversations.",
+            "id" : "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+            "type" : "admin_activity_log_event"
+          },
+          "type" : "notification_event_data"
+        },
+        "delivery_attempts" : 1,
+        "first_sent_at" : 1726135744,
+        "topic" : "admin.activity_log_event.created",
+        "created_at" : 1726135744,
+        "threat_intel" : {
+          "indicators_matched" : [ "IP" ],
+          "results" : [ {
+            "indicator" : "185.64.148.0",
+            "additional_data" : {
+              "tunnels" : [ {
+                "anonymous" : false,
+                "type" : "PROXY",
+                "operator" : "XYZ_PROXY"
+              } ],
+              "as" : {
+                "number" : 55256,
+                "organization" : "XYZ Inc"
+              },
+              "risks" : [ "CALLBACK_PROXY" ],
+              "infrastructure" : "DATACENTER",
+              "organization" : "XYZ Inc.",
+              "client" : {
+                "types" : [ "MOBILE", "DESKTOP" ],
+                "count" : 4,
+                "concentration" : {
+                  "country" : "IN",
+                  "density" : 1,
+                  "city" : "Gurgaon",
+                  "geohash" : "ttnccg",
+                  "state" : "Haryana",
+                  "skew" : 28
+                },
+                "proxies" : [ "LUMINATI_PROXY" ],
+                "countries" : 1
+              },
+              "location" : {
+                "country" : "IN",
+                "city" : "Delhi",
+                "state" : "National Capital Territory of Delhi"
+              }
+            },
+            "source" : {
+              "name" : "spur",
+              "url" : "https://spur.us"
+            },
+            "type" : "IP",
+            "category" : "corp_vpn",
+            "intention" : "benign"
+          } ]
+        },
+        "id" : "notif_3a7c4d12-56e7-4b8d-9f4c-d8e6f1234567",
+        "type" : "notification_event",
+        "app_id" : "abcdefgh",
+        "delivered_at" : 0,
+        "delivery_status" : "pending",
+        "network" : {
+          "ip" : {
+            "attributes" : [ {
+              "ip" : "185.64.148.0",
+              "source" : [ "@data.item.performed_by.ip" ]
+            } ],
+            "list" : [ "185.64.148.0" ]
+          }
+        }
+      }
+    service: "activity"
+    result:
+      custom:
+        app_id: "abcdefgh"
+        created_at: 1726135744
+        created_at_ms: 1.726135744E12
+        data:
+          item:
+            activity_description: "ABC turned their away mode off and did not reassign their conversations."
+            activity_type: "admin_away_mode_change"
+            created_at: 1726135744
+            id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            metadata:
+              auto_changed: false
+              away_mode: false
+              reassign_conversations: false
+              source: "admin update from web - Admin id: 1234567"
+              update_by: 1234567
+              update_by_name: "ABC"
+            performed_by:
+              email: "abc@xyz.com"
+              id: "1234567"
+              ip: "185.64.148.0"
+              type: "admin"
+            type: "admin_activity_log_event"
+          type: "notification_event_data"
+        delivered_at: 0
+        delivery_attempts: 1
+        delivery_status: "pending"
+        first_sent_at: 1726135744
+        id: "notif_3a7c4d12-56e7-4b8d-9f4c-d8e6f1234567"
+        network:
+          client:
+            geoip:
+              city:
+                name: "Paris"
+              continent:
+                code: "EU"
+                name: "Europe"
+              country:
+                iso_code: "FR"
+                name: "France"
+              ipAddress: "185.64.148.0"
+              location:
+                latitude: 48.90654
+                longitude: 2.33339
+              subdivision:
+                iso_code: "FR-IDF"
+                name: "Île-de-France"
+              timezone: "Europe/Paris"
+            ip: "185.64.148.0"
+          ip:
+            attributes:
+            -
+              ip: "185.64.148.0"
+              source:
+              - "@data.item.performed_by.ip"
+            list:
+            - "185.64.148.0"
+        service: "activity"
+        threat_intel:
+          indicators_matched:
+          - "IP"
+          results:
+          -
+            indicator: "185.64.148.0"
+            additional_data:
+              tunnels:
+              -
+                anonymous: false
+                type: "PROXY"
+                operator: "XYZ_PROXY"
+              as:
+                number: 55256
+                organization: "XYZ Inc"
+              risks:
+              - "CALLBACK_PROXY"
+              infrastructure: "DATACENTER"
+              organization: "XYZ Inc."
+              client:
+                types:
+                - "MOBILE"
+                - "DESKTOP"
+                count: 4
+                concentration:
+                  country: "IN"
+                  density: 1
+                  city: "Gurgaon"
+                  geohash: "ttnccg"
+                  state: "Haryana"
+                  skew: 28
+                proxies:
+                - "LUMINATI_PROXY"
+                countries: 1
+              location:
+                country: "IN"
+                city: "Delhi"
+                state: "National Capital Territory of Delhi"
+            source:
+              name: "spur"
+              url: "https://spur.us"
+            type: "IP"
+            category: "corp_vpn"
+            intention: "benign"
+        topic: "admin.activity_log_event.created"
+        type: "notification_event"
+        usr:
+          email: "abc@xyz.com"
+          id: "1234567"
+      message: |-
+        {
+          "data" : {
+            "item" : {
+              "metadata" : {
+                "update_by_name" : "ABC",
+                "auto_changed" : false,
+                "reassign_conversations" : false,
+                "away_mode" : false,
+                "source" : "admin update from web - Admin id: 1234567",
+                "update_by" : 1234567
+              },
+              "performed_by" : {
+                "ip" : "185.64.148.0",
+                "id" : "1234567",
+                "type" : "admin",
+                "email" : "abc@xyz.com"
+              },
+              "activity_type" : "admin_away_mode_change",
+              "created_at" : 1726135744,
+              "activity_description" : "ABC turned their away mode off and did not reassign their conversations.",
+              "id" : "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+              "type" : "admin_activity_log_event"
+            },
+            "type" : "notification_event_data"
+          },
+          "delivery_attempts" : 1,
+          "first_sent_at" : 1726135744,
+          "topic" : "admin.activity_log_event.created",
+          "created_at" : 1726135744,
+          "threat_intel" : {
+            "indicators_matched" : [ "IP" ],
+            "results" : [ {
+              "indicator" : "185.64.148.0",
+              "additional_data" : {
+                "tunnels" : [ {
+                  "anonymous" : false,
+                  "type" : "PROXY",
+                  "operator" : "XYZ_PROXY"
+                } ],
+                "as" : {
+                  "number" : 55256,
+                  "organization" : "XYZ Inc"
+                },
+                "risks" : [ "CALLBACK_PROXY" ],
+                "infrastructure" : "DATACENTER",
+                "organization" : "XYZ Inc.",
+                "client" : {
+                  "types" : [ "MOBILE", "DESKTOP" ],
+                  "count" : 4,
+                  "concentration" : {
+                    "country" : "IN",
+                    "density" : 1,
+                    "city" : "Gurgaon",
+                    "geohash" : "ttnccg",
+                    "state" : "Haryana",
+                    "skew" : 28
+                  },
+                  "proxies" : [ "LUMINATI_PROXY" ],
+                  "countries" : 1
+                },
+                "location" : {
+                  "country" : "IN",
+                  "city" : "Delhi",
+                  "state" : "National Capital Territory of Delhi"
+                }
+              },
+              "source" : {
+                "name" : "spur",
+                "url" : "https://spur.us"
+              },
+              "type" : "IP",
+              "category" : "corp_vpn",
+              "intention" : "benign"
+            } ]
+          },
+          "id" : "notif_3a7c4d12-56e7-4b8d-9f4c-d8e6f1234567",
+          "type" : "notification_event",
+          "app_id" : "abcdefgh",
+          "delivered_at" : 0,
+          "delivery_status" : "pending",
+          "network" : {
+            "ip" : {
+              "attributes" : [ {
+                "ip" : "185.64.148.0",
+                "source" : [ "@data.item.performed_by.ip" ]
+              } ],
+              "list" : [ "185.64.148.0" ]
+            }
+          }
+        }
+      service: "activity"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1726135744000
+  - sample: >-
+      {
+        "data" : {
+          "item" : {
+            "contact" : {
+              "role" : "lead",
+              "notes" : {
+                "total_count" : 0,
+                "has_more" : false,
+                "type" : "list",
+                "url" : "/contacts/a3f9de4278b2c016e5d4f309/notes"
+              },
+              "created_at" : "2024-09-12T09:59:31.936+00:00",
+              "external_id" : "7a8e4d1b-9c23-4f8d-91b2-e3c4d5678f90",
+              "type" : "contact",
+              "workspace_id" : "abcdefgh",
+              "companies" : {
+                "total_count" : 0,
+                "has_more" : false,
+                "type" : "list",
+                "url" : "/contacts/a3f9de4278b2c016e5d4f309/companies"
+              },
+              "unsubscribed_from_emails" : false,
+              "updated_at" : "2024-09-12T09:59:51.852+00:00",
+              "last_replied_at" : "2024-09-12T09:59:44.000+00:00",
+              "browser" : "chrome",
+              "id" : "a3f9de4278b2c016e5d4f309",
+              "browser_version" : "128.0.0.0",
+              "browser_language" : "en",
+              "email" : "",
+              "opted_out_subscription_types" : {
+                "total_count" : 0,
+                "has_more" : false,
+                "type" : "list",
+                "url" : "/contacts/a3f9de4278b2c016e5d4f309/subscriptions"
+              },
+              "has_hard_bounced" : false,
+              "os" : "Windows 10",
+              "unsubscribed_from_sms" : false,
+              "last_contacted_at" : "2024-09-12T09:59:50.000+00:00",
+              "avatar" : "https://static.intercomassets.com/app/pseudonym_avatars_2019/yellow-windmill.png",
+              "tags" : {
+                "total_count" : 0,
+                "has_more" : false,
+                "type" : "list",
+                "url" : "/contacts/a3f9de4278b2c016e5d4f309/tags"
+              },
+              "sms_consent" : false,
+              "social_profiles" : {
+                "type" : "list"
+              },
+              "marked_email_as_spam" : false,
+              "location" : {
+                "country" : "India",
+                "country_code" : "IND",
+                "city" : "Delhi",
+                "continent_code" : "AS",
+                "type" : "location",
+                "region" : "National Capital Territory of Delhi"
+              },
+              "last_seen_at" : "2024-09-12T09:59:43.853+00:00",
+              "opted_in_subscription_types" : {
+                "total_count" : 0,
+                "has_more" : false,
+                "type" : "list",
+                "url" : "/contacts/a3f9de4278b2c016e5d4f309/subscriptions"
+              }
+            },
+            "created_at" : "2024-09-12T10:11:27.000Z",
+            "type" : "content_stat.news_item",
+            "content_stat" : {
+              "content_title" : "Demo",
+              "stat_type" : "reaction",
+              "content_type" : "news_item",
+              "content_id" : 12345,
+              "ruleset_id" : 12345678,
+              "ruleset_version_id" : -1,
+              "receipt_id" : 70,
+              "id" : 123456789,
+              "tags" : {
+                "total_count" : 0,
+                "has_more" : false,
+                "type" : "list"
+              }
+            }
+          },
+          "type" : "notification_event_data"
+        },
+        "delivery_attempts" : 1,
+        "first_sent_at" : 1726135905,
+        "topic" : "content_stat.news_item",
+        "created_at" : 1726135905,
+        "id" : "notif_8d2a1e3f-4b67-4c89-a0cd-ff65e2b9a7c4",
+        "type" : "notification_event",
+        "app_id" : "abcdefgh",
+        "delivered_at" : 0,
+        "delivery_status" : "pending"
+      }
+    service: "news_item"
+    result:
+      custom:
+        app_id: "abcdefgh"
+        created_at: 1726135905
+        data:
+          item:
+            contact:
+              avatar: "https://static.intercomassets.com/app/pseudonym_avatars_2019/yellow-windmill.png"
+              browser: "chrome"
+              browser_language: "en"
+              browser_version: "128.0.0.0"
+              companies:
+                has_more: false
+                total_count: 0
+                type: "list"
+                url: "/contacts/a3f9de4278b2c016e5d4f309/companies"
+              created_at: "2024-09-12T09:59:31.936+00:00"
+              email: ""
+              external_id: "7a8e4d1b-9c23-4f8d-91b2-e3c4d5678f90"
+              has_hard_bounced: false
+              id: "a3f9de4278b2c016e5d4f309"
+              last_contacted_at: "2024-09-12T09:59:50.000+00:00"
+              last_replied_at: "2024-09-12T09:59:44.000+00:00"
+              last_seen_at: "2024-09-12T09:59:43.853+00:00"
+              location:
+                city: "Delhi"
+                continent_code: "AS"
+                country: "India"
+                country_code: "IND"
+                region: "National Capital Territory of Delhi"
+                type: "location"
+              marked_email_as_spam: false
+              notes:
+                has_more: false
+                total_count: 0
+                type: "list"
+                url: "/contacts/a3f9de4278b2c016e5d4f309/notes"
+              opted_in_subscription_types:
+                has_more: false
+                total_count: 0
+                type: "list"
+                url: "/contacts/a3f9de4278b2c016e5d4f309/subscriptions"
+              opted_out_subscription_types:
+                has_more: false
+                total_count: 0
+                type: "list"
+                url: "/contacts/a3f9de4278b2c016e5d4f309/subscriptions"
+              os: "Windows 10"
+              role: "lead"
+              sms_consent: false
+              social_profiles:
+                type: "list"
+              tags:
+                has_more: false
+                total_count: 0
+                type: "list"
+                url: "/contacts/a3f9de4278b2c016e5d4f309/tags"
+              type: "contact"
+              unsubscribed_from_emails: false
+              unsubscribed_from_sms: false
+              updated_at: "2024-09-12T09:59:51.852+00:00"
+              workspace_id: "abcdefgh"
+            content_stat:
+              content_id: 12345
+              content_title: "Demo"
+              content_type: "news_item"
+              id: 123456789
+              receipt_id: 70
+              ruleset_id: 12345678
+              ruleset_version_id: -1
+              stat_type: "reaction"
+              tags:
+                has_more: false
+                total_count: 0
+                type: "list"
+            created_at: "2024-09-12T10:11:27.000Z"
+            type: "content_stat.news_item"
+          type: "notification_event_data"
+        delivered_at: 0
+        delivery_attempts: 1
+        delivery_status: "pending"
+        first_sent_at: 1726135905
+        id: "notif_8d2a1e3f-4b67-4c89-a0cd-ff65e2b9a7c4"
+        service: "news_item"
+        topic: "content_stat.news_item"
+        type: "notification_event"
+        usr:
+          id: "a3f9de4278b2c016e5d4f309"
+      message: |-
+        {
+          "data" : {
+            "item" : {
+              "contact" : {
+                "role" : "lead",
+                "notes" : {
+                  "total_count" : 0,
+                  "has_more" : false,
+                  "type" : "list",
+                  "url" : "/contacts/a3f9de4278b2c016e5d4f309/notes"
+                },
+                "created_at" : "2024-09-12T09:59:31.936+00:00",
+                "external_id" : "7a8e4d1b-9c23-4f8d-91b2-e3c4d5678f90",
+                "type" : "contact",
+                "workspace_id" : "abcdefgh",
+                "companies" : {
+                  "total_count" : 0,
+                  "has_more" : false,
+                  "type" : "list",
+                  "url" : "/contacts/a3f9de4278b2c016e5d4f309/companies"
+                },
+                "unsubscribed_from_emails" : false,
+                "updated_at" : "2024-09-12T09:59:51.852+00:00",
+                "last_replied_at" : "2024-09-12T09:59:44.000+00:00",
+                "browser" : "chrome",
+                "id" : "a3f9de4278b2c016e5d4f309",
+                "browser_version" : "128.0.0.0",
+                "browser_language" : "en",
+                "email" : "",
+                "opted_out_subscription_types" : {
+                  "total_count" : 0,
+                  "has_more" : false,
+                  "type" : "list",
+                  "url" : "/contacts/a3f9de4278b2c016e5d4f309/subscriptions"
+                },
+                "has_hard_bounced" : false,
+                "os" : "Windows 10",
+                "unsubscribed_from_sms" : false,
+                "last_contacted_at" : "2024-09-12T09:59:50.000+00:00",
+                "avatar" : "https://static.intercomassets.com/app/pseudonym_avatars_2019/yellow-windmill.png",
+                "tags" : {
+                  "total_count" : 0,
+                  "has_more" : false,
+                  "type" : "list",
+                  "url" : "/contacts/a3f9de4278b2c016e5d4f309/tags"
+                },
+                "sms_consent" : false,
+                "social_profiles" : {
+                  "type" : "list"
+                },
+                "marked_email_as_spam" : false,
+                "location" : {
+                  "country" : "India",
+                  "country_code" : "IND",
+                  "city" : "Delhi",
+                  "continent_code" : "AS",
+                  "type" : "location",
+                  "region" : "National Capital Territory of Delhi"
+                },
+                "last_seen_at" : "2024-09-12T09:59:43.853+00:00",
+                "opted_in_subscription_types" : {
+                  "total_count" : 0,
+                  "has_more" : false,
+                  "type" : "list",
+                  "url" : "/contacts/a3f9de4278b2c016e5d4f309/subscriptions"
+                }
+              },
+              "created_at" : "2024-09-12T10:11:27.000Z",
+              "type" : "content_stat.news_item",
+              "content_stat" : {
+                "content_title" : "Demo",
+                "stat_type" : "reaction",
+                "content_type" : "news_item",
+                "content_id" : 12345,
+                "ruleset_id" : 12345678,
+                "ruleset_version_id" : -1,
+                "receipt_id" : 70,
+                "id" : 123456789,
+                "tags" : {
+                  "total_count" : 0,
+                  "has_more" : false,
+                  "type" : "list"
+                }
+              }
+            },
+            "type" : "notification_event_data"
+          },
+          "delivery_attempts" : 1,
+          "first_sent_at" : 1726135905,
+          "topic" : "content_stat.news_item",
+          "created_at" : 1726135905,
+          "id" : "notif_8d2a1e3f-4b67-4c89-a0cd-ff65e2b9a7c4",
+          "type" : "notification_event",
+          "app_id" : "abcdefgh",
+          "delivered_at" : 0,
+          "delivery_status" : "pending"
+        }
+      service: "news_item"
+      tags:
+       - "source:LOGS_SOURCE"
+      timestamp: 1726135191852
+  - sample: |-
+      {
+      	"data" : {
+          "item" : {
+            "metadata" : {
+              "description" : "Plan purchased successfully"
+            },
+            "user_id" : "123123",
+            "event_name" : "updated-plan",
+            "created_at" : 1726136086,
+            "intercom_user_id" : "4b2d8f15a1c7e92d30f4b6c1",
+            "id" : "b7f9c2d3-81af-21bf-c5d6-7e8f9a1b2c3d",
+            "type" : "event",
+            "email" : "demo@abc.in"
+          },
+          "type" : "notification_event_data"
+        },
+        "delivery_attempts" : 1,
+        "first_sent_at" : 1726136103,
+        "topic" : "event.created",
+        "created_at" : 1726136103,
+        "id" : "notif_7a2e8f3d-bc9c-4a7e-9bcd-6f1d2e8b3a4f",
+        "type" : "notification_event",
+        "app_id" : "abcdefgh",
+        "delivered_at" : 0,
+        "delivery_status" : "pending"
+      }
+    service: "data_event"
+    result:
+      custom:
+        app_id: "abcdefgh"
+        created_at: 1726136103
+        created_at_ms: 1.726136086E12
+        data:
+          item:
+            created_at: 1726136086
+            email: "demo@abc.in"
+            event_name: "updated-plan"
+            id: "b7f9c2d3-81af-21bf-c5d6-7e8f9a1b2c3d"
+            intercom_user_id: "4b2d8f15a1c7e92d30f4b6c1"
+            metadata:
+              description: "Plan purchased successfully"
+            type: "event"
+            user_id: "123123"
+          type: "notification_event_data"
+        delivered_at: 0
+        delivery_attempts: 1
+        delivery_status: "pending"
+        first_sent_at: 1726136103
+        id: "notif_7a2e8f3d-bc9c-4a7e-9bcd-6f1d2e8b3a4f"
+        service: "data_event"
+        topic: "event.created"
+        type: "notification_event"
+        usr:
+          email: "demo@abc.in"
+          id: "4b2d8f15a1c7e92d30f4b6c1"
+      message: |-
+        {
+          "data" : {
+            "item" : {
+              "metadata" : {
+                "description" : "Plan purchased successfully"
+              },
+              "user_id" : "123123",
+              "event_name" : "updated-plan",
+              "created_at" : 1726136086,
+              "intercom_user_id" : "4b2d8f15a1c7e92d30f4b6c1",
+              "id" : "b7f9c2d3-81af-21bf-c5d6-7e8f9a1b2c3d",
+              "type" : "event",
+              "email" : "demo@abc.in"
+            },
+            "type" : "notification_event_data"
+          },
+          "delivery_attempts" : 1,
+          "first_sent_at" : 1726136103,
+          "topic" : "event.created",
+          "created_at" : 1726136103,
+          "id" : "notif_7a2e8f3d-bc9c-4a7e-9bcd-6f1d2e8b3a4f",
+          "type" : "notification_event",
+          "app_id" : "abcdefgh",
+          "delivered_at" : 0,
+          "delivery_status" : "pending"
+        }
+      service: "data_event"
+      tags:
+       - "source:LOGS_SOURCE"
+      timestamp: 1726136086000
+  - sample: >-
+      {
+      	"data" : {
+          "item" : {
+            "ticket_state" : "submitted",
+            "ticket_type" : {
+              "workspace_id" : "abcdefgh",
+              "archived" : false,
+              "is_internal" : false,
+              "updated_at" : 1724911006,
+              "ticket_type_attributes" : {
+                "data" : [ {
+                  "input_options" : {
+                    "multiline" : false
+                  },
+                  "description" : "",
+                  "created_at" : 1724911006,
+                  "type" : "ticket_type_attribute",
+                  "visible_on_create" : true,
+                  "workspace_id" : "abcdefgh",
+                  "visible_to_contacts" : true,
+                  "archived" : false,
+                  "default" : true,
+                  "ticket_type_id" : 1,
+                  "updated_at" : 1724911006,
+                  "name" : "_default_title_",
+                  "data_type" : "string",
+                  "required_to_create_for_contacts" : false,
+                  "id" : "1234567",
+                  "required_to_create" : false,
+                  "order" : 0
+                }, {
+                  "input_options" : {
+                    "multiline" : true
+                  },
+                  "description" : "",
+                  "created_at" : 1724911006,
+                  "type" : "ticket_type_attribute",
+                  "visible_on_create" : true,
+                  "workspace_id" : "abcdefgh",
+                  "visible_to_contacts" : true,
+                  "archived" : false,
+                  "default" : true,
+                  "ticket_type_id" : 1,
+                  "updated_at" : 1724911006,
+                  "name" : "_default_description_",
+                  "data_type" : "string",
+                  "required_to_create_for_contacts" : false,
+                  "id" : "1234567",
+                  "required_to_create" : false,
+                  "order" : 1
+                }, {
+                  "input_options" : {
+                    "multiline" : false
+                  },
+                  "description" : "",
+                  "created_at" : 1724911006,
+                  "type" : "ticket_type_attribute",
+                  "visible_on_create" : true,
+                  "workspace_id" : "abcdefgh",
+                  "visible_to_contacts" : true,
+                  "archived" : false,
+                  "default" : false,
+                  "ticket_type_id" : 1,
+                  "updated_at" : 1724911006,
+                  "name" : "Platforms",
+                  "data_type" : "string",
+                  "required_to_create_for_contacts" : false,
+                  "id" : "1234567",
+                  "required_to_create" : false,
+                  "order" : 2
+                }, {
+                  "input_options" : {
+                    "multiline" : false
+                  },
+                  "description" : "",
+                  "created_at" : 1724911006,
+                  "type" : "ticket_type_attribute",
+                  "visible_on_create" : true,
+                  "workspace_id" : "abcdefgh",
+                  "visible_to_contacts" : true,
+                  "archived" : false,
+                  "default" : false,
+                  "ticket_type_id" : 1,
+                  "updated_at" : 1724911006,
+                  "name" : "Root cause",
+                  "data_type" : "string",
+                  "required_to_create_for_contacts" : false,
+                  "id" : "1234567",
+                  "required_to_create" : false,
+                  "order" : 3
+                } ],
+                "type" : "list"
+              },
+              "name" : "Support Request",
+              "icon" : "🎟",
+              "description" : "When a customer query can't be instantly resolved, convert to support request ticket to ensure the right details are captured and allow customers to keep track of progress.",
+              "created_at" : 1724911006,
+              "id" : "1",
+              "type" : "ticket_type",
+              "category" : "Customer"
+            },
+            "ticket_parts" : {
+              "ticket_parts" : [ {
+                "updated_at" : 1725600373,
+                "redacted" : false,
+                "author" : {
+                  "name" : "Fin",
+                  "id" : "1234567",
+                  "type" : "bot",
+                  "email" : "operator+abcdefgh@intercom.io"
+                },
+                "created_at" : 1725600373,
+                "part_type" : "language_detection_details",
+                "id" : "324",
+                "type" : "ticket_part"
+              }, {
+                "updated_at" : 1725600378,
+                "redacted" : false,
+                "author" : {
+                  "name" : "Fin",
+                  "id" : "1234567",
+                  "type" : "bot",
+                  "email" : "operator+abcdefgh@intercom.io"
+                },
+                "created_at" : 1725600378,
+                "part_type" : "comment",
+                "id" : "325",
+                "type" : "ticket_part",
+                "body" : "<p>Hi there! How can I assist you today?</p>"
+              }, {
+                "updated_at" : 1725600405,
+                "redacted" : false,
+                "author" : {
+                  "name" : "ABC",
+                  "id" : "1234567",
+                  "type" : "admin",
+                  "email" : "abc@xyz.com"
+                },
+                "created_at" : 1725600405,
+                "part_type" : "assignment",
+                "id" : "326",
+                "type" : "ticket_part",
+                "body" : "<p class=\"no-margin\">Two</p>",
+                "assigned_to" : {
+                  "id" : "1234567",
+                  "type" : "admin"
+                }
+              }, {
+                "ticket_state" : "submitted",
+                "previous_ticket_state" : "submitted",
+                "updated_at" : 1726136230,
+                "redacted" : false,
+                "author" : {
+                  "name" : "ABC",
+                  "id" : "1234567",
+                  "type" : "admin",
+                  "email" : "abc@xyz.com"
+                },
+                "created_at" : 1726136230,
+                "part_type" : "ticket_state_updated_by_admin",
+                "id" : "561",
+                "type" : "ticket_part"
+              } ],
+              "total_count" : 4,
+              "type" : "ticket_part.list"
+            },
+            "created_at" : 1725600372,
+            "type" : "ticket",
+            "ticket_id" : "14",
+            "ticket_state_external_label" : "Submitted",
+            "admin_assignee_id" : "1234567",
+            "team_assignee_id" : "0",
+            "updated_at" : 1726136230,
+            "is_shared" : true,
+            "ticket_state_internal_label" : "Submitted",
+            "id" : "20",
+            "ticket_attributes" : {
+              "_default_description_" : "Support request for assistance with customer interaction. Limited information provided, further details needed to proceed with ticket resolution.",
+              "_default_title_" : "Assistance Request for Customer Interaction"
+            },
+            "linked_objects" : {
+              "total_count" : 0,
+              "has_more" : false,
+              "type" : "list"
+            },
+            "category" : "Customer",
+            "contacts" : {
+              "type" : "contact.list",
+              "contacts" : [ {
+                "external_id" : "f7a1b9c2-8d34-4e5f-91a6-3d9e7b8c6f2d",
+                "id" : "4b3c7a9d8e1f4b3d6a7c9e0f",
+                "type" : "contact"
+              } ]
+            },
+            "open" : true
+          },
+          "type" : "notification_event_data"
+        },
+        "delivery_attempts" : 1,
+        "first_sent_at" : 1726136231,
+        "topic" : "ticket.created",
+        "created_at" : 1726136231,
+        "id" : "notif_7b4d1c3e-2f8a-49c7-bd5e-6e9f2a8c1b3d",
+        "type" : "notification_event",
+        "app_id" : "abcdefgh",
+        "delivered_at" : 0,
+        "delivery_status" : "pending"
+      }
+    service: "ticket"
+    result:
+      custom:
+        app_id: "abcdefgh"
+        created_at: 1726136231
+        data:
+          item:
+            admin_assignee_id: "1234567"
+            category: "Customer"
+            contacts:
+              contacts:
+               -
+                external_id: "f7a1b9c2-8d34-4e5f-91a6-3d9e7b8c6f2d"
+                id: "4b3c7a9d8e1f4b3d6a7c9e0f"
+                type: "contact"
+              type: "contact.list"
+            created_at: 1725600372
+            id: "20"
+            is_shared: true
+            linked_objects:
+              has_more: false
+              total_count: 0
+              type: "list"
+            open: true
+            team_assignee_id: "0"
+            ticket_attributes:
+              _default_description_: "Support request for assistance with customer interaction. Limited information provided, further details needed to proceed with ticket resolution."
+              _default_title_: "Assistance Request for Customer Interaction"
+            ticket_id: "14"
+            ticket_parts:
+              ticket_parts:
+               -
+                updated_at: 1725600373
+                redacted: false
+                author:
+                  name: "Fin"
+                  id: "1234567"
+                  type: "bot"
+                  email: "operator+abcdefgh@intercom.io"
+                created_at: 1725600373
+                part_type: "language_detection_details"
+                id: "324"
+                type: "ticket_part"
+               -
+                updated_at: 1725600378
+                redacted: false
+                author:
+                  name: "Fin"
+                  id: "1234567"
+                  type: "bot"
+                  email: "operator+abcdefgh@intercom.io"
+                created_at: 1725600378
+                part_type: "comment"
+                id: "325"
+                type: "ticket_part"
+                body: "<p>Hi there! How can I assist you today?</p>"
+               -
+                updated_at: 1725600405
+                redacted: false
+                author:
+                  name: "ABC"
+                  id: "1234567"
+                  type: "admin"
+                  email: "abc@xyz.com"
+                created_at: 1725600405
+                part_type: "assignment"
+                id: "326"
+                type: "ticket_part"
+                body: "<p class=\"no-margin\">Two</p>"
+                assigned_to:
+                  id: "1234567"
+                  type: "admin"
+               -
+                ticket_state: "submitted"
+                previous_ticket_state: "submitted"
+                updated_at: 1726136230
+                redacted: false
+                author:
+                  name: "ABC"
+                  id: "1234567"
+                  type: "admin"
+                  email: "abc@xyz.com"
+                created_at: 1726136230
+                part_type: "ticket_state_updated_by_admin"
+                id: "561"
+                type: "ticket_part"
+              total_count: 4
+              type: "ticket_part.list"
+            ticket_state: "submitted"
+            ticket_state_external_label: "Submitted"
+            ticket_state_internal_label: "Submitted"
+            ticket_type:
+              archived: false
+              category: "Customer"
+              created_at: 1724911006
+              description: "When a customer query can't be instantly resolved, convert to support request ticket to ensure the right details are captured and allow customers to keep track of progress."
+              icon: "🎟"
+              id: "1"
+              is_internal: false
+              name: "Support Request"
+              ticket_type_attributes:
+                data:
+                 -
+                  input_options:
+                    multiline: false
+                  description: ""
+                  created_at: 1724911006
+                  type: "ticket_type_attribute"
+                  visible_on_create: true
+                  workspace_id: "abcdefgh"
+                  visible_to_contacts: true
+                  archived: false
+                  default: true
+                  ticket_type_id: 1
+                  updated_at: 1724911006
+                  name: "_default_title_"
+                  data_type: "string"
+                  required_to_create_for_contacts: false
+                  id: "1234567"
+                  required_to_create: false
+                  order: 0
+                 -
+                  input_options:
+                    multiline: true
+                  description: ""
+                  created_at: 1724911006
+                  type: "ticket_type_attribute"
+                  visible_on_create: true
+                  workspace_id: "abcdefgh"
+                  visible_to_contacts: true
+                  archived: false
+                  default: true
+                  ticket_type_id: 1
+                  updated_at: 1724911006
+                  name: "_default_description_"
+                  data_type: "string"
+                  required_to_create_for_contacts: false
+                  id: "1234567"
+                  required_to_create: false
+                  order: 1
+                 -
+                  input_options:
+                    multiline: false
+                  description: ""
+                  created_at: 1724911006
+                  type: "ticket_type_attribute"
+                  visible_on_create: true
+                  workspace_id: "abcdefgh"
+                  visible_to_contacts: true
+                  archived: false
+                  default: false
+                  ticket_type_id: 1
+                  updated_at: 1724911006
+                  name: "Platforms"
+                  data_type: "string"
+                  required_to_create_for_contacts: false
+                  id: "1234567"
+                  required_to_create: false
+                  order: 2
+                 -
+                  input_options:
+                    multiline: false
+                  description: ""
+                  created_at: 1724911006
+                  type: "ticket_type_attribute"
+                  visible_on_create: true
+                  workspace_id: "abcdefgh"
+                  visible_to_contacts: true
+                  archived: false
+                  default: false
+                  ticket_type_id: 1
+                  updated_at: 1724911006
+                  name: "Root cause"
+                  data_type: "string"
+                  required_to_create_for_contacts: false
+                  id: "1234567"
+                  required_to_create: false
+                  order: 3
+                type: "list"
+              type: "ticket_type"
+              updated_at: 1724911006
+              workspace_id: "abcdefgh"
+            type: "ticket"
+            updated_at: 1726136230
+          type: "notification_event_data"
+        delivered_at: 0
+        delivery_attempts: 1
+        delivery_status: "pending"
+        first_sent_at: 1726136231
+        id: "notif_7b4d1c3e-2f8a-49c7-bd5e-6e9f2a8c1b3d"
+        service: "ticket"
+        topic: "ticket.created"
+        type: "notification_event"
+        updated_at_ms: 1.72613623E12
+        usr:
+          id: "1234567"
+      message: |-
+        {
+          "data" : {
+            "item" : {
+              "ticket_state" : "submitted",
+              "ticket_type" : {
+                "workspace_id" : "abcdefgh",
+                "archived" : false,
+                "is_internal" : false,
+                "updated_at" : 1724911006,
+                "ticket_type_attributes" : {
+                  "data" : [ {
+                    "input_options" : {
+                      "multiline" : false
+                    },
+                    "description" : "",
+                    "created_at" : 1724911006,
+                    "type" : "ticket_type_attribute",
+                    "visible_on_create" : true,
+                    "workspace_id" : "abcdefgh",
+                    "visible_to_contacts" : true,
+                    "archived" : false,
+                    "default" : true,
+                    "ticket_type_id" : 1,
+                    "updated_at" : 1724911006,
+                    "name" : "_default_title_",
+                    "data_type" : "string",
+                    "required_to_create_for_contacts" : false,
+                    "id" : "1234567",
+                    "required_to_create" : false,
+                    "order" : 0
+                  }, {
+                    "input_options" : {
+                      "multiline" : true
+                    },
+                    "description" : "",
+                    "created_at" : 1724911006,
+                    "type" : "ticket_type_attribute",
+                    "visible_on_create" : true,
+                    "workspace_id" : "abcdefgh",
+                    "visible_to_contacts" : true,
+                    "archived" : false,
+                    "default" : true,
+                    "ticket_type_id" : 1,
+                    "updated_at" : 1724911006,
+                    "name" : "_default_description_",
+                    "data_type" : "string",
+                    "required_to_create_for_contacts" : false,
+                    "id" : "1234567",
+                    "required_to_create" : false,
+                    "order" : 1
+                  }, {
+                    "input_options" : {
+                      "multiline" : false
+                    },
+                    "description" : "",
+                    "created_at" : 1724911006,
+                    "type" : "ticket_type_attribute",
+                    "visible_on_create" : true,
+                    "workspace_id" : "abcdefgh",
+                    "visible_to_contacts" : true,
+                    "archived" : false,
+                    "default" : false,
+                    "ticket_type_id" : 1,
+                    "updated_at" : 1724911006,
+                    "name" : "Platforms",
+                    "data_type" : "string",
+                    "required_to_create_for_contacts" : false,
+                    "id" : "1234567",
+                    "required_to_create" : false,
+                    "order" : 2
+                  }, {
+                    "input_options" : {
+                      "multiline" : false
+                    },
+                    "description" : "",
+                    "created_at" : 1724911006,
+                    "type" : "ticket_type_attribute",
+                    "visible_on_create" : true,
+                    "workspace_id" : "abcdefgh",
+                    "visible_to_contacts" : true,
+                    "archived" : false,
+                    "default" : false,
+                    "ticket_type_id" : 1,
+                    "updated_at" : 1724911006,
+                    "name" : "Root cause",
+                    "data_type" : "string",
+                    "required_to_create_for_contacts" : false,
+                    "id" : "1234567",
+                    "required_to_create" : false,
+                    "order" : 3
+                  } ],
+                  "type" : "list"
+                },
+                "name" : "Support Request",
+                "icon" : "🎟",
+                "description" : "When a customer query can't be instantly resolved, convert to support request ticket to ensure the right details are captured and allow customers to keep track of progress.",
+                "created_at" : 1724911006,
+                "id" : "1",
+                "type" : "ticket_type",
+                "category" : "Customer"
+              },
+              "ticket_parts" : {
+                "ticket_parts" : [ {
+                  "updated_at" : 1725600373,
+                  "redacted" : false,
+                  "author" : {
+                    "name" : "Fin",
+                    "id" : "1234567",
+                    "type" : "bot",
+                    "email" : "operator+abcdefgh@intercom.io"
+                  },
+                  "created_at" : 1725600373,
+                  "part_type" : "language_detection_details",
+                  "id" : "324",
+                  "type" : "ticket_part"
+                }, {
+                  "updated_at" : 1725600378,
+                  "redacted" : false,
+                  "author" : {
+                    "name" : "Fin",
+                    "id" : "1234567",
+                    "type" : "bot",
+                    "email" : "operator+abcdefgh@intercom.io"
+                  },
+                  "created_at" : 1725600378,
+                  "part_type" : "comment",
+                  "id" : "325",
+                  "type" : "ticket_part",
+                  "body" : "<p>Hi there! How can I assist you today?</p>"
+                }, {
+                  "updated_at" : 1725600405,
+                  "redacted" : false,
+                  "author" : {
+                    "name" : "ABC",
+                    "id" : "1234567",
+                    "type" : "admin",
+                    "email" : "abc@xyz.com"
+                  },
+                  "created_at" : 1725600405,
+                  "part_type" : "assignment",
+                  "id" : "326",
+                  "type" : "ticket_part",
+                  "body" : "<p class=\"no-margin\">Two</p>",
+                  "assigned_to" : {
+                    "id" : "1234567",
+                    "type" : "admin"
+                  }
+                }, {
+                  "ticket_state" : "submitted",
+                  "previous_ticket_state" : "submitted",
+                  "updated_at" : 1726136230,
+                  "redacted" : false,
+                  "author" : {
+                    "name" : "ABC",
+                    "id" : "1234567",
+                    "type" : "admin",
+                    "email" : "abc@xyz.com"
+                  },
+                  "created_at" : 1726136230,
+                  "part_type" : "ticket_state_updated_by_admin",
+                  "id" : "561",
+                  "type" : "ticket_part"
+                } ],
+                "total_count" : 4,
+                "type" : "ticket_part.list"
+              },
+              "created_at" : 1725600372,
+              "type" : "ticket",
+              "ticket_id" : "14",
+              "ticket_state_external_label" : "Submitted",
+              "admin_assignee_id" : "1234567",
+              "team_assignee_id" : "0",
+              "updated_at" : 1726136230,
+              "is_shared" : true,
+              "ticket_state_internal_label" : "Submitted",
+              "id" : "20",
+              "ticket_attributes" : {
+                "_default_description_" : "Support request for assistance with customer interaction. Limited information provided, further details needed to proceed with ticket resolution.",
+                "_default_title_" : "Assistance Request for Customer Interaction"
+              },
+              "linked_objects" : {
+                "total_count" : 0,
+                "has_more" : false,
+                "type" : "list"
+              },
+              "category" : "Customer",
+              "contacts" : {
+                "type" : "contact.list",
+                "contacts" : [ {
+                  "external_id" : "f7a1b9c2-8d34-4e5f-91a6-3d9e7b8c6f2d",
+                  "id" : "4b3c7a9d8e1f4b3d6a7c9e0f",
+                  "type" : "contact"
+                } ]
+              },
+              "open" : true
+            },
+            "type" : "notification_event_data"
+          },
+          "delivery_attempts" : 1,
+          "first_sent_at" : 1726136231,
+          "topic" : "ticket.created",
+          "created_at" : 1726136231,
+          "id" : "notif_7b4d1c3e-2f8a-49c7-bd5e-6e9f2a8c1b3d",
+          "type" : "notification_event",
+          "app_id" : "abcdefgh",
+          "delivered_at" : 0,
+          "delivery_status" : "pending"
+        }
+      service: "ticket"
+      tags:
+       - "source:LOGS_SOURCE"
+      timestamp: 1726136230000
+  - sample: |-
+      {
+      	"data" : {
+          "item" : {
+            "ticket" : {
+              "ticket_state" : "submitted",
+              "ticket_type" : {
+                "workspace_id" : "fq6rl0h",
+                "archived" : false,
+                "is_internal" : false,
+                "updated_at" : 1726469971,
+                "ticket_type_attributes" : {
+                  "data" : [ {
+                    "input_options" : {
+                      "multiline" : false
+                    },
+                    "description" : "",
+                    "created_at" : 1726469971,
+                    "type" : "ticket_type_attribute",
+                    "visible_on_create" : true,
+                    "workspace_id" : "fq6rl0h",
+                    "visible_to_contacts" : true,
+                    "archived" : false,
+                    "default" : true,
+                    "ticket_type_id" : 5,
+                    "updated_at" : 1726469971,
+                    "name" : "_default_title_",
+                    "data_type" : "string",
+                    "required_to_create_for_contacts" : false,
+                    "id" : "5181691",
+                    "required_to_create" : false,
+                    "order" : 0
+                  }, {
+                    "input_options" : {
+                      "multiline" : true
+                    },
+                    "description" : "",
+                    "created_at" : 1726469971,
+                    "type" : "ticket_type_attribute",
+                    "visible_on_create" : true,
+                    "workspace_id" : "fq6rl0h",
+                    "visible_to_contacts" : true,
+                    "archived" : false,
+                    "default" : true,
+                    "ticket_type_id" : 5,
+                    "updated_at" : 1726469971,
+                    "name" : "_default_description_",
+                    "data_type" : "string",
+                    "required_to_create_for_contacts" : false,
+                    "id" : "5181692",
+                    "required_to_create" : false,
+                    "order" : 1
+                  } ],
+                  "type" : "list"
+                },
+                "name" : "Demo ticket type",
+                "icon" : "📈",
+                "description" : "",
+                "created_at" : 1726469971,
+                "id" : "5",
+                "type" : "ticket_type",
+                "category" : "Customer"
+              },
+              "ticket_parts" : {
+                "ticket_parts" : [ {
+                  "updated_at" : 1726488973,
+                  "redacted" : false,
+                  "author" : {
+                    "name" : "Fin",
+                    "id" : "774209",
+                    "type" : "bot",
+                    "email" : "operator+fq6rl0h@intercom.io"
+                  },
+                  "created_at" : 1726488973,
+                  "part_type" : "language_detection_details",
+                  "id" : "142",
+                  "type" : "ticket_part"
+                }, {
+                  "updated_at" : 1726488976,
+                  "redacted" : false,
+                  "author" : {
+                    "name" : "Fin",
+                    "id" : "7742909",
+                    "type" : "bot",
+                    "email" : "operator+fq6rl0h@intercom.io"
+                  },
+                  "created_at" : 1726488976,
+                  "part_type" : "channel_and_reply_time_expectation",
+                  "id" : "143",
+                  "type" : "ticket_part",
+                  "body" : "<p>Crest will be back tomorrow.</p>"
+                }, {
+                  "updated_at" : 1726488977,
+                  "redacted" : false,
+                  "author" : {
+                    "name" : "Fin",
+                    "id" : "774209",
+                    "type" : "bot",
+                    "email" : "operator+fq6rl0h@intercom.io"
+                  },
+                  "created_at" : 1726488977,
+                  "part_type" : "comment",
+                  "id" : "144",
+                  "type" : "ticket_part",
+                  "body" : "<p>Give the team a way to reach you:</p>"
+                }, {
+                  "updated_at" : 1726488977,
+                  "redacted" : false,
+                  "author" : {
+                    "name" : "Fin",
+                    "id" : "7742909",
+                    "type" : "bot",
+                    "email" : "operator+fq6rl0h@intercom.io"
+                  },
+                  "created_at" : 1726488977,
+                  "part_type" : "attribute_collector",
+                  "id" : "145",
+                  "type" : "ticket_part"
+                }, {
+                  "ticket_state" : "submitted",
+                  "previous_ticket_state" : "submitted",
+                  "updated_at" : 1726488984,
+                  "redacted" : false,
+                  "author" : {
+                    "name" : "ABC",
+                    "id" : "772908",
+                    "type" : "admin",
+                    "email" : "abc@xyz.com"
+                  },
+                  "created_at" : 1726488984,
+                  "part_type" : "ticket_state_updated_by_admin",
+                  "id" : "146",
+                  "type" : "ticket_part"
+                }, {
+                  "updated_at" : 1726488990,
+                  "redacted" : false,
+                  "author" : {
+                    "name" : "ABC",
+                    "id" : "774208",
+                    "type" : "admin",
+                    "email" : "abc@xyz.com"
+                  },
+                  "created_at" : 1726488990,
+                  "part_type" : "assignment",
+                  "id" : "147",
+                  "type" : "ticket_part",
+                  "assigned_to" : {
+                    "id" : "774208",
+                    "type" : "admin"
+                  }
+                } ],
+                "total_count" : 6,
+                "type" : "ticket_part.list"
+              },
+              "created_at" : 1726488972,
+              "type" : "ticket",
+              "ticket_id" : "20",
+              "ticket_state_external_label" : "Submitted",
+              "admin_assignee_id" : "774208",
+              "team_assignee_id" : "0",
+              "updated_at" : 1726488990,
+              "is_shared" : true,
+              "ticket_state_internal_label" : "Submitted",
+              "id" : "21",
+              "linked_objects" : {
+                "total_count" : 0,
+                "has_more" : false,
+                "type" : "list"
+              },
+              "category" : "Customer",
+              "contacts" : {
+                "type" : "contact.list",
+                "contacts" : [ {
+                  "external_id" : "b601551-5c33-4ab3-ab1a-3ab383596b13",
+                  "id" : "66e82187d198b34128a84ac",
+                  "type" : "contact"
+                } ]
+              },
+              "open" : true
+            },
+            "type" : "ticket_ticket_part",
+            "ticket_part" : {
+              "updated_at" : 1726488990,
+              "redacted" : false,
+              "author" : {
+                "name" : "ABC",
+                "id" : "774208",
+                "type" : "admin",
+                "email" : "abc@xyz.com"
+              },
+              "created_at" : 1726488990,
+              "part_type" : "assignment",
+              "id" : "147",
+              "type" : "ticket_part",
+              "assigned_to" : {
+                "id" : "772908",
+                "type" : "admin"
+              }
+            }
+          },
+          "type" : "notification_event_data"
+        },
+        "delivery_attempts" : 1,
+        "service" : "ticket",
+        "first_sent_at" : 1726488992,
+        "topic" : "ticket.admin.assigned",
+        "created_at" : 1726488992,
+        "id" : "notif_6d5cdb7-2613-4dfc-8afb-646d0d79ab72",
+        "updated_at_ms" : 1726488990000,
+        "type" : "notification_event",
+        "app_id" : "fq6rl0h",
+        "delivered_at" : 0,
+        "delivery_status" : "pending"
+      }
+    service: "ticket"
+    result:
+      custom:
+        app_id: "fq6rl0h"
+        created_at: 1726488992
+        data:
+          item:
+            ticket:
+              admin_assignee_id: "774208"
+              category: "Customer"
+              contacts:
+                contacts:
+                 -
+                  external_id: "b601551-5c33-4ab3-ab1a-3ab383596b13"
+                  id: "66e82187d198b34128a84ac"
+                  type: "contact"
+                type: "contact.list"
+              created_at: 1726488972
+              id: "21"
+              is_shared: true
+              linked_objects:
+                has_more: false
+                total_count: 0
+                type: "list"
+              open: true
+              team_assignee_id: "0"
+              ticket_id: "20"
+              ticket_parts:
+                ticket_parts:
+                 -
+                  updated_at: 1726488973
+                  redacted: false
+                  author:
+                    name: "Fin"
+                    id: "774209"
+                    type: "bot"
+                    email: "operator+fq6rl0h@intercom.io"
+                  created_at: 1726488973
+                  part_type: "language_detection_details"
+                  id: "142"
+                  type: "ticket_part"
+                 -
+                  updated_at: 1726488976
+                  redacted: false
+                  author:
+                    name: "Fin"
+                    id: "7742909"
+                    type: "bot"
+                    email: "operator+fq6rl0h@intercom.io"
+                  created_at: 1726488976
+                  part_type: "channel_and_reply_time_expectation"
+                  id: "143"
+                  type: "ticket_part"
+                  body: "<p>Crest will be back tomorrow.</p>"
+                 -
+                  updated_at: 1726488977
+                  redacted: false
+                  author:
+                    name: "Fin"
+                    id: "774209"
+                    type: "bot"
+                    email: "operator+fq6rl0h@intercom.io"
+                  created_at: 1726488977
+                  part_type: "comment"
+                  id: "144"
+                  type: "ticket_part"
+                  body: "<p>Give the team a way to reach you:</p>"
+                 -
+                  updated_at: 1726488977
+                  redacted: false
+                  author:
+                    name: "Fin"
+                    id: "7742909"
+                    type: "bot"
+                    email: "operator+fq6rl0h@intercom.io"
+                  created_at: 1726488977
+                  part_type: "attribute_collector"
+                  id: "145"
+                  type: "ticket_part"
+                 -
+                  ticket_state: "submitted"
+                  previous_ticket_state: "submitted"
+                  updated_at: 1726488984
+                  redacted: false
+                  author:
+                    name: "ABC"
+                    id: "772908"
+                    type: "admin"
+                    email: "abc@xyz.com"
+                  created_at: 1726488984
+                  part_type: "ticket_state_updated_by_admin"
+                  id: "146"
+                  type: "ticket_part"
+                 -
+                  updated_at: 1726488990
+                  redacted: false
+                  author:
+                    name: "ABC"
+                    id: "774208"
+                    type: "admin"
+                    email: "abc@xyz.com"
+                  created_at: 1726488990
+                  part_type: "assignment"
+                  id: "147"
+                  type: "ticket_part"
+                  assigned_to:
+                    id: "774208"
+                    type: "admin"
+                total_count: 6
+                type: "ticket_part.list"
+              ticket_state: "submitted"
+              ticket_state_external_label: "Submitted"
+              ticket_state_internal_label: "Submitted"
+              ticket_type:
+                archived: false
+                category: "Customer"
+                created_at: 1726469971
+                description: ""
+                icon: "📈"
+                id: "5"
+                is_internal: false
+                name: "Demo ticket type"
+                ticket_type_attributes:
+                  data:
+                   -
+                    input_options:
+                      multiline: false
+                    description: ""
+                    created_at: 1726469971
+                    type: "ticket_type_attribute"
+                    visible_on_create: true
+                    workspace_id: "fq6rl0h"
+                    visible_to_contacts: true
+                    archived: false
+                    default: true
+                    ticket_type_id: 5
+                    updated_at: 1726469971
+                    name: "_default_title_"
+                    data_type: "string"
+                    required_to_create_for_contacts: false
+                    id: "5181691"
+                    required_to_create: false
+                    order: 0
+                   -
+                    input_options:
+                      multiline: true
+                    description: ""
+                    created_at: 1726469971
+                    type: "ticket_type_attribute"
+                    visible_on_create: true
+                    workspace_id: "fq6rl0h"
+                    visible_to_contacts: true
+                    archived: false
+                    default: true
+                    ticket_type_id: 5
+                    updated_at: 1726469971
+                    name: "_default_description_"
+                    data_type: "string"
+                    required_to_create_for_contacts: false
+                    id: "5181692"
+                    required_to_create: false
+                    order: 1
+                  type: "list"
+                type: "ticket_type"
+                updated_at: 1726469971
+                workspace_id: "fq6rl0h"
+              type: "ticket"
+              updated_at: 1726488990
+            ticket_part:
+              assigned_to:
+                id: "772908"
+                type: "admin"
+              author:
+                email: "abc@xyz.com"
+                id: "774208"
+                name: "ABC"
+                type: "admin"
+              created_at: 1726488990
+              id: "147"
+              part_type: "assignment"
+              redacted: false
+              type: "ticket_part"
+              updated_at: 1726488990
+            type: "ticket_ticket_part"
+          type: "notification_event_data"
+        delivered_at: 0
+        delivery_attempts: 1
+        delivery_status: "pending"
+        first_sent_at: 1726488992
+        id: "notif_6d5cdb7-2613-4dfc-8afb-646d0d79ab72"
+        service: "ticket"
+        topic: "ticket.admin.assigned"
+        type: "notification_event"
+        updated_at_ms: 1.72648899E12
+      message: |-
+        {
+          "data" : {
+            "item" : {
+              "ticket" : {
+                "ticket_state" : "submitted",
+                "ticket_type" : {
+                  "workspace_id" : "fq6rl0h",
+                  "archived" : false,
+                  "is_internal" : false,
+                  "updated_at" : 1726469971,
+                  "ticket_type_attributes" : {
+                    "data" : [ {
+                      "input_options" : {
+                        "multiline" : false
+                      },
+                      "description" : "",
+                      "created_at" : 1726469971,
+                      "type" : "ticket_type_attribute",
+                      "visible_on_create" : true,
+                      "workspace_id" : "fq6rl0h",
+                      "visible_to_contacts" : true,
+                      "archived" : false,
+                      "default" : true,
+                      "ticket_type_id" : 5,
+                      "updated_at" : 1726469971,
+                      "name" : "_default_title_",
+                      "data_type" : "string",
+                      "required_to_create_for_contacts" : false,
+                      "id" : "5181691",
+                      "required_to_create" : false,
+                      "order" : 0
+                    }, {
+                      "input_options" : {
+                        "multiline" : true
+                      },
+                      "description" : "",
+                      "created_at" : 1726469971,
+                      "type" : "ticket_type_attribute",
+                      "visible_on_create" : true,
+                      "workspace_id" : "fq6rl0h",
+                      "visible_to_contacts" : true,
+                      "archived" : false,
+                      "default" : true,
+                      "ticket_type_id" : 5,
+                      "updated_at" : 1726469971,
+                      "name" : "_default_description_",
+                      "data_type" : "string",
+                      "required_to_create_for_contacts" : false,
+                      "id" : "5181692",
+                      "required_to_create" : false,
+                      "order" : 1
+                    } ],
+                    "type" : "list"
+                  },
+                  "name" : "Demo ticket type",
+                  "icon" : "📈",
+                  "description" : "",
+                  "created_at" : 1726469971,
+                  "id" : "5",
+                  "type" : "ticket_type",
+                  "category" : "Customer"
+                },
+                "ticket_parts" : {
+                  "ticket_parts" : [ {
+                    "updated_at" : 1726488973,
+                    "redacted" : false,
+                    "author" : {
+                      "name" : "Fin",
+                      "id" : "774209",
+                      "type" : "bot",
+                      "email" : "operator+fq6rl0h@intercom.io"
+                    },
+                    "created_at" : 1726488973,
+                    "part_type" : "language_detection_details",
+                    "id" : "142",
+                    "type" : "ticket_part"
+                  }, {
+                    "updated_at" : 1726488976,
+                    "redacted" : false,
+                    "author" : {
+                      "name" : "Fin",
+                      "id" : "7742909",
+                      "type" : "bot",
+                      "email" : "operator+fq6rl0h@intercom.io"
+                    },
+                    "created_at" : 1726488976,
+                    "part_type" : "channel_and_reply_time_expectation",
+                    "id" : "143",
+                    "type" : "ticket_part",
+                    "body" : "<p>Crest will be back tomorrow.</p>"
+                  }, {
+                    "updated_at" : 1726488977,
+                    "redacted" : false,
+                    "author" : {
+                      "name" : "Fin",
+                      "id" : "774209",
+                      "type" : "bot",
+                      "email" : "operator+fq6rl0h@intercom.io"
+                    },
+                    "created_at" : 1726488977,
+                    "part_type" : "comment",
+                    "id" : "144",
+                    "type" : "ticket_part",
+                    "body" : "<p>Give the team a way to reach you:</p>"
+                  }, {
+                    "updated_at" : 1726488977,
+                    "redacted" : false,
+                    "author" : {
+                      "name" : "Fin",
+                      "id" : "7742909",
+                      "type" : "bot",
+                      "email" : "operator+fq6rl0h@intercom.io"
+                    },
+                    "created_at" : 1726488977,
+                    "part_type" : "attribute_collector",
+                    "id" : "145",
+                    "type" : "ticket_part"
+                  }, {
+                    "ticket_state" : "submitted",
+                    "previous_ticket_state" : "submitted",
+                    "updated_at" : 1726488984,
+                    "redacted" : false,
+                    "author" : {
+                      "name" : "ABC",
+                      "id" : "772908",
+                      "type" : "admin",
+                      "email" : "abc@xyz.com"
+                    },
+                    "created_at" : 1726488984,
+                    "part_type" : "ticket_state_updated_by_admin",
+                    "id" : "146",
+                    "type" : "ticket_part"
+                  }, {
+                    "updated_at" : 1726488990,
+                    "redacted" : false,
+                    "author" : {
+                      "name" : "ABC",
+                      "id" : "774208",
+                      "type" : "admin",
+                      "email" : "abc@xyz.com"
+                    },
+                    "created_at" : 1726488990,
+                    "part_type" : "assignment",
+                    "id" : "147",
+                    "type" : "ticket_part",
+                    "assigned_to" : {
+                      "id" : "774208",
+                      "type" : "admin"
+                    }
+                  } ],
+                  "total_count" : 6,
+                  "type" : "ticket_part.list"
+                },
+                "created_at" : 1726488972,
+                "type" : "ticket",
+                "ticket_id" : "20",
+                "ticket_state_external_label" : "Submitted",
+                "admin_assignee_id" : "774208",
+                "team_assignee_id" : "0",
+                "updated_at" : 1726488990,
+                "is_shared" : true,
+                "ticket_state_internal_label" : "Submitted",
+                "id" : "21",
+                "linked_objects" : {
+                  "total_count" : 0,
+                  "has_more" : false,
+                  "type" : "list"
+                },
+                "category" : "Customer",
+                "contacts" : {
+                  "type" : "contact.list",
+                  "contacts" : [ {
+                    "external_id" : "b601551-5c33-4ab3-ab1a-3ab383596b13",
+                    "id" : "66e82187d198b34128a84ac",
+                    "type" : "contact"
+                  } ]
+                },
+                "open" : true
+              },
+              "type" : "ticket_ticket_part",
+              "ticket_part" : {
+                "updated_at" : 1726488990,
+                "redacted" : false,
+                "author" : {
+                  "name" : "ABC",
+                  "id" : "774208",
+                  "type" : "admin",
+                  "email" : "abc@xyz.com"
+                },
+                "created_at" : 1726488990,
+                "part_type" : "assignment",
+                "id" : "147",
+                "type" : "ticket_part",
+                "assigned_to" : {
+                  "id" : "772908",
+                  "type" : "admin"
+                }
+              }
+            },
+            "type" : "notification_event_data"
+          },
+          "delivery_attempts" : 1,
+          "service" : "ticket",
+          "first_sent_at" : 1726488992,
+          "topic" : "ticket.admin.assigned",
+          "created_at" : 1726488992,
+          "id" : "notif_6d5cdb7-2613-4dfc-8afb-646d0d79ab72",
+          "updated_at_ms" : 1726488990000,
+          "type" : "notification_event",
+          "app_id" : "fq6rl0h",
+          "delivered_at" : 0,
+          "delivery_status" : "pending"
+        }
+      service: "ticket"
+      tags:
+       - "source:LOGS_SOURCE"
+      timestamp: 1726488990000

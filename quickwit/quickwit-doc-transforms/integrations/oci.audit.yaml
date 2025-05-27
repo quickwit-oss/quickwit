@@ -1,0 +1,324 @@
+id: oci.audit
+metric_id:
+backend_only: true
+installation_sources:
+  - oci.audit
+facets:
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+  - groups:
+      - Event
+    name: Event Outcome
+    path: evt.outcome
+    source: log
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Web Access
+    name: User-Agent
+    path: http.useragent
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - facetType: list
+    groups:
+      - OCI
+    name: Availability Domain
+    path: oci.availability_domain
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - OCI
+    name: Compartment Name
+    path: oci.compartment_name
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - OCI
+    name: Compartment OCID
+    path: oci.compartment_ocid
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - OCI
+    name: Log Group Id
+    path: oci.log_group_id
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - OCI
+    name: Tenancy OCID
+    path: oci.tenancy_ocid
+    source: log
+    type: string
+pipeline:
+  type: pipeline
+  name: OCI Audit Logs
+  enabled: true
+  filter:
+    query: source:oci.audit
+  processors:
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: attribute-remapper
+      name: Map `oracle.tenantid`, `data.identity.tenantId` to `oci.tenancy_ocid`
+      enabled: true
+      sources:
+        - oracle.tenantid
+        - data.identity.tenantId
+      sourceType: attribute
+      target: oci.tenancy_ocid
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `oracle.compartmentid`, `data.compartmentId` to `oci.compartment_ocid`
+      enabled: true
+      sources:
+        - oracle.compartmentid
+        - data.compartmentId
+      sourceType: attribute
+      target: oci.compartment_ocid
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `oracle.loggroupid` to `oci.log_group_id`
+      enabled: true
+      sources:
+        - oracle.loggroupid
+      sourceType: attribute
+      target: oci.log_group_id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `data.compartmentName` to `oci.compartment_name`
+      enabled: true
+      sources:
+        - data.compartmentName
+      sourceType: attribute
+      target: oci.compartment_name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `data.eventName` to `evt.name`
+      enabled: true
+      sources:
+        - data.eventName
+      sourceType: attribute
+      target: evt.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `data.identity.principalId`, `data.identity.callerId` to `usr.id`
+      enabled: true
+      sources:
+        - data.identity.principalId
+        - data.identity.callerId
+      sourceType: attribute
+      target: usr.id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `data.identity.principalName`, `data.identity.callerName` to `usr.name`
+      enabled: true
+      sources:
+        - data.identity.principalName
+        - data.identity.callerName
+      sourceType: attribute
+      target: usr.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `data.identity.userAgent` to `http.useragent`
+      enabled: true
+      sources:
+        - data.identity.userAgent
+      sourceType: attribute
+      target: http.useragent
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: user-agent-parser
+      name: User-Agent Parser
+      enabled: true
+      sources:
+        - http.useragent
+      target: http.useragent_details
+      encoded: false
+      combineVersionDetails: false
+    - type: attribute-remapper
+      name: Map `data.identity.ipAddress` to `network.client.ip`
+      enabled: true
+      sources:
+        - data.identity.ipAddress
+      sourceType: attribute
+      target: network.client.ip
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `data.response.status` to `http.status_code`
+      enabled: true
+      sources:
+        - data.response.status
+      sourceType: attribute
+      target: http.status_code
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: geo-ip-parser
+      name: GeoIP Parser
+      enabled: true
+      sources:
+        - network.client.ip
+      target: network.client.geoip
+      ip_processing_behavior: do-nothing
+    - type: message-remapper
+      name: Define `data.message` as the official message of the log
+      enabled: true
+      sources:
+        - data.message
+    - type: attribute-remapper
+      name: Map `data.request.action` to `http.method`
+      enabled: true
+      sources:
+        - data.request.action
+      sourceType: attribute
+      target: http.method
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `data.availabilityDomain` to `oci.availability_domain`
+      enabled: true
+      sources:
+        - data.availabilityDomain
+      sourceType: attribute
+      target: oci.availability_domain
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `data.request.path` to `http.url_details.path`
+      enabled: true
+      sources:
+        - data.request.path
+      sourceType: attribute
+      target: http.url_details.path
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: category-processor
+      name: Http status category processor
+      enabled: true
+      categories:
+        - filter:
+            query: "@http.status_code:[200 TO 299]"
+          name: OK
+        - filter:
+            query: "@http.status_code:[300 TO 399]"
+          name: Notice
+        - filter:
+            query: "@http.status_code:[400 TO 499]"
+          name: Warning
+        - filter:
+            query: "@http.status_code:[500 TO 599]"
+          name: Error
+      target: http.status_category
+    - type: status-remapper
+      name: Define `http.status_category` as the official status of the log
+      enabled: true
+      sources:
+        - http.status_category

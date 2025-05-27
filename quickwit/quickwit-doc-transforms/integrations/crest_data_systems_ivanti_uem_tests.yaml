@@ -1,0 +1,481 @@
+id: "crest_data_systems_ivanti_uem"
+tests:
+ -
+  sample: |-
+    {
+      "hostname" : "10.0.0.1",
+      "bitlocker-protection-status" : "0 - off",
+      "device-name" : "DESKTOP-123",
+      "bitlocker-gen-encrypt" : "0 - None",
+      "service" : "cds.ivanti.epm.bitlocker_details",
+      "bitlocker-encryption-percentage" : 0,
+      "bitlocker-lock-status" : "unlocked",
+      "bitlocker-conversion-status" : "0 - fully decrypted",
+      "device-id" : "{1234-5678-90}",
+      "bitlocker-encrypt-mode" : "Fully Encrypted"
+    }
+  result:
+    custom:
+      bitlocker-conversion-status: "0 - fully decrypted"
+      bitlocker-encrypt-mode: "Fully Encrypted"
+      bitlocker-encryption-percentage: 0
+      bitlocker-gen-encrypt: "0 - None"
+      bitlocker-lock-status: "unlocked"
+      bitlocker-protection-status: "0 - off"
+      device-id: "{1234-5678-90}"
+      device-name: "DESKTOP-123"
+      hostname: "10.0.0.1"
+      service: "cds.ivanti.epm.bitlocker_details"
+    message: |-
+      {
+        "hostname" : "10.0.0.1",
+        "bitlocker-protection-status" : "0 - off",
+        "device-name" : "DESKTOP-123",
+        "bitlocker-gen-encrypt" : "0 - None",
+        "service" : "cds.ivanti.epm.bitlocker_details",
+        "bitlocker-encryption-percentage" : 0,
+        "bitlocker-lock-status" : "unlocked",
+        "bitlocker-conversion-status" : "0 - fully decrypted",
+        "device-id" : "{1234-5678-90}",
+        "bitlocker-encrypt-mode" : "Fully Encrypted"
+      }
+    service: "cds.ivanti.epm.bitlocker_details"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "hostname" : "10.0.0.1",
+      "antivirus-product-version" : "4.12.16299.15",
+      "device-name" : "DESKTOP-123",
+      "last-virus-scan" : "2022-12-28 04:06:50",
+      "service" : "cds.ivanti.epm.antivirus_details",
+      "antivirus-product-name" : "Windows Defender",
+      "agent-running" : "True",
+      "device-id" : "{1234-5678-90}",
+      "antivirus-autoprotect" : "On"
+    }
+  result:
+    custom:
+      agent-running: "True"
+      antivirus-autoprotect: "On"
+      antivirus-product-name: "Windows Defender"
+      antivirus-product-version: "4.12.16299.15"
+      device-id: "{1234-5678-90}"
+      device-name: "DESKTOP-123"
+      hostname: "10.0.0.1"
+      last-virus-scan: "2022-12-28 04:06:50"
+      service: "cds.ivanti.epm.antivirus_details"
+    message: |-
+      {
+        "hostname" : "10.0.0.1",
+        "antivirus-product-version" : "4.12.16299.15",
+        "device-name" : "DESKTOP-123",
+        "last-virus-scan" : "2022-12-28 04:06:50",
+        "service" : "cds.ivanti.epm.antivirus_details",
+        "antivirus-product-name" : "Windows Defender",
+        "agent-running" : "True",
+        "device-id" : "{1234-5678-90}",
+        "antivirus-autoprotect" : "On"
+      }
+    service: "cds.ivanti.epm.antivirus_details"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "fixed-drives-manufacturer" : "VMware",
+      "fixed-drives-interface" : "scsi",
+      "hostname" : "10.0.0.1",
+      "fixed-drives-total-storage" : 512000,
+      "device-name" : "co7",
+      "service" : "cds.ivanti.epm.fixed_drives_details",
+      "fixed-drives-media-type" : "Fixed Disk",
+      "fixed-drives-name" : "/dev/sda",
+      "device-id" : "{1234-5678-90}",
+      "fixed-drives-model" : "Virtual disk"
+    }
+  result:
+    custom:
+      device-id: "{1234-5678-90}"
+      device-name: "co7"
+      fixed-drives-interface: "scsi"
+      fixed-drives-manufacturer: "VMware"
+      fixed-drives-media-type: "Fixed Disk"
+      fixed-drives-model: "Virtual disk"
+      fixed-drives-name: "/dev/sda"
+      fixed-drives-total-storage: 512000
+      hostname: "10.0.0.1"
+      service: "cds.ivanti.epm.fixed_drives_details"
+    message: |-
+      {
+        "fixed-drives-manufacturer" : "VMware",
+        "fixed-drives-interface" : "scsi",
+        "hostname" : "10.0.0.1",
+        "fixed-drives-total-storage" : 512000,
+        "device-name" : "co7",
+        "service" : "cds.ivanti.epm.fixed_drives_details",
+        "fixed-drives-media-type" : "Fixed Disk",
+        "fixed-drives-name" : "/dev/sda",
+        "device-id" : "{1234-5678-90}",
+        "fixed-drives-model" : "Virtual disk"
+      }
+    service: "cds.ivanti.epm.fixed_drives_details"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "hostname" : "10.0.0.1",
+      "device-name" : "DESKTOP-123",
+      "product-version" : "14.56.102.0",
+      "product-guid" : "Microsoft.SkypeApp_14.56.102.0",
+      "service" : "cds.ivanti.epm.product_instance_details",
+      "product-name" : "Skype",
+      "device-id" : "{1234-5678-90}",
+      "product-title" : "Microsoft.SkypeApp (14.56.102.0)"
+    }
+  result:
+    custom:
+      device-id: "{1234-5678-90}"
+      device-name: "DESKTOP-123"
+      hostname: "10.0.0.1"
+      product-guid: "Microsoft.SkypeApp_14.56.102.0"
+      product-name: "Skype"
+      product-title: "Microsoft.SkypeApp (14.56.102.0)"
+      product-version: "14.56.102.0"
+      service: "cds.ivanti.epm.product_instance_details"
+    message: |-
+      {
+        "hostname" : "10.0.0.1",
+        "device-name" : "DESKTOP-123",
+        "product-version" : "14.56.102.0",
+        "product-guid" : "Microsoft.SkypeApp_14.56.102.0",
+        "service" : "cds.ivanti.epm.product_instance_details",
+        "product-name" : "Skype",
+        "device-id" : "{1234-5678-90}",
+        "product-title" : "Microsoft.SkypeApp (14.56.102.0)"
+      }
+    service: "cds.ivanti.epm.product_instance_details"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "owner" : "DESKTOP-123\\admin",
+      "company-name" : "N/A",
+      "os-type" : "Microsoft Windows 10, 64-bit",
+      "device-name" : "DESKTOP-123",
+      "system-manufacturer" : "VMware, Inc.",
+      "os-last-startup-time" : "2022-12-14 16:05:36",
+      "device-status" : "N/A",
+      "server-type" : "N/A",
+      "device-id" : "{1234-5678-90}",
+      "os-version" : "10.0",
+      "last-updated" : "2023-01-05 17:42:58",
+      "hostname" : "10.0.0.1",
+      "service" : "cds.ivanti.epm.device_details",
+      "device-type" : "Virtual Workstation"
+    }
+  result:
+    custom:
+      company-name: "N/A"
+      device-id: "{1234-5678-90}"
+      device-name: "DESKTOP-123"
+      device-status: "N/A"
+      device-type: "Virtual Workstation"
+      hostname: "10.0.0.1"
+      last-updated: "2023-01-05 17:42:58"
+      os-last-startup-time: "2022-12-14 16:05:36"
+      os-type: "Microsoft Windows 10, 64-bit"
+      os-version: "10.0"
+      owner: "DESKTOP-123\\admin"
+      server-type: "N/A"
+      service: "cds.ivanti.epm.device_details"
+      system-manufacturer: "VMware, Inc."
+    message: |-
+      {
+        "owner" : "DESKTOP-123\\admin",
+        "company-name" : "N/A",
+        "os-type" : "Microsoft Windows 10, 64-bit",
+        "device-name" : "DESKTOP-123",
+        "system-manufacturer" : "VMware, Inc.",
+        "os-last-startup-time" : "2022-12-14 16:05:36",
+        "device-status" : "N/A",
+        "server-type" : "N/A",
+        "device-id" : "{1234-5678-90}",
+        "os-version" : "10.0",
+        "last-updated" : "2023-01-05 17:42:58",
+        "hostname" : "10.0.0.1",
+        "service" : "cds.ivanti.epm.device_details",
+        "device-type" : "Virtual Workstation"
+      }
+    service: "cds.ivanti.epm.device_details"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "platform-type" : "ANDROID",
+      "battery-charging-status" : "DISCHARGING",
+      "quarantined" : false,
+      "locale" : "en_IN",
+      "total-capacity" : 128,
+      "device-id" : 1234,
+      "hostname" : "example.com",
+      "battery-health-status" : "GOOD",
+      "ownership-type" : "UNKNOWN",
+      "blocked" : false,
+      "usr" : {
+        "name" : "Admin"
+      },
+      "registration-state" : "RETIRED",
+      "cellular-technology" : "GSM",
+      "last-checkin" : 1676379405447,
+      "client-last-checkin" : 1676379405447,
+      "violated-policies" : [ "MDM / Device Administration Disabled", "Out of Contact" ],
+      "platform-version" : "12",
+      "device-name" : "Redmi Note 10",
+      "jailbroken" : false,
+      "battery-level" : 31,
+      "client-version" : "89.1.0.4",
+      "total-ram-mb" : 0,
+      "support-lock-message" : false,
+      "uptime" : 4576919871,
+      "kiosk-state" : "NOT_CONFIGURED",
+      "service" : "cds.ivanti.mdm.device_details",
+      "dm-partition-name" : "Default Space",
+      "available-capacity" : 33.06085
+    }
+  result:
+    custom:
+      available-capacity: 33.06085
+      battery-charging-status: "DISCHARGING"
+      battery-health-status: "GOOD"
+      battery-level: 31
+      blocked: false
+      cds:
+        ivantiuem:
+          uptime: 4576919871
+      cellular-technology: "GSM"
+      client-last-checkin: 1676379405447
+      client-version: "89.1.0.4"
+      device-id: 1234
+      device-name: "Redmi Note 10"
+      dm-partition-name: "Default Space"
+      hostname: "example.com"
+      jailbroken: false
+      kiosk-state: "NOT_CONFIGURED"
+      last-checkin: 1676379405447
+      locale: "en_IN"
+      ownership-type: "UNKNOWN"
+      platform-type: "ANDROID"
+      platform-version: "12"
+      quarantined: false
+      registration-state: "RETIRED"
+      service: "cds.ivanti.mdm.device_details"
+      support-lock-message: false
+      total-capacity: 128
+      total-ram-mb: 0
+      usr:
+        name: "Admin"
+      violated-policies:
+       - "MDM / Device Administration Disabled"
+       - "Out of Contact"
+    message: |-
+      {
+        "platform-type" : "ANDROID",
+        "battery-charging-status" : "DISCHARGING",
+        "quarantined" : false,
+        "locale" : "en_IN",
+        "total-capacity" : 128,
+        "device-id" : 1234,
+        "hostname" : "example.com",
+        "battery-health-status" : "GOOD",
+        "ownership-type" : "UNKNOWN",
+        "blocked" : false,
+        "usr" : {
+          "name" : "Admin"
+        },
+        "registration-state" : "RETIRED",
+        "cellular-technology" : "GSM",
+        "last-checkin" : 1676379405447,
+        "client-last-checkin" : 1676379405447,
+        "violated-policies" : [ "MDM / Device Administration Disabled", "Out of Contact" ],
+        "platform-version" : "12",
+        "device-name" : "Redmi Note 10",
+        "jailbroken" : false,
+        "battery-level" : 31,
+        "client-version" : "89.1.0.4",
+        "total-ram-mb" : 0,
+        "support-lock-message" : false,
+        "uptime" : 4576919871,
+        "kiosk-state" : "NOT_CONFIGURED",
+        "service" : "cds.ivanti.mdm.device_details",
+        "dm-partition-name" : "Default Space",
+        "available-capacity" : 33.06085
+      }
+    service: "cds.ivanti.mdm.device_details"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "account-source" : "LOCAL",
+      "password-never-expire" : false,
+      "groups" : [ "Admin", "All Users" ],
+      "super-user" : false,
+      "bypass-saml" : false,
+      "enabled" : true,
+      "hostname" : "example.com",
+      "invite-state" : "Pending",
+      "usr" : {
+        "id" : 1234,
+        "email" : "user@example.com"
+      },
+      "service" : "cds.ivanti.mdm.user_details",
+      "account-type" : "USER",
+      "mutable" : true,
+      "login-failure-count" : 0,
+      "locked" : false,
+      "device-count" : 0
+    }
+  result:
+    custom:
+      account-source: "LOCAL"
+      account-type: "USER"
+      bypass-saml: false
+      device-count: 0
+      enabled: true
+      groups:
+       - "Admin"
+       - "All Users"
+      hostname: "example.com"
+      invite-state: "Pending"
+      locked: false
+      login-failure-count: 0
+      mutable: true
+      password-never-expire: false
+      service: "cds.ivanti.mdm.user_details"
+      super-user: false
+      usr:
+        email: "user@example.com"
+        id: 1234
+    message: |-
+      {
+        "account-source" : "LOCAL",
+        "password-never-expire" : false,
+        "groups" : [ "Admin", "All Users" ],
+        "super-user" : false,
+        "bypass-saml" : false,
+        "enabled" : true,
+        "hostname" : "example.com",
+        "invite-state" : "Pending",
+        "usr" : {
+          "id" : 1234,
+          "email" : "user@example.com"
+        },
+        "service" : "cds.ivanti.mdm.user_details",
+        "account-type" : "USER",
+        "mutable" : true,
+        "login-failure-count" : 0,
+        "locked" : false,
+        "device-count" : 0
+      }
+    service: "cds.ivanti.mdm.user_details"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "adapter-description" : "Intel(R) 82574L Gigabit Network Connection",
+      "adapter-subnet-mask" : "255.255.240.000",
+      "adapter-hidden" : "No",
+      "adapter-primary-dns" : "010.000.001.001",
+      "hostname" : "10.0.0.1",
+      "device-name" : "DESKTOP-123",
+      "service" : "cds.ivanti.epm.boundadapter_details",
+      "adapter-firewall-enabled" : "No",
+      "adapter-network-id" : "10.0.0.0/20",
+      "adapter-physical-address" : "00000000000F",
+      "device-id" : "{1234-5678-90}",
+      "adapter-ip-address" : "010.000.000.002"
+    }
+  result:
+    custom:
+      adapter-description: "Intel(R) 82574L Gigabit Network Connection"
+      adapter-firewall-enabled: "No"
+      adapter-hidden: "No"
+      adapter-ip-address: "010.000.000.002"
+      adapter-network-id: "10.0.0.0/20"
+      adapter-physical-address: "00000000000F"
+      adapter-primary-dns: "010.000.001.001"
+      adapter-subnet-mask: "255.255.240.000"
+      device-id: "{1234-5678-90}"
+      device-name: "DESKTOP-123"
+      hostname: "10.0.0.1"
+      service: "cds.ivanti.epm.boundadapter_details"
+    message: |-
+      {
+        "adapter-description" : "Intel(R) 82574L Gigabit Network Connection",
+        "adapter-subnet-mask" : "255.255.240.000",
+        "adapter-hidden" : "No",
+        "adapter-primary-dns" : "010.000.001.001",
+        "hostname" : "10.0.0.1",
+        "device-name" : "DESKTOP-123",
+        "service" : "cds.ivanti.epm.boundadapter_details",
+        "adapter-firewall-enabled" : "No",
+        "adapter-network-id" : "10.0.0.0/20",
+        "adapter-physical-address" : "00000000000F",
+        "device-id" : "{1234-5678-90}",
+        "adapter-ip-address" : "010.000.000.002"
+      }
+    service: "cds.ivanti.epm.boundadapter_details"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "package-version" : "1.8.3.1",
+      "package-category" : "Development/Tools",
+      "hostname" : "10.0.0.1",
+      "device-name" : "co7",
+      "service" : "cds.ivanti.epm.swkpmanager_details",
+      "package-license" : "GPLv2",
+      "package-size" : "23244302",
+      "device-id" : "{1234-5678-90}",
+      "package-name" : "git",
+      "package-publisher" : "CentOS",
+      "package-description" : "Git is a fast, scalable, distributed revision control system with an unusually rich command set that provides both high-level operations and full access to internals. The git rpm installs the core tools with minimal dependencies. To install all git packages, including tools for integrating with other SCMs, install the git-all meta-package."
+    }
+  result:
+    custom:
+      device-id: "{1234-5678-90}"
+      device-name: "co7"
+      hostname: "10.0.0.1"
+      package-category: "Development/Tools"
+      package-description: "Git is a fast, scalable, distributed revision control system with an unusually rich command set that provides both high-level operations and full access to internals. The git rpm installs the core tools with minimal dependencies. To install all git packages, including tools for integrating with other SCMs, install the git-all meta-package."
+      package-license: "GPLv2"
+      package-name: "git"
+      package-publisher: "CentOS"
+      package-size: "23244302"
+      package-version: "1.8.3.1"
+      service: "cds.ivanti.epm.swkpmanager_details"
+    message: |-
+      {
+        "package-version" : "1.8.3.1",
+        "package-category" : "Development/Tools",
+        "hostname" : "10.0.0.1",
+        "device-name" : "co7",
+        "service" : "cds.ivanti.epm.swkpmanager_details",
+        "package-license" : "GPLv2",
+        "package-size" : "23244302",
+        "device-id" : "{1234-5678-90}",
+        "package-name" : "git",
+        "package-publisher" : "CentOS",
+        "package-description" : "Git is a fast, scalable, distributed revision control system with an unusually rich command set that provides both high-level operations and full access to internals. The git rpm installs the core tools with minimal dependencies. To install all git packages, including tools for integrating with other SCMs, install the git-all meta-package."
+      }
+    service: "cds.ivanti.epm.swkpmanager_details"
+    tags:
+     - "source:LOGS_SOURCE"
+

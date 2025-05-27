@@ -1,0 +1,781 @@
+id: "crest-data-systems-togetherai"
+tests:
+  -
+    sample: |-
+      {
+        "lora" : false,
+        "lora_alpha" : 0,
+        "validation_file" : "",
+        "created_at" : "2024-06-13T10:12:01.481Z",
+        "steps_paid_for" : 1,
+        "output_name" : "monica.gswamy@crestdatasys.com/zephyr-7b-beta-2024-06-13-10-12-01",
+        "staring_epoch" : 0,
+        "token_count" : 1005,
+        "n_epochs" : 1,
+        "updated_at" : "2024-06-13T10:27:47.446Z",
+        "wandb_url" : "",
+        "model" : "HuggingFaceH4/zephyr-7b-beta",
+        "queue_depth" : 0,
+        "model_output_path" : "s3://together-dev/finetune/66189d36d3d901f39d0ac3eb/monica.gswamy@crestdatasys.com/zephyr-7b-beta-2024-06-13-10-12-01/ft-697f5ba1-f945-4872-a587-1f1963199d8a-2024-06-13-03-16-10",
+        "eval_steps" : 0,
+        "id" : "ft-697f5ba1-f945-4872-a587-1f1963199d8g",
+        "events" : [ {
+          "level" : "",
+          "param_count" : 0,
+          "training_offset" : 0,
+          "created_at" : "2024-06-13T10:12:01.481Z",
+          "message" : "Fine tune request created",
+          "type" : "JOB_PENDING",
+          "model_path" : "",
+          "token_count" : 0,
+          "wandb_url" : "",
+          "total_steps" : 0,
+          "step" : 0,
+          "checkpoint_path" : "",
+          "hash" : "",
+          "object" : "fine-tune-event"
+        }, {
+          "level" : "Info",
+          "param_count" : 0,
+          "training_offset" : 0,
+          "created_at" : "2024-06-13T10:12:03Z",
+          "message" : "Job started at Thu Jun 13 03:12:03 PDT 2024",
+          "type" : "JOB_START",
+          "model_path" : "",
+          "token_count" : 0,
+          "wandb_url" : "",
+          "total_steps" : 0,
+          "step" : 0,
+          "checkpoint_path" : "",
+          "hash" : "4178977090995962534",
+          "object" : "fine-tune-event"
+        }, {
+          "level" : "Info",
+          "param_count" : 0,
+          "training_offset" : 0,
+          "created_at" : "2024-06-13T10:12:09Z",
+          "message" : "Model data downloaded for HuggingFaceH4/zephyr-7b-beta at Thu Jun 13 03:12:09 PDT 2024",
+          "type" : "MODEL_DOWNLOAD_COMPLETE",
+          "model_path" : "",
+          "token_count" : 0,
+          "wandb_url" : "",
+          "total_steps" : 0,
+          "step" : 0,
+          "checkpoint_path" : "",
+          "hash" : "-125165104957770479",
+          "object" : "fine-tune-event"
+        }, {
+          "level" : "Info",
+          "param_count" : 0,
+          "training_offset" : 0,
+          "created_at" : "2024-06-13T10:12:11Z",
+          "message" : "Training data downloaded for HuggingFaceH4/zephyr-7b-beta at Thu Jun 13 03:12:11 PDT 2024",
+          "type" : "TRAINING_DATA_DOWNLOAD_COMPLETE",
+          "model_path" : "",
+          "token_count" : 0,
+          "wandb_url" : "",
+          "total_steps" : 0,
+          "step" : 0,
+          "checkpoint_path" : "",
+          "hash" : "-3645278027132387346",
+          "object" : "fine-tune-event"
+        }, {
+          "level" : "Info",
+          "param_count" : 7241732096,
+          "training_offset" : 0,
+          "created_at" : "2024-06-13T10:13:30Z",
+          "message" : "Training started for model HuggingFaceH4/zephyr-7b-beta",
+          "type" : "TRAINING_START",
+          "model_path" : "",
+          "token_count" : 8192,
+          "wandb_url" : "",
+          "total_steps" : 1,
+          "step" : 0,
+          "checkpoint_path" : "",
+          "hash" : "-5798282200691622251",
+          "object" : "fine-tune-event"
+        }, {
+          "level" : "Info",
+          "param_count" : 0,
+          "training_offset" : 0,
+          "created_at" : "2024-06-13T10:13:46Z",
+          "message" : "Epoch completed, at step 1",
+          "type" : "EPOCH_COMPLETE",
+          "model_path" : "",
+          "token_count" : 0,
+          "wandb_url" : "",
+          "total_steps" : 0,
+          "step" : 1,
+          "checkpoint_path" : "",
+          "hash" : "-8290283873166270601",
+          "object" : "fine-tune-event"
+        }, {
+          "level" : "Info",
+          "param_count" : 0,
+          "training_offset" : 0,
+          "created_at" : "2024-06-13T10:15:21Z",
+          "message" : "Training completed for HuggingFaceH4/zephyr-7b-beta at Thu Jun 13 03:15:21 PDT 2024",
+          "type" : "TRAINING_COMPLETE",
+          "model_path" : "",
+          "token_count" : 0,
+          "wandb_url" : "",
+          "total_steps" : 0,
+          "step" : 0,
+          "checkpoint_path" : "",
+          "hash" : "-6717742965975781714",
+          "object" : "fine-tune-event"
+        }, {
+          "level" : "Info",
+          "param_count" : 0,
+          "training_offset" : 0,
+          "created_at" : "2024-06-13T10:15:23Z",
+          "message" : "Compressing output model",
+          "type" : "COMPRESSING_MODEL",
+          "model_path" : "",
+          "token_count" : 0,
+          "wandb_url" : "",
+          "total_steps" : 0,
+          "step" : 0,
+          "checkpoint_path" : "",
+          "hash" : "7092162966666661936",
+          "object" : "fine-tune-event"
+        }, {
+          "level" : "Info",
+          "param_count" : 0,
+          "training_offset" : 0,
+          "created_at" : "2024-06-13T10:16:10Z",
+          "message" : "Model compression complete",
+          "type" : "MODEL_COMPRESSION_COMPLETE",
+          "model_path" : "",
+          "token_count" : 0,
+          "wandb_url" : "",
+          "total_steps" : 0,
+          "step" : 0,
+          "checkpoint_path" : "",
+          "hash" : "-2555382279540255059",
+          "object" : "fine-tune-event"
+        }, {
+          "level" : "Info",
+          "param_count" : 0,
+          "training_offset" : 0,
+          "created_at" : "2024-06-13T10:16:11Z",
+          "message" : "Uploading output model",
+          "type" : "MODEL_UPLOADING",
+          "model_path" : "",
+          "token_count" : 0,
+          "wandb_url" : "",
+          "total_steps" : 0,
+          "step" : 0,
+          "checkpoint_path" : "",
+          "hash" : "2909033227060918822",
+          "object" : "fine-tune-event"
+        }, {
+          "level" : "Info",
+          "param_count" : 0,
+          "training_offset" : 0,
+          "created_at" : "2024-06-13T10:27:45Z",
+          "message" : "Model upload complete",
+          "type" : "MODEL_UPLOAD_COMPLETE",
+          "model_path" : "",
+          "token_count" : 0,
+          "wandb_url" : "",
+          "total_steps" : 0,
+          "step" : 0,
+          "checkpoint_path" : "",
+          "hash" : "-6946500611598186252",
+          "object" : "fine-tune-event"
+        }, {
+          "level" : "Info",
+          "param_count" : 0,
+          "training_offset" : 0,
+          "created_at" : "2024-06-13T10:27:46Z",
+          "message" : "Job finished at Thu Jun 13 03:27:46 PDT 2024",
+          "type" : "JOB_COMPLETE",
+          "model_path" : "s3://together-dev/finetune/66189d36d3d901f39d0ac3eb/monica.gswamy@crestdatasys.com/zephyr-7b-beta-2024-06-13-10-12-01/ft-697f5ba1-f945-4872-a587-1f1963199d8a-2024-06-13-03-16-10",
+          "token_count" : 0,
+          "wandb_url" : "",
+          "total_steps" : 0,
+          "step" : 0,
+          "checkpoint_path" : "",
+          "hash" : "4545330781745909590",
+          "object" : "fine-tune-event"
+        } ],
+        "job_stats" : {
+          "FtMaxRss" : 0,
+          "FtInBlock" : 0,
+          "FtSysTime" : "",
+          "FtNivCsw" : 0,
+          "FtMajPgFlt" : 0,
+          "FtUserTime" : "",
+          "FtOutBlock" : 0,
+          "FtNvCsw" : 0,
+          "FtMinPgFlt" : 0
+        },
+        "random_seed" : "",
+        "training_file" : "file-4fb5b35e-c08d-4c67-b725-a5eb8648762e",
+        "n_checkpoints" : 1,
+        "TrainingFileNumLines" : 0,
+        "TrainingFileSize" : 40805,
+        "batch_size" : 8,
+        "total_price" : 5000000000,
+        "param_count" : 7241732096,
+        "training_offset" : 0,
+        "lora_dropout" : 0,
+        "UsedModelName" : "",
+        "owner_address" : "0x30b544538b221f9b0878c8af808b82ca9374a7a9",
+        "steps_completed" : 1,
+        "enable_checkpoints" : false,
+        "Suffix" : "",
+        "checkspoint_path" : "",
+        "user_id" : "66189d36d3d901f39d0ac3eb",
+        "job_id" : "23470",
+        "lora_r" : 0,
+        "total_steps" : 1,
+        "wandb_project_name" : "",
+        "lora_trainable_modules" : "",
+        "epochs_completed" : 1,
+        "internal_flags" : "",
+        "learning_rate" : 1.0E-5,
+        "status" : "completed"
+      }
+    result:
+      custom:
+        Suffix: ""
+        TrainingFileNumLines: 0
+        TrainingFileSize: 40805
+        UsedModelName: ""
+        batch_size: 8
+        checkspoint_path: ""
+        created_at: "2024-06-13T10:12:01.481Z"
+        enable_checkpoints: false
+        epochs_completed: 1
+        eval_steps: 0
+        events:
+        -
+          level: ""
+          param_count: 0
+          training_offset: 0
+          created_at: "2024-06-13T10:12:01.481Z"
+          message: "Fine tune request created"
+          type: "JOB_PENDING"
+          model_path: ""
+          token_count: 0
+          wandb_url: ""
+          total_steps: 0
+          step: 0
+          checkpoint_path: ""
+          hash: ""
+          object: "fine-tune-event"
+        -
+          level: "Info"
+          param_count: 0
+          training_offset: 0
+          created_at: "2024-06-13T10:12:03Z"
+          message: "Job started at Thu Jun 13 03:12:03 PDT 2024"
+          type: "JOB_START"
+          model_path: ""
+          token_count: 0
+          wandb_url: ""
+          total_steps: 0
+          step: 0
+          checkpoint_path: ""
+          hash: "4178977090995962534"
+          object: "fine-tune-event"
+        -
+          level: "Info"
+          param_count: 0
+          training_offset: 0
+          created_at: "2024-06-13T10:12:09Z"
+          message: "Model data downloaded for HuggingFaceH4/zephyr-7b-beta at Thu Jun 13 03:12:09 PDT 2024"
+          type: "MODEL_DOWNLOAD_COMPLETE"
+          model_path: ""
+          token_count: 0
+          wandb_url: ""
+          total_steps: 0
+          step: 0
+          checkpoint_path: ""
+          hash: "-125165104957770479"
+          object: "fine-tune-event"
+        -
+          level: "Info"
+          param_count: 0
+          training_offset: 0
+          created_at: "2024-06-13T10:12:11Z"
+          message: "Training data downloaded for HuggingFaceH4/zephyr-7b-beta at Thu Jun 13 03:12:11 PDT 2024"
+          type: "TRAINING_DATA_DOWNLOAD_COMPLETE"
+          model_path: ""
+          token_count: 0
+          wandb_url: ""
+          total_steps: 0
+          step: 0
+          checkpoint_path: ""
+          hash: "-3645278027132387346"
+          object: "fine-tune-event"
+        -
+          level: "Info"
+          param_count: 7241732096
+          training_offset: 0
+          created_at: "2024-06-13T10:13:30Z"
+          message: "Training started for model HuggingFaceH4/zephyr-7b-beta"
+          type: "TRAINING_START"
+          model_path: ""
+          token_count: 8192
+          wandb_url: ""
+          total_steps: 1
+          step: 0
+          checkpoint_path: ""
+          hash: "-5798282200691622251"
+          object: "fine-tune-event"
+        -
+          level: "Info"
+          param_count: 0
+          training_offset: 0
+          created_at: "2024-06-13T10:13:46Z"
+          message: "Epoch completed, at step 1"
+          type: "EPOCH_COMPLETE"
+          model_path: ""
+          token_count: 0
+          wandb_url: ""
+          total_steps: 0
+          step: 1
+          checkpoint_path: ""
+          hash: "-8290283873166270601"
+          object: "fine-tune-event"
+        -
+          level: "Info"
+          param_count: 0
+          training_offset: 0
+          created_at: "2024-06-13T10:15:21Z"
+          message: "Training completed for HuggingFaceH4/zephyr-7b-beta at Thu Jun 13 03:15:21 PDT 2024"
+          type: "TRAINING_COMPLETE"
+          model_path: ""
+          token_count: 0
+          wandb_url: ""
+          total_steps: 0
+          step: 0
+          checkpoint_path: ""
+          hash: "-6717742965975781714"
+          object: "fine-tune-event"
+        -
+          level: "Info"
+          param_count: 0
+          training_offset: 0
+          created_at: "2024-06-13T10:15:23Z"
+          message: "Compressing output model"
+          type: "COMPRESSING_MODEL"
+          model_path: ""
+          token_count: 0
+          wandb_url: ""
+          total_steps: 0
+          step: 0
+          checkpoint_path: ""
+          hash: "7092162966666661936"
+          object: "fine-tune-event"
+        -
+          level: "Info"
+          param_count: 0
+          training_offset: 0
+          created_at: "2024-06-13T10:16:10Z"
+          message: "Model compression complete"
+          type: "MODEL_COMPRESSION_COMPLETE"
+          model_path: ""
+          token_count: 0
+          wandb_url: ""
+          total_steps: 0
+          step: 0
+          checkpoint_path: ""
+          hash: "-2555382279540255059"
+          object: "fine-tune-event"
+        -
+          level: "Info"
+          param_count: 0
+          training_offset: 0
+          created_at: "2024-06-13T10:16:11Z"
+          message: "Uploading output model"
+          type: "MODEL_UPLOADING"
+          model_path: ""
+          token_count: 0
+          wandb_url: ""
+          total_steps: 0
+          step: 0
+          checkpoint_path: ""
+          hash: "2909033227060918822"
+          object: "fine-tune-event"
+        -
+          level: "Info"
+          param_count: 0
+          training_offset: 0
+          created_at: "2024-06-13T10:27:45Z"
+          message: "Model upload complete"
+          type: "MODEL_UPLOAD_COMPLETE"
+          model_path: ""
+          token_count: 0
+          wandb_url: ""
+          total_steps: 0
+          step: 0
+          checkpoint_path: ""
+          hash: "-6946500611598186252"
+          object: "fine-tune-event"
+        -
+          level: "Info"
+          param_count: 0
+          training_offset: 0
+          created_at: "2024-06-13T10:27:46Z"
+          message: "Job finished at Thu Jun 13 03:27:46 PDT 2024"
+          type: "JOB_COMPLETE"
+          model_path: "s3://together-dev/finetune/66189d36d3d901f39d0ac3eb/monica.gswamy@crestdatasys.com/zephyr-7b-beta-2024-06-13-10-12-01/ft-697f5ba1-f945-4872-a587-1f1963199d8a-2024-06-13-03-16-10"
+          token_count: 0
+          wandb_url: ""
+          total_steps: 0
+          step: 0
+          checkpoint_path: ""
+          hash: "4545330781745909590"
+          object: "fine-tune-event"
+        id: "ft-697f5ba1-f945-4872-a587-1f1963199d8g"
+        internal_flags: ""
+        job_id: "23470"
+        job_stats:
+          FtInBlock: 0
+          FtMajPgFlt: 0
+          FtMaxRss: 0
+          FtMinPgFlt: 0
+          FtNivCsw: 0
+          FtNvCsw: 0
+          FtOutBlock: 0
+          FtSysTime: ""
+          FtUserTime: ""
+        learning_rate: 1.0E-5
+        lora: false
+        lora_alpha: 0
+        lora_dropout: 0
+        lora_r: 0
+        lora_trainable_modules: ""
+        model: "HuggingFaceH4/zephyr-7b-beta"
+        model_output_path: "s3://together-dev/finetune/66189d36d3d901f39d0ac3eb/monica.gswamy@crestdatasys.com/zephyr-7b-beta-2024-06-13-10-12-01/ft-697f5ba1-f945-4872-a587-1f1963199d8a-2024-06-13-03-16-10"
+        n_checkpoints: 1
+        n_epochs: 1
+        output_name: "monica.gswamy@crestdatasys.com/zephyr-7b-beta-2024-06-13-10-12-01"
+        owner_address: "0x30b544538b221f9b0878c8af808b82ca9374a7a9"
+        param_count: 7241732096
+        queue_depth: 0
+        random_seed: ""
+        staring_epoch: 0
+        status: "completed"
+        steps_completed: 1
+        steps_paid_for: 1
+        token_count: 1005
+        total_price: 5000000000
+        total_steps: 1
+        training_file: "file-4fb5b35e-c08d-4c67-b725-a5eb8648762e"
+        training_offset: 0
+        updated_at: "2024-06-13T10:27:47.446Z"
+        user_id: "66189d36d3d901f39d0ac3eb"
+        validation_file: ""
+        wandb_project_name: ""
+        wandb_url: ""
+      message: |-
+        {
+          "lora" : false,
+          "lora_alpha" : 0,
+          "validation_file" : "",
+          "created_at" : "2024-06-13T10:12:01.481Z",
+          "steps_paid_for" : 1,
+          "output_name" : "monica.gswamy@crestdatasys.com/zephyr-7b-beta-2024-06-13-10-12-01",
+          "staring_epoch" : 0,
+          "token_count" : 1005,
+          "n_epochs" : 1,
+          "updated_at" : "2024-06-13T10:27:47.446Z",
+          "wandb_url" : "",
+          "model" : "HuggingFaceH4/zephyr-7b-beta",
+          "queue_depth" : 0,
+          "model_output_path" : "s3://together-dev/finetune/66189d36d3d901f39d0ac3eb/monica.gswamy@crestdatasys.com/zephyr-7b-beta-2024-06-13-10-12-01/ft-697f5ba1-f945-4872-a587-1f1963199d8a-2024-06-13-03-16-10",
+          "eval_steps" : 0,
+          "id" : "ft-697f5ba1-f945-4872-a587-1f1963199d8g",
+          "events" : [ {
+            "level" : "",
+            "param_count" : 0,
+            "training_offset" : 0,
+            "created_at" : "2024-06-13T10:12:01.481Z",
+            "message" : "Fine tune request created",
+            "type" : "JOB_PENDING",
+            "model_path" : "",
+            "token_count" : 0,
+            "wandb_url" : "",
+            "total_steps" : 0,
+            "step" : 0,
+            "checkpoint_path" : "",
+            "hash" : "",
+            "object" : "fine-tune-event"
+          }, {
+            "level" : "Info",
+            "param_count" : 0,
+            "training_offset" : 0,
+            "created_at" : "2024-06-13T10:12:03Z",
+            "message" : "Job started at Thu Jun 13 03:12:03 PDT 2024",
+            "type" : "JOB_START",
+            "model_path" : "",
+            "token_count" : 0,
+            "wandb_url" : "",
+            "total_steps" : 0,
+            "step" : 0,
+            "checkpoint_path" : "",
+            "hash" : "4178977090995962534",
+            "object" : "fine-tune-event"
+          }, {
+            "level" : "Info",
+            "param_count" : 0,
+            "training_offset" : 0,
+            "created_at" : "2024-06-13T10:12:09Z",
+            "message" : "Model data downloaded for HuggingFaceH4/zephyr-7b-beta at Thu Jun 13 03:12:09 PDT 2024",
+            "type" : "MODEL_DOWNLOAD_COMPLETE",
+            "model_path" : "",
+            "token_count" : 0,
+            "wandb_url" : "",
+            "total_steps" : 0,
+            "step" : 0,
+            "checkpoint_path" : "",
+            "hash" : "-125165104957770479",
+            "object" : "fine-tune-event"
+          }, {
+            "level" : "Info",
+            "param_count" : 0,
+            "training_offset" : 0,
+            "created_at" : "2024-06-13T10:12:11Z",
+            "message" : "Training data downloaded for HuggingFaceH4/zephyr-7b-beta at Thu Jun 13 03:12:11 PDT 2024",
+            "type" : "TRAINING_DATA_DOWNLOAD_COMPLETE",
+            "model_path" : "",
+            "token_count" : 0,
+            "wandb_url" : "",
+            "total_steps" : 0,
+            "step" : 0,
+            "checkpoint_path" : "",
+            "hash" : "-3645278027132387346",
+            "object" : "fine-tune-event"
+          }, {
+            "level" : "Info",
+            "param_count" : 7241732096,
+            "training_offset" : 0,
+            "created_at" : "2024-06-13T10:13:30Z",
+            "message" : "Training started for model HuggingFaceH4/zephyr-7b-beta",
+            "type" : "TRAINING_START",
+            "model_path" : "",
+            "token_count" : 8192,
+            "wandb_url" : "",
+            "total_steps" : 1,
+            "step" : 0,
+            "checkpoint_path" : "",
+            "hash" : "-5798282200691622251",
+            "object" : "fine-tune-event"
+          }, {
+            "level" : "Info",
+            "param_count" : 0,
+            "training_offset" : 0,
+            "created_at" : "2024-06-13T10:13:46Z",
+            "message" : "Epoch completed, at step 1",
+            "type" : "EPOCH_COMPLETE",
+            "model_path" : "",
+            "token_count" : 0,
+            "wandb_url" : "",
+            "total_steps" : 0,
+            "step" : 1,
+            "checkpoint_path" : "",
+            "hash" : "-8290283873166270601",
+            "object" : "fine-tune-event"
+          }, {
+            "level" : "Info",
+            "param_count" : 0,
+            "training_offset" : 0,
+            "created_at" : "2024-06-13T10:15:21Z",
+            "message" : "Training completed for HuggingFaceH4/zephyr-7b-beta at Thu Jun 13 03:15:21 PDT 2024",
+            "type" : "TRAINING_COMPLETE",
+            "model_path" : "",
+            "token_count" : 0,
+            "wandb_url" : "",
+            "total_steps" : 0,
+            "step" : 0,
+            "checkpoint_path" : "",
+            "hash" : "-6717742965975781714",
+            "object" : "fine-tune-event"
+          }, {
+            "level" : "Info",
+            "param_count" : 0,
+            "training_offset" : 0,
+            "created_at" : "2024-06-13T10:15:23Z",
+            "message" : "Compressing output model",
+            "type" : "COMPRESSING_MODEL",
+            "model_path" : "",
+            "token_count" : 0,
+            "wandb_url" : "",
+            "total_steps" : 0,
+            "step" : 0,
+            "checkpoint_path" : "",
+            "hash" : "7092162966666661936",
+            "object" : "fine-tune-event"
+          }, {
+            "level" : "Info",
+            "param_count" : 0,
+            "training_offset" : 0,
+            "created_at" : "2024-06-13T10:16:10Z",
+            "message" : "Model compression complete",
+            "type" : "MODEL_COMPRESSION_COMPLETE",
+            "model_path" : "",
+            "token_count" : 0,
+            "wandb_url" : "",
+            "total_steps" : 0,
+            "step" : 0,
+            "checkpoint_path" : "",
+            "hash" : "-2555382279540255059",
+            "object" : "fine-tune-event"
+          }, {
+            "level" : "Info",
+            "param_count" : 0,
+            "training_offset" : 0,
+            "created_at" : "2024-06-13T10:16:11Z",
+            "message" : "Uploading output model",
+            "type" : "MODEL_UPLOADING",
+            "model_path" : "",
+            "token_count" : 0,
+            "wandb_url" : "",
+            "total_steps" : 0,
+            "step" : 0,
+            "checkpoint_path" : "",
+            "hash" : "2909033227060918822",
+            "object" : "fine-tune-event"
+          }, {
+            "level" : "Info",
+            "param_count" : 0,
+            "training_offset" : 0,
+            "created_at" : "2024-06-13T10:27:45Z",
+            "message" : "Model upload complete",
+            "type" : "MODEL_UPLOAD_COMPLETE",
+            "model_path" : "",
+            "token_count" : 0,
+            "wandb_url" : "",
+            "total_steps" : 0,
+            "step" : 0,
+            "checkpoint_path" : "",
+            "hash" : "-6946500611598186252",
+            "object" : "fine-tune-event"
+          }, {
+            "level" : "Info",
+            "param_count" : 0,
+            "training_offset" : 0,
+            "created_at" : "2024-06-13T10:27:46Z",
+            "message" : "Job finished at Thu Jun 13 03:27:46 PDT 2024",
+            "type" : "JOB_COMPLETE",
+            "model_path" : "s3://together-dev/finetune/66189d36d3d901f39d0ac3eb/monica.gswamy@crestdatasys.com/zephyr-7b-beta-2024-06-13-10-12-01/ft-697f5ba1-f945-4872-a587-1f1963199d8a-2024-06-13-03-16-10",
+            "token_count" : 0,
+            "wandb_url" : "",
+            "total_steps" : 0,
+            "step" : 0,
+            "checkpoint_path" : "",
+            "hash" : "4545330781745909590",
+            "object" : "fine-tune-event"
+          } ],
+          "job_stats" : {
+            "FtMaxRss" : 0,
+            "FtInBlock" : 0,
+            "FtSysTime" : "",
+            "FtNivCsw" : 0,
+            "FtMajPgFlt" : 0,
+            "FtUserTime" : "",
+            "FtOutBlock" : 0,
+            "FtNvCsw" : 0,
+            "FtMinPgFlt" : 0
+          },
+          "random_seed" : "",
+          "training_file" : "file-4fb5b35e-c08d-4c67-b725-a5eb8648762e",
+          "n_checkpoints" : 1,
+          "TrainingFileNumLines" : 0,
+          "TrainingFileSize" : 40805,
+          "batch_size" : 8,
+          "total_price" : 5000000000,
+          "param_count" : 7241732096,
+          "training_offset" : 0,
+          "lora_dropout" : 0,
+          "UsedModelName" : "",
+          "owner_address" : "0x30b544538b221f9b0878c8af808b82ca9374a7a9",
+          "steps_completed" : 1,
+          "enable_checkpoints" : false,
+          "Suffix" : "",
+          "checkspoint_path" : "",
+          "user_id" : "66189d36d3d901f39d0ac3eb",
+          "job_id" : "23470",
+          "lora_r" : 0,
+          "total_steps" : 1,
+          "wandb_project_name" : "",
+          "lora_trainable_modules" : "",
+          "epochs_completed" : 1,
+          "internal_flags" : "",
+          "learning_rate" : 1.0E-5,
+          "status" : "completed"
+        }
+      tags:
+      - "source:LOGS_SOURCE"
+
+  - 
+    sample: |-
+      {
+        "filename" :  "input.jsonl",
+        "bytes" :  100000,
+        "created_at" :  1690957221,
+        "training_file" :  "file-3b60de18-37e2-49ba-85e1-b1df893d7ebb",
+        "purpose" :  "fine-tune",
+        "object" :  "file",
+        "LineCount" :  0,
+        "processed" :  false 
+      }
+    result:
+      custom:
+        LineCount: 0
+        bytes: 100000
+        created_at: 1690957221
+        filename: "input.jsonl"
+        object: "file"
+        processed: false
+        purpose: "fine-tune"
+        training_file: "file-3b60de18-37e2-49ba-85e1-b1df893d7ebb"
+      message: |-
+        {
+          "training_file" : "file-3b60de18-37e2-49ba-85e1-b1df893d7ebb",
+          "processed" : false,
+          "filename" : "input.jsonl",
+          "purpose" : "fine-tune",
+          "bytes" : 100000,
+          "created_at" : 1690957221,
+          "LineCount" : 0,
+          "object" : "file"
+        }
+      tags:
+        - "source:LOGS_SOURCE"
+
+  - 
+    sample: |-
+      {
+        "job_id" :  "ft-e57a3227-acca-47e2-9a1b-4bcee8945e02",
+        "object" :  "fine-tune-event",
+        "created_at" :  "2023-09-23T05:25:27.755Z",
+        "level" :  "info",
+        "message" :  "Fine tune request created",
+        "param_count" :  0,
+        "token_count" :  0,
+        "checkpoint_path" :  "",
+        "model_path" :  "",
+        "training_offset" :  0,
+        "hash" :  ""
+      }
+    result:
+      custom:
+        checkpoint_path: ""
+        created_at: "2023-09-23T05:25:27.755Z"
+        hash: ""
+        job_id: "ft-e57a3227-acca-47e2-9a1b-4bcee8945e02"
+        level: "info"
+        model_path: ""
+        object: "fine-tune-event"
+        param_count: 0
+        token_count: 0
+        training_offset: 0
+      message: "Fine tune request created"
+      tags:
+          - "source:LOGS_SOURCE"

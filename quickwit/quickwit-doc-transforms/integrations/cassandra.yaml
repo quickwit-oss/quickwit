@@ -1,0 +1,137 @@
+id: cassandra
+metric_id: cassandra
+backend_only: false
+facets:
+  - groups:
+      - Database
+    name: Operation Type
+    path: db.operation
+    source: log
+  - facetType: range
+    groups:
+      - Measure
+    name: Duration
+    path: duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: nanosecond
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+  - groups:
+      - Source Code
+    name: Thread Name
+    path: logger.thread_name
+    source: log
+  - groups:
+      - Cassandra
+    name: SStable
+    path: cassandra.sstable
+    source: log
+  - groups:
+      - Cassandra
+    name: Keyspace
+    path: cassandra.keyspace
+    source: log
+  - groups:
+      - Database
+    name: Table
+    path: db.table
+    source: log
+pipeline:
+  type: pipeline
+  name: Cassandra
+  enabled: true
+  filter:
+    query: source:cassandra
+  processors:
+    - type: grok-parser
+      name: Parsing Cassandra logs
+      enabled: true
+      source: message
+      samples:
+        - WARN  [MemtableFlushWriter:20342] 2016-06-29 08:35:35,936  SSTableWriter.java:240 - Compacting large partition limo/read_audit_history:2016-6-29 (115624250 bytes)
+        - "INFO  [SlabPoolCleaner] 2016-06-28 16:13:14,966  ColumnFamilyStore.java:1211 - Flushing largest CFS(Keyspace='order_store', ColumnFamily='orderdata') to free up room. Used total: 0.11/0.00, live: 0.11/0.00, flushing: 0.00/0.00, this: 0.10/0.10"
+        - INFO  [CompactionExecutor:26] 2016-06-28 14:38:40,545  CompactionTask.java:274 - Compacted 2 sstables to [/app/cassandra/datastax/dse-data03/order_store/orderhistory-65765df1fc1f11e5974cd5203249f77a/order_store-orderhistory-ka-139517,].  32,011,749 bytes to 29,390,144 (~91% of original) in 1,771ms = 15.826440MB/s.  39,261 total partitions merged to 36,402.  Partition merge counts were {1:33543, 2:2859, }
+        - 'WARN  [ServiceThread] 2016-06-30 14:42:41,538  GCInspector.java:256 - G1 Young Generation GC in 202ms.  G1 Eden Space: 1157627904 -> 0; G1 Old Gen: 6819034128 -> 4151661080; G1 Survivor Space: 553648128 -> 218103808;'
+        - |
+          DEBUG [ScheduledTasks:1] 2019-12-30 15:02:59,576 MonitoringTask.java:173 - 2 operations were slow in the last 5002 msecs:
+          <SELECT * FROM system_schema.tables>, time 7 msec - slow timeout 2 msec
+          <SELECT * FROM system_schema.columns>, time 7 msec - slow timeout 2 msec
+      grok:
+        supportRules: |
+          _level %{word:db.severity}
+          _thread_name %{notSpace:logger.thread_name}
+          _thread_id %{integer:logger.thread_id}
+          _logger_name %{notSpace:logger.name}
+          _table %{word:db.table}
+          _sstable %{notSpace:cassandra.sstable}
+          _bytes %{integer:cassandra.bytes}
+          _keyspace %{word:cassandra.keyspace}
+          _onheap_total %{number:cassandra.onheap.total}
+          _onheap_live %{number:cassandra.onheap.live}
+          _onheap_flush %{number:cassandra.onheap.flush}
+          _onheap_this %{number:cassandra.onheap.this}
+          _onheap_bytes %{integer:cassandra.onheap.bytes}
+          _onheap_pct %{integer:cassandra.onheap.percent}
+
+          _offheap_total %{number:cassandra.offheap.total}
+          _offheap_live %{number:cassandra.offheap.live}
+          _offheap_flush %{number:cassandra.offheap.flush}
+          _offheap_this %{number:cassandra.offheap.this}
+          _offheap_bytes %{integer:cassandra.offheap.bytes}
+          _offheap_pct %{integer:cassandra.offheap.percent}
+
+          _default_prefix %{_level}\s+\[(%{_thread_name}:%{_thread_id}|%{_thread_name})\]\s+%{date("yyyy-MM-dd HH:mm:ss,SSS"):db.date}\s+%{word:filename}.java:%{integer:lineno} -
+          _suggested_prefix %{date("yyyy-MM-dd HH:mm:ss"):db.date} \[(%{_thread_name}:%{_thread_id}|%{_thread_name})\] %{_level} %{_logger_name}\s+-
+          _prefix (?>%{_default_prefix}|%{_suggested_prefix})
+        matchRules: |
+          cassandra_compaction_key %{_prefix} %{regex("Compacting"):db.operation}.* %{_keyspace}\/%{_table}:%{data:partition_key} \(%{_bytes} bytes\)
+
+          cassandra_pool_cleaner %{_prefix} %{regex("Flushing"):db.operation}.*\(Keyspace='%{_keyspace}', ColumnFamily='%{_table}'\) %{data}: %{_onheap_total}\/%{_offheap_total}, live: %{_onheap_live}\/%{_offheap_live}, flushing: %{_onheap_flush}\/%{_offheap_flush}, this: %{_onheap_this}\/%{_offheap_this}
+
+          cassandra_pool_cleaner2 %{_prefix} %{regex("Enqueuing"):db.operation}.* of %{_keyspace}: %{_onheap_bytes}%{data} \(%{_onheap_pct}%\) on-heap, %{_offheap_bytes} \(%{_offheap_pct}%\).*
+
+          cassandra_table_flush %{_prefix} %{regex("Writing"):db.operation}.*-%{_keyspace}%{data}\(%{number:cassandra.bytes:scale(1000000)}%{data}, %{integer:cassandra.ops} ops, %{_onheap_pct}%\/%{_offheap_pct}.*
+
+          cassandra_mem_flush %{_prefix} Completed %{regex("flushing"):db.operation} %{_sstable} \(%{number:cassandra.bytes_kb}KiB\) for commitlog %{data:commitlog}
+
+          cassandra_compaction %{_prefix}\s+%{regex("Compacted"):db.operation}.* to \[%{_sstable}\].\s+%{notSpace:cassandra.bytes_in} bytes to %{notSpace:cassandra.bytes_out} \(\~%{integer:cassandra.percent_of_orig}% of original\) in %{notSpace:cassandra.duration_ms}ms = %{number:cassandra.speed_mb}MB/s.\s+%{notSpace:cassandra.pkeys_in} total partitions merged to %{notSpace:cassandra.pkeys_out}\.\s+Partition merge counts were %{data:cassandra.merge_cnt}
+
+          cassandra_gc_format %{_prefix} G.* %{integer:duration:scale(1000000)}ms. %{data}: %{integer:cassandra.eden.orig_bytes} -> %{integer:cassandra.eden.new_bytes}; %{data}: %{integer:cassandra.oldgen.orig_bytes} -> %{integer:cassandra.oldgen.new_bytes};.*
+
+          cassandra_thread_pending %{_prefix} %{word:cassandra.pool}\s*(?>%{integer:cassandra.cache_used}\s*%{integer:cassandra.cache_size}\s*all|%{integer:cassandra.threads.active}\s*%{integer:cassandra.threads.pending}\s*%{integer:cassandra.threads.completed}\s*%{integer:cassandra.threads.blocked}\s*%{integer:cassandra.threads.all_time_blocked}|%{integer:cassandra.threads.active}\s*%{integer:cassanadra.threads.pending})
+
+          cassandra_slow_statements %{_prefix} %{integer:db.operations} operations were slow in the last %{integer:elapsed_time:scale(1000000)} msecs:\n%{data:db.slow_statements:array("", "\\n")}
+
+          cassandra_fallback_parser %{_prefix} %{data:msg}
+
+          ## Extra samples
+
+          #Pool cleaner 2
+          # INFO  [SlabPoolCleaner] 2016-06-28 16:13:14,967  ColumnFamilyStore.java:905 - Enqueuing flush of orderdata: 216588472 (10%) on-heap, 0 (0%) off-heap
+
+          #Table Flush
+          # INFO  [MemtableFlushWriter:320] 2016-06-28 16:13:14,969  Memtable.java:347 - Writing Memtable-orderdata@849528272(129.804MiB serialized bytes, 297813 ops, 10%/0% of on/off-heap limit)
+
+          #Memory Flush
+          # INFO  [MemtableFlushWriter:1] 2016-06-28 16:19:48,627  Memtable.java:382 - Completed flushing /app/cassandra/datastax/dse-data01/system/local-7ad54392bcdd35a684174e047860b377/system-local-tmp-ka-3981-Data.db (0.000KiB) for commitlog position ReplayPosition(segmentId=1467130786324, position=567)
+
+          #Thread Pending
+          # INFO  [ServiceThread] 2016-06-30 14:42:41,542  StatusLogger.java:99 - KeyCache                  365405196               1073741824                      all
+
+          #Compaction key, Pool cleaner, Compaction, GC format, Default: in Log Samples
+    - type: date-remapper
+      name: Define `db.date` as the official date of the log
+      enabled: true
+      sources:
+        - db.date
+    - type: status-remapper
+      name: Define `db.severity` as the official status of the log
+      enabled: true
+      sources:
+        - db.severity

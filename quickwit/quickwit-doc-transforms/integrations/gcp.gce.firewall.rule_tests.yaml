@@ -1,0 +1,569 @@
+id: "gcp.gce.firewall.rule"
+tests:
+ -
+  sample: |-
+    {
+      "publishTime" : "2020-04-03T00:28:14.673Z",
+      "data" : {
+        "severity" : "NOTICE",
+        "logName" : "projects/test-271317/logs/cloudaudit.googleapis.com%2Factivity",
+        "resource" : {
+          "type" : "gce_firewall_rule",
+          "labels" : {
+            "project_id" : "test-271317",
+            "firewall_rule_id" : "6503232253886333218"
+          }
+        },
+        "protoPayload" : {
+          "requestMetadata" : {
+            "callerSuppliedUserAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)",
+            "callerIp" : "67.243.209.244"
+          },
+          "request" : {
+            "@type" : "type.googleapis.com/compute.firewalls.patch"
+          },
+          "authenticationInfo" : {
+            "principalEmail" : "test@testmail.com"
+          },
+          "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+          "resourceOriginalState" : {
+            "logConfig" : {
+              "enable" : false
+            },
+            "@type" : "compute.googleapis.com/patch.state",
+            "description" : "",
+            "targetTags" : [ "example" ],
+            "priority" : "1000",
+            "network" : "https://www.googleapis.com/compute/v1/projects/test-271317/global/networks/default",
+            "selfLink" : "https://www.googleapis.com/compute/v1/projects/test-271317/global/firewalls/test-fw-two",
+            "sourceRanges" : [ "67.243.209.244/32" ],
+            "selfLinkWithId" : "https://www.googleapis.com/compute/v1/projects/test-271317/global/firewalls/6503232253886333218",
+            "creationTimestamp" : "2020-03-16T11:05:01.881-07:00",
+            "name" : "test-fw-two",
+            "alloweds" : [ {
+              "IPProtocol" : "tcp",
+              "ports" : [ "22", "443" ]
+            }, {
+              "IPProtocol" : "udp",
+              "ports" : [ "9999" ]
+            } ],
+            "disabled" : false,
+            "id" : "6503232253886333218",
+            "enableLogging" : false,
+            "direction" : "INGRESS"
+          },
+          "methodName" : "v1.compute.firewalls.patch",
+          "resourceName" : "projects/test-271317/global/firewalls/test-fw-two",
+          "serviceName" : "compute.googleapis.com"
+        },
+        "receiveTimestamp" : "2020-04-03T00:28:13.752958613Z",
+        "operation" : {
+          "last" : true,
+          "producer" : "compute.googleapis.com",
+          "id" : "operation-1585873687571-5a257fdce6d13-fdc15f2b-893898c2"
+        },
+        "insertId" : "6o3qj5dcl8o",
+        "timestamp" : "2020-04-03T00:28:12.97Z"
+      },
+      "publish_time" : "2020-04-03T00:28:14.673Z",
+      "messageId" : "1082858327931239",
+      "attributes" : {
+        "logging" : {
+          "googleapis" : {
+            "com/timestamp" : "2020-04-03T00:28:12.97Z"
+          }
+        }
+      },
+      "message_id" : "1082858327931239",
+      "subscription" : "projects/test-271317/subscriptions/datadog"
+    }
+  result:
+    custom:
+      attributes:
+        logging:
+          googleapis:
+            com/timestamp: "2020-04-03T00:28:12.97Z"
+      data:
+        insertId: "6o3qj5dcl8o"
+        logName: "projects/test-271317/logs/cloudaudit.googleapis.com%2Factivity"
+        operation:
+          id: "operation-1585873687571-5a257fdce6d13-fdc15f2b-893898c2"
+          last: true
+          producer: "compute.googleapis.com"
+        protoPayload:
+          '@type': "type.googleapis.com/google.cloud.audit.AuditLog"
+          authenticationInfo:
+            principalEmail: "test@testmail.com"
+          methodName: "v1.compute.firewalls.patch"
+          request:
+            '@type': "type.googleapis.com/compute.firewalls.patch"
+          requestMetadata:
+            callerIp: "67.243.209.244"
+            callerSuppliedUserAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)"
+          resourceName: "projects/test-271317/global/firewalls/test-fw-two"
+          resourceOriginalState:
+            '@type': "compute.googleapis.com/patch.state"
+            alloweds:
+             -
+              IPProtocol: "tcp"
+              ports:
+               - "22"
+               - "443"
+             -
+              IPProtocol: "udp"
+              ports:
+               - "9999"
+            creationTimestamp: "2020-03-16T11:05:01.881-07:00"
+            description: ""
+            direction: "INGRESS"
+            disabled: false
+            enableLogging: false
+            id: "6503232253886333218"
+            logConfig:
+              enable: false
+            name: "test-fw-two"
+            network: "https://www.googleapis.com/compute/v1/projects/test-271317/global/networks/default"
+            priority: "1000"
+            selfLink: "https://www.googleapis.com/compute/v1/projects/test-271317/global/firewalls/test-fw-two"
+            selfLinkWithId: "https://www.googleapis.com/compute/v1/projects/test-271317/global/firewalls/6503232253886333218"
+            sourceRanges:
+             - "67.243.209.244/32"
+            targetTags:
+             - "example"
+          serviceName: "compute.googleapis.com"
+        receiveTimestamp: "2020-04-03T00:28:13.752958613Z"
+        resource:
+          labels:
+            firewall_rule_id: "6503232253886333218"
+            project_id: "test-271317"
+          type: "gce_firewall_rule"
+        severity: "NOTICE"
+        timestamp: "2020-04-03T00:28:12.97Z"
+      evt:
+        name: "v1.compute.firewalls.patch"
+      http:
+        useragent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "80"
+            minor: "0"
+            patch: "3987"
+            patch_minor: "149"
+          device:
+            brand: "Apple"
+            category: "Desktop"
+            family: "Mac"
+            model: "Mac"
+          os:
+            family: "Mac OS X"
+            major: "10"
+            minor: "14"
+            patch: "1"
+      messageId: "1082858327931239"
+      message_id: "1082858327931239"
+      network:
+        client:
+          geoip: {}
+          ip: "67.243.209.244"
+      ocsf:
+        activity_id: 3
+        activity_name: "Update"
+        actor:
+          user:
+            account:
+              uid: "test-271317"
+            email_addr: "test@testmail.com"
+            name: "test"
+            type: "User"
+            type_id: 1
+        api:
+          operation: "v1.compute.firewalls.patch"
+          request:
+            data:
+              '@type': "type.googleapis.com/compute.firewalls.patch"
+            uid: "Unknown"
+          service:
+            name: "compute.googleapis.com"
+        category_name: "Application Activity"
+        category_uid: 6
+        class_name: "API Activity"
+        class_uid: 6003
+        cloud:
+          account:
+            uid: "test-271317"
+          provider: "Google Cloud"
+        http_request:
+          user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)"
+        metadata:
+          event_code: "v1.compute.firewalls.patch"
+          log_name: "projects/test-271317/logs/cloudaudit.googleapis.com%2Factivity"
+          product:
+            name: "Google Cloud Audit logs"
+            vendor_name: "Google Cloud"
+          profiles:
+           - "cloud"
+           - "datetime"
+          uid: "6o3qj5dcl8o"
+          version: "1.3.0"
+        severity: "NOTICE"
+        severity_id: 99
+        src_endpoint:
+          ip: "67.243.209.244"
+        status: "Success"
+        status_id: 1
+        time: 1585873692970
+        time_dt: "2020-04-03T00:28:12.97Z"
+        type_uid: 600303
+      publishTime: "2020-04-03T00:28:14.673Z"
+      publish_time: "2020-04-03T00:28:14.673Z"
+      subscription: "projects/test-271317/subscriptions/datadog"
+      usr:
+        email: "test@testmail.com"
+        id: "test@testmail.com"
+    message: |-
+      {
+        "publishTime" : "2020-04-03T00:28:14.673Z",
+        "data" : {
+          "severity" : "NOTICE",
+          "logName" : "projects/test-271317/logs/cloudaudit.googleapis.com%2Factivity",
+          "resource" : {
+            "type" : "gce_firewall_rule",
+            "labels" : {
+              "project_id" : "test-271317",
+              "firewall_rule_id" : "6503232253886333218"
+            }
+          },
+          "protoPayload" : {
+            "requestMetadata" : {
+              "callerSuppliedUserAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)",
+              "callerIp" : "67.243.209.244"
+            },
+            "request" : {
+              "@type" : "type.googleapis.com/compute.firewalls.patch"
+            },
+            "authenticationInfo" : {
+              "principalEmail" : "test@testmail.com"
+            },
+            "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+            "resourceOriginalState" : {
+              "logConfig" : {
+                "enable" : false
+              },
+              "@type" : "compute.googleapis.com/patch.state",
+              "description" : "",
+              "targetTags" : [ "example" ],
+              "priority" : "1000",
+              "network" : "https://www.googleapis.com/compute/v1/projects/test-271317/global/networks/default",
+              "selfLink" : "https://www.googleapis.com/compute/v1/projects/test-271317/global/firewalls/test-fw-two",
+              "sourceRanges" : [ "67.243.209.244/32" ],
+              "selfLinkWithId" : "https://www.googleapis.com/compute/v1/projects/test-271317/global/firewalls/6503232253886333218",
+              "creationTimestamp" : "2020-03-16T11:05:01.881-07:00",
+              "name" : "test-fw-two",
+              "alloweds" : [ {
+                "IPProtocol" : "tcp",
+                "ports" : [ "22", "443" ]
+              }, {
+                "IPProtocol" : "udp",
+                "ports" : [ "9999" ]
+              } ],
+              "disabled" : false,
+              "id" : "6503232253886333218",
+              "enableLogging" : false,
+              "direction" : "INGRESS"
+            },
+            "methodName" : "v1.compute.firewalls.patch",
+            "resourceName" : "projects/test-271317/global/firewalls/test-fw-two",
+            "serviceName" : "compute.googleapis.com"
+          },
+          "receiveTimestamp" : "2020-04-03T00:28:13.752958613Z",
+          "operation" : {
+            "last" : true,
+            "producer" : "compute.googleapis.com",
+            "id" : "operation-1585873687571-5a257fdce6d13-fdc15f2b-893898c2"
+          },
+          "insertId" : "6o3qj5dcl8o",
+          "timestamp" : "2020-04-03T00:28:12.97Z"
+        },
+        "publish_time" : "2020-04-03T00:28:14.673Z",
+        "messageId" : "1082858327931239",
+        "attributes" : {
+          "logging" : {
+            "googleapis" : {
+              "com/timestamp" : "2020-04-03T00:28:12.97Z"
+            }
+          }
+        },
+        "message_id" : "1082858327931239",
+        "subscription" : "projects/test-271317/subscriptions/datadog"
+      }
+    service: "compute.googleapis.com"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1585873692970
+ -
+  sample: |-
+    {
+      "severity" : "NOTICE",
+      "logName" : "projects/test-271317/logs/cloudaudit.googleapis.com%2Factivity",
+      "resource" : {
+        "type" : "gce_firewall_rule",
+        "labels" : {
+          "project_id" : "test-271317",
+          "firewall_rule_id" : "6503232253886333218"
+        }
+      },
+      "protoPayload" : {
+        "requestMetadata" : {
+          "callerSuppliedUserAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)",
+          "callerIp" : "67.243.209.244"
+        },
+        "request" : {
+          "@type" : "type.googleapis.com/compute.firewalls.patch"
+        },
+        "authenticationInfo" : {
+          "principalEmail" : "test@testmail.com"
+        },
+        "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+        "resourceOriginalState" : {
+          "logConfig" : {
+            "enable" : false
+          },
+          "@type" : "compute.googleapis.com/patch.state",
+          "description" : "",
+          "targetTags" : [ "example" ],
+          "priority" : "1000",
+          "network" : "https://www.googleapis.com/compute/v1/projects/test-271317/global/networks/default",
+          "selfLink" : "https://www.googleapis.com/compute/v1/projects/test-271317/global/firewalls/test-fw-two",
+          "sourceRanges" : [ "67.243.209.244/32" ],
+          "selfLinkWithId" : "https://www.googleapis.com/compute/v1/projects/test-271317/global/firewalls/6503232253886333218",
+          "creationTimestamp" : "2020-03-16T11:05:01.881-07:00",
+          "name" : "test-fw-two",
+          "alloweds" : [ {
+            "IPProtocol" : "tcp",
+            "ports" : [ "22", "443" ]
+          }, {
+            "IPProtocol" : "udp",
+            "ports" : [ "9999" ]
+          } ],
+          "disabled" : false,
+          "id" : "6503232253886333218",
+          "enableLogging" : false,
+          "direction" : "INGRESS"
+        },
+        "methodName" : "v1.compute.firewalls.patch",
+        "resourceName" : "projects/test-271317/global/firewalls/test-fw-two",
+        "serviceName" : "compute.googleapis.com"
+      },
+      "receiveTimestamp" : "2020-04-03T00:28:13.752958613Z",
+      "operation" : {
+        "last" : true,
+        "producer" : "compute.googleapis.com",
+        "id" : "operation-1585873687571-5a257fdce6d13-fdc15f2b-893898c2"
+      },
+      "insertId" : "6o3qj5dcl8o",
+      "timestamp" : "2020-04-03T00:28:12.97Z"
+    }
+  result:
+    custom:
+      evt:
+        name: "v1.compute.firewalls.patch"
+      http:
+        useragent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "80"
+            minor: "0"
+            patch: "3987"
+            patch_minor: "149"
+          device:
+            brand: "Apple"
+            category: "Desktop"
+            family: "Mac"
+            model: "Mac"
+          os:
+            family: "Mac OS X"
+            major: "10"
+            minor: "14"
+            patch: "1"
+      insertId: "6o3qj5dcl8o"
+      logName: "projects/test-271317/logs/cloudaudit.googleapis.com%2Factivity"
+      network:
+        client:
+          geoip: {}
+          ip: "67.243.209.244"
+      ocsf:
+        activity_id: 3
+        activity_name: "Update"
+        actor:
+          user:
+            account:
+              uid: "test-271317"
+            email_addr: "test@testmail.com"
+            name: "test"
+            type: "User"
+            type_id: 1
+        api:
+          operation: "v1.compute.firewalls.patch"
+          request:
+            data:
+              '@type': "type.googleapis.com/compute.firewalls.patch"
+            uid: "Unknown"
+          service:
+            name: "compute.googleapis.com"
+        category_name: "Application Activity"
+        category_uid: 6
+        class_name: "API Activity"
+        class_uid: 6003
+        cloud:
+          account:
+            uid: "test-271317"
+          provider: "Google Cloud"
+        http_request:
+          user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)"
+        metadata:
+          event_code: "v1.compute.firewalls.patch"
+          log_name: "projects/test-271317/logs/cloudaudit.googleapis.com%2Factivity"
+          product:
+            name: "Google Cloud Audit logs"
+            vendor_name: "Google Cloud"
+          profiles:
+           - "cloud"
+           - "datetime"
+          uid: "6o3qj5dcl8o"
+          version: "1.3.0"
+        severity: "NOTICE"
+        severity_id: 99
+        src_endpoint:
+          ip: "67.243.209.244"
+        status: "Success"
+        status_id: 1
+        time: 1585873692970
+        time_dt: "2020-04-03T00:28:12.97Z"
+        type_uid: 600303
+      operation:
+        id: "operation-1585873687571-5a257fdce6d13-fdc15f2b-893898c2"
+        last: true
+        producer: "compute.googleapis.com"
+      protoPayload:
+        '@type': "type.googleapis.com/google.cloud.audit.AuditLog"
+        authenticationInfo:
+          principalEmail: "test@testmail.com"
+        methodName: "v1.compute.firewalls.patch"
+        request:
+          '@type': "type.googleapis.com/compute.firewalls.patch"
+        requestMetadata:
+          callerIp: "67.243.209.244"
+          callerSuppliedUserAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)"
+        resourceName: "projects/test-271317/global/firewalls/test-fw-two"
+        resourceOriginalState:
+          '@type': "compute.googleapis.com/patch.state"
+          alloweds:
+           -
+            IPProtocol: "tcp"
+            ports:
+             - "22"
+             - "443"
+           -
+            IPProtocol: "udp"
+            ports:
+             - "9999"
+          creationTimestamp: "2020-03-16T11:05:01.881-07:00"
+          description: ""
+          direction: "INGRESS"
+          disabled: false
+          enableLogging: false
+          id: "6503232253886333218"
+          logConfig:
+            enable: false
+          name: "test-fw-two"
+          network: "https://www.googleapis.com/compute/v1/projects/test-271317/global/networks/default"
+          priority: "1000"
+          selfLink: "https://www.googleapis.com/compute/v1/projects/test-271317/global/firewalls/test-fw-two"
+          selfLinkWithId: "https://www.googleapis.com/compute/v1/projects/test-271317/global/firewalls/6503232253886333218"
+          sourceRanges:
+           - "67.243.209.244/32"
+          targetTags:
+           - "example"
+        serviceName: "compute.googleapis.com"
+      receiveTimestamp: "2020-04-03T00:28:13.752958613Z"
+      resource:
+        labels:
+          firewall_rule_id: "6503232253886333218"
+          project_id: "test-271317"
+        type: "gce_firewall_rule"
+      severity: "NOTICE"
+      timestamp: "2020-04-03T00:28:12.97Z"
+      usr:
+        email: "test@testmail.com"
+        id: "test@testmail.com"
+    message: |-
+      {
+        "severity" : "NOTICE",
+        "logName" : "projects/test-271317/logs/cloudaudit.googleapis.com%2Factivity",
+        "resource" : {
+          "type" : "gce_firewall_rule",
+          "labels" : {
+            "project_id" : "test-271317",
+            "firewall_rule_id" : "6503232253886333218"
+          }
+        },
+        "protoPayload" : {
+          "requestMetadata" : {
+            "callerSuppliedUserAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)",
+            "callerIp" : "67.243.209.244"
+          },
+          "request" : {
+            "@type" : "type.googleapis.com/compute.firewalls.patch"
+          },
+          "authenticationInfo" : {
+            "principalEmail" : "test@testmail.com"
+          },
+          "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+          "resourceOriginalState" : {
+            "logConfig" : {
+              "enable" : false
+            },
+            "@type" : "compute.googleapis.com/patch.state",
+            "description" : "",
+            "targetTags" : [ "example" ],
+            "priority" : "1000",
+            "network" : "https://www.googleapis.com/compute/v1/projects/test-271317/global/networks/default",
+            "selfLink" : "https://www.googleapis.com/compute/v1/projects/test-271317/global/firewalls/test-fw-two",
+            "sourceRanges" : [ "67.243.209.244/32" ],
+            "selfLinkWithId" : "https://www.googleapis.com/compute/v1/projects/test-271317/global/firewalls/6503232253886333218",
+            "creationTimestamp" : "2020-03-16T11:05:01.881-07:00",
+            "name" : "test-fw-two",
+            "alloweds" : [ {
+              "IPProtocol" : "tcp",
+              "ports" : [ "22", "443" ]
+            }, {
+              "IPProtocol" : "udp",
+              "ports" : [ "9999" ]
+            } ],
+            "disabled" : false,
+            "id" : "6503232253886333218",
+            "enableLogging" : false,
+            "direction" : "INGRESS"
+          },
+          "methodName" : "v1.compute.firewalls.patch",
+          "resourceName" : "projects/test-271317/global/firewalls/test-fw-two",
+          "serviceName" : "compute.googleapis.com"
+        },
+        "receiveTimestamp" : "2020-04-03T00:28:13.752958613Z",
+        "operation" : {
+          "last" : true,
+          "producer" : "compute.googleapis.com",
+          "id" : "operation-1585873687571-5a257fdce6d13-fdc15f2b-893898c2"
+        },
+        "insertId" : "6o3qj5dcl8o",
+        "timestamp" : "2020-04-03T00:28:12.97Z"
+      }
+    service: "compute.googleapis.com"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1585873692970
+

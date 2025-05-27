@@ -1,0 +1,1565 @@
+id: shopify
+tests:
+ -
+  sample: |-
+    {
+      "subject_id" : 1234,
+      "path" : "/admin/pages",
+      "subject_type" : "Blog",
+      "author" : "Shopify",
+      "verb" : "create",
+      "created_at" : "2024-08-27T15:36:38+05:30",
+      "description" : "Blog was created: News.",
+      "arguments" : [ "News" ],
+      "id" : 222397999050809,
+      "message" : "Blog was created: <a href=\"https://admin.shopify.com/store/{store_name}/admin/blogs/1234\">News</a>."
+    }
+  service: "event"
+  result:
+    custom:
+      arguments:
+       - "News"
+      created_at: "2024-08-27T15:36:38+05:30"
+      description: "Blog was created: News."
+      id: 222397999050809
+      path: "/admin/pages"
+      subject_id: 1234
+      subject_type: "Blog"
+      usr:
+        name: "Shopify"
+      verb: "create"
+    message: "Blog was created: <a href=\"https://admin.shopify.com/store/{store_name}/admin/blogs/1234\">News</a>."
+    service: "event"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1724753198000
+ -
+  sample: |-
+    {
+      "confirmation_number" : "L5MIX0PUW",
+      "fulfillment_status" : "fulfilled",
+      "total_outstanding" : "1296.82",
+      "order_number" : 1002,
+      "created_at" : "2024-08-28T14:48:43+05:30",
+      "taxes_included" : false,
+      "line_items" : [ {
+        "variant_title" : "Black",
+        "fulfillment_status" : "fulfilled",
+        "total_discount" : "0.00",
+        "gift_card" : false,
+        "requires_shipping" : true,
+        "total_discount_set" : {
+          "shop_money" : {
+            "amount" : "0.00",
+            "currency_code" : "INR"
+          },
+          "presentment_money" : {
+            "amount" : "0.00",
+            "currency_code" : "INR"
+          }
+        },
+        "title" : "Shoes",
+        "product_exists" : true,
+        "variant_id" : 43744593936441,
+        "tax_lines" : [ {
+          "channel_liable" : false,
+          "rate" : 0.18,
+          "price" : "233.82",
+          "price_set" : {
+            "shop_money" : {
+              "amount" : "233.82",
+              "currency_code" : "INR"
+            },
+            "presentment_money" : {
+              "amount" : "233.82",
+              "currency_code" : "INR"
+            }
+          },
+          "title" : "IGST"
+        } ],
+        "price" : "1299.00",
+        "vendor" : "Dummy Vendor",
+        "product_id" : 7688312913977,
+        "id" : 12778730618937,
+        "grams" : 500,
+        "sku" : "SHOES-1",
+        "fulfillable_quantity" : 0,
+        "quantity" : 1,
+        "fulfillment_service" : "manual",
+        "taxable" : true,
+        "variant_inventory_management" : "shopify",
+        "current_quantity" : 1,
+        "admin_graphql_api_id" : "gid://shopify/LineItem/12778730618937",
+        "name" : "Shoes - Black",
+        "price_set" : {
+          "shop_money" : {
+            "amount" : "1299.00",
+            "currency_code" : "INR"
+          },
+          "presentment_money" : {
+            "amount" : "1299.00",
+            "currency_code" : "INR"
+          }
+        }
+      }, {
+        "variant_title" : "L",
+        "fulfillment_status" : "fulfilled",
+        "total_discount" : "0.00",
+        "gift_card" : false,
+        "requires_shipping" : true,
+        "total_discount_set" : {
+          "shop_money" : {
+            "amount" : "0.00",
+            "currency_code" : "INR"
+          },
+          "presentment_money" : {
+            "amount" : "0.00",
+            "currency_code" : "INR"
+          }
+        },
+        "title" : "Cotton tshirt",
+        "product_exists" : true,
+        "variant_id" : 43741030744121,
+        "tax_lines" : [ {
+          "channel_liable" : false,
+          "rate" : 0.18,
+          "price" : "53.82",
+          "price_set" : {
+            "shop_money" : {
+              "amount" : "53.82",
+              "currency_code" : "INR"
+            },
+            "presentment_money" : {
+              "amount" : "53.82",
+              "currency_code" : "INR"
+            }
+          },
+          "title" : "IGST"
+        } ],
+        "price" : "299.00",
+        "vendor" : "My Store",
+        "product_id" : 7687579762745,
+        "id" : 12801614413881,
+        "grams" : 100,
+        "sku" : "",
+        "fulfillable_quantity" : 0,
+        "quantity" : 1,
+        "fulfillment_service" : "manual",
+        "taxable" : true,
+        "variant_inventory_management" : "shopify",
+        "current_quantity" : 1,
+        "admin_graphql_api_id" : "gid://shopify/LineItem/12801614413881",
+        "name" : "Cotton tshirt - L",
+        "price_set" : {
+          "shop_money" : {
+            "amount" : "299.00",
+            "currency_code" : "INR"
+          },
+          "presentment_money" : {
+            "amount" : "299.00",
+            "currency_code" : "INR"
+          }
+        }
+      }, {
+        "fulfillable_quantity" : 0,
+        "fulfillment_status" : "fulfilled",
+        "quantity" : 1,
+        "total_discount" : "0.00",
+        "fulfillment_service" : "manual",
+        "gift_card" : false,
+        "taxable" : true,
+        "requires_shipping" : true,
+        "total_discount_set" : {
+          "shop_money" : {
+            "amount" : "0.00",
+            "currency_code" : "INR"
+          },
+          "presentment_money" : {
+            "amount" : "0.00",
+            "currency_code" : "INR"
+          }
+        },
+        "title" : "Desk Lamp",
+        "current_quantity" : 1,
+        "product_exists" : true,
+        "variant_id" : 43744917815353,
+        "tax_lines" : [ {
+          "channel_liable" : false,
+          "rate" : 0.18,
+          "price" : "144.00",
+          "price_set" : {
+            "shop_money" : {
+              "amount" : "144.00",
+              "currency_code" : "INR"
+            },
+            "presentment_money" : {
+              "amount" : "144.00",
+              "currency_code" : "INR"
+            }
+          },
+          "title" : "IGST"
+        } ],
+        "price" : "800.00",
+        "vendor" : "Dummy Vendor",
+        "admin_graphql_api_id" : "gid://shopify/LineItem/12801628569657",
+        "product_id" : 7688576860217,
+        "name" : "Desk Lamp",
+        "id" : 12801628569657,
+        "grams" : 0,
+        "price_set" : {
+          "shop_money" : {
+            "amount" : "800.00",
+            "currency_code" : "INR"
+          },
+          "presentment_money" : {
+            "amount" : "800.00",
+            "currency_code" : "INR"
+          }
+        },
+        "sku" : "DL789"
+      } ],
+      "buyer_accepts_marketing" : false,
+      "presentment_currency" : "INR",
+      "confirmed" : true,
+      "total_weight" : 600,
+      "total_discounts" : "0.00",
+      "fulfillments" : [ {
+        "updated_at" : "2024-09-20T10:13:23+05:30",
+        "service" : "manual",
+        "admin_graphql_api_id" : "gid://shopify/Fulfillment/4542375952441",
+        "name" : "#1002.1",
+        "created_at" : "2024-09-20T10:13:23+05:30",
+        "id" : 4542375952441,
+        "line_items" : [ {
+          "variant_title" : "Black",
+          "fulfillment_status" : "fulfilled",
+          "total_discount" : "0.00",
+          "gift_card" : false,
+          "requires_shipping" : true,
+          "total_discount_set" : {
+            "shop_money" : {
+              "amount" : "0.00",
+              "currency_code" : "INR"
+            },
+            "presentment_money" : {
+              "amount" : "0.00",
+              "currency_code" : "INR"
+            }
+          },
+          "title" : "Shoes",
+          "product_exists" : true,
+          "variant_id" : 43744593936441,
+          "tax_lines" : [ {
+            "channel_liable" : false,
+            "rate" : 0.18,
+            "price" : "233.82",
+            "price_set" : {
+              "shop_money" : {
+                "amount" : "233.82",
+                "currency_code" : "INR"
+              },
+              "presentment_money" : {
+                "amount" : "233.82",
+                "currency_code" : "INR"
+              }
+            },
+            "title" : "IGST"
+          } ],
+          "price" : "1299.00",
+          "vendor" : "Dummy Vendor",
+          "product_id" : 7688312913977,
+          "id" : 12778730618937,
+          "grams" : 500,
+          "sku" : "SHOES-1",
+          "fulfillable_quantity" : 0,
+          "quantity" : 1,
+          "fulfillment_service" : "manual",
+          "taxable" : true,
+          "variant_inventory_management" : "shopify",
+          "current_quantity" : 1,
+          "admin_graphql_api_id" : "gid://shopify/LineItem/12778730618937",
+          "name" : "Shoes - Black",
+          "price_set" : {
+            "shop_money" : {
+              "amount" : "1299.00",
+              "currency_code" : "INR"
+            },
+            "presentment_money" : {
+              "amount" : "1299.00",
+              "currency_code" : "INR"
+            }
+          }
+        }, {
+          "variant_title" : "L",
+          "fulfillment_status" : "fulfilled",
+          "total_discount" : "0.00",
+          "gift_card" : false,
+          "requires_shipping" : true,
+          "total_discount_set" : {
+            "shop_money" : {
+              "amount" : "0.00",
+              "currency_code" : "INR"
+            },
+            "presentment_money" : {
+              "amount" : "0.00",
+              "currency_code" : "INR"
+            }
+          },
+          "title" : "Cotton tshirt",
+          "product_exists" : true,
+          "variant_id" : 43741030744121,
+          "tax_lines" : [ {
+            "channel_liable" : false,
+            "rate" : 0.18,
+            "price" : "53.82",
+            "price_set" : {
+              "shop_money" : {
+                "amount" : "53.82",
+                "currency_code" : "INR"
+              },
+              "presentment_money" : {
+                "amount" : "53.82",
+                "currency_code" : "INR"
+              }
+            },
+            "title" : "IGST"
+          } ],
+          "price" : "299.00",
+          "vendor" : "My Store",
+          "product_id" : 7687579762745,
+          "id" : 12801614413881,
+          "grams" : 100,
+          "sku" : "",
+          "fulfillable_quantity" : 0,
+          "quantity" : 1,
+          "fulfillment_service" : "manual",
+          "taxable" : true,
+          "variant_inventory_management" : "shopify",
+          "current_quantity" : 1,
+          "admin_graphql_api_id" : "gid://shopify/LineItem/12801614413881",
+          "name" : "Cotton tshirt - L",
+          "price_set" : {
+            "shop_money" : {
+              "amount" : "299.00",
+              "currency_code" : "INR"
+            },
+            "presentment_money" : {
+              "amount" : "299.00",
+              "currency_code" : "INR"
+            }
+          }
+        }, {
+          "fulfillable_quantity" : 0,
+          "fulfillment_status" : "fulfilled",
+          "quantity" : 1,
+          "total_discount" : "0.00",
+          "fulfillment_service" : "manual",
+          "gift_card" : false,
+          "taxable" : true,
+          "requires_shipping" : true,
+          "total_discount_set" : {
+            "shop_money" : {
+              "amount" : "0.00",
+              "currency_code" : "INR"
+            },
+            "presentment_money" : {
+              "amount" : "0.00",
+              "currency_code" : "INR"
+            }
+          },
+          "title" : "Desk Lamp",
+          "current_quantity" : 1,
+          "product_exists" : true,
+          "variant_id" : 43744917815353,
+          "tax_lines" : [ {
+            "channel_liable" : false,
+            "rate" : 0.18,
+            "price" : "144.00",
+            "price_set" : {
+              "shop_money" : {
+                "amount" : "144.00",
+                "currency_code" : "INR"
+              },
+              "presentment_money" : {
+                "amount" : "144.00",
+                "currency_code" : "INR"
+              }
+            },
+            "title" : "IGST"
+          } ],
+          "price" : "800.00",
+          "vendor" : "Dummy Vendor",
+          "admin_graphql_api_id" : "gid://shopify/LineItem/12801628569657",
+          "product_id" : 7688576860217,
+          "name" : "Desk Lamp",
+          "id" : 12801628569657,
+          "grams" : 0,
+          "price_set" : {
+            "shop_money" : {
+              "amount" : "800.00",
+              "currency_code" : "INR"
+            },
+            "presentment_money" : {
+              "amount" : "800.00",
+              "currency_code" : "INR"
+            }
+          },
+          "sku" : "DL789"
+        } ],
+        "order_id" : 5030430111111,
+        "location_id" : 75274649657,
+        "status" : "success"
+      } ],
+      "client_details" : {
+        "browser_ip" : "10.0.0.0",
+        "user_agent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+      },
+      "updated_at" : "2024-09-20T10:13:23+05:30",
+      "customer_locale" : "en",
+      "processed_at" : "2024-08-28T14:48:43+05:30",
+      "currency" : "INR",
+      "id" : 5030430111111,
+      "subtotal_price" : "2398.00",
+      "total_price" : "2829.64",
+      "total_line_items_price" : "2398.00",
+      "total_tax" : "431.64",
+      "total_tip_received" : "0.00",
+      "financial_status" : "partially_paid",
+      "name" : "#1002",
+      "customer" : {
+        "note" : "",
+        "tax_exempt" : false,
+        "email_marketing_consent" : {
+          "state" : "not_subscribed",
+          "opt_in_level" : "single_opt_in"
+        },
+        "created_at" : "2024-08-28T15:50:36+05:30",
+        "last_name" : "Doe",
+        "verified_email" : true,
+        "tags" : "",
+        "default_address" : {
+          "zip" : "",
+          "country" : "India",
+          "address2" : "",
+          "city" : "Ahmedabad",
+          "address1" : "",
+          "last_name" : "Doe",
+          "province_code" : "GJ",
+          "country_code" : "IN",
+          "default" : true,
+          "province" : "Gujarat",
+          "name" : "John Doe",
+          "country_name" : "India",
+          "company" : "",
+          "id" : 8518800900153,
+          "customer_id" : 7597194181111,
+          "first_name" : "John"
+        },
+        "updated_at" : "2024-09-23T12:22:38+05:30",
+        "admin_graphql_api_id" : "gid://shopify/Customer/7597194181111",
+        "currency" : "INR",
+        "id" : 7597194181111,
+        "state" : "disabled",
+        "first_name" : "John",
+        "email" : "example@gmail.com"
+      }
+    }
+  service: "order"
+  result:
+    custom:
+      buyer_accepts_marketing: false
+      confirmation_number: "L5MIX0PUW"
+      confirmed: true
+      created_at: "2024-08-28T14:48:43+05:30"
+      currency: "INR"
+      customer:
+        admin_graphql_api_id: "gid://shopify/Customer/7597194181111"
+        created_at: "2024-08-28T15:50:36+05:30"
+        currency: "INR"
+        default_address:
+          address1: ""
+          address2: ""
+          city: "Ahmedabad"
+          company: ""
+          country: "India"
+          country_code: "IN"
+          country_name: "India"
+          customer_id: 7597194181111
+          default: true
+          first_name: "John"
+          id: 8518800900153
+          last_name: "Doe"
+          name: "John Doe"
+          province: "Gujarat"
+          province_code: "GJ"
+          zip: ""
+        email_marketing_consent:
+          opt_in_level: "single_opt_in"
+          state: "not_subscribed"
+        first_name: "John"
+        last_name: "Doe"
+        note: ""
+        state: "disabled"
+        tags: ""
+        tax_exempt: false
+        updated_at: "2024-09-23T12:22:38+05:30"
+        verified_email: true
+      customer_locale: "en"
+      financial_status: "partially_paid"
+      fulfillment_status: "fulfilled"
+      fulfillments:
+       -
+        updated_at: "2024-09-20T10:13:23+05:30"
+        service: "manual"
+        admin_graphql_api_id: "gid://shopify/Fulfillment/4542375952441"
+        name: "#1002.1"
+        created_at: "2024-09-20T10:13:23+05:30"
+        id: 4542375952441
+        line_items:
+         -
+          variant_title: "Black"
+          fulfillment_status: "fulfilled"
+          total_discount: "0.00"
+          gift_card: false
+          requires_shipping: true
+          total_discount_set:
+            shop_money:
+              amount: "0.00"
+              currency_code: "INR"
+            presentment_money:
+              amount: "0.00"
+              currency_code: "INR"
+          title: "Shoes"
+          product_exists: true
+          variant_id: 43744593936441
+          tax_lines:
+           -
+            channel_liable: false
+            rate: 0.18
+            price: "233.82"
+            price_set:
+              shop_money:
+                amount: "233.82"
+                currency_code: "INR"
+              presentment_money:
+                amount: "233.82"
+                currency_code: "INR"
+            title: "IGST"
+          price: "1299.00"
+          vendor: "Dummy Vendor"
+          product_id: 7688312913977
+          id: 12778730618937
+          grams: 500
+          sku: "SHOES-1"
+          fulfillable_quantity: 0
+          quantity: 1
+          fulfillment_service: "manual"
+          taxable: true
+          variant_inventory_management: "shopify"
+          current_quantity: 1
+          admin_graphql_api_id: "gid://shopify/LineItem/12778730618937"
+          name: "Shoes - Black"
+          price_set:
+            shop_money:
+              amount: "1299.00"
+              currency_code: "INR"
+            presentment_money:
+              amount: "1299.00"
+              currency_code: "INR"
+         -
+          variant_title: "L"
+          fulfillment_status: "fulfilled"
+          total_discount: "0.00"
+          gift_card: false
+          requires_shipping: true
+          total_discount_set:
+            shop_money:
+              amount: "0.00"
+              currency_code: "INR"
+            presentment_money:
+              amount: "0.00"
+              currency_code: "INR"
+          title: "Cotton tshirt"
+          product_exists: true
+          variant_id: 43741030744121
+          tax_lines:
+           -
+            channel_liable: false
+            rate: 0.18
+            price: "53.82"
+            price_set:
+              shop_money:
+                amount: "53.82"
+                currency_code: "INR"
+              presentment_money:
+                amount: "53.82"
+                currency_code: "INR"
+            title: "IGST"
+          price: "299.00"
+          vendor: "My Store"
+          product_id: 7687579762745
+          id: 12801614413881
+          grams: 100
+          sku: ""
+          fulfillable_quantity: 0
+          quantity: 1
+          fulfillment_service: "manual"
+          taxable: true
+          variant_inventory_management: "shopify"
+          current_quantity: 1
+          admin_graphql_api_id: "gid://shopify/LineItem/12801614413881"
+          name: "Cotton tshirt - L"
+          price_set:
+            shop_money:
+              amount: "299.00"
+              currency_code: "INR"
+            presentment_money:
+              amount: "299.00"
+              currency_code: "INR"
+         -
+          fulfillable_quantity: 0
+          fulfillment_status: "fulfilled"
+          quantity: 1
+          total_discount: "0.00"
+          fulfillment_service: "manual"
+          gift_card: false
+          taxable: true
+          requires_shipping: true
+          total_discount_set:
+            shop_money:
+              amount: "0.00"
+              currency_code: "INR"
+            presentment_money:
+              amount: "0.00"
+              currency_code: "INR"
+          title: "Desk Lamp"
+          current_quantity: 1
+          product_exists: true
+          variant_id: 43744917815353
+          tax_lines:
+           -
+            channel_liable: false
+            rate: 0.18
+            price: "144.00"
+            price_set:
+              shop_money:
+                amount: "144.00"
+                currency_code: "INR"
+              presentment_money:
+                amount: "144.00"
+                currency_code: "INR"
+            title: "IGST"
+          price: "800.00"
+          vendor: "Dummy Vendor"
+          admin_graphql_api_id: "gid://shopify/LineItem/12801628569657"
+          product_id: 7688576860217
+          name: "Desk Lamp"
+          id: 12801628569657
+          grams: 0
+          price_set:
+            shop_money:
+              amount: "800.00"
+              currency_code: "INR"
+            presentment_money:
+              amount: "800.00"
+              currency_code: "INR"
+          sku: "DL789"
+        order_id: 5030430111111
+        location_id: 75274649657
+        status: "success"
+      http:
+        useragent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "128"
+            minor: "0"
+            patch: "0"
+            patch_minor: "0"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Windows"
+            major: "10"
+      id: 5030430111111
+      line_items:
+       -
+        variant_title: "Black"
+        fulfillment_status: "fulfilled"
+        total_discount: "0.00"
+        gift_card: false
+        requires_shipping: true
+        total_discount_set:
+          shop_money:
+            amount: "0.00"
+            currency_code: "INR"
+          presentment_money:
+            amount: "0.00"
+            currency_code: "INR"
+        title: "Shoes"
+        product_exists: true
+        variant_id: 43744593936441
+        tax_lines:
+         -
+          channel_liable: false
+          rate: 0.18
+          price: "233.82"
+          price_set:
+            shop_money:
+              amount: "233.82"
+              currency_code: "INR"
+            presentment_money:
+              amount: "233.82"
+              currency_code: "INR"
+          title: "IGST"
+        price: "1299.00"
+        vendor: "Dummy Vendor"
+        product_id: 7688312913977
+        id: 12778730618937
+        grams: 500
+        sku: "SHOES-1"
+        fulfillable_quantity: 0
+        quantity: 1
+        fulfillment_service: "manual"
+        taxable: true
+        variant_inventory_management: "shopify"
+        current_quantity: 1
+        admin_graphql_api_id: "gid://shopify/LineItem/12778730618937"
+        name: "Shoes - Black"
+        price_set:
+          shop_money:
+            amount: "1299.00"
+            currency_code: "INR"
+          presentment_money:
+            amount: "1299.00"
+            currency_code: "INR"
+       -
+        variant_title: "L"
+        fulfillment_status: "fulfilled"
+        total_discount: "0.00"
+        gift_card: false
+        requires_shipping: true
+        total_discount_set:
+          shop_money:
+            amount: "0.00"
+            currency_code: "INR"
+          presentment_money:
+            amount: "0.00"
+            currency_code: "INR"
+        title: "Cotton tshirt"
+        product_exists: true
+        variant_id: 43741030744121
+        tax_lines:
+         -
+          channel_liable: false
+          rate: 0.18
+          price: "53.82"
+          price_set:
+            shop_money:
+              amount: "53.82"
+              currency_code: "INR"
+            presentment_money:
+              amount: "53.82"
+              currency_code: "INR"
+          title: "IGST"
+        price: "299.00"
+        vendor: "My Store"
+        product_id: 7687579762745
+        id: 12801614413881
+        grams: 100
+        sku: ""
+        fulfillable_quantity: 0
+        quantity: 1
+        fulfillment_service: "manual"
+        taxable: true
+        variant_inventory_management: "shopify"
+        current_quantity: 1
+        admin_graphql_api_id: "gid://shopify/LineItem/12801614413881"
+        name: "Cotton tshirt - L"
+        price_set:
+          shop_money:
+            amount: "299.00"
+            currency_code: "INR"
+          presentment_money:
+            amount: "299.00"
+            currency_code: "INR"
+       -
+        fulfillable_quantity: 0
+        fulfillment_status: "fulfilled"
+        quantity: 1
+        total_discount: "0.00"
+        fulfillment_service: "manual"
+        gift_card: false
+        taxable: true
+        requires_shipping: true
+        total_discount_set:
+          shop_money:
+            amount: "0.00"
+            currency_code: "INR"
+          presentment_money:
+            amount: "0.00"
+            currency_code: "INR"
+        title: "Desk Lamp"
+        current_quantity: 1
+        product_exists: true
+        variant_id: 43744917815353
+        tax_lines:
+         -
+          channel_liable: false
+          rate: 0.18
+          price: "144.00"
+          price_set:
+            shop_money:
+              amount: "144.00"
+              currency_code: "INR"
+            presentment_money:
+              amount: "144.00"
+              currency_code: "INR"
+          title: "IGST"
+        price: "800.00"
+        vendor: "Dummy Vendor"
+        admin_graphql_api_id: "gid://shopify/LineItem/12801628569657"
+        product_id: 7688576860217
+        name: "Desk Lamp"
+        id: 12801628569657
+        grams: 0
+        price_set:
+          shop_money:
+            amount: "800.00"
+            currency_code: "INR"
+          presentment_money:
+            amount: "800.00"
+            currency_code: "INR"
+        sku: "DL789"
+      name: "#1002"
+      network:
+        client:
+          geoip: {}
+          ip: "10.0.0.0"
+      order_number: 1002
+      presentment_currency: "INR"
+      processed_at: "2024-08-28T14:48:43+05:30"
+      subtotal_price: "2398.00"
+      taxes_included: false
+      total_discounts: "0.00"
+      total_line_items_price: "2398.00"
+      total_outstanding: "1296.82"
+      total_price: "2829.64"
+      total_tax: "431.64"
+      total_tip_received: "0.00"
+      total_weight: 600
+      updated_at: "2024-09-20T10:13:23+05:30"
+      usr:
+        email: "example@gmail.com"
+        id: 7597194181111
+        name: "John Doe"
+    message: |-
+      {
+        "confirmation_number" : "L5MIX0PUW",
+        "fulfillment_status" : "fulfilled",
+        "total_outstanding" : "1296.82",
+        "order_number" : 1002,
+        "created_at" : "2024-08-28T14:48:43+05:30",
+        "taxes_included" : false,
+        "line_items" : [ {
+          "variant_title" : "Black",
+          "fulfillment_status" : "fulfilled",
+          "total_discount" : "0.00",
+          "gift_card" : false,
+          "requires_shipping" : true,
+          "total_discount_set" : {
+            "shop_money" : {
+              "amount" : "0.00",
+              "currency_code" : "INR"
+            },
+            "presentment_money" : {
+              "amount" : "0.00",
+              "currency_code" : "INR"
+            }
+          },
+          "title" : "Shoes",
+          "product_exists" : true,
+          "variant_id" : 43744593936441,
+          "tax_lines" : [ {
+            "channel_liable" : false,
+            "rate" : 0.18,
+            "price" : "233.82",
+            "price_set" : {
+              "shop_money" : {
+                "amount" : "233.82",
+                "currency_code" : "INR"
+              },
+              "presentment_money" : {
+                "amount" : "233.82",
+                "currency_code" : "INR"
+              }
+            },
+            "title" : "IGST"
+          } ],
+          "price" : "1299.00",
+          "vendor" : "Dummy Vendor",
+          "product_id" : 7688312913977,
+          "id" : 12778730618937,
+          "grams" : 500,
+          "sku" : "SHOES-1",
+          "fulfillable_quantity" : 0,
+          "quantity" : 1,
+          "fulfillment_service" : "manual",
+          "taxable" : true,
+          "variant_inventory_management" : "shopify",
+          "current_quantity" : 1,
+          "admin_graphql_api_id" : "gid://shopify/LineItem/12778730618937",
+          "name" : "Shoes - Black",
+          "price_set" : {
+            "shop_money" : {
+              "amount" : "1299.00",
+              "currency_code" : "INR"
+            },
+            "presentment_money" : {
+              "amount" : "1299.00",
+              "currency_code" : "INR"
+            }
+          }
+        }, {
+          "variant_title" : "L",
+          "fulfillment_status" : "fulfilled",
+          "total_discount" : "0.00",
+          "gift_card" : false,
+          "requires_shipping" : true,
+          "total_discount_set" : {
+            "shop_money" : {
+              "amount" : "0.00",
+              "currency_code" : "INR"
+            },
+            "presentment_money" : {
+              "amount" : "0.00",
+              "currency_code" : "INR"
+            }
+          },
+          "title" : "Cotton tshirt",
+          "product_exists" : true,
+          "variant_id" : 43741030744121,
+          "tax_lines" : [ {
+            "channel_liable" : false,
+            "rate" : 0.18,
+            "price" : "53.82",
+            "price_set" : {
+              "shop_money" : {
+                "amount" : "53.82",
+                "currency_code" : "INR"
+              },
+              "presentment_money" : {
+                "amount" : "53.82",
+                "currency_code" : "INR"
+              }
+            },
+            "title" : "IGST"
+          } ],
+          "price" : "299.00",
+          "vendor" : "My Store",
+          "product_id" : 7687579762745,
+          "id" : 12801614413881,
+          "grams" : 100,
+          "sku" : "",
+          "fulfillable_quantity" : 0,
+          "quantity" : 1,
+          "fulfillment_service" : "manual",
+          "taxable" : true,
+          "variant_inventory_management" : "shopify",
+          "current_quantity" : 1,
+          "admin_graphql_api_id" : "gid://shopify/LineItem/12801614413881",
+          "name" : "Cotton tshirt - L",
+          "price_set" : {
+            "shop_money" : {
+              "amount" : "299.00",
+              "currency_code" : "INR"
+            },
+            "presentment_money" : {
+              "amount" : "299.00",
+              "currency_code" : "INR"
+            }
+          }
+        }, {
+          "fulfillable_quantity" : 0,
+          "fulfillment_status" : "fulfilled",
+          "quantity" : 1,
+          "total_discount" : "0.00",
+          "fulfillment_service" : "manual",
+          "gift_card" : false,
+          "taxable" : true,
+          "requires_shipping" : true,
+          "total_discount_set" : {
+            "shop_money" : {
+              "amount" : "0.00",
+              "currency_code" : "INR"
+            },
+            "presentment_money" : {
+              "amount" : "0.00",
+              "currency_code" : "INR"
+            }
+          },
+          "title" : "Desk Lamp",
+          "current_quantity" : 1,
+          "product_exists" : true,
+          "variant_id" : 43744917815353,
+          "tax_lines" : [ {
+            "channel_liable" : false,
+            "rate" : 0.18,
+            "price" : "144.00",
+            "price_set" : {
+              "shop_money" : {
+                "amount" : "144.00",
+                "currency_code" : "INR"
+              },
+              "presentment_money" : {
+                "amount" : "144.00",
+                "currency_code" : "INR"
+              }
+            },
+            "title" : "IGST"
+          } ],
+          "price" : "800.00",
+          "vendor" : "Dummy Vendor",
+          "admin_graphql_api_id" : "gid://shopify/LineItem/12801628569657",
+          "product_id" : 7688576860217,
+          "name" : "Desk Lamp",
+          "id" : 12801628569657,
+          "grams" : 0,
+          "price_set" : {
+            "shop_money" : {
+              "amount" : "800.00",
+              "currency_code" : "INR"
+            },
+            "presentment_money" : {
+              "amount" : "800.00",
+              "currency_code" : "INR"
+            }
+          },
+          "sku" : "DL789"
+        } ],
+        "buyer_accepts_marketing" : false,
+        "presentment_currency" : "INR",
+        "confirmed" : true,
+        "total_weight" : 600,
+        "total_discounts" : "0.00",
+        "fulfillments" : [ {
+          "updated_at" : "2024-09-20T10:13:23+05:30",
+          "service" : "manual",
+          "admin_graphql_api_id" : "gid://shopify/Fulfillment/4542375952441",
+          "name" : "#1002.1",
+          "created_at" : "2024-09-20T10:13:23+05:30",
+          "id" : 4542375952441,
+          "line_items" : [ {
+            "variant_title" : "Black",
+            "fulfillment_status" : "fulfilled",
+            "total_discount" : "0.00",
+            "gift_card" : false,
+            "requires_shipping" : true,
+            "total_discount_set" : {
+              "shop_money" : {
+                "amount" : "0.00",
+                "currency_code" : "INR"
+              },
+              "presentment_money" : {
+                "amount" : "0.00",
+                "currency_code" : "INR"
+              }
+            },
+            "title" : "Shoes",
+            "product_exists" : true,
+            "variant_id" : 43744593936441,
+            "tax_lines" : [ {
+              "channel_liable" : false,
+              "rate" : 0.18,
+              "price" : "233.82",
+              "price_set" : {
+                "shop_money" : {
+                  "amount" : "233.82",
+                  "currency_code" : "INR"
+                },
+                "presentment_money" : {
+                  "amount" : "233.82",
+                  "currency_code" : "INR"
+                }
+              },
+              "title" : "IGST"
+            } ],
+            "price" : "1299.00",
+            "vendor" : "Dummy Vendor",
+            "product_id" : 7688312913977,
+            "id" : 12778730618937,
+            "grams" : 500,
+            "sku" : "SHOES-1",
+            "fulfillable_quantity" : 0,
+            "quantity" : 1,
+            "fulfillment_service" : "manual",
+            "taxable" : true,
+            "variant_inventory_management" : "shopify",
+            "current_quantity" : 1,
+            "admin_graphql_api_id" : "gid://shopify/LineItem/12778730618937",
+            "name" : "Shoes - Black",
+            "price_set" : {
+              "shop_money" : {
+                "amount" : "1299.00",
+                "currency_code" : "INR"
+              },
+              "presentment_money" : {
+                "amount" : "1299.00",
+                "currency_code" : "INR"
+              }
+            }
+          }, {
+            "variant_title" : "L",
+            "fulfillment_status" : "fulfilled",
+            "total_discount" : "0.00",
+            "gift_card" : false,
+            "requires_shipping" : true,
+            "total_discount_set" : {
+              "shop_money" : {
+                "amount" : "0.00",
+                "currency_code" : "INR"
+              },
+              "presentment_money" : {
+                "amount" : "0.00",
+                "currency_code" : "INR"
+              }
+            },
+            "title" : "Cotton tshirt",
+            "product_exists" : true,
+            "variant_id" : 43741030744121,
+            "tax_lines" : [ {
+              "channel_liable" : false,
+              "rate" : 0.18,
+              "price" : "53.82",
+              "price_set" : {
+                "shop_money" : {
+                  "amount" : "53.82",
+                  "currency_code" : "INR"
+                },
+                "presentment_money" : {
+                  "amount" : "53.82",
+                  "currency_code" : "INR"
+                }
+              },
+              "title" : "IGST"
+            } ],
+            "price" : "299.00",
+            "vendor" : "My Store",
+            "product_id" : 7687579762745,
+            "id" : 12801614413881,
+            "grams" : 100,
+            "sku" : "",
+            "fulfillable_quantity" : 0,
+            "quantity" : 1,
+            "fulfillment_service" : "manual",
+            "taxable" : true,
+            "variant_inventory_management" : "shopify",
+            "current_quantity" : 1,
+            "admin_graphql_api_id" : "gid://shopify/LineItem/12801614413881",
+            "name" : "Cotton tshirt - L",
+            "price_set" : {
+              "shop_money" : {
+                "amount" : "299.00",
+                "currency_code" : "INR"
+              },
+              "presentment_money" : {
+                "amount" : "299.00",
+                "currency_code" : "INR"
+              }
+            }
+          }, {
+            "fulfillable_quantity" : 0,
+            "fulfillment_status" : "fulfilled",
+            "quantity" : 1,
+            "total_discount" : "0.00",
+            "fulfillment_service" : "manual",
+            "gift_card" : false,
+            "taxable" : true,
+            "requires_shipping" : true,
+            "total_discount_set" : {
+              "shop_money" : {
+                "amount" : "0.00",
+                "currency_code" : "INR"
+              },
+              "presentment_money" : {
+                "amount" : "0.00",
+                "currency_code" : "INR"
+              }
+            },
+            "title" : "Desk Lamp",
+            "current_quantity" : 1,
+            "product_exists" : true,
+            "variant_id" : 43744917815353,
+            "tax_lines" : [ {
+              "channel_liable" : false,
+              "rate" : 0.18,
+              "price" : "144.00",
+              "price_set" : {
+                "shop_money" : {
+                  "amount" : "144.00",
+                  "currency_code" : "INR"
+                },
+                "presentment_money" : {
+                  "amount" : "144.00",
+                  "currency_code" : "INR"
+                }
+              },
+              "title" : "IGST"
+            } ],
+            "price" : "800.00",
+            "vendor" : "Dummy Vendor",
+            "admin_graphql_api_id" : "gid://shopify/LineItem/12801628569657",
+            "product_id" : 7688576860217,
+            "name" : "Desk Lamp",
+            "id" : 12801628569657,
+            "grams" : 0,
+            "price_set" : {
+              "shop_money" : {
+                "amount" : "800.00",
+                "currency_code" : "INR"
+              },
+              "presentment_money" : {
+                "amount" : "800.00",
+                "currency_code" : "INR"
+              }
+            },
+            "sku" : "DL789"
+          } ],
+          "order_id" : 5030430111111,
+          "location_id" : 75274649657,
+          "status" : "success"
+        } ],
+        "client_details" : {
+          "browser_ip" : "10.0.0.0",
+          "user_agent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+        },
+        "updated_at" : "2024-09-20T10:13:23+05:30",
+        "customer_locale" : "en",
+        "processed_at" : "2024-08-28T14:48:43+05:30",
+        "currency" : "INR",
+        "id" : 5030430111111,
+        "subtotal_price" : "2398.00",
+        "total_price" : "2829.64",
+        "total_line_items_price" : "2398.00",
+        "total_tax" : "431.64",
+        "total_tip_received" : "0.00",
+        "financial_status" : "partially_paid",
+        "name" : "#1002",
+        "customer" : {
+          "note" : "",
+          "tax_exempt" : false,
+          "email_marketing_consent" : {
+            "state" : "not_subscribed",
+            "opt_in_level" : "single_opt_in"
+          },
+          "created_at" : "2024-08-28T15:50:36+05:30",
+          "last_name" : "Doe",
+          "verified_email" : true,
+          "tags" : "",
+          "default_address" : {
+            "zip" : "",
+            "country" : "India",
+            "address2" : "",
+            "city" : "Ahmedabad",
+            "address1" : "",
+            "last_name" : "Doe",
+            "province_code" : "GJ",
+            "country_code" : "IN",
+            "default" : true,
+            "province" : "Gujarat",
+            "name" : "John Doe",
+            "country_name" : "India",
+            "company" : "",
+            "id" : 8518800900153,
+            "customer_id" : 7597194181111,
+            "first_name" : "John"
+          },
+          "updated_at" : "2024-09-23T12:22:38+05:30",
+          "admin_graphql_api_id" : "gid://shopify/Customer/7597194181111",
+          "currency" : "INR",
+          "id" : 7597194181111,
+          "state" : "disabled",
+          "first_name" : "John",
+          "email" : "example@gmail.com"
+        }
+      }
+    service: "order"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1726807403000
+ -
+  sample: |-
+    {
+      "note" : "Note",
+      "taxExempt" : false,
+      "productSubscriberStatus" : "NEVER_SUBSCRIBED",
+      "lastOrder" : {
+        "totalPriceSet" : {
+          "shopMoney" : {
+            "amount" : "3065.64",
+            "currencyCode" : "INR"
+          }
+        }
+      },
+      "displayName" : "John Doe",
+      "smsMarketingConsent" : {
+        "marketingOptInLevel" : "SINGLE_OPT_IN",
+        "consentCollectedFrom" : "SHOPIFY",
+        "marketingState" : "NOT_SUBSCRIBED"
+      },
+      "validEmailAddress" : true,
+      "numberOfOrders" : "1",
+      "emailMarketingConsent" : {
+        "marketingOptInLevel" : "SINGLE_OPT_IN",
+        "marketingState" : "SUBSCRIBED",
+        "consentUpdatedAt" : "2024-09-03T09:31:52Z"
+      },
+      "createdAt" : "2024-09-03T09:31:52Z",
+      "legacyResourceId" : "123",
+      "canDelete" : false,
+      "lifetimeDuration" : "22 days",
+      "id" : "gid://shopify/Customer/123",
+      "state" : "DISABLED",
+      "dataSaleOptOut" : false,
+      "amountSpent" : {
+        "amount" : "3065.64",
+        "currencyCode" : "INR"
+      },
+      "updatedAt" : "2024-09-18T12:23:20Z",
+      "defaultAddress" : {
+        "country" : "India",
+        "city" : "Ahmedabad",
+        "countryCodeV2" : "IN"
+      },
+      "verifiedEmail" : true
+    }
+  service: "customer"
+  result:
+    custom:
+      amountSpent:
+        amount: "3065.64"
+        currencyCode: "INR"
+      canDelete: false
+      createdAt: "2024-09-03T09:31:52Z"
+      dataSaleOptOut: false
+      defaultAddress:
+        city: "Ahmedabad"
+        country: "India"
+        countryCodeV2: "IN"
+      emailMarketingConsent:
+        consentUpdatedAt: "2024-09-03T09:31:52Z"
+        marketingOptInLevel: "SINGLE_OPT_IN"
+        marketingState: "SUBSCRIBED"
+      id: "gid://shopify/Customer/123"
+      lastOrder:
+        totalPriceSet:
+          shopMoney:
+            amount: "3065.64"
+            currencyCode: "INR"
+      lifetimeDuration: "22 days"
+      note: "Note"
+      numberOfOrders: "1"
+      productSubscriberStatus: "NEVER_SUBSCRIBED"
+      smsMarketingConsent:
+        consentCollectedFrom: "SHOPIFY"
+        marketingOptInLevel: "SINGLE_OPT_IN"
+        marketingState: "NOT_SUBSCRIBED"
+      state: "DISABLED"
+      taxExempt: false
+      updatedAt: "2024-09-18T12:23:20Z"
+      usr:
+        id: "123"
+        name: "John Doe"
+      validEmailAddress: true
+      verifiedEmail: true
+    message: |-
+      {
+        "note" : "Note",
+        "taxExempt" : false,
+        "productSubscriberStatus" : "NEVER_SUBSCRIBED",
+        "lastOrder" : {
+          "totalPriceSet" : {
+            "shopMoney" : {
+              "amount" : "3065.64",
+              "currencyCode" : "INR"
+            }
+          }
+        },
+        "displayName" : "John Doe",
+        "smsMarketingConsent" : {
+          "marketingOptInLevel" : "SINGLE_OPT_IN",
+          "consentCollectedFrom" : "SHOPIFY",
+          "marketingState" : "NOT_SUBSCRIBED"
+        },
+        "validEmailAddress" : true,
+        "numberOfOrders" : "1",
+        "emailMarketingConsent" : {
+          "marketingOptInLevel" : "SINGLE_OPT_IN",
+          "marketingState" : "SUBSCRIBED",
+          "consentUpdatedAt" : "2024-09-03T09:31:52Z"
+        },
+        "createdAt" : "2024-09-03T09:31:52Z",
+        "legacyResourceId" : "123",
+        "canDelete" : false,
+        "lifetimeDuration" : "22 days",
+        "id" : "gid://shopify/Customer/123",
+        "state" : "DISABLED",
+        "dataSaleOptOut" : false,
+        "amountSpent" : {
+          "amount" : "3065.64",
+          "currencyCode" : "INR"
+        },
+        "updatedAt" : "2024-09-18T12:23:20Z",
+        "defaultAddress" : {
+          "country" : "India",
+          "city" : "Ahmedabad",
+          "countryCodeV2" : "IN"
+        },
+        "verifiedEmail" : true
+      }
+    service: "customer"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1726662200000
+ -
+  sample: |-
+    {
+      "sellingPlanGroupsCount" : {
+        "count" : 0
+      },
+      "isGiftCard" : false,
+      "publishedAt" : "2024-09-25T05:37:35Z",
+      "description" : "zx xvb",
+      "handle" : "black-pama-shoes",
+      "totalInventory" : 0,
+      "tracksInventory" : true,
+      "title" : "Black Pama Shoes",
+      "requiresSellingPlan" : false,
+      "hasOutOfStockVariants" : true,
+      "variantsCount" : {
+        "count" : 1
+      },
+      "priceRangeV2" : {
+        "maxVariantPrice" : {
+          "amount" : "0.0",
+          "currencyCode" : "INR"
+        },
+        "minVariantPrice" : {
+          "amount" : "0.0",
+          "currencyCode" : "INR"
+        }
+      },
+      "createdAt" : "2024-09-25T05:37:35Z",
+      "hasOnlyDefaultVariant" : true,
+      "legacyResourceId" : "7715954491449",
+      "vendor" : "Dummy Vendor",
+      "mediaCount" : {
+        "count" : 0
+      },
+      "onlineStoreUrl" : "https://8856f0-0b.myshopify.com/products/black-pama-shoes",
+      "id" : "gid://shopify/Product/7715954491449",
+      "category" : {
+        "isArchived" : false,
+        "name" : "Apparel & Accessories",
+        "fullName" : "Apparel & Accessories",
+        "id" : "gid://shopify/TaxonomyCategory/aa"
+      },
+      "hasVariantsThatRequiresComponents" : false,
+      "productType" : "",
+      "status" : "ACTIVE",
+      "updatedAt" : "2024-09-25T10:56:37Z"
+    }
+  service: "product"
+  result:
+    custom:
+      category:
+        fullName: "Apparel & Accessories"
+        id: "gid://shopify/TaxonomyCategory/aa"
+        isArchived: false
+        name: "Apparel & Accessories"
+      createdAt: "2024-09-25T05:37:35Z"
+      description: "zx xvb"
+      handle: "black-pama-shoes"
+      hasOnlyDefaultVariant: true
+      hasOutOfStockVariants: true
+      hasVariantsThatRequiresComponents: false
+      id: "gid://shopify/Product/7715954491449"
+      isGiftCard: false
+      legacyResourceId: "7715954491449"
+      mediaCount:
+        count: 0
+      onlineStoreUrl: "https://8856f0-0b.myshopify.com/products/black-pama-shoes"
+      priceRangeV2:
+        maxVariantPrice:
+          amount: "0.0"
+          currencyCode: "INR"
+        minVariantPrice:
+          amount: "0.0"
+          currencyCode: "INR"
+      productType: ""
+      product_status: "ACTIVE"
+      publishedAt: "2024-09-25T05:37:35Z"
+      requiresSellingPlan: false
+      sellingPlanGroupsCount:
+        count: 0
+      status: "info"
+      title: "Black Pama Shoes"
+      totalInventory: 0
+      tracksInventory: true
+      updatedAt: "2024-09-25T10:56:37Z"
+      variantsCount:
+        count: 1
+      vendor: "Dummy Vendor"
+    message: |-
+      {
+        "sellingPlanGroupsCount" : {
+          "count" : 0
+        },
+        "isGiftCard" : false,
+        "publishedAt" : "2024-09-25T05:37:35Z",
+        "description" : "zx xvb",
+        "handle" : "black-pama-shoes",
+        "totalInventory" : 0,
+        "tracksInventory" : true,
+        "title" : "Black Pama Shoes",
+        "requiresSellingPlan" : false,
+        "hasOutOfStockVariants" : true,
+        "variantsCount" : {
+          "count" : 1
+        },
+        "priceRangeV2" : {
+          "maxVariantPrice" : {
+            "amount" : "0.0",
+            "currencyCode" : "INR"
+          },
+          "minVariantPrice" : {
+            "amount" : "0.0",
+            "currencyCode" : "INR"
+          }
+        },
+        "createdAt" : "2024-09-25T05:37:35Z",
+        "hasOnlyDefaultVariant" : true,
+        "legacyResourceId" : "7715954491449",
+        "vendor" : "Dummy Vendor",
+        "mediaCount" : {
+          "count" : 0
+        },
+        "onlineStoreUrl" : "https://8856f0-0b.myshopify.com/products/black-pama-shoes",
+        "id" : "gid://shopify/Product/7715954491449",
+        "category" : {
+          "isArchived" : false,
+          "name" : "Apparel & Accessories",
+          "fullName" : "Apparel & Accessories",
+          "id" : "gid://shopify/TaxonomyCategory/aa"
+        },
+        "hasVariantsThatRequiresComponents" : false,
+        "productType" : "",
+        "status" : "ACTIVE",
+        "updatedAt" : "2024-09-25T10:56:37Z"
+      }
+    service: "product"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1727261797000

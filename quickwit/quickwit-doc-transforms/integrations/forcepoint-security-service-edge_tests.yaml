@@ -1,0 +1,671 @@
+id: forcepoint-security-service-edge
+tests:
+  -
+    sample: |-
+      {
+        "owner" : "abc@xyz.io",
+        "dlpmatchlocations" : "",
+        "classifylabels" : "",
+        "attachments" : "",
+        "originalfolder" : "",
+        "filelink" : "https://file_123.com",
+        "patterns" : "Encypted File (IsLocked: True), Document and PDF Files (FileMatchClassification: pdf)",
+        "originalpatterns" : "",
+        "enterprisename" : "",
+        "createdtime" : "27 Dec 2024 06:18:35",
+        "filename" : "file_123.pdf",
+        "folder" : "/My Drive",
+        "modifiedtime" : "26 Dec 2024 11:09:12",
+        "size" : "233926",
+        "application" : "Cloud Apps",
+        "policyid" : "",
+        "organization" : "",
+        "time" : "27 Dec 2024 07:19:17",
+        "sharedwith" : "",
+        "syslogheader" : "<110>1 2024-12-27T07:19:17.887066Z api.hostserver.com NILVALUE NILVALUE cloudsummary",
+        "status" : "Internal, Shared, DLP",
+        "fileid" : "1fdf5e4f8e4f8er4e8re7e"
+      }
+    service: "forcepoint-sse-cloudsummary"
+    result:
+      custom:
+        application: "Cloud Apps"
+        attachments: ""
+        classifylabels: ""
+        createdtime: "27 Dec 2024 06:18:35"
+        dlpmatchlocations: ""
+        enterprisename: ""
+        fileid: "1fdf5e4f8e4f8er4e8re7e"
+        filelink: "https://file_123.com"
+        filename: "file_123.pdf"
+        folder: "/My Drive"
+        modifiedtime: "26 Dec 2024 11:09:12"
+        organization: ""
+        originalfolder: ""
+        originalpatterns: ""
+        patterns: "Encypted File (IsLocked: True), Document and PDF Files (FileMatchClassification: pdf)"
+        policyid: ""
+        sharedwith: ""
+        size: "233926"
+        status:
+        - "Internal"
+        - "Shared"
+        - "DLP"
+        syslog:
+          hostname: "api.hostserver.com"
+          msgid: "cloudsummary"
+          priority: 110
+        syslogheader: "<110>1 2024-12-27T07:19:17.887066Z api.hostserver.com NILVALUE NILVALUE cloudsummary"
+        time: 1735283957000
+        usr:
+          name: "abc@xyz.io"
+      message: |-
+        {
+          "owner" : "abc@xyz.io",
+          "dlpmatchlocations" : "",
+          "classifylabels" : "",
+          "attachments" : "",
+          "originalfolder" : "",
+          "filelink" : "https://file_123.com",
+          "patterns" : "Encypted File (IsLocked: True), Document and PDF Files (FileMatchClassification: pdf)",
+          "originalpatterns" : "",
+          "enterprisename" : "",
+          "createdtime" : "27 Dec 2024 06:18:35",
+          "filename" : "file_123.pdf",
+          "folder" : "/My Drive",
+          "modifiedtime" : "26 Dec 2024 11:09:12",
+          "size" : "233926",
+          "application" : "Cloud Apps",
+          "policyid" : "",
+          "organization" : "",
+          "time" : "27 Dec 2024 07:19:17",
+          "sharedwith" : "",
+          "syslogheader" : "<110>1 2024-12-27T07:19:17.887066Z api.hostserver.com NILVALUE NILVALUE cloudsummary",
+          "status" : "Internal, Shared, DLP",
+          "fileid" : "1fdf5e4f8e4f8er4e8re7e"
+        }
+      service: "forcepoint-sse-cloudsummary"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1735283957000
+  -
+    sample: |-
+      {
+        "owner" : "abc@xyz.io",
+        "activity" : "",
+        "filelink" : "https://file_123.pdf.com",
+        "actoripaddress" : "10.10.10.10",
+        "patterns" : "Encypted File (IsLocked: True), Document and PDF Files (FileMatchClassification: pdf)",
+        "enterprisename" : "",
+        "createdtime" : "27 Dec 2024 06:18:35",
+        "actor" : "user123",
+        "filename" : "file_123.pdf",
+        "folder" : "/My Drive",
+        "copies" : "",
+        "modifiedtime" : "26 Dec 2024 11:09:12",
+        "size" : "",
+        "application" : "Cloud Apps",
+        "policyid" : "",
+        "action" : "DLPScan",
+        "time" : "27 Dec 2024 07:19:17",
+        "sharedwith" : "",
+        "syslogheader" : "<110>1 2024-12-27T07:19:17.847394Z api.hostserver.com NILVALUE NILVALUE cloudaudit",
+        "status" : "Internal, Shared, DLP",
+        "fileid" : "1sf8e78re7re78re52fe"
+      }
+    service: "forcepoint-sse-cloudaudit"
+    result:
+      custom:
+        action:
+        - "DLPScan"
+        activity: ""
+        application: "Cloud Apps"
+        copies: ""
+        createdtime: "27 Dec 2024 06:18:35"
+        enterprisename: ""
+        fileid: "1sf8e78re7re78re52fe"
+        filelink: "https://file_123.pdf.com"
+        filename: "file_123.pdf"
+        folder: "/My Drive"
+        modifiedtime: "26 Dec 2024 11:09:12"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+        owner: "abc@xyz.io"
+        patterns: "Encypted File (IsLocked: True), Document and PDF Files (FileMatchClassification: pdf)"
+        policyid: ""
+        sharedwith: ""
+        size: ""
+        status:
+        - "Internal"
+        - "Shared"
+        - "DLP"
+        syslog:
+          hostname: "api.hostserver.com"
+          msgid: "cloudaudit"
+          priority: 110
+        syslogheader: "<110>1 2024-12-27T07:19:17.847394Z api.hostserver.com NILVALUE NILVALUE cloudaudit"
+        time: 1735283957000
+        usr:
+          name: "user123"
+      message: |-
+        {
+          "owner" : "abc@xyz.io",
+          "activity" : "",
+          "filelink" : "https://file_123.pdf.com",
+          "actoripaddress" : "10.10.10.10",
+          "patterns" : "Encypted File (IsLocked: True), Document and PDF Files (FileMatchClassification: pdf)",
+          "enterprisename" : "",
+          "createdtime" : "27 Dec 2024 06:18:35",
+          "actor" : "user123",
+          "filename" : "file_123.pdf",
+          "folder" : "/My Drive",
+          "copies" : "",
+          "modifiedtime" : "26 Dec 2024 11:09:12",
+          "size" : "",
+          "application" : "Cloud Apps",
+          "policyid" : "",
+          "action" : "DLPScan",
+          "time" : "27 Dec 2024 07:19:17",
+          "sharedwith" : "",
+          "syslogheader" : "<110>1 2024-12-27T07:19:17.847394Z api.hostserver.com NILVALUE NILVALUE cloudaudit",
+          "status" : "Internal, Shared, DLP",
+          "fileid" : "1sf8e78re7re78re52fe"
+        }
+      service: "forcepoint-sse-cloudaudit"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1735283957000
+  -
+    sample: |-
+      {
+        "ipaddress" : "100.100.100.100",
+        "request" : "",
+        "dlppattern" : "",
+        "activity" : "Login",
+        "emailsenttime" : "",
+        "deviceguid" : "A0011C111-1111-C222F-A85C-11FF22FF22FF",
+        "useragent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0",
+        "emailto" : "",
+        "transactionid" : "c4878fefefe4reg2r4tr85dfs [26 Dec 2024 09:08:34]",
+        "policyid" : "11111",
+        "emailsubject" : "",
+        "action" : "2FA",
+        "details" : "User challenged with Multi-Factor Authentication.",
+        "email" : "user123@xyz.com",
+        "syslogheader" : "<110>1 2024-12-26T09:08:34.105000Z api.hostserver.com NILVALUE NILVALUE access",
+        "emailcc" : "",
+        "emailfrom" : "",
+        "url" : "/accounts/agent_login/",
+        "orgid" : "",
+        "filename" : "",
+        "instancename" : "",
+        "application" : "MicroApp",
+        "emailbcc" : "",
+        "usergroup" : "Admins, System Administrator",
+        "location" : [ "Guest" ],
+        "time" : "26 Dec 2024 09:08:34",
+        "pagetitle" : "",
+        "user" : "User123",
+        "device" : "Windows 10"
+      }
+    service: "forcepoint-sse-access"
+    result:
+      custom:
+        action:
+        - "2FA"
+        activity:
+        - "Login"
+        application: "MicroApp"
+        details: "User challenged with Multi-Factor Authentication."
+        device: "Windows 10"
+        deviceguid: "A0011C111-1111-C222F-A85C-11FF22FF22FF"
+        dlppattern: ""
+        emailbcc: ""
+        emailcc: ""
+        emailfrom: ""
+        emailsenttime: ""
+        emailsubject: ""
+        emailto: ""
+        filename: ""
+        http:
+          url: "/accounts/agent_login/"
+          url_details:
+            path: "/accounts/agent_login/"
+          useragent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0"
+          useragent_details:
+            browser:
+              family: "Edge"
+              major: "131"
+              minor: "0"
+              patch: "0"
+              patch_minor: "0"
+            device:
+              category: "Desktop"
+              family: "Other"
+            os:
+              family: "Windows"
+              major: "10"
+        instancename: ""
+        location:
+        - "Guest"
+        network:
+          client:
+            geoip: {}
+            ip: "100.100.100.100"
+        orgid: ""
+        pagetitle: ""
+        policyid: "11111"
+        request: ""
+        syslog:
+          hostname: "api.hostserver.com"
+          msgid: "access"
+          priority: 110
+        syslogheader: "<110>1 2024-12-26T09:08:34.105000Z api.hostserver.com NILVALUE NILVALUE access"
+        time: 1735204114000
+        transactionid: "c4878fefefe4reg2r4tr85dfs [26 Dec 2024 09:08:34]"
+        usergroup:
+        - "Admins"
+        - "System Administrator"
+        usr:
+          email: "user123@xyz.com"
+          name: "User123"
+      message: |-
+        {
+          "ipaddress" : "100.100.100.100",
+          "request" : "",
+          "dlppattern" : "",
+          "activity" : "Login",
+          "emailsenttime" : "",
+          "deviceguid" : "A0011C111-1111-C222F-A85C-11FF22FF22FF",
+          "useragent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0",
+          "emailto" : "",
+          "transactionid" : "c4878fefefe4reg2r4tr85dfs [26 Dec 2024 09:08:34]",
+          "policyid" : "11111",
+          "emailsubject" : "",
+          "action" : "2FA",
+          "details" : "User challenged with Multi-Factor Authentication.",
+          "email" : "user123@xyz.com",
+          "syslogheader" : "<110>1 2024-12-26T09:08:34.105000Z api.hostserver.com NILVALUE NILVALUE access",
+          "emailcc" : "",
+          "emailfrom" : "",
+          "url" : "/accounts/agent_login/",
+          "orgid" : "",
+          "filename" : "",
+          "instancename" : "",
+          "application" : "MicroApp",
+          "emailbcc" : "",
+          "usergroup" : "Admins, System Administrator",
+          "location" : [ "Guest" ],
+          "time" : "26 Dec 2024 09:08:34",
+          "pagetitle" : "",
+          "user" : "User123",
+          "device" : "Windows 10"
+        }
+      service: "forcepoint-sse-access"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1735204114000
+  -
+    sample: |-
+      {
+        "ipaddress" : "100.100.100.100",
+        "request" : "",
+        "emailcc" : "",
+        "dlppattern" : "",
+        "activity" : "Search, System",
+        "emailsenttime" : "",
+        "useragent" : "zero-test.zeroad.local",
+        "emailto" : "",
+        "emailfrom" : "",
+        "transactionid" : "1fsdfef55efe88re5s2fe5r5eg [28 Dec 2024 16:35:22]",
+        "url" : "/api/ds/eventlog/",
+        "filename" : "",
+        "application" : "CloudApp",
+        "emailsubject" : "",
+        "emailbcc" : "",
+        "action" : "Agent, Directory",
+        "location" : [ "Guest" ],
+        "details" : "",
+        "time" : "28 Dec 2024 16:35:22",
+        "pagetitle" : "",
+        "user" : "User123",
+        "device" : "Windows 10",
+        "email" : "user123.abc@xyz.com",
+        "syslogheader" : "<110>1 2024-12-28T16:35:22.394000Z api.hostserver.com NILVALUE NILVALUE access"
+      }
+    service: "forcepoint-sse-admin"
+    result:
+      custom:
+        action:
+        - "Agent"
+        - "Directory"
+        activity:
+        - "Search"
+        - "System"
+        application: "CloudApp"
+        details: ""
+        device: "Windows 10"
+        dlppattern: ""
+        emailbcc: ""
+        emailcc: ""
+        emailfrom: ""
+        emailsenttime: ""
+        emailsubject: ""
+        emailto: ""
+        filename: ""
+        http:
+          url: "/api/ds/eventlog/"
+          url_details:
+            path: "/api/ds/eventlog/"
+          useragent: "zero-test.zeroad.local"
+          useragent_details:
+            browser:
+              family: "Other"
+            device:
+              category: "Other"
+              family: "Other"
+            os:
+              family: "Other"
+        location:
+        - "Guest"
+        network:
+          client:
+            geoip: {}
+            ip: "100.100.100.100"
+        pagetitle: ""
+        request: ""
+        syslog:
+          hostname: "api.hostserver.com"
+          msgid: "access"
+          priority: 110
+        syslogheader: "<110>1 2024-12-28T16:35:22.394000Z api.hostserver.com NILVALUE NILVALUE access"
+        time: 1735403722000
+        transactionid: "1fsdfef55efe88re5s2fe5r5eg [28 Dec 2024 16:35:22]"
+        usr:
+          email: "user123.abc@xyz.com"
+          name: "User123"
+      message: |-
+        {
+          "ipaddress" : "100.100.100.100",
+          "request" : "",
+          "emailcc" : "",
+          "dlppattern" : "",
+          "activity" : "Search, System",
+          "emailsenttime" : "",
+          "useragent" : "zero-test.zeroad.local",
+          "emailto" : "",
+          "emailfrom" : "",
+          "transactionid" : "1fsdfef55efe88re5s2fe5r5eg [28 Dec 2024 16:35:22]",
+          "url" : "/api/ds/eventlog/",
+          "filename" : "",
+          "application" : "CloudApp",
+          "emailsubject" : "",
+          "emailbcc" : "",
+          "action" : "Agent, Directory",
+          "location" : [ "Guest" ],
+          "details" : "",
+          "time" : "28 Dec 2024 16:35:22",
+          "pagetitle" : "",
+          "user" : "User123",
+          "device" : "Windows 10",
+          "email" : "user123.abc@xyz.com",
+          "syslogheader" : "<110>1 2024-12-28T16:35:22.394000Z api.hostserver.com NILVALUE NILVALUE access"
+        }
+      service: "forcepoint-sse-admin"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1735403722000
+  -
+    sample: |-
+      {
+        "responsecode" : 400,
+        "ipaddress" : "10.10.10.10",
+        "requestmethod" : "GET",
+        "activity" : "Cloudsummary, RestAPI",
+        "deviceguid" : "",
+        "useragent" : "Mozilla/5.0 (Windows NT 10.0;Win64; x64) AppleWebKit/537.36 (KHTML,like Gecko) Chrome/131.0.0.0 Safari/537.36Edg/131.0.0.0",
+        "url" : "cloudapps/summary",
+        "transactionid" : "77fefe54-1111-1cd22-b51a-fs548ee4r2e [26 Dec 2024 06:37:12]",
+        "application" : "CloudApp",
+        "usergroup" : "Admins, System Administrator",
+        "location" : "London||Eng",
+        "time" : "26 Dec 2024 06:37:12",
+        "user" : "User123",
+        "device" : "",
+        "email" : "user123@xyz.com",
+        "syslogheader" : "<110>1 2024-12-26T06:37:12.620528Z api.hostserver.com NILVALUE NILVALUE access"
+      }
+    service: "forcepoint-sse-healthsystem"
+    result:
+      custom:
+        activity:
+        - "Cloudsummary"
+        - "RestAPI"
+        application: "CloudApp"
+        device: ""
+        deviceguid: ""
+        http:
+          method: "GET"
+          status_category: "Client Error"
+          status_code: 400
+          url: "cloudapps/summary"
+          url_details:
+            path: "cloudapps/summary"
+          useragent: "Mozilla/5.0 (Windows NT 10.0;Win64; x64) AppleWebKit/537.36 (KHTML,like Gecko) Chrome/131.0.0.0 Safari/537.36Edg/131.0.0.0"
+          useragent_details:
+            browser:
+              family: "Edge"
+              major: "131"
+              minor: "0"
+              patch: "0"
+              patch_minor: "0"
+            device:
+              category: "Desktop"
+              family: "Other"
+            os:
+              family: "Windows"
+              major: "10"
+        location: "London||Eng"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+        syslog:
+          hostname: "api.hostserver.com"
+          msgid: "access"
+          priority: 110
+        syslogheader: "<110>1 2024-12-26T06:37:12.620528Z api.hostserver.com NILVALUE NILVALUE access"
+        time: 1735195032000
+        transactionid: "77fefe54-1111-1cd22-b51a-fs548ee4r2e [26 Dec 2024 06:37:12]"
+        usergroup:
+        - "Admins"
+        - "System Administrator"
+        usr:
+          email: "user123@xyz.com"
+          name: "User123"
+      message: |-
+        {
+          "responsecode" : 400,
+          "ipaddress" : "10.10.10.10",
+          "requestmethod" : "GET",
+          "activity" : "Cloudsummary, RestAPI",
+          "deviceguid" : "",
+          "useragent" : "Mozilla/5.0 (Windows NT 10.0;Win64; x64) AppleWebKit/537.36 (KHTML,like Gecko) Chrome/131.0.0.0 Safari/537.36Edg/131.0.0.0",
+          "url" : "cloudapps/summary",
+          "transactionid" : "77fefe54-1111-1cd22-b51a-fs548ee4r2e [26 Dec 2024 06:37:12]",
+          "application" : "CloudApp",
+          "usergroup" : "Admins, System Administrator",
+          "location" : "London||Eng",
+          "time" : "26 Dec 2024 06:37:12",
+          "user" : "User123",
+          "device" : "",
+          "email" : "user123@xyz.com",
+          "syslogheader" : "<110>1 2024-12-26T06:37:12.620528Z api.hostserver.com NILVALUE NILVALUE access"
+        }
+      service: "forcepoint-sse-healthsystem"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1735195032000
+  -
+    sample: |-
+      {
+        "responsecode" : 581,
+        "ipaddress" : "100.100.100.100",
+        "requestmethod" : "GET",
+        "activity" : "Server5xx",
+        "deviceguid" : "11E22EE-1111-11AA-A112-C0BB2211C",
+        "useragent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "url" : "www.cloudapp_server.com",
+        "transactionid" : "Zfe54r8e4r_fse584r8e41fs5de [07 Jan 2025 07:13:57]",
+        "application" : "Cloud App",
+        "usergroup" : "Admins, System Administrator",
+        "location" : "Ahmedabad||Gujarat||GJ||IN",
+        "time" : "07 Jan 2025 07:13:57",
+        "user" : "User123",
+        "device" : "Windows 10",
+        "email" : "user123@abc.com",
+        "syslogheader" : "<110>1 2025-01-07T07:13:57.285663Z api.hostserver.com NILVALUE NILVALUE access"
+      }
+    service: "forcepoint-sse-healthproxy"
+    result:
+      custom:
+        activity:
+        - "Server5xx"
+        application: "Cloud App"
+        device: "Windows 10"
+        deviceguid: "11E22EE-1111-11AA-A112-C0BB2211C"
+        http:
+          method: "GET"
+          status_category: "Server Error"
+          status_code: 581
+          url: "www.cloudapp_server.com"
+          url_details:
+            path: "www.cloudapp_server.com"
+          useragent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          useragent_details:
+            browser:
+              family: "Chrome"
+              major: "131"
+              minor: "0"
+              patch: "0"
+              patch_minor: "0"
+            device:
+              category: "Desktop"
+              family: "Other"
+            os:
+              family: "Windows"
+              major: "10"
+        location: "Ahmedabad||Gujarat||GJ||IN"
+        network:
+          client:
+            geoip: {}
+            ip: "100.100.100.100"
+        syslog:
+          hostname: "api.hostserver.com"
+          msgid: "access"
+          priority: 110
+        syslogheader: "<110>1 2025-01-07T07:13:57.285663Z api.hostserver.com NILVALUE NILVALUE access"
+        time: 1736234037000
+        transactionid: "Zfe54r8e4r_fse584r8e41fs5de [07 Jan 2025 07:13:57]"
+        usergroup:
+        - "Admins"
+        - "System Administrator"
+        usr:
+          email: "user123@abc.com"
+          name: "User123"
+      message: |-
+        {
+          "responsecode" : 581,
+          "ipaddress" : "100.100.100.100",
+          "requestmethod" : "GET",
+          "activity" : "Server5xx",
+          "deviceguid" : "11E22EE-1111-11AA-A112-C0BB2211C",
+          "useragent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+          "url" : "www.cloudapp_server.com",
+          "transactionid" : "Zfe54r8e4r_fse584r8e41fs5de [07 Jan 2025 07:13:57]",
+          "application" : "Cloud App",
+          "usergroup" : "Admins, System Administrator",
+          "location" : "Ahmedabad||Gujarat||GJ||IN",
+          "time" : "07 Jan 2025 07:13:57",
+          "user" : "User123",
+          "device" : "Windows 10",
+          "email" : "user123@abc.com",
+          "syslogheader" : "<110>1 2025-01-07T07:13:57.285663Z api.hostserver.com NILVALUE NILVALUE access"
+        }
+      service: "forcepoint-sse-healthproxy"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1736234037000
+  -
+    sample: |-
+      {
+        "responsecode" : 400,
+        "activity" : "RunnerAppxx4, RestAPI",
+        "url" : "https://runnerapp.org/",
+        "transactionid" : "11aabbcc22-121c-48f5-b6e2-111df5s5er5e455 [05 Jan 2025 09:34:03]",
+        "filename" : "file123.exe",
+        "application" : "RunnerApp",
+        "usergroup" : "Admins, System Administrator",
+        "time" : "05 Jan 2025 09:34:03",
+        "user" : "jkc.bca",
+        "device" : "",
+        "email" : "jkc.bca@xyz.com",
+        "syslogheader" : "<110>1 2025-01-05T09:34:03.583951Z api.hostserver.com NILVALUE NILVALUE access",
+        "fileid" : "ferjer84e87re1sdfse",
+        "status" : ""
+      }
+    service: "forcepoint-sse-healthapi"
+    result:
+      custom:
+        activity:
+        - "RunnerAppxx4"
+        - "RestAPI"
+        application: "RunnerApp"
+        device: ""
+        fileid: "ferjer84e87re1sdfse"
+        filename: "file123.exe"
+        http:
+          status_category: "Client Error"
+          status_code: 400
+          url: "https://runnerapp.org/"
+          url_details:
+            host: "runnerapp.org"
+            path: "/"
+            scheme: "https"
+        status: ""
+        syslog:
+          hostname: "api.hostserver.com"
+          msgid: "access"
+          priority: 110
+        syslogheader: "<110>1 2025-01-05T09:34:03.583951Z api.hostserver.com NILVALUE NILVALUE access"
+        time: 1736069643000
+        transactionid: "11aabbcc22-121c-48f5-b6e2-111df5s5er5e455 [05 Jan 2025 09:34:03]"
+        usergroup:
+        - "Admins"
+        - "System Administrator"
+        usr:
+          email: "jkc.bca@xyz.com"
+          name: "jkc.bca"
+      message: |-
+        {
+          "responsecode" : 400,
+          "activity" : "RunnerAppxx4, RestAPI",
+          "url" : "https://runnerapp.org/",
+          "transactionid" : "11aabbcc22-121c-48f5-b6e2-111df5s5er5e455 [05 Jan 2025 09:34:03]",
+          "filename" : "file123.exe",
+          "application" : "RunnerApp",
+          "usergroup" : "Admins, System Administrator",
+          "time" : "05 Jan 2025 09:34:03",
+          "user" : "jkc.bca",
+          "device" : "",
+          "email" : "jkc.bca@xyz.com",
+          "syslogheader" : "<110>1 2025-01-05T09:34:03.583951Z api.hostserver.com NILVALUE NILVALUE access",
+          "fileid" : "ferjer84e87re1sdfse",
+          "status" : ""
+        }
+      service: "forcepoint-sse-healthapi"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1736069643000

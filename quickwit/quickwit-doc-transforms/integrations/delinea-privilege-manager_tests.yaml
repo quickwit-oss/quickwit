@@ -1,0 +1,285 @@
+id: delinea-privilege-manager
+tests:
+  -
+    sample: "CEF:0|Thycotic|Local Security Solution|8|67aa593adaf942b0933e24f60239bcc9|Password Disclosure Events|5|externalId=9 EventOccuredOnServer=11/11/2024 12:08:58 PM _DisclosedByUserId=d931c777-7021-48d6-92aa-e1f9fdb797f0 Requesting User=demo RemoteIpAddress=10.10.10.10 _ManagedUserId=f45c854f-3330-4fef-b943-8d09f2f1efe8 ManagedUserName=demo ComputerDomain=No computer domain for user F45C854F-3330-4FEF-B943-8D09F2F1EFE8 ComputerName=No computer name for user F45C854F-3330-4FEF-B943-8D09F2F1EFE8"
+    result:
+      custom:
+        ComputerDomain: "No computer domain for user F45C854F-3330-4FEF-B943-8D09F2F1EFE8"
+        ComputerName: "No computer name for user F45C854F-3330-4FEF-B943-8D09F2F1EFE8"
+        EventOccuredOnServer: 1731326938000
+        ManagedUserName: "demo"
+        RequestingUser: "demo"
+        _DisclosedByUserId: "d931c777-7021-48d6-92aa-e1f9fdb797f0"
+        _ManagedUserId: "f45c854f-3330-4fef-b943-8d09f2f1efe8"
+        device_product: "Local Security Solution"
+        device_vendor: "Thycotic"
+        device_version: "8"
+        event_name: "Password Disclosure Events"
+        externalId: 9
+        log_message: "externalId=9 EventOccuredOnServer=11/11/2024 12:08:58 PM _DisclosedByUserId=d931c777-7021-48d6-92aa-e1f9fdb797f0 Requesting User=demo RemoteIpAddress=10.10.10.10 _ManagedUserId=f45c854f-3330-4fef-b943-8d09f2f1efe8 ManagedUserName=demo ComputerDomain=No computer domain for user F45C854F-3330-4FEF-B943-8D09F2F1EFE8 ComputerName=No computer name for user F45C854F-3330-4FEF-B943-8D09F2F1EFE8"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+        service: "password-disclosure-events"
+        severity: "warning"
+      message: "CEF:0|Thycotic|Local Security Solution|8|67aa593adaf942b0933e24f60239bcc9|Password Disclosure Events|5|externalId=9 EventOccuredOnServer=11/11/2024 12:08:58 PM _DisclosedByUserId=d931c777-7021-48d6-92aa-e1f9fdb797f0 Requesting User=demo RemoteIpAddress=10.10.10.10 _ManagedUserId=f45c854f-3330-4fef-b943-8d09f2f1efe8 ManagedUserName=demo ComputerDomain=No computer domain for user F45C854F-3330-4FEF-B943-8D09F2F1EFE8 ComputerName=No computer name for user F45C854F-3330-4FEF-B943-8D09F2F1EFE8"
+      service: "password-disclosure-events"
+      status: "warn"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1731326938000
+  -
+    sample: "<5>1 2020-02-28T22:25:56.567000+00:00 demo user demo user - 67aa593adaf942b0933e24f60239bcc9 - CEF:0|Thycotic|Local Security Solution|8|67aa593adaf942b0933e24f60239bcc9|Password Disclosure Events|5|externalId=1 EventOccuredOnServer=2/28/2020 10:25:56 PM _DisclosedByUserId=fc580694-32fd-4dc1-ae8b-80eae7553109 Requesting User=No name for disclosed by user id 2DB8D3F9-E11E-4924-A19F-AB4FE5AB34EB RemoteIpAddress=10.10.10.10 _ManagedUserId=2db8d3f9-e11e-4924-a19f-ab4fe5ab34eb ManagedUserName=demo user ComputerDomain=No computer domain for user 2DB8D3F9-E11E-4924-A19F-AB4FE5AB34EB ComputerName=No computer name for user 2DB8D3F9-E11E-4924-A19F-AB4FE5AB34EB"
+    result:
+      custom:
+        ComputerDomain: "No computer domain for user 2DB8D3F9-E11E-4924-A19F-AB4FE5AB34EB"
+        ComputerName: "No computer name for user 2DB8D3F9-E11E-4924-A19F-AB4FE5AB34EB"
+        EventOccuredOnServer: 1582928756000
+        ManagedUserName: "demo user"
+        RequestingUser: "No name for disclosed by user id 2DB8D3F9-E11E-4924-A19F-AB4FE5AB34EB"
+        _DisclosedByUserId: "fc580694-32fd-4dc1-ae8b-80eae7553109"
+        _ManagedUserId: "2db8d3f9-e11e-4924-a19f-ab4fe5ab34eb"
+        device_product: "Local Security Solution"
+        device_vendor: "Thycotic"
+        device_version: "8"
+        event_name: "Password Disclosure Events"
+        externalId: 1
+        log_message: "externalId=1 EventOccuredOnServer=2/28/2020 10:25:56 PM _DisclosedByUserId=fc580694-32fd-4dc1-ae8b-80eae7553109 Requesting User=No name for disclosed by user id 2DB8D3F9-E11E-4924-A19F-AB4FE5AB34EB RemoteIpAddress=10.10.10.10 _ManagedUserId=2db8d3f9-e11e-4924-a19f-ab4fe5ab34eb ManagedUserName=demo user ComputerDomain=No computer domain for user 2DB8D3F9-E11E-4924-A19F-AB4FE5AB34EB ComputerName=No computer name for user 2DB8D3F9-E11E-4924-A19F-AB4FE5AB34EB"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+        service: "password-disclosure-events"
+        severity: "warning"
+        timestamp: 1582928756567
+      message: "<5>1 2020-02-28T22:25:56.567000+00:00 demo user demo user - 67aa593adaf942b0933e24f60239bcc9 - CEF:0|Thycotic|Local Security Solution|8|67aa593adaf942b0933e24f60239bcc9|Password Disclosure Events|5|externalId=1 EventOccuredOnServer=2/28/2020 10:25:56 PM _DisclosedByUserId=fc580694-32fd-4dc1-ae8b-80eae7553109 Requesting User=No name for disclosed by user id 2DB8D3F9-E11E-4924-A19F-AB4FE5AB34EB RemoteIpAddress=10.10.10.10 _ManagedUserId=2db8d3f9-e11e-4924-a19f-ab4fe5ab34eb ManagedUserName=demo user ComputerDomain=No computer domain for user 2DB8D3F9-E11E-4924-A19F-AB4FE5AB34EB ComputerName=No computer name for user 2DB8D3F9-E11E-4924-A19F-AB4FE5AB34EB"
+      service: "password-disclosure-events"
+      status: "warn"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1582928756000
+  -
+    sample: "<5>1 2020-02-28T22:25:56.567000+00:00 demo demo - 67aa593adaf942b0933e24f60239bcc9 - CEF:0|Thycotic|Local Security Solution|8|67aa593adaf942b0933e24f60239bcc9|Password Disclosure Events|5|externalId=1 EventOccuredOnServer=2/28/2020 10:25:56 PM _DisclosedByUserId=fc580694-32fd-4dc1-ae8b-80eae7553109 Requesting User=No name for disclosed by user id 2DB8D3F9-E11E-4924-A19F-AB4FE5AB34EB RemoteIpAddress=10.10.10.10 _ManagedUserId=2db8d3f9-e11e-4924-a19f-ab4fe5ab34eb ManagedUserName=demo user ComputerDomain=No computer domain for user 2DB8D3F9-E11E-4924-A19F-AB4FE5AB34EB ComputerName=No computer name for user 2DB8D3F9-E11E-4924-A19F-AB4FE5AB34EB"
+    result:
+      custom:
+        ComputerDomain: "No computer domain for user 2DB8D3F9-E11E-4924-A19F-AB4FE5AB34EB"
+        ComputerName: "No computer name for user 2DB8D3F9-E11E-4924-A19F-AB4FE5AB34EB"
+        EventOccuredOnServer: 1582928756000
+        ManagedUserName: "demo user"
+        RequestingUser: "No name for disclosed by user id 2DB8D3F9-E11E-4924-A19F-AB4FE5AB34EB"
+        _DisclosedByUserId: "fc580694-32fd-4dc1-ae8b-80eae7553109"
+        _ManagedUserId: "2db8d3f9-e11e-4924-a19f-ab4fe5ab34eb"
+        device_product: "Local Security Solution"
+        device_vendor: "Thycotic"
+        device_version: "8"
+        event_name: "Password Disclosure Events"
+        externalId: 1
+        log_message: "externalId=1 EventOccuredOnServer=2/28/2020 10:25:56 PM _DisclosedByUserId=fc580694-32fd-4dc1-ae8b-80eae7553109 Requesting User=No name for disclosed by user id 2DB8D3F9-E11E-4924-A19F-AB4FE5AB34EB RemoteIpAddress=10.10.10.10 _ManagedUserId=2db8d3f9-e11e-4924-a19f-ab4fe5ab34eb ManagedUserName=demo user ComputerDomain=No computer domain for user 2DB8D3F9-E11E-4924-A19F-AB4FE5AB34EB ComputerName=No computer name for user 2DB8D3F9-E11E-4924-A19F-AB4FE5AB34EB"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+        service: "password-disclosure-events"
+        severity: "warning"
+        syslog:
+          appname: "demo"
+          hostname: "demo"
+          msgid: "67aa593adaf942b0933e24f60239bcc9"
+          version: 1
+        timestamp: 1582928756567
+      message: "<5>1 2020-02-28T22:25:56.567000+00:00 demo demo - 67aa593adaf942b0933e24f60239bcc9 - CEF:0|Thycotic|Local Security Solution|8|67aa593adaf942b0933e24f60239bcc9|Password Disclosure Events|5|externalId=1 EventOccuredOnServer=2/28/2020 10:25:56 PM _DisclosedByUserId=fc580694-32fd-4dc1-ae8b-80eae7553109 Requesting User=No name for disclosed by user id 2DB8D3F9-E11E-4924-A19F-AB4FE5AB34EB RemoteIpAddress=10.10.10.10 _ManagedUserId=2db8d3f9-e11e-4924-a19f-ab4fe5ab34eb ManagedUserName=demo user ComputerDomain=No computer domain for user 2DB8D3F9-E11E-4924-A19F-AB4FE5AB34EB ComputerName=No computer name for user 2DB8D3F9-E11E-4924-A19F-AB4FE5AB34EB"
+      service: "password-disclosure-events"
+      status: "warn"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1582928756000
+  -
+    sample: "CEF:0|Thycotic|Application Control Solution|8|eeb7aaf6f6754586a7e33eb54b59ba4d|Application Action Events|5|externalId=201 PolicyName=Administrative Rights Required Detection Policy - MacOS (Sample) UserName=demo FileName=SoftwareUpdateNotificationManager FilePath=/System/Library/PrivateFrameworks/SoftwareUpdate.framework/Versions/A/Resources/SoftwareUpdateNotificationManager.app/Contents/MacOS/SoftwareUpdateNotificationManager EventReceivedByServer=11/20/2024 10:33:37 AM _FileId=2640ec5e-077c-5889-8bf3-5fbe0c55e5f0 _ComputerId=2386a2ac-807a-5682-a261-d0f4e85baa7c ComputerName=demo"
+    result:
+      custom:
+        ComputerName: "demo"
+        EventReceivedByServer: 1732098817000
+        FileName: "SoftwareUpdateNotificationManager"
+        FilePath: "/System/Library/PrivateFrameworks/SoftwareUpdate.framework/Versions/A/Resources/SoftwareUpdateNotificationManager.app/Contents/MacOS/SoftwareUpdateNotificationManager"
+        PolicyName: "Administrative Rights Required Detection Policy - MacOS (Sample)"
+        _ComputerId: "2386a2ac-807a-5682-a261-d0f4e85baa7c"
+        _FileId: "2640ec5e-077c-5889-8bf3-5fbe0c55e5f0"
+        device_product: "Application Control Solution"
+        device_vendor: "Thycotic"
+        device_version: "8"
+        event_name: "Application Action Events"
+        externalId: 201
+        log_message: "externalId=201 PolicyName=Administrative Rights Required Detection Policy - MacOS (Sample) UserName=demo FileName=SoftwareUpdateNotificationManager FilePath=/System/Library/PrivateFrameworks/SoftwareUpdate.framework/Versions/A/Resources/SoftwareUpdateNotificationManager.app/Contents/MacOS/SoftwareUpdateNotificationManager EventReceivedByServer=11/20/2024 10:33:37 AM _FileId=2640ec5e-077c-5889-8bf3-5fbe0c55e5f0 _ComputerId=2386a2ac-807a-5682-a261-d0f4e85baa7c ComputerName=demo"
+        service: "application-action-events"
+        severity: "warning"
+        usr:
+          name: "demo"
+      message: "CEF:0|Thycotic|Application Control Solution|8|eeb7aaf6f6754586a7e33eb54b59ba4d|Application Action Events|5|externalId=201 PolicyName=Administrative Rights Required Detection Policy - MacOS (Sample) UserName=demo FileName=SoftwareUpdateNotificationManager FilePath=/System/Library/PrivateFrameworks/SoftwareUpdate.framework/Versions/A/Resources/SoftwareUpdateNotificationManager.app/Contents/MacOS/SoftwareUpdateNotificationManager EventReceivedByServer=11/20/2024 10:33:37 AM _FileId=2640ec5e-077c-5889-8bf3-5fbe0c55e5f0 _ComputerId=2386a2ac-807a-5682-a261-d0f4e85baa7c ComputerName=demo"
+      service: "application-action-events"
+      status: "warn"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1732098817000
+  -
+    sample: "CEF:0|Thycotic|Application Control Solution|8|eeb7aaf6f6754586a7e33eb54b59ba4d|Application Action Events|5|externalId=7141 PolicyName=New Monitor Policy UserName=demo FileName=AGSService.exe FilePath=C:\\\\Program Files (x86)\\\\Common Files\\\\Adobe\\\\AdobeGCClient\\\\AGSService.exe EventReceivedByServer=11/26/2024 8:37:42 AM _FileId=d97c84a0-2b33-5612-84d4-8723899eeaf9 _ComputerId=9ffc0142-550f-8413-685b-65c1322c0281 ComputerName=test SecurityRatingSystemName=VirusTotal Rating System Rating=Clean"
+    result:
+      custom:
+        ComputerName: "test"
+        EventReceivedByServer: 1732610262000
+        FileName: "AGSService.exe"
+        FilePath: "C:\\\\Program Files (x86)\\\\Common Files\\\\Adobe\\\\AdobeGCClient\\\\AGSService.exe"
+        PolicyName: "New Monitor Policy"
+        Rating: "Clean"
+        SecurityRatingSystemName: "VirusTotal Rating System"
+        _ComputerId: "9ffc0142-550f-8413-685b-65c1322c0281"
+        _FileId: "d97c84a0-2b33-5612-84d4-8723899eeaf9"
+        device_product: "Application Control Solution"
+        device_vendor: "Thycotic"
+        device_version: "8"
+        event_name: "Application Action Events"
+        externalId: 7141
+        log_message: "externalId=7141 PolicyName=New Monitor Policy UserName=demo FileName=AGSService.exe FilePath=C:\\\\Program Files (x86)\\\\Common Files\\\\Adobe\\\\AdobeGCClient\\\\AGSService.exe EventReceivedByServer=11/26/2024 8:37:42 AM _FileId=d97c84a0-2b33-5612-84d4-8723899eeaf9 _ComputerId=9ffc0142-550f-8413-685b-65c1322c0281 ComputerName=test SecurityRatingSystemName=VirusTotal Rating System Rating=Clean"
+        service: "application-action-events"
+        severity: "warning"
+        usr:
+          name: "demo"
+      message: "CEF:0|Thycotic|Application Control Solution|8|eeb7aaf6f6754586a7e33eb54b59ba4d|Application Action Events|5|externalId=7141 PolicyName=New Monitor Policy UserName=demo FileName=AGSService.exe FilePath=C:\\\\Program Files (x86)\\\\Common Files\\\\Adobe\\\\AdobeGCClient\\\\AGSService.exe EventReceivedByServer=11/26/2024 8:37:42 AM _FileId=d97c84a0-2b33-5612-84d4-8723899eeaf9 _ComputerId=9ffc0142-550f-8413-685b-65c1322c0281 ComputerName=test SecurityRatingSystemName=VirusTotal Rating System Rating=Clean"
+      service: "application-action-events"
+      status: "warn"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1732610262000
+  -
+    sample: "CEF:0|Thycotic|Application Control Solution|8|b875d3a6433c42cc833205350343e498|Newly Discovered File Events|5|externalId=8449 FileName=New Loaded Resource 11/20/2024 10:09:26 AM +00:00 FileHashSha1=No sha1 hash for file id F7071A71-F213-51DF-9E55-47729B8B83D9 FileHashSha256=I9xARENk3p6RFXmjAc+RvjF0BFI0cTYB+OhamDr8EQc\\= FileHash=I9xARENk3p6RFXmjAc+RvjF0BFI0cTYB+OhamDr8EQc\\= FileFirstSeenByServer=11/20/2024 10:09:26 AM _FileId=f7071a71-f213-51df-9e55-47729b8b83d9 SecurityRatingSystemName=NO RATING Rating=NO RATING"
+    result:
+      custom:
+        FileFirstSeenByServer: 1732097366000
+        FileHash: "I9xARENk3p6RFXmjAc+RvjF0BFI0cTYB+OhamDr8EQc\\="
+        FileHashSha1: "No sha1 hash for file id F7071A71-F213-51DF-9E55-47729B8B83D9"
+        FileHashSha256: "I9xARENk3p6RFXmjAc+RvjF0BFI0cTYB+OhamDr8EQc\\="
+        FileName: "New Loaded Resource 11/20/2024 10:09:26 AM +00:00"
+        Rating: "NO RATING"
+        SecurityRatingSystemName: "NO RATING"
+        _FileId: "f7071a71-f213-51df-9e55-47729b8b83d9"
+        device_product: "Application Control Solution"
+        device_vendor: "Thycotic"
+        device_version: "8"
+        event_name: "Newly Discovered File Events"
+        externalId: 8449
+        log_message: "externalId=8449 FileName=New Loaded Resource 11/20/2024 10:09:26 AM +00:00 FileHashSha1=No sha1 hash for file id F7071A71-F213-51DF-9E55-47729B8B83D9 FileHashSha256=I9xARENk3p6RFXmjAc+RvjF0BFI0cTYB+OhamDr8EQc\\= FileHash=I9xARENk3p6RFXmjAc+RvjF0BFI0cTYB+OhamDr8EQc\\= FileFirstSeenByServer=11/20/2024 10:09:26 AM _FileId=f7071a71-f213-51df-9e55-47729b8b83d9 SecurityRatingSystemName=NO RATING Rating=NO RATING"
+        service: "newly-discovered-file-events"
+        severity: "warning"
+      message: "CEF:0|Thycotic|Application Control Solution|8|b875d3a6433c42cc833205350343e498|Newly Discovered File Events|5|externalId=8449 FileName=New Loaded Resource 11/20/2024 10:09:26 AM +00:00 FileHashSha1=No sha1 hash for file id F7071A71-F213-51DF-9E55-47729B8B83D9 FileHashSha256=I9xARENk3p6RFXmjAc+RvjF0BFI0cTYB+OhamDr8EQc\\= FileHash=I9xARENk3p6RFXmjAc+RvjF0BFI0cTYB+OhamDr8EQc\\= FileFirstSeenByServer=11/20/2024 10:09:26 AM _FileId=f7071a71-f213-51df-9e55-47729b8b83d9 SecurityRatingSystemName=NO RATING Rating=NO RATING"
+      service: "newly-discovered-file-events"
+      status: "warn"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1732097366000
+  -
+    sample: "CEF:0|Delinea|PrivilegeManager|12.0|ChangeHistory_CreateFromTemplate|ChangeHistory|0|_id=1315 CorrelationId=9ec433be-973c-4c9a-bb64-bcd8fe25f597 ItemId=f69894d4-0394-4d6e-bffb-f780f2b714ca ItemName=MAC OS Justify Elevate Process Rights Policy UserId=d931c777-7021-48d6-92aa-e1f9fdb797f0 UserName=demo Changes=The item was created from a template,"
+    result:
+      custom:
+        Changes: "The item was created from a template,"
+        CorrelationId: "9ec433be-973c-4c9a-bb64-bcd8fe25f597"
+        ItemId: "f69894d4-0394-4d6e-bffb-f780f2b714ca"
+        ItemName: "MAC OS Justify Elevate Process Rights Policy"
+        _id: 1315
+        change_history_type: "ChangeHistory_CreateFromTemplate"
+        device_product: "PrivilegeManager"
+        device_vendor: "Delinea"
+        device_version: "12.0"
+        event_name: "ChangeHistory"
+        log_message: "_id=1315 CorrelationId=9ec433be-973c-4c9a-bb64-bcd8fe25f597 ItemId=f69894d4-0394-4d6e-bffb-f780f2b714ca ItemName=MAC OS Justify Elevate Process Rights Policy UserId=d931c777-7021-48d6-92aa-e1f9fdb797f0 UserName=demo Changes=The item was created from a template,"
+        service: "change-history-events"
+        severity: "info"
+        usr:
+          id: "d931c777-7021-48d6-92aa-e1f9fdb797f0"
+          name: "demo"
+      message: "CEF:0|Delinea|PrivilegeManager|12.0|ChangeHistory_CreateFromTemplate|ChangeHistory|0|_id=1315 CorrelationId=9ec433be-973c-4c9a-bb64-bcd8fe25f597 ItemId=f69894d4-0394-4d6e-bffb-f780f2b714ca ItemName=MAC OS Justify Elevate Process Rights Policy UserId=d931c777-7021-48d6-92aa-e1f9fdb797f0 UserName=demo Changes=The item was created from a template,"
+      service: "change-history-events"
+      status: "info"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1
+  -
+    sample: "CEF:0|Thycotic|Application Control Solution|8|b875d3a6433c42cc833205350343e498|Application Action Events|5|externalId=8453 FileName=shutdown FileHashSha1=No sha1 hash for file id 1498556A-41D8-5F1E-8527-279A97F5E5C0 FileHashSha256=nq/AWFwlobG93e+Vw0aM2w6jc0t+fX5r9o30t8+fZfI\\= FileHash=nq/AWFwlobG93e+Vw0aM2w6jc0t+fX5r9o30t8+fZfI\\= FileFirstSeenByServer=11/20/2024 10:33:37 AM _FileId=1498556a-41d8-5f1e-8527-279a97f5e5c0"
+    result:
+      custom:
+        FileFirstSeenByServer: 1732098817000
+        FileHash: "nq/AWFwlobG93e+Vw0aM2w6jc0t+fX5r9o30t8+fZfI\\="
+        FileHashSha1: "No sha1 hash for file id 1498556A-41D8-5F1E-8527-279A97F5E5C0"
+        FileHashSha256: "nq/AWFwlobG93e+Vw0aM2w6jc0t+fX5r9o30t8+fZfI\\="
+        FileName: "shutdown"
+        _FileId: "1498556a-41d8-5f1e-8527-279a97f5e5c0"
+        device_product: "Application Control Solution"
+        device_vendor: "Thycotic"
+        device_version: "8"
+        event_name: "Application Action Events"
+        externalId: 8453
+        log_message: "externalId=8453 FileName=shutdown FileHashSha1=No sha1 hash for file id 1498556A-41D8-5F1E-8527-279A97F5E5C0 FileHashSha256=nq/AWFwlobG93e+Vw0aM2w6jc0t+fX5r9o30t8+fZfI\\= FileHash=nq/AWFwlobG93e+Vw0aM2w6jc0t+fX5r9o30t8+fZfI\\= FileFirstSeenByServer=11/20/2024 10:33:37 AM _FileId=1498556a-41d8-5f1e-8527-279a97f5e5c0"
+        service: "application-action-events"
+        severity: "warning"
+      message: "CEF:0|Thycotic|Application Control Solution|8|b875d3a6433c42cc833205350343e498|Application Action Events|5|externalId=8453 FileName=shutdown FileHashSha1=No sha1 hash for file id 1498556A-41D8-5F1E-8527-279A97F5E5C0 FileHashSha256=nq/AWFwlobG93e+Vw0aM2w6jc0t+fX5r9o30t8+fZfI\\= FileHash=nq/AWFwlobG93e+Vw0aM2w6jc0t+fX5r9o30t8+fZfI\\= FileFirstSeenByServer=11/20/2024 10:33:37 AM _FileId=1498556a-41d8-5f1e-8527-279a97f5e5c0"
+      service: "application-action-events"
+      status: "warn"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1732098817000
+  -
+    sample: "CEF:0|Thycotic|Application Control Solution|8|7d6bdbf08f2a4e9c9c7efa6b75803c45|Application Justification Events|5|externalId=2 PolicyName=New Elevate Process Rights Policy UserName=demo UserReason=for IT Use only  FileName=rundll32.exe FilePath=C:\\\\Windows\\\\System32\\\\rundll32.exe EventReceivedByServer=11/20/2024 10:34:27 AM _FileId=be1b5ec6-b717-54f6-9efa-5a3e6026c0f5 _ComputerId=59834d56-1710-88aa-be43-8102432c38ed ComputerName=demo"
+    result:
+      custom:
+        ComputerName: "demo"
+        EventReceivedByServer: 1732098867000
+        FileName: "rundll32.exe"
+        FilePath: "C:\\\\Windows\\\\System32\\\\rundll32.exe"
+        PolicyName: "New Elevate Process Rights Policy"
+        UserReason: "for IT Use only "
+        _ComputerId: "59834d56-1710-88aa-be43-8102432c38ed"
+        _FileId: "be1b5ec6-b717-54f6-9efa-5a3e6026c0f5"
+        device_product: "Application Control Solution"
+        device_vendor: "Thycotic"
+        device_version: "8"
+        event_name: "Application Justification Events"
+        externalId: 2
+        log_message: "externalId=2 PolicyName=New Elevate Process Rights Policy UserName=demo UserReason=for IT Use only  FileName=rundll32.exe FilePath=C:\\\\Windows\\\\System32\\\\rundll32.exe EventReceivedByServer=11/20/2024 10:34:27 AM _FileId=be1b5ec6-b717-54f6-9efa-5a3e6026c0f5 _ComputerId=59834d56-1710-88aa-be43-8102432c38ed ComputerName=demo"
+        service: "application-justification-events"
+        severity: "warning"
+        usr:
+          name: "demo"
+      message: "CEF:0|Thycotic|Application Control Solution|8|7d6bdbf08f2a4e9c9c7efa6b75803c45|Application Justification Events|5|externalId=2 PolicyName=New Elevate Process Rights Policy UserName=demo UserReason=for IT Use only  FileName=rundll32.exe FilePath=C:\\\\Windows\\\\System32\\\\rundll32.exe EventReceivedByServer=11/20/2024 10:34:27 AM _FileId=be1b5ec6-b717-54f6-9efa-5a3e6026c0f5 _ComputerId=59834d56-1710-88aa-be43-8102432c38ed ComputerName=demo"
+      service: "application-justification-events"
+      status: "warn"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1732098867000
+  -
+    sample: "CEF:0|Thycotic|Application Control Solution|8|4eb4ec69d7a94797972a41855d3e7799|Bad Rated Application Action Events|5|externalId=7327 PolicyName=Allow Application virus Total Rating  UserName=demo FileName=Ranstart.exe FilePath=C:\\\\KB4\\\\Newsim\\\\Ranstart.exe EventReceivedByServer=11/26/2024 10:09:28 AM _FileId=e2a6d53b-1964-529b-a6b6-660946e593d8 _ComputerId=59834d56-1710-88aa-be43-8102432c38ed ComputerName=demo SecurityRatingSystemName=VirusTotal Rating System Rating=Bad"
+    result:
+      custom:
+        ComputerName: "demo"
+        EventReceivedByServer: 1732615768000
+        FileName: "Ranstart.exe"
+        FilePath: "C:\\\\KB4\\\\Newsim\\\\Ranstart.exe"
+        PolicyName: "Allow Application virus Total Rating "
+        Rating: "Bad"
+        SecurityRatingSystemName: "VirusTotal Rating System"
+        _ComputerId: "59834d56-1710-88aa-be43-8102432c38ed"
+        _FileId: "e2a6d53b-1964-529b-a6b6-660946e593d8"
+        device_product: "Application Control Solution"
+        device_vendor: "Thycotic"
+        device_version: "8"
+        event_name: "Bad Rated Application Action Events"
+        externalId: 7327
+        log_message: "externalId=7327 PolicyName=Allow Application virus Total Rating  UserName=demo FileName=Ranstart.exe FilePath=C:\\\\KB4\\\\Newsim\\\\Ranstart.exe EventReceivedByServer=11/26/2024 10:09:28 AM _FileId=e2a6d53b-1964-529b-a6b6-660946e593d8 _ComputerId=59834d56-1710-88aa-be43-8102432c38ed ComputerName=demo SecurityRatingSystemName=VirusTotal Rating System Rating=Bad"
+        service: "bad-rated-application-action-events"
+        severity: "warning"
+        usr:
+          name: "demo"
+      message: "CEF:0|Thycotic|Application Control Solution|8|4eb4ec69d7a94797972a41855d3e7799|Bad Rated Application Action Events|5|externalId=7327 PolicyName=Allow Application virus Total Rating  UserName=demo FileName=Ranstart.exe FilePath=C:\\\\KB4\\\\Newsim\\\\Ranstart.exe EventReceivedByServer=11/26/2024 10:09:28 AM _FileId=e2a6d53b-1964-529b-a6b6-660946e593d8 _ComputerId=59834d56-1710-88aa-be43-8102432c38ed ComputerName=demo SecurityRatingSystemName=VirusTotal Rating System Rating=Bad"
+      service: "bad-rated-application-action-events"
+      status: "warn"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1732615768000

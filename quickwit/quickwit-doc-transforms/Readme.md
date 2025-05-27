@@ -19,7 +19,6 @@ See [datadog documentation](https://docs.datadoghq.com/logs/log_configuration/pr
 ### Transformers
 - [ ] arithmetic-processor
 - [x] attribute-remapper
-  - [ ] Missing `overrideOnConflict` 
 - [x] category-processor
 - [x] date-remapper
 - [ ] geo-ip-parser
@@ -34,3 +33,26 @@ See [datadog documentation](https://docs.datadoghq.com/logs/log_configuration/pr
 - [x] trace-id-remapper
 - [ ] url-parser
 - [ ] user-agent-parser
+
+# Integration Processor
+
+Update integration yaml files in the integrations folder.
+
+```
+python fetch_integrations.py
+
+```
+
+Generate `integrations_map.json` from the integration yaml files. This will also print the unsupported processors for each integration.
+
+```
+cargo run --bin convert_integrations
+```
+
+## Run Integration Tests
+
+```
+cargo test --test integration_test -- --nocapture
+```
+
+

@@ -1,0 +1,294 @@
+id: wiz
+tests:
+  - sample: |-
+      {
+        "actionParameters" : {
+          "clientID" : "kr7ngoiolk3d9i8ravmuutlb6",
+          "role" : "",
+          "name" : "sec-int",
+          "userpoolID" : "us-east-2_GQ3gwvxsQ",
+          "userEmail" : "",
+          "scopes" : [ "read:issues", "read:reports", "read:vulnerabilities", "update:reports", "create:reports" ],
+          "userID" : "mlipebtwsndhxdmnzdwrxzmiokfvinlqi4ovuyury24akkmoiwohg",
+          "products" : [ "*" ]
+        },
+        "requestId" : "cfd91580-65f0-4bc8-96f9-9b6a77c440ff",
+        "action" : "Login",
+        "serviceAccount" : {
+          "name" : "sec-int",
+          "id" : "mlipebtwsndhxdmnzdwrxzmiokfvinlqi4ovuyury24akkmoiwohg"
+        },
+        "id" : "cfd91580-65f0-4bc8-96f9-9b6a77c440ff",
+        "status" : "SUCCESS",
+        "timestamp" : "2024-02-14T22:11:00.543837Z"
+      }
+    result:
+      custom:
+        actionParameters:
+          clientID: "kr7ngoiolk3d9i8ravmuutlb6"
+          name: "sec-int"
+          products:
+          - "*"
+          role: ""
+          scopes:
+          - "read:issues"
+          - "read:reports"
+          - "read:vulnerabilities"
+          - "update:reports"
+          - "create:reports"
+          userID: "mlipebtwsndhxdmnzdwrxzmiokfvinlqi4ovuyury24akkmoiwohg"
+          userpoolID: "us-east-2_GQ3gwvxsQ"
+        evt:
+          name: "Login"
+          outcome: "SUCCESS"
+        id: "cfd91580-65f0-4bc8-96f9-9b6a77c440ff"
+        requestId: "cfd91580-65f0-4bc8-96f9-9b6a77c440ff"
+        timestamp: "2024-02-14T22:11:00.543837Z"
+        usr:
+          email: ""
+          id: "mlipebtwsndhxdmnzdwrxzmiokfvinlqi4ovuyury24akkmoiwohg"
+          name: "sec-int"
+      message: |-
+        {
+          "actionParameters" : {
+            "clientID" : "kr7ngoiolk3d9i8ravmuutlb6",
+            "role" : "",
+            "name" : "sec-int",
+            "userpoolID" : "us-east-2_GQ3gwvxsQ",
+            "userEmail" : "",
+            "scopes" : [ "read:issues", "read:reports", "read:vulnerabilities", "update:reports", "create:reports" ],
+            "userID" : "mlipebtwsndhxdmnzdwrxzmiokfvinlqi4ovuyury24akkmoiwohg",
+            "products" : [ "*" ]
+          },
+          "requestId" : "cfd91580-65f0-4bc8-96f9-9b6a77c440ff",
+          "action" : "Login",
+          "serviceAccount" : {
+            "name" : "sec-int",
+            "id" : "mlipebtwsndhxdmnzdwrxzmiokfvinlqi4ovuyury24akkmoiwohg"
+          },
+          "id" : "cfd91580-65f0-4bc8-96f9-9b6a77c440ff",
+          "status" : "SUCCESS",
+          "timestamp" : "2024-02-14T22:11:00.543837Z"
+        }
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1707948660543
+  - sample: |-
+      {
+        "id": "fb40dcc2-915a-4fe7-8083-e62daf81aafa",
+        "action": "Login",
+        "requestId": "fb40dcc2-915a-4fe7-8083-e62daf81aafa",
+        "status": "SUCCESS",
+        "timestamp": "2024-06-06T15:43:44.404535Z",
+        "actionParameters": {
+          "clientID": "kr7ngoiolk3d9i8ravmuutlb6",
+          "error": "",
+          "groups": null,
+          "name": "expel",
+          "products": [
+            "*"
+          ],
+          "role": "",
+          "scopes": [
+            "read:issues",
+            "read:reports",
+            "read:cloud_configuration",
+            "update:issues",
+            "update:reports",
+            "create:reports"
+          ],
+          "sourceIP": "34.75.210.18",
+          "userEmail": "annam.iyer@wiz.io",
+          "userID": "mlipebtwsndhxdmnzdwrxzmioklecda3irxfhjux45bwmgji2blxg",
+          "userPoolType": "sa",
+          "userpoolID": "us-east-2_GQ3gwvxsQ"
+        },
+        "userAgent": "expel",
+        "sourceIP": "34.75.210.18",
+        "serviceAccount": {
+          "id": "mlipebtwsndhxdmnzdwrxzmioklecda3irxfhjux45bwmgji2blxg",
+          "name": "expel"
+        },
+        "user": null
+      }
+    result:
+      custom:
+        actionParameters:
+          clientID: "kr7ngoiolk3d9i8ravmuutlb6"
+          error: ""
+          name: "expel"
+          products:
+          - "*"
+          role: ""
+          scopes:
+          - "read:issues"
+          - "read:reports"
+          - "read:cloud_configuration"
+          - "update:issues"
+          - "update:reports"
+          - "create:reports"
+          sourceIP: "34.75.210.18"
+          userID: "mlipebtwsndhxdmnzdwrxzmioklecda3irxfhjux45bwmgji2blxg"
+          userPoolType: "sa"
+          userpoolID: "us-east-2_GQ3gwvxsQ"
+        evt:
+          name: "Login"
+          outcome: "SUCCESS"
+        http:
+          useragent: "expel"
+        id: "fb40dcc2-915a-4fe7-8083-e62daf81aafa"
+        network:
+          client:
+            geoip: {}
+            ip: "34.75.210.18"
+        requestId: "fb40dcc2-915a-4fe7-8083-e62daf81aafa"
+        timestamp: "2024-06-06T15:43:44.404535Z"
+        usr:
+          email: "annam.iyer@wiz.io"
+          id: "mlipebtwsndhxdmnzdwrxzmioklecda3irxfhjux45bwmgji2blxg"
+          name: "expel"
+      message: |-
+        {
+          "actionParameters" : {
+            "clientID" : "kr7ngoiolk3d9i8ravmuutlb6",
+            "role" : "",
+            "sourceIP" : "34.75.210.18",
+            "userPoolType" : "sa",
+            "name" : "expel",
+            "userpoolID" : "us-east-2_GQ3gwvxsQ",
+            "userEmail" : "annam.iyer@wiz.io",
+            "scopes" : [ "read:issues", "read:reports", "read:cloud_configuration", "update:issues", "update:reports", "create:reports" ],
+            "error" : "",
+            "userID" : "mlipebtwsndhxdmnzdwrxzmioklecda3irxfhjux45bwmgji2blxg",
+            "products" : [ "*" ]
+          },
+          "sourceIP" : "34.75.210.18",
+          "requestId" : "fb40dcc2-915a-4fe7-8083-e62daf81aafa",
+          "action" : "Login",
+          "userAgent" : "expel",
+          "serviceAccount" : {
+            "name" : "expel",
+            "id" : "mlipebtwsndhxdmnzdwrxzmioklecda3irxfhjux45bwmgji2blxg"
+          },
+          "id" : "fb40dcc2-915a-4fe7-8083-e62daf81aafa",
+          "status" : "SUCCESS",
+          "timestamp" : "2024-06-06T15:43:44.404535Z"
+        }
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1717688624404
+  - sample: |-
+      {
+        "dueAt" : "None",
+        "severity" : "MEDIUM",
+        "createdAt" : "2024-05-30T17:25:27.658781Z",
+        "statusChangedAt" : "2024-05-30T17:22:38.90279Z",
+        "resolvedAt" : "None",
+        "projects" : "None",
+        "sourceRule" : {
+          "controlDescription" : "Vendor severity is critical",
+          "resolutionRecommendation" : "",
+          "securitySubCategories" : "None",
+          "__typename" : "Control",
+          "name" : "Findings with Critical Severity Vulnerabilities",
+          "id" : "4144c5de-c2aa-43e0-a0b7-fe7c43324d80"
+        },
+        "entitySnapshot" : {
+          "cloudPlatform" : "None",
+          "subscriptionExternalId" : "",
+          "externalId" : "vulnerability##14uv-jvyi-4n0o-mofk##1eaf09f5-6005-eb92-ce71-c46aaae4405c##0855##",
+          "resourceGroupExternalId" : "",
+          "type" : "SECURITY_TOOL_FINDING",
+          "cloudProviderURL" : "",
+          "createdAt" : "None",
+          "subscriptionTags" : "None",
+          "providerId" : "vulnerability##14uv-jvyi-4n0o-mofk##1eaf09f5-6005-eb92-ce71-c46aaae4405c##0855##",
+          "nativeType" : "",
+          "subscriptionName" : "",
+          "name" : "CVE-2017-6737",
+          "id" : "fac95575-6b2e-5c4b-9fa8-ec13afe63ab7",
+          "region" : "",
+          "status" : "None"
+        },
+        "id" : "05984434-0339-4714-948e-171b9593913d",
+        "type" : "TOXIC_COMBINATION",
+        "updatedAt" : "2024-05-30T17:25:27.658781Z",
+        "status" : "OPEN"
+      }
+    result:
+      custom:
+        createdAt: "2024-05-30T17:25:27.658781Z"
+        dueAt: "None"
+        entitySnapshot:
+          cloudPlatform: "None"
+          cloudProviderURL: ""
+          createdAt: "None"
+          externalId: "vulnerability##14uv-jvyi-4n0o-mofk##1eaf09f5-6005-eb92-ce71-c46aaae4405c##0855##"
+          id: "fac95575-6b2e-5c4b-9fa8-ec13afe63ab7"
+          name: "CVE-2017-6737"
+          nativeType: ""
+          providerId: "vulnerability##14uv-jvyi-4n0o-mofk##1eaf09f5-6005-eb92-ce71-c46aaae4405c##0855##"
+          region: ""
+          resourceGroupExternalId: ""
+          status: "None"
+          subscriptionExternalId: ""
+          subscriptionName: ""
+          subscriptionTags: "None"
+          type: "SECURITY_TOOL_FINDING"
+        evt:
+          category: "TOXIC_COMBINATION"
+          name: "Findings with Critical Severity Vulnerabilities"
+          outcome: "OPEN"
+          severity: "MEDIUM"
+        id: "05984434-0339-4714-948e-171b9593913d"
+        projects: "None"
+        resolvedAt: "None"
+        sourceRule:
+          __typename: "Control"
+          controlDescription: "Vendor severity is critical"
+          id: "4144c5de-c2aa-43e0-a0b7-fe7c43324d80"
+          resolutionRecommendation: ""
+          securitySubCategories: "None"
+        statusChangedAt: "2024-05-30T17:22:38.90279Z"
+        updatedAt: "2024-05-30T17:25:27.658781Z"
+      message: |-
+        {
+          "dueAt" : "None",
+          "severity" : "MEDIUM",
+          "createdAt" : "2024-05-30T17:25:27.658781Z",
+          "statusChangedAt" : "2024-05-30T17:22:38.90279Z",
+          "resolvedAt" : "None",
+          "projects" : "None",
+          "sourceRule" : {
+            "controlDescription" : "Vendor severity is critical",
+            "resolutionRecommendation" : "",
+            "securitySubCategories" : "None",
+            "__typename" : "Control",
+            "name" : "Findings with Critical Severity Vulnerabilities",
+            "id" : "4144c5de-c2aa-43e0-a0b7-fe7c43324d80"
+          },
+          "entitySnapshot" : {
+            "cloudPlatform" : "None",
+            "subscriptionExternalId" : "",
+            "externalId" : "vulnerability##14uv-jvyi-4n0o-mofk##1eaf09f5-6005-eb92-ce71-c46aaae4405c##0855##",
+            "resourceGroupExternalId" : "",
+            "type" : "SECURITY_TOOL_FINDING",
+            "cloudProviderURL" : "",
+            "createdAt" : "None",
+            "subscriptionTags" : "None",
+            "providerId" : "vulnerability##14uv-jvyi-4n0o-mofk##1eaf09f5-6005-eb92-ce71-c46aaae4405c##0855##",
+            "nativeType" : "",
+            "subscriptionName" : "",
+            "name" : "CVE-2017-6737",
+            "id" : "fac95575-6b2e-5c4b-9fa8-ec13afe63ab7",
+            "region" : "",
+            "status" : "None"
+          },
+          "id" : "05984434-0339-4714-948e-171b9593913d",
+          "type" : "TOXIC_COMBINATION",
+          "updatedAt" : "2024-05-30T17:25:27.658781Z",
+          "status" : "OPEN"
+        }
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1717089758902

@@ -1,0 +1,47 @@
+id: consul
+metric_id: consul
+backend_only: false
+facets:
+pipeline:
+  type: pipeline
+  name: Consul
+  enabled: true
+  filter:
+    query: source:consul
+  processors:
+    - type: grok-parser
+      name: Parsing Consul logs
+      enabled: true
+      source: message
+      samples:
+        - '==> WARNING: It is highly recommended to set GOMAXPROCS higher than 1'
+        - ==> Starting Consul agent...
+        - '2015/11/24 11:41:05 [INFO] serf: EventMemberJoin: 10.0.255.5 10.0.255.5'
+        - 'Mar 23 14:39:46 precise64 consul-template[23544]: (runner) creating Watcher'
+        - '2018-10-19T19:04:16.180Z [TRACE] pkcs11: key successfully found'
+      grok:
+        supportRules: |
+          _date %{date("yyyy/MM/dd HH:mm:ss"):timestamp}
+          _date_2 %{date("MMM dd HH:mm:ss"):timestamp}
+          _date_3 %{date("yyyy-MM-dd'T'HH:mm:ss.SSSZZ"):timestamp}
+          _status %{word:level}
+          _app %{data:app}
+          _event %{word:event}
+          _hostname %{notSpace:hostname}
+          _thread_id %{integer:logger.thread.id}
+        matchRules: |
+          Upstart_format ==>\s+(?>%{_status}:|)%{data:message}
+
+          Consul_template (\s*|\t*)%{_date_2} %{_hostname} %{_app}\[%{_thread_id}]:\s+%{data:message}
+
+          Default_format (\s*|\t*)(%{_date}|%{_date_3}) \[%{_status}\] %{_app}:( %{_event}:)?%{data:message}
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level

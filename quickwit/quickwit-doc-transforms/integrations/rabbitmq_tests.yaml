@@ -1,0 +1,36 @@
+id: "rabbitmq"
+tests:
+ -
+  sample: "=INFO REPORT==== 8-Mar-2018::14:09:27 === closing AMQP connection <0.22578.1180> (62.210.247.209:43887 -> 62.210.129.60:5672"
+  result:
+    custom:
+      status: "INFO"
+      timestamp: 1520518167000
+    message: "closing AMQP connection <0.22578.1180> (62.210.247.209:43887 -> 62.210.129.60:5672"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1520518167000
+ -
+  sample: "2018-11-22 10:44:33.654 [info] <0.620.0> accepting AMQP connection <0.620.0> (127.0.0.1:52771 -> 127.0.0.1:5672)"
+  result:
+    custom:
+      status: "info"
+      timestamp: 1542883473654
+    message: "<0.620.0> accepting AMQP connection <0.620.0> (127.0.0.1:52771 -> 127.0.0.1:5672)"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1542883473654
+ -
+  sample: "2022-04-18 22:52:43.608049+00:00 [warn] <0.130.0> cluster_formation.randomized_startup_delay_range.min and cluster_formation.randomized_startup_delay_range.max are deprecated"
+  result:
+    custom:
+      status: "warn"
+      timestamp: 1650322363608
+    message: "<0.130.0> cluster_formation.randomized_startup_delay_range.min and cluster_formation.randomized_startup_delay_range.max are deprecated"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1650322363608
+

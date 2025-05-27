@@ -1,0 +1,456 @@
+id: "zeek"
+tests:
+ -
+  sample: "<134>Dec 26 01:35:11 machine-name {\"_path\":\"capture_loss\",\"_write_ts\":\"2023-12-12T05:52:50.756358Z\",\"ts\":\"2023-12-12T05:52:32.763303Z\",\"ts_delta\":15.235642194747925,\"peer\":\"zeek\",\"gaps\":3,\"acks\":316,\"percent_lost\":0.9493670886075949}"
+  service: "corelight"
+  result:
+    custom:
+      _path: "capture_loss"
+      _write_ts: "2023-12-12T05:52:50.756358Z"
+      acks: 316
+      gaps: 3
+      peer: "zeek"
+      ts: "2023-12-12T05:52:32.763303Z"
+      ts_delta: 15.235642194747925
+      zeek:
+        percent_lost: 0.9493670886075949
+    message: "<134>Dec 26 01:35:11 machine-name {\"_path\":\"capture_loss\",\"_write_ts\":\"2023-12-12T05:52:50.756358Z\",\"ts\":\"2023-12-12T05:52:32.763303Z\",\"ts_delta\":15.235642194747925,\"peer\":\"zeek\",\"gaps\":3,\"acks\":316,\"percent_lost\":0.9493670886075949}"
+    service: "capture_loss"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1702360352763
+ -
+  sample: |-
+    {
+      "resp_pkts" : 0,
+      "resp_ip_bytes" : 0,
+      "orig_bytes" : 234,
+      "local_orig" : true,
+      "_write_ts" : "2023-12-12T05:52:50.756358Z",
+      "orig_ip_bytes" : 318,
+      "orig_pkts" : 3,
+      "_path" : "conn",
+      "missed_bytes" : 0,
+      "duration" : 3.0111899375915527,
+      "local_resp" : true,
+      "uid" : "CcdWSj20NUmxZowq93",
+      "resp_bytes" : 0,
+      "conn_state" : "OTH",
+      "proto" : "icmp",
+      "id" : {
+        "orig_p" : 3,
+        "resp_h" : "185.64.148.0",
+        "orig_h" : "185.64.148.0",
+        "resp_p" : 10
+      },
+      "ts" : "2023-12-12T05:52:32.763303Z"
+    }
+  result:
+    custom:
+      _path: "conn"
+      _write_ts: "2023-12-12T05:52:50.756358Z"
+      conn_state: "OTH"
+      connection_state: "No SYN seen - just midstream traffic"
+      local_orig: true
+      local_resp: true
+      network:
+        bytes_read: 234
+        bytes_written: 0
+        client:
+          ip: "185.64.148.0"
+          port: 3
+        destination:
+          ip: "185.64.148.0"
+          port: 10
+      orig_ip_bytes: 318
+      orig_pkts: 3
+      resp_ip_bytes: 0
+      resp_pkts: 0
+      ts: "2023-12-12T05:52:32.763303Z"
+      uid: "CcdWSj20NUmxZowq93"
+      zeek:
+        duration_sec: 3.0111899375915527
+        missed_bytes: 0
+        proto: "icmp"
+    message: |-
+      {
+        "resp_pkts" : 0,
+        "resp_ip_bytes" : 0,
+        "orig_bytes" : 234,
+        "local_orig" : true,
+        "_write_ts" : "2023-12-12T05:52:50.756358Z",
+        "orig_ip_bytes" : 318,
+        "orig_pkts" : 3,
+        "_path" : "conn",
+        "missed_bytes" : 0,
+        "duration" : 3.0111899375915527,
+        "local_resp" : true,
+        "uid" : "CcdWSj20NUmxZowq93",
+        "resp_bytes" : 0,
+        "conn_state" : "OTH",
+        "proto" : "icmp",
+        "id" : {
+          "orig_p" : 3,
+          "resp_h" : "185.64.148.0",
+          "orig_h" : "185.64.148.0",
+          "resp_p" : 10
+        },
+        "ts" : "2023-12-12T05:52:32.763303Z"
+      }
+    service: "conn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1702360352763
+ -
+  sample: |-
+    {
+      "status_code" : 200,
+      "method" : "POST",
+      "request_body_len" : 83,
+      "_write_ts" : "2023-12-12T05:52:50.756358Z",
+      "_path" : "http",
+      "orig_mime_types" : [ "application/ocsp-request" ],
+      "uri" : "/rootr3",
+      "version" : "1.1",
+      "uid" : "CBQBvs1hob384mp2lb",
+      "resp_mime_types" : [ "application/ocsp-response" ],
+      "trans_depth" : 1,
+      "orig_fuids" : [ "FKhxp22QnZua8NWY2" ],
+      "host" : "host.com",
+      "status_msg" : "OK",
+      "id" : {
+        "orig_p" : 47210,
+        "resp_h" : "185.64.148.0",
+        "orig_h" : "185.64.148.0",
+        "resp_p" : 80
+      },
+      "response_body_len" : 1434,
+      "user_agent" : "LIBCURL",
+      "ts" : "2023-12-12T05:52:32.763303Z",
+      "resp_fuids" : [ "F9Zqr71YzMZPVZ4dbe" ]
+    }
+  result:
+    custom:
+      _path: "http"
+      _write_ts: "2023-12-12T05:52:50.756358Z"
+      http:
+        method: "POST"
+        status_code: 200
+        url_details:
+          host: "host.com"
+          path: "/rootr3"
+        useragent: "LIBCURL"
+        version: "1.1"
+      http_url: "http://host.com/rootr3"
+      network:
+        bytes_read: 83
+        bytes_written: 1434
+        client:
+          ip: "185.64.148.0"
+          port: 47210
+        destination:
+          ip: "185.64.148.0"
+          port: 80
+      orig_fuids:
+       - "FKhxp22QnZua8NWY2"
+      orig_mime_types:
+       - "application/ocsp-request"
+      resp_fuids:
+       - "F9Zqr71YzMZPVZ4dbe"
+      resp_mime_types:
+       - "application/ocsp-response"
+      status_msg: "OK"
+      trans_depth: 1
+      ts: "2023-12-12T05:52:32.763303Z"
+      uid: "CBQBvs1hob384mp2lb"
+    message: |-
+      {
+        "status_code" : 200,
+        "method" : "POST",
+        "request_body_len" : 83,
+        "_write_ts" : "2023-12-12T05:52:50.756358Z",
+        "_path" : "http",
+        "orig_mime_types" : [ "application/ocsp-request" ],
+        "uri" : "/rootr3",
+        "version" : "1.1",
+        "uid" : "CBQBvs1hob384mp2lb",
+        "resp_mime_types" : [ "application/ocsp-response" ],
+        "trans_depth" : 1,
+        "orig_fuids" : [ "FKhxp22QnZua8NWY2" ],
+        "host" : "host.com",
+        "status_msg" : "OK",
+        "id" : {
+          "orig_p" : 47210,
+          "resp_h" : "185.64.148.0",
+          "orig_h" : "185.64.148.0",
+          "resp_p" : 80
+        },
+        "response_body_len" : 1434,
+        "user_agent" : "LIBCURL",
+        "ts" : "2023-12-12T05:52:32.763303Z",
+        "resp_fuids" : [ "F9Zqr71YzMZPVZ4dbe" ]
+      }
+    service: "http"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1702360352763
+ -
+  sample: |-
+    {
+      "AA" : false,
+      "TTLs" : [ 30.0 ],
+      "rejected" : false,
+      "query" : "win2k16-1-159",
+      "_write_ts" : "2023-12-12T05:52:50.756358Z",
+      "answers" : [ "185.64.148.0" ],
+      "trans_id" : 38706,
+      "rcode" : 0,
+      "_path" : "dns",
+      "rcode_name" : "NOERROR",
+      "TC" : false,
+      "RA" : false,
+      "uid" : "CsOSdHqRMu62rNs31",
+      "RD" : false,
+      "proto" : "udp",
+      "Z" : 0,
+      "id" : {
+        "orig_p" : 58013,
+        "resp_h" : "185.64.148.0",
+        "orig_h" : "185.64.148.0",
+        "resp_p" : 5355
+      },
+      "ts" : "2023-12-12T05:52:32.763303Z"
+    }
+  result:
+    custom:
+      AA: false
+      RA: false
+      RD: false
+      TC: false
+      TTLs:
+       - 30.0
+      Z: 0
+      _path: "dns"
+      _write_ts: "2023-12-12T05:52:50.756358Z"
+      dns:
+        answer:
+          name:
+           - "185.64.148.0"
+        flags:
+          rcode: "NOERROR"
+        id: 38706
+        question:
+          name: "win2k16-1-159"
+      network:
+        client:
+          geoip:
+            city:
+              name: "Paris"
+            continent:
+              code: "EU"
+              name: "Europe"
+            country:
+              iso_code: "FR"
+              name: "France"
+            ipAddress: "185.64.148.0"
+            location:
+              latitude: 48.90654
+              longitude: 2.33339
+            subdivision:
+              iso_code: "FR-IDF"
+              name: "Île-de-France"
+            timezone: "Europe/Paris"
+          ip: "185.64.148.0"
+          port: 58013
+        destination:
+          ip: "185.64.148.0"
+          port: 5355
+      rcode: 0
+      rejected: false
+      ts: "2023-12-12T05:52:32.763303Z"
+      uid: "CsOSdHqRMu62rNs31"
+      zeek:
+        proto: "udp"
+    message: |-
+      {
+        "AA" : false,
+        "TTLs" : [ 30.0 ],
+        "rejected" : false,
+        "query" : "win2k16-1-159",
+        "_write_ts" : "2023-12-12T05:52:50.756358Z",
+        "answers" : [ "185.64.148.0" ],
+        "trans_id" : 38706,
+        "rcode" : 0,
+        "_path" : "dns",
+        "rcode_name" : "NOERROR",
+        "TC" : false,
+        "RA" : false,
+        "uid" : "CsOSdHqRMu62rNs31",
+        "RD" : false,
+        "proto" : "udp",
+        "Z" : 0,
+        "id" : {
+          "orig_p" : 58013,
+          "resp_h" : "185.64.148.0",
+          "orig_h" : "185.64.148.0",
+          "resp_p" : 5355
+        },
+        "ts" : "2023-12-12T05:52:32.763303Z"
+      }
+    service: "dns"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1702360352763
+ -
+  sample: |-
+    {
+      "level" : "Reporter::INFO",
+      "_write_ts" : "2023-12-12T05:52:50.756358Z",
+      "location" : "",
+      "_path" : "reporter",
+      "message" : "18294 packets received on interface xyz, 0 (0.00%) dropped, 8 (0.04%) not processed",
+      "ts" : "2023-12-12T05:52:32.763303Z"
+    }
+  result:
+    custom:
+      _path: "reporter"
+      _write_ts: "2023-12-12T05:52:50.756358Z"
+      level: "Reporter::INFO"
+      location: ""
+      severity: "INFO"
+      ts: "2023-12-12T05:52:32.763303Z"
+    message: "18294 packets received on interface xyz, 0 (0.00%) dropped, 8 (0.04%) not processed"
+    service: "reporter"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1702360352763
+ -
+  sample: "<134>Jan 12 18:13:46 machine-name {\"_path\":\"datared\",\"_write_ts\":\"2024-01-13T00:13:42.817478Z\",\"ts\":\"2024-01-13T00:13:42.817478Z\",\"conn_red\":1310,\"conn_total\":18460,\"dns_red\":1141,\"dns_total\":1604,\"files_red\":313,\"files_total\":796,\"http_red\":140,\"http_total\":140,\"ssl_red\":215,\"ssl_total\":227,\"weird_red\":20,\"weird_total\":20}"
+  service: "corelight"
+  result:
+    custom:
+      _path: "datared"
+      _write_ts: "2024-01-13T00:13:42.817478Z"
+      ts: "2024-01-13T00:13:42.817478Z"
+      zeek:
+        conn_red: 1310
+        conn_total: 18460
+        dns_red: 1141
+        dns_total: 1604
+        files_red: 313
+        files_total: 796
+        http_red: 140
+        http_total: 140
+        ssl_red: 215
+        ssl_total: 227
+        weird_red: 20
+        weird_total: 20
+    message: "<134>Jan 12 18:13:46 machine-name {\"_path\":\"datared\",\"_write_ts\":\"2024-01-13T00:13:42.817478Z\",\"ts\":\"2024-01-13T00:13:42.817478Z\",\"conn_red\":1310,\"conn_total\":18460,\"dns_red\":1141,\"dns_total\":1604,\"files_red\":313,\"files_total\":796,\"http_red\":140,\"http_total\":140,\"ssl_red\":215,\"ssl_total\":227,\"weird_red\":20,\"weird_total\":20}"
+    service: "datared"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1705104822817
+ -
+  sample: "<134>Mar  6 20:22:19 machine-name {\"_path\":\"files_red\",\"_write_ts\":\"2024-03-07T02:22:18.145479Z\",\"ts\":[\"2024-03-07T02:12:12.099810Z\"],\"fuid\":\"FJcjJV2mrRbxT0TWi\",\"tx_hosts\":[\"10.10.10.10\"],\"rx_hosts\":[\"20.20.20.20\"],\"conn_uids\":[\"CALvyD1AyopngTm5Xh\"],\"source\":\"HTTP\",\"depth\":0,\"analyzers\":[\"SHA1\",\"MD5\",\"DATA_EVENT\",\"SHA256\"],\"local_orig\":true,\"is_orig\":false,\"seen_bytes\":163,\"total_bytes\":163,\"missing_bytes\":0,\"overflow_bytes\":0,\"timedout\":false,\"extracted\":[],\"md5\":\"e335c05220a3858e858d2026071e3se2\",\"sha1\":\"8514de756fa993adb449c282affe84c752bab495\",\"sha256\":\"2733c2e83762f8a9542ebacf40642505fee0247295161ced264b44d2ad6f9456\",\"num\":1}"
+  service: "corelight"
+  result:
+    custom:
+      _path: "files_red"
+      _write_ts: "2024-03-07T02:22:18.145479Z"
+      analyzers:
+       - "SHA1"
+       - "MD5"
+       - "DATA_EVENT"
+       - "SHA256"
+      conn_uids:
+       - "CALvyD1AyopngTm5Xh"
+      depth: 0
+      dest_host:
+       - "10.10.10.10"
+      fuid: "FJcjJV2mrRbxT0TWi"
+      is_orig: false
+      local_orig: true
+      md5: "e335c05220a3858e858d2026071e3se2"
+      num: 1
+      orig_host:
+       - "20.20.20.20"
+      rx_hosts:
+       - "20.20.20.20"
+      sha1: "8514de756fa993adb449c282affe84c752bab495"
+      sha256: "2733c2e83762f8a9542ebacf40642505fee0247295161ced264b44d2ad6f9456"
+      source: "HTTP"
+      timedout: false
+      ts:
+       - "2024-03-07T02:12:12.099810Z"
+      tx_hosts:
+       - "10.10.10.10"
+      zeek:
+        missing_bytes: 0
+        overflow_bytes: 0
+        seen_bytes: 163
+        total_bytes: 163
+    message: "<134>Mar  6 20:22:19 machine-name {\"_path\":\"files_red\",\"_write_ts\":\"2024-03-07T02:22:18.145479Z\",\"ts\":[\"2024-03-07T02:12:12.099810Z\"],\"fuid\":\"FJcjJV2mrRbxT0TWi\",\"tx_hosts\":[\"10.10.10.10\"],\"rx_hosts\":[\"20.20.20.20\"],\"conn_uids\":[\"CALvyD1AyopngTm5Xh\"],\"source\":\"HTTP\",\"depth\":0,\"analyzers\":[\"SHA1\",\"MD5\",\"DATA_EVENT\",\"SHA256\"],\"local_orig\":true,\"is_orig\":false,\"seen_bytes\":163,\"total_bytes\":163,\"missing_bytes\":0,\"overflow_bytes\":0,\"timedout\":false,\"extracted\":[],\"md5\":\"e335c05220a3858e858d2026071e3se2\",\"sha1\":\"8514de756fa993adb449c282affe84c752bab495\",\"sha256\":\"2733c2e83762f8a9542ebacf40642505fee0247295161ced264b44d2ad6f9456\",\"num\":1}"
+    service: "files_red"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1709778138145
+ -
+  sample: "<134>Mar  6 22:39:30 machine-name {\"_path\":\"dns_red\",\"_write_ts\":\"2024-03-07T04:39:28.580374Z\",\"ts\":\"2024-03-07T04:38:40.085451Z\",\"uid\":\"CyArTY2KEgcygwMLi1\",\"id.orig_h\":\"10.10.10.10\",\"id.orig_p\":123,\"id.resp_h\":\"20.20.20.20\",\"id.resp_p\":321,\"query\":\"time.missouri.edu\",\"qtype_name\":\"A\",\"num\":4}"
+  service: "corelight"
+  result:
+    custom:
+      _path: "dns_red"
+      _write_ts: "2024-03-07T04:39:28.580374Z"
+      dns:
+        question:
+          name: "time.missouri.edu"
+          type: "A"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+          port: 123
+        destination:
+          ip: "20.20.20.20"
+          port: 321
+      num: 4
+      ts: "2024-03-07T04:38:40.085451Z"
+      uid: "CyArTY2KEgcygwMLi1"
+    message: "<134>Mar  6 22:39:30 machine-name {\"_path\":\"dns_red\",\"_write_ts\":\"2024-03-07T04:39:28.580374Z\",\"ts\":\"2024-03-07T04:38:40.085451Z\",\"uid\":\"CyArTY2KEgcygwMLi1\",\"id.orig_h\":\"10.10.10.10\",\"id.orig_p\":123,\"id.resp_h\":\"20.20.20.20\",\"id.resp_p\":321,\"query\":\"time.missouri.edu\",\"qtype_name\":\"A\",\"num\":4}"
+    service: "dns_red"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1709786320085
+ -
+  sample: "<134>Nov 19 22:36:37 machine-name {\"_path\":\"etc_viz\",\"_system_name\":\"machine-name\",\"_write_ts\":\"2024-03-28T00:01:04.742415Z\",\"c2s_viz.clr_frac\":0.0,\"c2s_viz.enc_dev\":0.30151134457776363,\"c2s_viz.enc_frac\":1.0,\"c2s_viz.pdu1_enc\":true,\"c2s_viz.size\":198,\"err\":null,\"s2c_viz.clr_frac\":0.0,\"s2c_viz.enc_dev\":0.6957566520492713,\"s2c_viz.enc_frac\":1.0,\"s2c_viz.pdu1_enc\":true,\"s2c_viz.size\":818,\"server_a\":\"10.10.10.10\",\"server_p\":443,\"service\":[],\"ts\":\"2024-03-28T00:00:52.656388Z\",\"uid\":\"CV79JD7onkfdf7WDa\",\"viz_stat\":\"Ee!!\"}"
+  service: "corelight"
+  result:
+    custom:
+      _path: "etc_viz"
+      _system_name: "machine-name"
+      _write_ts: "2024-03-28T00:01:04.742415Z"
+      c2s_viz:
+        clr_frac: 0.0
+        enc_dev: 0.30151134457776363
+        enc_frac: 1.0
+        pdu1_enc: true
+        size: 198
+      network:
+        client:
+          ip: "10.10.10.10"
+          port: 443
+      s2c_viz:
+        clr_frac: 0.0
+        enc_dev: 0.6957566520492713
+        enc_frac: 1.0
+        pdu1_enc: true
+        size: 818
+      ts: "2024-03-28T00:00:52.656388Z"
+      uid: "CV79JD7onkfdf7WDa"
+      viz_stat: "Ee!!"
+    message: "<134>Nov 19 22:36:37 machine-name {\"_path\":\"etc_viz\",\"_system_name\":\"machine-name\",\"_write_ts\":\"2024-03-28T00:01:04.742415Z\",\"c2s_viz.clr_frac\":0.0,\"c2s_viz.enc_dev\":0.30151134457776363,\"c2s_viz.enc_frac\":1.0,\"c2s_viz.pdu1_enc\":true,\"c2s_viz.size\":198,\"err\":null,\"s2c_viz.clr_frac\":0.0,\"s2c_viz.enc_dev\":0.6957566520492713,\"s2c_viz.enc_frac\":1.0,\"s2c_viz.pdu1_enc\":true,\"s2c_viz.size\":818,\"server_a\":\"10.10.10.10\",\"server_p\":443,\"service\":[],\"ts\":\"2024-03-28T00:00:52.656388Z\",\"uid\":\"CV79JD7onkfdf7WDa\",\"viz_stat\":\"Ee!!\"}"
+    service: "etc_viz"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1711584052656

@@ -1,0 +1,180 @@
+id: csharp
+metric_id: dotnet
+backend_only: false
+facets:
+  - groups:
+      - Source Code
+    name: Error Type
+    path: error.kind
+    source: log
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+  - groups:
+      - Source Code
+    name: Thread Name
+    path: logger.thread_name
+    source: log
+pipeline:
+  type: pipeline
+  name: C#
+  enabled: true
+  filter:
+    query: source:csharp
+  processors:
+    - type: attribute-remapper
+      name: Map `logger` to `logger.name`
+      enabled: true
+      sources:
+        - logger
+      target: logger.name
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `thread` to `logger.thread_name`
+      enabled: true
+      sources:
+        - thread
+      target: logger.thread_name
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `exception`, `stack_trace`, `@x` to `error.stack`
+      enabled: true
+      sources:
+        - exception
+        - stack_trace
+        - '@x'
+      target: error.stack
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `Exception` to `error.stack`
+      enabled: true
+      sources:
+        - Exception
+      target: error.stack
+      preserveSource: true
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: grok-parser
+      name: Parsing csharp Default formats
+      enabled: true
+      source: message
+      samples:
+        - 2016-09-02T15:02:29.648Z INFO this is my message
+        - 2017-03-10 15:13:53.130 ERROR [10] ConsoleApplication1.Program mymethod:32 - an error occured while processing
+        - 2019-11-25 11:21:32.6282|INFO|NLogExample.Program|{dd.trace_id="4424326124026709723", dd.span_id="249969541933646857"} Example message
+        - '2019-12-02 11:47:20.467 -08:00 [INF] { dd.span_id: "4014120331748607290", dd.trace_id: "2762343115747197096", order-number: 1024 } Example message'
+        - 2019-11-25 11:16:22,874 [1] INFO  Log4NetExample.Program [(null)] {dd.trace_id="4009757125255271932", dd.span_id="1651023355892440286"} - Example message
+      grok:
+        supportRules: |
+          _date (%{date("yyyy-MM-dd HH:mm:ss.SSSS"):date}|%{date("yyyy-MM-dd HH:mm:ss.SSS"):date})
+          _date_ms %{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):date}
+          _status %{word:level}
+          _thread_name %{notSpace:logger.thread_name}
+          _logger_name %{notSpace:logger.name}
+          _line %{integer:line}
+          _method %{notSpace:method}
+        matchRules: |
+          recommended_format %{_date} %{_status} \[%{_thread_name}\] %{_logger_name} %{_method}:%{_line} - %{data:message}((\n|\t)%{data:error.stack})?
+
+          default_parser (%{_date}|%{_date_ms}) %{_status}\s+%{data:message}((\n|\t)%{data:error.stack})?
+
+          serilog_format %{date("yyyy-MM-dd HH:mm:ss.SSS Z"):date} \[%{_status}\] %{data::keyvalue(": ")}
+
+          Nlog_format (%{date("yyyy-MM-dd HH:mm:ss.SSSS"):date}|%{date("yyyy-MM-dd HH:mm:ss.SSS"):date}|%{date("yyyy-MM-dd HH:mm:ss.SS"):date}|%{date("yyyy-MM-dd HH:mm:ss.SSSSS"):date})\|%{_status}\|%{notSpace:logger.name}\|\{%{data::keyvalue}\}.*
+
+          log4net_format %{date("yyyy-MM-dd HH:mm:ss,SSS"):date} \[%{number}\] %{_status}\s+%{notSpace:logger.name} \[%{notSpace}\] \{%{data:Properties:keyvalue("=")}\}.*
+    - type: date-remapper
+      name: Define `date`, `time`, `@t` as the official date of the log
+      enabled: true
+      sources:
+        - date
+        - time
+        - '@t'
+    - type: status-remapper
+      name: Define `level`, `Level`, `@l` as the official status of the log
+      enabled: true
+      sources:
+        - level
+        - Level
+        - '@l'
+    - type: grok-parser
+      name: Parsing Exceptions
+      enabled: true
+      source: error.stack
+      grok:
+        supportRules: |
+        matchRules: |
+          error_rule %{notSpace:error.kind}: %{data:error.message}(\n|\t).*
+      samples:
+        - |
+          System.NullReferenceException: "Object reference not set to an instance of an object."
+             at FormApp.Form1.button_toggle(Object sender, EventArgs e) in F:\FormsApplication1\FormApp\Form1.cs:line 29
+             at System.Forms.Control.OnClick(EventArgs e)
+             at System.Forms.Button.OnClick(EventArgs e)
+             at System.Forms.Button.OnMouseOver(MouseEventArgs mevent)
+    - type: trace-id-remapper
+      name: Define `dd.trace_id`, `dd_trace_id`, `Properties.dd.trace_id`, `properties.dd.trace_id`, `Properties.dd_trace_id` as the official trace ID of the log
+      enabled: true
+      sources:
+        - dd.trace_id
+        - dd_trace_id
+        - Properties.dd.trace_id
+        - properties.dd.trace_id
+        - Properties.dd_trace_id
+    - type: message-remapper
+      name: Define `RenderedMessage`, `@m`, `@mt`, `message` as the official message of the log
+      enabled: true
+      sources:
+        - RenderedMessage
+        - '@m'
+        - '@mt'
+        - message
+    - type: attribute-remapper
+      name: Map attribute `dd.env`, `dd_env`, `Properties.dd.env`, `properties.dd.env`, `Properties.dd_env` to tag `env`
+      enabled: true
+      sources:
+        - dd.env
+        - dd_env
+        - Properties.dd.env
+        - properties.dd.env
+        - Properties.dd_env
+      target: env
+      targetType: tag
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+    - type: attribute-remapper
+      name: Map attribute `dd.version`, `dd_version`, `Properties.dd.version`, `properties.dd.version`, `Properties.dd_version` to tag `version`
+      enabled: true
+      sources:
+        - dd.version
+        - dd_version
+        - Properties.dd.version
+        - properties.dd.version
+        - Properties.dd_version
+      target: version
+      targetType: tag
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+    - type: service-remapper
+      name: Define `dd.service`, `dd_service`, `Properties.dd.service`, `properties.dd.service`, `Properties.dd_service` as the official service of the log
+      enabled: true
+      sources:
+        - dd.service
+        - dd_service
+        - Properties.dd.service
+        - properties.dd.service
+        - Properties.dd_service

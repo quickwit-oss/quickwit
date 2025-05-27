@@ -1,0 +1,165 @@
+id: crest-data-systems-netapp-bluexp
+tests:
+ -
+  sample: |-
+    {
+      "agentId" : "1WlLjSDTM89Ie9TtyZO1LTbp7fLYx4t6",
+      "hasRecords" : true,
+      "agentName" : "testPOC",
+      "principalId" : "System",
+      "accountId" : "account-cyioQXTZ",
+      "requestId" : "51bvUcXt-076747c8-b0bb-4145-8699-e855e77130a7",
+      "service" : "cloud-manager",
+      "action" : "Update WE SnapMirror Policies",
+      "startTime" : 1712345764203,
+      "hasFailedRecord" : false,
+      "endTime" : 1712345764567,
+      "lastModified" : 1712345766780,
+      "status" : "success"
+    }
+  result:
+    custom:
+      accountId: "account-cyioQXTZ"
+      action: "Update WE SnapMirror Policies"
+      agentId: "1WlLjSDTM89Ie9TtyZO1LTbp7fLYx4t6"
+      agentName: "testPOC"
+      endTime: 1712345764567
+      hasFailedRecord: false
+      hasRecords: true
+      lastModified: 1712345766780
+      logStatus: "ok"
+      principalId: "System"
+      requestId: "51bvUcXt-076747c8-b0bb-4145-8699-e855e77130a7"
+      service: "cloud-manager"
+      startTime: 1712345764203
+      status: "success"
+    message: |-
+      {
+        "agentId" : "1WlLjSDTM89Ie9TtyZO1LTbp7fLYx4t6",
+        "hasRecords" : true,
+        "agentName" : "testPOC",
+        "principalId" : "System",
+        "accountId" : "account-cyioQXTZ",
+        "requestId" : "51bvUcXt-076747c8-b0bb-4145-8699-e855e77130a7",
+        "service" : "cloud-manager",
+        "action" : "Update WE SnapMirror Policies",
+        "startTime" : 1712345764203,
+        "hasFailedRecord" : false,
+        "endTime" : 1712345764567,
+        "lastModified" : 1712345766780,
+        "status" : "success"
+      }
+    service: "cloud-manager"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "agentId" : "1WlLjSDTM89Ie9TtyZO1LTbp7fLYx4t6",
+      "hasRecords" : false,
+      "principalId" : "1WlLjSDTM89Ie9TtyZO1LTbp7fLYx4t6@clients",
+      "accountId" : "account-cyioQXTZ",
+      "requestId" : "4efdc3a1-d138-4268-bb0c-d173de983154",
+      "service" : "Cloud Backup for Apps & VMs",
+      "action" : "Authenticate and Authorize User",
+      "startTime" : 1712345560063,
+      "hasFailedRecord" : false,
+      "endTime" : 0,
+      "lastModified" : 1712345561820,
+      "requestData" : "{\"host\":\"loadbalancer.appms.netapp.com:443\",\"method\":\"POST\",\"request_uri\":\"/api/v1/hosts/update-status\",\"header\":{\"Authorization\":[\"******\"],\"Content-Length\":[\"0\"],\"Content-Type\":[\"text/plain\"],\"X-Account-Id\":[\"account-cyioQXTZ\"],\"X-Agent-Id\":[\"1WlLjSDTM89Ie9TtyZO1LTbp7fLYx4t6\"],\"X-B3-Parentspanid\":[\"5fe060614b88c563\"],\"X-B3-Sampled\":[\"0\"],\"X-B3-Spanid\":[\"764ff36924cd517b\"],\"X-B3-Traceid\":[\"bc7f13ddffbfb44ff7f556270ee4984c\"],\"X-Correlation-Id\":[\"51545649-1a38-4df3-b0fb-a816c2db62db\"],\"X-Envoy-Expected-Rq-Timeout-Ms\":[\"600000\"],\"X-Envoy-Internal\":[\"true\"],\"X-Forwarded-Client-Cert\":[\"By=spiffe://cluster.local/ns/snapcenter/sa/app;Hash=c788ac57e814fece64ed98971a6ac844ab50cede31eee170ac19e262487ca415;Subject=\\\"\\\";URI=spiffe://cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account\"],\"X-Forwarded-For\":[\"172.20.3.71\"],\"X-Forwarded-Proto\":[\"https\"],\"X-Request-Id\":[\"80e1402e-16dc-46ed-a1d3-e31b6da4b3bc\"]}}",
+      "errors" : [ "{\"code\":\"TenantIDNotFound\",\"message\":\"TenantID not found.\",\"resolution\":\"Correct the input and try again.\"}" ],
+      "status" : "failed"
+    }
+  result:
+    custom:
+      accountId: "account-cyioQXTZ"
+      action: "Authenticate and Authorize User"
+      agentId: "1WlLjSDTM89Ie9TtyZO1LTbp7fLYx4t6"
+      endTime: 0
+      errors:
+       - "{\"code\":\"TenantIDNotFound\",\"message\":\"TenantID not found.\",\"resolution\":\"Correct the input and try again.\"}"
+      hasFailedRecord: false
+      hasRecords: false
+      lastModified: 1712345561820
+      logStatus: "error"
+      principalId: "1WlLjSDTM89Ie9TtyZO1LTbp7fLYx4t6@clients"
+      requestData: "{\"host\":\"loadbalancer.appms.netapp.com:443\",\"method\":\"POST\",\"request_uri\":\"/api/v1/hosts/update-status\",\"header\":{\"Authorization\":[\"******\"],\"Content-Length\":[\"0\"],\"Content-Type\":[\"text/plain\"],\"X-Account-Id\":[\"account-cyioQXTZ\"],\"X-Agent-Id\":[\"1WlLjSDTM89Ie9TtyZO1LTbp7fLYx4t6\"],\"X-B3-Parentspanid\":[\"5fe060614b88c563\"],\"X-B3-Sampled\":[\"0\"],\"X-B3-Spanid\":[\"764ff36924cd517b\"],\"X-B3-Traceid\":[\"bc7f13ddffbfb44ff7f556270ee4984c\"],\"X-Correlation-Id\":[\"51545649-1a38-4df3-b0fb-a816c2db62db\"],\"X-Envoy-Expected-Rq-Timeout-Ms\":[\"600000\"],\"X-Envoy-Internal\":[\"true\"],\"X-Forwarded-Client-Cert\":[\"By=spiffe://cluster.local/ns/snapcenter/sa/app;Hash=c788ac57e814fece64ed98971a6ac844ab50cede31eee170ac19e262487ca415;Subject=\\\"\\\";URI=spiffe://cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account\"],\"X-Forwarded-For\":[\"172.20.3.71\"],\"X-Forwarded-Proto\":[\"https\"],\"X-Request-Id\":[\"80e1402e-16dc-46ed-a1d3-e31b6da4b3bc\"]}}"
+      requestId: "4efdc3a1-d138-4268-bb0c-d173de983154"
+      service: "Cloud Backup for Apps & VMs"
+      startTime: 1712345560063
+      status: "failed"
+    message: |-
+      {
+        "agentId" : "1WlLjSDTM89Ie9TtyZO1LTbp7fLYx4t6",
+        "hasRecords" : false,
+        "principalId" : "1WlLjSDTM89Ie9TtyZO1LTbp7fLYx4t6@clients",
+        "accountId" : "account-cyioQXTZ",
+        "requestId" : "4efdc3a1-d138-4268-bb0c-d173de983154",
+        "service" : "Cloud Backup for Apps & VMs",
+        "action" : "Authenticate and Authorize User",
+        "startTime" : 1712345560063,
+        "hasFailedRecord" : false,
+        "endTime" : 0,
+        "lastModified" : 1712345561820,
+        "requestData" : "{\"host\":\"loadbalancer.appms.netapp.com:443\",\"method\":\"POST\",\"request_uri\":\"/api/v1/hosts/update-status\",\"header\":{\"Authorization\":[\"******\"],\"Content-Length\":[\"0\"],\"Content-Type\":[\"text/plain\"],\"X-Account-Id\":[\"account-cyioQXTZ\"],\"X-Agent-Id\":[\"1WlLjSDTM89Ie9TtyZO1LTbp7fLYx4t6\"],\"X-B3-Parentspanid\":[\"5fe060614b88c563\"],\"X-B3-Sampled\":[\"0\"],\"X-B3-Spanid\":[\"764ff36924cd517b\"],\"X-B3-Traceid\":[\"bc7f13ddffbfb44ff7f556270ee4984c\"],\"X-Correlation-Id\":[\"51545649-1a38-4df3-b0fb-a816c2db62db\"],\"X-Envoy-Expected-Rq-Timeout-Ms\":[\"600000\"],\"X-Envoy-Internal\":[\"true\"],\"X-Forwarded-Client-Cert\":[\"By=spiffe://cluster.local/ns/snapcenter/sa/app;Hash=c788ac57e814fece64ed98971a6ac844ab50cede31eee170ac19e262487ca415;Subject=\\\"\\\";URI=spiffe://cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account\"],\"X-Forwarded-For\":[\"172.20.3.71\"],\"X-Forwarded-Proto\":[\"https\"],\"X-Request-Id\":[\"80e1402e-16dc-46ed-a1d3-e31b6da4b3bc\"]}}",
+        "errors" : [ "{\"code\":\"TenantIDNotFound\",\"message\":\"TenantID not found.\",\"resolution\":\"Correct the input and try again.\"}" ],
+        "status" : "failed"
+      }
+    service: "Cloud Backup for Apps & VMs"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "agentId" : "1WlLjSDTM89Ie9TtyZO1LTbp7fLYx4t6",
+      "hasRecords" : false,
+      "agentName" : "testPOC",
+      "principalId" : "System",
+      "accountId" : "account-cyioQXTZ",
+      "requestId" : "YRUNezWC-076747c8-b0bb-4145-8699-e855e77130a7",
+      "service" : "cloud-manager",
+      "action" : "Update Cloud Ontap Metadata",
+      "startTime" : 1712345283497,
+      "hasFailedRecord" : false,
+      "endTime" : 1712345297675,
+      "lastModified" : 1712345298589,
+      "status" : "success"
+    }
+  result:
+    custom:
+      accountId: "account-cyioQXTZ"
+      action: "Update Cloud Ontap Metadata"
+      agentId: "1WlLjSDTM89Ie9TtyZO1LTbp7fLYx4t6"
+      agentName: "testPOC"
+      endTime: 1712345297675
+      hasFailedRecord: false
+      hasRecords: false
+      lastModified: 1712345298589
+      logStatus: "ok"
+      principalId: "System"
+      requestId: "YRUNezWC-076747c8-b0bb-4145-8699-e855e77130a7"
+      service: "cloud-manager"
+      startTime: 1712345283497
+      status: "success"
+    message: |-
+      {
+        "agentId" : "1WlLjSDTM89Ie9TtyZO1LTbp7fLYx4t6",
+        "hasRecords" : false,
+        "agentName" : "testPOC",
+        "principalId" : "System",
+        "accountId" : "account-cyioQXTZ",
+        "requestId" : "YRUNezWC-076747c8-b0bb-4145-8699-e855e77130a7",
+        "service" : "cloud-manager",
+        "action" : "Update Cloud Ontap Metadata",
+        "startTime" : 1712345283497,
+        "hasFailedRecord" : false,
+        "endTime" : 1712345297675,
+        "lastModified" : 1712345298589,
+        "status" : "success"
+      }
+    service: "cloud-manager"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"

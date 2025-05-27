@@ -1,0 +1,109 @@
+id: "dynamodb"
+tests:
+ -
+  sample: |-
+    {
+      "eventID" : "a954451c-c2fc-4561-8aea-7a30ba1fdf52",
+      "awsRegion" : "us-west-2",
+      "eventVersion" : "1.03",
+      "responseElements" : {
+        "tableDescription" : {
+          "provisionedThroughput" : {
+            "numberOfDecreasesToday" : 0,
+            "writeCapacityUnits" : 25,
+            "readCapacityUnits" : 25
+          },
+          "tableStatus" : "DELETING",
+          "tableName" : "Music",
+          "itemCount" : 0,
+          "tableSizeBytes" : 0
+        }
+      },
+      "sourceIPAddress" : "192.0.2.0",
+      "eventSource" : "dynamodb.amazonaws.com",
+      "requestParameters" : {
+        "tableName" : "Music"
+      },
+      "userAgent" : "console.aws.amazon.com",
+      "eventType" : "AwsApiCall",
+      "apiVersion" : "2012-08-10",
+      "requestID" : "4KBNVRGD25RG1KEO9UT4V3FQDJVV4KQNSO5AEMVJF66Q9ASUAAJG",
+      "eventTime" : "2015-05-04T13:38:20Z",
+      "eventName" : "DeleteTable",
+      "recipientAccountId" : "111122223333"
+    }
+  result:
+    custom:
+      apiVersion: "2012-08-10"
+      awsRegion: "us-west-2"
+      db:
+        operation: "DELETING"
+      eventID: "a954451c-c2fc-4561-8aea-7a30ba1fdf52"
+      eventName: "DeleteTable"
+      eventSource: "dynamodb.amazonaws.com"
+      eventTime: "2015-05-04T13:38:20Z"
+      eventType: "AwsApiCall"
+      eventVersion: "1.03"
+      http:
+        request_id: "4KBNVRGD25RG1KEO9UT4V3FQDJVV4KQNSO5AEMVJF66Q9ASUAAJG"
+        useragent: "console.aws.amazon.com"
+        useragent_details:
+          browser:
+            family: "Other"
+          device:
+            category: "Other"
+            family: "Other"
+          os:
+            family: "Other"
+      network:
+        client:
+          ip: "192.0.2.0"
+      recipientAccountId: "111122223333"
+      requestID: "4KBNVRGD25RG1KEO9UT4V3FQDJVV4KQNSO5AEMVJF66Q9ASUAAJG"
+      requestParameters:
+        tableName: "Music"
+      responseElements:
+        tableDescription:
+          itemCount: 0
+          provisionedThroughput:
+            numberOfDecreasesToday: 0
+            readCapacityUnits: 25
+            writeCapacityUnits: 25
+          tableName: "Music"
+          tableSizeBytes: 0
+          tableStatus: "DELETING"
+      sourceIPAddress: "192.0.2.0"
+    message: |-
+      {
+        "eventID" : "a954451c-c2fc-4561-8aea-7a30ba1fdf52",
+        "awsRegion" : "us-west-2",
+        "eventVersion" : "1.03",
+        "responseElements" : {
+          "tableDescription" : {
+            "provisionedThroughput" : {
+              "numberOfDecreasesToday" : 0,
+              "writeCapacityUnits" : 25,
+              "readCapacityUnits" : 25
+            },
+            "tableStatus" : "DELETING",
+            "tableName" : "Music",
+            "itemCount" : 0,
+            "tableSizeBytes" : 0
+          }
+        },
+        "sourceIPAddress" : "192.0.2.0",
+        "eventSource" : "dynamodb.amazonaws.com",
+        "requestParameters" : {
+          "tableName" : "Music"
+        },
+        "userAgent" : "console.aws.amazon.com",
+        "eventType" : "AwsApiCall",
+        "apiVersion" : "2012-08-10",
+        "requestID" : "4KBNVRGD25RG1KEO9UT4V3FQDJVV4KQNSO5AEMVJF66Q9ASUAAJG",
+        "eventTime" : "2015-05-04T13:38:20Z",
+        "eventName" : "DeleteTable",
+        "recipientAccountId" : "111122223333"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+

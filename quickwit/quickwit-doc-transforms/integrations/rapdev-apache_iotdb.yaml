@@ -1,0 +1,32 @@
+id: rapdev-apache_iotdb
+metric_id: rapdev-apache-iotdb
+backend_only: false
+facets: []
+pipeline:
+  type: pipeline
+  name: Apache IoTDB by RapDev
+  enabled: true
+  filter:
+    query: source:rapdev-apache_iotdb
+  processors:
+    - type: grok-parser
+      name: Grok
+      enabled: true
+      source: message
+      samples:
+        - 2023-10-30 11:46:57,306 [main] INFO  o.a.i.db.service.DataNode:190 - Congratulation, IoTDB DataNode is set up successfully. Now, enjoy yourself!
+        - 2023-10-30 11:58:48,571 [ProcExecWorker-4] INFO  o.a.i.c.p.ProcedureExecutor:394 - pid=4, state=SUCCESS; org.apache.iotdb.confignode.procedure.impl.pipe.runtime.PipeMetaSyncProcedure finished in 21ms successfully.
+        - 2023-10-30 11:58:48,571 [ProcExecWorker-4] INFO  o.a.i.c.p.ProcedureExecutor:394 - pid=4, state=SUCCESS; org.apache.iotdb.confignode.procedure.impl.pipe.runtime.PipeMetaSyncProcedure finished in 21ms successfully.
+      grok:
+        supportRules: "_timestamp %{date(\"yyyy-MM-dd HH:mm:ss,SSS\"):timestamp}\n_thread \\[%{notSpace:logger.thread_name}\\]\n_level %{word:level}\n_logger %{notSpace:logger.name}:%{integer:logger.line}\n_pid %{data:process:keyvalue(\"=\")};"
+        matchRules: "pid_parse %{_timestamp} %{_thread} %{_level}\\s+%{_logger} - %{_pid} %{data:message}\nparse %{_timestamp} %{_thread} %{_level}\\s+%{_logger} - %{data:message}"
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp

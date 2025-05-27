@@ -1,0 +1,86 @@
+id: vonage
+# See app_id in your integration's manifest.json file to learn more:
+# https://docs.datadoghq.com/developers/integrations/check_references/#manifest-file
+metric_id: vonage
+# If for some reason id must be different than app_id, add the app_id in this field instead.
+# If id and app_id already match, this field can be left blank.
+backend_only: false
+facets:
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - User
+    name: User Email
+    path: usr.email
+    source: log
+  - description: ""
+    facetType: list
+    groups:
+      - Vonage
+    name: error_code
+    path: error_code
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Vonage
+    name: status
+    path: status
+    source: log
+    type: string
+pipeline:
+  type: pipeline
+  name: vonage_mapper
+  enabled: true
+  filter:
+    query: "source:vonage"
+  processors:
+    - type: attribute-remapper
+      name: Map `country` to `network.client.geoip.country.iso_code`
+      enabled: true
+      sources:
+        - country
+      sourceType: attribute
+      target: network.client.geoip.country.iso_code
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `user_email` to `usr.email`
+      enabled: true
+      sources:
+        - user_email
+      sourceType: attribute
+      target: usr.email
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `event_type` to `type`
+      enabled: true
+      sources:
+        - event_type
+      sourceType: attribute
+      target: type
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `created_at` to `timestamp`
+      enabled: true
+      sources:
+        - created_at
+      sourceType: attribute
+      target: timestamp
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp

@@ -1,0 +1,109 @@
+id: aqua
+metric_id: aqua
+backend_only: false
+facets:
+  - groups:
+      - System
+    name: User
+    path: system.user
+    source: log
+  - groups:
+      - System
+    name: Action
+    path: system.action
+    source: log
+  - groups:
+      - Vulnerability
+    name: Affected Image Name
+    path: vulnerability.image_name
+    source: log
+  - groups:
+      - Aquasec
+    name: Result
+    path: result
+    source: log
+    type: string
+  - facetType: range
+    groups:
+      - Aquasec
+    name: High Vulnerabilities
+    path: high
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - Aquasec
+    name: Medium Vulnerabilities
+    path: medium
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - Measure
+    name: Low Vulnerabilities
+    path: low
+    source: log
+    type: double
+pipeline:
+  type: pipeline
+  name: Aqua
+  enabled: true
+  filter:
+    query: source:aqua
+  processors:
+    - type: message-remapper
+      name: Define `data` as the official message of the log
+      enabled: true
+      sources:
+        - data
+    - type: grok-parser
+      name: Parsing aqua logs
+      enabled: true
+      source: message
+      samples:
+        - 'Mar 13 17:42:44 ip-172-31-9-170.us-west-2.compute.internal aquasec[1743]: action=create,user=root,uid=0,image=alpine:latest,imageid=13213123,result=deny,container=azeb,containerid=1232312'
+      grok:
+        supportRules: |
+          _timestamp (%{date("MMM dd HH:mm:ss"):timestamp}|%{date("MMM  d HH:mm:ss"):timestamp})
+          _host %{notSpace:syslog.hostname}
+          _app %{word:syslog.appname}
+          _pid %{number:pid}
+        matchRules: |
+          aqua_audit %{_timestamp} %{_host} %{_app}\[%{_pid}\]: %{data::keyvalue("=",":")}
+
+          data_json_parser %{data::json}
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: attribute-remapper
+      name: Map `action` to `system.action`
+      enabled: true
+      sources:
+        - action
+      target: system.action
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `user` to `system.user`
+      enabled: true
+      sources:
+        - user
+      target: system.user
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `image` to `vulnerability.image_name`
+      enabled: true
+      sources:
+        - image
+      target: vulnerability.image_name
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute

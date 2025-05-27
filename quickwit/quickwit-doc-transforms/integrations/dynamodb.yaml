@@ -1,0 +1,123 @@
+id: dynamodb
+metric_id: amazon-dynamodb
+backend_only: false
+facets:
+  - groups:
+      - Database
+    name: Operation Type
+    path: db.operation
+    source: log
+  - groups:
+      - Source Code
+    name: Error Type
+    path: error.kind
+    source: log
+  - groups:
+      - Web Access
+    name: Request ID
+    path: http.request_id
+    source: log
+  - groups:
+      - Web Access
+    name: User-Agent
+    path: http.useragent
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - AWS
+    name: Event Name
+    path: eventName
+    source: log
+pipeline:
+  type: pipeline
+  name: AWS DynamoDB
+  enabled: true
+  filter:
+    query: source:dynamodb
+  processors:
+    - type: attribute-remapper
+      name: Map `requestID` to `http.request_id`
+      enabled: true
+      sources:
+        - requestID
+      target: http.request_id
+      preserveSource: true
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `sourceIPAddress` to `network.client.ip`
+      enabled: true
+      sources:
+        - sourceIPAddress
+      target: network.client.ip
+      preserveSource: true
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `errorCode` to `error.kind`
+      enabled: true
+      sources:
+        - errorCode
+      target: error.kind
+      preserveSource: true
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `errorMessage` to `error.message`
+      enabled: true
+      sources:
+        - errorMessage
+      target: error.message
+      preserveSource: true
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `userAgent` to `http.useragent`
+      enabled: true
+      sources:
+        - userAgent
+      target: http.useragent
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: user-agent-parser
+      name: ''
+      enabled: true
+      sources:
+        - http.useragent
+      target: http.useragent_details
+      encoded: false
+    - type: attribute-remapper
+      name: Map `responseElements.tableDescription.tableStatus` to `db.operation`
+      enabled: true
+      sources:
+        - responseElements.tableDescription.tableStatus
+      target: db.operation
+      preserveSource: true
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute

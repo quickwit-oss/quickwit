@@ -1,0 +1,287 @@
+id: "twingate"
+tests:
+ -
+  sample: |-
+    {
+      "event_type" : "established_connection",
+      "connector" : {
+        "name" : "fine-jackal",
+        "id" : "41731"
+      },
+      "resource" : {
+        "address" : "www.twingate.com",
+        "id" : "504252",
+        "applied_rule" : "www.twingate.com"
+      },
+      "relays" : [ {
+        "port" : 30000,
+        "ip" : "35.188.149.148",
+        "name" : "relaybalancer+https://relays.stg.opstg.com"
+      }, {
+        "port" : 30001,
+        "ip" : "35.188.149.148",
+        "name" : "relaybalancer+https://relays.stg.opstg.com"
+      }, {
+        "port" : 30002,
+        "ip" : "35.188.149.148",
+        "name" : "relaybalancer+https://relays.stg.opstg.com"
+      } ],
+      "connection" : {
+        "protocol" : "tcp",
+        "resource_port" : 443,
+        "client_geo" : {
+          "continent" : {
+            "code" : "EU",
+            "name" : "Europe"
+          },
+          "country" : {
+            "name" : "United Kingdom",
+            "iso_code" : "GB"
+          },
+          "subdivision" : {
+            "name" : "England"
+          },
+          "as" : {
+            "number" : "AS56478",
+            "route" : "137.220.72.0/21",
+            "domain" : "hyperoptic.com",
+            "name" : "Hyperoptic Ltd",
+            "type" : "isp"
+          },
+          "city" : {
+            "name" : "London"
+          },
+          "timezone" : "Europe/London",
+          "ipAddress" : "137.220.73.91",
+          "location" : {
+            "latitude" : 51.5085,
+            "longitude" : -0.1257
+          }
+        },
+        "client_ip" : "137.220.73.91",
+        "cbct_freshness" : 176,
+        "id" : "ba8d113d-6226187c-a-5000100-634fd731-7dcd8",
+        "resource_ip" : "52.56.244.77"
+      },
+      "journald" : {
+        "_PID" : "369075",
+        "_SYSTEMD_INVOCATION_ID" : "79fe4f1561d24c7e97ef10981e97a85d",
+        "_CAP_EFFECTIVE" : "0",
+        "PRIORITY" : "6",
+        "_SYSTEMD_CGROUP" : "/system.slice/twingate-connector.service",
+        "_GID" : "65326",
+        "_SELINUX_CONTEXT" : "unconfined\n",
+        "_MACHINE_ID" : "5a282c8a612e4ce89d37357ab9799753",
+        "_COMM" : "twingate-connec",
+        "_STREAM_ID" : "ac0d02dbe26046508ed18e06ba50b941",
+        "_BOOT_ID" : "22d374d78ac34ffb86b955ebf0524bb1",
+        "_SYSTEMD_UNIT" : "twingate-connector.service",
+        "_TRANSPORT" : "stdout",
+        "_CMDLINE" : "/usr/bin/twingate-connector --systemd-watchdog",
+        "SYSLOG_IDENTIFIER" : "twingate-connector",
+        "_SYSTEMD_SLICE" : "system.slice",
+        "SYSLOG_FACILITY" : "3",
+        "_UID" : "65326",
+        "_HOSTNAME" : "ip-172-30-2-209",
+        "_EXE" : "/usr/bin/twingate-connector"
+      },
+      "user" : {
+        "id" : "13610",
+        "email" : "chen@twingate.com"
+      },
+      "device" : {
+        "id" : "86813"
+      },
+      "remote_network" : {
+        "name" : "datadog partner",
+        "id" : "90490"
+      },
+      "timestamp" : 1666176817571
+    }
+  result:
+    custom:
+      connection:
+        cbct_freshness: 176
+        client_geo:
+          as:
+            domain: "hyperoptic.com"
+            name: "Hyperoptic Ltd"
+            number: "AS56478"
+            route: "137.220.72.0/21"
+            type: "isp"
+          city:
+            name: "London"
+          continent:
+            code: "EU"
+            name: "Europe"
+          country:
+            iso_code: "GB"
+            name: "United Kingdom"
+          ipAddress: "137.220.73.91"
+          location:
+            latitude: 51.5085
+            longitude: -0.1257
+          subdivision:
+            name: "England"
+          timezone: "Europe/London"
+        id: "ba8d113d-6226187c-a-5000100-634fd731-7dcd8"
+        resource_ip: "52.56.244.77"
+        resource_port: 443
+      connector:
+        id: "41731"
+        name: "fine-jackal"
+      device:
+        id: "86813"
+      evt:
+        name: "established_connection"
+      journald:
+        PRIORITY: "6"
+        SYSLOG_FACILITY: "3"
+        SYSLOG_IDENTIFIER: "twingate-connector"
+        _BOOT_ID: "22d374d78ac34ffb86b955ebf0524bb1"
+        _CAP_EFFECTIVE: "0"
+        _CMDLINE: "/usr/bin/twingate-connector --systemd-watchdog"
+        _COMM: "twingate-connec"
+        _EXE: "/usr/bin/twingate-connector"
+        _GID: "65326"
+        _HOSTNAME: "ip-172-30-2-209"
+        _MACHINE_ID: "5a282c8a612e4ce89d37357ab9799753"
+        _PID: "369075"
+        _SELINUX_CONTEXT: |
+          unconfined
+        _STREAM_ID: "ac0d02dbe26046508ed18e06ba50b941"
+        _SYSTEMD_CGROUP: "/system.slice/twingate-connector.service"
+        _SYSTEMD_INVOCATION_ID: "79fe4f1561d24c7e97ef10981e97a85d"
+        _SYSTEMD_SLICE: "system.slice"
+        _SYSTEMD_UNIT: "twingate-connector.service"
+        _TRANSPORT: "stdout"
+        _UID: "65326"
+      network:
+        client:
+          geoip: {}
+          ip: "137.220.73.91"
+        transport: "tcp"
+      relays:
+       -
+        port: 30000
+        ip: "35.188.149.148"
+        name: "relaybalancer+https://relays.stg.opstg.com"
+       -
+        port: 30001
+        ip: "35.188.149.148"
+        name: "relaybalancer+https://relays.stg.opstg.com"
+       -
+        port: 30002
+        ip: "35.188.149.148"
+        name: "relaybalancer+https://relays.stg.opstg.com"
+      remote_network:
+        id: "90490"
+        name: "datadog partner"
+      resource:
+        address: "www.twingate.com"
+        applied_rule: "www.twingate.com"
+        id: "504252"
+      timestamp: 1666176817571
+      usr:
+        email: "chen@twingate.com"
+        id: "13610"
+    message: |-
+      {
+        "event_type" : "established_connection",
+        "connector" : {
+          "name" : "fine-jackal",
+          "id" : "41731"
+        },
+        "resource" : {
+          "address" : "www.twingate.com",
+          "id" : "504252",
+          "applied_rule" : "www.twingate.com"
+        },
+        "relays" : [ {
+          "port" : 30000,
+          "ip" : "35.188.149.148",
+          "name" : "relaybalancer+https://relays.stg.opstg.com"
+        }, {
+          "port" : 30001,
+          "ip" : "35.188.149.148",
+          "name" : "relaybalancer+https://relays.stg.opstg.com"
+        }, {
+          "port" : 30002,
+          "ip" : "35.188.149.148",
+          "name" : "relaybalancer+https://relays.stg.opstg.com"
+        } ],
+        "connection" : {
+          "protocol" : "tcp",
+          "resource_port" : 443,
+          "client_geo" : {
+            "continent" : {
+              "code" : "EU",
+              "name" : "Europe"
+            },
+            "country" : {
+              "name" : "United Kingdom",
+              "iso_code" : "GB"
+            },
+            "subdivision" : {
+              "name" : "England"
+            },
+            "as" : {
+              "number" : "AS56478",
+              "route" : "137.220.72.0/21",
+              "domain" : "hyperoptic.com",
+              "name" : "Hyperoptic Ltd",
+              "type" : "isp"
+            },
+            "city" : {
+              "name" : "London"
+            },
+            "timezone" : "Europe/London",
+            "ipAddress" : "137.220.73.91",
+            "location" : {
+              "latitude" : 51.5085,
+              "longitude" : -0.1257
+            }
+          },
+          "client_ip" : "137.220.73.91",
+          "cbct_freshness" : 176,
+          "id" : "ba8d113d-6226187c-a-5000100-634fd731-7dcd8",
+          "resource_ip" : "52.56.244.77"
+        },
+        "journald" : {
+          "_PID" : "369075",
+          "_SYSTEMD_INVOCATION_ID" : "79fe4f1561d24c7e97ef10981e97a85d",
+          "_CAP_EFFECTIVE" : "0",
+          "PRIORITY" : "6",
+          "_SYSTEMD_CGROUP" : "/system.slice/twingate-connector.service",
+          "_GID" : "65326",
+          "_SELINUX_CONTEXT" : "unconfined\n",
+          "_MACHINE_ID" : "5a282c8a612e4ce89d37357ab9799753",
+          "_COMM" : "twingate-connec",
+          "_STREAM_ID" : "ac0d02dbe26046508ed18e06ba50b941",
+          "_BOOT_ID" : "22d374d78ac34ffb86b955ebf0524bb1",
+          "_SYSTEMD_UNIT" : "twingate-connector.service",
+          "_TRANSPORT" : "stdout",
+          "_CMDLINE" : "/usr/bin/twingate-connector --systemd-watchdog",
+          "SYSLOG_IDENTIFIER" : "twingate-connector",
+          "_SYSTEMD_SLICE" : "system.slice",
+          "SYSLOG_FACILITY" : "3",
+          "_UID" : "65326",
+          "_HOSTNAME" : "ip-172-30-2-209",
+          "_EXE" : "/usr/bin/twingate-connector"
+        },
+        "user" : {
+          "id" : "13610",
+          "email" : "chen@twingate.com"
+        },
+        "device" : {
+          "id" : "86813"
+        },
+        "remote_network" : {
+          "name" : "datadog partner",
+          "id" : "90490"
+        },
+        "timestamp" : 1666176817571
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+

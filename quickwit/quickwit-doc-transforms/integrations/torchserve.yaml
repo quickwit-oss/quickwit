@@ -1,0 +1,225 @@
+id: torchserve
+metric_id: torchserve
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url
+    source: log
+  - groups:
+      - Web Access
+    name: Version
+    path: http.version
+    source: log
+  - groups:
+      - Source Code
+    name: Thread Name
+    path: logger.thread_name
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Client Port
+    path: network.client.port
+    source: log
+  - facetType: range
+    groups:
+      - Web Access
+    name: Bytes Written
+    path: network.bytes_written
+    source: log
+    type: double
+    unit:
+      family: bytes
+      name: byte
+  - groups:
+      - TorchServe
+    name: Worker id
+    path: worker.id
+    source: log
+  - groups:
+      - TorchServe
+    name: Model name
+    path: model.name
+    source: log
+  - groups:
+      - TorchServe
+    name: Backend response time
+    path: backend.response_time
+    source: log
+  - groups:
+      - TorchServe
+    name: Inference time
+    path: inference.time
+    source: log
+  - groups:
+      - TorchServe
+    name: Job backend time
+    path: job.backend_time
+    source: log
+  - groups:
+      - TorchServe
+    name: Job waiting time
+    path: job.waiting_time
+    source: log
+  - groups:
+      - TorchServe
+    name: Job done
+    path: job.done
+    source: log
+  - groups:
+      - TorchServe
+    name: Command timestamp
+    path: command.timestamp
+    source: log
+  - groups:
+      - TorchServe
+    name: Command name
+    path: command.name
+    source: log
+pipeline:
+  type: pipeline
+  name: TorchServe
+  enabled: true
+  filter:
+    query: source:torchserve
+  processors:
+    - type: grok-parser
+      name: Parsing TorchServe logs
+      enabled: true
+      source: message
+      samples:
+        - 2023-06-22T09:07:42,741 - /172.22.0.1:58654 "POST /predictions/linear_regression_1_1 HTTP/1.1" 200 10
+        - '2023-06-22T11:45:28,868 [INFO ] W-9003-linear_regression_2_2_1-stdout MODEL_LOG - Backend received inference at: 1687434328'
+        - "2023-06-22T12:29:13,817 [INFO ] W-9003-linear_regression_2_2_1 ACCESS_LOG - /172.22.0.1:65308 \"POST /predictions/linear_regression_2_2 HTTP/1.1\" 200 12\n"
+        - '2023-06-22T11:45:28,857 [DEBUG] W-9001-linear_regression_1_2_2 org.pytorch.serve.wlm.WorkerThread - sent a reply, jobdone: true'
+        - '2023-06-22T11:45:28,863 [INFO ] W-9003-linear_regression_2_2_1 org.pytorch.serve.wlm.WorkerThread - Flushing req.cmd PREDICT to backend at: 1687434328863'
+      grok:
+        supportRules: |
+          _date %{date("yyyy-MM-dd'T'HH:mm:ss,SSS", "UTC"):timestamp}
+          _client_ip %{ipOrHost:network.client.ip}
+          _client_port %{port:network.client.port}
+          _method %{word:http.method}
+          _url %{notSpace:http.url}
+          _version HTTP\/%{regex("\\d+\\.\\d+"):http.version}
+          _status_code %{integer:http.status_code}
+          _bytes_written %{integer:network.bytes_written}
+          _log_level %{notSpace:level}
+          _worker_id %{integer:worker.id}
+          _model_name %{data:model.name}
+          _output %{notSpace:output}
+          _file_name %{notSpace:file.name}
+          _response_time %{integer:backend.response_time}
+          _inference_time %{integer:inference.time}
+          _job_backend_time %{integer:job.backend_time}
+          _job_waiting_time %{integer:job.waiting_time}
+          _job_done %{boolean:job.done}
+          _command_timestamp %{integer:command.timestamp}
+          _command_name %{notSpace:command.name}
+
+          _thread_name (W-%{_worker_id}-%{_model_name}(-%{_output})?|%{notSpace})
+          _torchserve_log_prefix (%{_date} \[%{_log_level}[ ]*] %{_thread_name:logger.thread_name})
+
+          _default_message %{data}
+          _backend_response_time_message (Backend response time: %{_response_time})
+          _job_time_message (Waiting time ns: %{_job_waiting_time}, Backend time ns: %{_job_backend_time})
+          _job_done_message (sent a reply, jobdone: %{_job_done})
+          _model_inference_message (Backend received inference at: %{_inference_time})
+          _flush_message (Flushing req.cmd %{_command_name} to backend at: %{_command_timestamp})
+
+          _torchserve_message (%{_backend_response_time_message}|%{_job_time_message}|%{_model_inference_message}|%{_job_done_message}|%{_flush_message}|%{_default_message})
+
+          _torchserve_log (%{_torchserve_log_prefix} (ACCESS_LOG|MODEL_LOG|%{_file_name}) - (%{_access_log:message}|%{_torchserve_message:message}))
+          _access_log (/%{_client_ip}:%{_client_port} "%{_method} %{_url} %{_version}" %{_status_code} (?>%{_bytes_written}|-))
+        matchRules: |
+          access_log %{_date} - %{_access_log:message}
+          torchserve_log %{_torchserve_log}
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message
+    - type: category-processor
+      name: Categorise status code
+      enabled: true
+      categories:
+        - filter:
+            query: '@http.status_code:[200 TO 299]'
+          name: info
+        - filter:
+            query: '@http.status_code:[300 TO 399]'
+          name: notice
+        - filter:
+            query: '@http.status_code:[400 TO 499]'
+          name: warning
+        - filter:
+            query: '@http.status_code:[500 TO 599]'
+          name: error
+      target: level
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: geo-ip-parser
+      name: Geolocalize client IP
+      enabled: true
+      sources:
+        - network.client.ip
+      target: network.client.geoip
+      ip_processing_behavior: do-nothing

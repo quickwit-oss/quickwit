@@ -1,0 +1,1135 @@
+id: "checkpoint-quantum-firewall"
+tests:
+ -
+  sample: |-
+    {
+      "creation_time" : "1702027299",
+      "rule_uid" : [ "a0bc0def-da96-4c9d-a654-37c4125fb5c9", "a0bc0def-0g0h-0012-90i9-37c4125fb5c9" ],
+      "packets" : "685",
+      "protocol" : "HTTPS",
+      "client_outbound_packets" : "468",
+      "loguid" : "{0xab66c4d0,0x8d99f544,0x8d99f545,0x8d99f546}",
+      "action" : "Accept",
+      "aggregated_log_count" : "10",
+      "__policy_id_tag" : "product=VPN-1 & FireWall-1[db_tag={ABCD1234-5F67-B89B-AF12-3456B78B91A};mgmt=gw-81a3bc;date=1702026887;policy_name=Standard\\]",
+      "app_id" : "647368112",
+      "layer_name" : [ "Network", "URL" ],
+      "conn_direction" : "Internal",
+      "lastupdatetime" : "1702029877",
+      "sequencenum" : "1",
+      "inzone" : "Internal",
+      "rule_name" : "Cleanup rule",
+      "ifdir" : "inbound",
+      "originsicname" : "cn=ab_mgmt,o=gw-12a3bc..4de5fg",
+      "browse_time" : "170",
+      "version" : "5",
+      "server_inbound_packets" : "234",
+      "app_risk" : 4,
+      "connection_count" : "5",
+      "proto" : "6",
+      "app_category" : "High Risk",
+      "appi_name" : "malware.wicar.org",
+      "dst" : "185.64.148.0",
+      "origin" : "185.64.148.0",
+      "flags" : "4210688",
+      "last_hit_time" : "1702029425",
+      "layer_uuid" : [ "a0bc0def-da96-4c9d-a654-37c4125fb5c9", "a0bc0def-da96-4c9d-a654-37c4125fb5c9" ],
+      "server_inbound_bytes" : "42122",
+      "client_inbound_bytes" : "146518",
+      "duration" : "2578",
+      "app_properties" : "Spyware / Malicious Sites,High Risk,URL Filtering",
+      "client_inbound_packets" : "217",
+      "client_outbound_bytes" : "41141",
+      "ifname" : "eth0",
+      "service_id" : "https",
+      "matched_category" : "High Risk",
+      "product" : "URL Filtering",
+      "rule_action" : [ "Accept", "Accept" ],
+      "src" : "185.64.148.0",
+      "match_id" : [ "2", "16777221" ],
+      "update_count" : "6",
+      "server_outbound_packets" : "434",
+      "outzone" : "Internal",
+      "server_outbound_bytes" : "146518",
+      "parent_rule" : [ "0", "0" ],
+      "bytes" : "187659",
+      "service" : "443",
+      "hll_key" : "13407405998656291587",
+      "logid" : "320",
+      "time" : "1702027299",
+      "sig_id" : "4"
+    }
+  result:
+    custom:
+      __policy_id_tag: "product=VPN-1 & FireWall-1[db_tag={ABCD1234-5F67-B89B-AF12-3456B78B91A};mgmt=gw-81a3bc;date=1702026887;policy_name=Standard\\]"
+      action: "Accept"
+      aggregated_log_count: "10"
+      app_category: "High Risk"
+      app_id: "647368112"
+      app_properties: "Spyware / Malicious Sites,High Risk,URL Filtering"
+      app_risk: 4
+      browse_time: "170"
+      checkpoint:
+        quantum:
+          firewall:
+            app_risk_str: "High"
+            appi_name: "malware.wicar.org"
+            bytes: "187659"
+            client_inbound_bytes: "146518"
+            client_inbound_packets: "217"
+            client_outbound_bytes: "41141"
+            client_outbound_packets: "468"
+            server_inbound_packets: "234"
+            server_outbound_packets: "434"
+      conn_direction: "Internal"
+      connection_count: "5"
+      creation_time: "1702027299"
+      dst_ip_port: "185.64.148.0:443"
+      duration: "2578"
+      flags: "4210688"
+      hll_key: "13407405998656291587"
+      ifdir: "inbound"
+      ifname: "eth0"
+      inzone: "Internal"
+      last_hit_time: "1702029425"
+      lastupdatetime: "1702029877"
+      layer_name:
+       - "Network"
+       - "URL"
+      layer_uuid:
+       - "a0bc0def-da96-4c9d-a654-37c4125fb5c9"
+       - "a0bc0def-da96-4c9d-a654-37c4125fb5c9"
+      logid: "320"
+      loguid: "{0xab66c4d0,0x8d99f544,0x8d99f545,0x8d99f546}"
+      match_id:
+       - "2"
+       - "16777221"
+      matched_category: "High Risk"
+      network:
+        bytes_read: "42122"
+        bytes_written: "146518"
+        client:
+          geoip:
+            city:
+              name: "Paris"
+            continent:
+              code: "EU"
+              name: "Europe"
+            country:
+              iso_code: "FR"
+              name: "France"
+            ipAddress: "185.64.148.0"
+            location:
+              latitude: 48.90654
+              longitude: 2.33339
+            subdivision:
+              iso_code: "FR-IDF"
+              name: "Île-de-France"
+            timezone: "Europe/Paris"
+          ip: "185.64.148.0"
+        destination:
+          geoip:
+            city:
+              name: "Paris"
+            continent:
+              code: "EU"
+              name: "Europe"
+            country:
+              iso_code: "FR"
+              name: "France"
+            ipAddress: "185.64.148.0"
+            location:
+              latitude: 48.90654
+              longitude: 2.33339
+            subdivision:
+              iso_code: "FR-IDF"
+              name: "Île-de-France"
+            timezone: "Europe/Paris"
+          ip: "185.64.148.0"
+          port: "443"
+      origin: "185.64.148.0"
+      originsicname: "cn=ab_mgmt,o=gw-12a3bc..4de5fg"
+      outzone: "Internal"
+      packets: "685"
+      parent_rule:
+       - "0"
+       - "0"
+      product: "URL Filtering"
+      proto: "6"
+      protocol: "HTTPS"
+      rule_action:
+       - "Accept"
+       - "Accept"
+      rule_name: "Cleanup rule"
+      rule_uid:
+       - "a0bc0def-da96-4c9d-a654-37c4125fb5c9"
+       - "a0bc0def-0g0h-0012-90i9-37c4125fb5c9"
+      sequencenum: "1"
+      service_id: "https"
+      sig_id: "4"
+      time: "1702027299"
+      update_count: "6"
+      version: "5"
+    message: |-
+      {
+        "creation_time" : "1702027299",
+        "rule_uid" : [ "a0bc0def-da96-4c9d-a654-37c4125fb5c9", "a0bc0def-0g0h-0012-90i9-37c4125fb5c9" ],
+        "packets" : "685",
+        "protocol" : "HTTPS",
+        "client_outbound_packets" : "468",
+        "loguid" : "{0xab66c4d0,0x8d99f544,0x8d99f545,0x8d99f546}",
+        "action" : "Accept",
+        "aggregated_log_count" : "10",
+        "__policy_id_tag" : "product=VPN-1 & FireWall-1[db_tag={ABCD1234-5F67-B89B-AF12-3456B78B91A};mgmt=gw-81a3bc;date=1702026887;policy_name=Standard\\]",
+        "app_id" : "647368112",
+        "layer_name" : [ "Network", "URL" ],
+        "conn_direction" : "Internal",
+        "lastupdatetime" : "1702029877",
+        "sequencenum" : "1",
+        "inzone" : "Internal",
+        "rule_name" : "Cleanup rule",
+        "ifdir" : "inbound",
+        "originsicname" : "cn=ab_mgmt,o=gw-12a3bc..4de5fg",
+        "browse_time" : "170",
+        "version" : "5",
+        "server_inbound_packets" : "234",
+        "app_risk" : 4,
+        "connection_count" : "5",
+        "proto" : "6",
+        "app_category" : "High Risk",
+        "appi_name" : "malware.wicar.org",
+        "dst" : "185.64.148.0",
+        "origin" : "185.64.148.0",
+        "flags" : "4210688",
+        "last_hit_time" : "1702029425",
+        "layer_uuid" : [ "a0bc0def-da96-4c9d-a654-37c4125fb5c9", "a0bc0def-da96-4c9d-a654-37c4125fb5c9" ],
+        "server_inbound_bytes" : "42122",
+        "client_inbound_bytes" : "146518",
+        "duration" : "2578",
+        "app_properties" : "Spyware / Malicious Sites,High Risk,URL Filtering",
+        "client_inbound_packets" : "217",
+        "client_outbound_bytes" : "41141",
+        "ifname" : "eth0",
+        "service_id" : "https",
+        "matched_category" : "High Risk",
+        "product" : "URL Filtering",
+        "rule_action" : [ "Accept", "Accept" ],
+        "src" : "185.64.148.0",
+        "match_id" : [ "2", "16777221" ],
+        "update_count" : "6",
+        "server_outbound_packets" : "434",
+        "outzone" : "Internal",
+        "server_outbound_bytes" : "146518",
+        "parent_rule" : [ "0", "0" ],
+        "bytes" : "187659",
+        "service" : "443",
+        "hll_key" : "13407405998656291587",
+        "logid" : "320",
+        "time" : "1702027299",
+        "sig_id" : "4"
+      }
+    service: "URL Filtering"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1702027299
+ -
+  sample: |-
+    {
+      "received_bytes" : 0,
+      "performance_impact" : 2,
+      "protection_id" : "sample_514",
+      "dst" : "185.64.148.0",
+      "confidence_level" : "Low",
+      "origin" : "185.64.148.0",
+      "malware_rule_name" : "Test",
+      "sent_bytes" : 0,
+      "hostname" : "gw-12e3ab",
+      "ifname" : "eth9",
+      "service_id" : "syslog",
+      "action" : "Detect",
+      "policy" : "Standard",
+      "severity" : "Low",
+      "log_id" : 2,
+      "s_port" : 35098,
+      "product" : "IPS",
+      "lastupdatetime" : 1702272887,
+      "description_url" : "abc.html",
+      "sequencenum" : 1,
+      "smartdefense_profile" : "Strict",
+      "src" : "185.64.148.0",
+      "ifdir" : "outbound",
+      "protection_type" : "IPS",
+      "suppressed_logs" : 352,
+      "version" : 5,
+      "policy_time" : 1702016778,
+      "service" : "514",
+      "proto" : 17,
+      "time" : 1702271803
+    }
+  result:
+    custom:
+      action: "Detect"
+      confidence_level: "Low"
+      description_url: "abc.html"
+      dst_ip_port: "185.64.148.0:514"
+      hostname: "gw-12e3ab"
+      ifdir: "outbound"
+      ifname: "eth9"
+      lastupdatetime: 1702272887
+      log_id: 2
+      malware_rule_name: "Test"
+      network:
+        client:
+          geoip:
+            city:
+              name: "Paris"
+            continent:
+              code: "EU"
+              name: "Europe"
+            country:
+              iso_code: "FR"
+              name: "France"
+            ipAddress: "185.64.148.0"
+            location:
+              latitude: 48.90654
+              longitude: 2.33339
+            subdivision:
+              iso_code: "FR-IDF"
+              name: "Île-de-France"
+            timezone: "Europe/Paris"
+          ip: "185.64.148.0"
+          port: 35098
+        destination:
+          geoip:
+            city:
+              name: "Paris"
+            continent:
+              code: "EU"
+              name: "Europe"
+            country:
+              iso_code: "FR"
+              name: "France"
+            ipAddress: "185.64.148.0"
+            location:
+              latitude: 48.90654
+              longitude: 2.33339
+            subdivision:
+              iso_code: "FR-IDF"
+              name: "Île-de-France"
+            timezone: "Europe/Paris"
+          ip: "185.64.148.0"
+          port: "514"
+      origin: "185.64.148.0"
+      performance_impact: 2
+      policy: "Standard"
+      policy_time: 1702016778
+      product: "IPS"
+      protection_id: "sample_514"
+      protection_type: "IPS"
+      proto: 17
+      received_bytes: 0
+      sent_bytes: 0
+      sequencenum: 1
+      service_id: "syslog"
+      severity: "Low"
+      severity_to_status: "info"
+      smartdefense_profile: "Strict"
+      src_ip_port: "185.64.148.0:35098"
+      suppressed_logs: 352
+      time: 1702271803
+      version: 5
+    message: |-
+      {
+        "received_bytes" : 0,
+        "performance_impact" : 2,
+        "protection_id" : "sample_514",
+        "dst" : "185.64.148.0",
+        "confidence_level" : "Low",
+        "origin" : "185.64.148.0",
+        "malware_rule_name" : "Test",
+        "sent_bytes" : 0,
+        "hostname" : "gw-12e3ab",
+        "ifname" : "eth9",
+        "service_id" : "syslog",
+        "action" : "Detect",
+        "policy" : "Standard",
+        "severity" : "Low",
+        "log_id" : 2,
+        "s_port" : 35098,
+        "product" : "IPS",
+        "lastupdatetime" : 1702272887,
+        "description_url" : "abc.html",
+        "sequencenum" : 1,
+        "smartdefense_profile" : "Strict",
+        "src" : "185.64.148.0",
+        "ifdir" : "outbound",
+        "protection_type" : "IPS",
+        "suppressed_logs" : 352,
+        "version" : 5,
+        "policy_time" : 1702016778,
+        "service" : "514",
+        "proto" : 17,
+        "time" : 1702271803
+      }
+    service: "IPS"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1702271803
+ -
+  sample: |-
+    {
+      "product" : "Identity Awareness",
+      "snid" : "1e23f0dd",
+      "sequencenum" : "1",
+      "src" : "185.64.148.0",
+      "ifdir" : "inbound",
+      "origin" : "185.64.148.0",
+      "flags" : "150783",
+      "originsicname" : "cn=ab_mgmt,o=ab-12e3ba..2ab6cd",
+      "version" : "5",
+      "identity_src" : "AD Query",
+      "src_machine_name" : "sample-46-123",
+      "auth_method" : "Machine Authentication (Active Directory)",
+      "domain_name" : "abc.xyz",
+      "loguid" : "{0x1abcde0,0x1abcde0,0x1abcde0,0x1abcde0}",
+      "action" : "Log In",
+      "logid" : "131111",
+      "auth_status" : "Successful Login",
+      "time" : "1702458184",
+      "client_version" : "R81.20",
+      "identity_type" : "machine",
+      "client_name" : "Active Directory Query",
+      "endpoint_ip" : "185.64.148.0",
+      "src_machine_group" : "All Machines"
+    }
+  result:
+    custom:
+      action: "Log In"
+      auth_method: "Machine Authentication (Active Directory)"
+      auth_status: "Successful Login"
+      client_name: "Active Directory Query"
+      client_version: "R81.20"
+      domain_name: "abc.xyz"
+      endpoint_ip: "185.64.148.0"
+      flags: "150783"
+      identity_src: "AD Query"
+      identity_type: "machine"
+      ifdir: "inbound"
+      logid: "131111"
+      loguid: "{0x1abcde0,0x1abcde0,0x1abcde0,0x1abcde0}"
+      network:
+        client:
+          geoip:
+            city:
+              name: "Paris"
+            continent:
+              code: "EU"
+              name: "Europe"
+            country:
+              iso_code: "FR"
+              name: "France"
+            ipAddress: "185.64.148.0"
+            location:
+              latitude: 48.90654
+              longitude: 2.33339
+            subdivision:
+              iso_code: "FR-IDF"
+              name: "Île-de-France"
+            timezone: "Europe/Paris"
+          ip: "185.64.148.0"
+      origin: "185.64.148.0"
+      originsicname: "cn=ab_mgmt,o=ab-12e3ba..2ab6cd"
+      product: "Identity Awareness"
+      sequencenum: "1"
+      snid: "1e23f0dd"
+      src_machine_group: "All Machines"
+      src_machine_name: "sample-46-123"
+      time: "1702458184"
+      version: "5"
+    message: |-
+      {
+        "product" : "Identity Awareness",
+        "snid" : "1e23f0dd",
+        "sequencenum" : "1",
+        "src" : "185.64.148.0",
+        "ifdir" : "inbound",
+        "origin" : "185.64.148.0",
+        "flags" : "150783",
+        "originsicname" : "cn=ab_mgmt,o=ab-12e3ba..2ab6cd",
+        "version" : "5",
+        "identity_src" : "AD Query",
+        "src_machine_name" : "sample-46-123",
+        "auth_method" : "Machine Authentication (Active Directory)",
+        "domain_name" : "abc.xyz",
+        "loguid" : "{0x1abcde0,0x1abcde0,0x1abcde0,0x1abcde0}",
+        "action" : "Log In",
+        "logid" : "131111",
+        "auth_status" : "Successful Login",
+        "time" : "1702458184",
+        "client_version" : "R81.20",
+        "identity_type" : "machine",
+        "client_name" : "Active Directory Query",
+        "endpoint_ip" : "185.64.148.0",
+        "src_machine_group" : "All Machines"
+      }
+    service: "Identity Awareness"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1702458184
+ -
+  sample: |-
+    {
+      "nat_addtnl_rulenum" : 0,
+      "segment_time" : 1702013332,
+      "rule_uid" : [ "46523c2a-ld45-6q65-8cc5-q165ks7w45sh", "46523c2a-ld45-     6q78-8cq5-q165ks8Qg5ll" ],
+      "packets" : 86,
+      "hostname" : "gw-81e3ba",
+      "protocol" : "HTTPS",
+      "__pos" : 4,
+      "client_outbound_packets" : 60,
+      "new_time" : 1702013332,
+      "context_num" : 2,
+      "nat_rulenum" : 1,
+      "needs_browse_time" : 1,
+      "action" : "Accept",
+      "layer_name" : [ "Network", "URL" ],
+      "client_inbound_interface" : "eth0",
+      "xlatedst" : "185.64.148.0",
+      "last_rematch_time" : 1702013332,
+      "conn_direction" : "Internal",
+      "lastupdatetime" : 1702013677,
+      "sequencenum" : 1,
+      "inzone" : "Internal",
+      "contextnum" : 2,
+      "ifdir" : "outbound",
+      "version" : 5,
+      "server_inbound_packets" : 30,
+      "server_outbound_interface" : "eth0",
+      "start_time" : 1702013062,
+      "proto" : 6,
+      "xlatesrc" : "185.64.148.0",
+      "dst" : "185.64.148.0",
+      "nat_rule_uid" : "a164ak46-r46a-4652-79av-rqqf465c465q",
+      "xlatesport" : 46898,
+      "origin" : "185.64. 148.0",
+      "layer_uuid" : [ "46523c2a-ld45-6q65-8cc5-q165ks7w45sh", "46523c2a-ld45-6q78-8cq5-  q165ks8Qg5ll" ],
+      "server_inbound_bytes" : 7283,
+      "client_inbound_bytes" : 3445,
+      "elapsed" : 593,
+      "client_inbound_packets" : 26,
+      "client_outbound_bytes" : 7021,
+      "ifname" : "eth0",
+      "service_id" : "https",
+      "s_port" : 59029,
+      "product" : "Firewall",
+      "rule_action" : [ "Accept", "Accept" ],
+      "src" : "185.64.148.0",
+      "match_id" : [ 2, 46521458 ],
+      "server_outbound_packets" : 52,
+      "outzone" : "Internal",
+      "server_outbound_bytes" : 3445,
+      "parent_rule" : [ 0, 0 ],
+      "__p_dport" : 0,
+      "bytes" : 1264,
+      "service" : "443",
+      "xlatedport" : 0,
+      "hll_key" : 1652457895635214780,
+      "logid" : 6,
+      "time" : [ 1702013332, 1702013332 ],
+      "sig_id" : 4,
+      "__nsons" : 0
+    }
+  result:
+    custom:
+      __nsons: 0
+      __p_dport: 0
+      __pos: 4
+      action: "Accept"
+      checkpoint:
+        quantum:
+          firewall:
+            bytes: 1264
+            client_inbound_bytes: 3445
+            client_inbound_packets: 26
+            client_outbound_bytes: 7021
+            client_outbound_packets: 60
+            server_inbound_packets: 30
+            server_outbound_packets: 52
+      client_inbound_interface: "eth0"
+      conn_direction: "Internal"
+      context_num: 2
+      contextnum: 2
+      dst_ip_port: "185.64.148.0:443"
+      elapsed: 593
+      hll_key: 1652457895635214780
+      hostname: "gw-81e3ba"
+      ifdir: "outbound"
+      ifname: "eth0"
+      inzone: "Internal"
+      last_rematch_time: 1702013332
+      lastupdatetime: 1702013677
+      layer_name:
+       - "Network"
+       - "URL"
+      layer_uuid:
+       - "46523c2a-ld45-6q65-8cc5-q165ks7w45sh"
+       - "46523c2a-ld45-6q78-8cq5-  q165ks8Qg5ll"
+      logid: 6
+      match_id:
+       - 2
+       - 46521458
+      nat_addtnl_rulenum: 0
+      nat_rule_uid: "a164ak46-r46a-4652-79av-rqqf465c465q"
+      nat_rulenum: 1
+      needs_browse_time: 1
+      network:
+        bytes_read: 7283
+        bytes_written: 3445
+        client:
+          geoip:
+            city:
+              name: "Paris"
+            continent:
+              code: "EU"
+              name: "Europe"
+            country:
+              iso_code: "FR"
+              name: "France"
+            ipAddress: "185.64.148.0"
+            location:
+              latitude: 48.90654
+              longitude: 2.33339
+            subdivision:
+              iso_code: "FR-IDF"
+              name: "Île-de-France"
+            timezone: "Europe/Paris"
+          ip: "185.64.148.0"
+          port: 59029
+        destination:
+          geoip:
+            city:
+              name: "Paris"
+            continent:
+              code: "EU"
+              name: "Europe"
+            country:
+              iso_code: "FR"
+              name: "France"
+            ipAddress: "185.64.148.0"
+            location:
+              latitude: 48.90654
+              longitude: 2.33339
+            subdivision:
+              iso_code: "FR-IDF"
+              name: "Île-de-France"
+            timezone: "Europe/Paris"
+          ip: "185.64.148.0"
+          port: "443"
+      new_time: 1702013332
+      origin: "185.64. 148.0"
+      outzone: "Internal"
+      packets: 86
+      parent_rule:
+       - 0
+       - 0
+      product: "Firewall"
+      proto: 6
+      protocol: "HTTPS"
+      rule_action:
+       - "Accept"
+       - "Accept"
+      rule_uid:
+       - "46523c2a-ld45-6q65-8cc5-q165ks7w45sh"
+       - "46523c2a-ld45-     6q78-8cq5-q165ks8Qg5ll"
+      segment_time: 1702013332
+      sequencenum: 1
+      server_outbound_interface: "eth0"
+      service_id: "https"
+      sig_id: 4
+      src_ip_port: "185.64.148.0:59029"
+      start_time: 1702013062
+      time:
+       - 1702013332
+       - 1702013332
+      version: 5
+      xlatedport: 0
+      xlatedst: "185.64.148.0"
+      xlatesport: 46898
+      xlatesrc: "185.64.148.0"
+    message: |-
+      {
+        "nat_addtnl_rulenum" : 0,
+        "segment_time" : 1702013332,
+        "rule_uid" : [ "46523c2a-ld45-6q65-8cc5-q165ks7w45sh", "46523c2a-ld45-     6q78-8cq5-q165ks8Qg5ll" ],
+        "packets" : 86,
+        "hostname" : "gw-81e3ba",
+        "protocol" : "HTTPS",
+        "__pos" : 4,
+        "client_outbound_packets" : 60,
+        "new_time" : 1702013332,
+        "context_num" : 2,
+        "nat_rulenum" : 1,
+        "needs_browse_time" : 1,
+        "action" : "Accept",
+        "layer_name" : [ "Network", "URL" ],
+        "client_inbound_interface" : "eth0",
+        "xlatedst" : "185.64.148.0",
+        "last_rematch_time" : 1702013332,
+        "conn_direction" : "Internal",
+        "lastupdatetime" : 1702013677,
+        "sequencenum" : 1,
+        "inzone" : "Internal",
+        "contextnum" : 2,
+        "ifdir" : "outbound",
+        "version" : 5,
+        "server_inbound_packets" : 30,
+        "server_outbound_interface" : "eth0",
+        "start_time" : 1702013062,
+        "proto" : 6,
+        "xlatesrc" : "185.64.148.0",
+        "dst" : "185.64.148.0",
+        "nat_rule_uid" : "a164ak46-r46a-4652-79av-rqqf465c465q",
+        "xlatesport" : 46898,
+        "origin" : "185.64. 148.0",
+        "layer_uuid" : [ "46523c2a-ld45-6q65-8cc5-q165ks7w45sh", "46523c2a-ld45-6q78-8cq5-  q165ks8Qg5ll" ],
+        "server_inbound_bytes" : 7283,
+        "client_inbound_bytes" : 3445,
+        "elapsed" : 593,
+        "client_inbound_packets" : 26,
+        "client_outbound_bytes" : 7021,
+        "ifname" : "eth0",
+        "service_id" : "https",
+        "s_port" : 59029,
+        "product" : "Firewall",
+        "rule_action" : [ "Accept", "Accept" ],
+        "src" : "185.64.148.0",
+        "match_id" : [ 2, 46521458 ],
+        "server_outbound_packets" : 52,
+        "outzone" : "Internal",
+        "server_outbound_bytes" : 3445,
+        "parent_rule" : [ 0, 0 ],
+        "__p_dport" : 0,
+        "bytes" : 1264,
+        "service" : "443",
+        "xlatedport" : 0,
+        "hll_key" : 1652457895635214780,
+        "logid" : 6,
+        "time" : [ 1702013332, 1702013332 ],
+        "sig_id" : 4,
+        "__nsons" : 0
+      }
+    service: "Firewall"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "creation_time" : 1702027684,
+      "app_category_" : {
+        "_" : {
+          "_match_table" : [ "Network Protocols" ]
+        }
+      },
+      "packets" : 1770,
+      "appi_name_" : {
+        "_" : {
+          "_match_table" : [ "ICMP Protocol" ]
+        }
+      },
+      "client_outbound_packets" : 0,
+      "loguid" : "0xe4530a02,0x7e3167a6,0xd0ad64f6,0x45aa62d1",
+      "rule_name_" : {
+        "_" : {
+          "_match_table" : [ "Cleanup rule" ]
+        }
+      },
+      "action" : "Accept",
+      "layer_name_" : {
+        "_" : {
+          "_match_table" : [ "Network", "URL" ]
+        }
+      },
+      "aggregated_log_count" : 2,
+      "__policy_id_tag" : "product=VPN-1 & FireWall-1[db_tag={AJSK4652-7Q56-A46N-AK56-4652A4665B46B};mgmt=gw-81e3ba;date=1702026887;policy_name=Standard]",
+      "app_id" : 60526220,
+      "app_properties_" : {
+        "_" : {
+          "_match_table" : [ "Low Risk, Network Protocols" ]
+        }
+      },
+      "app_sig_id_" : {
+        "_" : {
+          "_match_table" : [ "60526220:1" ]
+        }
+      },
+      "conn_direction" : "Internal",
+      "lastupdatetime" : 1702038484,
+      "sequencenum" : 2,
+      "inzone" : "Internal",
+      "ifdir" : "inbound",
+      "app_desc_" : {
+        "_" : {
+          "_match_table" : [ "The Internet Control Message Protocol (ICMP) is a protocol used by network devices, including routers, to send error messages and operational information." ]
+        }
+      },
+      "originsicname" : "cn=cp_mgmt,o=gw-81e3ba..2qb6fg",
+      "server_inbound_packets" : 0,
+      "app_id_" : {
+        "_" : {
+          "_match_table" : [ 0, 60526220 ]
+        }
+      },
+      "match_id_" : {
+        "_" : {
+          "_match_table" : [ 2, 16777221 ]
+        }
+      },
+      "app_risk" : 2,
+      "connection_count" : 1,
+      "proto" : 1,
+      "app_category" : "Network Protocols",
+      "rule_uid_" : {
+        "_" : {
+          "_match_table" : [ "46523c2a-ld45-6q65-8cc5-q165ks7w45sh", "46523c2a-ld45-6q78-8cq5-q165ks8Qg5ll" ]
+        }
+      },
+      "matched_category_" : {
+        "_" : {
+          "_match_table" : [ "Network Protocols" ]
+        }
+      },
+      "appi_name" : "ICMP Protocol",
+      "dst" : "185.64.148.0",
+      "origin" : "185.64.148.0",
+      "flags" : 4210688,
+      "last_hit_time" : 1702029491,
+      "app_sig_id" : "60526220:1",
+      "rule_action_" : {
+        "_" : {
+          "_match_table" : [ "Accept", "Accept" ]
+        }
+      },
+      "parent_rule_" : {
+        "_" : {
+          "_match_table" : [ 0, 0 ]
+        }
+      },
+      "server_inbound_bytes" : 0,
+      "client_inbound_bytes" : 106200,
+      "duration" : 10800,
+      "h_version" : 5,
+      "app_properties" : "Low Risk, Network Protocols",
+      "client_inbound_packets" : 1770,
+      "client_outbound_bytes" : 0,
+      "ifname" : "eth0",
+      "service_id" : "echo-request",
+      "layer_uuid_" : {
+        "_" : {
+          "_match_table" : [ "46523c2a-ld45-6q65-8cc5-q165ks7w45sh", "46523c2a-ld45-6q78-8cq5-q165ks8Qg5ll" ]
+        }
+      },
+      "matched_category" : "Network Protocols",
+      "product" : "Application Control",
+      "src" : "185.64.148.0",
+      "update_count" : 3,
+      "server_outbound_packets" : 1770,
+      "outzone" : "Internal",
+      "server_outbound_bytes" : 106200,
+      "app_risk_" : {
+        "_" : {
+          "_match_table" : [ 0, 2 ]
+        }
+      },
+      "bytes" : 106200,
+      "hll_key" : 16791445055475980000,
+      "logid" : 352,
+      "app_desc" : "The Internet Control Message Protocol (ICMP) is a protocol used by network devices, including routers, to send error messages and operational information.",
+      "time" : 1702027684
+    }
+  result:
+    custom:
+      __policy_id_tag: "product=VPN-1 & FireWall-1[db_tag={AJSK4652-7Q56-A46N-AK56-4652A4665B46B};mgmt=gw-81e3ba;date=1702026887;policy_name=Standard]"
+      action: "Accept"
+      aggregated_log_count: 2
+      app_category: "Network Protocols"
+      app_category_:
+        _:
+          _match_table:
+           - "Network Protocols"
+      app_desc: "The Internet Control Message Protocol (ICMP) is a protocol used by network devices, including routers, to send error messages and operational information."
+      app_desc_:
+        _:
+          _match_table:
+           - "The Internet Control Message Protocol (ICMP) is a protocol used by network devices, including routers, to send error messages and operational information."
+      app_id: 60526220
+      app_id_:
+        _:
+          _match_table:
+           - 0
+           - 60526220
+      app_properties: "Low Risk, Network Protocols"
+      app_properties_:
+        _:
+          _match_table:
+           - "Low Risk, Network Protocols"
+      app_risk: 2
+      app_risk_:
+        _:
+          _match_table:
+           - 0
+           - 2
+      app_sig_id: "60526220:1"
+      app_sig_id_:
+        _:
+          _match_table:
+           - "60526220:1"
+      appi_name_:
+        _:
+          _match_table:
+           - "ICMP Protocol"
+      checkpoint:
+        quantum:
+          firewall:
+            app_risk_str: "Low"
+            appi_name: "ICMP Protocol"
+            bytes: 106200
+            client_inbound_bytes: 106200
+            client_inbound_packets: 1770
+            client_outbound_bytes: 0
+            client_outbound_packets: 0
+            server_inbound_packets: 0
+            server_outbound_packets: 1770
+      conn_direction: "Internal"
+      connection_count: 1
+      creation_time: 1702027684
+      duration: 10800
+      flags: 4210688
+      h_version: 5
+      hll_key: 16791445055475980000
+      ifdir: "inbound"
+      ifname: "eth0"
+      inzone: "Internal"
+      last_hit_time: 1702029491
+      lastupdatetime: 1702038484
+      layer_name_:
+        _:
+          _match_table:
+           - "Network"
+           - "URL"
+      layer_uuid_:
+        _:
+          _match_table:
+           - "46523c2a-ld45-6q65-8cc5-q165ks7w45sh"
+           - "46523c2a-ld45-6q78-8cq5-q165ks8Qg5ll"
+      logid: 352
+      loguid: "0xe4530a02,0x7e3167a6,0xd0ad64f6,0x45aa62d1"
+      match_id_:
+        _:
+          _match_table:
+           - 2
+           - 16777221
+      matched_category: "Network Protocols"
+      matched_category_:
+        _:
+          _match_table:
+           - "Network Protocols"
+      network:
+        bytes_read: 0
+        bytes_written: 106200
+        client:
+          geoip:
+            city:
+              name: "Paris"
+            continent:
+              code: "EU"
+              name: "Europe"
+            country:
+              iso_code: "FR"
+              name: "France"
+            ipAddress: "185.64.148.0"
+            location:
+              latitude: 48.90654
+              longitude: 2.33339
+            subdivision:
+              iso_code: "FR-IDF"
+              name: "Île-de-France"
+            timezone: "Europe/Paris"
+          ip: "185.64.148.0"
+        destination:
+          geoip:
+            city:
+              name: "Paris"
+            continent:
+              code: "EU"
+              name: "Europe"
+            country:
+              iso_code: "FR"
+              name: "France"
+            ipAddress: "185.64.148.0"
+            location:
+              latitude: 48.90654
+              longitude: 2.33339
+            subdivision:
+              iso_code: "FR-IDF"
+              name: "Île-de-France"
+            timezone: "Europe/Paris"
+          ip: "185.64.148.0"
+      origin: "185.64.148.0"
+      originsicname: "cn=cp_mgmt,o=gw-81e3ba..2qb6fg"
+      outzone: "Internal"
+      packets: 1770
+      parent_rule_:
+        _:
+          _match_table:
+           - 0
+           - 0
+      product: "Application Control"
+      proto: 1
+      rule_action_:
+        _:
+          _match_table:
+           - "Accept"
+           - "Accept"
+      rule_name_:
+        _:
+          _match_table:
+           - "Cleanup rule"
+      rule_uid_:
+        _:
+          _match_table:
+           - "46523c2a-ld45-6q65-8cc5-q165ks7w45sh"
+           - "46523c2a-ld45-6q78-8cq5-q165ks8Qg5ll"
+      sequencenum: 2
+      service_id: "echo-request"
+      time: 1702027684
+      update_count: 3
+    message: |-
+      {
+        "creation_time" : 1702027684,
+        "app_category_" : {
+          "_" : {
+            "_match_table" : [ "Network Protocols" ]
+          }
+        },
+        "packets" : 1770,
+        "appi_name_" : {
+          "_" : {
+            "_match_table" : [ "ICMP Protocol" ]
+          }
+        },
+        "client_outbound_packets" : 0,
+        "loguid" : "0xe4530a02,0x7e3167a6,0xd0ad64f6,0x45aa62d1",
+        "rule_name_" : {
+          "_" : {
+            "_match_table" : [ "Cleanup rule" ]
+          }
+        },
+        "action" : "Accept",
+        "layer_name_" : {
+          "_" : {
+            "_match_table" : [ "Network", "URL" ]
+          }
+        },
+        "aggregated_log_count" : 2,
+        "__policy_id_tag" : "product=VPN-1 & FireWall-1[db_tag={AJSK4652-7Q56-A46N-AK56-4652A4665B46B};mgmt=gw-81e3ba;date=1702026887;policy_name=Standard]",
+        "app_id" : 60526220,
+        "app_properties_" : {
+          "_" : {
+            "_match_table" : [ "Low Risk, Network Protocols" ]
+          }
+        },
+        "app_sig_id_" : {
+          "_" : {
+            "_match_table" : [ "60526220:1" ]
+          }
+        },
+        "conn_direction" : "Internal",
+        "lastupdatetime" : 1702038484,
+        "sequencenum" : 2,
+        "inzone" : "Internal",
+        "ifdir" : "inbound",
+        "app_desc_" : {
+          "_" : {
+            "_match_table" : [ "The Internet Control Message Protocol (ICMP) is a protocol used by network devices, including routers, to send error messages and operational information." ]
+          }
+        },
+        "originsicname" : "cn=cp_mgmt,o=gw-81e3ba..2qb6fg",
+        "server_inbound_packets" : 0,
+        "app_id_" : {
+          "_" : {
+            "_match_table" : [ 0, 60526220 ]
+          }
+        },
+        "match_id_" : {
+          "_" : {
+            "_match_table" : [ 2, 16777221 ]
+          }
+        },
+        "app_risk" : 2,
+        "connection_count" : 1,
+        "proto" : 1,
+        "app_category" : "Network Protocols",
+        "rule_uid_" : {
+          "_" : {
+            "_match_table" : [ "46523c2a-ld45-6q65-8cc5-q165ks7w45sh", "46523c2a-ld45-6q78-8cq5-q165ks8Qg5ll" ]
+          }
+        },
+        "matched_category_" : {
+          "_" : {
+            "_match_table" : [ "Network Protocols" ]
+          }
+        },
+        "appi_name" : "ICMP Protocol",
+        "dst" : "185.64.148.0",
+        "origin" : "185.64.148.0",
+        "flags" : 4210688,
+        "last_hit_time" : 1702029491,
+        "app_sig_id" : "60526220:1",
+        "rule_action_" : {
+          "_" : {
+            "_match_table" : [ "Accept", "Accept" ]
+          }
+        },
+        "parent_rule_" : {
+          "_" : {
+            "_match_table" : [ 0, 0 ]
+          }
+        },
+        "server_inbound_bytes" : 0,
+        "client_inbound_bytes" : 106200,
+        "duration" : 10800,
+        "h_version" : 5,
+        "app_properties" : "Low Risk, Network Protocols",
+        "client_inbound_packets" : 1770,
+        "client_outbound_bytes" : 0,
+        "ifname" : "eth0",
+        "service_id" : "echo-request",
+        "layer_uuid_" : {
+          "_" : {
+            "_match_table" : [ "46523c2a-ld45-6q65-8cc5-q165ks7w45sh", "46523c2a-ld45-6q78-8cq5-q165ks8Qg5ll" ]
+          }
+        },
+        "matched_category" : "Network Protocols",
+        "product" : "Application Control",
+        "src" : "185.64.148.0",
+        "update_count" : 3,
+        "server_outbound_packets" : 1770,
+        "outzone" : "Internal",
+        "server_outbound_bytes" : 106200,
+        "app_risk_" : {
+          "_" : {
+            "_match_table" : [ 0, 2 ]
+          }
+        },
+        "bytes" : 106200,
+        "hll_key" : 16791445055475980000,
+        "logid" : 352,
+        "app_desc" : "The Internet Control Message Protocol (ICMP) is a protocol used by network devices, including routers, to send error messages and operational information.",
+        "time" : 1702027684
+      }
+    service: "Application Control"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1702027684

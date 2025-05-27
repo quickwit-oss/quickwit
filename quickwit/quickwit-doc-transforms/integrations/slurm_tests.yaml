@@ -1,0 +1,42 @@
+id: "slurm"
+tests:
+ -
+  sample: "[2024-10-22T23:16:26.830] debug:  REQUEST_PERSIST_INIT: CLUSTER:linux VERSION:9472 UID:0 IP:172.22.0.4 CONN:9"
+  result:
+    custom:
+      timestamp: 1729638986830
+      level: "debug"
+    message: " REQUEST_PERSIST_INIT: CLUSTER:linux VERSION:9472 UID:0 IP:172.22.0.4 CONN:9"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1729638986830
+ -
+  sample: "[2024-10-29T04:28:12.937] [63.batch] debug2: _set_limit: RLIMIT_NOFILE : max:1048576 cur:4096 req:1048576"
+  result:
+    custom:
+      level: "debug"
+      timestamp: 1730176092937
+      slurm:
+        job_id: "63"
+        job_name: "batch"
+      debug:
+        level: "2"
+    message: "_set_limit: RLIMIT_NOFILE : max:1048576 cur:4096 req:1048576"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1730176092937
+ -
+  sample: "[2024-10-28T04:52:56.841] debug2: Finish processing RPC: REQUEST_PING"
+  result:
+    custom:
+      debug:
+        level: "2"
+      level: "debug"
+      timestamp: 1730091176841
+    message: "Finish processing RPC: REQUEST_PING"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1730091176841

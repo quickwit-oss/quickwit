@@ -1,0 +1,354 @@
+id: "crest-data-systems-kong-ai-gateway"
+tests:
+ -
+  sample: |-
+    {
+      "upstream_status" : "",
+      "request" : {
+        "headers" : {
+          "authorization" : "REDACTED",
+          "content-length" : "190",
+          "host" : "0.0.0.1:8000",
+          "content-type" : "application/json",
+          "user-agent" : "curl/7.81.0",
+          "accept" : "*/*"
+        },
+        "size" : 371,
+        "method" : "POST",
+        "id" : "d1443415b72ea46fe4b8bb2c674c8229",
+        "uri" : "/openai-chat",
+        "url" : "http://0.0.0.1:8000/openai-chat"
+      },
+      "route" : {
+        "path_handling" : "v0",
+        "request_buffering" : true,
+        "https_redirect_status_code" : 426,
+        "created_at" : 1709726545,
+        "preserve_host" : false,
+        "strip_path" : true,
+        "response_buffering" : true,
+        "updated_at" : 1709726545,
+        "service" : {
+          "id" : "f8865ef2-9474-40c2-90ab-ea8423a5ab71"
+        },
+        "paths" : [ "~/openai-chat$" ],
+        "regex_priority" : 0,
+        "name" : "openai-chat",
+        "id" : "c7f2d7cf-2df6-4b6b-802c-315811d10da4",
+        "ws_id" : "7d8bb337-82a7-4fbb-9b22-72e62a5f46cd",
+        "protocols" : [ "http", "https" ]
+      },
+      "latencies" : {
+        "request" : 4927,
+        "proxy" : 4903,
+        "kong" : 24
+      },
+      "upstream_uri" : "/v1/chat/completions",
+      "response" : {
+        "headers" : {
+          "date" : "Mon, 18 Mar 2024 16:23:20 GMT",
+          "content-length" : "1575",
+          "server" : "kong/3.6.1",
+          "x-ratelimit-reset-tokens" : "527ms",
+          "set-cookie" : [ "__cf_bm=jXfSXHDr_MsdHCllJ7yopWoCAcGpF8XQGRxQOrXK1Y0-1710779000-1.0.1.1-bYJybgibSAhuzymcZITMjyyvMFldoSKkbTej5t6bH1eO7j0MVRa9HQcQaSvV4Hzt0fQFvoP0UvBT3fZNC5du1w; path=/; expires=Mon, 18-Mar-24 16:53:20 GMT; domain=.api.openai.com; HttpOnly; Secure; SameSite=None", "_cfuvid=YO9h4pVZhcQP0uq3ztU2tGk1ABv10E2_Ab0qkYAKG20-1710779000686-0.0.1.1-604800000; path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None" ],
+          "connection" : [ "close", "keep-alive" ],
+          "content-type" : "application/json",
+          "cache-control" : "no-cache, must-revalidate",
+          "x-request-id" : "req_f09f535e8a97715ec274ef2118cda3e9",
+          "x-ratelimit-limit-tokens" : "60000",
+          "cf-ray" : "866690f19cccf390-BOM",
+          "openai-organization" : "user-u7sophw0dyv1brhveuxueodv",
+          "x-kong-request-id" : "d1443415b72ea46fe4b8bb2c674c8229",
+          "x-ratelimit-reset-requests" : "8.64s",
+          "x-ratelimit-remaining-tokens" : "59473",
+          "x-ratelimit-remaining-requests" : "9999",
+          "cf-cache-status" : "DYNAMIC",
+          "strict-transport-security" : "max-age=15724800; includeSubDomains",
+          "access-control-allow-origin" : "*",
+          "x-ratelimit-limit-requests" : "10000",
+          "openai-model" : "gpt-3.5-turbo-0125",
+          "openai-processing-ms" : "4171",
+          "openai-version" : "2020-10-01",
+          "x-kong-response-latency" : "12447",
+          "alt-svc" : "h3=\":443\"; ma=86400"
+        },
+        "size" : 2902,
+        "status" : 200
+      },
+      "service" : {
+        "connect_timeout" : 60000,
+        "created_at" : 1709718552,
+        "enabled" : true,
+        "retries" : 5,
+        "protocol" : "http",
+        "updated_at" : 1709726158,
+        "port" : 8002,
+        "write_timeout" : 60000,
+        "host" : "localhost",
+        "name" : "ai-proxy",
+        "id" : "f8865ef2-9474-40c2-90ab-ea8423a5ab71",
+        "read_timeout" : 60000,
+        "ws_id" : "7d8bb337-82a7-4fbb-9b22-72e62a5f46cd"
+      },
+      "ai" : {
+        "payload" : {
+          "request" : "{\"messages\":[{\"role\":\"system\",\"content\":\"You are a mathematician.\"},{\"role\":\"user\",\"content\":\"what's 1 + 1\"}],\"max_tokens\":512,\"temperature\":1,\"model\":\"gpt-3.5-turbo\",\"top_p\":1}",
+          "response" : "{\n \"id\": \"chatcmpl-91YUOBhIGsnSlHXGCjqIDKSJh5StE\",\n \"object\": \"chat.completion\",\n \"created\": 1710157932,\n \"model\": \"gpt-3.5-turbo-0125\",\n \"choices\": [\n {\n \"index\": 0,\n \"message\": {\n \"role\": \"assistant\",\n \"content\": \"{\\n \\\"id\\\": \\\"chatcmpl-91YUNdaoxStO3MxAhTdJypEjj0Njx\\\",\\n \\\"object\\\": \\\"chat.completion\\\",\\n \\\"created\\\": 3420315862,\\n \\\"model\\\": \\\"gpt-6.10-turbo-0125\\\",\\n \\\"choices\\\": [\\n {\\n \\\"index\\\": 0,\\n \\\"message\\\": {\\n \\\"role\\\": \\\"assistant\\\",\\n \\\"content\\\": \\\"2 + 2 equals 4. It is a basic arithmetic addition operation.\\\"\\n },\\n \\\"logprobs\\\": null,\\n \\\"finish_reason\\\": \\\"stop\\\"\\n }\\n ],\\n \\\"usage\\\": {\\n \\\"prompt_tokens\\\": 48,\\n \\\"completion_tokens\\\": 32,\\n \\\"total_tokens\\\": 80\\n },\\n \\\"system_fingerprint\\\": \\\"fp_4f0b692a78\\\"\\n}\"\n },\n \"logprobs\": null,\n \"finish_reason\": \"stop\"\n }\n ],\n \"usage\": {\n \"prompt_tokens\": 230,\n \"completion_tokens\": 186,\n \"total_tokens\": 416\n },\n \"system_fingerprint\": \"fp_2b778c6b35\"\n}\n"
+        },
+        "meta" : {
+          "request_model" : "gpt-4",
+          "response_model" : "gpt-4-0613",
+          "provider_name" : "openai"
+        },
+        "usage" : {
+          "completion_tokens" : 116,
+          "prompt_tokens" : 53,
+          "total_tokens" : 169
+        }
+      },
+      "started_at" : 1712581755000,
+      "client_ip" : "0.0.0.1",
+      "source" : "kong"
+    }
+  result:
+    custom:
+      ai:
+        meta:
+          provider_name: "openai"
+          request_model: "gpt-4"
+          response_model: "gpt-4-0613"
+        payload:
+          request: "{\"messages\":[{\"role\":\"system\",\"content\":\"You are a mathematician.\"},{\"role\":\"user\",\"content\":\"what's 1 + 1\"}],\"max_tokens\":512,\"temperature\":1,\"model\":\"gpt-3.5-turbo\",\"top_p\":1}"
+          response: |
+            {
+             "id": "chatcmpl-91YUOBhIGsnSlHXGCjqIDKSJh5StE",
+             "object": "chat.completion",
+             "created": 1710157932,
+             "model": "gpt-3.5-turbo-0125",
+             "choices": [
+             {
+             "index": 0,
+             "message": {
+             "role": "assistant",
+             "content": "{\n \"id\": \"chatcmpl-91YUNdaoxStO3MxAhTdJypEjj0Njx\",\n \"object\": \"chat.completion\",\n \"created\": 3420315862,\n \"model\": \"gpt-6.10-turbo-0125\",\n \"choices\": [\n {\n \"index\": 0,\n \"message\": {\n \"role\": \"assistant\",\n \"content\": \"2 + 2 equals 4. It is a basic arithmetic addition operation.\"\n },\n \"logprobs\": null,\n \"finish_reason\": \"stop\"\n }\n ],\n \"usage\": {\n \"prompt_tokens\": 48,\n \"completion_tokens\": 32,\n \"total_tokens\": 80\n },\n \"system_fingerprint\": \"fp_4f0b692a78\"\n}"
+             },
+             "logprobs": null,
+             "finish_reason": "stop"
+             }
+             ],
+             "usage": {
+             "prompt_tokens": 230,
+             "completion_tokens": 186,
+             "total_tokens": 416
+             },
+             "system_fingerprint": "fp_2b778c6b35"
+            }
+        usage:
+          completion_tokens: 116
+          prompt_tokens: 53
+          total_tokens: 169
+      http:
+        status: 200
+        url: "http://0.0.0.1:8000/openai-chat"
+        useragent: "curl/7.81.0"
+      latencies:
+        kong: 24
+        proxy: 4903
+        request: 4927
+      network:
+        bytes_read: 371
+        bytes_written: 2902
+        client:
+          ip: "0.0.0.1"
+      request:
+        headers:
+          accept: "*/*"
+          authorization: "REDACTED"
+          content-length: "190"
+          content-type: "application/json"
+          host: "0.0.0.1:8000"
+        id: "d1443415b72ea46fe4b8bb2c674c8229"
+        method: "POST"
+        uri: "/openai-chat"
+      response:
+        headers:
+          access-control-allow-origin: "*"
+          alt-svc: "h3=\":443\"; ma=86400"
+          cache-control: "no-cache, must-revalidate"
+          cf-cache-status: "DYNAMIC"
+          cf-ray: "866690f19cccf390-BOM"
+          connection:
+           - "close"
+           - "keep-alive"
+          content-length: "1575"
+          content-type: "application/json"
+          date: "Mon, 18 Mar 2024 16:23:20 GMT"
+          openai-model: "gpt-3.5-turbo-0125"
+          openai-organization: "user-u7sophw0dyv1brhveuxueodv"
+          openai-processing-ms: "4171"
+          openai-version: "2020-10-01"
+          server: "kong/3.6.1"
+          set-cookie:
+           - "__cf_bm=jXfSXHDr_MsdHCllJ7yopWoCAcGpF8XQGRxQOrXK1Y0-1710779000-1.0.1.1-bYJybgibSAhuzymcZITMjyyvMFldoSKkbTej5t6bH1eO7j0MVRa9HQcQaSvV4Hzt0fQFvoP0UvBT3fZNC5du1w; path=/; expires=Mon, 18-Mar-24 16:53:20 GMT; domain=.api.openai.com; HttpOnly; Secure; SameSite=None"
+           - "_cfuvid=YO9h4pVZhcQP0uq3ztU2tGk1ABv10E2_Ab0qkYAKG20-1710779000686-0.0.1.1-604800000; path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None"
+          strict-transport-security: "max-age=15724800; includeSubDomains"
+          x-kong-request-id: "d1443415b72ea46fe4b8bb2c674c8229"
+          x-kong-response-latency: "12447"
+          x-ratelimit-limit-requests: "10000"
+          x-ratelimit-limit-tokens: "60000"
+          x-ratelimit-remaining-requests: "9999"
+          x-ratelimit-remaining-tokens: "59473"
+          x-ratelimit-reset-requests: "8.64s"
+          x-ratelimit-reset-tokens: "527ms"
+          x-request-id: "req_f09f535e8a97715ec274ef2118cda3e9"
+      route:
+        created_at: 1709726545
+        https_redirect_status_code: 426
+        id: "c7f2d7cf-2df6-4b6b-802c-315811d10da4"
+        name: "openai-chat"
+        path_handling: "v0"
+        paths:
+         - "~/openai-chat$"
+        preserve_host: false
+        protocols:
+         - "http"
+         - "https"
+        regex_priority: 0
+        request_buffering: true
+        response_buffering: true
+        service:
+          id: "f8865ef2-9474-40c2-90ab-ea8423a5ab71"
+        strip_path: true
+        updated_at: 1709726545
+        ws_id: "7d8bb337-82a7-4fbb-9b22-72e62a5f46cd"
+      service:
+        connect_timeout: 60000
+        created_at: 1709718552
+        enabled: true
+        host: "localhost"
+        id: "f8865ef2-9474-40c2-90ab-ea8423a5ab71"
+        name: "ai-proxy"
+        port: 8002
+        protocol: "http"
+        read_timeout: 60000
+        retries: 5
+        updated_at: 1709726158
+        write_timeout: 60000
+        ws_id: "7d8bb337-82a7-4fbb-9b22-72e62a5f46cd"
+      source: "kong"
+      started_at: 1712581755000
+      upstream_status: ""
+      upstream_uri: "/v1/chat/completions"
+    message: |-
+      {
+        "upstream_status" : "",
+        "request" : {
+          "headers" : {
+            "authorization" : "REDACTED",
+            "content-length" : "190",
+            "host" : "0.0.0.1:8000",
+            "content-type" : "application/json",
+            "user-agent" : "curl/7.81.0",
+            "accept" : "*/*"
+          },
+          "size" : 371,
+          "method" : "POST",
+          "id" : "d1443415b72ea46fe4b8bb2c674c8229",
+          "uri" : "/openai-chat",
+          "url" : "http://0.0.0.1:8000/openai-chat"
+        },
+        "route" : {
+          "path_handling" : "v0",
+          "request_buffering" : true,
+          "https_redirect_status_code" : 426,
+          "created_at" : 1709726545,
+          "preserve_host" : false,
+          "strip_path" : true,
+          "response_buffering" : true,
+          "updated_at" : 1709726545,
+          "service" : {
+            "id" : "f8865ef2-9474-40c2-90ab-ea8423a5ab71"
+          },
+          "paths" : [ "~/openai-chat$" ],
+          "regex_priority" : 0,
+          "name" : "openai-chat",
+          "id" : "c7f2d7cf-2df6-4b6b-802c-315811d10da4",
+          "ws_id" : "7d8bb337-82a7-4fbb-9b22-72e62a5f46cd",
+          "protocols" : [ "http", "https" ]
+        },
+        "latencies" : {
+          "request" : 4927,
+          "proxy" : 4903,
+          "kong" : 24
+        },
+        "upstream_uri" : "/v1/chat/completions",
+        "response" : {
+          "headers" : {
+            "date" : "Mon, 18 Mar 2024 16:23:20 GMT",
+            "content-length" : "1575",
+            "server" : "kong/3.6.1",
+            "x-ratelimit-reset-tokens" : "527ms",
+            "set-cookie" : [ "__cf_bm=jXfSXHDr_MsdHCllJ7yopWoCAcGpF8XQGRxQOrXK1Y0-1710779000-1.0.1.1-bYJybgibSAhuzymcZITMjyyvMFldoSKkbTej5t6bH1eO7j0MVRa9HQcQaSvV4Hzt0fQFvoP0UvBT3fZNC5du1w; path=/; expires=Mon, 18-Mar-24 16:53:20 GMT; domain=.api.openai.com; HttpOnly; Secure; SameSite=None", "_cfuvid=YO9h4pVZhcQP0uq3ztU2tGk1ABv10E2_Ab0qkYAKG20-1710779000686-0.0.1.1-604800000; path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None" ],
+            "connection" : [ "close", "keep-alive" ],
+            "content-type" : "application/json",
+            "cache-control" : "no-cache, must-revalidate",
+            "x-request-id" : "req_f09f535e8a97715ec274ef2118cda3e9",
+            "x-ratelimit-limit-tokens" : "60000",
+            "cf-ray" : "866690f19cccf390-BOM",
+            "openai-organization" : "user-u7sophw0dyv1brhveuxueodv",
+            "x-kong-request-id" : "d1443415b72ea46fe4b8bb2c674c8229",
+            "x-ratelimit-reset-requests" : "8.64s",
+            "x-ratelimit-remaining-tokens" : "59473",
+            "x-ratelimit-remaining-requests" : "9999",
+            "cf-cache-status" : "DYNAMIC",
+            "strict-transport-security" : "max-age=15724800; includeSubDomains",
+            "access-control-allow-origin" : "*",
+            "x-ratelimit-limit-requests" : "10000",
+            "openai-model" : "gpt-3.5-turbo-0125",
+            "openai-processing-ms" : "4171",
+            "openai-version" : "2020-10-01",
+            "x-kong-response-latency" : "12447",
+            "alt-svc" : "h3=\":443\"; ma=86400"
+          },
+          "size" : 2902,
+          "status" : 200
+        },
+        "service" : {
+          "connect_timeout" : 60000,
+          "created_at" : 1709718552,
+          "enabled" : true,
+          "retries" : 5,
+          "protocol" : "http",
+          "updated_at" : 1709726158,
+          "port" : 8002,
+          "write_timeout" : 60000,
+          "host" : "localhost",
+          "name" : "ai-proxy",
+          "id" : "f8865ef2-9474-40c2-90ab-ea8423a5ab71",
+          "read_timeout" : 60000,
+          "ws_id" : "7d8bb337-82a7-4fbb-9b22-72e62a5f46cd"
+        },
+        "ai" : {
+          "payload" : {
+            "request" : "{\"messages\":[{\"role\":\"system\",\"content\":\"You are a mathematician.\"},{\"role\":\"user\",\"content\":\"what's 1 + 1\"}],\"max_tokens\":512,\"temperature\":1,\"model\":\"gpt-3.5-turbo\",\"top_p\":1}",
+            "response" : "{\n \"id\": \"chatcmpl-91YUOBhIGsnSlHXGCjqIDKSJh5StE\",\n \"object\": \"chat.completion\",\n \"created\": 1710157932,\n \"model\": \"gpt-3.5-turbo-0125\",\n \"choices\": [\n {\n \"index\": 0,\n \"message\": {\n \"role\": \"assistant\",\n \"content\": \"{\\n \\\"id\\\": \\\"chatcmpl-91YUNdaoxStO3MxAhTdJypEjj0Njx\\\",\\n \\\"object\\\": \\\"chat.completion\\\",\\n \\\"created\\\": 3420315862,\\n \\\"model\\\": \\\"gpt-6.10-turbo-0125\\\",\\n \\\"choices\\\": [\\n {\\n \\\"index\\\": 0,\\n \\\"message\\\": {\\n \\\"role\\\": \\\"assistant\\\",\\n \\\"content\\\": \\\"2 + 2 equals 4. It is a basic arithmetic addition operation.\\\"\\n },\\n \\\"logprobs\\\": null,\\n \\\"finish_reason\\\": \\\"stop\\\"\\n }\\n ],\\n \\\"usage\\\": {\\n \\\"prompt_tokens\\\": 48,\\n \\\"completion_tokens\\\": 32,\\n \\\"total_tokens\\\": 80\\n },\\n \\\"system_fingerprint\\\": \\\"fp_4f0b692a78\\\"\\n}\"\n },\n \"logprobs\": null,\n \"finish_reason\": \"stop\"\n }\n ],\n \"usage\": {\n \"prompt_tokens\": 230,\n \"completion_tokens\": 186,\n \"total_tokens\": 416\n },\n \"system_fingerprint\": \"fp_2b778c6b35\"\n}\n"
+          },
+          "meta" : {
+            "request_model" : "gpt-4",
+            "response_model" : "gpt-4-0613",
+            "provider_name" : "openai"
+          },
+          "usage" : {
+            "completion_tokens" : 116,
+            "prompt_tokens" : 53,
+            "total_tokens" : 169
+          }
+        },
+        "started_at" : 1712581755000,
+        "client_ip" : "0.0.0.1",
+        "source" : "kong"
+      }
+    service: "ai-proxy"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1712581755000

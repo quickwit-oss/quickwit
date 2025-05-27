@@ -1,0 +1,19 @@
+id: reflectiz
+tests:
+  - sample: >-
+      {
+          "ddsource":"reflectiz",
+          "ddtags":"reflectiz.site:test,reflectiz.scan:test,reflectiz.scan.number:1",
+          "message":"Scan Data Sent to Datadog",
+          "service":"reflectiz.v1.scan",
+          "timestamp": 1737876493000
+      }
+    result:
+      custom:
+        ddsource: "reflectiz"
+        ddtags: "reflectiz.site:test,reflectiz.scan:test,reflectiz.scan.number:1"
+        service: "reflectiz.v1.scan"
+        timestamp: 1737876493000
+      message: "Scan Data Sent to Datadog"
+      tags:
+      - "source:LOGS_SOURCE"

@@ -1,0 +1,242 @@
+id: "activemq"
+tests:
+ -
+  sample: "2019-05-29 18:31:44,133 | DEBUG | endElement(http://java.sun.com/JSP/TagLibraryDescriptor,attribute,attribute) | org.apache.tomcat.util.digester.Digester.sax | main"
+  result:
+    custom:
+      date: 1559154704133
+      level: "DEBUG"
+      logger:
+        name: "org.apache.tomcat.util.digester.Digester.sax"
+        thread_name: "main"
+    message: "endElement(http://java.sun.com/JSP/TagLibraryDescriptor,attribute,attribute)"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1559154704133
+ -
+  sample: "2019-05-29 19:11:18,514 | WARN  | Store limit is 102400 mb (current store usage is 0 mb). The data directory: /data/activemq/kahadb only has 20094 mb of usable space. - resetting to maximum available disk space: 20094 mb | org.apache.activemq.broker.BrokerService | main"
+  result:
+    custom:
+      date: 1559157078514
+      level: "WARN"
+      logger:
+        name: "org.apache.activemq.broker.BrokerService"
+        thread_name: "main"
+    message: "Store limit is 102400 mb (current store usage is 0 mb). The data directory: /data/activemq/kahadb only has 20094 mb of usable space. - resetting to maximum available disk space: 20094 mb"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1559157078514
+ -
+  sample: "INFO  | admin requested /admin/sendMessage.action [JMSType='[]' AMQ_SCHEDULED_DELAY='[]' JMSTimeToLive='[]' AMQ_SCHEDULED_REPEAT='[]' JMSDestinationType='[topic]' JMSXGroupSeq='[]' AMQ_SCHEDULED_PERIOD='[]' secret='[93896cbd-8aaf-430d-b013-86be90f408a4]' JMSMessageCount='[1]' JMSPriority='[]' JMSReplyTo='[]' JMSXGroupID='[]' JMSDestination='[ActiveMQ.Advisory.MasterBroker]' AMQ_SCHEDULED_CRON='[]' JMSText='[Enter some text here for the message body...]' JMSMessageCountHeader='[JMSXMessageCounter]' JMSCorrelationID='[]' ] from  172.17.0.1 at 29-05-2019 18:33:41,538 | qtp1059524106-41"
+  result:
+    custom:
+      date: 1559154821538
+      http:
+        url_details:
+          path: "/admin/sendMessage.action"
+      level: "INFO"
+      network:
+        client:
+          ip: "172.17.0.1"
+      system:
+        action: "/admin/sendMessage.action"
+        properties:
+          AMQ_SCHEDULED_CRON: "[]"
+          AMQ_SCHEDULED_DELAY: "[]"
+          AMQ_SCHEDULED_PERIOD: "[]"
+          AMQ_SCHEDULED_REPEAT: "[]"
+          JMSCorrelationID: "[]"
+          JMSDestination: "[ActiveMQ.Advisory.MasterBroker]"
+          JMSDestinationType: "[topic]"
+          JMSMessageCount: "[1]"
+          JMSMessageCountHeader: "[JMSXMessageCounter]"
+          JMSPriority: "[]"
+          JMSReplyTo: "[]"
+          JMSText: "[Enter some text here for the message body...]"
+          JMSTimeToLive: "[]"
+          JMSType: "[]"
+          JMSXGroupID: "[]"
+          JMSXGroupSeq: "[]"
+          secret: "[93896cbd-8aaf-430d-b013-86be90f408a4]"
+        user: "admin"
+    message: "INFO  | admin requested /admin/sendMessage.action [JMSType='[]' AMQ_SCHEDULED_DELAY='[]' JMSTimeToLive='[]' AMQ_SCHEDULED_REPEAT='[]' JMSDestinationType='[topic]' JMSXGroupSeq='[]' AMQ_SCHEDULED_PERIOD='[]' secret='[93896cbd-8aaf-430d-b013-86be90f408a4]' JMSMessageCount='[1]' JMSPriority='[]' JMSReplyTo='[]' JMSXGroupID='[]' JMSDestination='[ActiveMQ.Advisory.MasterBroker]' AMQ_SCHEDULED_CRON='[]' JMSText='[Enter some text here for the message body...]' JMSMessageCountHeader='[JMSXMessageCounter]' JMSCorrelationID='[]' ] from  172.17.0.1 at 29-05-2019 18:33:41,538 | qtp1059524106-41"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1559154821538
+ -
+  sample: "INFO  | admin requested /admin/createDestination.action [JMSDestinationType='[queue]' JMSDestination='[Test]' secret='[f35bb77b-6676-45a3-aa54-b012d519b85c]' ] from  172.17.0.1 at 29-05-2019 18:32:32,545 | qtp1059524106-40"
+  result:
+    custom:
+      date: 1559154752545
+      http:
+        url_details:
+          path: "/admin/createDestination.action"
+      level: "INFO"
+      network:
+        client:
+          ip: "172.17.0.1"
+      system:
+        action: "/admin/createDestination.action"
+        properties:
+          JMSDestination: "[Test]"
+          JMSDestinationType: "[queue]"
+          secret: "[f35bb77b-6676-45a3-aa54-b012d519b85c]"
+        user: "admin"
+    message: "INFO  | admin requested /admin/createDestination.action [JMSDestinationType='[queue]' JMSDestination='[Test]' secret='[f35bb77b-6676-45a3-aa54-b012d519b85c]' ] from  172.17.0.1 at 29-05-2019 18:32:32,545 | qtp1059524106-40"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1559154752545
+ -
+  sample: "2010-12-22 12:12:17,802 | INFO  | admin requested /admin/sendMessage.action [JMSTimeToLive='' JMSXGroupSeq='' AMQ_SCHEDULED_DELAY='' JMSType='' JMSMessageCountHeader='JMSXMessageCounter' JMSXGroupID='' JMSReplyTo='' JMSDestination='test' AMQ_SCHEDULED_PERIOD='' JMSText='Enter some text here for the message body...' JMSDestinationType='queue' AMQ_SCHEDULED_CRON='' JMSCorrelationID='' AMQ_SCHEDULED_REPEAT='' JMSMessageCount='1' secret='a0e1df62-14d6-4425-82a2-17aa01a16e7d' JMSPriority='' ] from 127.0.0.1 | qtp12205619-37"
+  result:
+    custom:
+      date: 1293019937802
+      http:
+        url_details:
+          path: "/admin/sendMessage.action"
+      level: "INFO"
+      network:
+        client:
+          ip: "127.0.0.1"
+      system:
+        action: "/admin/sendMessage.action"
+        properties:
+          JMSDestination: "test"
+          JMSDestinationType: "queue"
+          JMSMessageCount: "1"
+          JMSMessageCountHeader: "JMSXMessageCounter"
+          JMSText: "Enter some text here for the message body..."
+          secret: "a0e1df62-14d6-4425-82a2-17aa01a16e7d"
+        user: "admin"
+    message: "2010-12-22 12:12:17,802 | INFO  | admin requested /admin/sendMessage.action [JMSTimeToLive='' JMSXGroupSeq='' AMQ_SCHEDULED_DELAY='' JMSType='' JMSMessageCountHeader='JMSXMessageCounter' JMSXGroupID='' JMSReplyTo='' JMSDestination='test' AMQ_SCHEDULED_PERIOD='' JMSText='Enter some text here for the message body...' JMSDestinationType='queue' AMQ_SCHEDULED_CRON='' JMSCorrelationID='' AMQ_SCHEDULED_REPEAT='' JMSMessageCount='1' secret='a0e1df62-14d6-4425-82a2-17aa01a16e7d' JMSPriority='' ] from 127.0.0.1 | qtp12205619-37"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1293019937802
+ -
+  sample: "2010-12-22 12:13:32,457 | INFO  | admin called org.apache.activemq.broker.jmx.QueueView.sendTextMessage[message] | RMI TCP Connection(6)-192.168.1.107"
+  result:
+    custom:
+      date: 1293020012457
+      level: "INFO"
+      network:
+        client:
+          ip: "192.168.1.107"
+      system:
+        action: "org.apache.activemq.broker.jmx.QueueView.sendTextMessage"
+        properties: "message"
+        user: "admin"
+    message: "2010-12-22 12:13:32,457 | INFO  | admin called org.apache.activemq.broker.jmx.QueueView.sendTextMessage[message] | RMI TCP Connection(6)-192.168.1.107"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1293020012457
+ -
+  sample: "2021-02-09 16:01:22,540 INFO  [org.apache.activemq.artemis.core.server] AMQ221057: Global Max Size is being adjusted to 1/2 of the JVM max size (-Xmx). being defined as 1,073,741,824"
+  result:
+    custom:
+      date: 1612886482540
+      level: "INFO"
+      logger:
+        message_id: "AMQ221057"
+        name: "org.apache.activemq.artemis.core.server"
+    message: "Global Max Size is being adjusted to 1/2 of the JVM max size (-Xmx). being defined as 1,073,741,824"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1612886482540
+ -
+  sample: "2021-02-09 16:01:23,075 DEBUG [org.apache.activemq.artemis.core.server.impl.QueueImpl] QueueImpl[name=DLQ, postOffice=PostOfficeImpl [server=ActiveMQServerImpl::serverUUID=fbab3b4b-6a46-11eb-9136-a483e7ce9d75], temp=false]@3bb9efbc doing deliver. messageReferences=0"
+  result:
+    custom:
+      date: 1612886483075
+      level: "DEBUG"
+      logger:
+        name: "org.apache.activemq.artemis.core.server.impl.QueueImpl"
+    message: "QueueImpl[name=DLQ, postOffice=PostOfficeImpl [server=ActiveMQServerImpl::serverUUID=fbab3b4b-6a46-11eb-9136-a483e7ce9d75], temp=false]@3bb9efbc doing deliver. messageReferences=0"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1612886483075
+ -
+  sample: "2021-02-09 16:40:20,221 DEBUG [org.apache.activemq.artemis.core.server.impl.QueueMessageMetrics] QueuePendingMessageMetrics[queue=exampleQueue, name=delivering] decrement messageCount to 48: Reference[276]:RELIABLE:CoreMessage[messageID=276,durable=true,userID=616f3bf9-6b1f-11eb-8051-0eccb9209911,priority=4, timestamp=Tue Feb 09 16:40:08 EST 2021,expiration=0, durable=true, address=exampleQueue,size=276,properties=TypedProperties[__AMQ_CID=5f87b6e1-6b1f-11eb-8051-0eccb9209911,_AMQ_ROUTING_TYPE=1]]@2114910734"
+  result:
+    custom:
+      date: 1612888820221
+      level: "DEBUG"
+      logger:
+        name: "org.apache.activemq.artemis.core.server.impl.QueueMessageMetrics"
+    message: "QueuePendingMessageMetrics[queue=exampleQueue, name=delivering] decrement messageCount to 48: Reference[276]:RELIABLE:CoreMessage[messageID=276,durable=true,userID=616f3bf9-6b1f-11eb-8051-0eccb9209911,priority=4, timestamp=Tue Feb 09 16:40:08 EST 2021,expiration=0, durable=true, address=exampleQueue,size=276,properties=TypedProperties[__AMQ_CID=5f87b6e1-6b1f-11eb-8051-0eccb9209911,_AMQ_ROUTING_TYPE=1]]@2114910734"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1612888820221
+ -
+  sample: "2021-02-09 16:50:25,658 [AUDIT](Thread-1 (ActiveMQ-server-org.apache.activemq.artemis.core.server.impl.ActiveMQServerImpl$6@5911e990)) AMQ601500: User guest(guest)@127.0.0.1:57260 is sending a message CoreMessage[messageID=0,durable=true,userID=d11fa6a1-6b20-11eb-9424-00056b0176f3,priority=4, timestamp=Tue Feb 09 16:50:25 EST 2021,expiration=0, durable=true, address=exampleQueue,size=276,properties=TypedProperties[__AMQ_CID=cfeea14a-6b20-11eb-9424-00056b0176f3,_AMQ_ROUTING_TYPE=1]]@2011215847, with Context: RoutingContextImpl(Address=exampleQueue, routingType=ANYCAST, PreviousAddress=exampleQueue previousRoute:ANYCAST, reusable=true, version=-2147483640)"
+  result:
+    custom:
+      date: 1612889425658
+      level: "INFO"
+      logger:
+        message_id: "AMQ601500"
+        name: "ActiveMQ-server-org.apache.activemq.artemis.core.server.impl.ActiveMQServerImpl$6@5911e990"
+        thread_name: "Thread-1"
+      network:
+        client:
+          ip: "127.0.0.1"
+          port: 57260
+      system:
+        user: "guest(guest)"
+      type: "AUDIT"
+    message: "User guest(guest)@127.0.0.1:57260 is sending a message CoreMessage[messageID=0,durable=true,userID=d11fa6a1-6b20-11eb-9424-00056b0176f3,priority=4, timestamp=Tue Feb 09 16:50:25 EST 2021,expiration=0, durable=true, address=exampleQueue,size=276,properties=TypedProperties[__AMQ_CID=cfeea14a-6b20-11eb-9424-00056b0176f3,_AMQ_ROUTING_TYPE=1]]@2011215847, with Context: RoutingContextImpl(Address=exampleQueue, routingType=ANYCAST, PreviousAddress=exampleQueue previousRoute:ANYCAST, reusable=true, version=-2147483640)"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1612889425658
+ -
+  sample: "2021-02-09 16:50:27,022 [AUDIT](Thread-2 (ActiveMQ-server-org.apache.activemq.artemis.core.server.impl.ActiveMQServerImpl$6@5911e990)) AMQ601501: User guest(guest)@127.0.0.1:57260 is consuming a message from exampleQueue"
+  result:
+    custom:
+      date: 1612889427022
+      level: "INFO"
+      logger:
+        message_id: "AMQ601501"
+        name: "ActiveMQ-server-org.apache.activemq.artemis.core.server.impl.ActiveMQServerImpl$6@5911e990"
+        thread_name: "Thread-2"
+      network:
+        client:
+          ip: "127.0.0.1"
+          port: 57260
+      system:
+        user: "guest(guest)"
+      type: "AUDIT"
+    message: "User guest(guest)@127.0.0.1:57260 is consuming a message from exampleQueue"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1612889427022
+ -
+  sample: "2021-02-23 14:25:00,573 [AUDIT](RMI TCP Connection(15)-192.168.10.77) AMQ601170: User anonymous@unknown is getting messages killed on target resource: QueueImpl[name=ExpiryQueue, postOffice=PostOfficeImpl [server=ActiveMQServerImpl::serverUUID=0e3b3d2e-7080-11eb-a8c9-acde48001122], temp=false]@7f1c0769 []"
+  result:
+    custom:
+      date: 1614090300573
+      level: "INFO"
+      logger:
+        message_id: "AMQ601170"
+        name: "RMI TCP Connection(15)-192.168.10.77"
+      network:
+        client:
+          ip: "unknown"
+      system:
+        user: "anonymous"
+      type: "AUDIT"
+    message: "User anonymous@unknown is getting messages killed on target resource: QueueImpl[name=ExpiryQueue, postOffice=PostOfficeImpl [server=ActiveMQServerImpl::serverUUID=0e3b3d2e-7080-11eb-a8c9-acde48001122], temp=false]@7f1c0769 []"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1614090300573
+

@@ -1,0 +1,259 @@
+id: "sym"
+tests:
+ -
+  sample: |-
+    {
+      "actor" : {
+        "identity" : {
+          "service" : "sym",
+          "external_id" : "cloud",
+          "email" : "ari@symops.io"
+        },
+        "name" : "Ari Tang",
+        "user" : "sym:user:normal:ba76b21a-6fa9-473f-af93-07d441c5d4da:latest",
+        "username" : "ari@symops.io"
+      },
+      "service" : "sym",
+      "meta" : {
+        "schema_version" : 7
+      },
+      "run" : {
+        "parent" : "sym:run:flow_selection:1.0.0:88827c22-c38a-4891-9e69-3f23ccdeb726",
+        "actors" : {
+          "request" : {
+            "identity" : {
+              "user_id" : "U01CAEHPK0E",
+              "service" : "slack",
+              "external_id" : "T0106DCL4BB"
+            },
+            "name" : "Ari Tang",
+            "user" : "sym:user:normal:ba76b21a-6fa9-473f-af93-07d441c5d4da:latest",
+            "username" : "ari@symops.io"
+          },
+          "approve" : {
+            "identity" : {
+              "user_id" : "U01CAEHPK0E",
+              "service" : "slack",
+              "external_id" : "T0106DCL4BB"
+            },
+            "name" : "Ari Tang",
+            "user" : "sym:user:normal:ba76b21a-6fa9-473f-af93-07d441c5d4da:latest",
+            "username" : "ari@symops.io"
+          },
+          "prompt" : {
+            "identity" : {
+              "service" : "sym",
+              "external_id" : "cloud",
+              "email" : "ari@symops.io"
+            },
+            "name" : "Ari Tang",
+            "user" : "sym:user:normal:ba76b21a-6fa9-473f-af93-07d441c5d4da:latest",
+            "username" : "ari@symops.io"
+          },
+          "escalate" : {
+            "identity" : {
+              "service" : "sym",
+              "external_id" : "cloud",
+              "email" : "ari@symops.io"
+            },
+            "name" : "Ari Tang",
+            "user" : "sym:user:normal:ba76b21a-6fa9-473f-af93-07d441c5d4da:latest",
+            "username" : "ari@symops.io"
+          }
+        },
+        "srn" : "sym:run:iam_access:latest:c0754fef-465d-46f9-9a60-e0b3390a4cf2",
+        "flow" : "sym:flow:iam_access:155.0.0:83acf82f-ebd7-4449-94b1-4374e2f17900"
+      },
+      "id" : "16e2b5b0-33d0-4da3-a948-19031c9aab80",
+      "state" : {
+        "status" : "completed"
+      },
+      "event" : {
+        "template" : "sym:template:approval:1.0.0",
+        "channel" : "internal",
+        "type" : "escalate",
+        "srn" : "sym:event-spec:approval:1.0.0:escalate",
+        "timestamp" : "2023-07-26T16:05:06.504423"
+      },
+      "fields" : {
+        "duration" : 600,
+        "reason" : "asdfsdf",
+        "target_id" : "e26d0777-c108-47c1-97aa-f703e311bf5c",
+        "target" : {
+          "settings" : {
+            "iam_group" : "Sym-Staging-IAM-Strategy-Group"
+          },
+          "name" : "sym-staging-iam-strategy-group",
+          "label" : "IAM Test Target",
+          "type" : "aws_iam_group",
+          "srn" : "sym:access_target:aws_iam_group:sym-staging-iam-strategy-group:3.0.0:e26d0777-c108-47c1-97aa-f703e311bf5c"
+        }
+      },
+      "type" : "event"
+    }
+  result:
+    custom:
+      actor:
+        identity:
+          email: "ari@symops.io"
+          external_id: "cloud"
+          service: "sym"
+        name: "Ari Tang"
+      event:
+        channel: "internal"
+        srn: "sym:event-spec:approval:1.0.0:escalate"
+        template: "sym:template:approval:1.0.0"
+        timestamp: "2023-07-26T16:05:06.504423"
+        type: "escalate"
+      fields:
+        duration: 600
+        reason: "asdfsdf"
+        target:
+          label: "IAM Test Target"
+          name: "sym-staging-iam-strategy-group"
+          settings:
+            iam_group: "Sym-Staging-IAM-Strategy-Group"
+          srn: "sym:access_target:aws_iam_group:sym-staging-iam-strategy-group:3.0.0:e26d0777-c108-47c1-97aa-f703e311bf5c"
+          type: "aws_iam_group"
+        target_id: "e26d0777-c108-47c1-97aa-f703e311bf5c"
+      id: "16e2b5b0-33d0-4da3-a948-19031c9aab80"
+      meta:
+        schema_version: 7
+      run:
+        actors:
+          approve:
+            identity:
+              external_id: "T0106DCL4BB"
+              service: "slack"
+              user_id: "U01CAEHPK0E"
+            name: "Ari Tang"
+            user: "sym:user:normal:ba76b21a-6fa9-473f-af93-07d441c5d4da:latest"
+            username: "ari@symops.io"
+          escalate:
+            identity:
+              email: "ari@symops.io"
+              external_id: "cloud"
+              service: "sym"
+            name: "Ari Tang"
+            user: "sym:user:normal:ba76b21a-6fa9-473f-af93-07d441c5d4da:latest"
+            username: "ari@symops.io"
+          prompt:
+            identity:
+              email: "ari@symops.io"
+              external_id: "cloud"
+              service: "sym"
+            name: "Ari Tang"
+            user: "sym:user:normal:ba76b21a-6fa9-473f-af93-07d441c5d4da:latest"
+            username: "ari@symops.io"
+          request:
+            identity:
+              external_id: "T0106DCL4BB"
+              service: "slack"
+              user_id: "U01CAEHPK0E"
+            name: "Ari Tang"
+            user: "sym:user:normal:ba76b21a-6fa9-473f-af93-07d441c5d4da:latest"
+            username: "ari@symops.io"
+        flow: "sym:flow:iam_access:155.0.0:83acf82f-ebd7-4449-94b1-4374e2f17900"
+        parent: "sym:run:flow_selection:1.0.0:88827c22-c38a-4891-9e69-3f23ccdeb726"
+        srn: "sym:run:iam_access:latest:c0754fef-465d-46f9-9a60-e0b3390a4cf2"
+      service: "sym"
+      state:
+        status: "completed"
+      type: "event"
+      usr:
+        email: "ari@symops.io"
+        id: "sym:user:normal:ba76b21a-6fa9-473f-af93-07d441c5d4da:latest"
+    message: |-
+      {
+        "actor" : {
+          "identity" : {
+            "service" : "sym",
+            "external_id" : "cloud",
+            "email" : "ari@symops.io"
+          },
+          "name" : "Ari Tang",
+          "user" : "sym:user:normal:ba76b21a-6fa9-473f-af93-07d441c5d4da:latest",
+          "username" : "ari@symops.io"
+        },
+        "service" : "sym",
+        "meta" : {
+          "schema_version" : 7
+        },
+        "run" : {
+          "parent" : "sym:run:flow_selection:1.0.0:88827c22-c38a-4891-9e69-3f23ccdeb726",
+          "actors" : {
+            "request" : {
+              "identity" : {
+                "user_id" : "U01CAEHPK0E",
+                "service" : "slack",
+                "external_id" : "T0106DCL4BB"
+              },
+              "name" : "Ari Tang",
+              "user" : "sym:user:normal:ba76b21a-6fa9-473f-af93-07d441c5d4da:latest",
+              "username" : "ari@symops.io"
+            },
+            "approve" : {
+              "identity" : {
+                "user_id" : "U01CAEHPK0E",
+                "service" : "slack",
+                "external_id" : "T0106DCL4BB"
+              },
+              "name" : "Ari Tang",
+              "user" : "sym:user:normal:ba76b21a-6fa9-473f-af93-07d441c5d4da:latest",
+              "username" : "ari@symops.io"
+            },
+            "prompt" : {
+              "identity" : {
+                "service" : "sym",
+                "external_id" : "cloud",
+                "email" : "ari@symops.io"
+              },
+              "name" : "Ari Tang",
+              "user" : "sym:user:normal:ba76b21a-6fa9-473f-af93-07d441c5d4da:latest",
+              "username" : "ari@symops.io"
+            },
+            "escalate" : {
+              "identity" : {
+                "service" : "sym",
+                "external_id" : "cloud",
+                "email" : "ari@symops.io"
+              },
+              "name" : "Ari Tang",
+              "user" : "sym:user:normal:ba76b21a-6fa9-473f-af93-07d441c5d4da:latest",
+              "username" : "ari@symops.io"
+            }
+          },
+          "srn" : "sym:run:iam_access:latest:c0754fef-465d-46f9-9a60-e0b3390a4cf2",
+          "flow" : "sym:flow:iam_access:155.0.0:83acf82f-ebd7-4449-94b1-4374e2f17900"
+        },
+        "id" : "16e2b5b0-33d0-4da3-a948-19031c9aab80",
+        "state" : {
+          "status" : "completed"
+        },
+        "event" : {
+          "template" : "sym:template:approval:1.0.0",
+          "channel" : "internal",
+          "type" : "escalate",
+          "srn" : "sym:event-spec:approval:1.0.0:escalate",
+          "timestamp" : "2023-07-26T16:05:06.504423"
+        },
+        "fields" : {
+          "duration" : 600,
+          "reason" : "asdfsdf",
+          "target_id" : "e26d0777-c108-47c1-97aa-f703e311bf5c",
+          "target" : {
+            "settings" : {
+              "iam_group" : "Sym-Staging-IAM-Strategy-Group"
+            },
+            "name" : "sym-staging-iam-strategy-group",
+            "label" : "IAM Test Target",
+            "type" : "aws_iam_group",
+            "srn" : "sym:access_target:aws_iam_group:sym-staging-iam-strategy-group:3.0.0:e26d0777-c108-47c1-97aa-f703e311bf5c"
+          }
+        },
+        "type" : "event"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1690387506504
+

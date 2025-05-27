@@ -1,0 +1,47 @@
+id: voltdb
+metric_id: voltdb
+backend_only: false
+facets:
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+pipeline:
+  type: pipeline
+  name: VoltDB
+  enabled: true
+  filter:
+    query: source:voltdb
+  processors:
+    - type: grok-parser
+      name: Parsing default formats
+      enabled: true
+      source: message
+      samples:
+        - '2020-11-18 14:26:14,274   DEBUG [Periodic Priority Work] GC: GC for ParNew: 5 ms for 1 collections, 26947768 used; max is 2112618496'
+        - '2020-11-18 14:06:25,690   INFO  [qtp2074658615-90] AUTH: Authenticated user doggo from 172.22.0.1. This message is rate limited to once every 60 seconds.'
+        - '2020-11-18 14:30:48,301   DEBUG [Periodic Work] HOST: RSS=337477632 Configured rss limit=4987866316 Configured SNMP rss limit=4364383027'
+      grok:
+        supportRules: |
+          _timestamp %{date("yyyy-MM-dd HH:mm:ss,SSS"):timestamp}
+          _level %{word:level}
+          _task %{data:voltdb.task}
+          _logger_name %{notSpace:logger.name}
+        matchRules: |
+          default %{_timestamp}\s+%{_level}\s+\[%{_task}\] %{_logger_name}: +%{data:msg}
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: message-remapper
+      name: Define `msg` as the official message of the log
+      enabled: true
+      sources:
+        - msg

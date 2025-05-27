@@ -1,0 +1,252 @@
+id: microsoft-defender-for-cloud
+backend_only: false
+facets:
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+  - groups:
+      - Web Access
+    name: User-Agent
+    path: http.useragent
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - groups:
+      - Event
+    name: Event Type
+    path: evt.type
+    source: log
+  - groups:
+      - Event
+    name: Event Severity
+    path: evt.severity
+    source: log
+  - groups:
+      - Microsoft Defender for Cloud
+    name: Is Incident
+    path: IsIncident
+    source: log
+  - groups:
+      - Microsoft Defender for Cloud
+    name: Compromised Entity
+    path: CompromisedEntity
+    source: log
+  - groups:
+      - Microsoft Defender for Cloud
+    name: Alert URI
+    path: AlertUri
+    source: log
+  - groups:
+      - Azure
+    name: Resource Name
+    path: resource_name
+    source: log
+    type: string
+  - groups:
+      - Microsoft Defender for Cloud
+    name: Resource Status Code
+    path: properties.status.code
+    source: log
+pipeline:
+  type: pipeline
+  name: Microsoft Defender for Cloud
+  enabled: true
+  filter:
+    query: source:microsoft-defender-for-cloud
+  processors:
+    - type: date-remapper
+      name: Define `TimeGenerated`, `Properties.TimeGenerated` as the official date of the log
+      enabled: true
+      sources:
+        - TimeGenerated
+        - Properties.TimeGenerated
+    - type: attribute-remapper
+      name: Map `AlertDisplayName`, `properties.displayName`, `Properties.DisplayName` to `evt.name`
+      enabled: true
+      sources:
+        - AlertDisplayName
+        - properties.displayName
+        - Properties.DisplayName
+      sourceType: attribute
+      target: evt.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `AlertType` to `evt.type`
+      enabled: true
+      sources:
+        - AlertType
+      sourceType: attribute
+      target: evt.type
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: message-remapper
+      name: Define `Description`, `properties.metadata.description`, `Properties.Description` as the official message of the log
+      enabled: true
+      sources:
+        - Description
+        - properties.metadata.description
+        - Properties.Description
+    - type: attribute-remapper
+      name: Map `Severity`, `properties.metadata.severity`, `Properties.Status.Severity` to `evt.severity`
+      enabled: true
+      sources:
+        - Severity
+        - properties.metadata.severity
+        - Properties.Status.Severity
+      sourceType: attribute
+      target: evt.severity
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: grok-parser
+      name: Parsing `resource_name` from `properties.resourceDetails.id`
+      enabled: true
+      source: properties.resourceDetails.id
+      samples:
+        - /subscriptions/11111-5f07-1111-8f2b-1111111/resourcegroups/Sample-RG/providers/Microsoft.DocumentDb/databaseAccounts/Sample-AzureCosmosDBAccount
+        - /subscriptions/11111-5f07-1111-8f2b-1111111/resourceGroups/test-aks/providers/Microsoft.ContainerRegistry/registries/testregistry
+      grok:
+        supportRules: |
+          _non_extracted_resource %{regex("[a-zA-Z0-9-_.]*")}
+          _resource_name %{regex("[a-zA-Z0-9-_.]*"):resource_name:lowercase}
+          _subscriptions %{regex("(?i)SUBSCRIPTIONS")}
+          _resource_groups %{regex("(?i)RESOURCEGROUPS")}
+          _providers %{regex("(?i)PROVIDERS")}
+        matchRules: |
+          extract_resource_name /%{_subscriptions}\/%{_non_extracted_resource}\/%{_resource_groups}\/%{_non_extracted_resource}\/%{_providers}%{_non_extracted_resource}\/%{_non_extracted_resource}\/%{data}\/%{_resource_name}
+    - type: grok-parser
+      name: Parsing `resource_name` from `properties.ResourceDetails.Id`
+      enabled: true
+      source: Properties.ResourceDetails.Id
+      samples:
+        - /subscriptions/11111-5f07-1111-8f2b-1111111/resourcegroups/Sample-RG/providers/Microsoft.DocumentDb/databaseAccounts/Sample-AzureCosmosDBAccount
+        - /subscriptions/11111-5f07-1111-8f2b-1111111/resourceGroups/test-aks/providers/Microsoft.ContainerRegistry/registries/testregistry
+      grok:
+        supportRules: |
+          _non_extracted_resource %{regex("[a-zA-Z0-9-_.]*")}
+          _resource_name %{regex("[a-zA-Z0-9-_.]*"):resource_name:lowercase}
+          _subscriptions %{regex("(?i)SUBSCRIPTIONS")}
+          _resource_groups %{regex("(?i)RESOURCEGROUPS")}
+          _providers %{regex("(?i)PROVIDERS")}
+        matchRules: |
+          extract_resource_name /%{_subscriptions}\/%{_non_extracted_resource}\/%{_resource_groups}\/%{_non_extracted_resource}\/%{_providers}%{_non_extracted_resource}\/%{_non_extracted_resource}\/%{data}\/%{_resource_name}
+    - type: attribute-remapper
+      name: Map `Properties.Category` to `evt.category`
+      enabled: true
+      sources:
+        - Properties.Category
+      sourceType: attribute
+      target: evt.category
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `ExtendedProperties.UserAgent` to `http.useragent`
+      enabled: true
+      sources:
+        - ExtendedProperties.UserAgent
+      sourceType: attribute
+      target: http.useragent
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: user-agent-parser
+      name: ''
+      enabled: true
+      sources:
+        - http.useragent
+      target: http.useragent_details
+      encoded: false
+      combineVersionDetails: false
+    - type: attribute-remapper
+      name: Map `ExtendedProperties.IPAddress`, `ExtendedProperties.SourceIPAddress`, `ExtendedProperties.ClientIPAddress` to `network.client.ip`
+      enabled: true
+      sources:
+        - ExtendedProperties.IPAddress
+        - ExtendedProperties.SourceIPAddress
+        - ExtendedProperties.ClientIPAddress
+      sourceType: attribute
+      target: network.client.ip
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: geo-ip-parser
+      name: Fetching GeoIp data for client ip
+      enabled: true
+      sources:
+        - network.client.ip
+      target: network.client.geoip
+      ip_processing_behavior: do-nothing
+    - type: attribute-remapper
+      name: Map `ExtendedProperties.UserName` to `usr.name`
+      enabled: true
+      sources:
+        - ExtendedProperties.UserName
+      sourceType: attribute
+      target: usr.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false

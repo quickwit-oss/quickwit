@@ -1,0 +1,1093 @@
+id: docusign
+tests:
+ -
+  sample: |-
+    {
+      "user_info" : {
+        "is_admin" : "True",
+        "user_status" : "Active",
+        "user_type" : "CompanyUser",
+        "user_name" : "John Doe"
+      },
+      "activity_log" : {
+        "proxyStatus" : "",
+        "country" : "india",
+        "data" : {
+          "EnvelopeId" : "7d3d1d7a-1111-1111-1111-8684637b1123"
+        },
+        "city" : "mumbai",
+        "latitude" : 19.08,
+        "source" : "Web",
+        "userAgentClientInfo" : {
+          "os" : {
+            "family" : "Windows",
+            "version" : {
+              "major" : "10"
+            }
+          },
+          "browser" : {
+            "family" : "Chrome",
+            "version" : {
+              "patch" : "0",
+              "major" : "126",
+              "minor" : "0"
+            }
+          },
+          "device" : {
+            "model" : "",
+            "family" : "Other",
+            "brand" : ""
+          }
+        },
+        "organizationId" : "",
+        "result" : "",
+        "browser" : "Chrome 126",
+        "property" : "",
+        "referencedUserId" : "",
+        "action" : "Created",
+        "state" : "maharashtra",
+        "timestamp" : "2024-07-07T16:20:36.1227494Z",
+        "longitude" : 72.88,
+        "eventId" : "18f39c7c-1111-1111-1111-9aadcf98d123",
+        "ipAddressLocation" : {
+          "country" : "india",
+          "city" : "mumbai",
+          "latitude" : 19.08,
+          "state" : "maharashtra",
+          "longitude" : 72.88
+        },
+        "os" : "Windows 10",
+        "affectedUserId" : "",
+        "ipAddress" : "10.10.10.10",
+        "proxyType" : "",
+        "userAgent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+        "userId" : "fc8d7d8c-1111-1111-1111-2c7df1510123",
+        "accountId" : "93a15559-1111-1111-1111-683ea233c123",
+        "site" : "DEMO",
+        "field" : "",
+        "proxyLevel" : "",
+        "device" : "Other",
+        "object" : "Envelope"
+      }
+    }
+  result:
+    custom:
+      activity_log:
+        accountId: "93a15559-1111-1111-1111-683ea233c123"
+        action: "Created"
+        affectedUserId: ""
+        browser: "Chrome 126"
+        city: "mumbai"
+        country: "india"
+        data:
+          EnvelopeId: "7d3d1d7a-1111-1111-1111-8684637b1123"
+        device: "Other"
+        eventId: "18f39c7c-1111-1111-1111-9aadcf98d123"
+        field: ""
+        ipAddressLocation:
+          city: "mumbai"
+          country: "india"
+          latitude: 19.08
+          longitude: 72.88
+          state: "maharashtra"
+        latitude: 19.08
+        longitude: 72.88
+        object: "Envelope"
+        organizationId: ""
+        os: "Windows 10"
+        property: ""
+        proxyLevel: ""
+        proxyStatus: ""
+        proxyType: ""
+        referencedUserId: ""
+        result: ""
+        site: "DEMO"
+        source: "Web"
+        state: "maharashtra"
+        timestamp: "2024-07-07T16:20:36.1227494Z"
+        userAgentClientInfo:
+          browser:
+            family: "Chrome"
+            version:
+              major: "126"
+              minor: "0"
+              patch: "0"
+          device:
+            brand: ""
+            family: "Other"
+            model: ""
+          os:
+            family: "Windows"
+            version:
+              major: "10"
+      http:
+        useragent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "126"
+            minor: "0"
+            patch: "0"
+            patch_minor: "0"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Windows"
+            major: "10"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+      user_info:
+        is_admin: "True"
+        user_status: "Active"
+        user_type: "CompanyUser"
+      usr:
+        id: "fc8d7d8c-1111-1111-1111-2c7df1510123"
+        name: "John Doe"
+    message: |-
+      {
+        "user_info" : {
+          "is_admin" : "True",
+          "user_status" : "Active",
+          "user_type" : "CompanyUser",
+          "user_name" : "John Doe"
+        },
+        "activity_log" : {
+          "proxyStatus" : "",
+          "country" : "india",
+          "data" : {
+            "EnvelopeId" : "7d3d1d7a-1111-1111-1111-8684637b1123"
+          },
+          "city" : "mumbai",
+          "latitude" : 19.08,
+          "source" : "Web",
+          "userAgentClientInfo" : {
+            "os" : {
+              "family" : "Windows",
+              "version" : {
+                "major" : "10"
+              }
+            },
+            "browser" : {
+              "family" : "Chrome",
+              "version" : {
+                "patch" : "0",
+                "major" : "126",
+                "minor" : "0"
+              }
+            },
+            "device" : {
+              "model" : "",
+              "family" : "Other",
+              "brand" : ""
+            }
+          },
+          "organizationId" : "",
+          "result" : "",
+          "browser" : "Chrome 126",
+          "property" : "",
+          "referencedUserId" : "",
+          "action" : "Created",
+          "state" : "maharashtra",
+          "timestamp" : "2024-07-07T16:20:36.1227494Z",
+          "longitude" : 72.88,
+          "eventId" : "18f39c7c-1111-1111-1111-9aadcf98d123",
+          "ipAddressLocation" : {
+            "country" : "india",
+            "city" : "mumbai",
+            "latitude" : 19.08,
+            "state" : "maharashtra",
+            "longitude" : 72.88
+          },
+          "os" : "Windows 10",
+          "affectedUserId" : "",
+          "ipAddress" : "10.10.10.10",
+          "proxyType" : "",
+          "userAgent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+          "userId" : "fc8d7d8c-1111-1111-1111-2c7df1510123",
+          "accountId" : "93a15559-1111-1111-1111-683ea233c123",
+          "site" : "DEMO",
+          "field" : "",
+          "proxyLevel" : "",
+          "device" : "Other",
+          "object" : "Envelope"
+        }
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1720369236122
+ -
+  sample: |-
+    {
+      "user_info" : {
+        "is_admin" : "True",
+        "user_status" : "Active",
+        "user_type" : "CompanyUser",
+        "user_name" : "Jane Smith"
+      },
+      "activity_log" : {
+        "proxyStatus" : "",
+        "country" : "india",
+        "data" : {
+          "TemplateId" : "8fe4c8bd-1111-1111-1111-e723698881d2"
+        },
+        "city" : "delhi",
+        "latitude" : 28.64,
+        "source" : "Web",
+        "userAgentClientInfo" : {
+          "os" : {
+            "family" : "Windows",
+            "version" : {
+              "major" : "10"
+            }
+          },
+          "browser" : {
+            "family" : "Edge",
+            "version" : {
+              "patch" : "0",
+              "major" : "126",
+              "minor" : "0"
+            }
+          },
+          "device" : {
+            "model" : "",
+            "family" : "Other",
+            "brand" : ""
+          }
+        },
+        "organizationId" : "",
+        "result" : "",
+        "browser" : "Edge 126",
+        "property" : "",
+        "referencedUserId" : "",
+        "action" : "Created",
+        "state" : "delhi",
+        "timestamp" : "2024-07-04T10:35:24.5799183Z",
+        "longitude" : 77.22,
+        "eventId" : "9c12cc19-1111-1111-1111-89d62fabfc0e",
+        "ipAddressLocation" : {
+          "country" : "india",
+          "city" : "delhi",
+          "latitude" : 28.64,
+          "state" : "delhi",
+          "longitude" : 77.23
+        },
+        "os" : "Windows 10",
+        "affectedUserId" : "",
+        "ipAddress" : "10.10.10.10",
+        "proxyType" : "",
+        "userAgent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 Edg/126.0.0.0",
+        "userId" : "fc8d7d8c-1111-1111-1111-2c7df15109d1",
+        "accountId" : "93a15559-1111-1111-1111-683ea233c006",
+        "site" : "DEMO",
+        "field" : "",
+        "proxyLevel" : "",
+        "device" : "Other",
+        "object" : "Template"
+      }
+    }
+  result:
+    custom:
+      activity_log:
+        accountId: "93a15559-1111-1111-1111-683ea233c006"
+        action: "Created"
+        affectedUserId: ""
+        browser: "Edge 126"
+        city: "delhi"
+        country: "india"
+        data:
+          TemplateId: "8fe4c8bd-1111-1111-1111-e723698881d2"
+        device: "Other"
+        eventId: "9c12cc19-1111-1111-1111-89d62fabfc0e"
+        field: ""
+        ipAddressLocation:
+          city: "delhi"
+          country: "india"
+          latitude: 28.64
+          longitude: 77.23
+          state: "delhi"
+        latitude: 28.64
+        longitude: 77.22
+        object: "Template"
+        organizationId: ""
+        os: "Windows 10"
+        property: ""
+        proxyLevel: ""
+        proxyStatus: ""
+        proxyType: ""
+        referencedUserId: ""
+        result: ""
+        site: "DEMO"
+        source: "Web"
+        state: "delhi"
+        timestamp: "2024-07-04T10:35:24.5799183Z"
+        userAgentClientInfo:
+          browser:
+            family: "Edge"
+            version:
+              major: "126"
+              minor: "0"
+              patch: "0"
+          device:
+            brand: ""
+            family: "Other"
+            model: ""
+          os:
+            family: "Windows"
+            version:
+              major: "10"
+      http:
+        useragent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 Edg/126.0.0.0"
+        useragent_details:
+          browser:
+            family: "Edge"
+            major: "126"
+            minor: "0"
+            patch: "0"
+            patch_minor: "0"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Windows"
+            major: "10"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+      user_info:
+        is_admin: "True"
+        user_status: "Active"
+        user_type: "CompanyUser"
+      usr:
+        id: "fc8d7d8c-1111-1111-1111-2c7df15109d1"
+        name: "Jane Smith"
+    message: |-
+      {
+        "user_info" : {
+          "is_admin" : "True",
+          "user_status" : "Active",
+          "user_type" : "CompanyUser",
+          "user_name" : "Jane Smith"
+        },
+        "activity_log" : {
+          "proxyStatus" : "",
+          "country" : "india",
+          "data" : {
+            "TemplateId" : "8fe4c8bd-1111-1111-1111-e723698881d2"
+          },
+          "city" : "delhi",
+          "latitude" : 28.64,
+          "source" : "Web",
+          "userAgentClientInfo" : {
+            "os" : {
+              "family" : "Windows",
+              "version" : {
+                "major" : "10"
+              }
+            },
+            "browser" : {
+              "family" : "Edge",
+              "version" : {
+                "patch" : "0",
+                "major" : "126",
+                "minor" : "0"
+              }
+            },
+            "device" : {
+              "model" : "",
+              "family" : "Other",
+              "brand" : ""
+            }
+          },
+          "organizationId" : "",
+          "result" : "",
+          "browser" : "Edge 126",
+          "property" : "",
+          "referencedUserId" : "",
+          "action" : "Created",
+          "state" : "delhi",
+          "timestamp" : "2024-07-04T10:35:24.5799183Z",
+          "longitude" : 77.22,
+          "eventId" : "9c12cc19-1111-1111-1111-89d62fabfc0e",
+          "ipAddressLocation" : {
+            "country" : "india",
+            "city" : "delhi",
+            "latitude" : 28.64,
+            "state" : "delhi",
+            "longitude" : 77.23
+          },
+          "os" : "Windows 10",
+          "affectedUserId" : "",
+          "ipAddress" : "10.10.10.10",
+          "proxyType" : "",
+          "userAgent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 Edg/126.0.0.0",
+          "userId" : "fc8d7d8c-1111-1111-1111-2c7df15109d1",
+          "accountId" : "93a15559-1111-1111-1111-683ea233c006",
+          "site" : "DEMO",
+          "field" : "",
+          "proxyLevel" : "",
+          "device" : "Other",
+          "object" : "Template"
+        }
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1720089324579
+
+ -
+  sample: |-
+    {
+      "user_info" : {
+        "is_admin" : "True",
+        "user_status" : "Active",
+        "user_type" : "CompanyUser",
+        "user_name" : "Jane Smith"
+      },
+      "activity_log" : {
+        "proxyStatus" : "",
+        "country" : "united states",
+        "data" : {
+          "PermissionProfileId" : "26252962",
+          "AffectedUserId" : "8f76ceb7-1111-1111-1111-2401b5f15639",
+          "AffectedMembershipId" : "e40b7689-1111-1111-1111-a45dc32d93ef"
+        },
+        "city" : "seattle",
+        "latitude" : 47.6,
+        "source" : "API",
+        "organizationId" : "",
+        "result" : "",
+        "browser" : "",
+        "property" : "",
+        "referencedUserId" : "8f76ceb7-1111-1111-1111-2401b5f15639",
+        "action" : "UserAdded",
+        "state" : "washington",
+        "timestamp" : "2024-07-07T09:56:17.606699Z",
+        "longitude" : -122.33,
+        "eventId" : "74692662-1111-1111-1111-c43ed08c4d0d",
+        "ipAddressLocation" : {
+          "country" : "united states",
+          "city" : "seattle",
+          "latitude" : 47.6,
+          "state" : "washington",
+          "longitude" : -122.33
+        },
+        "os" : "",
+        "affectedUserId" : "8f76ceb7-1111-1111-1111-2401b5f15639",
+        "ipAddress" : "10.10.10.10",
+        "proxyType" : "",
+        "userAgent" : "",
+        "userId" : "fc8d7d8c-1111-1111-1111-2c7df15109d1",
+        "accountId" : "93a15559-1111-1111-1111-683ea233c006",
+        "site" : "DEMO",
+        "field" : "",
+        "proxyLevel" : "",
+        "device" : "",
+        "object" : "Account"
+      }
+    }
+  result:
+    custom:
+      activity_log:
+        accountId: "93a15559-1111-1111-1111-683ea233c006"
+        action: "UserAdded"
+        affectedUserId: "8f76ceb7-1111-1111-1111-2401b5f15639"
+        browser: ""
+        city: "seattle"
+        country: "united states"
+        data:
+          AffectedMembershipId: "e40b7689-1111-1111-1111-a45dc32d93ef"
+          AffectedUserId: "8f76ceb7-1111-1111-1111-2401b5f15639"
+          PermissionProfileId: "26252962"
+        device: ""
+        eventId: "74692662-1111-1111-1111-c43ed08c4d0d"
+        field: ""
+        ipAddressLocation:
+          city: "seattle"
+          country: "united states"
+          latitude: 47.6
+          longitude: -122.33
+          state: "washington"
+        latitude: 47.6
+        longitude: -122.33
+        object: "Account"
+        organizationId: ""
+        os: ""
+        property: ""
+        proxyLevel: ""
+        proxyStatus: ""
+        proxyType: ""
+        referencedUserId: "8f76ceb7-1111-1111-1111-2401b5f15639"
+        result: ""
+        site: "DEMO"
+        source: "API"
+        state: "washington"
+        timestamp: "2024-07-07T09:56:17.606699Z"
+      http:
+        useragent: ""
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+      user_info:
+        is_admin: "True"
+        user_status: "Active"
+        user_type: "CompanyUser"
+      usr:
+        id: "fc8d7d8c-1111-1111-1111-2c7df15109d1"
+        name: "Jane Smith"
+    message: |-
+      {
+        "user_info" : {
+          "is_admin" : "True",
+          "user_status" : "Active",
+          "user_type" : "CompanyUser",
+          "user_name" : "Jane Smith"
+        },
+        "activity_log" : {
+          "proxyStatus" : "",
+          "country" : "united states",
+          "data" : {
+            "PermissionProfileId" : "26252962",
+            "AffectedUserId" : "8f76ceb7-1111-1111-1111-2401b5f15639",
+            "AffectedMembershipId" : "e40b7689-1111-1111-1111-a45dc32d93ef"
+          },
+          "city" : "seattle",
+          "latitude" : 47.6,
+          "source" : "API",
+          "organizationId" : "",
+          "result" : "",
+          "browser" : "",
+          "property" : "",
+          "referencedUserId" : "8f76ceb7-1111-1111-1111-2401b5f15639",
+          "action" : "UserAdded",
+          "state" : "washington",
+          "timestamp" : "2024-07-07T09:56:17.606699Z",
+          "longitude" : -122.33,
+          "eventId" : "74692662-1111-1111-1111-c43ed08c4d0d",
+          "ipAddressLocation" : {
+            "country" : "united states",
+            "city" : "seattle",
+            "latitude" : 47.6,
+            "state" : "washington",
+            "longitude" : -122.33
+          },
+          "os" : "",
+          "affectedUserId" : "8f76ceb7-1111-1111-1111-2401b5f15639",
+          "ipAddress" : "10.10.10.10",
+          "proxyType" : "",
+          "userAgent" : "",
+          "userId" : "fc8d7d8c-1111-1111-1111-2c7df15109d1",
+          "accountId" : "93a15559-1111-1111-1111-683ea233c006",
+          "site" : "DEMO",
+          "field" : "",
+          "proxyLevel" : "",
+          "device" : "",
+          "object" : "Account"
+        }
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1720346177606
+ -
+  sample: |-
+    {
+      "user_info" : {
+        "is_admin" : "True",
+        "user_status" : "Active",
+        "user_type" : "CompanyUser",
+        "user_name" : "John Doe"
+      },
+      "activity_log" : {
+        "proxyStatus" : "",
+        "country" : "",
+        "data" : {
+          "SignerIp" : [ "1", "0", ".", "1", "0", ".", "1", "0", ".", "1", "0" ],
+          "EnvelopeType" : [ "E", "n", "v", "e", "l", "o", "p", "e" ],
+          "EventIds" : [ "11d72b55-1111-1111-1111-06c41040f123", "9a8a8054-1111-1111-1111-0df351043123" ],
+          "EnvelopeId" : [ "1", "8", "0", "a", "6", "4", "a", "b", "-", "3", "a", "7", "e", "-", "4", "7", "3", "3", "-", "9", "8", "5", "1", "-", "1", "4", "9", "1", "2", "3", "4", "5", "6", "5", "4", "7" ],
+          "SignerUserId" : [ "9", "2", "4", "e", "f", "2", "1", "2", "-", "6", "4", "3", "b", "-", "4", "1", "3", "7", "-", "9", "3", "f", "c", "-", "2", "1", "1", "1", "1", "4", "1", "5", "4", "3", "2", "1" ],
+          "SignerUserAgent" : [ "M", "o", "z", "i", "l", "l", "a", "/", "5", ".", "0", " ", "(", "W", "i", "n", "d", "o", "w", "s", " ", "N", "T", " ", "1", "0", ".", "0", ";", " ", "W", "i", "n", "6", "4", ";", " ", "x", "6", "4", ")", " ", "A", "p", "p", "l", "e", "W", "e", "b", "K", "i", "t", "/", "5", "3", "7", ".", "3", "6", " ", "(", "K", "H", "T", "M", "L", ",", " ", "l", "i", "k", "e", " ", "G", "e", "c", "k", "o", ")", " ", "C", "h", "r", "o", "m", "e", "/", "1", "2", "6", ".", "0", ".", "0", ".", "0", " ", "S", "a", "f", "a", "1", "1", "/", "3", "2", "7", ".", "2", "1" ],
+          "Severity" : "Medium"
+        },
+        "city" : "",
+        "latitude" : 0,
+        "source" : "Other",
+        "organizationId" : "7e8743ed-1111-1111-1111-16b409167123",
+        "result" : "",
+        "browser" : "",
+        "property" : "",
+        "referencedUserId" : "",
+        "action" : "SameSenderAndSigner",
+        "state" : "",
+        "timestamp" : "2024-07-10T07:00:38.8441378Z",
+        "longitude" : 0,
+        "eventId" : "06823011-1111-1111-1111-369ce106a86c",
+        "os" : "",
+        "affectedUserId" : "",
+        "ipAddress" : "",
+        "proxyType" : "",
+        "userAgent" : "",
+        "userId" : "924ef212-1111-1111-1111-2111141d1231",
+        "accountId" : "93a15559-1111-1111-1111-683ea2331231",
+        "site" : "DEMO",
+        "field" : "",
+        "proxyLevel" : "",
+        "device" : "",
+        "object" : "Alert"
+      }
+    }
+  result:
+    custom:
+      activity_log:
+        accountId: "93a15559-1111-1111-1111-683ea2331231"
+        action: "SameSenderAndSigner"
+        affectedUserId: ""
+        browser: ""
+        city: ""
+        country: ""
+        data:
+          EnvelopeId:
+           - "1"
+           - "8"
+           - "0"
+           - "a"
+           - "6"
+           - "4"
+           - "a"
+           - "b"
+           - "-"
+           - "3"
+           - "a"
+           - "7"
+           - "e"
+           - "-"
+           - "4"
+           - "7"
+           - "3"
+           - "3"
+           - "-"
+           - "9"
+           - "8"
+           - "5"
+           - "1"
+           - "-"
+           - "1"
+           - "4"
+           - "9"
+           - "1"
+           - "2"
+           - "3"
+           - "4"
+           - "5"
+           - "6"
+           - "5"
+           - "4"
+           - "7"
+          EnvelopeType:
+           - "E"
+           - "n"
+           - "v"
+           - "e"
+           - "l"
+           - "o"
+           - "p"
+           - "e"
+          EventIds:
+           - "11d72b55-1111-1111-1111-06c41040f123"
+           - "9a8a8054-1111-1111-1111-0df351043123"
+          Severity: "Medium"
+          SignerIp:
+           - "1"
+           - "0"
+           - "."
+           - "1"
+           - "0"
+           - "."
+           - "1"
+           - "0"
+           - "."
+           - "1"
+           - "0"
+          SignerUserAgent:
+           - "M"
+           - "o"
+           - "z"
+           - "i"
+           - "l"
+           - "l"
+           - "a"
+           - "/"
+           - "5"
+           - "."
+           - "0"
+           - " "
+           - "("
+           - "W"
+           - "i"
+           - "n"
+           - "d"
+           - "o"
+           - "w"
+           - "s"
+           - " "
+           - "N"
+           - "T"
+           - " "
+           - "1"
+           - "0"
+           - "."
+           - "0"
+           - ";"
+           - " "
+           - "W"
+           - "i"
+           - "n"
+           - "6"
+           - "4"
+           - ";"
+           - " "
+           - "x"
+           - "6"
+           - "4"
+           - ")"
+           - " "
+           - "A"
+           - "p"
+           - "p"
+           - "l"
+           - "e"
+           - "W"
+           - "e"
+           - "b"
+           - "K"
+           - "i"
+           - "t"
+           - "/"
+           - "5"
+           - "3"
+           - "7"
+           - "."
+           - "3"
+           - "6"
+           - " "
+           - "("
+           - "K"
+           - "H"
+           - "T"
+           - "M"
+           - "L"
+           - ","
+           - " "
+           - "l"
+           - "i"
+           - "k"
+           - "e"
+           - " "
+           - "G"
+           - "e"
+           - "c"
+           - "k"
+           - "o"
+           - ")"
+           - " "
+           - "C"
+           - "h"
+           - "r"
+           - "o"
+           - "m"
+           - "e"
+           - "/"
+           - "1"
+           - "2"
+           - "6"
+           - "."
+           - "0"
+           - "."
+           - "0"
+           - "."
+           - "0"
+           - " "
+           - "S"
+           - "a"
+           - "f"
+           - "a"
+           - "1"
+           - "1"
+           - "/"
+           - "3"
+           - "2"
+           - "7"
+           - "."
+           - "2"
+           - "1"
+          SignerUserId:
+           - "9"
+           - "2"
+           - "4"
+           - "e"
+           - "f"
+           - "2"
+           - "1"
+           - "2"
+           - "-"
+           - "6"
+           - "4"
+           - "3"
+           - "b"
+           - "-"
+           - "4"
+           - "1"
+           - "3"
+           - "7"
+           - "-"
+           - "9"
+           - "3"
+           - "f"
+           - "c"
+           - "-"
+           - "2"
+           - "1"
+           - "1"
+           - "1"
+           - "1"
+           - "4"
+           - "1"
+           - "5"
+           - "4"
+           - "3"
+           - "2"
+           - "1"
+        device: ""
+        eventId: "06823011-1111-1111-1111-369ce106a86c"
+        field: ""
+        latitude: 0
+        longitude: 0
+        object: "Alert"
+        organizationId: "7e8743ed-1111-1111-1111-16b409167123"
+        os: ""
+        property: ""
+        proxyLevel: ""
+        proxyStatus: ""
+        proxyType: ""
+        referencedUserId: ""
+        result: ""
+        site: "DEMO"
+        source: "Other"
+        state: ""
+        timestamp: "2024-07-10T07:00:38.8441378Z"
+      docusign:
+        status: "Warning"
+      http:
+        useragent: ""
+      network:
+        client:
+          ip: ""
+      user_info:
+        is_admin: "True"
+        user_status: "Active"
+        user_type: "CompanyUser"
+      usr:
+        id: "924ef212-1111-1111-1111-2111141d1231"
+        name: "John Doe"
+    message: |-
+      {
+        "user_info" : {
+          "is_admin" : "True",
+          "user_status" : "Active",
+          "user_type" : "CompanyUser",
+          "user_name" : "John Doe"
+        },
+        "activity_log" : {
+          "proxyStatus" : "",
+          "country" : "",
+          "data" : {
+            "SignerIp" : [ "1", "0", ".", "1", "0", ".", "1", "0", ".", "1", "0" ],
+            "EnvelopeType" : [ "E", "n", "v", "e", "l", "o", "p", "e" ],
+            "EventIds" : [ "11d72b55-1111-1111-1111-06c41040f123", "9a8a8054-1111-1111-1111-0df351043123" ],
+            "EnvelopeId" : [ "1", "8", "0", "a", "6", "4", "a", "b", "-", "3", "a", "7", "e", "-", "4", "7", "3", "3", "-", "9", "8", "5", "1", "-", "1", "4", "9", "1", "2", "3", "4", "5", "6", "5", "4", "7" ],
+            "SignerUserId" : [ "9", "2", "4", "e", "f", "2", "1", "2", "-", "6", "4", "3", "b", "-", "4", "1", "3", "7", "-", "9", "3", "f", "c", "-", "2", "1", "1", "1", "1", "4", "1", "5", "4", "3", "2", "1" ],
+            "SignerUserAgent" : [ "M", "o", "z", "i", "l", "l", "a", "/", "5", ".", "0", " ", "(", "W", "i", "n", "d", "o", "w", "s", " ", "N", "T", " ", "1", "0", ".", "0", ";", " ", "W", "i", "n", "6", "4", ";", " ", "x", "6", "4", ")", " ", "A", "p", "p", "l", "e", "W", "e", "b", "K", "i", "t", "/", "5", "3", "7", ".", "3", "6", " ", "(", "K", "H", "T", "M", "L", ",", " ", "l", "i", "k", "e", " ", "G", "e", "c", "k", "o", ")", " ", "C", "h", "r", "o", "m", "e", "/", "1", "2", "6", ".", "0", ".", "0", ".", "0", " ", "S", "a", "f", "a", "1", "1", "/", "3", "2", "7", ".", "2", "1" ],
+            "Severity" : "Medium"
+          },
+          "city" : "",
+          "latitude" : 0,
+          "source" : "Other",
+          "organizationId" : "7e8743ed-1111-1111-1111-16b409167123",
+          "result" : "",
+          "browser" : "",
+          "property" : "",
+          "referencedUserId" : "",
+          "action" : "SameSenderAndSigner",
+          "state" : "",
+          "timestamp" : "2024-07-10T07:00:38.8441378Z",
+          "longitude" : 0,
+          "eventId" : "06823011-1111-1111-1111-369ce106a86c",
+          "os" : "",
+          "affectedUserId" : "",
+          "ipAddress" : "",
+          "proxyType" : "",
+          "userAgent" : "",
+          "userId" : "924ef212-1111-1111-1111-2111141d1231",
+          "accountId" : "93a15559-1111-1111-1111-683ea2331231",
+          "site" : "DEMO",
+          "field" : "",
+          "proxyLevel" : "",
+          "device" : "",
+          "object" : "Alert"
+        }
+      }
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1720594838844
+ -
+  sample: |-
+    {
+      "user_info" : {
+        "is_admin" : "True",
+        "user_status" : "Active",
+        "user_type" : "CompanyUser",
+        "user_name" : "Jane Smith"
+      },
+      "activity_log" : {
+        "proxyStatus" : "",
+        "country" : "united states",
+        "data" : {
+          "GroupId" : "1111111"
+        },
+        "city" : "phoenix",
+        "latitude" : 33.51,
+        "source" : "Web",
+        "organizationId" : "",
+        "result" : "",
+        "browser" : "",
+        "property" : "",
+        "referencedUserId" : "",
+        "action" : "Deleted",
+        "state" : "arizona",
+        "timestamp" : "2024-07-10T07:26:16.5817447Z",
+        "longitude" : -112.08,
+        "eventId" : "fe670b26-1111-1111-1111-823e2fec8b2b",
+        "ipAddressLocation" : {
+          "country" : "united states",
+          "city" : "phoenix",
+          "latitude" : 33.51,
+          "state" : "arizona",
+          "longitude" : -112.08
+        },
+        "os" : "",
+        "affectedUserId" : "",
+        "ipAddress" : "10.10.10.10",
+        "proxyType" : "",
+        "userAgent" : "",
+        "userId" : "fc8d7d8c-1111-1111-1111-2c7df15109d1",
+        "accountId" : "93a15559-1111-1111-1111-683ea233c006",
+        "site" : "DEMO",
+        "field" : "",
+        "proxyLevel" : "",
+        "device" : "",
+        "object" : "Group"
+      }
+    }
+  result:
+    custom:
+      activity_log:
+        accountId: "93a15559-1111-1111-1111-683ea233c006"
+        action: "Deleted"
+        affectedUserId: ""
+        browser: ""
+        city: "phoenix"
+        country: "united states"
+        data:
+          GroupId: "1111111"
+        device: ""
+        eventId: "fe670b26-1111-1111-1111-823e2fec8b2b"
+        field: ""
+        ipAddressLocation:
+          city: "phoenix"
+          country: "united states"
+          latitude: 33.51
+          longitude: -112.08
+          state: "arizona"
+        latitude: 33.51
+        longitude: -112.08
+        object: "Group"
+        organizationId: ""
+        os: ""
+        property: ""
+        proxyLevel: ""
+        proxyStatus: ""
+        proxyType: ""
+        referencedUserId: ""
+        result: ""
+        site: "DEMO"
+        source: "Web"
+        state: "arizona"
+        timestamp: "2024-07-10T07:26:16.5817447Z"
+      http:
+        useragent: ""
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+      user_info:
+        is_admin: "True"
+        user_status: "Active"
+        user_type: "CompanyUser"
+      usr:
+        id: "fc8d7d8c-1111-1111-1111-2c7df15109d1"
+        name: "Jane Smith"
+    message: |-
+      {
+        "user_info" : {
+          "is_admin" : "True",
+          "user_status" : "Active",
+          "user_type" : "CompanyUser",
+          "user_name" : "Jane Smith"
+        },
+        "activity_log" : {
+          "proxyStatus" : "",
+          "country" : "united states",
+          "data" : {
+            "GroupId" : "1111111"
+          },
+          "city" : "phoenix",
+          "latitude" : 33.51,
+          "source" : "Web",
+          "organizationId" : "",
+          "result" : "",
+          "browser" : "",
+          "property" : "",
+          "referencedUserId" : "",
+          "action" : "Deleted",
+          "state" : "arizona",
+          "timestamp" : "2024-07-10T07:26:16.5817447Z",
+          "longitude" : -112.08,
+          "eventId" : "fe670b26-1111-1111-1111-823e2fec8b2b",
+          "ipAddressLocation" : {
+            "country" : "united states",
+            "city" : "phoenix",
+            "latitude" : 33.51,
+            "state" : "arizona",
+            "longitude" : -112.08
+          },
+          "os" : "",
+          "affectedUserId" : "",
+          "ipAddress" : "10.10.10.10",
+          "proxyType" : "",
+          "userAgent" : "",
+          "userId" : "fc8d7d8c-1111-1111-1111-2c7df15109d1",
+          "accountId" : "93a15559-1111-1111-1111-683ea233c006",
+          "site" : "DEMO",
+          "field" : "",
+          "proxyLevel" : "",
+          "device" : "",
+          "object" : "Group"
+        }
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1720596376581

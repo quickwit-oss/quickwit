@@ -1,0 +1,128 @@
+id: "kubernetes.audit"
+tests:
+ -
+  sample: |-
+    {
+      "requestReceivedTimestamp" : "2019-07-15T21:44:41.498428Z",
+      "objectRef" : {
+        "apiGroup" : "coordination.k8s.io",
+        "apiVersion" : "v1beta1",
+        "resource" : "leases",
+        "namespace" : "kube-node-lease",
+        "name" : "ip-10-128-70-150.ec2.internal"
+      },
+      "level" : "Metadata",
+      "kind" : "Event",
+      "verb" : "get",
+      "annotations" : {
+        "authorization" : {
+          "k8s" : {
+            "io/reason" : "",
+            "io/decision" : "allow"
+          }
+        }
+      },
+      "userAgent" : "kubelet/v1.14.3 (linux/amd64) kubernetes/5e53fd6",
+      "requestURI" : "/apis/coordination.k8s.io/v1beta1/namespaces/kube-node-lease/leases/ip-10-128-70-150.ec2.internal?timeout=10s",
+      "responseStatus" : {
+        "code" : 200
+      },
+      "stageTimestamp" : "2019-07-15T21:44:41.501278Z",
+      "sourceIPs" : [ "10.128.97.73" ],
+      "apiVersion" : "audit.k8s.io/v1",
+      "stage" : "ResponseComplete",
+      "user" : {
+        "groups" : [ "system:nodes", "system:authenticated" ],
+        "username" : "system:node:ip-10-128-70-150.ec2.internal"
+      }
+    }
+  result:
+    custom:
+      annotations:
+        authorization:
+          k8s:
+            io/decision: "allow"
+            io/reason: ""
+      apiVersion: "audit.k8s.io/v1"
+      duration: 3000000.0
+      http:
+        method: "get"
+        status_category: "OK"
+        status_code: 200
+        url_details:
+          path: "/apis/coordination.k8s.io/v1beta1/namespaces/kube-node-lease/leases/ip-10-128-70-150.ec2.internal"
+          queryString:
+            timeout: "10s"
+        useragent: "kubelet/v1.14.3 (linux/amd64) kubernetes/5e53fd6"
+        useragent_details:
+          browser:
+            family: "Other"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Linux"
+      kind: "Event"
+      level: "Metadata"
+      objectRef:
+        apiGroup: "coordination.k8s.io"
+        apiVersion: "v1beta1"
+        name: "ip-10-128-70-150.ec2.internal"
+        namespace: "kube-node-lease"
+        resource: "leases"
+      requestReceivedTimestamp: "2019-07-15T21:44:41.498428Z"
+      requestReceivedTimestamp_ms: 1563227081498
+      requestURI: "/apis/coordination.k8s.io/v1beta1/namespaces/kube-node-lease/leases/ip-10-128-70-150.ec2.internal?timeout=10s"
+      sourceIPs:
+       - "10.128.97.73"
+      stage: "ResponseComplete"
+      stageTimestamp: "2019-07-15T21:44:41.501278Z"
+      stageTimestamp_ms: 1563227081501
+      userAgent: "kubelet/v1.14.3 (linux/amd64) kubernetes/5e53fd6"
+      usr:
+        groups:
+         - "system:nodes"
+         - "system:authenticated"
+        id: "system:node:ip-10-128-70-150.ec2.internal"
+        name: "system:node:ip-10-128-70-150.ec2.internal"
+    message: |-
+      {
+        "requestReceivedTimestamp" : "2019-07-15T21:44:41.498428Z",
+        "objectRef" : {
+          "apiGroup" : "coordination.k8s.io",
+          "apiVersion" : "v1beta1",
+          "resource" : "leases",
+          "namespace" : "kube-node-lease",
+          "name" : "ip-10-128-70-150.ec2.internal"
+        },
+        "level" : "Metadata",
+        "kind" : "Event",
+        "verb" : "get",
+        "annotations" : {
+          "authorization" : {
+            "k8s" : {
+              "io/reason" : "",
+              "io/decision" : "allow"
+            }
+          }
+        },
+        "userAgent" : "kubelet/v1.14.3 (linux/amd64) kubernetes/5e53fd6",
+        "requestURI" : "/apis/coordination.k8s.io/v1beta1/namespaces/kube-node-lease/leases/ip-10-128-70-150.ec2.internal?timeout=10s",
+        "responseStatus" : {
+          "code" : 200
+        },
+        "stageTimestamp" : "2019-07-15T21:44:41.501278Z",
+        "sourceIPs" : [ "10.128.97.73" ],
+        "apiVersion" : "audit.k8s.io/v1",
+        "stage" : "ResponseComplete",
+        "user" : {
+          "groups" : [ "system:nodes", "system:authenticated" ],
+          "username" : "system:node:ip-10-128-70-150.ec2.internal"
+        }
+      }
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "kube_namespace:kube-node-lease"
+    timestamp: 1563227081501
+

@@ -1,0 +1,539 @@
+id: "crest_data_systems_pfsense"
+tests:
+ -
+  sample: |-
+    {
+      "service" : "cds.pfsense.filterlog",
+      "message" : "<134>1 2023-03-23T06:31:50.894183+00:00 pfSense.home.arpa filterlog 30514 - - 66,,,1000005813,lo0,match,pass,in,6,0x00,0x491b0,64,UDP,17,20,::1,::1,60680,123,20"
+    }
+  result:
+    custom:
+      action: "pass"
+      class: "0x00"
+      data_length: 20
+      destination_ip: "::1"
+      destination_location_details: {}
+      destination_port: "123"
+      direction: "in"
+      flow_label: "0x491b0"
+      hope_limit: 64
+      ip_version: "6"
+      network:
+        destination:
+          ip: "::1"
+          port: "123"
+      packet_length: 20
+      process_id: 30514
+      protocol_id: 17
+      protocol_name: "UDP"
+      real_interface: "lo0"
+      reason: "match"
+      rule_number: 66
+      service: "cds.pfsense.filterlog"
+      source_ip: "::1"
+      source_location_details: {}
+      source_port: "60680"
+      sourcetype: "filterlog"
+      syslog:
+        hostname: "pfSense.home.arpa"
+      timestamp: 1679553110894
+      tracker: 1000005813
+    message: "<134>1 2023-03-23T06:31:50.894183+00:00 pfSense.home.arpa filterlog 30514 - - 66,,,1000005813,lo0,match,pass,in,6,0x00,0x491b0,64,UDP,17,20,::1,::1,60680,123,20"
+    service: "cds.pfsense.filterlog"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1679553110894
+ -
+  sample: |-
+    {
+      "service" : "cds.pfsense.filterlog",
+      "message" : "<134>1 2023-03-23T06:31:50.894183+00:00 pfSense.home.arpa filterlog 30514 - - 4,,,1000000103,em1,match,block,in,4,0x0,,127,7215,0,none,1,carp,60,172.20.240.104,10.50.3.146,text hello my,2,2,2,2,2"
+    }
+  result:
+    custom:
+      action: "block"
+      advbase: 2
+      advskew: 2
+      carp_ttl: 2
+      carp_type: "text hello my"
+      destination_ip: "10.50.3.146"
+      destination_location_details: {}
+      direction: "in"
+      flags: "none"
+      id: 7215
+      ip_version: "4"
+      network:
+        destination:
+          ip: "10.50.3.146"
+      offset: 0
+      packet_length: 60
+      process_id: 30514
+      protocol_id: 1
+      protocol_name: "CARP"
+      real_interface: "em1"
+      reason: "match"
+      rule_number: 4
+      service: "cds.pfsense.filterlog"
+      source_ip: "172.20.240.104"
+      source_location_details: {}
+      sourcetype: "filterlog"
+      syslog:
+        hostname: "pfSense.home.arpa"
+      timestamp: 1679553110894
+      toc: "0x0"
+      tracker: 1000000103
+      ttl: 127
+      version: 2
+      vhid: 2
+    message: "<134>1 2023-03-23T06:31:50.894183+00:00 pfSense.home.arpa filterlog 30514 - - 4,,,1000000103,em1,match,block,in,4,0x0,,127,7215,0,none,1,carp,60,172.20.240.104,10.50.3.146,text hello my,2,2,2,2,2"
+    service: "cds.pfsense.filterlog"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1679553110894
+ -
+  sample: |-
+    {
+      "service" : "cds.pfsense.filterlog",
+      "message" : "<134>1 2023-03-23T06:31:50.894183+00:00 pfSense.home.arpa filterlog 30514 - - 80,,,100000101,em1,match,pass,in,4,0x0,,64,26704,0,DF,6,tcp,60,10.50.3.170,10.50.3.146,43864,8000,0,S,1953531981,,64240,,mss;sackOK;TS;nop;wscale"
+    }
+  result:
+    custom:
+      action: "pass"
+      data_length: 0
+      destination_ip: "10.50.3.146"
+      destination_location_details: {}
+      destination_port: 8000
+      direction: "in"
+      flags: "DF"
+      id: 26704
+      ip_version: "4"
+      network:
+        destination:
+          ip: "10.50.3.146"
+          port: 8000
+      offset: 0
+      packet_length: 60
+      process_id: 30514
+      protocol_id: 6
+      protocol_name: "TCP"
+      real_interface: "em1"
+      reason: "match"
+      rule_number: 80
+      sequence: 1953531981
+      service: "cds.pfsense.filterlog"
+      source_ip: "10.50.3.170"
+      source_location_details: {}
+      source_port: 43864
+      sourcetype: "filterlog"
+      syslog:
+        hostname: "pfSense.home.arpa"
+      tcp_flags: "S"
+      tcp_options: "mss;sackOK;TS;nop;wscale"
+      tcp_window: 64240
+      timestamp: 1679553110894
+      toc: "0x0"
+      tracker: 100000101
+      ttl: 64
+    message: "<134>1 2023-03-23T06:31:50.894183+00:00 pfSense.home.arpa filterlog 30514 - - 80,,,100000101,em1,match,pass,in,4,0x0,,64,26704,0,DF,6,tcp,60,10.50.3.170,10.50.3.146,43864,8000,0,S,1953531981,,64240,,mss;sackOK;TS;nop;wscale"
+    service: "cds.pfsense.filterlog"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1679553110894
+ -
+  sample: |-
+    {
+      "service" : "cds.pfsense.filterlog",
+      "message" : "<134>1 2023-03-23T06:31:50.894183+00:00 pfSense.home.arpa filterlog 30514 - - 4,,,1000000103,em1,match,block,in,4,0x0,,127,7215,0,none,1,icmp,60,172.20.240.104,10.50.3.146,request,1,3034540"
+    }
+  result:
+    custom:
+      action: "block"
+      destination_ip: "10.50.3.146"
+      destination_location_details: {}
+      direction: "in"
+      echo_id: 1
+      echo_sequence: 3034540
+      flags: "none"
+      icmp_code: "request"
+      id: 7215
+      ip_version: "4"
+      network:
+        destination:
+          ip: "10.50.3.146"
+      offset: 0
+      packet_length: 60
+      process_id: 30514
+      protocol_id: 1
+      protocol_name: "ICMP"
+      real_interface: "em1"
+      reason: "match"
+      rule_number: 4
+      service: "cds.pfsense.filterlog"
+      source_ip: "172.20.240.104"
+      source_location_details: {}
+      sourcetype: "filterlog"
+      syslog:
+        hostname: "pfSense.home.arpa"
+      timestamp: 1679553110894
+      toc: "0x0"
+      tracker: 1000000103
+      ttl: 127
+    message: "<134>1 2023-03-23T06:31:50.894183+00:00 pfSense.home.arpa filterlog 30514 - - 4,,,1000000103,em1,match,block,in,4,0x0,,127,7215,0,none,1,icmp,60,172.20.240.104,10.50.3.146,request,1,3034540"
+    service: "cds.pfsense.filterlog"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1679553110894
+ -
+  sample: |-
+    {
+      "service" : "cds.pfsense.filterlog",
+      "message" : "<134>1 2023-03-23T06:31:50.894183+00:00 pfSense.home.arpa filterlog 30514 - - 66,,,1000005813,lo0,match,pass,in,6,0x00,0x491b0,64,UDP,17,20,::1,::1,60680,123,20"
+    }
+  result:
+    custom:
+      action: "pass"
+      class: "0x00"
+      data_length: 20
+      destination_ip: "::1"
+      destination_location_details: {}
+      destination_port: "123"
+      direction: "in"
+      flow_label: "0x491b0"
+      hope_limit: 64
+      ip_version: "6"
+      network:
+        destination:
+          ip: "::1"
+          port: "123"
+      packet_length: 20
+      process_id: 30514
+      protocol_id: 17
+      protocol_name: "UDP"
+      real_interface: "lo0"
+      reason: "match"
+      rule_number: 66
+      service: "cds.pfsense.filterlog"
+      source_ip: "::1"
+      source_location_details: {}
+      source_port: "60680"
+      sourcetype: "filterlog"
+      syslog:
+        hostname: "pfSense.home.arpa"
+      timestamp: 1679553110894
+      tracker: 1000005813
+    message: "<134>1 2023-03-23T06:31:50.894183+00:00 pfSense.home.arpa filterlog 30514 - - 66,,,1000005813,lo0,match,pass,in,6,0x00,0x491b0,64,UDP,17,20,::1,::1,60680,123,20"
+    service: "cds.pfsense.filterlog"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1679553110894
+ -
+  sample: |-
+    {
+      "service" : "cds.pfsense.dhcp",
+      "message" : "<30>1 2023-02-20T11:46:30.496841+00:00 pfSense.home.arpa dhcpd 33152 - - DHCPDISCOVER from 00:00:00:00:00:00 (test) via te1"
+    }
+  result:
+    custom:
+      device_interface: "te1"
+      device_mac: "00:00:00:00:00:00"
+      device_name: "test"
+      dhcp_message: "DHCPDISCOVER"
+      process_id: 33152
+      service: "cds.pfsense.dhcp"
+      sourcetype: "dhcp"
+      syslog:
+        hostname: "pfSense.home.arpa"
+      timestamp: 1676893590496
+    message: "<30>1 2023-02-20T11:46:30.496841+00:00 pfSense.home.arpa dhcpd 33152 - - DHCPDISCOVER from 00:00:00:00:00:00 (test) via te1"
+    service: "cds.pfsense.dhcp"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1676893590496
+ -
+  sample: |-
+    {
+      "service" : "cds.pfsense.dhcp",
+      "message" : "<30>1 2023-02-20T11:46:30.496841+00:00 pfSense.home.arpa dhcpd 33152 - - DHCPDECLINE of 10.0.0.1 from 00:00:00:00:00:00 via te3: not found "
+    }
+  result:
+    custom:
+      device_interface: "te3"
+      device_mac: "00:00:00:00:00:00"
+      dhcp_message: "DHCPDECLINE"
+      leased_ip: "10.0.0.1"
+      process_id: 33152
+      service: "cds.pfsense.dhcp"
+      sourcetype: "dhcp"
+      syslog:
+        hostname: "pfSense.home.arpa"
+      timestamp: 1676893590496
+    message: "<30>1 2023-02-20T11:46:30.496841+00:00 pfSense.home.arpa dhcpd 33152 - - DHCPDECLINE of 10.0.0.1 from 00:00:00:00:00:00 via te3: not found "
+    service: "cds.pfsense.dhcp"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1676893590496
+ -
+  sample: |-
+    {
+      "service" : "cds.pfsense.dhcp",
+      "message" : "<30>1 2023-02-20T11:46:30.496841+00:00 pfSense.home.arpa dhcpd 33152 - - DHCPDISCOVER from 00:00:00:00:00:00 (test) via te1"
+    }
+  result:
+    custom:
+      device_interface: "te1"
+      device_mac: "00:00:00:00:00:00"
+      device_name: "test"
+      dhcp_message: "DHCPDISCOVER"
+      process_id: 33152
+      service: "cds.pfsense.dhcp"
+      sourcetype: "dhcp"
+      syslog:
+        hostname: "pfSense.home.arpa"
+      timestamp: 1676893590496
+    message: "<30>1 2023-02-20T11:46:30.496841+00:00 pfSense.home.arpa dhcpd 33152 - - DHCPDISCOVER from 00:00:00:00:00:00 (test) via te1"
+    service: "cds.pfsense.dhcp"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1676893590496
+ -
+  sample: |-
+    {
+      "service" : "cds.pfsense.dhcp",
+      "message" : "<30>1 2023-02-20T11:46:30.496841+00:00 pfSense.home.arpa dhcpd 33152 - - DHCPOFFER on 10.0.0.1 to 00:00:00:00:00:00 (test-test) via te1"
+    }
+  result:
+    custom:
+      device_interface: "te1"
+      device_mac: "00:00:00:00:00:00"
+      device_name: "test-test"
+      dhcp_message: "DHCPOFFER"
+      leased_ip: "10.0.0.1"
+      process_id: 33152
+      service: "cds.pfsense.dhcp"
+      sourcetype: "dhcp"
+      syslog:
+        hostname: "pfSense.home.arpa"
+      timestamp: 1676893590496
+    message: "<30>1 2023-02-20T11:46:30.496841+00:00 pfSense.home.arpa dhcpd 33152 - - DHCPOFFER on 10.0.0.1 to 00:00:00:00:00:00 (test-test) via te1"
+    service: "cds.pfsense.dhcp"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1676893590496
+ -
+  sample: |-
+    {
+      "service" : "cds.pfsense.dhcp",
+      "message" : "<30>1 2023-02-20T11:46:30.496841+00:00 pfSense.home.arpa dhcpd 33152 - - DHCPREQUEST for 10.0.0.1 from 00:00:00:00:00:00 (test) via te1"
+    }
+  result:
+    custom:
+      device_interface: "te1"
+      device_mac: "00:00:00:00:00:00"
+      device_name: "test"
+      dhcp_message: "DHCPREQUEST"
+      leased_ip: "10.0.0.1"
+      process_id: 33152
+      service: "cds.pfsense.dhcp"
+      sourcetype: "dhcp"
+      syslog:
+        hostname: "pfSense.home.arpa"
+      timestamp: 1676893590496
+    message: "<30>1 2023-02-20T11:46:30.496841+00:00 pfSense.home.arpa dhcpd 33152 - - DHCPREQUEST for 10.0.0.1 from 00:00:00:00:00:00 (test) via te1"
+    service: "cds.pfsense.dhcp"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1676893590496
+ -
+  sample: |-
+    {
+      "service" : "cds.pfsense.dhcp",
+      "message" : "<134>1 2023-04-12T12:31:50.894183+00:00 pfSense.home.arpa dhcpd 30514 - - DHCPACK on 10.50.15.250 to 00:50:56:81:b6:7a (AD) via em1"
+    }
+  result:
+    custom:
+      device_interface: "em1"
+      device_mac: "00:50:56:81:b6:7a"
+      device_name: "AD"
+      dhcp_message: "DHCPACK"
+      leased_ip: "10.50.15.250"
+      process_id: 30514
+      service: "cds.pfsense.dhcp"
+      sourcetype: "dhcp"
+      syslog:
+        hostname: "pfSense.home.arpa"
+      timestamp: 1681302710894
+    message: "<134>1 2023-04-12T12:31:50.894183+00:00 pfSense.home.arpa dhcpd 30514 - - DHCPACK on 10.50.15.250 to 00:50:56:81:b6:7a (AD) via em1"
+    service: "cds.pfsense.dhcp"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1681302710894
+ -
+  sample: |-
+    {
+      "service" : "cds.pfsense.openvpn",
+      "message" : "<30>1 2023-02-20T11:46:30.496841+00:00 pfSense.home.arpa openvpn 33152 - - openvpn server 'ovpns1' user 'pfsense' address '172.20.240.114' - connected"
+    }
+  result:
+    custom:
+      openvpn_connection_action: "connected"
+      openvpn_server: "ovpns1"
+      openvpn_user: "pfsense"
+      openvpn_user_address: "172.20.240.114"
+      process_id: 33152
+      service: "cds.pfsense.openvpn"
+      sourcetype: "openvpn"
+      syslog:
+        hostname: "pfSense.home.arpa"
+      timestamp: 1676893590496
+    message: "<30>1 2023-02-20T11:46:30.496841+00:00 pfSense.home.arpa openvpn 33152 - - openvpn server 'ovpns1' user 'pfsense' address '172.20.240.114' - connected"
+    service: "cds.pfsense.openvpn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1676893590496
+ -
+  sample: |-
+    {
+      "service" : "cds.pfsense.openvpn",
+      "message" : "<30>1 2023-02-20T11:46:30.496841+00:00 pfSense.home.arpa openvpn 33152 - - openvpn server 'ovpns1' user 'pfsense' address '172.20.240.114' - disconnected"
+    }
+  result:
+    custom:
+      openvpn_connection_action: "disconnected"
+      openvpn_server: "ovpns1"
+      openvpn_user: "pfsense"
+      openvpn_user_address: "172.20.240.114"
+      process_id: 33152
+      service: "cds.pfsense.openvpn"
+      sourcetype: "openvpn"
+      syslog:
+        hostname: "pfSense.home.arpa"
+      timestamp: 1676893590496
+    message: "<30>1 2023-02-20T11:46:30.496841+00:00 pfSense.home.arpa openvpn 33152 - - openvpn server 'ovpns1' user 'pfsense' address '172.20.240.114' - disconnected"
+    service: "cds.pfsense.openvpn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1676893590496
+ -
+  sample: |-
+    {
+      "service" : "cds.pfsense.openvpn",
+      "message" : "<30>1 2023-02-20T11:46:30.496841+00:00 pfSense.home.arpa openvpn 33152 - - openvpn server 'ovpns1' user 'pfsense' address '172.20.240.114' - connected"
+    }
+  result:
+    custom:
+      openvpn_connection_action: "connected"
+      openvpn_server: "ovpns1"
+      openvpn_user: "pfsense"
+      openvpn_user_address: "172.20.240.114"
+      process_id: 33152
+      service: "cds.pfsense.openvpn"
+      sourcetype: "openvpn"
+      syslog:
+        hostname: "pfSense.home.arpa"
+      timestamp: 1676893590496
+    message: "<30>1 2023-02-20T11:46:30.496841+00:00 pfSense.home.arpa openvpn 33152 - - openvpn server 'ovpns1' user 'pfsense' address '172.20.240.114' - connected"
+    service: "cds.pfsense.openvpn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1676893590496
+ -
+  sample: |-
+    {
+      "service" : "cds.pfsense.openvpn",
+      "message" : "<30>1 2023-02-20T11:46:30.496841+00:00 pfSense.home.arpa openvpn 33152 - - openvpn server 'ovpns1' user 'pfsense' address '172.20.240.114' - disconnected"
+    }
+  result:
+    custom:
+      openvpn_connection_action: "disconnected"
+      openvpn_server: "ovpns1"
+      openvpn_user: "pfsense"
+      openvpn_user_address: "172.20.240.114"
+      process_id: 33152
+      service: "cds.pfsense.openvpn"
+      sourcetype: "openvpn"
+      syslog:
+        hostname: "pfSense.home.arpa"
+      timestamp: 1676893590496
+    message: "<30>1 2023-02-20T11:46:30.496841+00:00 pfSense.home.arpa openvpn 33152 - - openvpn server 'ovpns1' user 'pfsense' address '172.20.240.114' - disconnected"
+    service: "cds.pfsense.openvpn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1676893590496
+ -
+  sample: |-
+    {
+      "service" : "cds.pfsense.openvpn",
+      "message" : "<30>1 2023-02-20T11:46:30.496841+00:00 pfSense.home.arpa openvpn 33152 - - openvpn server 'ovpns1' user 'pfsense' address '172.20.240.114' - disconnected"
+    }
+  result:
+    custom:
+      openvpn_connection_action: "disconnected"
+      openvpn_server: "ovpns1"
+      openvpn_user: "pfsense"
+      openvpn_user_address: "172.20.240.114"
+      process_id: 33152
+      service: "cds.pfsense.openvpn"
+      sourcetype: "openvpn"
+      syslog:
+        hostname: "pfSense.home.arpa"
+      timestamp: 1676893590496
+    message: "<30>1 2023-02-20T11:46:30.496841+00:00 pfSense.home.arpa openvpn 33152 - - openvpn server 'ovpns1' user 'pfsense' address '172.20.240.114' - disconnected"
+    service: "cds.pfsense.openvpn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1676893590496
+ -
+  sample: |-
+    {
+      "service" : "cds.pfsense.openvpn",
+      "message" : "<13>1 2024-10-11T11:12:09.600110+00:00 pfSense.testenv openvpn 53508 - - openvpn server 'ovpns2' user cert CN 'test-pfsense' address '55.122.21.32:40945' - connected"
+    }
+  result:
+    custom:
+      openvpn_connection_action: "connected"
+      openvpn_server: "ovpns2"
+      openvpn_user: "test-pfsense"
+      openvpn_user_address: "55.122.21.32"
+      openvpn_user_address_port: 40945
+      process_id: 53508
+      service: "cds.pfsense.openvpn"
+      sourcetype: "openvpn"
+      syslog:
+        hostname: "pfSense.testenv"
+      timestamp: 1728645129600
+    message: "<13>1 2024-10-11T11:12:09.600110+00:00 pfSense.testenv openvpn 53508 - - openvpn server 'ovpns2' user cert CN 'test-pfsense' address '55.122.21.32:40945' - connected"
+    service: "cds.pfsense.openvpn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1728645129600
+ -
+  sample: |-
+    {
+      "service" : "cds.pfsense.other",
+      "message" : "<32>1 2023-03-23T09:54:10.807547+00:00 pfSense.home.arpa openvpn 89475 - - 10.0.0.1:1234 Connection reset, restarting [0]"
+    }
+  result:
+    custom:
+      service: "cds.pfsense.other"
+      timestamp: 1679565250807
+    message: "<32>1 2023-03-23T09:54:10.807547+00:00 pfSense.home.arpa openvpn 89475 - - 10.0.0.1:1234 Connection reset, restarting [0]"
+    service: "cds.pfsense.other"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1679565250807
+ -
+  sample: |-
+    {
+      "service" : "cds.pfsense.other",
+      "message" : "<32>1 2023-03-23T09:54:10.807547+00:00 pfSense.home.arpa php-fpm 89475 - - Local User Database: Successfully edited user pfsense"
+    }
+  result:
+    custom:
+      service: "cds.pfsense.other"
+      timestamp: 1679565250807
+    message: "<32>1 2023-03-23T09:54:10.807547+00:00 pfSense.home.arpa php-fpm 89475 - - Local User Database: Successfully edited user pfsense"
+    service: "cds.pfsense.other"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1679565250807
+

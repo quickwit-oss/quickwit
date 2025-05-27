@@ -1,0 +1,868 @@
+id: "gcp.iam.role"
+tests:
+ -
+  sample: |-
+    {
+      "data" : {
+        "severity" : "NOTICE",
+        "logName" : "projects/test-271317/logs/cloudaudit.googleapis.com%2Factivity",
+        "resource" : {
+          "type" : "iam_role",
+          "labels" : {
+            "role_name" : "projects/test-271317/roles/CustomRole",
+            "project_id" : "test-271317"
+          }
+        },
+        "protoPayload" : {
+          "requestMetadata" : {
+            "requestAttributes" : {
+              "time" : "2020-04-02T17:17:35.342043563Z"
+            },
+            "callerSuppliedUserAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)",
+            "callerIp" : "67.243.209.244"
+          },
+          "request" : {
+            "parent" : "projects/test-271317",
+            "role" : {
+              "included_permissions" : [ "accessapproval.requests.approve" ],
+              "description" : "Created on: 2020-04-02",
+              "title" : "Custom Role"
+            },
+            "role_id" : "CustomRole",
+            "@type" : "type.googleapis.com/google.iam.admin.v1.CreateRoleRequest"
+          },
+          "authenticationInfo" : {
+            "principalSubject" : "user:test@testemail.com",
+            "principalEmail" : "test@testemail.com"
+          },
+          "authorizationInfo" : [ {
+            "resource" : "projects/test-271317",
+            "permission" : "iam.roles.create",
+            "granted" : true
+          } ],
+          "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+          "response" : {
+            "group_title" : "Custom",
+            "group_name" : "custom",
+            "@type" : "type.googleapis.com/google.iam.admin.v1.Role",
+            "name" : "projects/test-271317/roles/CustomRole",
+            "included_permissions" : [ "accessapproval.requests.approve" ],
+            "description" : "Created on: 2020-04-02",
+            "etag" : "BwWiUfoalFk=",
+            "title" : "Custom Role"
+          },
+          "serviceData" : {
+            "@type" : "type.googleapis.com/google.iam.admin.v1.AuditData",
+            "permissionDelta" : {
+              "addedPermissions" : [ "accessapproval.requests.approve" ]
+            }
+          },
+          "methodName" : "google.iam.admin.v1.CreateRole",
+          "resourceName" : "projects/test-271317/roles/CustomRole",
+          "serviceName" : "iam.googleapis.com"
+        },
+        "receiveTimestamp" : "2020-04-02T17:17:35.976303135Z",
+        "insertId" : "32gow0e5fcj3",
+        "timestamp" : "2020-04-02T17:17:35.215584288Z"
+      }
+    }
+  result:
+    custom:
+      data:
+        insertId: "32gow0e5fcj3"
+        logName: "projects/test-271317/logs/cloudaudit.googleapis.com%2Factivity"
+        protoPayload:
+          '@type': "type.googleapis.com/google.cloud.audit.AuditLog"
+          authenticationInfo:
+            principalEmail: "test@testemail.com"
+            principalSubject: "user:test@testemail.com"
+          authorizationInfo:
+           -
+            resource: "projects/test-271317"
+            permission: "iam.roles.create"
+            granted: true
+          methodName: "google.iam.admin.v1.CreateRole"
+          request:
+            '@type': "type.googleapis.com/google.iam.admin.v1.CreateRoleRequest"
+            parent: "projects/test-271317"
+            role:
+              description: "Created on: 2020-04-02"
+              included_permissions:
+               - "accessapproval.requests.approve"
+              title: "Custom Role"
+            role_id: "CustomRole"
+          requestMetadata:
+            callerIp: "67.243.209.244"
+            callerSuppliedUserAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)"
+            requestAttributes:
+              time: "2020-04-02T17:17:35.342043563Z"
+          resourceName: "projects/test-271317/roles/CustomRole"
+          response:
+            '@type': "type.googleapis.com/google.iam.admin.v1.Role"
+            description: "Created on: 2020-04-02"
+            etag: "BwWiUfoalFk="
+            group_name: "custom"
+            group_title: "Custom"
+            included_permissions:
+             - "accessapproval.requests.approve"
+            name: "projects/test-271317/roles/CustomRole"
+            title: "Custom Role"
+          serviceData:
+            '@type': "type.googleapis.com/google.iam.admin.v1.AuditData"
+            permissionDelta:
+              addedPermissions:
+               - "accessapproval.requests.approve"
+          serviceName: "iam.googleapis.com"
+        receiveTimestamp: "2020-04-02T17:17:35.976303135Z"
+        resource:
+          labels:
+            project_id: "test-271317"
+            role_name: "projects/test-271317/roles/CustomRole"
+          type: "iam_role"
+        severity: "NOTICE"
+        timestamp: "2020-04-02T17:17:35.215584288Z"
+      evt:
+        name: "google.iam.admin.v1.CreateRole"
+      http:
+        useragent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "80"
+            minor: "0"
+            patch: "3987"
+            patch_minor: "149"
+          device:
+            brand: "Apple"
+            category: "Desktop"
+            family: "Mac"
+            model: "Mac"
+          os:
+            family: "Mac OS X"
+            major: "10"
+            minor: "14"
+            patch: "1"
+      network:
+        client:
+          geoip: {}
+          ip: "67.243.209.244"
+      ocsf:
+        activity_id: 1
+        activity_name: "Create"
+        actor:
+          user:
+            account:
+              uid: "test-271317"
+            email_addr: "test@testemail.com"
+            name: "test"
+            type: "User"
+            type_id: 1
+        api:
+          operation: "google.iam.admin.v1.createrole"
+          request:
+            data:
+              '@type': "type.googleapis.com/google.iam.admin.v1.CreateRoleRequest"
+              parent: "projects/test-271317"
+              role:
+                description: "Created on: 2020-04-02"
+                included_permissions:
+                 - "accessapproval.requests.approve"
+                title: "Custom Role"
+              role_id: "CustomRole"
+            uid: "Unknown"
+          response:
+            data:
+              '@type': "type.googleapis.com/google.iam.admin.v1.Role"
+              description: "Created on: 2020-04-02"
+              etag: "BwWiUfoalFk="
+              group_name: "custom"
+              group_title: "Custom"
+              included_permissions:
+               - "accessapproval.requests.approve"
+              name: "projects/test-271317/roles/CustomRole"
+              title: "Custom Role"
+          service:
+            name: "iam.googleapis.com"
+        category_name: "Identity & Access Management"
+        category_uid: 3
+        class_name: "Account Change"
+        class_uid: 3001
+        cloud:
+          account:
+            uid: "test-271317"
+          provider: "Google Cloud"
+        http_request:
+          user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)"
+        metadata:
+          event_code: "google.iam.admin.v1.createrole"
+          log_name: "projects/test-271317/logs/cloudaudit.googleapis.com%2Factivity"
+          product:
+            name: "Google Cloud Audit logs"
+            vendor_name: "Google Cloud"
+          profiles:
+           - "cloud"
+           - "datetime"
+          uid: "32gow0e5fcj3"
+          version: "1.3.0"
+        severity: "NOTICE"
+        severity_id: 99
+        src_endpoint:
+          ip: "67.243.209.244"
+        status: "Success"
+        status_id: 1
+        time: 1585847855215
+        time_dt: "2020-04-02T17:17:35.215584288Z"
+        type_uid: 300101
+        user:
+          account:
+            uid: "test-271317"
+          name: "projects/test-271317/roles/CustomRole"
+          type: "Role"
+          type_id: 99
+      usr:
+        email: "test@testemail.com"
+        id: "test@testemail.com"
+    message: |-
+      {
+        "data" : {
+          "severity" : "NOTICE",
+          "logName" : "projects/test-271317/logs/cloudaudit.googleapis.com%2Factivity",
+          "resource" : {
+            "type" : "iam_role",
+            "labels" : {
+              "role_name" : "projects/test-271317/roles/CustomRole",
+              "project_id" : "test-271317"
+            }
+          },
+          "protoPayload" : {
+            "requestMetadata" : {
+              "requestAttributes" : {
+                "time" : "2020-04-02T17:17:35.342043563Z"
+              },
+              "callerSuppliedUserAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)",
+              "callerIp" : "67.243.209.244"
+            },
+            "request" : {
+              "parent" : "projects/test-271317",
+              "role" : {
+                "included_permissions" : [ "accessapproval.requests.approve" ],
+                "description" : "Created on: 2020-04-02",
+                "title" : "Custom Role"
+              },
+              "role_id" : "CustomRole",
+              "@type" : "type.googleapis.com/google.iam.admin.v1.CreateRoleRequest"
+            },
+            "authenticationInfo" : {
+              "principalSubject" : "user:test@testemail.com",
+              "principalEmail" : "test@testemail.com"
+            },
+            "authorizationInfo" : [ {
+              "resource" : "projects/test-271317",
+              "permission" : "iam.roles.create",
+              "granted" : true
+            } ],
+            "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+            "response" : {
+              "group_title" : "Custom",
+              "group_name" : "custom",
+              "@type" : "type.googleapis.com/google.iam.admin.v1.Role",
+              "name" : "projects/test-271317/roles/CustomRole",
+              "included_permissions" : [ "accessapproval.requests.approve" ],
+              "description" : "Created on: 2020-04-02",
+              "etag" : "BwWiUfoalFk=",
+              "title" : "Custom Role"
+            },
+            "serviceData" : {
+              "@type" : "type.googleapis.com/google.iam.admin.v1.AuditData",
+              "permissionDelta" : {
+                "addedPermissions" : [ "accessapproval.requests.approve" ]
+              }
+            },
+            "methodName" : "google.iam.admin.v1.CreateRole",
+            "resourceName" : "projects/test-271317/roles/CustomRole",
+            "serviceName" : "iam.googleapis.com"
+          },
+          "receiveTimestamp" : "2020-04-02T17:17:35.976303135Z",
+          "insertId" : "32gow0e5fcj3",
+          "timestamp" : "2020-04-02T17:17:35.215584288Z"
+        }
+      }
+    service: "iam.googleapis.com"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1585847855215
+ -
+  sample: |-
+    {
+      "severity" : "NOTICE",
+      "logName" : "projects/test-271317/logs/cloudaudit.googleapis.com%2Factivity",
+      "resource" : {
+        "type" : "iam_role",
+        "labels" : {
+          "role_name" : "projects/test-271317/roles/CustomRole",
+          "project_id" : "test-271317"
+        }
+      },
+      "protoPayload" : {
+        "requestMetadata" : {
+          "requestAttributes" : {
+            "time" : "2020-04-02T17:17:35.342043563Z"
+          },
+          "callerSuppliedUserAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)",
+          "callerIp" : "67.243.209.244"
+        },
+        "request" : {
+          "parent" : "projects/test-271317",
+          "role" : {
+            "included_permissions" : [ "accessapproval.requests.approve" ],
+            "description" : "Created on: 2020-04-02",
+            "title" : "Custom Role"
+          },
+          "role_id" : "CustomRole",
+          "@type" : "type.googleapis.com/google.iam.admin.v1.CreateRoleRequest"
+        },
+        "authenticationInfo" : {
+          "principalSubject" : "user:test@testemail.com",
+          "principalEmail" : "test@testemail.com"
+        },
+        "authorizationInfo" : [ {
+          "resource" : "projects/test-271317",
+          "permission" : "iam.roles.create",
+          "granted" : true
+        } ],
+        "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+        "response" : {
+          "group_title" : "Custom",
+          "group_name" : "custom",
+          "@type" : "type.googleapis.com/google.iam.admin.v1.Role",
+          "name" : "projects/test-271317/roles/CustomRole",
+          "included_permissions" : [ "accessapproval.requests.approve" ],
+          "description" : "Created on: 2020-04-02",
+          "etag" : "BwWiUfoalFk=",
+          "title" : "Custom Role"
+        },
+        "serviceData" : {
+          "@type" : "type.googleapis.com/google.iam.admin.v1.AuditData",
+          "permissionDelta" : {
+            "addedPermissions" : [ "accessapproval.requests.approve" ]
+          }
+        },
+        "methodName" : "google.iam.admin.v1.CreateRole",
+        "resourceName" : "projects/test-271317/roles/CustomRole",
+        "serviceName" : "iam.googleapis.com"
+      },
+      "receiveTimestamp" : "2020-04-02T17:17:35.976303135Z",
+      "insertId" : "32gow0e5fcj3",
+      "timestamp" : "2020-04-02T17:17:35.215584288Z"
+    }
+  result:
+    custom:
+      evt:
+        name: "google.iam.admin.v1.CreateRole"
+      http:
+        useragent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "80"
+            minor: "0"
+            patch: "3987"
+            patch_minor: "149"
+          device:
+            brand: "Apple"
+            category: "Desktop"
+            family: "Mac"
+            model: "Mac"
+          os:
+            family: "Mac OS X"
+            major: "10"
+            minor: "14"
+            patch: "1"
+      insertId: "32gow0e5fcj3"
+      logName: "projects/test-271317/logs/cloudaudit.googleapis.com%2Factivity"
+      network:
+        client:
+          geoip: {}
+          ip: "67.243.209.244"
+      ocsf:
+        activity_id: 1
+        activity_name: "Create"
+        actor:
+          user:
+            account:
+              uid: "test-271317"
+            email_addr: "test@testemail.com"
+            name: "test"
+            type: "User"
+            type_id: 1
+        api:
+          operation: "google.iam.admin.v1.createrole"
+          request:
+            data:
+              '@type': "type.googleapis.com/google.iam.admin.v1.CreateRoleRequest"
+              parent: "projects/test-271317"
+              role:
+                description: "Created on: 2020-04-02"
+                included_permissions:
+                 - "accessapproval.requests.approve"
+                title: "Custom Role"
+              role_id: "CustomRole"
+            uid: "Unknown"
+          response:
+            data:
+              '@type': "type.googleapis.com/google.iam.admin.v1.Role"
+              description: "Created on: 2020-04-02"
+              etag: "BwWiUfoalFk="
+              group_name: "custom"
+              group_title: "Custom"
+              included_permissions:
+               - "accessapproval.requests.approve"
+              name: "projects/test-271317/roles/CustomRole"
+              title: "Custom Role"
+          service:
+            name: "iam.googleapis.com"
+        category_name: "Identity & Access Management"
+        category_uid: 3
+        class_name: "Account Change"
+        class_uid: 3001
+        cloud:
+          account:
+            uid: "test-271317"
+          provider: "Google Cloud"
+        http_request:
+          user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)"
+        metadata:
+          event_code: "google.iam.admin.v1.createrole"
+          log_name: "projects/test-271317/logs/cloudaudit.googleapis.com%2Factivity"
+          product:
+            name: "Google Cloud Audit logs"
+            vendor_name: "Google Cloud"
+          profiles:
+           - "cloud"
+           - "datetime"
+          uid: "32gow0e5fcj3"
+          version: "1.3.0"
+        severity: "NOTICE"
+        severity_id: 99
+        src_endpoint:
+          ip: "67.243.209.244"
+        status: "Success"
+        status_id: 1
+        time: 1585847855215
+        time_dt: "2020-04-02T17:17:35.215584288Z"
+        type_uid: 300101
+        user:
+          account:
+            uid: "test-271317"
+          name: "projects/test-271317/roles/CustomRole"
+          type: "Role"
+          type_id: 99
+      protoPayload:
+        '@type': "type.googleapis.com/google.cloud.audit.AuditLog"
+        authenticationInfo:
+          principalEmail: "test@testemail.com"
+          principalSubject: "user:test@testemail.com"
+        authorizationInfo:
+         -
+          resource: "projects/test-271317"
+          permission: "iam.roles.create"
+          granted: true
+        methodName: "google.iam.admin.v1.CreateRole"
+        request:
+          '@type': "type.googleapis.com/google.iam.admin.v1.CreateRoleRequest"
+          parent: "projects/test-271317"
+          role:
+            description: "Created on: 2020-04-02"
+            included_permissions:
+             - "accessapproval.requests.approve"
+            title: "Custom Role"
+          role_id: "CustomRole"
+        requestMetadata:
+          callerIp: "67.243.209.244"
+          callerSuppliedUserAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)"
+          requestAttributes:
+            time: "2020-04-02T17:17:35.342043563Z"
+        resourceName: "projects/test-271317/roles/CustomRole"
+        response:
+          '@type': "type.googleapis.com/google.iam.admin.v1.Role"
+          description: "Created on: 2020-04-02"
+          etag: "BwWiUfoalFk="
+          group_name: "custom"
+          group_title: "Custom"
+          included_permissions:
+           - "accessapproval.requests.approve"
+          name: "projects/test-271317/roles/CustomRole"
+          title: "Custom Role"
+        serviceData:
+          '@type': "type.googleapis.com/google.iam.admin.v1.AuditData"
+          permissionDelta:
+            addedPermissions:
+             - "accessapproval.requests.approve"
+        serviceName: "iam.googleapis.com"
+      receiveTimestamp: "2020-04-02T17:17:35.976303135Z"
+      resource:
+        labels:
+          project_id: "test-271317"
+          role_name: "projects/test-271317/roles/CustomRole"
+        type: "iam_role"
+      severity: "NOTICE"
+      timestamp: "2020-04-02T17:17:35.215584288Z"
+      usr:
+        email: "test@testemail.com"
+        id: "test@testemail.com"
+    message: |-
+      {
+        "severity" : "NOTICE",
+        "logName" : "projects/test-271317/logs/cloudaudit.googleapis.com%2Factivity",
+        "resource" : {
+          "type" : "iam_role",
+          "labels" : {
+            "role_name" : "projects/test-271317/roles/CustomRole",
+            "project_id" : "test-271317"
+          }
+        },
+        "protoPayload" : {
+          "requestMetadata" : {
+            "requestAttributes" : {
+              "time" : "2020-04-02T17:17:35.342043563Z"
+            },
+            "callerSuppliedUserAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)",
+            "callerIp" : "67.243.209.244"
+          },
+          "request" : {
+            "parent" : "projects/test-271317",
+            "role" : {
+              "included_permissions" : [ "accessapproval.requests.approve" ],
+              "description" : "Created on: 2020-04-02",
+              "title" : "Custom Role"
+            },
+            "role_id" : "CustomRole",
+            "@type" : "type.googleapis.com/google.iam.admin.v1.CreateRoleRequest"
+          },
+          "authenticationInfo" : {
+            "principalSubject" : "user:test@testemail.com",
+            "principalEmail" : "test@testemail.com"
+          },
+          "authorizationInfo" : [ {
+            "resource" : "projects/test-271317",
+            "permission" : "iam.roles.create",
+            "granted" : true
+          } ],
+          "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+          "response" : {
+            "group_title" : "Custom",
+            "group_name" : "custom",
+            "@type" : "type.googleapis.com/google.iam.admin.v1.Role",
+            "name" : "projects/test-271317/roles/CustomRole",
+            "included_permissions" : [ "accessapproval.requests.approve" ],
+            "description" : "Created on: 2020-04-02",
+            "etag" : "BwWiUfoalFk=",
+            "title" : "Custom Role"
+          },
+          "serviceData" : {
+            "@type" : "type.googleapis.com/google.iam.admin.v1.AuditData",
+            "permissionDelta" : {
+              "addedPermissions" : [ "accessapproval.requests.approve" ]
+            }
+          },
+          "methodName" : "google.iam.admin.v1.CreateRole",
+          "resourceName" : "projects/test-271317/roles/CustomRole",
+          "serviceName" : "iam.googleapis.com"
+        },
+        "receiveTimestamp" : "2020-04-02T17:17:35.976303135Z",
+        "insertId" : "32gow0e5fcj3",
+        "timestamp" : "2020-04-02T17:17:35.215584288Z"
+      }
+    service: "iam.googleapis.com"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1585847855215
+ -
+  sample: |-
+    {
+      "data" : {
+        "severity" : "NOTICE",
+        "logName" : "projects/test-271317/logs/cloudaudit.googleapis.com%2Factivity",
+        "resource" : {
+          "type" : "iam_role",
+          "labels" : {
+            "role_name" : "projects/test-271317/roles/CustomRole",
+            "project_id" : "test-271317"
+          }
+        },
+        "protoPayload" : {
+          "requestMetadata" : {
+            "requestAttributes" : {
+              "time" : "2020-04-02T17:17:35.342043563Z"
+            },
+            "callerSuppliedUserAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)",
+            "callerIp" : "67.243.209.244"
+          },
+          "request" : {
+            "parent" : "projects/test-271317",
+            "role" : {
+              "included_permissions" : [ "accessapproval.requests.approve" ],
+              "description" : "Created on: 2020-04-02",
+              "title" : "Custom Role"
+            },
+            "role_id" : "CustomRole",
+            "@type" : "type.googleapis.com/google.iam.admin.v1.GetRoleRequest"
+          },
+          "authenticationInfo" : {
+            "principalSubject" : "user:test@testemail.com",
+            "principalEmail" : "test@testemail.com"
+          },
+          "authorizationInfo" : [ {
+            "resource" : "projects/test-271317",
+            "permission" : "iam.roles.get",
+            "granted" : true
+          } ],
+          "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+          "response" : {
+            "group_title" : "Custom",
+            "group_name" : "custom",
+            "@type" : "type.googleapis.com/google.iam.admin.v1.Role",
+            "name" : "projects/test-271317/roles/CustomRole",
+            "included_permissions" : [ "accessapproval.requests.approve" ],
+            "description" : "Created on: 2020-04-02",
+            "etag" : "BwWiUfoalFk=",
+            "title" : "Custom Role"
+          },
+          "serviceData" : {
+            "@type" : "type.googleapis.com/google.iam.admin.v1.AuditData",
+            "permissionDelta" : {
+              "addedPermissions" : [ "accessapproval.requests.approve" ]
+            }
+          },
+          "methodName" : "google.iam.admin.v1.GetRole",
+          "resourceName" : "projects/test-271317/roles/CustomRole",
+          "serviceName" : "iam.googleapis.com"
+        },
+        "receiveTimestamp" : "2020-04-02T17:17:35.976303135Z",
+        "insertId" : "32gow0e5fcj3",
+        "timestamp" : "2020-04-02T17:17:35.215584288Z"
+      }
+    }
+  result:
+    custom:
+      data:
+        insertId: "32gow0e5fcj3"
+        logName: "projects/test-271317/logs/cloudaudit.googleapis.com%2Factivity"
+        protoPayload:
+          '@type': "type.googleapis.com/google.cloud.audit.AuditLog"
+          authenticationInfo:
+            principalEmail: "test@testemail.com"
+            principalSubject: "user:test@testemail.com"
+          authorizationInfo:
+           -
+            resource: "projects/test-271317"
+            permission: "iam.roles.get"
+            granted: true
+          methodName: "google.iam.admin.v1.GetRole"
+          request:
+            '@type': "type.googleapis.com/google.iam.admin.v1.GetRoleRequest"
+            parent: "projects/test-271317"
+            role:
+              description: "Created on: 2020-04-02"
+              included_permissions:
+               - "accessapproval.requests.approve"
+              title: "Custom Role"
+            role_id: "CustomRole"
+          requestMetadata:
+            callerIp: "67.243.209.244"
+            callerSuppliedUserAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)"
+            requestAttributes:
+              time: "2020-04-02T17:17:35.342043563Z"
+          resourceName: "projects/test-271317/roles/CustomRole"
+          response:
+            '@type': "type.googleapis.com/google.iam.admin.v1.Role"
+            description: "Created on: 2020-04-02"
+            etag: "BwWiUfoalFk="
+            group_name: "custom"
+            group_title: "Custom"
+            included_permissions:
+             - "accessapproval.requests.approve"
+            name: "projects/test-271317/roles/CustomRole"
+            title: "Custom Role"
+          serviceData:
+            '@type': "type.googleapis.com/google.iam.admin.v1.AuditData"
+            permissionDelta:
+              addedPermissions:
+               - "accessapproval.requests.approve"
+          serviceName: "iam.googleapis.com"
+        receiveTimestamp: "2020-04-02T17:17:35.976303135Z"
+        resource:
+          labels:
+            project_id: "test-271317"
+            role_name: "projects/test-271317/roles/CustomRole"
+          type: "iam_role"
+        severity: "NOTICE"
+        timestamp: "2020-04-02T17:17:35.215584288Z"
+      evt:
+        name: "google.iam.admin.v1.GetRole"
+      http:
+        useragent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "80"
+            minor: "0"
+            patch: "3987"
+            patch_minor: "149"
+          device:
+            brand: "Apple"
+            category: "Desktop"
+            family: "Mac"
+            model: "Mac"
+          os:
+            family: "Mac OS X"
+            major: "10"
+            minor: "14"
+            patch: "1"
+      network:
+        client:
+          geoip: {}
+          ip: "67.243.209.244"
+      ocsf:
+        activity_id: 2
+        activity_name: "Read"
+        actor:
+          user:
+            account:
+              uid: "test-271317"
+            email_addr: "test@testemail.com"
+            name: "test"
+            type: "User"
+            type_id: 1
+        api:
+          operation: "google.iam.admin.v1.getrole"
+          request:
+            data:
+              '@type': "type.googleapis.com/google.iam.admin.v1.GetRoleRequest"
+              parent: "projects/test-271317"
+              role:
+                description: "Created on: 2020-04-02"
+                included_permissions:
+                 - "accessapproval.requests.approve"
+                title: "Custom Role"
+              role_id: "CustomRole"
+            uid: "Unknown"
+          response:
+            data:
+              '@type': "type.googleapis.com/google.iam.admin.v1.Role"
+              description: "Created on: 2020-04-02"
+              etag: "BwWiUfoalFk="
+              group_name: "custom"
+              group_title: "Custom"
+              included_permissions:
+               - "accessapproval.requests.approve"
+              name: "projects/test-271317/roles/CustomRole"
+              title: "Custom Role"
+          service:
+            name: "iam.googleapis.com"
+        category_name: "Application Activity"
+        category_uid: 6
+        class_name: "API Activity"
+        class_uid: 6003
+        cloud:
+          account:
+            uid: "test-271317"
+          provider: "Google Cloud"
+        http_request:
+          user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)"
+        metadata:
+          event_code: "google.iam.admin.v1.getrole"
+          log_name: "projects/test-271317/logs/cloudaudit.googleapis.com%2Factivity"
+          product:
+            name: "Google Cloud Audit logs"
+            vendor_name: "Google Cloud"
+          profiles:
+           - "cloud"
+           - "datetime"
+          uid: "32gow0e5fcj3"
+          version: "1.3.0"
+        severity: "NOTICE"
+        severity_id: 99
+        src_endpoint:
+          ip: "67.243.209.244"
+        status: "Success"
+        status_id: 1
+        time: 1585847855215
+        time_dt: "2020-04-02T17:17:35.215584288Z"
+        type_uid: 600302
+      usr:
+        email: "test@testemail.com"
+        id: "test@testemail.com"
+    message: |-
+      {
+        "data" : {
+          "severity" : "NOTICE",
+          "logName" : "projects/test-271317/logs/cloudaudit.googleapis.com%2Factivity",
+          "resource" : {
+            "type" : "iam_role",
+            "labels" : {
+              "role_name" : "projects/test-271317/roles/CustomRole",
+              "project_id" : "test-271317"
+            }
+          },
+          "protoPayload" : {
+            "requestMetadata" : {
+              "requestAttributes" : {
+                "time" : "2020-04-02T17:17:35.342043563Z"
+              },
+              "callerSuppliedUserAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)",
+              "callerIp" : "67.243.209.244"
+            },
+            "request" : {
+              "parent" : "projects/test-271317",
+              "role" : {
+                "included_permissions" : [ "accessapproval.requests.approve" ],
+                "description" : "Created on: 2020-04-02",
+                "title" : "Custom Role"
+              },
+              "role_id" : "CustomRole",
+              "@type" : "type.googleapis.com/google.iam.admin.v1.GetRoleRequest"
+            },
+            "authenticationInfo" : {
+              "principalSubject" : "user:test@testemail.com",
+              "principalEmail" : "test@testemail.com"
+            },
+            "authorizationInfo" : [ {
+              "resource" : "projects/test-271317",
+              "permission" : "iam.roles.get",
+              "granted" : true
+            } ],
+            "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+            "response" : {
+              "group_title" : "Custom",
+              "group_name" : "custom",
+              "@type" : "type.googleapis.com/google.iam.admin.v1.Role",
+              "name" : "projects/test-271317/roles/CustomRole",
+              "included_permissions" : [ "accessapproval.requests.approve" ],
+              "description" : "Created on: 2020-04-02",
+              "etag" : "BwWiUfoalFk=",
+              "title" : "Custom Role"
+            },
+            "serviceData" : {
+              "@type" : "type.googleapis.com/google.iam.admin.v1.AuditData",
+              "permissionDelta" : {
+                "addedPermissions" : [ "accessapproval.requests.approve" ]
+              }
+            },
+            "methodName" : "google.iam.admin.v1.GetRole",
+            "resourceName" : "projects/test-271317/roles/CustomRole",
+            "serviceName" : "iam.googleapis.com"
+          },
+          "receiveTimestamp" : "2020-04-02T17:17:35.976303135Z",
+          "insertId" : "32gow0e5fcj3",
+          "timestamp" : "2020-04-02T17:17:35.215584288Z"
+        }
+      }
+    service: "iam.googleapis.com"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1585847855215
+

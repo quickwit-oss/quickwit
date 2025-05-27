@@ -1,0 +1,87 @@
+id: "aws.fsx"
+tests:
+ -
+  sample: "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing' Guid='{54849625-5478-4994-A5BA-3E3B0328C30D}'/><EventID>4663</EventID><Version>1</Version><Level>0</Level><Task>12800</Task><Opcode>0</Opcode><Keywords>0x8020000000000000</Keywords><TimeCreated SystemTime='2021-06-13T21:29:42.250333600Z'/><EventRecordID>294054</EventRecordID><Correlation/><Execution ProcessID='4' ThreadID='6832'/><Channel>Security</Channel><Computer>amznfsxjgnfqf2v.fsx.demo.com</Computer><Security/></System><EventData><Data Name='SubjectUserSid'>S-1-5-21-1387100404-3545110199-3154596375-1113</Data><Data Name='SubjectUserName'>Admin</Data><Data Name='SubjectDomainName'>fsx</Data><Data Name='SubjectLogonId'>0xbc9cfcc</Data><Data Name='ObjectServer'>Security</Data><Data Name='ObjectType'>File</Data><Data Name='ObjectName'>\\Device\\HarddiskVolume13\\share\\My first folder</Data><Data Name='HandleId'>0x1350</Data><Data Name='AccessList'>%%4423</Data><Data Name='AccessMask'>0x80</Data><Data Name='ProcessId'>0x4</Data><Data Name='ProcessName'></Data><Data Name='ResourceAttributes'>S:AI</Data></EventData></Event>"
+  result:
+    custom:
+      AccessList: "%%4423"
+      AccessMask: "0x80"
+      Event:
+        EventData:
+          Data:
+           -
+            value: "S-1-5-21-1387100404-3545110199-3154596375-1113"
+            Name: "SubjectUserSid"
+           -
+            value: "Admin"
+            Name: "SubjectUserName"
+           -
+            value: "fsx"
+            Name: "SubjectDomainName"
+           -
+            value: "0xbc9cfcc"
+            Name: "SubjectLogonId"
+           -
+            value: "Security"
+            Name: "ObjectServer"
+           -
+            value: "File"
+            Name: "ObjectType"
+           -
+            value: "\\Device\\HarddiskVolume13\\share\\My first folder"
+            Name: "ObjectName"
+           -
+            value: "0x1350"
+            Name: "HandleId"
+           -
+            value: "%%4423"
+            Name: "AccessList"
+           -
+            value: "0x80"
+            Name: "AccessMask"
+           -
+            value: "0x4"
+            Name: "ProcessId"
+           -
+            Name: "ProcessName"
+           -
+            value: "S:AI"
+            Name: "ResourceAttributes"
+        System:
+          Channel: "Security"
+          Computer: "amznfsxjgnfqf2v.fsx.demo.com"
+          Correlation: ""
+          EventRecordID: "294054"
+          Execution:
+            ProcessID: "4"
+            ThreadID: "6832"
+          Keywords: "0x8020000000000000"
+          Level: "0"
+          Opcode: "0"
+          Provider:
+            Guid: "{54849625-5478-4994-A5BA-3E3B0328C30D}"
+            Name: "Microsoft-Windows-Security-Auditing"
+          Security: ""
+          Task: "12800"
+          TimeCreated:
+            SystemTime: "2021-06-13T21:29:42.250333600Z"
+          Version: "1"
+      HandleId: "0x1350"
+      ObjectName: "\\Device\\HarddiskVolume13\\share\\My first folder"
+      ObjectServer: "Security"
+      ObjectType: "File"
+      ProcessId: "0x4"
+      ResourceAttributes: "S:AI"
+      SubjectDomainName: "fsx"
+      SubjectLogonId: "0xbc9cfcc"
+      SubjectUserSid: "S-1-5-21-1387100404-3545110199-3154596375-1113"
+      evt:
+        id: "4663"
+        name: "An attempt was made to access an object"
+      usr:
+        id: "Admin"
+    message: "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing' Guid='{54849625-5478-4994-A5BA-3E3B0328C30D}'/><EventID>4663</EventID><Version>1</Version><Level>0</Level><Task>12800</Task><Opcode>0</Opcode><Keywords>0x8020000000000000</Keywords><TimeCreated SystemTime='2021-06-13T21:29:42.250333600Z'/><EventRecordID>294054</EventRecordID><Correlation/><Execution ProcessID='4' ThreadID='6832'/><Channel>Security</Channel><Computer>amznfsxjgnfqf2v.fsx.demo.com</Computer><Security/></System><EventData><Data Name='SubjectUserSid'>S-1-5-21-1387100404-3545110199-3154596375-1113</Data><Data Name='SubjectUserName'>Admin</Data><Data Name='SubjectDomainName'>fsx</Data><Data Name='SubjectLogonId'>0xbc9cfcc</Data><Data Name='ObjectServer'>Security</Data><Data Name='ObjectType'>File</Data><Data Name='ObjectName'>\\Device\\HarddiskVolume13\\share\\My first folder</Data><Data Name='HandleId'>0x1350</Data><Data Name='AccessList'>%%4423</Data><Data Name='AccessMask'>0x80</Data><Data Name='ProcessId'>0x4</Data><Data Name='ProcessName'></Data><Data Name='ResourceAttributes'>S:AI</Data></EventData></Event>"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1623619782250
+

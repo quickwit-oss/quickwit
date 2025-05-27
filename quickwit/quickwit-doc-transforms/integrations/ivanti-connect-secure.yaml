@@ -1,0 +1,552 @@
+id: ivanti-connect-secure
+metric_id: ivanti-connect-secure
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: User-Agent
+    path: http.useragent
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Destination IP
+    path: network.destination.ip
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - facetType: range
+    groups:
+      - Ivanti connect secure
+    name: ACL Count
+    path: ivanti_connect_secure.acl_count
+    source: log
+    type: integer
+  - facetType: range
+    groups:
+      - Ivanti connect secure
+    name: Concurrent Users
+    path: ivanti_connect_secure.concurrent_users
+    source: log
+    type: integer
+  - facetType: range
+    groups:
+      - Ivanti connect secure
+    name: Connections
+    path: ivanti_connect_secure.connections
+    source: log
+    type: integer
+  - facetType: range
+    groups:
+      - Ivanti connect secure
+    name: Detected Files
+    path: ivanti_connect_secure.detected_files
+    source: log
+    type: integer
+  - facetType: range
+    groups:
+      - Ivanti connect secure
+    name: Duration
+    path: ivanti_connect_secure.duration
+    source: log
+    type: integer
+    unit:
+      family: time
+      name: second
+  - facetType: range
+    groups:
+      - Ivanti connect secure
+    name: Matched Files
+    path: ivanti_connect_secure.matched_files
+    source: log
+    type: integer
+  - facetType: range
+    groups:
+      - Ivanti connect secure
+    name: Mismatched Files
+    path: ivanti_connect_secure.mismatched_files
+    source: log
+    type: integer
+  - facetType: range
+    groups:
+      - Ivanti connect secure
+    name: Optimized ACL Count
+    path: ivanti_connect_secure.optimized_acl_count
+    source: log
+    type: integer
+  - facetType: range
+    groups:
+      - Ivanti connect secure
+    name: Time Taken
+    path: ivanti_connect_secure.time_taken
+    source: log
+    type: integer
+    unit:
+      family: time
+      name: second
+pipeline:
+  type: pipeline
+  name: Ivanti Connect Secure
+  enabled: true
+  filter:
+    query: source:ivanti-connect-secure
+  processors:
+    - type: grok-parser
+      name: Parsing common log format
+      enabled: true
+      source: message
+      samples:
+        - '1023 <134>1 2024-11-22T00:20:11-05:00 test.com PulseSecure: - - -
+          {"message_id":"WEB20174","date":"2024-11-22","timestamp":"1732252811","us_timestamp":"1732252811.910431","opaque_id":"640","gateway_id":"","gateway_name":"","unique_id":"uid__1732252811_4979_82","sev_num":"1","sev_string":"info","source_ip":"10.10.10.10",
+          "macaddr":"",
+          "user":"user1@test.com","realm_name":"test-realm","roles":"kit-common,
+          kit-desktops,
+          kit-automation","session_id":"12ab34cd56","useragent":"Mozilla/5.0
+          (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)
+          Chrome/131.0.0.0
+          Safari/537.36","device_id":"","browser_id":"12ab34cd565533110bd94b7d656715d7","tenant_id":"","cert_hash":"","additional_details":[],"raw_message":"WebRequest
+          completed, GET to
+          [http://10.0.0.0:8080//api/session/data/noauth/users/1a1a1a1a-1111-11aa-1a11-1111111111a111?token=ABC]
+          from [10.0.0.0] result=[200] sent=[151] received=[67] in [0]
+          seconds"}'
+      grok:
+        supportRules: ""
+        matchRules: "common_rule (%{number} )?(<%{integer}>)?(%{integer} )?%{notSpace}
+          %{notSpace} %{notSpace}: %{notSpace} %{notSpace} %{notSpace}
+          %{data::json}"
+    - type: grok-parser
+      name: Parsing `message_id` attribute
+      enabled: true
+      source: message_id
+      samples:
+        - WEB20174
+      grok:
+        supportRules: ""
+        matchRules: message_id_rule %{regex("[A-Za-z]{3}"):event_type}%{integer}
+    - type: grok-parser
+      name: Convert `roles` field into an array
+      enabled: true
+      source: roles
+      samples:
+        - kit-common, kit-desktops, kit-automation
+      grok:
+        supportRules: ""
+        matchRules: roles_rule %{data:roles:array("",", ")}
+    - type: arithmetic-processor
+      name: Convert `timestamp` epoch to milliseconds epoch
+      enabled: true
+      expression: timestamp * 1000
+      target: timestamp
+      replaceMissing: false
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: service-remapper
+      name: Define `event_type` as the official service of the log
+      enabled: true
+      sources:
+        - event_type
+    - type: message-remapper
+      name: Define `raw_message` as the official message of the log
+      enabled: true
+      sources:
+        - raw_message
+    - name: Lookup for `sev_string` to `status`
+      enabled: true
+      source: sev_string
+      target: status
+      lookupTable: |-
+        info, Info
+        minor, Notice
+        major, Warning
+        critical, Critical
+      type: lookup-processor
+    - type: status-remapper
+      name: Define `status` as the official status of the log
+      enabled: true
+      sources:
+        - status
+    - type: attribute-remapper
+      name: Map `user` to `usr.name`
+      enabled: true
+      sources:
+        - user
+      sourceType: attribute
+      target: usr.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `source_ip` to `network.client.ip`
+      enabled: true
+      sources:
+        - source_ip
+      sourceType: attribute
+      target: network.client.ip
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `destination_ip` to `network.destination.ip`
+      enabled: true
+      sources:
+        - destination_ip
+      sourceType: attribute
+      target: network.destination.ip
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `useragent` to `http.useragent`
+      enabled: true
+      sources:
+        - useragent
+      sourceType: attribute
+      target: http.useragent
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: geo-ip-parser
+      name: Extracting geolocation information from the client IP
+      enabled: true
+      sources:
+        - network.client.ip
+      target: network.client.geoip
+      ip_processing_behavior: do-nothing
+    - type: user-agent-parser
+      name: Extracting user-agent information from the user-agent
+      enabled: true
+      sources:
+        - http.useragent
+      target: http.useragent_details
+      encoded: false
+      combineVersionDetails: false
+    - type: category-processor
+      name: Category processor for realm name
+      enabled: true
+      categories:
+        - filter:
+            query: '@realm_name:(-* OR "")'
+          name: N/A
+      target: realm_name
+    - type: category-processor
+      name: Category processor for http user agent
+      enabled: true
+      categories:
+        - filter:
+            query: '@http.useragent:(-* OR "")'
+          name: N/A
+      target: http.useragent
+    - type: pipeline
+      name: Web Requests
+      enabled: true
+      filter:
+        query: service:WEB
+      processors:
+        - type: grok-parser
+          name: Parsing Web Requests Logs
+          enabled: true
+          source: message
+          samples:
+            - WebRequest completed, GET to
+              [http://10.0.0.0:8080//fonts/carlito/Carlito-Bold.woff] from
+              [10.0.1.45] result=[200] sent=[45] received=[281212] in [0]
+              seconds
+            - "Access blocked to invalid SSL site - Host: example.host, Port:
+              123, Request: http://example.com/url"
+            - "Access blocked due to invalid ActiveSync request. Host:
+              example.host, Request: http://example.com/url"
+            - "Access blocked after DNS lookup - Host: example.host, Request:
+              POST http://example.com/url"
+            - "Access denied because outbound secure http connections are
+              disabled - Host: example.host, Request: POST
+              http://example.com/url"
+          grok:
+            supportRules: extract_http_method
+              %{regex("(POST|GET|PUT|DELETE|PATCH|OPTIONS)"):http.method}
+            matchRules: >-
+              completed_web_requests_rule WebRequest completed,
+              %{word:http.method} to \[%{regex("[^]]*"):http.url}\] from
+              \[%{ip}\] result=\[%{integer:http.status_code}\]
+              sent=\[%{integer:network.bytes_written}\]
+              received=\[%{integer:network.bytes_read}\] in
+              \[%{integer:ivanti_connect_secure.time_taken}\] seconds
+
+              failed_web_requests_rule WebRequest Failed : Host: %{notSpace:http.url_details.host}, Request: (%{extract_http_method} )?%{notSpace:http.url}(,)? Reason(:)? %{data:reason}
+
+              blocked_web_requests_rule1 %{regex("Access blocked after DNS lookup"):reason}(. Check Web ACL settings)? - Host: %{notSpace:http.url_details.host}, Request: (%{extract_http_method} )?%{notSpace:http.url}
+
+              blocked_web_requests_rule2 %{regex("Access blocked to invalid SSL site"):reason} - Host: %{notSpace:http.url_details.host}, Port: %{integer:port}, Request: (%{extract_http_method} )?%{notSpace:http.url}
+
+              blocked_web_requests_rule3 %{regex("Access blocked due to invalid ActiveSync request"):reason}. Host: %{notSpace:http.url_details.host}, Request: (%{extract_http_method} )?%{notSpace:http.url}
+
+              denied_web_requests_rule Access denied because outbound secure http connections are disabled - Host: %{notSpace:http.url_details.host}, Request: (%{extract_http_method} )?%{notSpace:http.url}
+        - type: category-processor
+          name: HTTP status category processor
+          enabled: true
+          categories:
+            - filter:
+                query: "@http.status_code:[100 TO 199]"
+              name: Informational
+            - filter:
+                query: "@http.status_code:[200 TO 299]"
+              name: Successful
+            - filter:
+                query: "@http.status_code:[300 TO 399]"
+              name: Redirection
+            - filter:
+                query: "@http.status_code:[400 TO 499]"
+              name: Client Error
+            - filter:
+                query: "@http.status_code:[500 TO 599]"
+              name: Server Error
+          target: http.status_category
+    - type: pipeline
+      name: Statistics
+      enabled: true
+      filter:
+        query: service:STS
+      processors:
+        - type: grok-parser
+          name: Parsing Statistics Logs
+          enabled: true
+          source: message
+          samples:
+            - "Number of concurrent users logged in to the device: 2"
+            - "Number of NCP connections: 5"
+            - "Number of JCP connections: 6"
+          grok:
+            supportRules: ""
+            matchRules: >-
+              statistics_rule_1 Number of concurrent users logged in to the
+              device: %{integer:ivanti_connect_secure.concurrent_users}
+
+              statistics_rule_2 Number of (NCP|JCP) connections: %{integer:ivanti_connect_secure.connections}
+    - type: pipeline
+      name: Authentication
+      enabled: true
+      filter:
+        query: service:AUT
+      processors:
+        - type: grok-parser
+          name: Parsing Authentication Logs
+          enabled: true
+          source: message
+          samples:
+            - "Login failed using auth server System Local(Local
+              Authentication). Reason: failure reason"
+            - Primary authentication failed for demouser/System Local from
+              10.10.10.10
+            - Login failed from 10.10.10.10 for demouser/System Local because
+              group test-group is disabled. Group Access is turned off in the
+              license.
+            - Remote address for user user@test.com/test-realm changed from
+              10.10.10.10 to 20.20.20.20 forwarded-for changed from 10.0.0.0 to
+              .
+            - "SSL negotiation failed while client at source IP '10.10.10.10'
+              was trying to connect to '10.0.0.0'. Reason: 'http request'"
+          grok:
+            supportRules: ""
+            matchRules: >-
+              unauthenticated_rule1 Unauthenticated request url
+              %{notSpace:http.url} came from IP %{ipv4:network.client.ip}.
+
+              unauthenticated_rule2 Connection from IP %{ipv4:network.client.ip} not authenticated yet \(URL=%{notSpace:http.url}\)
+
+              failed_login_rule1 Login failed( using auth server %{regex("[^.]*")})?. Reason: %{data:reason}
+
+              failed_login_rule2 (Primary|Secondary) authentication failed for %{regex("[^/]*"):usr.name}/%{regex(".*(?= from)"):realm_name} from %{ipv4:network.client.ip}
+
+              failed_login_rule3 Login failed from %{ipv4:network.client.ip} for %{regex("[^/]*"):usr.name}/%{regex(".*(?= because)"):realm_name} because %{regex("[^.]*"):reason}.*
+
+              failed_login_rule4 Login failed from %{ipv4:network.client.ip} for %{regex("[^/]*"):usr.name}/%{regex("[^.]*"):realm_name} using %{regex("[^.]*")}.( %{regex("[^.]*"):reason}.)?
+
+              failed_login_rule5 Login failed from %{ipv4:network.client.ip} for %{regex("[^/]*"):usr.name}/%{regex("[^.]*"):realm_name}.( %{regex("[^.]*"):reason}.)?
+
+              failed_login_rule6 Login failed from %{ipv4:network.client.ip} for %{notSpace:usr.name} because %{regex("[^.]*"):reason}.
+
+              rejected_login_rule1 Login rejected from IP %{ipv4:network.client.ip} for %{regex("[^/]*"):usr.name}/%{regex("[^.]*"):realm_name} %{regex("due to internal error"):reason}.
+
+              rejected_login_rule2 Login rejected( login)? from IP %{ipv4:network.client.ip} for %{regex("[^/]*"):usr.name}/%{regex("[^.]*"):realm_name}. %{regex("[^.]*"):reason}.
+
+              rejected_login_rule3 Login rejected( login)? from IP %{ipv4:network.client.ip}( for %{regex("[^.]*"):usr.name})?. %{regex("[^.]*"):reason}.
+
+              successful_login_rule1 (Primary|Secondary) authentication successful for %{regex("[^/]*"):usr.name}/%{regex(".*(?= from)"):realm_name} from %{ipv4:network.client.ip}( forwarded for %{ipv4:forwarded_ip})?
+
+              successful_login_rule2 Login succeeded for %{regex("[^/]*"):usr.name}/%{regex("[^\\(]*"):realm_name} \(session:%{regex("[^)]*"):session_id}\) from %{ipv4:network.client.ip}( )?.*
+
+              successful_login_rule3 Login succeeded for %{regex("[^/]*"):usr.name}/%{regex(".*(?= from)"):realm_name} from %{ipv4:network.client.ip}( )?.*
+
+              successful_login_rule4 %{regex("[^/]*"):usr.name}/%{regex(".*(?= from)"):realm_name} from IP %{ipv4:network.client.ip}( via (%{port:network.client.port}|%{word:}) port)? authenticated successfully using %{regex(".*(?= authentication)"):} authentication.
+
+              successful_login_rule5 %{regex(".*(?= login)"):} login succeeded for %{regex("[^/]*"):usr.name}/%{regex(".*(?= from)"):realm_name} from %{ipv4:network.client.ip}.
+
+              ssl_negotiation_failed SSL negotiation failed while client at source IP '%{ipv4:network.client.ip}' was trying to connect to '%{ipv4:network.destination.ip}'. Reason: '%{data:reason}'
+
+              remote_address_change_rule Remote address for user %{regex("[^/]*"):usr.name}/%{regex(".*(?= changed)"):realm_name} changed from %{ipv4:old_client_ip} to %{ipv4:new_client_ip}( forwarded-for %{data})?.
+    - type: pipeline
+      name: System Status
+      enabled: true
+      filter:
+        query: service:SYS
+      processors:
+        - type: grok-parser
+          name: Parsing System Status Logs
+          enabled: true
+          source: message
+          samples:
+            - "Integrity Scan Completed: Integrity Scan Results : Matched Files
+              18773, Newly Detected Files 10, Mismatched Files 10"
+          grok:
+            supportRules: ""
+            matchRules: "integrity_scan_rule Integrity Scan Completed: Integrity Scan
+              Results : Matched Files
+              %{integer:ivanti_connect_secure.matched_files}, Newly Detected
+              Files %{integer:ivanti_connect_secure.detected_files}, Mismatched
+              Files %{integer:ivanti_connect_secure.mismatched_files}"
+    - type: pipeline
+      name: Connection Requests
+      enabled: true
+      filter:
+        query: service:JAV
+      processors:
+        - type: grok-parser
+          name: Parsing Connection requests logs
+          enabled: true
+          source: message
+          samples:
+            - Closed connection to test.com port 3389 after 7 seconds, with 1286
+              bytes read (in 5 chunks) and 1364 bytes written (in 5 chunks)
+            - Closed connection to test.com port 3389 after 7 seconds, with 1286
+              bytes read (in 5 chunks) and 1364 bytes written (in 5 chunks)
+              (session:sid12345)
+          grok:
+            supportRules: ""
+            matchRules: connection_requests_rule Closed connection to %{notSpace:hostname}
+              port %{port:network.destination.port} after
+              %{integer:ivanti_connect_secure.duration} seconds, with
+              %{integer:network.bytes_read} bytes read \(in
+              %{integer:read_chunks} chunks\) and
+              %{integer:network.bytes_written} bytes written \(in
+              %{integer:written_chunks} chunks\)(
+              \(session:%{regex("[^)]*"):sessionid}\))?
+    - type: pipeline
+      name: VPN Tunneling
+      enabled: true
+      filter:
+        query: service:(NWC OR ERR)
+      processors:
+        - type: grok-parser
+          name: Parsing VPN Tunneling Logs
+          enabled: true
+          source: message
+          samples:
+            - "VPN Tunneling: ACL count = 24."
+            - "VPN Tunneling: Optimized ACL count = 0."
+            - "VPN Tunneling: Session started for user (session: sid1234) with
+              IPv4 address 10.10.10.10, hostname demohost"
+            - "VPN Tunneling: Session started for user with IP 10.10.10.10,
+              hostname demohost"
+          grok:
+            supportRules: ""
+            matchRules: >-
+              vpn_tunneling_rule1 VPN Tunneling: ACL count =
+              %{integer:ivanti_connect_secure.acl_count}.
+
+              vpn_tunneling_rule2 VPN Tunneling: Optimized ACL count = %{integer:ivanti_connect_secure.optimized_acl_count}.
+
+              vpn_tunneling_rule3 VPN Tunneling: Session started for user( \(session: %{regex("[^)]*"):session_id}\))? with (IPv4 address|IP) %{ipv4:network.client.ip}, hostname %{data:hostname}
+    - type: pipeline
+      name: Administrator Logins & Administrator Changes
+      enabled: true
+      filter:
+        query: service:ADM
+      processors:
+        - type: grok-parser
+          name: Parsing Administrative Activities Logs
+          enabled: true
+          source: message
+          samples:
+            - Login failed from 10.10.10.10 for adminuser/System Local.
+            - Login failed from 10.10.10.10 for adminuser/System Local because
+              group System Local is disabled. Group Access is turned off in the
+              license.
+            - Login failed from 10.10.10.10 for adminuser/System Local using
+              test-server server.
+            - Admin adminuser/System Local from IP 10.10.10.10 via 3221 port
+              authenticated successfully using primary authentication.
+            - Login succeeded for adminuser/System Local from IP 10.10.10.10 via
+              3221 port.
+          grok:
+            supportRules: ""
+            matchRules: >-
+              failed_login_rule1 Login failed from %{ipv4:network.client.ip} for
+              %{regex("[^/]*"):usr.name}/%{regex(".*(?= because)"):realm_name}
+              because %{regex("[^.]*"):reason}.*
+
+              failed_login_rule2 Login failed from %{ipv4:network.client.ip} for %{regex("[^/]*"):usr.name}/%{regex(".*(?= using)"):realm_name} using %{regex("[^.]*")}.
+
+              failed_login_rule3 Login failed from %{ipv4:network.client.ip} for %{regex("[^/]*"):usr.name}/%{regex("[^.]*"):realm_name}.
+
+              successful_login_rule1 Admin %{regex("[^/]*"):usr.name}/%{regex(".*(?= from)"):realm_name} from IP %{ipv4:network.client.ip}( via (%{port:network.client.port}|%{word:}) port)? authenticated successfully using %{regex(".*(?= authentication)"):} authentication.
+
+              successful_login_rule2 Login succeeded for %{regex("[^/]*"):usr.name}/%{regex(".*(?= from)"):realm_name} from IP %{ipv4:network.client.ip}( via (%{port:network.client.port}|%{word:}) port)?.

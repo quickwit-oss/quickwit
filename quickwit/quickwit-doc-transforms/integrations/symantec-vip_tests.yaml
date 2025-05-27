@@ -1,0 +1,122 @@
+id: "symantec-vip"
+tests:
+ -
+  sample: |-
+    {
+      "wsdlVersion" : "1_1",
+      "extUserId" : "7cc34F6DC",
+      "durationMillis" : "60",
+      "credId" : "VSME1673472",
+      "result" : {
+        "credType" : "STANDARD_OTP",
+        "statusMessage" : "Success",
+        "status" : "0000"
+      },
+      "jurHash" : "1459689",
+      "requestId" : "abcd456",
+      "_nestedCalls" : [ {
+        "result" : {
+          "credType" : "STANDARD_OTP",
+          "statusMessage" : "Success",
+          "status" : "0000"
+        },
+        "jurHash" : "1459689",
+        "extUserId" : "7cc34F6DC",
+        "newBindStatus" : "ENABLED",
+        "credId" : "VSME16734672",
+        "operation" : "addCredential"
+      }, {
+        "result" : {
+          "detail" : "0000",
+          "detailMessage" : "Success",
+          "statusMessage" : "Success",
+          "status" : "0000"
+        },
+        "operation" : "activateToken"
+      } ],
+      "newBindStatus" : "ENABLED",
+      "_id" : "coloss4be-d2-tc.149132321663.2235348",
+      "operation" : "addCredential",
+      "txnId" : "vipus7E94583921D0EA",
+      "ts" : "2017-04-04 16:39:23.090 +0000"
+    }
+  service: "event-logs"
+  result:
+    custom:
+      _id: "coloss4be-d2-tc.149132321663.2235348"
+      _nestedCalls:
+       -
+        result:
+          credType: "STANDARD_OTP"
+          statusMessage: "Success"
+          status: "0000"
+        jurHash: "1459689"
+        extUserId: "7cc34F6DC"
+        newBindStatus: "ENABLED"
+        credId: "VSME16734672"
+        operation: "addCredential"
+       -
+        result:
+          detail: "0000"
+          detailMessage: "Success"
+          statusMessage: "Success"
+          status: "0000"
+        operation: "activateToken"
+      credId: "VSME1673472"
+      durationMillis: "60"
+      jurHash: "1459689"
+      newBindStatus: "ENABLED"
+      operation: "addCredential"
+      requestId: "abcd456"
+      result:
+        credType: "STANDARD_OTP"
+        status: "0000"
+        statusMessage: "Success"
+      ts: 1491323963090
+      txnId: "vipus7E94583921D0EA"
+      usr:
+        name: "7cc34F6DC"
+      wsdlVersion: "1_1"
+    message: |-
+      {
+        "wsdlVersion" : "1_1",
+        "extUserId" : "7cc34F6DC",
+        "durationMillis" : "60",
+        "credId" : "VSME1673472",
+        "result" : {
+          "credType" : "STANDARD_OTP",
+          "statusMessage" : "Success",
+          "status" : "0000"
+        },
+        "jurHash" : "1459689",
+        "requestId" : "abcd456",
+        "_nestedCalls" : [ {
+          "result" : {
+            "credType" : "STANDARD_OTP",
+            "statusMessage" : "Success",
+            "status" : "0000"
+          },
+          "jurHash" : "1459689",
+          "extUserId" : "7cc34F6DC",
+          "newBindStatus" : "ENABLED",
+          "credId" : "VSME16734672",
+          "operation" : "addCredential"
+        }, {
+          "result" : {
+            "detail" : "0000",
+            "detailMessage" : "Success",
+            "statusMessage" : "Success",
+            "status" : "0000"
+          },
+          "operation" : "activateToken"
+        } ],
+        "newBindStatus" : "ENABLED",
+        "_id" : "coloss4be-d2-tc.149132321663.2235348",
+        "operation" : "addCredential",
+        "txnId" : "vipus7E94583921D0EA",
+        "ts" : "2017-04-04 16:39:23.090 +0000"
+      }
+    service: "event-logs"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1491323963090

@@ -1,0 +1,173 @@
+id: "mobile"
+tests:
+ -
+  sample: |-
+    {
+      "date" : "2019-12-12T16:41:32.806+0100",
+      "git_commit" : "0209d81",
+      "version_name" : 1,
+      "service" : "android-sample-java",
+      "logger" : {
+        "name" : "test_logger"
+      },
+      "version_code" : 1,
+      "http" : {
+        "useragent" : "Dalvik/2.1.0 (Linux; U; Android 10; Android SDK built for x86 Build/QSR1.191030.002)"
+      },
+      "network" : {
+        "client" : {
+          "connectivity" : "network_wifi",
+          "ip" : "45.79.17.102"
+        }
+      },
+      "status" : "INFO"
+    }
+  result:
+    custom:
+      date: "2019-12-12T16:41:32.806+0100"
+      git_commit: "0209d81"
+      http:
+        useragent: "Dalvik/2.1.0 (Linux; U; Android 10; Android SDK built for x86 Build/QSR1.191030.002)"
+        useragent_details:
+          browser:
+            family: "Android"
+            major: "10"
+          device:
+            brand: "Generic_Android"
+            category: "Mobile"
+            family: "Android SDK built for x86"
+            model: "Android SDK built for x86"
+          os:
+            family: "Android"
+            major: "10"
+      logger:
+        name: "test_logger"
+      network:
+        client:
+          connectivity: "network_wifi"
+          geoip: {}
+          ip: "45.79.17.102"
+      service: "android-sample-java"
+      status: "INFO"
+      version_code: 1
+      version_name: 1
+    message: |-
+      {
+        "date" : "2019-12-12T16:41:32.806+0100",
+        "git_commit" : "0209d81",
+        "version_name" : 1,
+        "service" : "android-sample-java",
+        "logger" : {
+          "name" : "test_logger"
+        },
+        "version_code" : 1,
+        "http" : {
+          "useragent" : "Dalvik/2.1.0 (Linux; U; Android 10; Android SDK built for x86 Build/QSR1.191030.002)"
+        },
+        "network" : {
+          "client" : {
+            "connectivity" : "network_wifi",
+            "ip" : "45.79.17.102"
+          }
+        },
+        "status" : "INFO"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "date" : "2019-12-12T16:41:32.806+0100",
+      "user_action" : {
+        "id" : "9fa32314-99af-11ea-bb37-0242ac130002"
+      },
+      "logger" : {
+        "name" : "test_logger"
+      },
+      "version_code" : 1,
+      "session_id" : "20cdb46b-eb38-48c8-8037-baa19b188f1e",
+      "application_id" : "ac8218cf-498b-4d33-bd44-151095959547",
+      "network" : {
+        "client" : {
+          "connectivity" : "network_wifi",
+          "ip" : "45.79.17.102"
+        }
+      },
+      "git_commit" : "0209d81",
+      "view" : {
+        "id" : "9252b1eb-5910-4f6f-9b09-a6cb76609be3"
+      },
+      "version_name" : 1,
+      "service" : "android-sample-java",
+      "http" : {
+        "useragent" : "Dalvik/2.1.0 (Linux; U; Android 10; Android SDK built for x86 Build/QSR1.191030.002)"
+      },
+      "status" : "INFO"
+    }
+  result:
+    custom:
+      application_id: "ac8218cf-498b-4d33-bd44-151095959547"
+      date: "2019-12-12T16:41:32.806+0100"
+      git_commit: "0209d81"
+      http:
+        useragent: "Dalvik/2.1.0 (Linux; U; Android 10; Android SDK built for x86 Build/QSR1.191030.002)"
+        useragent_details:
+          browser:
+            family: "Android"
+            major: "10"
+          device:
+            brand: "Generic_Android"
+            category: "Mobile"
+            family: "Android SDK built for x86"
+            model: "Android SDK built for x86"
+          os:
+            family: "Android"
+            major: "10"
+      logger:
+        name: "test_logger"
+      network:
+        client:
+          connectivity: "network_wifi"
+          geoip: {}
+          ip: "45.79.17.102"
+      service: "android-sample-java"
+      session_id: "20cdb46b-eb38-48c8-8037-baa19b188f1e"
+      status: "INFO"
+      user_action:
+        id: "9fa32314-99af-11ea-bb37-0242ac130002"
+      version_code: 1
+      version_name: 1
+      view:
+        id: "9252b1eb-5910-4f6f-9b09-a6cb76609be3"
+    message: |-
+      {
+        "date" : "2019-12-12T16:41:32.806+0100",
+        "user_action" : {
+          "id" : "9fa32314-99af-11ea-bb37-0242ac130002"
+        },
+        "logger" : {
+          "name" : "test_logger"
+        },
+        "version_code" : 1,
+        "session_id" : "20cdb46b-eb38-48c8-8037-baa19b188f1e",
+        "application_id" : "ac8218cf-498b-4d33-bd44-151095959547",
+        "network" : {
+          "client" : {
+            "connectivity" : "network_wifi",
+            "ip" : "45.79.17.102"
+          }
+        },
+        "git_commit" : "0209d81",
+        "view" : {
+          "id" : "9252b1eb-5910-4f6f-9b09-a6cb76609be3"
+        },
+        "version_name" : 1,
+        "service" : "android-sample-java",
+        "http" : {
+          "useragent" : "Dalvik/2.1.0 (Linux; U; Android 10; Android SDK built for x86 Build/QSR1.191030.002)"
+        },
+        "status" : "INFO"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+

@@ -1,0 +1,385 @@
+id: "cassandra"
+tests:
+ -
+  sample: "WARN  [MemtableFlushWriter:20342] 2016-06-29 08:35:35,936  SSTableWriter.java:240 - Compacting large partition limo/read_audit_history:2016-6-29 (115624250 bytes)"
+  result:
+    custom:
+      cassandra:
+        bytes: 115624250
+        keyspace: "limo"
+      db:
+        date: 1467189335936
+        operation: "Compacting"
+        severity: "WARN"
+        table: "read_audit_history"
+      filename: "SSTableWriter"
+      lineno: 240
+      logger:
+        thread_id: 20342
+        thread_name: "MemtableFlushWriter"
+      partition_key: "2016-6-29"
+    message: "WARN  [MemtableFlushWriter:20342] 2016-06-29 08:35:35,936  SSTableWriter.java:240 - Compacting large partition limo/read_audit_history:2016-6-29 (115624250 bytes)"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1467189335936
+ -
+  sample: "INFO  [SlabPoolCleaner] 2016-06-28 16:13:14,966  ColumnFamilyStore.java:1211 - Flushing largest CFS(Keyspace='order_store', ColumnFamily='orderdata') to free up room. Used total: 0.11/0.00, live: 0.11/0.00, flushing: 0.00/0.00, this: 0.10/0.10"
+  result:
+    custom:
+      cassandra:
+        keyspace: "order_store"
+        offheap:
+          flush: 0.0
+          live: 0.0
+          this: 0.1
+          total: 0.0
+        onheap:
+          flush: 0.0
+          live: 0.11
+          this: 0.1
+          total: 0.11
+      db:
+        date: 1467130394966
+        operation: "Flushing"
+        severity: "INFO"
+        table: "orderdata"
+      filename: "ColumnFamilyStore"
+      lineno: 1211
+      logger:
+        thread_name: "SlabPoolCleaner"
+    message: "INFO  [SlabPoolCleaner] 2016-06-28 16:13:14,966  ColumnFamilyStore.java:1211 - Flushing largest CFS(Keyspace='order_store', ColumnFamily='orderdata') to free up room. Used total: 0.11/0.00, live: 0.11/0.00, flushing: 0.00/0.00, this: 0.10/0.10"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1467130394966
+ -
+  sample: "INFO  [SlabPoolCleaner] 2016-06-28 16:13:14,967  ColumnFamilyStore.java:905 - Enqueuing flush of orderdata: 216588472 (10%) on-heap, 0 (0%) off-heap"
+  result:
+    custom:
+      cassandra:
+        keyspace: "orderdata"
+        offheap:
+          bytes: 0
+          percent: 0
+        onheap:
+          bytes: 216588472
+          percent: 10
+      db:
+        date: 1467130394967
+        operation: "Enqueuing"
+        severity: "INFO"
+      filename: "ColumnFamilyStore"
+      lineno: 905
+      logger:
+        thread_name: "SlabPoolCleaner"
+    message: "INFO  [SlabPoolCleaner] 2016-06-28 16:13:14,967  ColumnFamilyStore.java:905 - Enqueuing flush of orderdata: 216588472 (10%) on-heap, 0 (0%) off-heap"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1467130394967
+ -
+  sample: "INFO  [MemtableFlushWriter:320] 2016-06-28 16:13:14,969  Memtable.java:347 - Writing Memtable-orderdata@849528272(129.804MiB serialized bytes, 297813 ops, 10%/0% of on/off-heap limit)"
+  result:
+    custom:
+      cassandra:
+        bytes: 1.29804E8
+        keyspace: "orderdata"
+        offheap:
+          percent: 0
+        onheap:
+          percent: 10
+        ops: 297813
+      db:
+        date: 1467130394969
+        operation: "Writing"
+        severity: "INFO"
+      filename: "Memtable"
+      lineno: 347
+      logger:
+        thread_id: 320
+        thread_name: "MemtableFlushWriter"
+    message: "INFO  [MemtableFlushWriter:320] 2016-06-28 16:13:14,969  Memtable.java:347 - Writing Memtable-orderdata@849528272(129.804MiB serialized bytes, 297813 ops, 10%/0% of on/off-heap limit)"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1467130394969
+ -
+  sample: "INFO  [MemtableFlushWriter:1] 2016-06-28 16:19:48,627  Memtable.java:382 - Completed flushing /app/cassandra/datastax/dse-data01/system/local-7ad54392bcdd35a684174e047860b377/system-local-tmp-ka-3981-Data.db (0.000KiB) for commitlog position ReplayPosition(segmentId=1467130786324, position=567)"
+  result:
+    custom:
+      cassandra:
+        bytes_kb: 0.0
+        sstable: "/app/cassandra/datastax/dse-data01/system/local-7ad54392bcdd35a684174e047860b377/system-local-tmp-ka-3981-Data.db"
+      commitlog: "position ReplayPosition(segmentId=1467130786324, position=567)"
+      db:
+        date: 1467130788627
+        operation: "flushing"
+        severity: "INFO"
+      filename: "Memtable"
+      lineno: 382
+      logger:
+        thread_id: 1
+        thread_name: "MemtableFlushWriter"
+    message: "INFO  [MemtableFlushWriter:1] 2016-06-28 16:19:48,627  Memtable.java:382 - Completed flushing /app/cassandra/datastax/dse-data01/system/local-7ad54392bcdd35a684174e047860b377/system-local-tmp-ka-3981-Data.db (0.000KiB) for commitlog position ReplayPosition(segmentId=1467130786324, position=567)"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1467130788627
+ -
+  sample: "INFO  [CompactionExecutor:26] 2016-06-28 14:38:40,545  CompactionTask.java:274 - Compacted 2 sstables to [/app/cassandra/datastax/dse-data03/order_store/orderhistory-65765df1fc1f11e5974cd5203249f77a/order_store-orderhistory-ka-139517,].  32,011,749 bytes to 29,390,144 (~91% of original) in 1,771ms = 15.826440MB/s.  39,261 total partitions merged to 36,402.  Partition merge counts were {1:33543, 2:2859, }"
+  result:
+    custom:
+      cassandra:
+        bytes_in: "32,011,749"
+        bytes_out: "29,390,144"
+        duration_ms: "1,771"
+        merge_cnt: "{1:33543, 2:2859, }"
+        percent_of_orig: 91
+        pkeys_in: "39,261"
+        pkeys_out: "36,402"
+        speed_mb: 15.82644
+        sstable: "/app/cassandra/datastax/dse-data03/order_store/orderhistory-65765df1fc1f11e5974cd5203249f77a/order_store-orderhistory-ka-139517,"
+      db:
+        date: 1467124720545
+        operation: "Compacted"
+        severity: "INFO"
+      filename: "CompactionTask"
+      lineno: 274
+      logger:
+        thread_id: 26
+        thread_name: "CompactionExecutor"
+    message: "INFO  [CompactionExecutor:26] 2016-06-28 14:38:40,545  CompactionTask.java:274 - Compacted 2 sstables to [/app/cassandra/datastax/dse-data03/order_store/orderhistory-65765df1fc1f11e5974cd5203249f77a/order_store-orderhistory-ka-139517,].  32,011,749 bytes to 29,390,144 (~91% of original) in 1,771ms = 15.826440MB/s.  39,261 total partitions merged to 36,402.  Partition merge counts were {1:33543, 2:2859, }"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1467124720545
+ -
+  sample: "WARN  [ServiceThread] 2016-06-30 14:42:41,538  GCInspector.java:256 - G1 Young Generation GC in 202ms.  G1 Eden Space: 1157627904 -> 0; G1 Old Gen: 6819034128 -> 4151661080; G1 Survivor Space: 553648128 -> 218103808;"
+  result:
+    custom:
+      cassandra:
+        eden:
+          new_bytes: 0
+          orig_bytes: 1157627904
+        oldgen:
+          new_bytes: 4151661080
+          orig_bytes: 6819034128
+      db:
+        date: 1467297761538
+        severity: "WARN"
+      duration: 2.02E8
+      filename: "GCInspector"
+      lineno: 256
+      logger:
+        thread_name: "ServiceThread"
+    message: "WARN  [ServiceThread] 2016-06-30 14:42:41,538  GCInspector.java:256 - G1 Young Generation GC in 202ms.  G1 Eden Space: 1157627904 -> 0; G1 Old Gen: 6819034128 -> 4151661080; G1 Survivor Space: 553648128 -> 218103808;"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1467297761538
+ -
+  sample: "INFO  [ServiceThread] 2016-06-30 14:42:41,542  StatusLogger.java:99 - KeyCache                  365405196               1073741824                      all"
+  result:
+    custom:
+      cassandra:
+        cache_size: 1073741824
+        cache_used: 365405196
+        pool: "KeyCache"
+      db:
+        date: 1467297761542
+        severity: "INFO"
+      filename: "StatusLogger"
+      lineno: 99
+      logger:
+        thread_name: "ServiceThread"
+    message: "INFO  [ServiceThread] 2016-06-30 14:42:41,542  StatusLogger.java:99 - KeyCache                  365405196               1073741824                      all"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1467297761542
+ -
+  sample: "WARN  [ServiceThread] 2016-06-30 14:42:41,538  GCInspector.java:256 - whatever"
+  result:
+    custom:
+      db:
+        date: 1467297761538
+        severity: "WARN"
+      filename: "GCInspector"
+      lineno: 256
+      logger:
+        thread_name: "ServiceThread"
+      msg: "whatever"
+    message: "WARN  [ServiceThread] 2016-06-30 14:42:41,538  GCInspector.java:256 - whatever"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1467297761538
+ -
+  sample: "2016-06-30 14:42:41 [ServiceThread] WARN GCInspector.java:256 - whatever"
+  result:
+    custom:
+      db:
+        date: 1467297761000
+        severity: "WARN"
+      logger:
+        name: "GCInspector.java:256"
+        thread_name: "ServiceThread"
+      msg: "whatever"
+    message: "2016-06-30 14:42:41 [ServiceThread] WARN GCInspector.java:256 - whatever"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1467297761000
+ -
+  sample: "DEBUG [ValidationExecutor:108] 2016-06-30 14:42:41,538 EstimatedHistogram.java:304 - [0..0]: 1"
+  result:
+    custom:
+      db:
+        date: 1467297761538
+        severity: "DEBUG"
+      filename: "EstimatedHistogram"
+      lineno: 304
+      logger:
+        thread_id: 108
+        thread_name: "ValidationExecutor"
+      msg: "[0..0]: 1"
+    message: "DEBUG [ValidationExecutor:108] 2016-06-30 14:42:41,538 EstimatedHistogram.java:304 - [0..0]: 1"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1467297761538
+ -
+  sample: "DEBUG [PerDiskMemtableFlushWriter_0:6272] 2019-02-11 16:22:18,428 Memtable.java:485 - Completed flushing /cassdata/system/batches-845e4cb463211234e12b64ff2c24a132/321-big-Data.db (17.861KiB) for commitlog position CommitLogPosition(segmentId=1539908174810, position=5726318)"
+  result:
+    custom:
+      cassandra:
+        bytes_kb: 17.861
+        sstable: "/cassdata/system/batches-845e4cb463211234e12b64ff2c24a132/321-big-Data.db"
+      commitlog: "position CommitLogPosition(segmentId=1539908174810, position=5726318)"
+      db:
+        date: 1549902138428
+        operation: "flushing"
+        severity: "DEBUG"
+      filename: "Memtable"
+      lineno: 485
+      logger:
+        thread_id: 6272
+        thread_name: "PerDiskMemtableFlushWriter_0"
+    message: "DEBUG [PerDiskMemtableFlushWriter_0:6272] 2019-02-11 16:22:18,428 Memtable.java:485 - Completed flushing /cassdata/system/batches-845e4cb463211234e12b64ff2c24a132/321-big-Data.db (17.861KiB) for commitlog position CommitLogPosition(segmentId=1539908174810, position=5726318)"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1549902138428
+ -
+  sample: |
+    DEBUG [ScheduledTasks:1] 2018-11-22 12:50:31,441  MonitoringTask.java:173 - 3 operations were slow in the last 5000 msecs:
+    <SELECT * FROM offernet.work_e WHERE community_id = 1496222336 AND member_id = 49 AND ~~edge_label_id = 65550 LIMIT 50000>, time 505 msec - slow timeout 500 msec
+    <SELECT * FROM offernet.item_e WHERE community_id = 2052914560 AND member_id = 189 AND ~~edge_label_id = 65553 LIMIT 50000>, time 505 msec - slow timeout 500 msec
+    <SELECT * FROM offernet.item_e WHERE community_id = 2140990336 AND member_id = 212 AND ~~edge_label_id = 65553 LIMIT 50000>, time 504 msec - slow timeout 500 msec
+  result:
+    custom:
+      db:
+        date: 1542891031441
+        operations: 3
+        severity: "DEBUG"
+        slow_statements:
+         - "<SELECT * FROM offernet.work_e WHERE community_id = 1496222336 AND member_id = 49 AND ~~edge_label_id = 65550 LIMIT 50000>, time 505 msec - slow timeout 500 msec"
+         - "<SELECT * FROM offernet.item_e WHERE community_id = 2052914560 AND member_id = 189 AND ~~edge_label_id = 65553 LIMIT 50000>, time 505 msec - slow timeout 500 msec"
+         - "<SELECT * FROM offernet.item_e WHERE community_id = 2140990336 AND member_id = 212 AND ~~edge_label_id = 65553 LIMIT 50000>, time 504 msec - slow timeout 500 msec"
+      elapsed_time: 5.0E9
+      filename: "MonitoringTask"
+      lineno: 173
+      logger:
+        thread_id: 1
+        thread_name: "ScheduledTasks"
+    message: |
+      DEBUG [ScheduledTasks:1] 2018-11-22 12:50:31,441  MonitoringTask.java:173 - 3 operations were slow in the last 5000 msecs:
+      <SELECT * FROM offernet.work_e WHERE community_id = 1496222336 AND member_id = 49 AND ~~edge_label_id = 65550 LIMIT 50000>, time 505 msec - slow timeout 500 msec
+      <SELECT * FROM offernet.item_e WHERE community_id = 2052914560 AND member_id = 189 AND ~~edge_label_id = 65553 LIMIT 50000>, time 505 msec - slow timeout 500 msec
+      <SELECT * FROM offernet.item_e WHERE community_id = 2140990336 AND member_id = 212 AND ~~edge_label_id = 65553 LIMIT 50000>, time 504 msec - slow timeout 500 msec
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1542891031441
+ -
+  sample: |
+    DEBUG [ScheduledTasks:1] 2019-12-30 15:24:19,781 MonitoringTask.java:173 - 1 operations were slow in the last 5000 msecs:
+    <SELECT * FROM system_schema.tables LIMIT 100>, was slow 2 times: avg/min/max 2/2/3 msec - slow timeout 2 msec
+    <SELECT * FROM system_schema.columns LIMIT 200>, was slow 3 times: avg/min/max 4/5/6 msec - slow timeout 3 msec
+  result:
+    custom:
+      db:
+        date: 1577719459781
+        operations: 1
+        severity: "DEBUG"
+        slow_statements:
+         - "<SELECT * FROM system_schema.tables LIMIT 100>, was slow 2 times: avg/min/max 2/2/3 msec - slow timeout 2 msec"
+         - "<SELECT * FROM system_schema.columns LIMIT 200>, was slow 3 times: avg/min/max 4/5/6 msec - slow timeout 3 msec"
+      elapsed_time: 5.0E9
+      filename: "MonitoringTask"
+      lineno: 173
+      logger:
+        thread_id: 1
+        thread_name: "ScheduledTasks"
+    message: |
+      DEBUG [ScheduledTasks:1] 2019-12-30 15:24:19,781 MonitoringTask.java:173 - 1 operations were slow in the last 5000 msecs:
+      <SELECT * FROM system_schema.tables LIMIT 100>, was slow 2 times: avg/min/max 2/2/3 msec - slow timeout 2 msec
+      <SELECT * FROM system_schema.columns LIMIT 200>, was slow 3 times: avg/min/max 4/5/6 msec - slow timeout 3 msec
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1577719459781
+ -
+  sample: "TRACE [GossipStage:1] 2018-07-04 17:07:47,879 Gossiper.java:1234 - Updating heartbeat state version to 2344 from 2343 for 127.0.0.2:7000"
+  result:
+    custom:
+      db:
+        date: 1530724067879
+        severity: "TRACE"
+      filename: "Gossiper"
+      lineno: 1234
+      logger:
+        thread_id: 1
+        thread_name: "GossipStage"
+      msg: "Updating heartbeat state version to 2344 from 2343 for 127.0.0.2:7000"
+    message: "TRACE [GossipStage:1] 2018-07-04 17:07:47,879 Gossiper.java:1234 - Updating heartbeat state version to 2344 from 2343 for 127.0.0.2:7000"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1530724067879
+ -
+  sample: "TRACE [SharedPool-Worker-1] 2016-02-05 19:44:00,154 Message.java:506 - Received: OPTIONS, v=4"
+  result:
+    custom:
+      db:
+        date: 1454701440154
+        severity: "TRACE"
+      filename: "Message"
+      lineno: 506
+      logger:
+        thread_name: "SharedPool-Worker-1"
+      msg: "Received: OPTIONS, v=4"
+    message: "TRACE [SharedPool-Worker-1] 2016-02-05 19:44:00,154 Message.java:506 - Received: OPTIONS, v=4"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1454701440154
+ -
+  sample: "TRACE [SharedPool-Worker-1] 2016-02-05 19:44:09,346 Message.java:525 - Responding: ROWS [user_id(tlp_example, user_data), org.apache.cassandra.db.marshal.UUIDType][email(tlp_example, user_data), org.apache.cassandra.db.marshal.UTF8Type][tax_id(tlp_example, user_data), org.apache.cassandra.db.marshal.UTF8Type] | db8f7a00-cc3e-11e5-b248-091830ac5256 | nate+logex@thelastpickle.com | abc123 | 19be0e40-cc3f-11e5-b248-091830ac5256 | nate+logex@thelastpickle.com | abc123 ---, v=4"
+  result:
+    custom:
+      db:
+        date: 1454701449346
+        severity: "TRACE"
+      filename: "Message"
+      lineno: 525
+      logger:
+        thread_name: "SharedPool-Worker-1"
+      msg: "Responding: ROWS [user_id(tlp_example, user_data), org.apache.cassandra.db.marshal.UUIDType][email(tlp_example, user_data), org.apache.cassandra.db.marshal.UTF8Type][tax_id(tlp_example, user_data), org.apache.cassandra.db.marshal.UTF8Type] | db8f7a00-cc3e-11e5-b248-091830ac5256 | nate+logex@thelastpickle.com | abc123 | 19be0e40-cc3f-11e5-b248-091830ac5256 | nate+logex@thelastpickle.com | abc123 ---, v=4"
+    message: "TRACE [SharedPool-Worker-1] 2016-02-05 19:44:09,346 Message.java:525 - Responding: ROWS [user_id(tlp_example, user_data), org.apache.cassandra.db.marshal.UUIDType][email(tlp_example, user_data), org.apache.cassandra.db.marshal.UTF8Type][tax_id(tlp_example, user_data), org.apache.cassandra.db.marshal.UTF8Type] | db8f7a00-cc3e-11e5-b248-091830ac5256 | nate+logex@thelastpickle.com | abc123 | 19be0e40-cc3f-11e5-b248-091830ac5256 | nate+logex@thelastpickle.com | abc123 ---, v=4"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1454701449346
+

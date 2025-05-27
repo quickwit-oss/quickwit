@@ -1,0 +1,137 @@
+id: "crest_data_systems_anomali_threatstream"
+tests:
+ -
+  sample: |-
+    {
+      "assignee-user" : "apple@cds.com",
+      "hostname" : "api.threatstream.com",
+      "is-public" : true,
+      "incident-status" : "New",
+      "service" : "cds.anomali.threatstream.incident_details",
+      "publication-status" : "published",
+      "is-cloneable" : "yes",
+      "tlp" : "white",
+      "incident-id" : 152200,
+      "is-anonymous" : false,
+      "tags" : [ "Exile-rat", "tropic trooper", "apt23", "Vietnam", "China", "Keyboy", "Pirate Panda" ],
+      "timestamp" : "2023-06-09T10:19:58Z"
+    }
+  result:
+    custom:
+      assignee-user: "apple@cds.com"
+      hostname: "api.threatstream.com"
+      incident-id: 152200
+      incident-status: "New"
+      is-anonymous: false
+      is-cloneable: "yes"
+      is-public: true
+      publication-status: "published"
+      service: "cds.anomali.threatstream.incident_details"
+      tags:
+       - "Exile-rat"
+       - "tropic trooper"
+       - "apt23"
+       - "Vietnam"
+       - "China"
+       - "Keyboy"
+       - "Pirate Panda"
+      timestamp: "2023-06-09T10:19:58Z"
+      tlp: "white"
+    message: |-
+      {
+        "assignee-user" : "apple@cds.com",
+        "hostname" : "api.threatstream.com",
+        "is-public" : true,
+        "incident-status" : "New",
+        "service" : "cds.anomali.threatstream.incident_details",
+        "publication-status" : "published",
+        "is-cloneable" : "yes",
+        "tlp" : "white",
+        "incident-id" : 152200,
+        "is-anonymous" : false,
+        "tags" : [ "Exile-rat", "tropic trooper", "apt23", "Vietnam", "China", "Keyboy", "Pirate Panda" ],
+        "timestamp" : "2023-06-09T10:19:58Z"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "country" : "US",
+      "is-public" : false,
+      "observable-severity" : "low",
+      "observable-id" : 59591954049,
+      "confidence" : 100,
+      "source" : "Anomali Threat Research TOR Nodes",
+      "threat-type" : "tor",
+      "type" : "ip",
+      "retina-confidence" : -1,
+      "tags" : [ "Exit", "Fast", "Guard", "node_name=UnredactedChina", "Running", "Stable", "tcp-0", "tcp-443", "tor_version=0.4.7.13", "V2Dir", "Valid" ],
+      "hostname" : "api.threatstream.com",
+      "is-editable" : false,
+      "service" : "cds.anomali.threatstream.observable_details",
+      "observable-status" : "active",
+      "organization" : "ULAYER",
+      "indicator-type" : "tor_ip",
+      "is-anonymous" : false,
+      "timestamp" : "2023-06-09T10:20:04Z"
+    }
+  result:
+    custom:
+      cds:
+        anomali:
+          threatstream:
+            organization: "ULAYER"
+      confidence: 100
+      country: "US"
+      hostname: "api.threatstream.com"
+      indicator-type: "tor_ip"
+      is-anonymous: false
+      is-editable: false
+      is-public: false
+      observable-id: 59591954049
+      observable-severity: "low"
+      observable-status: "active"
+      organization: "ULAYER"
+      retina-confidence: -1
+      service: "cds.anomali.threatstream.observable_details"
+      source: "Anomali Threat Research TOR Nodes"
+      tags:
+       - "Exit"
+       - "Fast"
+       - "Guard"
+       - "node_name=UnredactedChina"
+       - "Running"
+       - "Stable"
+       - "tcp-0"
+       - "tcp-443"
+       - "tor_version=0.4.7.13"
+       - "V2Dir"
+       - "Valid"
+      threat-type: "tor"
+      timestamp: "2023-06-09T10:20:04Z"
+      type: "ip"
+    message: |-
+      {
+        "country" : "US",
+        "is-public" : false,
+        "observable-severity" : "low",
+        "observable-id" : 59591954049,
+        "confidence" : 100,
+        "source" : "Anomali Threat Research TOR Nodes",
+        "threat-type" : "tor",
+        "type" : "ip",
+        "retina-confidence" : -1,
+        "tags" : [ "Exit", "Fast", "Guard", "node_name=UnredactedChina", "Running", "Stable", "tcp-0", "tcp-443", "tor_version=0.4.7.13", "V2Dir", "Valid" ],
+        "hostname" : "api.threatstream.com",
+        "is-editable" : false,
+        "service" : "cds.anomali.threatstream.observable_details",
+        "observable-status" : "active",
+        "organization" : "ULAYER",
+        "indicator-type" : "tor_ip",
+        "is-anonymous" : false,
+        "timestamp" : "2023-06-09T10:20:04Z"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+

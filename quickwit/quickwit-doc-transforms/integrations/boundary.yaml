@@ -1,0 +1,270 @@
+id: boundary
+metric_id: boundary
+backend_only: false
+facets:
+  - facetType: range
+    groups:
+      - Measure
+    name: Duration
+    path: duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: nanosecond
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: Referer
+    path: http.referer
+    source: log
+  - groups:
+      - Web Access
+    name: Request ID
+    path: http.request_id
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Source Code
+    name: Logger Version
+    path: logger.version
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - groups:
+      - Event
+    name: Event Category
+    path: evt.category
+    source: log
+  - groups:
+      - Boundary
+    name: Host ID
+    path: data.response.details.item.host_id
+    source: log
+  - groups:
+      - Boundary
+    name: Host Set ID
+    path: data.response.details.item.host_set_id
+    source: log
+  - groups:
+      - Boundary
+    name: Target ID
+    path: data.response.details.item.target_id
+    source: log
+  - groups:
+      - Boundary
+    name: Login Name
+    path: data.request.details.Attrs.PasswordLoginAttributes.login_name
+    source: log
+  - groups:
+      - Boundary
+    name: Method ID
+    path: data.request.details.auth_method_id
+    source: log
+pipeline:
+  type: pipeline
+  name: Boundary
+  enabled: true
+  filter:
+    query: source:boundary
+  processors:
+    - type: grok-parser
+      name: Parsing Boundary logs
+      enabled: true
+      source: message
+      samples:
+        # System
+        - |
+          {"id": "ucZ3F62GB8", "source": "https://hashicorp.com/boundary/722bbe11f780/controller+worker", "specversion": "1.0", "type": "system", "data": {"version": "v0.1", "op": "github.com/hashicorp/boundary/internal/observability/event.(*HclogLoggerAdapter).writeEvent", "data": {"@original-log-level": "none", "@original-log-name": "aws", "msg": "configuring client automatic mTLS"}}, "datacontentype": "application/cloudevents", "time": "2022-08-25T17:09:18.3470639Z"}
+        # Observation
+        - |
+          {"id": "QUQzCBiPGm", "source": "https://hashicorp.com/boundary/722bbe11f780/controller+worker", "specversion": "1.0", "type": "observation", "data": {"latency-ms": 0.3555, "request_info": {"id": "gtraceid_vGvf9iipt9SbzlfoPq0w", "method": "GET", "path": "/health", "client_ip": "192.168.96.1"}, "start": "2022-08-25T17:10:28.8698045Z", "status": 200, "stop": "2022-08-25T17:10:28.87016Z", "version": "v0.1"}, "datacontentype": "application/cloudevents", "time": "2022-08-25T17:10:28.870178Z"}
+        # Audit
+        - |
+          {"id": "qilNChuSzk", "source": "https://hashicorp.com/boundary/722bbe11f780/controller+worker", "specversion": "1.0", "type": "audit", "data": {"id": "e_NxcuR8NFyE", "version": "v0.1", "type": "APIRequest", "timestamp": "2022-08-25T17:09:18.6464134Z", "request_info": {"id": "gtraceid_4AdJhzSA9V3PB2QS5yg5", "method": "GET", "path": "/health", "client_ip": "192.168.96.1"}, "request": {"details": {}}, "response": {"status_code": 200, "details": {}}}, "datacontentype": "application/cloudevents", "time": "2022-08-25T17:09:18.6464236Z", "serialized": "eyJpZCI6InFpbE5DaHVTemsiLCJzb3VyY2UiOiJodHRwczovL2hhc2hpY29ycC5jb20vYm91bmRhcnkvNzIyYmJlMTFmNzgwL2NvbnRyb2xsZXIrd29ya2VyIiwic3BlY3ZlcnNpb24iOiIxLjAiLCJ0eXBlIjoiYXVkaXQiLCJkYXRhIjp7ImlkIjoiZV9OeGN1UjhORnlFIiwidmVyc2lvbiI6InYwLjEiLCJ0eXBlIjoiQVBJUmVxdWVzdCIsInRpbWVzdGFtcCI6IjIwMjItMDgtMjVUMTc6MDk6MTguNjQ2NDEzNFoiLCJyZXF1ZXN0X2luZm8iOnsiaWQiOiJndHJhY2VpZF80QWRKaHpTQTlWM1BCMlFTNXlnNSIsIm1ldGhvZCI6IkdFVCIsInBhdGgiOiIvaGVhbHRoIiwiY2xpZW50X2lwIjoiMTkyLjE2OC45Ni4xIn0sInJlcXVlc3QiOnsiZGV0YWlscyI6e319LCJyZXNwb25zZSI6eyJzdGF0dXNfY29kZSI6MjAwLCJkZXRhaWxzIjp7fX19LCJkYXRhY29udGVudHlwZSI6ImFwcGxpY2F0aW9uL2Nsb3VkZXZlbnRzIiwidGltZSI6IjIwMjItMDgtMjVUMTc6MDk6MTguNjQ2NDIzNloifQo", "serialized_hmac": "hmac-sha256:iQuvbqa_OGbUs01IqMgP-cHWpkkVHViJPxqg0c548zk"}
+        # Audit :authenticate
+        - |
+          {"id":"TWgbbFuWEO","source":"https://hashicorp.com/boundary/boundary/controller","specversion":"1.0","type":"audit","data":{"id":"e_LoTtUsaQqd","version":"v0.1","type":"APIRequest","timestamp":"2022-10-28T21:32:17.191409009Z","request_info":{"id":"gtraceid_oYLCosMZ0rXd3x9KXgeO","method":"POST","path":"/v1/auth-methods/ampw_MzcxyAednr:authenticate","client_ip":"127.0.0.1"},"auth":{"auth_token_id":"","user_info":{"id":"u_anon"},"grants_info":{"grants":[{"grant":"id=*;type=scope;actions=list,no-op","scope_id":"global","role_id":"r_9sWtNpcw0T"},{"grant":"id=*;type=auth-method;actions=authenticate,list","scope_id":"global","role_id":"r_9sWtNpcw0T"},{"grant":"id={{account.id}};actions=change-password,read","scope_id":"global","role_id":"r_9sWtNpcw0T"},{"grant":"id=*;type=auth-token;actions=delete:self,list,read:self","scope_id":"global","role_id":"r_9sWtNpcw0T"},{"grant":"id=*;type=scope;actions=list,no-op","scope_id":"o_Uu6IrAy48s","role_id":"r_bTCTDXry15"},{"grant":"id=*;type=auth-method;actions=authenticate,list","scope_id":"o_Uu6IrAy48s","role_id":"r_bTCTDXry15"},{"grant":"id={{account.id}};actions=change-password,read","scope_id":"o_Uu6IrAy48s","role_id":"r_bTCTDXry15"},{"grant":"id=*;type=auth-token;actions=delete:self,list,read:self","scope_id":"o_Uu6IrAy48s","role_id":"r_bTCTDXry15"},{"grant":"id=*;type=auth-method;actions=authenticate,list","scope_id":"global","role_id":"r_E7dwpHLiez"},{"grant":"id={{account.id}};actions=change-password,read","scope_id":"global","role_id":"r_E7dwpHLiez"},{"grant":"type=scope;actions=list","scope_id":"global","role_id":"r_E7dwpHLiez"},{"grant":"id=*;type=auth-method;actions=authenticate,list","scope_id":"o_GAmd2nZMdx","role_id":"r_anh0swf5qh"},{"grant":"id={{account.id}};actions=change-password,read","scope_id":"o_GAmd2nZMdx","role_id":"r_anh0swf5qh"},{"grant":"type=scope;actions=list","scope_id":"o_GAmd2nZMdx","role_id":"r_anh0swf5qh"}]},"email":"hmac-sha256:5uynI_usnKX95SSlMaA_jlfsYa_ahPLdaLi89qzjtg0","name":"hmac-sha256:5uynI_usnKX95SSlMaA_jlfsYa_ahPLdaLi89qzjtg0"},"request":{"details":{"auth_method_id":"ampw_MzcxyAednr","Attrs":{"PasswordLoginAttributes":{"login_name":"hmac-sha256:H24gkYb1FNZFJ2xpl5Hs1eRQ9JDvEY4fmjWZ2LjrXUM","password":"encrypted:CiRKZby5uv8JazerrWgCeN0sL37yyUTaJV58v6n8R1fgh66djQoqERoPa2Rrdl9ORXRlTE1ydGFE"}},"command":"login"}},"response":{"status_code":200,"details":{"Attrs":{"AuthTokenResponse":{"id":"at_KsIzNr0Jdh","scope":{"id":"o_GAmd2nZMdx","type":"org","parent_scope_id":"global"},"token":"encrypted:CrcBs9TLjBNcNVhIoMYwwDJLORAnC_UwxyPSFWZHQV59dAsvOglj1aS5R6kPqIahm83U96UGhgcv22nGvTHgHgm1emU49_6mY7RRrMpAOhknjp6ONxPuMhEzbTAQruXDLby5XBNBOgxUeHUJiL8mGJ-2SOnYFt0pgZkPvlnbpMzg0SxgkmVVVyKut-dGas2ru4RJ-NMquA9-CtQWxhP1XuSbQWmYIADeh5WxUTsBlAF1jfxE275Mn0J2KhEaD2tka3ZfTkV0ZUxNcnRhRA","user_id":"u_uJQC7egeQA","auth_method_id":"ampw_MzcxyAednr","account_id":"acctpw_CUGVKmcrE6","created_time":{"seconds":1666992737,"nanos":183123000},"updated_time":{"seconds":1666992737,"nanos":183123000},"approximate_last_used_time":{"seconds":1666992737,"nanos":183123000},"expiration_time":{"seconds":1667597537}}},"command":"login"}}},"datacontentype":"application/cloudevents","time":"2022-10-28T21:32:17.191419384Z","serialized":"eyJpZCI6IlRXZ2JiRnVXRUtruncated", "serialized_hmac":"hmac-sha256:msa_FHDrCZ6pAKJDLoLkpynQseyHejRp73a-QafOiNs"}
+        # Audit :authorize-session
+        - |
+          {"id":"lAYgOraThe","source":"https://hashicorp.com/boundary/boundary/controller","specversion":"1.0","type":"audit","data":{"id":"e_F1Oprvfurh","version":"v0.1","type":"APIRequest","timestamp":"2022-11-04T21:20:12.780438633Z","request_info":{"id":"gtraceid_wNBFIK6gF3VI1TAZjSSI","method":"POST","path":"/v1/targets/postgres:authorize-session","public_id":"at_gGkHBt7HVI","client_ip":"127.0.0.1"},"auth":{"auth_token_id":"","user_info":{"id":"u_66aQKsel6y","auth_account_id":"acctpw_ed5256aIo4"},"grants_info":{"grants":[{"grant":"id=*;type=scope;actions=list,no-op","scope_id":"global","role_id":"r_RMCAwxV9DB"},{"grant":"id=*;type=auth-method;actions=authenticate,list","scope_id":"global","role_id":"r_RMCAwxV9DB"},{"grant":"id={{account.id}};actions=change-password,read","scope_id":"global","role_id":"r_RMCAwxV9DB"},{"grant":"id=*;type=auth-token;actions=delete:self,list,read:self","scope_id":"global","role_id":"r_RMCAwxV9DB"},{"grant":"id=*;type=scope;actions=list,no-op","scope_id":"o_rpdixJGraT","role_id":"r_GGx31LtlhK"},{"grant":"id=*;type=auth-method;actions=authenticate,list","scope_id":"o_rpdixJGraT","role_id":"r_GGx31LtlhK"},{"grant":"id={{account.id}};actions=change-password,read","scope_id":"o_rpdixJGraT","role_id":"r_GGx31LtlhK"},{"grant":"id=*;type=auth-token;actions=delete:self,list,read:self","scope_id":"o_rpdixJGraT","role_id":"r_GGx31LtlhK"},{"grant":"id=*;type=session;actions=cancel:self,list,read:self","scope_id":"p_heEMRHn9Qm","role_id":"r_oyJgSwjD9r"},{"grant":"type=target;actions=list","scope_id":"p_heEMRHn9Qm","role_id":"r_oyJgSwjD9r"},{"grant":"id=*;type=session;actions=cancel:self,list,read:self","scope_id":"p_rLxHuef4gM","role_id":"r_UD6Sark2Dd"},{"grant":"type=target;actions=list","scope_id":"p_rLxHuef4gM","role_id":"r_UD6Sark2Dd"},{"grant":"id=*;type=auth-method;actions=authenticate,list","scope_id":"global","role_id":"r_WOUGISfPZu"},{"grant":"id={{account.id}};actions=change-password,read","scope_id":"global","role_id":"r_WOUGISfPZu"},{"grant":"type=scope;actions=list","scope_id":"global","role_id":"r_WOUGISfPZu"},{"grant":"id=*;type=auth-method;actions=authenticate,list","scope_id":"o_SOyozKCr8n","role_id":"r_x1GBeprgvU"},{"grant":"id={{account.id}};actions=change-password,read","scope_id":"o_SOyozKCr8n","role_id":"r_x1GBeprgvU"},{"grant":"type=scope;actions=list","scope_id":"o_SOyozKCr8n","role_id":"r_x1GBeprgvU"},{"grant":"id=*;type=*;actions=*","scope_id":"o_SOyozKCr8n","role_id":"r_qstzn4g9so"},{"grant":"id=*;type=*;actions=*","scope_id":"p_rLxHuef4gM","role_id":"r_DcLxuhHChI"}]},"email":"[REDACTED]","name":"[REDACTED]"},"request":{"details":{"id":"postgres","name":"postgres","scope_name":"databases"}},"response":{"status_code":200,"details":{"item":{"session_id":"s_ltj5fKHDvg","target_id":"ttcp_oCYC5cNCNJ","scope":{"id":"p_rLxHuef4gM","type":"project","name":"databases","description":"Databases project","parent_scope_id":"o_SOyozKCr8n"},"created_time":{"seconds":1667596812,"nanos":767270000},"user_id":"u_66aQKsel6y","host_set_id":"hsst_mjcXiWgSnU","host_id":"hst_sgpcCLoDvu","type":"tcp","authorization_token":"[REDACTED]","endpoint":"tcp://postgres:5432"}}}},"datacontentype":"application/cloudevents","time":"2022-11-04T21:20:12.780448425Z","serialized":"eyJpZCI6ImxBWWdPtruncated","serialized_hmac":"hmac-sha256:_JAoEAy8ZvZFy4CLMUugPzybsQpVg2tSJEkB8z5VJtA"}
+      grok:
+        matchRules: |
+          boundary_json %{data::json}
+        supportRules: ''
+    - type: date-remapper
+      name: Define `time` as the official date of the log
+      enabled: true
+      sources:
+        - time
+    - type: grok-parser
+      name: Parse timestamp to a human-readable `_timestamp` attribute
+      enabled: true
+      source: time
+      samples:
+        - |
+          2022-11-07T20:16:17.243049376Z
+        - |
+          2022-11-07T20:16:02.6102328Z
+      grok:
+        matchRules: |
+          _timestamp %{_timedate:}%{_time:_timestamp}%{_seconds}
+        supportRules: |
+          _time %{regex("(2[0-3]|[01][0-9]):[0-5][0-9]:[0-5][0-9]")}
+          _timedate %{regex("\\d{4}-\\d{2}-\\d{2}T")}
+          _seconds .*Z
+    - type: message-remapper
+      name: Define `data.data.msg` as the official message of the log
+      enabled: true
+      sources:
+        - data.data.msg
+      overrideOnConflict: true
+    - type: attribute-remapper
+      name: Map `source` to `http.referer`
+      enabled: true
+      sources:
+        - source
+      target: http.referer
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `data.request_info.client_ip` to `network.client.ip`
+      enabled: true
+      sources:
+        - data.request_info.client_ip
+      target: network.client.ip
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `data.request_info.id` to `http.request_id`
+      enabled: true
+      sources:
+        - data.request_info.id
+      target: http.request_id
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `data.request_info.method` to `http.method`
+      enabled: true
+      sources:
+        - data.request_info.method
+      target: http.method
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `data.request_info.path` to `http.url_details.path`
+      enabled: true
+      sources:
+        - data.request_info.path
+      target: http.url_details.path
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `data.response.status_code`, `data.status` to `http.status_code`
+      enabled: true
+      sources:
+        - data.response.status_code
+        - data.status
+      target: http.status_code
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `data.response.details.item.user_id`, `data.auth.user_info.id` to `usr.id`
+      enabled: true
+      sources:
+        - data.response.details.item.user_id
+        - data.auth.user_info.id
+      target: usr.id
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `type` to `evt.category`
+      enabled: true
+      sources:
+        - type
+      target: evt.category
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `datacontentype` to `evt.content_type`
+      enabled: true
+      sources:
+        - datacontentype
+      target: evt.content_type
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `data.op` to `evt.operation`
+      enabled: true
+      sources:
+        - data.op
+      target: evt.operation
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `specversion` to `logger.version`
+      enabled: true
+      sources:
+        - specversion
+      target: logger.version
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `data.latency-ms` to `duration`
+      enabled: true
+      sources:
+        - data.latency-ms
+      target: duration
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: arithmetic-processor
+      name: Convert duration from ms to ns
+      enabled: true
+      expression: duration * 1000000
+      target: duration
+      replaceMissing: false

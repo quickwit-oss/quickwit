@@ -1,0 +1,714 @@
+id: crest_data_systems_nozomi_networks
+metric_id: crest-data-systems-nozomi-networks
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - description: ""
+    facetType: list
+    groups:
+      - Crest Data Systems Nozomi Networks
+    name: Alert Name
+    path: cds.nozomi_networks.alert.name
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest Data Systems Nozomi Networks
+    name: API Key Name
+    path: cds.nozomi_networks.api.key_name
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest Data Systems Nozomi Networks
+    name: Asset Name
+    path: cds.nozomi_networks.asset.name
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest Data Systems Nozomi Networks
+    name: Audit Event Name
+    path: cds.nozomi_networks.audit_item.name
+    source: log
+    type: string
+  - description: ""
+    facetType: range
+    groups:
+      - Crest Data Systems Nozomi Networks
+    name: Average Transferred Packet Bytes
+    path: cds.nozomi_networks.sessions.transferred.avg_packet_bytes
+    source: log
+    type: double
+  - description: ""
+    facetType: list
+    groups:
+      - Crest Data Systems Nozomi Networks
+    name: Client Browser Version
+    path: http.useragent_details.browser.version
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest Data Systems Nozomi Networks
+    name: Client OS Version
+    path: http.useragent_details.os.version
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest Data Systems Nozomi Networks
+    name: Node Name
+    path: cds.nozomi_networks.node.name
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest Data Systems Nozomi Networks
+    name: Nozomi Networks Asset ID
+    path: cds.nozomi_networks.asset.id
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest Data Systems Nozomi Networks
+    name: Nozomi Site Name
+    path: cds.nozomi_networks.site.name
+    source: log
+    type: string
+  - description: ""
+    facetType: range
+    groups:
+      - Crest Data Systems Nozomi Networks
+    name: Risk
+    path: cds.nozomi_networks.nozomi_risk
+    source: log
+    type: double
+  - description: ""
+    facetType: list
+    groups:
+      - Crest Data Systems Nozomi Networks
+    name: Sessions Destination
+    path: cds.nozomi_networks.sessions.destination
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest Data Systems Nozomi Networks
+    name: Sessions Source
+    path: cds.nozomi_networks.sessions.source
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest Data Systems Nozomi Networks
+    name: Site Latitude
+    path: cds.nozomi_networks.site.latitude
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest Data Systems Nozomi Networks
+    name: Site Longitude
+    path: cds.nozomi_networks.site.longitude
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest Data Systems Nozomi Networks
+    name: User Name
+    path: cds.nozomi_networks.username
+    source: log
+    type: string
+  - description: ""
+    facetType: range
+    groups:
+      - Crest Data Systems Nozomi Networks
+    name: Variable Last Value
+    path: cds.nozomi_networks.variable.last_value
+    source: log
+    type: double
+  - description: ""
+    facetType: list
+    groups:
+      - Crest Data Systems Nozomi Networks
+    name: Variable Name
+    path: cds.nozomi_networks.variable.name
+    source: log
+    type: string
+  - description: ""
+    facetType: range
+    groups:
+      - Crest Data Systems Nozomi Networks
+    name: Vulnerabilities Score
+    path: cds.nozomi_networks.vulnerabilities_score
+    source: log
+    type: double
+pipeline:
+  type: pipeline
+  name: Crest Data Systems Nozomi Networks
+  enabled: true
+  filter:
+    query: source:crest_data_systems_nozomi_networks
+  processors:
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: attribute-remapper
+      name: Map attribute `relationships.site.data.id` to tag `nozomi-site-id`
+      enabled: true
+      sources:
+        - relationships.site.data.id
+      sourceType: attribute
+      target: nozomi-site-id
+      targetType: tag
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map tag `nozomi-networks-batch` to attribute
+        `cds.nozomi_networks.timestamp`
+      enabled: true
+      sources:
+        - nozomi-networks-batch
+      sourceType: tag
+      target: cds.nozomi_networks.timestamp
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: grok-parser
+      name: convert `cds.nozomi_networks.timestamp` to epoch
+      enabled: true
+      source: cds.nozomi_networks.timestamp
+      samples:
+        - 2024-12-09_07:23:45
+      grok:
+        supportRules: ""
+        matchRules: date_rule %{date("yyyy-MM-dd_HH:mm:ss"):cds.nozomi_networks.timestamp}
+    - type: date-remapper
+      name: Define `cds.nozomi_networks.timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - cds.nozomi_networks.timestamp
+    - type: attribute-remapper
+      name: Map `relationships.asset.data` to `cds.nozomi_networks.asset`
+      enabled: true
+      sources:
+        - relationships.asset.data
+      sourceType: attribute
+      target: cds.nozomi_networks.asset
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `attributes.nozomi_risk` to `cds.nozomi_networks.nozomi_risk`
+      enabled: true
+      sources:
+        - attributes.nozomi_risk
+      sourceType: attribute
+      target: cds.nozomi_networks.nozomi_risk
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: pipeline
+      name: Sites Pipeline
+      enabled: true
+      filter:
+        query: service:cds.nozomi_networks.sites
+      processors:
+        - type: attribute-remapper
+          name: Map `attributes.latitude` to `cds.nozomi_networks.site.latitude`
+          enabled: true
+          sources:
+            - attributes.latitude
+          sourceType: attribute
+          target: cds.nozomi_networks.site.latitude
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `attributes.longitude` to `cds.nozomi_networks.site.longitude`
+          enabled: true
+          sources:
+            - attributes.longitude
+          sourceType: attribute
+          target: cds.nozomi_networks.site.longitude
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map attribute `id` to tag `nozomi-site-id`
+          enabled: true
+          sources:
+            - id
+          sourceType: attribute
+          target: nozomi-site-id
+          targetType: tag
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `attributes.name` to `cds.nozomi_networks.site.name`
+          enabled: true
+          sources:
+            - attributes.name
+          sourceType: attribute
+          target: cds.nozomi_networks.site.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Assets End of Sale Processing Pipeline
+      enabled: true
+      filter:
+        query: service:cds.nozomi_networks.assets @attributes.end_of_sale_date:>0
+      processors:
+        - type: attribute-remapper
+          name: Map `attributes.end_of_sale_date` to `attributes.end_of_sale_date`
+          enabled: true
+          sources:
+            - attributes.end_of_sale_date
+          sourceType: attribute
+          target: attributes.end_of_sale_date
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+        - type: arithmetic-processor
+          name: Calculate `cds.nozomi_networks.days_until_eosale`
+          enabled: true
+          expression:
+            (((attributes.end_of_sale_date - cds.nozomi_networks.timestamp) /
+            1000) / 3600) / 24
+          target: cds.nozomi_networks.days_until_eosale
+          replaceMissing: false
+        - type: arithmetic-processor
+          name: Calculate `cds.nozomi_networks.days_until_eosale`
+          enabled: true
+          expression: 0 - cds.nozomi_networks.days_until_eosale
+          target: cds.nozomi_networks.days_exceeded_eosale
+          replaceMissing: false
+    - type: pipeline
+      name: Assets End of Support Processing Pipeline
+      enabled: true
+      filter:
+        query: service:cds.nozomi_networks.assets @attributes.end_of_support_date:>0
+      processors:
+        - type: attribute-remapper
+          name: Map `attributes.end_of_support_date` to `attributes.end_of_support_date`
+          enabled: true
+          sources:
+            - attributes.end_of_support_date
+          sourceType: attribute
+          target: attributes.end_of_support_date
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+        - type: arithmetic-processor
+          name: Calculate `cds.nozomi_networks.days_until_eos`
+          enabled: true
+          expression:
+            (((attributes.end_of_support_date - cds.nozomi_networks.timestamp) /
+            1000) / 3600) / 24
+          target: cds.nozomi_networks.days_until_eos
+          replaceMissing: false
+        - type: arithmetic-processor
+          name: Calculate `cds.nozomi_networks.days_exceeded_eos`
+          enabled: true
+          expression: 0 - cds.nozomi_networks.days_until_eos
+          target: cds.nozomi_networks.days_exceeded_eos
+          replaceMissing: false
+    - type: pipeline
+      name: Nodes Pipeline
+      enabled: true
+      filter:
+        query: service:cds.nozomi_networks.nodes
+      processors:
+        - type: attribute-remapper
+          name: Map `attributes.name` to `cds.nozomi_networks.node.name`
+          enabled: true
+          sources:
+            - attributes.name
+          sourceType: attribute
+          target: cds.nozomi_networks.node.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Assets Pipeline
+      enabled: true
+      filter:
+        query: service:cds.nozomi_networks.assets
+      processors:
+        - type: attribute-remapper
+          name: Map `id` to `cds.nozomi_networks.asset.id`
+          enabled: true
+          sources:
+            - id
+          sourceType: attribute
+          target: cds.nozomi_networks.asset.id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `attributes.name` to `cds.nozomi_networks.asset.name`
+          enabled: true
+          sources:
+            - attributes.name
+          sourceType: attribute
+          target: cds.nozomi_networks.asset.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Sensors Pipeline
+      enabled: true
+      filter:
+        query: service:cds.nozomi_networks.sensors
+      processors:
+        - type: attribute-remapper
+          name:
+            Map `attributes.public_ip`, `attributes.ip`, `attributes.geoip_ip` to
+            `network.client.ip`
+          enabled: true
+          sources:
+            - attributes.public_ip
+            - attributes.ip
+            - attributes.geoip_ip
+          sourceType: attribute
+          target: network.client.ip
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: geo-ip-parser
+          name: GeoIp Parser for `network.client.ip`
+          enabled: true
+          sources:
+            - network.client.ip
+          target: network.client.geoip
+          ip_processing_behavior: do-nothing
+        - type: attribute-remapper
+          name: Map `attributes.name` to `cds.nozomi_networks.sensor.name`
+          enabled: true
+          sources:
+            - attributes.name
+          sourceType: attribute
+          target: cds.nozomi_networks.sensor.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Variables Pipeline
+      enabled: true
+      filter:
+        query: service:cds.nozomi_networks.variables
+      processors:
+        - type: date-remapper
+          name: Define `attributes.last_update_time` as the official date of the log
+          enabled: true
+          sources:
+            - attributes.last_update_time
+        - type: attribute-remapper
+          name: Map `attributes.last_value` to `cds.nozomi_networks.variable.last_value`
+          enabled: true
+          sources:
+            - attributes.last_value
+          sourceType: attribute
+          target: cds.nozomi_networks.variable.last_value
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `attributes.name` to `cds.nozomi_networks.variable.name`
+          enabled: true
+          sources:
+            - attributes.name
+          sourceType: attribute
+          target: cds.nozomi_networks.variable.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Audit Logs Pipeline
+      enabled: true
+      filter:
+        query: service:cds.nozomi_networks.audit_items
+      processors:
+        - type: date-remapper
+          name: Define `attributes.record_created_at` as the official date of the log
+          enabled: true
+          sources:
+            - attributes.record_created_at
+        - type: user-agent-parser
+          name: Parse The `attributes.browser` field
+          enabled: true
+          sources:
+            - attributes.browser
+          target: http.useragent_details
+          encoded: false
+          combineVersionDetails: false
+        - type: attribute-remapper
+          name: Map `attributes.ip_address` to `network.client.ip`
+          enabled: true
+          sources:
+            - attributes.ip_address
+          sourceType: attribute
+          target: network.client.ip
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: geo-ip-parser
+          name: GeoIp Parser for `network.client.ip`
+          enabled: true
+          sources:
+            - network.client.ip
+          target: network.client.geoip
+          ip_processing_behavior: do-nothing
+        - type: string-builder-processor
+          name: Create Full Version for `http.useragent_details.os` - Add Major Version
+          enabled: true
+          template: "%{http.useragent_details.os.major}"
+          target: http.useragent_details.os.version
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Create Full Version for `http.useragent_details.os` - Add Minor Version
+          enabled: true
+          template:
+            "%{http.useragent_details.os.version}.%{http.useragent_details.os.min\
+            or}"
+          target: http.useragent_details.os.version
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Create Full Version for `http.useragent_details.os` - Add Patch Version
+          enabled: true
+          template:
+            "%{http.useragent_details.os.version}.%{http.useragent_details.os.pat\
+            ch}"
+          target: http.useragent_details.os.version
+          replaceMissing: false
+        - type: string-builder-processor
+          name:
+            Create Full Version for `http.useragent_details.browser` - Add Major
+            Version
+          enabled: true
+          template: "%{http.useragent_details.browser.major}"
+          target: http.useragent_details.browser.version
+          replaceMissing: false
+        - type: string-builder-processor
+          name:
+            Create Full Version for `http.useragent_details.browser` - Add Minor
+            Version
+          enabled: true
+          template:
+            "%{http.useragent_details.browser.version}.%{http.useragent_details.b\
+            rowser.minor}"
+          target: http.useragent_details.browser.version
+          replaceMissing: false
+        - type: string-builder-processor
+          name:
+            Create Full Version for `http.useragent_details.browser` - Add Patch
+            Version
+          enabled: true
+          template:
+            "%{http.useragent_details.browser.version}.%{http.useragent_details.b\
+            rowser.patch}"
+          target: http.useragent_details.browser.version
+          replaceMissing: false
+        - type: attribute-remapper
+          name: Map `attributes.username` to `cds.nozomi_networks.username`
+          enabled: true
+          sources:
+            - attributes.username
+          sourceType: attribute
+          target: cds.nozomi_networks.username
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: grok-parser
+          name: Parse API `key_name`
+          enabled: true
+          source: cds.nozomi_networks.username
+          samples:
+            - xyz@gmail.co via APIkey AKre6f5d
+          grok:
+            supportRules: ""
+            matchRules: extraction_rule
+              %{regex("[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}"):cds.nozomi_networks.username}\s*via\s*APIkey\s*%{data:cds.nozomi_networks.api.key_name}
+        - type: attribute-remapper
+          name: Map `attributes.name` to `cds.nozomi_networks.audit_item.name`
+          enabled: true
+          sources:
+            - attributes.name
+          sourceType: attribute
+          target: cds.nozomi_networks.audit_item.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Health Logs Pipeline
+      enabled: true
+      filter:
+        query: service:cds.nozomi_networks.health_logs
+      processors:
+        - type: date-remapper
+          name: Define `attributes.record_created_at` as the official date of the log
+          enabled: true
+          sources:
+            - attributes.record_created_at
+    - type: pipeline
+      name: Sessions Pipeline
+      enabled: true
+      filter:
+        query: service:cds.nozomi_networks.sessions
+      processors:
+        - type: date-remapper
+          name: Define `attributes.last_activity_time` as the official date of the log
+          enabled: true
+          sources:
+            - attributes.last_activity_time
+        - type: attribute-remapper
+          name: Map `attributes.to` to `cds.nozomi_networks.sessions.destination`
+          enabled: true
+          sources:
+            - attributes.to
+          sourceType: attribute
+          target: cds.nozomi_networks.sessions.destination
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `attributes.from` to `cds.nozomi_networks.sessions.source`
+          enabled: true
+          sources:
+            - attributes.from
+          sourceType: attribute
+          target: cds.nozomi_networks.sessions.source
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `attributes.transferred.avg_packet_bytes` to
+            `cds.nozomi_networks.sessions.transferred.avg_packet_bytes`
+          enabled: true
+          sources:
+            - attributes.transferred.avg_packet_bytes
+          sourceType: attribute
+          target: cds.nozomi_networks.sessions.transferred.avg_packet_bytes
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Alerts Pipeline
+      enabled: true
+      filter:
+        query: service:cds.nozomi_networks.alerts
+      processors:
+        - type: attribute-remapper
+          name: Map `attributes.risk` to `cds.nozomi_networks.nozomi_risk`
+          enabled: true
+          sources:
+            - attributes.risk
+          sourceType: attribute
+          target: cds.nozomi_networks.nozomi_risk
+          targetType: attribute
+          targetFormat: double
+          preserveSource: false
+          overrideOnConflict: false
+        - type: date-remapper
+          name: Define `attributes.time` as the official date of the log
+          enabled: true
+          sources:
+            - attributes.time
+        - type: attribute-remapper
+          name: Map `attributes.name` to `cds.nozomi_networks.alert.name`
+          enabled: true
+          sources:
+            - attributes.name
+          sourceType: attribute
+          target: cds.nozomi_networks.alert.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Vulnerabilities Pipeline
+      enabled: true
+      filter:
+        query: service:cds.nozomi_networks.vulnerabilities
+      processors:
+        - type: attribute-remapper
+          name: Map `attributes.score` to `cds.nozomi_networks.vulnerabilities_score`
+          enabled: true
+          sources:
+            - attributes.score
+          sourceType: attribute
+          target: cds.nozomi_networks.vulnerabilities_score
+          targetType: attribute
+          targetFormat: double
+          preserveSource: false
+          overrideOnConflict: false

@@ -1,0 +1,87 @@
+id: "celery"
+tests:
+ -
+  sample: "[2025-10-23 20:02:25,658: INFO/MainProcess] Task tasks.multiply[c05345e1-cfa5-43cb-9671-30a98115c5db] received"
+  result:
+    custom:
+      level: "INFO"
+      timestamp: 1761249745658
+    message: "Task tasks.multiply[c05345e1-cfa5-43cb-9671-30a98115c5db] received"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1761249745658
+ -
+  sample: "[2025-10-23 20:02:25,660: INFO/ForkPoolWorker-4] Task tasks.add[c25d9c94-4ef6-4828-a1a7-37f6f5a328da] succeeded in 0.00030375000278581865s: 9"
+  result:
+    custom:
+      level: "INFO"
+      timestamp: 1761249745660
+    message: "Task tasks.add[c25d9c94-4ef6-4828-a1a7-37f6f5a328da] succeeded in 0.00030375000278581865s: 9"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1761249745660
+ -
+  sample: "celery@17133dbfe7a6 [2025-10-01 13:33:33.400755] heartbeat: clock=1452, freq=5, local_received=1743702813.4011424, pid=1, sw_ident=py-celery, sw_sys=Linux, sw_ver=5.4.0, utcoffset=0"
+  result:
+    custom:
+      clock: 1452.0
+      freq: 5.0
+      local_received: 1.7437028134011424E9
+      pid: 1.0
+      sw_ident: "py-celery"
+      sw_sys: "Linux"
+      sw_ver: "5.4.0"
+      timestamp: 1759325613400
+      utcoffset: 0.0
+      worker_id: "17133dbfe7a6"
+    message: "celery@17133dbfe7a6 [2025-10-01 13:33:33.400755] heartbeat: clock=1452, freq=5, local_received=1743702813.4011424, pid=1, sw_ident=py-celery, sw_sys=Linux, sw_ver=5.4.0, utcoffset=0"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1759325613400
+ -
+  sample: "celery@17133dbfe7a6 [2025-10-01 13:33:34.982177] task received: tasks.add(eaae3cff-f198-4fe3-9f69-ad59b0412bed) args=(4, 5) kwargs={} clock=1455, eta=None, expires=None, local_received=1743702814.983349, parent_id=None, pid=1, retries=0, root_id=eaae3cff-f198-4fe3-9f69-ad59b0412bed, utcoffset=0"
+  result:
+    custom:
+      args: "(4, 5)"
+      clock: 1455
+      eta: "None"
+      expires: "None"
+      kwargs: "{}"
+      local_received: 1.743702814983349E9
+      parent_id: "None"
+      pid: 1
+      retries: 0
+      root_id: "eaae3cff-f198-4fe3-9f69-ad59b0412bed"
+      task_id: "eaae3cff-f198-4fe3-9f69-ad59b0412bed"
+      task_name: "tasks.add"
+      task_status: "received"
+      timestamp: 1759325614982
+      utcoffset: 0
+      worker_id: "17133dbfe7a6"
+    message: "celery@17133dbfe7a6 [2025-10-01 13:33:34.982177] task received: tasks.add(eaae3cff-f198-4fe3-9f69-ad59b0412bed) args=(4, 5) kwargs={} clock=1455, eta=None, expires=None, local_received=1743702814.983349, parent_id=None, pid=1, retries=0, root_id=eaae3cff-f198-4fe3-9f69-ad59b0412bed, utcoffset=0"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1759325614982
+ -
+  sample: "celery@17133dbfe7a6 [2025-10-01 13:33:34.986589] task succeeded: tasks.add(eaae3cff-f198-4fe3-9f69-ad59b0412bed) args=(4, 5) kwargs={} clock=1458, local_received=1743702814.987442, pid=1, result=9, runtime=0.00012291595339775085, utcoffset=0"
+  result:
+    custom:
+      args: "(4, 5)"
+      clock: 1458
+      kwargs: "{}"
+      local_received: 1.743702814987442E9
+      pid: 1
+      result: 9
+      runtime: 1.2291595339775085E-4
+      task_id: "eaae3cff-f198-4fe3-9f69-ad59b0412bed"
+      task_name: "tasks.add"
+      task_status: "succeeded"
+      timestamp: 1759325614986
+      utcoffset: 0
+      worker_id: "17133dbfe7a6"
+    message: "celery@17133dbfe7a6 [2025-10-01 13:33:34.986589] task succeeded: tasks.add(eaae3cff-f198-4fe3-9f69-ad59b0412bed) args=(4, 5) kwargs={} clock=1458, local_received=1743702814.987442, pid=1, result=9, runtime=0.00012291595339775085, utcoffset=0"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1759325614986

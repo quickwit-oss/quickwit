@@ -1,0 +1,83 @@
+id: continuous_ai_netsuite
+metric_id: continuous-ai-netsuite
+backend_only: false
+pipeline:
+  type: pipeline
+  name: NetSuite Logs by Continuous AI
+  enabled: true
+  filter:
+    query: source:continuous_ai_netsuite
+  processors:
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: date-remapper
+      name: Define `date` as the official date of the log
+      enabled: true
+      sources:
+        - date
+    - type: category-processor
+      name: Map Errors to Log Levels
+      enabled: true
+      categories:
+        - filter:
+            query: '-@errorcode:*?*'
+          name: notice
+        - filter:
+            query: '@errorcode:*?*'
+          name: alert
+      target: log_level
+    - type: status-remapper
+      name: Define `log_level` as the official status of the log
+      enabled: true
+      sources:
+        - log_level
+    - type: geo-ip-parser
+      name: Add geolocation data for IP addresses
+      enabled: true
+      sources:
+        - ipaddress
+      target: ip_address_geo
+    - type: category-processor
+      name: Map Record Type IDs to readable names
+      enabled: true
+      categories:
+        - filter:
+            query: '@recordtypeid:"-112"'
+          name: account
+        - filter:
+            query: '@recordtypeid:"-401"'
+          name: company_information
+        - filter:
+            query: '@recordtypeid:"-9"'
+          name: entity
+        - filter:
+            query: '@recordtypeid:"-124"'
+          name: field
+        - filter:
+            query: '@recordtypeid:"-390"'
+          name: integration
+        - filter:
+            query: '@recordtypeid:"-10"'
+          name: item
+        - filter:
+            query: '@recordtypeid:"-123"'
+          name: record_type
+        - filter:
+            query: '@recordtypeid:"-118"'
+          name: role
+        - filter:
+            query: '@recordtypeid:"-417"'
+          name: script
+        - filter:
+            query: '@recordtypeid:"-418"'
+          name: script_deployment
+        - filter:
+            query: '@recordtypeid:"-128"'
+          name: tax_code
+        - filter:
+            query: '@recordtypeid:"-30"'
+          name: transaction
+      target: record_type_name

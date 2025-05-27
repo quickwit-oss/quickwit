@@ -1,0 +1,214 @@
+id: proxysql
+metric_id: proxysql
+backend_only: false
+facets:
+  - groups:
+      - Database
+    name: Database
+    path: db.instance
+    source: log
+  - groups:
+      - Database
+    name: Statement
+    path: db.statement
+    source: log
+  - groups:
+      - Database
+    name: User
+    path: db.user
+    source: log
+  - facetType: range
+    groups:
+      - Measure
+    name: Duration
+    path: duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: nanosecond
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+pipeline:
+  type: pipeline
+  name: ProxySQL
+  enabled: true
+  filter:
+    query: source:proxysql
+  processors:
+      # Regular ProxySQL logs, text based
+    - type: grok-parser
+      name: Parsing ProxySQL logs
+      enabled: true
+      source: message
+      grok:
+        supportRules: |
+          _longDate %{date("yyyy-MM-dd HH:mm:ss"):date}
+          _textDate %{date("EEE MMM dd HH:mm:ss yyyy"):date}
+          _level \[%{word:level}\]
+          _logger %{notSpace:logger.name}\:%{number:logger.line_number}\:%{notSpace:logger.method_name}\(.*\)
+          _revision rev.\s+%{regex("\\d+.\\d+.\\d+"):revision}
+        matchRules: |
+          extendedFormat %{_longDate}\s+%{_logger}\:\s+%{_level}\s+%{data:message}
+          simplifiedFormat %{_longDate}\s+%{_level}\s+%{data:message}
+          safeGuard %{_longDate}.*%{_level}%{data:message}
+          stdout %{data:proxysql_service}\s+%{_revision}\s+--\s+%{notSpace:logger.name}\s+--\s+%{_textDate}
+      samples:
+        - "2020-04-06 08:59:07 MySQL_Monitor.cpp:960:monitor_read_only_thread(): [ERROR] Timeout on read_only check for db:3306 after 2ms. Unable to create a connection. If the server is overload, increase mysql-monitor_connect_timeout. Error: timeout on creating new connection: Can't connect to MySQL server on 'db' (115)."
+        - 2020-04-06 08:59:08 [INFO] New mysql_aws_aurora_hostgroups table
+        - Standard MySQL Authentication rev. 0.2.0902 -- MySQL_Authentication.cpp -- Tue Oct 15 17:03:55 2019
+    - type: grok-parser
+      # Audit logs have a duration field that specify a unit
+      name: '[audit log] Format duration field unit and move into duration_us'
+      enabled: true
+      source: duration
+      grok:
+        matchRules: |
+          duration_ms %{number:duration:scale(1000000)}ms
+          duration_s %{number:duration:scale(1000000000)}s
+          duration_us %{number:duration:scale(1000)}us
+          duration_ns %{number:duration:scale(1)}ns
+        supportRules: ''
+      samples:
+        - 125.02ms
+    - type: grok-parser
+      name: '[audit log] Parse the client_addr'
+      enabled: true
+      source: client_addr
+      grok:
+        matchRules: |
+          ip_and_port %{ipOrHost:network.client.ip}:%{number:network.client.port}
+        supportRules: ''
+      samples:
+        - 127.0.0.1:39954
+    - type: grok-parser
+      name: '[audit log] Parse the proxy_addr'
+      enabled: true
+      source: proxy_addr
+      grok:
+        matchRules: |
+          ip_and_port %{ipOrHost:network.proxysql.ip}:%{number:network.proxysql.port}
+        supportRules: ''
+      samples:
+        - 0.0.0.0:6033
+    - type: grok-parser
+      name: '[audit log] Parse the extra_info field'
+      enabled: true
+      source: extra_info
+      grok:
+        matchRules: |
+          logger %{notSpace:logger.name}\:%{number:logger.line_number}\:%{notSpace:logger.method_name}
+        supportRules: ''
+      samples:
+        - MySQL_Thread.cpp:2652:~MySQL_Thread()
+    - type: attribute-remapper
+      name: Map `schemaname` to `db.instance`
+      enabled: true
+      sources:
+        - schemaname
+      target: db.instance
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `username` to `db.user`
+      enabled: true
+      sources:
+        - username
+      target: db.user
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `thread_id` to `logger.thread_id`
+      enabled: true
+      sources:
+        - thread_id
+      target: logger.thread_id
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: grok-parser
+      name: '[query log] Parse the client_addr'
+      enabled: true
+      source: client
+      grok:
+        matchRules: |
+          ip_and_port %{ipOrHost:network.client.ip}:%{number:network.client.port}
+        supportRules: ''
+      samples:
+        - 127.0.0.1:39954
+    - type: arithmetic-processor
+      name: '[audit/query log] Compute duration in nanoseconds from duration_us in seconds'
+      enabled: true
+      expression: duration_us * 1000
+      target: duration
+      replaceMissing: false
+    - type: attribute-remapper
+      name: Map `query` to `db.statement`
+      enabled: true
+      sources:
+        - query
+      target: db.statement
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `rows_affected` to `db.rows_affected`
+      enabled: true
+      sources:
+        - rows_affected
+      target: db.rows_affected
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `rows_sent` to `db.rows_sent`
+      enabled: true
+      sources:
+        - rows_sent
+      target: db.rows_sent
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: grok-parser
+      name: '[query log] Parse the proxysql address'
+      enabled: true
+      source: server
+      grok:
+        matchRules: |
+          ip_and_port %{ipOrHost:network.proxysql.ip}:%{number:network.proxysql.port}
+        supportRules: ''
+      samples:
+        - 127.0.0.1:39958
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: date-remapper
+      name: Define `date`, `timestamp`, `endtime_timestamp_us` as the official date of the log
+      enabled: true
+      sources:
+        - date  # Regular proxysql logs
+        - timestamp  # Audit logs
+        - endtime_timestamp_us  # Query/slow query logs, using the endtime of the query
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message

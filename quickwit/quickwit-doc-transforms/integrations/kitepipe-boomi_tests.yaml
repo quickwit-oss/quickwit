@@ -1,0 +1,241 @@
+id: "kitepipe-boomi"
+tests:
+  - sample: >-
+      {
+            "inboundDocumentSize" : 0,
+            "outboundDocumentCount" : 0,
+            "inboundDocumentCount" : 1,
+            "outboundDocumentSize" : 0,
+            "ddtags" : "atom.name:molecule_sandbox,execution.status:complete,boomi.process.name:main_70_minute_process,status:Info,host:10_1_1_185",
+            "executionStatus" : "complete",
+            "executionType" : "exec_sched",
+            "executionDuration" : 4200270,
+            "message" : "",
+            "ddsource" : "kitepipe-boomi",
+            "atomName" : "molecule_sandbox",
+            "executionTime" : "2023-02-03T02:00:00Z",
+            "executionId" : "execution-0e16d8c0-1e6f-4b4e-9391-e9cd08d9f716-2023.02.03",
+            "service" : "BoomiExecutionRecord",
+            "host" : "10_1_1_185",
+            "nodeId" : "10_1_1_185",
+            "boomiProcessName" : "main_70_minute_process",
+            "inboundErrorDocumentCount" : 0,
+            "status" : "Info"
+          }
+    result: 
+      custom:
+        atomName: "molecule_sandbox"
+        boomiProcessName: "main_70_minute_process"
+        ddsource: "kitepipe-boomi"
+        ddtags: "atom.name:molecule_sandbox,execution.status:complete,boomi.process.name:main_70_minute_process,status:Info,host:10_1_1_185"
+        executionDuration: 4200270
+        executionId: "execution-0e16d8c0-1e6f-4b4e-9391-e9cd08d9f716-2023.02.03"
+        executionStatus: "complete"
+        executionTime: "2023-02-03T02:00:00Z"
+        executionType: "exec_sched"
+        host: "10_1_1_185"
+        inboundDocumentCount: 1
+        inboundDocumentSize: 0
+        inboundErrorDocumentCount: 0
+        nodeId: "10_1_1_185"
+        outboundDocumentCount: 0
+        outboundDocumentSize: 0
+        service: "BoomiExecutionRecord"
+        status: "Info"
+      message: ""
+      tags:
+      - "source:LOGS_SOURCE"
+  - sample: >-
+      {
+            "inboundDocumentSize" : 0,
+            "outboundDocumentCount" : 0,
+            "inboundDocumentCount" : 1,
+            "outboundDocumentSize" : 0,
+            "ddtags" : "atom.name:molecule_sandbox,execution.status:complete,boomi.process.name:listener_test_api_gateway,status:Info,host:10_1_1_185",
+            "executionStatus" : "complete",
+            "executionType" : "exec_listener",
+            "executionDuration" : 306,
+            "message" : "",
+            "ddsource" : "kitepipe-boomi",
+            "atomName" : "molecule_sandbox",
+            "executionTime" : "2023-02-02T13:11:37Z",
+            "executionId" : "execution-fb4706b7-e9cb-4ed8-8d01-4f189b8a77a9-2023.02.02",
+            "service" : "BoomiExecutionRecord",
+            "host" : "10_1_1_185",
+            "nodeId" : "10_1_1_185",
+            "boomiProcessName" : "listener_test_api_gateway",
+            "inboundErrorDocumentCount" : 0,
+            "status" : "Info"
+          }
+    result:
+      custom:
+        atomName: "molecule_sandbox"
+        boomiProcessName: "listener_test_api_gateway"
+        ddsource: "kitepipe-boomi"
+        ddtags: "atom.name:molecule_sandbox,execution.status:complete,boomi.process.name:listener_test_api_gateway,status:Info,host:10_1_1_185"
+        executionDuration: 306
+        executionId: "execution-fb4706b7-e9cb-4ed8-8d01-4f189b8a77a9-2023.02.02"
+        executionStatus: "complete"
+        executionTime: "2023-02-02T13:11:37Z"
+        executionType: "exec_listener"
+        host: "10_1_1_185"
+        inboundDocumentCount: 1
+        inboundDocumentSize: 0
+        inboundErrorDocumentCount: 0
+        nodeId: "10_1_1_185"
+        outboundDocumentCount: 0
+        outboundDocumentSize: 0
+        service: "BoomiExecutionRecord"
+        status: "Info"
+      message: ""
+      tags:
+      - "source:LOGS_SOURCE"
+  - sample: >-
+      {
+            "inboundDocumentSize" : 0,
+            "outboundDocumentCount" : 1,
+            "inboundDocumentCount" : 1,
+            "outboundDocumentSize" : 5,
+            "ddtags" : "atom.name:molecule_sandbox,execution.status:complete,boomi.process.name:main_order_creation,status:Info,host:10_1_1_185",
+            "executionStatus" : "complete",
+            "executionType" : "exec_sched",
+            "executionDuration" : 13602,
+            "message" : "",
+            "ddsource" : "kitepipe-boomi",
+            "atomName" : "molecule_sandbox",
+            "executionTime" : "2023-02-02T13:15:00Z",
+            "executionId" : "execution-be3ad3b4-7774-4fe7-a0b3-5dcc8cb32666-2023.02.02",
+            "service" : "BoomiExecutionRecord",
+            "host" : "10_1_1_185",
+            "nodeId" : "10_1_1_185",
+            "boomiProcessName" : "main_order_creation",
+            "inboundErrorDocumentCount" : 0,
+            "status" : "Info"
+          }
+    result:
+      custom:
+        atomName: "molecule_sandbox"
+        boomiProcessName: "main_order_creation"
+        ddsource: "kitepipe-boomi"
+        ddtags: "atom.name:molecule_sandbox,execution.status:complete,boomi.process.name:main_order_creation,status:Info,host:10_1_1_185"
+        executionDuration: 13602
+        executionId: "execution-be3ad3b4-7774-4fe7-a0b3-5dcc8cb32666-2023.02.02"
+        executionStatus: "complete"
+        executionTime: "2023-02-02T13:15:00Z"
+        executionType: "exec_sched"
+        host: "10_1_1_185"
+        inboundDocumentCount: 1
+        inboundDocumentSize: 0
+        inboundErrorDocumentCount: 0
+        nodeId: "10_1_1_185"
+        outboundDocumentCount: 1
+        outboundDocumentSize: 5
+        service: "BoomiExecutionRecord"
+        status: "Info"
+      message: ""
+      tags:
+      - "source:LOGS_SOURCE"
+  - sample: |-
+      {
+        "service" : "BoomiContainerLog",
+        "message" : "Oct 27, 2024 11:12:03 PM UTC INFO    [com.boomi.util.LogUtil doLog] Node is using valid java"
+      }
+    service: BoomiContainerLog
+    result:
+      custom:
+        logentrydate: 1730070723000
+        logstatus: INFO
+        message: "[com.boomi.util.LogUtil doLog] Node is using valid java"
+        service: "BoomiContainerLog"
+        status_category: "Info"
+      message: "Oct 27, 2024 11:12:03 PM UTC INFO    [com.boomi.util.LogUtil doLog] Node is using valid java"
+      service: "BoomiContainerLog"
+      status: "info"
+      tags:
+       - "source:LOGS_SOURCE"
+      timestamp: 1730070723000
+  - sample: |-
+      {
+        "service" : "BoomiHTTP",
+        "message" : "10.254.254.111 - testuser@myaccount-ABC123 [01/Aug/2016:00:23:17 +0000] \"POST /ws/rest/v1/myapi/customers HTTP/1.1\" 200 33562 \"-\" \"Mozilla/4.0 (compatible; MSIE 6.0; MS Web Services Client Protocol 4.0.30319.18063)\" \"4339bfdc-968e-4438-81ef-6124e2a0d404\" \"execution-fdee86b6-e5ea-4055-bdd7-f8e4ce1563e2-2016.08.01\" 7906"
+      }
+    service: BoomiHTTP
+    result: 
+      custom:
+        date_access: 1470010997000
+        execution_id: "execution-fdee86b6-e5ea-4055-bdd7-f8e4ce1563e2-2016.08.01"
+        http:
+          auth: "testuser@myaccount-ABC123"
+          method: "POST"
+          referer: "-"
+          status_category: "OK"
+          status_code: 200
+          url: "/ws/rest/v1/myapi/customers"
+          url_details:
+            path: "/ws/rest/v1/myapi/customers"
+          useragent: "Mozilla/4.0 (compatible; MSIE 6.0; MS Web Services Client Protocol 4.0.30319.18063)"
+          useragent_details:
+            browser:
+              family: "IE"
+              major: "6"
+              minor: "0"
+            device:
+              category: "Other"
+              family: "Other"
+            os:
+              family: "Other"
+          version: "1.1"
+        network:
+          bytes_written: 33562
+          client:
+            ip: "10.254.254.111"
+        process_id: "4339bfdc-968e-4438-81ef-6124e2a0d404"
+        response_time_ms: 7906
+        service: "BoomiHTTP"
+      message: "10.254.254.111 - testuser@myaccount-ABC123 [01/Aug/2016:00:23:17 +0000] \"POST /ws/rest/v1/myapi/customers HTTP/1.1\" 200 33562 \"-\" \"Mozilla/4.0 (compatible; MSIE 6.0; MS Web Services Client Protocol 4.0.30319.18063)\" \"4339bfdc-968e-4438-81ef-6124e2a0d404\" \"execution-fdee86b6-e5ea-4055-bdd7-f8e4ce1563e2-2016.08.01\" 7906"
+      service: "BoomiHTTP"
+      status: "ok"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1470010997000
+  - sample: |-
+      {
+        "service" : "BoomiHTTP",
+        "message" : "10.1.1.131 -  -  [27/Nov/2024:21:01:52 +0000] \"GET /_admin/status HTTP/1.1\" 200 0 \"-\" \"ELB-HealthChecker/2.0\" \"-\" \"-\" 0"
+      }
+    service: BoomiHTTP
+    result:
+      custom:
+        date_access: 1732741312000
+        execution_id: "-"
+        http:
+          method: "GET"
+          referer: "-"
+          status_category: "OK"
+          status_code: 200
+          url: "/_admin/status"
+          url_details:
+            path: "/_admin/status"
+          useragent: "ELB-HealthChecker/2.0"
+          useragent_details:
+            browser:
+              family: "Other"
+            device:
+              category: "Other"
+              family: "Other"
+            os:
+              family: "Other"
+          version: "1.1"
+        network:
+          bytes_written: 0
+          client:
+            ip: "10.1.1.131"
+        process_id: "-"
+        response_time_ms: 0
+        service: "BoomiHTTP"
+      message: "10.1.1.131 -  -  [27/Nov/2024:21:01:52 +0000] \"GET /_admin/status HTTP/1.1\" 200 0 \"-\" \"ELB-HealthChecker/2.0\" \"-\" \"-\" 0"
+      service: "BoomiHTTP"
+      status: "ok"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1732741312000

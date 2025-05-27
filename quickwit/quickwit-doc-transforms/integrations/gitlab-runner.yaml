@@ -1,0 +1,82 @@
+id: gitlab-runner
+metric_id: gitlab-runner
+backend_only: false
+facets:
+  - groups:
+      - Event
+    name: Job Outcome
+    path: job.outcome
+    source: log
+  - groups:
+      - Event
+    name: Job ID
+    path: job.id
+    source: log
+  - groups:
+      - Event
+    name: Job Runner
+    path: job.runner
+    source: log
+pipeline:
+  type: pipeline
+  name: Gitlab Runner
+  enabled: true
+  filter:
+    query: source:gitlab-runner
+  processors:
+    - type: grok-parser
+      name: Extract prefix
+      enabled: true
+      source: message
+      samples:
+        - 'Aug 19 08:47:22 vagrant gitlab-runner[1440]: Running in system-mode.'
+        - "ERROR: Failed to load config Near line 3 (last key parsed 'log_format'): expected value but found 'json' instead  builds=0"
+      grok:
+        supportRules: |
+          _date %{date("MMM dd HH:mm:ss"):date}
+        matchRules: |
+          journald_begining (%{_date} %{hostname:syslog.hostname} %{hostname:syslog.appname}\[\d+\]:\s)?%{data:msg}
+    - type: grok-parser
+      name: Parsing Gitlab Runner logs
+      enabled: true
+      source: msg
+      grok:
+        supportRules: |
+          _color (\x1B\[0;m)?
+        matchRules: |
+          gitlab_runner_job Job\s%{word:job.outcome}\s+%{_color}\s+duration%{_color}=%{number:job.duration}s job%{_color}=%{integer:job.id}\s+project%{_color}=%{integer:project.id}\s+runner%{_color}=%{word:job.runner}
+          gitlab_runner_check Checking for jobs... %{word:job.outcome}\s+%{_color}\s+job%{_color}=%{integer:job.id} repo_url%{_color}=%{notSpace:url} runner%{_color}=%{word:job.runner}
+          gitlab_runner_level %{word:level}: %{data:message}
+      samples:
+        - Checking for jobs... received                       job=141847259 repo_url=https://gitlab.ddbuild.io/DataDog/k8s-nodegroups.git runner=nXySy2Hv
+        - Job succeeded                    duration=24.383583446s job=2154106 project=141 runner=cxxE2HUr
+    - type: grok-parser
+      name: Parsing JSON Gitlab Runner logs
+      enabled: true
+      source: msg
+      grok:
+        matchRules: |
+          gitlab_runner_json %{data:properties:json}
+        supportRules: ''
+      samples:
+        - '{"StopSignal":15,"builds":0,"level":"warning","msg":"Starting forceful shutdown","time":"2020-08-19T09:14:31Z"}'
+    - type: date-remapper
+      name: Define `date`, `properties.time` as the official date of the log
+      enabled: true
+      overrideOnConflict: true
+      sources:
+        - date
+        - properties.time
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: message-remapper
+      name: Define `msg`, `message`, `properties.msg` as the official message of the log
+      enabled: true
+      overrideOnConflict: true
+      sources:
+        - msg
+        - message
+        - properties.msg

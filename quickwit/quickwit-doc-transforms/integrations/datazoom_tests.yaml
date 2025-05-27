@@ -1,0 +1,517 @@
+id: "datazoom"
+tests:
+ -
+  sample: |-
+    {
+      "ad" : {
+        "ad_blocker" : false
+      },
+      "ops_metadata" : {
+        "client_ts_ms" : "1649345354892"
+      },
+      "event" : {
+        "type" : "error"
+      }
+    }
+  result:
+    custom:
+      ad:
+        ad_blocker: false
+      event:
+        type: "error"
+      ops_metadata:
+        client_ts_ms: "1649345354892"
+    message: |-
+      {
+        "ad" : {
+          "ad_blocker" : false
+        },
+        "ops_metadata" : {
+          "client_ts_ms" : "1649345354892"
+        },
+        "event" : {
+          "type" : "error"
+        }
+      }
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1649345354892
+ -
+  sample: |-
+    {
+      "connector_list" : "dz-connector-amplitude,dz-connector-bigquery,dz-connector-datadog,dz-connector-s3",
+      "geo_location" : {
+        "latitude" : 10.3099,
+        "region" : "Central Visayas",
+        "postal_code" : "6000",
+        "region_code" : "07",
+        "longitude" : 123.893
+      },
+      "ad" : {
+        "ad_blocker" : false
+      },
+      "user_details" : {
+        "app_session_id" : "52679c28-f558-4f5b-971e-1d4dec0e6795",
+        "app_session_start_ts_ms" : 1649775327493,
+        "content_session_id" : "26d0577c-c6b4-411b-bca8-1735e7a11cd4",
+        "user_agent" : "Mozilla/5.0 (Linux; Android 9; INE-LX2 Build/HUAWEIINE-LX2; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/99.0.4844.73 Mobile Safari/537.36"
+      },
+      "custom" : {
+        "contentAssetType" : "feature",
+        "director" : "",
+        "genreName" : "",
+        "contentId" : "touchyourheart-s001e046",
+        "contentTitle" : "S1E046 Episode 46",
+        "contentGroupId" : "touchyourheart",
+        "deviceID" : "8zJGoMFlHoF7wazo7lLVTX",
+        "episodeNumber" : "46",
+        "userId" : "807CCBEA-3E38-457F-B4E1-5B1C22381639",
+        "platform" : "AndroidApp",
+        "contentProvider" : "",
+        "contentGroupTitle" : "Touch Your Heart",
+        "cast" : "",
+        "amplitudeSessionId" : 1649775306259
+      },
+      "sampling" : {
+        "connector_sampling_rate" : 100,
+        "in_sample" : true
+      },
+      "dz_connector_id" : "dz-connector-datadog",
+      "video" : {
+        "media_type" : "content",
+        "title" : ""
+      },
+      "attempt" : {
+        "global_count" : 0,
+        "success" : false,
+        "local_count" : 0,
+        "terminal" : false
+      },
+      "network" : {
+        "asn_org" : "Smart Broadband, Inc",
+        "isp" : "Smart Broadband, Inc.",
+        "client" : {
+          "geoip" : {
+            "country" : {
+              "name" : "Philippines",
+              "iso_code" : "PH"
+            },
+            "city" : {
+              "name" : "Cebu City"
+            }
+          },
+          "ip" : "175.176.64.208"
+        },
+        "asn" : "AS10139 Smart Broadband, Inc."
+      },
+      "event_id" : "52679c28-f558-4f5b-971e-1d4dec0e6795_00.01332",
+      "usr" : {
+        "id" : "807CCBEA-3E38-457F-B4E1-5B1C22381639"
+      },
+      "service" : "Shaka Player",
+      "connector_config_id" : "519b81a2-aa59-49fa-a600-73390ed7bc63",
+      "http" : {
+        "useragent_details" : {
+          "os" : {
+            "family" : "Android"
+          },
+          "browser" : {
+            "family" : "Chrome"
+          }
+        }
+      },
+      "ops_metadata" : {
+        "collector_platform" : "Web",
+        "msg_send_client_ts_ms" : 1649778172976,
+        "client_ts_ms" : 1649778172517,
+        "connector" : "Datadog",
+        "server_ts_offset_ms" : -54782,
+        "enriched" : false,
+        "duplicate" : false,
+        "collector" : "Shaka Player",
+        "customer" : "ABS-CBN Corporation",
+        "connector_config_name" : "Datazoom Debug",
+        "configuration_name" : "FlixForge Production 1"
+      },
+      "page" : {
+        "page_url" : "https://www.iwanttfc.com/?utm_source=android#!/search?phrase=Touc",
+        "dz_sdk_version" : "1.91",
+        "site_domain" : "www.iwanttfc.com",
+        "page_title" : "iWantTFC",
+        "referrer_url" : ""
+      },
+      "event" : {
+        "metrics" : {
+          "num_ad_plays" : 0,
+          "time_since_last_ad_break_start_ms" : 0,
+          "time_since_last_ad_completed_ms" : 0,
+          "event_count" : 1333,
+          "time_since_last_rendition_change_ms" : 0,
+          "time_since_last_heartbeat_ms" : 250687,
+          "playback_duration_ads_ms" : 0,
+          "time_since_last_milestone_content_ms" : 0,
+          "time_since_request_content_ms" : 2269977,
+          "num_errors_content" : 0,
+          "time_since_started_content_ms" : 2258444,
+          "player_viewable" : false,
+          "time_since_last_request_ad_ms" : 0,
+          "time_since_last_pause_ms" : 10248,
+          "stall_count_content" : 0,
+          "time_since_last_buffer_start_content_ms" : 2269973,
+          "engagement_duration_ms" : 2845024,
+          "time_since_last_started_ad_ms" : 0,
+          "player_state" : "playing",
+          "stall_duration_content_ms" : 0,
+          "buffer_duration_content_ms" : 1164,
+          "content_session_start_ts_ms" : 1649775902540,
+          "playback_duration_content_ms" : 705014,
+          "time_since_last_stall_start_content_ms" : 0,
+          "num_requests_content" : 13,
+          "num_content_plays" : 13,
+          "time_since_last_milestone_ad_ms" : 0,
+          "bandwidth_kbps" : 10000,
+          "playback_rate" : 0,
+          "num_errors_ads" : 0,
+          "time_since_last_buffer_start_ad_ms" : 0,
+          "volume_level_percent" : 0,
+          "time_since_last_seek_start_ms" : 70349,
+          "playback_duration_ms" : 705014,
+          "time_since_last_buffer_start_ms" : 2269973,
+          "buffer_duration_ms" : 1164
+        },
+        "type" : "resume",
+        "timestamp" : 1649778119023
+      },
+      "configuration_id" : "6febf53d-48e1-4f23-80c8-6198edd96cfa",
+      "device" : {
+        "device_id" : "ec7bf2e3-30c0-4509-84c7-8f5231099069",
+        "os_version" : "9",
+        "browser_width" : 360,
+        "cookies_enabled" : true,
+        "device_type" : "mobile",
+        "browser_version" : "4.0",
+        "browser_height" : 710
+      },
+      "customer_code" : "185960d8-ee34-47cb-994e-8b93d8562083",
+      "dzMessageType" : "player",
+      "player" : {
+        "subtitles" : false,
+        "player_version" : "v2.5.23",
+        "fullscreen" : true,
+        "player_name" : "Shaka Player",
+        "streaming_type" : "VOD"
+      }
+    }
+  result:
+    custom:
+      ad:
+        ad_blocker: false
+      attempt:
+        global_count: 0
+        local_count: 0
+        success: false
+        terminal: false
+      configuration_id: "6febf53d-48e1-4f23-80c8-6198edd96cfa"
+      connector_config_id: "519b81a2-aa59-49fa-a600-73390ed7bc63"
+      connector_list: "dz-connector-amplitude,dz-connector-bigquery,dz-connector-datadog,dz-connector-s3"
+      custom:
+        amplitudeSessionId: 1649775306259
+        cast: ""
+        contentAssetType: "feature"
+        contentGroupId: "touchyourheart"
+        contentGroupTitle: "Touch Your Heart"
+        contentId: "touchyourheart-s001e046"
+        contentProvider: ""
+        contentTitle: "S1E046 Episode 46"
+        deviceID: "8zJGoMFlHoF7wazo7lLVTX"
+        director: ""
+        episodeNumber: "46"
+        genreName: ""
+        platform: "AndroidApp"
+        userId: "807CCBEA-3E38-457F-B4E1-5B1C22381639"
+      customer_code: "185960d8-ee34-47cb-994e-8b93d8562083"
+      device:
+        browser_height: 710
+        browser_version: "4.0"
+        browser_width: 360
+        cookies_enabled: true
+        device_id: "ec7bf2e3-30c0-4509-84c7-8f5231099069"
+        device_type: "mobile"
+        os_version: "9"
+      dzMessageType: "player"
+      dz_connector_id: "dz-connector-datadog"
+      event:
+        metrics:
+          bandwidth_kbps: 10000
+          buffer_duration_content_ms: 1164
+          buffer_duration_ms: 1164
+          content_session_start_ts_ms: 1649775902540
+          engagement_duration_ms: 2845024
+          event_count: 1333
+          num_ad_plays: 0
+          num_content_plays: 13
+          num_errors_ads: 0
+          num_errors_content: 0
+          num_requests_content: 13
+          playback_duration_ads_ms: 0
+          playback_duration_content_ms: 705014
+          playback_duration_ms: 705014
+          playback_rate: 0
+          player_state: "playing"
+          player_viewable: false
+          stall_count_content: 0
+          stall_duration_content_ms: 0
+          time_since_last_ad_break_start_ms: 0
+          time_since_last_ad_completed_ms: 0
+          time_since_last_buffer_start_ad_ms: 0
+          time_since_last_buffer_start_content_ms: 2269973
+          time_since_last_buffer_start_ms: 2269973
+          time_since_last_heartbeat_ms: 250687
+          time_since_last_milestone_ad_ms: 0
+          time_since_last_milestone_content_ms: 0
+          time_since_last_pause_ms: 10248
+          time_since_last_rendition_change_ms: 0
+          time_since_last_request_ad_ms: 0
+          time_since_last_seek_start_ms: 70349
+          time_since_last_stall_start_content_ms: 0
+          time_since_last_started_ad_ms: 0
+          time_since_request_content_ms: 2269977
+          time_since_started_content_ms: 2258444
+          volume_level_percent: 0
+        timestamp: 1649778119023
+        type: "resume"
+      event_id: "52679c28-f558-4f5b-971e-1d4dec0e6795_00.01332"
+      http:
+        useragent_details:
+          browser:
+            family: "Chrome"
+          os:
+            family: "Android"
+      network:
+        asn: "AS10139 Smart Broadband, Inc."
+        asn_org: "Smart Broadband, Inc"
+        client:
+          geoip:
+            city:
+              name: "Cebu City"
+            country:
+              iso_code: "PH"
+              name: "Philippines"
+            location:
+              latitude: 10.3099
+              longitude: 123.893
+            postal_code: "6000"
+            subdivision:
+              iso_code: "07"
+              name: "Central Visayas"
+          ip: "175.176.64.208"
+        isp: "Smart Broadband, Inc."
+      ops_metadata:
+        client_ts_ms: 1649778172517
+        collector: "Shaka Player"
+        collector_platform: "Web"
+        configuration_name: "FlixForge Production 1"
+        connector: "Datadog"
+        connector_config_name: "Datazoom Debug"
+        customer: "ABS-CBN Corporation"
+        duplicate: false
+        enriched: false
+        msg_send_client_ts_ms: 1649778172976
+        server_ts_offset_ms: -54782
+      page:
+        dz_sdk_version: "1.91"
+        page_title: "iWantTFC"
+        page_url: "https://www.iwanttfc.com/?utm_source=android#!/search?phrase=Touc"
+        referrer_url: ""
+        site_domain: "www.iwanttfc.com"
+      player:
+        fullscreen: true
+        player_name: "Shaka Player"
+        player_version: "v2.5.23"
+        streaming_type: "VOD"
+        subtitles: false
+      sampling:
+        connector_sampling_rate: 100
+        in_sample: true
+      service: "Shaka Player"
+      user_details:
+        app_session_id: "52679c28-f558-4f5b-971e-1d4dec0e6795"
+        app_session_start_ts_ms: 1649775327493
+        content_session_id: "26d0577c-c6b4-411b-bca8-1735e7a11cd4"
+        user_agent: "Mozilla/5.0 (Linux; Android 9; INE-LX2 Build/HUAWEIINE-LX2; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/99.0.4844.73 Mobile Safari/537.36"
+      usr:
+        id: "807CCBEA-3E38-457F-B4E1-5B1C22381639"
+      video:
+        media_type: "content"
+        title: ""
+    message: |-
+      {
+        "connector_list" : "dz-connector-amplitude,dz-connector-bigquery,dz-connector-datadog,dz-connector-s3",
+        "geo_location" : {
+          "latitude" : 10.3099,
+          "region" : "Central Visayas",
+          "postal_code" : "6000",
+          "region_code" : "07",
+          "longitude" : 123.893
+        },
+        "ad" : {
+          "ad_blocker" : false
+        },
+        "user_details" : {
+          "app_session_id" : "52679c28-f558-4f5b-971e-1d4dec0e6795",
+          "app_session_start_ts_ms" : 1649775327493,
+          "content_session_id" : "26d0577c-c6b4-411b-bca8-1735e7a11cd4",
+          "user_agent" : "Mozilla/5.0 (Linux; Android 9; INE-LX2 Build/HUAWEIINE-LX2; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/99.0.4844.73 Mobile Safari/537.36"
+        },
+        "custom" : {
+          "contentAssetType" : "feature",
+          "director" : "",
+          "genreName" : "",
+          "contentId" : "touchyourheart-s001e046",
+          "contentTitle" : "S1E046 Episode 46",
+          "contentGroupId" : "touchyourheart",
+          "deviceID" : "8zJGoMFlHoF7wazo7lLVTX",
+          "episodeNumber" : "46",
+          "userId" : "807CCBEA-3E38-457F-B4E1-5B1C22381639",
+          "platform" : "AndroidApp",
+          "contentProvider" : "",
+          "contentGroupTitle" : "Touch Your Heart",
+          "cast" : "",
+          "amplitudeSessionId" : 1649775306259
+        },
+        "sampling" : {
+          "connector_sampling_rate" : 100,
+          "in_sample" : true
+        },
+        "dz_connector_id" : "dz-connector-datadog",
+        "video" : {
+          "media_type" : "content",
+          "title" : ""
+        },
+        "attempt" : {
+          "global_count" : 0,
+          "success" : false,
+          "local_count" : 0,
+          "terminal" : false
+        },
+        "network" : {
+          "asn_org" : "Smart Broadband, Inc",
+          "isp" : "Smart Broadband, Inc.",
+          "client" : {
+            "geoip" : {
+              "country" : {
+                "name" : "Philippines",
+                "iso_code" : "PH"
+              },
+              "city" : {
+                "name" : "Cebu City"
+              }
+            },
+            "ip" : "175.176.64.208"
+          },
+          "asn" : "AS10139 Smart Broadband, Inc."
+        },
+        "event_id" : "52679c28-f558-4f5b-971e-1d4dec0e6795_00.01332",
+        "usr" : {
+          "id" : "807CCBEA-3E38-457F-B4E1-5B1C22381639"
+        },
+        "service" : "Shaka Player",
+        "connector_config_id" : "519b81a2-aa59-49fa-a600-73390ed7bc63",
+        "http" : {
+          "useragent_details" : {
+            "os" : {
+              "family" : "Android"
+            },
+            "browser" : {
+              "family" : "Chrome"
+            }
+          }
+        },
+        "ops_metadata" : {
+          "collector_platform" : "Web",
+          "msg_send_client_ts_ms" : 1649778172976,
+          "client_ts_ms" : 1649778172517,
+          "connector" : "Datadog",
+          "server_ts_offset_ms" : -54782,
+          "enriched" : false,
+          "duplicate" : false,
+          "collector" : "Shaka Player",
+          "customer" : "ABS-CBN Corporation",
+          "connector_config_name" : "Datazoom Debug",
+          "configuration_name" : "FlixForge Production 1"
+        },
+        "page" : {
+          "page_url" : "https://www.iwanttfc.com/?utm_source=android#!/search?phrase=Touc",
+          "dz_sdk_version" : "1.91",
+          "site_domain" : "www.iwanttfc.com",
+          "page_title" : "iWantTFC",
+          "referrer_url" : ""
+        },
+        "event" : {
+          "metrics" : {
+            "num_ad_plays" : 0,
+            "time_since_last_ad_break_start_ms" : 0,
+            "time_since_last_ad_completed_ms" : 0,
+            "event_count" : 1333,
+            "time_since_last_rendition_change_ms" : 0,
+            "time_since_last_heartbeat_ms" : 250687,
+            "playback_duration_ads_ms" : 0,
+            "time_since_last_milestone_content_ms" : 0,
+            "time_since_request_content_ms" : 2269977,
+            "num_errors_content" : 0,
+            "time_since_started_content_ms" : 2258444,
+            "player_viewable" : false,
+            "time_since_last_request_ad_ms" : 0,
+            "time_since_last_pause_ms" : 10248,
+            "stall_count_content" : 0,
+            "time_since_last_buffer_start_content_ms" : 2269973,
+            "engagement_duration_ms" : 2845024,
+            "time_since_last_started_ad_ms" : 0,
+            "player_state" : "playing",
+            "stall_duration_content_ms" : 0,
+            "buffer_duration_content_ms" : 1164,
+            "content_session_start_ts_ms" : 1649775902540,
+            "playback_duration_content_ms" : 705014,
+            "time_since_last_stall_start_content_ms" : 0,
+            "num_requests_content" : 13,
+            "num_content_plays" : 13,
+            "time_since_last_milestone_ad_ms" : 0,
+            "bandwidth_kbps" : 10000,
+            "playback_rate" : 0,
+            "num_errors_ads" : 0,
+            "time_since_last_buffer_start_ad_ms" : 0,
+            "volume_level_percent" : 0,
+            "time_since_last_seek_start_ms" : 70349,
+            "playback_duration_ms" : 705014,
+            "time_since_last_buffer_start_ms" : 2269973,
+            "buffer_duration_ms" : 1164
+          },
+          "type" : "resume",
+          "timestamp" : 1649778119023
+        },
+        "configuration_id" : "6febf53d-48e1-4f23-80c8-6198edd96cfa",
+        "device" : {
+          "device_id" : "ec7bf2e3-30c0-4509-84c7-8f5231099069",
+          "os_version" : "9",
+          "browser_width" : 360,
+          "cookies_enabled" : true,
+          "device_type" : "mobile",
+          "browser_version" : "4.0",
+          "browser_height" : 710
+        },
+        "customer_code" : "185960d8-ee34-47cb-994e-8b93d8562083",
+        "dzMessageType" : "player",
+        "player" : {
+          "subtitles" : false,
+          "player_version" : "v2.5.23",
+          "fullscreen" : true,
+          "player_name" : "Shaka Player",
+          "streaming_type" : "VOD"
+        }
+      }
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1649778172517
+

@@ -1,0 +1,48 @@
+id: "hdfs_datanode"
+tests:
+ -
+  sample: "2019-09-19 10:18:07,662 INFO org.apache.hadoop.hdfs.server.datanode.DataNode: Receiving BP-1946191569-10.128.0.4-1537814388792:blk_1087201176_13460388 src: /10.128.0.3:34532 dest: /10.128.0.2:9866"
+  result:
+    custom:
+      logger:
+        name: "org.apache.hadoop.hdfs.server.datanode.DataNode"
+      syslog:
+        severity: "INFO"
+        timestamp: 1568888287662
+    message: "Receiving BP-1946191569-10.128.0.4-1537814388792:blk_1087201176_13460388 src: /10.128.0.3:34532 dest: /10.128.0.2:9866"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1568888287662
+ -
+  sample: "19/09/24 19:20:46 INFO datanode.VolumeScanner: VolumeScanner(/hadoop/dfs/data, DS-46fe29ef-76c4-4f98-abe2-fceb5e407426): no suitable block pools found to scan.  Waiting 1814399728 ms."
+  result:
+    custom:
+      logger:
+        name: "datanode.VolumeScanner"
+      syslog:
+        severity: "INFO"
+        timestamp: 1569352846000
+    message: "VolumeScanner(/hadoop/dfs/data, DS-46fe29ef-76c4-4f98-abe2-fceb5e407426): no suitable block pools found to scan.  Waiting 1814399728 ms."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1569352846000
+ -
+  sample: "2019-11-06 09:50:49,211 WARN  datanode.DataNode (BlockReceiver.java:flushOrSync(419)) - Slow flushOrSync took 318ms (threshold=300ms), isSync:true, flushTotalNanos=9857ns, volume=/grid/16/hadoop/hdfs/data"
+  result:
+    custom:
+      logger:
+        file_name: "BlockReceiver.java"
+        line_number: 419.0
+        method_name: "flushOrSync"
+        name: "datanode.DataNode"
+      syslog:
+        severity: "WARN"
+        timestamp: 1573033849211
+    message: "Slow flushOrSync took 318ms (threshold=300ms), isSync:true, flushTotalNanos=9857ns, volume=/grid/16/hadoop/hdfs/data"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1573033849211
+

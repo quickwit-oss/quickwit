@@ -1,0 +1,44 @@
+id: gcp.container
+metric_id: google-container-engine
+backend_only: false
+facets:
+  - groups:
+      - GCP
+    name: Project ID
+    path: project_id
+    source: tag
+pipeline:
+  type: pipeline
+  name: Google Container
+  enabled: true
+  filter:
+    query: source:gcp.container
+  processors:
+    - type: date-remapper
+      name: Define `data.timestamp`, `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - data.timestamp
+        - timestamp
+    - type: status-remapper
+      name: Define `data.severity`, `severity` as the official status of the log
+      enabled: true
+      sources:
+        - data.severity
+        - severity
+    - type: message-remapper
+      name: Define `data.textPayload`, `textPayload` as the official message of the log
+      enabled: true
+      sources:
+        - data.textPayload
+        - textPayload
+    - type: attribute-remapper
+      name: Map `pod_id` to `pod_name`
+      enabled: true
+      sources:
+        - pod_id
+      sourceType: tag
+      target: pod_name
+      targetType: tag
+      preserveSource: true
+      overrideOnConflict: false

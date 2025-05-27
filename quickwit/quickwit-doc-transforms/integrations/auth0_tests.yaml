@@ -1,0 +1,630 @@
+id: "auth0"
+tests:
+  - sample: |-
+      {
+        "log_id" : "90020200123T15145913700000000000000000000000000000000000",
+        "data" : {
+          "date" : "2020-01-23T15:14:59.137Z",
+          "log_id" : "90020200123T15145913700000000000000000000000000000000000",
+          "user_name" : "cleveráguila",
+          "ip" : "79.153.77.39",
+          "description" : "waaaaa",
+          "strategy_type" : "database",
+          "type" : "feoobft",
+          "client_id" : "61PIEqk9Hd4hXJFZhoBZ5bNmN349coz1",
+          "hostname" : "awesome.bisonte.auth0.com",
+          "connection_id" : "con_DFOp2K6Ysya1y2OP",
+          "user_id" : "auth0|61PIEqk9Hd4hXJFZhoBZ5bNmN349coz1",
+          "connection" : "great-pollo",
+          "details" : "whatever...",
+          "strategy" : "auth0",
+          "client_name" : "greatballena",
+          "tenant" : "datadog",
+          "user_agent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36"
+        }
+      }
+    result:
+      custom:
+        data:
+          client_id: "61PIEqk9Hd4hXJFZhoBZ5bNmN349coz1"
+          client_name: "greatballena"
+          connection: "great-pollo"
+          connection_id: "con_DFOp2K6Ysya1y2OP"
+          date: "2020-01-23T15:14:59.137Z"
+          description: "waaaaa"
+          details: "whatever..."
+          hostname: "awesome.bisonte.auth0.com"
+          ip: "79.153.77.39"
+          log_id: "90020200123T15145913700000000000000000000000000000000000"
+          strategy: "auth0"
+          strategy_type: "database"
+          tenant: "datadog"
+          type: "feoobft"
+          user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36"
+          user_id: "auth0|61PIEqk9Hd4hXJFZhoBZ5bNmN349coz1"
+          user_name: "cleveráguila"
+        evt:
+          name: "failed_exchange_password_and_oob_challenge_for_access_token"
+        http:
+          useragent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36"
+          useragent_details:
+            browser:
+              family: "Chrome"
+              major: "71"
+              minor: "0"
+              patch: "3578"
+              patch_minor: "98"
+            device:
+              category: "Desktop"
+              family: "Other"
+            os:
+              family: "Windows"
+              major: "10"
+        log_id: "90020200123T15145913700000000000000000000000000000000000"
+        network:
+          client:
+            geoip: {}
+            ip: "79.153.77.39"
+        ocsf:
+          activity_id: 99
+          activity_name: "feoobft"
+          actor:
+            app_name: "greatballena"
+            app_uid: "61PIEqk9Hd4hXJFZhoBZ5bNmN349coz1"
+            user:
+              name: "cleveráguila"
+              uid: "auth0|61PIEqk9Hd4hXJFZhoBZ5bNmN349coz1"
+          category_name: "Identity & Access Management"
+          category_uid: 3
+          class_name: "Authentication"
+          class_uid: 3002
+          dst_endpoint:
+            hostname: "awesome.bisonte.auth0.com"
+          http_request:
+            user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36"
+          metadata:
+            event_code: "feoobft"
+            product:
+              name: "Auth0"
+              vendor_name: "Auth0 Log Events"
+            profiles:
+              - "datetime"
+            uid: "90020200123T15145913700000000000000000000000000000000000"
+            version: "1.3.0"
+          severity: "Informational"
+          severity_id: 1
+          src_endpoint:
+            ip: "79.153.77.39"
+          status: "Failure"
+          status_id: 2
+          time: 1579792499137
+          time_dt: "2020-01-23T15:14:59.137Z"
+          type_uid: 300299
+          user:
+            name: "cleveráguila"
+            uid: "auth0|61PIEqk9Hd4hXJFZhoBZ5bNmN349coz1"
+        usr:
+          id: "auth0|61PIEqk9Hd4hXJFZhoBZ5bNmN349coz1"
+          name: "cleveráguila"
+      message: "Failed exchange of Password and OOB Challenge for Access Token"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1579792499137
+  - sample: |-
+      {
+        "log_id" : "90020200123T15145913700000000000000000000000000000000000",
+        "data" : {
+          "date" : "2020-01-23T15:14:59.137Z",
+          "description" : "Auth0 has launched a new admin update",
+          "type" : "admin_update_launch"
+        }
+      }
+    result:
+      custom:
+        data:
+          date: "2020-01-23T15:14:59.137Z"
+          type: "admin_update_launch"
+        evt:
+          name: "auth0_update_launched"
+        log_id: "90020200123T15145913700000000000000000000000000000000000"
+        ocsf:
+          activity_id: 99
+          activity_name: "admin_update_launch"
+          category_name: "Uncategorized"
+          category_uid: 0
+          class_name: "Base Event"
+          class_uid: 0
+          metadata:
+            event_code: "admin_update_launch"
+            product:
+              name: "Auth0"
+              vendor_name: "Auth0 Log Events"
+            profiles:
+              - "datetime"
+            version: "1.3.0"
+          severity: "Informational"
+          severity_id: 1
+          time: 1579792499137
+          time_dt: "2020-01-23T15:14:59.137Z"
+          type_uid: 99
+      message: "Auth0 has launched a new admin update"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1579792499137
+  - sample: |-
+      {
+        "log_id" : "90020200123T15145913700000000000000000000000000000000000",
+        "data" : {
+          "date" : "2020-01-23T15:14:59.137Z",
+          "description" : "Auth0 has detected a failed login",
+          "type" : "f"
+        }
+      }
+    result:
+      custom:
+        data:
+          date: "2020-01-23T15:14:59.137Z"
+          type: "f"
+        evt:
+          category: "authentication"
+          name: "failed_login"
+          outcome: "failure"
+        log_id: "90020200123T15145913700000000000000000000000000000000000"
+        ocsf:
+          activity_id: 99
+          activity_name: "f"
+          category_name: "Uncategorized"
+          category_uid: 0
+          class_name: "Base Event"
+          class_uid: 0
+          metadata:
+            event_code: "f"
+            product:
+              name: "Auth0"
+              vendor_name: "Auth0 Log Events"
+            profiles:
+              - "datetime"
+            version: "1.3.0"
+          severity: "Informational"
+          severity_id: 1
+          time: 1579792499137
+          time_dt: "2020-01-23T15:14:59.137Z"
+          type_uid: 99
+      message: "Auth0 has detected a failed login"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1579792499137
+  - sample: |-
+      {
+        "log_id" : "90020200123T15145913700000000000000000000000000000000000",
+        "data" : {
+          "date" : "2020-01-23T15:14:59.137Z",
+          "description" : "Auth0 has detected a successful signup",
+          "type" : "ss"
+        }
+      }
+    result:
+      custom:
+        data:
+          date: "2020-01-23T15:14:59.137Z"
+          description: "Auth0 has detected a successful signup"
+          type: "ss"
+        evt:
+          category: "authentication"
+          name: "success_signup"
+          outcome: "success"
+        log_id: "90020200123T15145913700000000000000000000000000000000000"
+        ocsf:
+          activity_id: 99
+          activity_name: "ss"
+          category_name: "Uncategorized"
+          category_uid: 0
+          class_name: "Base Event"
+          class_uid: 0
+          metadata:
+            event_code: "ss"
+            product:
+              name: "Auth0"
+              vendor_name: "Auth0 Log Events"
+            profiles:
+              - "datetime"
+            version: "1.3.0"
+          severity: "Informational"
+          severity_id: 1
+          time: 1579792499137
+          time_dt: "2020-01-23T15:14:59.137Z"
+          type_uid: 99
+      message: "Successful Signup"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1579792499137
+  - sample: |-
+      {
+        "log_id" : "90020200123T15145913700000000000000000000000000000000000",
+        "data" : {
+          "date" : "2025-05-07T09:01:59.137Z",
+          "log_id" : "90020200123T15145913700000000000000000000000000000000000",
+          "$event_schema" : {
+            "version" : "1.0.0"
+          },
+          "user_name" : "clever@test.com",
+          "ip" : "79.153.77.39",
+          "description" : "waaaaa",
+          "strategy_type" : "database",
+          "type" : "s",
+          "client_id" : "61PIEqk9Hd4hXJFZhoBZ5bNmN349coz1",
+          "hostname" : "awesome.bisonte.auth0.com",
+          "connection_id" : "con_DFOp2K6Ysya1y2OP",
+          "user_id" : "auth0|61PIEqk9Hd4hXJFZhoBZ5bNmN349coz1",
+          "connection" : "great-pollo",
+          "details" : "whatever...",
+          "strategy" : "auth0",
+          "client_name" : "greatballena",
+          "tenant" : "datadog",
+          "user_agent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36"
+        }
+      }
+    result:
+      custom:
+        data:
+          $event_schema:
+            version: "1.0.0"
+          client_id: "61PIEqk9Hd4hXJFZhoBZ5bNmN349coz1"
+          client_name: "greatballena"
+          connection: "great-pollo"
+          connection_id: "con_DFOp2K6Ysya1y2OP"
+          date: "2025-05-07T09:01:59.137Z"
+          description: "waaaaa"
+          details: "whatever..."
+          hostname: "awesome.bisonte.auth0.com"
+          ip: "79.153.77.39"
+          log_id: "90020200123T15145913700000000000000000000000000000000000"
+          strategy: "auth0"
+          strategy_type: "database"
+          tenant: "datadog"
+          type: "s"
+          user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36"
+          user_id: "auth0|61PIEqk9Hd4hXJFZhoBZ5bNmN349coz1"
+          user_name: "clever@test.com"
+        evt:
+          category: "authentication"
+          name: "success_login"
+          outcome: "success"
+        http:
+          useragent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36"
+          useragent_details:
+            browser:
+              family: "Chrome"
+              major: "71"
+              minor: "0"
+              patch: "3578"
+              patch_minor: "98"
+            device:
+              category: "Desktop"
+              family: "Other"
+            os:
+              family: "Windows"
+              major: "10"
+        log_id: "90020200123T15145913700000000000000000000000000000000000"
+        network:
+          client:
+            geoip: {}
+            ip: "79.153.77.39"
+        ocsf:
+          activity_id: 1
+          activity_name: "Logon"
+          actor:
+            app_name: "greatballena"
+            app_uid: "61PIEqk9Hd4hXJFZhoBZ5bNmN349coz1"
+            user:
+              name: "clever@test.com"
+              uid: "auth0|61PIEqk9Hd4hXJFZhoBZ5bNmN349coz1"
+          category_name: "Identity & Access Management"
+          category_uid: 3
+          class_name: "Authentication"
+          class_uid: 3002
+          dst_endpoint:
+            hostname: "awesome.bisonte.auth0.com"
+          http_request:
+            user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36"
+          metadata:
+            event_code: "s"
+            log_version: "1.0.0"
+            product:
+              name: "Auth0"
+              vendor_name: "Auth0 Log Events"
+            profiles:
+              - "datetime"
+            uid: "90020200123T15145913700000000000000000000000000000000000"
+            version: "1.3.0"
+          severity: "Informational"
+          severity_id: 1
+          src_endpoint:
+            ip: "79.153.77.39"
+          status: "Success"
+          status_id: 1
+          time: 1746608519137
+          time_dt: "2025-05-07T09:01:59.137Z"
+          type_uid: 300201
+          user:
+            name: "clever@test.com"
+            uid: "auth0|61PIEqk9Hd4hXJFZhoBZ5bNmN349coz1"
+        usr:
+          id: "auth0|61PIEqk9Hd4hXJFZhoBZ5bNmN349coz1"
+          name: "clever@test.com"
+      message: "Successful login event."
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1746608519137
+  - sample: |-
+      {
+        "log_id" : "90020200123T15145913700000000000000000000000000000000000",
+        "data" : {
+          "date" : "2025-05-07T09:01:59.137Z",
+          "log_id" : "90020200123T15145913700000000000000000000000000000000000",
+          "$event_schema" : {
+            "version" : "1.0.0"
+          },
+          "user_name" : "",
+          "ip" : "79.153.77.39",
+          "description" : "user_id: bdf8b733-f7q1-4fq1-9723-edcd437q96q1",
+          "strategy_type" : "database",
+          "type" : "sdu",
+          "client_id" : "61PIEqk9Hd4hXJFZhoBZ5bNmN349coz1",
+          "hostname" : "awesome.bisonte.auth0.com",
+          "connection_id" : "con_DFOp2K6Ysya1y2OP",
+          "user_id" : "",
+          "connection" : "great-pollo",
+          "details" : "whatever...",
+          "strategy" : "auth0",
+          "client_name" : "greatballena",
+          "tenant" : "datadog",
+          "user_agent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36"
+        }
+      }
+    result:
+      custom:
+        data:
+          $event_schema:
+            version: "1.0.0"
+          client_id: "61PIEqk9Hd4hXJFZhoBZ5bNmN349coz1"
+          client_name: "greatballena"
+          connection: "great-pollo"
+          connection_id: "con_DFOp2K6Ysya1y2OP"
+          date: "2025-05-07T09:01:59.137Z"
+          description: "user_id: bdf8b733-f7q1-4fq1-9723-edcd437q96q1"
+          details: "whatever..."
+          hostname: "awesome.bisonte.auth0.com"
+          ip: "79.153.77.39"
+          log_id: "90020200123T15145913700000000000000000000000000000000000"
+          strategy: "auth0"
+          strategy_type: "database"
+          tenant: "datadog"
+          type: "sdu"
+          user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36"
+          user_id: ""
+          user_name: ""
+        evt:
+          name: "success_user_deletion"
+        http:
+          useragent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36"
+          useragent_details:
+            browser:
+              family: "Chrome"
+              major: "71"
+              minor: "0"
+              patch: "3578"
+              patch_minor: "98"
+            device:
+              category: "Desktop"
+              family: "Other"
+            os:
+              family: "Windows"
+              major: "10"
+        log_id: "90020200123T15145913700000000000000000000000000000000000"
+        network:
+          client:
+            geoip: {}
+            ip: "79.153.77.39"
+        ocsf:
+          activity_id: 6
+          activity_name: "Delete"
+          actor:
+            app_name: "greatballena"
+            app_uid: "61PIEqk9Hd4hXJFZhoBZ5bNmN349coz1"
+            user:
+              name: ""
+              uid: ""
+          category_name: "Identity & Access Management"
+          category_uid: 3
+          class_name: "Account Change"
+          class_uid: 3001
+          http_request:
+            user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36"
+          metadata:
+            event_code: "sdu"
+            log_version: "1.0.0"
+            product:
+              name: "Auth0"
+              vendor_name: "Auth0 Log Events"
+            profiles:
+              - "datetime"
+            uid: "90020200123T15145913700000000000000000000000000000000000"
+            version: "1.3.0"
+          severity: "Informational"
+          severity_id: 1
+          src_endpoint:
+            ip: "79.153.77.39"
+          status: "Success"
+          status_id: 1
+          time: 1746608519137
+          time_dt: "2025-05-07T09:01:59.137Z"
+          type_uid: 300106
+          user:
+            uid: "bdf8b733-f7q1-4fq1-9723-edcd437q96q1"
+        usr:
+          id: ""
+          name: ""
+      message: "User successfully deleted"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1746608519137
+  - sample: |-
+      {
+        "log_id" : "90020200123T15145913700000000000000000000000000000000000",
+        "data" : {
+          "date" : "2025-05-07T09:01:59.137Z",
+          "log_id" : "90020200123T15145913700000000000000000000000000000000000",
+          "$event_schema" : {
+            "version" : "1.0.0"
+          },
+          "user_name" : "",
+          "ip" : "79.153.77.39",
+          "description" : "user_id: bdf8b733-f7q1-4fq1-9723-edcd437q96q1",
+          "strategy_type" : "database",
+          "type" : "sapi",
+          "client_id" : "61PIEqk9Hd4hXJFZhoBZ5bNmN349coz1",
+          "hostname" : "awesome.bisonte.auth0.com",
+          "connection_id" : "con_DFOp2K6Ysya1y2OP",
+          "user_id" : "",
+          "connection" : "great-pollo",
+          "details" : {
+            "request" : {
+              "path" : "/api/v2/users/auth01111/refresh-tokens",
+              "method" : "delete",
+              "auth" : {
+                "credentials" : {
+                  "scopes" : [ "read:client_grants" ]
+                },
+                "strategy" : "jwt"
+              },
+              "ip" : "1.1.1.1",
+              "channel" : "api",
+              "userAgent" : "node"
+            },
+            "response" : {
+              "statusCode" : 202
+            }
+          },
+          "strategy" : "auth0",
+          "client_name" : "greatballena",
+          "tenant" : "datadog",
+          "user_agent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36"
+        }
+      }
+    result:
+      custom:
+        data:
+          $event_schema:
+            version: "1.0.0"
+          client_id: "61PIEqk9Hd4hXJFZhoBZ5bNmN349coz1"
+          client_name: "greatballena"
+          connection: "great-pollo"
+          connection_id: "con_DFOp2K6Ysya1y2OP"
+          date: "2025-05-07T09:01:59.137Z"
+          details:
+            request:
+              auth:
+                credentials:
+                  scopes:
+                    - "read:client_grants"
+                strategy: "jwt"
+              channel: "api"
+              ip: "1.1.1.1"
+              method: "delete"
+              path: "/api/v2/users/auth01111/refresh-tokens"
+              userAgent: "node"
+            response:
+              statusCode: 202
+          hostname: "awesome.bisonte.auth0.com"
+          ip: "79.153.77.39"
+          log_id: "90020200123T15145913700000000000000000000000000000000000"
+          strategy: "auth0"
+          strategy_type: "database"
+          tenant: "datadog"
+          type: "sapi"
+          user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36"
+          user_id: ""
+          user_name: ""
+        evt:
+          name: "success_api_operation"
+        http:
+          useragent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36"
+          useragent_details:
+            browser:
+              family: "Chrome"
+              major: "71"
+              minor: "0"
+              patch: "3578"
+              patch_minor: "98"
+            device:
+              category: "Desktop"
+              family: "Other"
+            os:
+              family: "Windows"
+              major: "10"
+        log_id: "90020200123T15145913700000000000000000000000000000000000"
+        network:
+          client:
+            geoip: {}
+            ip: "79.153.77.39"
+        ocsf:
+          activity_id: 4
+          activity_name: "Delete"
+          actor:
+            app_name: "greatballena"
+            app_uid: "61PIEqk9Hd4hXJFZhoBZ5bNmN349coz1"
+            user:
+              name: ""
+              uid: ""
+          api:
+            operation: "sapi"
+            request:
+              data:
+                auth:
+                  credentials:
+                    scopes:
+                      - "read:client_grants"
+                  strategy: "jwt"
+                channel: "api"
+                ip: "1.1.1.1"
+                method: "delete"
+                path: "/api/v2/users/auth01111/refresh-tokens"
+                userAgent: "node"
+              uid: "unknown"
+            response:
+              data:
+                statusCode: 202
+          category_name: "Application Activity"
+          category_uid: 6
+          class_name: "API Activity"
+          class_uid: 6003
+          http_request:
+            http_method: "DELETE"
+            url:
+              path: "/api/v2/users/auth01111/refresh-tokens"
+            user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36"
+          metadata:
+            event_code: "sapi"
+            log_version: "1.0.0"
+            product:
+              name: "Auth0"
+              vendor_name: "Auth0 Log Events"
+            profiles:
+              - "datetime"
+            uid: "90020200123T15145913700000000000000000000000000000000000"
+            version: "1.3.0"
+          severity: "Informational"
+          severity_id: 1
+          src_endpoint:
+            ip: "79.153.77.39"
+          time: 1746608519137
+          time_dt: "2025-05-07T09:01:59.137Z"
+          type_uid: 600304
+        usr:
+          id: ""
+          name: ""
+      message: "user_id: bdf8b733-f7q1-4fq1-9723-edcd437q96q1"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1746608519137

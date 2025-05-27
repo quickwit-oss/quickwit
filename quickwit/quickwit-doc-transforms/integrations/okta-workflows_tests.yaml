@@ -1,0 +1,149 @@
+id: "okta-workflows"
+tests:
+ -
+  sample: |-
+    {
+      "enrichment_details" : {
+        "workflow_id" : "01JDNV8HCJPX0JR7JSR9JY5CA5",
+        "workflow_name" : "Schedule Flow"
+      },
+      "log" : {
+        "severity" : "INFO",
+        "request" : {
+          "ipChain" : [ {
+            "ip" : "null"
+          } ]
+        },
+        "eventType" : "workflows.user.flow.activate",
+        "published" : "2024-12-23T09:01:06.674Z",
+        "uuid" : "726d2b15-c10c-11ef-b07f-8d23c9fdf856",
+        "version" : "0",
+        "target" : [ {
+          "alternateId" : "Okta Workflows",
+          "displayName" : "Okta Workflows",
+          "id" : "00olyc3jhdlie0qFu697",
+          "type" : "AppInstance"
+        }, {
+          "alternateId" : "Schedule Flow",
+          "displayName" : "Schedule Flow",
+          "id" : "01JDNV8HCJPX0JR7JSR9JY5CA5",
+          "type" : "Flow"
+        } ],
+        "actor" : {
+          "alternateId" : "fejehi2728@kazvi.com",
+          "displayName" : "Dhruva Patel",
+          "id" : "00ulycdpfr62PfUc6697",
+          "type" : "User"
+        },
+        "debugContext" : {
+          "debugData" : {
+            "sessionId" : "451605df-f773-4c06-933f-fc471a3069b4"
+          }
+        },
+        "displayMessage" : "Flow activated",
+        "client" : {
+          "zone" : "null",
+          "ipAddress" : "103.108.207.58",
+          "userAgent" : {
+            "os" : "Windows 10",
+            "browser" : "CHROME",
+            "rawUserAgent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          },
+          "device" : "Computer",
+          "geographicalContext" : {
+            "country" : "India",
+            "city" : "Bharūch",
+            "postalCode" : "392012",
+            "state" : "Gujarat",
+            "geolocation" : {
+              "lon" : 72.9782,
+              "lat" : 21.7003
+            }
+          }
+        },
+        "outcome" : {
+          "result" : "SUCCESS"
+        },
+        "transaction" : {
+          "id" : "451605df-f773-4c06-933f-fc471a3069b4",
+          "type" : "WORKFLOW"
+        }
+      }
+    }
+  result:
+    custom:
+      enrichment_details:
+        workflow_id: "01JDNV8HCJPX0JR7JSR9JY5CA5"
+        workflow_name: "Schedule Flow"
+      evt:
+        name: "workflows.user.flow.activate"
+        outcome: "SUCCESS"
+      http:
+        useragent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "131"
+            minor: "0"
+            patch: "0"
+            patch_minor: "0"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Windows"
+            major: "10"
+      log:
+        client:
+          device: "Computer"
+          geographicalContext:
+            city: "Bharūch"
+            country: "India"
+            geolocation:
+              lat: 21.7003
+              lon: 72.9782
+            postalCode: "392012"
+            state: "Gujarat"
+          userAgent:
+            browser: "CHROME"
+            os: "Windows 10"
+          zone: "null"
+        debugContext:
+          debugData:
+            sessionId: "451605df-f773-4c06-933f-fc471a3069b4"
+        published: "2024-12-23T09:01:06.674Z"
+        request:
+          ipChain:
+           -
+            ip: "null"
+        severity: "INFO"
+        target:
+         -
+          alternateId: "Okta Workflows"
+          displayName: "Okta Workflows"
+          id: "00olyc3jhdlie0qFu697"
+          type: "AppInstance"
+         -
+          alternateId: "Schedule Flow"
+          displayName: "Schedule Flow"
+          id: "01JDNV8HCJPX0JR7JSR9JY5CA5"
+          type: "Flow"
+        transaction:
+          id: "451605df-f773-4c06-933f-fc471a3069b4"
+          type: "WORKFLOW"
+        uuid: "726d2b15-c10c-11ef-b07f-8d23c9fdf856"
+        version: "0"
+      network:
+        client:
+          geoip: {}
+          ip: "103.108.207.58"
+      usr:
+        email: "fejehi2728@kazvi.com"
+        id: "00ulycdpfr62PfUc6697"
+        name: "Dhruva Patel"
+        type: "User"
+    message: "Flow activated"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1734944466674

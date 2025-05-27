@@ -1,0 +1,27 @@
+id: "etcd"
+tests:
+ -
+  sample: "2020-08-20 18:19:25.769683 I | embed: ready to serve client requests"
+  result:
+    custom:
+      date: 1597947565769
+      level: "I"
+      package: "embed"
+    message: "ready to serve client requests"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1597947565769
+ -
+  sample: "2020-08-20 18:23:44.714594 W | rafthttp: lost the TCP streaming connection with peer d282ac2ce600c1ce (stream Message reader)"
+  result:
+    custom:
+      date: 1597947824714
+      level: "W"
+      package: "rafthttp"
+    message: "lost the TCP streaming connection with peer d282ac2ce600c1ce (stream Message reader)"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1597947824714
+

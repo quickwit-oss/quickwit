@@ -1,0 +1,122 @@
+id: "azure.compute"
+tests:
+ -
+  sample: |-
+    {
+      "callerIpAddress" : "34.224.243.198",
+      "resourceId" : "/SUBSCRIPTIONS/8C56D827-5F07-45CE-8F2B-6C5001DB5C6F/resourceGroups/KITCHEN-DD-AGENT-WIN2019-AZURE-20200407T115109PL2363814-A6/providers/MICROSOFT.COMPUTE/VIRTUALMACHINES/DDATWIN2019",
+      "level" : "Warning",
+      "identity" : {
+        "authorization" : {
+          "evidence" : {
+            "principalId" : "5f6793e4783e49a2bfb8cdaasdada"
+          }
+        }
+      },
+      "operationName" : "MICROSOFT.AUTHORIZATION/POLICIES/AUDIT/ACTION",
+      "correlationId" : "aea8188d-9be4-48c7-9e8f-3bf10a545ff3",
+      "time" : "2020-04-07T12:01:17.8810661Z",
+      "category" : "Administrative",
+      "resultType" : "Success",
+      "durationMs" : 123,
+      "resultSignature" : "Succeeded."
+    }
+  result:
+    custom:
+      correlationId: "aea8188d-9be4-48c7-9e8f-3bf10a545ff3"
+      duration: 1.23E8
+      durationMs: 123
+      evt:
+        category: "Administrative"
+        name: "MICROSOFT.AUTHORIZATION/POLICIES/AUDIT/ACTION"
+        outcome: "Success"
+      level: "Warning"
+      network:
+        client:
+          ip: "34.224.243.198"
+      resourceId: "/SUBSCRIPTIONS/8C56D827-5F07-45CE-8F2B-6C5001DB5C6F/resourceGroups/KITCHEN-DD-AGENT-WIN2019-AZURE-20200407T115109PL2363814-A6/providers/MICROSOFT.COMPUTE/VIRTUALMACHINES/DDATWIN2019"
+      resource_name: "ddatwin2019"
+      resultSignature: "Succeeded."
+      time: "2020-04-07T12:01:17.8810661Z"
+      usr:
+        id: "5f6793e4783e49a2bfb8cdaasdada"
+    message: |-
+      {
+        "callerIpAddress" : "34.224.243.198",
+        "resourceId" : "/SUBSCRIPTIONS/8C56D827-5F07-45CE-8F2B-6C5001DB5C6F/resourceGroups/KITCHEN-DD-AGENT-WIN2019-AZURE-20200407T115109PL2363814-A6/providers/MICROSOFT.COMPUTE/VIRTUALMACHINES/DDATWIN2019",
+        "level" : "Warning",
+        "identity" : {
+          "authorization" : {
+            "evidence" : {
+              "principalId" : "5f6793e4783e49a2bfb8cdaasdada"
+            }
+          }
+        },
+        "operationName" : "MICROSOFT.AUTHORIZATION/POLICIES/AUDIT/ACTION",
+        "correlationId" : "aea8188d-9be4-48c7-9e8f-3bf10a545ff3",
+        "time" : "2020-04-07T12:01:17.8810661Z",
+        "category" : "Administrative",
+        "resultType" : "Success",
+        "durationMs" : 123,
+        "resultSignature" : "Succeeded."
+      }
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1586260877881
+ -
+  sample: |-
+    {
+      "resourceId" : "/SUBSCRIPTIONS/8C56D827-5F07-45CE-8F2B-6C5001DB5C6F/RESOURCEGROUPS/KITCHEN-DD-AGENT-SLES-12-AZURE-20200408T112721PL2367806-A6/PROVIDERS/MICROSOFT.COMPUTE/VIRTUALMACHINES/DD-AGENT-TESTING-SLES-12-AZURE",
+      "level" : "Critical",
+      "identity" : {
+        "authorization" : {
+          "evidence" : {
+            "principalId" : "5f6793e4783e49a2bfb8cdaasdada"
+          }
+        }
+      },
+      "correlationId" : "dba965ff-6161-4837-a2bf-95b355ddf2d0",
+      "operationName" : "Microsoft.Resourcehealth/healthevent/Updated/action",
+      "time" : "2020-04-08T11:49:12.1063734Z",
+      "category" : "ResourceHealth",
+      "resultType" : "Updated",
+      "properties" : {
+        "eventCategory" : "ResourceHealth",
+        "eventProperties" : {
+          "cause" : "PlatformInitiated",
+          "details" : "Unknown",
+          "currentHealthStatus" : "Unavailable",
+          "previousHealthStatus" : "Unavailable",
+          "title" : "Down: Virtual machine has been unavailable for 15 minutes",
+          "type" : "Downtime"
+        }
+      }
+    }
+  result:
+    custom:
+      correlationId: "dba965ff-6161-4837-a2bf-95b355ddf2d0"
+      evt:
+        category: "ResourceHealth"
+        name: "Microsoft.Resourcehealth/healthevent/Updated/action"
+        outcome: "Updated"
+      level: "Critical"
+      properties:
+        eventCategory: "ResourceHealth"
+        eventProperties:
+          cause: "PlatformInitiated"
+          currentHealthStatus: "Unavailable"
+          details: "Unknown"
+          previousHealthStatus: "Unavailable"
+          type: "Downtime"
+      resourceId: "/SUBSCRIPTIONS/8C56D827-5F07-45CE-8F2B-6C5001DB5C6F/RESOURCEGROUPS/KITCHEN-DD-AGENT-SLES-12-AZURE-20200408T112721PL2367806-A6/PROVIDERS/MICROSOFT.COMPUTE/VIRTUALMACHINES/DD-AGENT-TESTING-SLES-12-AZURE"
+      resource_name: "dd-agent-testing-sles-12-azure"
+      time: "2020-04-08T11:49:12.1063734Z"
+      usr:
+        id: "5f6793e4783e49a2bfb8cdaasdada"
+    message: "Down: Virtual machine has been unavailable for 15 minutes"
+    status: "critical"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1586346552106
+

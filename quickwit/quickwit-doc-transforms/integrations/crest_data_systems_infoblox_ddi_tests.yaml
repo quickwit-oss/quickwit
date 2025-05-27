@@ -1,0 +1,410 @@
+id: "crest_data_systems_infoblox_ddi"
+tests:
+  - sample: |
+      <30>Mar 7 08:32:59 infoblox.localdomain dhcpd[20397]: DHCPDECLINE of 1.1.1.1 from 00:c0:dd:07:18:e2 via 2.2.2.2: abandoned
+    result:
+      custom:
+        decline_reason: "abandoned"
+        infoblox_client_mac: "00:c0:dd:07:18:e2"
+        infoblox_dhcp_message: "DHCPDECLINE"
+        infoblox_host: "infoblox.localdomain"
+        infoblox_interface: "2.2.2.2"
+        infoblox_type: "dhcpd"
+        log_message: "DHCPDECLINE of 1.1.1.1 from 00:c0:dd:07:18:e2 via 2.2.2.2: abandoned"
+        network:
+          destination:
+            ip: "1.1.1.1"
+        pid: 20397
+      message: |
+        <30>Mar 7 08:32:59 infoblox.localdomain dhcpd[20397]: DHCPDECLINE of 1.1.1.1 from 00:c0:dd:07:18:e2 via 2.2.2.2: abandoned
+      tags:
+        - "source:LOGS_SOURCE"
+  - sample: |
+      <30>Mar 27 08:32:59 infoblox.localdomain dhcpd[2567]: DHCPACK on 1.1.1.1 to 00:50:56:83:6c:a0 (DESKTOP-ABCD) via eth3 relay eth3 lease-duration 1800 uid 01:00:50:56:83:6c:a0
+    result:
+      custom:
+        client_hostname: "DESKTOP-ABCD"
+        infoblox_client_mac: "00:50:56:83:6c:a0"
+        infoblox_dhcp_message: "DHCPACK"
+        infoblox_host: "infoblox.localdomain"
+        infoblox_interface: "eth3"
+        infoblox_type: "dhcpd"
+        lease_duration: 1800
+        log_message: "DHCPACK on 1.1.1.1 to 00:50:56:83:6c:a0 (DESKTOP-ABCD) via eth3 relay eth3 lease-duration 1800 uid 01:00:50:56:83:6c:a0"
+        network:
+          destination:
+            ip: "1.1.1.1"
+        pid: 2567
+        relay: "eth3"
+        uid: "01:00:50:56:83:6c:a0"
+      message: |
+        <30>Mar 27 08:32:59 infoblox.localdomain dhcpd[2567]: DHCPACK on 1.1.1.1 to 00:50:56:83:6c:a0 (DESKTOP-ABCD) via eth3 relay eth3 lease-duration 1800 uid 01:00:50:56:83:6c:a0
+      tags:
+        - "source:LOGS_SOURCE"
+  - sample: |
+      <30>Mar 27 08:32:59 infoblox.localdomain dhcpd[1761]: DHCPDISCOVER from 00:50:56:83:6c:a0 (DESKTOP-ABCD) via eth3 TransID a76ecf84 uid 01:00:50:56:83:6c:a0
+    result:
+      custom:
+        client_hostname: "DESKTOP-ABCD"
+        infoblox_client_mac: "00:50:56:83:6c:a0"
+        infoblox_dhcp_message: "DHCPDISCOVER"
+        infoblox_host: "infoblox.localdomain"
+        infoblox_interface: "eth3"
+        infoblox_type: "dhcpd"
+        log_message: "DHCPDISCOVER from 00:50:56:83:6c:a0 (DESKTOP-ABCD) via eth3 TransID a76ecf84 uid 01:00:50:56:83:6c:a0"
+        pid: 1761
+        trans_id: "a76ecf84"
+        uid: "01:00:50:56:83:6c:a0"
+      message: |
+        <30>Mar 27 08:32:59 infoblox.localdomain dhcpd[1761]: DHCPDISCOVER from 00:50:56:83:6c:a0 (DESKTOP-ABCD) via eth3 TransID a76ecf84 uid 01:00:50:56:83:6c:a0
+      tags:
+        - "source:LOGS_SOURCE"
+  - sample: |
+      <30>Mar 27 08:32:59 infoblox.localdomain dhcpd[4495]: DHCPREQUEST for 1.1.1.1 from 00:50:56:83:6c:a0 via eth3 TransID a18a70a0 uid 01:00:50:56:83:6c:a0
+    result:
+      custom:
+        infoblox_client_mac: "00:50:56:83:6c:a0"
+        infoblox_dhcp_message: "DHCPREQUEST"
+        infoblox_host: "infoblox.localdomain"
+        infoblox_interface: "eth3"
+        infoblox_type: "dhcpd"
+        log_message: "DHCPREQUEST for 1.1.1.1 from 00:50:56:83:6c:a0 via eth3 TransID a18a70a0 uid 01:00:50:56:83:6c:a0"
+        network:
+          destination:
+            ip: "1.1.1.1"
+        pid: 4495
+        trans_id: "a18a70a0"
+        uid: "01:00:50:56:83:6c:a0"
+      message: |
+        <30>Mar 27 08:32:59 infoblox.localdomain dhcpd[4495]: DHCPREQUEST for 1.1.1.1 from 00:50:56:83:6c:a0 via eth3 TransID a18a70a0 uid 01:00:50:56:83:6c:a0
+      tags:
+        - "source:LOGS_SOURCE"
+  - sample: |
+      <30>Mar 27 08:32:59 infoblox.localdomain dhcpd[17530]: DHCPACK on 1.1.1.1 to 00:50:56:83:6c:a0 (DESKTOP-ABCD) via eth3 relay eth3 lease-duration 1800 (RENEW) uid 01:00:50:56:83:6c:a0
+    result:
+      custom:
+        client_hostname: "DESKTOP-ABCD"
+        infoblox_client_mac: "00:50:56:83:6c:a0"
+        infoblox_dhcp_message: "DHCPACK"
+        infoblox_host: "infoblox.localdomain"
+        infoblox_interface: "eth3"
+        infoblox_type: "dhcpd"
+        lease_duration: 1800
+        log_message: "DHCPACK on 1.1.1.1 to 00:50:56:83:6c:a0 (DESKTOP-ABCD) via eth3 relay eth3 lease-duration 1800 (RENEW) uid 01:00:50:56:83:6c:a0"
+        network:
+          destination:
+            ip: "1.1.1.1"
+        pid: 17530
+        relay: "eth3"
+      message: |
+        <30>Mar 27 08:32:59 infoblox.localdomain dhcpd[17530]: DHCPACK on 1.1.1.1 to 00:50:56:83:6c:a0 (DESKTOP-ABCD) via eth3 relay eth3 lease-duration 1800 (RENEW) uid 01:00:50:56:83:6c:a0
+      tags:
+        - "source:LOGS_SOURCE"
+  - sample: |
+      <30>Mar 27 08:32:59 infoblox.localdomain dhcpd[1761]: DHCPRELEASE of 1.1.1.1 from 00:50:56:83:6c:a0 (DESKTOP-ABCD) via eth3 (found) TransID 0286f3d0 uid 01:00:50:56:83:6c:a0
+    result:
+      custom:
+        client_hostname: "DESKTOP-ABCD"
+        infoblox_client_mac: "00:50:56:83:6c:a0"
+        infoblox_dhcp_message: "DHCPRELEASE"
+        infoblox_host: "infoblox.localdomain"
+        infoblox_interface: "eth3"
+        infoblox_type: "dhcpd"
+        lease_status: "found"
+        log_message: "DHCPRELEASE of 1.1.1.1 from 00:50:56:83:6c:a0 (DESKTOP-ABCD) via eth3 (found) TransID 0286f3d0 uid 01:00:50:56:83:6c:a0"
+        network:
+          destination:
+            ip: "1.1.1.1"
+        pid: 1761
+        trans_id: "0286f3d0"
+        uid: "01:00:50:56:83:6c:a0"
+      message: |
+        <30>Mar 27 08:32:59 infoblox.localdomain dhcpd[1761]: DHCPRELEASE of 1.1.1.1 from 00:50:56:83:6c:a0 (DESKTOP-ABCD) via eth3 (found) TransID 0286f3d0 uid 01:00:50:56:83:6c:a0
+      tags:
+        - "source:LOGS_SOURCE"
+  - sample: |
+      <30>Mar 18 11:44:52 10.0.0.1 dhcpd[32243]: DHCPDECLINE of 1.1.1.1 from 34:29:8f:71:b8:99 via 192.168.0.2 TransID 00000000: not found
+    result:
+      custom:
+        decline_reason: "not found"
+        infoblox_client_mac: "34:29:8f:71:b8:99"
+        infoblox_dhcp_message: "DHCPDECLINE"
+        infoblox_host: "10.0.0.1"
+        infoblox_interface: "192.168.0.2"
+        infoblox_type: "dhcpd"
+        log_message: "DHCPDECLINE of 1.1.1.1 from 34:29:8f:71:b8:99 via 192.168.0.2 TransID 00000000: not found"
+        network:
+          destination:
+            ip: "1.1.1.1"
+        pid: 32243
+        trans_id: "00000000"
+      message: |
+        <30>Mar 18 11:44:52 10.0.0.1 dhcpd[32243]: DHCPDECLINE of 1.1.1.1 from 34:29:8f:71:b8:99 via 192.168.0.2 TransID 00000000: not found
+      tags:
+        - "source:LOGS_SOURCE"
+  - sample: |
+      <30>Mar 11 23:51:31 infoblox.localdomain named[17742]: 07-Apr-2022 08:08:10.043 client 1.1.1.1#57398 UDP: query: a2.foo.com IN A response: NOERROR +AED a2.foo.com 28800 IN A 2.2.2.2;
+    result:
+      custom:
+        additional_message: "a2.foo.com 28800 IN A 2.2.2.2;"
+        dns:
+          answer:
+            class: "IN"
+            name: "a2.foo.com"
+            type: "A"
+          flags:
+            rcode: "NOERROR"
+        dns_response_flags: "+AED"
+        dns_response_protocol: "UDP"
+        infoblox_dns_client_ip: "1.1.1.1"
+        infoblox_dns_client_port: "57398"
+        infoblox_host: "infoblox.localdomain"
+        infoblox_type: "named"
+        log_date: "07-Apr-2022"
+        log_message: "07-Apr-2022 08:08:10.043 client 1.1.1.1#57398 UDP: query: a2.foo.com IN A response: NOERROR +AED a2.foo.com 28800 IN A 2.2.2.2;"
+        log_time: "08:08:10.043"
+        message_type: "response"
+        network:
+          client:
+            geoip: { }
+        pid: 17742
+      message: |
+        <30>Mar 11 23:51:31 infoblox.localdomain named[17742]: 07-Apr-2022 08:08:10.043 client 1.1.1.1#57398 UDP: query: a2.foo.com IN A response: NOERROR +AED a2.foo.com 28800 IN A 2.2.2.2;
+      tags:
+        - "source:LOGS_SOURCE"
+  - sample: |
+      <29>Aug 18 11:17:29 infoblox.localdomain named[25911]: DNS format error from 1.1.1.1#53 resolving www.newgoogle.com/AAAA for client 2.2.2.2#54313: non-improving referral
+    result:
+      custom:
+        additional_message: "non-improving referral"
+        dns:
+          answer:
+            name: "www.newgoogle.com"
+            type: "AAAA"
+        infoblox_dns_client_ip: "2.2.2.2"
+        infoblox_dns_client_port: "54313"
+        infoblox_host: "infoblox.localdomain"
+        infoblox_type: "named"
+        log_message: "DNS format error from 1.1.1.1#53 resolving www.newgoogle.com/AAAA for client 2.2.2.2#54313: non-improving referral"
+        network:
+          client:
+            geoip: { }
+          destination:
+            ip: "1.1.1.1"
+            port: "53"
+        pid: 25911
+      message: |
+        <29>Aug 18 11:17:29 infoblox.localdomain named[25911]: DNS format error from 1.1.1.1#53 resolving www.newgoogle.com/AAAA for client 2.2.2.2#54313: non-improving referral
+      tags:
+        - "source:LOGS_SOURCE"
+  - sample: |
+      <30>Mar 27 08:32:59 infoblox.localdomain dhcpd[20397]: DHCPNAK on 1.1.1.1 to f4:30:b9:17:ab:0e via 2.2.2.2
+    result:
+      custom:
+        infoblox_client_mac: "f4:30:b9:17:ab:0e"
+        infoblox_dhcp_message: "DHCPNAK"
+        infoblox_host: "infoblox.localdomain"
+        infoblox_interface: "2.2.2.2"
+        infoblox_type: "dhcpd"
+        log_message: "DHCPNAK on 1.1.1.1 to f4:30:b9:17:ab:0e via 2.2.2.2"
+        network:
+          destination:
+            ip: "1.1.1.1"
+        pid: 20397
+      message: |
+        <30>Mar 27 08:32:59 infoblox.localdomain dhcpd[20397]: DHCPNAK on 1.1.1.1 to f4:30:b9:17:ab:0e via 2.2.2.2
+      tags:
+        - "source:LOGS_SOURCE"
+  - sample: |
+      <30>Mar 27 08:32:59 infoblox.localdomain dhcpd[20397]: DHCPEXPIRE on 1.1.1.1 to 00:50:56:83:6c:a0
+    result:
+      custom:
+        infoblox_client_mac: "00:50:56:83:6c:a0"
+        infoblox_dhcp_message: "DHCPEXPIRE"
+        infoblox_host: "infoblox.localdomain"
+        infoblox_type: "dhcpd"
+        log_message: "DHCPEXPIRE on 1.1.1.1 to 00:50:56:83:6c:a0"
+        network:
+          destination:
+            ip: "1.1.1.1"
+        pid: 20397
+      message: |
+        <30>Mar 27 08:32:59 infoblox.localdomain dhcpd[20397]: DHCPEXPIRE on 1.1.1.1 to 00:50:56:83:6c:a0
+      tags:
+        - "source:LOGS_SOURCE"
+  - sample: |
+      <30>Mar 18 13:35:15 10.0.0.1 dhcpd[18078]: DHCPINFORM from 1.1.1.1 via 2.2.2.2 TransID 5713b740
+    result:
+      custom:
+        infoblox_dhcp_message: "DHCPINFORM"
+        infoblox_host: "10.0.0.1"
+        infoblox_interface: "2.2.2.2"
+        infoblox_type: "dhcpd"
+        log_message: "DHCPINFORM from 1.1.1.1 via 2.2.2.2 TransID 5713b740"
+        network:
+          client:
+            ip: "1.1.1.1"
+        pid: 18078
+        trans_id: "5713b740"
+      message: |
+        <30>Mar 18 13:35:15 10.0.0.1 dhcpd[18078]: DHCPINFORM from 1.1.1.1 via 2.2.2.2 TransID 5713b740
+      tags:
+        - "source:LOGS_SOURCE"
+  - sample: |
+      <30>Mar 27 08:32:59 infoblox.localdomain dhcpd[4495]: DHCPREQUEST for 1.1.1.1 from 00:50:56:83:6c:a0 (DESKTOP-ABCD) via eth3 TransID 54ade258 uid 01:00:50:56:83:6c:a0 (RENEW)
+    result:
+      custom:
+        client_hostname: "DESKTOP-ABCD"
+        infoblox_client_mac: "00:50:56:83:6c:a0"
+        infoblox_dhcp_message: "DHCPREQUEST"
+        infoblox_host: "infoblox.localdomain"
+        infoblox_interface: "eth3"
+        infoblox_type: "dhcpd"
+        log_message: "DHCPREQUEST for 1.1.1.1 from 00:50:56:83:6c:a0 (DESKTOP-ABCD) via eth3 TransID 54ade258 uid 01:00:50:56:83:6c:a0 (RENEW)"
+        network:
+          destination:
+            ip: "1.1.1.1"
+        pid: 4495
+        trans_id: "54ade258"
+        uid: "01:00:50:56:83:6c:a0"
+      message: |
+        <30>Mar 27 08:32:59 infoblox.localdomain dhcpd[4495]: DHCPREQUEST for 1.1.1.1 from 00:50:56:83:6c:a0 (DESKTOP-ABCD) via eth3 TransID 54ade258 uid 01:00:50:56:83:6c:a0 (RENEW)
+      tags:
+        - "source:LOGS_SOURCE"
+  - sample: |
+      <30>Jul 28 10:06:19 infoblox-10.160.0.2 named[17761]: client @0x7fde980bdb00 1.1.1.1#49397 (www.google.com): query 'www.google.com/AAAA/IN' denied
+    result:
+      custom:
+        dns:
+          answer:
+            class: "IN"
+            name: "www.google.com"
+            type: "AAAA"
+        dns_status: "denied"
+        infoblox_dns_client_ip: "1.1.1.1"
+        infoblox_dns_client_port: "49397"
+        infoblox_host: "infoblox-10.160.0.2"
+        infoblox_type: "named"
+        log_message: "client @0x7fde980bdb00 1.1.1.1#49397 (www.google.com): query 'www.google.com/AAAA/IN' denied"
+        message_type: "query"
+        network:
+          client:
+            geoip: { }
+        pid: 17761
+      message: |
+        <30>Jul 28 10:06:19 infoblox-10.160.0.2 named[17761]: client @0x7fde980bdb00 1.1.1.1#49397 (www.google.com): query 'www.google.com/AAAA/IN' denied
+      tags:
+        - "source:LOGS_SOURCE"
+  - sample: |
+      <45>Mar 11 23:51:31 infoblox.localdomain named[17742]: 07-Apr-2022 08:08:10.043 client 1.1.1.1#50565 UDP: query: test.com IN A response: REFUSED -
+    result:
+      custom:
+        dns:
+          answer:
+            class: "IN"
+            name: "test.com"
+            type: "A"
+          flags:
+            rcode: "REFUSED"
+        dns_response_flags: "-"
+        dns_response_protocol: "UDP"
+        infoblox_dns_client_ip: "1.1.1.1"
+        infoblox_dns_client_port: "50565"
+        infoblox_host: "infoblox.localdomain"
+        infoblox_type: "named"
+        log_date: "07-Apr-2022"
+        log_message: "07-Apr-2022 08:08:10.043 client 1.1.1.1#50565 UDP: query: test.com IN A response: REFUSED -"
+        log_time: "08:08:10.043"
+        message_type: "response"
+        network:
+          client:
+            geoip: { }
+        pid: 17742
+      message: |
+        <45>Mar 11 23:51:31 infoblox.localdomain named[17742]: 07-Apr-2022 08:08:10.043 client 1.1.1.1#50565 UDP: query: test.com IN A response: REFUSED -
+      tags:
+        - "source:LOGS_SOURCE"
+  - sample: |
+      <30>Mar 27 08:32:59 infoblox.localdomain dhcpd[2567]: DHCPOFFER on 1.1.1.1 to 00:50:56:83:6c:a0 (DESKTOP-ABCD) via eth3 relay eth3 lease-duration 119 offered-duration 1800 uid 01:00:50:56:83:6c:a0
+    result:
+      custom:
+        client_hostname: "DESKTOP-ABCD"
+        infoblox_client_mac: "00:50:56:83:6c:a0"
+        infoblox_dhcp_message: "DHCPOFFER"
+        infoblox_host: "infoblox.localdomain"
+        infoblox_interface: "eth3"
+        infoblox_type: "dhcpd"
+        lease_duration: 119
+        log_message: "DHCPOFFER on 1.1.1.1 to 00:50:56:83:6c:a0 (DESKTOP-ABCD) via eth3 relay eth3 lease-duration 119 offered-duration 1800 uid 01:00:50:56:83:6c:a0"
+        network:
+          destination:
+            ip: "1.1.1.1"
+        offered_duration: 1800
+        pid: 2567
+        relay: "eth3"
+        uid: "01:00:50:56:83:6c:a0"
+      message: |
+        <30>Mar 27 08:32:59 infoblox.localdomain dhcpd[2567]: DHCPOFFER on 1.1.1.1 to 00:50:56:83:6c:a0 (DESKTOP-ABCD) via eth3 relay eth3 lease-duration 119 offered-duration 1800 uid 01:00:50:56:83:6c:a0
+      tags:
+        - "source:LOGS_SOURCE"
+  - sample: |
+      <30>Mar 27 08:32:59 infoblox.localdomain dhcpd[21114]: DHCPOFFER on 1.1.1.1 to 00:50:56:83:6c:a0 (DESKTOP-ABCD) via eth3 relay eth3 lease-duration 120 offered-duration 1800
+    result:
+      custom:
+        client_hostname: "DESKTOP-ABCD"
+        infoblox_client_mac: "00:50:56:83:6c:a0"
+        infoblox_dhcp_message: "DHCPOFFER"
+        infoblox_host: "infoblox.localdomain"
+        infoblox_interface: "eth3"
+        infoblox_type: "dhcpd"
+        lease_duration: 120
+        log_message: "DHCPOFFER on 1.1.1.1 to 00:50:56:83:6c:a0 (DESKTOP-ABCD) via eth3 relay eth3 lease-duration 120 offered-duration 1800"
+        network:
+          destination:
+            ip: "1.1.1.1"
+        offered_duration: 1800
+        pid: 21114
+        relay: "eth3"
+      message: |
+        <30>Mar 27 08:32:59 infoblox.localdomain dhcpd[21114]: DHCPOFFER on 1.1.1.1 to 00:50:56:83:6c:a0 (DESKTOP-ABCD) via eth3 relay eth3 lease-duration 120 offered-duration 1800
+      tags:
+        - "source:LOGS_SOURCE"
+  - sample: |
+      <30>Mar 18 13:35:15 10.0.0.1 dhcpd[18078]: DHCPINFORM from 1.1.1.1 via eth2 TransID 5713b740
+    result:
+      custom:
+        infoblox_dhcp_message: "DHCPINFORM"
+        infoblox_host: "10.0.0.1"
+        infoblox_interface: "eth2"
+        infoblox_type: "dhcpd"
+        log_message: "DHCPINFORM from 1.1.1.1 via eth2 TransID 5713b740"
+        network:
+          client:
+            ip: "1.1.1.1"
+        pid: 18078
+        trans_id: "5713b740"
+      message: |
+        <30>Mar 18 13:35:15 10.0.0.1 dhcpd[18078]: DHCPINFORM from 1.1.1.1 via eth2 TransID 5713b740
+      tags:
+        - "source:LOGS_SOURCE"
+  - sample: |
+      <30>Mar 27 08:32:59 infoblox.localdomain dhcpd[21114]: DHCPRELEASE of 1.1.1.1 from 00:50:56:83:6c:a0 via eth3 (not found) TransID 665fd9f1
+    result:
+      custom:
+        infoblox_client_mac: "00:50:56:83:6c:a0"
+        infoblox_dhcp_message: "DHCPRELEASE"
+        infoblox_host: "infoblox.localdomain"
+        infoblox_interface: "eth3"
+        infoblox_type: "dhcpd"
+        lease_status: "not found"
+        log_message: "DHCPRELEASE of 1.1.1.1 from 00:50:56:83:6c:a0 via eth3 (not found) TransID 665fd9f1"
+        network:
+          destination:
+            ip: "1.1.1.1"
+        pid: 21114
+        trans_id: "665fd9f1"
+      message: |
+        <30>Mar 27 08:32:59 infoblox.localdomain dhcpd[21114]: DHCPRELEASE of 1.1.1.1 from 00:50:56:83:6c:a0 via eth3 (not found) TransID 665fd9f1
+      tags:
+        - "source:LOGS_SOURCE"
+

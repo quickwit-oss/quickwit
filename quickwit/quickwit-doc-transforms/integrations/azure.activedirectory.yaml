@@ -1,0 +1,318 @@
+id: azure.activedirectory
+metric_id: azure-active-directory
+backend_only: false
+facets:
+  - facetType: range
+    groups:
+      - Measure
+    name: Duration
+    path: duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: nanosecond
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+  - groups:
+      - Event
+    name: Event Outcome
+    path: evt.outcome
+    source: log
+  - groups:
+      - Web Access
+    name: User-Agent
+    path: http.useragent
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - User
+    name: User Email
+    path: usr.email
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - groups:
+      - Azure
+    name: Resource ID
+    path: resourceId
+    source: log
+    type: string
+  - groups:
+      - Azure
+    name: Resource Name
+    path: resource_name
+    source: log
+    type: string
+  - groups:
+      - Azure
+    name: Client Application
+    path: properties.clientAppUsed
+    source: log
+    type: string
+  - groups:
+      - Azure
+    name: Service Principal
+    path: properties.servicePrincipalName
+    source: log
+    type: string
+  - groups:
+      - Azure
+    name: Application Display Name
+    path: properties.appDisplayName
+    source: log
+    type: string
+  - groups:
+      - Azure
+    name: Application ID
+    path: properties.appId
+    source: log
+    type: string
+  - groups:
+      - Azure
+    name: Resource Group
+    path: resource_group
+    source: tag
+    type: string
+  - groups:
+      - Event
+    name: Event Category
+    path: evt.category
+    source: log
+  - groups:
+      - Azure
+    name: Subscription ID
+    path: subscription_id
+    source: tag
+    type: string
+  - groups:
+      - Azure
+    name: Tenant
+    path: tenant
+    source: tag
+    type: string
+pipeline:
+  type: pipeline
+  name: Azure Active Directory
+  enabled: true
+  filter:
+    query: source:azure.activedirectory
+  processors:
+    - type: grok-parser
+      name: Parsing `resource_name` from `resourceId`
+      enabled: true
+      source: resourceId
+      samples:
+        - /SUBSCRIPTIONS/8C56D827-5F07-45CE-8F2B-6C5001DB5C6F/RESOURCEGROUPS/ET-COMPUTE-RG/PROVIDERS/MICROSOFT.STORAGE/STORAGEACCOUNTS/ETFLOWLOGS
+      grok:
+        supportRules: |
+          _non_extracted_resource %{regex("[a-zA-Z0-9-_.]*")}
+          _resource_name %{regex("[a-zA-Z0-9-_.]*"):resource_name:lowercase}
+          _subscriptions %{regex("(?i)SUBSCRIPTIONS")}
+          _resource_groups %{regex("(?i)RESOURCEGROUPS")}
+          _providers %{regex("(?i)PROVIDERS")}
+        matchRules: |
+          extract_resource_name /%{_subscriptions}\/%{_non_extracted_resource}\/%{_resource_groups}\/%{_non_extracted_resource}\/%{_providers}%{_non_extracted_resource}\/%{_non_extracted_resource}\/%{data}\/%{_resource_name}
+    - type: date-remapper
+      name: Define `properties.createdDateTime`, `properties.activityDateTime`, `properties.timeGenerated`, `time` as the official date of the log
+      enabled: true
+      sources:
+        - properties.createdDateTime
+        - properties.activityDateTime
+        - properties.timeGenerated
+        - time
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: attribute-remapper
+      name: Map `category` to `evt.category`
+      enabled: true
+      sources:
+        - category
+      target: evt.category
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `operationName` to `evt.name`
+      enabled: true
+      sources:
+        - operationName
+      target: evt.name
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `callerIpAddress` to `network.client.ip`
+      enabled: true
+      sources:
+        - callerIpAddress
+      target: network.client.ip
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: arithmetic-processor
+      name: Compute duration in nanoseconds from durationMs in miliseconds
+      enabled: true
+      expression: durationMs * 1000000
+      target: duration
+      replaceMissing: false
+    - type: geo-ip-parser
+      name: Fetching GeoIp data for client ip
+      enabled: true
+      sources:
+        - network.client.ip
+      target: network.client.geoip
+    - type: attribute-remapper
+      name: Map `properties.initiatedBy.user.userPrincipalName`, `properties.userPrincipalName` to `usr.id`
+      enabled: true
+      sources:
+        - properties.initiatedBy.user.userPrincipalName
+        - properties.userPrincipalName
+      target: usr.id
+      preserveSource: true
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `properties.initiatedBy.user.userPrincipalName`, `properties.userDisplayName` to `usr.name`
+      enabled: true
+      sources:
+        - properties.initiatedBy.user.userPrincipalName
+        - properties.userDisplayName
+      target: usr.name
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `properties.userPrincipalName` to `usr.email`
+      enabled: true
+      sources:
+        - properties.userPrincipalName
+      target: usr.email
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `properties.userAgent` to `http.useragent`
+      enabled: true
+      sources:
+        - properties.userAgent
+      target: http.useragent
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: user-agent-parser
+      name: ''
+      enabled: true
+      sources:
+        - http.useragent
+      target: http.useragent_details
+      encoded: false
+    - type: message-remapper
+      name: Define `resultDescription`, `properties.status.additionalDetails` as the official message of the log
+      enabled: true
+      sources:
+        - resultDescription
+        - properties.status.additionalDetails
+    - type: category-processor
+      name: Categorise sign-in event outcomes
+      enabled: true
+      categories:
+        - filter:
+            query: '@evt.category:SignInLogs @properties.status.errorCode:0'
+          name: success
+        - filter:
+            query: '@evt.category:SignInLogs -@properties.status.errorCode:0 @properties.status.errorCode:*'
+          name: failure
+      target: evt.outcome
+    - type: attribute-remapper
+      name: Map `properties.result` to `evt.outcome`
+      enabled: true
+      sources:
+        - properties.result
+      target: evt.outcome
+      targetFormat: string
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: string-builder-processor
+      name: title - %{evt.name} resulted in %{evt.outcome} initiated by %{usr.id}
+      enabled: true
+      target: title
+      template: "'%{evt.name}' resulted in %{evt.outcome} initiated by %{usr.id} %{properties.initiatedBy.app.displayName}"
+      replaceMissing: true

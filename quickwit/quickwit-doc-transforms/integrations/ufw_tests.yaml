@@ -1,0 +1,28 @@
+id: "UFW"
+tests:
+ -
+  sample: "[1746862.282899] [UFW BLOCK] IN=eth0 OUT= MAC=de:ad:be:ef:12:34:56:78:00:00:00:00:00:00 SRC=1.2.3.4 DST=2.3.4.5 LEN=40 TOS=0x00 PREC=0x00 TTL=249 ID=4368 PROTO=TCP SPT=45983 DPT=3389 WINDOW=1024 RES=0x00 SYN URGP=0"
+  result:
+    custom:
+      system:
+        action: "BLOCK"
+        details:
+          DPT: 3389
+          DST: "2.3.4.5"
+          ID: 4368
+          IN: "eth0"
+          LEN: 40
+          MAC: "de:ad:be:ef:12:34:56:78:00:00:00:00:00:00"
+          PREC: "0x00"
+          PROTO: "TCP"
+          RES: "0x00"
+          SPT: 45983
+          SRC: "1.2.3.4"
+          TOS: "0x00"
+          TTL: 249
+          URGP: 0
+          WINDOW: 1024
+    message: "[1746862.282899] [UFW BLOCK] IN=eth0 OUT= MAC=de:ad:be:ef:12:34:56:78:00:00:00:00:00:00 SRC=1.2.3.4 DST=2.3.4.5 LEN=40 TOS=0x00 PREC=0x00 TTL=249 ID=4368 PROTO=TCP SPT=45983 DPT=3389 WINDOW=1024 RES=0x00 SYN URGP=0"
+    tags:
+     - "source:LOGS_SOURCE"
+

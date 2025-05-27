@@ -1,0 +1,1090 @@
+id: sonicwall-firewall
+metric_id: sonicwall-firewall
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Geoip
+    name: Destination City Name
+    path: network.destination.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Continent Code
+    path: network.destination.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Continent Name
+    path: network.destination.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Country ISO Code
+    path: network.destination.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Country Name
+    path: network.destination.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Subdivision ISO Code
+    path: network.destination.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Subdivision Name
+    path: network.destination.geoip.subdivision.name
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+pipeline:
+  type: pipeline
+  name: Sonicwall Firewall
+  enabled: true
+  filter:
+    query: "source:sonicwall-firewall"
+  processors:
+    - type: grok-parser
+      name: Parsing Sonicwall Firewall Logs
+      enabled: true
+      source: message
+      samples:
+        - Apr 27 19:29:07 10.10.10.10 id=firewall sn=0000A0AAAA00
+          time="2022-04-27 19:29:40" fw=10.10.10.10 pri=1 c=32 m=267 msg="TCP
+          Xmas Tree dropped" n=56 src=10.10.10.10:16345:X1 dst=10.10.10.10:81
+          srcMac=00:53:2a:7d:1d:35 dstMac=00:53:c5:ca:be:01 proto=tcp/81
+        - >
+          10.0.0.1  id=firewall sn=12345678 time="2022-03-09 05:29:32 UTC"
+          fw=10.10.10.10 pri=6 c=1024 gcat=2 m=97 msg="Web site hit"
+          srcMac=12:34:56:78:90:ab src=10.10.10.10:56502:X0 srcZone=Trusted
+          natSrc=10.10.10.10:15926 dstMac=ab:09:87:65:43:21 dst=10.10.10.10:80:X1
+          dstZone=Untrusted natDst=10.10.10.10:80 usr="Unknown (SSO failed)"
+          proto=tcp/http sent=510 rcvd=955 app=5147 op=1
+          dstname=ocsp.digicert.com arg=/abcd code=27 Category="Information
+          Technology/Computers" note="Policy: cfsZonePolicy0, Info: 6147 "
+          n=367895985 fw_action="NA" dpi=1
+        - >
+          <129> id=firewall sn=ZZZZZZZZZ time="2022-02-24 03:29:07"
+          fw=10.10.10.10 pri=1 c=32 m=609 msg="IPS Prevention Alert:
+          WEB-ATTACKS Apache Log4j2 JNDI Log Messages Remote Code Execution"
+          sid=2307 ipscat="WEB-ATTACKS Apache Log4j2 JNDI Log Messages Remote
+          Code Execution" ipspri=2 n=8158 src=10.10.10.10:54192:X20-V60
+          dst=:8080:X20-V68 dstV6=2a02:cf40:add:4002:91f2:a9b2:e09a:6fc6
+          fw_action="drop"
+        - >
+          id=YYYYYY sn=XXXX time="2019-03-19 06:44:01 UTC" fw=10.10.10.10 pri=3 c=4
+          m=14 msg="Web site access denied" app=49177 appName="General HTTPS"
+          n=856789 src=10.10.10.10:59668:X0:nb020.example.com
+          dst=10.10.10.10:443:X1:example.com srcMac=00:53:ff:ff:99:c5
+          dstMac=00:53:66:66:99:99 proto=tcp/https dstname=example.com arg=/
+          code=49 Category="Freeware/Software Downloads"
+        - <134>  id=firewall sn=0040103D66B5 time="2024-09-23 05:38:11 UTC"
+          fw=10.10.10.10 pri=6 c=16 gcat=4 m=1334 usr="admin" msg="User "kavan"
+          is added into Group "SonicWALL Administrators"" n=30 fw_action="NA"
+      grok:
+        supportRules: _space %{regex("[\\s]*")}
+        matchRules: sonicwall_rule (<%{number:message_priority}> )?%{_space}(%{date("MMM
+          d HH:mm:ss"):date} )?(%{date("MMM  d HH:mm:ss"):date} )?(%{ip:ip}
+          )?%{greedyData::keyvalue("=","`~!#$%^&*()+{}\\[\\]|;'?<>:/\" ")}
+    - type: grok-parser
+      name: Parsing Sonicwall Firewall destination
+      enabled: true
+      source: dst
+      samples:
+        - 10.10.10.10:80:X1:esdu.com
+        - 10.10.10.10:80:X1
+        - 10.10.10.10
+        - 10.10.10.10::X1:esdu.com
+        - :80:X1:esdu.com
+      grok:
+        supportRules: ""
+        matchRules: >-
+          destination_parser_rule_1
+          :(%{number:network.destination.port})?(:)?(%{word:destination.network_interface})?(:)?(%{hostname:destination.resolved_name})?
+
+          destination_parser_rule_2 (%{ip:network.destination.ip})?(:)?(%{number:network.destination.port})?(:)?(%{word:destination.network_interface})?(:)?(%{hostname:destination.resolved_name})?
+    - type: grok-parser
+      name: Parsing Sonicwall Firewall source
+      enabled: true
+      source: src
+      samples:
+        - 10.10.10.10:80:X1:esdu.com
+        - 10.10.10.10:80:X1
+        - 10.10.10.10:80
+        - 10.10.10.10::X1:esdu.com
+        - ::X1:esdu.com
+      grok:
+        supportRules: ""
+        matchRules: >-
+          source_parser_rule_1
+          :(%{number:network.client.port})?(:)?(%{word:source.network_interface})?(:)?(%{hostname:source.resolved_name})?
+
+          source_parser_rule_2 (%{ip:network.client.ip})?(:)?(%{number:network.client.port})?(:)?(%{word:source.network_interface})?(:)?(%{hostname:source.resolved_name})?
+    - type: grok-parser
+      name: Parsing Sonicwall Firewall nat source
+      enabled: true
+      source: natSrc
+      samples:
+        - 10.10.10.10:48245
+        - 10.10.10.10
+      grok:
+        supportRules: ""
+        matchRules: natscr_parser_rule %{ip:source.nat.ip}(:%{number:source.nat.port})?
+    - type: grok-parser
+      name: Parsing Sonicwall Firewall nat destination
+      enabled: true
+      source: natDst
+      samples:
+        - 10.10.10.10
+        - 10.10.10.10:320
+      grok:
+        supportRules: ""
+        matchRules: natdst_parser_rule
+          %{ip:destination.nat.ip}(:%{number:destination.nat.port})?
+    - type: grok-parser
+      name: Parsing Sonicwall Firewall protocol and service
+      enabled: true
+      source: proto
+      samples:
+        - tcp/http
+        - icmp
+        - ipv6-icmp
+        - udp/netbios-ns
+      grok:
+        supportRules: protocol_service_parser %{regex("[a-zA-Z0-9-]*")}
+        matchRules: proto_parser_rule
+          %{protocol_service_parser:protocol}(/%{protocol_service_parser:service})?
+    - type: grok-parser
+      name: Parsing Sonicwall Firewall time
+      enabled: true
+      source: time
+      samples:
+        - 2024-09-11 06:30:00 UTC
+      grok:
+        supportRules: ""
+        matchRules: time_parser_rule %{date("yyyy-MM-dd HH:mm:ss z"):timestamp}
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: grok-parser
+      name: Parsing Sonicwall Firewall message
+      enabled: true
+      source: msg
+      samples:
+        - Assigned IP address 0.0.0.0 to MAC address 00:00:00:00:0C:0E
+        - SYN-Flooding machine %s blacklisted
+        - TCP-Flooding machine %s blacklisted
+        - Possible ARP attack from MAC address %s
+        - RST-Flooding machine %s blacklisted
+      grok:
+        supportRules: ""
+        matchRules: >-
+          message_parser_rule_1 Assigned IP address %{ip:ip_address} to MAC
+          address %{mac:MacAddress}
+
+          message_parser_rule_2 (TCP|SYN|RST|FIN)-Flooding machine %{greedyData:message_value} blacklisted
+
+          message_parser_rule_3 Possible ARP attack from MAC address %{greedyData:message_value}
+
+          message_parser_rule_4 Possible replay attack with this client IP - %{greedyData:message_value}
+    - type: attribute-remapper
+      name: Map `app` to `syslog_appid`
+      enabled: true
+      sources:
+        - app
+      sourceType: attribute
+      target: syslog_appid
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `af_polid` to `app.policy.id`
+      enabled: true
+      sources:
+        - af_polid
+      sourceType: attribute
+      target: app.policy.id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `af_policy` to `app.policy.name`
+      enabled: true
+      sources:
+        - af_policy
+      sourceType: attribute
+      target: app.policy.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `af_type` to `app.policy.type`
+      enabled: true
+      sources:
+        - af_type
+      sourceType: attribute
+      target: app.policy.type
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `af_service` to `app.policy.service_name`
+      enabled: true
+      sources:
+        - af_service
+      sourceType: attribute
+      target: app.policy.service_name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `af_action` to `app.policy.action`
+      enabled: true
+      sources:
+        - af_action
+      sourceType: attribute
+      target: app.policy.action
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `af_object` to `app.policy.object_name`
+      enabled: true
+      sources:
+        - af_object
+      sourceType: attribute
+      target: app.policy.object_name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `ai` to `active_interface`
+      enabled: true
+      sources:
+        - ai
+      sourceType: attribute
+      target: active_interface
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `appcat` to `app.category`
+      enabled: true
+      sources:
+        - appcat
+      sourceType: attribute
+      target: app.category
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `bcastRx` to `broadcast.packet_recieved`
+      enabled: true
+      sources:
+        - bcastRx
+      sourceType: attribute
+      target: broadcast.packet_recieved
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `bcastTx` to `broadcast.packet_transmitted`
+      enabled: true
+      sources:
+        - bcastTx
+      sourceType: attribute
+      target: broadcast.packet_transmitted
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `bid` to `blade_id`
+      enabled: true
+      sources:
+        - bid
+      sourceType: attribute
+      target: blade_id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `bytesRx` to `interface_bytes.received`
+      enabled: true
+      sources:
+        - bytesRx
+      sourceType: attribute
+      target: interface_bytes.received
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `bytesTx` to `interface_bytes.transmitted`
+      enabled: true
+      sources:
+        - bytesTx
+      sourceType: attribute
+      target: interface_bytes.transmitted
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `c` to `message_category`
+      enabled: true
+      sources:
+        - c
+      sourceType: attribute
+      target: message_category
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: category-processor
+      name: Categorise Group Category
+      enabled: true
+      categories:
+        - filter:
+            query: "@gcat:1"
+          name: System
+        - filter:
+            query: "@gcat:2"
+          name: Log
+        - filter:
+            query: "@gcat:3"
+          name: Security Services
+        - filter:
+            query: "@gcat:4"
+          name: Users
+        - filter:
+            query: "@gcat:5"
+          name: Firewall Settings
+        - filter:
+            query: "@gcat:6"
+          name: Network
+        - filter:
+            query: "@gcat:7"
+          name: VPN
+        - filter:
+            query: "@gcat:8"
+          name: High Availability
+        - filter:
+            query: "@gcat:9"
+          name: 3G/4G, Modem, and Module
+        - filter:
+            query: "@gcat:10"
+          name: Firewall
+        - filter:
+            query: "@gcat:11"
+          name: Wireless
+        - filter:
+            query: "@gcat:12"
+          name: VoIP
+        - filter:
+            query: "@gcat:13"
+          name: SSL VPN
+        - filter:
+            query: "@gcat:14"
+          name: Anti-Spam
+        - filter:
+            query: "@gcat:15"
+          name: WAN Acceleration
+        - filter:
+            query: "@gcat:16"
+          name: SD-WAN
+        - filter:
+            query: "@gcat:17"
+          name: Multi-Tenancy
+      target: group_category
+    - type: category-processor
+      name: Categorise Priority
+      enabled: true
+      categories:
+        - filter:
+            query: "@pri:0"
+          name: Emergency
+        - filter:
+            query: "@pri:1"
+          name: Alert
+        - filter:
+            query: "@pri:2"
+          name: Critical
+        - filter:
+            query: "@pri:3"
+          name: Error
+        - filter:
+            query: "@pri:4"
+          name: Warning
+        - filter:
+            query: "@pri:5"
+          name: Notice
+        - filter:
+            query: "@pri:6"
+          name: Info
+        - filter:
+            query: "@pri:7"
+          name: Debug
+      target: priority
+    - type: status-remapper
+      name: Define `priority` as the official status of the log
+      enabled: true
+      sources:
+        - priority
+    - type: attribute-remapper
+      name: Map `pri` to `priority_level`
+      enabled: true
+      sources:
+        - pri
+      sourceType: attribute
+      target: priority_level
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `arg` to `http.url_details.path`
+      enabled: true
+      sources:
+        - arg
+      sourceType: attribute
+      target: http.url_details.path
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `result` to `http.status_code`
+      enabled: true
+      sources:
+        - result
+      sourceType: attribute
+      target: http.status_code
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `usr` to `usr.name`
+      enabled: true
+      sources:
+        - usr
+      sourceType: attribute
+      target: usr.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: geo-ip-parser
+      name: Extracting Geo Location from Source IP Address
+      enabled: true
+      sources:
+        - network.client.ip
+      target: network.client.geoip
+      ip_processing_behavior: do-nothing
+    - type: geo-ip-parser
+      name: Extracting Geo Location from Destination IP Address
+      enabled: true
+      sources:
+        - network.destination.ip
+      target: network.destination.geoip
+      ip_processing_behavior: do-nothing
+    - type: attribute-remapper
+      name: Map `catid` to `rule_category_id`
+      enabled: true
+      sources:
+        - catid
+      sourceType: attribute
+      target: rule_category_id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `cdur` to `connection_duration`
+      enabled: true
+      sources:
+        - cdur
+      sourceType: attribute
+      target: connection_duration
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `change` to `firewall.last_config_change`
+      enabled: true
+      sources:
+        - change
+      sourceType: attribute
+      target: firewall.last_config_change
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `conns` to `connections`
+      enabled: true
+      sources:
+        - conns
+      sourceType: attribute
+      target: connections
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `contentObject` to `app.rule`
+      enabled: true
+      sources:
+        - contentObject
+      sourceType: attribute
+      target: app.rule
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `dstMac` to `destination.mac`
+      enabled: true
+      sources:
+        - dstMac
+      sourceType: attribute
+      target: destination.mac
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `dstV6` to `destination.ipv6`
+      enabled: true
+      sources:
+        - dstV6
+      sourceType: attribute
+      target: destination.ipv6
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `dstZone` to `destination.zone`
+      enabled: true
+      sources:
+        - dstZone
+      sourceType: attribute
+      target: destination.zone
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `dur` to `session_duration`
+      enabled: true
+      sources:
+        - dur
+      sourceType: attribute
+      target: session_duration
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `dyn` to `dynamic`
+      enabled: true
+      sources:
+        - dyn
+      sourceType: attribute
+      target: dynamic
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `f` to `flow_type`
+      enabled: true
+      sources:
+        - f
+      sourceType: attribute
+      target: flow_type
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `filetxstatus` to `file_transmission_status`
+      enabled: true
+      sources:
+        - filetxstatus
+      sourceType: attribute
+      target: file_transmission_status
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `fw` to `firewall.WAN`
+      enabled: true
+      sources:
+        - fw
+      sourceType: attribute
+      target: firewall.WAN
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `fw_action` to `firewall.action`
+      enabled: true
+      sources:
+        - fw_action
+      sourceType: attribute
+      target: firewall.action
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `fwlan` to `firewall.LAN`
+      enabled: true
+      sources:
+        - fwlan
+      sourceType: attribute
+      target: firewall.LAN
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `goodRxBytes` to `sonicpoint.bytes_received`
+      enabled: true
+      sources:
+        - goodRxBytes
+      sourceType: attribute
+      target: sonicpoint.bytes_received
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `goodTxBytes` to `sonicpoint.bytes_transmitted`
+      enabled: true
+      sources:
+        - goodTxBytes
+      sourceType: attribute
+      target: sonicpoint.bytes_transmitted
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `i` to `firewall.gms_message_interval`
+      enabled: true
+      sources:
+        - i
+      sourceType: attribute
+      target: firewall.gms_message_interval
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `if` to `interface`
+      enabled: true
+      sources:
+        - if
+      sourceType: attribute
+      target: interface
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `ipscat` to `ips.category`
+      enabled: true
+      sources:
+        - ipscat
+      sourceType: attribute
+      target: ips.category
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `ipspri` to `ips.priority`
+      enabled: true
+      sources:
+        - ipspri
+      sourceType: attribute
+      target: ips.priority
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `lic` to `firewall.license_count`
+      enabled: true
+      sources:
+        - lic
+      sourceType: attribute
+      target: firewall.license_count
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `m` to `message_id`
+      enabled: true
+      sources:
+        - m
+      sourceType: attribute
+      target: message_id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `msg` to `message`
+      enabled: true
+      sources:
+        - msg
+      sourceType: attribute
+      target: message
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `n` to `event.count`
+      enabled: true
+      sources:
+        - n
+      sourceType: attribute
+      target: event.count
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `natDstV6` to `destination.nat.ipv6`
+      enabled: true
+      sources:
+        - natDstV6
+      sourceType: attribute
+      target: destination.nat.ipv6
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `natSrcV6` to `source.nat.ipv6`
+      enabled: true
+      sources:
+        - natSrcV6
+      sourceType: attribute
+      target: source.nat.ipv6
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `op` to `http_operation_code`
+      enabled: true
+      sources:
+        - op
+      sourceType: attribute
+      target: http_operation_code
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `pt` to `firewall.port`
+      enabled: true
+      sources:
+        - pt
+      sourceType: attribute
+      target: firewall.port
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `rcptTo` to `mailTo`
+      enabled: true
+      sources:
+        - rcptTo
+      sourceType: attribute
+      target: mailTo
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `rcvd` to `bytes.received`
+      enabled: true
+      sources:
+        - rcvd
+      sourceType: attribute
+      target: bytes.received
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `rpkt` to `packets.received`
+      enabled: true
+      sources:
+        - rpkt
+      sourceType: attribute
+      target: packets.received
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `sent` to `bytes.sent`
+      enabled: true
+      sources:
+        - sent
+      sourceType: attribute
+      target: bytes.sent
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `sess` to `session_type`
+      enabled: true
+      sources:
+        - sess
+      sourceType: attribute
+      target: session_type
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `sid` to `signature_id`
+      enabled: true
+      sources:
+        - sid
+      sourceType: attribute
+      target: signature_id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `sn` to `device_serial_number`
+      enabled: true
+      sources:
+        - sn
+      sourceType: attribute
+      target: device_serial_number
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `spkt` to `packets.sent`
+      enabled: true
+      sources:
+        - spkt
+      sourceType: attribute
+      target: packets.sent
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `spycat` to `antispyware.category`
+      enabled: true
+      sources:
+        - spycat
+      sourceType: attribute
+      target: antispyware.category
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `spypri` to `antispyware.priority`
+      enabled: true
+      sources:
+        - spypri
+      sourceType: attribute
+      target: antispyware.priority
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `srcMac` to `source.mac`
+      enabled: true
+      sources:
+        - srcMac
+      sourceType: attribute
+      target: source.mac
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `srcZone` to `source.zone`
+      enabled: true
+      sources:
+        - srcZone
+      sourceType: attribute
+      target: source.zone
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `type` to `icmp_type`
+      enabled: true
+      sources:
+        - type
+      sourceType: attribute
+      target: icmp_type
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `ucastRx` to `unicast.packets_received`
+      enabled: true
+      sources:
+        - ucastRx
+      sourceType: attribute
+      target: unicast.packets_received
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `ucastTx` to `unicast.packets_transmitted`
+      enabled: true
+      sources:
+        - ucastTx
+      sourceType: attribute
+      target: unicast.packets_transmitted
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `vpnpolicy` to `source.vpn_policy`
+      enabled: true
+      sources:
+        - vpnpolicy
+      sourceType: attribute
+      target: source.vpn_policy
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `vpnpolicyDst` to `destination.vpn_policy`
+      enabled: true
+      sources:
+        - vpnpolicyDst
+      sourceType: attribute
+      target: destination.vpn_policy
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `dstname` to `destination.hostname`
+      enabled: true
+      sources:
+        - dstname
+      sourceType: attribute
+      target: destination.hostname
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: category-processor
+      name: Categorise DHCP message
+      enabled: true
+      categories:
+        - filter:
+            query: "@message_id:99"
+          name: DHCPC Retransmit Discover
+        - filter:
+            query: "@message_id:100"
+          name: DHCPC Retransmit Request
+        - filter:
+            query: "@message_id:101"
+          name: DHCPC Retransmit Request Renew
+        - filter:
+            query: "@message_id:102"
+          name: DHCPC Retransmit Request Rebind
+        - filter:
+            query: "@message_id:103"
+          name: DHCPC Retransmit Request Reboot
+        - filter:
+            query: "@message_id:104"
+          name: DHCPC Retransmit Request Verify
+        - filter:
+            query: "@message_id:105"
+          name: DHCPC Discover
+        - filter:
+            query: "@message_id:106"
+          name: DHCPC No Offer
+        - filter:
+            query: "@message_id:107"
+          name: DHCPC Offer Receive
+        - filter:
+            query: "@message_id:108"
+          name: DHCPC Selecting
+        - filter:
+            query: "@message_id:109"
+          name: DHCPC Request Failed
+        - filter:
+            query: "@message_id:110"
+          name: DHCPC Request NAK
+        - filter:
+            query: "@message_id:111"
+          name: DHCPC Request ACK
+        - filter:
+            query: "@message_id:112"
+          name: DHCPC Request Decline
+        - filter:
+            query: "@message_id:113"
+          name: DHCPC Bound Rebind
+        - filter:
+            query: "@message_id:114"
+          name: DHCPC Bound Renew
+        - filter:
+            query: "@message_id:115"
+          name: DHCPC Request Renew
+        - filter:
+            query: "@message_id:116"
+          name: DHCPC Request Rebind
+        - filter:
+            query: "@message_id:117"
+          name: DHCPC Request Reboot
+        - filter:
+            query: "@message_id:118"
+          name: DHCPC Request Verify
+        - filter:
+            query: "@message_id:119"
+          name: DHCPC Verify Initiation Failed
+        - filter:
+            query: "@message_id:121"
+          name: DHCPC Get New IP
+        - filter:
+            query: "@message_id:122"
+          name: DHCPC Send Release
+        - filter:
+            query: "@message_id:588"
+          name: Offer Error
+        - filter:
+            query: "@message_id:589"
+          name: Request Response Error
+      target: message_type
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message

@@ -1,0 +1,380 @@
+id: cisco-secure-web-appliance
+tests:
+  - sample: '<38>Sep 25 12:13:55 Crest.CSWA accesslogs: Info: 1727246631.866 93971 10.10.10.10 TCP_MISS/200 8560 CONNECT tunnel://csp.withgoogle.com:443/ - DIRECT/csp.withgoogle.com application/octet-stream DEFAULT_CASE_12-DefaultGroup-match_network-NONE-NONE-NONE-DefaultGroup-NONE <"IW_comp",3.0,1,"-",-,-,-,1,"-",-,-,-,"-",1,-,"-","-",-,-,"IW_comp,IW_csec",-,"-","Computers and Internet","-","Unknown","Unknown","-","-",0.73,0,-,"-","-",1,"-",-,-,"-","-",-,1,"-",-,-> - -'
+    service: "access_logs"
+    result:
+      custom:
+        acl_decision_tag: "DEFAULT_CASE_12"
+        advance_malware_protection_file_scanning_verdict: "Not Scanned"
+        archive_scan_file_verdict: "-"
+        archive_scan_verdict: "-"
+        archive_scan_verdict_details: "1"
+        avc_adc_application_name: "Unknown"
+        avc_adc_application_type: "Unknown"
+        average_bandwidth_consumed: "0.73"
+        cisco_data_security_scanning_verdict: "-"
+        contacted_server_type: "DIRECT"
+        custom_url_category: "IW_comp"
+        data_security_policy: "NONE"
+        external_dlp_policy: "NONE"
+        external_dlp_scan_verdict: "-"
+        http:
+          method: "CONNECT"
+          status_category: "Successful"
+          status_code: 200
+          url: "tunnel://csp.withgoogle.com:443/"
+          url_details:
+            host: "csp.withgoogle.com"
+            path: "/"
+            port: 443
+            scheme: "tunnel"
+        identity: "match_network"
+        latency: 93971.0
+        mcafee_malware_scanning_verdict: "1"
+        mcafee_malware_scanning_verdict_name: "Unknown"
+        mime_type: "application/octet-stream"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+        outbound_malware_scanning_policy: "NONE"
+        policy_group_name: "DefaultGroup"
+        request_throttled: "0"
+        request_throttled_status: "Not Throttled"
+        response_size: 8560.0
+        routing_policy: "DefaultGroup"
+        server_name: "csp.withgoogle.com"
+        sophos_malware_scanning_verdict: "1"
+        sophos_malware_scanning_verdict_name: "Unknown"
+        suspected_user_agent: "- -"
+        syslog:
+          host: "Crest.CSWA"
+          severity: "Info"
+        threat_type: "Computers and Internet"
+        timestamp: 1.727246631866E12
+        transaction_result_code: "TCP_MISS"
+        url_category_verdict: "IW_comp,IW_csec"
+        web_reputation: "3.0"
+        web_tap_behavior: "-"
+        webroot_malware_scanning_verdict: "1"
+        webroot_malware_scanning_verdict_name: "Unknown"
+        youtube_url_category: "-"
+      message: "<38>Sep 25 12:13:55 Crest.CSWA accesslogs: Info: 1727246631.866 93971 10.10.10.10 TCP_MISS/200 8560 CONNECT tunnel://csp.withgoogle.com:443/ - DIRECT/csp.withgoogle.com application/octet-stream DEFAULT_CASE_12-DefaultGroup-match_network-NONE-NONE-NONE-DefaultGroup-NONE <\"IW_comp\",3.0,1,\"-\",-,-,-,1,\"-\",-,-,-,\"-\",1,-,\"-\",\"-\",-,-,\"IW_comp,IW_csec\",-,\"-\",\"Computers and Internet\",\"-\",\"Unknown\",\"Unknown\",\"-\",\"-\",0.73,0,-,\"-\",\"-\",1,\"-\",-,-,\"-\",\"-\",-,1,\"-\",-,-> - -"
+      service: "access_logs"
+      status: "info"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1727246631866
+  - sample: '<38>Sep 25 12:13:55 Crest.CSWA accesslogs: Info: 1727360160.873 206 10.10.10.10 DIRECT/451 8207 GET www.learning.com - DIRECT/www.learning.com application/json BLOCK_AMW_REQ_12-DefaultGroup-match_network-NONE-NONE-NONE-DefaultGroup-NONE <"IW_infr",-6.5,21,"Troj/Phish",0,354385,12559,21,"WSA_INFECTED_FILE.pdf",-,Trojan,Troj/Phish,"Rootkit",21,-,"Reference","Troj/Phish",1,1,"Reference",Reference,"-","Social Networking","-","Social Networking","Social Networking","-","-",246.75,0,Local,"-Troj/Phish","-",39,"W32.CiscoTestVector",33,1,"WSA-INFECTED-FILE.pdf","fd5ef49d4213e05f448f11ed9c98253d85829614fba368a421d14e64c426da5e",ARCHIVESCAN_BLOCKEDFILETYPE,EXT_ARCHIVESCAN_VERDICT,"EXT_ARCHIVESCAN_THREATDETAIL",EXT_WTT_BEHAVIOR,EXT_YTCAT> - -'
+    service: "access_logs"
+    result:
+      custom:
+        acl_decision_tag: "BLOCK_AMW_REQ_12"
+        advance_malware_protection_detected_reputation_score: "33"
+        advance_malware_protection_detected_threat_name: "W32.CiscoTestVector"
+        advance_malware_protection_file_scanning_verdict: "Malicious"
+        advance_malware_protection_request_indicator_upload: "1"
+        archive_scan_file_verdict: "EXT_ARCHIVESCAN_THREATDETAIL"
+        archive_scan_verdict: "ARCHIVESCAN_BLOCKEDFILETYPE"
+        archive_scan_verdict_details: "EXT_ARCHIVESCAN_VERDICT"
+        avc_adc_application_name: "Social Networking"
+        avc_adc_application_type: "Social Networking"
+        average_bandwidth_consumed: "246.75"
+        cisco_data_security_scanning_verdict: "1"
+        cisco_data_security_scanning_verdict_name: "Block"
+        cisco_web_usage_url_category_verdict: "Reference"
+        contacted_server_type: "DIRECT"
+        custom_url_category: "IW_infr"
+        data_security_policy: "NONE"
+        external_dlp_policy: "NONE"
+        external_dlp_scan_verdict: "1"
+        external_dlp_scan_verdict_name: "Block"
+        http:
+          method: "GET"
+          status_category: "Client Error"
+          status_code: 451
+          url: "www.learning.com"
+          url_details:
+            path: "www.learning.com"
+        identity: "match_network"
+        latency: 206.0
+        mcafee_detected_virus_name: "Rootkit"
+        mcafee_detection_type: "Trojan"
+        mcafee_malware_scanning_verdict: "21"
+        mcafee_malware_scanning_verdict_name: "Phishing URL"
+        mcafee_scanned_file_name: "WSA_INFECTED_FILE.pdf"
+        mcafee_virus_type: "Troj/Phish"
+        mime_type: "application/json"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+        outbound_malware_scanning_policy: "NONE"
+        policy_group_name: "DefaultGroup"
+        request_side_anti_malware_scanning_verdict: "-Troj/Phish"
+        request_throttled: "0"
+        request_throttled_status: "Not Throttled"
+        response_size: 8207.0
+        routing_policy: "DefaultGroup"
+        scanned_file_identifier: "fd5ef49d4213e05f448f11ed9c98253d85829614fba368a421d14e64c426da5e"
+        scanned_file_name: "WSA-INFECTED-FILE.pdf"
+        server_name: "www.learning.com"
+        sophos_detected_file_name: "Reference"
+        sophos_malware_scanning_verdict: "21"
+        sophos_malware_scanning_verdict_name: "Phishing URL"
+        sophos_threat_name: "Troj/Phish"
+        suspected_user_agent: "- -"
+        syslog:
+          host: "Crest.CSWA"
+          severity: "Info"
+        threat_type: "Social Networking"
+        timestamp: 1.727360160873E12
+        transaction_result_code: "DIRECT"
+        url_category_verdict: "Reference"
+        user_type: "Local"
+        web_reputation: "-6.5"
+        web_tap_behavior: "EXT_WTT_BEHAVIOR"
+        webroot_malware_scanning_verdict: "21"
+        webroot_malware_scanning_verdict_name: "Phishing URL"
+        webroot_spyware_name: "Troj/Phish"
+        webroot_threat_identifier: "354385"
+        webroot_threat_risk_ratio: "0"
+        webroot_trace_identifier: "12559"
+        youtube_url_category: "EXT_YTCAT"
+      message: "<38>Sep 25 12:13:55 Crest.CSWA accesslogs: Info: 1727360160.873 206 10.10.10.10 DIRECT/451 8207 GET www.learning.com - DIRECT/www.learning.com application/json BLOCK_AMW_REQ_12-DefaultGroup-match_network-NONE-NONE-NONE-DefaultGroup-NONE <\"IW_infr\",-6.5,21,\"Troj/Phish\",0,354385,12559,21,\"WSA_INFECTED_FILE.pdf\",-,Trojan,Troj/Phish,\"Rootkit\",21,-,\"Reference\",\"Troj/Phish\",1,1,\"Reference\",Reference,\"-\",\"Social Networking\",\"-\",\"Social Networking\",\"Social Networking\",\"-\",\"-\",246.75,0,Local,\"-Troj/Phish\",\"-\",39,\"W32.CiscoTestVector\",33,1,\"WSA-INFECTED-FILE.pdf\",\"fd5ef49d4213e05f448f11ed9c98253d85829614fba368a421d14e64c426da5e\",ARCHIVESCAN_BLOCKEDFILETYPE,EXT_ARCHIVESCAN_VERDICT,\"EXT_ARCHIVESCAN_THREATDETAIL\",EXT_WTT_BEHAVIOR,EXT_YTCAT> - -"
+      service: "access_logs"
+      status: "info"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1727360160873
+  - sample: '1727360160.873 206 10.10.10.10 (abc.com) DIRECT/451 8207 GET www.gottapedia.com - DIRECT/www.gottapedia.com application/json BLOCK_AMW_RESP_11-DefaultGroup-match_network-NONE-NONE-NONE-DefaultGroup-NONE <"IW_infr",-6.5,21,"Troj/Phish",0,354385,12559,21,"WSA_INFECTED_FILE.pdf",-,Trojan,Troj/Phish,"Rootkit",21,-,"Reference","Troj/Phish",1,1,"Reference",Reference,"Phishing URL","Social Networking","-","Social Networking","Social Networking","-","-",246.75,0,Local,"-","-",39,"W32.CiscoTestVector",33,1,"WSA-INFECTED-FILE.pdf","fd5ef49d4213e05f448f11ed9c98253d85829614fba368a421d14e64c426da5e",ARCHIVESCAN_BLOCKEDFILETYPE,EXT_ARCHIVESCAN_VERDICT,"EXT_ARCHIVESCAN_THREATDETAIL",EXT_WTT_BEHAVIOR,EXT_YTCAT> - -'
+    service: "access_logs"
+    result:
+      custom:
+        acl_decision_tag: "BLOCK_AMW_RESP_11"
+        advance_malware_protection_detected_reputation_score: "33"
+        advance_malware_protection_detected_threat_name: "W32.CiscoTestVector"
+        advance_malware_protection_file_scanning_verdict: "Malicious"
+        advance_malware_protection_request_indicator_upload: "1"
+        archive_scan_file_verdict: "EXT_ARCHIVESCAN_THREATDETAIL"
+        archive_scan_verdict: "ARCHIVESCAN_BLOCKEDFILETYPE"
+        archive_scan_verdict_details: "EXT_ARCHIVESCAN_VERDICT"
+        avc_adc_application_name: "Social Networking"
+        avc_adc_application_type: "Social Networking"
+        average_bandwidth_consumed: "246.75"
+        cisco_data_security_scanning_verdict: "1"
+        cisco_data_security_scanning_verdict_name: "Block"
+        cisco_web_usage_url_category_verdict: "Reference"
+        contacted_server_type: "DIRECT"
+        custom_url_category: "IW_infr"
+        data_security_policy: "NONE"
+        external_dlp_policy: "NONE"
+        external_dlp_scan_verdict: "1"
+        external_dlp_scan_verdict_name: "Block"
+        http:
+          method: "GET"
+          status_category: "Client Error"
+          status_code: 451
+          url: "www.gottapedia.com"
+          url_details:
+            path: "www.gottapedia.com"
+        identity: "match_network"
+        latency: 206.0
+        mcafee_detected_virus_name: "Rootkit"
+        mcafee_detection_type: "Trojan"
+        mcafee_malware_scanning_verdict: "21"
+        mcafee_malware_scanning_verdict_name: "Phishing URL"
+        mcafee_scanned_file_name: "WSA_INFECTED_FILE.pdf"
+        mcafee_virus_type: "Troj/Phish"
+        mime_type: "application/json"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+        outbound_malware_scanning_policy: "NONE"
+        policy_group_name: "DefaultGroup"
+        request_throttled: "0"
+        request_throttled_status: "Not Throttled"
+        response_side_anti_malware_scanning_verdict: "Phishing URL"
+        response_size: 8207.0
+        routing_policy: "DefaultGroup"
+        scanned_file_identifier: "fd5ef49d4213e05f448f11ed9c98253d85829614fba368a421d14e64c426da5e"
+        scanned_file_name: "WSA-INFECTED-FILE.pdf"
+        server_name: "www.gottapedia.com"
+        sophos_detected_file_name: "Reference"
+        sophos_malware_scanning_verdict: "21"
+        sophos_malware_scanning_verdict_name: "Phishing URL"
+        sophos_threat_name: "Troj/Phish"
+        source_domain_name: "abc.com"
+        suspected_user_agent: "- -"
+        threat_type: "Social Networking"
+        timestamp: 1.727360160873E12
+        transaction_result_code: "DIRECT"
+        url_category_verdict: "Reference"
+        user_type: "Local"
+        web_reputation: "-6.5"
+        web_tap_behavior: "EXT_WTT_BEHAVIOR"
+        webroot_malware_scanning_verdict: "21"
+        webroot_malware_scanning_verdict_name: "Phishing URL"
+        webroot_spyware_name: "Troj/Phish"
+        webroot_threat_identifier: "354385"
+        webroot_threat_risk_ratio: "0"
+        webroot_trace_identifier: "12559"
+        youtube_url_category: "EXT_YTCAT"
+      message: "1727360160.873 206 10.10.10.10 (abc.com) DIRECT/451 8207 GET www.gottapedia.com - DIRECT/www.gottapedia.com application/json BLOCK_AMW_RESP_11-DefaultGroup-match_network-NONE-NONE-NONE-DefaultGroup-NONE <\"IW_infr\",-6.5,21,\"Troj/Phish\",0,354385,12559,21,\"WSA_INFECTED_FILE.pdf\",-,Trojan,Troj/Phish,\"Rootkit\",21,-,\"Reference\",\"Troj/Phish\",1,1,\"Reference\",Reference,\"Phishing URL\",\"Social Networking\",\"-\",\"Social Networking\",\"Social Networking\",\"-\",\"-\",246.75,0,Local,\"-\",\"-\",39,\"W32.CiscoTestVector\",33,1,\"WSA-INFECTED-FILE.pdf\",\"fd5ef49d4213e05f448f11ed9c98253d85829614fba368a421d14e64c426da5e\",ARCHIVESCAN_BLOCKEDFILETYPE,EXT_ARCHIVESCAN_VERDICT,\"EXT_ARCHIVESCAN_THREATDETAIL\",EXT_WTT_BEHAVIOR,EXT_YTCAT> - -"
+      service: "access_logs"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1727360160873
+  - sample: '1727246631.866 93971 10.10.11.12 TCP_MISS/200 8560 CONNECT tunnel://csp.withgoogle.com:443/ - DIRECT/csp.withgoogle.com application/octet-stream DEFAULT_CASE_12-DefaultGroup-match_network-NONE-NONE-NONE-DefaultGroup-NONE <"IW_comp",3.0,1,"-",-,-,-,1,"-",-,-,-,"-",1,-,"-","-",-,-,"IW_comp,IW_csec",-,"-","Computers and Internet","-","Unknown","Unknown","-","-",0.73,0,-,"-","-",1,"-",-,-,"-","-",-,1,"-",-,-> - -'
+    service: "access_logs"
+    result:
+      custom:
+        acl_decision_tag: "DEFAULT_CASE_12"
+        advance_malware_protection_file_scanning_verdict: "Not Scanned"
+        archive_scan_file_verdict: "-"
+        archive_scan_verdict: "-"
+        archive_scan_verdict_details: "1"
+        avc_adc_application_name: "Unknown"
+        avc_adc_application_type: "Unknown"
+        average_bandwidth_consumed: "0.73"
+        cisco_data_security_scanning_verdict: "-"
+        contacted_server_type: "DIRECT"
+        custom_url_category: "IW_comp"
+        data_security_policy: "NONE"
+        external_dlp_policy: "NONE"
+        external_dlp_scan_verdict: "-"
+        http:
+          method: "CONNECT"
+          status_category: "Successful"
+          status_code: 200
+          url: "tunnel://csp.withgoogle.com:443/"
+          url_details:
+            host: "csp.withgoogle.com"
+            path: "/"
+            port: 443
+            scheme: "tunnel"
+        identity: "match_network"
+        latency: 93971.0
+        mcafee_malware_scanning_verdict: "1"
+        mcafee_malware_scanning_verdict_name: "Unknown"
+        mime_type: "application/octet-stream"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.11.12"
+        outbound_malware_scanning_policy: "NONE"
+        policy_group_name: "DefaultGroup"
+        request_throttled: "0"
+        request_throttled_status: "Not Throttled"
+        response_size: 8560.0
+        routing_policy: "DefaultGroup"
+        server_name: "csp.withgoogle.com"
+        sophos_malware_scanning_verdict: "1"
+        sophos_malware_scanning_verdict_name: "Unknown"
+        suspected_user_agent: "- -"
+        threat_type: "Computers and Internet"
+        timestamp: 1.727246631866E12
+        transaction_result_code: "TCP_MISS"
+        url_category_verdict: "IW_comp,IW_csec"
+        web_reputation: "3.0"
+        web_tap_behavior: "-"
+        webroot_malware_scanning_verdict: "1"
+        webroot_malware_scanning_verdict_name: "Unknown"
+        youtube_url_category: "-"
+      message: "1727246631.866 93971 10.10.11.12 TCP_MISS/200 8560 CONNECT tunnel://csp.withgoogle.com:443/ - DIRECT/csp.withgoogle.com application/octet-stream DEFAULT_CASE_12-DefaultGroup-match_network-NONE-NONE-NONE-DefaultGroup-NONE <\"IW_comp\",3.0,1,\"-\",-,-,-,1,\"-\",-,-,-,\"-\",1,-,\"-\",\"-\",-,-,\"IW_comp,IW_csec\",-,\"-\",\"Computers and Internet\",\"-\",\"Unknown\",\"Unknown\",\"-\",\"-\",0.73,0,-,\"-\",\"-\",1,\"-\",-,-,\"-\",\"-\",-,1,\"-\",-,-> - -"
+      service: "access_logs"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1727246631866
+  - sample: 'Wed Sep 18 18:59:26 2024 Info: Firewall allowed TCP data from 10.10.10.10:80 to 10.10.10.10:80.'
+    service: "l4tm_logs"
+    result:
+      custom:
+        action: "allowed"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+            port: 80
+          destination:
+            geoip: {}
+            ip: "10.10.10.10"
+            port: 80
+        protocol: "TCP"
+        syslog:
+          severity: "Info"
+        timestamp: 1726685966000
+      message: "Wed Sep 18 18:59:26 2024 Info: Firewall allowed TCP data from 10.10.10.10:80 to 10.10.10.10:80."
+      service: "l4tm_logs"
+      status: "info"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1726685966000
+  - sample: 'Wed Sep 18 18:59:26 2024 Info: Firewall blocked TCP data from 10.10.10.10 (abc.net) to 10.10.10.10 (abc.net).'
+    service: "l4tm_logs"
+    result:
+      custom:
+        action: "blocked"
+        destination_domain: "abc.net"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+          destination:
+            geoip: {}
+            ip: "10.10.10.10"
+        protocol: "TCP"
+        source_domain: "abc.net"
+        syslog:
+          severity: "Info"
+        timestamp: 1726685966000
+      message: "Wed Sep 18 18:59:26 2024 Info: Firewall blocked TCP data from 10.10.10.10 (abc.net) to 10.10.10.10 (abc.net)."
+      service: "l4tm_logs"
+      status: "info"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1726685966000
+  - sample: 'Wed Sep 18 18:59:27 2024 Info: Address 10.10.10.10 for blocksite.net (blocksite.net) removed from firewall block list.'
+    service: "l4tm_logs"
+    result:
+      custom:
+        domain: "blocksite.net"
+        firewall_action: "removed"
+        firewall_list: "block"
+        network:
+          destination:
+            geoip: {}
+            ip: "10.10.10.10"
+        sub_domain: "blocksite.net"
+        syslog:
+          severity: "Info"
+        timestamp: 1726685967000
+      message: "Wed Sep 18 18:59:27 2024 Info: Address 10.10.10.10 for blocksite.net (blocksite.net) removed from firewall block list."
+      service: "l4tm_logs"
+      status: "info"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1726685967000
+  - sample: 'Wed Sep 18 18:59:27 2024 Info: Address 10.10.10.10 (abc.net) for blocksite.net (blocksite.net) removed from firewall block list.'
+    service: "l4tm_logs"
+    result:
+      custom:
+        destination_domain: "abc.net"
+        domain: "blocksite.net"
+        firewall_action: "removed"
+        firewall_list: "block"
+        network:
+          destination:
+            geoip: {}
+            ip: "10.10.10.10"
+        sub_domain: "blocksite.net"
+        syslog:
+          severity: "Info"
+        timestamp: 1726685967000
+      message: "Wed Sep 18 18:59:27 2024 Info: Address 10.10.10.10 (abc.net) for blocksite.net (blocksite.net) removed from firewall block list."
+      service: "l4tm_logs"
+      status: "info"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1726685967000

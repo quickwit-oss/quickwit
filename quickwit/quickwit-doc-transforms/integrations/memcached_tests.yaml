@@ -1,0 +1,81 @@
+id: "memcached"
+tests:
+ -
+  sample: "<26 server listening (auto-negotiate)"
+  result:
+    custom:
+      direction: "<"
+      direction_category: "in"
+      level: "info"
+      socket_descriptor: 26.0
+    message: "<26 server listening (auto-negotiate)"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: ">26 server listening (auto-negotiate)"
+  result:
+    custom:
+      direction: ">"
+      direction_category: "out"
+      level: "info"
+      socket_descriptor: 26.0
+    message: ">26 server listening (auto-negotiate)"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "32: Client using the ascii protocol"
+  result:
+    custom:
+      level: "info"
+      socket_descriptor: 32.0
+    message: "32: Client using the ascii protocol"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "Can't listen for events on fd %d"
+  result:
+    custom:
+      error:
+        message: "Can't listen for events on fd %d"
+      level: "warning"
+    message: "Can't listen for events on fd %d"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "slab class  39: chunk size 458992 perslab \t2"
+  result:
+    custom:
+      level: "info"
+      socket_descriptor: 39.0
+    message: "slab class  39: chunk size 458992 perslab \t2"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "slab class   2: chunk size\t320 perslab  3276"
+  result:
+    custom:
+      level: "info"
+      socket_descriptor: 2.0
+    message: "slab class   2: chunk size\t320 perslab  3276"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "> NOT FOUND my_key"
+  result:
+    custom:
+      direction: ">"
+      direction_category: "out"
+      error:
+        message: "NOT FOUND my_key"
+      level: "warning"
+    message: "> NOT FOUND my_key"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+

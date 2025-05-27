@@ -1,0 +1,1084 @@
+id: slack
+backend_only: false
+facets:
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+  - groups:
+      - Event
+    name: Event Outcome
+    path: evt.outcome
+    source: log
+  - groups:
+      - Web Access
+    name: User-Agent
+    path: http.useragent
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - User
+    name: User Email
+    path: usr.email
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - groups:
+      - User
+    name: User Team
+    path: usr.team
+    source: log
+  - groups:
+      - User
+    name: User Type
+    path: usr.type
+    source: log
+  - groups:
+      - Runtime Security
+    name: File MIME Type
+    path: file.mime_type
+    source: log
+  - groups:
+      - Runtime Security
+    name: File Name
+    path: file.name
+    source: log
+  - groups:
+      - Runtime Security
+    name: File ID
+    path: file.id
+    source: log
+  - groups:
+      - Slack
+    name: Slack Channel ID
+    path: slack.channel.id
+    source: log
+  - groups:
+      - Slack
+    name: Slack Channel Name
+    path: slack.channel.name
+    source: log
+  - groups:
+      - Slack
+    name: Slack Channel Privacy
+    path: slack.channel.privacy
+    source: log
+  - groups:
+      - Slack
+    name: Slack App ID
+    path: slack.app.id
+    source: log
+  - groups:
+      - Slack
+    name: Slack App Name
+    path: slack.app.name
+    source: log
+  - groups:
+      - Slack
+    name: Slack App Permission
+    path: slack.app.permission
+    source: log
+pipeline:
+  type: pipeline
+  name: Slack Pipeline
+  enabled: true
+  filter:
+    query: source:slack
+  processors:
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: pipeline
+      name: Audit Logs Service
+      enabled: true
+      filter:
+        query: service:audit-logs-service
+      processors:
+        - type: arithmetic-processor
+          name: Get a timestamp in milliseconds
+          enabled: true
+          expression: date_create * 1000
+          target: date_create_milliseconds
+          replaceMissing: true
+        - type: date-remapper
+          name: Define `date_create_milliseconds` as the official date of the log
+          enabled: true
+          sources:
+            - date_create_milliseconds
+        - type: attribute-remapper
+          name: Map `context.ip_address` to `network.client.ip`
+          enabled: true
+          sources:
+            - context.ip_address
+          sourceType: attribute
+          target: network.client.ip
+          targetType: attribute
+          targetFormat: string
+          preserveSource: true
+          overrideOnConflict: false
+        - type: geo-ip-parser
+          name: Geoip parser
+          enabled: true
+          sources:
+            - network.client.ip
+          target: network.client.geoip
+          ip_processing_behavior: do-nothing
+        - type: attribute-remapper
+          name: Map `action` to `evt.name`
+          enabled: true
+          sources:
+            - action
+          sourceType: attribute
+          target: evt.name
+          targetType: attribute
+          targetFormat: string
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `actor.user.email` to `usr.email`
+          enabled: true
+          sources:
+            - actor.user.email
+          sourceType: attribute
+          target: usr.email
+          targetType: attribute
+          targetFormat: string
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `actor.user.id` to `usr.id`
+          enabled: true
+          sources:
+            - actor.user.id
+          sourceType: attribute
+          target: usr.id
+          targetType: attribute
+          targetFormat: string
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `actor.user.name` to `usr.name`
+          enabled: true
+          sources:
+            - actor.user.name
+          sourceType: attribute
+          target: usr.name
+          targetType: attribute
+          targetFormat: string
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `actor.user.team` to `usr.team`
+          enabled: true
+          sources:
+            - actor.user.team
+          sourceType: attribute
+          target: usr.team
+          targetType: attribute
+          targetFormat: string
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `actor.type` to `usr.type`
+          enabled: true
+          sources:
+            - actor.type
+          sourceType: attribute
+          target: usr.type
+          targetType: attribute
+          targetFormat: string
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `context.ua` to `http.useragent`
+          enabled: true
+          sources:
+            - context.ua
+          sourceType: attribute
+          target: http.useragent
+          targetType: attribute
+          targetFormat: string
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `entity.file.filetype` to `file.mime_type`
+          enabled: true
+          sources:
+            - entity.file.filetype
+          sourceType: attribute
+          target: file.mime_type
+          targetType: attribute
+          targetFormat: string
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `entity.file.name` to `file.name`
+          enabled: true
+          sources:
+            - entity.file.name
+          sourceType: attribute
+          target: file.name
+          targetType: attribute
+          targetFormat: string
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `entity.file.id` to `file.id`
+          enabled: true
+          sources:
+            - entity.file.id
+          sourceType: attribute
+          target: file.id
+          targetType: attribute
+          targetFormat: string
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `entity.channel.id` to `slack.channel.id`
+          enabled: true
+          sources:
+            - entity.channel.id
+          sourceType: attribute
+          target: slack.channel.id
+          targetType: attribute
+          targetFormat: string
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `entity.channel.name` to `slack.channel.name`
+          enabled: true
+          sources:
+            - entity.channel.name
+          sourceType: attribute
+          target: slack.channel.name
+          targetType: attribute
+          targetFormat: string
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `entity.channel.privacy` to `slack.channel.privacy`
+          enabled: true
+          sources:
+            - entity.channel.privacy
+          sourceType: attribute
+          target: slack.channel.privacy
+          targetType: attribute
+          targetFormat: string
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `entity.app.id` to `slack.app.id`
+          enabled: true
+          sources:
+            - entity.app.id
+          sourceType: attribute
+          target: slack.app.id
+          targetType: attribute
+          targetFormat: string
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `entity.app.name` to `slack.app.name`
+          enabled: true
+          sources:
+            - entity.app.name
+          sourceType: attribute
+          target: slack.app.name
+          targetType: attribute
+          targetFormat: string
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `entity.app.scope` to `slack.app.permission`
+          enabled: true
+          sources:
+            - entity.app.scope
+          sourceType: attribute
+          target: slack.app.permission
+          targetType: attribute
+          targetFormat: string
+          preserveSource: true
+          overrideOnConflict: false
+    - type: pipeline
+      name: OCSF pre transformations
+      enabled: true
+      ocsf:
+        isOcsf: true
+      filter:
+        query: "*"
+      processors:
+        - type: string-builder-processor
+          name: Add version
+          enabled: true
+          template: 1.3.0
+          target: ocsf.metadata.version
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add product name
+          enabled: true
+          template: Slack Audit Log
+          target: ocsf.metadata.product.name
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add product vendor
+          enabled: true
+          template: Slack
+          target: ocsf.metadata.product.vendor_name
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add severity
+          enabled: true
+          template: Informational
+          target: ocsf.severity
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add severity id
+          enabled: true
+          template: "1"
+          target: ocsf.severity_id
+          replaceMissing: false
+        - type: attribute-remapper
+          name: Map `action` to `ocsf.message`
+          enabled: true
+          sources:
+            - action
+          sourceType: attribute
+          target: ocsf.message
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `action` to `ocsf.metadata.event_code`
+          enabled: true
+          sources:
+            - action
+          sourceType: attribute
+          target: ocsf.metadata.event_code
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `id` to `ocsf.metadata.uid`
+          enabled: true
+          sources:
+            - id
+          sourceType: attribute
+          target: ocsf.metadata.uid
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+    - type: pipeline
+      name: Slack OCSF sub pipeline for class Account Change [3001]
+      enabled: true
+      ocsf:
+        isOcsf: true
+      filter:
+        query:
+          "@ocsf.metadata.event_code:(organization_accepted_migration OR owner_transferred OR
+          permissions_assigned OR permissions_removed OR
+          pref.dm_retention_changed OR role_assigned OR role_change_to_admin OR
+          role_change_to_guest OR role_change_to_owner OR role_change_to_user OR
+          role_removed OR user_created OR user_deactivated OR user_email_updated
+          OR user_joined_workspace OR user_password_reset_requested OR
+          user_password_reset_slack_security OR user_reactivated)"
+      processors:
+        - type: string-builder-processor
+          name: Add category uid
+          enabled: true
+          template: "3"
+          target: ocsf.category_uid
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add category name
+          enabled: true
+          template: Identity & Access Management
+          target: ocsf.category_name
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add class uid
+          enabled: true
+          template: "3001"
+          target: ocsf.class_uid
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add class name
+          enabled: true
+          template: Account Change
+          target: ocsf.class_name
+          replaceMissing: false
+        - type: attribute-remapper
+          name: Map `action` to `ocsf.activity_name`
+          enabled: true
+          sources:
+            - action
+          sourceType: attribute
+          target: ocsf.activity_name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `actor.user.name` to `ocsf.actor.user.name`
+          enabled: true
+          sources:
+            - actor.user.name
+          sourceType: attribute
+          target: ocsf.actor.user.name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `actor.user.id` to `ocsf.actor.user.uid`
+          enabled: true
+          sources:
+            - actor.user.id
+          sourceType: attribute
+          target: ocsf.actor.user.uid
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `actor.user.email` to `ocsf.actor.user.email_addr`
+          enabled: true
+          sources:
+            - actor.user.email
+          sourceType: attribute
+          target: ocsf.actor.user.email_addr
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `entity.user.name` to `ocsf.user.name`
+          enabled: true
+          sources:
+            - entity.user.name
+          sourceType: attribute
+          target: ocsf.user.name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `entity.user.email` to `ocsf.user.email_addr`
+          enabled: true
+          sources:
+            - entity.user.email
+          sourceType: attribute
+          target: ocsf.user.email_addr
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `entity.user.id` to `ocsf.user.uid`
+          enabled: true
+          sources:
+            - entity.user.id
+          sourceType: attribute
+          target: ocsf.user.uid
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `context.ua` to `ocsf.http_request.user_agent`
+          enabled: true
+          sources:
+            - context.ua
+          sourceType: attribute
+          target: ocsf.http_request.user_agent
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `context.ip_address` to `ocsf.src_endpoint.ip`
+          enabled: true
+          sources:
+            - context.ip_address
+          sourceType: attribute
+          target: ocsf.src_endpoint.ip
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: category-processor
+          name: OCSF - activity_id mapping
+          enabled: true
+          categories:
+            - filter:
+                query: "@action:(user_created)"
+              name: "1"
+            - filter:
+                query: "@action:(user_password_reset_requested OR
+                  user_password_reset_slack_security)"
+              name: "4"
+            - filter:
+                query: "@action:(*)"
+              name: "99"
+          target: ocsf.activity_id
+        - type: category-processor
+          name: OCSF - activity_name mapping
+          enabled: true
+          categories:
+            - filter:
+                query: "@ocsf.activity_id:(1)"
+              name: Create
+            - filter:
+                query: "@ocsf.activity_id:(4)"
+              name: Password Reset
+          target: ocsf.activity_name
+    - type: pipeline
+      name: Slack OCSF sub pipeline for class Authentication [3002]
+      enabled: true
+      ocsf:
+        isOcsf: true
+      filter:
+        query: "@action:(user_login OR user_login_failed)"
+      processors:
+        - type: string-builder-processor
+          name: Add category uid
+          enabled: true
+          template: "3"
+          target: ocsf.category_uid
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add category name
+          enabled: true
+          template: Identity & Access Management
+          target: ocsf.category_name
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add class uid
+          enabled: true
+          template: "3002"
+          target: ocsf.class_uid
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add class name
+          enabled: true
+          template: Authentication
+          target: ocsf.class_name
+          replaceMissing: false
+        - type: attribute-remapper
+          name: Map `actor.user.name` to `ocsf.actor.user.name`
+          enabled: true
+          sources:
+            - actor.user.name
+          sourceType: attribute
+          target: ocsf.actor.user.name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `actor.user.id` to `ocsf.actor.user.uid`
+          enabled: true
+          sources:
+            - actor.user.id
+          sourceType: attribute
+          target: ocsf.actor.user.uid
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `actor.user.email` to `ocsf.actor.user.email_addr`
+          enabled: true
+          sources:
+            - actor.user.email
+          sourceType: attribute
+          target: ocsf.actor.user.email_addr
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `context.ip_address` to `ocsf.src_endpoint.ip`
+          enabled: true
+          sources:
+            - context.ip_address
+          sourceType: attribute
+          target: ocsf.src_endpoint.ip
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `entity.user.name` to `ocsf.user.name`
+          enabled: true
+          sources:
+            - entity.user.name
+          sourceType: attribute
+          target: ocsf.user.name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `entity.user.email` to `ocsf.user.email_addr`
+          enabled: true
+          sources:
+            - entity.user.email
+          sourceType: attribute
+          target: ocsf.user.email_addr
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `entity.user.id` to `ocsf.user.uid`
+          enabled: true
+          sources:
+            - entity.user.id
+          sourceType: attribute
+          target: ocsf.user.uid
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `context.location.id` to `ocsf.dst_endpoint.uid`
+          enabled: true
+          sources:
+            - context.location.id
+          sourceType: attribute
+          target: ocsf.dst_endpoint.uid
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: string-builder-processor
+          name: Add ocsf.dst_endpoint.type_id
+          enabled: true
+          template: "99"
+          target: ocsf.dst_endpoint.type_id
+          replaceMissing: false
+        - type: attribute-remapper
+          name: Map `ocsf.dst_endpoint.type_id` to `ocsf.dst_endpoint.type_id`
+          enabled: true
+          sources:
+            - ocsf.dst_endpoint.type_id
+          sourceType: attribute
+          target: ocsf.dst_endpoint.type_id
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `context.location.type` to `ocsf.dst_endpoint.type`
+          enabled: true
+          sources:
+            - context.location.type
+          sourceType: attribute
+          target: ocsf.dst_endpoint.type
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `context.location.name` to `ocsf.dst_endpoint.name`
+          enabled: true
+          sources:
+            - context.location.name
+          sourceType: attribute
+          target: ocsf.dst_endpoint.name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `context.location.domain` to `ocsf.dst_endpoint.domain`
+          enabled: true
+          sources:
+            - context.location.domain
+          sourceType: attribute
+          target: ocsf.dst_endpoint.domain
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `context.ua` to `ocsf.http_request.user_agent`
+          enabled: true
+          sources:
+            - context.ua
+          sourceType: attribute
+          target: ocsf.http_request.user_agent
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `context.ip_address` to `ocsf.src_endpoint.ip`
+          enabled: true
+          sources:
+            - context.ip_address
+          sourceType: attribute
+          target: ocsf.src_endpoint.ip
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: category-processor
+          name: OCSF - status_id mapping
+          enabled: true
+          categories:
+            - filter:
+                query: "@action:(user_login)"
+              name: 1
+            - filter:
+                query: "@action:(user_login_failed)"
+              name: 2
+          target: ocsf.status_id
+        - type: attribute-remapper
+          name: Map `ocsf.status_id` to `ocsf.status_id`
+          enabled: true
+          sources:
+            - ocsf.status_id
+          sourceType: attribute
+          target: ocsf.status_id
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+        - type: category-processor
+          name: OCSF - status mapping
+          enabled: true
+          categories:
+            - filter:
+                query: "@ocsf.status_id:(1)"
+              name: Success
+            - filter:
+                query: "@ocsf.status_id:(2)"
+              name: Failure
+          target: ocsf.status
+        - type: category-processor
+          name: OCSF - activity_id mapping
+          enabled: true
+          categories:
+            - filter:
+                query: "@action:(*)"
+              name: "1"
+          target: ocsf.activity_id
+        - type: category-processor
+          name: OCSF - activity_name mapping
+          enabled: true
+          categories:
+            - filter:
+                query: "@ocsf.activity_id:(1)"
+              name: Logon
+          target: ocsf.activity_name
+    - type: pipeline
+      name: Slack OCSF sub pipeline for class API Activity [6003]
+      enabled: true
+      ocsf:
+        isOcsf: true
+      filter:
+        query: -@ocsf.category_uid:*
+      processors:
+        - type: string-builder-processor
+          name: Add category uid
+          enabled: true
+          template: "6"
+          target: ocsf.category_uid
+          replaceMissing: false
+        - type: attribute-remapper
+          name: Map `action` to `ocsf.api.operation`
+          enabled: true
+          sources:
+            - action
+          sourceType: attribute
+          target: ocsf.api.operation
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: string-builder-processor
+          name: Add category name
+          enabled: true
+          template: Application Activity
+          target: ocsf.category_name
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add class uid
+          enabled: true
+          template: "6003"
+          target: ocsf.class_uid
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add class name
+          enabled: true
+          template: API Activity
+          target: ocsf.class_name
+          replaceMissing: false
+        - type: attribute-remapper
+          name: Map `context.ip_address` to `ocsf.src_endpoint.ip`
+          enabled: true
+          sources:
+            - context.ip_address
+          sourceType: attribute
+          target: ocsf.src_endpoint.ip
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `context.location.name` to `ocsf.dst_endpoint.name`
+          enabled: true
+          sources:
+            - context.location.name
+          sourceType: attribute
+          target: ocsf.dst_endpoint.name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `context.location.domain` to `ocsf.dst_endpoint.domain`
+          enabled: true
+          sources:
+            - context.location.domain
+          sourceType: attribute
+          target: ocsf.dst_endpoint.domain
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `context.location.id` to `ocsf.dst_endpoint.uid`
+          enabled: true
+          sources:
+            - context.location.id
+          sourceType: attribute
+          target: ocsf.dst_endpoint.uid
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: string-builder-processor
+          name: Add ocsf.dst_endpoint.type_id
+          enabled: true
+          template: "99"
+          target: ocsf.dst_endpoint.type_id
+          replaceMissing: false
+        - type: attribute-remapper
+          name: Map `ocsf.dst_endpoint.type_id` to `ocsf.dst_endpoint.type_id`
+          enabled: true
+          sources:
+            - ocsf.dst_endpoint.type_id
+          sourceType: attribute
+          target: ocsf.dst_endpoint.type_id
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `context.location.type` to `ocsf.dst_endpoint.type`
+          enabled: true
+          sources:
+            - context.location.type
+          sourceType: attribute
+          target: ocsf.dst_endpoint.type
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `actor.user.email` to `ocsf.actor.user.email_addr`
+          enabled: true
+          sources:
+            - actor.user.email
+          sourceType: attribute
+          target: ocsf.actor.user.email_addr
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `actor.user.name` to `ocsf.actor.user.name`
+          enabled: true
+          sources:
+            - actor.user.name
+          sourceType: attribute
+          target: ocsf.actor.user.name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `actor.user.id` to `ocsf.actor.user.uid`
+          enabled: true
+          sources:
+            - actor.user.id
+          sourceType: attribute
+          target: ocsf.actor.user.uid
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `context.ua` to `ocsf.http_request.user_agent`
+          enabled: true
+          sources:
+            - context.ua
+          sourceType: attribute
+          target: ocsf.http_request.user_agent
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `action` to `ocsf.activity_name`
+          enabled: true
+          sources:
+            - action
+          sourceType: attribute
+          target: ocsf.activity_name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: category-processor
+          name: OCSF - activity_id mapping
+          enabled: true
+          categories:
+            - filter:
+                query: "@action:(*added* OR *created*)"
+              name: "1"
+            - filter:
+                query: "@action:(file_downloaded OR public_channel_preview)"
+              name: "2"
+            - filter:
+                query: "@action:(*updated* OR *disabled* OR *enabled* OR *changed*)"
+              name: "3"
+            - filter:
+                query: "@action:(*deleted* OR *removed* OR *deletion*)"
+              name: "4"
+            - filter:
+                query: "@action:(*)"
+              name: "99"
+          target: ocsf.activity_id
+        - type: category-processor
+          name: OCSF - activity_name mapping
+          enabled: true
+          categories:
+            - filter:
+                query: "@ocsf.activity_id:(1)"
+              name: Create
+            - filter:
+                query: "@ocsf.activity_id:(2)"
+              name: Read
+            - filter:
+                query: "@ocsf.activity_id:(3)"
+              name: Update
+            - filter:
+                query: "@ocsf.activity_id:(4)"
+              name: Delete
+          target: ocsf.activity_name
+    - type: pipeline
+      name: OCSF post transformations
+      enabled: true
+      ocsf:
+        isOcsf: true
+      filter:
+        query: "*"
+      processors:
+        - type: arithmetic-processor
+          name: Convert ocsf.time to millisecond
+          enabled: true
+          expression: date_create * 1000
+          target: ocsf.time
+          replaceMissing: true
+        - type: attribute-remapper
+          name: Map `ocsf.time` to `ocsf.time`
+          enabled: true
+          sources:
+            - ocsf.time
+          sourceType: attribute
+          target: ocsf.time
+          targetType: attribute
+          targetFormat: double
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `ocsf.class_uid` to `ocsf.class_uid`
+          enabled: true
+          sources:
+            - ocsf.class_uid
+          sourceType: attribute
+          target: ocsf.class_uid
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `ocsf.activity_id` to `ocsf.activity_id`
+          enabled: true
+          sources:
+            - ocsf.activity_id
+          sourceType: attribute
+          target: ocsf.activity_id
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `ocsf.category_uid` to `ocsf.category_uid`
+          enabled: true
+          sources:
+            - ocsf.category_uid
+          sourceType: attribute
+          target: ocsf.category_uid
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `ocsf.severity_id` to `ocsf.severity_id`
+          enabled: true
+          sources:
+            - ocsf.severity_id
+          sourceType: attribute
+          target: ocsf.severity_id
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+        - type: arithmetic-processor
+          name: Type ID calculator
+          enabled: true
+          expression: (ocsf.class_uid * 100) + ocsf.activity_id
+          target: ocsf.type_uid
+          replaceMissing: false
+        - type: attribute-remapper
+          name: Map `ocsf.type_uid` to `ocsf.type_uid`
+          enabled: true
+          sources:
+            - ocsf.type_uid
+          sourceType: attribute
+          target: ocsf.type_uid
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false

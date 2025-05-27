@@ -1,0 +1,2216 @@
+id: "cloudtrail"
+tests:
+  - sample: |-
+      {
+        "eventID" : "b7d4398e-b2f0-4faa-9c76-e2d316a8d67f",
+        "awsRegion" : "us-east-2",
+        "eventVersion" : "1.04",
+        "responseElements" : {
+          "snapshotId" : "snap-123456789012"
+        },
+        "sourceIPAddress" : "205.251.233.182",
+        "eventSource" : "cloudtrail.amazonaws.com",
+        "errorMessage" : "Unknown trail: myTrail2 for the user: 123456789012",
+        "requestParameters" : {
+          "name" : "myTrail2"
+        },
+        "errorCode" : "TrailNotFoundException",
+        "userAgent" : "aws-cli/1.10.32 Python/2.7.9 Windows/7 botocore/1.4.22",
+        "userIdentity" : {
+          "accessKeyId" : "EXAMPLE_KEY_ID",
+          "accountId" : "123456789012",
+          "principalId" : "EX_PRINCIPAL_ID",
+          "type" : "IAMUser",
+          "arn" : "arn:aws:iam::123456789012:user/Alice",
+          "userName" : "Alice"
+        },
+        "eventType" : "AwsApiCall",
+        "ddsource" : "cloudtrail",
+        "requestID" : "5d40662a-49f7-11e6-97e4-d9cb6ff7d6a3",
+        "eventTime" : "2017-11-20T11:15:45Z",
+        "eventName" : "UpdateTrail",
+        "recipientAccountId" : "123456789012"
+      }
+    result:
+      custom:
+        awsRegion: "us-east-2"
+        ddsource: "cloudtrail"
+        error:
+          kind: "TrailNotFoundException"
+          message: "Unknown trail: myTrail2 for the user: 123456789012"
+        errorCode: "TrailNotFoundException"
+        errorMessage: "Unknown trail: myTrail2 for the user: 123456789012"
+        eventID: "b7d4398e-b2f0-4faa-9c76-e2d316a8d67f"
+        eventName: "UpdateTrail"
+        eventSource: "cloudtrail.amazonaws.com"
+        eventTime: "2017-11-20T11:15:45Z"
+        eventType: "AwsApiCall"
+        eventVersion: "1.04"
+        evt:
+          name: "UpdateTrail"
+        http:
+          request_id: "5d40662a-49f7-11e6-97e4-d9cb6ff7d6a3"
+          useragent: "aws-cli/1.10.32 Python/2.7.9 Windows/7 botocore/1.4.22"
+          useragent_details:
+            browser:
+              family: "aws-cli"
+              major: "1"
+              minor: "10"
+              patch: "32"
+            device:
+              brand: "Spider"
+              category: "Bot"
+              family: "Spider"
+              model: "Desktop"
+            os:
+              family: "Windows"
+        level: "Error"
+        network:
+          client:
+            geoip: {}
+            ip: "205.251.233.182"
+        ocsf:
+          activity_id: 3
+          activity_name: "Update"
+          actor:
+            user:
+              account:
+                uid: "123456789012"
+              credential_uid: "EXAMPLE_KEY_ID"
+              name: "Alice"
+              type: "IAMUser"
+              uid: "arn:aws:iam::123456789012:user/Alice"
+              uid_alt: "EX_PRINCIPAL_ID"
+          api:
+            operation: "UpdateTrail"
+            request:
+              data:
+                name: "myTrail2"
+              uid: "5d40662a-49f7-11e6-97e4-d9cb6ff7d6a3"
+            response:
+              data:
+                snapshotId: "snap-123456789012"
+              error: "TrailNotFoundException"
+              error_message: "Unknown trail: myTrail2 for the user: 123456789012"
+            service:
+              name: "cloudtrail.amazonaws.com"
+          category_name: "Application Activity"
+          category_uid: 6
+          class_name: "API Activity"
+          class_uid: 6003
+          cloud:
+            provider: "AWS"
+            region: "us-east-2"
+          http_request:
+            user_agent: "aws-cli/1.10.32 Python/2.7.9 Windows/7 botocore/1.4.22"
+          metadata:
+            event_code: "AwsApiCall"
+            product:
+              name: "CloudTrail"
+              vendor_name: "AWS"
+              version: "1.04"
+            profiles:
+              - "cloud"
+              - "datetime"
+            uid: "b7d4398e-b2f0-4faa-9c76-e2d316a8d67f"
+            version: "1.3.0"
+          severity: "Informational"
+          severity_id: 1
+          src_endpoint:
+            ip: "205.251.233.182"
+          status: "Failure"
+          status_id: 2
+          time: 1511176545000
+          time_dt: "2017-11-20T11:15:45Z"
+          type_uid: 600303
+        recipientAccountId: "123456789012"
+        requestID: "5d40662a-49f7-11e6-97e4-d9cb6ff7d6a3"
+        requestParameters:
+          name: "myTrail2"
+        responseElements:
+          snapshotId: "snap-123456789012"
+        sourceIPAddress: "205.251.233.182"
+        userAgent: "aws-cli/1.10.32 Python/2.7.9 Windows/7 botocore/1.4.22"
+        userIdentity:
+          accessKeyId: "EXAMPLE_KEY_ID"
+          accountId: "123456789012"
+          arn: "arn:aws:iam::123456789012:user/Alice"
+          principalId: "EX_PRINCIPAL_ID"
+          session_name: "Alice"
+          type: "IAMUser"
+          userName: "Alice"
+        usr:
+          id: "Alice"
+          name: "Alice"
+      message: |-
+        {
+          "eventID" : "b7d4398e-b2f0-4faa-9c76-e2d316a8d67f",
+          "awsRegion" : "us-east-2",
+          "eventVersion" : "1.04",
+          "responseElements" : {
+            "snapshotId" : "snap-123456789012"
+          },
+          "sourceIPAddress" : "205.251.233.182",
+          "eventSource" : "cloudtrail.amazonaws.com",
+          "errorMessage" : "Unknown trail: myTrail2 for the user: 123456789012",
+          "requestParameters" : {
+            "name" : "myTrail2"
+          },
+          "errorCode" : "TrailNotFoundException",
+          "userAgent" : "aws-cli/1.10.32 Python/2.7.9 Windows/7 botocore/1.4.22",
+          "userIdentity" : {
+            "accessKeyId" : "EXAMPLE_KEY_ID",
+            "accountId" : "123456789012",
+            "principalId" : "EX_PRINCIPAL_ID",
+            "type" : "IAMUser",
+            "arn" : "arn:aws:iam::123456789012:user/Alice",
+            "userName" : "Alice"
+          },
+          "eventType" : "AwsApiCall",
+          "ddsource" : "cloudtrail",
+          "requestID" : "5d40662a-49f7-11e6-97e4-d9cb6ff7d6a3",
+          "eventTime" : "2017-11-20T11:15:45Z",
+          "eventName" : "UpdateTrail",
+          "recipientAccountId" : "123456789012"
+        }
+      status: "error"
+      tags:
+        - "source:LOGS_SOURCE"
+        - "account:123456789012"
+        - "region:us-east-2"
+  - sample: |-
+      {
+        "eventID" : "b7d4398e-b2f0-4faa-9c76-e2d316a8d67f",
+        "awsRegion" : "us-east-2",
+        "eventVersion" : "1.04",
+        "responseElements" : {
+          "snapshotId" : "snap-123456789012"
+        },
+        "sourceIPAddress" : "205.251.233.182",
+        "eventSource" : "cloudtrail.amazonaws.com",
+        "errorMessage" : "Unknown trail: myTrail2 for the user: 123456789012",
+        "requestParameters" : {
+          "name" : "myTrail2"
+        },
+        "errorCode" : "TrailNotFoundException",
+        "userAgent" : "aws-cli/1.10.32 Python/2.7.9 Windows/7 botocore/1.4.22",
+        "userIdentity" : {
+          "sessionContext" : {
+            "sessionIssuer" : {
+              "accountId" : "987654321012",
+              "principalId" : "UTTK46MQNTY35OYIPKET",
+              "arn" : "arn: aws: iam::987654321012: role / RandomRoleName",
+              "type" : "Role",
+              "userName" : "RandomRoleName"
+            },
+            "attributes" : {
+              "mfaAuthenticated" : "false",
+              "creationDate" : "2019 - 09 - 17 T21: 10: 44 Z"
+            }
+          },
+          "accessKeyId" : "EXAMPLE_KEY_ID",
+          "accountId" : "123456789012",
+          "principalId" : "EX_PRINCIPAL_ID",
+          "type" : "AssumedRole",
+          "arn" : "arn:aws:iam::123456789012:user/Alice",
+          "userName" : "Alice"
+        },
+        "eventType" : "AwsApiCall",
+        "ddsource" : "cloudtrail",
+        "requestID" : "5d40662a-49f7-11e6-97e4-d9cb6ff7d6a3",
+        "eventTime" : "2017-11-20T11:15:45Z",
+        "eventName" : "UpdateTrail",
+        "recipientAccountId" : "123456789012"
+      }
+    result:
+      custom:
+        awsRegion: "us-east-2"
+        ddsource: "cloudtrail"
+        error:
+          kind: "TrailNotFoundException"
+          message: "Unknown trail: myTrail2 for the user: 123456789012"
+        errorCode: "TrailNotFoundException"
+        errorMessage: "Unknown trail: myTrail2 for the user: 123456789012"
+        eventID: "b7d4398e-b2f0-4faa-9c76-e2d316a8d67f"
+        eventName: "UpdateTrail"
+        eventSource: "cloudtrail.amazonaws.com"
+        eventTime: "2017-11-20T11:15:45Z"
+        eventType: "AwsApiCall"
+        eventVersion: "1.04"
+        evt:
+          name: "UpdateTrail"
+        http:
+          request_id: "5d40662a-49f7-11e6-97e4-d9cb6ff7d6a3"
+          useragent: "aws-cli/1.10.32 Python/2.7.9 Windows/7 botocore/1.4.22"
+          useragent_details:
+            browser:
+              family: "aws-cli"
+              major: "1"
+              minor: "10"
+              patch: "32"
+            device:
+              brand: "Spider"
+              category: "Bot"
+              family: "Spider"
+              model: "Desktop"
+            os:
+              family: "Windows"
+        level: "Error"
+        network:
+          client:
+            geoip: {}
+            ip: "205.251.233.182"
+        ocsf:
+          activity_id: 3
+          activity_name: "Update"
+          actor:
+            session:
+              created_time_dt: "2019 - 09 - 17 T21: 10: 44 Z"
+              is_mfa: false
+              issuer: "arn: aws: iam::987654321012: role / RandomRoleName"
+            user:
+              account:
+                uid: "123456789012"
+              credential_uid: "EXAMPLE_KEY_ID"
+              name: "Alice"
+              type: "AssumedRole"
+              uid: "arn:aws:iam::123456789012:user/Alice"
+              uid_alt: "EX_PRINCIPAL_ID"
+          api:
+            operation: "UpdateTrail"
+            request:
+              data:
+                name: "myTrail2"
+              uid: "5d40662a-49f7-11e6-97e4-d9cb6ff7d6a3"
+            response:
+              data:
+                snapshotId: "snap-123456789012"
+              error: "TrailNotFoundException"
+              error_message: "Unknown trail: myTrail2 for the user: 123456789012"
+            service:
+              name: "cloudtrail.amazonaws.com"
+          category_name: "Application Activity"
+          category_uid: 6
+          class_name: "API Activity"
+          class_uid: 6003
+          cloud:
+            provider: "AWS"
+            region: "us-east-2"
+          http_request:
+            user_agent: "aws-cli/1.10.32 Python/2.7.9 Windows/7 botocore/1.4.22"
+          metadata:
+            event_code: "AwsApiCall"
+            product:
+              name: "CloudTrail"
+              vendor_name: "AWS"
+              version: "1.04"
+            profiles:
+              - "cloud"
+              - "datetime"
+            uid: "b7d4398e-b2f0-4faa-9c76-e2d316a8d67f"
+            version: "1.3.0"
+          severity: "Informational"
+          severity_id: 1
+          src_endpoint:
+            ip: "205.251.233.182"
+          status: "Failure"
+          status_id: 2
+          time: 1511176545000
+          time_dt: "2017-11-20T11:15:45Z"
+          type_uid: 600303
+        recipientAccountId: "123456789012"
+        requestID: "5d40662a-49f7-11e6-97e4-d9cb6ff7d6a3"
+        requestParameters:
+          name: "myTrail2"
+        responseElements:
+          snapshotId: "snap-123456789012"
+        sourceIPAddress: "205.251.233.182"
+        userAgent: "aws-cli/1.10.32 Python/2.7.9 Windows/7 botocore/1.4.22"
+        userIdentity:
+          accessKeyId: "EXAMPLE_KEY_ID"
+          accountId: "123456789012"
+          arn: "arn:aws:iam::123456789012:user/Alice"
+          assumed_role: "RandomRoleName"
+          principalId: "EX_PRINCIPAL_ID"
+          sessionContext:
+            attributes:
+              creationDate: "2019 - 09 - 17 T21: 10: 44 Z"
+              mfaAuthenticated: "false"
+            sessionIssuer:
+              accountId: "987654321012"
+              arn: "arn: aws: iam::987654321012: role / RandomRoleName"
+              principalId: "UTTK46MQNTY35OYIPKET"
+              type: "Role"
+              userName: "RandomRoleName"
+          session_name: "Alice"
+          type: "AssumedRole"
+          userName: "Alice"
+        usr:
+          id: "Alice"
+          name: "Alice"
+      message: |-
+        {
+          "eventID" : "b7d4398e-b2f0-4faa-9c76-e2d316a8d67f",
+          "awsRegion" : "us-east-2",
+          "eventVersion" : "1.04",
+          "responseElements" : {
+            "snapshotId" : "snap-123456789012"
+          },
+          "sourceIPAddress" : "205.251.233.182",
+          "eventSource" : "cloudtrail.amazonaws.com",
+          "errorMessage" : "Unknown trail: myTrail2 for the user: 123456789012",
+          "requestParameters" : {
+            "name" : "myTrail2"
+          },
+          "errorCode" : "TrailNotFoundException",
+          "userAgent" : "aws-cli/1.10.32 Python/2.7.9 Windows/7 botocore/1.4.22",
+          "userIdentity" : {
+            "sessionContext" : {
+              "sessionIssuer" : {
+                "accountId" : "987654321012",
+                "principalId" : "UTTK46MQNTY35OYIPKET",
+                "arn" : "arn: aws: iam::987654321012: role / RandomRoleName",
+                "type" : "Role",
+                "userName" : "RandomRoleName"
+              },
+              "attributes" : {
+                "mfaAuthenticated" : "false",
+                "creationDate" : "2019 - 09 - 17 T21: 10: 44 Z"
+              }
+            },
+            "accessKeyId" : "EXAMPLE_KEY_ID",
+            "accountId" : "123456789012",
+            "principalId" : "EX_PRINCIPAL_ID",
+            "type" : "AssumedRole",
+            "arn" : "arn:aws:iam::123456789012:user/Alice",
+            "userName" : "Alice"
+          },
+          "eventType" : "AwsApiCall",
+          "ddsource" : "cloudtrail",
+          "requestID" : "5d40662a-49f7-11e6-97e4-d9cb6ff7d6a3",
+          "eventTime" : "2017-11-20T11:15:45Z",
+          "eventName" : "UpdateTrail",
+          "recipientAccountId" : "123456789012"
+        }
+      status: "error"
+      tags:
+        - "source:LOGS_SOURCE"
+        - "account:123456789012"
+        - "region:us-east-2"
+  - sample: |-
+      {
+        "eventID" : "b7d4398e-b2f0-4faa-9c76-e2d316a8d67f",
+        "awsRegion" : "us-east-2",
+        "eventVersion" : "1.04",
+        "responseElements" : {
+          "snapshotId" : "snap-123456789012"
+        },
+        "sourceIPAddress" : "205.251.233.182",
+        "eventSource" : "cloudtrail.amazonaws.com",
+        "requestParameters" : {
+          "name" : "myTrail2"
+        },
+        "errorCode" : "TrailNotFoundException",
+        "resources" : [ {
+          "accountId" : "172597598111",
+          "type" : "AWS::DynamoDB::Table",
+          "ARN" : "arn:aws:dynamodb:us-east-1:172597598111:table/lsoro-test"
+        } ],
+        "userAgent" : "aws-cli/1.10.32 Python/2.7.9 Windows/7 botocore/1.4.22",
+        "userIdentity" : {
+          "sessionContext" : {
+            "sessionIssuer" : {
+              "accountId" : "987654321012",
+              "principalId" : "UTTK46MQNTY35OYIPKET",
+              "arn" : "arn: aws: iam::987654321012: role / RandomRoleName",
+              "type" : "Role",
+              "userName" : "RandomRoleName"
+            },
+            "attributes" : {
+              "mfaAuthenticated" : "false",
+              "creationDate" : "2019 - 09 - 17 T21: 10: 44 Z"
+            }
+          },
+          "accessKeyId" : "EXAMPLE_KEY_ID",
+          "accountId" : "123456789012",
+          "principalId" : "EX_PRINCIPAL_ID",
+          "type" : "Root",
+          "arn" : "arn:aws:iam::123456789012:user/Alice"
+        },
+        "eventType" : "AwsApiCall",
+        "ddsource" : "cloudtrail",
+        "requestID" : "5d40662a-49f7-11e6-97e4-d9cb6ff7d6a3",
+        "eventTime" : "2017-11-20T11:15:45Z",
+        "eventName" : "UpdateTrail",
+        "recipientAccountId" : "123456789012"
+      }
+    result:
+      custom:
+        awsRegion: "us-east-2"
+        ddsource: "cloudtrail"
+        error:
+          kind: "TrailNotFoundException"
+        errorCode: "TrailNotFoundException"
+        eventID: "b7d4398e-b2f0-4faa-9c76-e2d316a8d67f"
+        eventName: "UpdateTrail"
+        eventSource: "cloudtrail.amazonaws.com"
+        eventTime: "2017-11-20T11:15:45Z"
+        eventType: "AwsApiCall"
+        eventVersion: "1.04"
+        evt:
+          name: "UpdateTrail"
+        http:
+          request_id: "5d40662a-49f7-11e6-97e4-d9cb6ff7d6a3"
+          useragent: "aws-cli/1.10.32 Python/2.7.9 Windows/7 botocore/1.4.22"
+          useragent_details:
+            browser:
+              family: "aws-cli"
+              major: "1"
+              minor: "10"
+              patch: "32"
+            device:
+              brand: "Spider"
+              category: "Bot"
+              family: "Spider"
+              model: "Desktop"
+            os:
+              family: "Windows"
+        level: "Error"
+        network:
+          client:
+            geoip: {}
+            ip: "205.251.233.182"
+        ocsf:
+          activity_id: 3
+          activity_name: "Update"
+          actor:
+            session:
+              created_time_dt: "2019 - 09 - 17 T21: 10: 44 Z"
+              is_mfa: false
+              issuer: "arn: aws: iam::987654321012: role / RandomRoleName"
+            user:
+              account:
+                uid: "123456789012"
+              credential_uid: "EXAMPLE_KEY_ID"
+              type: "Root"
+              uid: "arn:aws:iam::123456789012:user/Alice"
+              uid_alt: "EX_PRINCIPAL_ID"
+          api:
+            operation: "UpdateTrail"
+            request:
+              data:
+                name: "myTrail2"
+              uid: "5d40662a-49f7-11e6-97e4-d9cb6ff7d6a3"
+            response:
+              data:
+                snapshotId: "snap-123456789012"
+              error: "TrailNotFoundException"
+            service:
+              name: "cloudtrail.amazonaws.com"
+          category_name: "Application Activity"
+          category_uid: 6
+          class_name: "API Activity"
+          class_uid: 6003
+          cloud:
+            provider: "AWS"
+            region: "us-east-2"
+          http_request:
+            user_agent: "aws-cli/1.10.32 Python/2.7.9 Windows/7 botocore/1.4.22"
+          metadata:
+            event_code: "AwsApiCall"
+            product:
+              name: "CloudTrail"
+              vendor_name: "AWS"
+              version: "1.04"
+            profiles:
+              - "cloud"
+              - "datetime"
+            uid: "b7d4398e-b2f0-4faa-9c76-e2d316a8d67f"
+            version: "1.3.0"
+          severity: "Informational"
+          severity_id: 1
+          src_endpoint:
+            ip: "205.251.233.182"
+          status: "Failure"
+          status_id: 2
+          time: 1511176545000
+          time_dt: "2017-11-20T11:15:45Z"
+          type_uid: 600303
+        recipientAccountId: "123456789012"
+        requestID: "5d40662a-49f7-11e6-97e4-d9cb6ff7d6a3"
+        requestParameters:
+          name: "myTrail2"
+        resource:
+          ARN: "arn:aws:dynamodb:us-east-1:172597598111:table/lsoro-test"
+          accountId: "172597598111"
+          type: "AWS::DynamoDB::Table"
+        resources:
+          - accountId: "172597598111"
+            type: "AWS::DynamoDB::Table"
+            ARN: "arn:aws:dynamodb:us-east-1:172597598111:table/lsoro-test"
+        responseElements:
+          snapshotId: "snap-123456789012"
+        sourceIPAddress: "205.251.233.182"
+        userAgent: "aws-cli/1.10.32 Python/2.7.9 Windows/7 botocore/1.4.22"
+        userIdentity:
+          accessKeyId: "EXAMPLE_KEY_ID"
+          accountId: "123456789012"
+          arn: "arn:aws:iam::123456789012:user/Alice"
+          assumed_role: "RandomRoleName"
+          principalId: "EX_PRINCIPAL_ID"
+          sessionContext:
+            attributes:
+              creationDate: "2019 - 09 - 17 T21: 10: 44 Z"
+              mfaAuthenticated: "false"
+            sessionIssuer:
+              accountId: "987654321012"
+              arn: "arn: aws: iam::987654321012: role / RandomRoleName"
+              principalId: "UTTK46MQNTY35OYIPKET"
+              type: "Role"
+              userName: "RandomRoleName"
+          session_name: "Alice"
+          type: "Root"
+        usr:
+          id: "Root"
+      message: |-
+        {
+          "eventID" : "b7d4398e-b2f0-4faa-9c76-e2d316a8d67f",
+          "awsRegion" : "us-east-2",
+          "eventVersion" : "1.04",
+          "responseElements" : {
+            "snapshotId" : "snap-123456789012"
+          },
+          "sourceIPAddress" : "205.251.233.182",
+          "eventSource" : "cloudtrail.amazonaws.com",
+          "requestParameters" : {
+            "name" : "myTrail2"
+          },
+          "errorCode" : "TrailNotFoundException",
+          "resources" : [ {
+            "accountId" : "172597598111",
+            "type" : "AWS::DynamoDB::Table",
+            "ARN" : "arn:aws:dynamodb:us-east-1:172597598111:table/lsoro-test"
+          } ],
+          "userAgent" : "aws-cli/1.10.32 Python/2.7.9 Windows/7 botocore/1.4.22",
+          "userIdentity" : {
+            "sessionContext" : {
+              "sessionIssuer" : {
+                "accountId" : "987654321012",
+                "principalId" : "UTTK46MQNTY35OYIPKET",
+                "arn" : "arn: aws: iam::987654321012: role / RandomRoleName",
+                "type" : "Role",
+                "userName" : "RandomRoleName"
+              },
+              "attributes" : {
+                "mfaAuthenticated" : "false",
+                "creationDate" : "2019 - 09 - 17 T21: 10: 44 Z"
+              }
+            },
+            "accessKeyId" : "EXAMPLE_KEY_ID",
+            "accountId" : "123456789012",
+            "principalId" : "EX_PRINCIPAL_ID",
+            "type" : "Root",
+            "arn" : "arn:aws:iam::123456789012:user/Alice"
+          },
+          "eventType" : "AwsApiCall",
+          "ddsource" : "cloudtrail",
+          "requestID" : "5d40662a-49f7-11e6-97e4-d9cb6ff7d6a3",
+          "eventTime" : "2017-11-20T11:15:45Z",
+          "eventName" : "UpdateTrail",
+          "recipientAccountId" : "123456789012"
+        }
+      status: "error"
+      tags:
+        - "source:LOGS_SOURCE"
+        - "account:123456789012"
+        - "region:us-east-2"
+  - sample: |-
+      {
+        "severity" : "Informational",
+        "activity_name" : "Attach Policy",
+        "metadata" : {
+          "uid" : "1a8308f8-b59f-4257-b150-b287516f375e",
+          "product" : {
+            "feature" : {
+              "name" : "Management"
+            },
+            "name" : "CloudTrail",
+            "vendor_name" : "AWS",
+            "version" : "1.08"
+          },
+          "profiles" : [ "cloud" ],
+          "version" : "1.1.0"
+        },
+        "category_uid" : 3,
+        "type_name" : "Account Change: Attach Policy",
+        "category_name" : "Audit Activity",
+        "src_endpoint" : {
+          "ip" : "185.64.148.140"
+        },
+        "unmapped" : [ [ "userIdentity.sessionContext.sessionIssuer.type", "Role" ], [ "userIdentity.sessionContext.sessionIssuer.userName", "Admin" ], [ "userIdentity.sessionContext.sessionIssuer.principalId", "AROAIOJRFK4IOK6BW5ISY" ], [ "recipientAccountId", "112233445566" ], [ "requestParameters.policyArn", "arn:aws:iam::aws:policy/AmazonSageMakerFullAccess" ], [ "readOnly", "false" ], [ "eventType", "AwsApiCall" ], [ "managementEvent", "true" ], [ "userIdentity.sessionContext.sessionIssuer.accountId", "112233445566" ] ],
+        "cloud" : {
+          "provider" : "AWS",
+          "region" : "us-east-1"
+        },
+        "actor" : {
+          "invoked_by" : "cloudtrail.amazonaws.com",
+          "session" : {
+            "created_time" : 1679057558000,
+            "is_mfa" : false,
+            "issuer" : "arn:aws:iam::112233445566:role/Admin"
+          },
+          "user" : {
+            "uid" : "arn:aws:sts::112233445566:assumed-role/Admin/Admin-user",
+            "uid_alt" : "AROAIOJRFK4IOK6BW5ISY:Admin-user",
+            "type" : "AssumedRole",
+            "account" : {
+              "uid" : "112233445566"
+            },
+            "credential_uid" : "ASIAXTKM3VWISSN75QFU"
+          }
+        },
+        "status_id" : 1,
+        "class_uid" : 3001,
+        "activity_id" : 7,
+        "http_request" : {
+          "user_agent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:102.0) Gecko/20100101 Firefox/102.0"
+        },
+        "time" : 1679070710000,
+        "api" : {
+          "request" : {
+            "uid" : "e82d2d19-5e02-4c09-8baf-36823b7d4806"
+          },
+          "response" : {
+            "error" : "Access Denied",
+            "message" : "Access Denied for IAM user"
+          },
+          "service" : {
+            "name" : "iam.amazonaws.com"
+          },
+          "operation" : "AttachRolePolicy"
+        },
+        "severity_id" : 1,
+        "class_name" : "Account Change",
+        "user" : {
+          "name" : "AmazonSageMakerServiceCatalogProductsExecutionRole"
+        },
+        "type_uid" : 300107,
+        "status" : "Success"
+      }
+    result:
+      custom:
+        activity_id: 7
+        activity_name: "Attach Policy"
+        actor:
+          session:
+            created_time: 1679057558000
+            issuer: "arn:aws:iam::112233445566:role/Admin"
+        api:
+          operation: "AttachRolePolicy"
+          request:
+            uid: "e82d2d19-5e02-4c09-8baf-36823b7d4806"
+          response:
+            error: "Access Denied"
+            message: "Access Denied for IAM user"
+        category_name: "Audit Activity"
+        category_uid: 3
+        class_name: "Account Change"
+        class_uid: 3001
+        cloud:
+          provider: "AWS"
+          region: "us-east-1"
+        error:
+          kind: "Access Denied"
+          message: "Access Denied for IAM user"
+        eventSource: "iam.amazonaws.com"
+        evt:
+          name: "AttachRolePolicy"
+        http:
+          useragent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:102.0) Gecko/20100101 Firefox/102.0"
+          useragent_details:
+            browser:
+              family: "Firefox"
+              major: "102"
+              minor: "0"
+            device:
+              brand: "Apple"
+              category: "Desktop"
+              family: "Mac"
+              model: "Mac"
+            os:
+              family: "Mac OS X"
+              major: "10"
+              minor: "15"
+        http_request:
+          user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:102.0) Gecko/20100101 Firefox/102.0"
+        level: "Error"
+        metadata:
+          product:
+            feature:
+              name: "Management"
+            name: "CloudTrail"
+            vendor_name: "AWS"
+            version: "1.08"
+          profiles:
+            - "cloud"
+          uid: "1a8308f8-b59f-4257-b150-b287516f375e"
+          version: "1.1.0"
+        network:
+          client:
+            geoip:
+              city:
+                name: "Paris"
+              continent:
+                code: "EU"
+                name: "Europe"
+              country:
+                iso_code: "FR"
+                name: "France"
+              ipAddress: "185.64.148.140"
+              location:
+                latitude: 48.90654
+                longitude: 2.33339
+              subdivision:
+                iso_code: "FR-IDF"
+                name: "Île-de-France"
+              timezone: "Europe/Paris"
+            ip: "185.64.148.140"
+        ocsf:
+          actor:
+            invoked_by: "cloudtrail.amazonaws.com"
+            session:
+              is_mfa: false
+            user:
+              account:
+                uid: "112233445566"
+              credential_uid: "ASIAXTKM3VWISSN75QFU"
+              type: "AssumedRole"
+              uid: "arn:aws:sts::112233445566:assumed-role/Admin/Admin-user"
+              uid_alt: "AROAIOJRFK4IOK6BW5ISY:Admin-user"
+          api:
+            service:
+              name: "iam.amazonaws.com"
+          cloud:
+            provider: "AWS"
+          metadata:
+            product:
+              name: "CloudTrail"
+              vendor_name: "AWS"
+            profiles:
+              - "cloud"
+              - "datetime"
+            version: "1.3.0"
+          severity: "Informational"
+          severity_id: 1
+        severity: "Informational"
+        severity_id: 1
+        src_endpoint:
+          ip: "185.64.148.140"
+        status: "Success"
+        status_id: 1
+        time: 1679070710000
+        type_name: "Account Change: Attach Policy"
+        type_uid: 300107
+        unmapped:
+          - - "userIdentity.sessionContext.sessionIssuer.type"
+            - "Role"
+          - - "userIdentity.sessionContext.sessionIssuer.userName"
+            - "Admin"
+          - - "userIdentity.sessionContext.sessionIssuer.principalId"
+            - "AROAIOJRFK4IOK6BW5ISY"
+          - - "recipientAccountId"
+            - "112233445566"
+          - - "requestParameters.policyArn"
+            - "arn:aws:iam::aws:policy/AmazonSageMakerFullAccess"
+          - - "readOnly"
+            - "false"
+          - - "eventType"
+            - "AwsApiCall"
+          - - "managementEvent"
+            - "true"
+          - - "userIdentity.sessionContext.sessionIssuer.accountId"
+            - "112233445566"
+        user:
+          name: "AmazonSageMakerServiceCatalogProductsExecutionRole"
+        userIdentity:
+          accessKeyId: "ASIAXTKM3VWISSN75QFU"
+          accountId: "112233445566"
+          arn: "arn:aws:sts::112233445566:assumed-role/Admin/Admin-user"
+          invokedBy: "cloudtrail.amazonaws.com"
+          principalId: "AROAIOJRFK4IOK6BW5ISY:Admin-user"
+          sessionContext:
+            attributes:
+              mfaAuthenticated: false
+          session_name: "Admin-user"
+          type: "AssumedRole"
+      message: |-
+        {
+          "severity" : "Informational",
+          "activity_name" : "Attach Policy",
+          "metadata" : {
+            "uid" : "1a8308f8-b59f-4257-b150-b287516f375e",
+            "product" : {
+              "feature" : {
+                "name" : "Management"
+              },
+              "name" : "CloudTrail",
+              "vendor_name" : "AWS",
+              "version" : "1.08"
+            },
+            "profiles" : [ "cloud" ],
+            "version" : "1.1.0"
+          },
+          "category_uid" : 3,
+          "type_name" : "Account Change: Attach Policy",
+          "category_name" : "Audit Activity",
+          "src_endpoint" : {
+            "ip" : "185.64.148.140"
+          },
+          "unmapped" : [ [ "userIdentity.sessionContext.sessionIssuer.type", "Role" ], [ "userIdentity.sessionContext.sessionIssuer.userName", "Admin" ], [ "userIdentity.sessionContext.sessionIssuer.principalId", "AROAIOJRFK4IOK6BW5ISY" ], [ "recipientAccountId", "112233445566" ], [ "requestParameters.policyArn", "arn:aws:iam::aws:policy/AmazonSageMakerFullAccess" ], [ "readOnly", "false" ], [ "eventType", "AwsApiCall" ], [ "managementEvent", "true" ], [ "userIdentity.sessionContext.sessionIssuer.accountId", "112233445566" ] ],
+          "cloud" : {
+            "provider" : "AWS",
+            "region" : "us-east-1"
+          },
+          "actor" : {
+            "invoked_by" : "cloudtrail.amazonaws.com",
+            "session" : {
+              "created_time" : 1679057558000,
+              "is_mfa" : false,
+              "issuer" : "arn:aws:iam::112233445566:role/Admin"
+            },
+            "user" : {
+              "uid" : "arn:aws:sts::112233445566:assumed-role/Admin/Admin-user",
+              "uid_alt" : "AROAIOJRFK4IOK6BW5ISY:Admin-user",
+              "type" : "AssumedRole",
+              "account" : {
+                "uid" : "112233445566"
+              },
+              "credential_uid" : "ASIAXTKM3VWISSN75QFU"
+            }
+          },
+          "status_id" : 1,
+          "class_uid" : 3001,
+          "activity_id" : 7,
+          "http_request" : {
+            "user_agent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:102.0) Gecko/20100101 Firefox/102.0"
+          },
+          "time" : 1679070710000,
+          "api" : {
+            "request" : {
+              "uid" : "e82d2d19-5e02-4c09-8baf-36823b7d4806"
+            },
+            "response" : {
+              "error" : "Access Denied",
+              "message" : "Access Denied for IAM user"
+            },
+            "service" : {
+              "name" : "iam.amazonaws.com"
+            },
+            "operation" : "AttachRolePolicy"
+          },
+          "severity_id" : 1,
+          "class_name" : "Account Change",
+          "user" : {
+            "name" : "AmazonSageMakerServiceCatalogProductsExecutionRole"
+          },
+          "type_uid" : 300107,
+          "status" : "Success"
+        }
+      status: "error"
+      tags:
+        - "source:LOGS_SOURCE"
+        - "region:us-east-1"
+  - sample: |-
+      {
+        "eventID" : "a9096a59-0bd9-4b48-9e5f-57f7e6d91a70",
+        "awsRegion" : "us-east-1",
+        "eventCategory" : "Management",
+        "eventVersion" : "1.08",
+        "responseElements" : {
+          "federatedUser" : {
+            "arn" : "arn:aws:sts::111111111111:federated-user/temp",
+            "federatedUserId" : "111111111111:temp"
+          },
+          "credentials" : {
+            "accessKeyId" : "AKIAZZZZZZZZZZZZZZZZ",
+            "sessionToken" : "IQoJb3JpZ2luX2VjELT//////////wEaCXVzLWVhc3QtMSJIMEYCIQDuT6O8D5JQ5Wc1jZerjhlEsEiHAcYh3R4LD+W57/RzggIhAKcgqWg4vbKT85VrI45Fk9mApsJtDLqxi4PuHm/mNpL5Kp0CCOz//////////wEQARoMNjc3MzAxMDM4ODkzIgw6l9AP7v51hccY7nAq8QEYzXx4bmrD4ya9OxOOe40ayCFoaqlsbECG0CiYLSPAVYzztzOtNuTp6OiOvoCnLIxhaCivAqeX4ylr22dT/lxUot4RliX3PMsv3mY7/Mj4IV9FLBz9bZjRW4/LQw6esT9NuLnRB3APJoxSZ7MTHc4R3SinrFq+6Z85tIR09Hh4AutpXD6GdU2raoj6hiLf//3oYAA0bKJcva6jS1zfz5nD1Qcn/XlTA2O8dpf8ug0Qzyc2QuFy4VD3HJXACyfCpPXzxDJqzT+7/y3z+jDHpzdkq9fcSDVrIaJ18jwLrhQzVgHt5BUUWXljxrg3FYPCSQOHMO//g7EGOpgBGhyq1WhZH6FIxFkYxL3DTKsKJBmOyNnvEmm/WkLU7bXbmBwYIklkUkEktobvUm5rOEoV6FK25P4KVy+aAZ8ZNJlxuaZ04vBZosvXH7ehi4TaLnLw7Jiy6Cp9BJgFbTCmt69MqRHUyBYH16wxTmHTpddufsxucbAAvlq+4A/tmdcLJvh6+WHxXKOrvbbsOAXTiUBMQQQQQQQ=",
+            "expiration" : "Apr 18, 2024, 11:26:43 AM"
+          },
+          "packedPolicySize" : 4
+        },
+        "sourceIPAddress" : "212.29.248.204",
+        "eventSource" : "sts.amazonaws.com",
+        "requestParameters" : {
+          "durationSeconds" : 900,
+          "name" : "temp",
+          "policy" : "{\"Version\": \"2012-10-17\",\n\n\"Statement\": [\n\n{\"Effect\": \"Allow\",\n\n\"Action\": \"*\",\n\n\"Resource\": \"*\"}]}\n"
+        },
+        "userAgent" : "aws-cli/1.32.60 md/Botocore#1.34.60 ua/2.0 os/macos#23.4.0 md/arch#arm64 lang/python#3.12.2 md/pyimpl#CPython cfg/retry-mode#legacy botocore/1.34.60",
+        "readOnly" : false,
+        "userIdentity" : {
+          "accessKeyId" : "AKIABBBBBBBBBBBBBBBB",
+          "accountId" : "111111111111",
+          "principalId" : "AIDACCCCCCCCCCCCCCCCC",
+          "type" : "IAMUser",
+          "arn" : "arn:aws:iam::111111111111:user/user",
+          "userName" : "fd-test-user"
+        },
+        "eventType" : "AwsApiCall",
+        "requestID" : "876dcb2d-64a1-43d0-8f47-f317362c02da",
+        "eventTime" : "2024-04-18T11:11:43Z",
+        "eventName" : "GetFederationToken",
+        "recipientAccountId" : "111111111111",
+        "tlsDetails" : {
+          "tlsVersion" : "TLSv1.3",
+          "cipherSuite" : "TLS_AES_128_GCM_SHA256",
+          "clientProvidedHostHeader" : "sts.amazonaws.com"
+        },
+        "managementEvent" : true
+      }
+    result:
+      custom:
+        awsRegion: "us-east-1"
+        eventCategory: "Management"
+        eventID: "a9096a59-0bd9-4b48-9e5f-57f7e6d91a70"
+        eventName: "GetFederationToken"
+        eventSource: "sts.amazonaws.com"
+        eventTime: "2024-04-18T11:11:43Z"
+        eventType: "AwsApiCall"
+        eventVersion: "1.08"
+        evt:
+          name: "GetFederationToken"
+        http:
+          request_id: "876dcb2d-64a1-43d0-8f47-f317362c02da"
+          useragent: "aws-cli/1.32.60 md/Botocore#1.34.60 ua/2.0 os/macos#23.4.0 md/arch#arm64 lang/python#3.12.2 md/pyimpl#CPython cfg/retry-mode#legacy botocore/1.34.60"
+          useragent_details:
+            browser:
+              family: "aws-cli"
+              major: "1"
+              minor: "32"
+              patch: "60"
+            device:
+              brand: "Spider"
+              category: "Bot"
+              family: "Spider"
+              model: "Desktop"
+            os:
+              family: "Other"
+        managementEvent: true
+        network:
+          client:
+            geoip: {}
+            ip: "212.29.248.204"
+        ocsf:
+          activity_id: 2
+          activity_name: "Read"
+          actor:
+            user:
+              account:
+                uid: "111111111111"
+              credential_uid: "AKIABBBBBBBBBBBBBBBB"
+              name: "fd-test-user"
+              type: "IAMUser"
+              uid: "arn:aws:iam::111111111111:user/user"
+              uid_alt: "AIDACCCCCCCCCCCCCCCCC"
+          api:
+            operation: "GetFederationToken"
+            request:
+              data:
+                SessionPolicyARN:
+                  Statement:
+                    - Action: "*"
+                      Resource: "*"
+                      Effect: "Allow"
+                  Version: "2012-10-17"
+                durationSeconds: 900
+                name: "temp"
+                policy: |
+                  {"Version": "2012-10-17",
+
+                  "Statement": [
+
+                  {"Effect": "Allow",
+
+                  "Action": "*",
+
+                  "Resource": "*"}]}
+              uid: "876dcb2d-64a1-43d0-8f47-f317362c02da"
+            response:
+              data:
+                credentials:
+                  accessKeyId: "AKIAZZZZZZZZZZZZZZZZ"
+                  expiration: "Apr 18, 2024, 11:26:43 AM"
+                  sessionToken: "IQoJb3JpZ2luX2VjELT//////////wEaCXVzLWVhc3QtMSJIMEYCIQDuT6O8D5JQ5Wc1jZerjhlEsEiHAcYh3R4LD+W57/RzggIhAKcgqWg4vbKT85VrI45Fk9mApsJtDLqxi4PuHm/mNpL5Kp0CCOz//////////wEQARoMNjc3MzAxMDM4ODkzIgw6l9AP7v51hccY7nAq8QEYzXx4bmrD4ya9OxOOe40ayCFoaqlsbECG0CiYLSPAVYzztzOtNuTp6OiOvoCnLIxhaCivAqeX4ylr22dT/lxUot4RliX3PMsv3mY7/Mj4IV9FLBz9bZjRW4/LQw6esT9NuLnRB3APJoxSZ7MTHc4R3SinrFq+6Z85tIR09Hh4AutpXD6GdU2raoj6hiLf//3oYAA0bKJcva6jS1zfz5nD1Qcn/XlTA2O8dpf8ug0Qzyc2QuFy4VD3HJXACyfCpPXzxDJqzT+7/y3z+jDHpzdkq9fcSDVrIaJ18jwLrhQzVgHt5BUUWXljxrg3FYPCSQOHMO//g7EGOpgBGhyq1WhZH6FIxFkYxL3DTKsKJBmOyNnvEmm/WkLU7bXbmBwYIklkUkEktobvUm5rOEoV6FK25P4KVy+aAZ8ZNJlxuaZ04vBZosvXH7ehi4TaLnLw7Jiy6Cp9BJgFbTCmt69MqRHUyBYH16wxTmHTpddufsxucbAAvlq+4A/tmdcLJvh6+WHxXKOrvbbsOAXTiUBMQQQQQQQ="
+                federatedUser:
+                  arn: "arn:aws:sts::111111111111:federated-user/temp"
+                  federatedUserId: "111111111111:temp"
+                packedPolicySize: 4
+            service:
+              name: "sts.amazonaws.com"
+          category_name: "Application Activity"
+          category_uid: 6
+          class_name: "API Activity"
+          class_uid: 6003
+          cloud:
+            provider: "AWS"
+            region: "us-east-1"
+          http_request:
+            user_agent: "aws-cli/1.32.60 md/Botocore#1.34.60 ua/2.0 os/macos#23.4.0 md/arch#arm64 lang/python#3.12.2 md/pyimpl#CPython cfg/retry-mode#legacy botocore/1.34.60"
+          metadata:
+            event_code: "AwsApiCall"
+            product:
+              feature:
+                name: "Management"
+              name: "CloudTrail"
+              vendor_name: "AWS"
+              version: "1.08"
+            profiles:
+              - "cloud"
+              - "datetime"
+            uid: "a9096a59-0bd9-4b48-9e5f-57f7e6d91a70"
+            version: "1.3.0"
+          severity: "Informational"
+          severity_id: 1
+          src_endpoint:
+            ip: "212.29.248.204"
+          status: "Success"
+          status_id: 1
+          time: 1713438703000
+          time_dt: "2024-04-18T11:11:43Z"
+          type_uid: 600302
+        readOnly: false
+        recipientAccountId: "111111111111"
+        requestID: "876dcb2d-64a1-43d0-8f47-f317362c02da"
+        requestParameters:
+          SessionPolicyARN:
+            Statement:
+              - Action: "*"
+                Resource: "*"
+                Effect: "Allow"
+            Version: "2012-10-17"
+          durationSeconds: 900
+          name: "temp"
+          policy: |
+            {"Version": "2012-10-17",
+
+            "Statement": [
+
+            {"Effect": "Allow",
+
+            "Action": "*",
+
+            "Resource": "*"}]}
+        responseElements:
+          credentials:
+            accessKeyId: "AKIAZZZZZZZZZZZZZZZZ"
+            expiration: "Apr 18, 2024, 11:26:43 AM"
+            sessionToken: "IQoJb3JpZ2luX2VjELT//////////wEaCXVzLWVhc3QtMSJIMEYCIQDuT6O8D5JQ5Wc1jZerjhlEsEiHAcYh3R4LD+W57/RzggIhAKcgqWg4vbKT85VrI45Fk9mApsJtDLqxi4PuHm/mNpL5Kp0CCOz//////////wEQARoMNjc3MzAxMDM4ODkzIgw6l9AP7v51hccY7nAq8QEYzXx4bmrD4ya9OxOOe40ayCFoaqlsbECG0CiYLSPAVYzztzOtNuTp6OiOvoCnLIxhaCivAqeX4ylr22dT/lxUot4RliX3PMsv3mY7/Mj4IV9FLBz9bZjRW4/LQw6esT9NuLnRB3APJoxSZ7MTHc4R3SinrFq+6Z85tIR09Hh4AutpXD6GdU2raoj6hiLf//3oYAA0bKJcva6jS1zfz5nD1Qcn/XlTA2O8dpf8ug0Qzyc2QuFy4VD3HJXACyfCpPXzxDJqzT+7/y3z+jDHpzdkq9fcSDVrIaJ18jwLrhQzVgHt5BUUWXljxrg3FYPCSQOHMO//g7EGOpgBGhyq1WhZH6FIxFkYxL3DTKsKJBmOyNnvEmm/WkLU7bXbmBwYIklkUkEktobvUm5rOEoV6FK25P4KVy+aAZ8ZNJlxuaZ04vBZosvXH7ehi4TaLnLw7Jiy6Cp9BJgFbTCmt69MqRHUyBYH16wxTmHTpddufsxucbAAvlq+4A/tmdcLJvh6+WHxXKOrvbbsOAXTiUBMQQQQQQQ="
+          federatedUser:
+            arn: "arn:aws:sts::111111111111:federated-user/temp"
+            federatedUserId: "111111111111:temp"
+          packedPolicySize: 4
+        sourceIPAddress: "212.29.248.204"
+        tlsDetails:
+          cipherSuite: "TLS_AES_128_GCM_SHA256"
+          clientProvidedHostHeader: "sts.amazonaws.com"
+          tlsVersion: "TLSv1.3"
+        userAgent: "aws-cli/1.32.60 md/Botocore#1.34.60 ua/2.0 os/macos#23.4.0 md/arch#arm64 lang/python#3.12.2 md/pyimpl#CPython cfg/retry-mode#legacy botocore/1.34.60"
+        userIdentity:
+          accessKeyId: "AKIABBBBBBBBBBBBBBBB"
+          accountId: "111111111111"
+          arn: "arn:aws:iam::111111111111:user/user"
+          principalId: "AIDACCCCCCCCCCCCCCCCC"
+          session_name: "user"
+          type: "IAMUser"
+          userName: "fd-test-user"
+        usr:
+          id: "fd-test-user"
+          name: "fd-test-user"
+      message: |-
+        {
+          "eventID" : "a9096a59-0bd9-4b48-9e5f-57f7e6d91a70",
+          "awsRegion" : "us-east-1",
+          "eventCategory" : "Management",
+          "eventVersion" : "1.08",
+          "responseElements" : {
+            "federatedUser" : {
+              "arn" : "arn:aws:sts::111111111111:federated-user/temp",
+              "federatedUserId" : "111111111111:temp"
+            },
+            "credentials" : {
+              "accessKeyId" : "AKIAZZZZZZZZZZZZZZZZ",
+              "sessionToken" : "IQoJb3JpZ2luX2VjELT//////////wEaCXVzLWVhc3QtMSJIMEYCIQDuT6O8D5JQ5Wc1jZerjhlEsEiHAcYh3R4LD+W57/RzggIhAKcgqWg4vbKT85VrI45Fk9mApsJtDLqxi4PuHm/mNpL5Kp0CCOz//////////wEQARoMNjc3MzAxMDM4ODkzIgw6l9AP7v51hccY7nAq8QEYzXx4bmrD4ya9OxOOe40ayCFoaqlsbECG0CiYLSPAVYzztzOtNuTp6OiOvoCnLIxhaCivAqeX4ylr22dT/lxUot4RliX3PMsv3mY7/Mj4IV9FLBz9bZjRW4/LQw6esT9NuLnRB3APJoxSZ7MTHc4R3SinrFq+6Z85tIR09Hh4AutpXD6GdU2raoj6hiLf//3oYAA0bKJcva6jS1zfz5nD1Qcn/XlTA2O8dpf8ug0Qzyc2QuFy4VD3HJXACyfCpPXzxDJqzT+7/y3z+jDHpzdkq9fcSDVrIaJ18jwLrhQzVgHt5BUUWXljxrg3FYPCSQOHMO//g7EGOpgBGhyq1WhZH6FIxFkYxL3DTKsKJBmOyNnvEmm/WkLU7bXbmBwYIklkUkEktobvUm5rOEoV6FK25P4KVy+aAZ8ZNJlxuaZ04vBZosvXH7ehi4TaLnLw7Jiy6Cp9BJgFbTCmt69MqRHUyBYH16wxTmHTpddufsxucbAAvlq+4A/tmdcLJvh6+WHxXKOrvbbsOAXTiUBMQQQQQQQ=",
+              "expiration" : "Apr 18, 2024, 11:26:43 AM"
+            },
+            "packedPolicySize" : 4
+          },
+          "sourceIPAddress" : "212.29.248.204",
+          "eventSource" : "sts.amazonaws.com",
+          "requestParameters" : {
+            "durationSeconds" : 900,
+            "name" : "temp",
+            "policy" : "{\"Version\": \"2012-10-17\",\n\n\"Statement\": [\n\n{\"Effect\": \"Allow\",\n\n\"Action\": \"*\",\n\n\"Resource\": \"*\"}]}\n"
+          },
+          "userAgent" : "aws-cli/1.32.60 md/Botocore#1.34.60 ua/2.0 os/macos#23.4.0 md/arch#arm64 lang/python#3.12.2 md/pyimpl#CPython cfg/retry-mode#legacy botocore/1.34.60",
+          "readOnly" : false,
+          "userIdentity" : {
+            "accessKeyId" : "AKIABBBBBBBBBBBBBBBB",
+            "accountId" : "111111111111",
+            "principalId" : "AIDACCCCCCCCCCCCCCCCC",
+            "type" : "IAMUser",
+            "arn" : "arn:aws:iam::111111111111:user/user",
+            "userName" : "fd-test-user"
+          },
+          "eventType" : "AwsApiCall",
+          "requestID" : "876dcb2d-64a1-43d0-8f47-f317362c02da",
+          "eventTime" : "2024-04-18T11:11:43Z",
+          "eventName" : "GetFederationToken",
+          "recipientAccountId" : "111111111111",
+          "tlsDetails" : {
+            "tlsVersion" : "TLSv1.3",
+            "cipherSuite" : "TLS_AES_128_GCM_SHA256",
+            "clientProvidedHostHeader" : "sts.amazonaws.com"
+          },
+          "managementEvent" : true
+        }
+      tags:
+        - "source:LOGS_SOURCE"
+        - "account:111111111111"
+        - "region:us-east-1"
+  - sample: |-
+      {
+        "eventID" : "fed06f42-cb12-4764-8c69-example",
+        "awsRegion" : "us-east-1",
+        "eventCategory" : "Management",
+        "eventVersion" : "1.08",
+        "responseElements" : {
+          "ConsoleLogin" : "Success"
+        },
+        "sourceIPAddress" : "192.0.2.0",
+        "eventSource" : "signin.amazonaws.com",
+        "userAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/67.0.3396.99 Safari/537.36",
+        "eventType" : "AwsConsoleSignIn",
+        "userIdentity" : {
+          "accountId" : "111122223333",
+          "principalId" : "AIDACKCEVSQ6C2EXAMPLE",
+          "arn" : "arn:aws:iam::111122223333:user/anaya",
+          "type" : "IAMUser",
+          "userName" : "anaya"
+        },
+        "additionalEventData" : {
+          "LoginTo" : "https://console.aws.amazon.com/console/home?state=hashArgs%23&isauthcode=true",
+          "MobileVersion" : "No",
+          "MFAIdentifier" : "arn:aws:iam::111122223333:u2f/user/anaya/default-AAAAAAAABBBBBBBBCCCCCCCCDD",
+          "MFAUsed" : "Yes"
+        },
+        "eventTime" : "2023-11-10T16:24:34Z",
+        "eventName" : "ConsoleLogin",
+        "recipientAccountId" : "111122223333"
+      }
+    result:
+      custom:
+        additionalEventData:
+          LoginTo: "https://console.aws.amazon.com/console/home?state=hashArgs%23&isauthcode=true"
+          MFAIdentifier: "arn:aws:iam::111122223333:u2f/user/anaya/default-AAAAAAAABBBBBBBBCCCCCCCCDD"
+          MFAUsed: "Yes"
+          MobileVersion: "No"
+        awsRegion: "us-east-1"
+        eventCategory: "Management"
+        eventID: "fed06f42-cb12-4764-8c69-example"
+        eventName: "ConsoleLogin"
+        eventSource: "signin.amazonaws.com"
+        eventTime: "2023-11-10T16:24:34Z"
+        eventType: "AwsConsoleSignIn"
+        eventVersion: "1.08"
+        evt:
+          name: "ConsoleLogin"
+        http:
+          useragent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/67.0.3396.99 Safari/537.36"
+          useragent_details:
+            browser:
+              family: "Chrome"
+              major: "67"
+              minor: "0"
+              patch: "3396"
+              patch_minor: "99"
+            device:
+              brand: "Apple"
+              category: "Desktop"
+              family: "Mac"
+              model: "Mac"
+            os:
+              family: "Mac OS X"
+              major: "10"
+              minor: "11"
+              patch: "6"
+        network:
+          client:
+            geoip: {}
+            ip: "192.0.2.0"
+        ocsf:
+          activity_id: 1
+          activity_name: "Logon"
+          actor:
+            user:
+              account:
+                uid: "111122223333"
+              name: "anaya"
+              type: "IAMUser"
+              uid: "arn:aws:iam::111122223333:user/anaya"
+              uid_alt: "AIDACKCEVSQ6C2EXAMPLE"
+          api:
+            operation: "ConsoleLogin"
+            response:
+              data:
+                ConsoleLogin: "Success"
+            service:
+              name: "signin.amazonaws.com"
+          category_name: "Identity & Access Management"
+          category_uid: 3
+          class_name: "Authentication"
+          class_uid: 3002
+          cloud:
+            provider: "AWS"
+            region: "us-east-1"
+          dst_endpoint:
+            svc_name: "https://console.aws.amazon.com/console/home?state=hashArgs%23&isauthcode=true"
+          http_request:
+            user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/67.0.3396.99 Safari/537.36"
+          is_mfa: true
+          metadata:
+            event_code: "AwsConsoleSignIn"
+            product:
+              feature:
+                name: "Management"
+              name: "CloudTrail"
+              vendor_name: "AWS"
+              version: "1.08"
+            profiles:
+              - "cloud"
+              - "datetime"
+            uid: "fed06f42-cb12-4764-8c69-example"
+            version: "1.3.0"
+          severity: "Informational"
+          severity_id: 1
+          src_endpoint:
+            ip: "192.0.2.0"
+          status: "Success"
+          status_id: 1
+          time: 1699633474000
+          time_dt: "2023-11-10T16:24:34Z"
+          type_uid: 300201
+          user:
+            uid: "arn:aws:iam::111122223333:user/anaya"
+            uid_alt: "AIDACKCEVSQ6C2EXAMPLE"
+        recipientAccountId: "111122223333"
+        responseElements:
+          ConsoleLogin: "Success"
+        sourceIPAddress: "192.0.2.0"
+        userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/67.0.3396.99 Safari/537.36"
+        userIdentity:
+          accountId: "111122223333"
+          arn: "arn:aws:iam::111122223333:user/anaya"
+          principalId: "AIDACKCEVSQ6C2EXAMPLE"
+          session_name: "anaya"
+          type: "IAMUser"
+          userName: "anaya"
+        usr:
+          id: "anaya"
+          name: "anaya"
+      message: |-
+        {
+          "eventID" : "fed06f42-cb12-4764-8c69-example",
+          "awsRegion" : "us-east-1",
+          "eventCategory" : "Management",
+          "eventVersion" : "1.08",
+          "responseElements" : {
+            "ConsoleLogin" : "Success"
+          },
+          "sourceIPAddress" : "192.0.2.0",
+          "eventSource" : "signin.amazonaws.com",
+          "userAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/67.0.3396.99 Safari/537.36",
+          "eventType" : "AwsConsoleSignIn",
+          "userIdentity" : {
+            "accountId" : "111122223333",
+            "principalId" : "AIDACKCEVSQ6C2EXAMPLE",
+            "arn" : "arn:aws:iam::111122223333:user/anaya",
+            "type" : "IAMUser",
+            "userName" : "anaya"
+          },
+          "additionalEventData" : {
+            "LoginTo" : "https://console.aws.amazon.com/console/home?state=hashArgs%23&isauthcode=true",
+            "MobileVersion" : "No",
+            "MFAIdentifier" : "arn:aws:iam::111122223333:u2f/user/anaya/default-AAAAAAAABBBBBBBBCCCCCCCCDD",
+            "MFAUsed" : "Yes"
+          },
+          "eventTime" : "2023-11-10T16:24:34Z",
+          "eventName" : "ConsoleLogin",
+          "recipientAccountId" : "111122223333"
+        }
+      tags:
+        - "source:LOGS_SOURCE"
+        - "account:111122223333"
+        - "region:us-east-1"
+  - sample: |-
+      {
+        "eventID" : "ba0801a1-87ec-4d26-be87-EXAMPLE75bbb",
+        "awsRegion" : "us-east-1",
+        "eventCategory" : "Management",
+        "sessionCredentialFromConsole" : "true",
+        "eventVersion" : "1.08",
+        "responseElements" : {
+          "user" : {
+            "path" : "/",
+            "arn" : "arn:aws:iam::888888888888:user/Richard",
+            "userName" : "Richard",
+            "userId" : "AIDA6ON6E4XEP7EXAMPLE",
+            "createDate" : "Jul 19, 2023 9:25:09 PM"
+          }
+        },
+        "sourceIPAddress" : "192.0.2.0",
+        "eventSource" : "iam.amazonaws.com",
+        "requestParameters" : {
+          "userName" : "Richard"
+        },
+        "userAgent" : "aws-cli/2.13.5 Python/3.11.4 Linux/4.14.255-314-253.539.amzn2.x86_64 exec-env/CloudShell exe/x86_64.amzn.2 prompt/off command/iam.create-user",
+        "readOnly" : false,
+        "userIdentity" : {
+          "accessKeyId" : "AKIAIOSFODNN7EXAMPLE",
+          "sessionContext" : {
+            "attributes" : {
+              "mfaAuthenticated" : "false",
+              "creationDate" : "2023-07-19T21:11:57Z"
+            }
+          },
+          "accountId" : "888888888888",
+          "principalId" : "AIDA6ON6E4XEGITEXAMPLE",
+          "type" : "IAMUser",
+          "arn" : "arn:aws:iam::888888888888:user/Mary",
+          "userName" : "Mary"
+        },
+        "eventType" : "AwsApiCall",
+        "requestID" : "2d528c76-329e-410b-9516-EXAMPLE565dc",
+        "eventTime" : "2023-07-19T21:25:09Z",
+        "eventName" : "CreateUser",
+        "recipientAccountId" : "888888888888",
+        "tlsDetails" : {
+          "tlsVersion" : "TLSv1.2",
+          "cipherSuite" : "ECDHE-RSA-AES128-GCM-SHA256",
+          "clientProvidedHostHeader" : "iam.amazonaws.com"
+        },
+        "managementEvent" : true
+      }
+    result:
+      custom:
+        awsRegion: "us-east-1"
+        eventCategory: "Management"
+        eventID: "ba0801a1-87ec-4d26-be87-EXAMPLE75bbb"
+        eventName: "CreateUser"
+        eventSource: "iam.amazonaws.com"
+        eventTime: "2023-07-19T21:25:09Z"
+        eventType: "AwsApiCall"
+        eventVersion: "1.08"
+        evt:
+          name: "CreateUser"
+        http:
+          request_id: "2d528c76-329e-410b-9516-EXAMPLE565dc"
+          useragent: "aws-cli/2.13.5 Python/3.11.4 Linux/4.14.255-314-253.539.amzn2.x86_64 exec-env/CloudShell exe/x86_64.amzn.2 prompt/off command/iam.create-user"
+          useragent_details:
+            browser:
+              family: "aws-cli"
+              major: "2"
+              minor: "13"
+              patch: "5"
+            device:
+              category: "Desktop"
+              family: "Other"
+            os:
+              family: "Linux"
+              major: "4"
+              minor: "14"
+              patch: "255"
+        managementEvent: true
+        network:
+          client:
+            geoip: {}
+            ip: "192.0.2.0"
+        ocsf:
+          activity_id: 1
+          activity_name: "Create"
+          actor:
+            session:
+              created_time_dt: "2023-07-19T21:11:57Z"
+              is_mfa: false
+            user:
+              account:
+                uid: "888888888888"
+              credential_uid: "AKIAIOSFODNN7EXAMPLE"
+              name: "Mary"
+              type: "IAMUser"
+              uid: "arn:aws:iam::888888888888:user/Mary"
+              uid_alt: "AIDA6ON6E4XEGITEXAMPLE"
+          api:
+            operation: "CreateUser"
+            request:
+              data:
+                userName: "Richard"
+              uid: "2d528c76-329e-410b-9516-EXAMPLE565dc"
+            response:
+              data:
+                user:
+                  arn: "arn:aws:iam::888888888888:user/Richard"
+                  createDate: "Jul 19, 2023 9:25:09 PM"
+                  path: "/"
+                  userId: "AIDA6ON6E4XEP7EXAMPLE"
+                  userName: "Richard"
+            service:
+              name: "iam.amazonaws.com"
+          category_name: "Identity & Access Management"
+          category_uid: 3
+          class_name: "Account Change"
+          class_uid: 3001
+          cloud:
+            provider: "AWS"
+            region: "us-east-1"
+          http_request:
+            user_agent: "aws-cli/2.13.5 Python/3.11.4 Linux/4.14.255-314-253.539.amzn2.x86_64 exec-env/CloudShell exe/x86_64.amzn.2 prompt/off command/iam.create-user"
+          metadata:
+            event_code: "AwsApiCall"
+            product:
+              feature:
+                name: "Management"
+              name: "CloudTrail"
+              vendor_name: "AWS"
+              version: "1.08"
+            profiles:
+              - "cloud"
+              - "datetime"
+            uid: "ba0801a1-87ec-4d26-be87-EXAMPLE75bbb"
+            version: "1.3.0"
+          severity: "Informational"
+          severity_id: 1
+          src_endpoint:
+            ip: "192.0.2.0"
+          status: "Success"
+          status_id: 1
+          time: 1689801909000
+          time_dt: "2023-07-19T21:25:09Z"
+          type_uid: 300101
+          user:
+            name: "Richard"
+            uid: "AIDA6ON6E4XEGITEXAMPLE"
+        readOnly: false
+        recipientAccountId: "888888888888"
+        requestID: "2d528c76-329e-410b-9516-EXAMPLE565dc"
+        requestParameters:
+          userName: "Richard"
+        responseElements:
+          user:
+            arn: "arn:aws:iam::888888888888:user/Richard"
+            createDate: "Jul 19, 2023 9:25:09 PM"
+            path: "/"
+            userId: "AIDA6ON6E4XEP7EXAMPLE"
+            userName: "Richard"
+        sessionCredentialFromConsole: "true"
+        sourceIPAddress: "192.0.2.0"
+        tlsDetails:
+          cipherSuite: "ECDHE-RSA-AES128-GCM-SHA256"
+          clientProvidedHostHeader: "iam.amazonaws.com"
+          tlsVersion: "TLSv1.2"
+        userAgent: "aws-cli/2.13.5 Python/3.11.4 Linux/4.14.255-314-253.539.amzn2.x86_64 exec-env/CloudShell exe/x86_64.amzn.2 prompt/off command/iam.create-user"
+        userIdentity:
+          accessKeyId: "AKIAIOSFODNN7EXAMPLE"
+          accountId: "888888888888"
+          arn: "arn:aws:iam::888888888888:user/Mary"
+          principalId: "AIDA6ON6E4XEGITEXAMPLE"
+          sessionContext:
+            attributes:
+              creationDate: "2023-07-19T21:11:57Z"
+              mfaAuthenticated: "false"
+          session_name: "Mary"
+          type: "IAMUser"
+          userName: "Mary"
+        usr:
+          id: "Mary"
+          name: "Mary"
+      message: |-
+        {
+          "eventID" : "ba0801a1-87ec-4d26-be87-EXAMPLE75bbb",
+          "awsRegion" : "us-east-1",
+          "eventCategory" : "Management",
+          "sessionCredentialFromConsole" : "true",
+          "eventVersion" : "1.08",
+          "responseElements" : {
+            "user" : {
+              "path" : "/",
+              "arn" : "arn:aws:iam::888888888888:user/Richard",
+              "userName" : "Richard",
+              "userId" : "AIDA6ON6E4XEP7EXAMPLE",
+              "createDate" : "Jul 19, 2023 9:25:09 PM"
+            }
+          },
+          "sourceIPAddress" : "192.0.2.0",
+          "eventSource" : "iam.amazonaws.com",
+          "requestParameters" : {
+            "userName" : "Richard"
+          },
+          "userAgent" : "aws-cli/2.13.5 Python/3.11.4 Linux/4.14.255-314-253.539.amzn2.x86_64 exec-env/CloudShell exe/x86_64.amzn.2 prompt/off command/iam.create-user",
+          "readOnly" : false,
+          "userIdentity" : {
+            "accessKeyId" : "AKIAIOSFODNN7EXAMPLE",
+            "sessionContext" : {
+              "attributes" : {
+                "mfaAuthenticated" : "false",
+                "creationDate" : "2023-07-19T21:11:57Z"
+              }
+            },
+            "accountId" : "888888888888",
+            "principalId" : "AIDA6ON6E4XEGITEXAMPLE",
+            "type" : "IAMUser",
+            "arn" : "arn:aws:iam::888888888888:user/Mary",
+            "userName" : "Mary"
+          },
+          "eventType" : "AwsApiCall",
+          "requestID" : "2d528c76-329e-410b-9516-EXAMPLE565dc",
+          "eventTime" : "2023-07-19T21:25:09Z",
+          "eventName" : "CreateUser",
+          "recipientAccountId" : "888888888888",
+          "tlsDetails" : {
+            "tlsVersion" : "TLSv1.2",
+            "cipherSuite" : "ECDHE-RSA-AES128-GCM-SHA256",
+            "clientProvidedHostHeader" : "iam.amazonaws.com"
+          },
+          "managementEvent" : true
+        }
+      tags:
+        - "source:LOGS_SOURCE"
+        - "account:888888888888"
+        - "region:us-east-1"
+  - sample: |-
+      {
+        "eventID" : "bac6b79e-2861-456e-b9aa-8ea6fd043c3e",
+        "awsRegion" : "us-west-2",
+        "evt" : {
+          "name" : "DescribeReservedNodes"
+        },
+        "eventCategory" : "Management",
+        "level" : "Error",
+        "eventVersion" : "1.08",
+        "eventSource" : "memorydb.amazonaws.com",
+        "tde_ref_recipientAccountIdFriendlyName" : {
+          "accountfriendlyname" : "Datadog - us1-staging-dog-k8s-us-east-1b-squirtle",
+          "awsorg" : "prod"
+        },
+        "readOnly" : true,
+        "userIdentity" : {
+          "accessKeyId" : "ASIA3TD2SXWAQQI6SKLJ",
+          "sessionContext" : {
+            "sessionIssuer" : {
+              "accountId" : "796973514113",
+              "tde_ref_accountIdFriendlyName" : {
+                "accountfriendlyname" : "Datadog - us1-staging-dog-k8s-us-east-1b-squirtle",
+                "awsorg" : "prod"
+              },
+              "principalId" : "AROA3TD2SXWA4AWVWYOVS",
+              "type" : "Role",
+              "arn" : "arn:aws:iam::796973514113:role/datadog-aws-integration-role",
+              "userName" : "datadog-aws-integration-role"
+            },
+            "attributes" : {
+              "mfaAuthenticated" : "false",
+              "creationDate" : "2025-03-28T06:22:18Z"
+            }
+          },
+          "accountId" : "796973514113",
+          "session_name" : "DatadogAWSIntegration",
+          "tde_ref_accountIdFriendlyName" : {
+            "accountfriendlyname" : "Datadog - us1-staging-dog-k8s-us-east-1b-squirtle",
+            "awsorg" : "prod"
+          },
+          "assumed_role" : "datadog-aws-integration-role",
+          "principalId" : "AROA3TD2SXWA4AWVWYOVS:DatadogAWSIntegration",
+          "type" : "AssumedRole",
+          "arn" : "arn:aws:sts::796973514113:assumed-role/datadog-aws-integration-role/DatadogAWSIntegration"
+        },
+        "eventType" : "AwsApiCall",
+        "error" : {
+          "kind" : "AccessDenied",
+          "message" : "User: arn:aws:sts::796973514113:assumed-role/datadog-aws-integration-role/DatadogAWSIntegration is not authorized to perform: memorydb:DescribeReservedNodes on resource: arn:aws:memorydb:us-west-2:796973514113:reservednode/* because no identity-based policy allows the memorydb:DescribeReservedNodes action"
+        },
+        "network" : {
+          "ip" : {
+            "attributes" : [ {
+              "ip" : "44.192.28.101",
+              "source" : [ "@network.client.ip", "@network.client.geoip.ipAddress" ]
+            } ],
+            "list" : [ "44.192.28.101" ]
+          },
+          "client" : {
+            "geoip" : {
+              "continent" : {
+                "code" : "NA",
+                "name" : "North America"
+              },
+              "country" : {
+                "name" : "United States",
+                "iso_code" : "US"
+              },
+              "subdivision" : {
+                "name" : "Virginia",
+                "iso_code" : "US-VA"
+              },
+              "as" : {
+                "number" : "AS14618",
+                "route" : "44.192.0.0/11",
+                "domain" : "amazon.com",
+                "name" : "Amazon.com, Inc.",
+                "type" : "hosting"
+              },
+              "city" : {
+                "name" : "Ashburn"
+              },
+              "timezone" : "America/New_York",
+              "ipAddress" : "44.192.28.101",
+              "location" : {
+                "latitude" : 39.04372,
+                "longitude" : -77.48749
+              }
+            },
+            "ip" : "44.192.28.101",
+            "dd_internal_ip" : {
+              "openports" : "",
+              "accountid" : "",
+              "associateddnsrecords" : "",
+              "accountname" : "",
+              "accounttype" : "",
+              "banners" : ""
+            },
+            "is_private_network_ip" : false
+          }
+        },
+        "usr" : {
+          "account_id" : "796973514113"
+        },
+        "service" : "cloudtrail",
+        "eventName" : "DescribeReservedNodes",
+        "recipientAccountId" : "796973514113",
+        "tlsDetails" : {
+          "tlsVersion" : "TLSv1.3",
+          "cipherSuite" : "TLS_AES_128_GCM_SHA256",
+          "clientProvidedHostHeader" : "memory-db.us-west-2.amazonaws.com"
+        },
+        "http" : {
+          "useragent" : "aws-sdk-go-v2/1.36.3 ua/2.1 os/linux lang/go#1.23.7-X-nocoverageredesign-loopvar md/GOOS#linux md/GOARCH#arm64 api/memorydb#1.26.1 m/C",
+          "request_id" : "17352ae0-273c-466d-8a45-76724db6819f",
+          "useragent_details" : {
+            "os" : {
+              "family" : "Linux"
+            },
+            "browser" : {
+              "family" : "Other"
+            },
+            "device" : {
+              "family" : "Other",
+              "category" : "Desktop"
+            }
+          }
+        },
+        "managementEvent" : true,
+        "aws" : {
+          "s3" : {
+            "bucket" : "xuxu-cloudtrail-aggregation",
+            "key" : "prod-464622532012/AWSLogs/o-73iu42t62o/796973514113/CloudTrail/us-west-2/2025/03/28/796973514113_CloudTrail_us-west-2_20250328T0720Z_IzKRCwuihNkcom5K.json.gz"
+          },
+          "invoked_function_arn" : "arn:aws:lambda:us-east-1:013910733512:function:datadog-forwarder-prod-org-2-v2",
+          "function_version" : "$LATEST"
+        }
+      }
+    result:
+      custom:
+        aws:
+          function_version: "$LATEST"
+          invoked_function_arn: "arn:aws:lambda:us-east-1:013910733512:function:datadog-forwarder-prod-org-2-v2"
+          s3:
+            bucket: "xuxu-cloudtrail-aggregation"
+            key: "prod-464622532012/AWSLogs/o-73iu42t62o/796973514113/CloudTrail/us-west-2/2025/03/28/796973514113_CloudTrail_us-west-2_20250328T0720Z_IzKRCwuihNkcom5K.json.gz"
+        awsRegion: "us-west-2"
+        error:
+          kind: "AccessDenied"
+          message: "User: arn:aws:sts::796973514113:assumed-role/datadog-aws-integration-role/DatadogAWSIntegration is not authorized to perform: memorydb:DescribeReservedNodes on resource: arn:aws:memorydb:us-west-2:796973514113:reservednode/* because no identity-based policy allows the memorydb:DescribeReservedNodes action"
+        eventCategory: "Management"
+        eventID: "bac6b79e-2861-456e-b9aa-8ea6fd043c3e"
+        eventName: "DescribeReservedNodes"
+        eventSource: "memorydb.amazonaws.com"
+        eventType: "AwsApiCall"
+        eventVersion: "1.08"
+        evt:
+          name: "DescribeReservedNodes"
+        http:
+          request_id: "17352ae0-273c-466d-8a45-76724db6819f"
+          useragent: "aws-sdk-go-v2/1.36.3 ua/2.1 os/linux lang/go#1.23.7-X-nocoverageredesign-loopvar md/GOOS#linux md/GOARCH#arm64 api/memorydb#1.26.1 m/C"
+          useragent_details:
+            browser:
+              family: "Other"
+            device:
+              category: "Desktop"
+              family: "Other"
+            os:
+              family: "Linux"
+        level: "Error"
+        managementEvent: true
+        network:
+          client:
+            dd_internal_ip:
+              accountid: ""
+              accountname: ""
+              accounttype: ""
+              associateddnsrecords: ""
+              banners: ""
+              openports: ""
+            geoip: {}
+            ip: "44.192.28.101"
+            is_private_network_ip: false
+          ip:
+            attributes:
+              - ip: "44.192.28.101"
+                source:
+                  - "@network.client.ip"
+                  - "@network.client.geoip.ipAddress"
+            list:
+              - "44.192.28.101"
+        ocsf:
+          activity_id: 2
+          activity_name: "Read"
+          actor:
+            session:
+              created_time_dt: "2025-03-28T06:22:18Z"
+              is_mfa: false
+              issuer: "arn:aws:iam::796973514113:role/datadog-aws-integration-role"
+            user:
+              account:
+                uid: "796973514113"
+              credential_uid: "ASIA3TD2SXWAQQI6SKLJ"
+              type: "AssumedRole"
+              uid: "arn:aws:sts::796973514113:assumed-role/datadog-aws-integration-role/DatadogAWSIntegration"
+              uid_alt: "AROA3TD2SXWA4AWVWYOVS:DatadogAWSIntegration"
+          api:
+            operation: "DescribeReservedNodes"
+            service:
+              name: "memorydb.amazonaws.com"
+          category_name: "Application Activity"
+          category_uid: 6
+          class_name: "API Activity"
+          class_uid: 6003
+          cloud:
+            provider: "AWS"
+            region: "us-west-2"
+          metadata:
+            event_code: "AwsApiCall"
+            product:
+              feature:
+                name: "Management"
+              name: "CloudTrail"
+              vendor_name: "AWS"
+              version: "1.08"
+            profiles:
+              - "cloud"
+              - "datetime"
+            uid: "bac6b79e-2861-456e-b9aa-8ea6fd043c3e"
+            version: "1.3.0"
+          severity: "Informational"
+          severity_id: 1
+          status: "Success"
+          status_id: 1
+          type_uid: 600302
+        readOnly: true
+        recipientAccountId: "796973514113"
+        service: "cloudtrail"
+        tde_ref_recipientAccountIdFriendlyName:
+          accountfriendlyname: "Datadog - us1-staging-dog-k8s-us-east-1b-squirtle"
+          awsorg: "prod"
+        tlsDetails:
+          cipherSuite: "TLS_AES_128_GCM_SHA256"
+          clientProvidedHostHeader: "memory-db.us-west-2.amazonaws.com"
+          tlsVersion: "TLSv1.3"
+        userIdentity:
+          accessKeyId: "ASIA3TD2SXWAQQI6SKLJ"
+          accountId: "796973514113"
+          arn: "arn:aws:sts::796973514113:assumed-role/datadog-aws-integration-role/DatadogAWSIntegration"
+          assumed_role: "datadog-aws-integration-role"
+          principalId: "AROA3TD2SXWA4AWVWYOVS:DatadogAWSIntegration"
+          sessionContext:
+            attributes:
+              creationDate: "2025-03-28T06:22:18Z"
+              mfaAuthenticated: "false"
+            sessionIssuer:
+              accountId: "796973514113"
+              arn: "arn:aws:iam::796973514113:role/datadog-aws-integration-role"
+              principalId: "AROA3TD2SXWA4AWVWYOVS"
+              tde_ref_accountIdFriendlyName:
+                accountfriendlyname: "Datadog - us1-staging-dog-k8s-us-east-1b-squirtle"
+                awsorg: "prod"
+              type: "Role"
+              userName: "datadog-aws-integration-role"
+          session_name: "DatadogAWSIntegration"
+          tde_ref_accountIdFriendlyName:
+            accountfriendlyname: "Datadog - us1-staging-dog-k8s-us-east-1b-squirtle"
+            awsorg: "prod"
+          type: "AssumedRole"
+        usr:
+          account_id: "796973514113"
+      message: |-
+        {
+          "eventID" : "bac6b79e-2861-456e-b9aa-8ea6fd043c3e",
+          "awsRegion" : "us-west-2",
+          "evt" : {
+            "name" : "DescribeReservedNodes"
+          },
+          "eventCategory" : "Management",
+          "level" : "Error",
+          "eventVersion" : "1.08",
+          "eventSource" : "memorydb.amazonaws.com",
+          "tde_ref_recipientAccountIdFriendlyName" : {
+            "accountfriendlyname" : "Datadog - us1-staging-dog-k8s-us-east-1b-squirtle",
+            "awsorg" : "prod"
+          },
+          "readOnly" : true,
+          "userIdentity" : {
+            "accessKeyId" : "ASIA3TD2SXWAQQI6SKLJ",
+            "sessionContext" : {
+              "sessionIssuer" : {
+                "accountId" : "796973514113",
+                "tde_ref_accountIdFriendlyName" : {
+                  "accountfriendlyname" : "Datadog - us1-staging-dog-k8s-us-east-1b-squirtle",
+                  "awsorg" : "prod"
+                },
+                "principalId" : "AROA3TD2SXWA4AWVWYOVS",
+                "type" : "Role",
+                "arn" : "arn:aws:iam::796973514113:role/datadog-aws-integration-role",
+                "userName" : "datadog-aws-integration-role"
+              },
+              "attributes" : {
+                "mfaAuthenticated" : "false",
+                "creationDate" : "2025-03-28T06:22:18Z"
+              }
+            },
+            "accountId" : "796973514113",
+            "session_name" : "DatadogAWSIntegration",
+            "tde_ref_accountIdFriendlyName" : {
+              "accountfriendlyname" : "Datadog - us1-staging-dog-k8s-us-east-1b-squirtle",
+              "awsorg" : "prod"
+            },
+            "assumed_role" : "datadog-aws-integration-role",
+            "principalId" : "AROA3TD2SXWA4AWVWYOVS:DatadogAWSIntegration",
+            "type" : "AssumedRole",
+            "arn" : "arn:aws:sts::796973514113:assumed-role/datadog-aws-integration-role/DatadogAWSIntegration"
+          },
+          "eventType" : "AwsApiCall",
+          "error" : {
+            "kind" : "AccessDenied",
+            "message" : "User: arn:aws:sts::796973514113:assumed-role/datadog-aws-integration-role/DatadogAWSIntegration is not authorized to perform: memorydb:DescribeReservedNodes on resource: arn:aws:memorydb:us-west-2:796973514113:reservednode/* because no identity-based policy allows the memorydb:DescribeReservedNodes action"
+          },
+          "network" : {
+            "ip" : {
+              "attributes" : [ {
+                "ip" : "44.192.28.101",
+                "source" : [ "@network.client.ip", "@network.client.geoip.ipAddress" ]
+              } ],
+              "list" : [ "44.192.28.101" ]
+            },
+            "client" : {
+              "geoip" : {
+                "continent" : {
+                  "code" : "NA",
+                  "name" : "North America"
+                },
+                "country" : {
+                  "name" : "United States",
+                  "iso_code" : "US"
+                },
+                "subdivision" : {
+                  "name" : "Virginia",
+                  "iso_code" : "US-VA"
+                },
+                "as" : {
+                  "number" : "AS14618",
+                  "route" : "44.192.0.0/11",
+                  "domain" : "amazon.com",
+                  "name" : "Amazon.com, Inc.",
+                  "type" : "hosting"
+                },
+                "city" : {
+                  "name" : "Ashburn"
+                },
+                "timezone" : "America/New_York",
+                "ipAddress" : "44.192.28.101",
+                "location" : {
+                  "latitude" : 39.04372,
+                  "longitude" : -77.48749
+                }
+              },
+              "ip" : "44.192.28.101",
+              "dd_internal_ip" : {
+                "openports" : "",
+                "accountid" : "",
+                "associateddnsrecords" : "",
+                "accountname" : "",
+                "accounttype" : "",
+                "banners" : ""
+              },
+              "is_private_network_ip" : false
+            }
+          },
+          "usr" : {
+            "account_id" : "796973514113"
+          },
+          "service" : "cloudtrail",
+          "eventName" : "DescribeReservedNodes",
+          "recipientAccountId" : "796973514113",
+          "tlsDetails" : {
+            "tlsVersion" : "TLSv1.3",
+            "cipherSuite" : "TLS_AES_128_GCM_SHA256",
+            "clientProvidedHostHeader" : "memory-db.us-west-2.amazonaws.com"
+          },
+          "http" : {
+            "useragent" : "aws-sdk-go-v2/1.36.3 ua/2.1 os/linux lang/go#1.23.7-X-nocoverageredesign-loopvar md/GOOS#linux md/GOARCH#arm64 api/memorydb#1.26.1 m/C",
+            "request_id" : "17352ae0-273c-466d-8a45-76724db6819f",
+            "useragent_details" : {
+              "os" : {
+                "family" : "Linux"
+              },
+              "browser" : {
+                "family" : "Other"
+              },
+              "device" : {
+                "family" : "Other",
+                "category" : "Desktop"
+              }
+            }
+          },
+          "managementEvent" : true,
+          "aws" : {
+            "s3" : {
+              "bucket" : "xuxu-cloudtrail-aggregation",
+              "key" : "prod-464622532012/AWSLogs/o-73iu42t62o/796973514113/CloudTrail/us-west-2/2025/03/28/796973514113_CloudTrail_us-west-2_20250328T0720Z_IzKRCwuihNkcom5K.json.gz"
+            },
+            "invoked_function_arn" : "arn:aws:lambda:us-east-1:013910733512:function:datadog-forwarder-prod-org-2-v2",
+            "function_version" : "$LATEST"
+          }
+        }
+      status: "error"
+      tags:
+        - "source:LOGS_SOURCE"
+        - "account:796973514113"
+        - "region:us-west-2"
+  - sample: |-
+      {
+        "eventID" : "71c88be9-ea5c-43c7-8c82-example",
+        "awsRegion" : "us-east-1",
+        "requestID" : "1c8a6220-4263-4763-b526-example",
+        "eventVersion" : "1.05",
+        "sourceIPAddress" : "205.8.181.128",
+        "eventSource" : "directconnect.amazonaws.com",
+        "eventTime" : "2023-09-21T22:22:52Z",
+        "eventName" : "DescribeDirectConnectGateways",
+        "recipientAccountId" : "1111111111111",
+        "userAgent" : "Boto3/1.15.2 Python/3.8.2 Linux/5.6.3-arch1-1 Botocore/1.18.2",
+        "userIdentity" : {
+          "accessKeyId" : "AKIA3Z2XBVEXAMPLE",
+          "accountId" : "1111111111111",
+          "principalId" : "AIDADO2GQEXAMPLE",
+          "type" : "IAMUser",
+          "arn" : "arn:aws:iam::1111111111111:user/Level6",
+          "userName" : "Level6"
+        },
+        "eventType" : "AwsApiCall"
+      }
+    result:
+      custom:
+        awsRegion: "us-east-1"
+        eventID: "71c88be9-ea5c-43c7-8c82-example"
+        eventName: "DescribeDirectConnectGateways"
+        eventSource: "directconnect.amazonaws.com"
+        eventTime: "2023-09-21T22:22:52Z"
+        eventType: "AwsApiCall"
+        eventVersion: "1.05"
+        evt:
+          name: "DescribeDirectConnectGateways"
+        http:
+          request_id: "1c8a6220-4263-4763-b526-example"
+          useragent: "Boto3/1.15.2 Python/3.8.2 Linux/5.6.3-arch1-1 Botocore/1.18.2"
+          useragent_details:
+            browser:
+              family: "Boto3"
+              major: "1"
+              minor: "15"
+              patch: "2"
+            device:
+              brand: "Spider"
+              category: "Bot"
+              family: "Spider"
+              model: "Desktop"
+            os:
+              family: "Linux"
+              major: "5"
+              minor: "6"
+              patch: "3"
+        network:
+          client:
+            geoip: {}
+            ip: "205.8.181.128"
+        ocsf:
+          activity_id: 2
+          activity_name: "Read"
+          actor:
+            user:
+              account:
+                uid: "1111111111111"
+              credential_uid: "AKIA3Z2XBVEXAMPLE"
+              name: "Level6"
+              type: "IAMUser"
+              uid: "arn:aws:iam::1111111111111:user/Level6"
+              uid_alt: "AIDADO2GQEXAMPLE"
+          api:
+            operation: "DescribeDirectConnectGateways"
+            request:
+              uid: "1c8a6220-4263-4763-b526-example"
+            service:
+              name: "directconnect.amazonaws.com"
+          category_name: "Application Activity"
+          category_uid: 6
+          class_name: "API Activity"
+          class_uid: 6003
+          cloud:
+            provider: "AWS"
+            region: "us-east-1"
+          http_request:
+            user_agent: "Boto3/1.15.2 Python/3.8.2 Linux/5.6.3-arch1-1 Botocore/1.18.2"
+          metadata:
+            event_code: "AwsApiCall"
+            product:
+              name: "CloudTrail"
+              vendor_name: "AWS"
+              version: "1.05"
+            profiles:
+              - "cloud"
+              - "datetime"
+            uid: "71c88be9-ea5c-43c7-8c82-example"
+            version: "1.3.0"
+          severity: "Informational"
+          severity_id: 1
+          src_endpoint:
+            ip: "205.8.181.128"
+          status: "Success"
+          status_id: 1
+          time: 1695334972000
+          time_dt: "2023-09-21T22:22:52Z"
+          type_uid: 600302
+        recipientAccountId: "1111111111111"
+        requestID: "1c8a6220-4263-4763-b526-example"
+        sourceIPAddress: "205.8.181.128"
+        userAgent: "Boto3/1.15.2 Python/3.8.2 Linux/5.6.3-arch1-1 Botocore/1.18.2"
+        userIdentity:
+          accessKeyId: "AKIA3Z2XBVEXAMPLE"
+          accountId: "1111111111111"
+          arn: "arn:aws:iam::1111111111111:user/Level6"
+          principalId: "AIDADO2GQEXAMPLE"
+          session_name: "Level6"
+          type: "IAMUser"
+          userName: "Level6"
+        usr:
+          id: "Level6"
+          name: "Level6"
+      message: |-
+        {
+          "eventID" : "71c88be9-ea5c-43c7-8c82-example",
+          "awsRegion" : "us-east-1",
+          "requestID" : "1c8a6220-4263-4763-b526-example",
+          "eventVersion" : "1.05",
+          "sourceIPAddress" : "205.8.181.128",
+          "eventSource" : "directconnect.amazonaws.com",
+          "eventTime" : "2023-09-21T22:22:52Z",
+          "eventName" : "DescribeDirectConnectGateways",
+          "recipientAccountId" : "1111111111111",
+          "userAgent" : "Boto3/1.15.2 Python/3.8.2 Linux/5.6.3-arch1-1 Botocore/1.18.2",
+          "userIdentity" : {
+            "accessKeyId" : "AKIA3Z2XBVEXAMPLE",
+            "accountId" : "1111111111111",
+            "principalId" : "AIDADO2GQEXAMPLE",
+            "type" : "IAMUser",
+            "arn" : "arn:aws:iam::1111111111111:user/Level6",
+            "userName" : "Level6"
+          },
+          "eventType" : "AwsApiCall"
+        }
+      tags:
+        - "source:LOGS_SOURCE"
+        - "account:1111111111111"
+        - "region:us-east-1"
+  - sample: |-
+      {
+        "metadata" : {
+          "product" : {
+            "name" : "CloudTrail"
+          }
+        },
+        "api" : {
+          "request" : {
+            "data" : "{\"name\": \"mytrail\"}"
+          },
+          "response" : {
+            "data" : "{\"name\": \"mytrail1\"}"
+          }
+        }
+      }
+    result:
+      custom:
+        api:
+          request:
+            data: '{"name": "mytrail"}'
+          response:
+            data: '{"name": "mytrail1"}'
+        metadata:
+          product:
+            name: "CloudTrail"
+        ocsf:
+          api:
+            request:
+              data:
+                name: "mytrail"
+            response:
+              data:
+                name: "mytrail1"
+          cloud:
+            provider: "AWS"
+          metadata:
+            product:
+              name: "CloudTrail"
+              vendor_name: "AWS"
+            profiles:
+              - "cloud"
+              - "datetime"
+            version: "1.3.0"
+          severity: "Informational"
+          severity_id: 1
+        requestParameters:
+          name: "mytrail"
+        responseElements:
+          name: "mytrail1"
+      message: |-
+        {
+          "metadata" : {
+            "product" : {
+              "name" : "CloudTrail"
+            }
+          },
+          "api" : {
+            "request" : {
+              "data" : "{\"name\": \"mytrail\"}"
+            },
+            "response" : {
+              "data" : "{\"name\": \"mytrail1\"}"
+            }
+          }
+        }
+      tags:
+        - "source:LOGS_SOURCE"

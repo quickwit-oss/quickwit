@@ -1,0 +1,395 @@
+id: "cloudfront"
+tests:
+ -
+  sample: "2010-03-12\t 23:51:20\t SEA4\t 192.0.2.147\t connect\t 2014\t OK\t bfd8a98bee0840d9b871b7f6ade9908f\t rtmp://shqshne4jdp4b6.cloudfront.net/cfx/st​\tkey=value\t http://player.longtailvideo.com/player.swf\t http://www.longtailvideo.com/support/jw-player-setup-wizard?example=204\t LNX%2010,0,32,18\t -\t -\t -\t -"
+  result:
+    custom:
+      cloudfront:
+        edge-location: "SEA4"
+        status: "OK"
+        stream:
+          queryString: {}
+      date_access: 1268437880000
+      http:
+        ident: "rtmp://shqshne4jdp4b6.cloudfront.net/cfx/st​"
+        method: "connect"
+        referer: "http://player.longtailvideo.com/player.swf"
+        url: "http://www.longtailvideo.com/support/jw-player-setup-wizard?example=204"
+        url_details:
+          queryString:
+            key: "value"
+        useragent: "LNX%2010,0,32,18"
+        useragent_details:
+          browser:
+            family: "Other"
+          device:
+            category: "Other"
+            family: "Other"
+          os:
+            family: "Other"
+      network:
+        bytes_written: 2014
+        client:
+          id: "bfd8a98bee0840d9b871b7f6ade9908f"
+          ip: "192.0.2.147"
+    message: "2010-03-12\t 23:51:20\t SEA4\t 192.0.2.147\t connect\t 2014\t OK\t bfd8a98bee0840d9b871b7f6ade9908f\t rtmp://shqshne4jdp4b6.cloudfront.net/cfx/st​\tkey=value\t http://player.longtailvideo.com/player.swf\t http://www.longtailvideo.com/support/jw-player-setup-wizard?example=204\t LNX%2010,0,32,18\t -\t -\t -\t -"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1268437880000
+ -
+  sample: "2019-12-17\t16:36:45\tLAX3-C3\t418\t167.216.131.180\tPOST\tdqok34epbkzv2.cloudfront.net\t/api/effu/back_office/environments/staging/pcdu/netsuite/record-change\t401\t-\tNetSuite/2019.2%2520(SuiteScript)\t-\t-\tError\ttiLX4Pye9scFGNb_tEnixIKN3hAW15drXcSeNG-xoFligmwedxjbbA==\twww.farmersbusinessnetwork.com\thttps\t934\t0.067\t-\tTLSv1.2\tECDHE-RSA-AES128-GCM-SHA256\tError\tHTTP/1.1\t-\t-\t36798\t0.067\tError\tapplication/json\t42\t-\t-"
+  result:
+    custom:
+      cloudfront:
+        cookie: "-"
+        edge-location: "LAX3-C3"
+        edge-response-result-type: "Error"
+        edge-result-type: "Error"
+      date_access: 1576600605000
+      duration: 6.700000000000001E7
+      http:
+        ident: "www.farmersbusinessnetwork.com"
+        method: "POST"
+        request_id: "tiLX4Pye9scFGNb_tEnixIKN3hAW15drXcSeNG-xoFligmwedxjbbA=="
+        resource:
+          content_length: 42.0
+          content_type: "application/json"
+        ssl:
+          cipher: "ECDHE-RSA-AES128-GCM-SHA256"
+          protocol: "TLSv1.2"
+        status_category: "warning"
+        status_code: 401
+        time_to_first_byte: 0.067
+        url_details:
+          host: "dqok34epbkzv2.cloudfront.net"
+          path: "/api/effu/back_office/environments/staging/pcdu/netsuite/record-change"
+          queryString: {}
+          scheme: "https"
+        useragent: "NetSuite/2019.2%2520(SuiteScript)"
+        useragent_details:
+          browser:
+            family: "Other"
+          device:
+            category: "Other"
+            family: "Other"
+          os:
+            family: "Other"
+        version: "1.1"
+        x_edge_detailed_result_type: "Error"
+      network:
+        bytes_read: 934
+        bytes_written: 418
+        client:
+          ip: "167.216.131.180"
+          port: 36798.0
+    message: "2019-12-17\t16:36:45\tLAX3-C3\t418\t167.216.131.180\tPOST\tdqok34epbkzv2.cloudfront.net\t/api/effu/back_office/environments/staging/pcdu/netsuite/record-change\t401\t-\tNetSuite/2019.2%2520(SuiteScript)\t-\t-\tError\ttiLX4Pye9scFGNb_tEnixIKN3hAW15drXcSeNG-xoFligmwedxjbbA==\twww.farmersbusinessnetwork.com\thttps\t934\t0.067\t-\tTLSv1.2\tECDHE-RSA-AES128-GCM-SHA256\tError\tHTTP/1.1\t-\t-\t36798\t0.067\tError\tapplication/json\t42\t-\t-"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1576600605000
+ -
+  sample: "2019-12-04\t21:02:31    LAX1 392 192.0.2.100    GET d111111abcdef8.cloudfront.net  /index.html 200 -   Mozilla/5.0%2520(Windows%2520NT%252010.0;%2520Win64;%2520x64)%2520AppleWebKit/537.36%2520(KHTML,%2520like%2520Gecko)%2520Chrome/78.0.3904.108%2520Safari/537.36 -   -   Hit f37nTMVvnKvV2ZSvEsivup_c2kZ7VXzYdjC-GUQZ5qNs-89BlWazbw==    d111111abcdef8.cloudfront.net  https   23  0.001   -   TLSv1.2 ECDHE-RSA-AES128-GCM-SHA256 Hit HTTP/2.0    -   -   11040   0.001   Hit text/html   78  -   -"
+  result:
+    custom:
+      cloudfront:
+        cookie: "-"
+        edge-location: "LAX1"
+        edge-response-result-type: "Hit"
+        edge-result-type: "Hit"
+      date_access: 1575493351000
+      duration: 1000000.0
+      http:
+        ident: "d111111abcdef8.cloudfront.net"
+        method: "GET"
+        request_id: "f37nTMVvnKvV2ZSvEsivup_c2kZ7VXzYdjC-GUQZ5qNs-89BlWazbw=="
+        resource:
+          content_length: 78.0
+          content_type: "text/html"
+        ssl:
+          cipher: "ECDHE-RSA-AES128-GCM-SHA256"
+          protocol: "TLSv1.2"
+        status_category: "OK"
+        status_code: 200
+        time_to_first_byte: 0.001
+        url_details:
+          host: "d111111abcdef8.cloudfront.net"
+          path: "/index.html"
+          queryString: {}
+          scheme: "https"
+        useragent: "Mozilla/5.0%2520(Windows%2520NT%252010.0;%2520Win64;%2520x64)%2520AppleWebKit/537.36%2520(KHTML,%2520like%2520Gecko)%2520Chrome/78.0.3904.108%2520Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "78"
+            minor: "0"
+            patch: "3904"
+            patch_minor: "108"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Windows"
+        version: "2.0"
+        x_edge_detailed_result_type: "Hit"
+      network:
+        bytes_read: 23
+        bytes_written: 392
+        client:
+          ip: "192.0.2.100"
+          port: 11040.0
+    message: "2019-12-04\t21:02:31    LAX1 392 192.0.2.100    GET d111111abcdef8.cloudfront.net  /index.html 200 -   Mozilla/5.0%2520(Windows%2520NT%252010.0;%2520Win64;%2520x64)%2520AppleWebKit/537.36%2520(KHTML,%2520like%2520Gecko)%2520Chrome/78.0.3904.108%2520Safari/537.36 -   -   Hit f37nTMVvnKvV2ZSvEsivup_c2kZ7VXzYdjC-GUQZ5qNs-89BlWazbw==    d111111abcdef8.cloudfront.net  https   23  0.001   -   TLSv1.2 ECDHE-RSA-AES128-GCM-SHA256 Hit HTTP/2.0    -   -   11040   0.001   Hit text/html   78  -   -"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1575493351000
+ -
+  sample: "2019-12-04\t21:02:31    LAX1 392 192.0.2.100    GET d111111abcdef8.cloudfront.net  /index.html 200 -   Mozilla/5.0%2520(Windows%2520NT%252010.0;%2520Win64;%2520x64)%2520AppleWebKit/537.36%2520(KHTML,%2520like%2520Gecko)%2520Chrome/78.0.3904.108%2520Safari/537.36 -   -   Hit f37nTMVvnKvV2ZSvEsivup_c2kZ7VXzYdjC-GUQZ5qNs-89BlWazbw==    d111111abcdef8.cloudfront.net  https   23  0.001   -   TLSv1.2 ECDHE-RSA-AES128-GCM-SHA256 Hit HTTP/2.0    Processed   1   11040   0.001   Hit text/html   78  0   77"
+  result:
+    custom:
+      cloudfront:
+        cookie: "-"
+        edge-location: "LAX1"
+        edge-response-result-type: "Hit"
+        edge-result-type: "Hit"
+      date_access: 1575493351000
+      duration: 1000000.0
+      http:
+        ident: "d111111abcdef8.cloudfront.net"
+        method: "GET"
+        request_id: "f37nTMVvnKvV2ZSvEsivup_c2kZ7VXzYdjC-GUQZ5qNs-89BlWazbw=="
+        resource:
+          content_length: 78.0
+          content_type: "text/html"
+        sc_range_end: 77.0
+        sc_range_start: 0.0
+        ssl:
+          cipher: "ECDHE-RSA-AES128-GCM-SHA256"
+          protocol: "TLSv1.2"
+        status_category: "OK"
+        status_code: 200
+        time_to_first_byte: 0.001
+        url_details:
+          host: "d111111abcdef8.cloudfront.net"
+          path: "/index.html"
+          queryString: {}
+          scheme: "https"
+        useragent: "Mozilla/5.0%2520(Windows%2520NT%252010.0;%2520Win64;%2520x64)%2520AppleWebKit/537.36%2520(KHTML,%2520like%2520Gecko)%2520Chrome/78.0.3904.108%2520Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "78"
+            minor: "0"
+            patch: "3904"
+            patch_minor: "108"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Windows"
+        version: "2.0"
+        x_edge_detailed_result_type: "Hit"
+      network:
+        bytes_read: 23
+        bytes_written: 392
+        client:
+          ip: "192.0.2.100"
+          port: 11040.0
+      security:
+        fle_encrypted_fields: 1.0
+        fle_status: "Processed"
+    message: "2019-12-04\t21:02:31    LAX1 392 192.0.2.100    GET d111111abcdef8.cloudfront.net  /index.html 200 -   Mozilla/5.0%2520(Windows%2520NT%252010.0;%2520Win64;%2520x64)%2520AppleWebKit/537.36%2520(KHTML,%2520like%2520Gecko)%2520Chrome/78.0.3904.108%2520Safari/537.36 -   -   Hit f37nTMVvnKvV2ZSvEsivup_c2kZ7VXzYdjC-GUQZ5qNs-89BlWazbw==    d111111abcdef8.cloudfront.net  https   23  0.001   -   TLSv1.2 ECDHE-RSA-AES128-GCM-SHA256 Hit HTTP/2.0    Processed   1   11040   0.001   Hit text/html   78  0   77"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1575493351000
+ -
+  sample: "1600299221.087\t174.204.64.230\t0.000\t304\t322\tGET\thttps\tpreview.dashcon.io\t/michaelw/real-time-logs-all_fields/2020/speakers/\t637\tSEA19-C2\teRwgLa8bR0pQBnbTFt_jIVY77WAfmcRuE980cPpEpGBcxrM6rq97vw==\td3gpvymg9z2unc.cloudfront.net\t0.140\tHTTP/2.0\tIPv4\tMozilla/5.0%20(iPhone;%20CPU%20iPhone%20OS%2013_7%20like%20Mac%20OS%20X)%20AppleWebKit/605.1.15%20(KHTML,%20like%20Gecko)%20Version/13.1.2%20Mobile/15E148%20Safari/604.1\thttps://preview.dashcon.io/michaelw/real-time-logs-all_fields/2020/speakers/alex-landau/\t-\t-\tRefreshHit\t-\tTLSv1.3\tTLS_AES_128_GCM_SHA256\tRefreshHit\t-\t-\t-\t-\t-\t-\t10485\tRefreshHit\tUS\tgzip,%20deflate,%20br\ttext/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\t/michaelw/real-time-logs-all_fields/*\thost:preview.dashcon.io%0Aaccept:text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8%0Aaccept-encoding:gzip,%20deflate,%20br%0Aif-none-match:%22c223572e08c0fc3cde6d5416ff989957%22%0Aif-modified-since:Fri,%2011%20Sep%202020%2023:02:55%20GMT%0Auser-agent:Mozilla/5.0%20(iPhone;%20CPU%20iPhone%20OS%2013_7%20like%20Mac%20OS%20X)%20AppleWebKit/605.1.15%20(KHTML,%20like%20Gecko)%20Version/13.1.2%20Mobile/15E148%20Safari/604.1%0Aaccept-language:en-us%0Areferer:https://preview.dashcon.io/michaelw/real-time-logs-all_fields/2020/speakers/alex-landau/%0A\thost%0Aaccept%0Aaccept-encoding%0Aif-none-match%0Aif-modified-since%0Auser-agent%0Aaccept-language%0Areferer%0Acookie%0A\t9"
+  result:
+    custom:
+      accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+      accept-encoding: "gzip,%20deflate,%20br"
+      cache-behavior-path-pattern: "/michaelw/real-time-logs-all_fields/*"
+      cloudfront:
+        cookie: "-"
+        edge-location: "SEA19-C2"
+        edge-response-result-type: "RefreshHit"
+        edge-result-type: "RefreshHit"
+      duration: 1.4E8
+      header-names: "host%0Aaccept%0Aaccept-encoding%0Aif-none-match%0Aif-modified-since%0Auser-agent%0Aaccept-language%0Areferer%0Acookie%0A"
+      headers: "host:preview.dashcon.io%0Aaccept:text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8%0Aaccept-encoding:gzip,%20deflate,%20br%0Aif-none-match:%22c223572e08c0fc3cde6d5416ff989957%22%0Aif-modified-since:Fri,%2011%20Sep%202020%2023:02:55%20GMT%0Auser-agent:Mozilla/5.0%20(iPhone;%20CPU%20iPhone%20OS%2013_7%20like%20Mac%20OS%20X)%20AppleWebKit/605.1.15%20(KHTML,%20like%20Gecko)%20Version/13.1.2%20Mobile/15E148%20Safari/604.1%0Aaccept-language:en-us%0Areferer:https://preview.dashcon.io/michaelw/real-time-logs-all_fields/2020/speakers/alex-landau/%0A"
+      headers-count: 9
+      http:
+        ident: "d3gpvymg9z2unc.cloudfront.net"
+        method: "GET"
+        referer: "https://preview.dashcon.io/michaelw/real-time-logs-all_fields/2020/speakers/alex-landau/"
+        request_id: "eRwgLa8bR0pQBnbTFt_jIVY77WAfmcRuE980cPpEpGBcxrM6rq97vw=="
+        ssl:
+          cipher: "TLS_AES_128_GCM_SHA256"
+          protocol: "TLSv1.3"
+        status_category: "notice"
+        status_code: 304
+        time_to_first_byte: 0.0
+        url_details:
+          host: "preview.dashcon.io"
+          path: "/michaelw/real-time-logs-all_fields/2020/speakers/"
+          queryString: {}
+          scheme: "https"
+        useragent: "Mozilla/5.0%20(iPhone;%20CPU%20iPhone%20OS%2013_7%20like%20Mac%20OS%20X)%20AppleWebKit/605.1.15%20(KHTML,%20like%20Gecko)%20Version/13.1.2%20Mobile/15E148%20Safari/604.1"
+        useragent_details:
+          browser:
+            family: "Mobile Safari UI/WKWebView"
+            major: "13"
+            minor: "1"
+            patch: "2"
+          device:
+            brand: "Apple"
+            category: "Mobile"
+            family: "iPhone"
+            model: "iPhone"
+          os:
+            family: "iOS"
+        version: "2.0"
+        x_edge_detailed_result_type: "RefreshHit"
+      network:
+        bytes_read: 637
+        bytes_written: 322
+        client:
+          country: "US"
+          ip: "174.204.64.230"
+          ip_version: 4
+          port: 10485.0
+      timestamp: 1.600299221087E12
+    message: "1600299221.087\t174.204.64.230\t0.000\t304\t322\tGET\thttps\tpreview.dashcon.io\t/michaelw/real-time-logs-all_fields/2020/speakers/\t637\tSEA19-C2\teRwgLa8bR0pQBnbTFt_jIVY77WAfmcRuE980cPpEpGBcxrM6rq97vw==\td3gpvymg9z2unc.cloudfront.net\t0.140\tHTTP/2.0\tIPv4\tMozilla/5.0%20(iPhone;%20CPU%20iPhone%20OS%2013_7%20like%20Mac%20OS%20X)%20AppleWebKit/605.1.15%20(KHTML,%20like%20Gecko)%20Version/13.1.2%20Mobile/15E148%20Safari/604.1\thttps://preview.dashcon.io/michaelw/real-time-logs-all_fields/2020/speakers/alex-landau/\t-\t-\tRefreshHit\t-\tTLSv1.3\tTLS_AES_128_GCM_SHA256\tRefreshHit\t-\t-\t-\t-\t-\t-\t10485\tRefreshHit\tUS\tgzip,%20deflate,%20br\ttext/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\t/michaelw/real-time-logs-all_fields/*\thost:preview.dashcon.io%0Aaccept:text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8%0Aaccept-encoding:gzip,%20deflate,%20br%0Aif-none-match:%22c223572e08c0fc3cde6d5416ff989957%22%0Aif-modified-since:Fri,%2011%20Sep%202020%2023:02:55%20GMT%0Auser-agent:Mozilla/5.0%20(iPhone;%20CPU%20iPhone%20OS%2013_7%20like%20Mac%20OS%20X)%20AppleWebKit/605.1.15%20(KHTML,%20like%20Gecko)%20Version/13.1.2%20Mobile/15E148%20Safari/604.1%0Aaccept-language:en-us%0Areferer:https://preview.dashcon.io/michaelw/real-time-logs-all_fields/2020/speakers/alex-landau/%0A\thost%0Aaccept%0Aaccept-encoding%0Aif-none-match%0Aif-modified-since%0Auser-agent%0Aaccept-language%0Areferer%0Acookie%0A\t9"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1600299221087
+ -
+  sample: "1600020865.895\t67.183.143.147\t0.168\t200\t31126\tGET\thttps\tpreview.dashcon.io\t/michaelw/real-time-logs-all_fields/2020/font/CalibreWeb-Medium.woff2\t82\tSFO20-C1\teR3FzjDcwV6Pq1BLuTy94PN9BicI_one9B4tC4ECGWrVfX4UsSBq_Q==\td3gpvymg9z2unc.cloudfront.net\t0.237\tHTTP/2.0\tIPv4\tMozilla/5.0%20(Macintosh;%20Intel%20Mac%20OS%20X%2010_15_6)%20AppleWebKit/537.36%20(KHTML,%20like%20Gecko)%20Chrome/85.0.4183.83%20Safari/537.36\thttps://preview.dashcon.io/michaelw/real-time-logs-all_fields/2020/static/style.8fb2b.css\t-\t-\tMiss\t-\tTLSv1.3\tTLS_AES_128_GCM_SHA256\tMiss\t-\t-\tfont/woff2\t30736\t-\t-\t51179\tMiss\tUS\tgzip,%20deflate,%20br\t*/*\t/michaelw/real-time-logs-all_fields/*\thost:preview.dashcon.io%0Aorigin:https://preview.dashcon.io%0Adpr:2%0Auser-agent:Mozilla/5.0%20(Macintosh;%20Intel%20Mac%20OS%20X%2010_15_6)%20AppleWebKit/537.36%20(KHTML,%20like%20Gecko)%20Chrome/85.0.4183.83%20Safari/537.36%0Aviewport-width:1440%0Aaccept:*/*%0Asec-fetch-site:same-origin%0Asec-fetch-mode:cors%0Asec-fetch-dest:font%0Areferer:https://preview.dashcon.io/michaelw/real-time-logs-all_fields/2020/static/style.8fb2b.css%0Aaccept-encoding:gzip,%20deflate,%20br%0Aaccept-language:en-US,en;q=0.9%0A\thost%0Aorigin%0Adpr%0Auser-agent%0Aviewport-width%0Aaccept%0Asec-fetch-site%0Asec-fetch-mode%0Asec-fetch-dest%0Areferer%0Aaccept-encoding%0Aaccept-language%0Acookie%0A\t13"
+  result:
+    custom:
+      accept: "*/*"
+      accept-encoding: "gzip,%20deflate,%20br"
+      cache-behavior-path-pattern: "/michaelw/real-time-logs-all_fields/*"
+      cloudfront:
+        cookie: "-"
+        edge-location: "SFO20-C1"
+        edge-response-result-type: "Miss"
+        edge-result-type: "Miss"
+      duration: 2.37E8
+      header-names: "host%0Aorigin%0Adpr%0Auser-agent%0Aviewport-width%0Aaccept%0Asec-fetch-site%0Asec-fetch-mode%0Asec-fetch-dest%0Areferer%0Aaccept-encoding%0Aaccept-language%0Acookie%0A"
+      headers: "host:preview.dashcon.io%0Aorigin:https://preview.dashcon.io%0Adpr:2%0Auser-agent:Mozilla/5.0%20(Macintosh;%20Intel%20Mac%20OS%20X%2010_15_6)%20AppleWebKit/537.36%20(KHTML,%20like%20Gecko)%20Chrome/85.0.4183.83%20Safari/537.36%0Aviewport-width:1440%0Aaccept:*/*%0Asec-fetch-site:same-origin%0Asec-fetch-mode:cors%0Asec-fetch-dest:font%0Areferer:https://preview.dashcon.io/michaelw/real-time-logs-all_fields/2020/static/style.8fb2b.css%0Aaccept-encoding:gzip,%20deflate,%20br%0Aaccept-language:en-US,en;q=0.9%0A"
+      headers-count: 13
+      http:
+        ident: "d3gpvymg9z2unc.cloudfront.net"
+        method: "GET"
+        referer: "https://preview.dashcon.io/michaelw/real-time-logs-all_fields/2020/static/style.8fb2b.css"
+        request_id: "eR3FzjDcwV6Pq1BLuTy94PN9BicI_one9B4tC4ECGWrVfX4UsSBq_Q=="
+        resource:
+          content_length: 30736.0
+          content_type: "font/woff2"
+        ssl:
+          cipher: "TLS_AES_128_GCM_SHA256"
+          protocol: "TLSv1.3"
+        status_category: "OK"
+        status_code: 200
+        time_to_first_byte: 0.168
+        url_details:
+          host: "preview.dashcon.io"
+          path: "/michaelw/real-time-logs-all_fields/2020/font/CalibreWeb-Medium.woff2"
+          queryString: {}
+          scheme: "https"
+        useragent: "Mozilla/5.0%20(Macintosh;%20Intel%20Mac%20OS%20X%2010_15_6)%20AppleWebKit/537.36%20(KHTML,%20like%20Gecko)%20Chrome/85.0.4183.83%20Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "85"
+            minor: "0"
+            patch: "4183"
+            patch_minor: "83"
+          device:
+            category: "Other"
+            family: "Other"
+          os:
+            family: "Other"
+        version: "2.0"
+        x_edge_detailed_result_type: "Miss"
+      network:
+        bytes_read: 82
+        bytes_written: 31126
+        client:
+          country: "US"
+          ip: "67.183.143.147"
+          ip_version: 4
+          port: 51179.0
+      timestamp: 1.600020865895E12
+    message: "1600020865.895\t67.183.143.147\t0.168\t200\t31126\tGET\thttps\tpreview.dashcon.io\t/michaelw/real-time-logs-all_fields/2020/font/CalibreWeb-Medium.woff2\t82\tSFO20-C1\teR3FzjDcwV6Pq1BLuTy94PN9BicI_one9B4tC4ECGWrVfX4UsSBq_Q==\td3gpvymg9z2unc.cloudfront.net\t0.237\tHTTP/2.0\tIPv4\tMozilla/5.0%20(Macintosh;%20Intel%20Mac%20OS%20X%2010_15_6)%20AppleWebKit/537.36%20(KHTML,%20like%20Gecko)%20Chrome/85.0.4183.83%20Safari/537.36\thttps://preview.dashcon.io/michaelw/real-time-logs-all_fields/2020/static/style.8fb2b.css\t-\t-\tMiss\t-\tTLSv1.3\tTLS_AES_128_GCM_SHA256\tMiss\t-\t-\tfont/woff2\t30736\t-\t-\t51179\tMiss\tUS\tgzip,%20deflate,%20br\t*/*\t/michaelw/real-time-logs-all_fields/*\thost:preview.dashcon.io%0Aorigin:https://preview.dashcon.io%0Adpr:2%0Auser-agent:Mozilla/5.0%20(Macintosh;%20Intel%20Mac%20OS%20X%2010_15_6)%20AppleWebKit/537.36%20(KHTML,%20like%20Gecko)%20Chrome/85.0.4183.83%20Safari/537.36%0Aviewport-width:1440%0Aaccept:*/*%0Asec-fetch-site:same-origin%0Asec-fetch-mode:cors%0Asec-fetch-dest:font%0Areferer:https://preview.dashcon.io/michaelw/real-time-logs-all_fields/2020/static/style.8fb2b.css%0Aaccept-encoding:gzip,%20deflate,%20br%0Aaccept-language:en-US,en;q=0.9%0A\thost%0Aorigin%0Adpr%0Auser-agent%0Aviewport-width%0Aaccept%0Asec-fetch-site%0Asec-fetch-mode%0Asec-fetch-dest%0Areferer%0Aaccept-encoding%0Aaccept-language%0Acookie%0A\t13"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1600020865895
+ -
+  sample: "1600020865.895\txxx.xxx.xxx.xxx\t0.168\t200\t31126\tGET\thttps\tpreview.dashcon.io\t/michaelw/real-time-logs-all_fields/2020/font/CalibreWeb-Medium.woff2\t82\tSFO20-C1\teR3FzjDcwV6Pq1BLuTy94PN9BicI_one9B4tC4ECGWrVfX4UsSBq_Q==\td3gpvymg9z2unc.cloudfront.net\t0.237\tHTTP/2.0\tIPv4\tMozilla/5.0%20(Macintosh;%20Intel%20Mac%20OS%20X%2010_15_6)%20AppleWebKit/537.36%20(KHTML,%20like%20Gecko)%20Chrome/85.0.4183.83%20Safari/537.36\thttps://preview.dashcon.io/michaelw/real-time-logs-all_fields/2020/static/style.8fb2b.css\t-\t-\tMiss\t-\tTLSv1.3\tTLS_AES_128_GCM_SHA256\tMiss\t-\t-\tfont/woff2\t30736\t-\t-\t51179\tMiss\tUS\tgzip,%20deflate,%20br\t*/*\t/michaelw/real-time-logs-all_fields/*\thost:preview.dashcon.io%0Aorigin:https://preview.dashcon.io%0Adpr:2%0Auser-agent:Mozilla/5.0%20(Macintosh;%20Intel%20Mac%20OS%20X%2010_15_6)%20AppleWebKit/537.36%20(KHTML,%20like%20Gecko)%20Chrome/85.0.4183.83%20Safari/537.36%0Aviewport-width:1440%0Aaccept:*/*%0Asec-fetch-site:same-origin%0Asec-fetch-mode:cors%0Asec-fetch-dest:font%0Areferer:https://preview.dashcon.io/michaelw/real-time-logs-all_fields/2020/static/style.8fb2b.css%0Aaccept-encoding:gzip,%20deflate,%20br%0Aaccept-language:en-US,en;q=0.9%0A\thost%0Aorigin%0Adpr%0Auser-agent%0Aviewport-width%0Aaccept%0Asec-fetch-site%0Asec-fetch-mode%0Asec-fetch-dest%0Areferer%0Aaccept-encoding%0Aaccept-language%0Acookie%0A\t13"
+  result:
+    custom:
+      accept: "*/*"
+      accept-encoding: "gzip,%20deflate,%20br"
+      cache-behavior-path-pattern: "/michaelw/real-time-logs-all_fields/*"
+      cloudfront:
+        cookie: "-"
+        edge-location: "SFO20-C1"
+        edge-response-result-type: "Miss"
+        edge-result-type: "Miss"
+      duration: 2.37E8
+      header-names: "host%0Aorigin%0Adpr%0Auser-agent%0Aviewport-width%0Aaccept%0Asec-fetch-site%0Asec-fetch-mode%0Asec-fetch-dest%0Areferer%0Aaccept-encoding%0Aaccept-language%0Acookie%0A"
+      headers: "host:preview.dashcon.io%0Aorigin:https://preview.dashcon.io%0Adpr:2%0Auser-agent:Mozilla/5.0%20(Macintosh;%20Intel%20Mac%20OS%20X%2010_15_6)%20AppleWebKit/537.36%20(KHTML,%20like%20Gecko)%20Chrome/85.0.4183.83%20Safari/537.36%0Aviewport-width:1440%0Aaccept:*/*%0Asec-fetch-site:same-origin%0Asec-fetch-mode:cors%0Asec-fetch-dest:font%0Areferer:https://preview.dashcon.io/michaelw/real-time-logs-all_fields/2020/static/style.8fb2b.css%0Aaccept-encoding:gzip,%20deflate,%20br%0Aaccept-language:en-US,en;q=0.9%0A"
+      headers-count: 13
+      http:
+        ident: "d3gpvymg9z2unc.cloudfront.net"
+        method: "GET"
+        referer: "https://preview.dashcon.io/michaelw/real-time-logs-all_fields/2020/static/style.8fb2b.css"
+        request_id: "eR3FzjDcwV6Pq1BLuTy94PN9BicI_one9B4tC4ECGWrVfX4UsSBq_Q=="
+        resource:
+          content_length: 30736.0
+          content_type: "font/woff2"
+        ssl:
+          cipher: "TLS_AES_128_GCM_SHA256"
+          protocol: "TLSv1.3"
+        status_category: "OK"
+        status_code: 200
+        time_to_first_byte: 0.168
+        url_details:
+          host: "preview.dashcon.io"
+          path: "/michaelw/real-time-logs-all_fields/2020/font/CalibreWeb-Medium.woff2"
+          queryString: {}
+          scheme: "https"
+        useragent: "Mozilla/5.0%20(Macintosh;%20Intel%20Mac%20OS%20X%2010_15_6)%20AppleWebKit/537.36%20(KHTML,%20like%20Gecko)%20Chrome/85.0.4183.83%20Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "85"
+            minor: "0"
+            patch: "4183"
+            patch_minor: "83"
+          device:
+            category: "Other"
+            family: "Other"
+          os:
+            family: "Other"
+        version: "2.0"
+        x_edge_detailed_result_type: "Miss"
+      network:
+        bytes_read: 82
+        bytes_written: 31126
+        client:
+          country: "US"
+          ip: "xxx.xxx.xxx.xxx"
+          ip_version: 4
+          port: 51179.0
+      timestamp: 1.600020865895E12
+    message: "1600020865.895\txxx.xxx.xxx.xxx\t0.168\t200\t31126\tGET\thttps\tpreview.dashcon.io\t/michaelw/real-time-logs-all_fields/2020/font/CalibreWeb-Medium.woff2\t82\tSFO20-C1\teR3FzjDcwV6Pq1BLuTy94PN9BicI_one9B4tC4ECGWrVfX4UsSBq_Q==\td3gpvymg9z2unc.cloudfront.net\t0.237\tHTTP/2.0\tIPv4\tMozilla/5.0%20(Macintosh;%20Intel%20Mac%20OS%20X%2010_15_6)%20AppleWebKit/537.36%20(KHTML,%20like%20Gecko)%20Chrome/85.0.4183.83%20Safari/537.36\thttps://preview.dashcon.io/michaelw/real-time-logs-all_fields/2020/static/style.8fb2b.css\t-\t-\tMiss\t-\tTLSv1.3\tTLS_AES_128_GCM_SHA256\tMiss\t-\t-\tfont/woff2\t30736\t-\t-\t51179\tMiss\tUS\tgzip,%20deflate,%20br\t*/*\t/michaelw/real-time-logs-all_fields/*\thost:preview.dashcon.io%0Aorigin:https://preview.dashcon.io%0Adpr:2%0Auser-agent:Mozilla/5.0%20(Macintosh;%20Intel%20Mac%20OS%20X%2010_15_6)%20AppleWebKit/537.36%20(KHTML,%20like%20Gecko)%20Chrome/85.0.4183.83%20Safari/537.36%0Aviewport-width:1440%0Aaccept:*/*%0Asec-fetch-site:same-origin%0Asec-fetch-mode:cors%0Asec-fetch-dest:font%0Areferer:https://preview.dashcon.io/michaelw/real-time-logs-all_fields/2020/static/style.8fb2b.css%0Aaccept-encoding:gzip,%20deflate,%20br%0Aaccept-language:en-US,en;q=0.9%0A\thost%0Aorigin%0Adpr%0Auser-agent%0Aviewport-width%0Aaccept%0Asec-fetch-site%0Asec-fetch-mode%0Asec-fetch-dest%0Areferer%0Aaccept-encoding%0Aaccept-language%0Acookie%0A\t13"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1600020865895
+

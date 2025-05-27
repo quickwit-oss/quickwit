@@ -1,0 +1,159 @@
+id: "imperva"
+tests:
+  - sample: |-
+      {
+        "id" : "a7c1b600-7ac9-11ef-846d-cb39fe0344fe",
+        "main_sentence" : "Illegal Resource Access attack by a single IP from Switzerland using Go HTTP library HackingTool ",
+        "secondary_sentence" : "On host \"natalie.test.incaptest.co\" ",
+        "false_positive" : false,
+        "events_count" : 2,
+        "events_blocked_percent" : 100,
+        "first_event_time" : 1727219198868,
+        "last_event_time" : 1727219199328,
+        "severity" : "MINOR",
+        "severity_explanation" : "",
+        "dominant_attack_country" : {
+          "country" : "Switzerland",
+          "country_code" : "CH",
+          "dominance" : "DOMINANT"
+        },
+        "dominant_attack_ip" : {
+          "ip" : "179.43.149.114",
+          "reputation" : [
+            "IP reputation Medium risk",
+            "Backdoor communication",
+            "DShield"
+          ],
+          "dominance" : "STRONGLY_DOMINANT"
+        },
+        "dominant_attacked_host" : {
+          "value" : "natalie.test.incaptest.co",
+          "dominance" : "STRONGLY_DOMINANT"
+        },
+        "dominant_attack_tool" : {
+          "name" : "Go HTTP library",
+          "type" : "Suspicious",
+          "dominance" : "STRONGLY_DOMINANT"
+        },
+        "dominant_attack_violation" : "Illegal Resource Access",
+        "only_custom_rule_based" : true,
+        "how_common" : "UNDEFINED",
+        "incident_type" : "REGULAR"
+      }
+    service : "imperva-attack-analysis"
+    result:
+      custom:
+        dominant_attack_country:
+          dominance: "DOMINANT"
+        dominant_attack_ip:
+          dominance: "STRONGLY_DOMINANT"
+          reputation:
+           - "IP reputation Medium risk"
+           - "Backdoor communication"
+           - "DShield"
+        dominant_attack_tool:
+          dominance: "STRONGLY_DOMINANT"
+          name: "Go HTTP library"
+          type: "Suspicious"
+        dominant_attacked_host:
+          dominance: "STRONGLY_DOMINANT"
+          value: "natalie.test.incaptest.co"
+        events_blocked_percent: 100
+        events_count: 2
+        evt:
+          category: "Illegal Resource Access"
+        false_positive: false
+        first_event_time: 1727219198868
+        how_common: "UNDEFINED"
+        id: "a7c1b600-7ac9-11ef-846d-cb39fe0344fe"
+        incident_type: "REGULAR"
+        last_event_time: 1727219199328
+        main_sentence: "Illegal Resource Access attack by a single IP from Switzerland using Go HTTP library HackingTool "
+        message: "Illegal Resource Access attack by a single IP from Switzerland using Go HTTP library HackingTool  On host \"natalie.test.incaptest.co\" "
+        network:
+          client:
+            geoip:
+              country:
+                iso_code: "CH"
+                name: "Switzerland"
+            ip: "179.43.149.114"
+        only_custom_rule_based: true
+        secondary_sentence: "On host \"natalie.test.incaptest.co\" "
+        severity: "MINOR"
+        severity_explanation: ""
+      message: |-
+        {
+          "severity" : "MINOR",
+          "dominant_attacked_host" : {
+            "dominance" : "STRONGLY_DOMINANT",
+            "value" : "natalie.test.incaptest.co"
+          },
+          "incident_type" : "REGULAR",
+          "last_event_time" : 1727219199328,
+          "dominant_attack_ip" : {
+            "ip" : "179.43.149.114",
+            "reputation" : [ "IP reputation Medium risk", "Backdoor communication", "DShield" ],
+            "dominance" : "STRONGLY_DOMINANT"
+          },
+          "severity_explanation" : "",
+          "first_event_time" : 1727219198868,
+          "how_common" : "UNDEFINED",
+          "only_custom_rule_based" : true,
+          "dominant_attack_country" : {
+            "country" : "Switzerland",
+            "country_code" : "CH",
+            "dominance" : "DOMINANT"
+          },
+          "dominant_attack_tool" : {
+            "name" : "Go HTTP library",
+            "dominance" : "STRONGLY_DOMINANT",
+            "type" : "Suspicious"
+          },
+          "events_count" : 2,
+          "secondary_sentence" : "On host \"natalie.test.incaptest.co\" ",
+          "false_positive" : false,
+          "dominant_attack_violation" : "Illegal Resource Access",
+          "main_sentence" : "Illegal Resource Access attack by a single IP from Switzerland using Go HTTP library HackingTool ",
+          "events_blocked_percent" : 100,
+          "id" : "a7c1b600-7ac9-11ef-846d-cb39fe0344fe"
+        }
+      service: "imperva-attack-analysis"
+      tags:
+       - "source:LOGS_SOURCE"
+      timestamp: 1727219199328
+  - sample: |-
+      {
+        "account_id" : "1073171",
+        "resource_type_key" : "",
+        "user_id" : "2468281",
+        "service" : "imperva-audit-trail",
+        "user_details" : "douglas.gunter@datadoghq.com",
+        "assumed_by_user" : "",
+        "resource_id" : "",
+        "time" : 1712862956885,
+        "message" : "API key enabled for apiId: 89718 of user: douglas.gunter@datadoghq.com",
+        "context_key" : "UI",
+        "type_description" : "API key enabled",
+        "type_key" : "USER_API_KEY_ENABLED"
+      }
+    service : "imperva-audit-trail"
+    result : 
+      custom:
+        account_id: "1073171"
+        assumed_by_user: ""
+        context_key: "UI"
+        evt:
+          name: "API key enabled"
+        resource_id: ""
+        resource_type_key: ""
+        service: "imperva-audit-trail"
+        time: 1712862956885
+        type_key: "USER_API_KEY_ENABLED"
+        user_id: "2468281"
+        usr:
+          email: "douglas.gunter@datadoghq.com"
+      message: "API key enabled for apiId: 89718 of user: douglas.gunter@datadoghq.com"
+      service: "imperva-audit-trail"
+      tags:
+       - "source:LOGS_SOURCE"
+      timestamp: 1712862956885

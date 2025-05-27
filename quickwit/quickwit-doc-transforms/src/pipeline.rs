@@ -14,7 +14,8 @@
 
 use std::sync::Arc;
 
-use serde::{Deserialize, Serialize};
+use serde::de::{self, Visitor};
+use serde::{Deserialize, Deserializer, Serialize};
 use tracing::warn;
 use vrl::datadog_filter::Matcher;
 
@@ -90,7 +91,7 @@ impl Pipeline {
 #[derive(Debug, Clone, Serialize, Deserialize, Hash, Eq, PartialEq, Default)]
 pub struct PipelineConfig(Arc<Vec<PipelineStepConfig>>);
 
-#[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum PipelineStepConfig {
     #[serde(rename = "url-parser")]
@@ -209,6 +210,8 @@ pub enum PipelineStepConfig {
     StringBuilder {
         #[serde(flatten)]
         common: CommonConfig,
+        /// The source is yaml which doesn't properly differentiate between strings and numbers.
+        #[serde(deserialize_with = "deserialize_string_or_number")]
         template: String,
         target: String,
         #[serde(default)]
@@ -247,6 +250,39 @@ pub enum PipelineStepConfig {
         common: CommonConfig,
         sources: Vec<String>,
     },
+}
+
+impl PipelineStepConfig {
+    pub fn name(&self) -> String {
+        // Serialize the parser and extract the tag type as its name
+        let val = serde_json::to_value(self).unwrap_or_default();
+        val.get("type")
+            .and_then(|t| t.as_str())
+            .unwrap_or("unknown")
+            .to_string()
+    }
+
+    pub fn is_supported(&self) -> bool {
+        match self {
+            PipelineStepConfig::NestedPipeline { .. }
+            | PipelineStepConfig::Grok { .. }
+            | PipelineStepConfig::AutoGrok { .. }
+            | PipelineStepConfig::AttributeRemapper { .. }
+            | PipelineStepConfig::StatusRemapper { .. }
+            | PipelineStepConfig::DateRemapper { .. }
+            | PipelineStepConfig::StringBuilder { .. }
+            | PipelineStepConfig::CategoryProcessor { .. }
+            | PipelineStepConfig::MessageRemapper { .. }
+            | PipelineStepConfig::TraceIdRemapper { .. }
+            | PipelineStepConfig::SpanIdRemapper { .. }
+            | PipelineStepConfig::ServiceRemapper { .. } => true,
+            PipelineStepConfig::UrlParser {}
+            | PipelineStepConfig::UserAgentParser {}
+            | PipelineStepConfig::GeoIpParser {}
+            | PipelineStepConfig::ArithmeticProcessor {}
+            | PipelineStepConfig::LookupProcessor {} => false,
+        }
+    }
 }
 
 #[derive(Default, Clone, Copy, Debug, Serialize, Deserialize, Eq, PartialEq, Hash)]
@@ -292,11 +328,19 @@ pub struct CommonConfig {
     #[serde(default)]
     /// The filter to check before applying the step.
     pub filter: Filter,
+
+    /// Information to detect integrations.
+    /// We don't want to use the passed integrations to avoid double processing logs.
+    #[serde(default)]
+    pub is_read_only: bool,
+    pub integration: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq, Hash)]
 pub struct CategoryConfig {
     pub filter: Filter,
+    /// The source is yaml which doesn't properly differentiate between strings and numbers.
+    #[serde(deserialize_with = "deserialize_string_or_number")]
     pub name: String,
 }
 
@@ -309,6 +353,8 @@ impl Default for CommonConfig {
             // default. This is just for convenience in the tests.
             enabled: true,
             filter: Default::default(),
+            is_read_only: false,
+            integration: None,
         }
     }
 }
@@ -325,6 +371,47 @@ impl From<&str> for Filter {
             query: query.to_string(),
         }
     }
+}
+
+/// Custom deserializer that accepts either a string or a number and produces a `String`.
+fn deserialize_string_or_number<'de, D>(deserializer: D) -> Result<String, D::Error>
+where D: Deserializer<'de> {
+    struct StringOrNumberVisitor;
+
+    impl Visitor<'_> for StringOrNumberVisitor {
+        type Value = String;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a string or number")
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<String, E>
+        where E: de::Error {
+            Ok(value.to_owned())
+        }
+
+        fn visit_string<E>(self, value: String) -> Result<String, E>
+        where E: de::Error {
+            Ok(value)
+        }
+
+        fn visit_i64<E>(self, value: i64) -> Result<String, E>
+        where E: de::Error {
+            Ok(value.to_string())
+        }
+
+        fn visit_u64<E>(self, value: u64) -> Result<String, E>
+        where E: de::Error {
+            Ok(value.to_string())
+        }
+
+        fn visit_f64<E>(self, value: f64) -> Result<String, E>
+        where E: de::Error {
+            Ok(value.to_string())
+        }
+    }
+
+    deserializer.deserialize_any(StringOrNumberVisitor)
 }
 
 fn build_vrl_matcher_from_config(

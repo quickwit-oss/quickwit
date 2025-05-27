@@ -1,0 +1,435 @@
+id: "crest_data_systems_lansweeper"
+tests:
+  - sample: |-
+      {
+        "name" : "testsite",
+        "id" : "111-1111-1111111-11111",
+        "brandingName" : "test"
+      }
+    service: "cds.lansweeper.sites"
+    tags:
+      - "lansweeper-batch:2025-01-03_09:55:15"
+    result:
+      custom:
+        brandingName: "test"
+        id: "111-1111-1111111-11111"
+        site_name: "testsite"
+        timestamp: 1735898115000
+      message: |-
+        {
+          "name" : "testsite",
+          "id" : "111-1111-1111111-11111",
+          "brandingName" : "test"
+        }
+      service: "cds.lansweeper.sites"
+      tags:
+        - "source:LOGS_SOURCE"
+        - "lansweeper-batch:2025-01-03_09:55:15"
+      timestamp: 1735898115000
+  - sample: |-
+      {
+        "severity" : "Critical",
+        "references" : [ {
+          "url" : "https://appcheck-ng.com/microsoft-patch-tuesday-november-12th-2024/",
+          "tags" : [ "Vendor Advisory" ]
+        } ],
+        "assetKeys" : [ "sjslkdfjsdfsjdfhksjdncsc" ],
+        "confidentiality" : "HIGH",
+        "availabilityImpact" : "HIGH",
+        "publishedOn" : "2024-11-12 18:15:33",
+        "cause" : {
+          "vendor" : [ "Microsoft" ],
+          "affectedProduct" : [ "Windows server 2019" ],
+          "category" : [ "OS" ]
+        },
+        "source" : "Microsoft Corporation",
+        "updatedOn" : "2024-11-18 22:20:32",
+        "baseScore" : 9.8,
+        "isActive" : true,
+        "userInteraction" : "NONE",
+        "patchable" : true,
+        "privilegeRequired" : "NONE",
+        "integrity" : "HIGH",
+        "cve" : "CVE-2024-43639",
+        "weaknessEnumeration" : [ "CWE-197" ],
+        "attackComplexity" : "Low",
+        "scope" : "UNCHANGED",
+        "attackVector" : "Network",
+        "riskScore" : 9.8,
+        "exploitability" : {
+          "exploitable" : "Unknown",
+          "exploitedInTheWild" : "Unknown"
+        }
+      }
+    service: "cds.lansweeper.vulnerabilities"
+    result:
+      custom:
+        assetKeys:
+          - "sjslkdfjsdfsjdfhksjdncsc"
+        attackComplexity: "Low"
+        attackVector: "Network"
+        availabilityImpact: "HIGH"
+        baseScore: 9.8
+        cause:
+          affectedProduct:
+            - "Windows server 2019"
+          category:
+            - "OS"
+          vendor:
+            - "Microsoft"
+        confidentiality: "HIGH"
+        cve: "CVE-2024-43639"
+        exploitability:
+          exploitable: "Unknown"
+          exploitedInTheWild: "Unknown"
+        integrity: "HIGH"
+        isActive: true
+        patchable: true
+        privilegeRequired: "NONE"
+        publishedOn: "2024-11-12 18:15:33"
+        references:
+          - url: "https://appcheck-ng.com/microsoft-patch-tuesday-november-12th-2024/"
+            tags:
+              - "Vendor Advisory"
+        riskScore: 9.8
+        scope: "UNCHANGED"
+        severity: "Critical"
+        updatedOn: 1731968432000
+        userInteraction: "NONE"
+        vulnerability_source: "Microsoft Corporation"
+        weaknessEnumeration:
+          - "CWE-197"
+      message: |-
+        {
+          "severity" : "Critical",
+          "references" : [ {
+            "url" : "https://appcheck-ng.com/microsoft-patch-tuesday-november-12th-2024/",
+            "tags" : [ "Vendor Advisory" ]
+          } ],
+          "assetKeys" : [ "sjslkdfjsdfsjdfhksjdncsc" ],
+          "confidentiality" : "HIGH",
+          "availabilityImpact" : "HIGH",
+          "publishedOn" : "2024-11-12 18:15:33",
+          "cause" : {
+            "vendor" : [ "Microsoft" ],
+            "affectedProduct" : [ "Windows server 2019" ],
+            "category" : [ "OS" ]
+          },
+          "source" : "Microsoft Corporation",
+          "updatedOn" : "2024-11-18 22:20:32",
+          "baseScore" : 9.8,
+          "isActive" : true,
+          "userInteraction" : "NONE",
+          "patchable" : true,
+          "privilegeRequired" : "NONE",
+          "integrity" : "HIGH",
+          "cve" : "CVE-2024-43639",
+          "weaknessEnumeration" : [ "CWE-197" ],
+          "attackComplexity" : "Low",
+          "scope" : "UNCHANGED",
+          "attackVector" : "Network",
+          "riskScore" : 9.8,
+          "exploitability" : {
+            "exploitable" : "Unknown",
+            "exploitedInTheWild" : "Unknown"
+          }
+        }
+      service: "cds.lansweeper.vulnerabilities"
+      status: "critical"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1731968432000
+  - sample: |-
+      {
+        "createdAt" : "2022-11-08T12:55:51.419Z",
+        "joinedAt" : "2022-11-18T10:00:07.778Z",
+        "lastTimeAccess" : "2022-11-18T10:07:13.172Z",
+        "email" : "sample.user@example.com",
+        "username" : "sample.user",
+        "status" : "enabled"
+      }
+    service: "cds.lansweeper.accounts"
+    tags:
+      - "lansweeper-batch:2025-01-03_09:55:15"
+    result:
+      custom:
+        InactiveSince: 776
+        account_status: "enabled"
+        createdAt: "2022-11-08T12:55:51.419Z"
+        email: "sample.user@example.com"
+        joinedAt: "2022-11-18T10:00:07.778Z"
+        lastTimeAccess: "2022-11-18T10:07:13.172Z"
+        timestamp: 1735898115000
+        username: "sample.user"
+      message: |-
+        {
+          "createdAt" : "2022-11-08T12:55:51.419Z",
+          "joinedAt" : "2022-11-18T10:00:07.778Z",
+          "lastTimeAccess" : "2022-11-18T10:07:13.172Z",
+          "email" : "sample.user@example.com",
+          "username" : "sample.user",
+          "status" : "enabled"
+        }
+      service: "cds.lansweeper.accounts"
+      tags:
+        - "source:LOGS_SOURCE"
+        - "lansweeper-batch:2025-01-03_09:55:15"
+      timestamp: 1735898115000
+  - sample: |-
+      {
+        "architectures" : [ "x64" ],
+        "software" : "Azure Data Studio",
+        "shortVersions" : [ "1.37" ],
+        "type" : "Application",
+        "unspsc" : "12435",
+        "operatingSystems" : [ "Windows" ],
+        "assets" : 3,
+        "installDate" : "2022-09-17T00:00:00.000Z",
+        "versions" : [ "1.37.0" ],
+        "installType" : "other",
+        "relatedSoftwareNames" : [ "Azure Data Studio" ],
+        "publisher" : "Microsoft",
+        "category" : "Database",
+        "marketVersions" : [ "1" ]
+      }
+    service: "cds.lansweeper.softwares"
+    tags:
+      - "lansweeper-batch:2025-01-03_09:55:15"
+    result:
+      custom:
+        DaysSinceInstall: 839
+        architectures:
+          - "x64"
+        assets: 3
+        category: "Database"
+        installDate: "2022-09-17T00:00:00.000Z"
+        installType: "other"
+        marketVersions:
+          - "1"
+        operatingSystems:
+          - "Windows"
+        publisher: "Microsoft"
+        relatedSoftwareNames:
+          - "Azure Data Studio"
+        shortVersions:
+          - "1.37"
+        software: "Azure Data Studio"
+        timestamp: 1735898115000
+        type: "Application"
+        unspsc: "12435"
+        versions:
+          - "1.37.0"
+      message: |-
+        {
+          "architectures" : [ "x64" ],
+          "software" : "Azure Data Studio",
+          "shortVersions" : [ "1.37" ],
+          "type" : "Application",
+          "unspsc" : "12435",
+          "operatingSystems" : [ "Windows" ],
+          "assets" : 3,
+          "installDate" : "2022-09-17T00:00:00.000Z",
+          "versions" : [ "1.37.0" ],
+          "installType" : "other",
+          "relatedSoftwareNames" : [ "Azure Data Studio" ],
+          "publisher" : "Microsoft",
+          "category" : "Database",
+          "marketVersions" : [ "1" ]
+        }
+      service: "cds.lansweeper.softwares"
+      tags:
+        - "source:LOGS_SOURCE"
+        - "lansweeper-batch:2025-01-03_09:55:15"
+      timestamp: 1735898115000
+  - sample: |-
+      {
+        "assetBasicInfo" : {
+          "lastSeen" : "2023-10-14T14:59:59.000Z",
+          "firstSeen" : "2023-10-14T14:59:59.000Z",
+          "name" : "sample",
+          "scanServer" : "Sample",
+          "type" : "OT"
+        },
+        "recognitionInfo" : {
+          "modelMetadata" : {
+            "endOfLifeDate" : "2021-12-31T12:00:00.000Z",
+            "endOfSupportDate" : "2012-07-01T12:00:00.000Z"
+          },
+          "osMetadata" : {
+            "endOfSupportDate" : "2012-07-01T12:00:00.000Z",
+            "endOfLifeDate" : "2022-04-30T10:00:00.000Z"
+          }
+        },
+        "assetCustom" : {
+          "stateName" : "Active",
+          "warrantyDate" : "2007-12-04T00:00:00.000Z",
+          "manufacturer" : "Roooo"
+        },
+        "key" : "sdljkjdlfejsded",
+        "url" : "https://app.lansweeper.com/sample/asset/sadkjashdkajhsd/summary"
+      }
+    service: "cds.lansweeper.assets"
+    tags:
+      - "lansweeper-batch:2025-01-03_09:55:15"
+    result:
+      custom:
+        DaysFromFirstSeen: 446
+        DaysOutOfWarranty: 6240.0
+        InactiveDays: 446
+        ModelEOLExceededDays: 1098.0
+        ModelEOLRemainingDays: -1098
+        ModelSupportExceededDays: 4568.0
+        ModelSupportRemainingDays: -4568
+        OsEOLExceededDays: 978.0
+        OsEOLRemainingDays: -978
+        OsSupportExceededDays: 4568.0
+        OsSupportRemainingDays: -4568
+        WarrantyRemainingDays: -6240
+        assetBasicInfo:
+          firstSeen: "2023-10-14T14:59:59.000Z"
+          lastSeen: "2023-10-14T14:59:59.000Z"
+          name: "sample"
+          scanServer: "Sample"
+          type: "OT"
+        assetCustom:
+          manufacturer: "Roooo"
+          stateName: "Active"
+          warrantyDate: "2007-12-04T00:00:00.000Z"
+        key: "sdljkjdlfejsded"
+        recognitionInfo:
+          modelMetadata:
+            endOfLifeDate: "2021-12-31T12:00:00.000Z"
+            endOfSupportDate: "2012-07-01T12:00:00.000Z"
+          osMetadata:
+            endOfLifeDate: "2022-04-30T10:00:00.000Z"
+            endOfSupportDate: "2012-07-01T12:00:00.000Z"
+        timestamp: 1735898115000
+        url: "https://app.lansweeper.com/sample/asset/sadkjashdkajhsd/summary"
+      message: |-
+        {
+          "assetBasicInfo" : {
+            "lastSeen" : "2023-10-14T14:59:59.000Z",
+            "firstSeen" : "2023-10-14T14:59:59.000Z",
+            "name" : "sample",
+            "scanServer" : "Sample",
+            "type" : "OT"
+          },
+          "recognitionInfo" : {
+            "modelMetadata" : {
+              "endOfLifeDate" : "2021-12-31T12:00:00.000Z",
+              "endOfSupportDate" : "2012-07-01T12:00:00.000Z"
+            },
+            "osMetadata" : {
+              "endOfSupportDate" : "2012-07-01T12:00:00.000Z",
+              "endOfLifeDate" : "2022-04-30T10:00:00.000Z"
+            }
+          },
+          "assetCustom" : {
+            "stateName" : "Active",
+            "warrantyDate" : "2007-12-04T00:00:00.000Z",
+            "manufacturer" : "Roooo"
+          },
+          "key" : "sdljkjdlfejsded",
+          "url" : "https://app.lansweeper.com/sample/asset/sadkjashdkajhsd/summary"
+        }
+      service: "cds.lansweeper.assets"
+      tags:
+        - "source:LOGS_SOURCE"
+        - "lansweeper-batch:2025-01-03_09:55:15"
+      timestamp: 1735898115000
+  - sample: |-
+      {
+        "assetBasicInfo" : {
+          "lastSeen" : "2023-10-14T14:59:59.000Z",
+          "firstSeen" : "2023-10-14T14:59:59.000Z",
+          "name" : "sample",
+          "scanServer" : "Sample",
+          "type" : "OT"
+        },
+        "recognitionInfo" : {
+          "modelMetadata" : {
+            "endOfLifeDate" : "2021-12-31T12:00:00.000Z",
+            "endOfSupportDate" : "2012-07-01T12:00:00.000Z"
+          },
+          "osMetadata" : {
+            "endOfSupportDate" : "2012-07-01T12:00:00.000Z",
+            "endOfLifeDate" : "2022-04-30T10:00:00.000Z"
+          }
+        },
+        "assetCustom" : {
+          "stateName" : "Active",
+          "warrantyDate" : "2007-12-04T00:00:00.000Z",
+          "manufacturer" : "Roooo"
+        },
+        "key" : "sdljkjdlfejsded",
+        "url" : "https://app.lansweeper.com/sample/asset/sadkjashdkajhsd/summary"
+      }
+    service: "cds.lansweeper.assets"
+    tags:
+      - "lansweeper-batch:2025-01-03_09:55:15"
+    result:
+      custom:
+        DaysFromFirstSeen: 446
+        DaysOutOfWarranty: 6240.0
+        InactiveDays: 446
+        ModelEOLExceededDays: 1098.0
+        ModelEOLRemainingDays: -1098
+        ModelSupportExceededDays: 4568.0
+        ModelSupportRemainingDays: -4568
+        OsEOLExceededDays: 978.0
+        OsEOLRemainingDays: -978
+        OsSupportExceededDays: 4568.0
+        OsSupportRemainingDays: -4568
+        WarrantyRemainingDays: -6240
+        assetBasicInfo:
+          firstSeen: "2023-10-14T14:59:59.000Z"
+          lastSeen: "2023-10-14T14:59:59.000Z"
+          name: "sample"
+          scanServer: "Sample"
+          type: "OT"
+        assetCustom:
+          manufacturer: "Roooo"
+          stateName: "Active"
+          warrantyDate: "2007-12-04T00:00:00.000Z"
+        key: "sdljkjdlfejsded"
+        recognitionInfo:
+          modelMetadata:
+            endOfLifeDate: "2021-12-31T12:00:00.000Z"
+            endOfSupportDate: "2012-07-01T12:00:00.000Z"
+          osMetadata:
+            endOfLifeDate: "2022-04-30T10:00:00.000Z"
+            endOfSupportDate: "2012-07-01T12:00:00.000Z"
+        timestamp: 1735898115000
+        url: "https://app.lansweeper.com/sample/asset/sadkjashdkajhsd/summary"
+      message: |-
+        {
+          "assetBasicInfo" : {
+            "lastSeen" : "2023-10-14T14:59:59.000Z",
+            "firstSeen" : "2023-10-14T14:59:59.000Z",
+            "name" : "sample",
+            "scanServer" : "Sample",
+            "type" : "OT"
+          },
+          "recognitionInfo" : {
+            "modelMetadata" : {
+              "endOfLifeDate" : "2021-12-31T12:00:00.000Z",
+              "endOfSupportDate" : "2012-07-01T12:00:00.000Z"
+            },
+            "osMetadata" : {
+              "endOfSupportDate" : "2012-07-01T12:00:00.000Z",
+              "endOfLifeDate" : "2022-04-30T10:00:00.000Z"
+            }
+          },
+          "assetCustom" : {
+            "stateName" : "Active",
+            "warrantyDate" : "2007-12-04T00:00:00.000Z",
+            "manufacturer" : "Roooo"
+          },
+          "key" : "sdljkjdlfejsded",
+          "url" : "https://app.lansweeper.com/sample/asset/sadkjashdkajhsd/summary"
+        }
+      service: "cds.lansweeper.assets"
+      tags:
+        - "source:LOGS_SOURCE"
+        - "lansweeper-batch:2025-01-03_09:55:15"
+      timestamp: 1735898115000

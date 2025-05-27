@@ -1,0 +1,126 @@
+id: crest_data_systems_anomali_threatstream
+metric_id: crest-data-systems-anomali-threatstream
+backend_only: false
+facets:
+  - groups:
+      - Crest Data Systems Anomali Threatstream
+    name: Observable Status
+    path: observable-status
+    source: log
+  - groups:
+      - Crest Data Systems Anomali Threatstream
+    name: Incident ID
+    path: incident-id
+    source: log
+  - groups:
+      - Crest Data Systems Anomali Threatstream
+    name: Indicator Type
+    path: indicator-type
+    source: log
+  - groups:
+      - Crest Data Systems Anomali Threatstream
+    name: Threatstream Threat Type
+    path: threatstream-threat-type
+    source: log
+  - groups:
+      - Crest Data Systems Anomali Threatstream
+    name: Threatstream Type
+    path: threatstream-type
+    source: log
+  - groups:
+      - Crest Data Systems Anomali Threatstream
+    name: Observable Severity
+    path: observable-severity
+    source: log
+  - groups:
+      - Crest Data Systems Anomali Threatstream
+    name: TLP Color
+    path: tlp
+    source: log
+  - groups:
+      - Crest Data Systems Anomali Threatstream
+    name: Country
+    path: country
+    source: log
+  - groups:
+      - Crest Data Systems Anomali Threatstream
+    name: Is Public
+    path: is-public
+    source: log
+  - groups:
+      - Crest Data Systems Anomali Threatstream
+    name: Assignee User
+    path: assignee-user
+    source: log
+  - groups:
+      - Crest Data Systems Anomali Threatstream
+    name: Organization
+    path: cds.anomali.threatstream.organization
+    source: log
+  - groups:
+      - Crest Data Systems Anomali Threatstream
+    name: Confidence
+    path: confidence
+    source: log
+  - groups:
+      - Crest Data Systems Anomali Threatstream
+    name: Observable ID
+    path: observable-id
+    source: log
+  - groups:
+      - Crest Data Systems Anomali Threatstream
+    name: Tags
+    path: tags
+    source: log
+  - groups:
+      - Crest Data Systems Anomali Threatstream
+    name: Publication Status
+    path: publication-status
+    source: log
+  - groups:
+      - Crest Data Systems Anomali Threatstream
+    name: Is Anonymous
+    path: is-anonymous
+    source: log
+  - groups:
+      - Crest Data Systems Anomali Threatstream
+    name: Is Editable
+    path: is-editable
+    source: log
+  - groups:
+      - Crest Data Systems Anomali Threatstream
+    name: Retina Confidence
+    path: retina-confidence
+    source: log
+  - groups:
+      - Crest Data Systems Anomali Threatstream
+    name: Is Cloneable
+    path: is-cloneable
+    source: log
+  - groups:
+      - Crest Data Systems Anomali Threatstream
+    name: Threatstream Incident Status
+    path: threatstream-incident-status
+    source: log
+  - groups:
+      - Crest Data Systems Anomali Threatstream
+    name: Threatstream Source
+    path: threatstream-source
+    source: log
+pipeline:
+  type: pipeline
+  name: Anomali ThreatStream by Crest Data Systems
+  enabled: true
+  filter:
+    query: source:crest_data_systems_anomali_threatstream
+  processors:
+    - type: attribute-remapper
+      name: Map `organization` to `cds.anomali.threatstream.organization`
+      enabled: true
+      sources:
+        - organization
+      target: cds.anomali.threatstream.organization
+      preserveSource: true
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute

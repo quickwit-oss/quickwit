@@ -1,0 +1,408 @@
+id: "haproxy"
+tests:
+ -
+  sample: "10.0.1.2:33317 [06/Feb/2009:12:14:14.655] http-in static/srv1 10/0/30/69/109 200 2750 - - ---- 1/1/1/1/0 0/0 {1wt.eu} {} \"GET /index.html HTTP/1.1\""
+  result:
+    custom:
+      date_access: 1233922454655
+      duration: 1.09E8
+      haproxy:
+        actconn: 1
+        backend_name: "static"
+        backend_queue: 0
+        beconn: 1
+        captured_request_cookie: "-"
+        captured_request_headers: "1wt.eu"
+        captured_response_cookie: "-"
+        feconn: 1
+        frontend_name: "http-in"
+        retries: 0
+        srv_queue: 0
+        srvconn: 1
+        termination_state: "----"
+        time_backend_response: 69
+        time_queue: 0
+        time_request: 10
+      http:
+        method: "GET"
+        status_category: "OK"
+        status_code: 200
+        url: "/index.html"
+        url_details:
+          path: "/index.html"
+        version: "1.1"
+      load_balancer:
+        service_name: "srv1"
+        time_backend_connect: 30
+      network:
+        bytes_written: 2750
+        client:
+          ip: "10.0.1.2"
+          port: 33317
+    message: "10.0.1.2:33317 [06/Feb/2009:12:14:14.655] http-in static/srv1 10/0/30/69/109 200 2750 - - ---- 1/1/1/1/0 0/0 {1wt.eu} {} \"GET /index.html HTTP/1.1\""
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1233922454655
+ -
+  sample: "10.0.1.2:33313 [06/Feb/2009:12:12:51.443] fnt bck/srv1 34/56/5007 212 -- 1/3/6/8/13 15/17"
+  result:
+    custom:
+      date_access: 1233922371443
+      duration: 5.007E9
+      haproxy:
+        actconn: 1
+        backend_name: "bck"
+        backend_queue: 17
+        beconn: 6
+        feconn: 3
+        frontend_name: "fnt"
+        retries: 13
+        srv_queue: 15
+        srvconn: 8
+        termination_state: "--"
+        time_queue: 34
+      load_balancer:
+        service_name: "srv1"
+        time_backend_connect: 56
+      network:
+        bytes_written: 212
+        client:
+          ip: "10.0.1.2"
+          port: 33313
+    message: "10.0.1.2:33313 [06/Feb/2009:12:12:51.443] fnt bck/srv1 34/56/5007 212 -- 1/3/6/8/13 15/17"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1233922371443
+ -
+  sample: "Connect from 10.0.1.2:33312 to 10.0.3.31:8012 (www/HTTP)"
+  result:
+    custom:
+      haproxy:
+        frontend_name: "www"
+        mode: "HTTP"
+      network:
+        client:
+          ip: "10.0.1.2"
+          port: 33312
+        destination:
+          ip: "10.0.3.31"
+          port: 8012
+    message: "Connect from 10.0.1.2:33312 to 10.0.3.31:8012 (www/HTTP)"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: "Feb  1 18:34:10 localhost haproxy[42471]: 73.18.215.121:50886 [01/Feb/2018:18:34:10.200] fr_proxy.lirn.net-HTTP bk_UnivOfThePeople-9797/bk_mp01-UnivOfThePeople-9797 0/0/0/121/122 200 938 - - --VN 4/4/3/3/0 0/0 \"GET /MuseProxyID=mp01/MuseSessionID=0000fx7/MuseProtocol=http/MuseHost=go.galegroup.com/MusePath/ps/browseIndex?inPS=true&prodId=PPCA&userGroupName=lirn17237&tabID=T003&topicId=&searchId=R3&searchType=AdvancedSearchForm&searchResultsType=SingleTab&sort=&browseIndex=TY&browsePagination=50&displayFormat=LIST&isMultiSelect=false&initPageSize=3&buildLimiterValues=true&userGroupName=lirn17237&prodId=PPCA HTTP/1.1\""
+  result:
+    custom:
+      date_access: 1517510050200
+      duration: 1.22E8
+      haproxy:
+        actconn: 4
+        backend_name: "bk_UnivOfThePeople-9797"
+        backend_queue: 0
+        beconn: 3
+        captured_request_cookie: "-"
+        captured_response_cookie: "-"
+        feconn: 4
+        frontend_name: "fr_proxy.lirn.net-HTTP"
+        pid: 42471.0
+        retries: 0
+        srv_queue: 0
+        srvconn: 3
+        termination_state: "--VN"
+        time_backend_response: 121
+        time_queue: 0
+        time_request: 0
+      http:
+        method: "GET"
+        status_category: "OK"
+        status_code: 200
+        url: "/MuseProxyID=mp01/MuseSessionID=0000fx7/MuseProtocol=http/MuseHost=go.galegroup.com/MusePath/ps/browseIndex?inPS=true&prodId=PPCA&userGroupName=lirn17237&tabID=T003&topicId=&searchId=R3&searchType=AdvancedSearchForm&searchResultsType=SingleTab&sort=&browseIndex=TY&browsePagination=50&displayFormat=LIST&isMultiSelect=false&initPageSize=3&buildLimiterValues=true&userGroupName=lirn17237&prodId=PPCA"
+        url_details:
+          path: "/MuseProxyID=mp01/MuseSessionID=0000fx7/MuseProtocol=http/MuseHost=go.galegroup.com/MusePath/ps/browseIndex"
+          queryString:
+            browseIndex: "TY"
+            browsePagination: "50"
+            buildLimiterValues: "true"
+            displayFormat: "LIST"
+            inPS: "true"
+            initPageSize: "3"
+            isMultiSelect: "false"
+            prodId: "PPCA"
+            searchId: "R3"
+            searchResultsType: "SingleTab"
+            searchType: "AdvancedSearchForm"
+            sort: ""
+            tabID: "T003"
+            topicId: ""
+            userGroupName: "lirn17237"
+        version: "1.1"
+      load_balancer:
+        service_name: "bk_mp01-UnivOfThePeople-9797"
+        time_backend_connect: 0
+      network:
+        bytes_written: 938
+        client:
+          ip: "73.18.215.121"
+          port: 50886
+      syslog:
+        date: 34281250000
+        host: "localhost"
+    message: "Feb  1 18:34:10 localhost haproxy[42471]: 73.18.215.121:50886 [01/Feb/2018:18:34:10.200] fr_proxy.lirn.net-HTTP bk_UnivOfThePeople-9797/bk_mp01-UnivOfThePeople-9797 0/0/0/121/122 200 938 - - --VN 4/4/3/3/0 0/0 \"GET /MuseProxyID=mp01/MuseSessionID=0000fx7/MuseProtocol=http/MuseHost=go.galegroup.com/MusePath/ps/browseIndex?inPS=true&prodId=PPCA&userGroupName=lirn17237&tabID=T003&topicId=&searchId=R3&searchType=AdvancedSearchForm&searchResultsType=SingleTab&sort=&browseIndex=TY&browsePagination=50&displayFormat=LIST&isMultiSelect=false&initPageSize=3&buildLimiterValues=true&userGroupName=lirn17237&prodId=PPCA HTTP/1.1\""
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1517510050200
+ -
+  sample: "Feb 01 18:34:10 - haproxy[42471]: 73.18.215.121:50886 [01/Feb/2018:18:34:10.200] fr_proxy.lirn.net-HTTP bk_UnivOfThePeople-9797/bk_mp01-UnivOfThePeople-9797 0/0/0/121/122 200 938 - - --VN 4/4/3/3/0 0/0 \"GET /MuseProxyID=mp01/MuseSessionID=0000fx7/MuseProtocol=http/MuseHost=go.galegroup.com/MusePath/ps/browseIndex?inPS=true&prodId=PPCA&userGroupName=lirn17237&tabID=T003&topicId=&searchId=R3&searchType=AdvancedSearchForm&searchResultsType=SingleTab&sort=&browseIndex=TY&browsePagination=50&displayFormat=LIST&isMultiSelect=false&initPageSize=3&buildLimiterValues=true&userGroupName=lirn17237&prodId=PPCA HTTP/1.1\""
+  result:
+    custom:
+      date_access: 1517510050200
+      duration: 1.22E8
+      haproxy:
+        actconn: 4
+        backend_name: "bk_UnivOfThePeople-9797"
+        backend_queue: 0
+        beconn: 3
+        captured_request_cookie: "-"
+        captured_response_cookie: "-"
+        feconn: 4
+        frontend_name: "fr_proxy.lirn.net-HTTP"
+        pid: 42471.0
+        retries: 0
+        srv_queue: 0
+        srvconn: 3
+        termination_state: "--VN"
+        time_backend_response: 121
+        time_queue: 0
+        time_request: 0
+      http:
+        method: "GET"
+        status_category: "OK"
+        status_code: 200
+        url: "/MuseProxyID=mp01/MuseSessionID=0000fx7/MuseProtocol=http/MuseHost=go.galegroup.com/MusePath/ps/browseIndex?inPS=true&prodId=PPCA&userGroupName=lirn17237&tabID=T003&topicId=&searchId=R3&searchType=AdvancedSearchForm&searchResultsType=SingleTab&sort=&browseIndex=TY&browsePagination=50&displayFormat=LIST&isMultiSelect=false&initPageSize=3&buildLimiterValues=true&userGroupName=lirn17237&prodId=PPCA"
+        url_details:
+          path: "/MuseProxyID=mp01/MuseSessionID=0000fx7/MuseProtocol=http/MuseHost=go.galegroup.com/MusePath/ps/browseIndex"
+          queryString:
+            browseIndex: "TY"
+            browsePagination: "50"
+            buildLimiterValues: "true"
+            displayFormat: "LIST"
+            inPS: "true"
+            initPageSize: "3"
+            isMultiSelect: "false"
+            prodId: "PPCA"
+            searchId: "R3"
+            searchResultsType: "SingleTab"
+            searchType: "AdvancedSearchForm"
+            sort: ""
+            tabID: "T003"
+            topicId: ""
+            userGroupName: "lirn17237"
+        version: "1.1"
+      load_balancer:
+        service_name: "bk_mp01-UnivOfThePeople-9797"
+        time_backend_connect: 0
+      network:
+        bytes_written: 938
+        client:
+          ip: "73.18.215.121"
+          port: 50886
+      syslog:
+        date: 34281250000
+        host: "-"
+    message: "Feb 01 18:34:10 - haproxy[42471]: 73.18.215.121:50886 [01/Feb/2018:18:34:10.200] fr_proxy.lirn.net-HTTP bk_UnivOfThePeople-9797/bk_mp01-UnivOfThePeople-9797 0/0/0/121/122 200 938 - - --VN 4/4/3/3/0 0/0 \"GET /MuseProxyID=mp01/MuseSessionID=0000fx7/MuseProtocol=http/MuseHost=go.galegroup.com/MusePath/ps/browseIndex?inPS=true&prodId=PPCA&userGroupName=lirn17237&tabID=T003&topicId=&searchId=R3&searchType=AdvancedSearchForm&searchResultsType=SingleTab&sort=&browseIndex=TY&browsePagination=50&displayFormat=LIST&isMultiSelect=false&initPageSize=3&buildLimiterValues=true&userGroupName=lirn17237&prodId=PPCA HTTP/1.1\""
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1517510050200
+ -
+  sample: "Apr 16 13:37:08 haproxy-test-fri4 haproxy[4720]: 127.0.0.1:34902 [16/Apr/2018:13:37:08.576] stats stats/<STATS> 0/0/0/0/0 200 1316 - - LR-- 1/1/0/0/0 0/0 \"GET /haproxy_stats/;csv;norefresh HTTP/1.1\""
+  result:
+    custom:
+      date_access: 1523885828576
+      duration: 0.0
+      haproxy:
+        actconn: 1
+        backend_name: "stats"
+        backend_queue: 0
+        beconn: 0
+        captured_request_cookie: "-"
+        captured_response_cookie: "-"
+        feconn: 1
+        frontend_name: "stats"
+        pid: 4720.0
+        retries: 0
+        srv_queue: 0
+        srvconn: 0
+        termination_state: "LR--"
+        time_backend_response: 0
+        time_queue: 0
+        time_request: 0
+      http:
+        method: "GET"
+        status_category: "OK"
+        status_code: 200
+        url: "/haproxy_stats/;csv;norefresh"
+        url_details:
+          path: "/haproxy_stats/;csv;norefresh"
+        version: "1.1"
+      load_balancer:
+        service_name: "<STATS>"
+        time_backend_connect: 0
+      network:
+        bytes_written: 1316
+        client:
+          ip: "127.0.0.1"
+          port: 34902
+      syslog:
+        date: 40657028000
+        host: "haproxy-test-fri4"
+    message: "Apr 16 13:37:08 haproxy-test-fri4 haproxy[4720]: 127.0.0.1:34902 [16/Apr/2018:13:37:08.576] stats stats/<STATS> 0/0/0/0/0 200 1316 - - LR-- 1/1/0/0/0 0/0 \"GET /haproxy_stats/;csv;norefresh HTTP/1.1\""
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1523885828576
+ -
+  sample: "2019-01-14T21:49:23+00:00 localhost haproxy[6]: 130.211.2.246:64478 [14/Jan/2019:21:49:23.640] http-0_0_0_0-8080 propjoe/propjoe-71 0/0/0/2/2 202 142 - - ---- 64/64/16/0/0 0/0 {34.204.102.208, 35.190.30.199} \"POST /api/v1/check_run/?api_key=****************************aedd HTTP/1.1\""
+  result:
+    custom:
+      date_access: 1547502563640
+      duration: 2000000.0
+      haproxy:
+        actconn: 64
+        backend_name: "propjoe"
+        backend_queue: 0
+        beconn: 16
+        captured_request_cookie: "-"
+        captured_request_headers: "34.204.102.208, 35.190.30.199"
+        captured_response_cookie: "-"
+        feconn: 64
+        frontend_name: "http-0_0_0_0-8080"
+        pid: 6.0
+        retries: 0
+        srv_queue: 0
+        srvconn: 0
+        termination_state: "----"
+        time_backend_response: 2
+        time_queue: 0
+        time_request: 0
+      http:
+        method: "POST"
+        status_category: "OK"
+        status_code: 202
+        url: "/api/v1/check_run/?api_key=****************************aedd"
+        url_details:
+          path: "/api/v1/check_run/"
+          queryString:
+            api_key: "****************************aedd"
+        version: "1.1"
+      load_balancer:
+        service_name: "propjoe-71"
+        time_backend_connect: 0
+      network:
+        bytes_written: 142
+        client:
+          ip: "130.211.2.246"
+          port: 64478
+      syslog:
+        date: 1547502563000
+        host: "localhost"
+    message: "2019-01-14T21:49:23+00:00 localhost haproxy[6]: 130.211.2.246:64478 [14/Jan/2019:21:49:23.640] http-0_0_0_0-8080 propjoe/propjoe-71 0/0/0/2/2 202 142 - - ---- 64/64/16/0/0 0/0 {34.204.102.208, 35.190.30.199} \"POST /api/v1/check_run/?api_key=****************************aedd HTTP/1.1\""
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1547502563640
+ -
+  sample: "Jan 21 10:43:56 nl12s0204 haproxy[137260]: 217.114.110.36:21090 [21/Jan/2019:10:43:56.296] lb_slicing_77_222_80_79 bk_kamino_p/nl14s0111 1/2/87 25085 CD 49198/21255/4356/482/0 0/0"
+  result:
+    custom:
+      date_access: 1548067436296
+      duration: 8.7E7
+      haproxy:
+        actconn: 49198
+        backend_name: "bk_kamino_p"
+        backend_queue: 0
+        beconn: 4356
+        feconn: 21255
+        frontend_name: "lb_slicing_77_222_80_79"
+        pid: 137260.0
+        retries: 0
+        srv_queue: 0
+        srvconn: 482
+        termination_state: "CD"
+        time_queue: 1
+      load_balancer:
+        service_name: "nl14s0111"
+        time_backend_connect: 2
+      network:
+        bytes_written: 25085
+        client:
+          ip: "217.114.110.36"
+          port: 21090
+      syslog:
+        date: 33302636000
+        host: "nl12s0204"
+    message: "Jan 21 10:43:56 nl12s0204 haproxy[137260]: 217.114.110.36:21090 [21/Jan/2019:10:43:56.296] lb_slicing_77_222_80_79 bk_kamino_p/nl14s0111 1/2/87 25085 CD 49198/21255/4356/482/0 0/0"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1548067436296
+ -
+  sample: "Jan 21 10:43:56 nl12s0204 haproxy[137260]: Connect from 188.207.249.162:53412 to 77.222.80.71:80 (lb_http_oa_vip/HTTP)"
+  result:
+    custom:
+      haproxy:
+        frontend_name: "lb_http_oa_vip"
+        mode: "HTTP"
+        pid: 137260.0
+      network:
+        client:
+          ip: "188.207.249.162"
+          port: 53412
+        destination:
+          ip: "77.222.80.71"
+          port: 80
+      syslog:
+        date: 33302636000
+        host: "nl12s0204"
+    message: "Jan 21 10:43:56 nl12s0204 haproxy[137260]: Connect from 188.207.249.162:53412 to 77.222.80.71:80 (lb_http_oa_vip/HTTP)"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: "Jan 21 10:43:56 nl12s0204 haproxy[137260]: 89.200.2.10:17988 [21/Jan/2019:10:43:45.113] lb_https_op_vip bk_op_c30a_leliezorg/nl12s0075 33/1/11273 3449 -- 49203/8259/50/25/0 0/0"
+  result:
+    custom:
+      date_access: 1548067425113
+      duration: 1.1273E10
+      haproxy:
+        actconn: 49203
+        backend_name: "bk_op_c30a_leliezorg"
+        backend_queue: 0
+        beconn: 50
+        feconn: 8259
+        frontend_name: "lb_https_op_vip"
+        pid: 137260.0
+        retries: 0
+        srv_queue: 0
+        srvconn: 25
+        termination_state: "--"
+        time_queue: 33
+      load_balancer:
+        service_name: "nl12s0075"
+        time_backend_connect: 1
+      network:
+        bytes_written: 3449
+        client:
+          ip: "89.200.2.10"
+          port: 17988
+      syslog:
+        date: 33302636000
+        host: "nl12s0204"
+    message: "Jan 21 10:43:56 nl12s0204 haproxy[137260]: 89.200.2.10:17988 [21/Jan/2019:10:43:45.113] lb_https_op_vip bk_op_c30a_leliezorg/nl12s0075 33/1/11273 3449 -- 49203/8259/50/25/0 0/0"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1548067425113
+

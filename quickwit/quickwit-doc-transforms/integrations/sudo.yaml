@@ -1,0 +1,40 @@
+id: sudo
+backend_only: true # sudo integration only lives for now in logs-backend
+facets:
+  - groups:
+      - System
+    name: User
+    path: system.user
+    source: log
+  - groups:
+      - System
+    name: Command
+    path: system.cmd
+    source: log
+pipeline:
+  type: pipeline
+  name: Sudo
+  enabled: true
+  filter:
+    query: source:sudo
+  processors:
+    - type: grok-parser
+      name: Parsing sudo logs
+      enabled: true
+      source: message
+      samples:
+        - 'loguser : TTY=pts/0 ; PWD=/home/loguser ; USER=root ; COMMAND=/bin/sh -c echo SUDO-SUCCESS-oxkqwtwexepwahfzlenkpqoibmkmagmy; LANG=en_US.UTF-8 LC_CTYPE=en_US.UTF-8 /usr/bin/python /home/loguser/.ansible/tmp/ansible-tmp-1421323266.3-107017371979285/command; rm -rf /home/loguser/.ansible/tmp/ansible-tmp-1421323266.3-107017371979285/ >/dev/null 2>&1'
+      grok:
+        supportRules: |
+          _sudo_user %{notSpace:system.user}
+          _sudo_tty TTY=%{notSpace:system.tty} ;
+          _sudo_pwd PWD=%{notSpace:system.pwd} ;
+          _sudo_run_as_user USER=%{notSpace:system.run_as_user} ;
+          _sudo_group GROUP=%{notSpace:system.run_as_group} ;
+          _sudo_tsid TSID=%{notSpace:system.tsid} ;
+          _sudo_env ENV=%{data:system.env}
+          _sudo_command COMMAND=%{data:system.cmd}
+          _sudo_lang LANG=%{notSpace:system.lang}
+          _sudo_lc_type LC_CTYPE=%{notSpace:system.lc_type}
+        matchRules: |
+          sudo.default %{_sudo_user} : %{_sudo_tty}( %{_sudo_pwd})? %{_sudo_run_as_user}( %{_sudo_group})?( %{_sudo_tsid})?( %{_sudo_env})? (%{_sudo_command})?; (%{_sudo_lang} )?(%{_sudo_lc_type} )?.*

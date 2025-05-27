@@ -1,0 +1,59 @@
+id: "cloudhsm"
+tests:
+ -
+  sample: "Time: 12/19/17 21:01:16.962174, usecs:1513717276962174 Sequence No : 0x0 Reboot counter : 0xe8 Command Type(hex) : CN_MGMT_CMD (0x0) Opcode : CN_INIT_TOKEN (0x1) Session Handle : 0x1004001 Response : 0:HSM Return: SUCCESS Log type : MINIMAL_LOG_ENTRY (0)"
+  result:
+    custom:
+      command_type: "CN_MGMT_CMD (0x0)"
+      date_access: 1513717276962
+      log_type: "MINIMAL_LOG_ENTRY"
+      opcode: "CN_INIT_TOKEN (0x1)"
+      reboot_counter: "0xe8"
+      response: "0:HSM"
+      response_type: "SUCCESS"
+      sequence_number: "0x0"
+      session_id: "0x1004001"
+    message: "Time: 12/19/17 21:01:16.962174, usecs:1513717276962174 Sequence No : 0x0 Reboot counter : 0xe8 Command Type(hex) : CN_MGMT_CMD (0x0) Opcode : CN_INIT_TOKEN (0x1) Session Handle : 0x1004001 Response : 0:HSM Return: SUCCESS Log type : MINIMAL_LOG_ENTRY (0)"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1513717276962
+ -
+  sample: "Time: 12/19/17 21:01:17.174902, usecs:1513717277174902 Sequence No : 0x2 Reboot counter : 0xe8 Command Type(hex) : CN_MGMT_CMD (0x0) Opcode : CN_CREATE_APPLIANCE_USER (0xfc) Session Handle : 0x1004001 Response : 0:HSM Return: SUCCESS Log type : MGMT_USER_DETAILS_LOG (2) User Name : app_user User Type : CN_APPLIANCE_USER (5)"
+  result:
+    custom:
+      command_type: "CN_MGMT_CMD (0x0)"
+      date_access: 1513717277174
+      log_type: "MGMT_USER_DETAILS_LOG"
+      opcode: "CN_CREATE_APPLIANCE_USER (0xfc)"
+      reboot_counter: "0xe8"
+      response: "0:HSM"
+      response_type: "SUCCESS"
+      sequence_number: "0x2"
+      session_id: "0x1004001"
+      usr:
+        name: "app_user"
+        type: "CN_APPLIANCE_USER"
+    message: "Time: 12/19/17 21:01:17.174902, usecs:1513717277174902 Sequence No : 0x2 Reboot counter : 0xe8 Command Type(hex) : CN_MGMT_CMD (0x0) Opcode : CN_CREATE_APPLIANCE_USER (0xfc) Session Handle : 0x1004001 Response : 0:HSM Return: SUCCESS Log type : MGMT_USER_DETAILS_LOG (2) User Name : app_user User Type : CN_APPLIANCE_USER (5)"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1513717277174
+ -
+  sample: "Time: 12/13/17 23:09:04.815530, usecs:1513206544815530 Sequence No: 0x2b Reboot counter: 0xe8 Command Type(hex): CN_MGMT_CMD (0x0) Opcode: CN_DESTROY_OBJECT (0x11) Session Handle: 0x2014004 Response: 0:HSM Return: SUCCESS Log type: MGMT_KEY_DETAILS_LOG (1) Priv/Secret Key Handle: 131079 Public Key Handle: 0"
+  result:
+    custom:
+      command_type: "CN_MGMT_CMD (0x0)"
+      date_access: 1513206544815
+      log_type: "MGMT_KEY_DETAILS_LOG"
+      opcode: "CN_DESTROY_OBJECT (0x11)"
+      public_key_handle: "0"
+      reboot_counter: "0xe8"
+      response: "0:HSM"
+      response_type: "SUCCESS"
+      secret_key_handle: "131079"
+      sequence_number: "0x2b"
+      session_id: "0x2014004"
+    message: "Time: 12/13/17 23:09:04.815530, usecs:1513206544815530 Sequence No: 0x2b Reboot counter: 0xe8 Command Type(hex): CN_MGMT_CMD (0x0) Opcode: CN_DESTROY_OBJECT (0x11) Session Handle: 0x2014004 Response: 0:HSM Return: SUCCESS Log type: MGMT_KEY_DETAILS_LOG (1) Priv/Secret Key Handle: 131079 Public Key Handle: 0"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1513206544815
+

@@ -1,0 +1,650 @@
+id: crest_data_systems_square
+metric_id: crest-data-systems-square
+backend_only: false
+facets:
+  - description: ""
+    facetType: list
+    groups:
+      - Crest Data Systems Square
+    name: Customer Birthyear
+    path: cds.square.customer.birthyear
+    source: log
+    type: integer
+  - description: ""
+    facetType: range
+    groups:
+      - Crest Data Systems Square
+    name: Dispute Amount
+    path: cds.square.dispute.amount_money.amount
+    source: log
+    type: double
+  - description: ""
+    facetType: list
+    groups:
+      - Crest Data Systems Square
+    name: Dispute Currency
+    path: cds.square.dispute.amount_money.currency
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest Data Systems Square
+    name: Dispute ID
+    path: cds.square.dispute.id
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest Data Systems Square
+    name: Dispute State
+    path: cds.square.dispute.state
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest Data Systems Square
+    name: GAN Source
+    path: cds.square.gift_card.gan_source
+    source: log
+    type: string
+  - description: ""
+    facetType: range
+    groups:
+      - Crest Data Systems Square
+    name: Gift Card Balance Amount
+    path: cds.square.gift_card.balance_money.amount
+    source: log
+    type: double
+  - description: ""
+    facetType: list
+    groups:
+      - Crest Data Systems Square
+    name: Gift Card Currency
+    path: cds.square.gift_card.balance_money.currency
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest Data Systems Square
+    name: Gift Card State
+    path: cds.square.gift_card.state
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest Data Systems Square
+    name: Linked Customer ID
+    path: cds.square.gift_card.linked_customer_id
+    source: log
+    type: string
+  - description: ""
+    facetType: range
+    groups:
+      - Crest Data Systems Square
+    name: Payment Amount
+    path: cds.square.payment.amount_money.amount
+    source: log
+    type: double
+  - description: ""
+    facetType: list
+    groups:
+      - Crest Data Systems Square
+    name: Payment Currency
+    path: cds.square.payment.amount_money.currency
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest Data Systems Square
+    name: Payment Location ID
+    path: cds.square.payment.location_id
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest Data Systems Square
+    name: Payment Source
+    path: cds.square.payment.source_type
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest Data Systems Square
+    name: Payment Status
+    path: cds.square.payment.status
+    source: log
+    type: string
+  - description: ""
+    facetType: range
+    groups:
+      - Crest Data Systems Square
+    name: "Payout Amount "
+    path: cds.square.payout.amount_money.amount
+    source: log
+    type: double
+  - description: ""
+    facetType: list
+    groups:
+      - Crest Data Systems Square
+    name: Payout Currency
+    path: cds.square.payout.amount_money.currency_code
+    source: log
+    type: string
+  - description: ""
+    facetType: range
+    groups:
+      - Crest Data Systems Square
+    name: Refund Amount
+    path: cds.square.refund.amount_money.amount
+    source: log
+    type: double
+  - description: ""
+    facetType: list
+    groups:
+      - Crest Data Systems Square
+    name: Refund Currency
+    path: cds.square.refund.amount_money.currency
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest Data Systems Square
+    name: Refund Location ID
+    path: cds.square.refund.location_id
+    source: log
+    type: string
+pipeline:
+  type: pipeline
+  name: Crest Data Systems Square
+  enabled: true
+  filter:
+    query: source:crest_data_systems_square
+  processors:
+    - type: pipeline
+      name: Event logs Pipeline
+      enabled: true
+      filter:
+        query: service:cds.square.events
+      processors:
+        - type: grok-parser
+          name: Extract Primary Event from `type` to `service`
+          enabled: true
+          source: type
+          samples:
+            - dispute.state.updated
+            - booking.custom_attribute.owned.deleted
+          grok:
+            supportRules: ""
+            matchRules: extract_primary_event %{word:service}\..*
+        - type: string-builder-processor
+          name: Add integration prefix to `service`
+          enabled: true
+          template: cds.square.events.%{service}
+          target: service
+          replaceMissing: false
+        - type: service-remapper
+          name: Define `service` as the official service of the log
+          enabled: true
+          sources:
+            - service
+        - type: date-remapper
+          name: Define `created_at` as the official date of the log
+          enabled: true
+          sources:
+            - created_at
+    - type: pipeline
+      name: Payout Remapper For Facets Creation
+      enabled: true
+      filter:
+        query: service:cds.square.events.payout
+      processors:
+        - type: attribute-remapper
+          name: Map `data.object.payout.amount_money` to `cds.square.payout.amount_money`
+          enabled: true
+          sources:
+            - data.object.payout.amount_money
+          sourceType: attribute
+          target: cds.square.payout.amount_money
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Dispute Remapper For Facets Creation
+      enabled: true
+      filter:
+        query: service:cds.square.events.dispute
+      processors:
+        - type: attribute-remapper
+          name: Map `data.object.dispute.id` to `cds.square.dispute.id`
+          enabled: true
+          sources:
+            - data.object.dispute.id
+          sourceType: attribute
+          target: cds.square.dispute.id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `data.object.dispute.state` to `cds.square.dispute.state`
+          enabled: true
+          sources:
+            - data.object.dispute.state
+          sourceType: attribute
+          target: cds.square.dispute.state
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `data.object.dispute.amount_money` to
+            `cds.square.dispute.amount_money`
+          enabled: true
+          sources:
+            - data.object.dispute.amount_money
+          sourceType: attribute
+          target: cds.square.dispute.amount_money
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Refund Remapper For Facets Creation
+      enabled: true
+      filter:
+        query: service:cds.square.events.refund
+      processors:
+        - type: attribute-remapper
+          name: Map `data.object.refund.location_id` to `cds.square.refund.location_id`
+          enabled: true
+          sources:
+            - data.object.refund.location_id
+          sourceType: attribute
+          target: cds.square.refund.location_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `data.object.refund.amount_money` to `cds.square.refund.amount_money`
+          enabled: true
+          sources:
+            - data.object.refund.amount_money
+          sourceType: attribute
+          target: cds.square.refund.amount_money
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Gift Card Remapper For Facets Creation
+      enabled: true
+      filter:
+        query: service:cds.square.events.gift_card
+      processors:
+        - type: attribute-remapper
+          name: Map `data.object.gift_card.gan_source` to
+            `cds.square.gift_card.gan_source`
+          enabled: true
+          sources:
+            - data.object.gift_card.gan_source
+          sourceType: attribute
+          target: cds.square.gift_card.gan_source
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `data.object.linked_customer_id` to
+            `cds.square.gift_card.linked_customer_id`
+          enabled: true
+          sources:
+            - data.object.linked_customer_id
+          sourceType: attribute
+          target: cds.square.gift_card.linked_customer_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `data.object.gift_card.state` to `cds.square.gift_card.state`
+          enabled: true
+          sources:
+            - data.object.gift_card.state
+          sourceType: attribute
+          target: cds.square.gift_card.state
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `data.object.gift_card.balance_money` to
+            `cds.square.gift_card.balance_money`
+          enabled: true
+          sources:
+            - data.object.gift_card.balance_money
+          sourceType: attribute
+          target: cds.square.gift_card.balance_money
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Payment Remapper For Facets Creation
+      enabled: true
+      filter:
+        query: service:cds.square.events.payment
+      processors:
+        - type: attribute-remapper
+          name: Map `data.object.payment.status` to `cds.square.payment.status`
+          enabled: true
+          sources:
+            - data.object.payment.status
+          sourceType: attribute
+          target: cds.square.payment.status
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `data.object.payment.source_type` to `cds.square.payment.source_type`
+          enabled: true
+          sources:
+            - data.object.payment.source_type
+          sourceType: attribute
+          target: cds.square.payment.source_type
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `data.object.payment.location_id` to `cds.square.payment.location_id`
+          enabled: true
+          sources:
+            - data.object.payment.location_id
+          sourceType: attribute
+          target: cds.square.payment.location_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `data.object.payment.amount_money` to
+            `cds.square.payment.amount_money`
+          enabled: true
+          sources:
+            - data.object.payment.amount_money
+          sourceType: attribute
+          target: cds.square.payment.amount_money
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Customer Log Processing Pipeline
+      enabled: true
+      filter:
+        query: service:cds.square.events.customer
+      processors:
+        - type: grok-parser
+          name: Extract Birthyear of Customer
+          enabled: true
+          source: data.object.customer.birthday
+          samples:
+            - 1962-03-04
+          grok:
+            supportRules: ""
+            matchRules: extract_birthyear %{integer:cds.square.customer.birthyear}-%{data}%
+    - type: pipeline
+      name: "Order Fulfilment Time Calculation "
+      enabled: true
+      filter:
+        query: service:cds.square.events.order @type:order.fulfillment.updated
+          @data.object.order_fulfillment_updated.fulfillment_update.new_state:COMPLETED
+      processors:
+        - type: grok-parser
+          name: Convert `updated_at` to epoch
+          enabled: true
+          source: data.object.order_fulfillment_updated.updated_at
+          samples:
+            - 2020-06-18T17:45:13Z
+            - 2020-06-18T17:45:13.123Z
+          grok:
+            supportRules: ""
+            matchRules: >-
+              date_to_epoch
+              %{date("yyyy-MM-dd'T'HH:mm:ssZ"):data.object.order_fulfillment_updated.updated_at}
+
+              date_to_epoch2 %{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):data.object.order_fulfillment_updated.updated_at}
+        - type: grok-parser
+          name: Convert `created_at` to epoch
+          enabled: true
+          source: data.object.order_fulfillment_updated.created_at
+          samples:
+            - 2020-06-18T17:45:13Z
+            - 2020-06-18T17:45:13.123Z
+          grok:
+            supportRules: ""
+            matchRules: >-
+              date_to_epoch
+              %{date("yyyy-MM-dd'T'HH:mm:ssZ"):data.object.order_fulfillment_updated.created_at}
+
+              date_to_epoch2 %{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):data.object.order_fulfillment_updated.created_at}
+        - type: arithmetic-processor
+          name: Calculate `cds.square.order_fulfillment_time_seconds`
+          enabled: true
+          expression: (data.object.order_fulfillment_updated.updated_at -
+            data.object.order_fulfillment_updated.created_at) / 1000
+          target: cds.square.order_fulfillment_time_seconds
+          replaceMissing: false
+    - type: pipeline
+      name: "Refund Processing Time Calculation "
+      enabled: true
+      filter:
+        query:
+          service:cds.square.events.refund @data.object.refund.status:(COMPLETED OR
+          REJECTED)
+      processors:
+        - type: grok-parser
+          name: Convert `updated_at` to epoch
+          enabled: true
+          source: data.object.refund.updated_at
+          samples:
+            - 2020-06-18T17:45:13Z
+            - 2020-06-18T17:45:13.123Z
+          grok:
+            supportRules: ""
+            matchRules: >-
+              date_to_epoch
+              %{date("yyyy-MM-dd'T'HH:mm:ssZ"):data.object.refund.updated_at}
+
+              date_to_epoch2 %{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):data.object.refund.updated_at}
+        - type: grok-parser
+          name: Convert `created_at` to epoch
+          enabled: true
+          source: data.object.refund.created_at
+          samples:
+            - 2020-06-18T17:45:13Z
+            - 2020-06-18T17:45:13.123Z
+          grok:
+            supportRules: ""
+            matchRules: >-
+              date_to_epoch
+              %{date("yyyy-MM-dd'T'HH:mm:ssZ"):data.object.refund.created_at}
+
+              date_to_epoch2 %{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):data.object.refund.created_at}
+        - type: arithmetic-processor
+          name: Calculate `cds.square.refund_processing_time_seconds`
+          enabled: true
+          expression:
+            (data.object.refund.updated_at - data.object.refund.created_at) /
+            1000
+          target: cds.square.refund_processing_time_seconds
+          replaceMissing: false
+    - type: pipeline
+      name: "Payment Processing Time Calculation "
+      enabled: true
+      filter:
+        query: service:cds.square.events.payment @cds.square.payment.status:COMPLETED
+      processors:
+        - type: grok-parser
+          name: Convert `updated_at` to epoch
+          enabled: true
+          source: data.object.payment.updated_at
+          samples:
+            - 2020-06-18T17:45:13Z
+            - 2020-06-18T17:45:13.123Z
+          grok:
+            supportRules: ""
+            matchRules: >-
+              date_to_epoch
+              %{date("yyyy-MM-dd'T'HH:mm:ssZ"):data.object.payment.updated_at}
+
+              date_to_epoch2 %{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):data.object.payment.updated_at}
+        - type: grok-parser
+          name: Convert `created_at` to epoch
+          enabled: true
+          source: data.object.payment.created_at
+          samples:
+            - 2020-06-18T17:45:13Z
+            - 2020-06-18T17:45:13.123Z
+          grok:
+            supportRules: ""
+            matchRules: >-
+              date_to_epoch
+              %{date("yyyy-MM-dd'T'HH:mm:ssZ"):data.object.payment.created_at}
+
+              date_to_epoch2 %{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):data.object.payment.created_at}
+        - type: arithmetic-processor
+          name: Calculate `cds.square.payment_processing_time_seconds`
+          enabled: true
+          expression:
+            (data.object.payment.updated_at - data.object.payment.created_at) /
+            1000
+          target: cds.square.payment_processing_time_seconds
+          replaceMissing: false
+    - type: pipeline
+      name: "Dispute Settlement Time Calculation "
+      enabled: true
+      filter:
+        query: service:cds.square.events.dispute @cds.square.dispute.state:(WON OR LOST)
+      processors:
+        - type: grok-parser
+          name: Convert `updated_at` to epoch
+          enabled: true
+          source: data.object.dispute.updated_at
+          samples:
+            - 2020-06-18T17:45:13Z
+            - 2020-06-18T17:45:13.123Z
+          grok:
+            supportRules: ""
+            matchRules: >-
+              date_to_epoch
+              %{date("yyyy-MM-dd'T'HH:mm:ssZ"):data.object.dispute.updated_at}
+
+              date_to_epoch2 %{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):data.object.dispute.updated_at}
+        - type: grok-parser
+          name: Convert `created_at` to epoch
+          enabled: true
+          source: data.object.dispute.created_at
+          samples:
+            - 2020-06-18T17:45:13Z
+            - 2020-06-18T17:45:13.123Z
+          grok:
+            supportRules: ""
+            matchRules: >-
+              date_to_epoch
+              %{date("yyyy-MM-dd'T'HH:mm:ssZ"):data.object.dispute.created_at}
+
+              date_to_epoch2 %{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):data.object.dispute.created_at}
+        - type: arithmetic-processor
+          name: Calculate `cds.square.dispute_settlement_duration_seconds`
+          enabled: true
+          expression:
+            (data.object.dispute.updated_at - data.object.dispute.created_at) /
+            1000
+          target: cds.square.dispute_settlement_duration_seconds
+          replaceMissing: false
+    - type: pipeline
+      name: "Payout Settlement Time Calculation "
+      enabled: true
+      filter:
+        query:
+          service:cds.square.events.payout @data.object.payout.status:(FAILED OR
+          PAID)
+      processors:
+        - type: grok-parser
+          name: Convert `updated_at` to epoch
+          enabled: true
+          source: data.object.payout.updated_at
+          samples:
+            - 2020-06-18T17:45:13Z
+            - 2020-06-18T17:45:13.123Z
+            - 2020-06-18T17:45:13.12Z
+          grok:
+            supportRules: ""
+            matchRules: >-
+              date_to_epoch
+              %{date("yyyy-MM-dd'T'HH:mm:ssZ"):data.object.payout.updated_at}
+
+              date_to_epoch2 %{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):data.object.payout.updated_at}
+        - type: grok-parser
+          name: Convert `created_at` to epoch
+          enabled: true
+          source: data.object.payout.created_at
+          samples:
+            - 2020-06-18T17:45:13Z
+            - 2020-06-18T17:45:13.123Z
+          grok:
+            supportRules: ""
+            matchRules: >-
+              date_to_epoch
+              %{date("yyyy-MM-dd'T'HH:mm:ssZ"):data.object.payout.created_at}
+
+              date_to_epoch2 %{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):data.object.payout.created_at}
+        - type: arithmetic-processor
+          name: Calculate `cds.square.payout_settlement_duration_seconds`
+          enabled: true
+          expression:
+            (data.object.payout.updated_at - data.object.payout.created_at) /
+            1000
+          target: cds.square.payout_settlement_duration_seconds
+          replaceMissing: false
+    - type: pipeline
+      name: "Invoice Settlement Time Calculation "
+      enabled: true
+      filter:
+        query: service:cds.square.events.invoice @data.object.invoice.status:PAID
+      processors:
+        - type: grok-parser
+          name: Convert `updated_at` to epoch
+          enabled: true
+          source: data.object.invoice.updated_at
+          samples:
+            - 2020-06-18T17:45:13Z
+            - 2020-06-18T17:45:13.123Z
+          grok:
+            supportRules: ""
+            matchRules: >-
+              date_to_epoch
+              %{date("yyyy-MM-dd'T'HH:mm:ssZ"):data.object.invoice.updated_at}
+
+              date_to_epoch2 %{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):data.object.invoice.updated_at}
+        - type: grok-parser
+          name: Convert `created_at` to epoch
+          enabled: true
+          source: data.object.invoice.created_at
+          samples:
+            - 2020-06-18T17:45:13Z
+            - 2020-06-18T17:45:13.123Z
+          grok:
+            supportRules: ""
+            matchRules: >-
+              date_to_epoch
+              %{date("yyyy-MM-dd'T'HH:mm:ssZ"):data.object.invoice.created_at}
+
+              date_to_epoch2 %{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):data.object.invoice.created_at}
+        - type: arithmetic-processor
+          name: Calculate `cds.square.invoice_settlement_duration_seconds`
+          enabled: true
+          expression:
+            (data.object.invoice.updated_at - data.object.invoice.created_at) /
+            1000
+          target: cds.square.invoice_settlement_duration_seconds
+          replaceMissing: false

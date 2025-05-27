@@ -1,0 +1,31 @@
+id: "powerdns"
+tests:
+ -
+  sample: "Oct 08 15:08:53 cc-test-powerdns pdns_recursor[16261]: Only allowing queries from: 127.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 169.254.0.0/16, 192.168.0.0/16, 172.16.0.0/12, ::1/128, fc00::/7, fe80::/10"
+  result:
+    custom:
+      hostname: "cc-test-powerdns"
+      pid: 16261
+      syslog:
+        appname: "pdns_recursor"
+      timestamp: 24246533000
+    message: "Only allowing queries from: 127.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 169.254.0.0/16, 192.168.0.0/16, 172.16.0.0/12, ::1/128, fc00::/7, fe80::/10"
+    service: "pdns_recursor"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 24246533000
+ -
+  sample: "Oct 08 15:08:53 cc-test-powerdns pdns_recursor[16261]: Inserting rfc 1918 private space zones"
+  result:
+    custom:
+      hostname: "cc-test-powerdns"
+      pid: 16261
+      syslog:
+        appname: "pdns_recursor"
+      timestamp: 24246533000
+    message: "Inserting rfc 1918 private space zones"
+    service: "pdns_recursor"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 24246533000
+

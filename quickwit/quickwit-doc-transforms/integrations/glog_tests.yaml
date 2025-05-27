@@ -1,0 +1,48 @@
+id: "glog"
+tests:
+ -
+  sample: "I0402 08:06:51.571361       1 static_autoscaler.go:366] Calculating unneeded nodes"
+  result:
+    custom:
+      level: "I"
+      lineno: 366.0
+      logger:
+        name: "static_autoscaler.go"
+        thread_id: 1.0
+      timestamp: 39427611571
+    message: "Calculating unneeded nodes"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 39427611571
+ -
+  sample: "I0402 08:06:51.571361       1 k8sclient.go:251] Replicas are not as expected : updating replicas from 37 to 36"
+  result:
+    custom:
+      level: "I"
+      lineno: 251.0
+      logger:
+        name: "k8sclient.go"
+        thread_id: 1.0
+      timestamp: 39427611571
+    message: "Replicas are not as expected : updating replicas from 37 to 36"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 39427611571
+ -
+  sample: "E0402 08:06:51.571361       1 authentication.go:65] Unable to authenticate the request due to an error: x509: certificate has expired or is not yet valid"
+  result:
+    custom:
+      level: "E"
+      lineno: 65.0
+      logger:
+        name: "authentication.go"
+        thread_id: 1.0
+      timestamp: 39427611571
+    message: "Unable to authenticate the request due to an error: x509: certificate has expired or is not yet valid"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 39427611571
+

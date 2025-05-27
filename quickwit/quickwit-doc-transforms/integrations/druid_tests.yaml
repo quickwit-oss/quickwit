@@ -1,0 +1,208 @@
+id: "druid"
+tests:
+ -
+  sample: "2019-09-10T09:40:20,909 INFO [Coordinator-Exec--0] org.apache.druid.server.coordinator.helper.DruidCoordinatorSegmentInfoLoader - Starting coordination. Getting available segments."
+  result:
+    custom:
+      level: "INFO"
+      logger:
+        name: "org.apache.druid.server.coordinator.helper.DruidCoordinatorSegmentInfoLoader"
+        thread_name: "Coordinator-Exec--0"
+      timestamp: 1568108420909
+    message: "Starting coordination. Getting available segments."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1568108420909
+ -
+  sample: |
+    2019-07-25T20:12:02,335 INFO [main] org.apache.druid.server.metrics.MetricsModule - Adding monitor[org.apache.druid.java.util.metrics.JvmMonitor@2fd954f]
+    Exception in thread "main" java.lang.RuntimeException: com.google.inject.CreationException: Unable to create injector, see the following errors:
+
+    1) No implementation for java.util.List<org.apache.druid.segment.realtime.FireDepartment> was bound.
+  result:
+    custom:
+      error:
+        stack: |-
+          Exception in thread "main" java.lang.RuntimeException: com.google.inject.CreationException: Unable to create injector, see the following errors:
+
+          1) No implementation for java.util.List<org.apache.druid.segment.realtime.FireDepartment> was bound.
+      level: "INFO"
+      logger:
+        name: "org.apache.druid.server.metrics.MetricsModule"
+        thread_name: "main"
+      timestamp: 1564085522335
+    message: "Adding monitor[org.apache.druid.java.util.metrics.JvmMonitor@2fd954f]"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1564085522335
+ -
+  sample: |
+    2019-07-25T20:26:56,776 INFO [main] org.apache.druid.guice.JsonConfigurator - Unable to parse [druid.monitoring.monitors]=[["org.apache.druid.client.cache.CacheMonitor","org.apache.druid.java.util.metrics.SysMonitor","org.apache.druid.server.metrics.HistoricalMetricsMonitor","org.apache.druid.java.util.metrics.JvmMonitor","org.apache.druid.java.util.metrics.JvmCpuMonitor","org.apache.druid.java.util.metrics.CpuAcctDeltaMonitor","org.apache.druid.java.util.metrics.JvmThreadsMonitor"] as a json object, using as is.
+    com.fasterxml.jackson.core.JsonParseException: Unexpected end-of-input: expected close marker for ARRAY
+     at [Source: [org.apache.druid.client.cache.CacheMonitor, line: 1, column: 727]
+      at com.fasterxml.jackson.core.JsonParser
+      at com.fasterxml.jackson.core.base.ParserMinimalBase
+  result:
+    custom:
+      error:
+        kind: "com.fasterxml.jackson.core.JsonParseException"
+        message: "Unexpected end-of-input: expected close marker for ARRAY"
+        stack: |-
+          com.fasterxml.jackson.core.JsonParseException: Unexpected end-of-input: expected close marker for ARRAY
+           at [Source: [org.apache.druid.client.cache.CacheMonitor, line: 1, column: 727]
+            at com.fasterxml.jackson.core.JsonParser
+            at com.fasterxml.jackson.core.base.ParserMinimalBase
+      level: "INFO"
+      logger:
+        name: "org.apache.druid.guice.JsonConfigurator"
+        thread_name: "main"
+      timestamp: 1564086416776
+    message: "Unable to parse [druid.monitoring.monitors]=[[\"org.apache.druid.client.cache.CacheMonitor\",\"org.apache.druid.java.util.metrics.SysMonitor\",\"org.apache.druid.server.metrics.HistoricalMetricsMonitor\",\"org.apache.druid.java.util.metrics.JvmMonitor\",\"org.apache.druid.java.util.metrics.JvmCpuMonitor\",\"org.apache.druid.java.util.metrics.CpuAcctDeltaMonitor\",\"org.apache.druid.java.util.metrics.JvmThreadsMonitor\"] as a json object, using as is."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1564086416776
+ -
+  sample: "2019-09-10T09:40:20,909 INFO [Coordinator-Exec--0] org.apache.druid.server.coordinator.helper.DruidCoordinatorSegmentInfoLoader - 1234567 123 - Starting coordination. Getting available segments."
+  result:
+    custom:
+      dd:
+        span_id: "123"
+      level: "INFO"
+      logger:
+        name: "org.apache.druid.server.coordinator.helper.DruidCoordinatorSegmentInfoLoader"
+        thread_name: "Coordinator-Exec--0"
+      timestamp: 1568108420909
+    message: "Starting coordination. Getting available segments."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1568108420909
+    trace_id: "1234567"
+ -
+  sample: "2000-09-07 14:07:41,508 [main] INFO  MyApp - Entering application."
+  result:
+    custom:
+      level: "INFO"
+      logger:
+        name: "MyApp"
+        thread_name: "main"
+      timestamp: 968335661508
+    message: "Entering application."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 968335661508
+ -
+  sample: "54 [main] INFO MyApp.foo.bar - Entering application."
+  result:
+    custom:
+      duration: 54
+      level: "INFO"
+      logger:
+        name: "MyApp.foo.bar"
+        thread_name: "main"
+    message: "Entering application."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: "2000-09-07 14:07:44 INFO org.foo.bar:32 - Entering application."
+  result:
+    custom:
+      level: "INFO"
+      line: 32
+      logger:
+        name: "org.foo.bar"
+      timestamp: 968335664000
+    message: "Entering application."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 968335664000
+ -
+  sample: "2000-09-07 14:07:44.452 [main] INFO org.foo.bar - Entering application."
+  result:
+    custom:
+      level: "INFO"
+      logger:
+        name: "org.foo.bar"
+        thread_name: "main"
+      timestamp: 968335664452
+    message: "Entering application."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 968335664452
+ -
+  sample: "2000-09-07 14:07:41,508 [main] INFO  MyApp - 1234567 123 - Entering application."
+  result:
+    custom:
+      dd:
+        span_id: "123"
+      level: "INFO"
+      logger:
+        name: "MyApp"
+        thread_name: "main"
+      timestamp: 968335661508
+    message: "Entering application."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 968335661508
+    trace_id: "1234567"
+ -
+  sample: "54 [main] INFO MyApp.foo.bar - 1234567 123 - Entering application."
+  result:
+    custom:
+      dd:
+        span_id: "123"
+      duration: 54
+      level: "INFO"
+      logger:
+        name: "MyApp.foo.bar"
+        thread_name: "main"
+    message: "Entering application."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+    trace_id: "1234567"
+ -
+  sample: "2000-09-07 14:07:44 INFO org.foo.bar:32 - 1234567 123 - Entering application."
+  result:
+    custom:
+      dd:
+        span_id: "123"
+      level: "INFO"
+      line: 32
+      logger:
+        name: "org.foo.bar"
+      timestamp: 968335664000
+    message: "Entering application."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 968335664000
+    trace_id: "1234567"
+ -
+  sample: "2000-09-07 14:07:44.452 [main] INFO org.foo.bar - 1234567 123 - Entering application."
+  result:
+    custom:
+      dd:
+        span_id: "123"
+      level: "INFO"
+      logger:
+        name: "org.foo.bar"
+        thread_name: "main"
+      timestamp: 968335664452
+    message: "Entering application."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 968335664452
+    trace_id: "1234567"
+

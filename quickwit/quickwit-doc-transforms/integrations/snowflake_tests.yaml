@@ -1,0 +1,498 @@
+id: "snowflake"
+tests:
+  - sample: |-
+      {
+        "warehouse_type" : "STANDARD",
+        "queued_repair_time" : 0,
+        "external_function_total_sent_rows" : 0,
+        "query_id" : "01b3b001-0404-992f-002a-6603deb9266a",
+        "inbound_data_transfer_bytes" : 0,
+        "bytes_spilled_to_local_storage" : 0,
+        "transaction_blocked_time" : 0,
+        "partitions_total" : 0,
+        "query_acceleration_bytes_scanned" : 0,
+        "external_function_total_sent_bytes" : 0,
+        "rows_deleted" : 0,
+        "compilation_time" : 39,
+        "bytes_read_from_result" : 0,
+        "percentage_scanned_from_cache" : 0,
+        "release_version" : "8.14.2",
+        "transaction_id" : 0,
+        "direct_objects_accessed" : [ {
+          "columns" : [ {
+            "columnId" : 7675584,
+            "columnName" : "BASE_TABLE_NAME"
+          }, {
+            "columnId" : 7675587,
+            "columnName" : "SILENCE_UNTIL_DT"
+          }, {
+            "columnId" : 7675586,
+            "columnName" : "CREATED_DT"
+          }, {
+            "columnId" : 7675585,
+            "columnName" : "DATACENTER_LABEL"
+          }, {
+            "columnId" : 7675588,
+            "columnName" : "REASON"
+          } ],
+          "objectDomain" : "Table",
+          "objectName" : "REPORTING.GENERAL.BYOD_ALERT_SILENCES_CONTROL_TABLE",
+          "objectId" : 3694074
+        } ],
+        "bytes_written_to_result" : 0,
+        "query_type" : "SELECT",
+        "child_queries_wait_time" : 0,
+        "query_acceleration_upper_limit_scale_factor" : 0,
+        "role_name" : "IA_BYOD_ROLE",
+        "start_time" : 1.713193079926E9,
+        "warehouse_name" : "IA_BYOD_WAREHOUSE",
+        "bytes_deleted" : 0,
+        "external_function_total_invocations" : 0,
+        "secondary_role_stats" : "{\"roleNames\":[],\"roleCount\":0,\"roleIds\":[]}",
+        "external_function_total_received_rows" : 0,
+        "list_external_files_time" : 0,
+        "query_parameterized_hash" : "a21f800b9daee6a87ebf0c7383cf05d1",
+        "query_text" : "WITH SILENCES AS (\n  SELECT LOWER(BASE_TABLE_NAME), CREATED_DT, SILENCE_UNTIL_DT, REASON\n      ,ROW_NUMBER() OVER (PARTITION BY LOWER(BASE_TABLE_NAME) ORDER BY CREATED_DT DESC) AS ROW_NUMBER\n  FROM REPORTING.GENERAL.BYOD_ALERT_SILENCES_CONTROL_TABLE\n  WHERE CONTAINS(?, LOWER(DATACENTER_LABEL))\n)\nSELECT * FROM SILENCES WHERE ROW_NUMBER = ?;",
+        "user_name" : "IA_BYOD_USER",
+        "bytes_sent_over_the_network" : 0,
+        "partitions_scanned" : 0,
+        "execution_time" : 1,
+        "bytes_written" : 0,
+        "query_hash" : "585805d3c72d757d2282d91ce0683472",
+        "query_parameterized_hash_version" : 1,
+        "execution_status" : "SUCCESS",
+        "queued_provisioning_time" : 0,
+        "is_client_generated_statement" : true,
+        "query_acceleration_partitions_scanned" : 0,
+        "total_elapsed_time" : 40,
+        "rows_written_to_result" : "0",
+        "query_hash_version" : 2,
+        "rows_inserted" : 0,
+        "database_name" : "REPORTING",
+        "role_type" : "ROLE",
+        "queued_overload_time" : 0,
+        "bytes_spilled_to_remote_storage" : 0,
+        "end_time" : 1.713193079966E9,
+        "rows_updated" : 0,
+        "session_id" : "11934112718122730",
+        "credits_used_cloud_services" : 6.0E-6,
+        "base_objects_accessed" : [ {
+          "columns" : [ {
+            "columnId" : 7675584,
+            "columnName" : "BASE_TABLE_NAME"
+          }, {
+            "columnId" : 7675587,
+            "columnName" : "SILENCE_UNTIL_DT"
+          }, {
+            "columnId" : 7675586,
+            "columnName" : "CREATED_DT"
+          }, {
+            "columnId" : 7675585,
+            "columnName" : "DATACENTER_LABEL"
+          }, {
+            "columnId" : 7675588,
+            "columnName" : "REASON"
+          } ],
+          "objectDomain" : "Table",
+          "objectName" : "REPORTING.GENERAL.BYOD_ALERT_SILENCES_CONTROL_TABLE",
+          "objectId" : 3694074
+        } ],
+        "query_tag" : {
+          "code_owner_team" : "team-internalanalyticsintakeplatform",
+          "cost_attribution_team" : "team-internalanalyticsintakeplatform",
+          "mortar_job_id" : "661d3e9b95dd3662a86488c6",
+          "class_name" : "ByodSinkSnowflake"
+        },
+        "bytes_scanned" : 0,
+        "query_start_time" : "1713193079.926000000",
+        "database_id" : "3694074",
+        "rows_unloaded" : 0,
+        "outbound_data_transfer_bytes" : 0,
+        "external_function_total_received_bytes" : 0,
+        "warehouse_id" : 38
+      }
+    tags:
+      - "table:query_history"
+    result:
+      custom:
+        access:
+          base_objects:
+            - columns:
+                - columnId: 7675584
+                  columnName: "BASE_TABLE_NAME"
+                - columnId: 7675587
+                  columnName: "SILENCE_UNTIL_DT"
+                - columnId: 7675586
+                  columnName: "CREATED_DT"
+                - columnId: 7675585
+                  columnName: "DATACENTER_LABEL"
+                - columnId: 7675588
+                  columnName: "REASON"
+              objectDomain: "Table"
+              objectName: "REPORTING.GENERAL.BYOD_ALERT_SILENCES_CONTROL_TABLE"
+              objectId: 3694074
+          direct_objects:
+            - columns:
+                - columnId: 7675584
+                  columnName: "BASE_TABLE_NAME"
+                - columnId: 7675587
+                  columnName: "SILENCE_UNTIL_DT"
+                - columnId: 7675586
+                  columnName: "CREATED_DT"
+                - columnId: 7675585
+                  columnName: "DATACENTER_LABEL"
+                - columnId: 7675588
+                  columnName: "REASON"
+              objectDomain: "Table"
+              objectName: "REPORTING.GENERAL.BYOD_ALERT_SILENCES_CONTROL_TABLE"
+              objectId: 3694074
+        bytes:
+          deleted: 0
+          read_from_result: 0
+          scanned: 0
+          sent_over_the_network: 0
+          spilled_to_local_storage: 0
+          spilled_to_remote_storage: 0
+          written: 0
+          written_to_result: 0
+        child_queries_wait_time: 0
+        compilation_time: 39
+        credits_used_cloud_services: 6.0E-6
+        database:
+          id: "3694074"
+          name: "REPORTING"
+        end_time: 1.713193079966E9
+        execution:
+          status: "SUCCESS"
+          time: 1
+        external_function_total:
+          invocations: 0
+          received_bytes: 0
+          received_rows: 0
+          sent_bytes: 0
+          sent_rows: 0
+        inbound_data_transfer:
+          bytes: 0
+        is_client_generated_statement: true
+        list_external_files_time: 0
+        ocsf:
+          activity_id: 4
+          activity_name: "Query"
+          actor:
+            session:
+              uid: "11934112718122730"
+            user:
+              name: "IA_BYOD_USER"
+          category_name: "Application Activity"
+          category_uid: 6
+          class_name: "Datastore Activity"
+          class_uid: 6005
+          database:
+            name: "REPORTING"
+            type: "Relational"
+            type_id: 1
+            uid: "3694074"
+          metadata:
+            product:
+              name: "Snowflake"
+              vendor_name: "Snowflake"
+            version: "1.3.0"
+          query_info:
+            query_string: |-
+              WITH SILENCES AS (
+                SELECT LOWER(BASE_TABLE_NAME), CREATED_DT, SILENCE_UNTIL_DT, REASON
+                    ,ROW_NUMBER() OVER (PARTITION BY LOWER(BASE_TABLE_NAME) ORDER BY CREATED_DT DESC) AS ROW_NUMBER
+                FROM REPORTING.GENERAL.BYOD_ALERT_SILENCES_CONTROL_TABLE
+                WHERE CONTAINS(?, LOWER(DATACENTER_LABEL))
+              )
+              SELECT * FROM SILENCES WHERE ROW_NUMBER = ?;
+            uid: "01b3b001-0404-992f-002a-6603deb9266a"
+          severity: "Informational"
+          severity_id: 1
+          src_endpoint:
+            name: "Unknown"
+          status: "Success"
+          status_id: 1
+          time: 1.713193079966E9
+          type: "Database"
+          type_id: 1
+          type_uid: 600504
+        outbound_data_transfer:
+          bytes: 0
+        partitions:
+          scanned: 0
+          total: 0
+        percentage_scanned_from_cache: 0
+        query:
+          hash: "585805d3c72d757d2282d91ce0683472"
+          hash_version: 2
+          id: "01b3b001-0404-992f-002a-6603deb9266a"
+          parameterized_hash: "a21f800b9daee6a87ebf0c7383cf05d1"
+          parameterized_hash_version: 1
+          tag:
+            class_name: "ByodSinkSnowflake"
+            code_owner_team: "team-internalanalyticsintakeplatform"
+            cost_attribution_team: "team-internalanalyticsintakeplatform"
+            mortar_job_id: "661d3e9b95dd3662a86488c6"
+          type: "SELECT"
+        query_acceleration:
+          bytes_scanned: 0
+          partitions_scanned: 0
+          upper_limit_scale_factor: 0
+        query_start_time: "1713193079.926000000"
+        queued:
+          overload_time: 0
+          provisioning_time: 0
+          repair_time: 0
+        release_version: "8.14.2"
+        role:
+          name: "IA_BYOD_ROLE"
+          type: "ROLE"
+        rows:
+          deleted: 0
+          inserted: 0
+          unloaded: 0
+          updated: 0
+          written_to_result: "0"
+        secondary_role_stats: '{"roleNames":[],"roleCount":0,"roleIds":[]}'
+        session:
+          id: "11934112718122730"
+        start_time: 1.713193079926E9
+        total_elapsed_time: 40
+        transaction:
+          blocked_time: 0
+          id: 0
+        usr:
+          name: "IA_BYOD_USER"
+        warehouse:
+          id: 38
+          name: "IA_BYOD_WAREHOUSE"
+          type: "STANDARD"
+      message: |-
+        WITH SILENCES AS (
+          SELECT LOWER(BASE_TABLE_NAME), CREATED_DT, SILENCE_UNTIL_DT, REASON
+              ,ROW_NUMBER() OVER (PARTITION BY LOWER(BASE_TABLE_NAME) ORDER BY CREATED_DT DESC) AS ROW_NUMBER
+          FROM REPORTING.GENERAL.BYOD_ALERT_SILENCES_CONTROL_TABLE
+          WHERE CONTAINS(?, LOWER(DATACENTER_LABEL))
+        )
+        SELECT * FROM SILENCES WHERE ROW_NUMBER = ?;
+      tags:
+        - "source:LOGS_SOURCE"
+        - "snowflake.table:query_history"
+        - "query.parameterized_hash:a21f800b9daee6a87ebf0c7383cf05d1"
+      timestamp: 1713193079
+  - sample: |-
+      {
+        "first_authentication_factor" : "PASSWORD",
+        "event_id" : "11934112722679274",
+        "event_type" : "LOGIN",
+        "reported_client_type" : "PYTHON_DRIVER",
+        "user_name" : "IA_DBT_USER",
+        "client_ip" : "34.233.140.66",
+        "related_event_id" : "0",
+        "event_timestamp" : 1714285140794,
+        "is_success" : "YES",
+        "reported_client_version" : "3.7.1"
+      }
+    tags:
+      - "table:login_history"
+    result:
+      custom:
+        event:
+          timestamp: 1714285140794
+        event_id: "11934112722679274"
+        event_type: "LOGIN"
+        evt:
+          name: "LOGIN"
+          outcome: "YES"
+        first_authentication_factor: "PASSWORD"
+        network:
+          client:
+            geoip: {}
+            ip: "34.233.140.66"
+        ocsf:
+          activity_id: 1
+          activity_name: "Logon"
+          actor:
+            app_name: "PYTHON_DRIVER"
+            user:
+              name: "IA_DBT_USER"
+          category_name: "Identity & Access Management"
+          category_uid: 3
+          class_name: "Authentication"
+          class_uid: 3002
+          is_mfa: false
+          metadata:
+            event_code: "LOGIN"
+            product:
+              name: "Snowflake"
+              vendor_name: "Snowflake"
+            version: "1.3.0"
+          service:
+            name: "snowflake"
+          severity: "Informational"
+          severity_id: 1
+          src_endpoint:
+            name: "34.233.140.66"
+          time: 1714285140794
+          type_uid: 300201
+          user:
+            name: "IA_DBT_USER"
+        related_event_id: "0"
+        reported_client_type: "PYTHON_DRIVER"
+        reported_client_version: "3.7.1"
+        usr:
+          name: "IA_DBT_USER"
+      message: |-
+        {
+          "first_authentication_factor" : "PASSWORD",
+          "event_id" : "11934112722679274",
+          "event_type" : "LOGIN",
+          "reported_client_type" : "PYTHON_DRIVER",
+          "user_name" : "IA_DBT_USER",
+          "client_ip" : "34.233.140.66",
+          "related_event_id" : "0",
+          "event_timestamp" : 1714285140794,
+          "is_success" : "YES",
+          "reported_client_version" : "3.7.1"
+        }
+      tags:
+        - "source:LOGS_SOURCE"
+        - "snowflake.table:login_history"
+      timestamp: 1714285140794
+  - sample: |-
+      {
+        "bytes_transferred" : "291229031",
+        "start_time" : 1749650061000,
+        "service" : "snowflake",
+        "end_time" : 1749650061000,
+        "transfer_type" : "COPY",
+        "source" : {
+          "cloud" : "aws",
+          "region" : "us-east-1"
+        },
+        "target" : {
+          "cloud" : "aws",
+          "region" : "us-east-1"
+        }
+      }
+    tags:
+      - "table:data_transfer_history"
+    result:
+      custom:
+        bytes_transferred: "291229031"
+        end_time: 1749650061000
+        evt:
+          action: "COPY"
+        ocsf:
+          activity_id: 99
+          activity_name: "COPY"
+          category_name: "Uncategorized"
+          category_uid: 0
+          class_name: "Base Event"
+          class_uid: 0
+          metadata:
+            event_code: "COPY"
+            product:
+              name: "Snowflake"
+              vendor_name: "Snowflake"
+            version: "1.3.0"
+          severity: "Informational"
+          severity_id: 1
+          time: 1749650061000
+          type_uid: 99
+        service: "snowflake"
+        source:
+          cloud: "aws"
+          region: "us-east-1"
+        start_time: 1749650061000
+        target:
+          cloud: "aws"
+          region: "us-east-1"
+        transfer_type: "COPY"
+      message: |-
+        {
+          "bytes_transferred" : "291229031",
+          "start_time" : 1749650061000,
+          "service" : "snowflake",
+          "end_time" : 1749650061000,
+          "transfer_type" : "COPY",
+          "source" : {
+            "cloud" : "aws",
+            "region" : "us-east-1"
+          },
+          "target" : {
+            "cloud" : "aws",
+            "region" : "us-east-1"
+          }
+        }
+      tags:
+        - "source:LOGS_SOURCE"
+        - "snowflake.table:data_transfer_history"
+      timestamp: 1749650061000
+  - sample: |-
+      {
+        "role" : "ORGADMIN",
+        "created_on" : 1749649751000,
+        "service" : "snowflake",
+        "action" : "GRANT_CREATED",
+        "granted_to" : "USER",
+        "grantee_name" : "LEAD_USER",
+        "granted_by" : "ACCOUNTADMIN",
+        "timestamp" : 1749649751000
+      }
+    tags:
+      - "table:grants_to_users"
+    result:
+      custom:
+        action: "GRANT_CREATED"
+        created_on: 1749649751000
+        evt:
+          name: "GRANT_CREATED"
+        granted:
+          by: "ACCOUNTADMIN"
+          to: "USER"
+        ocsf:
+          activity_id: 1
+          activity_name: "Assign Privileges"
+          actor:
+            user:
+              name: "ACCOUNTADMIN"
+          category_name: "Identity & Access Management"
+          category_uid: 3
+          class_name: "User Access Management"
+          class_uid: 3005
+          metadata:
+            event_code: "GRANT_CREATED"
+            product:
+              name: "Snowflake"
+              vendor_name: "Snowflake"
+            version: "1.3.0"
+          privileges:
+            - "ORGADMIN"
+            - "ADMIN_PRIVILEGES_ASSIGNED"
+          severity: "Informational"
+          severity_id: 1
+          time: 1749649751000
+          type_uid: 300501
+          user:
+            name: "LEAD_USER"
+        role: "ORGADMIN"
+        service: "snowflake"
+        timestamp: 1749649751000
+        usr:
+          name: "LEAD_USER"
+      message: |-
+        {
+          "role" : "ORGADMIN",
+          "created_on" : 1749649751000,
+          "service" : "snowflake",
+          "action" : "GRANT_CREATED",
+          "granted_to" : "USER",
+          "grantee_name" : "LEAD_USER",
+          "granted_by" : "ACCOUNTADMIN",
+          "timestamp" : 1749649751000
+        }
+      tags:
+        - "source:LOGS_SOURCE"
+        - "snowflake.table:grants_to_users"

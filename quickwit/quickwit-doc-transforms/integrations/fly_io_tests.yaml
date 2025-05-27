@@ -1,0 +1,88 @@
+id: "fly_io"
+tests:
+ -
+  sample: |-
+    {
+      "fly" : {
+        "app" : {
+          "instance" : "32882401c3294",
+          "name" : "datadog-agent-example"
+        },
+        "region" : "ewr"
+      },
+      "log" : {
+        "level" : "info"
+      },
+      "host" : "32882401c3294",
+      "env" : "flyenv",
+      "event" : {
+        "provider" : "app"
+      },
+      "message" : "2024-07-17 15:12:03 UTC | TRACE | INFO | (pkg/trace/info/stats.go:98 in LogAndResetStats) | [lang:python lang_version:3.8.19 interpreter:CPython tracer_version:2.8.5 endpoint_version:v0.5 service:fly-io-django-example-app] -> traces received: 2, traces filtered: 0, traces amount: 7118 bytes, events extracted: 0, events sampled: 0",
+      "ddsource" : "fly_io",
+      "timestamp" : "2024-07-17T15:12:03.753496132Z"
+    }
+  result:
+    custom:
+      ddsource: "fly_io"
+      env: "flyenv"
+      event:
+        provider: "app"
+      fly:
+        app:
+          instance: "32882401c3294"
+          name: "datadog-agent-example"
+        region: "ewr"
+      host: "32882401c3294"
+      log:
+        level: "info"
+      timestamp: "2024-07-17T15:12:03.753496132Z"
+    message: "2024-07-17 15:12:03 UTC | TRACE | INFO | (pkg/trace/info/stats.go:98 in LogAndResetStats) | [lang:python lang_version:3.8.19 interpreter:CPython tracer_version:2.8.5 endpoint_version:v0.5 service:fly-io-django-example-app] -> traces received: 2, traces filtered: 0, traces amount: 7118 bytes, events extracted: 0, events sampled: 0"
+    service: "datadog-agent-example"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "env:flyenv"
+ -
+  sample: |-
+    {
+      "fly" : {
+        "app" : {
+          "instance" : "32882401c3294",
+          "name" : "fly-io-django-example-app"
+        },
+        "region" : "ewr"
+      },
+      "log" : {
+        "level" : "info"
+      },
+      "host" : "32882401c3294",
+      "env" : "flyenv",
+      "event" : {
+        "provider" : "app"
+      },
+      "message" : "2024-07-17 15:11:03,197 ERROR [django.security.DisallowedHost] [exception.py:124] [dd.service=fly-io-django-example-app dd.env=flyenv dd.version=1.0.0 dd.trace_id=11819940765089042102 dd.span_id=9075026360387080219] - Invalid HTTP_HOST header: 'localhost:8000'. You may need to add 'localhost' to ALLOWED_HOSTS.",
+      "ddsource" : "fly_io",
+      "timestamp" : "2024-07-17T15:11:03.197750866Z"
+    }
+  result:
+    custom:
+      ddsource: "fly_io"
+      env: "flyenv"
+      event:
+        provider: "app"
+      fly:
+        app:
+          instance: "32882401c3294"
+          name: "fly-io-django-example-app"
+        region: "ewr"
+      host: "32882401c3294"
+      log:
+        level: "info"
+      timestamp: "2024-07-17T15:11:03.197750866Z"
+    message: "2024-07-17 15:11:03,197 ERROR [django.security.DisallowedHost] [exception.py:124] [dd.service=fly-io-django-example-app dd.env=flyenv dd.version=1.0.0 dd.trace_id=11819940765089042102 dd.span_id=9075026360387080219] - Invalid HTTP_HOST header: 'localhost:8000'. You may need to add 'localhost' to ALLOWED_HOSTS."
+    service: "fly-io-django-example-app"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "env:flyenv"

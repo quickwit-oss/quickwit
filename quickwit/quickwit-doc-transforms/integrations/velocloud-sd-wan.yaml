@@ -1,0 +1,78 @@
+id: velocloud-sd-wan
+metric_id: velocloud-sd-wan
+backend_only: false
+facets:
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+pipeline:
+  type: pipeline
+  name: VeloCloud Logs Pipeline
+  enabled: true
+  filter:
+    query: source:velocloud-sd-wan
+  processors:
+    - type: date-remapper
+      name: Define `eventTime` as the official date of the log
+      enabled: true
+      sources:
+        - eventTime
+    - type: status-remapper
+      name: Define `severity` as the official status of the log
+      enabled: true
+      sources:
+        - severity
+    - type: attribute-remapper
+      name: Map `event` to `evt.name`
+      enabled: true
+      sources:
+        - event
+      sourceType: attribute
+      target: evt.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: grok-parser
+      name: Parse detail field into JSON
+      enabled: true
+      source: detail
+      samples:
+        - '{\"remoteIp\":\"76.218.109.82\",\"method\":\"edge/edgeProvision\",\"principle\":\"vachar@vmware.com\",\"principleType\":\"USER\",\"requestId\":79,\"pid\":392225,\"jobId\":\"vachar@vmware.com.172437068.3280\",\"roleId\":901,\"roleName\":\"Operator
+          Standard
+          Admin\",\"userId\":180,\"authType\":\"OPERATOR_USER\",\"sessionId\":\"OPERATOR:1:901:vachar@vmware.com:1724381186391\",\"enterpriseId\":103,\"enterpriseName\":\"Datadoghq\"}'
+        - '{"system error":"detail exceeds event limit of 64K"}'
+      grok:
+        supportRules: ""
+        matchRules: detail %{data::json}
+    - type: attribute-remapper
+      name: Map `userId` to `usr.id`
+      enabled: true
+      sources:
+        - userId
+      sourceType: attribute
+      target: usr.id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `username` to `usr.name`
+      enabled: true
+      sources:
+        - username
+      sourceType: attribute
+      target: usr.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false

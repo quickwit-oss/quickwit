@@ -1,0 +1,25 @@
+id: "supervisord"
+tests:
+ -
+  sample: "2020-09-18 10:10:32,584 BLAT Increased RLIMIT_NOFILE limit to 128000"
+  result:
+    custom:
+      status: "BLAT"
+      timestamp: 1600423832584
+    message: "Increased RLIMIT_NOFILE limit to 128000"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1600423832584
+ -
+  sample: "2020-09-18 10:10:32,592 TRAC /var/run/supervisor.sock:Medusa (V1.12) started at Fri Sep 18 10:10:32 2020\n\tHostname: <unix domain socket>\n\tPort:/var/run/supervisor.sock"
+  result:
+    custom:
+      status: "TRAC"
+      timestamp: 1600423832592
+    message: "/var/run/supervisor.sock:Medusa (V1.12) started at Fri Sep 18 10:10:32 2020\n\tHostname: <unix domain socket>\n\tPort:/var/run/supervisor.sock"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1600423832592
+

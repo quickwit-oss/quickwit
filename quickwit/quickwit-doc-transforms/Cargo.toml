@@ -14,6 +14,7 @@ license.workspace = true
 fnv = { workspace = true }
 rand = { workspace = true }
 serde = { workspace = true }
+serde_yaml = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
 time = { workspace = true }
@@ -27,6 +28,11 @@ quickwit-datetime = { workspace = true }
 
 [dev-dependencies]
 serde_yaml = { workspace = true }
+env_logger = { workspace = true }
 
 [features]
 testsuite = []
+
+[[bin]]
+name = "convert_integrations"
+path = "src/bin/convert_integrations.rs"

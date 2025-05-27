@@ -1,0 +1,232 @@
+id: typingdna
+metric_id: typingdna-activelock
+backend_only: false
+facets:
+  - groups:
+      - TypingDNA
+    name: typingdna.result
+    path: typingdna.result
+    source: log
+  - groups:
+      - TypingDNA
+    name: typingdna.username
+    path: typingdna.username
+    source: log
+  - facetType: range
+    groups:
+      - TypingDNA
+    name: activity.cpm
+    path: activity.cpm
+    source: log
+    type: integer
+  - facetType: range
+    groups:
+      - TypingDNA
+    name: activity.chars
+    path: activity.chars
+    source: log
+    type: integer
+  - facetType: range
+    groups:
+      - TypingDNA
+    name: activity.minutes
+    path: activity.minutes
+    source: log
+    type: integer
+  - facetType: range
+    groups:
+      - TypingDNA
+    name: batch_similarity.app
+    path: batch_similarity.app
+    source: log
+    type: integer
+  - facetType: range
+    groups:
+      - TypingDNA
+    name: batch_similarity.keyboard
+    path: batch_similarity.keyboard
+    source: log
+    type: integer
+  - facetType: range
+    groups:
+      - TypingDNA
+    name: batch_similarity.timespan
+    path: batch_similarity.timespan
+    source: log
+    type: integer
+  - facetType: range
+    groups:
+      - TypingDNA
+    name: extra.ignored_data
+    path: extra.ignored_data
+    source: log
+    type: integer
+  - facetType: range
+    groups:
+      - TypingDNA
+    name: extra.keyboard_percentage
+    path: extra.keyboard_percentage
+    source: log
+    type: integer
+  - facetType: range
+    groups:
+      - TypingDNA
+    name: extra.sanity
+    path: extra.sanity
+    source: log
+    type: integer
+  - facetType: range
+    groups:
+      - TypingDNA
+    name: training_strength
+    path: training_strength
+    source: log
+    type: integer
+  - groups:
+      - TypingDNA
+    name: typingdna.version
+    path: typingdna.version
+    source: log
+  - groups:
+      - TypingDNA
+    name: main_app
+    path: main_app
+    source: log
+  - facetType: range
+    groups:
+      - TypingDNA
+    name: typingdna.score
+    path: typingdna.score
+    source: log
+    type: double
+  - groups:
+      - TypingDNA
+    name: keyboard_id
+    path: keyboard_id
+    source: log
+  - groups:
+      - TypingDNA
+    name: installID
+    path: installID
+    source: log
+  - facetType: range
+    groups:
+      - TypingDNA
+    name: typingdna.speed
+    path: typingdna.speed
+    source: log
+    type: integer
+  - groups:
+      - TypingDNA
+    name: keyboard_type
+    path: keyboard_type
+    source: log
+  - groups:
+      - TypingDNA
+    name: license_id
+    path: license_id
+    source: log
+  - facetType: range
+    groups:
+      - TypingDNA
+    name: moods.calm
+    path: moods.calm
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - TypingDNA
+    name: moods.energetic
+    path: moods.energetic
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - TypingDNA
+    name: moods.focused
+    path: moods.focused
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - TypingDNA
+    name: moods.happy
+    path: moods.happy
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - TypingDNA
+    name: moods.stressed
+    path: moods.stressed
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - TypingDNA
+    name: moods.tired
+    path: moods.tired
+    source: log
+    type: double
+  - groups:
+      - TypingDNA
+    name: package_id
+    path: package_id
+    source: log
+pipeline:
+  type: pipeline
+  name: TypingDNA
+  enabled: true
+  filter:
+    query: source:typingdna
+  processors:
+    - type: attribute-remapper
+      name: Map `username` to `typingdna.username`
+      enabled: true
+      sources:
+        - username
+      sourceType: attribute
+      target: typingdna.username
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `result` to `typingdna.result`
+      enabled: true
+      sources:
+        - result
+      sourceType: attribute
+      target: typingdna.result
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `version` to `typingdna.version`
+      enabled: true
+      sources:
+        - version
+      sourceType: attribute
+      target: typingdna.version
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `speed` to `typingdna.speed`
+      enabled: true
+      sources:
+        - speed
+      sourceType: attribute
+      target: typingdna.speed
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `score` to `typingdna.score`
+      enabled: true
+      sources:
+        - score
+      sourceType: attribute
+      target: typingdna.score
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false

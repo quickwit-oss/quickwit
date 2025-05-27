@@ -1,0 +1,152 @@
+id: tanium
+metric_id: tanium
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+pipeline:
+  type: pipeline
+  name: Tanium
+  enabled: true
+  filter:
+    query: source:tanium
+  processors:
+    - type: date-remapper
+      name: Define `alertedAt`, `createdAt`, `creation_time` as the official date of
+        the log
+      enabled: true
+      sources:
+        - alertedAt
+        - createdAt
+        - creation_time
+    - type: attribute-remapper
+      name: Map `state.target.ip`, `computerIpAddress` to `network.client.ip`
+      enabled: true
+      sources:
+        - state.target.ip
+        - computerIpAddress
+      sourceType: attribute
+      target: network.client.ip
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `mod_user.id`, `userId` to `usr.id`
+      enabled: true
+      sources:
+        - mod_user.id
+        - userId
+      sourceType: attribute
+      target: usr.id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `mod_user.name`, `userName` to `usr.name`
+      enabled: true
+      sources:
+        - mod_user.name
+        - userName
+      sourceType: attribute
+      target: usr.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: pipeline
+      name: Platform Audit Logs for Authentication
+      enabled: true
+      filter:
+        query: service:platform-audit-logs @object_type_name:authentication
+      processors:
+        - type: grok-parser
+          name: Parsing authentication logs for platform audits
+          enabled: true
+          source: details
+          samples:
+            - "User: test@example.com; Session ID: 111111; 10.10.10.10"
+            - "Failed Authentication Expired session supplied. User:
+              test@example.com; Last Used: 2024-12-29 06:24:46 +0000; Now:
+              2024-12-29 06:29:50 +0000"
+            - "Failed Authentication JWT authentication failed: IP Address:
+              10.10.10.10. User access token has been invalidated"
+            - "Failed Authentication JWT authentication failed: IP Address:
+              10.10.10.10. JWTInvalidToken: Invalid JSON Web Token. Token has
+              expired. now=2024-12-31 06:18:12 +0000 exp=2024-12-31 05:35:00
+              +0000"
+            - "User: test@example.com; Session ID: 111111; Authentication Type:
+              JsonWebToken; IP Address: 10.10.10.10"
+          grok:
+            supportRules: ""
+            matchRules: >-
+              new_system_user_session_created_rule UserID: %{word:usr.id};
+              Session ID: %{integer:session_id}; IP Address: %{ip:network.client.ip}
+
+              new_session_created_rule User: %{regex("[^;]*"):usr.name}; Session ID: %{integer:session_id}; Authentication Type: %{regex("[^;]*"):authentication_type}(; Originated from %{notSpace:originated_from})?(; IP Address: %{ip:network.client.ip})?
+
+              user_logged_out User: %{regex("[^;]*"):usr.name}; Session ID: %{integer:session_id}; (IP Address: )?%{ip:network.client.ip}
+
+              authentication_failed_rule1 Failed Authentication (Deleted|Expired) session supplied.%{regex(" *")}User: %{regex("[^;]*"):usr.name}; Last Used: %{date("yyyy-MM-dd HH:mm:ss Z"):last_used}; Now: %{date("yyyy-MM-dd HH:mm:ss Z"):now}
+
+              authentication_failed_rule2 Failed Authentication JWT authentication failed: IP Address: %{ip:network.client.ip}. (JWTInvalidToken: Invalid JSON Web Token. Token has expired. now=%{date("yyyy-MM-dd HH:mm:ss Z"):now} exp=%{date("yyyy-MM-dd HH:mm:ss Z"):exp}|User access token has been invalidated)
+    - type: pipeline
+      name: Platform Audit Logs for System Settings
+      enabled: true
+      filter:
+        query: service:platform-audit-logs @object_type_name:system_setting
+      processors:
+        - type: grok-parser
+          name: Parsing system settings logs for platform audits
+          enabled: true
+          source: details
+          samples:
+            - Updated 'ias_auth_jwks_download_timeout_seconds' from 20 to 10
+            - Updated 'jwt_settings' from {\"username_claim\":\"email\"} to
+              {\"username_claim\":\"email\"}
+            - "Created setting 'HotCachePercentage' with a value of: 80"
+          grok:
+            supportRules: ""
+            matchRules: >-
+              update_rule Updated '%{word:setting}' from %{regex(".*(?=
+              to)"):old_value} to %{data:new_value}
+
+              create_rule Created setting '%{word:setting}' with a value of: %{data:value}
+    - type: pipeline
+      name: " Message Remapping for Platform Audit Logs"
+      enabled: true
+      filter:
+        query: service:platform-audit-logs
+      processors:
+        - type: message-remapper
+          name: Define `details` as the official message of the log
+          enabled: true
+          sources:
+            - details
+    - name: Lookup on `severity` to `status`
+      enabled: true
+      source: severity
+      target: status
+      lookupTable: |-
+        info,Info
+        low,Notice
+        medium,Warning
+        high,Critical
+        critical,Alert
+      type: lookup-processor
+    - type: status-remapper
+      name: Define `status` as the official status of the log
+      enabled: true
+      sources:
+        - status

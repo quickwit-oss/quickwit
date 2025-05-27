@@ -1,0 +1,45 @@
+id: "zookeeper"
+tests:
+ -
+  sample: "2000-09-07 14:07:41,508 [main] INFO  MyApp - Entering application."
+  result:
+    custom:
+      logger:
+        name: "MyApp"
+        thread_name: "main"
+      status: "INFO"
+      timestamp: 968335661508
+    message: "Entering application."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 968335661508
+ -
+  sample: "54 [main] INFO MyApp.foo.bar - Entering application."
+  result:
+    custom:
+      duration: 54
+      logger:
+        name: "MyApp.foo.bar"
+        thread_name: "main"
+      status: "INFO"
+    message: "Entering application."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: "2000-09-07 14:07:44 INFO org.foo.bar:32 - Entering application."
+  result:
+    custom:
+      line: 32
+      logger:
+        name: "org.foo.bar"
+      status: "INFO"
+      timestamp: 968335664000
+    message: "Entering application."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 968335664000
+

@@ -1,0 +1,79 @@
+id: avio-consulting-mulesoft-observability
+metric_id: avio-consulting-mulesoft-observability
+backend_only: false
+installation_sources: 
+  - mulesoft
+facets: null
+pipeline:
+  type: pipeline
+  name: MuleSoft Observability Log Pipeline by AVIO Consulting
+  enabled: true
+  filter:
+    query: "source:mulesoft"
+  processors:
+    - type: service-remapper
+      name: Define `service.name` as the official service of the log
+      enabled: true
+      sources:
+        - service.name
+    - type: trace-id-remapper
+      name: Define `messageAttributes.traceIdLongLowPart`, `traceIdLong`, `log4j.context_data.traceIdLong` as
+        the official trace ID of the log
+      enabled: true
+      sources:
+        - messageAttributes.traceIdLongLowPart
+        - traceIdLong
+        - log4j.context_data.traceIdLong
+    - type: attribute-remapper
+      name: Map `messageAttributes.spanIdLong`, `spanIdLong`, `log4j.context_data.spanIdLong` to
+        `dd.span_id`
+      enabled: true
+      sources:
+        - messageAttributes.spanIdLong
+        - spanIdLong
+        - log4j.context_data.spanIdLong
+      sourceType: attribute
+      target: dd.span_id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: true
+    - type: attribute-remapper
+      name: Map `exception.detail` to `error.message`
+      enabled: true
+      sources:
+        - exception.detail
+      sourceType: attribute
+      target: error.message
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `exception.type` to `error.type`
+      enabled: true
+      sources:
+        - exception.type
+      sourceType: attribute
+      target: error.type
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `log4j.context_data.correlationId` to `correlationId`
+      enabled: true
+      sources:
+        - log4j.context_data.correlationId
+      sourceType: attribute
+      target: correlationId
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map attribute `team` to a tag
+      enabled: true
+      sources:
+        - team
+      sourceType: attribute
+      target: team
+      targetType: tag
+      preserveSource: true
+      overrideOnConflict: false

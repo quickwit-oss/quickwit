@@ -1,0 +1,1376 @@
+id: "crest-data-systems-zscaler"
+tests:
+ -
+  sample: |-
+    {
+      "Connector" : "USconnector-1633598427585",
+      "TargetCount" : "67",
+      "ActiveConnectionsToPrivateSE" : "0",
+      "MicroTenantID" : "145257480799129312",
+      "ActiveConnectionsToPublicSE" : "1",
+      "AvailableDiskBytes" : "261886394368",
+      "ProcessMemoryUtilization" : "4",
+      "ServiceCount" : "67",
+      "CPUUtilization" : "1",
+      "DisconnectedConnectionsToPrivateSE" : "0",
+      "AppConnectionsCleared" : "300",
+      "DisconnectedConnectionsToPublicSE" : "0",
+      "UsedUDPPortsIPv4" : "4",
+      "TransmittedBytesToPrivateSE" : "0",
+      "UsedUDPPortsIPv6" : "5",
+      "AppCount" : "129",
+      "SystemMaximumFileDescriptors" : "960344",
+      "UsedTCPPortsIPv4" : "11",
+      "SystemUsedFileDescriptors" : "1280",
+      "ReceivedBytesFromPrivateSE" : "0",
+      "AppConnectionsCreated" : "300",
+      "AppConnectionsActive" : "0",
+      "AvailablePorts" : "28232",
+      "UsedTCPPortsIPv6" : "1",
+      "TransmittedBytesToPublicSE" : "121350",
+      "ProcessMaximumFileDescriptors" : "512000",
+      "service" : "cd.zpa.app_connector_metrics",
+      "SystemMemoryUtilization" : "9",
+      "AliveTargetCount" : "62",
+      "LogTimestamp" : "2024-11-03T00:00:00Z",
+      "ProcessUsedFileDescriptors" : "152",
+      "ReceivedBytesFromPublicSE" : "27150"
+    }
+  service: "cd.zpa.app_connector_metrics"
+  result:
+    custom:
+      ActiveConnectionsToPrivateSE: "0"
+      ActiveConnectionsToPublicSE: "1"
+      AliveTargetCount: "62"
+      AppConnectionsActive: "0"
+      AppConnectionsCleared: "300"
+      AppConnectionsCreated: "300"
+      AppCount: "129"
+      AvailableDiskBytes: "261886394368"
+      AvailablePorts: "28232"
+      CPUUtilization: "1"
+      Connector: "USconnector-1633598427585"
+      DisconnectedConnectionsToPrivateSE: "0"
+      DisconnectedConnectionsToPublicSE: "0"
+      LogTimestamp: "2024-11-03T00:00:00Z"
+      MicroTenantID: "145257480799129312"
+      ProcessMaximumFileDescriptors: "512000"
+      ProcessMemoryUtilization: "4"
+      ProcessUsedFileDescriptors: "152"
+      ReceivedBytesFromPrivateSE: "0"
+      ReceivedBytesFromPublicSE: "27150"
+      ServiceCount: "67"
+      SystemMaximumFileDescriptors: "960344"
+      SystemMemoryUtilization: "9"
+      SystemUsedFileDescriptors: "1280"
+      TargetCount: "67"
+      TransmittedBytesToPrivateSE: "0"
+      TransmittedBytesToPublicSE: "121350"
+      UsedTCPPortsIPv4: "11"
+      UsedTCPPortsIPv6: "1"
+      UsedUDPPortsIPv4: "4"
+      UsedUDPPortsIPv6: "5"
+      service: "cd.zpa.app_connector_metrics"
+    message: |-
+      {
+        "Connector" : "USconnector-1633598427585",
+        "TargetCount" : "67",
+        "ActiveConnectionsToPrivateSE" : "0",
+        "MicroTenantID" : "145257480799129312",
+        "ActiveConnectionsToPublicSE" : "1",
+        "AvailableDiskBytes" : "261886394368",
+        "ProcessMemoryUtilization" : "4",
+        "ServiceCount" : "67",
+        "CPUUtilization" : "1",
+        "DisconnectedConnectionsToPrivateSE" : "0",
+        "AppConnectionsCleared" : "300",
+        "DisconnectedConnectionsToPublicSE" : "0",
+        "UsedUDPPortsIPv4" : "4",
+        "TransmittedBytesToPrivateSE" : "0",
+        "UsedUDPPortsIPv6" : "5",
+        "AppCount" : "129",
+        "SystemMaximumFileDescriptors" : "960344",
+        "UsedTCPPortsIPv4" : "11",
+        "SystemUsedFileDescriptors" : "1280",
+        "ReceivedBytesFromPrivateSE" : "0",
+        "AppConnectionsCreated" : "300",
+        "AppConnectionsActive" : "0",
+        "AvailablePorts" : "28232",
+        "UsedTCPPortsIPv6" : "1",
+        "TransmittedBytesToPublicSE" : "121350",
+        "ProcessMaximumFileDescriptors" : "512000",
+        "service" : "cd.zpa.app_connector_metrics",
+        "SystemMemoryUtilization" : "9",
+        "AliveTargetCount" : "62",
+        "LogTimestamp" : "2024-11-03T00:00:00Z",
+        "ProcessUsedFileDescriptors" : "152",
+        "ReceivedBytesFromPublicSE" : "27150"
+      }
+    service: "cd.zpa.app_connector_metrics"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1730592000000
+ -
+  sample: |-
+    {
+      "Connector" : "Some App Connector",
+      "SessionType" : "ZPN_ASSISTANT_BROKER_CONTROL",
+      "ZEN" : "US-NY-8179",
+      "TotalBytesRx" : 10902554,
+      "Platform" : "el7",
+      "TotalBytesTx" : 48931771,
+      "Customer" : "Customer Name",
+      "PublicIP" : "0.0.0.0",
+      "Latitude" : 47,
+      "TimestampUnAuthentication" : "",
+      "HostStartTime" : "1513229995",
+      "ServiceCount" : 2,
+      "CPUUtilization" : 1,
+      "MemUtilization" : 20,
+      "ErrorsRxInterface" : 0,
+      "PacketsTxInterface" : 1797471190,
+      "Version" : "19.20.3",
+      "SessionStatus" : "ZPN_STATUS_AUTHENTICATED",
+      "InterfaceDefRoute" : "eth0",
+      "DiscardsRxInterface" : 0,
+      "HostUpTime" : "1513229995",
+      "CountryCode" : "IN",
+      "PacketsRxInterface" : 1617569938,
+      "DefRouteGW" : "10.0.0.1",
+      "BytesTxInterface" : 192958782635,
+      "ErrorsTxInterface" : 0,
+      "TimestampAuthentication" : "2019-06-27T05:05:23.348Z",
+      "PrimaryDNSResolver" : "89.160.20.112",
+      "NumOfInterfaces" : 2,
+      "BytesRxInterface" : 319831966346,
+      "Longitude" : -122,
+      "DiscardsTxInterface" : 0,
+      "PrivateIP" : "10.0.0.4",
+      "ConnectorUpTime" : "1555920005",
+      "service" : "cd.zpa.app_connector_status",
+      "ConnectorStartTime" : "1555920005",
+      "ConnectorGroup" : "Some App Connector Group",
+      "LogTimestamp" : "2021-11-17T04:29:38.000Z",
+      "SessionID" : "8A64Qwj9zCkfYDGJVoUZ"
+    }
+  service: "cd.zpa.app_connector_status"
+  result:
+    custom:
+      BytesRxInterface: 319831966346
+      BytesTxInterface: 192958782635
+      CPUUtilization: 1
+      Connector: "Some App Connector"
+      ConnectorGroup: "Some App Connector Group"
+      ConnectorStartTime: "1555920005"
+      ConnectorUpTime: "1555920005"
+      CountryCode: "IN"
+      Customer: "Customer Name"
+      DefRouteGW: "10.0.0.1"
+      DiscardsRxInterface: 0
+      DiscardsTxInterface: 0
+      ErrorsRxInterface: 0
+      ErrorsTxInterface: 0
+      HostStartTime: "1513229995"
+      HostUpTime: "1513229995"
+      InterfaceDefRoute: "eth0"
+      Latitude: 47
+      LogTimestamp: "2021-11-17T04:29:38.000Z"
+      Longitude: -122
+      MemUtilization: 20
+      NumOfInterfaces: 2
+      PacketsRxInterface: 1617569938
+      PacketsTxInterface: 1797471190
+      Platform: "el7"
+      PrimaryDNSResolver: "89.160.20.112"
+      PrivateIP: "10.0.0.4"
+      PublicIP: "0.0.0.0"
+      ServiceCount: 2
+      SessionID: "8A64Qwj9zCkfYDGJVoUZ"
+      SessionStatus: "ZPN_STATUS_AUTHENTICATED"
+      SessionType: "ZPN_ASSISTANT_BROKER_CONTROL"
+      TimestampAuthentication: "2019-06-27T05:05:23.348Z"
+      TimestampUnAuthentication: ""
+      TotalBytesRx: 10902554
+      TotalBytesTx: 48931771
+      Version: "19.20.3"
+      ZEN: "US-NY-8179"
+      network:
+        client:
+          geoip: {}
+          ip: "0.0.0.0"
+      service: "cd.zpa.app_connector_status"
+    message: |-
+      {
+        "Connector" : "Some App Connector",
+        "SessionType" : "ZPN_ASSISTANT_BROKER_CONTROL",
+        "ZEN" : "US-NY-8179",
+        "TotalBytesRx" : 10902554,
+        "Platform" : "el7",
+        "TotalBytesTx" : 48931771,
+        "Customer" : "Customer Name",
+        "PublicIP" : "0.0.0.0",
+        "Latitude" : 47,
+        "TimestampUnAuthentication" : "",
+        "HostStartTime" : "1513229995",
+        "ServiceCount" : 2,
+        "CPUUtilization" : 1,
+        "MemUtilization" : 20,
+        "ErrorsRxInterface" : 0,
+        "PacketsTxInterface" : 1797471190,
+        "Version" : "19.20.3",
+        "SessionStatus" : "ZPN_STATUS_AUTHENTICATED",
+        "InterfaceDefRoute" : "eth0",
+        "DiscardsRxInterface" : 0,
+        "HostUpTime" : "1513229995",
+        "CountryCode" : "IN",
+        "PacketsRxInterface" : 1617569938,
+        "DefRouteGW" : "10.0.0.1",
+        "BytesTxInterface" : 192958782635,
+        "ErrorsTxInterface" : 0,
+        "TimestampAuthentication" : "2019-06-27T05:05:23.348Z",
+        "PrimaryDNSResolver" : "89.160.20.112",
+        "NumOfInterfaces" : 2,
+        "BytesRxInterface" : 319831966346,
+        "Longitude" : -122,
+        "DiscardsTxInterface" : 0,
+        "PrivateIP" : "10.0.0.4",
+        "ConnectorUpTime" : "1555920005",
+        "service" : "cd.zpa.app_connector_status",
+        "ConnectorStartTime" : "1555920005",
+        "ConnectorGroup" : "Some App Connector Group",
+        "LogTimestamp" : "2021-11-17T04:29:38.000Z",
+        "SessionID" : "8A64Qwj9zCkfYDGJVoUZ"
+      }
+    service: "cd.zpa.app_connector_status"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1637123378000
+ -
+  sample: |-
+    {
+      "ContentType" : "",
+      "Customer" : "SafemarchTestUser",
+      "ClientPort" : 0,
+      "ResponseHdrSize" : 210,
+      "ProtocolVersion" : "",
+      "StatusCode" : 301,
+      "RequestBodySize" : 0,
+      "ExchangeSequenceIndex" : 0,
+      "TimestampRequestReceiveFinish" : 1663346058861590,
+      "ClientPublicIp" : "185.64.148.140",
+      "RequestHdrSize" : 42,
+      "ResponseBodySize" : 0,
+      "TotalBytesProcessed" : 5,
+      "InspectionReqHeadersProcessingTime" : 736,
+      "ParanoiaLevel" : 2,
+      "TimestampRequestReceiveStart" : 1663346058860810,
+      "InspectionReqBodyProcessingTime" : 973,
+      "Method" : "GET",
+      "TimestampResponseTransmitStart" : 0,
+      "UpgradeHeaderPresent" : 0,
+      "SSLInspection" : 1,
+      "TimestampRequestTransmitFinish" : 0,
+      "Domain" : "safemarch.com",
+      "TotalTimeRequestTransmit" : 0,
+      "Application" : 145254438888544148,
+      "CertificateId" : 145254438888538207,
+      "AssistantID" : "test-key-1650457413478",
+      "TotalTimeResponseTransmit" : 0,
+      "TimestampRequestReceiveHeaderFinish" : 1663346058860833,
+      "TotalTimeResponseReceive" : 58,
+      "ContentEncoding" : "",
+      "URL" : "/",
+      "HTTPError" : "success",
+      "ApplicationGroup" : 145254438888544129,
+      "TimestampRequestTransmitStart" : 0,
+      "InspectionControlsHitCount" : 0,
+      "InspectionRespHeadersProcessingTime" : 29,
+      "UserID" : "testuser@safemarch.com",
+      "UserAgent" : "curl/7.68.0",
+      "OriginDomain" : "",
+      "Protocol" : "1.1",
+      "TransferEncoding" : "",
+      "InspectionRespBodyProcessingTime" : 2,
+      "InspectionProfile" : 145254438888538683,
+      "TotalTimeRequestReceive" : 0,
+      "TimestampResponseReceiveFinish" : 1663346058866909,
+      "TimestampResponseTransmitFinish" : 1663346058866941,
+      "DoubleEncryption" : 0,
+      "Host" : "safemarch.com",
+      "InspectionPolicy" : 145254438888543730,
+      "InspectionRuleProcessingTime" : 0,
+      "ConnectionID" : "cg698XMrXoY9OfjUSURh,EUtFPDqC5AzvQpL+DjAV",
+      "service" : "cd.zpa.app_protection",
+      "LogTimestamp" : "2021-11-17T04:29:38.000Z"
+    }
+  service: "cd.zpa.app_protection"
+  result:
+    custom:
+      Application: 145254438888544148
+      ApplicationGroup: 145254438888544129
+      AssistantID: "test-key-1650457413478"
+      CertificateId: 145254438888538207
+      ClientPort: 0
+      ClientPublicIp: "185.64.148.140"
+      ConnectionID: "cg698XMrXoY9OfjUSURh,EUtFPDqC5AzvQpL+DjAV"
+      ContentEncoding: ""
+      ContentType: ""
+      Customer: "SafemarchTestUser"
+      Domain: "safemarch.com"
+      DoubleEncryption: 0
+      DoubleEncryptionStatus: "Off"
+      ExchangeSequenceIndex: 0
+      HTTPError: "success"
+      Host: "safemarch.com"
+      InspectionControlsHitCount: 0
+      InspectionPolicy: 145254438888543730
+      InspectionProfile: 145254438888538683
+      InspectionReqBodyProcessingTime: 973
+      InspectionReqHeadersProcessingTime: 736
+      InspectionRespBodyProcessingTime: 2
+      InspectionRespHeadersProcessingTime: 29
+      InspectionRuleProcessingTime: 0
+      LogTimestamp: "2021-11-17T04:29:38.000Z"
+      Method: "GET"
+      OriginDomain: ""
+      ParanoiaLevel: 2
+      Protocol: "1.1"
+      ProtocolVersion: ""
+      RequestBodySize: 0
+      RequestHdrSize: 42
+      ResponseBodySize: 0
+      ResponseHdrSize: 210
+      SSLInspection: 1
+      StatusCode: 301
+      TimestampRequestReceiveFinish: 1663346058861590
+      TimestampRequestReceiveHeaderFinish: 1663346058860833
+      TimestampRequestReceiveStart: 1663346058860810
+      TimestampRequestTransmitFinish: 0
+      TimestampRequestTransmitStart: 0
+      TimestampResponseReceiveFinish: 1663346058866909
+      TimestampResponseTransmitFinish: 1663346058866941
+      TimestampResponseTransmitStart: 0
+      TotalBytesProcessed: 5
+      TotalTimeRequestReceive: 0
+      TotalTimeRequestTransmit: 0
+      TotalTimeResponseReceive: 58
+      TotalTimeResponseTransmit: 0
+      TransferEncoding: ""
+      URL: "/"
+      UpgradeHeaderPresent: 0
+      UserAgent: "curl/7.68.0"
+      UserID: "testuser@safemarch.com"
+      http:
+        useragent_details:
+          browser:
+            family: "curl"
+            major: "7"
+            minor: "68"
+            patch: "0"
+          device:
+            category: "Other"
+            family: "Other"
+          os:
+            family: "Other"
+      network:
+        client:
+          geoip:
+            city:
+              name: "Paris"
+            continent:
+              code: "EU"
+              name: "Europe"
+            country:
+              iso_code: "FR"
+              name: "France"
+            ipAddress: "185.64.148.140"
+            location:
+              latitude: 48.90654
+              longitude: 2.33339
+            subdivision:
+              iso_code: "FR-IDF"
+              name: "Île-de-France"
+            timezone: "Europe/Paris"
+          ip: "185.64.148.140"
+      service: "cd.zpa.app_protection"
+    message: |-
+      {
+        "ContentType" : "",
+        "Customer" : "SafemarchTestUser",
+        "ClientPort" : 0,
+        "ResponseHdrSize" : 210,
+        "ProtocolVersion" : "",
+        "StatusCode" : 301,
+        "RequestBodySize" : 0,
+        "ExchangeSequenceIndex" : 0,
+        "TimestampRequestReceiveFinish" : 1663346058861590,
+        "ClientPublicIp" : "185.64.148.140",
+        "RequestHdrSize" : 42,
+        "ResponseBodySize" : 0,
+        "TotalBytesProcessed" : 5,
+        "InspectionReqHeadersProcessingTime" : 736,
+        "ParanoiaLevel" : 2,
+        "TimestampRequestReceiveStart" : 1663346058860810,
+        "InspectionReqBodyProcessingTime" : 973,
+        "Method" : "GET",
+        "TimestampResponseTransmitStart" : 0,
+        "UpgradeHeaderPresent" : 0,
+        "SSLInspection" : 1,
+        "TimestampRequestTransmitFinish" : 0,
+        "Domain" : "safemarch.com",
+        "TotalTimeRequestTransmit" : 0,
+        "Application" : 145254438888544148,
+        "CertificateId" : 145254438888538207,
+        "AssistantID" : "test-key-1650457413478",
+        "TotalTimeResponseTransmit" : 0,
+        "TimestampRequestReceiveHeaderFinish" : 1663346058860833,
+        "TotalTimeResponseReceive" : 58,
+        "ContentEncoding" : "",
+        "URL" : "/",
+        "HTTPError" : "success",
+        "ApplicationGroup" : 145254438888544129,
+        "TimestampRequestTransmitStart" : 0,
+        "InspectionControlsHitCount" : 0,
+        "InspectionRespHeadersProcessingTime" : 29,
+        "UserID" : "testuser@safemarch.com",
+        "UserAgent" : "curl/7.68.0",
+        "OriginDomain" : "",
+        "Protocol" : "1.1",
+        "TransferEncoding" : "",
+        "InspectionRespBodyProcessingTime" : 2,
+        "InspectionProfile" : 145254438888538683,
+        "TotalTimeRequestReceive" : 0,
+        "TimestampResponseReceiveFinish" : 1663346058866909,
+        "TimestampResponseTransmitFinish" : 1663346058866941,
+        "DoubleEncryption" : 0,
+        "Host" : "safemarch.com",
+        "InspectionPolicy" : 145254438888543730,
+        "InspectionRuleProcessingTime" : 0,
+        "ConnectionID" : "cg698XMrXoY9OfjUSURh,EUtFPDqC5AzvQpL+DjAV",
+        "service" : "cd.zpa.app_protection",
+        "LogTimestamp" : "2021-11-17T04:29:38.000Z"
+      }
+    service: "cd.zpa.app_protection"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1637123378000
+ -
+  sample: |-
+    {
+      "User" : "zpaadmin@xxxxxxxxxxxxxxxxx.zpa-customer.com",
+      "ClientAuditUpdate" : 0,
+      "RequestID" : "11111111-1111-1111-1111-111111111111",
+      "ObjectID" : 12345678901234567,
+      "AuditOperationType" : "Create",
+      "CustomerID" : 98765432109876543,
+      "ModifiedBy" : 12345678901234567,
+      "ObjectName" : "Some-Name",
+      "ObjectType" : "Server",
+      "ModifiedTime" : "2021-11-17T04:29:38.000Z",
+      "AuditNewValue" : "{\"id\":\"72058340288495701\",\"name\":\"Some-Name\",\"domainOrIpAddress\":\"81.2.69.144\",\"description\":\"This is a description field\",\"enabled\":\"true\"}",
+      "service" : "cd.zpa.audit",
+      "CreationTime" : "2021-11-17T04:29:38.000Z",
+      "SessionID" : "1idn23nlfm2q1txa5h3r4mep6",
+      "AuditOldValue" : ""
+    }
+  service: "cd.zpa.audit"
+  result:
+    custom:
+      AuditNewValue: "{\"id\":\"72058340288495701\",\"name\":\"Some-Name\",\"domainOrIpAddress\":\"81.2.69.144\",\"description\":\"This is a description field\",\"enabled\":\"true\"}"
+      AuditOldValue: ""
+      AuditOperationType: "Create"
+      ClientAuditUpdate: 0
+      CreationTime: "2021-11-17T04:29:38.000Z"
+      CustomerID: 98765432109876543
+      ModifiedBy: 12345678901234567
+      ModifiedTime: "2021-11-17T04:29:38.000Z"
+      ObjectID: 12345678901234567
+      ObjectName: "Some-Name"
+      ObjectType: "Server"
+      RequestID: "11111111-1111-1111-1111-111111111111"
+      SessionID: "1idn23nlfm2q1txa5h3r4mep6"
+      User: "zpaadmin@xxxxxxxxxxxxxxxxx.zpa-customer.com"
+      UserType: "Admin"
+      service: "cd.zpa.audit"
+    message: |-
+      {
+        "User" : "zpaadmin@xxxxxxxxxxxxxxxxx.zpa-customer.com",
+        "ClientAuditUpdate" : 0,
+        "RequestID" : "11111111-1111-1111-1111-111111111111",
+        "ObjectID" : 12345678901234567,
+        "AuditOperationType" : "Create",
+        "CustomerID" : 98765432109876543,
+        "ModifiedBy" : 12345678901234567,
+        "ObjectName" : "Some-Name",
+        "ObjectType" : "Server",
+        "ModifiedTime" : "2021-11-17T04:29:38.000Z",
+        "AuditNewValue" : "{\"id\":\"72058340288495701\",\"name\":\"Some-Name\",\"domainOrIpAddress\":\"81.2.69.144\",\"description\":\"This is a description field\",\"enabled\":\"true\"}",
+        "service" : "cd.zpa.audit",
+        "CreationTime" : "2021-11-17T04:29:38.000Z",
+        "SessionID" : "1idn23nlfm2q1txa5h3r4mep6",
+        "AuditOldValue" : ""
+      }
+    service: "cd.zpa.audit"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1637123378000
+ -
+  sample: |-
+    {
+      "ClientPrivateIp" : "81.2.69.193",
+      "Customer" : "ANZ Team/zdemo in beta",
+      "TotalTimeResponseTransmit" : 13,
+      "TimestampRequestReceiveHeaderFinish" : "2019-07-03T05:12:25.723Z",
+      "TotalTimeResponseReceive" : 73,
+      "Exporter" : "unset",
+      "StatusCode" : 304,
+      "URL" : "/media/Regular.woff",
+      "ResponseSize" : 331,
+      "TimestampRequestReceiveFinish" : "2019-07-03T05:12:25.723Z",
+      "ClientPublicIp" : "81.2.69.144",
+      "TimestampRequestTransmitStart" : "2019-07-03T05:12:25.790Z",
+      "TotalTimeConnectionSetup" : 66995,
+      "UserAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/12.1.1 Safari/605.1.15",
+      "XFF" : "",
+      "TimestampResponseReceiveStart" : "2019-07-03T05:12:25.791Z",
+      "Protocol" : "HTTPS",
+      "ConnectionStatus" : "",
+      "ClientPublicPort" : 60006,
+      "NameID" : "admin@zdemo.net",
+      "RequestSize" : 615,
+      "ConnectionReason" : "",
+      "TotalTimeRequestReceive" : 127,
+      "TimestampRequestReceiveStart" : "2019-07-03T05:12:25.723Z",
+      "TimestampResponseReceiveFinish" : "2019-07-03T05:12:25.791Z",
+      "TimestampResponseTransmitFinish" : "2019-07-03T05:12:25.791Z",
+      "ApplicationPort" : 443,
+      "Host" : "portal.beta.zdemo.net",
+      "Method" : "GET",
+      "TimestampResponseTransmitStart" : "2019-07-03T05:12:25.791Z",
+      "ConnectionID" : "",
+      "TotalTimeServerResponse" : 1349,
+      "service" : "cd.zpa.browser_access",
+      "TimestampRequestTransmitFinish" : "2019-07-03T05:12:25.790Z",
+      "LogTimestamp" : "2021-11-17T04:29:38.000Z",
+      "TotalTimeRequestTransmit" : 21
+    }
+  service: "cd.zpa.browser_access"
+  result:
+    custom:
+      ApplicationPort: 443
+      ClientPrivateIp: "81.2.69.193"
+      ClientPublicIp: "81.2.69.144"
+      ClientPublicPort: 60006
+      ConnectionID: ""
+      ConnectionReason: ""
+      ConnectionStatus: ""
+      Customer: "ANZ Team/zdemo in beta"
+      Exporter: "unset"
+      Host: "portal.beta.zdemo.net"
+      LogTimestamp: "2021-11-17T04:29:38.000Z"
+      Method: "GET"
+      NameID: "admin@zdemo.net"
+      Protocol: "HTTPS"
+      RequestSize: 615
+      ResponseSize: 331
+      StatusCode: 304
+      TimestampRequestReceiveFinish: "2019-07-03T05:12:25.723Z"
+      TimestampRequestReceiveHeaderFinish: "2019-07-03T05:12:25.723Z"
+      TimestampRequestReceiveStart: "2019-07-03T05:12:25.723Z"
+      TimestampRequestTransmitFinish: "2019-07-03T05:12:25.790Z"
+      TimestampRequestTransmitStart: "2019-07-03T05:12:25.790Z"
+      TimestampResponseReceiveFinish: "2019-07-03T05:12:25.791Z"
+      TimestampResponseReceiveStart: "2019-07-03T05:12:25.791Z"
+      TimestampResponseTransmitFinish: "2019-07-03T05:12:25.791Z"
+      TimestampResponseTransmitStart: "2019-07-03T05:12:25.791Z"
+      TotalTimeConnectionSetup: 66995
+      TotalTimeRequestReceive: 127
+      TotalTimeRequestTransmit: 21
+      TotalTimeResponseReceive: 73
+      TotalTimeResponseTransmit: 13
+      TotalTimeServerResponse: 1349
+      URL: "/media/Regular.woff"
+      UserAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/12.1.1 Safari/605.1.15"
+      XFF: ""
+      http:
+        useragent_details:
+          browser:
+            family: "Safari"
+            major: "12"
+            minor: "1"
+            patch: "1"
+            version: "12.1.1"
+          device:
+            brand: "Apple"
+            category: "Desktop"
+            family: "Mac"
+            model: "Mac"
+          os:
+            family: "Mac OS X"
+            major: "10"
+            minor: "14"
+            patch: "5"
+            version: "10.14.5"
+      network:
+        client:
+          geoip: {}
+          ip: "81.2.69.144"
+      service: "cd.zpa.browser_access"
+    message: |-
+      {
+        "ClientPrivateIp" : "81.2.69.193",
+        "Customer" : "ANZ Team/zdemo in beta",
+        "TotalTimeResponseTransmit" : 13,
+        "TimestampRequestReceiveHeaderFinish" : "2019-07-03T05:12:25.723Z",
+        "TotalTimeResponseReceive" : 73,
+        "Exporter" : "unset",
+        "StatusCode" : 304,
+        "URL" : "/media/Regular.woff",
+        "ResponseSize" : 331,
+        "TimestampRequestReceiveFinish" : "2019-07-03T05:12:25.723Z",
+        "ClientPublicIp" : "81.2.69.144",
+        "TimestampRequestTransmitStart" : "2019-07-03T05:12:25.790Z",
+        "TotalTimeConnectionSetup" : 66995,
+        "UserAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/12.1.1 Safari/605.1.15",
+        "XFF" : "",
+        "TimestampResponseReceiveStart" : "2019-07-03T05:12:25.791Z",
+        "Protocol" : "HTTPS",
+        "ConnectionStatus" : "",
+        "ClientPublicPort" : 60006,
+        "NameID" : "admin@zdemo.net",
+        "RequestSize" : 615,
+        "ConnectionReason" : "",
+        "TotalTimeRequestReceive" : 127,
+        "TimestampRequestReceiveStart" : "2019-07-03T05:12:25.723Z",
+        "TimestampResponseReceiveFinish" : "2019-07-03T05:12:25.791Z",
+        "TimestampResponseTransmitFinish" : "2019-07-03T05:12:25.791Z",
+        "ApplicationPort" : 443,
+        "Host" : "portal.beta.zdemo.net",
+        "Method" : "GET",
+        "TimestampResponseTransmitStart" : "2019-07-03T05:12:25.791Z",
+        "ConnectionID" : "",
+        "TotalTimeServerResponse" : 1349,
+        "service" : "cd.zpa.browser_access",
+        "TimestampRequestTransmitFinish" : "2019-07-03T05:12:25.790Z",
+        "LogTimestamp" : "2021-11-17T04:29:38.000Z",
+        "TotalTimeRequestTransmit" : 21
+      }
+    service: "cd.zpa.browser_access"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1637123378000
+ -
+  sample: |-
+    {
+      "UsedUDPPortsIPv4" : "4",
+      "UsedUDPPortsIPv6" : "5",
+      "MicroTenantID" : "145257480799129312",
+      "SystemMaximumFileDescriptors" : "960344",
+      "UsedTCPPortsIPv4" : "1",
+      "SystemUsedFileDescriptors" : "1211",
+      "PrivateSE" : "TestPrivateServiceEdge",
+      "AvailableDiskBytes" : "261886394368",
+      "ProcessMemoryUtilization" : 8,
+      "AvailablePorts" : "28223",
+      "UsedTCPPortsIPv6" : "1",
+      "CPUUtilization" : "1",
+      "ProcessMaximumFileDescriptors" : "421000",
+      "service" : "cd.zpa.private_service_edge_metrics",
+      "SystemMemoryUtilization" : 8,
+      "LogTimestamp" : "2021-11-17T04:29:38.000Z",
+      "ProcessUsedFileDescriptors" : "122"
+    }
+  service: "cd.zpa.private_service_edge_metrics"
+  result:
+    custom:
+      AvailableDiskBytes: "261886394368"
+      AvailablePorts: "28223"
+      CPUUtilization: "1"
+      LogTimestamp: "2021-11-17T04:29:38.000Z"
+      MicroTenantID: "145257480799129312"
+      PrivateSE: "TestPrivateServiceEdge"
+      ProcessMaximumFileDescriptors: "421000"
+      ProcessMemoryUtilization: 8
+      ProcessUsedFileDescriptors: "122"
+      SystemMaximumFileDescriptors: "960344"
+      SystemMemoryUtilization: 8
+      SystemUsedFileDescriptors: "1211"
+      UsedTCPPortsIPv4: "1"
+      UsedTCPPortsIPv6: "1"
+      UsedUDPPortsIPv4: "4"
+      UsedUDPPortsIPv6: "5"
+      service: "cd.zpa.private_service_edge_metrics"
+    message: |-
+      {
+        "UsedUDPPortsIPv4" : "4",
+        "UsedUDPPortsIPv6" : "5",
+        "MicroTenantID" : "145257480799129312",
+        "SystemMaximumFileDescriptors" : "960344",
+        "UsedTCPPortsIPv4" : "1",
+        "SystemUsedFileDescriptors" : "1211",
+        "PrivateSE" : "TestPrivateServiceEdge",
+        "AvailableDiskBytes" : "261886394368",
+        "ProcessMemoryUtilization" : 8,
+        "AvailablePorts" : "28223",
+        "UsedTCPPortsIPv6" : "1",
+        "CPUUtilization" : "1",
+        "ProcessMaximumFileDescriptors" : "421000",
+        "service" : "cd.zpa.private_service_edge_metrics",
+        "SystemMemoryUtilization" : 8,
+        "LogTimestamp" : "2021-11-17T04:29:38.000Z",
+        "ProcessUsedFileDescriptors" : "122"
+      }
+    service: "cd.zpa.private_service_edge_metrics"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1637123378000
+ -
+  sample: |-
+    {
+      "SessionType" : "ZPN_TUNNEL_CONTROL",
+      "ZEN" : "ZPA-zdx3",
+      "TotalBytesRx" : 5257,
+      "ServiceEdge" : "PB1-1637740498039",
+      "Platform" : "el7",
+      "TotalBytesTx" : 7543,
+      "Customer" : "ayyappats",
+      "PublicIP" : "199.168.150.161",
+      "MicroTenantID" : "145257480799129312",
+      "Latitude" : 0.0,
+      "TimestampUnAuthentication" : "",
+      "HostStartTime" : "1916930",
+      "PackageVersion" : "",
+      "CPUUtilization" : 0,
+      "MemUtilization" : 3,
+      "ErrorsRxInterface" : 0,
+      "PacketsTxInterface" : 149703945,
+      "Version" : "21.268.1-341-g71d6f30-asan",
+      "SessionStatus" : "ZPN_STATUS_AUTHENTICATED",
+      "InterfaceDefRoute" : "",
+      "DiscardsRxInterface" : 2058,
+      "CountryCode" : "",
+      "PacketsRxInterface" : 144152768,
+      "DefRouteGW" : "10.66.96.254",
+      "ServiceEdgeStartTime" : "1638354879",
+      "ServiceEdgeGroup" : "PB1",
+      "BytesTxInterface" : 22304497040,
+      "ErrorsTxInterface" : 0,
+      "TimestampAuthentication" : "2021-12-01T10:34:42.067Z",
+      "PrimaryDNSResolver" : "10.66.98.1",
+      "NumOfInterfaces" : 2,
+      "BytesRxInterface" : 15435341381,
+      "Longitude" : 0.0,
+      "DiscardsTxInterface" : 0,
+      "PrivateIP" : "10.66.96.147",
+      "service" : "cd.zpa.private_service_edge_status",
+      "LogTimestamp" : "2024-11-03T00:00:00Z",
+      "SessionID" : "W9zkTJ90MQjP/1wmYZo/"
+    }
+  service: "cd.zpa.private_service_edge_status"
+  result:
+    custom:
+      BytesRxInterface: 15435341381
+      BytesTxInterface: 22304497040
+      CPUUtilization: 0
+      CountryCode: ""
+      Customer: "ayyappats"
+      DefRouteGW: "10.66.96.254"
+      DiscardsRxInterface: 2058
+      DiscardsTxInterface: 0
+      ErrorsRxInterface: 0
+      ErrorsTxInterface: 0
+      HostStartTime: "1916930"
+      InterfaceDefRoute: ""
+      Latitude: 0.0
+      LogTimestamp: "2024-11-03T00:00:00Z"
+      Longitude: 0.0
+      MemUtilization: 3
+      MicroTenantID: "145257480799129312"
+      NumOfInterfaces: 2
+      PackageVersion: ""
+      PacketsRxInterface: 144152768
+      PacketsTxInterface: 149703945
+      Platform: "el7"
+      PrimaryDNSResolver: "10.66.98.1"
+      PrivateIP: "10.66.96.147"
+      PublicIP: "199.168.150.161"
+      ServiceEdge: "PB1-1637740498039"
+      ServiceEdgeGroup: "PB1"
+      ServiceEdgeStartTime: "1638354879"
+      SessionID: "W9zkTJ90MQjP/1wmYZo/"
+      SessionStatus: "ZPN_STATUS_AUTHENTICATED"
+      SessionType: "ZPN_TUNNEL_CONTROL"
+      TimestampAuthentication: "2021-12-01T10:34:42.067Z"
+      TimestampUnAuthentication: ""
+      TotalBytesRx: 5257
+      TotalBytesTx: 7543
+      Version: "21.268.1-341-g71d6f30-asan"
+      ZEN: "ZPA-zdx3"
+      network:
+        client:
+          geoip: {}
+          ip: "199.168.150.161"
+      service: "cd.zpa.private_service_edge_status"
+    message: |-
+      {
+        "SessionType" : "ZPN_TUNNEL_CONTROL",
+        "ZEN" : "ZPA-zdx3",
+        "TotalBytesRx" : 5257,
+        "ServiceEdge" : "PB1-1637740498039",
+        "Platform" : "el7",
+        "TotalBytesTx" : 7543,
+        "Customer" : "ayyappats",
+        "PublicIP" : "199.168.150.161",
+        "MicroTenantID" : "145257480799129312",
+        "Latitude" : 0.0,
+        "TimestampUnAuthentication" : "",
+        "HostStartTime" : "1916930",
+        "PackageVersion" : "",
+        "CPUUtilization" : 0,
+        "MemUtilization" : 3,
+        "ErrorsRxInterface" : 0,
+        "PacketsTxInterface" : 149703945,
+        "Version" : "21.268.1-341-g71d6f30-asan",
+        "SessionStatus" : "ZPN_STATUS_AUTHENTICATED",
+        "InterfaceDefRoute" : "",
+        "DiscardsRxInterface" : 2058,
+        "CountryCode" : "",
+        "PacketsRxInterface" : 144152768,
+        "DefRouteGW" : "10.66.96.254",
+        "ServiceEdgeStartTime" : "1638354879",
+        "ServiceEdgeGroup" : "PB1",
+        "BytesTxInterface" : 22304497040,
+        "ErrorsTxInterface" : 0,
+        "TimestampAuthentication" : "2021-12-01T10:34:42.067Z",
+        "PrimaryDNSResolver" : "10.66.98.1",
+        "NumOfInterfaces" : 2,
+        "BytesRxInterface" : 15435341381,
+        "Longitude" : 0.0,
+        "DiscardsTxInterface" : 0,
+        "PrivateIP" : "10.66.96.147",
+        "service" : "cd.zpa.private_service_edge_status",
+        "LogTimestamp" : "2024-11-03T00:00:00Z",
+        "SessionID" : "W9zkTJ90MQjP/1wmYZo/"
+      }
+    service: "cd.zpa.private_service_edge_status"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1730592000000
+ -
+  sample: |-
+    {
+      "Policy" : "ABC Lab Apps",
+      "TimestampZENFirstRxConnector" : "",
+      "ZENTotalBytesTxConnector" : 2406926,
+      "ClientLongitude" : -119.0,
+      "Server" : "0",
+      "TimestampZENLastTxConnector" : "2019-05-31T17:34:27.348Z",
+      "Customer" : "Customer XYZ",
+      "ZENTotalBytesRxClient" : 2406926,
+      "ZENTotalBytesTxClient" : 0,
+      "TimestampAppLearnStart" : "",
+      "ClientCountryCode" : "US",
+      "ConnectionSetupTime" : 192397,
+      "Idp" : "Example IDP Config",
+      "ConnectorZENSetupTime" : 191017,
+      "ClientToClient" : "0",
+      "ConnectionStatus" : "active",
+      "ConnectorIP" : "67.43.156.12",
+      "CAProcessingTime" : 1330,
+      "ConnectorPort" : 60266,
+      "TimestampConnectionStart" : "2019-05-30T08:20:42.230Z",
+      "ClientPublicIP" : "81.2.69.193",
+      "TimestampCARx" : "2019-05-30T08:20:42.231Z",
+      "SessionID" : "LHJdkjmNDf12nclBsvwA",
+      "Application" : "ABC Lab Apps",
+      "ZENBytesRxConnector" : 0,
+      "ServicePort" : 10011,
+      "Connector" : "ZDEMO ABC",
+      "TimestampConnectionEnd" : "",
+      "TimestampZENFirstRxClient" : "2019-05-30T08:20:42.424Z",
+      "TimestampZENFirstTxClient" : "",
+      "ServerIP" : "175.16.199.1",
+      "TimestampConnectorZENSetupComplete" : "2019-05-30T08:20:42.422Z",
+      "ClientZEN" : "broker2b.pdx",
+      "ZENBytesTxConnector" : 7115,
+      "ZENTotalBytesRxConnector" : 0,
+      "PolicyProcessingTime" : 28,
+      "TimestampZENFirstTxConnector" : "2019-05-30T08:20:42.424Z",
+      "AppGroup" : "ABC Lab Apps",
+      "AppLearnTime" : 0,
+      "ClientPrivateIP" : "81.2.69.193",
+      "TimestampZENLastRxClient" : "2019-05-31T17:34:27.348Z",
+      "ZENBytesRxClient" : 7115,
+      "IPProtocol" : 6,
+      "ServerSetupTime" : 465,
+      "DoubleEncryption" : 0,
+      "Host" : "175.16.199.1",
+      "TimestampZENLastTxClient" : "",
+      "ZENBytesTxClient" : 0,
+      "ConnectionID" : "SqyZIMkg0JTj7EABsvwA,Q+EjXGdrvbF2lPiBbedm",
+      "Username" : "ZPA LSS Client",
+      "service" : "cd.zpa.user_activity",
+      "ClientLatitude" : 45.0,
+      "ConnectorZEN" : "broker2b.pdx",
+      "TimestampCATx" : "2019-05-30T08:20:42.230Z",
+      "LogTimestamp" : "2021-11-17T04:29:38.000Z",
+      "TimestampZENLastRxConnector" : "",
+      "ServerPort" : 10011,
+      "InternalReason" : ""
+    }
+  service: "cd.zpa.user_activity"
+  result:
+    custom:
+      AppGroup: "ABC Lab Apps"
+      AppLearnTime: 0
+      Application: "ABC Lab Apps"
+      CAProcessingTime: 1330
+      ClientApplication: "ABC Lab Apps"
+      ClientCountryCode: "US"
+      ClientLatitude: 45.0
+      ClientLongitude: -119.0
+      ClientPrivateIP: "81.2.69.193"
+      ClientPublicIP: "81.2.69.193"
+      ClientToClient: "0"
+      ClientZEN: "broker2b.pdx"
+      ConnectionID: "SqyZIMkg0JTj7EABsvwA,Q+EjXGdrvbF2lPiBbedm"
+      ConnectionSetupTime: 192397
+      ConnectionStatus: "active"
+      Connector: "ZDEMO ABC"
+      ConnectorIP: "67.43.156.12"
+      ConnectorPort: 60266
+      ConnectorZEN: "broker2b.pdx"
+      ConnectorZENSetupTime: 191017
+      Customer: "Customer XYZ"
+      DoubleEncryption: 0
+      Host: "175.16.199.1"
+      IPProtocol: 6
+      Idp: "Example IDP Config"
+      InternalReason: ""
+      LogTimestamp: "2021-11-17T04:29:38.000Z"
+      Policy: "ABC Lab Apps"
+      PolicyProcessingTime: 28
+      Server: "0"
+      ServerIP: "175.16.199.1"
+      ServerPort: 10011
+      ServerSetupTime: 465
+      ServicePort: 10011
+      SessionID: "LHJdkjmNDf12nclBsvwA"
+      TimestampAppLearnStart: ""
+      TimestampCARx: "2019-05-30T08:20:42.231Z"
+      TimestampCATx: "2019-05-30T08:20:42.230Z"
+      TimestampConnectionEnd: ""
+      TimestampConnectionStart: "2019-05-30T08:20:42.230Z"
+      TimestampConnectorZENSetupComplete: "2019-05-30T08:20:42.422Z"
+      TimestampZENFirstRxClient: "2019-05-30T08:20:42.424Z"
+      TimestampZENFirstRxConnector: ""
+      TimestampZENFirstTxClient: ""
+      TimestampZENFirstTxConnector: "2019-05-30T08:20:42.424Z"
+      TimestampZENLastRxClient: "2019-05-31T17:34:27.348Z"
+      TimestampZENLastRxConnector: ""
+      TimestampZENLastTxClient: ""
+      TimestampZENLastTxConnector: "2019-05-31T17:34:27.348Z"
+      Username: "ZPA LSS Client"
+      ZENBytesRxClient: 7115
+      ZENBytesRxConnector: 0
+      ZENBytesTxClient: 0
+      ZENBytesTxConnector: 7115
+      ZENTotalBytesRxClient: 2406926
+      ZENTotalBytesRxConnector: 0
+      ZENTotalBytesTxClient: 0
+      ZENTotalBytesTxConnector: 2406926
+      network:
+        client:
+          geoip: {}
+          ip: "81.2.69.193"
+      service: "cd.zpa.user_activity"
+    message: |-
+      {
+        "Policy" : "ABC Lab Apps",
+        "TimestampZENFirstRxConnector" : "",
+        "ZENTotalBytesTxConnector" : 2406926,
+        "ClientLongitude" : -119.0,
+        "Server" : "0",
+        "TimestampZENLastTxConnector" : "2019-05-31T17:34:27.348Z",
+        "Customer" : "Customer XYZ",
+        "ZENTotalBytesRxClient" : 2406926,
+        "ZENTotalBytesTxClient" : 0,
+        "TimestampAppLearnStart" : "",
+        "ClientCountryCode" : "US",
+        "ConnectionSetupTime" : 192397,
+        "Idp" : "Example IDP Config",
+        "ConnectorZENSetupTime" : 191017,
+        "ClientToClient" : "0",
+        "ConnectionStatus" : "active",
+        "ConnectorIP" : "67.43.156.12",
+        "CAProcessingTime" : 1330,
+        "ConnectorPort" : 60266,
+        "TimestampConnectionStart" : "2019-05-30T08:20:42.230Z",
+        "ClientPublicIP" : "81.2.69.193",
+        "TimestampCARx" : "2019-05-30T08:20:42.231Z",
+        "SessionID" : "LHJdkjmNDf12nclBsvwA",
+        "Application" : "ABC Lab Apps",
+        "ZENBytesRxConnector" : 0,
+        "ServicePort" : 10011,
+        "Connector" : "ZDEMO ABC",
+        "TimestampConnectionEnd" : "",
+        "TimestampZENFirstRxClient" : "2019-05-30T08:20:42.424Z",
+        "TimestampZENFirstTxClient" : "",
+        "ServerIP" : "175.16.199.1",
+        "TimestampConnectorZENSetupComplete" : "2019-05-30T08:20:42.422Z",
+        "ClientZEN" : "broker2b.pdx",
+        "ZENBytesTxConnector" : 7115,
+        "ZENTotalBytesRxConnector" : 0,
+        "PolicyProcessingTime" : 28,
+        "TimestampZENFirstTxConnector" : "2019-05-30T08:20:42.424Z",
+        "AppGroup" : "ABC Lab Apps",
+        "AppLearnTime" : 0,
+        "ClientPrivateIP" : "81.2.69.193",
+        "TimestampZENLastRxClient" : "2019-05-31T17:34:27.348Z",
+        "ZENBytesRxClient" : 7115,
+        "IPProtocol" : 6,
+        "ServerSetupTime" : 465,
+        "DoubleEncryption" : 0,
+        "Host" : "175.16.199.1",
+        "TimestampZENLastTxClient" : "",
+        "ZENBytesTxClient" : 0,
+        "ConnectionID" : "SqyZIMkg0JTj7EABsvwA,Q+EjXGdrvbF2lPiBbedm",
+        "Username" : "ZPA LSS Client",
+        "service" : "cd.zpa.user_activity",
+        "ClientLatitude" : 45.0,
+        "ConnectorZEN" : "broker2b.pdx",
+        "TimestampCATx" : "2019-05-30T08:20:42.230Z",
+        "LogTimestamp" : "2021-11-17T04:29:38.000Z",
+        "TimestampZENLastRxConnector" : "",
+        "ServerPort" : 10011,
+        "InternalReason" : ""
+      }
+    service: "cd.zpa.user_activity"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1637123378000
+ -
+  sample: |-
+    {
+      "ZEN" : "broker2b.pdx",
+      "TotalBytesRx" : 31274866,
+      "ClientType" : "zpn_client_type_zapp",
+      "TotalBytesTx" : 25424152,
+      "Platform" : "windows",
+      "Customer" : "Customer XYZ",
+      "PublicIP" : "81.2.69.144",
+      "TrustedNetworksNames" : "145248739466696953",
+      "PosturesMiss" : "sm-posture11,sm-posture12",
+      "Latitude" : 45,
+      "TimestampUnAuthentication" : "",
+      "TrustedNetworks" : "TN1_stc1",
+      "Idp" : "IDP Config",
+      "PosturesHit" : "sm-posture1,sm-posture2",
+      "Version" : "19.12.0-36-g87dad18",
+      "CertificateCN" : "loggerz2x.pde.zpabeta.net",
+      "SessionStatus" : "ZPN_STATUS_AUTHENTICATED",
+      "CountryCode" : "US",
+      "ZENLatitude" : 47,
+      "FQDNRegistered" : "0",
+      "FQDNRegisteredError" : "CUSTOMER_NOT_ENABLED",
+      "SAMLAttributes" : "myname:user,myemail:user@zscaler.com",
+      "Hostname" : "DESKTOP-99HCSJ1",
+      "ZENCountryCode" : "",
+      "TimestampAuthentication" : "2019-05-29T21:18:38.000Z",
+      "Longitude" : -119,
+      "Username" : "ZPA LSS Client",
+      "PrivateIP" : "81.2.69.193",
+      "ZENLongitude" : -122,
+      "service" : "cd.zpa.user_status",
+      "LogTimestamp" : "2021-11-17T04:29:38.000Z",
+      "SessionID" : "vkczUERSLl88Y+ytH8v5"
+    }
+  service: "cd.zpa.user_status"
+  result:
+    custom:
+      CertificateCN: "loggerz2x.pde.zpabeta.net"
+      ClientType: "zpn_client_type_zapp"
+      CountryCode: "US"
+      Customer: "Customer XYZ"
+      FQDNRegistered: "0"
+      FQDNRegisteredError: "CUSTOMER_NOT_ENABLED"
+      Hostname: "DESKTOP-99HCSJ1"
+      Idp: "IDP Config"
+      Latitude: 45
+      LogTimestamp: "2021-11-17T04:29:38.000Z"
+      Longitude: -119
+      Platform: "windows"
+      PosturesHit: "sm-posture1,sm-posture2"
+      PosturesMiss: "sm-posture11,sm-posture12"
+      PrivateIP: "81.2.69.193"
+      PublicIP: "81.2.69.144"
+      SAMLAttributes: "myname:user,myemail:user@zscaler.com"
+      SessionID: "vkczUERSLl88Y+ytH8v5"
+      SessionStatus: "ZPN_STATUS_AUTHENTICATED"
+      TimestampAuthentication: "2019-05-29T21:18:38.000Z"
+      TimestampUnAuthentication: ""
+      TotalBytesRx: 31274866
+      TotalBytesTx: 25424152
+      TrustedNetworks: "TN1_stc1"
+      TrustedNetworksNames: "145248739466696953"
+      Username: "ZPA LSS Client"
+      Version: "19.12.0-36-g87dad18"
+      ZEN: "broker2b.pdx"
+      ZENCountryCode: ""
+      ZENLatitude: 47
+      ZENLongitude: -122
+      network:
+        client:
+          geoip: {}
+          ip: "81.2.69.144"
+      service: "cd.zpa.user_status"
+    message: |-
+      {
+        "ZEN" : "broker2b.pdx",
+        "TotalBytesRx" : 31274866,
+        "ClientType" : "zpn_client_type_zapp",
+        "TotalBytesTx" : 25424152,
+        "Platform" : "windows",
+        "Customer" : "Customer XYZ",
+        "PublicIP" : "81.2.69.144",
+        "TrustedNetworksNames" : "145248739466696953",
+        "PosturesMiss" : "sm-posture11,sm-posture12",
+        "Latitude" : 45,
+        "TimestampUnAuthentication" : "",
+        "TrustedNetworks" : "TN1_stc1",
+        "Idp" : "IDP Config",
+        "PosturesHit" : "sm-posture1,sm-posture2",
+        "Version" : "19.12.0-36-g87dad18",
+        "CertificateCN" : "loggerz2x.pde.zpabeta.net",
+        "SessionStatus" : "ZPN_STATUS_AUTHENTICATED",
+        "CountryCode" : "US",
+        "ZENLatitude" : 47,
+        "FQDNRegistered" : "0",
+        "FQDNRegisteredError" : "CUSTOMER_NOT_ENABLED",
+        "SAMLAttributes" : "myname:user,myemail:user@zscaler.com",
+        "Hostname" : "DESKTOP-99HCSJ1",
+        "ZENCountryCode" : "",
+        "TimestampAuthentication" : "2019-05-29T21:18:38.000Z",
+        "Longitude" : -119,
+        "Username" : "ZPA LSS Client",
+        "PrivateIP" : "81.2.69.193",
+        "ZENLongitude" : -122,
+        "service" : "cd.zpa.user_status",
+        "LogTimestamp" : "2021-11-17T04:29:38.000Z",
+        "SessionID" : "vkczUERSLl88Y+ytH8v5"
+      }
+    service: "cd.zpa.user_status"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1637123378000
+ -
+  sample: |-
+    {
+      "service" : "cds.zia.web",
+      "event" : {
+        "devicehostname" : "TestMachine35",
+        "rulelabel" : "Zscaler Proxy Traffic",
+        "eurl" : "www.example.com",
+        "urlclass" : "Business Use",
+        "reqmethod" : "CONNECT",
+        "stime" : "0",
+        "cip" : "81.2.69.193",
+        "login" : "test@example.com",
+        "respcode" : "200",
+        "dlpdict" : "None",
+        "reqsize" : "600",
+        "malwarecat" : "None",
+        "appname" : "General Browsing",
+        "action" : "Blocked",
+        "ctime" : "0",
+        "sip" : "81.2.69.145",
+        "ruletype" : "FwFilter",
+        "appclass" : "General Browsing",
+        "urlcat" : "Web Search",
+        "respsize" : "65",
+        "dept" : "Unknown",
+        "ereferer" : "None",
+        "unscannabletype" : "None",
+        "threatname" : "None",
+        "contenttype" : "Other",
+        "eua" : "Windows Microsoft Windows 10 Pro ZTunnel/1.0",
+        "deviceowner" : "administrator1",
+        "urlsupercat" : "Information Technology",
+        "proto" : "HTTP_PROXY",
+        "riskscore" : "0",
+        "location" : "Test DB",
+        "time" : "Fri Dec 17 07:04:57 2021",
+        "dlpeng" : "None"
+      }
+    }
+  service: "cd.zia.web"
+  result:
+    custom:
+      event:
+        action: "Blocked"
+        appclass: "General Browsing"
+        appname: "General Browsing"
+        cip: "81.2.69.193"
+        contenttype: "Other"
+        ctime: "0"
+        dept: "Unknown"
+        devicehostname: "TestMachine35"
+        deviceowner: "administrator1"
+        dlpdict: "None"
+        dlpeng: "None"
+        ereferer: "None"
+        eua: "Windows Microsoft Windows 10 Pro ZTunnel/1.0"
+        eurl: "www.example.com"
+        location: "Test DB"
+        login: "test@example.com"
+        malwarecat: "None"
+        proto: "HTTP_PROXY"
+        reqmethod: "CONNECT"
+        reqsize: "600"
+        respcode: "200"
+        respsize: "65"
+        riskscore: "0"
+        rulelabel: "Zscaler Proxy Traffic"
+        ruletype: "FwFilter"
+        sip: "81.2.69.145"
+        stime: "0"
+        threatname: "None"
+        time: "Fri Dec 17 07:04:57 2021"
+        unscannabletype: "None"
+        urlcat: "Web Search"
+        urlclass: "Business Use"
+        urlsupercat: "Information Technology"
+      network:
+        client:
+          geoip: {}
+          ip: "81.2.69.193"
+        destination:
+          geoip: {}
+          ip: "81.2.69.145"
+      service: "cds.zia.web"
+    message: |-
+      {
+        "service" : "cds.zia.web",
+        "event" : {
+          "devicehostname" : "TestMachine35",
+          "rulelabel" : "Zscaler Proxy Traffic",
+          "eurl" : "www.example.com",
+          "urlclass" : "Business Use",
+          "reqmethod" : "CONNECT",
+          "stime" : "0",
+          "cip" : "81.2.69.193",
+          "login" : "test@example.com",
+          "respcode" : "200",
+          "dlpdict" : "None",
+          "reqsize" : "600",
+          "malwarecat" : "None",
+          "appname" : "General Browsing",
+          "action" : "Blocked",
+          "ctime" : "0",
+          "sip" : "81.2.69.145",
+          "ruletype" : "FwFilter",
+          "appclass" : "General Browsing",
+          "urlcat" : "Web Search",
+          "respsize" : "65",
+          "dept" : "Unknown",
+          "ereferer" : "None",
+          "unscannabletype" : "None",
+          "threatname" : "None",
+          "contenttype" : "Other",
+          "eua" : "Windows Microsoft Windows 10 Pro ZTunnel/1.0",
+          "deviceowner" : "administrator1",
+          "urlsupercat" : "Information Technology",
+          "proto" : "HTTP_PROXY",
+          "riskscore" : "0",
+          "location" : "Test DB",
+          "time" : "Fri Dec 17 07:04:57 2021",
+          "dlpeng" : "None"
+        }
+      }
+    service: "cds.zia.web"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "service" : "cds.zia.dns",
+      "event" : {
+        "dns_reqtype" : "Some type",
+        "devicehostname" : "Machine9000",
+        "reqrulelabel" : "Access%20Blocked",
+        "resrulelabel" : "None",
+        "srv_dport" : "8080",
+        "reqaction" : "REQ_ALLOW",
+        "cip" : "89.160.20.112",
+        "dns_req" : "example.com",
+        "deviceowner" : "Owner77",
+        "datetime" : "Fri Dec 17 07:27:54 2021",
+        "dns_resp" : "Some response string",
+        "location" : "TestLoc%20DB",
+        "resaction" : "Some Response Action",
+        "sip" : "89.160.20.156",
+        "department" : "Unknown",
+        "category" : "Professional Services",
+        "user" : "some_user@example.com",
+        "durationms" : "123456"
+      }
+    }
+  service: "cd.zia.dns"
+  result:
+    custom:
+      event:
+        category: "Professional Services"
+        cip: "89.160.20.112"
+        datetime: "Fri Dec 17 07:27:54 2021"
+        department: "Unknown"
+        devicehostname: "Machine9000"
+        deviceowner: "Owner77"
+        dns_req: "example.com"
+        dns_reqtype: "Some type"
+        dns_resp: "Some response string"
+        durationms: "123456"
+        location: "TestLoc%20DB"
+        reqaction: "REQ_ALLOW"
+        reqrulelabel: "Access%20Blocked"
+        resaction: "Some Response Action"
+        resrulelabel: "None"
+        sip: "89.160.20.156"
+        srv_dport: "8080"
+        user: "some_user@example.com"
+      network:
+        client:
+          geoip: {}
+          ip: "89.160.20.112"
+        destination:
+          geoip: {}
+          ip: "89.160.20.156"
+      service: "cds.zia.dns"
+    message: |-
+      {
+        "service" : "cds.zia.dns",
+        "event" : {
+          "dns_reqtype" : "Some type",
+          "devicehostname" : "Machine9000",
+          "reqrulelabel" : "Access%20Blocked",
+          "resrulelabel" : "None",
+          "srv_dport" : "8080",
+          "reqaction" : "REQ_ALLOW",
+          "cip" : "89.160.20.112",
+          "dns_req" : "example.com",
+          "deviceowner" : "Owner77",
+          "datetime" : "Fri Dec 17 07:27:54 2021",
+          "dns_resp" : "Some response string",
+          "location" : "TestLoc%20DB",
+          "resaction" : "Some Response Action",
+          "sip" : "89.160.20.156",
+          "department" : "Unknown",
+          "category" : "Professional Services",
+          "user" : "some_user@example.com",
+          "durationms" : "123456"
+        }
+      }
+    service: "cds.zia.dns"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1

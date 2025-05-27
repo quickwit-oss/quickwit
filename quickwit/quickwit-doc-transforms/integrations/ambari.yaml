@@ -1,0 +1,70 @@
+id: ambari
+metric_id: ambari
+backend_only: false
+facets:
+  - groups:
+      - Source Code
+    name: Thread Name
+    path: logger.thread_name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - groups:
+      - Ambari
+    name: Ambari Service
+    path: ambari.service
+    source: log
+  - groups:
+      - System
+    name: Action
+    path: system.action
+    source: log
+pipeline:
+  type: pipeline
+  name: Ambari
+  enabled: true
+  filter:
+    query: source:ambari
+  processors:
+    - type: grok-parser
+      name: Parsing Ambari logs
+      enabled: true
+      source: message
+      grok:
+        matchRules: |
+          alerts %{_timestamp} \[%{_level}\] \[%{notSpace}\] \[%{word:ambari.service:lowercase}\] \[%{word:component}\] %{data}
+          audit %{_timestamp_2}, User\(%{word:usr.name}\), RemoteIp\(%{notSpace:network.client.ip}\), Operation\(%{data:system.operation}\), Roles\(%{data:roles}\), Status\(%{word:status}\)(, Reason\(%{data:error.message}\))?(, Consecutive failures\(%{data:error.consecutive_failures}\))?
+          config %{_timestamp}  %{_level} - \(configchange\)\s+type: '%{notSpace:type}', tag: '%{notSpace:tag}', version: '%{notSpace:version}'
+          config_message %{_timestamp}  %{_level} - \(configchange\)\s+%{data}
+          server %{_timestamp}  %{_level} \[%{notSpace:logger.thread_name}\] %{_logger_name} - %{data}
+          server.command %{_level} %{_timestamp} %{_logger_name} - %{data}
+          server.check.database %{_timestamp}\s+%{_level} - %{data}
+        supportRules: |
+          _timestamp %{date("yyyy-MM-dd HH:mm:ss,SSS"):timestamp}
+          _timestamp_2 %{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):timestamp}
+          _level %{word:level}
+          _logger_name %{notSpace:logger.name}
+      samples:
+        - 2019-05-25 19:11:43,731  INFO [MessageBroker-2] WebSocketMessageBrokerStats:113 - WebSocketSession[1 current WS(0)-HttpStream(1)-HttpPoll(0), 1010 total, 931 closed abnormally (931 connect failure, 0 send limit, 0 transport error)], stompSubProtocol[processed CONNECT(17)-CONNECTED(17)-DISCONNECT(0)], stompBrokerRelay[null], inboundChannel[pool size = 0, active threads = 0, queued tasks = 0, completed tasks = 33627], outboundChannelpool size = 0, active threads = 0, queued tasks = 0, completed tasks = 11157], sockJsScheduler[pool size = 4, active threads = 1, queued tasks = 2, completed tasks = 1061738]
+        - '2019-05-25 19:11:36,660  INFO [ambari-client-thread-17177] AmbariAuthenticationEventHandlerImpl:136 - Failed to authenticate cloudbreak: The user does not exist in the Ambari database'
+        - 2019-04-22 15:35:00,799 [OK] [HARD] [SMARTSENSE] [smartsense_long_running_bundle] (SmartSense Long Running Bundle) All bundles are on track.
+        - '2019-05-25T13:13:16.540Z, User(admin), RemoteIp(127.0.0.1), Operation(User login), Roles(Ambari: Ambari Administrator), Status(Success)'
+        - "2019-04-22 15:04:46,163  INFO - (configchange)    Config type 'hbase-atlas-application-properties' was modified with the following keys, added: [atlas.hook.hbase.keepAliveTime, atlas.hook.hbase.maxThreads, atlas.hook.hbase.minThreads, atlas.hook.hbase.queueSize, atlas.hook.hbase.numRetries, atlas.hook.hbase.synchronous], deleted: [], changed: []"
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level

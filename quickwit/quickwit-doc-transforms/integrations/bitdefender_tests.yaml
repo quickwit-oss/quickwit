@@ -1,0 +1,1667 @@
+id: bitdefender
+tests:
+  -
+    sample: |-
+      {
+        "method" : "addEvents",
+        "id" : 1731566555000,
+        "jsonrpc" : "2.0",
+        "params" : {
+          "events" : [ {
+            "computer_id" : "aaaaaaaa1111111112222222sssssss",
+            "parent_process_id" : 22222,
+            "date" : "2019-01-24T11:13:04.000Z",
+            "computer_name" : "ABC",
+            "file_path" : "aaaa22222sssssss222.bender",
+            "malware_name" : "",
+            "process_info_command_line" : "c:\\\\aaa.exe-test",
+            "attack_type" : "suspiciousfilesandnetworktraffic",
+            "module" : "hd",
+            "detection_level" : "normal",
+            "command_line_parameters" : "abc",
+            "computer_fqdn" : "abc",
+            "is_fileless_attack" : 1,
+            "companyId" : "1111aaaaasssss222s",
+            "computer_ip" : "10.10.10.10",
+            "final_status" : "quarantined",
+            "product_installed" : "XYZ",
+            "process_info_path" : "C:\\\\aa.exe",
+            "hwid" : "00000000-0000-0000-0000-111111****",
+            "user" : {
+              "name" : "admin",
+              "sid" : "AA222AA11-55FF-41E1-BF8F-1111AAAA"
+            },
+            "malware_type" : "file",
+            "parent_process_path" : "C:\\\\AVAA\\\\BBBB\\\\cmd.exe",
+            "hash" : "hash_3"
+          }, {
+            "computer_id" : "1111aaaaaaa222bbbb",
+            "parent_process_id" : 2222,
+            "date" : "2019-01-24T11:13:04.000Z",
+            "computer_name" : "Knight",
+            "file_path" : "aaaaaaa111111sssssss2dddd.bender",
+            "malware_name" : "",
+            "process_info_command_line" : "c:\\\\aaa.exe-test",
+            "attack_type" : "attack1",
+            "module" : "hd",
+            "detection_level" : "aggressive",
+            "command_line_parameters" : "abc",
+            "computer_fqdn" : "knight",
+            "is_fileless_attack" : 1,
+            "companyId" : "111111f***",
+            "computer_ip" : "100.10.0.100",
+            "final_status" : "quarantined",
+            "product_installed" : "ABC",
+            "process_info_path" : "C:\\\\a.exe",
+            "hwid" : "00000000-0000-0000-0000-406186b5****",
+            "user" : {
+              "name" : "admin2",
+              "sid" : "AAA2222-222AA-1A1S-BF8F-55AABB55AA55"
+            },
+            "malware_type" : "file",
+            "parent_process_path" : "C:\\\\AAA\\\\SFGB\\\\cmd.exe",
+            "hash" : "hash_3"
+          } ]
+        }
+      }
+    result:
+      custom:
+        computer_ip_extracted: "10.10.10.10,100.10.0.100"
+        id: 1731566555000
+        jsonrpc: "2.0"
+        method: "addEvents"
+        module_extracted: "hd,hd"
+        network:
+          client:
+            ip:
+            - "10.10.10.10"
+            - "100.10.0.100"
+        params:
+          events:
+          -
+            computer_id: "aaaaaaaa1111111112222222sssssss"
+            parent_process_id: 22222
+            date: "2019-01-24T11:13:04.000Z"
+            computer_name: "ABC"
+            file_path: "aaaa22222sssssss222.bender"
+            malware_name: ""
+            process_info_command_line: "c:\\\\aaa.exe-test"
+            attack_type: "suspiciousfilesandnetworktraffic"
+            module: "hd"
+            detection_level: "normal"
+            command_line_parameters: "abc"
+            computer_fqdn: "abc"
+            is_fileless_attack: 1
+            companyId: "1111aaaaasssss222s"
+            computer_ip: "10.10.10.10"
+            final_status: "quarantined"
+            product_installed: "XYZ"
+            process_info_path: "C:\\\\aa.exe"
+            hwid: "00000000-0000-0000-0000-111111****"
+            user:
+              name: "admin"
+              sid: "AA222AA11-55FF-41E1-BF8F-1111AAAA"
+            malware_type: "file"
+            parent_process_path: "C:\\\\AVAA\\\\BBBB\\\\cmd.exe"
+            hash: "hash_3"
+          -
+            computer_id: "1111aaaaaaa222bbbb"
+            parent_process_id: 2222
+            date: "2019-01-24T11:13:04.000Z"
+            computer_name: "Knight"
+            file_path: "aaaaaaa111111sssssss2dddd.bender"
+            malware_name: ""
+            process_info_command_line: "c:\\\\aaa.exe-test"
+            attack_type: "attack1"
+            module: "hd"
+            detection_level: "aggressive"
+            command_line_parameters: "abc"
+            computer_fqdn: "knight"
+            is_fileless_attack: 1
+            companyId: "111111f***"
+            computer_ip: "100.10.0.100"
+            final_status: "quarantined"
+            product_installed: "ABC"
+            process_info_path: "C:\\\\a.exe"
+            hwid: "00000000-0000-0000-0000-406186b5****"
+            user:
+              name: "admin2"
+              sid: "AAA2222-222AA-1A1S-BF8F-55AABB55AA55"
+            malware_type: "file"
+            parent_process_path: "C:\\\\AAA\\\\SFGB\\\\cmd.exe"
+            hash: "hash_3"
+        service: "hyper-detect-event"
+      message: |-
+        {
+          "method" : "addEvents",
+          "id" : 1731566555000,
+          "jsonrpc" : "2.0",
+          "params" : {
+            "events" : [ {
+              "computer_id" : "aaaaaaaa1111111112222222sssssss",
+              "parent_process_id" : 22222,
+              "date" : "2019-01-24T11:13:04.000Z",
+              "computer_name" : "ABC",
+              "file_path" : "aaaa22222sssssss222.bender",
+              "malware_name" : "",
+              "process_info_command_line" : "c:\\\\aaa.exe-test",
+              "attack_type" : "suspiciousfilesandnetworktraffic",
+              "module" : "hd",
+              "detection_level" : "normal",
+              "command_line_parameters" : "abc",
+              "computer_fqdn" : "abc",
+              "is_fileless_attack" : 1,
+              "companyId" : "1111aaaaasssss222s",
+              "computer_ip" : "10.10.10.10",
+              "final_status" : "quarantined",
+              "product_installed" : "XYZ",
+              "process_info_path" : "C:\\\\aa.exe",
+              "hwid" : "00000000-0000-0000-0000-111111****",
+              "user" : {
+                "name" : "admin",
+                "sid" : "AA222AA11-55FF-41E1-BF8F-1111AAAA"
+              },
+              "malware_type" : "file",
+              "parent_process_path" : "C:\\\\AVAA\\\\BBBB\\\\cmd.exe",
+              "hash" : "hash_3"
+            }, {
+              "computer_id" : "1111aaaaaaa222bbbb",
+              "parent_process_id" : 2222,
+              "date" : "2019-01-24T11:13:04.000Z",
+              "computer_name" : "Knight",
+              "file_path" : "aaaaaaa111111sssssss2dddd.bender",
+              "malware_name" : "",
+              "process_info_command_line" : "c:\\\\aaa.exe-test",
+              "attack_type" : "attack1",
+              "module" : "hd",
+              "detection_level" : "aggressive",
+              "command_line_parameters" : "abc",
+              "computer_fqdn" : "knight",
+              "is_fileless_attack" : 1,
+              "companyId" : "111111f***",
+              "computer_ip" : "100.10.0.100",
+              "final_status" : "quarantined",
+              "product_installed" : "ABC",
+              "process_info_path" : "C:\\\\a.exe",
+              "hwid" : "00000000-0000-0000-0000-406186b5****",
+              "user" : {
+                "name" : "admin2",
+                "sid" : "AAA2222-222AA-1A1S-BF8F-55AABB55AA55"
+              },
+              "malware_type" : "file",
+              "parent_process_path" : "C:\\\\AAA\\\\SFGB\\\\cmd.exe",
+              "hash" : "hash_3"
+            } ]
+          }
+        }
+      service: "hyper-detect-event"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1731566555000
+  -
+    sample: |-
+      {
+        "method" : "addEvents",
+        "id" : 1731500406000,
+        "jsonrpc" : "2.0",
+        "params" : {
+          "events" : [ {
+            "computer_id" : "1111a1aaa111aa3a1465b7e4",
+            "computer_name" : "AA-XYZ-01",
+            "last_blocked" : "2017-09-14T08:49:43.000Z",
+            "module" : "aph",
+            "count" : 1,
+            "url" : "http://example.com/",
+            "computer_fqdn" : "aa-xyz-01.ab.abc",
+            "companyId" : "11111aa1a11aaa1110da972",
+            "computer_ip" : "10.10.1.0",
+            "aph_type" : "phishing",
+            "product_installed" : "BEST",
+            "_testEvent_" : true,
+            "status" : "aph_blocked"
+          }, {
+            "computer_id" : "1111a1aaa111aa3a1465b7e4",
+            "computer_name" : "AA-XYZ-01",
+            "last_blocked" : "2017-09-14T08:49:43.000Z",
+            "module" : "aph",
+            "count" : 1,
+            "url" : "http://example.com/",
+            "computer_fqdn" : "aa-xyz-01.ab.abc",
+            "companyId" : "11111aa1a11aaa1110da972",
+            "computer_ip" : "10.10.0.0",
+            "aph_type" : "phishing",
+            "product_installed" : "BEST",
+            "_testEvent_" : true,
+            "status" : "aph_blocked"
+          } ]
+        }
+      }
+    result:
+      custom:
+        computer_ip_extracted: "10.10.1.0,10.10.0.0"
+        id: 1731500406000
+        jsonrpc: "2.0"
+        method: "addEvents"
+        module_extracted: "aph,aph"
+        network:
+          client:
+            ip:
+            - "10.10.1.0"
+            - "10.10.0.0"
+        params:
+          events:
+          -
+            computer_id: "1111a1aaa111aa3a1465b7e4"
+            computer_name: "AA-XYZ-01"
+            last_blocked: "2017-09-14T08:49:43.000Z"
+            module: "aph"
+            count: 1
+            url: "http://example.com/"
+            computer_fqdn: "aa-xyz-01.ab.abc"
+            companyId: "11111aa1a11aaa1110da972"
+            computer_ip: "10.10.1.0"
+            aph_type: "phishing"
+            product_installed: "BEST"
+            _testEvent_: true
+            status: "aph_blocked"
+          -
+            computer_id: "1111a1aaa111aa3a1465b7e4"
+            computer_name: "AA-XYZ-01"
+            last_blocked: "2017-09-14T08:49:43.000Z"
+            module: "aph"
+            count: 1
+            url: "http://example.com/"
+            computer_fqdn: "aa-xyz-01.ab.abc"
+            companyId: "11111aa1a11aaa1110da972"
+            computer_ip: "10.10.0.0"
+            aph_type: "phishing"
+            product_installed: "BEST"
+            _testEvent_: true
+            status: "aph_blocked"
+        service: "antiphishing"
+      message: |-
+        {
+          "method" : "addEvents",
+          "id" : 1731500406000,
+          "jsonrpc" : "2.0",
+          "params" : {
+            "events" : [ {
+              "computer_id" : "1111a1aaa111aa3a1465b7e4",
+              "computer_name" : "AA-XYZ-01",
+              "last_blocked" : "2017-09-14T08:49:43.000Z",
+              "module" : "aph",
+              "count" : 1,
+              "url" : "http://example.com/",
+              "computer_fqdn" : "aa-xyz-01.ab.abc",
+              "companyId" : "11111aa1a11aaa1110da972",
+              "computer_ip" : "10.10.1.0",
+              "aph_type" : "phishing",
+              "product_installed" : "BEST",
+              "_testEvent_" : true,
+              "status" : "aph_blocked"
+            }, {
+              "computer_id" : "1111a1aaa111aa3a1465b7e4",
+              "computer_name" : "AA-XYZ-01",
+              "last_blocked" : "2017-09-14T08:49:43.000Z",
+              "module" : "aph",
+              "count" : 1,
+              "url" : "http://example.com/",
+              "computer_fqdn" : "aa-xyz-01.ab.abc",
+              "companyId" : "11111aa1a11aaa1110da972",
+              "computer_ip" : "10.10.0.0",
+              "aph_type" : "phishing",
+              "product_installed" : "BEST",
+              "_testEvent_" : true,
+              "status" : "aph_blocked"
+            } ]
+          }
+        }
+      service: "antiphishing"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1731500406000
+  -
+    sample: |-
+      {
+        "method" : "addEvents",
+        "id" : 1731567708000,
+        "jsonrpc" : "2.0",
+        "params" : {
+          "events" : [ {
+            "computer_id" : "11111ghtyef1111111",
+            "computer_name" : "ABCD-HRS",
+            "file_path" : "C:\\\\ASC\\\\ADFF\\\\SD\\\\ASFDF\\\\SFD\\\\sff87-c5ab-4888sdfd-sd2255-aaaaaa111111.Rfdfx.zip.3d6\\\\ASFgsfd",
+            "ignored" : 0,
+            "malware_name" : "Gen:Variant.Trojan.Linux.DDos.1",
+            "module" : "av",
+            "quarantined" : 0,
+            "signaturesNumber" : "7.97668",
+            "scanEngineType" : 3,
+            "companyId" : "48498sfdgf848gh",
+            "computer_fqdn" : "abcd-hrs",
+            "deleted" : 0,
+            "computer_ip" : "10.10.10.10",
+            "blocked" : 1,
+            "final_status" : "blocked",
+            "product_installed" : "BEST",
+            "cleaned" : 0,
+            "present" : 0,
+            "user" : {
+              "name" : "Crest",
+              "id" : "S-1-1-11-111111-222222222-333333333-1000"
+            },
+            "malware_type" : "file",
+            "hash" : "fg878878dfsdgd888sf888",
+            "timestamp" : "2024-10-16T10:08:26.000Z"
+          }, {
+            "computer_id" : "5454fefef555",
+            "computer_name" : "ABCDS-AFE",
+            "file_path" : "C:\\\\AFDF\\\\SFDg\\\\SFG\\\\SGDFD\\\\SDGF\\\\fg4444-753b-4256-8c1a-2222fdfgr.sdfdf(1).zip.sds4\\\\dsfdgf587887878.bin",
+            "ignored" : 0,
+            "malware_name" : "Trojan.Ransom.MBRlock.B",
+            "module" : "av",
+            "quarantined" : 0,
+            "signaturesNumber" : "7.97668",
+            "scanEngineType" : 3,
+            "companyId" : "54878gdde78844",
+            "computer_fqdn" : "abcds-afe",
+            "deleted" : 1,
+            "computer_ip" : "10.100.100.100",
+            "blocked" : 0,
+            "final_status" : "deleted",
+            "product_installed" : "BEST",
+            "cleaned" : 0,
+            "present" : 0,
+            "user" : {
+              "name" : "Crest",
+              "id" : "S-1-1-11-11111-22222222-33333-1000"
+            },
+            "malware_type" : "file",
+            "hash" : "65484fgeree1111fdgd222222",
+            "timestamp" : "2024-10-16T10:08:54.000Z"
+          } ]
+        }
+      }
+    result:
+      custom:
+        computer_ip_extracted: "10.10.10.10,10.100.100.100"
+        id: 1731567708000
+        jsonrpc: "2.0"
+        method: "addEvents"
+        module_extracted: "av,av"
+        network:
+          client:
+            ip:
+            - "10.10.10.10"
+            - "10.100.100.100"
+        params:
+          events:
+          -
+            computer_id: "11111ghtyef1111111"
+            computer_name: "ABCD-HRS"
+            file_path: "C:\\\\ASC\\\\ADFF\\\\SD\\\\ASFDF\\\\SFD\\\\sff87-c5ab-4888sdfd-sd2255-aaaaaa111111.Rfdfx.zip.3d6\\\\ASFgsfd"
+            ignored: 0
+            malware_name: "Gen:Variant.Trojan.Linux.DDos.1"
+            module: "av"
+            quarantined: 0
+            signaturesNumber: "7.97668"
+            scanEngineType: 3
+            companyId: "48498sfdgf848gh"
+            computer_fqdn: "abcd-hrs"
+            deleted: 0
+            computer_ip: "10.10.10.10"
+            blocked: 1
+            final_status: "blocked"
+            product_installed: "BEST"
+            cleaned: 0
+            present: 0
+            user:
+              name: "Crest"
+              id: "S-1-1-11-111111-222222222-333333333-1000"
+            malware_type: "file"
+            hash: "fg878878dfsdgd888sf888"
+            timestamp: "2024-10-16T10:08:26.000Z"
+          -
+            computer_id: "5454fefef555"
+            computer_name: "ABCDS-AFE"
+            file_path: "C:\\\\AFDF\\\\SFDg\\\\SFG\\\\SGDFD\\\\SDGF\\\\fg4444-753b-4256-8c1a-2222fdfgr.sdfdf(1).zip.sds4\\\\dsfdgf587887878.bin"
+            ignored: 0
+            malware_name: "Trojan.Ransom.MBRlock.B"
+            module: "av"
+            quarantined: 0
+            signaturesNumber: "7.97668"
+            scanEngineType: 3
+            companyId: "54878gdde78844"
+            computer_fqdn: "abcds-afe"
+            deleted: 1
+            computer_ip: "10.100.100.100"
+            blocked: 0
+            final_status: "deleted"
+            product_installed: "BEST"
+            cleaned: 0
+            present: 0
+            user:
+              name: "Crest"
+              id: "S-1-1-11-11111-22222222-33333-1000"
+            malware_type: "file"
+            hash: "65484fgeree1111fdgd222222"
+            timestamp: "2024-10-16T10:08:54.000Z"
+        service: "antimalware"
+      message: |-
+        {
+          "method" : "addEvents",
+          "id" : 1731567708000,
+          "jsonrpc" : "2.0",
+          "params" : {
+            "events" : [ {
+              "computer_id" : "11111ghtyef1111111",
+              "computer_name" : "ABCD-HRS",
+              "file_path" : "C:\\\\ASC\\\\ADFF\\\\SD\\\\ASFDF\\\\SFD\\\\sff87-c5ab-4888sdfd-sd2255-aaaaaa111111.Rfdfx.zip.3d6\\\\ASFgsfd",
+              "ignored" : 0,
+              "malware_name" : "Gen:Variant.Trojan.Linux.DDos.1",
+              "module" : "av",
+              "quarantined" : 0,
+              "signaturesNumber" : "7.97668",
+              "scanEngineType" : 3,
+              "companyId" : "48498sfdgf848gh",
+              "computer_fqdn" : "abcd-hrs",
+              "deleted" : 0,
+              "computer_ip" : "10.10.10.10",
+              "blocked" : 1,
+              "final_status" : "blocked",
+              "product_installed" : "BEST",
+              "cleaned" : 0,
+              "present" : 0,
+              "user" : {
+                "name" : "Crest",
+                "id" : "S-1-1-11-111111-222222222-333333333-1000"
+              },
+              "malware_type" : "file",
+              "hash" : "fg878878dfsdgd888sf888",
+              "timestamp" : "2024-10-16T10:08:26.000Z"
+            }, {
+              "computer_id" : "5454fefef555",
+              "computer_name" : "ABCDS-AFE",
+              "file_path" : "C:\\\\AFDF\\\\SFDg\\\\SFG\\\\SGDFD\\\\SDGF\\\\fg4444-753b-4256-8c1a-2222fdfgr.sdfdf(1).zip.sds4\\\\dsfdgf587887878.bin",
+              "ignored" : 0,
+              "malware_name" : "Trojan.Ransom.MBRlock.B",
+              "module" : "av",
+              "quarantined" : 0,
+              "signaturesNumber" : "7.97668",
+              "scanEngineType" : 3,
+              "companyId" : "54878gdde78844",
+              "computer_fqdn" : "abcds-afe",
+              "deleted" : 1,
+              "computer_ip" : "10.100.100.100",
+              "blocked" : 0,
+              "final_status" : "deleted",
+              "product_installed" : "BEST",
+              "cleaned" : 0,
+              "present" : 0,
+              "user" : {
+                "name" : "Crest",
+                "id" : "S-1-1-11-11111-22222222-33333-1000"
+              },
+              "malware_type" : "file",
+              "hash" : "65484fgeree1111fdgd222222",
+              "timestamp" : "2024-10-16T10:08:54.000Z"
+            } ]
+          }
+        }
+      service: "antimalware"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1731567708000
+  -
+    sample: |-
+      {
+        "method" : "addEvents",
+        "id" : 1731562021000,
+        "jsonrpc" : "2.0",
+        "params" : {
+          "events" : [ {
+            "computer_id" : "1111a1aaa111aa3a111",
+            "computer_name" : "AB-WIN7-X64-11",
+            "last_blocked" : "2017-09-14T07:56:33.000Z",
+            "exploit_path" : "C:\\\\Users\\\\admin\\\\Desktop\\\\Tools\\\\avcsim\\\\win32\\\\avcsim32.exe",
+            "module" : "avc",
+            "count" : 1,
+            "exploit_type" : "AVCBlockedExploit",
+            "computer_fqdn" : "fc-win7-x64-01",
+            "companyId" : "670630bd6e50cec1220da972",
+            "computer_ip" : "100.100.0.1",
+            "product_installed" : "BEST",
+            "_testEvent_" : true,
+            "status" : "avc_blocked"
+          } ]
+        }
+      }
+    result:
+      custom:
+        computer_ip_extracted: "100.100.0.1"
+        id: 1731562021000
+        jsonrpc: "2.0"
+        method: "addEvents"
+        module_extracted: "avc"
+        network:
+          client:
+            ip:
+            - "100.100.0.1"
+        params:
+          events:
+          -
+            computer_id: "1111a1aaa111aa3a111"
+            computer_name: "AB-WIN7-X64-11"
+            last_blocked: "2017-09-14T07:56:33.000Z"
+            exploit_path: "C:\\\\Users\\\\admin\\\\Desktop\\\\Tools\\\\avcsim\\\\win32\\\\avcsim32.exe"
+            module: "avc"
+            count: 1
+            exploit_type: "AVCBlockedExploit"
+            computer_fqdn: "fc-win7-x64-01"
+            companyId: "670630bd6e50cec1220da972"
+            computer_ip: "100.100.0.1"
+            product_installed: "BEST"
+            _testEvent_: true
+            status: "avc_blocked"
+        service: "advanced-threat-control"
+      message: |-
+        {
+          "method" : "addEvents",
+          "id" : 1731562021000,
+          "jsonrpc" : "2.0",
+          "params" : {
+            "events" : [ {
+              "computer_id" : "1111a1aaa111aa3a111",
+              "computer_name" : "AB-WIN7-X64-11",
+              "last_blocked" : "2017-09-14T07:56:33.000Z",
+              "exploit_path" : "C:\\\\Users\\\\admin\\\\Desktop\\\\Tools\\\\avcsim\\\\win32\\\\avcsim32.exe",
+              "module" : "avc",
+              "count" : 1,
+              "exploit_type" : "AVCBlockedExploit",
+              "computer_fqdn" : "fc-win7-x64-01",
+              "companyId" : "670630bd6e50cec1220da972",
+              "computer_ip" : "100.100.0.1",
+              "product_installed" : "BEST",
+              "_testEvent_" : true,
+              "status" : "avc_blocked"
+            } ]
+          }
+        }
+      service: "advanced-threat-control"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1731562021000
+  -
+    sample: |-
+      {
+        "method" : "addEvents",
+        "id" : 1731562021000,
+        "jsonrpc" : "2.0",
+        "params" : {
+          "events" : [ {
+            "computer_id" : "11111aa1a11aaa1aaa11",
+            "computer_name" : "CD-WIN7-X64-11",
+            "last_blocked" : "2017-09-11T10:23:43.000Z",
+            "module" : "dp",
+            "target_type" : "http",
+            "count" : 1,
+            "url" : "http://example.com/",
+            "companyId" : "aaaaaaaa11111aaa1111aa",
+            "computer_fqdn" : "cd-win7-x64-11",
+            "computer_ip" : "100.100.10.10",
+            "blocking_rule_name" : "dv",
+            "product_installed" : "BEST",
+            "status" : "data_protection_blocked"
+          } ]
+        }
+      }
+    result:
+      custom:
+        computer_ip_extracted: "100.100.10.10"
+        id: 1731562021000
+        jsonrpc: "2.0"
+        method: "addEvents"
+        module_extracted: "dp"
+        network:
+          client:
+            ip:
+            - "100.100.10.10"
+        params:
+          events:
+          -
+            computer_id: "11111aa1a11aaa1aaa11"
+            computer_name: "CD-WIN7-X64-11"
+            last_blocked: "2017-09-11T10:23:43.000Z"
+            module: "dp"
+            target_type: "http"
+            count: 1
+            url: "http://example.com/"
+            companyId: "aaaaaaaa11111aaa1111aa"
+            computer_fqdn: "cd-win7-x64-11"
+            computer_ip: "100.100.10.10"
+            blocking_rule_name: "dv"
+            product_installed: "BEST"
+            status: "data_protection_blocked"
+        service: "data-protection"
+      message: |-
+        {
+          "method" : "addEvents",
+          "id" : 1731562021000,
+          "jsonrpc" : "2.0",
+          "params" : {
+            "events" : [ {
+              "computer_id" : "11111aa1a11aaa1aaa11",
+              "computer_name" : "CD-WIN7-X64-11",
+              "last_blocked" : "2017-09-11T10:23:43.000Z",
+              "module" : "dp",
+              "target_type" : "http",
+              "count" : 1,
+              "url" : "http://example.com/",
+              "companyId" : "aaaaaaaa11111aaa1111aa",
+              "computer_fqdn" : "cd-win7-x64-11",
+              "computer_ip" : "100.100.10.10",
+              "blocking_rule_name" : "dv",
+              "product_installed" : "BEST",
+              "status" : "data_protection_blocked"
+            } ]
+          }
+        }
+      service: "data-protection"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1731562021000
+  -
+    sample: |-
+      {
+        "method" : "addEvents",
+        "id" : 1731562221000,
+        "jsonrpc" : "2.0",
+        "params" : {
+          "events" : [ {
+            "computer_id" : "11111aa1a11aaa1110bb222",
+            "computer_name" : "AAAA-CID",
+            "last_blocked" : "2024-10-15T10:20:09.000Z",
+            "local_port" : "57265",
+            "module" : "fw",
+            "count" : 1,
+            "protocol_id" : "17",
+            "companyId" : "11111111aaaaaaaaabbbbbb22",
+            "computer_fqdn" : "AAAAAA-ccccccc11",
+            "computer_ip" : "10.10.10.10",
+            "product_installed" : "BEST",
+            "user" : {
+              "name" : "itadori",
+              "id" : "A-1-5-22-111222-1111-1111-1000"
+            },
+            "application_path" : "C:\\\\ProgramFiles\\\\AAA\\\\BBBB\\\\CCC\\\\dddd.exe",
+            "status" : "traffic_blocked"
+          }, {
+            "computer_id" : "11111aa1a11aaa1110bb222",
+            "computer_name" : "AAAA-CID",
+            "last_blocked" : "2024-10-15T10:20:09.000Z",
+            "local_port" : "57265",
+            "module" : "fw",
+            "count" : 1,
+            "protocol_id" : "17",
+            "companyId" : "11111111aaaaaaaaabbbbbb22",
+            "computer_fqdn" : "AAAAAA-ccccccc11",
+            "computer_ip" : "10.10.10.11",
+            "product_installed" : "BEST",
+            "user" : {
+              "name" : "itadori",
+              "id" : "A-1-5-22-111222-1111-1111-1000"
+            },
+            "application_path" : "C:\\\\ProgramFiles\\\\AAA\\\\BBBB\\\\CCC\\\\dddd.exe",
+            "status" : "traffic_blocked"
+          } ]
+        }
+      }
+    result:
+      custom:
+        computer_ip_extracted: "10.10.10.10,10.10.10.11"
+        id: 1731562221000
+        jsonrpc: "2.0"
+        local_port_extracted: "57265,57265"
+        method: "addEvents"
+        module_extracted: "fw,fw"
+        network:
+          client:
+            ip:
+            - "10.10.10.10"
+            - "10.10.10.11"
+            port:
+            - "57265"
+            - "57265"
+        params:
+          events:
+          -
+            computer_id: "11111aa1a11aaa1110bb222"
+            computer_name: "AAAA-CID"
+            last_blocked: "2024-10-15T10:20:09.000Z"
+            local_port: "57265"
+            module: "fw"
+            count: 1
+            protocol_id: "17"
+            companyId: "11111111aaaaaaaaabbbbbb22"
+            computer_fqdn: "AAAAAA-ccccccc11"
+            computer_ip: "10.10.10.10"
+            product_installed: "BEST"
+            user:
+              name: "itadori"
+              id: "A-1-5-22-111222-1111-1111-1000"
+            application_path: "C:\\\\ProgramFiles\\\\AAA\\\\BBBB\\\\CCC\\\\dddd.exe"
+            status: "traffic_blocked"
+          -
+            computer_id: "11111aa1a11aaa1110bb222"
+            computer_name: "AAAA-CID"
+            last_blocked: "2024-10-15T10:20:09.000Z"
+            local_port: "57265"
+            module: "fw"
+            count: 1
+            protocol_id: "17"
+            companyId: "11111111aaaaaaaaabbbbbb22"
+            computer_fqdn: "AAAAAA-ccccccc11"
+            computer_ip: "10.10.10.11"
+            product_installed: "BEST"
+            user:
+              name: "itadori"
+              id: "A-1-5-22-111222-1111-1111-1000"
+            application_path: "C:\\\\ProgramFiles\\\\AAA\\\\BBBB\\\\CCC\\\\dddd.exe"
+            status: "traffic_blocked"
+        service: "firewall"
+      message: |-
+        {
+          "method" : "addEvents",
+          "id" : 1731562221000,
+          "jsonrpc" : "2.0",
+          "params" : {
+            "events" : [ {
+              "computer_id" : "11111aa1a11aaa1110bb222",
+              "computer_name" : "AAAA-CID",
+              "last_blocked" : "2024-10-15T10:20:09.000Z",
+              "local_port" : "57265",
+              "module" : "fw",
+              "count" : 1,
+              "protocol_id" : "17",
+              "companyId" : "11111111aaaaaaaaabbbbbb22",
+              "computer_fqdn" : "AAAAAA-ccccccc11",
+              "computer_ip" : "10.10.10.10",
+              "product_installed" : "BEST",
+              "user" : {
+                "name" : "itadori",
+                "id" : "A-1-5-22-111222-1111-1111-1000"
+              },
+              "application_path" : "C:\\\\ProgramFiles\\\\AAA\\\\BBBB\\\\CCC\\\\dddd.exe",
+              "status" : "traffic_blocked"
+            }, {
+              "computer_id" : "11111aa1a11aaa1110bb222",
+              "computer_name" : "AAAA-CID",
+              "last_blocked" : "2024-10-15T10:20:09.000Z",
+              "local_port" : "57265",
+              "module" : "fw",
+              "count" : 1,
+              "protocol_id" : "17",
+              "companyId" : "11111111aaaaaaaaabbbbbb22",
+              "computer_fqdn" : "AAAAAA-ccccccc11",
+              "computer_ip" : "10.10.10.11",
+              "product_installed" : "BEST",
+              "user" : {
+                "name" : "itadori",
+                "id" : "A-1-5-22-111222-1111-1111-1000"
+              },
+              "application_path" : "C:\\\\ProgramFiles\\\\AAA\\\\BBBB\\\\CCC\\\\dddd.exe",
+              "status" : "traffic_blocked"
+            } ]
+          }
+        }
+      service: "firewall"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1731562221000
+  -
+    sample: |-
+      {
+        "method" : "addEvents",
+        "id" : 1731567708000,
+        "jsonrpc" : "2.0",
+        "params" : {
+          "events" : [ {
+            "companyId" : "sdfg215155sdff",
+            "computerIp" : "100.100.11.10",
+            "threatType" : "RANSOMWARE",
+            "computerName" : "VVV-WIN7-X64-11",
+            "endpointId" : "1sfdgfb585585f",
+            "remediationActions" : [ "1", "", "1" ],
+            "module" : "network-sandboxing",
+            "fileSizes" : [ "2614", "2615", "2616" ],
+            "filePaths" : [ "C:\\\\Users\\\\ABC\\\\CDG\\\\SADF.xml", "D:\\\\avs\\\\sfg\\\\sdg.xml", "D:\\\\fdf\\\\asdg\\\\asgf\\\\app\\\\asd\\\\afsgf\\\\as\\\\sdgf\\\\afsgdf\\\\sdf.xml" ],
+            "detectionTime" : 1505386969
+          }, {
+            "companyId" : "sdfg215155sdff",
+            "computerIp" : "100.100.10.10",
+            "threatType" : "RANSOMWARE",
+            "computerName" : "VVV-WIN7-X64-11",
+            "endpointId" : "1sfdgfb585585f",
+            "remediationActions" : [ "1", "", "1" ],
+            "module" : "network-sandboxing",
+            "fileSizes" : [ "2614", "2615", "2616" ],
+            "filePaths" : [ "C:\\\\Users\\\\ABC\\\\CDG\\\\SADF.xml", "D:\\\\avs\\\\sfg\\\\sdg.xml", "D:\\\\fdf\\\\asdg\\\\asgf\\\\app\\\\asd\\\\afsgf\\\\as\\\\sdgf\\\\afsgdf\\\\sdf.xml" ],
+            "detectionTime" : 1505386969
+          } ]
+        }
+      }
+    result:
+      custom:
+        computerIp_extracted: "100.100.11.10,100.100.10.10"
+        id: 1731567708000
+        jsonrpc: "2.0"
+        method: "addEvents"
+        module_extracted: "network-sandboxing,network-sandboxing"
+        network:
+          client:
+            ip:
+            - "100.100.11.10"
+            - "100.100.10.10"
+        params:
+          events:
+          -
+            companyId: "sdfg215155sdff"
+            computerIp: "100.100.11.10"
+            threatType: "RANSOMWARE"
+            computerName: "VVV-WIN7-X64-11"
+            endpointId: "1sfdgfb585585f"
+            remediationActions:
+            - "1"
+            - ""
+            - "1"
+            module: "network-sandboxing"
+            fileSizes:
+            - "2614"
+            - "2615"
+            - "2616"
+            filePaths:
+            - "C:\\\\Users\\\\ABC\\\\CDG\\\\SADF.xml"
+            - "D:\\\\avs\\\\sfg\\\\sdg.xml"
+            - "D:\\\\fdf\\\\asdg\\\\asgf\\\\app\\\\asd\\\\afsgf\\\\as\\\\sdgf\\\\afsgdf\\\\sdf.xml"
+            detectionTime: 1505386969
+          -
+            companyId: "sdfg215155sdff"
+            computerIp: "100.100.10.10"
+            threatType: "RANSOMWARE"
+            computerName: "VVV-WIN7-X64-11"
+            endpointId: "1sfdgfb585585f"
+            remediationActions:
+            - "1"
+            - ""
+            - "1"
+            module: "network-sandboxing"
+            fileSizes:
+            - "2614"
+            - "2615"
+            - "2616"
+            filePaths:
+            - "C:\\\\Users\\\\ABC\\\\CDG\\\\SADF.xml"
+            - "D:\\\\avs\\\\sfg\\\\sdg.xml"
+            - "D:\\\\fdf\\\\asdg\\\\asgf\\\\app\\\\asd\\\\afsgf\\\\as\\\\sdgf\\\\afsgdf\\\\sdf.xml"
+            detectionTime: 1505386969
+        service: "sandbox-analyzer-detection"
+      message: |-
+        {
+          "method" : "addEvents",
+          "id" : 1731567708000,
+          "jsonrpc" : "2.0",
+          "params" : {
+            "events" : [ {
+              "companyId" : "sdfg215155sdff",
+              "computerIp" : "100.100.11.10",
+              "threatType" : "RANSOMWARE",
+              "computerName" : "VVV-WIN7-X64-11",
+              "endpointId" : "1sfdgfb585585f",
+              "remediationActions" : [ "1", "", "1" ],
+              "module" : "network-sandboxing",
+              "fileSizes" : [ "2614", "2615", "2616" ],
+              "filePaths" : [ "C:\\\\Users\\\\ABC\\\\CDG\\\\SADF.xml", "D:\\\\avs\\\\sfg\\\\sdg.xml", "D:\\\\fdf\\\\asdg\\\\asgf\\\\app\\\\asd\\\\afsgf\\\\as\\\\sdgf\\\\afsgdf\\\\sdf.xml" ],
+              "detectionTime" : 1505386969
+            }, {
+              "companyId" : "sdfg215155sdff",
+              "computerIp" : "100.100.10.10",
+              "threatType" : "RANSOMWARE",
+              "computerName" : "VVV-WIN7-X64-11",
+              "endpointId" : "1sfdgfb585585f",
+              "remediationActions" : [ "1", "", "1" ],
+              "module" : "network-sandboxing",
+              "fileSizes" : [ "2614", "2615", "2616" ],
+              "filePaths" : [ "C:\\\\Users\\\\ABC\\\\CDG\\\\SADF.xml", "D:\\\\avs\\\\sfg\\\\sdg.xml", "D:\\\\fdf\\\\asdg\\\\asgf\\\\app\\\\asd\\\\afsgf\\\\as\\\\sdgf\\\\afsgdf\\\\sdf.xml" ],
+              "detectionTime" : 1505386969
+            } ]
+          }
+        }
+      service: "sandbox-analyzer-detection"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1731567708000
+  -
+    sample: |-
+      {
+        "method" : "addEvents",
+        "id" : 1731567708000,
+        "jsonrpc" : "2.0",
+        "params" : {
+          "events" : [ {
+            "computer_id" : "585ghjergt555v1",
+            "severity" : "medium",
+            "computer_name" : "Light-EID",
+            "file_path" : "c:\\\\as\\\\sdf\\\\sdfg\\\\sfdgrf\\\\dsdfg\\\\c80f6454-43fe-4d57-dfgf813e-9e7e287c27b7_ransomware.sdfgf.zip.7b7\\\\1001a8c7f33185217e6e1bdbb8dba9780d475da944684fb4bf1fc04809525887",
+            "file_hash_sha256" : "1001a8c7f33185217e6e1bdbb8dba9780d475da944684fb4bf1fc04809525887",
+            "created" : "2024-10-16T09:37:38.955Z",
+            "file_name" : "1001a8c7f33185217e6e1bdbb8dba9780d475da944684fb4bf1fc04809525887",
+            "endpointId" : "670caed7094af2a4ff995d64",
+            "module" : "new-incident",
+            "detection_name" : "Trojan.Ransom.Autoit.A",
+            "attack_types" : [ "Malware", "Ransomware", "Other" ],
+            "attack_entry" : 1237238051,
+            "computer_fqdn" : "assettag-1234",
+            "companyId" : "611111bd6sfdgfe50cec12fdg588972",
+            "incident_id" : "defrgh7777f4445455",
+            "computer_ip" : "100.0.100.100,100.1.10.1",
+            "file_hash_md5" : "fdre5gt74wergth4egrt",
+            "main_action" : "blocked",
+            "process_path" : "c:\\\\sfg\\\\ergft.exe",
+            "att_ck_id" : [ "T1189", "T1204", "T1553", "T1083", "T1106", "T1497", "T1559", "T1047", "T1082", "T1016", "T1105", "T1132", "T1090", "T1071", "T1102", "T1213", "T1571", "T1129", "T1574", "T1005", "T1564", "T1548", "T1095", "T1070", "T1486", "T1485", "T1059", "T1074" ],
+            "severity_score" : 67
+          } ]
+        }
+      }
+    result:
+      custom:
+        computer_ip_extracted: "100.0.100.100,100.1.10.1"
+        id: 1731567708000
+        jsonrpc: "2.0"
+        method: "addEvents"
+        module_extracted: "new-incident"
+        network:
+          client:
+            ip:
+            - "100.0.100.100"
+            - "100.1.10.1"
+        params:
+          events:
+          -
+            computer_id: "585ghjergt555v1"
+            severity: "medium"
+            computer_name: "Light-EID"
+            file_path: "c:\\\\as\\\\sdf\\\\sdfg\\\\sfdgrf\\\\dsdfg\\\\c80f6454-43fe-4d57-dfgf813e-9e7e287c27b7_ransomware.sdfgf.zip.7b7\\\\1001a8c7f33185217e6e1bdbb8dba9780d475da944684fb4bf1fc04809525887"
+            file_hash_sha256: "1001a8c7f33185217e6e1bdbb8dba9780d475da944684fb4bf1fc04809525887"
+            created: "2024-10-16T09:37:38.955Z"
+            file_name: "1001a8c7f33185217e6e1bdbb8dba9780d475da944684fb4bf1fc04809525887"
+            endpointId: "670caed7094af2a4ff995d64"
+            module: "new-incident"
+            detection_name: "Trojan.Ransom.Autoit.A"
+            attack_types:
+            - "Malware"
+            - "Ransomware"
+            - "Other"
+            attack_entry: 1237238051
+            computer_fqdn: "assettag-1234"
+            companyId: "611111bd6sfdgfe50cec12fdg588972"
+            incident_id: "defrgh7777f4445455"
+            computer_ip: "100.0.100.100,100.1.10.1"
+            file_hash_md5: "fdre5gt74wergth4egrt"
+            main_action: "blocked"
+            process_path: "c:\\\\sfg\\\\ergft.exe"
+            att_ck_id:
+            - "T1189"
+            - "T1204"
+            - "T1553"
+            - "T1083"
+            - "T1106"
+            - "T1497"
+            - "T1559"
+            - "T1047"
+            - "T1082"
+            - "T1016"
+            - "T1105"
+            - "T1132"
+            - "T1090"
+            - "T1071"
+            - "T1102"
+            - "T1213"
+            - "T1571"
+            - "T1129"
+            - "T1574"
+            - "T1005"
+            - "T1564"
+            - "T1548"
+            - "T1095"
+            - "T1070"
+            - "T1486"
+            - "T1485"
+            - "T1059"
+            - "T1074"
+            severity_score: 67
+        service: "new-incident"
+        user_sid_extracted: ""
+        username_extracted: ""
+      message: |-
+        {
+          "method" : "addEvents",
+          "id" : 1731567708000,
+          "jsonrpc" : "2.0",
+          "params" : {
+            "events" : [ {
+              "computer_id" : "585ghjergt555v1",
+              "severity" : "medium",
+              "computer_name" : "Light-EID",
+              "file_path" : "c:\\\\as\\\\sdf\\\\sdfg\\\\sfdgrf\\\\dsdfg\\\\c80f6454-43fe-4d57-dfgf813e-9e7e287c27b7_ransomware.sdfgf.zip.7b7\\\\1001a8c7f33185217e6e1bdbb8dba9780d475da944684fb4bf1fc04809525887",
+              "file_hash_sha256" : "1001a8c7f33185217e6e1bdbb8dba9780d475da944684fb4bf1fc04809525887",
+              "created" : "2024-10-16T09:37:38.955Z",
+              "file_name" : "1001a8c7f33185217e6e1bdbb8dba9780d475da944684fb4bf1fc04809525887",
+              "endpointId" : "670caed7094af2a4ff995d64",
+              "module" : "new-incident",
+              "detection_name" : "Trojan.Ransom.Autoit.A",
+              "attack_types" : [ "Malware", "Ransomware", "Other" ],
+              "attack_entry" : 1237238051,
+              "computer_fqdn" : "assettag-1234",
+              "companyId" : "611111bd6sfdgfe50cec12fdg588972",
+              "incident_id" : "defrgh7777f4445455",
+              "computer_ip" : "100.0.100.100,100.1.10.1",
+              "file_hash_md5" : "fdre5gt74wergth4egrt",
+              "main_action" : "blocked",
+              "process_path" : "c:\\\\sfg\\\\ergft.exe",
+              "att_ck_id" : [ "T1189", "T1204", "T1553", "T1083", "T1106", "T1497", "T1559", "T1047", "T1082", "T1016", "T1105", "T1132", "T1090", "T1071", "T1102", "T1213", "T1571", "T1129", "T1574", "T1005", "T1564", "T1548", "T1095", "T1070", "T1486", "T1485", "T1059", "T1074" ],
+              "severity_score" : 67
+            } ]
+          }
+        }
+      service: "new-incident"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1731567708000
+  -
+    sample: |-
+      {
+        "method" : "addEvents",
+        "id" : 1731567708000,
+        "jsonrpc" : "2.0",
+        "params" : {
+          "events" : [ {
+            "computer_id" : "11111aa1a11aaa1110da11aa1",
+            "computer_name" : "AA-YUNO-11",
+            "malware" : [ {
+              "actionTaken" : "quarantine",
+              "malwareType" : "virus",
+              "malwareName" : "Trojan.Generic.KD.874127",
+              "infectedObject" : "WL-caaaa111119aa111119f9-0"
+            } ],
+            "endpointId" : "1111aaaaaaaa22bbbbbbbbbb",
+            "subject" : "EmailingSending..WL-0",
+            "module" : "exchange-malware",
+            "serverName" : "BB-YUNO-11",
+            "companyId" : "aaa1111111bbbb222",
+            "computer_fqdn" : "aa-yuno-01.aa.cdc",
+            "computer_ip" : "100.100.10.10",
+            "sender" : "aa_test01@aa.dom",
+            "recipients" : [ "aa_bbbb01@aa.acc" ],
+            "product_installed" : "BEST",
+            "detectionTime" : "2017-09-13T14:20:37.000Z"
+          } ]
+        }
+      }
+    result:
+      custom:
+        computer_ip_extracted: "100.100.10.10"
+        id: 1731567708000
+        jsonrpc: "2.0"
+        method: "addEvents"
+        module_extracted: "exchange-malware"
+        network:
+          client:
+            ip:
+            - "100.100.10.10"
+        params:
+          events:
+          -
+            computer_id: "11111aa1a11aaa1110da11aa1"
+            computer_name: "AA-YUNO-11"
+            malware:
+            -
+              actionTaken: "quarantine"
+              malwareType: "virus"
+              malwareName: "Trojan.Generic.KD.874127"
+              infectedObject: "WL-caaaa111119aa111119f9-0"
+            endpointId: "1111aaaaaaaa22bbbbbbbbbb"
+            subject: "EmailingSending..WL-0"
+            module: "exchange-malware"
+            serverName: "BB-YUNO-11"
+            companyId: "aaa1111111bbbb222"
+            computer_fqdn: "aa-yuno-01.aa.cdc"
+            computer_ip: "100.100.10.10"
+            sender: "aa_test01@aa.dom"
+            recipients:
+            - "aa_bbbb01@aa.acc"
+            product_installed: "BEST"
+            detectionTime: "2017-09-13T14:20:37.000Z"
+        sender_extracted: "aa_test01@aa.dom"
+        service: "exchange-malware-detection"
+        usr:
+          email:
+          - "aa_test01@aa.dom"
+      message: |-
+        {
+          "method" : "addEvents",
+          "id" : 1731567708000,
+          "jsonrpc" : "2.0",
+          "params" : {
+            "events" : [ {
+              "computer_id" : "11111aa1a11aaa1110da11aa1",
+              "computer_name" : "AA-YUNO-11",
+              "malware" : [ {
+                "actionTaken" : "quarantine",
+                "malwareType" : "virus",
+                "malwareName" : "Trojan.Generic.KD.874127",
+                "infectedObject" : "WL-caaaa111119aa111119f9-0"
+              } ],
+              "endpointId" : "1111aaaaaaaa22bbbbbbbbbb",
+              "subject" : "EmailingSending..WL-0",
+              "module" : "exchange-malware",
+              "serverName" : "BB-YUNO-11",
+              "companyId" : "aaa1111111bbbb222",
+              "computer_fqdn" : "aa-yuno-01.aa.cdc",
+              "computer_ip" : "100.100.10.10",
+              "sender" : "aa_test01@aa.dom",
+              "recipients" : [ "aa_bbbb01@aa.acc" ],
+              "product_installed" : "BEST",
+              "detectionTime" : "2017-09-13T14:20:37.000Z"
+            } ]
+          }
+        }
+      service: "exchange-malware-detection"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1731567708000
+  -
+    sample: |-
+      {
+        "method" : "addEvents",
+        "id" : 1731567808000,
+        "jsonrpc" : "2.0",
+        "params" : {
+          "events" : [ {
+            "computer_id" : "adfrgh968574fgthyj",
+            "computer_name" : "TEST_ENDPOINT",
+            "victim_ip" : "100.10.1.1",
+            "local_port" : "80",
+            "module" : "network-monitor",
+            "detection_name" : "PrivacyThreat.PasswordStealer.HTTP",
+            "source_ip" : "10.10.100.0",
+            "computer_fqdn" : "test-endpoint.dsd.ro",
+            "actionTaken" : "reportOnly",
+            "computer_ip" : "10.10.10.10",
+            "product_installed" : "BEST",
+            "detection_attackTechnique" : "discovery",
+            "user" : {
+              "userSid" : "S-1-2-3-4",
+              "userName" : "user1@domain.com"
+            },
+            "timestamp" : "2019-01-24T11:13:04.000Z"
+          } ]
+        }
+      }
+    result:
+      custom:
+        id: 1731567808000
+        jsonrpc: "2.0"
+        local_port_extracted: "80"
+        method: "addEvents"
+        module_extracted: "network-monitor"
+        network:
+          client:
+            ip:
+            - "10.10.100.0"
+            port:
+            - "80"
+          destination:
+            ip:
+            - "100.10.1.1"
+        params:
+          events:
+          -
+            computer_id: "adfrgh968574fgthyj"
+            computer_name: "TEST_ENDPOINT"
+            victim_ip: "100.10.1.1"
+            local_port: "80"
+            module: "network-monitor"
+            detection_name: "PrivacyThreat.PasswordStealer.HTTP"
+            source_ip: "10.10.100.0"
+            computer_fqdn: "test-endpoint.dsd.ro"
+            actionTaken: "reportOnly"
+            computer_ip: "10.10.10.10"
+            product_installed: "BEST"
+            detection_attackTechnique: "discovery"
+            user:
+              userSid: "S-1-2-3-4"
+              userName: "user1@domain.com"
+            timestamp: "2019-01-24T11:13:04.000Z"
+        service: "network-attack-defense-monitor"
+        source_ip_extracted: "10.10.100.0"
+        victim_ip_extracted: "100.10.1.1"
+      message: |-
+        {
+          "method" : "addEvents",
+          "id" : 1731567808000,
+          "jsonrpc" : "2.0",
+          "params" : {
+            "events" : [ {
+              "computer_id" : "adfrgh968574fgthyj",
+              "computer_name" : "TEST_ENDPOINT",
+              "victim_ip" : "100.10.1.1",
+              "local_port" : "80",
+              "module" : "network-monitor",
+              "detection_name" : "PrivacyThreat.PasswordStealer.HTTP",
+              "source_ip" : "10.10.100.0",
+              "computer_fqdn" : "test-endpoint.dsd.ro",
+              "actionTaken" : "reportOnly",
+              "computer_ip" : "10.10.10.10",
+              "product_installed" : "BEST",
+              "detection_attackTechnique" : "discovery",
+              "user" : {
+                "userSid" : "S-1-2-3-4",
+                "userName" : "user1@domain.com"
+              },
+              "timestamp" : "2019-01-24T11:13:04.000Z"
+            } ]
+          }
+        }
+      service: "network-attack-defense-monitor"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1731567808000
+  -
+    sample: |-
+      {
+        "method" : "addEvents",
+        "id" : 1731567808000,
+        "jsonrpc" : "2.0",
+        "params" : {
+          "events" : [ {
+            "computer_id" : "5ed4d2fef23f7325715dbb22",
+            "item_count" : "23",
+            "computer_name" : "DC-FEWEFRG",
+            "attack_type" : "remote",
+            "module" : "ransomware-mitigation",
+            "companyId" : "wefgr5efgr5wef5gr8",
+            "computer_fqdn" : "dc-weffdsd.local",
+            "computer_ip" : "100.10.100.1",
+            "product_installed" : "FFWDEF",
+            "company_name" : "Bitdefender",
+            "attack_source" : "10.10.10.110",
+            "user" : {
+              "name" : "user",
+              "sid" : "S-11-22-33"
+            },
+            "detected_on" : 1591007594
+          } ]
+        }
+      }
+    result:
+      custom:
+        attack_source_extracted: "10.10.10.110"
+        id: 1731567808000
+        jsonrpc: "2.0"
+        method: "addEvents"
+        module_extracted: "ransomware-mitigation"
+        network:
+          client:
+            ip:
+            - "10.10.10.110"
+        params:
+          events:
+          -
+            computer_id: "5ed4d2fef23f7325715dbb22"
+            item_count: "23"
+            computer_name: "DC-FEWEFRG"
+            attack_type: "remote"
+            module: "ransomware-mitigation"
+            companyId: "wefgr5efgr5wef5gr8"
+            computer_fqdn: "dc-weffdsd.local"
+            computer_ip: "100.10.100.1"
+            product_installed: "FFWDEF"
+            company_name: "Bitdefender"
+            attack_source: "10.10.10.110"
+            user:
+              name: "user"
+              sid: "S-11-22-33"
+            detected_on: 1591007594
+        service: "ransomware-activity-detection"
+      message: |-
+        {
+          "method" : "addEvents",
+          "id" : 1731567808000,
+          "jsonrpc" : "2.0",
+          "params" : {
+            "events" : [ {
+              "computer_id" : "5ed4d2fef23f7325715dbb22",
+              "item_count" : "23",
+              "computer_name" : "DC-FEWEFRG",
+              "attack_type" : "remote",
+              "module" : "ransomware-mitigation",
+              "companyId" : "wefgr5efgr5wef5gr8",
+              "computer_fqdn" : "dc-weffdsd.local",
+              "computer_ip" : "100.10.100.1",
+              "product_installed" : "FFWDEF",
+              "company_name" : "Bitdefender",
+              "attack_source" : "10.10.10.110",
+              "user" : {
+                "name" : "user",
+                "sid" : "S-11-22-33"
+              },
+              "detected_on" : 1591007594
+            } ]
+          }
+        }
+      service: "ransomware-activity-detection"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1731567808000
+  -
+    sample: |-
+      {
+        "method" : "addEvents",
+        "id" : 1731567808000,
+        "jsonrpc" : "2.0",
+        "params" : {
+          "events" : [ {
+            "computer_id" : "efrgtfhg585hg6561",
+            "computer_name" : "AA-WIN7-X64-33",
+            "last_blocked" : "2017-09-08T12:46:30.000Z",
+            "block_type" : "http_timelimiter",
+            "module" : "uc",
+            "count" : 1,
+            "url" : "http://100.10.10.1:2000/sdsf/fdgg.dll",
+            "uc_type" : "http",
+            "companyId" : "sfdg6985rgt98rg",
+            "computer_fqdn" : "aa-win7-x64-33",
+            "computer_ip" : "100.100.100.100",
+            "product_installed" : "BEST",
+            "categories" : "",
+            "application_path" : "C:\\\\AAA\\\\SEFGRF\\\\cfgf.exe",
+            "status" : "uc_site_blocked"
+          } ]
+        }
+      }
+    result:
+      custom:
+        computer_ip_extracted: "100.100.100.100"
+        id: 1731567808000
+        jsonrpc: "2.0"
+        method: "addEvents"
+        module_extracted: "uc"
+        network:
+          client:
+            ip:
+            - "100.100.100.100"
+        params:
+          events:
+          -
+            computer_id: "efrgtfhg585hg6561"
+            computer_name: "AA-WIN7-X64-33"
+            last_blocked: "2017-09-08T12:46:30.000Z"
+            block_type: "http_timelimiter"
+            module: "uc"
+            count: 1
+            url: "http://100.10.10.1:2000/sdsf/fdgg.dll"
+            uc_type: "http"
+            companyId: "sfdg6985rgt98rg"
+            computer_fqdn: "aa-win7-x64-33"
+            computer_ip: "100.100.100.100"
+            product_installed: "BEST"
+            categories: ""
+            application_path: "C:\\\\AAA\\\\SEFGRF\\\\cfgf.exe"
+            status: "uc_site_blocked"
+        service: "user-control"
+      message: |-
+        {
+          "method" : "addEvents",
+          "id" : 1731567808000,
+          "jsonrpc" : "2.0",
+          "params" : {
+            "events" : [ {
+              "computer_id" : "efrgtfhg585hg6561",
+              "computer_name" : "AA-WIN7-X64-33",
+              "last_blocked" : "2017-09-08T12:46:30.000Z",
+              "block_type" : "http_timelimiter",
+              "module" : "uc",
+              "count" : 1,
+              "url" : "http://100.10.10.1:2000/sdsf/fdgg.dll",
+              "uc_type" : "http",
+              "companyId" : "sfdg6985rgt98rg",
+              "computer_fqdn" : "aa-win7-x64-33",
+              "computer_ip" : "100.100.100.100",
+              "product_installed" : "BEST",
+              "categories" : "",
+              "application_path" : "C:\\\\AAA\\\\SEFGRF\\\\cfgf.exe",
+              "status" : "uc_site_blocked"
+            } ]
+          }
+        }
+      service: "user-control"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1731567808000
+  -
+    sample: |-
+      {
+        "method" : "addEvents",
+        "id" : 1731567808000,
+        "jsonrpc" : "2.0",
+        "params" : {
+          "events" : [ {
+            "storage_type" : "Nutanix",
+            "file_path" : "C:\\\\Users\\\\Administrator\\\\Documents\\\\installer.xml",
+            "storage_ip" : "100.0.100.0",
+            "malware_name" : "BAT.Trojan.FormatC.Z",
+            "endpointId" : "59a1604e60369e06733f8aba",
+            "module" : "storage-antimalware",
+            "detection_time" : "2018-05-07T10:23:43.000Z",
+            "companyId" : "59a14b271da197c6108b4567",
+            "storage_name" : "fileserver001",
+            "file_hash" : "04d7cff845111aaaaaaa1111134f5e6c18145d0a9b5a38dedd8a58a422001c",
+            "computerName" : "zbook",
+            "malware_type" : "1",
+            "status" : "5"
+          }, {
+            "storage_type" : "Nutanix",
+            "file_path" : "C:\\\\AFD\\\\AER\\\\Fedfr\\\\dfg.xml",
+            "storage_ip" : "100.10.100.10",
+            "malware_name" : "BAT.Trojan.FormatC.Z",
+            "endpointId" : "557fgr8ef7rgefrg36",
+            "module" : "storage-antimalware",
+            "detection_time" : "2018-05-07T10:23:43.000Z",
+            "companyId" : "erg5e5g8efg785efgrdef",
+            "storage_name" : "fileserver001",
+            "file_hash" : "5683000000wefrg854ef2rg1gfegr1",
+            "computerName" : "DFGFFG",
+            "malware_type" : "1",
+            "status" : "5"
+          } ]
+        }
+      }
+    result:
+      custom:
+        id: 1731567808000
+        jsonrpc: "2.0"
+        method: "addEvents"
+        module_extracted: "storage-antimalware,storage-antimalware"
+        network:
+          client:
+            ip:
+            - "100.0.100.0"
+            - "100.10.100.10"
+        params:
+          events:
+          -
+            storage_type: "Nutanix"
+            file_path: "C:\\\\Users\\\\Administrator\\\\Documents\\\\installer.xml"
+            storage_ip: "100.0.100.0"
+            malware_name: "BAT.Trojan.FormatC.Z"
+            endpointId: "59a1604e60369e06733f8aba"
+            module: "storage-antimalware"
+            detection_time: "2018-05-07T10:23:43.000Z"
+            companyId: "59a14b271da197c6108b4567"
+            storage_name: "fileserver001"
+            file_hash: "04d7cff845111aaaaaaa1111134f5e6c18145d0a9b5a38dedd8a58a422001c"
+            computerName: "zbook"
+            malware_type: "1"
+            status: "5"
+          -
+            storage_type: "Nutanix"
+            file_path: "C:\\\\AFD\\\\AER\\\\Fedfr\\\\dfg.xml"
+            storage_ip: "100.10.100.10"
+            malware_name: "BAT.Trojan.FormatC.Z"
+            endpointId: "557fgr8ef7rgefrg36"
+            module: "storage-antimalware"
+            detection_time: "2018-05-07T10:23:43.000Z"
+            companyId: "erg5e5g8efg785efgrdef"
+            storage_name: "fileserver001"
+            file_hash: "5683000000wefrg854ef2rg1gfegr1"
+            computerName: "DFGFFG"
+            malware_type: "1"
+            status: "5"
+        service: "storage-antimalware"
+        storage_ip_extracted: "100.0.100.0,100.10.100.10"
+      message: |-
+        {
+          "method" : "addEvents",
+          "id" : 1731567808000,
+          "jsonrpc" : "2.0",
+          "params" : {
+            "events" : [ {
+              "storage_type" : "Nutanix",
+              "file_path" : "C:\\\\Users\\\\Administrator\\\\Documents\\\\installer.xml",
+              "storage_ip" : "100.0.100.0",
+              "malware_name" : "BAT.Trojan.FormatC.Z",
+              "endpointId" : "59a1604e60369e06733f8aba",
+              "module" : "storage-antimalware",
+              "detection_time" : "2018-05-07T10:23:43.000Z",
+              "companyId" : "59a14b271da197c6108b4567",
+              "storage_name" : "fileserver001",
+              "file_hash" : "04d7cff845111aaaaaaa1111134f5e6c18145d0a9b5a38dedd8a58a422001c",
+              "computerName" : "zbook",
+              "malware_type" : "1",
+              "status" : "5"
+            }, {
+              "storage_type" : "Nutanix",
+              "file_path" : "C:\\\\AFD\\\\AER\\\\Fedfr\\\\dfg.xml",
+              "storage_ip" : "100.10.100.10",
+              "malware_name" : "BAT.Trojan.FormatC.Z",
+              "endpointId" : "557fgr8ef7rgefrg36",
+              "module" : "storage-antimalware",
+              "detection_time" : "2018-05-07T10:23:43.000Z",
+              "companyId" : "erg5e5g8efg785efgrdef",
+              "storage_name" : "fileserver001",
+              "file_hash" : "5683000000wefrg854ef2rg1gfegr1",
+              "computerName" : "DFGFFG",
+              "malware_type" : "1",
+              "status" : "5"
+            } ]
+          }
+        }
+      service: "storage-antimalware"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1731567808000
+  -
+    sample: |-
+      {
+        "method" : "addEvents",
+        "id" : 1731562021000,
+        "jsonrpc" : "2.0",
+        "params" : {
+          "events" : [ {
+            "computer_id" : "sfdg544444444444",
+            "detection_pid" : "2000",
+            "computer_name" : "TEST_ENDPOINT",
+            "detection_username" : "user@domain.com",
+            "detection_threatName" : "EICAR-Test-File(notavirus)",
+            "endpointId" : "5cf51ba5e8ee8c5b1852a9d6",
+            "module" : "antiexploit",
+            "detection_exploitTechnique" : "Flash/Generic",
+            "detection_time" : "2019-06-03T13:58:30.000Z",
+            "detection_action" : "kill",
+            "detection_parentPid" : "4000",
+            "detection_parentPath" : "C:\\\\file25c8ba8b90ea1de127962f464.exe",
+            "companyId" : "5cf10c8af23f73097377c924",
+            "computer_fqdn" : "test-endpoint.dsd.ro",
+            "computer_ip" : "10.10.10.110",
+            "detection_path" : "C:\\\\file15c8ba8b90ea1de127962f464.exe",
+            "product_installed" : "BEST"
+          } ]
+        }
+      }
+    result:
+      custom:
+        computer_ip_extracted: "10.10.10.110"
+        detection_username_extracted: "user@domain.com"
+        id: 1731562021000
+        jsonrpc: "2.0"
+        method: "addEvents"
+        module_extracted: "antiexploit"
+        network:
+          client:
+            ip:
+            - "10.10.10.110"
+        params:
+          events:
+          -
+            computer_id: "sfdg544444444444"
+            detection_pid: "2000"
+            computer_name: "TEST_ENDPOINT"
+            detection_username: "user@domain.com"
+            detection_threatName: "EICAR-Test-File(notavirus)"
+            endpointId: "5cf51ba5e8ee8c5b1852a9d6"
+            module: "antiexploit"
+            detection_exploitTechnique: "Flash/Generic"
+            detection_time: "2019-06-03T13:58:30.000Z"
+            detection_action: "kill"
+            detection_parentPid: "4000"
+            detection_parentPath: "C:\\\\file25c8ba8b90ea1de127962f464.exe"
+            companyId: "5cf10c8af23f73097377c924"
+            computer_fqdn: "test-endpoint.dsd.ro"
+            computer_ip: "10.10.10.110"
+            detection_path: "C:\\\\file15c8ba8b90ea1de127962f464.exe"
+            product_installed: "BEST"
+        service: "antiexploit"
+        usr:
+          name:
+          - "user@domain.com"
+      message: |-
+        {
+          "method" : "addEvents",
+          "id" : 1731562021000,
+          "jsonrpc" : "2.0",
+          "params" : {
+            "events" : [ {
+              "computer_id" : "sfdg544444444444",
+              "detection_pid" : "2000",
+              "computer_name" : "TEST_ENDPOINT",
+              "detection_username" : "user@domain.com",
+              "detection_threatName" : "EICAR-Test-File(notavirus)",
+              "endpointId" : "5cf51ba5e8ee8c5b1852a9d6",
+              "module" : "antiexploit",
+              "detection_exploitTechnique" : "Flash/Generic",
+              "detection_time" : "2019-06-03T13:58:30.000Z",
+              "detection_action" : "kill",
+              "detection_parentPid" : "4000",
+              "detection_parentPath" : "C:\\\\file25c8ba8b90ea1de127962f464.exe",
+              "companyId" : "5cf10c8af23f73097377c924",
+              "computer_fqdn" : "test-endpoint.dsd.ro",
+              "computer_ip" : "10.10.10.110",
+              "detection_path" : "C:\\\\file15c8ba8b90ea1de127962f464.exe",
+              "product_installed" : "BEST"
+            } ]
+          }
+        }
+      service: "antiexploit"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1731562021000

@@ -1,0 +1,883 @@
+id: "oci.audit"
+tests:
+  -
+    sample: |-
+      {
+        "oracle" : {
+          "compartmentid" : "ocid1.tenancy.oc1..aaaaaaaakyknye4jnwyh6rbcugpp4kh6iqzi7ir7pmguufdn5h7n5mnwlcoq",
+          "ingestedtime" : "2025-01-17T15:50:22.161Z",
+          "loggroupid" : "_Audit",
+          "tenantid" : "ocid1.tenancy.oc1..aaaaaaaakyknye4jnwyh6rbcugpp4kh6iqzi7ir7pmguufdn5h7n5mnwlcoq"
+        },
+        "data" : {
+          "compartmentId" : "ocid1.tenancy.oc1..aaaaaaaakyknye4jnwyh6rbcugpp4kh6iqzi7ir7pmguufdn5h7n5mnwlcoq",
+          "request" : {
+            "path" : "/apis/coordination.k8s.io/v1/namespaces/default/leases/oracle.com-oci",
+            "action" : "PUT",
+            "id" : "3acf2ddf-a5c1-462f-9a70-0435d7e98fbb"
+          },
+          "resourceId" : "ocid1.cluster.oc1.iad.aaaaaaaao6ffkkooatbl7c7y5f5cflo57pmg72c575lg2vl6echpsi4nt5xa",
+          "identity" : {
+            "tenantId" : "",
+            "principalId" : "",
+            "principalName" : "oke",
+            "userAgent" : "cloud-provider-oci/v0.0.0 (linux/arm64) kubernetes/$Format",
+            "callerId" : "",
+            "authType" : "Native",
+            "callerName" : ""
+          },
+          "response" : {
+            "responseTime" : "2025-01-17T15:50:10.942Z",
+            "status" : "200"
+          },
+          "eventGroupingId" : "3acf2ddf-a5c1-462f-9a70-0435d7e98fbb",
+          "eventName" : "io.k8s.coordination.v1.leases.update",
+          "compartmentName" : "datadog84",
+          "message" : "io.k8s.coordination.v1.leases.update succeeded"
+        },
+        "service" : "oci",
+        "source" : "",
+        "type" : "io.k8s.coordination.v1.leases.update",
+        "ddsource" : "oci.audit",
+        "timestamp" : "2025-01-17T15:50:10.936Z"
+      }
+    result:
+      custom:
+        data:
+          eventGroupingId: "3acf2ddf-a5c1-462f-9a70-0435d7e98fbb"
+          identity:
+            authType: "Native"
+          request:
+            id: "3acf2ddf-a5c1-462f-9a70-0435d7e98fbb"
+          resourceId: "ocid1.cluster.oc1.iad.aaaaaaaao6ffkkooatbl7c7y5f5cflo57pmg72c575lg2vl6echpsi4nt5xa"
+          response:
+            responseTime: "2025-01-17T15:50:10.942Z"
+            status: "200"
+        ddsource: "oci.audit"
+        evt:
+          name: "io.k8s.coordination.v1.leases.update"
+        http:
+          method: "PUT"
+          status_category: "OK"
+          status_code: "200"
+          url_details:
+            path: "/apis/coordination.k8s.io/v1/namespaces/default/leases/oracle.com-oci"
+          useragent: "cloud-provider-oci/v0.0.0 (linux/arm64) kubernetes/$Format"
+          useragent_details:
+            browser:
+              family: "Other"
+            device:
+              category: "Desktop"
+              family: "Other"
+            os:
+              family: "Linux"
+        oci:
+          compartment_name: "datadog84"
+          compartment_ocid: "ocid1.tenancy.oc1..aaaaaaaakyknye4jnwyh6rbcugpp4kh6iqzi7ir7pmguufdn5h7n5mnwlcoq"
+          log_group_id: "_Audit"
+          tenancy_ocid: "ocid1.tenancy.oc1..aaaaaaaakyknye4jnwyh6rbcugpp4kh6iqzi7ir7pmguufdn5h7n5mnwlcoq"
+        oracle:
+          ingestedtime: "2025-01-17T15:50:22.161Z"
+        service: "oci"
+        source: ""
+        timestamp: "2025-01-17T15:50:10.936Z"
+        type: "io.k8s.coordination.v1.leases.update"
+        usr:
+          id: ""
+          name: "oke"
+      message: "io.k8s.coordination.v1.leases.update succeeded"
+      status: "ok"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1737129010936
+  -
+    sample: |-
+      {
+        "data": {
+          "additionalDetails": {
+            "X-Real-Port": 55570,
+            "imageId": "ocid1.image.oc1.iad.aaaaaaaaos3mbobav5crphacln3i4vdfbukc2jgn7tgfbkf5lwpijg7rvehq",
+            "shape": "VM.Standard.E2.1",
+            "type": "CustomerVmi",
+            "volumeId": "null"
+          },
+          "availabilityDomain": "AD3",
+          "compartmentId": "ocid1.tenancy.oc1..aaaaaaaakyknye4jnwyh6rbcugpp4kh6iqzi7ir7pmguufdn5h7n5mnwlcoq",
+          "compartmentName": "datadog84",
+          "definedTags": {
+            "Oracle-Tags": {
+              "CreatedBy": "default/bella.rhee@datadoghq.com",
+              "CreatedOn": "2024-09-03T18:22:35.832Z"
+            },
+            "dd-test-namespace": {
+              "department": "HR",
+              "hi": "testval"
+            }
+          },
+          "eventGroupingId": "csid9759bdc24b249fae9b2e5545d115/31eeb7daf11a4122b82ace28af3e4090",
+          "eventName": "TerminateInstance",
+          "freeformTags": {},
+          "identity": {
+            "authType": "natv",
+            "callerId": null,
+            "callerName": null,
+            "consoleSessionId": "csid9759bdc24b249fae9b2e5545d115",
+            "credentials": "ST$eyJraWQiOiJhc3dfaWFkXzE3MTU2NDgwNzIzNzciLCJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJvY2lkMS51c2VyLm9jMS4uYWFhYWFhYWFvZGl4ZnZ5bm5mZHFrNmpiZ2Z2YXR1ZXB6ZGNxb2Q3cXFxd3pnZm15aHRydGdtYWJteDJxIiwibWZhX3ZlcmlmaWVkIjoidHJ1ZSIsImlzcyI6ImF1dGhTZXJ2aWNlLm9yYWNsZS5jb20iLCJwdHlwZSI6InVzZXIiLCJzZXNzX2V4cCI6IkZyaSwgMTcgSmFuIDIwMjUgMjI6NTE6MzggVVRDIiwic2lkIjoiN2QwMGU0MWRmZTM0NDFkOGE0ODI3YzNmNzk0OWM5NTc6NDc2NTJhIiwiYXVkIjoib2NpIiwicHN0eXBlIjoibmF0diIsInR0eXBlIjoibG9naW4iLCJleHAiOjE3MzcxMzI2NDcsImlhdCI6MTczNzEyOTA0NywianRpIjoiNTgxOGNiMGQtNDhkOC00MzkzLThlODItMzVlNzZiMGI3ODAzIiwidGVuYW50Ijoib2NpZDEudGVuYW5jeS5vYzEuLmFhYWFhYWFha3lrbnllNGpud3loNnJiY3VncHA0a2g2aXF6aTdpcjdwbWd1dWZkbjVoN241bW53bGNvcSIsImp3ayI6IntcImFsZ1wiOlwiUlMyNTZcIixcImVcIjpcIkFRQUJcIixcImV4dFwiOnRydWUsXCJrZXlfb3BzXCI6W1widmVyaWZ5XCJdLFwia3R5XCI6XCJSU0FcIixcIm5cIjpcImxIUXRtZXRFVXBWV05JYWlXZEQxTFF2b2JFZVpoRkZiMjMybUtlTGpWc1BnSHRFNGtVQ2VoMXhYbjFkYTREVUVtSktMd2k5SHpJY21zX3JEWE1VWXpTRlZ2eUFBS0Y1Z3AwSXppSV83UTNQV3BfMkJDYm80SFdPUnBuXzQwMkswRkFHeWpvU2sxRDdFR0ZrUTQzSlhLTG9wSFRSTVNvTGJoM1dWVkFWTUNOR2RLdzgyTjlGbFRNSlFiOEQyUUdIWjRXcDRrVWtxQkVwR1MxdWRrN2dTZmZKQVpuRzJsOExONHllVG8zYjV2MkNUdXA1YmJtX0dHeC03OEh0TEd1RkQtdy0tR3Z4OFYzQlJVbnR5Smd6Xzl6S1ZycGpLaW95RVJXakdKVTkzdXlVeGJ2bmQ2UEtRY3N0aDlLblF6cDB4QVdqMUotR3pyaHQxQ3AwT1YyMnZtUVwiLFwia2lkXCI6XCJwdWJrZXktN2RmZGYwN2ItMTY0YS00NmEwLThlNzYtMjkzYzM0YTJiZjZmXCJ9In0.V3i5mUCsUrTJHUi621IEOdFEwDqKsuJ3Kpyr6k9bLmJ3GLDDvUFdaGmrESZl6NzDrZh_--MhLBbtlTxB1XCyH4Tdaq86gLG6N9RjllZM_tpElwWhUwxli5vlux-mozht8UBkoA2Njuu99nQIZXwmJ1uk0W9o2OjNQZAhMnnLLgQjZ8vXJ_ooFVkGejEr_SjpEa41xA4x2UsC-7tKcJWHvO3o0Ohl6T8ZmShncOrPq6bJS8g_i8KJLWB3H33Opv7_0HFG7J6FdwIf4lg_fElD9KZvcbGUxzTbH0jzd54TEcdxc9HTIxaFBBaUMljAqNmvd19nzQTtdTbDzRwFFdmM3w",
+            "ipAddress": "38.142.177.195",
+            "principalId": "ocid1.user.oc1..aaaaaaaaodixfvynnfdqk6jbgfvatuepzdcqod7qqqwzgfmyhtrtgmabmx2q",
+            "principalName": "Bella Rhee",
+            "tenantId": "ocid1.tenancy.oc1..aaaaaaaakyknye4jnwyh6rbcugpp4kh6iqzi7ir7pmguufdn5h7n5mnwlcoq",
+            "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          },
+          "message": "bellas-compute instance TerminateInstance succeeded",
+          "request": {
+            "action": "DELETE",
+            "headers": {
+              "Accept": [
+                "*/*"
+              ],
+              "Connection": [
+                "keep-alive"
+              ],
+              "Origin": [
+                "https://cloud.oracle.com"
+              ],
+              "Referer": [
+                "https://cloud.oracle.com/"
+              ]
+            },
+            "id": "csid9759bdc24b249fae9b2e5545d115/31eeb7daf11a4122b82ace28af3e4090/B0DADFBCACCEE62F3DE545DC26C54655",
+            "parameters": {
+              "preserveBootVolume": [
+                "false"
+              ],
+              "preserveDataVolumesCreatedAtLaunch": [
+                "true"
+              ]
+            },
+            "path": "/20160918/instances/ocid1.instance.oc1.iad.anuwcljtehwejaiczsxqrzeknsq6dv6ip4xyo5wlx45fu3vv7uq5k37ykuhq"
+          },
+          "resourceId": "ocid1.instance.oc1.iad.anuwcljtehwejaiczsxqrzeknsq6dv6ip4xyo5wlx45fu3vv7uq5k37ykuhq",
+          "response": {
+            "headers": {
+              "Access-Control-Allow-Credentials": [
+                "true"
+              ],
+              "Access-Control-Allow-Origin": [
+                "https://cloud.oracle.com"
+              ],
+              "Access-Control-Expose-Headers": [
+                "opc-previous-page,opc-next-page,opc-client-info,ETag,opc-total-items,opc-request-id,Location"
+              ],
+              "Content-Length": [
+                "0"
+              ],
+              "Content-Type": [
+                "application/octet-stream"
+              ],
+              "Date": [
+                "Fri, 17 Jan 2025 15:53:27 GMT"
+              ],
+              "Strict-Transport-Security": [
+                "max-age=31536000; includeSubDomains;"
+              ],
+              "Timing-Allow-Origin": [
+                "https://cloud.oracle.com"
+              ],
+              "Vary": [
+                "Origin"
+              ],
+              "X-Content-Type-Options": [
+                "nosniff"
+              ],
+              "X-Frame-Options": [
+                "SAMEORIGIN"
+              ],
+              "opc-request-id": [
+                "csid9759bdc24b249fae9b2e5545d115/31eeb7daf11a4122b82ace28af3e4090/B0DADFBCACCEE62F3DE545DC26C54655"
+              ]
+            },
+            "message": null,
+            "payload": {},
+            "responseTime": "2025-01-17T15:53:27.797Z",
+            "status": "204"
+          },
+          "stateChange": {
+            "current": {},
+            "previous": {
+              "agentConfig": {
+                "areAllPluginsDisabled": false,
+                "isManagementDisabled": false,
+                "isMonitoringDisabled": false,
+                "pluginsConfig": [
+                  {
+                    "desiredState": "DISABLED",
+                    "name": "Vulnerability Scanning"
+                  },
+                  {
+                    "desiredState": "DISABLED",
+                    "name": "Oracle Java Management Service"
+                  },
+                  {
+                    "desiredState": "DISABLED",
+                    "name": "OS Management Service Agent"
+                  },
+                  {
+                    "desiredState": "DISABLED",
+                    "name": "OS Management Hub Agent"
+                  },
+                  {
+                    "desiredState": "DISABLED",
+                    "name": "Management Agent"
+                  },
+                  {
+                    "desiredState": "ENABLED",
+                    "name": "Custom Logs Monitoring"
+                  },
+                  {
+                    "desiredState": "DISABLED",
+                    "name": "Compute RDMA GPU Monitoring"
+                  },
+                  {
+                    "desiredState": "ENABLED",
+                    "name": "Compute Instance Run Command"
+                  },
+                  {
+                    "desiredState": "ENABLED",
+                    "name": "Compute Instance Monitoring"
+                  },
+                  {
+                    "desiredState": "DISABLED",
+                    "name": "Compute HPC RDMA Auto-Configuration"
+                  },
+                  {
+                    "desiredState": "DISABLED",
+                    "name": "Compute HPC RDMA Authentication"
+                  },
+                  {
+                    "desiredState": "ENABLED",
+                    "name": "Cloud Guard Workload Protection"
+                  },
+                  {
+                    "desiredState": "DISABLED",
+                    "name": "Block Volume Management"
+                  },
+                  {
+                    "desiredState": "DISABLED",
+                    "name": "Bastion"
+                  }
+                ]
+              },
+              "availabilityConfig": {
+                "recoveryAction": "RESTORE_INSTANCE"
+              },
+              "availabilityDomain": "FtnL:US-ASHBURN-AD-3",
+              "compartmentId": "ocid1.tenancy.oc1..aaaaaaaakyknye4jnwyh6rbcugpp4kh6iqzi7ir7pmguufdn5h7n5mnwlcoq",
+              "definedTags": {
+                "Oracle-Tags": {
+                  "CreatedBy": "default/bella.rhee@datadoghq.com",
+                  "CreatedOn": "2024-09-03T18:22:35.832Z"
+                },
+                "dd-test-namespace": {
+                  "department": "HR",
+                  "hi": "testval"
+                }
+              },
+              "displayName": "bellas-compute instance",
+              "extendedMetadata": {},
+              "faultDomain": "FAULT-DOMAIN-3",
+              "freeformTags": {},
+              "id": "ocid1.instance.oc1.iad.anuwcljtehwejaiczsxqrzeknsq6dv6ip4xyo5wlx45fu3vv7uq5k37ykuhq",
+              "imageId": "ocid1.image.oc1.iad.aaaaaaaaos3mbobav5crphacln3i4vdfbukc2jgn7tgfbkf5lwpijg7rvehq",
+              "instanceOptions": {
+                "areLegacyImdsEndpointsDisabled": false
+              },
+              "isCrossNumaNode": false,
+              "launchMode": "PARAVIRTUALIZED",
+              "launchOptions": {
+                "bootVolumeType": "PARAVIRTUALIZED",
+                "firmware": "UEFI_64",
+                "isConsistentVolumeNamingEnabled": true,
+                "isPvEncryptionInTransitEnabled": false,
+                "networkType": "PARAVIRTUALIZED",
+                "remoteDataVolumeType": "PARAVIRTUALIZED"
+              },
+              "lifecycleState": "RUNNING",
+              "metadata": {
+                "ssh_authorized_keys": "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCrBra9gWbhO9TxPsEN+FeP3tsw/IRGu/xh3Zu+bVc2YK1SwFxn8bhetL0BXudzsEh6npdiLNXmDDOii8y3DaFU6ChSJu8MoPzd6OCX5BaQNauRyg3RBSsWq9njq1+24LnS5uNBYxhDawOasbLUk4lxAOzowq5azqwo5bgRiwD8speXSxVSRIxFKsHKwNIcjzrUDmXGk8lZ77GljhSJa7ZbNvgqzjYoUb/UKpoS56fNJHRnzXY86sH8HB1a4LTDQYQXEZzLx9H5jxxm3ibtctLuIrpBY2iIULso3Avpo1r+Cao0IYxPnh057689hy/G/e18+h67pfmVc3u8sAW9KFVp ssh-key-2024-09-03"
+              },
+              "region": "iad",
+              "securityAttributes": {},
+              "securityAttributesState": "STABLE",
+              "shape": "VM.Standard.E2.1",
+              "shapeConfig": {
+                "gpus": 0,
+                "localDisks": 0,
+                "maxVnicAttachments": 2,
+                "memoryInGBs": 8,
+                "networkingBandwidthInGbps": 0.7,
+                "ocpus": 1,
+                "processorDescription": "2.0 GHz AMD EPYC™ 7551 (Naples)",
+                "vcpus": 2
+              },
+              "sourceDetails": {
+                "imageId": "ocid1.image.oc1.iad.aaaaaaaaos3mbobav5crphacln3i4vdfbukc2jgn7tgfbkf5lwpijg7rvehq",
+                "sourceType": "image"
+              },
+              "systemTags": {},
+              "timeCreated": "2024-09-03T18:22:36.832Z"
+            }
+          }
+        },
+        "oracle": {
+          "compartmentid": "ocid1.tenancy.oc1..aaaaaaaakyknye4jnwyh6rbcugpp4kh6iqzi7ir7pmguufdn5h7n5mnwlcoq",
+          "ingestedtime": "2025-01-17T15:53:36.763Z",
+          "loggroupid": "_Audit",
+          "tenantid": "ocid1.tenancy.oc1..aaaaaaaakyknye4jnwyh6rbcugpp4kh6iqzi7ir7pmguufdn5h7n5mnwlcoq"
+        },
+        "source": "bellas-compute instance",
+        "timestamp": "2025-01-17T15:53:27.797Z",
+        "type": "com.oraclecloud.computeApi.TerminateInstance.begin",
+        "ddsource": "oci.audit",
+        "service": "oci"
+      }
+    result:
+      custom:
+        data:
+          additionalDetails:
+            X-Real-Port: 55570
+            imageId: "ocid1.image.oc1.iad.aaaaaaaaos3mbobav5crphacln3i4vdfbukc2jgn7tgfbkf5lwpijg7rvehq"
+            shape: "VM.Standard.E2.1"
+            type: "CustomerVmi"
+            volumeId: "null"
+          definedTags:
+            Oracle-Tags:
+              CreatedBy: "default/bella.rhee@datadoghq.com"
+              CreatedOn: "2024-09-03T18:22:35.832Z"
+            dd-test-namespace:
+              department: "HR"
+              hi: "testval"
+          eventGroupingId: "csid9759bdc24b249fae9b2e5545d115/31eeb7daf11a4122b82ace28af3e4090"
+          identity:
+            authType: "natv"
+            consoleSessionId: "csid9759bdc24b249fae9b2e5545d115"
+            credentials: "ST$eyJraWQiOiJhc3dfaWFkXzE3MTU2NDgwNzIzNzciLCJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJvY2lkMS51c2VyLm9jMS4uYWFhYWFhYWFvZGl4ZnZ5bm5mZHFrNmpiZ2Z2YXR1ZXB6ZGNxb2Q3cXFxd3pnZm15aHRydGdtYWJteDJxIiwibWZhX3ZlcmlmaWVkIjoidHJ1ZSIsImlzcyI6ImF1dGhTZXJ2aWNlLm9yYWNsZS5jb20iLCJwdHlwZSI6InVzZXIiLCJzZXNzX2V4cCI6IkZyaSwgMTcgSmFuIDIwMjUgMjI6NTE6MzggVVRDIiwic2lkIjoiN2QwMGU0MWRmZTM0NDFkOGE0ODI3YzNmNzk0OWM5NTc6NDc2NTJhIiwiYXVkIjoib2NpIiwicHN0eXBlIjoibmF0diIsInR0eXBlIjoibG9naW4iLCJleHAiOjE3MzcxMzI2NDcsImlhdCI6MTczNzEyOTA0NywianRpIjoiNTgxOGNiMGQtNDhkOC00MzkzLThlODItMzVlNzZiMGI3ODAzIiwidGVuYW50Ijoib2NpZDEudGVuYW5jeS5vYzEuLmFhYWFhYWFha3lrbnllNGpud3loNnJiY3VncHA0a2g2aXF6aTdpcjdwbWd1dWZkbjVoN241bW53bGNvcSIsImp3ayI6IntcImFsZ1wiOlwiUlMyNTZcIixcImVcIjpcIkFRQUJcIixcImV4dFwiOnRydWUsXCJrZXlfb3BzXCI6W1widmVyaWZ5XCJdLFwia3R5XCI6XCJSU0FcIixcIm5cIjpcImxIUXRtZXRFVXBWV05JYWlXZEQxTFF2b2JFZVpoRkZiMjMybUtlTGpWc1BnSHRFNGtVQ2VoMXhYbjFkYTREVUVtSktMd2k5SHpJY21zX3JEWE1VWXpTRlZ2eUFBS0Y1Z3AwSXppSV83UTNQV3BfMkJDYm80SFdPUnBuXzQwMkswRkFHeWpvU2sxRDdFR0ZrUTQzSlhLTG9wSFRSTVNvTGJoM1dWVkFWTUNOR2RLdzgyTjlGbFRNSlFiOEQyUUdIWjRXcDRrVWtxQkVwR1MxdWRrN2dTZmZKQVpuRzJsOExONHllVG8zYjV2MkNUdXA1YmJtX0dHeC03OEh0TEd1RkQtdy0tR3Z4OFYzQlJVbnR5Smd6Xzl6S1ZycGpLaW95RVJXakdKVTkzdXlVeGJ2bmQ2UEtRY3N0aDlLblF6cDB4QVdqMUotR3pyaHQxQ3AwT1YyMnZtUVwiLFwia2lkXCI6XCJwdWJrZXktN2RmZGYwN2ItMTY0YS00NmEwLThlNzYtMjkzYzM0YTJiZjZmXCJ9In0.V3i5mUCsUrTJHUi621IEOdFEwDqKsuJ3Kpyr6k9bLmJ3GLDDvUFdaGmrESZl6NzDrZh_--MhLBbtlTxB1XCyH4Tdaq86gLG6N9RjllZM_tpElwWhUwxli5vlux-mozht8UBkoA2Njuu99nQIZXwmJ1uk0W9o2OjNQZAhMnnLLgQjZ8vXJ_ooFVkGejEr_SjpEa41xA4x2UsC-7tKcJWHvO3o0Ohl6T8ZmShncOrPq6bJS8g_i8KJLWB3H33Opv7_0HFG7J6FdwIf4lg_fElD9KZvcbGUxzTbH0jzd54TEcdxc9HTIxaFBBaUMljAqNmvd19nzQTtdTbDzRwFFdmM3w"
+          request:
+            headers:
+              Accept:
+                - "*/*"
+              Connection:
+                - "keep-alive"
+              Origin:
+                - "https://cloud.oracle.com"
+              Referer:
+                - "https://cloud.oracle.com/"
+            id: "csid9759bdc24b249fae9b2e5545d115/31eeb7daf11a4122b82ace28af3e4090/B0DADFBCACCEE62F3DE545DC26C54655"
+            parameters:
+              preserveBootVolume:
+                - "false"
+              preserveDataVolumesCreatedAtLaunch:
+                - "true"
+          resourceId: "ocid1.instance.oc1.iad.anuwcljtehwejaiczsxqrzeknsq6dv6ip4xyo5wlx45fu3vv7uq5k37ykuhq"
+          response:
+            headers:
+              Access-Control-Allow-Credentials:
+                - "true"
+              Access-Control-Allow-Origin:
+                - "https://cloud.oracle.com"
+              Access-Control-Expose-Headers:
+                - "opc-previous-page,opc-next-page,opc-client-info,ETag,opc-total-items,opc-request-id,Location"
+              Content-Length:
+                - "0"
+              Content-Type:
+                - "application/octet-stream"
+              Date:
+                - "Fri, 17 Jan 2025 15:53:27 GMT"
+              Strict-Transport-Security:
+                - "max-age=31536000; includeSubDomains;"
+              Timing-Allow-Origin:
+                - "https://cloud.oracle.com"
+              Vary:
+                - "Origin"
+              X-Content-Type-Options:
+                - "nosniff"
+              X-Frame-Options:
+                - "SAMEORIGIN"
+              opc-request-id:
+                - "csid9759bdc24b249fae9b2e5545d115/31eeb7daf11a4122b82ace28af3e4090/B0DADFBCACCEE62F3DE545DC26C54655"
+            responseTime: "2025-01-17T15:53:27.797Z"
+            status: "204"
+          stateChange:
+            previous:
+              agentConfig:
+                areAllPluginsDisabled: false
+                isManagementDisabled: false
+                isMonitoringDisabled: false
+                pluginsConfig:
+                  - desiredState: "DISABLED"
+                    name: "Vulnerability Scanning"
+                  - desiredState: "DISABLED"
+                    name: "Oracle Java Management Service"
+                  - desiredState: "DISABLED"
+                    name: "OS Management Service Agent"
+                  - desiredState: "DISABLED"
+                    name: "OS Management Hub Agent"
+                  - desiredState: "DISABLED"
+                    name: "Management Agent"
+                  - desiredState: "ENABLED"
+                    name: "Custom Logs Monitoring"
+                  - desiredState: "DISABLED"
+                    name: "Compute RDMA GPU Monitoring"
+                  - desiredState: "ENABLED"
+                    name: "Compute Instance Run Command"
+                  - desiredState: "ENABLED"
+                    name: "Compute Instance Monitoring"
+                  - desiredState: "DISABLED"
+                    name: "Compute HPC RDMA Auto-Configuration"
+                  - desiredState: "DISABLED"
+                    name: "Compute HPC RDMA Authentication"
+                  - desiredState: "ENABLED"
+                    name: "Cloud Guard Workload Protection"
+                  - desiredState: "DISABLED"
+                    name: "Block Volume Management"
+                  - desiredState: "DISABLED"
+                    name: "Bastion"
+              availabilityConfig:
+                recoveryAction: "RESTORE_INSTANCE"
+              availabilityDomain: "FtnL:US-ASHBURN-AD-3"
+              compartmentId: "ocid1.tenancy.oc1..aaaaaaaakyknye4jnwyh6rbcugpp4kh6iqzi7ir7pmguufdn5h7n5mnwlcoq"
+              definedTags:
+                Oracle-Tags:
+                  CreatedBy: "default/bella.rhee@datadoghq.com"
+                  CreatedOn: "2024-09-03T18:22:35.832Z"
+                dd-test-namespace:
+                  department: "HR"
+                  hi: "testval"
+              displayName: "bellas-compute instance"
+              faultDomain: "FAULT-DOMAIN-3"
+              id: "ocid1.instance.oc1.iad.anuwcljtehwejaiczsxqrzeknsq6dv6ip4xyo5wlx45fu3vv7uq5k37ykuhq"
+              imageId: "ocid1.image.oc1.iad.aaaaaaaaos3mbobav5crphacln3i4vdfbukc2jgn7tgfbkf5lwpijg7rvehq"
+              instanceOptions:
+                areLegacyImdsEndpointsDisabled: false
+              isCrossNumaNode: false
+              launchMode: "PARAVIRTUALIZED"
+              launchOptions:
+                bootVolumeType: "PARAVIRTUALIZED"
+                firmware: "UEFI_64"
+                isConsistentVolumeNamingEnabled: true
+                isPvEncryptionInTransitEnabled: false
+                networkType: "PARAVIRTUALIZED"
+                remoteDataVolumeType: "PARAVIRTUALIZED"
+              lifecycleState: "RUNNING"
+              metadata:
+                ssh_authorized_keys: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCrBra9gWbhO9TxPsEN+FeP3tsw/IRGu/xh3Zu+bVc2YK1SwFxn8bhetL0BXudzsEh6npdiLNXmDDOii8y3DaFU6ChSJu8MoPzd6OCX5BaQNauRyg3RBSsWq9njq1+24LnS5uNBYxhDawOasbLUk4lxAOzowq5azqwo5bgRiwD8speXSxVSRIxFKsHKwNIcjzrUDmXGk8lZ77GljhSJa7ZbNvgqzjYoUb/UKpoS56fNJHRnzXY86sH8HB1a4LTDQYQXEZzLx9H5jxxm3ibtctLuIrpBY2iIULso3Avpo1r+Cao0IYxPnh057689hy/G/e18+h67pfmVc3u8sAW9KFVp ssh-key-2024-09-03"
+              region: "iad"
+              securityAttributesState: "STABLE"
+              shape: "VM.Standard.E2.1"
+              shapeConfig:
+                gpus: 0
+                localDisks: 0
+                maxVnicAttachments: 2
+                memoryInGBs: 8
+                networkingBandwidthInGbps: 0.7
+                ocpus: 1
+                processorDescription: "2.0 GHz AMD EPYC™ 7551 (Naples)"
+                vcpus: 2
+              sourceDetails:
+                imageId: "ocid1.image.oc1.iad.aaaaaaaaos3mbobav5crphacln3i4vdfbukc2jgn7tgfbkf5lwpijg7rvehq"
+                sourceType: "image"
+              timeCreated: "2024-09-03T18:22:36.832Z"
+        ddsource: "oci.audit"
+        evt:
+          name: "TerminateInstance"
+        http:
+          method: "DELETE"
+          status_category: "OK"
+          status_code: "204"
+          url_details:
+            path: "/20160918/instances/ocid1.instance.oc1.iad.anuwcljtehwejaiczsxqrzeknsq6dv6ip4xyo5wlx45fu3vv7uq5k37ykuhq"
+          useragent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          useragent_details:
+            browser:
+              family: "Chrome"
+              major: "131"
+              minor: "0"
+              patch: "0"
+              patch_minor: "0"
+            device:
+              brand: "Apple"
+              category: "Desktop"
+              family: "Mac"
+              model: "Mac"
+            os:
+              family: "Mac OS X"
+              major: "10"
+              minor: "15"
+              patch: "7"
+        network:
+          client:
+            geoip: { }
+            ip: "38.142.177.195"
+        oci:
+          availability_domain: "AD3"
+          compartment_name: "datadog84"
+          compartment_ocid: "ocid1.tenancy.oc1..aaaaaaaakyknye4jnwyh6rbcugpp4kh6iqzi7ir7pmguufdn5h7n5mnwlcoq"
+          log_group_id: "_Audit"
+          tenancy_ocid: "ocid1.tenancy.oc1..aaaaaaaakyknye4jnwyh6rbcugpp4kh6iqzi7ir7pmguufdn5h7n5mnwlcoq"
+        oracle:
+          ingestedtime: "2025-01-17T15:53:36.763Z"
+        service: "oci"
+        source: "bellas-compute instance"
+        timestamp: "2025-01-17T15:53:27.797Z"
+        type: "com.oraclecloud.computeApi.TerminateInstance.begin"
+        usr:
+          id: "ocid1.user.oc1..aaaaaaaaodixfvynnfdqk6jbgfvatuepzdcqod7qqqwzgfmyhtrtgmabmx2q"
+          name: "Bella Rhee"
+      message: "bellas-compute instance TerminateInstance succeeded"
+      status: "ok"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1737129207797
+  -
+    sample: |-
+      {
+        "data": {
+          "additionalDetails": {
+            "X-Real-Port": 48702
+          },
+          "availabilityDomain": "AD2",
+          "compartmentId": "ocid1.tenancy.oc1..aaaaaaaakyknye4jnwyh6rbcugpp4kh6iqzi7ir7pmguufdn5h7n5mnwlcoq",
+          "compartmentName": "datadog84",
+          "definedTags": null,
+          "eventGroupingId": "39ca1faca6bba5bb08e8d73cc4c720ca/7FE3E69844942C04A7EFFE3FEF9D3F7C",
+          "eventName": "ListVnicAttachments",
+          "freeformTags": null,
+          "identity": {
+            "authType": "resource",
+            "callerId": null,
+            "callerName": null,
+            "consoleSessionId": null,
+            "credentials": "ST$eyJraWQiOiJhc3dfaWFkXzE3MTU2NDgwNzIzNzciLCJhbGciOiJSUzI1NiJ9.eyJzdmNUZW5hbnRJZCI6Im9jaWQxLnRlbmFuY3kub2MxLi5hYWFhYWFhYTV2cnR1NGJqY3FwanZid29yaXdmZmdjY3JncmJrdW02NG10bjMzeXJjY2pycXB6dXlhcmEiLCJzdWIiOiJvY2lkMS5jbHVzdGVyLm9jMS5pYWQuYWFhYWFhYWFvNmZma2tvb2F0Ymw3Yzd5NWY1Y2ZsbzU3cG1nNzJjNTc1bGcydmw2ZWNocHNpNG50NXhhIiwic3ZjIjoib2tlIiwiaXNzIjoiYXV0aFNlcnZpY2Uub3JhY2xlLmNvbSIsInJlc190ZW5hbnQiOiJvY2lkMS50ZW5hbmN5Lm9jMS4uYWFhYWFhYWFreWtueWU0am53eWg2cmJjdWdwcDRraDZpcXppN2lyN3BtZ3V1ZmRuNWg3bjVtbndsY29xIiwicHR5cGUiOiJyZXNvdXJjZSIsInJlc291cmNlX3N1Yl90eXBlIjoiaW50ZXJuYWwiLCJyZXNfdHlwZSI6ImNsdXN0ZXIiLCJhdWQiOiJvY2kiLCJyZXNfaWQiOiJvY2lkMS5jbHVzdGVyLm9jMS5pYWQuYWFhYWFhYWFvNmZma2tvb2F0Ymw3Yzd5NWY1Y2ZsbzU3cG1nNzJjNTc1bGcydmw2ZWNocHNpNG50NXhhIiwidHR5cGUiOiJyZXNfc3AiLCJyZXNfY29tcGFydG1lbnQiOiJvY2lkMS50ZW5hbmN5Lm9jMS4uYWFhYWFhYWFreWtueWU0am53eWg2cmJjdWdwcDRraDZpcXppN2lyN3BtZ3V1ZmRuNWg3bjVtbndsY29xIiwiZXhwIjoxNzM3MTQ3NjczLCJpYXQiOjE3MzcxMDQ0NzMsImp0aSI6IjFhNTcxZTM1LTY3NTktNGQ3Yi04NTEyLTU3OTM1YzE5YWIwYiIsInRlbmFudCI6Im9jaWQxLnRlbmFuY3kub2MxLi5hYWFhYWFhYWt5a255ZTRqbnd5aDZyYmN1Z3BwNGtoNmlxemk3aXI3cG1ndXVmZG41aDduNW1ud2xjb3EiLCJvcGMtZGdzIjoiVjMsb2NpZDEudGVuYW5jeS5vYzEuLmFhYWFhYWFha3lrbnllNGpud3loNnJiY3VncHA0a2g2aXF6aTdpcjdwbWd1dWZkbjVoN241bW53bGNvcSxBQUFBQVFBQUFBQi9mMzkvQUFBQWp3PT0sQUFBQUFBPT0iLCJqd2siOiJ7XCJraWRcIjpcIm9jaWQxLmNsdXN0ZXIub2MxLmlhZC5hYWFhYWFhYW82ZmZra29vYXRibDdjN3k1ZjVjZmxvNTdwbWc3MmM1NzVsZzJ2bDZlY2hwc2k0bnQ1eGFcIixcIm5cIjpcIm5YdUJOU1BZQkU0aGVTZmc4Vm1GcmhCOUlLVldvYWVOVUQ4Z0RoWktVTHVvRWFvdGNoRFBpYlFObnk5N2gwTUlvYVp2QWE2QVN3eEt5d05SeHpWazhuV09ROHNudmlKQVVka1JiSEdzbXN5c1NZc2E2aGVKMG5odFJ0TmhkMzNTZTc3Q2ZxbGt2S2VfWXp6d2RVME9VT1Y4MjNSejN5bm5vSmhTWWNlZVR6RE40UF9hMDU5OHVscjRFWUtGNmVpRVg2ZlNHcTBXd3A0Zi11RmdxYUFBYnZEdEJuTXB0YmlGZE13NmlzN25NblFuOWphVHJ1ZlZ0NzdYUkQzWDJVQndqWmh2R2ZSR2dMemVYVDNxYVVZeUpnRDJDRm5hdW9kT19CUXNrdGQ1UWNlRDVRdVR6Tk1tWEM4S0ZnTkVKN1FNcTI2Y0Rna205MjF5S3lHTjloQjhUUVwiLFwiZVwiOlwiQVFBQlwiLFwia3R5XCI6XCJSU0FcIixcImFsZ1wiOlwiUlMyNTZcIixcInVzZVwiOlwic2lnXCJ9In0.UGGGs3b2uWO8ZE10x62Zi7jCrq73O1UaLP0qx-TqxqO0f32Q1_PuKNQbu3x-mZ5AC6T_R317O5XTkolr3bSJwQXqPOLNX38Y3f4k0vorNzGgFQAp1wIIzPEPCeZ5jBiX-mJaKfzWpk0_dlgeu4TKujhEe8HWbeGI_vLLfhKBDUOL6cuSThjiV1BuKqmDqsK4rpc8XxMqoxp3tg23aA19cGqL8C4td1WtkjOc26C5wUu2anBZHvWl17IhQK5bSpyhJ8QxYgE1_NTDMDN5jU87b7v5cMolvTeXdb4Gacvzb0S3I75mebr5NLlFj4OeBeK3DQgyWRpWk0F8wkt-wDpxYA",
+            "ipAddress": "10.0.0.12",
+            "principalId": "ocid1.cluster.oc1.iad.aaaaaaaao6ffkkooatbl7c7y5f5cflo57pmg72c575lg2vl6echpsi4nt5xa",
+            "principalName": null,
+            "tenantId": "ocid1.tenancy.oc1..aaaaaaaakyknye4jnwyh6rbcugpp4kh6iqzi7ir7pmguufdn5h7n5mnwlcoq",
+            "userAgent": "Oracle-GoSDK/65.75.1 (linux/arm64; go/go1.22.7 4493 X:boringcrypto)"
+          },
+          "message": "ListVnicAttachments succeeded",
+          "request": {
+            "action": "GET",
+            "headers": {
+              "Accept": [
+                "*/*"
+              ],
+              "Date": [
+                "Fri, 17 Jan 2025 15:49:52 GMT"
+              ]
+            },
+            "id": "39ca1faca6bba5bb08e8d73cc4c720ca/7FE3E69844942C04A7EFFE3FEF9D3F7C/7B9119B9C13AE63619CD5A87B61F2AE5",
+            "parameters": {
+              "compartmentId": [
+                "ocid1.tenancy.oc1..aaaaaaaakyknye4jnwyh6rbcugpp4kh6iqzi7ir7pmguufdn5h7n5mnwlcoq"
+              ],
+              "instanceId": [
+                "ocid1.instance.oc1.iad.anuwcljsehwejaicufeqawou4edhiaeuemrumtazuu6uesbs2eugtsx66opa"
+              ]
+            },
+            "path": "/20160918/vnicAttachments"
+          },
+          "resourceId": null,
+          "response": {
+            "headers": {
+              "Connection": [
+                "close"
+              ],
+              "Content-Encoding": [
+                "gzip"
+              ],
+              "Content-Length": [
+                "556"
+              ],
+              "Content-Type": [
+                "application/json"
+              ],
+              "Date": [
+                "Fri, 17 Jan 2025 15:49:52 GMT"
+              ],
+              "Strict-Transport-Security": [
+                "max-age=31536000; includeSubDomains;"
+              ],
+              "X-Content-Type-Options": [
+                "nosniff"
+              ],
+              "opc-request-id": [
+                "39ca1faca6bba5bb08e8d73cc4c720ca/7FE3E69844942C04A7EFFE3FEF9D3F7C/7B9119B9C13AE63619CD5A87B61F2AE5"
+              ]
+            },
+            "message": null,
+            "payload": {},
+            "responseTime": "2025-01-17T15:49:52.365Z",
+            "status": "200"
+          },
+          "stateChange": {
+            "current": null,
+            "previous": null
+          }
+        },
+        "oracle": {
+          "compartmentid": "ocid1.tenancy.oc1..aaaaaaaakyknye4jnwyh6rbcugpp4kh6iqzi7ir7pmguufdn5h7n5mnwlcoq",
+          "ingestedtime": "2025-01-17T15:50:00.666Z",
+          "loggroupid": "_Audit",
+          "tenantid": "ocid1.tenancy.oc1..aaaaaaaakyknye4jnwyh6rbcugpp4kh6iqzi7ir7pmguufdn5h7n5mnwlcoq"
+        },
+        "source": "",
+        "timestamp": "2025-01-17T15:49:52.365Z",
+        "type": "com.oraclecloud.computeApi.ListVnicAttachments",
+        "ddsource": "oci.audit",
+        "service": "oci"
+      }
+    result:
+      custom:
+        data:
+          additionalDetails:
+            X-Real-Port: 48702
+          eventGroupingId: "39ca1faca6bba5bb08e8d73cc4c720ca/7FE3E69844942C04A7EFFE3FEF9D3F7C"
+          identity:
+            authType: "resource"
+            credentials: "ST$eyJraWQiOiJhc3dfaWFkXzE3MTU2NDgwNzIzNzciLCJhbGciOiJSUzI1NiJ9.eyJzdmNUZW5hbnRJZCI6Im9jaWQxLnRlbmFuY3kub2MxLi5hYWFhYWFhYTV2cnR1NGJqY3FwanZid29yaXdmZmdjY3JncmJrdW02NG10bjMzeXJjY2pycXB6dXlhcmEiLCJzdWIiOiJvY2lkMS5jbHVzdGVyLm9jMS5pYWQuYWFhYWFhYWFvNmZma2tvb2F0Ymw3Yzd5NWY1Y2ZsbzU3cG1nNzJjNTc1bGcydmw2ZWNocHNpNG50NXhhIiwic3ZjIjoib2tlIiwiaXNzIjoiYXV0aFNlcnZpY2Uub3JhY2xlLmNvbSIsInJlc190ZW5hbnQiOiJvY2lkMS50ZW5hbmN5Lm9jMS4uYWFhYWFhYWFreWtueWU0am53eWg2cmJjdWdwcDRraDZpcXppN2lyN3BtZ3V1ZmRuNWg3bjVtbndsY29xIiwicHR5cGUiOiJyZXNvdXJjZSIsInJlc291cmNlX3N1Yl90eXBlIjoiaW50ZXJuYWwiLCJyZXNfdHlwZSI6ImNsdXN0ZXIiLCJhdWQiOiJvY2kiLCJyZXNfaWQiOiJvY2lkMS5jbHVzdGVyLm9jMS5pYWQuYWFhYWFhYWFvNmZma2tvb2F0Ymw3Yzd5NWY1Y2ZsbzU3cG1nNzJjNTc1bGcydmw2ZWNocHNpNG50NXhhIiwidHR5cGUiOiJyZXNfc3AiLCJyZXNfY29tcGFydG1lbnQiOiJvY2lkMS50ZW5hbmN5Lm9jMS4uYWFhYWFhYWFreWtueWU0am53eWg2cmJjdWdwcDRraDZpcXppN2lyN3BtZ3V1ZmRuNWg3bjVtbndsY29xIiwiZXhwIjoxNzM3MTQ3NjczLCJpYXQiOjE3MzcxMDQ0NzMsImp0aSI6IjFhNTcxZTM1LTY3NTktNGQ3Yi04NTEyLTU3OTM1YzE5YWIwYiIsInRlbmFudCI6Im9jaWQxLnRlbmFuY3kub2MxLi5hYWFhYWFhYWt5a255ZTRqbnd5aDZyYmN1Z3BwNGtoNmlxemk3aXI3cG1ndXVmZG41aDduNW1ud2xjb3EiLCJvcGMtZGdzIjoiVjMsb2NpZDEudGVuYW5jeS5vYzEuLmFhYWFhYWFha3lrbnllNGpud3loNnJiY3VncHA0a2g2aXF6aTdpcjdwbWd1dWZkbjVoN241bW53bGNvcSxBQUFBQVFBQUFBQi9mMzkvQUFBQWp3PT0sQUFBQUFBPT0iLCJqd2siOiJ7XCJraWRcIjpcIm9jaWQxLmNsdXN0ZXIub2MxLmlhZC5hYWFhYWFhYW82ZmZra29vYXRibDdjN3k1ZjVjZmxvNTdwbWc3MmM1NzVsZzJ2bDZlY2hwc2k0bnQ1eGFcIixcIm5cIjpcIm5YdUJOU1BZQkU0aGVTZmc4Vm1GcmhCOUlLVldvYWVOVUQ4Z0RoWktVTHVvRWFvdGNoRFBpYlFObnk5N2gwTUlvYVp2QWE2QVN3eEt5d05SeHpWazhuV09ROHNudmlKQVVka1JiSEdzbXN5c1NZc2E2aGVKMG5odFJ0TmhkMzNTZTc3Q2ZxbGt2S2VfWXp6d2RVME9VT1Y4MjNSejN5bm5vSmhTWWNlZVR6RE40UF9hMDU5OHVscjRFWUtGNmVpRVg2ZlNHcTBXd3A0Zi11RmdxYUFBYnZEdEJuTXB0YmlGZE13NmlzN25NblFuOWphVHJ1ZlZ0NzdYUkQzWDJVQndqWmh2R2ZSR2dMemVYVDNxYVVZeUpnRDJDRm5hdW9kT19CUXNrdGQ1UWNlRDVRdVR6Tk1tWEM4S0ZnTkVKN1FNcTI2Y0Rna205MjF5S3lHTjloQjhUUVwiLFwiZVwiOlwiQVFBQlwiLFwia3R5XCI6XCJSU0FcIixcImFsZ1wiOlwiUlMyNTZcIixcInVzZVwiOlwic2lnXCJ9In0.UGGGs3b2uWO8ZE10x62Zi7jCrq73O1UaLP0qx-TqxqO0f32Q1_PuKNQbu3x-mZ5AC6T_R317O5XTkolr3bSJwQXqPOLNX38Y3f4k0vorNzGgFQAp1wIIzPEPCeZ5jBiX-mJaKfzWpk0_dlgeu4TKujhEe8HWbeGI_vLLfhKBDUOL6cuSThjiV1BuKqmDqsK4rpc8XxMqoxp3tg23aA19cGqL8C4td1WtkjOc26C5wUu2anBZHvWl17IhQK5bSpyhJ8QxYgE1_NTDMDN5jU87b7v5cMolvTeXdb4Gacvzb0S3I75mebr5NLlFj4OeBeK3DQgyWRpWk0F8wkt-wDpxYA"
+          request:
+            headers:
+              Accept:
+                - "*/*"
+              Date:
+                - "Fri, 17 Jan 2025 15:49:52 GMT"
+            id: "39ca1faca6bba5bb08e8d73cc4c720ca/7FE3E69844942C04A7EFFE3FEF9D3F7C/7B9119B9C13AE63619CD5A87B61F2AE5"
+            parameters:
+              compartmentId:
+                - "ocid1.tenancy.oc1..aaaaaaaakyknye4jnwyh6rbcugpp4kh6iqzi7ir7pmguufdn5h7n5mnwlcoq"
+              instanceId:
+                - "ocid1.instance.oc1.iad.anuwcljsehwejaicufeqawou4edhiaeuemrumtazuu6uesbs2eugtsx66opa"
+          response:
+            headers:
+              Connection:
+                - "close"
+              Content-Encoding:
+                - "gzip"
+              Content-Length:
+                - "556"
+              Content-Type:
+                - "application/json"
+              Date:
+                - "Fri, 17 Jan 2025 15:49:52 GMT"
+              Strict-Transport-Security:
+                - "max-age=31536000; includeSubDomains;"
+              X-Content-Type-Options:
+                - "nosniff"
+              opc-request-id:
+                - "39ca1faca6bba5bb08e8d73cc4c720ca/7FE3E69844942C04A7EFFE3FEF9D3F7C/7B9119B9C13AE63619CD5A87B61F2AE5"
+            responseTime: "2025-01-17T15:49:52.365Z"
+            status: "200"
+        ddsource: "oci.audit"
+        evt:
+          name: "ListVnicAttachments"
+        http:
+          method: "GET"
+          status_category: "OK"
+          status_code: "200"
+          url_details:
+            path: "/20160918/vnicAttachments"
+          useragent: "Oracle-GoSDK/65.75.1 (linux/arm64; go/go1.22.7 4493 X:boringcrypto)"
+          useragent_details:
+            browser:
+              family: "Other"
+            device:
+              category: "Desktop"
+              family: "Other"
+            os:
+              family: "Linux"
+        network:
+          client:
+            geoip: { }
+            ip: "10.0.0.12"
+        oci:
+          availability_domain: "AD2"
+          compartment_name: "datadog84"
+          compartment_ocid: "ocid1.tenancy.oc1..aaaaaaaakyknye4jnwyh6rbcugpp4kh6iqzi7ir7pmguufdn5h7n5mnwlcoq"
+          log_group_id: "_Audit"
+          tenancy_ocid: "ocid1.tenancy.oc1..aaaaaaaakyknye4jnwyh6rbcugpp4kh6iqzi7ir7pmguufdn5h7n5mnwlcoq"
+        oracle:
+          ingestedtime: "2025-01-17T15:50:00.666Z"
+        service: "oci"
+        source: ""
+        timestamp: "2025-01-17T15:49:52.365Z"
+        type: "com.oraclecloud.computeApi.ListVnicAttachments"
+        usr:
+          id: "ocid1.cluster.oc1.iad.aaaaaaaao6ffkkooatbl7c7y5f5cflo57pmg72c575lg2vl6echpsi4nt5xa"
+      message: "ListVnicAttachments succeeded"
+      status: "ok"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1737128992365
+  -
+    sample: |-
+      {
+        "oracle" : {
+          "compartmentid" : "ocid1.tenancy.oc1..aaaaaaaakyknye4jnwyh6rbcugpp4kh6iqzi7ir7pmguufdn5h7n5mnwlcoq",
+          "ingestedtime" : "2025-02-10T17:55:08.276Z",
+          "loggroupid" : "_Audit",
+          "tenantid" : "ocid1.tenancy.oc1..aaaaaaaakyknye4jnwyh6rbcugpp4kh6iqzi7ir7pmguufdn5h7n5mnwlcoq"
+        },
+        "data" : {
+          "compartmentId" : "ocid1.tenancy.oc1..aaaaaaaakyknye4jnwyh6rbcugpp4kh6iqzi7ir7pmguufdn5h7n5mnwlcoq",
+          "request" : {
+            "headers" : {
+              "Authorization" : [ "Signature version=\"1\",headers=\"date (request-target) host opc-obo-token\",keyId=\"ST$eyJraWQiOiJhc3dfaWFkXzE3MTU2NDgwNzIzNzciLCJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJvY2lkMS5pbnN0YW5jZS5vYzEuaWFkLmFudXdjbGp0bnBubzZ0aWM1NGo0dGZodjc3cGpqM2NmZzNjN21tdDJwYmdpZGJjbmdzMmtiNXp5Z2ZjcSIsIm9wYy1jZXJ0dHlwZSI6Imluc3RhbmNlIiwiaXNzIjoiYXV0aFNlcnZpY2Uub3JhY2xlLmNvbSIsImZwcmludCI6IjVGOkREOkQ4OjUyOkJBOkVGOjg2OjVEOjFGOjFBOjVEOjc1OkIwOkMyOkUyOjcwOjdGOjI2OjkyOjhCIiwicHR5cGUiOiJpbnN0YW5jZSIsImF1ZCI6Im9jaSIsIm9wYy10YWciOiJWMyxvY2lkMS50ZW5hbmN5Lm9jMS4uYWFhYWFhYWFxbnBjcGZxZm1yZjZkdzVnY2V3N3lxcGlydmFydWVpcmoybXY0anpuNXZramdvZWpzeG1hLEFBQUFBUUFBQUFBQUFBQ0IsQUFBQUFRQUFBQUFBQUFDRyIsInR0eXBlIjoieDUwOSIsIm9wYy1pbnN0YW5jZSI6Im9jaWQxLmluc3RhbmNlLm9jMS5pYWQuYW51d2NsanRucG5vNnRpYzU0ajR0Zmh2NzdwamozY2ZnM2M3bW10MnBiZ2lkYmNuZ3Mya2I1enlnZmNxIiwiZXhwIjoxNzM5MjE3MDU2LCJvcGMtY29tcGFydG1lbnQiOiJvY2lkMS5jb21wYXJ0bWVudC5vYzEuLmFhYWFhYWFhNmp2a3VkenFtYzZldXcyYmJmdXd4dmJvbDc3cXFxdTJtcHhyYmV6NGZpZ3EyeGFqcXkzYSIsImlhdCI6MTczOTIxMDEwNSwianRpIjoiZGQyNWIyZGYtM2RkNi00NjYzLTliNjAtYzcyMGMwN2FhNzc5IiwidGVuYW50Ijoib2NpZDEudGVuYW5jeS5vYzEuLmFhYWFhYWFhcW5wY3BmcWZtcmY2ZHc1Z2Nldzd5cXBpcnZhcnVlaXJqMm12NGp6bjV2a2pnb2Vqc3htYSIsImp3ayI6IntcImtpZFwiOlwiNWY6ZGQ6ZDg6NTI6YmE6ZWY6ODY6NWQ6MWY6MWE6NWQ6NzU6YjA6YzI6ZTI6NzA6N2Y6MjY6OTI6OGJcIixcIm5cIjpcIjVaWEdIZ2tJQnJhbW9sT1BoSUhjeHJZRnA0U3NlTTRwRHVrMkM0OTY1YjZINlhWZ3V2VC1tdmxuX0hNNVd6aklOaDd6Y2w1Z2FWYkJoWDBzM3JEQUhCRm1VOVM0MnpmVERuVllETlAzWk1fMEM1V2FsMjhYZVhQUXFuM2Fqc0xRTWJUZzl5b1JVTWVmVVhPcXRuNDNCdXZxbGlqTldCMmZDRk1PR3ZuOFhUWGpqNl8xNFNjOWRyb3N3NnM0UlBBR240blZiQmNPem1wMG96MnNPTEJmNGdnWnhQNk5DVkYtdy1WdlhEb3hpM2dselQ0S1pHbHNUNVZnSTNOS21Gdnh4SjhxYUFqd1RiR1JVLTVpS1A5Mk1ZZUJ2V3NwSEx0NmtRdW5HSWgtakNxU0RFTXJTV3BvemwwaUlId1hQSEZvelp0UzBoQXZxVTVmOHZUbmxUUUYzd1wiLFwiZVwiOlwiQVFBQlwiLFwia3R5XCI6XCJSU0FcIixcImFsZ1wiOlwiUlMyNTZcIixcInVzZVwiOlwic2lnXCJ9Iiwib3BjLXRlbmFudCI6Im9jaWQxLnRlbmFuY3kub2MxLi5hYWFhYWFhYXFucGNwZnFmbXJmNmR3NWdjZXc3eXFwaXJ2YXJ1ZWlyajJtdjRqem41dmtqZ29lanN4bWEifQ.dT58H2soo2sP_PL8Ib0af8zpwUmcDbnl2I2K6FmAdwSly57OsnqhJ2Veswb0k0YojnFm_vvkGx1rjkeAMYMnrNqKv47n0D97oRMeyjY94h2rhpfDC128DgWzQnLMwmvnLV1pam3zjkoCYz9OSLgCU4TVHK840dURIR_cjYEapIjYNokylJsb-1myHS-Es2jvgWEK0cDSvjW9XxpyUgboL16XNfKfscsA2RrSuMk6FpK0FGe6CgextKu2H9EzPU9R_7BALLv4XLCg6FViZpWWOoYwjj8lBHSSp7k5KB8gsuEZFwVUXPqR8DSuJIgmFDXXN6T6Lmz1Mt87hO8elDC2UA\",algorithm=\"rsa-sha256\",signature=\"*****\"" ],
+              "Accept" : [ "*/*" ],
+              "Opc-Request-Id" : [ "cc5beb1885c971211908c8b3b76f7562" ],
+              "User-Agent" : [ "Oracle-GoSDK/65.67.1 (go/go1.21.8; linux/arm64; terraform/2.33.0; terraform-cli/1.2.9) ORMTerraformer/5.46.0" ],
+              "Opc-Obo-Token" : [ "eyJraWQiOiJhc3dfaWFkXzE3MTU2NDgwNzIzNzciLCJhbGciOiJSUzI1NiJ9.eyJ0Z3QiOiJhbGxfc3ZjIiwic3ViIjoib2NpZDEudXNlci5vYzEuLmFhYWFhYWFhdHd1dnJ6eHVybHZkNnZxYnM2cW9zb2x5MjVjZmxob2RnN2M3ZmduN2k0bWgzdjV0amoycSIsImNoYWluIjoiIiwidGd0X25hbWUiOiJhbGxfc3ZjIiwiZGdycHMiOiJbXCJvY2lkMS5keW5hbWljZ3JvdXAub2MxLi5hYWFhYWFhYWYzajZqbWc0M2x5ZmNqaGVnc3h4dGZpam1pc2dxaG41N2syNHRjNmV3aXpzazZvbHQyMmFcIl0iLCJjYWxsX3N2YyI6Im9yY2hlc3RyYXRpb24iLCJ0Z3RzIjoiW1wiYWxsX3N2Y1wiXSIsIm1mYV92ZXJpZmllZCI6InRydWUiLCJvd24iOiJvY2lkMS50ZW5hbmN5Lm9jMS4uYWFhYWFhYWFxbnBjcGZxZm1yZjZkdzVnY2V3N3lxcGlydmFydWVpcmoybXY0anpuNXZramdvZWpzeG1hIiwiaXNzIjoiYXV0aFNlcnZpY2Uub3JhY2xlLmNvbSIsInB0eXBlIjoidXNlciIsInRndF9uYW1lcyI6IltcImFsbF9zdmNcIl0iLCJkZWxlZ2F0aW5nU2VydmljZSI6Im9yY2hlc3RyYXRpb24iLCJhdWQiOiJvY2kiLCJwc3R5cGUiOiJuYXR2IiwidHR5cGUiOiJkZWwiLCJleHAiOjE3MzkyOTY0NzcsImlhdCI6MTczOTIxMDA3Nywib2JvX3R5cGUiOiJzZXJ2aWNlIiwianRpIjoiNTdkNDhjNDYtYWJlZS00YzdmLTkxNmQtNjAwODE3Y2YxY2QyIiwidGVuYW50Ijoib2NpZDEudGVuYW5jeS5vYzEuLmFhYWFhYWFha3lrbnllNGpud3loNnJiY3VncHA0a2g2aXF6aTdpcjdwbWd1dWZkbjVoN241bW53bGNvcSIsIm5hbWUtY2hhaW4iOiIifQ.y7UUua8z42szIbjzUNI6DBfjddc3tmG69EY_QCt8-cpgWfT3C-08cWR9ZHV_BkxmWVMswWRyfMUlsboQIkgXzWPm9bJrK_gA0B4UEiRKIcf8P47oOten7XJjTV5uILQU9YWRUoK3y-wdyuPgJR2MPmjgeyaGZXw87qF2-wxW6zOnRNBqnO7VyWUKRTBy4SegUBe6XRmyyR9fmkoX_NKroZolbyl4hv0hV3toK6yGHKTU6MbD6jM5jFQRX-nYAd2t_9Lti1heiBfeF011F0CvWsvaly-wFEpv5OoJk_pUGcb39zwAAfcOyoDKbhJLV43DDJXc072mkQOP6fLc_98IZw" ],
+              "Accept-Encoding" : [ "gzip" ],
+              "Opc-Client-Info" : [ "Oracle-GoSDK/65.67.1" ],
+              "Date" : [ "Mon, 10 Feb 2025 17:55:06 GMT" ],
+              "Content-Type" : [ "application/json" ],
+              "Opc-Client-Retries" : [ "true" ]
+            },
+            "path" : "/20160918/userGroupMemberships/ocid1.groupmembership.oc1..aaaaaaaa6o3meuhttpitb3orrssfiyyqm5gfi44ri43wl7ne667na2vlel5q",
+            "action" : "GET",
+            "id" : "cc5beb1885c971211908c8b3b76f7562/B448894C20384E3B4F331474FF3C3861/6CA0EE6670171D88BB3AADEA906429BA"
+          },
+          "resourceId" : "ocid1.groupmembership.oc1..aaaaaaaa6o3meuhttpitb3orrssfiyyqm5gfi44ri43wl7ne667na2vlel5q",
+          "availabilityDomain" : "AD1",
+          "identity" : {
+            "credentials" : "ST$eyJraWQiOiJhc3dfaWFkXzE3MTU2NDgwNzIzNzciLCJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJvY2lkMS5pbnN0YW5jZS5vYzEuaWFkLmFudXdjbGp0bnBubzZ0aWM1NGo0dGZodjc3cGpqM2NmZzNjN21tdDJwYmdpZGJjbmdzMmtiNXp5Z2ZjcSIsIm9wYy1jZXJ0dHlwZSI6Imluc3RhbmNlIiwiaXNzIjoiYXV0aFNlcnZpY2Uub3JhY2xlLmNvbSIsImZwcmludCI6IjVGOkREOkQ4OjUyOkJBOkVGOjg2OjVEOjFGOjFBOjVEOjc1OkIwOkMyOkUyOjcwOjdGOjI2OjkyOjhCIiwicHR5cGUiOiJpbnN0YW5jZSIsImF1ZCI6Im9jaSIsIm9wYy10YWciOiJWMyxvY2lkMS50ZW5hbmN5Lm9jMS4uYWFhYWFhYWFxbnBjcGZxZm1yZjZkdzVnY2V3N3lxcGlydmFydWVpcmoybXY0anpuNXZramdvZWpzeG1hLEFBQUFBUUFBQUFBQUFBQ0IsQUFBQUFRQUFBQUFBQUFDRyIsInR0eXBlIjoieDUwOSIsIm9wYy1pbnN0YW5jZSI6Im9jaWQxLmluc3RhbmNlLm9jMS5pYWQuYW51d2NsanRucG5vNnRpYzU0ajR0Zmh2NzdwamozY2ZnM2M3bW10MnBiZ2lkYmNuZ3Mya2I1enlnZmNxIiwiZXhwIjoxNzM5MjE3MDU2LCJvcGMtY29tcGFydG1lbnQiOiJvY2lkMS5jb21wYXJ0bWVudC5vYzEuLmFhYWFhYWFhNmp2a3VkenFtYzZldXcyYmJmdXd4dmJvbDc3cXFxdTJtcHhyYmV6NGZpZ3EyeGFqcXkzYSIsImlhdCI6MTczOTIxMDEwNSwianRpIjoiZGQyNWIyZGYtM2RkNi00NjYzLTliNjAtYzcyMGMwN2FhNzc5IiwidGVuYW50Ijoib2NpZDEudGVuYW5jeS5vYzEuLmFhYWFhYWFhcW5wY3BmcWZtcmY2ZHc1Z2Nldzd5cXBpcnZhcnVlaXJqMm12NGp6bjV2a2pnb2Vqc3htYSIsImp3ayI6IntcImtpZFwiOlwiNWY6ZGQ6ZDg6NTI6YmE6ZWY6ODY6NWQ6MWY6MWE6NWQ6NzU6YjA6YzI6ZTI6NzA6N2Y6MjY6OTI6OGJcIixcIm5cIjpcIjVaWEdIZ2tJQnJhbW9sT1BoSUhjeHJZRnA0U3NlTTRwRHVrMkM0OTY1YjZINlhWZ3V2VC1tdmxuX0hNNVd6aklOaDd6Y2w1Z2FWYkJoWDBzM3JEQUhCRm1VOVM0MnpmVERuVllETlAzWk1fMEM1V2FsMjhYZVhQUXFuM2Fqc0xRTWJUZzl5b1JVTWVmVVhPcXRuNDNCdXZxbGlqTldCMmZDRk1PR3ZuOFhUWGpqNl8xNFNjOWRyb3N3NnM0UlBBR240blZiQmNPem1wMG96MnNPTEJmNGdnWnhQNk5DVkYtdy1WdlhEb3hpM2dselQ0S1pHbHNUNVZnSTNOS21Gdnh4SjhxYUFqd1RiR1JVLTVpS1A5Mk1ZZUJ2V3NwSEx0NmtRdW5HSWgtakNxU0RFTXJTV3BvemwwaUlId1hQSEZvelp0UzBoQXZxVTVmOHZUbmxUUUYzd1wiLFwiZVwiOlwiQVFBQlwiLFwia3R5XCI6XCJSU0FcIixcImFsZ1wiOlwiUlMyNTZcIixcInVzZVwiOlwic2lnXCJ9Iiwib3BjLXRlbmFudCI6Im9jaWQxLnRlbmFuY3kub2MxLi5hYWFhYWFhYXFucGNwZnFmbXJmNmR3NWdjZXc3eXFwaXJ2YXJ1ZWlyajJtdjRqem41dmtqZ29lanN4bWEifQ.dT58H2soo2sP_PL8Ib0af8zpwUmcDbnl2I2K6FmAdwSly57OsnqhJ2Veswb0k0YojnFm_vvkGx1rjkeAMYMnrNqKv47n0D97oRMeyjY94h2rhpfDC128DgWzQnLMwmvnLV1pam3zjkoCYz9OSLgCU4TVHK840dURIR_cjYEapIjYNokylJsb-1myHS-Es2jvgWEK0cDSvjW9XxpyUgboL16XNfKfscsA2RrSuMk6FpK0FGe6CgextKu2H9EzPU9R_7BALLv4XLCg6FViZpWWOoYwjj8lBHSSp7k5KB8gsuEZFwVUXPqR8DSuJIgmFDXXN6T6Lmz1Mt87hO8elDC2UA",
+            "ipAddress" : "152.70.201.32",
+            "tenantId" : "ocid1.tenancy.oc1..aaaaaaaakyknye4jnwyh6rbcugpp4kh6iqzi7ir7pmguufdn5h7n5mnwlcoq",
+            "principalId" : "ocid1.user.oc1..aaaaaaaatwuvrzxurlvd6vqbs6qosoly25cflhodg7c7fgn7i4mh3v5tjj2q",
+            "principalName" : "kanishk.tripathi@datadoghq.com",
+            "userAgent" : "Oracle-GoSDK/65.67.1 (go/go1.21.8; linux/arm64; terraform/2.33.0; terraform-cli/1.2.9) ORMTerraformer/5.46.0",
+            "callerId" : "ocid1.instance.oc1.iad.anuwcljtnpno6tic54j4tfhv77pjj3cfg3c7mmt2pbgidbcngs2kb5zygfcq",
+            "authType" : "natv"
+          },
+          "response" : {
+            "headers" : {
+              "Strict-Transport-Security" : [ "max-age=31536000; includeSubDomains;" ],
+              "Cache-Control" : [ "no-cache, no-store, must-revalidate" ],
+              "X-Content-Type-Options" : [ "nosniff" ],
+              "Pragma" : [ "no-cache" ],
+              "Content-Length" : [ "110" ],
+              "opc-request-id" : [ "cc5beb1885c971211908c8b3b76f7562/B448894C20384E3B4F331474FF3C3861/6CA0EE6670171D88BB3AADEA906429BA" ],
+              "Date" : [ "Mon, 10 Feb 2025 17:55:06 GMT" ],
+              "Content-Type" : [ "application/json" ]
+            },
+            "responseTime" : "2025-02-10T17:55:06.586Z",
+            "status" : "404"
+          },
+          "eventGroupingId" : "cc5beb1885c971211908c8b3b76f7562/B448894C20384E3B4F331474FF3C3861",
+          "eventName" : "GetUserGroupMembership",
+          "compartmentName" : "datadog84",
+          "additionalDetails" : {
+            "X-Real-Port" : 51478
+          },
+          "message" : "GetUserGroupMembership failed with response 'NotAuthorizedOrNotFound'"
+        },
+        "service" : "oci",
+        "source" : "",
+        "type" : "com.oraclecloud.identityControlPlane.GetUserGroupMembership",
+        "ddsource" : "oci.audit",
+        "timestamp" : "2025-02-10T17:55:06.586Z"
+      }
+    result:
+      custom:
+        data:
+          additionalDetails:
+            X-Real-Port: 51478
+          eventGroupingId: "cc5beb1885c971211908c8b3b76f7562/B448894C20384E3B4F331474FF3C3861"
+          identity:
+            authType: "natv"
+            credentials: "ST$eyJraWQiOiJhc3dfaWFkXzE3MTU2NDgwNzIzNzciLCJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJvY2lkMS5pbnN0YW5jZS5vYzEuaWFkLmFudXdjbGp0bnBubzZ0aWM1NGo0dGZodjc3cGpqM2NmZzNjN21tdDJwYmdpZGJjbmdzMmtiNXp5Z2ZjcSIsIm9wYy1jZXJ0dHlwZSI6Imluc3RhbmNlIiwiaXNzIjoiYXV0aFNlcnZpY2Uub3JhY2xlLmNvbSIsImZwcmludCI6IjVGOkREOkQ4OjUyOkJBOkVGOjg2OjVEOjFGOjFBOjVEOjc1OkIwOkMyOkUyOjcwOjdGOjI2OjkyOjhCIiwicHR5cGUiOiJpbnN0YW5jZSIsImF1ZCI6Im9jaSIsIm9wYy10YWciOiJWMyxvY2lkMS50ZW5hbmN5Lm9jMS4uYWFhYWFhYWFxbnBjcGZxZm1yZjZkdzVnY2V3N3lxcGlydmFydWVpcmoybXY0anpuNXZramdvZWpzeG1hLEFBQUFBUUFBQUFBQUFBQ0IsQUFBQUFRQUFBQUFBQUFDRyIsInR0eXBlIjoieDUwOSIsIm9wYy1pbnN0YW5jZSI6Im9jaWQxLmluc3RhbmNlLm9jMS5pYWQuYW51d2NsanRucG5vNnRpYzU0ajR0Zmh2NzdwamozY2ZnM2M3bW10MnBiZ2lkYmNuZ3Mya2I1enlnZmNxIiwiZXhwIjoxNzM5MjE3MDU2LCJvcGMtY29tcGFydG1lbnQiOiJvY2lkMS5jb21wYXJ0bWVudC5vYzEuLmFhYWFhYWFhNmp2a3VkenFtYzZldXcyYmJmdXd4dmJvbDc3cXFxdTJtcHhyYmV6NGZpZ3EyeGFqcXkzYSIsImlhdCI6MTczOTIxMDEwNSwianRpIjoiZGQyNWIyZGYtM2RkNi00NjYzLTliNjAtYzcyMGMwN2FhNzc5IiwidGVuYW50Ijoib2NpZDEudGVuYW5jeS5vYzEuLmFhYWFhYWFhcW5wY3BmcWZtcmY2ZHc1Z2Nldzd5cXBpcnZhcnVlaXJqMm12NGp6bjV2a2pnb2Vqc3htYSIsImp3ayI6IntcImtpZFwiOlwiNWY6ZGQ6ZDg6NTI6YmE6ZWY6ODY6NWQ6MWY6MWE6NWQ6NzU6YjA6YzI6ZTI6NzA6N2Y6MjY6OTI6OGJcIixcIm5cIjpcIjVaWEdIZ2tJQnJhbW9sT1BoSUhjeHJZRnA0U3NlTTRwRHVrMkM0OTY1YjZINlhWZ3V2VC1tdmxuX0hNNVd6aklOaDd6Y2w1Z2FWYkJoWDBzM3JEQUhCRm1VOVM0MnpmVERuVllETlAzWk1fMEM1V2FsMjhYZVhQUXFuM2Fqc0xRTWJUZzl5b1JVTWVmVVhPcXRuNDNCdXZxbGlqTldCMmZDRk1PR3ZuOFhUWGpqNl8xNFNjOWRyb3N3NnM0UlBBR240blZiQmNPem1wMG96MnNPTEJmNGdnWnhQNk5DVkYtdy1WdlhEb3hpM2dselQ0S1pHbHNUNVZnSTNOS21Gdnh4SjhxYUFqd1RiR1JVLTVpS1A5Mk1ZZUJ2V3NwSEx0NmtRdW5HSWgtakNxU0RFTXJTV3BvemwwaUlId1hQSEZvelp0UzBoQXZxVTVmOHZUbmxUUUYzd1wiLFwiZVwiOlwiQVFBQlwiLFwia3R5XCI6XCJSU0FcIixcImFsZ1wiOlwiUlMyNTZcIixcInVzZVwiOlwic2lnXCJ9Iiwib3BjLXRlbmFudCI6Im9jaWQxLnRlbmFuY3kub2MxLi5hYWFhYWFhYXFucGNwZnFmbXJmNmR3NWdjZXc3eXFwaXJ2YXJ1ZWlyajJtdjRqem41dmtqZ29lanN4bWEifQ.dT58H2soo2sP_PL8Ib0af8zpwUmcDbnl2I2K6FmAdwSly57OsnqhJ2Veswb0k0YojnFm_vvkGx1rjkeAMYMnrNqKv47n0D97oRMeyjY94h2rhpfDC128DgWzQnLMwmvnLV1pam3zjkoCYz9OSLgCU4TVHK840dURIR_cjYEapIjYNokylJsb-1myHS-Es2jvgWEK0cDSvjW9XxpyUgboL16XNfKfscsA2RrSuMk6FpK0FGe6CgextKu2H9EzPU9R_7BALLv4XLCg6FViZpWWOoYwjj8lBHSSp7k5KB8gsuEZFwVUXPqR8DSuJIgmFDXXN6T6Lmz1Mt87hO8elDC2UA"
+          request:
+            headers:
+              Accept:
+                - "*/*"
+              Accept-Encoding:
+                - "gzip"
+              Authorization:
+                - "Signature version=\"1\",headers=\"date (request-target) host opc-obo-token\",keyId=\"ST$eyJraWQiOiJhc3dfaWFkXzE3MTU2NDgwNzIzNzciLCJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJvY2lkMS5pbnN0YW5jZS5vYzEuaWFkLmFudXdjbGp0bnBubzZ0aWM1NGo0dGZodjc3cGpqM2NmZzNjN21tdDJwYmdpZGJjbmdzMmtiNXp5Z2ZjcSIsIm9wYy1jZXJ0dHlwZSI6Imluc3RhbmNlIiwiaXNzIjoiYXV0aFNlcnZpY2Uub3JhY2xlLmNvbSIsImZwcmludCI6IjVGOkREOkQ4OjUyOkJBOkVGOjg2OjVEOjFGOjFBOjVEOjc1OkIwOkMyOkUyOjcwOjdGOjI2OjkyOjhCIiwicHR5cGUiOiJpbnN0YW5jZSIsImF1ZCI6Im9jaSIsIm9wYy10YWciOiJWMyxvY2lkMS50ZW5hbmN5Lm9jMS4uYWFhYWFhYWFxbnBjcGZxZm1yZjZkdzVnY2V3N3lxcGlydmFydWVpcmoybXY0anpuNXZramdvZWpzeG1hLEFBQUFBUUFBQUFBQUFBQ0IsQUFBQUFRQUFBQUFBQUFDRyIsInR0eXBlIjoieDUwOSIsIm9wYy1pbnN0YW5jZSI6Im9jaWQxLmluc3RhbmNlLm9jMS5pYWQuYW51d2NsanRucG5vNnRpYzU0ajR0Zmh2NzdwamozY2ZnM2M3bW10MnBiZ2lkYmNuZ3Mya2I1enlnZmNxIiwiZXhwIjoxNzM5MjE3MDU2LCJvcGMtY29tcGFydG1lbnQiOiJvY2lkMS5jb21wYXJ0bWVudC5vYzEuLmFhYWFhYWFhNmp2a3VkenFtYzZldXcyYmJmdXd4dmJvbDc3cXFxdTJtcHhyYmV6NGZpZ3EyeGFqcXkzYSIsImlhdCI6MTczOTIxMDEwNSwianRpIjoiZGQyNWIyZGYtM2RkNi00NjYzLTliNjAtYzcyMGMwN2FhNzc5IiwidGVuYW50Ijoib2NpZDEudGVuYW5jeS5vYzEuLmFhYWFhYWFhcW5wY3BmcWZtcmY2ZHc1Z2Nldzd5cXBpcnZhcnVlaXJqMm12NGp6bjV2a2pnb2Vqc3htYSIsImp3ayI6IntcImtpZFwiOlwiNWY6ZGQ6ZDg6NTI6YmE6ZWY6ODY6NWQ6MWY6MWE6NWQ6NzU6YjA6YzI6ZTI6NzA6N2Y6MjY6OTI6OGJcIixcIm5cIjpcIjVaWEdIZ2tJQnJhbW9sT1BoSUhjeHJZRnA0U3NlTTRwRHVrMkM0OTY1YjZINlhWZ3V2VC1tdmxuX0hNNVd6aklOaDd6Y2w1Z2FWYkJoWDBzM3JEQUhCRm1VOVM0MnpmVERuVllETlAzWk1fMEM1V2FsMjhYZVhQUXFuM2Fqc0xRTWJUZzl5b1JVTWVmVVhPcXRuNDNCdXZxbGlqTldCMmZDRk1PR3ZuOFhUWGpqNl8xNFNjOWRyb3N3NnM0UlBBR240blZiQmNPem1wMG96MnNPTEJmNGdnWnhQNk5DVkYtdy1WdlhEb3hpM2dselQ0S1pHbHNUNVZnSTNOS21Gdnh4SjhxYUFqd1RiR1JVLTVpS1A5Mk1ZZUJ2V3NwSEx0NmtRdW5HSWgtakNxU0RFTXJTV3BvemwwaUlId1hQSEZvelp0UzBoQXZxVTVmOHZUbmxUUUYzd1wiLFwiZVwiOlwiQVFBQlwiLFwia3R5XCI6XCJSU0FcIixcImFsZ1wiOlwiUlMyNTZcIixcInVzZVwiOlwic2lnXCJ9Iiwib3BjLXRlbmFudCI6Im9jaWQxLnRlbmFuY3kub2MxLi5hYWFhYWFhYXFucGNwZnFmbXJmNmR3NWdjZXc3eXFwaXJ2YXJ1ZWlyajJtdjRqem41dmtqZ29lanN4bWEifQ.dT58H2soo2sP_PL8Ib0af8zpwUmcDbnl2I2K6FmAdwSly57OsnqhJ2Veswb0k0YojnFm_vvkGx1rjkeAMYMnrNqKv47n0D97oRMeyjY94h2rhpfDC128DgWzQnLMwmvnLV1pam3zjkoCYz9OSLgCU4TVHK840dURIR_cjYEapIjYNokylJsb-1myHS-Es2jvgWEK0cDSvjW9XxpyUgboL16XNfKfscsA2RrSuMk6FpK0FGe6CgextKu2H9EzPU9R_7BALLv4XLCg6FViZpWWOoYwjj8lBHSSp7k5KB8gsuEZFwVUXPqR8DSuJIgmFDXXN6T6Lmz1Mt87hO8elDC2UA\",algorithm=\"rsa-sha256\",signature=\"*****\""
+              Content-Type:
+                - "application/json"
+              Date:
+                - "Mon, 10 Feb 2025 17:55:06 GMT"
+              Opc-Client-Info:
+                - "Oracle-GoSDK/65.67.1"
+              Opc-Client-Retries:
+                - "true"
+              Opc-Obo-Token:
+                - "eyJraWQiOiJhc3dfaWFkXzE3MTU2NDgwNzIzNzciLCJhbGciOiJSUzI1NiJ9.eyJ0Z3QiOiJhbGxfc3ZjIiwic3ViIjoib2NpZDEudXNlci5vYzEuLmFhYWFhYWFhdHd1dnJ6eHVybHZkNnZxYnM2cW9zb2x5MjVjZmxob2RnN2M3ZmduN2k0bWgzdjV0amoycSIsImNoYWluIjoiIiwidGd0X25hbWUiOiJhbGxfc3ZjIiwiZGdycHMiOiJbXCJvY2lkMS5keW5hbWljZ3JvdXAub2MxLi5hYWFhYWFhYWYzajZqbWc0M2x5ZmNqaGVnc3h4dGZpam1pc2dxaG41N2syNHRjNmV3aXpzazZvbHQyMmFcIl0iLCJjYWxsX3N2YyI6Im9yY2hlc3RyYXRpb24iLCJ0Z3RzIjoiW1wiYWxsX3N2Y1wiXSIsIm1mYV92ZXJpZmllZCI6InRydWUiLCJvd24iOiJvY2lkMS50ZW5hbmN5Lm9jMS4uYWFhYWFhYWFxbnBjcGZxZm1yZjZkdzVnY2V3N3lxcGlydmFydWVpcmoybXY0anpuNXZramdvZWpzeG1hIiwiaXNzIjoiYXV0aFNlcnZpY2Uub3JhY2xlLmNvbSIsInB0eXBlIjoidXNlciIsInRndF9uYW1lcyI6IltcImFsbF9zdmNcIl0iLCJkZWxlZ2F0aW5nU2VydmljZSI6Im9yY2hlc3RyYXRpb24iLCJhdWQiOiJvY2kiLCJwc3R5cGUiOiJuYXR2IiwidHR5cGUiOiJkZWwiLCJleHAiOjE3MzkyOTY0NzcsImlhdCI6MTczOTIxMDA3Nywib2JvX3R5cGUiOiJzZXJ2aWNlIiwianRpIjoiNTdkNDhjNDYtYWJlZS00YzdmLTkxNmQtNjAwODE3Y2YxY2QyIiwidGVuYW50Ijoib2NpZDEudGVuYW5jeS5vYzEuLmFhYWFhYWFha3lrbnllNGpud3loNnJiY3VncHA0a2g2aXF6aTdpcjdwbWd1dWZkbjVoN241bW53bGNvcSIsIm5hbWUtY2hhaW4iOiIifQ.y7UUua8z42szIbjzUNI6DBfjddc3tmG69EY_QCt8-cpgWfT3C-08cWR9ZHV_BkxmWVMswWRyfMUlsboQIkgXzWPm9bJrK_gA0B4UEiRKIcf8P47oOten7XJjTV5uILQU9YWRUoK3y-wdyuPgJR2MPmjgeyaGZXw87qF2-wxW6zOnRNBqnO7VyWUKRTBy4SegUBe6XRmyyR9fmkoX_NKroZolbyl4hv0hV3toK6yGHKTU6MbD6jM5jFQRX-nYAd2t_9Lti1heiBfeF011F0CvWsvaly-wFEpv5OoJk_pUGcb39zwAAfcOyoDKbhJLV43DDJXc072mkQOP6fLc_98IZw"
+              Opc-Request-Id:
+                - "cc5beb1885c971211908c8b3b76f7562"
+              User-Agent:
+                - "Oracle-GoSDK/65.67.1 (go/go1.21.8; linux/arm64; terraform/2.33.0; terraform-cli/1.2.9) ORMTerraformer/5.46.0"
+            id: "cc5beb1885c971211908c8b3b76f7562/B448894C20384E3B4F331474FF3C3861/6CA0EE6670171D88BB3AADEA906429BA"
+          resourceId: "ocid1.groupmembership.oc1..aaaaaaaa6o3meuhttpitb3orrssfiyyqm5gfi44ri43wl7ne667na2vlel5q"
+          response:
+            headers:
+              Cache-Control:
+                - "no-cache, no-store, must-revalidate"
+              Content-Length:
+                - "110"
+              Content-Type:
+                - "application/json"
+              Date:
+                - "Mon, 10 Feb 2025 17:55:06 GMT"
+              Pragma:
+                - "no-cache"
+              Strict-Transport-Security:
+                - "max-age=31536000; includeSubDomains;"
+              X-Content-Type-Options:
+                - "nosniff"
+              opc-request-id:
+                - "cc5beb1885c971211908c8b3b76f7562/B448894C20384E3B4F331474FF3C3861/6CA0EE6670171D88BB3AADEA906429BA"
+            responseTime: "2025-02-10T17:55:06.586Z"
+            status: "404"
+        ddsource: "oci.audit"
+        evt:
+          name: "GetUserGroupMembership"
+        http:
+          method: "GET"
+          status_category: "Warning"
+          status_code: "404"
+          url_details:
+            path: "/20160918/userGroupMemberships/ocid1.groupmembership.oc1..aaaaaaaa6o3meuhttpitb3orrssfiyyqm5gfi44ri43wl7ne667na2vlel5q"
+          useragent: "Oracle-GoSDK/65.67.1 (go/go1.21.8; linux/arm64; terraform/2.33.0; terraform-cli/1.2.9) ORMTerraformer/5.46.0"
+          useragent_details:
+            browser:
+              family: "Other"
+            device:
+              category: "Desktop"
+              family: "Other"
+            os:
+              family: "Linux"
+        network:
+          client:
+            geoip: { }
+            ip: "152.70.201.32"
+        oci:
+          availability_domain: "AD1"
+          compartment_name: "datadog84"
+          compartment_ocid: "ocid1.tenancy.oc1..aaaaaaaakyknye4jnwyh6rbcugpp4kh6iqzi7ir7pmguufdn5h7n5mnwlcoq"
+          log_group_id: "_Audit"
+          tenancy_ocid: "ocid1.tenancy.oc1..aaaaaaaakyknye4jnwyh6rbcugpp4kh6iqzi7ir7pmguufdn5h7n5mnwlcoq"
+        oracle:
+          ingestedtime: "2025-02-10T17:55:08.276Z"
+        service: "oci"
+        source: ""
+        timestamp: "2025-02-10T17:55:06.586Z"
+        type: "com.oraclecloud.identityControlPlane.GetUserGroupMembership"
+        usr:
+          id: "ocid1.user.oc1..aaaaaaaatwuvrzxurlvd6vqbs6qosoly25cflhodg7c7fgn7i4mh3v5tjj2q"
+          name: "kanishk.tripathi@datadoghq.com"
+      message: "GetUserGroupMembership failed with response 'NotAuthorizedOrNotFound'"
+      status: "warn"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1739210106586

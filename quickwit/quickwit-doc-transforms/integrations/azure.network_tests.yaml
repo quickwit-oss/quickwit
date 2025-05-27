@@ -1,0 +1,122 @@
+id: "azure.network"
+tests:
+ -
+  sample: |-
+    {
+      "callerIpAddress" : "34.224.243.198",
+      "resourceId" : "/SUBSCRIPTIONS/8C56D827-5F07-45CE-8F2B-6C5001DB5C6F/RESOURCEGROUPS/KITCHEN-DD-AGENT-WIN2019-AZURE-20200407T115109PL2363814-A6/PROVIDERS/MICROSOFT.NETWORK/FRONTDOORS/DDATWIN2019",
+      "level" : "Warning",
+      "identity" : {
+        "authorization" : {
+          "evidence" : {
+            "principalId" : "5f6793e4783e49a2bfb8cdaasdada"
+          }
+        }
+      },
+      "operationName" : "MICROSOFT.AUTHORIZATION/POLICIES/AUDIT/ACTION",
+      "correlationId" : "aea8188d-9be4-48c7-9e8f-3bf10a545ff3",
+      "time" : "2020-04-07T12:01:17.8810661Z",
+      "category" : "Administrative",
+      "resultType" : "Success",
+      "durationMs" : 123,
+      "resultSignature" : "Succeeded."
+    }
+  result:
+    custom:
+      correlationId: "aea8188d-9be4-48c7-9e8f-3bf10a545ff3"
+      duration: 1.23E8
+      durationMs: 123
+      evt:
+        category: "Administrative"
+        name: "MICROSOFT.AUTHORIZATION/POLICIES/AUDIT/ACTION"
+        outcome: "Success"
+      level: "Warning"
+      network:
+        client:
+          ip: "34.224.243.198"
+      resourceId: "/SUBSCRIPTIONS/8C56D827-5F07-45CE-8F2B-6C5001DB5C6F/RESOURCEGROUPS/KITCHEN-DD-AGENT-WIN2019-AZURE-20200407T115109PL2363814-A6/PROVIDERS/MICROSOFT.NETWORK/FRONTDOORS/DDATWIN2019"
+      resource_name: "ddatwin2019"
+      resultSignature: "Succeeded."
+      time: "2020-04-07T12:01:17.8810661Z"
+      usr:
+        id: "5f6793e4783e49a2bfb8cdaasdada"
+    message: |-
+      {
+        "callerIpAddress" : "34.224.243.198",
+        "resourceId" : "/SUBSCRIPTIONS/8C56D827-5F07-45CE-8F2B-6C5001DB5C6F/RESOURCEGROUPS/KITCHEN-DD-AGENT-WIN2019-AZURE-20200407T115109PL2363814-A6/PROVIDERS/MICROSOFT.NETWORK/FRONTDOORS/DDATWIN2019",
+        "level" : "Warning",
+        "identity" : {
+          "authorization" : {
+            "evidence" : {
+              "principalId" : "5f6793e4783e49a2bfb8cdaasdada"
+            }
+          }
+        },
+        "operationName" : "MICROSOFT.AUTHORIZATION/POLICIES/AUDIT/ACTION",
+        "correlationId" : "aea8188d-9be4-48c7-9e8f-3bf10a545ff3",
+        "time" : "2020-04-07T12:01:17.8810661Z",
+        "category" : "Administrative",
+        "resultType" : "Success",
+        "durationMs" : 123,
+        "resultSignature" : "Succeeded."
+      }
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1586260877881
+ -
+  sample: |-
+    {
+      "resourceId" : "/SUBSCRIPTIONS/8C56D827-5F07-45CE-8F2B-6C5001DB5C6F/RESOURCEGROUPS/HETANSH-RESOURCE-GROUP-FOR-TESTING/PROVIDERS/MICROSOFT.NETWORK/FRONTDOORS/HETANSHTEST",
+      "level" : "Critical",
+      "identity" : {
+        "authorization" : {
+          "evidence" : {
+            "principalId" : "5f6793e4783e49a2bfb8cdaasdada"
+          }
+        }
+      },
+      "correlationId" : "699a9793-d7d7-4613-b58a-0018da23b2cb",
+      "operationName" : "Microsoft.Resourcehealth/healthevent/Activated/action",
+      "time" : "2020-04-06T10:54:44.4707124Z",
+      "category" : "ResourceHealth",
+      "resultType" : "Active",
+      "properties" : {
+        "eventCategory" : "ResourceHealth",
+        "eventProperties" : {
+          "cause" : "PlatformInitiated",
+          "details" : "",
+          "currentHealthStatus" : "Unavailable",
+          "previousHealthStatus" : "Available",
+          "title" : "Front Door service has detected global availability drops impacting one or more regions. The issue may cause failures for client requests sent to this Front Door resource.",
+          "type" : "Downtime"
+        }
+      }
+    }
+  result:
+    custom:
+      correlationId: "699a9793-d7d7-4613-b58a-0018da23b2cb"
+      evt:
+        category: "ResourceHealth"
+        name: "Microsoft.Resourcehealth/healthevent/Activated/action"
+        outcome: "Active"
+      level: "Critical"
+      properties:
+        eventCategory: "ResourceHealth"
+        eventProperties:
+          cause: "PlatformInitiated"
+          currentHealthStatus: "Unavailable"
+          details: ""
+          previousHealthStatus: "Available"
+          type: "Downtime"
+      resourceId: "/SUBSCRIPTIONS/8C56D827-5F07-45CE-8F2B-6C5001DB5C6F/RESOURCEGROUPS/HETANSH-RESOURCE-GROUP-FOR-TESTING/PROVIDERS/MICROSOFT.NETWORK/FRONTDOORS/HETANSHTEST"
+      resource_name: "hetanshtest"
+      time: "2020-04-06T10:54:44.4707124Z"
+      usr:
+        id: "5f6793e4783e49a2bfb8cdaasdada"
+    message: "Front Door service has detected global availability drops impacting one or more regions. The issue may cause failures for client requests sent to this Front Door resource."
+    status: "critical"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1586170484470
+

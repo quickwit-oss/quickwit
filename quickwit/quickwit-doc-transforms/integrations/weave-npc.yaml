@@ -1,0 +1,83 @@
+id: weave-npc
+metric_id: nginx-ingress-controller
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - System
+    name: User
+    path: system.user
+    source: log
+  - groups:
+      - System
+    name: Action
+    path: system.action
+    source: log
+  - groups:
+      - Weave
+    name: Ipset
+    path: network.ipset
+    source: log
+pipeline:
+  type: pipeline
+  name: Weave NPC
+  enabled: true
+  filter:
+    query: source:weave-npc
+  processors:
+    - type: grok-parser
+      name: Parsing Weave NPC logs
+      enabled: true
+      source: message
+      samples:
+        - 'WARN: 2018/12/07 18:49:34.228275 UDP connection from 192.168.131.39:2817 to 255.255.255.255:67 blocked by Weave NPC.'
+        - 'INFO: 2018/12/07 18:45:05.223738 added entry 192.168.131.39 to weave-myipset of 1234566-abcdefgb-123456'
+        - 'INFO: 2018/02/27 10:29:15.725883 destroying ipset: &npc.selectorSpec{key:"", selector:labels.internalSelector{}, dst:false, ipsetType:"hash:ip", ipsetName:"weave-myipset", nsName:"test"}'
+        - 'DEBU: 2018/12/07 18:45:00.277478 EVENT AddPod {"metadata":{"creationTimestamp":"2018-12-07T18:45:00Z","generateName":"dns-update-123456789"}'
+      grok:
+        supportRules: |
+          _status %{word:status}
+          _date %{date("yyyy/MM/dd HH:mm:ss.SSSSSS"):timestamp}
+          _client_ip %{ipOrHost:network.client.ip}
+          _client_port %{number:network.client.port}
+          _destination_ip %{ipOrHost:network.destination.ip}
+          _destination_port %{number:network.destination.port}
+          _ipset %{notSpace:network.ipset}
+          _action %{word:system.action:lowercase}
+          _user %{notSpace:system.user}
+        matchRules: |
+          blocked_rule %{_status}: %{_date} %{word:http.protocol:lowercase} connection from %{_client_ip}:%{_client_port} to %{_destination_ip}:%{_destination_port} %{_action} .*
+
+          entry_rule %{_status}: %{_date} %{_action} entry %{_client_ip} (to|from) %{_ipset} of %{_user}
+
+          event_rule %{_status}: %{_date} EVENT %{_action} %{data::json}
+
+          ipset_rule %{_status}: %{_date} %{_action} ipset(: %{data:network.ipset_details:keyvalue(":",",")}| %{_ipset})
+          ipset_crash %{_status}: %{_date} ipset \[%{word} %{_ipset} .*\] %{_action}: %{data:error.message}
+
+          fallback %{_status}: %{_date} %{data::keyvalue}
+
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `status` as the official status of the log
+      enabled: true
+      sources:
+        - status
+    - type: attribute-remapper
+      name: Map `network.ipset_details.ipsetName` to `network.ipset`
+      enabled: true
+      sources:
+        - network.ipset_details.ipsetName
+      target: network.ipset
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute

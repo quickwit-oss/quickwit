@@ -1,0 +1,94 @@
+id: "confluence-audit-records"
+tests:
+ -
+  sample: |-
+    {
+      "summary" : "Group created",
+      "author" : {
+        "operations" : "None",
+        "publicName" : "Unknown user",
+        "displayName" : "System",
+        "isExternalCollaborator" : "False",
+        "accountType" : "",
+        "externalCollaborator" : "False",
+        "type" : "user"
+      },
+      "affectedObject" : {
+        "name" : "confluence-user-access-admins-siemintegrations:123456",
+        "objectType" : "Group"
+      },
+      "description" : "",
+      "sysAdmin" : "False",
+      "creationDate" : "1704443630406",
+      "category" : "Users and groups",
+      "superAdmin" : "False",
+      "remoteAddress" : "185.64.148.140"
+    }
+  result:
+    custom:
+      affectedObject:
+        name: "confluence-user-access-admins-siemintegrations:123456"
+        objectType: "Group"
+      author:
+        accountType: ""
+        externalCollaborator: "False"
+        isExternalCollaborator: "False"
+        operations: "None"
+        publicName: "Unknown user"
+        type: "user"
+      creationDate: "1704443630406"
+      description: ""
+      evt:
+        category: "Users and groups"
+        name: "Group created"
+      network:
+        client:
+          geoip:
+            city:
+              name: "Paris"
+            continent:
+              code: "EU"
+              name: "Europe"
+            country:
+              iso_code: "FR"
+              name: "France"
+            ipAddress: "185.64.148.140"
+            location:
+              latitude: 48.90654
+              longitude: 2.33339
+            subdivision:
+              iso_code: "FR-IDF"
+              name: "Île-de-France"
+            timezone: "Europe/Paris"
+          ip: "185.64.148.140"
+      superAdmin: "False"
+      sysAdmin: "False"
+      usr:
+        name: "System"
+    message: |-
+      {
+        "summary" : "Group created",
+        "author" : {
+          "operations" : "None",
+          "publicName" : "Unknown user",
+          "displayName" : "System",
+          "isExternalCollaborator" : "False",
+          "accountType" : "",
+          "externalCollaborator" : "False",
+          "type" : "user"
+        },
+        "affectedObject" : {
+          "name" : "confluence-user-access-admins-siemintegrations:123456",
+          "objectType" : "Group"
+        },
+        "description" : "",
+        "sysAdmin" : "False",
+        "creationDate" : "1704443630406",
+        "category" : "Users and groups",
+        "superAdmin" : "False",
+        "remoteAddress" : "185.64.148.140"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1704443630406
+

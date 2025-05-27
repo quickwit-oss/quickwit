@@ -1,0 +1,693 @@
+id: "slack"
+tests:
+  - sample: |-
+      {
+        "actor" : {
+          "type" : "user",
+          "user" : {
+            "name" : "Chris Laverdiere",
+            "id" : "U0604NAUUEP",
+            "team" : "T05V7STRHN1",
+            "email" : "chris.laverdiere@datadoghq.com"
+          }
+        },
+        "date_create" : 1702417572,
+        "service" : "audit-logs-service",
+        "context" : {
+          "session_id" : 6019089426594,
+          "location" : {
+            "domain" : "dd-integ-chat",
+            "name" : "Chat Integrations",
+            "id" : "T05V7STRHN1",
+            "type" : "workspace"
+          },
+          "ip_address" : "72.76.145.202",
+          "ua" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_3_1) AppleWebKit/537.36 (KHTML, like Gecko) Slack/4.35.126 Chrome/118.0.5993.89 Electron/27.0.2 Safari/537.36 AppleSilicon Sonic Slack_SSB/4.35.126"
+        },
+        "action" : "channel_renamed",
+        "id" : "a1a9ced1-4451-4488-b0fd-77f9f67e956a",
+        "entity" : {
+          "channel" : {
+            "is_shared" : false,
+            "name" : "testchan2point19",
+            "privacy" : "private",
+            "id" : "C066TRVMPH6",
+            "is_org_shared" : false
+          },
+          "type" : "channel"
+        }
+      }
+    result:
+      custom:
+        action: "channel_renamed"
+        actor:
+          type: "user"
+          user:
+            email: "chris.laverdiere@datadoghq.com"
+            id: "U0604NAUUEP"
+            name: "Chris Laverdiere"
+            team: "T05V7STRHN1"
+        context:
+          ip_address: "72.76.145.202"
+          location:
+            domain: "dd-integ-chat"
+            id: "T05V7STRHN1"
+            name: "Chat Integrations"
+            type: "workspace"
+          session_id: 6019089426594
+          ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_3_1) AppleWebKit/537.36 (KHTML, like Gecko) Slack/4.35.126 Chrome/118.0.5993.89 Electron/27.0.2 Safari/537.36 AppleSilicon Sonic Slack_SSB/4.35.126"
+        date_create: 1702417572
+        date_create_milliseconds: 1.702417572E12
+        entity:
+          channel:
+            id: "C066TRVMPH6"
+            is_org_shared: false
+            is_shared: false
+            name: "testchan2point19"
+            privacy: "private"
+          type: "channel"
+        evt:
+          name: "channel_renamed"
+        http:
+          useragent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_3_1) AppleWebKit/537.36 (KHTML, like Gecko) Slack/4.35.126 Chrome/118.0.5993.89 Electron/27.0.2 Safari/537.36 AppleSilicon Sonic Slack_SSB/4.35.126"
+        id: "a1a9ced1-4451-4488-b0fd-77f9f67e956a"
+        network:
+          client:
+            geoip: {}
+            ip: "72.76.145.202"
+        ocsf:
+          activity_id: 99
+          activity_name: "channel_renamed"
+          actor:
+            user:
+              email_addr: "chris.laverdiere@datadoghq.com"
+              name: "Chris Laverdiere"
+              uid: "U0604NAUUEP"
+          api:
+            operation: "channel_renamed"
+          category_name: "Application Activity"
+          category_uid: 6
+          class_name: "API Activity"
+          class_uid: 6003
+          dst_endpoint:
+            domain: "dd-integ-chat"
+            name: "Chat Integrations"
+            type: "workspace"
+            type_id: 99
+            uid: "T05V7STRHN1"
+          http_request:
+            user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_3_1) AppleWebKit/537.36 (KHTML, like Gecko) Slack/4.35.126 Chrome/118.0.5993.89 Electron/27.0.2 Safari/537.36 AppleSilicon Sonic Slack_SSB/4.35.126"
+          message: "channel_renamed"
+          metadata:
+            event_code: "channel_renamed"
+            product:
+              name: "Slack Audit Log"
+              vendor_name: "Slack"
+            uid: "a1a9ced1-4451-4488-b0fd-77f9f67e956a"
+            version: "1.3.0"
+          severity: "Informational"
+          severity_id: 1
+          src_endpoint:
+            ip: "72.76.145.202"
+          time: 1.702417572E12
+          type_uid: 600399
+        service: "audit-logs-service"
+        slack:
+          channel:
+            id: "C066TRVMPH6"
+            name: "testchan2point19"
+            privacy: "private"
+        usr:
+          email: "chris.laverdiere@datadoghq.com"
+          id: "U0604NAUUEP"
+          name: "Chris Laverdiere"
+          team: "T05V7STRHN1"
+          type: "user"
+      message: |-
+        {
+          "actor" : {
+            "type" : "user",
+            "user" : {
+              "name" : "Chris Laverdiere",
+              "id" : "U0604NAUUEP",
+              "team" : "T05V7STRHN1",
+              "email" : "chris.laverdiere@datadoghq.com"
+            }
+          },
+          "date_create" : 1702417572,
+          "service" : "audit-logs-service",
+          "context" : {
+            "session_id" : 6019089426594,
+            "location" : {
+              "domain" : "dd-integ-chat",
+              "name" : "Chat Integrations",
+              "id" : "T05V7STRHN1",
+              "type" : "workspace"
+            },
+            "ip_address" : "72.76.145.202",
+            "ua" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_3_1) AppleWebKit/537.36 (KHTML, like Gecko) Slack/4.35.126 Chrome/118.0.5993.89 Electron/27.0.2 Safari/537.36 AppleSilicon Sonic Slack_SSB/4.35.126"
+          },
+          "action" : "channel_renamed",
+          "id" : "a1a9ced1-4451-4488-b0fd-77f9f67e956a",
+          "entity" : {
+            "channel" : {
+              "is_shared" : false,
+              "name" : "testchan2point19",
+              "privacy" : "private",
+              "id" : "C066TRVMPH6",
+              "is_org_shared" : false
+            },
+            "type" : "channel"
+          }
+        }
+      service: "audit-logs-service"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1702417572000
+  - sample: |-
+      {
+        "actor" : {
+          "type" : "user",
+          "user" : {
+            "name" : "Charlie Parker",
+            "id" : "W123AB456",
+            "email" : "bird@slack.com"
+          }
+        },
+        "date_create" : 1521214343,
+        "context" : {
+          "session_id" : "847288190092",
+          "location" : {
+            "domain" : "birdland",
+            "name" : "Birdland",
+            "id" : "E1701NCCA",
+            "type" : "enterprise"
+          },
+          "ip_address" : "127.0.0.1",
+          "ua" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/64.0.3282.186 Safari/537.36"
+        },
+        "action" : "user_login",
+        "id" : "0123a45b-6c7d-8900-e12f-3456789gh0i1",
+        "entity" : {
+          "type" : "user",
+          "user" : {
+            "name" : "Charlie Parker",
+            "id" : "W123AB456",
+            "email" : "bird@slack.com"
+          }
+        }
+      }
+    result:
+      custom:
+        action: "user_login"
+        actor:
+          type: "user"
+          user:
+            email: "bird@slack.com"
+            id: "W123AB456"
+            name: "Charlie Parker"
+        context:
+          ip_address: "127.0.0.1"
+          location:
+            domain: "birdland"
+            id: "E1701NCCA"
+            name: "Birdland"
+            type: "enterprise"
+          session_id: "847288190092"
+          ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/64.0.3282.186 Safari/537.36"
+        date_create: 1521214343
+        entity:
+          type: "user"
+          user:
+            email: "bird@slack.com"
+            id: "W123AB456"
+            name: "Charlie Parker"
+        id: "0123a45b-6c7d-8900-e12f-3456789gh0i1"
+        ocsf:
+          activity_id: 1
+          activity_name: "Logon"
+          actor:
+            user:
+              email_addr: "bird@slack.com"
+              name: "Charlie Parker"
+              uid: "W123AB456"
+          category_name: "Identity & Access Management"
+          category_uid: 3
+          class_name: "Authentication"
+          class_uid: 3002
+          dst_endpoint:
+            domain: "birdland"
+            name: "Birdland"
+            type: "enterprise"
+            type_id: 99
+            uid: "E1701NCCA"
+          http_request:
+            user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/64.0.3282.186 Safari/537.36"
+          message: "user_login"
+          metadata:
+            event_code: "user_login"
+            product:
+              name: "Slack Audit Log"
+              vendor_name: "Slack"
+            uid: "0123a45b-6c7d-8900-e12f-3456789gh0i1"
+            version: "1.3.0"
+          severity: "Informational"
+          severity_id: 1
+          src_endpoint:
+            ip: "127.0.0.1"
+          status: "Success"
+          status_id: 1
+          time: 1.521214343E12
+          type_uid: 300201
+          user:
+            email_addr: "bird@slack.com"
+            name: "Charlie Parker"
+            uid: "W123AB456"
+      message: |-
+        {
+          "actor" : {
+            "type" : "user",
+            "user" : {
+              "name" : "Charlie Parker",
+              "id" : "W123AB456",
+              "email" : "bird@slack.com"
+            }
+          },
+          "date_create" : 1521214343,
+          "context" : {
+            "session_id" : "847288190092",
+            "location" : {
+              "domain" : "birdland",
+              "name" : "Birdland",
+              "id" : "E1701NCCA",
+              "type" : "enterprise"
+            },
+            "ip_address" : "127.0.0.1",
+            "ua" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/64.0.3282.186 Safari/537.36"
+          },
+          "action" : "user_login",
+          "id" : "0123a45b-6c7d-8900-e12f-3456789gh0i1",
+          "entity" : {
+            "type" : "user",
+            "user" : {
+              "name" : "Charlie Parker",
+              "id" : "W123AB456",
+              "email" : "bird@slack.com"
+            }
+          }
+        }
+      tags:
+        - "source:LOGS_SOURCE"
+  - sample: |-
+      {
+        "actor" : {
+          "type" : "user",
+          "user" : {
+            "name" : "Charlie Parker",
+            "id" : "W123AB456",
+            "email" : "bird@slack.com"
+          }
+        },
+        "date_create" : 1521214343,
+        "context" : {
+          "session_id" : "847288190092",
+          "location" : {
+            "domain" : "birdland",
+            "name" : "Birdland",
+            "id" : "E1701NCCA",
+            "type" : "enterprise"
+          },
+          "ip_address" : "1.23.45.678",
+          "ua" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/64.0.3282.186 Safari/537.36"
+        },
+        "action" : "user_login",
+        "id" : "0123a45b-6c7d-8900-e12f-3456789gh0i1",
+        "entity" : {
+          "type" : "user",
+          "user" : {
+            "name" : "Charlie Parker",
+            "id" : "W123AB456",
+            "email" : "bird@slack.com"
+          }
+        }
+      }
+    result:
+      custom:
+        action: "user_login"
+        actor:
+          type: "user"
+          user:
+            email: "bird@slack.com"
+            id: "W123AB456"
+            name: "Charlie Parker"
+        context:
+          ip_address: "1.23.45.678"
+          location:
+            domain: "birdland"
+            id: "E1701NCCA"
+            name: "Birdland"
+            type: "enterprise"
+          session_id: "847288190092"
+          ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/64.0.3282.186 Safari/537.36"
+        date_create: 1521214343
+        entity:
+          type: "user"
+          user:
+            email: "bird@slack.com"
+            id: "W123AB456"
+            name: "Charlie Parker"
+        id: "0123a45b-6c7d-8900-e12f-3456789gh0i1"
+        ocsf:
+          activity_id: 1
+          activity_name: "Logon"
+          actor:
+            user:
+              email_addr: "bird@slack.com"
+              name: "Charlie Parker"
+              uid: "W123AB456"
+          category_name: "Identity & Access Management"
+          category_uid: 3
+          class_name: "Authentication"
+          class_uid: 3002
+          dst_endpoint:
+            domain: "birdland"
+            name: "Birdland"
+            type: "enterprise"
+            type_id: 99
+            uid: "E1701NCCA"
+          http_request:
+            user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/64.0.3282.186 Safari/537.36"
+          message: "user_login"
+          metadata:
+            event_code: "user_login"
+            product:
+              name: "Slack Audit Log"
+              vendor_name: "Slack"
+            uid: "0123a45b-6c7d-8900-e12f-3456789gh0i1"
+            version: "1.3.0"
+          severity: "Informational"
+          severity_id: 1
+          src_endpoint:
+            ip: "1.23.45.678"
+          status: "Success"
+          status_id: 1
+          time: 1.521214343E12
+          type_uid: 300201
+          user:
+            email_addr: "bird@slack.com"
+            name: "Charlie Parker"
+            uid: "W123AB456"
+      message: |-
+        {
+          "actor" : {
+            "type" : "user",
+            "user" : {
+              "name" : "Charlie Parker",
+              "id" : "W123AB456",
+              "email" : "bird@slack.com"
+            }
+          },
+          "date_create" : 1521214343,
+          "context" : {
+            "session_id" : "847288190092",
+            "location" : {
+              "domain" : "birdland",
+              "name" : "Birdland",
+              "id" : "E1701NCCA",
+              "type" : "enterprise"
+            },
+            "ip_address" : "1.23.45.678",
+            "ua" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/64.0.3282.186 Safari/537.36"
+          },
+          "action" : "user_login",
+          "id" : "0123a45b-6c7d-8900-e12f-3456789gh0i1",
+          "entity" : {
+            "type" : "user",
+            "user" : {
+              "name" : "Charlie Parker",
+              "id" : "W123AB456",
+              "email" : "bird@slack.com"
+            }
+          }
+        }
+      tags:
+        - "source:LOGS_SOURCE"
+  - sample: |-
+      {
+        "actor" : {
+          "type" : "user",
+          "user" : {
+            "name" : "Charlie Parker",
+            "id" : "W123AB456",
+            "email" : "bird@slack.com"
+          }
+        },
+        "date_create" : 1521214343,
+        "context" : {
+          "session_id" : "847288190092",
+          "location" : {
+            "domain" : "birdland",
+            "name" : "Birdland",
+            "id" : "E1701NCCA",
+            "type" : "enterprise"
+          },
+          "ip_address" : "127.0.0.1",
+          "ua" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/64.0.3282.186 Safari/537.36"
+        },
+        "action" : "guest_deactivated",
+        "id" : "0123a45b-6c7d-8900-e12f-3456789gh0i1",
+        "entity" : {
+          "type" : "user",
+          "user" : {
+            "name" : "Peter Parker",
+            "id" : "W123AB457",
+            "email" : "spidy@slack.com"
+          }
+        }
+      }
+    result:
+      custom:
+        action: "guest_deactivated"
+        actor:
+          type: "user"
+          user:
+            email: "bird@slack.com"
+            id: "W123AB456"
+            name: "Charlie Parker"
+        context:
+          ip_address: "127.0.0.1"
+          location:
+            domain: "birdland"
+            id: "E1701NCCA"
+            name: "Birdland"
+            type: "enterprise"
+          session_id: "847288190092"
+          ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/64.0.3282.186 Safari/537.36"
+        date_create: 1521214343
+        entity:
+          type: "user"
+          user:
+            email: "spidy@slack.com"
+            id: "W123AB457"
+            name: "Peter Parker"
+        id: "0123a45b-6c7d-8900-e12f-3456789gh0i1"
+        ocsf:
+          activity_id: 99
+          activity_name: "guest_deactivated"
+          actor:
+            user:
+              email_addr: "bird@slack.com"
+              name: "Charlie Parker"
+              uid: "W123AB456"
+          api:
+            operation: "guest_deactivated"
+          category_name: "Application Activity"
+          category_uid: 6
+          class_name: "API Activity"
+          class_uid: 6003
+          dst_endpoint:
+            domain: "birdland"
+            name: "Birdland"
+            type: "enterprise"
+            type_id: 99
+            uid: "E1701NCCA"
+          http_request:
+            user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/64.0.3282.186 Safari/537.36"
+          message: "guest_deactivated"
+          metadata:
+            event_code: "guest_deactivated"
+            product:
+              name: "Slack Audit Log"
+              vendor_name: "Slack"
+            uid: "0123a45b-6c7d-8900-e12f-3456789gh0i1"
+            version: "1.3.0"
+          severity: "Informational"
+          severity_id: 1
+          src_endpoint:
+            ip: "127.0.0.1"
+          time: 1.521214343E12
+          type_uid: 600399
+      message: |-
+        {
+          "actor" : {
+            "type" : "user",
+            "user" : {
+              "name" : "Charlie Parker",
+              "id" : "W123AB456",
+              "email" : "bird@slack.com"
+            }
+          },
+          "date_create" : 1521214343,
+          "context" : {
+            "session_id" : "847288190092",
+            "location" : {
+              "domain" : "birdland",
+              "name" : "Birdland",
+              "id" : "E1701NCCA",
+              "type" : "enterprise"
+            },
+            "ip_address" : "127.0.0.1",
+            "ua" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/64.0.3282.186 Safari/537.36"
+          },
+          "action" : "guest_deactivated",
+          "id" : "0123a45b-6c7d-8900-e12f-3456789gh0i1",
+          "entity" : {
+            "type" : "user",
+            "user" : {
+              "name" : "Peter Parker",
+              "id" : "W123AB457",
+              "email" : "spidy@slack.com"
+            }
+          }
+        }
+      tags:
+        - "source:LOGS_SOURCE"
+  - sample: |-
+      {
+        "actor" : {
+          "user" : {
+            "name" : "Test User",
+            "id" : "TESTA123",
+            "team" : "T100000000",
+            "type" : "user",
+            "email" : "test@test.com"
+          }
+        },
+        "date_create" : 1741357698,
+        "context" : {
+          "location" : {
+            "domain" : "test-domain",
+            "name" : "Test",
+            "id" : "T100000000",
+            "type" : "enterprise"
+          },
+          "ip_address" : "1.1.1.1",
+          "ua" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/64.0.3282.186 Safari/537.36"
+        },
+        "action" : "user_created",
+        "id" : "00aaa0aa-089a-4f07-8a00-00a0aaa298a6",
+        "entity" : {
+          "type" : "user",
+          "user" : {
+            "name" : "Test",
+            "id" : "U00WWWG0W0Z",
+            "team" : "T100000000",
+            "email" : "test@test.com"
+          }
+        }
+      }
+    result:
+      custom:
+        action: "user_created"
+        actor:
+          user:
+            email: "test@test.com"
+            id: "TESTA123"
+            name: "Test User"
+            team: "T100000000"
+            type: "user"
+        context:
+          ip_address: "1.1.1.1"
+          location:
+            domain: "test-domain"
+            id: "T100000000"
+            name: "Test"
+            type: "enterprise"
+          ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/64.0.3282.186 Safari/537.36"
+        date_create: 1741357698
+        entity:
+          type: "user"
+          user:
+            email: "test@test.com"
+            id: "U00WWWG0W0Z"
+            name: "Test"
+            team: "T100000000"
+        id: "00aaa0aa-089a-4f07-8a00-00a0aaa298a6"
+        ocsf:
+          activity_id: 1
+          activity_name: "Create"
+          actor:
+            user:
+              email_addr: "test@test.com"
+              name: "Test User"
+              uid: "TESTA123"
+          category_name: "Identity & Access Management"
+          category_uid: 3
+          class_name: "Account Change"
+          class_uid: 3001
+          http_request:
+            user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/64.0.3282.186 Safari/537.36"
+          message: "user_created"
+          metadata:
+            event_code: "user_created"
+            product:
+              name: "Slack Audit Log"
+              vendor_name: "Slack"
+            uid: "00aaa0aa-089a-4f07-8a00-00a0aaa298a6"
+            version: "1.3.0"
+          severity: "Informational"
+          severity_id: 1
+          src_endpoint:
+            ip: "1.1.1.1"
+          time: 1.741357698E12
+          type_uid: 300101
+          user:
+            email_addr: "test@test.com"
+            name: "Test"
+            uid: "U00WWWG0W0Z"
+      message: |-
+        {
+          "actor" : {
+            "user" : {
+              "name" : "Test User",
+              "id" : "TESTA123",
+              "team" : "T100000000",
+              "type" : "user",
+              "email" : "test@test.com"
+            }
+          },
+          "date_create" : 1741357698,
+          "context" : {
+            "location" : {
+              "domain" : "test-domain",
+              "name" : "Test",
+              "id" : "T100000000",
+              "type" : "enterprise"
+            },
+            "ip_address" : "1.1.1.1",
+            "ua" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/64.0.3282.186 Safari/537.36"
+          },
+          "action" : "user_created",
+          "id" : "00aaa0aa-089a-4f07-8a00-00a0aaa298a6",
+          "entity" : {
+            "type" : "user",
+            "user" : {
+              "name" : "Test",
+              "id" : "U00WWWG0W0Z",
+              "team" : "T100000000",
+              "email" : "test@test.com"
+            }
+          }
+        }
+      tags:
+        - "source:LOGS_SOURCE"

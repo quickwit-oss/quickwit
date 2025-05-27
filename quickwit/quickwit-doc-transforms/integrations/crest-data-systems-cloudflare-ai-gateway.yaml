@@ -1,0 +1,74 @@
+id: crest-data-systems-cloudflare-ai-gateway
+metric_id: crest-data-systems-cloudflare-ai-gateway
+backend_only: false
+facets:
+  - facetType: range
+    groups:
+      - Crest Data Cloudflare AI Gateway
+    name: Count
+    path: cds.cloudflare_ai_gateway.count
+    source: log
+    type: integer
+  - facetType: range
+    groups:
+      - Crest Data Cloudflare AI Gateway
+    name: Uncached Tokens In
+    path: cds.cloudflare_ai_gateway.sum.uncachedTokensIn
+    source: log
+    type: integer
+  - facetType: range
+    groups:
+      - Crest Data Cloudflare AI Gateway
+    name: Uncached Tokens Out
+    path: cds.cloudflare_ai_gateway.sum.uncachedTokensOut
+    source: log
+    type: integer
+pipeline:
+  type: pipeline
+  name: Cloudflare AI Gateway by Crest Data
+  enabled: true
+  filter:
+    query: "source:crest-data-systems-cloudflare-ai-gateway"
+  processors:
+    - type: date-remapper
+      name: Define `dimensions.ts` as the official date of the log
+      enabled: true
+      sources:
+        - dimensions.ts
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: attribute-remapper
+      name: Map `count` to `cds.cloudflare_ai_gateway.count`
+      enabled: true
+      sources:
+        - count
+      sourceType: attribute
+      target: cds.cloudflare_ai_gateway.count
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `sum.uncachedTokensIn` to
+        `cds.cloudflare_ai_gateway.sum.uncachedTokensIn`
+      enabled: true
+      sources:
+        - sum.uncachedTokensIn
+      sourceType: attribute
+      target: cds.cloudflare_ai_gateway.sum.uncachedTokensIn
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `sum.uncachedTokensOut` to
+        `cds.cloudflare_ai_gateway.sum.uncachedTokensOut`
+      enabled: true
+      sources:
+        - sum.uncachedTokensOut
+      sourceType: attribute
+      target: cds.cloudflare_ai_gateway.sum.uncachedTokensOut
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false

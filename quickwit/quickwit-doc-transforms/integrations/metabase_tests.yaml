@@ -1,0 +1,279 @@
+id: "metabase"
+tests:
+ -
+  sample: |-
+    {
+      "entity_qualified_id" : "dashboard_11",
+      "entity_type" : "dashboard",
+      "user_id" : 1,
+      "topic" : "dashboard-add-cards",
+      "details" : {
+        "dashcards" : [ {
+          "name" : "Client, Filtered by Client ID is abc",
+          "id" : 118,
+          "card_id" : 120
+        } ],
+        "name" : "Views",
+        "id" : 11
+      },
+      "id" : "178",
+      "entity_id" : 11,
+      "timestamp" : "2024-09-30T11:47:26.247269+05:30"
+    }
+  service: "activity-events"
+  result:
+    custom:
+      details:
+        dashcards:
+         -
+          name: "Client, Filtered by Client ID is abc"
+          id: 118
+          card_id: 120
+        id: 11
+        name: "Views"
+      entity_id: 11
+      entity_qualified_id: "dashboard_11"
+      entity_type: "dashboard"
+      evt:
+        name: "dashboard-add-cards"
+      id: "178"
+      timestamp: "2024-09-30T11:47:26.247269+05:30"
+      usr:
+        id: 1
+    message: |-
+      {
+        "entity_qualified_id" : "dashboard_11",
+        "entity_type" : "dashboard",
+        "user_id" : 1,
+        "topic" : "dashboard-add-cards",
+        "details" : {
+          "dashcards" : [ {
+            "name" : "Client, Filtered by Client ID is abc",
+            "id" : 118,
+            "card_id" : 120
+          } ],
+          "name" : "Views",
+          "id" : 11
+        },
+        "id" : "178",
+        "entity_id" : 11,
+        "timestamp" : "2024-09-30T11:47:26.247269+05:30"
+      }
+    service: "activity-events"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1727677046247
+ -
+  sample: |-
+    {
+      "entity_type" : "setting",
+      "user_id" : 1,
+      "topic" : "setting-update",
+      "details" : {
+        "previous-value" : "UCT",
+        "key" : "report-timezone",
+        "new-value" : "UTC"
+      },
+      "id" : "188",
+      "timestamp" : "2024-09-30T12:37:04.133904+05:30"
+    }
+  service: "activity-events"
+  result:
+    custom:
+      details:
+        key: "report-timezone"
+        new-value: "UTC"
+        previous-value: "UCT"
+      entity_type: "setting"
+      evt:
+        name: "setting-update"
+      id: "188"
+      timestamp: "2024-09-30T12:37:04.133904+05:30"
+      usr:
+        id: 1
+    message: |-
+      {
+        "entity_type" : "setting",
+        "user_id" : 1,
+        "topic" : "setting-update",
+        "details" : {
+          "previous-value" : "UCT",
+          "key" : "report-timezone",
+          "new-value" : "UTC"
+        },
+        "id" : "188",
+        "timestamp" : "2024-09-30T12:37:04.133904+05:30"
+      }
+    service: "activity-events"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1727680024133
+ -
+  sample: |-
+    {
+      "entity_qualified_id" : "dashboard_1",
+      "user_email" : "abc.xyz@something.com",
+      "database_name" : "Sample Database",
+      "table_description" : "Information on customer accounts registered with Piespace. Each account represents a new organization signing up for on-demand pies.",
+      "entity_id" : 1,
+      "table_name" : "ACCOUNTS",
+      "entity_type" : "table",
+      "user_type" : "personal",
+      "user_id" : 1,
+      "database_description" : "Some example data for you to play around with.",
+      "user_full_name" : "Abc Xyz",
+      "table_display_name" : "Accounts",
+      "id" : "12",
+      "timestamp" : "2024-09-05T11:59:10.181879Z"
+    }
+  service: "view-logs"
+  result:
+    custom:
+      database_description: "Some example data for you to play around with."
+      database_name: "Sample Database"
+      entity_description: "Information on customer accounts registered with Piespace. Each account represents a new organization signing up for on-demand pies."
+      entity_display_name: "Accounts"
+      entity_id: 1
+      entity_name: "ACCOUNTS"
+      entity_qualified_id: "dashboard_1"
+      entity_type: "table"
+      id: "12"
+      timestamp: "2024-09-05T11:59:10.181879Z"
+      user_type: "personal"
+      usr:
+        email: "abc.xyz@something.com"
+        id: 1
+        name: "Abc Xyz"
+    message: |-
+      {
+        "entity_qualified_id" : "dashboard_1",
+        "user_email" : "abc.xyz@something.com",
+        "database_name" : "Sample Database",
+        "table_description" : "Information on customer accounts registered with Piespace. Each account represents a new organization signing up for on-demand pies.",
+        "entity_id" : 1,
+        "table_name" : "ACCOUNTS",
+        "entity_type" : "table",
+        "user_type" : "personal",
+        "user_id" : 1,
+        "database_description" : "Some example data for you to play around with.",
+        "user_full_name" : "Abc Xyz",
+        "table_display_name" : "Accounts",
+        "id" : "12",
+        "timestamp" : "2024-09-05T11:59:10.181879Z"
+      }
+    service: "view-logs"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1725537550181
+ -
+  sample: |-
+    {
+      "result_rows" : 2,
+      "error" : "Error in query, something is invalid",
+      "database_qualified_id" : "database_1",
+      "dashboard_description" : "Views, performance, activity, and other data for a particular question.",
+      "pulse_id" : 6,
+      "cache_hit" : false,
+      "user_type" : "personal",
+      "dashboard_qualified_id" : "dashboard_5",
+      "action_id" : 7,
+      "database_description" : "Some example data for you to play around with.",
+      "user_email" : "abc.xyz@something.com",
+      "query_source" : "dashboard",
+      "dashboard_name" : "Question overview",
+      "database_name" : "Sample Database",
+      "is_native" : false,
+      "query" : {
+        "constraints" : {
+          "max-results" : 10000,
+          "max-results-bare-rows" : 2000
+        }
+      },
+      "entity_id" : "306",
+      "card_description" : "Most recently downloaded content.",
+      "card_id" : 85,
+      "running_time_seconds" : 0.169,
+      "user_id" : "1",
+      "database_id" : 13371337,
+      "user_full_name" : "Abc Xyz",
+      "card_name" : "Last downloads",
+      "started_at" : "2024-09-10T10:37:35.965619Z",
+      "card_qualified_id" : "card_85",
+      "action_qualified_id" : "action_7",
+      "dashboard_id" : 5
+    }
+  service: "query-logs"
+  result:
+    custom:
+      action_id: 7
+      action_qualified_id: "action_7"
+      cache_hit: false
+      card_description: "Most recently downloaded content."
+      card_id: 85
+      card_name: "Last downloads"
+      card_qualified_id: "card_85"
+      dashboard_description: "Views, performance, activity, and other data for a particular question."
+      dashboard_id: 5
+      dashboard_name: "Question overview"
+      dashboard_qualified_id: "dashboard_5"
+      database_description: "Some example data for you to play around with."
+      database_id: 13371337
+      database_name: "Sample Database"
+      database_qualified_id: "database_1"
+      entity_id: "306"
+      error: "Error in query, something is invalid"
+      is_native: false
+      pulse_id: 6
+      query:
+        constraints:
+          max-results: 10000
+          max-results-bare-rows: 2000
+      query_source: "dashboard"
+      result_rows: 2
+      running_time_seconds: 0.169
+      started_at: "2024-09-10T10:37:35.965619Z"
+      user_type: "personal"
+      usr:
+        email: "abc.xyz@something.com"
+        id: "1"
+        name: "Abc Xyz"
+    message: |-
+      {
+        "result_rows" : 2,
+        "error" : "Error in query, something is invalid",
+        "database_qualified_id" : "database_1",
+        "dashboard_description" : "Views, performance, activity, and other data for a particular question.",
+        "pulse_id" : 6,
+        "cache_hit" : false,
+        "user_type" : "personal",
+        "dashboard_qualified_id" : "dashboard_5",
+        "action_id" : 7,
+        "database_description" : "Some example data for you to play around with.",
+        "user_email" : "abc.xyz@something.com",
+        "query_source" : "dashboard",
+        "dashboard_name" : "Question overview",
+        "database_name" : "Sample Database",
+        "is_native" : false,
+        "query" : {
+          "constraints" : {
+            "max-results" : 10000,
+            "max-results-bare-rows" : 2000
+          }
+        },
+        "entity_id" : "306",
+        "card_description" : "Most recently downloaded content.",
+        "card_id" : 85,
+        "running_time_seconds" : 0.169,
+        "user_id" : "1",
+        "database_id" : 13371337,
+        "user_full_name" : "Abc Xyz",
+        "card_name" : "Last downloads",
+        "started_at" : "2024-09-10T10:37:35.965619Z",
+        "card_qualified_id" : "card_85",
+        "action_qualified_id" : "action_7",
+        "dashboard_id" : 5
+      }
+    service: "query-logs"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1725964655965

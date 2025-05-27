@@ -1,0 +1,41 @@
+id: mwaa
+tests:
+  - sample: "[2025-01-20T17:30:06.797+0000] {dag.py:21} ERROR - This is an
+      error log from the task"
+    result:
+      custom:
+        filename: "dag.py"
+        level: "ERROR"
+        lineno: 21
+        timestamp: 1737394206797
+      message: "This is an error log from the task"
+      status: "error"
+      tags:
+       - "source:LOGS_SOURCE"
+      timestamp: 1737394206797
+  - sample: "[2025-01-20T17:28:06.431+0000] {dag.py:20} WARNING - This is a
+      warning log from the task"
+    result:
+      custom:
+        filename: "dag.py"
+        level: "WARNING"
+        lineno: 20
+        timestamp: 1737394086431
+      message: "This is a warning log from the task"
+      status: "warn"
+      tags:
+       - "source:LOGS_SOURCE"
+      timestamp: 1737394086431
+  - sample: "[2025-01-20T17:28:06.431+0000] {logging_mixin.py:190} INFO - Task is
+      running"
+    result: 
+      custom:
+        filename: "logging_mixin.py"
+        level: "INFO"
+        lineno: 190
+        timestamp: 1737394086431
+      message: "Task is running"
+      status: "info"
+      tags:
+       - "source:LOGS_SOURCE"
+      timestamp: 1737394086431

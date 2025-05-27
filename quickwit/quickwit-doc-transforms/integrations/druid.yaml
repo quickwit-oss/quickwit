@@ -1,0 +1,121 @@
+id: druid
+metric_id: druid
+backend_only: false
+facets:
+  - facetType: range
+    groups:
+      - Measure
+    name: Duration
+    path: duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: nanosecond
+  - groups:
+      - Source Code
+    name: Error Type
+    path: error.kind
+    source: log
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+  - groups:
+      - Source Code
+    name: Thread Name
+    path: logger.thread_name
+    source: log
+pipeline:
+  type: pipeline
+  name: Druid
+  enabled: true
+  filter:
+    query: source:druid
+  processors:
+    - type: grok-parser
+      name: Parsing Druid formats
+      enabled: true
+      source: message
+      samples:
+        - 2019-07-25T20:12:02,335 INFO [main] org.apache.druid.server.metrics.MetricsModule - Adding monitor[org.apache.druid.java.util.metrics.JvmMonitor@2fd954f]
+        - |-
+          2000-09-07T14:07:41,508 INFO [main] MyApp - 1321281354128614668 5986620922286636160 - Test
+          Exception in thread "main" java.lang.RuntimeException: com.google.inject.CreationException: Unable to create injector, see the following errors:
+          1) No implementation for java.util.List<org.apache.druid.segment.realtime.FireDepartment> was bound.
+      grok:
+        supportRules: |
+          _date %{date("yyyy-MM-dd'T'HH:mm:ss,SSS"):timestamp}
+          _thread_name %{notSpace:logger.thread_name}
+          _status %{word:level}
+          _logger_name %{notSpace:logger.name}
+          _line %{integer:line}
+
+        matchRules: |
+          druid %{_date}\s+%{_status}\s+\[%{_thread_name}\]\s+%{_logger_name}\s+-\s+(?>%{word:dd.trace_id} %{word:dd.span_id} - )?%{data:message}((\n|\t)%{data:error.stack})?
+    - type: grok-parser
+      name: Parsing Java Default formats
+      enabled: true
+      source: message
+      samples:
+        - 2000-09-07 14:07:41,508 [main] INFO  MyApp - Entering application.
+        - 54 [main] INFO MyApp.foo.bar - Entering application.
+        - 2000-09-07 14:07:44 INFO org.foo.bar:32 - Entering application.
+        - 2000-09-07 14:07:44.452 [main] INFO org.foo.bar - Entering application.
+      grok:
+        supportRules: |
+          _date %{date("yyyy-MM-dd HH:mm:ss"):timestamp}
+          _date_ms %{date("yyyy-MM-dd HH:mm:ss,SSS"):timestamp}
+          _date_slf4j %{date("yyyy-MM-dd HH:mm:ss.SSS"):timestamp}
+          _duration %{integer:duration}
+          _thread_name %{notSpace:logger.thread_name}
+          _status %{word:level}
+          _logger_name %{notSpace:logger.name}
+          _context %{notSpace:logger.context}
+          _line %{integer:line}
+
+        matchRules: |
+          # Same as java integration
+
+          java_default (%{_date_ms}|%{_duration})\s+\[%{_thread_name}\]\s+%{_status}\s+%{_logger_name}\s*(%{_context}\s*)?- (?>%{word:dd.trace_id} %{word:dd.span_id} - )?%{data:message}((\n|\t)%{data:error.stack})?
+
+          java_slf4j %{_date_slf4j}\s+\[%{_thread_name}\]\s+%{_status}\s+%{_logger_name}\s*(%{_context}\s*)?- (?>%{word:dd.trace_id} %{word:dd.span_id} - )?%{data:message}((\n|\t)%{data:error.stack})?
+
+          java_log4j %{_date} %{_status}\s+%{_logger_name}:%{_line}\s+- (?>%{word:dd.trace_id} %{word:dd.span_id} - )?%{data:message}((\n|\t)%{data:error.stack})?
+
+          java_fallback (%{_date}|%{_date_ms}) %{_status}\s+(?>%{word:dd.trace_id} %{word:dd.span_id} )?%{data:message}((\n|\t)%{data:error.stack})?
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message
+    - type: trace-id-remapper
+      name: Define `dd.trace_id` as the official trace ID of the log
+      enabled: true
+      sources:
+        - dd.trace_id
+    - type: grok-parser
+      name: Parsing Stack traces
+      enabled: true
+      source: error.stack
+      grok:
+        supportRules: |
+        matchRules: |
+          error_rule %{notSpace:error.kind}: %{data:error.message}(\n|\t).*
+      samples:
+        - |
+          com.fasterxml.jackson.core.JsonParseException: Unexpected end-of-input: expected close marker for ARRAY
+            at [Source: [org.apache.druid.client.cache.CacheMonitor, line: 1, column: 727]
+              at com.fasterxml.jackson.core.JsonParser
+              at com.fasterxml.jackson.core.base.ParserMinimalBase

@@ -1,0 +1,563 @@
+id: "runtime-security-agent"
+tests:
+ -
+  sample: |-
+    {
+      "container" : {
+        "id" : "8c5cace6e4a6101e20311ee41ec1c784bdbccc6d9d6ae5b93a7cb6c2852b497e"
+      },
+      "date" : "2021-03-23T14:17:46.126232748Z",
+      "evt" : {
+        "name" : "open",
+        "category" : "File Activity",
+        "outcome" : "Success"
+      },
+      "process" : {
+        "executable_container_path" : "/run/containerd/io.containerd.runtime.v1.linux/k8s.io/8c5cace6e4a6101e20311ee41ec1c784bdbccc6d9d6ae5b93a7cb6c2852b497e/rootfs",
+        "executable_inode" : 266658,
+        "comm" : "trace-agent",
+        "gid" : 0,
+        "credentials" : {
+          "egroup" : "root",
+          "fsuser" : "root",
+          "gid" : 0,
+          "euid" : 0,
+          "fsgid" : 0,
+          "fsgroup" : "root",
+          "fsuid" : 0,
+          "uid" : 0,
+          "egid" : 0,
+          "euser" : "root",
+          "cap_effective" : [ "CAP_AUDIT_WRITE", "CAP_CHOWN", "CAP_DAC_OVERRIDE", "CAP_FOWNER", "CAP_FSETID", "CAP_KILL", "CAP_MKNOD", "CAP_NET_BIND_SERVICE", "CAP_NET_RAW", "CAP_SETFCAP", "CAP_SETGID", "CAP_SETPCAP", "CAP_SETUID", "CAP_SYS_CHROOT" ],
+          "user" : "root",
+          "cap_permitted" : [ "CAP_AUDIT_WRITE", "CAP_CHOWN", "CAP_DAC_OVERRIDE", "CAP_FOWNER", "CAP_FSETID", "CAP_KILL", "CAP_MKNOD", "CAP_NET_BIND_SERVICE", "CAP_NET_RAW", "CAP_SETFCAP", "CAP_SETGID", "CAP_SETPCAP", "CAP_SETUID", "CAP_SYS_CHROOT" ],
+          "group" : "root"
+        },
+        "pid" : 1792,
+        "tid" : 1809,
+        "executable" : {
+          "inode" : 266658,
+          "mode" : 33261,
+          "path" : "/opt/datadog-agent/embedded/bin/trace-agent",
+          "name" : "trace-agent",
+          "in_upper_layer" : false,
+          "container_path" : "/run/containerd/io.containerd.runtime.v1.linux/k8s.io/8c5cace6e4a6101e20311ee41ec1c784bdbccc6d9d6ae5b93a7cb6c2852b497e/rootfs",
+          "user" : "root",
+          "modification_time" : "2021-03-23T11:55:51Z",
+          "mount_id" : 1172,
+          "filesystem" : "overlay",
+          "change_time" : "2021-03-23T14:17:08.444344215Z",
+          "group" : "root"
+        },
+        "uid" : 0,
+        "executable_mount_id" : 1172,
+        "tty" : "null",
+        "exec_time" : "2021-03-23T14:17:33Z",
+        "executable_path" : "/opt/datadog-agent/embedded/bin/trace-agent",
+        "user" : "root",
+        "fork_time" : "2021-03-23T14:17:33Z",
+        "group" : "root"
+      },
+      "agent" : {
+        "rule_id" : "logs_altered",
+        "policy_version" : "1.0.2",
+        "policy_name" : "default.policy"
+      },
+      "file" : {
+        "flags" : [ "O_CLOEXEC", "O_CREAT", "O_RDWR", "O_TRUNC" ],
+        "destination" : {
+          "mode" : 438
+        },
+        "filesystem" : "ext4",
+        "inode" : 1283672,
+        "mode" : 33188,
+        "path" : "/var/log/datadog/trace-agent.log",
+        "name" : "trace-agent.log",
+        "container_path" : "/run/containerd/io.containerd.runtime.v1.linux/k8s.io/8c5cace6e4a6101e20311ee41ec1c784bdbccc6d9d6ae5b93a7cb6c2852b497e/rootfs",
+        "user" : "root",
+        "modification_time" : "2021-03-23T14:17:46.228237845Z",
+        "mount_id" : 1199,
+        "change_time" : "2021-03-23T14:17:46.228237845Z",
+        "group" : "root"
+      },
+      "usr" : {
+        "id" : "root",
+        "group" : "root"
+      },
+      "title" : "Log data was deleted"
+    }
+  result:
+    custom:
+      agent:
+        policy_name: "default.policy"
+        policy_version: "1.0.2"
+        rule_id: "logs_altered"
+      container:
+        id: "8c5cace6e4a6101e20311ee41ec1c784bdbccc6d9d6ae5b93a7cb6c2852b497e"
+      date: "2021-03-23T14:17:46.126232748Z"
+      evt:
+        category: "File Activity"
+        name: "open"
+        outcome: "Success"
+      file:
+        change_time: "2021-03-23T14:17:46.228237845Z"
+        container_path: "/run/containerd/io.containerd.runtime.v1.linux/k8s.io/8c5cace6e4a6101e20311ee41ec1c784bdbccc6d9d6ae5b93a7cb6c2852b497e/rootfs"
+        destination:
+          mode: 438
+        filesystem: "ext4"
+        flags:
+         - "O_CLOEXEC"
+         - "O_CREAT"
+         - "O_RDWR"
+         - "O_TRUNC"
+        group: "root"
+        inode: 1283672
+        mode: 33188
+        modification_time: "2021-03-23T14:17:46.228237845Z"
+        mount_id: 1199
+        name: "trace-agent.log"
+        path: "/var/log/datadog/trace-agent.log"
+        user: "root"
+      process:
+        comm: "trace-agent"
+        credentials:
+          cap_effective:
+           - "CAP_AUDIT_WRITE"
+           - "CAP_CHOWN"
+           - "CAP_DAC_OVERRIDE"
+           - "CAP_FOWNER"
+           - "CAP_FSETID"
+           - "CAP_KILL"
+           - "CAP_MKNOD"
+           - "CAP_NET_BIND_SERVICE"
+           - "CAP_NET_RAW"
+           - "CAP_SETFCAP"
+           - "CAP_SETGID"
+           - "CAP_SETPCAP"
+           - "CAP_SETUID"
+           - "CAP_SYS_CHROOT"
+          cap_permitted:
+           - "CAP_AUDIT_WRITE"
+           - "CAP_CHOWN"
+           - "CAP_DAC_OVERRIDE"
+           - "CAP_FOWNER"
+           - "CAP_FSETID"
+           - "CAP_KILL"
+           - "CAP_MKNOD"
+           - "CAP_NET_BIND_SERVICE"
+           - "CAP_NET_RAW"
+           - "CAP_SETFCAP"
+           - "CAP_SETGID"
+           - "CAP_SETPCAP"
+           - "CAP_SETUID"
+           - "CAP_SYS_CHROOT"
+          egid: 0
+          egroup: "root"
+          euid: 0
+          euser: "root"
+          fsgid: 0
+          fsgroup: "root"
+          fsuid: 0
+          fsuser: "root"
+          gid: 0
+          group: "root"
+          uid: 0
+          user: "root"
+        exec_time: "2021-03-23T14:17:33Z"
+        executable:
+          change_time: "2021-03-23T14:17:08.444344215Z"
+          container_path: "/run/containerd/io.containerd.runtime.v1.linux/k8s.io/8c5cace6e4a6101e20311ee41ec1c784bdbccc6d9d6ae5b93a7cb6c2852b497e/rootfs"
+          filesystem: "overlay"
+          group: "root"
+          in_upper_layer: false
+          inode: 266658
+          mode: 33261
+          modification_time: "2021-03-23T11:55:51Z"
+          mount_id: 1172
+          name: "trace-agent"
+          path: "/opt/datadog-agent/embedded/bin/trace-agent"
+          user: "root"
+        executable_container_path: "/run/containerd/io.containerd.runtime.v1.linux/k8s.io/8c5cace6e4a6101e20311ee41ec1c784bdbccc6d9d6ae5b93a7cb6c2852b497e/rootfs"
+        executable_inode: 266658
+        executable_mount_id: 1172
+        executable_path: "/opt/datadog-agent/embedded/bin/trace-agent"
+        fork_time: "2021-03-23T14:17:33Z"
+        gid: 0
+        group: "root"
+        pid: 1792
+        tid: 1809
+        tty: "null"
+        uid: 0
+        user: "root"
+      title: "Log data was deleted"
+      usr:
+        group: "root"
+        id: "root"
+    message: |-
+      {
+        "container" : {
+          "id" : "8c5cace6e4a6101e20311ee41ec1c784bdbccc6d9d6ae5b93a7cb6c2852b497e"
+        },
+        "date" : "2021-03-23T14:17:46.126232748Z",
+        "evt" : {
+          "name" : "open",
+          "category" : "File Activity",
+          "outcome" : "Success"
+        },
+        "process" : {
+          "executable_container_path" : "/run/containerd/io.containerd.runtime.v1.linux/k8s.io/8c5cace6e4a6101e20311ee41ec1c784bdbccc6d9d6ae5b93a7cb6c2852b497e/rootfs",
+          "executable_inode" : 266658,
+          "comm" : "trace-agent",
+          "gid" : 0,
+          "credentials" : {
+            "egroup" : "root",
+            "fsuser" : "root",
+            "gid" : 0,
+            "euid" : 0,
+            "fsgid" : 0,
+            "fsgroup" : "root",
+            "fsuid" : 0,
+            "uid" : 0,
+            "egid" : 0,
+            "euser" : "root",
+            "cap_effective" : [ "CAP_AUDIT_WRITE", "CAP_CHOWN", "CAP_DAC_OVERRIDE", "CAP_FOWNER", "CAP_FSETID", "CAP_KILL", "CAP_MKNOD", "CAP_NET_BIND_SERVICE", "CAP_NET_RAW", "CAP_SETFCAP", "CAP_SETGID", "CAP_SETPCAP", "CAP_SETUID", "CAP_SYS_CHROOT" ],
+            "user" : "root",
+            "cap_permitted" : [ "CAP_AUDIT_WRITE", "CAP_CHOWN", "CAP_DAC_OVERRIDE", "CAP_FOWNER", "CAP_FSETID", "CAP_KILL", "CAP_MKNOD", "CAP_NET_BIND_SERVICE", "CAP_NET_RAW", "CAP_SETFCAP", "CAP_SETGID", "CAP_SETPCAP", "CAP_SETUID", "CAP_SYS_CHROOT" ],
+            "group" : "root"
+          },
+          "pid" : 1792,
+          "tid" : 1809,
+          "executable" : {
+            "inode" : 266658,
+            "mode" : 33261,
+            "path" : "/opt/datadog-agent/embedded/bin/trace-agent",
+            "name" : "trace-agent",
+            "in_upper_layer" : false,
+            "container_path" : "/run/containerd/io.containerd.runtime.v1.linux/k8s.io/8c5cace6e4a6101e20311ee41ec1c784bdbccc6d9d6ae5b93a7cb6c2852b497e/rootfs",
+            "user" : "root",
+            "modification_time" : "2021-03-23T11:55:51Z",
+            "mount_id" : 1172,
+            "filesystem" : "overlay",
+            "change_time" : "2021-03-23T14:17:08.444344215Z",
+            "group" : "root"
+          },
+          "uid" : 0,
+          "executable_mount_id" : 1172,
+          "tty" : "null",
+          "exec_time" : "2021-03-23T14:17:33Z",
+          "executable_path" : "/opt/datadog-agent/embedded/bin/trace-agent",
+          "user" : "root",
+          "fork_time" : "2021-03-23T14:17:33Z",
+          "group" : "root"
+        },
+        "agent" : {
+          "rule_id" : "logs_altered",
+          "policy_version" : "1.0.2",
+          "policy_name" : "default.policy"
+        },
+        "file" : {
+          "flags" : [ "O_CLOEXEC", "O_CREAT", "O_RDWR", "O_TRUNC" ],
+          "destination" : {
+            "mode" : 438
+          },
+          "filesystem" : "ext4",
+          "inode" : 1283672,
+          "mode" : 33188,
+          "path" : "/var/log/datadog/trace-agent.log",
+          "name" : "trace-agent.log",
+          "container_path" : "/run/containerd/io.containerd.runtime.v1.linux/k8s.io/8c5cace6e4a6101e20311ee41ec1c784bdbccc6d9d6ae5b93a7cb6c2852b497e/rootfs",
+          "user" : "root",
+          "modification_time" : "2021-03-23T14:17:46.228237845Z",
+          "mount_id" : 1199,
+          "change_time" : "2021-03-23T14:17:46.228237845Z",
+          "group" : "root"
+        },
+        "usr" : {
+          "id" : "root",
+          "group" : "root"
+        },
+        "title" : "Log data was deleted"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "container" : {
+        "id" : "8c5cace6e4a6101e20311ee41ec1c784bdbccc6d9d6ae5b93a7cb6c2852b497e"
+      },
+      "date" : "2021-03-23T14:17:46.126232748Z",
+      "evt" : {
+        "name" : "open",
+        "category" : "File Activity",
+        "outcome" : "Success"
+      },
+      "process" : {
+        "executable_container_path" : "/run/containerd/io.containerd.runtime.v1.linux/k8s.io/8c5cace6e4a6101e20311ee41ec1c784bdbccc6d9d6ae5b93a7cb6c2852b497e/rootfs",
+        "executable_inode" : 266658,
+        "comm" : "trace-agent",
+        "gid" : 0,
+        "credentials" : {
+          "egroup" : "root",
+          "fsuser" : "root",
+          "gid" : 0,
+          "euid" : 0,
+          "fsgid" : 0,
+          "fsgroup" : "root",
+          "fsuid" : 0,
+          "uid" : 0,
+          "egid" : 0,
+          "euser" : "root",
+          "cap_effective" : [ "CAP_AUDIT_WRITE", "CAP_CHOWN", "CAP_DAC_OVERRIDE", "CAP_FOWNER", "CAP_FSETID", "CAP_KILL", "CAP_MKNOD", "CAP_NET_BIND_SERVICE", "CAP_NET_RAW", "CAP_SETFCAP", "CAP_SETGID", "CAP_SETPCAP", "CAP_SETUID", "CAP_SYS_CHROOT" ],
+          "user" : "root",
+          "cap_permitted" : [ "CAP_AUDIT_WRITE", "CAP_CHOWN", "CAP_DAC_OVERRIDE", "CAP_FOWNER", "CAP_FSETID", "CAP_KILL", "CAP_MKNOD", "CAP_NET_BIND_SERVICE", "CAP_NET_RAW", "CAP_SETFCAP", "CAP_SETGID", "CAP_SETPCAP", "CAP_SETUID", "CAP_SYS_CHROOT" ],
+          "group" : "root"
+        },
+        "pid" : 1792,
+        "tid" : 1809,
+        "executable" : {
+          "inode" : 266658,
+          "mode" : 33261,
+          "path" : "/opt/datadog-agent/embedded/bin/trace-agent",
+          "name" : "trace-agent",
+          "in_upper_layer" : false,
+          "container_path" : "/run/containerd/io.containerd.runtime.v1.linux/k8s.io/8c5cace6e4a6101e20311ee41ec1c784bdbccc6d9d6ae5b93a7cb6c2852b497e/rootfs",
+          "user" : "root",
+          "modification_time" : "2021-03-23T11:55:51Z",
+          "mount_id" : 1172,
+          "filesystem" : "overlay",
+          "change_time" : "2021-03-23T14:17:08.444344215Z",
+          "group" : "root"
+        },
+        "uid" : 0,
+        "executable_mount_id" : 1172,
+        "tty" : "null",
+        "exec_time" : "2021-03-23T14:17:33Z",
+        "executable_path" : "/opt/datadog-agent/embedded/bin/trace-agent",
+        "user" : "root",
+        "fork_time" : "2021-03-23T14:17:33Z",
+        "group" : "root"
+      },
+      "agent" : {
+        "rule_id" : "logs_altered",
+        "policy_version" : "1.0.2",
+        "policy_name" : "default.policy"
+      },
+      "file" : {
+        "flags" : [ "O_CLOEXEC", "O_CREAT", "O_RDWR", "O_TRUNC" ],
+        "destination" : {
+          "mode" : 438
+        },
+        "filesystem" : "ext4",
+        "inode" : 1283672,
+        "mode" : 33188,
+        "path" : "/var/log/datadog/trace-agent.log",
+        "name" : "trace-agent.log",
+        "container_path" : "/run/containerd/io.containerd.runtime.v1.linux/k8s.io/8c5cace6e4a6101e20311ee41ec1c784bdbccc6d9d6ae5b93a7cb6c2852b497e/rootfs",
+        "user" : "root",
+        "modification_time" : "2021-03-23T14:17:46.228237845Z",
+        "mount_id" : 1199,
+        "change_time" : "2021-03-23T14:17:46.228237845Z",
+        "group" : "root"
+      },
+      "usr" : {
+        "id" : "root",
+        "group" : "root"
+      },
+      "title" : "Log data was deleted"
+    }
+  result:
+    custom:
+      agent:
+        policy_name: "default.policy"
+        policy_version: "1.0.2"
+        rule_id: "logs_altered"
+      container:
+        id: "8c5cace6e4a6101e20311ee41ec1c784bdbccc6d9d6ae5b93a7cb6c2852b497e"
+      date: "2021-03-23T14:17:46.126232748Z"
+      evt:
+        category: "File Activity"
+        name: "open"
+        outcome: "Success"
+      file:
+        change_time: "2021-03-23T14:17:46.228237845Z"
+        container_path: "/run/containerd/io.containerd.runtime.v1.linux/k8s.io/8c5cace6e4a6101e20311ee41ec1c784bdbccc6d9d6ae5b93a7cb6c2852b497e/rootfs"
+        destination:
+          mode: 438
+        filesystem: "ext4"
+        flags:
+         - "O_CLOEXEC"
+         - "O_CREAT"
+         - "O_RDWR"
+         - "O_TRUNC"
+        group: "root"
+        inode: 1283672
+        mode: 33188
+        modification_time: "2021-03-23T14:17:46.228237845Z"
+        mount_id: 1199
+        name: "trace-agent.log"
+        path: "/var/log/datadog/trace-agent.log"
+        user: "root"
+      process:
+        comm: "trace-agent"
+        credentials:
+          cap_effective:
+           - "CAP_AUDIT_WRITE"
+           - "CAP_CHOWN"
+           - "CAP_DAC_OVERRIDE"
+           - "CAP_FOWNER"
+           - "CAP_FSETID"
+           - "CAP_KILL"
+           - "CAP_MKNOD"
+           - "CAP_NET_BIND_SERVICE"
+           - "CAP_NET_RAW"
+           - "CAP_SETFCAP"
+           - "CAP_SETGID"
+           - "CAP_SETPCAP"
+           - "CAP_SETUID"
+           - "CAP_SYS_CHROOT"
+          cap_permitted:
+           - "CAP_AUDIT_WRITE"
+           - "CAP_CHOWN"
+           - "CAP_DAC_OVERRIDE"
+           - "CAP_FOWNER"
+           - "CAP_FSETID"
+           - "CAP_KILL"
+           - "CAP_MKNOD"
+           - "CAP_NET_BIND_SERVICE"
+           - "CAP_NET_RAW"
+           - "CAP_SETFCAP"
+           - "CAP_SETGID"
+           - "CAP_SETPCAP"
+           - "CAP_SETUID"
+           - "CAP_SYS_CHROOT"
+          egid: 0
+          egroup: "root"
+          euid: 0
+          euser: "root"
+          fsgid: 0
+          fsgroup: "root"
+          fsuid: 0
+          fsuser: "root"
+          gid: 0
+          group: "root"
+          uid: 0
+          user: "root"
+        exec_time: "2021-03-23T14:17:33Z"
+        executable:
+          change_time: "2021-03-23T14:17:08.444344215Z"
+          container_path: "/run/containerd/io.containerd.runtime.v1.linux/k8s.io/8c5cace6e4a6101e20311ee41ec1c784bdbccc6d9d6ae5b93a7cb6c2852b497e/rootfs"
+          filesystem: "overlay"
+          group: "root"
+          in_upper_layer: false
+          inode: 266658
+          mode: 33261
+          modification_time: "2021-03-23T11:55:51Z"
+          mount_id: 1172
+          name: "trace-agent"
+          path: "/opt/datadog-agent/embedded/bin/trace-agent"
+          user: "root"
+        executable_container_path: "/run/containerd/io.containerd.runtime.v1.linux/k8s.io/8c5cace6e4a6101e20311ee41ec1c784bdbccc6d9d6ae5b93a7cb6c2852b497e/rootfs"
+        executable_inode: 266658
+        executable_mount_id: 1172
+        executable_path: "/opt/datadog-agent/embedded/bin/trace-agent"
+        fork_time: "2021-03-23T14:17:33Z"
+        gid: 0
+        group: "root"
+        pid: 1792
+        tid: 1809
+        tty: "null"
+        uid: 0
+        user: "root"
+      title: "Log data was deleted"
+      usr:
+        group: "root"
+        id: "root"
+    message: |-
+      {
+        "container" : {
+          "id" : "8c5cace6e4a6101e20311ee41ec1c784bdbccc6d9d6ae5b93a7cb6c2852b497e"
+        },
+        "date" : "2021-03-23T14:17:46.126232748Z",
+        "evt" : {
+          "name" : "open",
+          "category" : "File Activity",
+          "outcome" : "Success"
+        },
+        "process" : {
+          "executable_container_path" : "/run/containerd/io.containerd.runtime.v1.linux/k8s.io/8c5cace6e4a6101e20311ee41ec1c784bdbccc6d9d6ae5b93a7cb6c2852b497e/rootfs",
+          "executable_inode" : 266658,
+          "comm" : "trace-agent",
+          "gid" : 0,
+          "credentials" : {
+            "egroup" : "root",
+            "fsuser" : "root",
+            "gid" : 0,
+            "euid" : 0,
+            "fsgid" : 0,
+            "fsgroup" : "root",
+            "fsuid" : 0,
+            "uid" : 0,
+            "egid" : 0,
+            "euser" : "root",
+            "cap_effective" : [ "CAP_AUDIT_WRITE", "CAP_CHOWN", "CAP_DAC_OVERRIDE", "CAP_FOWNER", "CAP_FSETID", "CAP_KILL", "CAP_MKNOD", "CAP_NET_BIND_SERVICE", "CAP_NET_RAW", "CAP_SETFCAP", "CAP_SETGID", "CAP_SETPCAP", "CAP_SETUID", "CAP_SYS_CHROOT" ],
+            "user" : "root",
+            "cap_permitted" : [ "CAP_AUDIT_WRITE", "CAP_CHOWN", "CAP_DAC_OVERRIDE", "CAP_FOWNER", "CAP_FSETID", "CAP_KILL", "CAP_MKNOD", "CAP_NET_BIND_SERVICE", "CAP_NET_RAW", "CAP_SETFCAP", "CAP_SETGID", "CAP_SETPCAP", "CAP_SETUID", "CAP_SYS_CHROOT" ],
+            "group" : "root"
+          },
+          "pid" : 1792,
+          "tid" : 1809,
+          "executable" : {
+            "inode" : 266658,
+            "mode" : 33261,
+            "path" : "/opt/datadog-agent/embedded/bin/trace-agent",
+            "name" : "trace-agent",
+            "in_upper_layer" : false,
+            "container_path" : "/run/containerd/io.containerd.runtime.v1.linux/k8s.io/8c5cace6e4a6101e20311ee41ec1c784bdbccc6d9d6ae5b93a7cb6c2852b497e/rootfs",
+            "user" : "root",
+            "modification_time" : "2021-03-23T11:55:51Z",
+            "mount_id" : 1172,
+            "filesystem" : "overlay",
+            "change_time" : "2021-03-23T14:17:08.444344215Z",
+            "group" : "root"
+          },
+          "uid" : 0,
+          "executable_mount_id" : 1172,
+          "tty" : "null",
+          "exec_time" : "2021-03-23T14:17:33Z",
+          "executable_path" : "/opt/datadog-agent/embedded/bin/trace-agent",
+          "user" : "root",
+          "fork_time" : "2021-03-23T14:17:33Z",
+          "group" : "root"
+        },
+        "agent" : {
+          "rule_id" : "logs_altered",
+          "policy_version" : "1.0.2",
+          "policy_name" : "default.policy"
+        },
+        "file" : {
+          "flags" : [ "O_CLOEXEC", "O_CREAT", "O_RDWR", "O_TRUNC" ],
+          "destination" : {
+            "mode" : 438
+          },
+          "filesystem" : "ext4",
+          "inode" : 1283672,
+          "mode" : 33188,
+          "path" : "/var/log/datadog/trace-agent.log",
+          "name" : "trace-agent.log",
+          "container_path" : "/run/containerd/io.containerd.runtime.v1.linux/k8s.io/8c5cace6e4a6101e20311ee41ec1c784bdbccc6d9d6ae5b93a7cb6c2852b497e/rootfs",
+          "user" : "root",
+          "modification_time" : "2021-03-23T14:17:46.228237845Z",
+          "mount_id" : 1199,
+          "change_time" : "2021-03-23T14:17:46.228237845Z",
+          "group" : "root"
+        },
+        "usr" : {
+          "id" : "root",
+          "group" : "root"
+        },
+        "title" : "Log data was deleted"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+

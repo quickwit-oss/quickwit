@@ -1,0 +1,66 @@
+id: "elasticsearch"
+tests:
+ -
+  sample: "[2018-03-15T10:49:37,858][INFO ][index.search.slowlog.query] [i-0a78cf272c227585e] [8.1520909160000.4][0] took[6.9s], took_millis[6962], types[], stats[], search_type[QUERY_THEN_FETCH], total_shards[2], source[{\"size\":0,\"timeout\":\"1m\",\"query\":\"myquery}]"
+  result:
+    custom:
+      duration: 6.962E9
+      elasticsearch:
+        index: "8.1520909160000.4"
+        operation: "query"
+        shard: 0
+      level: "INFO"
+      nodeId: "i-0a78cf272c227585e"
+      node_name: "i-0a78cf272c227585e"
+      timestamp: 1521110977858
+    message: "[2018-03-15T10:49:37,858][INFO ][index.search.slowlog.query] [i-0a78cf272c227585e] [8.1520909160000.4][0] took[6.9s], took_millis[6962], types[], stats[], search_type[QUERY_THEN_FETCH], total_shards[2], source[{\"size\":0,\"timeout\":\"1m\",\"query\":\"myquery}]"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1521110977858
+ -
+  sample: "[2018-03-15T11:18:32,097][TRACE][index.indexing.slowlog.index] [i-0fb0942bc5af92a50] [62.1520954640000.0/mzEo0np9TE67-TZfLSizUQ] took[211.4ms], took_millis[211], type[event], id[AWIpYf-elx3mYSdfhef5], routing[] , source[{\"tag\":{\"role\":\"alerting-metric-evaluator\",\"name\":\"alerting-metric-evaluator\",\"source\":\"\",\"env\":\"staging\",\"availability-zone\":\"us-east-1d\"},\"timestamp\":\"2018-03-15T11:18:31.066Z\",\"tiebreaker\":-724304927,\"service\":\"alerting-metric-query\",\"status\":\"info\",\"host\":\"i-0a88da725e2bf2373\",\"tags\":[\"worker_id:2\",\"service:alerting-metric-query\",\"source:\",\"lsb_codename:trusty\",\"lsb_id:ubuntu\",\"lsb_release:14.04\",\"account:staging\",\"autoscaling.managed:true\",\"autoscaling_group:alerting-metric-evaluator-anomaly\",\"availability-zone:us-east-1d\",\"aws_account:727006795293\",\"ec2_churn:666\",\"iam_profile:dd-common-profile\",\"image:ami-09192173\",\"instance-type:r4.2xlarge\",\"kernel:none\",\"name:alerting-metric-evaluator\",\"region:us-east-1\",\"security-group-name:alerting-metric-evaluator\",\"security-group-name:common\",\"security_group_name:alerting-metric-evaluator\",\"security_group_name:common\",\"team:bourbon\",\"team:yuzu\",\"terraform.managed:true\",\"terraform.module:alerting-metric-evaluator\",\"terraform.module:vpc-comm]"
+  result:
+    custom:
+      duration: 2.11E8
+      elasticsearch:
+        index: "62.1520954640000.0/mzEo0np9TE67-TZfLSizUQ"
+        operation: "index"
+      level: "TRACE"
+      nodeId: "i-0fb0942bc5af92a50"
+      node_name: "i-0fb0942bc5af92a50"
+      timestamp: 1521112712097
+    message: "[2018-03-15T11:18:32,097][TRACE][index.indexing.slowlog.index] [i-0fb0942bc5af92a50] [62.1520954640000.0/mzEo0np9TE67-TZfLSizUQ] took[211.4ms], took_millis[211], type[event], id[AWIpYf-elx3mYSdfhef5], routing[] , source[{\"tag\":{\"role\":\"alerting-metric-evaluator\",\"name\":\"alerting-metric-evaluator\",\"source\":\"\",\"env\":\"staging\",\"availability-zone\":\"us-east-1d\"},\"timestamp\":\"2018-03-15T11:18:31.066Z\",\"tiebreaker\":-724304927,\"service\":\"alerting-metric-query\",\"status\":\"info\",\"host\":\"i-0a88da725e2bf2373\",\"tags\":[\"worker_id:2\",\"service:alerting-metric-query\",\"source:\",\"lsb_codename:trusty\",\"lsb_id:ubuntu\",\"lsb_release:14.04\",\"account:staging\",\"autoscaling.managed:true\",\"autoscaling_group:alerting-metric-evaluator-anomaly\",\"availability-zone:us-east-1d\",\"aws_account:727006795293\",\"ec2_churn:666\",\"iam_profile:dd-common-profile\",\"image:ami-09192173\",\"instance-type:r4.2xlarge\",\"kernel:none\",\"name:alerting-metric-evaluator\",\"region:us-east-1\",\"security-group-name:alerting-metric-evaluator\",\"security-group-name:common\",\"security_group_name:alerting-metric-evaluator\",\"security_group_name:common\",\"team:bourbon\",\"team:yuzu\",\"terraform.managed:true\",\"terraform.module:alerting-metric-evaluator\",\"terraform.module:vpc-comm]"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1521112712097
+ -
+  sample: "[2018-03-15T10:49:37,857][INFO ][foo.bar] new node installed"
+  result:
+    custom:
+      level: "INFO"
+      logger:
+        name: "foo.bar"
+      timestamp: 1521110977857
+    message: "[2018-03-15T10:49:37,857][INFO ][foo.bar] new node installed"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1521110977857
+ -
+  sample: "[2018-06-05 10:06:31,687][INFO ][cluster.metadata         ] [elasticsnoop_node_two] [test-index] creating index, cause [api], templates [], shards [5]/[1], mappings []"
+  result:
+    custom:
+      level: "INFO"
+      logger:
+        name: "cluster.metadata"
+      nodeId: "elasticsnoop_node_two"
+      node_name: "elasticsnoop_node_two"
+      timestamp: 1528193191687
+    message: "[2018-06-05 10:06:31,687][INFO ][cluster.metadata         ] [elasticsnoop_node_two] [test-index] creating index, cause [api], templates [], shards [5]/[1], mappings []"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1528193191687
+

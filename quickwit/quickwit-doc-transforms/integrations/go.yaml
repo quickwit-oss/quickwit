@@ -1,0 +1,97 @@
+id: go
+metric_id: go
+backend_only: false
+facets:
+pipeline:
+  type: pipeline
+  name: Golang
+  enabled: true
+  filter:
+    query: source:go
+  processors:
+    - type: grok-parser
+      name: Parsing Go Default formats
+      enabled: true
+      source: message
+      samples:
+        - '[Oct 27 02:18:00] DEBUG main: started observing beach animal=walrus'
+        - 2017/03/02 16:07:16 You cannot divide by 0
+      grok:
+        supportRules: |
+          _date %{date("yyyy/MM/dd HH:mm:ss"):date}
+          _date_prefix %{date("MMM dd HH:mm:ss"):date}
+          _status %{word:level}
+          _thread_name %{notSpace:logger.thread_name}
+        matchRules: |
+          go_prefixed \[%{_date_prefix}\]\s+%{_status}\s+%{_thread_name}: %{data:message}
+
+          go_default %{_date} %{data:error.message}
+
+    - type: grok-parser
+      name: Extracting keyvalue
+      enabled: true
+      source: message
+      samples:
+        - timestamp="2015-03-26T01:27:38-04:00" level=debug msg="Started observing beach" animal=walrus number=8
+      grok:
+        supportRules: |
+        matchRules: |
+          go_fallback %{data::keyvalue}
+
+    - type: attribute-remapper
+      name: Map `exception`, `stack_trace` to `error.stack`
+      enabled: true
+      sources:
+        - exception
+        - stack_trace
+      target: error.stack
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: date-remapper
+      name: Define `date` as the official date of the log
+      enabled: true
+      sources:
+        - date
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: message-remapper
+      name: Define `msg`, `message` as the official message of the log
+      enabled: true
+      sources:
+        - msg
+        - message
+    - type: trace-id-remapper
+      name: Define `dd.trace_id` as the official trace ID of the log
+      enabled: true
+      sources:
+        - dd.trace_id
+    - type: attribute-remapper
+      name: Map attribute `dd.env` to tag `env`
+      enabled: true
+      sources:
+        - dd.env
+      target: env
+      targetType: tag
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+    - type: attribute-remapper
+      name: Map attribute `dd.version` to tag `version`
+      enabled: true
+      sources:
+        - dd.version
+      target: version
+      targetType: tag
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+    - type: service-remapper
+      name: Define `dd.service` as the official service of the log
+      enabled: true
+      sources:
+        - dd.service

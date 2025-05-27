@@ -1,0 +1,293 @@
+id: "crest-data-systems-upguard"
+tests:
+ -
+  sample: |-
+    {
+      "severity" : "medium",
+      "remediation" : "Remote management protocols, whether text-based or graphical, should only be allowed on internal networks and VPNs. This prevents the exploitation of their functionality by unauthorized users from the internet. If an internet-facing SSH service is necessary, consider using one edge system for all SSH connections, from which users can then SSH into other machines. This reduces the attack surface and the number of systems that must be rigorously maintained to ensure no known vulnerabilities are present.",
+      "riskSubtype" : "SSH",
+      "risk_id" : "exposed_service:SSH",
+      "riskType" : "exposed_service",
+      "description" : "Secure Shell (SSH) is a secure remote command line shell used for managing and manipulating systems across a network. SSH uses public/private certificate pairs to encrypt traffic over the network. By default, SSH uses port 22.",
+      "hostnames" : [ "0.0.0.0", "sample.com" ],
+      "risk" : "Because SSH simulates sitting at a computer, a compromised SSH account used by a malicious actor has the same access as whatever user they are impersonating. This can be especially risky on servers and other administrative systems where sensitive data and important services are located. Although SSH is a secure protocol, over time there have been several vulnerabilities discovered in it that could allow attackers to gain shell access.",
+      "finding" : "'SSH' port open",
+      "firstDetected" : "2024-09-11T14:29:59.660836Z",
+      "category" : "network_sec",
+      "hostnameCount" : 2
+    }
+  service: "cds.upguard.risks"
+  result:
+    custom:
+      cds:
+        upguard:
+          category: "network_sec"
+          description: "Secure Shell (SSH) is a secure remote command line shell used for managing and manipulating systems across a network. SSH uses public/private certificate pairs to encrypt traffic over the network. By default, SSH uses port 22."
+          finding: "'SSH' port open"
+          firstDetected: "2024-09-11T14:29:59.660836Z"
+          hostnameCount: 2
+          hostnames:
+           - "0.0.0.0"
+           - "sample.com"
+          remediation: "Remote management protocols, whether text-based or graphical, should only be allowed on internal networks and VPNs. This prevents the exploitation of their functionality by unauthorized users from the internet. If an internet-facing SSH service is necessary, consider using one edge system for all SSH connections, from which users can then SSH into other machines. This reduces the attack surface and the number of systems that must be rigorously maintained to ensure no known vulnerabilities are present."
+          riskSubtype: "SSH"
+          riskType: "exposed_service"
+          risk_details: "Because SSH simulates sitting at a computer, a compromised SSH account used by a malicious actor has the same access as whatever user they are impersonating. This can be especially risky on servers and other administrative systems where sensitive data and important services are located. Although SSH is a secure protocol, over time there have been several vulnerabilities discovered in it that could allow attackers to gain shell access."
+          risk_id: "exposed_service:SSH"
+          severity: "medium"
+      severity: "notice"
+    message: |-
+      {
+        "severity" : "medium",
+        "remediation" : "Remote management protocols, whether text-based or graphical, should only be allowed on internal networks and VPNs. This prevents the exploitation of their functionality by unauthorized users from the internet. If an internet-facing SSH service is necessary, consider using one edge system for all SSH connections, from which users can then SSH into other machines. This reduces the attack surface and the number of systems that must be rigorously maintained to ensure no known vulnerabilities are present.",
+        "riskSubtype" : "SSH",
+        "risk_id" : "exposed_service:SSH",
+        "riskType" : "exposed_service",
+        "description" : "Secure Shell (SSH) is a secure remote command line shell used for managing and manipulating systems across a network. SSH uses public/private certificate pairs to encrypt traffic over the network. By default, SSH uses port 22.",
+        "hostnames" : [ "0.0.0.0", "sample.com" ],
+        "risk" : "Because SSH simulates sitting at a computer, a compromised SSH account used by a malicious actor has the same access as whatever user they are impersonating. This can be especially risky on servers and other administrative systems where sensitive data and important services are located. Although SSH is a secure protocol, over time there have been several vulnerabilities discovered in it that could allow attackers to gain shell access.",
+        "finding" : "'SSH' port open",
+        "firstDetected" : "2024-09-11T14:29:59.660836Z",
+        "category" : "network_sec",
+        "hostnameCount" : 2
+      }
+    service: "cds.upguard.risks"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "domain-name" : "sample.com",
+      "score" : 874,
+      "scanned-at" : "2025-02-05T01:19:59.231855Z",
+      "is-primary-domain" : true,
+      "active" : true,
+      "labels" : [ "test" ]
+    }
+  service: "cds.upguard.domains"
+  result:
+    custom:
+      cds:
+        upguard:
+          active: true
+          domain-name: "sample.com"
+          is-primary-domain: true
+          labels: "test"
+          scanned-at: "2025-02-05T01:19:59.231855Z"
+          score: 874
+    message: |-
+      {
+        "domain-name" : "sample.com",
+        "score" : 874,
+        "scanned-at" : "2025-02-05T01:19:59.231855Z",
+        "is-primary-domain" : true,
+        "active" : true,
+        "labels" : [ "test" ]
+      }
+    service: "cds.upguard.domains"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "owner" : "DigitalOcean, LLC",
+      "country" : "United States",
+      "automated_score" : 836,
+      "sources" : [ "Certificate" ],
+      "ip" : "104.248.231.89",
+      "services" : [ "HTTP", "HTTPS", "SSH" ],
+      "labels" : [ "test" ]
+    }
+  service: "cds.upguard.ips"
+  result:
+    custom:
+      cds:
+        upguard:
+          automated_score: 836
+          country: "United States"
+          geoip: {}
+          ip: "104.248.231.89"
+          labels: "test"
+          owner: "DigitalOcean, LLC"
+          services:
+           - "HTTP"
+           - "HTTPS"
+           - "SSH"
+          sources:
+           - "Certificate"
+    message: |-
+      {
+        "owner" : "DigitalOcean, LLC",
+        "country" : "United States",
+        "automated_score" : 836,
+        "sources" : [ "Certificate" ],
+        "ip" : "104.248.231.89",
+        "services" : [ "HTTP", "HTTPS", "SSH" ],
+        "labels" : [ "test" ]
+      }
+    service: "cds.upguard.ips"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "cve_severity" : 7.8,
+      "cve_id" : "CVE-2020-15778",
+      "cpes" : [ "cpe:/a:openbsd:openssh:8.2:p1-4ubuntu0.11" ],
+      "ip_addresses" : [ "134.209.129.124" ],
+      "cve_description" : "** DISPUTED ** scp in OpenSSH through 8.3p1 allows command injection in the scp.c toremote function, as demonstrated by backtick characters in the destination argument. NOTE: the vendor reportedly has stated that they intentionally omit validation of \"anomalous argument transfers\" because that could \"stand a great chance of breaking existing workflows.\"",
+      "verified" : false,
+      "cve_mapped_severity" : "High",
+      "created_at" : "2024-12-17T19:47:54.725701Z",
+      "vulnerable_host" : "sample.com",
+      "cve_epss" : 0.00587
+    }
+  service: "cds.upguard.vulnerabilities"
+  result:
+    custom:
+      cds:
+        upguard:
+          cpes:
+           - "cpe:/a:openbsd:openssh:8.2:p1-4ubuntu0.11"
+          created_at: "2024-12-17T19:47:54.725701Z"
+          cve_description: "** DISPUTED ** scp in OpenSSH through 8.3p1 allows command injection in the scp.c toremote function, as demonstrated by backtick characters in the destination argument. NOTE: the vendor reportedly has stated that they intentionally omit validation of \"anomalous argument transfers\" because that could \"stand a great chance of breaking existing workflows.\""
+          cve_epss: 0.00587
+          cve_id: "CVE-2020-15778"
+          cve_mapped_severity: "High"
+          cve_severity: 7.8
+          ip_addresses:
+           - "134.209.129.124"
+          verified: false
+          vulnerable_host: "sample.com"
+      cve_mapped_severity: "error"
+    message: |-
+      {
+        "cve_severity" : 7.8,
+        "cve_id" : "CVE-2020-15778",
+        "cpes" : [ "cpe:/a:openbsd:openssh:8.2:p1-4ubuntu0.11" ],
+        "ip_addresses" : [ "134.209.129.124" ],
+        "cve_description" : "** DISPUTED ** scp in OpenSSH through 8.3p1 allows command injection in the scp.c toremote function, as demonstrated by backtick characters in the destination argument. NOTE: the vendor reportedly has stated that they intentionally omit validation of \"anomalous argument transfers\" because that could \"stand a great chance of breaking existing workflows.\"",
+        "verified" : false,
+        "cve_mapped_severity" : "High",
+        "created_at" : "2024-12-17T19:47:54.725701Z",
+        "vulnerable_host" : "sample.com",
+        "cve_epss" : 0.00587
+      }
+    service: "cds.upguard.vulnerabilities"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "notification" : {
+        "occurredAt" : "Zoomcar",
+        "context" : {
+          "apiKey" : "apikey",
+          "user" : "user"
+        },
+        "description" : 2314,
+        "id" : "Zoomcar",
+        "type" : "zoomcar.com"
+      }
+    }
+  service: "cds.upguard.notifications"
+  result:
+    custom:
+      cds:
+        upguard:
+          notification:
+            context:
+              apiKey: "apikey"
+              user: "user"
+            description: 2314
+            id: "Zoomcar"
+            occurredAt: "Zoomcar"
+            type: "zoomcar.com"
+    message: |-
+      {
+        "notification" : {
+          "occurredAt" : "Zoomcar",
+          "context" : {
+            "apiKey" : "apikey",
+            "user" : "user"
+          },
+          "description" : 2314,
+          "id" : "Zoomcar",
+          "type" : "zoomcar.com"
+        }
+      }
+    service: "cds.upguard.notifications"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "breach_description" : "In July 2018, the Indian self-drive car rental company.",
+      "breach_domain" : "zoomcar.com",
+      "date_published" : "2020-06-05T03:04:55.9443Z",
+      "breach_title" : "Zoomcar",
+      "assignee_user_email" : "",
+      "breach_name" : "Zoomcar",
+      "date_occurred" : "2018-07-01T00:00:00Z",
+      "related_identities" : [ {
+        "last_breach_date" : "2021-04-08T00:00:00Z",
+        "domain" : "crestdatasys.com",
+        "name" : "manthan.patel"
+      } ],
+      "total_exposures" : 3589795,
+      "breach_type" : "Company",
+      "exposed_data_classes" : [ "Email addresses", "IP addresses", "Names", "Passwords", "Phone numbers" ],
+      "breach_id" : 2314
+    }
+  service: "cds.upguard.breaches"
+  result:
+    custom:
+      cds:
+        upguard:
+          assignee_user_email: ""
+          breach_description: "In July 2018, the Indian self-drive car rental company."
+          breach_domain: "zoomcar.com"
+          breach_id: 2314
+          breach_name: "Zoomcar"
+          breach_title: "Zoomcar"
+          breach_type: "Company"
+          date_occurred: "2018-07-01T00:00:00Z"
+          date_published: "2020-06-05T03:04:55.9443Z"
+          exposed_data_classes: "Email addresses,IP addresses,Names,Passwords,Phone numbers"
+          related_identities:
+           -
+            last_breach_date: "2021-04-08T00:00:00Z"
+            domain: "crestdatasys.com"
+            name: "manthan.patel"
+          related_identities_names: "manthan.patel"
+          total_exposures: 3589795
+    message: |-
+      {
+        "breach_description" : "In July 2018, the Indian self-drive car rental company.",
+        "breach_domain" : "zoomcar.com",
+        "date_published" : "2020-06-05T03:04:55.9443Z",
+        "breach_title" : "Zoomcar",
+        "assignee_user_email" : "",
+        "breach_name" : "Zoomcar",
+        "date_occurred" : "2018-07-01T00:00:00Z",
+        "related_identities" : [ {
+          "last_breach_date" : "2021-04-08T00:00:00Z",
+          "domain" : "crestdatasys.com",
+          "name" : "manthan.patel"
+        } ],
+        "total_exposures" : 3589795,
+        "breach_type" : "Company",
+        "exposed_data_classes" : [ "Email addresses", "IP addresses", "Names", "Passwords", "Phone numbers" ],
+        "breach_id" : 2314
+      }
+    service: "cds.upguard.breaches"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1

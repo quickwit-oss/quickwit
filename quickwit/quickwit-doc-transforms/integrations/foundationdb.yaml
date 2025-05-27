@@ -1,0 +1,113 @@
+id: foundationdb
+backend_only: false
+facets:
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+  - groups:
+      - FoundationDB
+    name: Type
+    path: Type
+    source: log
+  - groups:
+      - FoundationDB
+    name: Machine IP Address
+    path: machine.ip
+    source: log
+  - groups:
+      - FoundationDB
+    name: Machine Port
+    path: machine.port
+    source: log
+  - facetType: range
+    groups:
+      - FoundationDB
+    name: Storage Servers with the Least Free Space
+    path: WorstFreeSpaceStorageServer
+    source: log
+    type: integer
+    unit:
+      family: bytes
+      name: byte
+  - facetType: range
+    groups:
+      - FoundationDB
+    name: Log Servers with the Least Free Space
+    path: WorstFreeSpaceTLog
+    source: log
+    type: integer
+    unit:
+      family: bytes
+      name: byte
+  - facetType: range
+    groups:
+      - FoundationDB
+    name: Worst Storage Server Durability Lag
+    path: WorstStorageServerDurabilityLag
+    source: log
+    type: integer
+  - facetType: range
+    groups:
+      - FoundationDB
+    name: Largest Storage Server Queue
+    path: WorstStorageServerQueue
+    source: log
+    type: integer
+  - facetType: range
+    groups:
+      - FoundationDB
+    name: Worst Storage Server Version Lag
+    path: WorstStorageServerVersionLag
+    source: log
+    type: integer
+pipeline:
+  type: pipeline
+  name: FoundationDB
+  enabled: true
+  filter:
+    query: source:foundationdb
+  processors:
+    - type: date-remapper
+      name: Define `DateTime` as the official date of the log
+      enabled: true
+      sources:
+        - DateTime
+    - name: Map FoundationDB Severity to Datadog Status
+      enabled: true
+      source: Severity
+      target: Status
+      lookupTable: |-
+        5,Debug
+        10,Info
+        20,Warn
+        30,Critical
+        40,Emergency
+      defaultLookup: Info
+      type: lookup-processor
+    - type: status-remapper
+      name: Define `Status` as the official status of the log
+      enabled: true
+      sources:
+        - Status
+    - type: attribute-remapper
+      name: Map `Type` to `evt.name`
+      enabled: true
+      preserveSource: true
+      sources:
+        - Type
+      target: evt.name
+      sourceType: attribute
+      targetType: attribute
+      overrideOnConflict: false
+    - type: grok-parser
+      name: Parse Machine IP and Port as separate attributes
+      enabled: true
+      source: Machine
+      grok:
+        matchRules: |
+          _machine_ip_and_port %{ip:machine.ip}:%{port:machine.port}
+        supportRules: ''
+      samples:
+        - 127.0.0.1:4500

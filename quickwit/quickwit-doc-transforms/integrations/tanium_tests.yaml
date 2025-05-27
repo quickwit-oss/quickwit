@@ -1,0 +1,785 @@
+id: "tanium"
+tests:
+ -
+  sample: |-
+    {
+      "eid" : 1,
+      "ackedAt" : "2024-12-26T06:26:52.692Z",
+      "groupingId" : 2,
+      "matchType" : "process",
+      "type" : "detect.match",
+      "receivedAt" : "2024-12-26T06:20:09.415Z",
+      "lastEIDResolutionAttempt" : "2024-12-26T06:20:17.210Z",
+      "scanConfigRevisionId" : 1,
+      "path" : "C:\\test.exe",
+      "createdAt" : "2024-12-26T06:20:09.636Z",
+      "alertedAt" : "2024-12-26T06:15:52.000Z",
+      "Endpoint" : {
+        "id" : 2
+      },
+      "computerName" : "AssetTag-EID",
+      "details" : "",
+      "scanConfigId" : 2,
+      "id" : 2,
+      "state" : "unresolved",
+      "intelDocId" : 79,
+      "updatedAt" : "2024-12-26T06:26:52.699Z",
+      "severity" : "info",
+      "findingId" : "",
+      "priority" : "high",
+      "firstEIDResolutionAttempt" : "2024-12-26T06:20:17.210Z",
+      "intelDocRevisionId" : 1,
+      "guid" : "00000000-0000-0000-0000-000000000001",
+      "computerIpAddress" : "10.10.10.10",
+      "intelDoc" : {
+        "sourceId" : 9,
+        "disabledEndpointCount" : 0,
+        "isSchemaValid" : true,
+        "description" : "Control panel items can be used to execute arbitrary code and is a well known bypass mechanism for red teams and attackers.",
+        "source" : {
+          "createdAt" : "2024-12-19T18:26:29.536Z",
+          "nameSlug" : "tanium-signals",
+          "name" : "Tanium Signals",
+          "description" : "Tanium authored Signals stream",
+          "id" : 9,
+          "type" : "tanium-signals",
+          "enabled" : true,
+          "updatedAt" : "2025-01-06T09:34:08.431Z"
+        },
+        "type" : "tanium-signal",
+        "intrinsicId" : "Control Panel Items",
+        "platforms" : [ "windows" ],
+        "revisionId" : 1,
+        "createdAt" : "2024-12-19T18:26:40.490Z",
+        "typeVersion" : "1.0",
+        "mitreAttack" : {
+          "techniques" : [ {
+            "name" : "System Binary Proxy Execution",
+            "id" : "T1218"
+          }, {
+            "name" : "System Binary Proxy Execution: Control Panel",
+            "id" : "T1218.002"
+          } ]
+        },
+        "size" : 1116,
+        "lastDeploymentTimestamp" : "2024-12-19T18:37:38.550Z",
+        "name" : "Control Panel Items",
+        "allowAutoDisable" : true,
+        "firstDeploymentTimestamp" : "2024-12-19T18:37:38.550Z",
+        "throttledFindingCount" : 0,
+        "disabled" : false,
+        "id" : 79,
+        "updatedAt" : "2024-12-19T20:46:41.889Z",
+        "status" : "HIGH_FIDELITY"
+      }
+    }
+  service: "threat-response-alerts"
+  result:
+    custom:
+      Endpoint:
+        id: 2
+      ackedAt: "2024-12-26T06:26:52.692Z"
+      alertedAt: "2024-12-26T06:15:52.000Z"
+      computerName: "AssetTag-EID"
+      createdAt: "2024-12-26T06:20:09.636Z"
+      details: ""
+      eid: 1
+      findingId: ""
+      firstEIDResolutionAttempt: "2024-12-26T06:20:17.210Z"
+      groupingId: 2
+      guid: "00000000-0000-0000-0000-000000000001"
+      id: 2
+      intelDoc:
+        allowAutoDisable: true
+        createdAt: "2024-12-19T18:26:40.490Z"
+        description: "Control panel items can be used to execute arbitrary code and is a well known bypass mechanism for red teams and attackers."
+        disabled: false
+        disabledEndpointCount: 0
+        firstDeploymentTimestamp: "2024-12-19T18:37:38.550Z"
+        id: 79
+        intrinsicId: "Control Panel Items"
+        isSchemaValid: true
+        lastDeploymentTimestamp: "2024-12-19T18:37:38.550Z"
+        mitreAttack:
+          techniques:
+           -
+            name: "System Binary Proxy Execution"
+            id: "T1218"
+           -
+            name: "System Binary Proxy Execution: Control Panel"
+            id: "T1218.002"
+        name: "Control Panel Items"
+        platforms:
+         - "windows"
+        revisionId: 1
+        size: 1116
+        source:
+          createdAt: "2024-12-19T18:26:29.536Z"
+          description: "Tanium authored Signals stream"
+          enabled: true
+          id: 9
+          name: "Tanium Signals"
+          nameSlug: "tanium-signals"
+          type: "tanium-signals"
+          updatedAt: "2025-01-06T09:34:08.431Z"
+        sourceId: 9
+        status: "HIGH_FIDELITY"
+        throttledFindingCount: 0
+        type: "tanium-signal"
+        typeVersion: "1.0"
+        updatedAt: "2024-12-19T20:46:41.889Z"
+      intelDocId: 79
+      intelDocRevisionId: 1
+      lastEIDResolutionAttempt: "2024-12-26T06:20:17.210Z"
+      matchType: "process"
+      network:
+        client:
+          ip: "10.10.10.10"
+      path: "C:\\test.exe"
+      priority: "high"
+      receivedAt: "2024-12-26T06:20:09.415Z"
+      scanConfigId: 2
+      scanConfigRevisionId: 1
+      severity: "info"
+      state: "unresolved"
+      status: "Info"
+      type: "detect.match"
+      updatedAt: "2024-12-26T06:26:52.699Z"
+    message: |-
+      {
+        "eid" : 1,
+        "ackedAt" : "2024-12-26T06:26:52.692Z",
+        "groupingId" : 2,
+        "matchType" : "process",
+        "type" : "detect.match",
+        "receivedAt" : "2024-12-26T06:20:09.415Z",
+        "lastEIDResolutionAttempt" : "2024-12-26T06:20:17.210Z",
+        "scanConfigRevisionId" : 1,
+        "path" : "C:\\test.exe",
+        "createdAt" : "2024-12-26T06:20:09.636Z",
+        "alertedAt" : "2024-12-26T06:15:52.000Z",
+        "Endpoint" : {
+          "id" : 2
+        },
+        "computerName" : "AssetTag-EID",
+        "details" : "",
+        "scanConfigId" : 2,
+        "id" : 2,
+        "state" : "unresolved",
+        "intelDocId" : 79,
+        "updatedAt" : "2024-12-26T06:26:52.699Z",
+        "severity" : "info",
+        "findingId" : "",
+        "priority" : "high",
+        "firstEIDResolutionAttempt" : "2024-12-26T06:20:17.210Z",
+        "intelDocRevisionId" : 1,
+        "guid" : "00000000-0000-0000-0000-000000000001",
+        "computerIpAddress" : "10.10.10.10",
+        "intelDoc" : {
+          "sourceId" : 9,
+          "disabledEndpointCount" : 0,
+          "isSchemaValid" : true,
+          "description" : "Control panel items can be used to execute arbitrary code and is a well known bypass mechanism for red teams and attackers.",
+          "source" : {
+            "createdAt" : "2024-12-19T18:26:29.536Z",
+            "nameSlug" : "tanium-signals",
+            "name" : "Tanium Signals",
+            "description" : "Tanium authored Signals stream",
+            "id" : 9,
+            "type" : "tanium-signals",
+            "enabled" : true,
+            "updatedAt" : "2025-01-06T09:34:08.431Z"
+          },
+          "type" : "tanium-signal",
+          "intrinsicId" : "Control Panel Items",
+          "platforms" : [ "windows" ],
+          "revisionId" : 1,
+          "createdAt" : "2024-12-19T18:26:40.490Z",
+          "typeVersion" : "1.0",
+          "mitreAttack" : {
+            "techniques" : [ {
+              "name" : "System Binary Proxy Execution",
+              "id" : "T1218"
+            }, {
+              "name" : "System Binary Proxy Execution: Control Panel",
+              "id" : "T1218.002"
+            } ]
+          },
+          "size" : 1116,
+          "lastDeploymentTimestamp" : "2024-12-19T18:37:38.550Z",
+          "name" : "Control Panel Items",
+          "allowAutoDisable" : true,
+          "firstDeploymentTimestamp" : "2024-12-19T18:37:38.550Z",
+          "throttledFindingCount" : 0,
+          "disabled" : false,
+          "id" : 79,
+          "updatedAt" : "2024-12-19T20:46:41.889Z",
+          "status" : "HIGH_FIDELITY"
+        }
+      }
+    service: "threat-response-alerts"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1735193752000
+ -
+  sample: |-
+    {
+      "createdAt" : "2024-12-30T11:20:55.110Z",
+      "action" : "create",
+      "id" : 1859,
+      "state" : {
+        "connectionId" : "remote:AssetTag-EID:111111111:1",
+        "sessionId" : "00000000-0000-0000-0000-000000000001",
+        "target" : {
+          "eid" : "1",
+          "hostname" : "AssetTag-EID",
+          "clientId" : "608353334",
+          "ip" : "10.10.10.10",
+          "operatingSystem" : "Windows 11 Pro",
+          "platform" : "Windows"
+        }
+      },
+      "userName" : "user@example.com",
+      "userId" : 48,
+      "table" : "LiveConnection",
+      "updatedAt" : "2024-12-30T11:20:55.110Z"
+    }
+  service: "threat-response-audit-logs"
+  result:
+    custom:
+      action: "create"
+      createdAt: "2024-12-30T11:20:55.110Z"
+      id: 1859
+      network:
+        client:
+          ip: "10.10.10.10"
+      state:
+        connectionId: "remote:AssetTag-EID:111111111:1"
+        sessionId: "00000000-0000-0000-0000-000000000001"
+        target:
+          clientId: "608353334"
+          eid: "1"
+          hostname: "AssetTag-EID"
+          operatingSystem: "Windows 11 Pro"
+          platform: "Windows"
+      table: "LiveConnection"
+      updatedAt: "2024-12-30T11:20:55.110Z"
+      usr:
+        id: 48
+        name: "user@example.com"
+    message: |-
+      {
+        "createdAt" : "2024-12-30T11:20:55.110Z",
+        "action" : "create",
+        "id" : 1859,
+        "state" : {
+          "connectionId" : "remote:AssetTag-EID:111111111:1",
+          "sessionId" : "00000000-0000-0000-0000-000000000001",
+          "target" : {
+            "eid" : "1",
+            "hostname" : "AssetTag-EID",
+            "clientId" : "608353334",
+            "ip" : "10.10.10.10",
+            "operatingSystem" : "Windows 11 Pro",
+            "platform" : "Windows"
+          }
+        },
+        "userName" : "user@example.com",
+        "userId" : 48,
+        "table" : "LiveConnection",
+        "updatedAt" : "2024-12-30T11:20:55.110Z"
+      }
+    service: "threat-response-audit-logs"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1735557655110
+ -
+  sample: |-
+    {
+      "createdAt" : "2024-12-30T09:12:55.918Z",
+      "action" : "update",
+      "id" : 1856,
+      "state" : {
+        "guidsUpdated" : [ "00000000-0000-0000-0000-000000000023" ],
+        "idsUpdated" : [ 23 ],
+        "updatedFields" : {
+          "state" : "resolved"
+        },
+        "legacyType" : "detect.service.alert.modified.batch"
+      },
+      "userName" : "user@example.com",
+      "userId" : 48,
+      "table" : "Alert",
+      "updatedAt" : "2024-12-30T09:12:55.918Z"
+    }
+  service: "threat-response-audit-logs"
+  result:
+    custom:
+      action: "update"
+      createdAt: "2024-12-30T09:12:55.918Z"
+      id: 1856
+      state:
+        guidsUpdated:
+         - "00000000-0000-0000-0000-000000000023"
+        idsUpdated:
+         - 23
+        legacyType: "detect.service.alert.modified.batch"
+        updatedFields:
+          state: "resolved"
+      table: "Alert"
+      updatedAt: "2024-12-30T09:12:55.918Z"
+      usr:
+        id: 48
+        name: "user@example.com"
+    message: |-
+      {
+        "createdAt" : "2024-12-30T09:12:55.918Z",
+        "action" : "update",
+        "id" : 1856,
+        "state" : {
+          "guidsUpdated" : [ "00000000-0000-0000-0000-000000000023" ],
+          "idsUpdated" : [ 23 ],
+          "updatedFields" : {
+            "state" : "resolved"
+          },
+          "legacyType" : "detect.service.alert.modified.batch"
+        },
+        "userName" : "user@example.com",
+        "userId" : 48,
+        "table" : "Alert",
+        "updatedAt" : "2024-12-30T09:12:55.918Z"
+      }
+    service: "threat-response-audit-logs"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1735549975918
+ -
+  sample: |-
+    {
+      "creation_time" : "2025-01-06T09:46:20Z",
+      "audit_name" : "New System User Session Created",
+      "type_name" : "CreateObject",
+      "modifier_user_id" : 0,
+      "object_name" : "",
+      "details" : "UserID: 44; Session ID: 322444; IP Address: 10.10.10.10",
+      "last_modified_by" : "",
+      "object_type_name" : "authentication",
+      "type" : 0,
+      "object_id" : 2,
+      "modification_time" : "2025-01-06T09:46:20Z",
+      "audit_row_id" : 323047
+    }
+  service: "platform-audit-logs"
+  result:
+    custom:
+      audit_name: "New System User Session Created"
+      audit_row_id: 323047
+      creation_time: "2025-01-06T09:46:20Z"
+      last_modified_by: ""
+      modification_time: "2025-01-06T09:46:20Z"
+      modifier_user_id: 0
+      network:
+        client:
+          ip: "10.10.10.10"
+      object_id: 2
+      object_name: ""
+      object_type_name: "authentication"
+      session_id: 322444
+      type: 0
+      type_name: "CreateObject"
+      usr:
+        id: "44"
+    message: "UserID: 44; Session ID: 322444; IP Address: 10.10.10.10"
+    service: "platform-audit-logs"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1736156780000
+ -
+  sample: |-
+    {
+      "creation_time" : "2025-01-06T09:46:19Z",
+      "audit_name" : "New Session Created",
+      "type_name" : "CreateObject",
+      "modifier_user_id" : 0,
+      "object_name" : "",
+      "details" : "User: Reputation; Session ID: 322443; Authentication Type: User; Originated from SOAPPluginScheduler",
+      "last_modified_by" : "",
+      "object_type_name" : "authentication",
+      "type" : 0,
+      "object_id" : 7,
+      "modification_time" : "2025-01-06T09:46:19Z",
+      "audit_row_id" : 323046
+    }
+  service: "platform-audit-logs"
+  result:
+    custom:
+      audit_name: "New Session Created"
+      audit_row_id: 323046
+      authentication_type: "User"
+      creation_time: "2025-01-06T09:46:19Z"
+      last_modified_by: ""
+      modification_time: "2025-01-06T09:46:19Z"
+      modifier_user_id: 0
+      object_id: 7
+      object_name: ""
+      object_type_name: "authentication"
+      originated_from: "SOAPPluginScheduler"
+      session_id: 322443
+      type: 0
+      type_name: "CreateObject"
+      usr:
+        name: "Reputation"
+    message: "User: Reputation; Session ID: 322443; Authentication Type: User; Originated from SOAPPluginScheduler"
+    service: "platform-audit-logs"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1736156779000
+ -
+  sample: |-
+    {
+      "creation_time" : "2025-01-02T16:28:31Z",
+      "audit_name" : "New Session Created",
+      "type_name" : "CreateObject",
+      "modifier_user_id" : 0,
+      "object_name" : "",
+      "details" : "User: integrations@tanium.com; Session ID: 254078; Authentication Type: JsonWebToken; IP Address: 10.10.10.10",
+      "last_modified_by" : "",
+      "object_type_name" : "authentication",
+      "type" : 0,
+      "object_id" : 3,
+      "modification_time" : "2025-01-02T16:28:31Z",
+      "audit_row_id" : 254586
+    }
+  service: "platform-audit-logs"
+  result:
+    custom:
+      audit_name: "New Session Created"
+      audit_row_id: 254586
+      authentication_type: "JsonWebToken"
+      creation_time: "2025-01-02T16:28:31Z"
+      last_modified_by: ""
+      modification_time: "2025-01-02T16:28:31Z"
+      modifier_user_id: 0
+      network:
+        client:
+          ip: "10.10.10.10"
+      object_id: 3
+      object_name: ""
+      object_type_name: "authentication"
+      session_id: 254078
+      type: 0
+      type_name: "CreateObject"
+      usr:
+        name: "integrations@tanium.com"
+    message: "User: integrations@tanium.com; Session ID: 254078; Authentication Type: JsonWebToken; IP Address: 10.10.10.10"
+    service: "platform-audit-logs"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1735835311000
+ -
+  sample: |-
+    {
+      "creation_time" : "2024-12-26T12:12:38Z",
+      "mod_user" : {
+        "domain" : "",
+        "name" : "test@example.com",
+        "id" : 47,
+        "display_name" : ""
+      },
+      "type_name" : "DeleteObject",
+      "last_modified_by" : "test@example.com",
+      "type" : 2,
+      "object_id" : 47,
+      "audit_row_id" : 122364,
+      "audit_name" : "User Logged Out",
+      "modifier_user_id" : 47,
+      "object_name" : "",
+      "details" : "User: test@example.com; Session ID: 121951; 10.10.10.10",
+      "object_type_name" : "authentication",
+      "modification_time" : "2024-12-26T12:12:38Z"
+    }
+  service: "platform-audit-logs"
+  result:
+    custom:
+      audit_name: "User Logged Out"
+      audit_row_id: 122364
+      creation_time: "2024-12-26T12:12:38Z"
+      last_modified_by: "test@example.com"
+      mod_user:
+        display_name: ""
+        domain: ""
+      modification_time: "2024-12-26T12:12:38Z"
+      modifier_user_id: 47
+      network:
+        client:
+          ip: "10.10.10.10"
+      object_id: 47
+      object_name: ""
+      object_type_name: "authentication"
+      session_id: 121951
+      type: 2
+      type_name: "DeleteObject"
+      usr:
+        id: 47
+        name: "test@example.com"
+    message: "User: test@example.com; Session ID: 121951; 10.10.10.10"
+    service: "platform-audit-logs"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1735215158000
+ -
+  sample: |-
+    {
+      "creation_time" : "2024-12-31T18:29:50Z",
+      "audit_name" : "Authentication Failed",
+      "type_name" : "FailedCreateObject",
+      "modifier_user_id" : 0,
+      "object_name" : "",
+      "details" : "Failed Authentication Deleted session supplied.  User: Comply; Last Used: 2024-12-31 18:24:16 +0000; Now: 2024-12-31 18:29:50 +0000",
+      "last_modified_by" : "",
+      "object_type_name" : "authentication",
+      "type" : 3,
+      "object_id" : 0,
+      "modification_time" : "2024-12-31T18:29:50Z",
+      "audit_row_id" : 219322
+    }
+  service: "platform-audit-logs"
+  result:
+    custom:
+      audit_name: "Authentication Failed"
+      audit_row_id: 219322
+      creation_time: "2024-12-31T18:29:50Z"
+      last_modified_by: ""
+      last_used: 1735669456000
+      modification_time: "2024-12-31T18:29:50Z"
+      modifier_user_id: 0
+      now: 1735669790000
+      object_id: 0
+      object_name: ""
+      object_type_name: "authentication"
+      type: 3
+      type_name: "FailedCreateObject"
+      usr:
+        name: "Comply"
+    message: "Failed Authentication Deleted session supplied.  User: Comply; Last Used: 2024-12-31 18:24:16 +0000; Now: 2024-12-31 18:29:50 +0000"
+    service: "platform-audit-logs"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1735669790000
+ -
+  sample: |-
+    {
+      "creation_time" : "2025-01-04T14:26:53Z",
+      "audit_name" : "Authentication Failed",
+      "type_name" : "FailedCreateObject",
+      "modifier_user_id" : 0,
+      "object_name" : "",
+      "details" : "Failed Authentication Expired session supplied. User: Reputation; Last Used: 2025-01-04 14:21:52 +0000; Now: 2025-01-04 14:26:53 +0000",
+      "last_modified_by" : "",
+      "object_type_name" : "authentication",
+      "type" : 3,
+      "object_id" : 0,
+      "modification_time" : "2025-01-04T14:26:53Z",
+      "audit_row_id" : 289840
+    }
+  service: "platform-audit-logs"
+  result:
+    custom:
+      audit_name: "Authentication Failed"
+      audit_row_id: 289840
+      creation_time: "2025-01-04T14:26:53Z"
+      last_modified_by: ""
+      last_used: 1736000512000
+      modification_time: "2025-01-04T14:26:53Z"
+      modifier_user_id: 0
+      now: 1736000813000
+      object_id: 0
+      object_name: ""
+      object_type_name: "authentication"
+      type: 3
+      type_name: "FailedCreateObject"
+      usr:
+        name: "Reputation"
+    message: "Failed Authentication Expired session supplied. User: Reputation; Last Used: 2025-01-04 14:21:52 +0000; Now: 2025-01-04 14:26:53 +0000"
+    service: "platform-audit-logs"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1736000813000
+ -
+  sample: |-
+    {
+      "creation_time" : "2025-01-03T05:56:12Z",
+      "audit_name" : "Authentication Failed",
+      "type_name" : "FailedCreateObject",
+      "modifier_user_id" : 0,
+      "object_name" : "",
+      "details" : "Failed Authentication JWT authentication failed: IP Address: 10.10.10.10. User access token has been invalidated",
+      "last_modified_by" : "",
+      "object_type_name" : "authentication",
+      "type" : 3,
+      "object_id" : 0,
+      "modification_time" : "2025-01-03T05:56:12Z",
+      "audit_row_id" : 264927
+    }
+  service: "platform-audit-logs"
+  result:
+    custom:
+      audit_name: "Authentication Failed"
+      audit_row_id: 264927
+      creation_time: "2025-01-03T05:56:12Z"
+      last_modified_by: ""
+      modification_time: "2025-01-03T05:56:12Z"
+      modifier_user_id: 0
+      network:
+        client:
+          ip: "10.10.10.10"
+      object_id: 0
+      object_name: ""
+      object_type_name: "authentication"
+      type: 3
+      type_name: "FailedCreateObject"
+    message: "Failed Authentication JWT authentication failed: IP Address: 10.10.10.10. User access token has been invalidated"
+    service: "platform-audit-logs"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1735883772000
+ -
+  sample: |-
+    {
+      "creation_time" : "2024-12-31T11:53:03Z",
+      "audit_name" : "Authentication Failed",
+      "type_name" : "FailedCreateObject",
+      "modifier_user_id" : 0,
+      "object_name" : "",
+      "details" : "Failed Authentication JWT authentication failed: IP Address: 10.10.10.10. JWTInvalidToken: Invalid JSON Web Token. Token has expired. now=2024-12-31 11:53:03 +0000 exp=2024-12-31 11:10:13 +0000",
+      "last_modified_by" : "",
+      "object_type_name" : "authentication",
+      "type" : 3,
+      "object_id" : 0,
+      "modification_time" : "2024-12-31T11:53:03Z",
+      "audit_row_id" : 214232
+    }
+  service: "platform-audit-logs"
+  result:
+    custom:
+      audit_name: "Authentication Failed"
+      audit_row_id: 214232
+      creation_time: "2024-12-31T11:53:03Z"
+      exp: 1735643413000
+      last_modified_by: ""
+      modification_time: "2024-12-31T11:53:03Z"
+      modifier_user_id: 0
+      network:
+        client:
+          ip: "10.10.10.10"
+      now: 1735645983000
+      object_id: 0
+      object_name: ""
+      object_type_name: "authentication"
+      type: 3
+      type_name: "FailedCreateObject"
+    message: "Failed Authentication JWT authentication failed: IP Address: 10.10.10.10. JWTInvalidToken: Invalid JSON Web Token. Token has expired. now=2024-12-31 11:53:03 +0000 exp=2024-12-31 11:10:13 +0000"
+    service: "platform-audit-logs"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1735645983000
+ -
+  sample: |-
+    {
+      "creation_time" : "2025-01-06T09:53:02Z",
+      "mod_user" : {
+        "domain" : "",
+        "name" : "admin",
+        "id" : 2,
+        "display_name" : ""
+      },
+      "type_name" : "UpdateObject",
+      "last_modified_by" : "admin",
+      "type" : 1,
+      "object_id" : 102,
+      "audit_row_id" : 9234,
+      "audit_name" : "ias_auth_jwks_download_timeout_seconds",
+      "modifier_user_id" : 2,
+      "object_name" : "ias_auth_jwks_download_timeout_seconds",
+      "details" : "Updated 'ias_auth_jwks_download_timeout_seconds' from 10 to 10",
+      "object_type_name" : "system_setting",
+      "modification_time" : "2025-01-06T09:53:02Z"
+    }
+  service: "platform-audit-logs"
+  result:
+    custom:
+      audit_name: "ias_auth_jwks_download_timeout_seconds"
+      audit_row_id: 9234
+      creation_time: "2025-01-06T09:53:02Z"
+      last_modified_by: "admin"
+      mod_user:
+        display_name: ""
+        domain: ""
+      modification_time: "2025-01-06T09:53:02Z"
+      modifier_user_id: 2
+      new_value: "10"
+      object_id: 102
+      object_name: "ias_auth_jwks_download_timeout_seconds"
+      object_type_name: "system_setting"
+      old_value: "10"
+      setting: "ias_auth_jwks_download_timeout_seconds"
+      type: 1
+      type_name: "UpdateObject"
+      usr:
+        id: 2
+        name: "admin"
+    message: "Updated 'ias_auth_jwks_download_timeout_seconds' from 10 to 10"
+    service: "platform-audit-logs"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1736157182000
+ -
+  sample: |-
+    {
+      "creation_time" : "2024-12-19T18:27:31Z",
+      "mod_user" : {
+        "domain" : "<[tanium]>",
+        "name" : "Patch",
+        "id" : 37,
+        "display_name" : "Tanium Internal"
+      },
+      "type_name" : "CreateObject",
+      "last_modified_by" : "Patch",
+      "type" : 0,
+      "object_id" : 317,
+      "audit_row_id" : 105,
+      "audit_name" : "HotCachePercentage",
+      "modifier_user_id" : 37,
+      "object_name" : "HotCachePercentage",
+      "details" : "Created setting 'HotCachePercentage' with a value of: 80",
+      "object_type_name" : "system_setting",
+      "modification_time" : "2024-12-19T18:27:31Z"
+    }
+  service: "platform-audit-logs"
+  result:
+    custom:
+      audit_name: "HotCachePercentage"
+      audit_row_id: 105
+      creation_time: "2024-12-19T18:27:31Z"
+      last_modified_by: "Patch"
+      mod_user:
+        display_name: "Tanium Internal"
+        domain: "<[tanium]>"
+      modification_time: "2024-12-19T18:27:31Z"
+      modifier_user_id: 37
+      object_id: 317
+      object_name: "HotCachePercentage"
+      object_type_name: "system_setting"
+      setting: "HotCachePercentage"
+      type: 0
+      type_name: "CreateObject"
+      usr:
+        id: 37
+        name: "Patch"
+      value: "80"
+    message: "Created setting 'HotCachePercentage' with a value of: 80"
+    service: "platform-audit-logs"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1734632851000

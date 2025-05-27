@@ -1,0 +1,263 @@
+id: ivanti-nzta
+metric_id: ivanti-nzta
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - facetType: range
+    groups:
+      - Web Access
+    name: Network Bytes Read
+    path: network.bytes_read
+    source: log
+    type: double
+    unit:
+      family: bytes
+      name: byte
+  - facetType: range
+    groups:
+      - Web Access
+    name: Bytes Written
+    path: network.bytes_written
+    source: log
+    type: double
+    unit:
+      family: bytes
+      name: byte
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - groups:
+      - User
+    name: User Email
+    path: usr.email
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url
+    source: log
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - description: ''
+    facetType: range
+    groups:
+      - Ivanti nZTA
+    name: Concurrent Users
+    path: ivanti_nzta.concurrent_users
+    source: log
+    type: integer
+  - description: ''
+    facetType: range
+    groups:
+      - Ivanti nZTA
+    name: Connections
+    path: ivanti_nzta.connections
+    source: log
+    type: integer
+  - description: ''
+    facetType: range
+    groups:
+      - Ivanti nZTA
+    name: Duration
+    path: ivanti_nzta.duration
+    source: log
+    type: integer
+    unit:
+      family: time
+      name: second
+pipeline:
+  type: pipeline
+  name: Ivanti nZTA
+  enabled: true
+  filter:
+    query: source:ivanti-nzta
+  processors:
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: arithmetic-processor
+      name: Convert `timestamp` epoch to milliseconds epoch
+      enabled: true
+      expression: timestamp * 1000
+      target: timestamp
+      replaceMissing: false
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: message-remapper
+      name: Define `raw_message`, `message_type` as the official message of the log
+      enabled: true
+      sources:
+        - raw_message
+        - message_type
+    - type: grok-parser
+      name: Convert `source_ip` field into an array
+      enabled: true
+      source: source_ip
+      samples:
+        - 10.10.10.10, 20.20.20.20
+      grok:
+        supportRules: ""
+        matchRules: source_ip_rule %{data:source_ip:array("",", ")}
+    - type: attribute-remapper
+      name: Map `source_ip` to `network.client.ip`
+      enabled: true
+      sources:
+        - source_ip
+      sourceType: attribute
+      target: network.client.ip
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `user_name` to `usr.name`
+      enabled: true
+      sources:
+        - user_name
+      sourceType: attribute
+      target: usr.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: pipeline
+      name: Admin Logs
+      enabled: true
+      filter:
+        query: service:admin-logs
+      processors:
+        - type: grok-parser
+          name: Parsing Admin Logs
+          enabled: true
+          source: message
+          samples:
+            - Login failed from 10.10.10.10 for adminuser/System Local.
+            - Login failed from 10.10.10.10 for adminuser/System Local because
+              group System Local is disabled. Group Access is turned off in the
+              license.
+            - Login failed from 10.10.10.10 for adminuser/System Local using
+              test-server server.
+            - "Login failed using auth server Admin Auth (Local Authentication).
+              Reason: Failed"
+            - "Created (Authentication > Auth Servers > Auth Server[Admin Auth]
+              > Local Authentication > Users > User[test]) with the following
+              attributes: [Username=test] [Full name=Test] [Email
+              address=test.user@example.com] [Password=*****]
+              [Password=*****] [Password Salt=*****] [Password Salt=*****]
+              [Password Hash Format=strong-hash] [One-time user=false]
+              [console-access=false] [Enabled=true] [Require user to change
+              password at next sign in=true]"
+          grok:
+            supportRules: _space %{regex("(\\s)*"):}
+            matchRules: >-
+              failed_login_rule1 Login failed from %{ip:network.client.ip} for
+              %{regex("[^/]*"):usr.name}/(%{regex(".*(?= using)"):realm_name}
+              using %{regex(".*(?= server)"):server_name} server.|%{regex(".*(?=
+              because)"):realm_name} because
+              %{regex("[^.]*"):reason}.*|%{regex("[^.]*"):realm_name}.)
+
+              failed_login_rule2 Login failed( using auth server %{regex("[^(]*"):auth_server} \(%{regex("[^)]*"):auth_method}\))?.%{_space}Reason:%{_space}%{data:reason}
+
+              failed_login_rule3  %{word} authentication failed for %{regex("[^/]*"):usr.name}/%{regex(".*(?= from)"):realm_name} from %{ip:network.client.ip}
+
+              authentication_server_rule Authenticating with %{word} Authentication Server:%{_space}"%{regex("[^\"]*"):auth_server}"
+
+              create_user_rule Created \(%{regex(".*(?= Users)")} Users %{regex("[^)]*")}\) with the following attributes:%{_space}\[Username=%{regex("[^]]*"):user_name}\]%{_space}\[Full name=%{regex("[^]]*"):full_name}\]%{_space}\[Email address=%{regex("[^]]*"):usr.email}\]%{_space}\[%{regex("[^]]*")}\]%{_space}\[%{regex("[^]]*")}\]%{_space}\[%{regex("[^]]*")}\]%{_space}\[%{regex("[^]]*")}\]%{_space}\[Password Hash Format=%{regex("[^]]*"):password_hash_format}\]%{_space}\[One-time user=%{boolean:one_time_user}\]%{_space}\[console-access=%{boolean:console_access}\]%{_space}\[Enabled=%{boolean:is_enabled}\] %{data}
+
+              admin_change_rule Created \(%{regex("[^)]*")}\) with the following attributes:%{_space}%{data:attributes}
+    - type: pipeline
+      name: Access Logs
+      enabled: true
+      filter:
+        query: service:access-logs
+      processors:
+        - type: grok-parser
+          name: Parsing Access Logs
+          enabled: true
+          source: message
+          samples:
+            - "Login failed for 'Primary' authentication using auth server 'User
+              Auth' ('Local Authentication'). Reason: 'Failed'"
+            - 'Authenticating user with Primary Authentication Server: "User
+              Auth"'
+            - Primary authentication failed for test/User Auth from 10.10.10.10
+          grok:
+            supportRules: _space %{regex("(\\s)*"):}
+            matchRules: >-
+              failed_login_rule1 Login failed for '%{word}' authentication using
+              auth server '%{regex("[^']*"):auth_server}'
+              \('%{regex("[^']*"):auth_method}'\).%{_space}Reason:%{_space}'%{data:reason}'
+
+              failed_login_rule2 %{word} authentication failed for %{regex("[^/]*"):usr.name}/%{regex(".*(?= from)"):realm_name} from %{ip:network.client.ip}
+
+              authentication_server_rule Authenticating user with %{word} Authentication Server:%{_space}"%{regex("[^\"]*"):auth_server}"
+
+              vpn_tunnelling_rule VPN Tunneling: Session started for user%{_space}(\(session:%{_space}%{notSpace:session_id}\))?%{_space}with (IPv4 address|IP) %{ip:network.client.ip},%{_space}hostname %{data:hostname}
+
+              connection_rule Closed connection to %{ip:network.client.ip} after %{number:ivanti_nzta.duration} seconds, with %{integer:network.bytes_read} bytes read and %{integer:network.bytes_written} bytes written
+    - type: pipeline
+      name: Event Logs
+      enabled: true
+      filter:
+        query: service:event-logs
+      processors:
+        - type: grok-parser
+          name: Parsing Event Logs
+          enabled: true
+          source: message
+          samples:
+            - "Number of concurrent users logged in to the device: 3"
+            - "Number of NCP connections: 0"
+            - API GET call failed for resource
+              [http://example.com]
+              with response code [404].
+            - User Group 'ZTA User Role' added.
+            - "Readiness failed. Details: Notification Channel Connectivity NOT
+              Healthy."
+          grok:
+            supportRules: _space %{regex("(\\s)*"):}
+            matchRules: >-
+              concurrent_users_rule Number of concurrent users logged in to the
+              device:%{_space}%{integer:ivanti_nzta.concurrent_users}
+
+              ncp_connections_rule Number of (JCP|NCP) connections:%{_space}%{integer:ivanti_nzta.connections}
+
+              api_failure_response_rule API %{word:http.method} call failed for resource \[%{regex("[^]]*"):http.url}\] with response code \[%{integer:http.status_code}\].
+
+              user_group_added_rule User Group '%{regex("[^/']*"):user_group}' added.
+
+              user_added_rule Local User '%{regex("[^/']*"):added_user}' added.
+
+              readiness_failure_rule Readiness failed. Details: %{data:details}
+    - name: Lookup for `severity` to `status`
+      enabled: true
+      source: severity
+      target: status
+      lookupTable: |-
+        INFO, Info
+        MINOR, Notice
+        MAJOR, Warning
+        CRITICAL, Critical
+      type: lookup-processor
+    - type: status-remapper
+      name: Define `status` as the official status of the log
+      enabled: true
+      sources:
+        - status

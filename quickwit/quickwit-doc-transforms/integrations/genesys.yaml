@@ -1,0 +1,65 @@
+id: genesys
+metric_id: genesys
+backend_only: false
+facets:
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+pipeline:
+  type: pipeline
+  name: Genesys
+  enabled: true
+  filter:
+    query: source:genesys
+  processors:
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: date-remapper
+      name: Define `eventDate` as the official date of the log
+      enabled: true
+      sources:
+        - eventDate
+    - name: Lookup for `status` to `status`
+      enabled: true
+      source: status
+      target: status
+      lookupTable: |-
+        SUCCESS, info
+        FAILURE, error
+        WARNING, warning
+      type: lookup-processor
+    - type: status-remapper
+      name: Define `status` as the official status of the log
+      enabled: true
+      sources:
+        - status
+    - type: attribute-remapper
+      name: Map `user.id` to `usr.id`
+      enabled: true
+      sources:
+        - user.id
+      sourceType: attribute
+      target: usr.id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `user.name` to `usr.name`
+      enabled: true
+      sources:
+        - user.name
+      sourceType: attribute
+      target: usr.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false

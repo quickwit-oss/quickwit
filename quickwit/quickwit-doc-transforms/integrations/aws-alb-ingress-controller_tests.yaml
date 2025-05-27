@@ -1,0 +1,48 @@
+id: "aws-alb-ingress-controller"
+tests:
+ -
+  sample: "I0408 21:09:06.840010       1 store.go:226] updating annotations information for ingress ref-prod/dre-proxy"
+  result:
+    custom:
+      level: "I"
+      lineno: 226.0
+      logger:
+        name: "store.go"
+        thread_id: 1.0
+      timestamp: 39992946840
+    message: "updating annotations information for ingress ref-prod/dre-proxy"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 39992946840
+ -
+  sample: "I0408 21:09:06.840010       1 rules.go:98] ref-prod/ref-prod-ingress: rule 2 modified with conditions [{ \_ \_Field: \"host-header\", \_ \_Values: [\"oauth2-int.us-east-1.ref-prod.wds.io\"] \_},{ \_ \_Field: \"path-pattern\", \_ \_Values: [\"/*\"] \_}]"
+  result:
+    custom:
+      level: "I"
+      lineno: 98.0
+      logger:
+        name: "rules.go"
+        thread_id: 1.0
+      timestamp: 39992946840
+    message: "ref-prod/ref-prod-ingress: rule 2 modified with conditions [{ \_ \_Field: \"host-header\", \_ \_Values: [\"oauth2-int.us-east-1.ref-prod.wds.io\"] \_},{ \_ \_Field: \"path-pattern\", \_ \_Values: [\"/*\"] \_}]"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 39992946840
+ -
+  sample: "W0408 21:09:06.840010       1 reflector.go:270] pkg/mod/k8s.io/client-go@v2.0.0-alpha.0.0.20191112141123-5c4ab214ef58+incompatible/utils/cache/reflector.go:95: watch of *v1.Endpoints ended with: too old resource version: 98851296 (98851900)"
+  result:
+    custom:
+      level: "W"
+      lineno: 270.0
+      logger:
+        name: "reflector.go"
+        thread_id: 1.0
+      timestamp: 39992946840
+    message: "pkg/mod/k8s.io/client-go@v2.0.0-alpha.0.0.20191112141123-5c4ab214ef58+incompatible/utils/cache/reflector.go:95: watch of *v1.Endpoints ended with: too old resource version: 98851296 (98851900)"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 39992946840
+

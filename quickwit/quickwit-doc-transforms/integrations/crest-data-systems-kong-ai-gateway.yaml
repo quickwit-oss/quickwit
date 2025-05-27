@@ -1,0 +1,147 @@
+id: crest-data-systems-kong-ai-gateway
+metric_id: crest-data-systems-kong-ai-gateway
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url
+    source: log
+  - groups:
+      - Web Access
+    name: User-Agent
+    path: http.useragent
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - facetType: range
+    groups:
+      - Crest Data Kong AI Gateway
+    name: Completion Tokens
+    path: ai.usage.completion_tokens
+    source: log
+    type: integer
+  - facetType: range
+    groups:
+      - Crest Data Kong AI Gateway
+    name: Kong Latency
+    path: latencies.kong
+    source: log
+    type: integer
+    unit:
+      family: time
+      name: millisecond
+  - facetType: range
+    groups:
+      - Crest Data Kong AI Gateway
+    name: Prompt Tokens
+    path: ai.usage.prompt_tokens
+    source: log
+    type: integer
+  - facetType: range
+    groups:
+      - Crest Data Kong AI Gateway
+    name: Proxy Latency
+    path: latencies.proxy
+    source: log
+    type: integer
+    unit:
+      family: time
+      name: millisecond
+  - facetType: range
+    groups:
+      - Crest Data Kong AI Gateway
+    name: Request Latency
+    path: latencies.request
+    source: log
+    type: integer
+    unit:
+      family: time
+      name: millisecond
+  - facetType: range
+    groups:
+      - Crest Data Kong AI Gateway
+    name: Total Tokens
+    path: ai.usage.total_tokens
+    source: log
+    type: integer
+pipeline:
+  type: pipeline
+  name: Kong AI by Crest Data
+  enabled: true
+  filter:
+    query: "source:crest-data-systems-kong-ai-gateway"
+  processors:
+    - type: date-remapper
+      name: Define `started_at` as the official date of the log
+      enabled: true
+      sources:
+        - started_at
+    - type: service-remapper
+      name: Define `service.name` as the official service of the log
+      enabled: true
+      sources:
+        - service.name
+    - type: attribute-remapper
+      name: Map `request.url` to `http.url`
+      enabled: true
+      sources:
+        - request.url
+      sourceType: attribute
+      target: http.url
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `client_ip` to `network.client.ip`
+      enabled: true
+      sources:
+        - client_ip
+      sourceType: attribute
+      target: network.client.ip
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `request.headers.user-agent` to `http.useragent`
+      enabled: true
+      sources:
+        - request.headers.user-agent
+      sourceType: attribute
+      target: http.useragent
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `request.size` to `network.bytes_read`
+      enabled: true
+      sources:
+        - request.size
+      sourceType: attribute
+      target: network.bytes_read
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `response.size` to `network.bytes_written`
+      enabled: true
+      sources:
+        - response.size
+      sourceType: attribute
+      target: network.bytes_written
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `response.status` to `http.status`
+      enabled: true
+      sources:
+        - response.status
+      sourceType: attribute
+      target: http.status
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false

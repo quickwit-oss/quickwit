@@ -1,0 +1,42 @@
+id: "iis"
+tests:
+ -
+  sample: "2002-05-02 17:42:15 172.22.255.255 GET /images/picture.jpg ?toto=tata 80 toto 123.123.123.123 Mozilla/4.0+(compatible;MSIE+5.5;+Windows+2000+Server) 200 211 322 1234"
+  result:
+    custom:
+      date_access: 1020361335000
+      duration: 1.234E9
+      http:
+        auth: "toto"
+        method: "GET"
+        server_name: "172.22.255.255"
+        status_category: "OK"
+        status_code: 200
+        sub_status_code: 211
+        url: "/images/picture.jpg"
+        url_details:
+          path: "/images/picture.jpg"
+        useragent: "Mozilla/4.0+(compatible;MSIE+5.5;+Windows+2000+Server)"
+        useragent_details:
+          browser:
+            family: "IE"
+            major: "5"
+            minor: "5"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Windows"
+            major: "2000"
+      iis:
+        win32_status: 322
+      network:
+        client:
+          ip: "123.123.123.123"
+          port: 80
+    message: "2002-05-02 17:42:15 172.22.255.255 GET /images/picture.jpg ?toto=tata 80 toto 123.123.123.123 Mozilla/4.0+(compatible;MSIE+5.5;+Windows+2000+Server) 200 211 322 1234"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1020361335000
+

@@ -1,0 +1,193 @@
+id: fauna
+metric_id: fauna
+backend_only: false
+facets:
+  - description: Number of read operations consumed.
+    facetType: range
+    groups:
+      - Fauna
+    name: fauna.BYTE_READ_OPS
+    path: fauna.BYTE_READ_OPS
+    source: log
+    type: integer
+  - description: Number of write operations consumed.
+    facetType: range
+    groups:
+      - Fauna
+    name: fauna.BYTE_WRITE_OPS
+    path: fauna.BYTE_WRITE_OPS
+    source: log
+    type: integer
+  - description: Number of bytes in the request.
+    facetType: range
+    groups:
+      - Fauna
+    name: fauna.BYTES_IN
+    path: fauna.BYTES_IN
+    source: log
+    type: integer
+    unit:
+      family: bytes
+      name: byte
+  - description: Number of bytes in the response.
+    facetType: range
+    groups:
+      - Fauna
+    name: fauna.BYTES_OUT
+    path: fauna.BYTES_OUT
+    source: log
+    type: integer
+    unit:
+      family: bytes
+      name: byte
+  - description: Number of compute operations consumed.
+    facetType: range
+    groups:
+      - Fauna
+    name: fauna.COMPUTE_OPS
+    path: fauna.COMPUTE_OPS
+    source: log
+    type: integer
+  - description: Query processing time, in milliseconds.
+    facetType: range
+    groups:
+      - Fauna
+    name: fauna.QUERY_TIME_MS
+    path: fauna.QUERY_TIME_MS
+    source: log
+    type: integer
+    unit:
+      family: time
+      name: millisecond
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - facetType: range
+    groups:
+      - Measure
+    name: Duration
+    path: duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: nanosecond
+pipeline:
+  type: pipeline
+  name: Fauna
+  enabled: true
+  filter:
+    query: "source:fauna"
+  processors:
+    - type: date-remapper
+      name: Define `TS` as the official date of the log
+      enabled: true
+      sources:
+        - TS
+    - type: attribute-remapper
+      name: Map `RESPONSE_CODE` to `http.status_code`
+      enabled: true
+      sources:
+        - RESPONSE_CODE
+      sourceType: attribute
+      target: http.status_code
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: arithmetic-processor
+      name: duration = QUERY_TIME_MS * 1000000
+      enabled: true
+      expression: QUERY_TIME_MS * 1000000
+      target: duration
+      replaceMissing: false
+    - type: category-processor
+      name: HTTP Status to Log Level
+      enabled: true
+      categories:
+        - filter:
+            query: "@http.status_code:(>=400 <500)"
+          name: Warning
+        - filter:
+            query: "@http.status_code:>=500"
+          name: Error
+        - filter:
+            query: "@http.status_code:(>=200 <400)"
+          name: OK
+      target: http.status_category
+    - type: status-remapper
+      name: Define `http.status_category` as the official status of the log
+      enabled: true
+      sources:
+        - http.status_category
+    - type: attribute-remapper
+      name: Map `BYTE_READ_OPS` to `fauna.BYTE_READ_OPS`
+      enabled: true
+      sources:
+        - BYTE_READ_OPS
+      sourceType: attribute
+      target: fauna.BYTE_READ_OPS
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `BYTE_WRITE_OPS` to `fauna.BYTE_WRITE_OPS`
+      enabled: true
+      sources:
+        - BYTE_WRITE_OPS
+      sourceType: attribute
+      target: fauna.BYTE_WRITE_OPS
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `BYTES_IN` to `fauna.BYTES_IN`
+      enabled: true
+      sources:
+        - BYTES_IN
+      sourceType: attribute
+      target: fauna.BYTES_IN
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `BYTES_OUT` to `fauna.BYTES_OUT`
+      enabled: true
+      sources:
+        - BYTES_OUT
+      sourceType: attribute
+      target: fauna.BYTES_OUT
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `COMPUTE_OPS` to `fauna.COMPUTE_OPS`
+      enabled: true
+      sources:
+        - COMPUTE_OPS
+      sourceType: attribute
+      target: fauna.COMPUTE_OPS
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `QUERY_TIME_MS` to `fauna.QUERY_TIME_MS`
+      enabled: true
+      sources:
+        - QUERY_TIME_MS
+      sourceType: attribute
+      target: fauna.QUERY_TIME_MS
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `TXN_RETRIES` to `fauna.TXN_RETRIES`
+      enabled: true
+      sources:
+        - TXN_RETRIES
+      sourceType: attribute
+      target: fauna.TXN_RETRIES
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false

@@ -1,0 +1,141 @@
+id: gunicorn
+metric_id: gunicorn
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: URL Host
+    path: http.url_details.host
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Web Access
+    name: URL Port
+    path: http.url_details.port
+    source: log
+  - groups:
+      - Web Access
+    name: URL scheme
+    path: http.url_details.scheme
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+pipeline:
+  type: pipeline
+  name: Gunicorn
+  enabled: true
+  filter:
+    query: source:gunicorn
+  processors:
+    - type: grok-parser
+      name: Parsing Gunicorn access and error logs
+      enabled: true
+      source: message
+      samples:
+        - 127.0.0.1 - frank [13/Jul/2016:10:55:36 +0000] "GET /apache_pb.gif HTTP/1.0" 200 2326
+        - 192.0.2.1 - Ultan [07/Mar/2004:16:43:54 -0800] "GET /unencrypted_password_list?foo=bar HTTP/1.1" 404 9001 "http://passwords.hackz0r" "Mozilla/4.08 [en] (Win95)"
+        - '[2017-07-13 16:33:24 +0000] [17] [INFO] Booting worker with pid: 17'
+        - |-
+          [2017-07-13 18:31:11,580] ERROR in app: Exception on /api/users [POST]
+          Traceback (most recent call last):
+            File "/usr/local/lib/python3.5/dist-packages/flask/app.py", line 1982, in wsgi_app
+              response = self.full_dispatch_request()
+      grok:
+        supportRules: |
+          _auth %{notSpace:http.auth:nullIf("-")}
+          _bytes_written %{integer:network.bytes_written}
+          _client_ip %{ipOrHost:network.client.ip}
+          _version HTTP\/%{regex("\\d+\\.\\d+"):http.version}
+          _url %{notSpace:http.url}
+          _ident %{notSpace:http.ident:nullIf("-")}
+          _user_agent %{data:http.useragent}
+          _referer %{notSpace:http.referer}
+          _status_code %{integer:http.status_code}
+          _method %{word:http.method}
+          _date_access %{date("dd/MMM/yyyy:HH:mm:ss Z"):date_access}
+          _x_forwarded_for %{regex("[^\\\"]*"):http._x_forwarded_for:nullIf("-")}
+          _prefix_1 \[%{date("yyyy-MM-dd HH:mm:ss Z"):timestamp}\] \[%{integer:pid}\] \[%{word:level}\]
+          _prefix_2 \[%{date("yyyy-MM-dd HH:mm:ss,SSS"):timestamp}\] %{word:level}
+        matchRules: |
+          access.common %{_client_ip} %{_ident} %{_auth} \[%{_date_access}\] "(?>%{_method} |)%{_url}(?> %{_version}|)" %{_status_code} (?>%{_bytes_written}|-)
+
+          access.combined %{access.common} "%{_referer}" "%{_user_agent}"( "%{_x_forwarded_for}")?.*
+
+          error_format (?>%{_prefix_1}|%{_prefix_2}) %{data:error.message}(\n|\t|\s)+Traceback \(most recent call last\):(?s)\s*%{data:error.stack}
+          fallback_format (?>%{_prefix_1}|%{_prefix_2}) .*
+
+    - type: user-agent-parser
+      name: ''
+      enabled: true
+      sources:
+        - http.useragent
+      target: http.useragent_details
+      encoded: false
+    - type: url-parser
+      name: ''
+      enabled: true
+      sources:
+        - http.url
+      target: http.url_details
+    - type: date-remapper
+      name: Define `date_access`, `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - date_access
+        - timestamp
+    - type: category-processor
+      name: Categorise status code
+      enabled: true
+      categories:
+        - filter:
+            query: '@http.status_code:[200 TO 299]'
+          name: Info
+        - filter:
+            query: '@http.status_code:[300 TO 399]'
+          name: Notice
+        - filter:
+            query: '@http.status_code:[400 TO 499]'
+          name: Warning
+        - filter:
+            query: '@http.status_code:[500 TO 599]'
+          name: Error
+      target: http.status_category
+    - type: status-remapper
+      name: Define `http.status_category`, `level` as the official status of the log
+      enabled: true
+      sources:
+        - http.status_category
+        - level
+

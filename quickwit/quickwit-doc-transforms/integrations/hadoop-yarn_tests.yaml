@@ -1,0 +1,15 @@
+id: "hadoop-yarn"
+tests:
+ -
+  sample: "25/02/24 19:18:39 WARN YarnSchedulerBackend$YarnSchedulerEndpoint: Attempted to request executors before the AM has registered!"
+  result:
+    custom:
+      level: "WARN"
+      logger:
+        name: "YarnSchedulerBackend$YarnSchedulerEndpoint"
+      timestamp: 1740424719000
+    message: "Attempted to request executors before the AM has registered!"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1740424719000

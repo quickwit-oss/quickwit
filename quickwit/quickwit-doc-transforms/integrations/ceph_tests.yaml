@@ -1,0 +1,170 @@
+id: "ceph"
+tests:
+ -
+  sample: "2019-06-19 08:00:04.025198 mon.ceph-node-1 unknown.0 - 0 :  [INF] mkfs 9f7d54f4-56b0-4f37-ab0a-eeaf198fd8f6"
+  result:
+    custom:
+      ceph:
+        address: "-"
+        node: "mon.ceph-node-1"
+        subsystem: "unknown.0"
+      date: 1560931204025
+      level: "INF"
+      logger:
+        index: 0
+    message: "2019-06-19 08:00:04.025198 mon.ceph-node-1 unknown.0 - 0 :  [INF] mkfs 9f7d54f4-56b0-4f37-ab0a-eeaf198fd8f6"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1560931204025
+ -
+  sample: "2019-06-19 08:03:12.463811 mgr.ceph-node-1 mgr.4110 10.164.0.4:0/8674 1 : cluster [DBG] pgmap v3: 0 pgs: ; 0 B data, 0 B used, 0 B / 0 B avail"
+  result:
+    custom:
+      ceph:
+        address: "10.164.0.4:0/8674"
+        node: "mgr.ceph-node-1"
+        subsystem: "mgr.4110"
+      date: 1560931392463
+      level: "DBG"
+      logger:
+        index: 1
+    message: "2019-06-19 08:03:12.463811 mgr.ceph-node-1 mgr.4110 10.164.0.4:0/8674 1 : cluster [DBG] pgmap v3: 0 pgs: ; 0 B data, 0 B used, 0 B / 0 B avail"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1560931392463
+ -
+  sample: "2019-06-19 08:00:05.945153 mon.ceph-node-1 mon.0 10.164.0.4:6789/0 7 : audit [DBG] from='admin socket' entity='admin socket' cmd='mon_status' args=[]: dispatch"
+  result:
+    custom:
+      ceph:
+        address: "10.164.0.4:6789/0"
+        node: "mon.ceph-node-1"
+        subsystem: "mon.0"
+      date: 1560931205945
+      level: "DBG"
+      logger:
+        index: 7
+    message: "2019-06-19 08:00:05.945153 mon.ceph-node-1 mon.0 10.164.0.4:6789/0 7 : audit [DBG] from='admin socket' entity='admin socket' cmd='mon_status' args=[]: dispatch"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1560931205945
+ -
+  sample: "2019-06-19 08:03:46.798992 mon.ceph-node-1 mon.0 10.164.0.4:6789/0 78 : audit [INF] from='osd.2 10.164.0.5:6800/7528' entity='osd.2' cmd='[{\"prefix\": \"osd crush create-or-move\", \"id\": 2, \"weight\":0.0195, \"args\": [\"host=ceph-node-3\", \"root=default\"]}]': finished"
+  result:
+    custom:
+      ceph:
+        address: "10.164.0.4:6789/0"
+        node: "mon.ceph-node-1"
+        subsystem: "mon.0"
+      date: 1560931426798
+      level: "INF"
+      logger:
+        index: 78
+    message: "2019-06-19 08:03:46.798992 mon.ceph-node-1 mon.0 10.164.0.4:6789/0 78 : audit [INF] from='osd.2 10.164.0.5:6800/7528' entity='osd.2' cmd='[{\"prefix\": \"osd crush create-or-move\", \"id\": 2, \"weight\":0.0195, \"args\": [\"host=ceph-node-3\", \"root=default\"]}]': finished"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1560931426798
+ -
+  sample: "[2019-06-19 08:03:08,911][ceph_volume.main][INFO  ] Running command: ceph-volume --cluster ceph lvm create --bluestore --data /dev/sdb"
+  result:
+    custom:
+      ceph:
+        function: "ceph_volume.main"
+      date: 1560931388911
+      level: "INFO"
+    message: "[2019-06-19 08:03:08,911][ceph_volume.main][INFO  ] Running command: ceph-volume --cluster ceph lvm create --bluestore --data /dev/sdb"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1560931388911
+ -
+  sample: "2019-06-19 08:03:13.471 7f26c2813700  1 mon.ceph-node-1@0(leader).log v15 check_sub sending message to mgr.4110 10.164.0.4:0/8674 with 1 entries (version 15)"
+  result:
+    custom:
+      ceph:
+        priority: 1
+        subsystem: "mon.ceph-node-1@0(leader).log"
+      date: 1560931393471
+      logger:
+        thread_name: "7f26c2813700"
+    message: "2019-06-19 08:03:13.471 7f26c2813700  1 mon.ceph-node-1@0(leader).log v15 check_sub sending message to mgr.4110 10.164.0.4:0/8674 with 1 entries (version 15)"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1560931393471
+ -
+  sample: "2019-06-19 08:03:10.851 7f43ff76be00  0 set uid:gid to 64045:64045 (ceph:ceph)"
+  result:
+    custom:
+      ceph:
+        priority: 0
+        subsystem: "set"
+      date: 1560931390851
+      logger:
+        thread_name: "7f43ff76be00"
+    message: "2019-06-19 08:03:10.851 7f43ff76be00  0 set uid:gid to 64045:64045 (ceph:ceph)"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1560931390851
+ -
+  sample: "2019-06-19 08:03:10.859 7f43ff76be00  1 bluefs add_block_device bdev 1 path /var/lib/ceph/osd/ceph-0//block size 20 GiB"
+  result:
+    custom:
+      ceph:
+        priority: 1
+        subsystem: "bluefs"
+      date: 1560931390859
+      logger:
+        thread_name: "7f43ff76be00"
+    message: "2019-06-19 08:03:10.859 7f43ff76be00  1 bluefs add_block_device bdev 1 path /var/lib/ceph/osd/ceph-0//block size 20 GiB"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1560931390859
+ -
+  sample: "2019-06-19 08:03:13.471 7f26c2813700  1 mon.ceph-node-1@0(leader).log v15 check_sub sending message to mgr.4110 10.164.0.4:0/8674 with 1 entries (version 15)"
+  result:
+    custom:
+      ceph:
+        priority: 1
+        subsystem: "mon.ceph-node-1@0(leader).log"
+      date: 1560931393471
+      logger:
+        thread_name: "7f26c2813700"
+    message: "2019-06-19 08:03:13.471 7f26c2813700  1 mon.ceph-node-1@0(leader).log v15 check_sub sending message to mgr.4110 10.164.0.4:0/8674 with 1 entries (version 15)"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1560931393471
+ -
+  sample: "2021-01-15T00:30:03.410926-0500 mon.mon1 (mon.1) 4867123 : audit [DBG] from='client.? v1:192.0.2.1:0/557007769' entity='client.client1' cmd=[{'prefix':'df','format':'json'}]: dispatch"
+  result:
+    custom:
+      ceph:
+        node: "mon.mon1"
+        subsystem: "mon.1"
+      date: 1610688603410
+      level: "DBG"
+      logger:
+        index: 4867123
+    message: "2021-01-15T00:30:03.410926-0500 mon.mon1 (mon.1) 4867123 : audit [DBG] from='client.? v1:192.0.2.1:0/557007769' entity='client.client1' cmd=[{'prefix':'df','format':'json'}]: dispatch"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1610688603410
+ -
+  sample: "2021-01-15T00:59:48.232-0500 7f35adcd7700 0 log_channel(audit) log [DBG] : from='client.1045659409 -' entity='client.admin' cmd=[{'prefix': 'osd perf', 'target': ['mon-mgr', ''], 'format': 'json'}]: dispatch"
+  result:
+    custom:
+      ceph:
+        priority: 0
+        subsystem: "log_channel(audit)"
+      date: 1610690388232
+      logger:
+        thread_name: "7f35adcd7700"
+    message: "2021-01-15T00:59:48.232-0500 7f35adcd7700 0 log_channel(audit) log [DBG] : from='client.1045659409 -' entity='client.admin' cmd=[{'prefix': 'osd perf', 'target': ['mon-mgr', ''], 'format': 'json'}]: dispatch"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1610690388232
+

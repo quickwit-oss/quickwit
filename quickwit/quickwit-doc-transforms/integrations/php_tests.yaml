@@ -1,0 +1,301 @@
+id: "php"
+tests:
+ -
+  sample: "Error message. [dd.span_id=\"4014120331748607290\" dd.trace_id=\"2762343115747197098\"]"
+  result:
+    custom:
+      dd:
+        span_id: "4014120331748607290"
+    message: "Error message. [dd.span_id=\"4014120331748607290\" dd.trace_id=\"2762343115747197098\"]"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+    trace_id: "2762343115747197098"
+ -
+  sample: "[2023-05-26 13:53:08] production.DEBUG: email sent {\"dd.trace_id\":\"12441063084678150498\",\"dd.span_id\":\"14615341708603940851\"}"
+  result:
+    custom:
+      channel: "production"
+      dd:
+        span_id: "14615341708603940851"
+      message: "email sent"
+      status: "DEBUG"
+      timestamp: 1685109188000
+    message: "[2023-05-26 13:53:08] production.DEBUG: email sent {\"dd.trace_id\":\"12441063084678150498\",\"dd.span_id\":\"14615341708603940851\"}"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1685109188000
+    trace_id: "12441063084678150498"
+ -
+  sample: "[2023-05-26 13:53:08] production.DEBUG: email sent [dd.trace_id=8702072361770304301 dd.span_id=12316750189659236094 status=notice service=worker]"
+  result:
+    custom:
+      channel: "production"
+      dd:
+        span_id: "12316750189659236094"
+      message: "email sent"
+      service: "worker"
+      status: "notice"
+      timestamp: 1685109188000
+    message: "[2023-05-26 13:53:08] production.DEBUG: email sent [dd.trace_id=8702072361770304301 dd.span_id=12316750189659236094 status=notice service=worker]"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1685109188000
+    trace_id: "8702072361770304301"
+ -
+  sample: "2023-06-13T07:59:21+00:00 NOTICE (5): Notice message [dd.trace_id=\"8702072361770304301\" dd.span_id=\"12316750189659236094\" status=\"notice\" dd.env=\"my-env\" dd.version=\"4.2\" dd.service=\"my-service\"]"
+  result:
+    custom:
+      dd:
+        service: "my-service"
+        span_id: "12316750189659236094"
+      message: "Notice message"
+      status: "notice"
+      timestamp: 1686643161000
+    message: "2023-06-13T07:59:21+00:00 NOTICE (5): Notice message [dd.trace_id=\"8702072361770304301\" dd.span_id=\"12316750189659236094\" status=\"notice\" dd.env=\"my-env\" dd.version=\"4.2\" dd.service=\"my-service\"]"
+    service: "my-service"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "env:my-env"
+     - "version:4.2"
+    timestamp: 1686643161000
+    trace_id: "8702072361770304301"
+ -
+  sample: "[12-June-2023 13:53:08] ERROR: [pool www] child 1234 said into stderr: \"[2023-06-13T13:53:00.103088+00:00] AlbumController.WARNING: Sample log [dd.span_id=\"4014120331748607290\" dd.trace_id=\"2762343115747197098\"] [] []\""
+  result:
+    custom:
+      dd:
+        span_id: "4014120331748607290"
+    message: "[12-June-2023 13:53:08] ERROR: [pool www] child 1234 said into stderr: \"[2023-06-13T13:53:00.103088+00:00] AlbumController.WARNING: Sample log [dd.span_id=\"4014120331748607290\" dd.trace_id=\"2762343115747197098\"] [] []\""
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+    trace_id: "2762343115747197098"
+ -
+  sample: "2023-06-13T14:11:24+00:00 DEBUG (7): Debug - message! [] {\"dd.trace_id\":\"3874201437900919142\",\"dd.span_id\":\"1097783838439658713\",\"status\":\"debug\"}"
+  result:
+    custom:
+      dd:
+        span_id: "1097783838439658713"
+      message: "Debug - message! []"
+      status: "debug"
+      timestamp: 1686665484000
+    message: "2023-06-13T14:11:24+00:00 DEBUG (7): Debug - message! [] {\"dd.trace_id\":\"3874201437900919142\",\"dd.span_id\":\"1097783838439658713\",\"status\":\"debug\"}"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1686665484000
+    trace_id: "3874201437900919142"
+ -
+  sample: |-
+    {
+      "datetime" : "2023-06-13T08:38:06.779055+00: 00",
+      "level_name" : "DEBUG",
+      "level" : 100,
+      "context" : {
+        "dd" : {
+          "trace_id" : "3387360948680168019",
+          "span_id" : "17136689247840714885",
+          "service" : "worker"
+        },
+        "status" : "debug"
+      },
+      "channel" : "production",
+      "message" : "Exception thrown"
+    }
+  result:
+    custom:
+      channel: "production"
+      context:
+        dd:
+          service: "worker"
+        status: "debug"
+      datetime: "2023-06-13T08:38:06.779055+00: 00"
+      dd:
+        span_id: "17136689247840714885"
+      level: 100
+      level_name: "DEBUG"
+    message: "Exception thrown"
+    service: "worker"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+    trace_id: "3387360948680168019"
+ -
+  sample: |-
+    {
+      "priorityName" : "WARN",
+      "extra" : {
+        "dd" : {
+          "trace_id" : "12390080212876714621",
+          "span_id" : "16635658495926952950",
+          "service" : "my-service",
+          "env" : "my-env",
+          "version" : "4.2"
+        },
+        "status" : "warning"
+      },
+      "priority" : 4,
+      "message" : "A 4 message",
+      "timestamp" : "2023-06-19T09:38:58+00:00"
+    }
+  result:
+    custom:
+      dd:
+        span_id: "16635658495926952950"
+      extra:
+        dd:
+          service: "my-service"
+        status: "warning"
+      priority: 4
+      priorityName: "WARN"
+      timestamp: "2023-06-19T09:38:58+00:00"
+    message: "A 4 message"
+    service: "my-service"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "env:my-env"
+     - "version:4.2"
+    timestamp: 1687167538000
+    trace_id: "12390080212876714621"
+ -
+   sample: |-
+     {
+       "datetime" : "2023-06-13T08:38:06.779055+00: 00",
+       "level_name" : "ERROR",
+       "level" : 400,
+       "context" : {
+         "dd" : {
+           "trace_id" : "3387360948680168019",
+           "span_id" : "17136689247840714885",
+           "service" : "worker"
+         },
+         "error" : {
+           "kind" : "Exception",
+           "message" : "An error occurred",
+           "stack" : "#0 /var/www/laravel/app/Jobs/MyJob.php(42): App\\Jobs\\MyJob->handle()",
+           "file" : "/var/www/laravel/app/Jobs/MyJob.php"
+         }
+       },
+       "channel" : "production"
+     }
+   result:
+     custom:
+       channel: "production"
+       context:
+         dd:
+           service: "worker"
+         error:
+           file: "/var/www/laravel/app/Jobs/MyJob.php"
+           kind: "Exception"
+           message: "An error occurred"
+           stack: "#0 /var/www/laravel/app/Jobs/MyJob.php(42): App\\Jobs\\MyJob->handle()"
+       datetime: "2023-06-13T08:38:06.779055+00: 00"
+       dd:
+         span_id: "17136689247840714885"
+       error:
+         kind: "Exception"
+         message: "An error occurred"
+         stack: "#0 /var/www/laravel/app/Jobs/MyJob.php(42): App\\Jobs\\MyJob->handle()"
+       level: 400
+       level_name: "ERROR"
+     message: |-
+       {
+         "datetime" : "2023-06-13T08:38:06.779055+00: 00",
+         "level_name" : "ERROR",
+         "level" : 400,
+         "context" : {
+           "dd" : {
+             "trace_id" : "3387360948680168019",
+             "span_id" : "17136689247840714885",
+             "service" : "worker"
+           },
+           "error" : {
+             "stack" : "#0 /var/www/laravel/app/Jobs/MyJob.php(42): App\\Jobs\\MyJob->handle()",
+             "file" : "/var/www/laravel/app/Jobs/MyJob.php",
+             "kind" : "Exception",
+             "message" : "An error occurred"
+           }
+         },
+         "channel" : "production"
+       }
+     service: "worker"
+     status: "error"
+     tags:
+       - "source:LOGS_SOURCE"
+     timestamp: 1
+     trace_id: "3387360948680168019"
+ -
+   sample: |-
+     {
+       "datetime" : "2023-06-13T08:38:06.779055+00: 00",
+       "level_name" : "ERROR",
+       "level" : 400,
+       "context" : {
+         "dd" : {
+           "trace_id" : "3387360948680168019",
+           "span_id" : "17136689247840714885",
+           "service" : "worker"
+         }
+       },
+       "extra": {
+         "error" : {
+           "kind" : "Exception",
+           "message" : "An error occurred",
+           "stack" : "#0 /var/www/laravel/app/Jobs/MyJob.php(42): App\\Jobs\\MyJob->handle()"
+         }
+       },
+       "channel" : "production"
+     }
+   result:
+     custom:
+       channel: "production"
+       context:
+         dd:
+           service: "worker"
+       datetime: "2023-06-13T08:38:06.779055+00: 00"
+       dd:
+         span_id: "17136689247840714885"
+       error:
+         kind: "Exception"
+         message: "An error occurred"
+         stack: "#0 /var/www/laravel/app/Jobs/MyJob.php(42): App\\Jobs\\MyJob->handle()"
+       extra:
+         error:
+           kind: "Exception"
+           message: "An error occurred"
+           stack: "#0 /var/www/laravel/app/Jobs/MyJob.php(42): App\\Jobs\\MyJob->handle()"
+       level: 400
+       level_name: "ERROR"
+     message: |-
+       {
+         "datetime" : "2023-06-13T08:38:06.779055+00: 00",
+         "level_name" : "ERROR",
+         "level" : 400,
+         "extra" : {
+           "error" : {
+             "stack" : "#0 /var/www/laravel/app/Jobs/MyJob.php(42): App\\Jobs\\MyJob->handle()",
+             "kind" : "Exception",
+             "message" : "An error occurred"
+           }
+         },
+         "context" : {
+           "dd" : {
+             "trace_id" : "3387360948680168019",
+             "span_id" : "17136689247840714885",
+             "service" : "worker"
+           }
+         },
+         "channel" : "production"
+       }
+     service: "worker"
+     status: "error"
+     tags:
+       - "source:LOGS_SOURCE"
+     timestamp: 1
+     trace_id: "3387360948680168019"

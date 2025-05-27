@@ -1,0 +1,300 @@
+id: "microsoft-defender-for-cloud"
+tests:
+ -
+  sample: |-
+    {
+      "Status" : "New",
+      "VendorName" : "Microsoft",
+      "StartTimeUtc" : "2023-08-03T18:42:27.0847058Z",
+      "Description" : "THIS IS A SAMPLE ALERT: Analysis of DNS transactions detected a possible DNS tunnel. Such activity, while possibly legitimate user behaviour, is frequently performed by attackers to evade network monitoring and filtering. Typical related attacker activity is likely to include the download and execution of malicious software or remote administration tools.",
+      "CompromisedEntity" : "Sample-VM",
+      "TimeGenerated" : "2023-08-03T18:43:27.0847058Z",
+      "ProductName" : "Microsoft Defender for Cloud",
+      "IsIncident" : false,
+      "AzureResourceId" : "/SUBSCRIPTIONS/8c56d827-5f07-45ce-8f2b-6c5001db5c6f/RESOURCEGROUPS/Sample-RG/PROVIDERS/MICROSOFT.COMPUTE/VIRTUALMACHINES/Sample-VM",
+      "Severity" : "LOW",
+      "Intent" : "Exfiltration",
+      "EndTimeUtc" : "2023-08-03T18:42:27.0847058Z",
+      "ProcessingEndTime" : "2023-08-03T18:43:27.0847058Z",
+      "ExtendedProperties" : {
+        "Answers" : "00.00.00.00",
+        "UserName" : "test",
+        "DomainName" : "sample.domain",
+        "UserAgent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36",
+        "ResourceType" : "Virtual Machine",
+        "IPAddress" : "1.1.1.1"
+      },
+      "Entities" : [ {
+        "AzureID" : "/SUBSCRIPTIONS/8c56d827-5f07-45ce-8f2b-6c5001db5c6f/RESOURCEGROUPS/Sample-RG/PROVIDERS/MICROSOFT.COMPUTE/VIRTUALMACHINES/Sample-VM",
+        "Type" : "host",
+        "NTDomain" : "",
+        "DnsDomain" : "",
+        "Asset" : false,
+        "NetBiosName" : "sampleHost",
+        "HostName" : "sampleHost",
+        "$id" : "4"
+      }, {
+        "IpAdresses" : [ {
+          "Type" : "ip",
+          "Address" : "00.00.00.00",
+          "Asset" : false,
+          "$id" : "6",
+          "Location" : {
+            "CountryName" : "United States",
+            "State" : "California",
+            "Latitude" : 0,
+            "City" : "San Francisco",
+            "CountryCode" : "US",
+            "Longitude" : 0,
+            "Asn" : 0
+          }
+        } ],
+        "Type" : "dns",
+        "DomainName" : "sample.domain",
+        "Asset" : false,
+        "HostIpAddress" : {
+          "$ref" : "6"
+        },
+        "$id" : "5"
+      }, {
+        "$ref" : "6"
+      }, {
+        "Type" : "azure-resource",
+        "ResourceId" : "/SUBSCRIPTIONS/8c56d827-5f07-45ce-8f2b-6c5001db5c6f/RESOURCEGROUPS/Sample-RG/PROVIDERS/MICROSOFT.COMPUTE/VIRTUALMACHINES/Sample-VM",
+        "ResourceName" : "Sample-VM",
+        "Metadata" : {
+          "IsGraphCenter" : true
+        },
+        "Asset" : true,
+        "ResourceType" : "Virtual Machine",
+        "$id" : "7"
+      } ],
+      "ResourceIdentifiers" : [ {
+        "AzureResourceTenantId" : "4d3bac44-0230-4732-9e70-cc00736f0a97",
+        "Type" : "AzureResource",
+        "AzureResourceId" : "/SUBSCRIPTIONS/8c56d827-5f07-45ce-8f2b-6c5001db5c6f/RESOURCEGROUPS/Sample-RG/PROVIDERS/MICROSOFT.COMPUTE/VIRTUALMACHINES/Sample-VM",
+        "$id" : "2"
+      }, {
+        "AadTenantId" : "4d3bac44-0230-4732-9e70-cc00736f0a97",
+        "Type" : "AAD",
+        "$id" : "3"
+      } ],
+      "AlertType" : "SIMULATED_AzureDNS_DataExfiltration",
+      "SystemAlertId" : "2517112126529152941_f6071c54-672e-4c34-bd69-6bc10e7d8196",
+      "AlertUri" : "https://portal.azure.com/#blade/Microsoft_Azure_Security_AzureDefenderForData/AlertBlade/alertId/2517112126529152941_f6071c54-672e-4c34-bd69-6bc10e7d8196/subscriptionId/8c56d827-5f07-45ce-8f2b-6c5001db5c6f/resourceGroup/Sample-RG/referencedFrom/alertDeepLink/location/centralus",
+      "service" : "SecurityAlerts",
+      "AlertDisplayName" : "[SAMPLE ALERT] Possible data exfiltration via DNS tunnel (Preview)",
+      "RemediationSteps" : [ "Ask the machine owner if this is intended behavior.", "If the activity is unexpected, treat the machine as potentially compromised and remediate as follows.", "Isolate the machine from the network to prevent lateral movement.", "Run a full antimalware scan on the machine, following any resulting remediation advice.", "Review installed and running software on the machine, removing any unknown or unwanted packages.", "Revert the machine to a known good state, reinstalling operating system if required and restoring software from a verified malware-free source.", "Resolve Azure Security Center recommendations for the machine, remediating highlighted security issues to prevent future breaches." ]
+    }
+  result:
+    custom:
+      AlertUri: "https://portal.azure.com/#blade/Microsoft_Azure_Security_AzureDefenderForData/AlertBlade/alertId/2517112126529152941_f6071c54-672e-4c34-bd69-6bc10e7d8196/subscriptionId/8c56d827-5f07-45ce-8f2b-6c5001db5c6f/resourceGroup/Sample-RG/referencedFrom/alertDeepLink/location/centralus"
+      AzureResourceId: "/SUBSCRIPTIONS/8c56d827-5f07-45ce-8f2b-6c5001db5c6f/RESOURCEGROUPS/Sample-RG/PROVIDERS/MICROSOFT.COMPUTE/VIRTUALMACHINES/Sample-VM"
+      CompromisedEntity: "Sample-VM"
+      EndTimeUtc: "2023-08-03T18:42:27.0847058Z"
+      Entities:
+       -
+        AzureID: "/SUBSCRIPTIONS/8c56d827-5f07-45ce-8f2b-6c5001db5c6f/RESOURCEGROUPS/Sample-RG/PROVIDERS/MICROSOFT.COMPUTE/VIRTUALMACHINES/Sample-VM"
+        Type: "host"
+        NTDomain: ""
+        DnsDomain: ""
+        Asset: false
+        NetBiosName: "sampleHost"
+        HostName: "sampleHost"
+        $id: "4"
+       -
+        IpAdresses:
+         -
+          Type: "ip"
+          Address: "00.00.00.00"
+          Asset: false
+          $id: "6"
+          Location:
+            CountryName: "United States"
+            State: "California"
+            Latitude: 0
+            City: "San Francisco"
+            CountryCode: "US"
+            Longitude: 0
+            Asn: 0
+        Type: "dns"
+        DomainName: "sample.domain"
+        Asset: false
+        HostIpAddress:
+          $ref: "6"
+        $id: "5"
+       -
+        $ref: "6"
+       -
+        Type: "azure-resource"
+        ResourceId: "/SUBSCRIPTIONS/8c56d827-5f07-45ce-8f2b-6c5001db5c6f/RESOURCEGROUPS/Sample-RG/PROVIDERS/MICROSOFT.COMPUTE/VIRTUALMACHINES/Sample-VM"
+        ResourceName: "Sample-VM"
+        Metadata:
+          IsGraphCenter: true
+        Asset: true
+        ResourceType: "Virtual Machine"
+        $id: "7"
+      ExtendedProperties:
+        Answers: "00.00.00.00"
+        DomainName: "sample.domain"
+        ResourceType: "Virtual Machine"
+      Intent: "Exfiltration"
+      IsIncident: false
+      ProcessingEndTime: "2023-08-03T18:43:27.0847058Z"
+      ProductName: "Microsoft Defender for Cloud"
+      RemediationSteps:
+       - "Ask the machine owner if this is intended behavior."
+       - "If the activity is unexpected, treat the machine as potentially compromised and remediate as follows."
+       - "Isolate the machine from the network to prevent lateral movement."
+       - "Run a full antimalware scan on the machine, following any resulting remediation advice."
+       - "Review installed and running software on the machine, removing any unknown or unwanted packages."
+       - "Revert the machine to a known good state, reinstalling operating system if required and restoring software from a verified malware-free source."
+       - "Resolve Azure Security Center recommendations for the machine, remediating highlighted security issues to prevent future breaches."
+      ResourceIdentifiers:
+       -
+        AzureResourceTenantId: "4d3bac44-0230-4732-9e70-cc00736f0a97"
+        Type: "AzureResource"
+        AzureResourceId: "/SUBSCRIPTIONS/8c56d827-5f07-45ce-8f2b-6c5001db5c6f/RESOURCEGROUPS/Sample-RG/PROVIDERS/MICROSOFT.COMPUTE/VIRTUALMACHINES/Sample-VM"
+        $id: "2"
+       -
+        AadTenantId: "4d3bac44-0230-4732-9e70-cc00736f0a97"
+        Type: "AAD"
+        $id: "3"
+      StartTimeUtc: "2023-08-03T18:42:27.0847058Z"
+      Status: "New"
+      SystemAlertId: "2517112126529152941_f6071c54-672e-4c34-bd69-6bc10e7d8196"
+      TimeGenerated: "2023-08-03T18:43:27.0847058Z"
+      VendorName: "Microsoft"
+      evt:
+        name: "[SAMPLE ALERT] Possible data exfiltration via DNS tunnel (Preview)"
+        severity: "LOW"
+        type: "SIMULATED_AzureDNS_DataExfiltration"
+      http:
+        useragent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "89"
+            minor: "0"
+            patch: "4389"
+            patch_minor: "82"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Windows"
+            major: "10"
+      network:
+        client:
+          geoip: {}
+          ip: "1.1.1.1"
+      service: "SecurityAlerts"
+      usr:
+        name: "test"
+    message: "THIS IS A SAMPLE ALERT: Analysis of DNS transactions detected a possible DNS tunnel. Such activity, while possibly legitimate user behaviour, is frequently performed by attackers to evade network monitoring and filtering. Typical related attacker activity is likely to include the download and execution of malicious software or remote administration tools."
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1691088207084
+ -
+  sample: |-
+    {
+      "service" : "SecurityRecommendations",
+      "tenantId" : "4d3bac44-0230-4732-9e70-cc00736f0a97",
+      "name" : "c0b7cfc6-3172-465a-b378-53c7ff2cc0d5",
+      "id" : "/subscriptions/8c56d827-5f07-45ce-8f2b-6c5001db5c6f/resourceGroups/demo-11287-aks/providers/Microsoft.ContainerRegistry/registries/shopistACR/providers/Microsoft.Security/assessments/c0b7cfc6-3172-465a-b378-53c7ff2cc0d5",
+      "securityEventDataEnrichment" : {
+        "apiVersion" : "2019-01-01",
+        "action" : "Insert",
+        "isSnapshot" : false
+      },
+      "type" : "Microsoft.Security/assessments",
+      "assessmentEventDataEnrichment" : {
+        "apiVersion" : "2019-01-01",
+        "action" : "Insert",
+        "isSnapshot" : false
+      },
+      "properties" : {
+        "metadata" : {
+          "preview" : true,
+          "severity" : "High",
+          "userImpact" : "Low",
+          "policyDefinitionId" : "/providers/Microsoft.Authorization/policyDefinitions/090c7b07-b4ed-4561-ad20-e9075f3ccaff",
+          "assessmentType" : "BuiltIn",
+          "implementationEffort" : "Moderate",
+          "displayName" : "Container registry images should have vulnerability findings resolved (powered by Microsoft Defender Vulnerability Management)",
+          "description" : "Container image vulnerability assessment scans your registry for commonly known vulnerabilities (CVEs) and provides a detailed vulnerability report for each image. Resolving vulnerabilities can greatly improve your security posture, ensuring images are safe to use prior to deployment.",
+          "threats" : [ "DataExfiltration", "DataSpillage", "AccountBreach", "ElevationOfPrivilege" ],
+          "remediationDescription" : "To resolve container image vulnerabilities: <br>1. Navigate to the relevant resource under the Unhealthy section and select the container image you are looking to remediate. <br>2. Review the set of known vulnerabilities found by the scan by their severity. <br>3. Click on each vulnerability to view its details and explicit remediation instructions. <br>4. Remediate the vulnerability using the provided instructions described in the Remediation field. <br>5. Upload the new remediated image to your registry. Review scan results for the new image to verify the remediated vulnerabilities no longer exist. <br>6. Delete the old image with the vulnerabilities from your registry. <br>",
+          "categories" : [ "Compute" ]
+        },
+        "resourceDetails" : {
+          "source" : "Azure",
+          "id" : "/subscriptions/8c56d827-5f07-45ce-8f2b-6c5001db5c6f/resourceGroups/demo-11287-aks/providers/Microsoft.ContainerRegistry/registries/shopistACR"
+        },
+        "displayName" : "Container registry images should have vulnerability findings resolved (powered by Microsoft Defender Vulnerability Management)",
+        "links" : {
+          "azurePortal" : "portal.azure.com/#blade/Microsoft_Azure_Security/RecommendationsBlade/assessmentKey/c0b7cfc6-3172-465a-b378-53c7ff2cc0d5/resourceId/%2fsubscriptions%2f8c56d827-5f07-45ce-8f2b-6c5001db5c6f%2fresourceGroups%2fdemo-11287-aks%2fproviders%2fMicrosoft.ContainerRegistry%2fregistries%2fshopistACR"
+        },
+        "additionalData" : {
+          "subAssessmentsLink" : "/subscriptions/8c56d827-5f07-45ce-8f2b-6c5001db5c6f/resourceGroups/demo-11287-aks/providers/Microsoft.ContainerRegistry/registries/shopistACR/providers/Microsoft.Security/assessments/c0b7cfc6-3172-465a-b378-53c7ff2cc0d5/subAssessments",
+          "maxCvss30Score" : "7.8"
+        },
+        "status" : {
+          "statusChangeDate" : "2023-06-02T03:15:54.1687456Z",
+          "code" : "Unhealthy",
+          "firstEvaluationDate" : "2023-06-02T03:15:54.1687456Z"
+        }
+      }
+    }
+  result:
+    custom:
+      assessmentEventDataEnrichment:
+        action: "Insert"
+        apiVersion: "2019-01-01"
+        isSnapshot: false
+      evt:
+        name: "Container registry images should have vulnerability findings resolved (powered by Microsoft Defender Vulnerability Management)"
+        severity: "High"
+      id: "/subscriptions/8c56d827-5f07-45ce-8f2b-6c5001db5c6f/resourceGroups/demo-11287-aks/providers/Microsoft.ContainerRegistry/registries/shopistACR/providers/Microsoft.Security/assessments/c0b7cfc6-3172-465a-b378-53c7ff2cc0d5"
+      name: "c0b7cfc6-3172-465a-b378-53c7ff2cc0d5"
+      properties:
+        additionalData:
+          maxCvss30Score: "7.8"
+          subAssessmentsLink: "/subscriptions/8c56d827-5f07-45ce-8f2b-6c5001db5c6f/resourceGroups/demo-11287-aks/providers/Microsoft.ContainerRegistry/registries/shopistACR/providers/Microsoft.Security/assessments/c0b7cfc6-3172-465a-b378-53c7ff2cc0d5/subAssessments"
+        links:
+          azurePortal: "portal.azure.com/#blade/Microsoft_Azure_Security/RecommendationsBlade/assessmentKey/c0b7cfc6-3172-465a-b378-53c7ff2cc0d5/resourceId/%2fsubscriptions%2f8c56d827-5f07-45ce-8f2b-6c5001db5c6f%2fresourceGroups%2fdemo-11287-aks%2fproviders%2fMicrosoft.ContainerRegistry%2fregistries%2fshopistACR"
+        metadata:
+          assessmentType: "BuiltIn"
+          categories:
+           - "Compute"
+          displayName: "Container registry images should have vulnerability findings resolved (powered by Microsoft Defender Vulnerability Management)"
+          implementationEffort: "Moderate"
+          policyDefinitionId: "/providers/Microsoft.Authorization/policyDefinitions/090c7b07-b4ed-4561-ad20-e9075f3ccaff"
+          preview: true
+          remediationDescription: "To resolve container image vulnerabilities: <br>1. Navigate to the relevant resource under the Unhealthy section and select the container image you are looking to remediate. <br>2. Review the set of known vulnerabilities found by the scan by their severity. <br>3. Click on each vulnerability to view its details and explicit remediation instructions. <br>4. Remediate the vulnerability using the provided instructions described in the Remediation field. <br>5. Upload the new remediated image to your registry. Review scan results for the new image to verify the remediated vulnerabilities no longer exist. <br>6. Delete the old image with the vulnerabilities from your registry. <br>"
+          threats:
+           - "DataExfiltration"
+           - "DataSpillage"
+           - "AccountBreach"
+           - "ElevationOfPrivilege"
+          userImpact: "Low"
+        resourceDetails:
+          id: "/subscriptions/8c56d827-5f07-45ce-8f2b-6c5001db5c6f/resourceGroups/demo-11287-aks/providers/Microsoft.ContainerRegistry/registries/shopistACR"
+          source: "Azure"
+        status:
+          code: "Unhealthy"
+          firstEvaluationDate: "2023-06-02T03:15:54.1687456Z"
+          statusChangeDate: "2023-06-02T03:15:54.1687456Z"
+      resource_name: "shopistacr"
+      securityEventDataEnrichment:
+        action: "Insert"
+        apiVersion: "2019-01-01"
+        isSnapshot: false
+      service: "SecurityRecommendations"
+      tenantId: "4d3bac44-0230-4732-9e70-cc00736f0a97"
+      type: "Microsoft.Security/assessments"
+    message: "Container image vulnerability assessment scans your registry for commonly known vulnerabilities (CVEs) and provides a detailed vulnerability report for each image. Resolving vulnerabilities can greatly improve your security posture, ensuring images are safe to use prior to deployment."
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+

@@ -1,0 +1,181 @@
+id: "google.security.command.center"
+tests:
+ -
+  sample: |-
+    {
+      "severity" : 2,
+      "finding_class_state" : "THREAT",
+      "parent" : "organizations/114087998767/sources/16626987567371313208",
+      "access" : {
+        "caller_ip" : "1.1.1.1",
+        "user_name" : "testuser",
+        "principal_email" : "testuser@example.com",
+        "user_agent" : "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36"
+      },
+      "create_time" : {
+        "seconds" : 1689327869,
+        "nanos" : 809000000
+      },
+      "canonical_name" : "projects/958371799887/sources/16626987567371313208/findings/cbcb439956336362c9a06289e38a46d3",
+      "stateChange" : "UNCHANGED",
+      "mute" : 4,
+      "mitre_attack" : {
+        "version" : "9"
+      },
+      "parent_display_name" : "Virtual Machine Threat Detection",
+      "security_marks" : {
+        "name" : "organizations/114087998767/sources/16626987567371313208/findings/cbcb439956336362c9a06289e38a46d3/securityMarks"
+      },
+      "service" : "Findings",
+      "name" : "organizations/114087998767/sources/16626987567371313208/findings/cbcb439956336362c9a06289e38a46d3",
+      "finding_state" : "ACTIVE",
+      "finding_severity" : "HIGH",
+      "mute_state" : "UNDEFINED",
+      "state" : 1,
+      "resource_name" : "//compute.googleapis.com/projects/test/zones/europe-north1-a/instances/4764684082462107784",
+      "category" : "Defense Evasion: Unexpected kernel code modification",
+      "event_time" : {
+        "seconds" : 1689327253,
+        "nanos" : 567000000
+      },
+      "contacts" : {
+        "security" : {
+          "contacts" : [ {
+            "email" : "test"
+          }, {
+            "email" : "test"
+          } ]
+        },
+        "technical" : {
+          "contacts" : [ {
+            "email" : "test"
+          } ]
+        }
+      },
+      "status" : "info",
+      "finding_class" : 1
+    }
+  result:
+    custom:
+      canonical_name: "projects/958371799887/sources/16626987567371313208/findings/cbcb439956336362c9a06289e38a46d3"
+      contacts:
+        security:
+          contacts:
+           -
+            email: "test"
+           -
+            email: "test"
+        technical:
+          contacts:
+           -
+            email: "test"
+      create_time:
+        nanos: 809000000
+        seconds: 1689327869
+      event_time:
+        milliseconds: 1.689327253E12
+        nanos: 567000000
+        seconds: 1689327253
+      evt:
+        category: "THREAT"
+        name: "Defense Evasion: Unexpected kernel code modification"
+        severity: "HIGH"
+      finding_class: 1
+      finding_state: "ACTIVE"
+      http:
+        useragent: "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome Mobile"
+            major: "114"
+            minor: "0"
+            patch: "0"
+            patch_minor: "0"
+          device:
+            brand: "Generic_Android"
+            category: "Mobile"
+            family: "K"
+            model: "K"
+          os:
+            family: "Android"
+            major: "10"
+      mitre_attack:
+        version: "9"
+      mute: 4
+      mute_state: "UNDEFINED"
+      name: "organizations/114087998767/sources/16626987567371313208/findings/cbcb439956336362c9a06289e38a46d3"
+      network:
+        client:
+          geoip: {}
+          ip: "1.1.1.1"
+      parent: "organizations/114087998767/sources/16626987567371313208"
+      parent_display_name: "Virtual Machine Threat Detection"
+      resource_name: "//compute.googleapis.com/projects/test/zones/europe-north1-a/instances/4764684082462107784"
+      security_marks:
+        name: "organizations/114087998767/sources/16626987567371313208/findings/cbcb439956336362c9a06289e38a46d3/securityMarks"
+      service: "Findings"
+      severity: 2
+      state: 1
+      stateChange: "UNCHANGED"
+      status: "info"
+      usr:
+        email: "testuser@example.com"
+        name: "testuser"
+    message: |-
+      {
+        "severity" : 2,
+        "finding_class_state" : "THREAT",
+        "parent" : "organizations/114087998767/sources/16626987567371313208",
+        "access" : {
+          "caller_ip" : "1.1.1.1",
+          "user_name" : "testuser",
+          "principal_email" : "testuser@example.com",
+          "user_agent" : "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36"
+        },
+        "create_time" : {
+          "seconds" : 1689327869,
+          "nanos" : 809000000
+        },
+        "canonical_name" : "projects/958371799887/sources/16626987567371313208/findings/cbcb439956336362c9a06289e38a46d3",
+        "stateChange" : "UNCHANGED",
+        "mute" : 4,
+        "mitre_attack" : {
+          "version" : "9"
+        },
+        "parent_display_name" : "Virtual Machine Threat Detection",
+        "security_marks" : {
+          "name" : "organizations/114087998767/sources/16626987567371313208/findings/cbcb439956336362c9a06289e38a46d3/securityMarks"
+        },
+        "service" : "Findings",
+        "name" : "organizations/114087998767/sources/16626987567371313208/findings/cbcb439956336362c9a06289e38a46d3",
+        "finding_state" : "ACTIVE",
+        "finding_severity" : "HIGH",
+        "mute_state" : "UNDEFINED",
+        "state" : 1,
+        "resource_name" : "//compute.googleapis.com/projects/test/zones/europe-north1-a/instances/4764684082462107784",
+        "category" : "Defense Evasion: Unexpected kernel code modification",
+        "event_time" : {
+          "seconds" : 1689327253,
+          "nanos" : 567000000
+        },
+        "contacts" : {
+          "security" : {
+            "contacts" : [ {
+              "email" : "test"
+            }, {
+              "email" : "test"
+            } ]
+          },
+          "technical" : {
+            "contacts" : [ {
+              "email" : "test"
+            } ]
+          }
+        },
+        "status" : "info",
+        "finding_class" : 1
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1689327253000
+

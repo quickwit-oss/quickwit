@@ -1,0 +1,150 @@
+id: ringcentral
+metric_id: ringcentral
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+pipeline:
+  type: pipeline
+  name: RingCentral
+  enabled: true
+  filter:
+    query: "source:ringcentral"
+  processors:
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: pipeline
+      name: Voice
+      enabled: true
+      filter:
+        query: "service:voice"
+      processors:
+        - type: date-remapper
+          name: Define `log.startTime` as the official date of the log
+          enabled: true
+          sources:
+            - log.startTime
+        - type: attribute-remapper
+          name: Map `log.extension.id` to `extensionId`
+          enabled: true
+          sources:
+            - log.extension.id
+          sourceType: attribute
+          target: extensionId
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map attribute `log.direction` to tag `direction`
+          enabled: true
+          sources:
+            - log.direction
+          sourceType: attribute
+          target: direction
+          targetType: tag
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map attribute `enrichment_details.accountId` to tag `accountid`
+          enabled: true
+          sources:
+            - enrichment_details.accountId
+          sourceType: attribute
+          target: accountid
+          targetType: tag
+          preserveSource: true
+          overrideOnConflict: false
+    - type: pipeline
+      name: Audit
+      enabled: true
+      filter:
+        query: "service:audit"
+      processors:
+        - type: date-remapper
+          name: Define `eventTime` as the official date of the log
+          enabled: true
+          sources:
+            - eventTime
+        - type: attribute-remapper
+          name: Map `initiator.extensionId` to `extensionId`
+          enabled: true
+          sources:
+            - initiator.extensionId
+          sourceType: attribute
+          target: extensionId
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `clientIp` to `network.client.ip`
+          enabled: true
+          sources:
+            - clientIp
+          sourceType: attribute
+          target: network.client.ip
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: geo-ip-parser
+          name: GeoIP for the 'network.client.ip'
+          enabled: true
+          sources:
+            - network.client.ip
+          target: network.client.geoip
+          ip_processing_behavior: do-nothing
+        - type: attribute-remapper
+          name: Map `initiator.name` to `usr.name`
+          enabled: true
+          sources:
+            - initiator.name
+          sourceType: attribute
+          target: usr.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false

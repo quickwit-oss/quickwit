@@ -1,0 +1,176 @@
+id: azure.recoveryservices
+backend_only: true # Integration azure.recoveryservices is associated to integration azure_recovery_service_vault. However, this integration has no tile and has no ID. For these two reasons we keep this integration as backend only.
+facets:
+  - facetType: range
+    groups:
+      - Measure
+    name: Duration
+    path: duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: nanosecond
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+  - groups:
+      - Event
+    name: Event Outcome
+    path: evt.outcome
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - groups:
+      - Azure
+    name: Resource ID
+    path: resourceId
+    source: log
+    type: string
+  - groups:
+      - Azure
+    name: Resource Name
+    path: resource_name
+    source: log
+    type: string
+  - groups:
+      - Event
+    name: Event Category
+    path: evt.category
+    source: log
+  - groups:
+      - Entity
+    name: Entity Name
+    path: entity_name
+    source: log
+  - groups:
+      - Azure
+    name: Subscription ID
+    path: subscription_id
+    source: tag
+    type: string
+  - groups:
+      - Azure
+    name: Resource Group
+    path: resource_group
+    source: tag
+    type: string
+pipeline:
+  type: pipeline
+  name: Azure Recovery Services
+  enabled: true
+  filter:
+    query: source:azure.recoveryservices
+  processors:
+    - type: grok-parser
+      name: Parsing `resource_name` from `resourceId`
+      enabled: true
+      source: resourceId
+      samples:
+        - /SUBSCRIPTIONS/A4F42A47-2B5B-4A4C-B6CF-F00D6C189365/RESOURCEGROUPS/TESTRG/PROVIDERS/MICROSOFT.RECOVERYSERVICES/VAULTS/VAULT428
+      grok:
+        supportRules: |
+          _non_extracted_resource %{regex("[a-zA-Z0-9-_.]*")}
+          _resource_name %{regex("[a-zA-Z0-9-_.]*"):resource_name:lowercase}
+          _subscriptions %{regex("(?i)SUBSCRIPTIONS")}
+          _resource_groups %{regex("(?i)RESOURCEGROUPS")}
+          _providers %{regex("(?i)PROVIDERS")}
+        matchRules: |
+          extract_resource_name /%{_subscriptions}\/%{_non_extracted_resource}\/%{_resource_groups}\/%{_non_extracted_resource}\/%{_providers}%{_non_extracted_resource}\/%{_non_extracted_resource}\/%{data}\/%{_resource_name}
+    - type: date-remapper
+      name: Define `time` as the official date of the log
+      enabled: true
+      sources:
+        - time
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: attribute-remapper
+      name: Map `category` to `evt.category`
+      enabled: true
+      sources:
+        - category
+      target: evt.category
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `operationName` to `evt.name`
+      enabled: true
+      sources:
+        - operationName
+      target: evt.name
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `resultType` to `evt.outcome`
+      enabled: true
+      sources:
+        - resultType
+      target: evt.outcome
+      targetFormat: string
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `callerIpAddress` to `network.client.ip`
+      enabled: true
+      sources:
+        - callerIpAddress
+      target: network.client.ip
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: arithmetic-processor
+      name: Compute duration in nanoseconds from durationMs in milliseconds
+      enabled: true
+      expression: durationMs * 1000000
+      target: duration
+      replaceMissing: false
+    - type: attribute-remapper
+      name: Map `identity.authorization.evidence.principalId` to `usr.id`
+      enabled: true
+      sources:
+        - identity.authorization.evidence.principalId
+      target: usr.id
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `properties.Entity Name` to `entity_name`
+      enabled: true
+      sources:
+        - properties.Entity Name
+      target: entity_name
+      preserveSource: false
+      overrideOnConflict: false
+
+      sourceType: attribute
+      targetType: attribute
+# todo (logs-core) Re-enable this when azure team has confirmed that the integration metric is ready
+# metrics:
+#  - name: azure.recovery_services.backup_completed
+#    query: source:azure.recoveryservices
+#    groupBys:
+#      - path: '@entity_name'
+#        tagName: entity_name
+#      - path: '@evt.outcome'
+#        tagName: evt.outcome

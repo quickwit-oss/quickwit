@@ -1,0 +1,391 @@
+id: "symantec-endpoint-protection"
+tests:
+ -
+  sample: "<54>Sep 13 08:34:00 WIN-RQBT7BNE363 SymantecServer: DESKTOP-CIK30CC,198.252.206.17,Continue,Application and Device Control is ready,System,Begin: 2024-09-13 08:32:44,End Time: 2024-09-13 08:32:44,Rule: Built-in rule,0,SysPlant,0,SysPlant,None,User Name: Bob,Domain Name: example.local,Action Type: Block,File size (bytes): 16385,Device ID: 890124,IP Address: 104.199.65.125,IP Address1: 203.0.113.1,MAC Address1: 00:11:22:33:44:55,GATEWAY1: 192.168.1.1,IP Address2: 198.51.100.1,MAC Address2: AA:BB:CC:DD:EE:FF,GATEWAY2: 172.16.1.1,IP Address3: 192.0.2.1,MAC Address3: 11:22:33:44:55:66,GATEWAY3: 172.16.1.1,IP Address4: 185.245.40.65,MAC Address4: 66:77:88:99:00:11,GATEWAY4: 203.0.113.254"
+  result:
+    custom:
+      action_description: "Continue"
+      action_type: "Block"
+      api_name: "System"
+      application_event_description: "Application and Device Control is ready"
+      called_process_name: "SysPlant"
+      caller_process_id: "0"
+      caller_return_address: "0"
+      caller_return_module_name: "SysPlant"
+      device_id: 890124
+      domain_name: "example.local"
+      end_time: "2024-09-13 08:32:44"
+      file_size: 16385
+      gateway1: "192.168.1.1"
+      gateway2: "172.16.1.1"
+      gateway3: "172.16.1.1"
+      gateway4: "203.0.113.254"
+      ip_Address: "104.199.65.125"
+      ip_address_1: "203.0.113.1"
+      ip_address_2: "198.51.100.1"
+      ip_address_3: "192.0.2.1"
+      ip_address_4: "185.245.40.65"
+      mac_address_1: "00:11:22:33:44:55"
+      mac_address_2: "AA:BB:CC:DD:EE:FF"
+      mac_address_3: "11:22:33:44:55:66"
+      mac_address_4: "66:77:88:99:00:11"
+      network:
+        client:
+          geoip: {}
+          ip: "198.252.206.17"
+      parameters: "None"
+      rule_name: "Built-in rule"
+      service: "application-control"
+      start_time: 1726216364000
+      syslog:
+        hostname: "WIN-RQBT7BNE363"
+        symantecServer: "DESKTOP-CIK30CC"
+      timestamp: 22062840000
+      usr:
+        name: "Bob"
+    message: "<54>Sep 13 08:34:00 WIN-RQBT7BNE363 SymantecServer: DESKTOP-CIK30CC,198.252.206.17,Continue,Application and Device Control is ready,System,Begin: 2024-09-13 08:32:44,End Time: 2024-09-13 08:32:44,Rule: Built-in rule,0,SysPlant,0,SysPlant,None,User Name: Bob,Domain Name: example.local,Action Type: Block,File size (bytes): 16385,Device ID: 890124,IP Address: 104.199.65.125,IP Address1: 203.0.113.1,MAC Address1: 00:11:22:33:44:55,GATEWAY1: 192.168.1.1,IP Address2: 198.51.100.1,MAC Address2: AA:BB:CC:DD:EE:FF,GATEWAY2: 172.16.1.1,IP Address3: 192.0.2.1,MAC Address3: 11:22:33:44:55:66,GATEWAY3: 172.16.1.1,IP Address4: 185.245.40.65,MAC Address4: 66:77:88:99:00:11,GATEWAY4: 203.0.113.254"
+    service: "application-control"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 22062840000
+ -
+  sample: "<54>Apr 27 00:49:29 C7016238111 SymantecServer: C7332658237,Event Description: [SID: 24461] Web Attack: EICAR Standard Anti-Virus Test File Download attack blocked. Traffic has been blocked for this application: C:\\PROGRAM FILES (X86)\\GOOGLE\\CHROME\\APPLICATION\\CHROME.EXE,Event Type: Intrusion Prevention System Intrusion Detected,Local Host IP: 172.16.1.1,Local Host MAC: 0050569214B1,Remote Host Name: test456,Remote Host IP: 93.184.216.100,Remote Host MAC: 00:11:22:33:44:55,Inbound,TCP,Blocked,Begin: 2022-04-27 00:58:20,End Time: 2022-04-27 00:58:20,Occurrences: 1,Application: C:/PROGRAM FILES (X86)/GOOGLE/CHROME/APPLICATION/CHROME.EXE,Location: Default,User Name: Administrator,Domain Name: C7332658237,Local Port: 53967,Remote Port: 80,CIDS Signature ID: 24461,CIDS Signature string: Web Attack: EICAR Standard Anti-Virus Test File Download,CIDS Signature SubID: 65536,Intrusion URL: http://s3-eu-west-1.amazonaws.com/cp-chk-files/e.txt?static=CPCheckMe&amp;rand=1651046295517,Intrusion Payload URL: http://example.com,IP Address1: 203.0.113.1,MAC Address1: 00:11:22:33:44:55,GATEWAY1: 192.168.1.1,IP Address2: 198.51.100.1,MAC Address2: AA:BB:CC:DD:EE:FF,GATEWAY2: 172.16.1.1,IP Address3: 192.0.2.1,MAC Address3: 11:22:33:44:55:66,GATEWAY3: 172.16.1.1,IP Address4: 185.245.40.65,MAC Address4: 66:77:88:99:00:11,GATEWAY4: 203.0.113.254,SHA-256: 45DE9F5A25BF478C6A8D8625A984895C9B3FDEA6EB12A55DDD088DCEBD9DF5AB,MD-5: 9f86d081884c7d659a2feaa0c55ad023,Intensive Protection Level: N/A,URL Risk: N/A,URL Category: Content Servers,Correlation ID: 12345"
+  result:
+    custom:
+      application: "C:/PROGRAM FILES (X86)/GOOGLE/CHROME/APPLICATION/CHROME.EXE"
+      cids_signature_id: 24461
+      cids_signature_string: "Web Attack: EICAR Standard Anti-Virus Test File Download"
+      cids_signature_subid: 65536
+      correlation_id: "12345"
+      domain_name: "C7332658237"
+      end_time: 1651021100000
+      event_type: "Intrusion Prevention System Intrusion Detected"
+      gateway1: "192.168.1.1"
+      gateway2: "172.16.1.1"
+      gateway3: "172.16.1.1"
+      gateway4: "203.0.113.254"
+      hack_type: "Blocked"
+      intensive_protection_level: "N/A"
+      intrusion_payload_url: "http://example.com"
+      intrusion_url: "http://s3-eu-west-1.amazonaws.com/cp-chk-files/e.txt?static=CPCheckMe&amp;rand=1651046295517"
+      ip_address_1: "203.0.113.1"
+      ip_address_2: "198.51.100.1"
+      ip_address_3: "192.0.2.1"
+      ip_address_4: "185.245.40.65"
+      local_host_ip: "172.16.1.1"
+      local_host_mac: "0050569214B1"
+      local_port: 53967
+      location: "Default"
+      mac_address_1: "00:11:22:33:44:55"
+      mac_address_2: "AA:BB:CC:DD:EE:FF"
+      mac_address_3: "11:22:33:44:55:66"
+      mac_address_4: "66:77:88:99:00:11"
+      md5: "9f86d081884c7d659a2feaa0c55ad023"
+      network:
+        client:
+          geoip: {}
+          ip: "93.184.216.100"
+      network_protocol: "TCP"
+      occurrences: 1
+      remote_host_mac: "00:11:22:33:44:55"
+      remote_host_name: "test456"
+      remote_port: 80
+      security_event_description: "[SID: 24461] Web Attack: EICAR Standard Anti-Virus Test File Download attack blocked. Traffic has been blocked for this application: C:\\PROGRAM FILES (X86)\\GOOGLE\\CHROME\\APPLICATION\\CHROME.EXE"
+      service: "security"
+      sha256: "45DE9F5A25BF478C6A8D8625A984895C9B3FDEA6EB12A55DDD088DCEBD9DF5AB"
+      start_time: 1651021100000
+      syslog:
+        hostname: "C7016238111"
+        symantecServer: "C7332658237"
+      timestamp: 41561369000
+      traffic_direction: "Inbound"
+      url_category: "Content Servers"
+      url_risk: "N/A"
+      usr:
+        name: "Administrator"
+    message: "<54>Apr 27 00:49:29 C7016238111 SymantecServer: C7332658237,Event Description: [SID: 24461] Web Attack: EICAR Standard Anti-Virus Test File Download attack blocked. Traffic has been blocked for this application: C:\\PROGRAM FILES (X86)\\GOOGLE\\CHROME\\APPLICATION\\CHROME.EXE,Event Type: Intrusion Prevention System Intrusion Detected,Local Host IP: 172.16.1.1,Local Host MAC: 0050569214B1,Remote Host Name: test456,Remote Host IP: 93.184.216.100,Remote Host MAC: 00:11:22:33:44:55,Inbound,TCP,Blocked,Begin: 2022-04-27 00:58:20,End Time: 2022-04-27 00:58:20,Occurrences: 1,Application: C:/PROGRAM FILES (X86)/GOOGLE/CHROME/APPLICATION/CHROME.EXE,Location: Default,User Name: Administrator,Domain Name: C7332658237,Local Port: 53967,Remote Port: 80,CIDS Signature ID: 24461,CIDS Signature string: Web Attack: EICAR Standard Anti-Virus Test File Download,CIDS Signature SubID: 65536,Intrusion URL: http://s3-eu-west-1.amazonaws.com/cp-chk-files/e.txt?static=CPCheckMe&amp;rand=1651046295517,Intrusion Payload URL: http://example.com,IP Address1: 203.0.113.1,MAC Address1: 00:11:22:33:44:55,GATEWAY1: 192.168.1.1,IP Address2: 198.51.100.1,MAC Address2: AA:BB:CC:DD:EE:FF,GATEWAY2: 172.16.1.1,IP Address3: 192.0.2.1,MAC Address3: 11:22:33:44:55:66,GATEWAY3: 172.16.1.1,IP Address4: 185.245.40.65,MAC Address4: 66:77:88:99:00:11,GATEWAY4: 203.0.113.254,SHA-256: 45DE9F5A25BF478C6A8D8625A984895C9B3FDEA6EB12A55DDD088DCEBD9DF5AB,MD-5: 9f86d081884c7d659a2feaa0c55ad023,Intensive Protection Level: N/A,URL Risk: N/A,URL Category: Content Servers,Correlation ID: 12345"
+    service: "security"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 41561369000
+ -
+  sample: "<54>Sep 16 08:30:10 WIN-RQBT7BNE367 SymantecServer: Virus found,IP Address: 192.168.1.104,Computer name: DESKTOP-GHI789,Source: Auto-Protect scan,Risk name: Worm.P2P.Gen,Occurrences: 1,File path: C:\\Downloads\\infected.zip,Description: Worm detected,Actual action: Cleaned by deletion,Requested action: Cleaned,Secondary action: Quarantined,Event time: 2024-09-16 08:28:05,Event Insert Time: 2024-09-16 08:30:10,End Time: 2024-09-16 08:28:07,Last update time: 2024-09-16 08:30:10,Domain Name: MyCompanyDomain,Group Name: My Company\\Sales Team,Server Name: WIN-RQBT7BNE367,User Name: Robert Brown,Source Computer Name: DESKTOP-GHI789,Source Computer IP: 192.168.1.104,IP Address 1: 203.0.113.1,MAC Address 1: 00:11:22:33:44:55,GATEWAY IP 1: 192.168.1.1,IP Address 2: 198.51.100.1,MAC Address 2: AA:BB:CC:DD:EE:FF,GATEWAY IP 2: 172.16.1.1,IP Address 3: 192.0.2.1,MAC Address 3: 11:22:33:44:55:66,GATEWAY IP 3: 172.16.1.1,IP Address 4: 185.245.40.65,MAC Address 4: 66:77:88:99:00:11,GATEWAY IP 4: 203.0.113.254,Disposition: Bad,Download site: https://untrustedsource.com,Web domain: untrustedsource.com,Downloaded by: edge.exe,Prevalence: This file has been seen by some Symantec users.,Confidence: This file is untrustworthy.,URL Tracking Status: On,First Seen: Symantec has known about this file for more than 2 years.,Sensitivity: Medium,Allowed application reason: Not on the allow list,Application hash: 67890ABCDEF1234567890ABCDEF1234567890,Hash type: SHA2,Company name: GHI Corporation,Application name: infected.zip,Application version: 5.0,Application type: 130,File size (bytes): 8192,Category set: Worm,Category type: Virus,Location: Default,Intensive Protection Level: 4,Certificate issuer: Symantec Corporation,Certificate signer: Symantec SHA256 Code Signing CA,Certificate thumbprint: 567890ABCDEF1234567890ABCDEF,Signing timestamp: 1643723400,Certificate serial number: 567890ABCDEF"
+  result:
+    custom:
+      actual_action: "Cleaned by deletion"
+      allowed_application_reason: "Not on the allow list"
+      application_hash: "67890ABCDEF1234567890ABCDEF1234567890"
+      application_name: "infected.zip"
+      application_type: "130"
+      application_version: "5.0"
+      category_set: "Worm"
+      category_type: "Virus"
+      certificate_issuer: "Symantec Corporation"
+      certificate_serial_number: "567890ABCDEF"
+      certificate_signer: "Symantec SHA256 Code Signing CA"
+      certificate_thumbprint: "567890ABCDEF1234567890ABCDEF"
+      company_name: "GHI Corporation"
+      computer_name: "DESKTOP-GHI789"
+      confidence: "This file is untrustworthy."
+      disposition: "Bad"
+      domain_name: "MyCompanyDomain"
+      download_site: "https://untrustedsource.com"
+      downloaded_by: "edge.exe"
+      end_time: "2024-09-16 08:28:07"
+      event_insert_time: "2024-09-16 08:30:10"
+      event_time: "2024-09-16 08:28:05"
+      file_path: "C:\\Downloads\\infected.zip"
+      file_size: 8192
+      first_seen: "Symantec has known about this file for more than 2 years."
+      gateway1: "192.168.1.1"
+      gateway2: "172.16.1.1"
+      gateway3: "172.16.1.1"
+      gateway4: "203.0.113.254"
+      group_name: "My Company\\Sales Team"
+      hash_type: "SHA2"
+      intensive_protection_level: "4"
+      ip_address_1: "203.0.113.1"
+      ip_address_2: "198.51.100.1"
+      ip_address_3: "192.0.2.1"
+      ip_address_4: "185.245.40.65"
+      last_update_time: "2024-09-16 08:30:10"
+      location: "Default"
+      mac_address_1: "00:11:22:33:44:55"
+      mac_address_2: "AA:BB:CC:DD:EE:FF"
+      mac_address_3: "11:22:33:44:55:66"
+      mac_address_4: "66:77:88:99:00:11"
+      network:
+        client:
+          geoip: {}
+          ip: "192.168.1.104"
+      occurrences: 1
+      prevalence: "This file has been seen by some Symantec users."
+      requested_action: "Cleaned"
+      risk_event_description: "Worm detected"
+      risk_name: "Worm.P2P.Gen"
+      risk_type: "Virus found"
+      scan_source: "Auto-Protect scan"
+      secondary_action: "Quarantined"
+      sensitivity: "Medium"
+      server_name: "WIN-RQBT7BNE367"
+      service: "risk"
+      signing_timestamp: "1643723400"
+      source_computer_ip: "192.168.1.104"
+      source_computer_name: "DESKTOP-GHI789"
+      syslog:
+        hostname: "WIN-RQBT7BNE367"
+      timestamp: 22321810000
+      url_tracking_status: "On"
+      usr:
+        name: "Robert Brown"
+      web_domain: "untrustedsource.com"
+    message: "<54>Sep 16 08:30:10 WIN-RQBT7BNE367 SymantecServer: Virus found,IP Address: 192.168.1.104,Computer name: DESKTOP-GHI789,Source: Auto-Protect scan,Risk name: Worm.P2P.Gen,Occurrences: 1,File path: C:\\Downloads\\infected.zip,Description: Worm detected,Actual action: Cleaned by deletion,Requested action: Cleaned,Secondary action: Quarantined,Event time: 2024-09-16 08:28:05,Event Insert Time: 2024-09-16 08:30:10,End Time: 2024-09-16 08:28:07,Last update time: 2024-09-16 08:30:10,Domain Name: MyCompanyDomain,Group Name: My Company\\Sales Team,Server Name: WIN-RQBT7BNE367,User Name: Robert Brown,Source Computer Name: DESKTOP-GHI789,Source Computer IP: 192.168.1.104,IP Address 1: 203.0.113.1,MAC Address 1: 00:11:22:33:44:55,GATEWAY IP 1: 192.168.1.1,IP Address 2: 198.51.100.1,MAC Address 2: AA:BB:CC:DD:EE:FF,GATEWAY IP 2: 172.16.1.1,IP Address 3: 192.0.2.1,MAC Address 3: 11:22:33:44:55:66,GATEWAY IP 3: 172.16.1.1,IP Address 4: 185.245.40.65,MAC Address 4: 66:77:88:99:00:11,GATEWAY IP 4: 203.0.113.254,Disposition: Bad,Download site: https://untrustedsource.com,Web domain: untrustedsource.com,Downloaded by: edge.exe,Prevalence: This file has been seen by some Symantec users.,Confidence: This file is untrustworthy.,URL Tracking Status: On,First Seen: Symantec has known about this file for more than 2 years.,Sensitivity: Medium,Allowed application reason: Not on the allow list,Application hash: 67890ABCDEF1234567890ABCDEF1234567890,Hash type: SHA2,Company name: GHI Corporation,Application name: infected.zip,Application version: 5.0,Application type: 130,File size (bytes): 8192,Category set: Worm,Category type: Virus,Location: Default,Intensive Protection Level: 4,Certificate issuer: Symantec Corporation,Certificate signer: Symantec SHA256 Code Signing CA,Certificate thumbprint: 567890ABCDEF1234567890ABCDEF,Signing timestamp: 1643723400,Certificate serial number: 567890ABCDEF"
+    service: "risk"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 22321810000
+ -
+  sample: "<54>Sep 10 21:54:23 WIN-RQBT7BNE363 SymantecServer: Scan ID: 1725971909,Begin: 2024-09-10 21:45:57,End Time: 2024-09-10 21:48:31,Completed,Duration (seconds): 154,User1: SYSTEM,User2: SYSTEM,Scan started on selected drives and folders and all extensions.,Scan Complete:  Risks: 0   Scanned: 732   Files/Folders/Drives Omitted: 0 Trusted Files Skipped: 338,Command: Not a command scan (),Threats: 0,Infected: 0,Total files: 732,Omitted: 0,Computer: DESKTOP-GGG3BOO,IP Address: 203.0.113.1,Domain Name: Default,Group Name: My Company\\Default Group,Server Name: WIN-RQBT7BNE363,Scan Type: Definition Watch Scan,IP Address1: 203.0.113.1,MAC Address1: 00:11:22:33:44:55,GATEWAY1: 192.168.1.1,IP Address2: 198.51.100.1,MAC Address2: AA:BB:CC:DD:EE:FF,GATEWAY2: 172.16.1.1,IP Address3: 192.0.2.1,MAC Address3: 11:22:33:44:55:66,GATEWAY3: 172.16.1.1,IP Address4: 185.245.40.65,MAC Address4: 66:77:88:99:00:11,GATEWAY4: 203.0.113.254"
+  result:
+    custom:
+      command: "Not a command scan ()"
+      computer: "DESKTOP-GGG3BOO"
+      domain_name: "Default"
+      duration: 154
+      end_time: 1726004911000
+      gateway1: "192.168.1.1"
+      gateway2: "172.16.1.1"
+      gateway3: "172.16.1.1"
+      gateway4: "203.0.113.254"
+      group_name: "My Company\\Default Group"
+      infected: 0
+      ip_address_1: "203.0.113.1"
+      ip_address_2: "198.51.100.1"
+      ip_address_3: "192.0.2.1"
+      ip_address_4: "185.245.40.65"
+      mac_address_1: "00:11:22:33:44:55"
+      mac_address_2: "AA:BB:CC:DD:EE:FF"
+      mac_address_3: "11:22:33:44:55:66"
+      mac_address_4: "66:77:88:99:00:11"
+      network:
+        client:
+          geoip: {}
+          ip: "203.0.113.1"
+      omitted_files: 0
+      scan_description: "Scan started on selected drives and folders and all extensions."
+      scan_id: 1725971909
+      scan_results:
+        file_path: "Files/Folders/Drives"
+        omitted: 0
+        risks: 0
+        scanned: 732
+        trusted_files_skipped: 338
+      scan_type: "Definition Watch Scan"
+      server_name: "WIN-RQBT7BNE363"
+      service: "scan"
+      start_time: 1726004757000
+      status: "Completed"
+      syslog:
+        hostname: "WIN-RQBT7BNE363"
+      threats: 0
+      timestamp: 21851663000
+      total_files: 732
+      user1: "SYSTEM"
+      user2: "SYSTEM"
+    message: "<54>Sep 10 21:54:23 WIN-RQBT7BNE363 SymantecServer: Scan ID: 1725971909,Begin: 2024-09-10 21:45:57,End Time: 2024-09-10 21:48:31,Completed,Duration (seconds): 154,User1: SYSTEM,User2: SYSTEM,Scan started on selected drives and folders and all extensions.,Scan Complete:  Risks: 0   Scanned: 732   Files/Folders/Drives Omitted: 0 Trusted Files Skipped: 338,Command: Not a command scan (),Threats: 0,Infected: 0,Total files: 732,Omitted: 0,Computer: DESKTOP-GGG3BOO,IP Address: 203.0.113.1,Domain Name: Default,Group Name: My Company\\Default Group,Server Name: WIN-RQBT7BNE363,Scan Type: Definition Watch Scan,IP Address1: 203.0.113.1,MAC Address1: 00:11:22:33:44:55,GATEWAY1: 192.168.1.1,IP Address2: 198.51.100.1,MAC Address2: AA:BB:CC:DD:EE:FF,GATEWAY2: 172.16.1.1,IP Address3: 192.0.2.1,MAC Address3: 11:22:33:44:55:66,GATEWAY3: 172.16.1.1,IP Address4: 185.245.40.65,MAC Address4: 66:77:88:99:00:11,GATEWAY4: 203.0.113.254"
+    service: "scan"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 21851663000
+ -
+  sample: "<54>Sep 27 10:06:25 WIN-RQBT7BNE363 SymantecServer: WIN-4K914H0NBUP,Local Host IP: 93.184.216.34,Local Port: 21,Local Host MAC: 0050569214AF,Remote Host IP: 185.245.40.100,Remote Host Name: test267,Remote Port: 17000,Remote Host MAC: 00505681A7C6,TCP,Inbound,Begin: 2024-09-27 10:00:06,End Time: 2024-09-27 10:00:06,Occurrences: 2,Application: testApplication,Rule: Block all other IP traffic and log,Location: Default,User Name: Test user,Domain Name: DESKTOP-GGG3BOO,IP Address1: 203.0.113.1,MAC Address1: 00:11:22:33:44:55,GATEWAY1: 192.168.1.1,IP Address2: 198.51.100.1,MAC Address2: AA:BB:CC:DD:EE:FF,GATEWAY2: 172.16.1.1,IP Address3: 192.0.2.1,MAC Address3: 11:22:33:44:55:66,GATEWAY3: 172.16.1.1,IP Address4: 185.245.40.65,MAC Address4: 66:77:88:99:00:11,GATEWAY4: 203.0.113.254,Action: Blocked,SHA-256: 4567890987654321098765432109876543210987654321098765432109876543,MD-5: 3a4a436a436a436a436a436a436a436a"
+  result:
+    custom:
+      action: "Blocked"
+      application: "testApplication"
+      domain_name: "DESKTOP-GGG3BOO"
+      end_time: 1727431206000
+      gateway1: "192.168.1.1"
+      gateway2: "172.16.1.1"
+      gateway3: "172.16.1.1"
+      gateway4: "203.0.113.254"
+      ip_address_1: "203.0.113.1"
+      ip_address_2: "198.51.100.1"
+      ip_address_3: "192.0.2.1"
+      ip_address_4: "185.245.40.65"
+      local_host_ip: "93.184.216.34"
+      local_host_mac: "0050569214AF"
+      local_port: 21
+      location: "Default"
+      mac_address_1: "00:11:22:33:44:55"
+      mac_address_2: "AA:BB:CC:DD:EE:FF"
+      mac_address_3: "11:22:33:44:55:66"
+      mac_address_4: "66:77:88:99:00:11"
+      md5: "3a4a436a436a436a436a436a436a436a"
+      network:
+        client:
+          geoip: {}
+          ip: "185.245.40.100"
+      network_protocol: "TCP"
+      occurrences: 2
+      remote_host_mac: "00505681A7C6"
+      remote_host_name: "test267"
+      remote_port: 17000
+      service: "traffic"
+      sha_256: "4567890987654321098765432109876543210987654321098765432109876543"
+      start_time: 1727431206000
+      syslog:
+        hostname: "WIN-RQBT7BNE363"
+        symantecServer: "WIN-4K914H0NBUP"
+      timestamp: 23277985000
+      traffic_direction: "Inbound"
+      traffic_rule: "Block all other IP traffic and log"
+      usr:
+        name: "Test user"
+    message: "<54>Sep 27 10:06:25 WIN-RQBT7BNE363 SymantecServer: WIN-4K914H0NBUP,Local Host IP: 93.184.216.34,Local Port: 21,Local Host MAC: 0050569214AF,Remote Host IP: 185.245.40.100,Remote Host Name: test267,Remote Port: 17000,Remote Host MAC: 00505681A7C6,TCP,Inbound,Begin: 2024-09-27 10:00:06,End Time: 2024-09-27 10:00:06,Occurrences: 2,Application: testApplication,Rule: Block all other IP traffic and log,Location: Default,User Name: Test user,Domain Name: DESKTOP-GGG3BOO,IP Address1: 203.0.113.1,MAC Address1: 00:11:22:33:44:55,GATEWAY1: 192.168.1.1,IP Address2: 198.51.100.1,MAC Address2: AA:BB:CC:DD:EE:FF,GATEWAY2: 172.16.1.1,IP Address3: 192.0.2.1,MAC Address3: 11:22:33:44:55:66,GATEWAY3: 172.16.1.1,IP Address4: 185.245.40.65,MAC Address4: 66:77:88:99:00:11,GATEWAY4: 203.0.113.254,Action: Blocked,SHA-256: 4567890987654321098765432109876543210987654321098765432109876543,MD-5: 3a4a436a436a436a436a436a436a436a"
+    service: "traffic"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 23277985000
+ -
+  sample: "<54>Sep 10 05:46:31 WIN-RQBT7BNE363 SymantecServer: DESKTOP-GGG3BOO,Category: 0,CVE,Event Description: Downloaded new content update from the management server successfully.     Remote file path: https://WIN-RQBT7BNE363:443/content/{05306A8A-E8C1-4081-BD49-94C8E01AF2C1}/240412011/Full.zip,Event time: 2024-09-10 05:42:28,Group Name: My Company\\Default Group"
+  result:
+    custom:
+      activity: "client"
+      category: 0
+      client_event_description: "Downloaded new content update from the management server successfully.     Remote file path: https://WIN-RQBT7BNE363:443/content/{05306A8A-E8C1-4081-BD49-94C8E01AF2C1}/240412011/Full.zip"
+      event_source: "CVE"
+      event_time: "2024-09-10 05:42:28"
+      group_name: "My Company\\Default Group"
+      service: "system"
+      syslog:
+        SymantecServer: "DESKTOP-GGG3BOO"
+        hostname: "WIN-RQBT7BNE363"
+      timestamp: 21793591000
+    message: "<54>Sep 10 05:46:31 WIN-RQBT7BNE363 SymantecServer: DESKTOP-GGG3BOO,Category: 0,CVE,Event Description: Downloaded new content update from the management server successfully.     Remote file path: https://WIN-RQBT7BNE363:443/content/{05306A8A-E8C1-4081-BD49-94C8E01AF2C1}/240412011/Full.zip,Event time: 2024-09-10 05:42:28,Group Name: My Company\\Default Group"
+    service: "system"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 21793591000
+ -
+  sample: "<54>Sep 16 04:25:05 WIN-RQBT7BNE363 SymantecServer: Site: My Site,Server Name: WIN-RQBT7BNE363,Domain Name: Default,The management server received the client log successfully,DESKTOP-GGG3BOO,Test,LocalComputer"
+  result:
+    custom:
+      activity: "client-server"
+      client_server_event_description: "The management server received the client log successfully"
+      domain_name: "Default"
+      host_name: "DESKTOP-GGG3BOO"
+      location: "LocalComputer"
+      server_name: "WIN-RQBT7BNE363"
+      service: "system"
+      syslog:
+        hostname: "WIN-RQBT7BNE363"
+        symantecServer:
+          site: "My Site"
+      timestamp: 22307105000
+      usr:
+        name: "Test"
+    message: "<54>Sep 16 04:25:05 WIN-RQBT7BNE363 SymantecServer: Site: My Site,Server Name: WIN-RQBT7BNE363,Domain Name: Default,The management server received the client log successfully,DESKTOP-GGG3BOO,Test,LocalComputer"
+    service: "system"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 22307105000
+ -
+  sample: "<51>Sep 11 00:03:41 WIN-RQBT7BNE363 SymantecServer: Site: My Site,Server Name: WIN-RQBT7BNE363,Event Description: The administrator's user name or password is incorrect. Type a valid user name or password."
+  result:
+    custom:
+      activity: "server"
+      server_event_description: "The administrator's user name or password is incorrect. Type a valid user name or password."
+      server_name: "WIN-RQBT7BNE363"
+      service: "system"
+      syslog:
+        hostname: "WIN-RQBT7BNE363"
+        symantecServer:
+          site: "My Site"
+      timestamp: 21859421000
+    message: "<51>Sep 11 00:03:41 WIN-RQBT7BNE363 SymantecServer: Site: My Site,Server Name: WIN-RQBT7BNE363,Event Description: The administrator's user name or password is incorrect. Type a valid user name or password."
+    service: "system"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 21859421000
+ -
+  sample: "<54>Sep 11 03:00:13 WIN-RQBT7BNE363 SymantecServer: Site: My Site,Server Name: WIN-RQBT7BNE363,Domain Name: Default,Admin: admin,Event Description: Site: My Site\t\t\t\t\t\t\t\t\t\t\t\t\t"
+  result:
+    custom:
+      activity: "admin"
+      admin_event_description: "Site: My Site"
+      admin_name: "admin"
+      domain_name: "Default"
+      server_name: "WIN-RQBT7BNE363"
+      service: "system"
+      syslog:
+        hostname: "WIN-RQBT7BNE363"
+        symantecServer:
+          site: "My Site"
+      timestamp: 21870013000
+    message: "<54>Sep 11 03:00:13 WIN-RQBT7BNE363 SymantecServer: Site: My Site,Server Name: WIN-RQBT7BNE363,Domain Name: Default,Admin: admin,Event Description: Site: My Site\t\t\t\t\t\t\t\t\t\t\t\t\t"
+    service: "system"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 21870013000
+ -
+  sample: "<54>Sep 10 03:55:14 WIN-RQBT7BNE363 SymantecServer: Site: My Site,Server Name: WIN-RQBT7BNE363,Domain Name: Default,Admin: admin,Event Description: Added shared policy upon system install: Added shared policy upon system install,Daily Scheduled Scan"
+  result:
+    custom:
+      audit_admin_name: "admin"
+      audit_event_description: "Added shared policy upon system install"
+      domain_name: "Default"
+      event_type: "Added shared policy upon system install"
+      policy_name: "Daily Scheduled Scan"
+      server_name: "WIN-RQBT7BNE363"
+      service: "audit"
+      syslog:
+        hostname: "WIN-RQBT7BNE363"
+        symantecServer:
+          site: "My Site"
+      timestamp: 21786914000
+    message: "<54>Sep 10 03:55:14 WIN-RQBT7BNE363 SymantecServer: Site: My Site,Server Name: WIN-RQBT7BNE363,Domain Name: Default,Admin: admin,Event Description: Added shared policy upon system install: Added shared policy upon system install,Daily Scheduled Scan"
+    service: "audit"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 21786914000

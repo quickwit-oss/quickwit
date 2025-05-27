@@ -1,0 +1,1241 @@
+id: zeek
+metric_id: zeek
+backend_only: false
+facets:
+  - groups:
+      - DNS
+    name: Answer Name
+    path: dns.answer.name
+    source: log
+  - groups:
+      - DNS
+    name: Response Code
+    path: dns.flags.rcode
+    source: log
+  - groups:
+      - DNS
+    name: DNS ID
+    path: dns.id
+    source: log
+  - groups:
+      - DNS
+    name: Question Class
+    path: dns.question.class
+    source: log
+  - groups:
+      - DNS
+    name: Question Name
+    path: dns.question.name
+    source: log
+  - groups:
+      - DNS
+    name: Question Type
+    path: dns.question.type
+    source: log
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: Referer
+    path: http.referer
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: URL Host
+    path: http.url_details.host
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Web Access
+    name: User-Agent
+    path: http.useragent
+    source: log
+  - groups:
+      - Web Access
+    name: Version
+    path: http.version
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Client Port
+    path: network.client.port
+    source: log
+  - groups:
+      - Web Access
+    name: Destination IP
+    path: network.destination.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Destination Port
+    path: network.destination.port
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - facetType: range
+    groups:
+      - Zeek
+    name: Auth Attempts
+    path: zeek.auth_attempts
+    source: log
+    type: integer
+  - facetType: list
+    groups:
+      - Zeek
+    name: Client Requested Address
+    path: zeek.request.host
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Zeek
+    name: Client Requested Port
+    path: zeek.request_p
+    source: log
+    type: string
+  - facetType: range
+    groups:
+      - Zeek
+    name: conn_red
+    path: zeek.conn_red
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - Zeek
+    name: conn_total
+    path: zeek.conn_total
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - Zeek
+    name: DNS Bytes
+    path: zeek.dns_bytes
+    source: log
+    type: integer
+    unit:
+      family: bytes
+      name: byte
+  - facetType: range
+    groups:
+      - Zeek
+    name: dns_red
+    path: zeek.dns_red
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - Zeek
+    name: dns_total
+    path: zeek.dns_total
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - Zeek
+    name: Duration Seconds
+    path: zeek.duration_sec
+    source: log
+    type: double
+    unit:
+      family: time
+      name: second
+  - facetType: range
+    groups:
+      - Zeek
+    name: File Size
+    path: zeek.file_size
+    source: log
+    type: double
+    unit:
+      family: bytes
+      name: byte
+  - facetType: range
+    groups:
+      - Zeek
+    name: files_red
+    path: zeek.files_red
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - Zeek
+    name: files_total
+    path: zeek.files_total
+    source: log
+    type: double
+  - facetType: list
+    groups:
+      - Zeek
+    name: Host Port
+    path: zeek.host_p
+    source: log
+    type: string
+  - facetType: range
+    groups:
+      - Zeek
+    name: http_red
+    path: zeek.http_red
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - Zeek
+    name: http_total
+    path: zeek.http_total
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - Zeek
+    name: Lease Time
+    path: zeek.lease_time
+    source: log
+    type: double
+    unit:
+      family: time
+      name: second
+  - facetType: range
+    groups:
+      - Zeek
+    name: Missed Bytes
+    path: zeek.missed_bytes
+    source: log
+    type: double
+    unit:
+      family: bytes
+      name: byte
+  - facetType: range
+    groups:
+      - Zeek
+    name: Missing Bytes
+    path: zeek.missing_bytes
+    source: log
+    type: double
+    unit:
+      family: bytes
+      name: byte
+  - facetType: list
+    groups:
+      - Zeek
+    name: Notice Type
+    path: zeek.note
+    source: log
+    type: string
+  - facetType: range
+    groups:
+      - Zeek
+    name: Overflow Bytes
+    path: zeek.overflow_bytes
+    source: log
+    type: integer
+    unit:
+      family: bytes
+      name: byte
+  - facetType: range
+    groups:
+      - Zeek
+    name: Percent Lost
+    path: zeek.percent_lost
+    source: log
+    type: double
+  - facetType: list
+    groups:
+      - Zeek
+    name: Protocol
+    path: zeek.proto
+    source: log
+    type: string
+  - facetType: range
+    groups:
+      - Zeek
+    name: Seen Bytes
+    path: zeek.seen_bytes
+    source: log
+    type: integer
+    unit:
+      family: bytes
+      name: byte
+  - facetType: list
+    groups:
+      - Zeek
+    name: Server Bound Address
+    path: zeek.bound.host
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Zeek
+    name: Server Bound Port
+    path: zeek.bound_p
+    source: log
+    type: string
+  - facetType: range
+    groups:
+      - Zeek
+    name: Size
+    path: zeek.size
+    source: log
+    type: double
+    unit:
+      family: bytes
+      name: byte
+  - facetType: range
+    groups:
+      - Zeek
+    name: ssl_red
+    path: zeek.ssl_red
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - Zeek
+    name: ssl_total
+    path: zeek.ssl_total
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - Zeek
+    name: Total Bytes
+    path: zeek.total_bytes
+    source: log
+    type: integer
+    unit:
+      family: bytes
+      name: byte
+  - facetType: range
+    groups:
+      - Zeek
+    name: weird_red
+    path: zeek.weird_red
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - Zeek
+    name: weird_total
+    path: zeek.weird_total
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - Zeek
+    name: x509_red
+    path: zeek.x509_red
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - Zeek
+    name: x509_total
+    path: zeek.x509_total
+    source: log
+    type: double
+pipeline:
+  type: pipeline
+  name: Zeek
+  enabled: true
+  filter:
+    query: source:zeek
+  processors:
+    - type: pipeline
+      name: Processing for Corelight logs
+      enabled: true
+      filter:
+        query: 'service:corelight '
+      processors:
+        - type: grok-parser
+          name: Parsing corelight logs
+          enabled: true
+          source: message
+          samples:
+            - <134>Dec 26 01:35:11 machine-name {"_path":"capture_loss","_write_ts":"2023-12-12T05:52:50.756358Z","ts":"2023-12-12T05:52:32.763303Z","ts_delta":15.235642194747925,"peer":"zeek","gaps":3,"acks":316,"percent_lost":0.9493670886075949}
+          grok:
+            supportRules: ''
+            matchRules: corelight (<%{word:}>)?(%{date("MMM d HH:mm:ss"):}|%{date("MMM  d HH:mm:ss"):})? %{notSpace:} %{data::json}
+    - type: service-remapper
+      name: Define `_path` as the official service of the log
+      enabled: true
+      sources:
+        - _path
+    - type: attribute-remapper
+      name: Map `id.orig_h` to `network.client.ip`
+      enabled: true
+      sources:
+        - id.orig_h
+      sourceType: attribute
+      target: network.client.ip
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `id.orig_p` to `network.client.port`
+      enabled: true
+      sources:
+        - id.orig_p
+      sourceType: attribute
+      target: network.client.port
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `id.resp_h` to `network.destination.ip`
+      enabled: true
+      sources:
+        - id.resp_h
+      sourceType: attribute
+      target: network.destination.ip
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `id.resp_p` to `network.destination.port`
+      enabled: true
+      sources:
+        - id.resp_p
+      sourceType: attribute
+      target: network.destination.port
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: pipeline
+      name: Datetime Remapper for other than files_red logs
+      enabled: true
+      filter:
+        query: "-@_path:files_red "
+      processors:
+        - type: date-remapper
+          name: Define `ts` as the official date of the log
+          enabled: true
+          sources:
+            - ts
+    - type: pipeline
+      name: Datetime Remapper for files_red logs
+      enabled: true
+      filter:
+        query: "@_path:files_red "
+      processors:
+        - type: date-remapper
+          name: Define `_write_ts` as the official date of the log
+          enabled: true
+          sources:
+            - _write_ts
+    - type: pipeline
+      name: Processing for conn logs
+      enabled: true
+      filter:
+        query: '@_path:conn* '
+      processors:
+        - name: Lookup for `conn_state` to `connection_state` field
+          enabled: true
+          source: conn_state
+          target: connection_state
+          lookupTable: |-
+            S0,Connection attempt seen - no reply
+            S1,Connection established - not terminated
+            SF,Normal establishment and termination
+            REJ,Connection attempt rejected
+            S2,Connection established and close attempt by originator seen
+            S3,Connection established and close attempt by responder seen
+            RSTO,Connection established - originator aborted
+            RSTR,Responder sent a RST
+            RSTOS0,Originator sent a SYN followed by a RST - we never saw a SYN-ACK from the responder
+            RSTRH,Responder sent a SYN ACK followed by a RST - we never saw a SYN from the (purported) originator
+            SH,Originator sent a SYN followed by a FIN - we never saw a SYN ACK from the responder
+            SHR,Responder sent a SYN ACK followed by a FIN - we never saw a SYN from the originator
+            OTH,No SYN seen - just midstream traffic
+          type: lookup-processor
+        - type: attribute-remapper
+          name: Map `missed_bytes` to `zeek.missed_bytes`
+          enabled: true
+          sources:
+            - missed_bytes
+          sourceType: attribute
+          target: zeek.missed_bytes
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Processing for pe logs
+      enabled: true
+      filter:
+        query: '@_path:pe '
+      processors:
+        - name: Lookup for `is_exe` to `file_type` field
+          enabled: true
+          source: is_exe
+          target: file_type
+          lookupTable: |-
+            true,exe
+            false,other
+          type: lookup-processor
+    - type: pipeline
+      name: Processing for reporter logs
+      enabled: true
+      filter:
+        query: '@_path:reporter '
+      processors:
+        - type: grok-parser
+          name: Parsing `severity` from `level` attribute
+          enabled: true
+          source: level
+          samples:
+            - Reporter::INFO
+          grok:
+            supportRules: ''
+            matchRules: reporter_rule Reporter::%{word:severity}
+    - type: pipeline
+      name: Processing for ntp logs
+      enabled: true
+      filter:
+        query: '@_path:ntp '
+      processors:
+        - name: Lookup for `mode` to `ntp_mode`
+          enabled: true
+          source: mode
+          target: ntp_mode
+          lookupTable: |-
+            0,reserved
+            1,symmetric active
+            2,symmetric passive
+            3,client
+            4,server
+            5,broadcast
+            6,NTP control message
+            7,reserved for private use
+          type: lookup-processor
+    - type: pipeline
+      name: Processing for suricata logs
+      enabled: true
+      filter:
+        query: '@_path:suricata_corelight '
+      processors:
+        - name: Lookup for `alert.severity` to `alert_severity`
+          enabled: true
+          source: alert.severity
+          target: alert_severity
+          lookupTable: |-
+            1,High
+            2,Medium
+            3,Low
+          type: lookup-processor
+    - type: pipeline
+      name: Processing for http logs and Standard attribute remapping for HTTP requests
+      enabled: true
+      filter:
+        query: "@_path:(http OR http_red) "
+      processors:
+        - type: string-builder-processor
+          name: "Create URL based on `host` and `uri` "
+          enabled: true
+          template: http://%{host}%{uri}
+          target: http_url
+          replaceMissing: false
+        - type: attribute-remapper
+          name: Map `method` to `http.method`
+          enabled: true
+          sources:
+            - method
+          sourceType: attribute
+          target: http.method
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `host` to `http.url_details.host`
+          enabled: true
+          sources:
+            - host
+          sourceType: attribute
+          target: http.url_details.host
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `uri` to `http.url_details.path`
+          enabled: true
+          sources:
+            - uri
+          sourceType: attribute
+          target: http.url_details.path
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `referrer` to `http.referer`
+          enabled: true
+          sources:
+            - referrer
+          sourceType: attribute
+          target: http.referer
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `version` to `http.version`
+          enabled: true
+          sources:
+            - version
+          sourceType: attribute
+          target: http.version
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `user_agent` to `http.useragent`
+          enabled: true
+          sources:
+            - user_agent
+          sourceType: attribute
+          target: http.useragent
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `status_code` to `http.status_code`
+          enabled: true
+          sources:
+            - status_code
+          sourceType: attribute
+          target: http.status_code
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Standard attribute remapping for Web Access
+      enabled: true
+      filter:
+        query: "@_path:(conn* OR http OR http_red) "
+      processors:
+        - type: attribute-remapper
+          name: Map `orig_bytes`, `request_body_len` to `network.bytes_read`
+          enabled: true
+          sources:
+            - orig_bytes
+            - request_body_len
+          sourceType: attribute
+          target: network.bytes_read
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `resp_bytes`, `response_body_len` to `network.bytes_written`
+          enabled: true
+          sources:
+            - resp_bytes
+            - response_body_len
+          sourceType: attribute
+          target: network.bytes_written
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Processing for dns logs and Standard attribute remapping for DNS
+      enabled: true
+      filter:
+        query: "@_path:(dns OR dns_red OR generic_dns_tunnels) "
+      processors:
+        - type: geo-ip-parser
+          name: Extracting geolocation information from the client IP
+          enabled: true
+          sources:
+            - network.client.ip
+          target: network.client.geoip
+          ip_processing_behavior: do-nothing
+        - type: attribute-remapper
+          name: Map `bytes` to `zeek.dns_bytes`
+          enabled: true
+          sources:
+            - bytes
+          sourceType: attribute
+          target: zeek.dns_bytes
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `trans_id` to `dns.id`
+          enabled: true
+          sources:
+            - trans_id
+          sourceType: attribute
+          target: dns.id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `domain`, `query` to `dns.question.name`
+          enabled: true
+          sources:
+            - domain
+            - query
+          sourceType: attribute
+          target: dns.question.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `qclass_name` to `dns.question.class`
+          enabled: true
+          sources:
+            - qclass_name
+          sourceType: attribute
+          target: dns.question.class
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `qtype_name` to `dns.question.type`
+          enabled: true
+          sources:
+            - qtype_name
+          sourceType: attribute
+          target: dns.question.type
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `rcode_name` to `dns.flags.rcode`
+          enabled: true
+          sources:
+            - rcode_name
+          sourceType: attribute
+          target: dns.flags.rcode
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `answers` to `dns.answer.name`
+          enabled: true
+          sources:
+            - answers
+          sourceType: attribute
+          target: dns.answer.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Standard attribute remapping for user attributes
+      enabled: true
+      filter:
+        query: "@_path:(ftp OR socks OR http OR http_red) "
+      processors:
+        - type: attribute-remapper
+          name: Map `user`, `username` to `usr.name`
+          enabled: true
+          sources:
+            - user
+            - username
+          sourceType: attribute
+          target: usr.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Standard attribute remapping for Syslog
+      enabled: true
+      filter:
+        query: '@_path:syslog '
+      processors:
+        - type: attribute-remapper
+          name: Map `severity` to `syslog.severity`
+          enabled: true
+          sources:
+            - severity
+          sourceType: attribute
+          target: syslog.severity
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Remap `request`,`request_p`,`bound` and `bound_p` attributes
+      enabled: true
+      filter:
+        query: "@_path:socks "
+      processors:
+        - type: attribute-remapper
+          name: Map `request` to `zeek.request`
+          enabled: true
+          sources:
+            - request
+          sourceType: attribute
+          target: zeek.request
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `request_p` to `zeek.request_p`
+          enabled: true
+          sources:
+            - request_p
+          sourceType: attribute
+          target: zeek.request_p
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `bound` to `zeek.bound`
+          enabled: true
+          sources:
+            - bound
+          sourceType: attribute
+          target: zeek.bound
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `bound_p` to `zeek.bound_p`
+          enabled: true
+          sources:
+            - bound_p
+          sourceType: attribute
+          target: zeek.bound_p
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Remap `duration` to `duration_sec` attribute
+      enabled: true
+      filter:
+        query: '@_path:(conn* OR dhcp OR snmp) '
+      processors:
+        - type: attribute-remapper
+          name: Map `duration` to `zeek.duration_sec`
+          enabled: true
+          sources:
+            - duration
+          sourceType: attribute
+          target: zeek.duration_sec
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Remap attributes for ssh logs
+      enabled: true
+      filter:
+        query: "@_path:ssh "
+      processors:
+        - type: attribute-remapper
+          name: Map `auth_attempts` to `zeek.auth_attempts`
+          enabled: true
+          sources:
+            - auth_attempts
+          sourceType: attribute
+          target: zeek.auth_attempts
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Remap attributes for ftp logs
+      enabled: true
+      filter:
+        query: "@_path:ftp "
+      processors:
+        - type: attribute-remapper
+          name: Map `file_size` to `zeek.file_size`
+          enabled: true
+          sources:
+            - file_size
+          sourceType: attribute
+          target: zeek.file_size
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Remap attributes for dhcp logs
+      enabled: true
+      filter:
+        query: "@_path:dhcp "
+      processors:
+        - type: attribute-remapper
+          name: Map `lease_time` to `zeek.lease_time`
+          enabled: true
+          sources:
+            - lease_time
+          sourceType: attribute
+          target: zeek.lease_time
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Remap attributes for notice and weird logs
+      enabled: true
+      filter:
+        query: "@_path:(notice OR weird OR weird_red) "
+      processors:
+        - type: attribute-remapper
+          name: Map `note` to `zeek.note`
+          enabled: true
+          sources:
+            - note
+          sourceType: attribute
+          target: zeek.note
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Remap attributes for files logs
+      enabled: true
+      filter:
+        query: "@_path:(files OR files_red) "
+      processors:
+        - type: attribute-remapper
+          name: Map `overflow_bytes` to `zeek.overflow_bytes`
+          enabled: true
+          sources:
+            - overflow_bytes
+          sourceType: attribute
+          target: zeek.overflow_bytes
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `missing_bytes` to `zeek.missing_bytes`
+          enabled: true
+          sources:
+            - missing_bytes
+          sourceType: attribute
+          target: zeek.missing_bytes
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `seen_bytes` to `zeek.seen_bytes`
+          enabled: true
+          sources:
+            - seen_bytes
+          sourceType: attribute
+          target: zeek.seen_bytes
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `total_bytes` to `zeek.total_bytes`
+          enabled: true
+          sources:
+            - total_bytes
+          sourceType: attribute
+          target: zeek.total_bytes
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `network.client.ip`, `rx_hosts` to `orig_host`
+          enabled: true
+          sources:
+            - network.client.ip
+            - rx_hosts
+          sourceType: attribute
+          target: orig_host
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `network.destination.ip`, `tx_hosts` to `dest_host`
+          enabled: true
+          sources:
+            - network.destination.ip
+            - tx_hosts
+          sourceType: attribute
+          target: dest_host
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+    - type: pipeline
+      name: Remap attributes for capture loss logs
+      enabled: true
+      filter:
+        query: "@_path:capture_loss "
+      processors:
+        - type: attribute-remapper
+          name: Map `percent_lost` to `zeek.percent_lost`
+          enabled: true
+          sources:
+            - percent_lost
+          sourceType: attribute
+          target: zeek.percent_lost
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Remap attributes for smb files logs
+      enabled: true
+      filter:
+        query: "@_path:smb_files "
+      processors:
+        - type: attribute-remapper
+          name: Map `size` to `zeek.size`
+          enabled: true
+          sources:
+            - size
+          sourceType: attribute
+          target: zeek.size
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Remap attributes for software logs
+      enabled: true
+      filter:
+        query: "@_path:software "
+      processors:
+        - type: attribute-remapper
+          name: Map `host_p` to `zeek.host_p`
+          enabled: true
+          sources:
+            - host_p
+          sourceType: attribute
+          target: zeek.host_p
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Remap `proto` attribute to `zeek.proto`
+      enabled: true
+      filter:
+        query: "@_path:(conn* OR notice OR traceroute OR dns OR dns_red OR dpd OR syslog) "
+      processors:
+        - type: attribute-remapper
+          name: Map `proto` to `zeek.proto`
+          enabled: true
+          sources:
+            - proto
+          sourceType: attribute
+          target: zeek.proto
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Remapping datared log attributes
+      enabled: true
+      filter:
+        query: "@_path:datared "
+      processors:
+        - type: attribute-remapper
+          name: Map `conn_red` to `zeek.conn_red`
+          enabled: true
+          sources:
+            - conn_red
+          sourceType: attribute
+          target: zeek.conn_red
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `conn_total` to `zeek.conn_total`
+          enabled: true
+          sources:
+            - conn_total
+          sourceType: attribute
+          target: zeek.conn_total
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `dns_red` to `zeek.dns_red`
+          enabled: true
+          sources:
+            - dns_red
+          sourceType: attribute
+          target: zeek.dns_red
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `dns_total` to `zeek.dns_total`
+          enabled: true
+          sources:
+            - dns_total
+          sourceType: attribute
+          target: zeek.dns_total
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `files_red` to `zeek.files_red`
+          enabled: true
+          sources:
+            - files_red
+          sourceType: attribute
+          target: zeek.files_red
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `files_total` to `zeek.files_total`
+          enabled: true
+          sources:
+            - files_total
+          sourceType: attribute
+          target: zeek.files_total
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `http_red` to `zeek.http_red`
+          enabled: true
+          sources:
+            - http_red
+          sourceType: attribute
+          target: zeek.http_red
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `http_total` to `zeek.http_total`
+          enabled: true
+          sources:
+            - http_total
+          sourceType: attribute
+          target: zeek.http_total
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `ssl_red` to `zeek.ssl_red`
+          enabled: true
+          sources:
+            - ssl_red
+          sourceType: attribute
+          target: zeek.ssl_red
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `ssl_total` to `zeek.ssl_total`
+          enabled: true
+          sources:
+            - ssl_total
+          sourceType: attribute
+          target: zeek.ssl_total
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `weird_red` to `zeek.weird_red`
+          enabled: true
+          sources:
+            - weird_red
+          sourceType: attribute
+          target: zeek.weird_red
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `weird_total` to `zeek.weird_total`
+          enabled: true
+          sources:
+            - weird_total
+          sourceType: attribute
+          target: zeek.weird_total
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `x509_red` to `zeek.x509_red`
+          enabled: true
+          sources:
+            - x509_red
+          sourceType: attribute
+          target: zeek.x509_red
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `x509_total` to `zeek.x509_total`
+          enabled: true
+          sources:
+            - x509_total
+          sourceType: attribute
+          target: zeek.x509_total
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Remapping etc_viz log attributes
+      enabled: true
+      filter:
+        query: "@_path:etc_viz "
+      processors:
+        - type: attribute-remapper
+          name: Map `server_a` to `network.client.ip`
+          enabled: true
+          sources:
+            - server_a
+          sourceType: attribute
+          target: network.client.ip
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `server_p` to `network.client.port`
+          enabled: true
+          sources:
+            - server_p
+          sourceType: attribute
+          target: network.client.port
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: status-remapper
+      name: Define `severity`, `syslog.severity` as the official status of the log
+      enabled: true
+      sources:
+        - severity
+        - syslog.severity

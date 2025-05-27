@@ -1,0 +1,170 @@
+id: "invary"
+tests:
+ -
+  sample: |-
+    {
+      "node" : {
+        "name" : "tim-attestd-dell",
+        "processor" : "x86_64",
+        "uptime" : 172094,
+        "tags" : [ "linux", "local", "tim" ]
+      },
+      "endpoint" : "yeadwuk1favadnv2gshbwt9qe",
+      "checks" : [ {
+        "result" : "SUCCESSFUL",
+        "name" : "required.nodes"
+      }, {
+        "result" : "SUCCESSFUL",
+        "name" : "jump.tables"
+      }, {
+        "result" : "SUCCESSFUL",
+        "name" : "function.pointers"
+      }, {
+        "result" : "SUCCESSFUL",
+        "name" : "task.gates"
+      }, {
+        "result" : "SUCCESSFUL",
+        "name" : "task.tree"
+      }, {
+        "result" : "SUCCESSFUL",
+        "name" : "data.nodes"
+      }, {
+        "result" : "SUCCESSFUL",
+        "name" : "nops.table"
+      } ],
+      "created" : "2023-10-19T14:28:52.604920282Z",
+      "kernel" : {
+        "release" : "6.2.0-34-generic",
+        "name" : "Linux",
+        "version" : "#34~22.04.1-Ubuntu SMP PREEMPT_DYNAMIC Thu Sep  7 13:12:03 UTC 2"
+      },
+      "organization" : "qf7a4cty3whfcms98f9qaqm62",
+      "id" : "wakbaswdv0awdp6z0f76d0vxm",
+      "passed" : [ "required.nodes", "jump.tables", "function.pointers", "task.gates", "task.tree", "data.nodes", "nops.table" ],
+      "distribution" : {
+        "vendor" : "ubuntu",
+        "release" : "22.04",
+        "codename" : "jammy"
+      },
+      "measurement" : {
+        "nodes" : 2863050,
+        "edges" : 9681866,
+        "modules" : 249
+      },
+      "status" : "SUCCESSFUL"
+    }
+  result:
+    custom:
+      checks:
+       -
+        result: "SUCCESSFUL"
+        name: "required.nodes"
+       -
+        result: "SUCCESSFUL"
+        name: "jump.tables"
+       -
+        result: "SUCCESSFUL"
+        name: "function.pointers"
+       -
+        result: "SUCCESSFUL"
+        name: "task.gates"
+       -
+        result: "SUCCESSFUL"
+        name: "task.tree"
+       -
+        result: "SUCCESSFUL"
+        name: "data.nodes"
+       -
+        result: "SUCCESSFUL"
+        name: "nops.table"
+      created: "2023-10-19T14:28:52.604920282Z"
+      distribution:
+        codename: "jammy"
+        release: "22.04"
+        vendor: "ubuntu"
+      endpoint: "yeadwuk1favadnv2gshbwt9qe"
+      id: "wakbaswdv0awdp6z0f76d0vxm"
+      kernel:
+        name: "Linux"
+        release: "6.2.0-34-generic"
+        version: "#34~22.04.1-Ubuntu SMP PREEMPT_DYNAMIC Thu Sep  7 13:12:03 UTC 2"
+      measurement:
+        edges: 9681866
+        modules: 249
+        nodes: 2863050
+      node:
+        name: "tim-attestd-dell"
+        processor: "x86_64"
+        tags:
+         - "linux"
+         - "local"
+         - "tim"
+        uptime: 172094
+      organization: "qf7a4cty3whfcms98f9qaqm62"
+      passed:
+       - "required.nodes"
+       - "jump.tables"
+       - "function.pointers"
+       - "task.gates"
+       - "task.tree"
+       - "data.nodes"
+       - "nops.table"
+      status: "SUCCESSFUL"
+      status_category: "OK"
+    message: |-
+      {
+        "node" : {
+          "name" : "tim-attestd-dell",
+          "processor" : "x86_64",
+          "uptime" : 172094,
+          "tags" : [ "linux", "local", "tim" ]
+        },
+        "endpoint" : "yeadwuk1favadnv2gshbwt9qe",
+        "checks" : [ {
+          "result" : "SUCCESSFUL",
+          "name" : "required.nodes"
+        }, {
+          "result" : "SUCCESSFUL",
+          "name" : "jump.tables"
+        }, {
+          "result" : "SUCCESSFUL",
+          "name" : "function.pointers"
+        }, {
+          "result" : "SUCCESSFUL",
+          "name" : "task.gates"
+        }, {
+          "result" : "SUCCESSFUL",
+          "name" : "task.tree"
+        }, {
+          "result" : "SUCCESSFUL",
+          "name" : "data.nodes"
+        }, {
+          "result" : "SUCCESSFUL",
+          "name" : "nops.table"
+        } ],
+        "created" : "2023-10-19T14:28:52.604920282Z",
+        "kernel" : {
+          "release" : "6.2.0-34-generic",
+          "name" : "Linux",
+          "version" : "#34~22.04.1-Ubuntu SMP PREEMPT_DYNAMIC Thu Sep  7 13:12:03 UTC 2"
+        },
+        "organization" : "qf7a4cty3whfcms98f9qaqm62",
+        "id" : "wakbaswdv0awdp6z0f76d0vxm",
+        "passed" : [ "required.nodes", "jump.tables", "function.pointers", "task.gates", "task.tree", "data.nodes", "nops.table" ],
+        "distribution" : {
+          "vendor" : "ubuntu",
+          "release" : "22.04",
+          "codename" : "jammy"
+        },
+        "measurement" : {
+          "nodes" : 2863050,
+          "edges" : 9681866,
+          "modules" : 249
+        },
+        "status" : "SUCCESSFUL"
+      }
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1697725732604
+

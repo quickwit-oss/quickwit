@@ -1,0 +1,186 @@
+id: bind9
+tests:
+ -
+  sample: "<158>Sep 20 15:50:26 bindserver named[1630972]: 2024-09-20T10:20:26.751Z queries: info: client @0x7f264c465b08 10.10.10.10#56256 (google.com): query: google.com IN A + (10.10.10.10)"
+  service: "queries"
+  result:
+    custom:
+      dns:
+        question:
+          class: "IN"
+          name: "google.com"
+          type: "A"
+      event_type: "queries"
+      flag: "+"
+      network:
+        client:
+          ip: "10.10.10.10"
+          port: "56256"
+        destination:
+          ip: "10.10.10.10"
+      severity: "info"
+      status: "informational"
+      timestamp: 1726827626751
+    message: "client @0x7f264c465b08 10.10.10.10#56256 (google.com): query: google.com IN A + (10.10.10.10)"
+    service: "queries"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1726827626751
+ -
+  sample: "09-Sep-2024 18:18:23.841 network: info: no longer listening on 10.10.10.10#50"
+  service: "network"
+  result:
+    custom:
+      action: "not-listening"
+      event_type: "network"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+          port: "50"
+      severity: "info"
+      status: "informational"
+      timestamp: 1725905903841
+      vendor_action: "no longer listening"
+    message: "no longer listening on 10.10.10.10#50"
+    service: "network"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1725905903841
+ -
+  sample: "10-Sep-2024 19:18:23.841 lame-servers: info: timed out resolving 'example.com/DS/IN': 8.8.8.8#53"
+  service: "lame-servers"
+  result:
+    custom:
+      dns:
+        question:
+          class: "DS"
+          name: "example.com"
+          type: "IN"
+      error_type: "timed out"
+      event_type: "lame-servers"
+      network:
+        destination:
+          ip: "8.8.8.8"
+          port: "53"
+      severity: "info"
+      status: "informational"
+      timestamp: 1725995903841
+    message: "timed out resolving 'example.com/DS/IN': 8.8.8.8#53"
+    service: "lame-servers"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1725995903841
+ -
+  sample: "10-Sep-2024 20:18:23.841 notify: info: zone example.com/IN: sending notify to 20.20.20.20#60"
+  service: "notify"
+  result:
+    custom:
+      action: "send-notify"
+      dns:
+        question:
+          class: "IN"
+          name: "example.com"
+      event_type: "notify"
+      network:
+        destination:
+          ip: "20.20.20.20"
+          port: "60"
+      severity: "info"
+      status: "informational"
+      timestamp: 1725999503841
+      vendor_action: "sending notify"
+    message: "zone example.com/IN: sending notify to 20.20.20.20#60"
+    service: "notify"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1725999503841
+ -
+  sample: "10-Sep-2024 21:18:23.841 queries: info: client @0x7f0c38008a28 10.10.10.10#50 (example.com): query: example.com IN PTR +E(0)K (20.20.20.20)"
+  service: "queries"
+  result:
+    custom:
+      dns:
+        question:
+          class: "IN"
+          name: "example.com"
+          type: "PTR"
+      event_type: "queries"
+      flag: "+E(0)K"
+      network:
+        client:
+          ip: "10.10.10.10"
+          port: "50"
+        destination:
+          ip: "20.20.20.20"
+      severity: "info"
+      status: "informational"
+      timestamp: 1726003103841
+    message: "client @0x7f0c38008a28 10.10.10.10#50 (example.com): query: example.com IN PTR +E(0)K (20.20.20.20)"
+    service: "queries"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1726003103841
+ -
+  sample: "10-Sep-2024 21:18:23.841 query-errors: info: client @0x7f0c38008a28 10.10.10.10#50 (example.com): query failed (REFUSED) for example.com/IN/A at query.c:5671"
+  service: "query-errors"
+  result:
+    custom:
+      dns:
+        flags:
+          rcode: "REFUSED"
+        question:
+          class: "IN"
+          name: "example.com"
+          type: "A"
+      event_type: "query-errors"
+      file_name: "query.c"
+      line_number: "5671"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+          port: "50"
+      reply_code: "Refused"
+      severity: "info"
+      status: "informational"
+      timestamp: 1726003103841
+    message: "client @0x7f0c38008a28 10.10.10.10#50 (example.com): query failed (REFUSED) for example.com/IN/A at query.c:5671"
+    service: "query-errors"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1726003103841
+ -
+  sample: "10-Sep-2024 21:18:23.841 security: info: client @0x7f0c38008a28 10.10.10.10#50 (example.com): query (cache) 'example.com/A/IN' denied (allow-query-cache did not match)"
+  service: "security"
+  result:
+    custom:
+      dns:
+        question:
+          class: "A"
+          name: "example.com"
+          type: "IN"
+      event_type: "security"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+          port: "50"
+      operation_type: "query (cache)"
+      reason: "allow-query-cache did not match"
+      request_type: "denied"
+      severity: "info"
+      status: "informational"
+      timestamp: 1726003103841
+    message: "client @0x7f0c38008a28 10.10.10.10#50 (example.com): query (cache) 'example.com/A/IN' denied (allow-query-cache did not match)"
+    service: "security"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1726003103841

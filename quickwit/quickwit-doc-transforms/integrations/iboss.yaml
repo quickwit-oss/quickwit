@@ -1,0 +1,542 @@
+id: iboss
+metric_id: iboss
+backend_only: false
+facets:
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url
+    source: log
+  - groups:
+      - Web Access
+    name: URL Host
+    path: http.url_details.host
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Web Access
+    name: URL scheme
+    path: http.url_details.scheme
+    source: log
+  - groups:
+      - Web Access
+    name: User-Agent
+    path: http.useragent
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Client Port
+    path: network.client.port
+    source: log
+  - groups:
+      - Geoip
+    name: Destination City Name
+    path: network.destination.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Continent Code
+    path: network.destination.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Continent Name
+    path: network.destination.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Country ISO Code
+    path: network.destination.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Country Name
+    path: network.destination.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Subdivision ISO Code
+    path: network.destination.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Subdivision Name
+    path: network.destination.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Destination IP
+    path: network.destination.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Destination Port
+    path: network.destination.port
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - description: ''
+    facetType: range
+    groups:
+      - iboss
+    name: Client Peer Time
+    path: iboss.clientPeerTime
+    source: log
+    type: double
+    unit:
+      family: time
+      name: millisecond
+  - description: ''
+    facetType: range
+    groups:
+      - iboss
+    name: Proxy DNS Lookup Time
+    path: iboss.proxyDnsLookupTime
+    source: log
+    type: double
+    unit:
+      family: time
+      name: millisecond
+  - description: ''
+    facetType: range
+    groups:
+      - iboss
+    name: Proxy Total Time
+    path: iboss.proxyTotalTime
+    source: log
+    type: double
+    unit:
+      family: time
+      name: millisecond
+  - description: ''
+    facetType: range
+    groups:
+      - iboss
+    name: Server Peer Time
+    path: iboss.serverPeerTime
+    source: log
+    type: double
+    unit:
+      family: time
+      name: millisecond
+  - description: ''
+    facetType: range
+    groups:
+      - iboss
+    name: Use Time
+    path: iboss.useTime
+    source: log
+    type: double
+    unit:
+      family: time
+      name: millisecond
+pipeline:
+  type: pipeline
+  name: iboss
+  enabled: true
+  filter:
+    query: source:iboss
+  processors:
+    - type: grok-parser
+      name: Parsing Event logs
+      enabled: true
+      source: message
+      samples:
+        - <46>May 28 06:45:51 test.ibosscloud.com
+          {"exception":"-","totalByteUsage":"5404","policyLayers":"Gmail|Github|Non
+          Enterprise Owned|Microsoft CASB Unsanctioned
+          Applications","sourcePort":"27993","resourceId":"-","contentTypeHeader":"-","callout":"0","privateIp":"10.20.10.20","sAction":"Allowed","sourceIpAddress":"10.20.10.20","subjectId":"test","responseCode":"200","proxyTimeSinceEpoch":"10","authStepUp":"false","productVersion":"10.3.3.125","ztScore":"0","proxyRule":"Test","clientPeerTime":"10","totalByteCount":"5404","host":"example-test.com","stealth":"0","action":"Allowed","uriPath":"/","computerMacAddress":"00:00:00:00:00:00","iboss":"test.ibosscloud.com","ztPolicyName":"Non
+          Enterprise
+          Owned","proxyPeerResponseTime":"123","tlsVersion":"-","ipAddress":"10.20.30.20","resourceName":"-","localProxyPort":"80","logSubType":"MALWARE_SOURCE","ibossIpAddress":"10.20.30.40","mde":"-","lastname":"-","macAddress":"00:00:00:00:00:00","ztPolicyId":"zt-policy-id-1","filename":"-","filteringGroupName":"Default","cncFlag":"0","proxyDnsLookupTime":"347","identityProviderName":"-","proxyTotalTime":"248","destinationPort":"80","logType":"WEB_LOG","extension":"cc","firstname":"-","scheme":"http","reportingGroup":"0","requestMethod":"GET","description":"-","policyTrace":"-","categoryName":"Malware","directionName":"outbound","sandBoxDecoded":"-","urlLogId":"8532","computerName":"TEST-ASSET","assetId":"asset-id-1","audit":"0","useTime":"602","identityProviderUUID":"auto-login","upstreamByteUsage":"2974","proxyResponseTime":"602","applicationName":"C:\\\\chrome.exe","direction":"2","malware":"1","chatGPTMessage":"-","proxyTransactionStartTime":"1748414749.895","userAgent":"Edg/136.0.0.0","publicIp":"10.20.20.10","url":"http://example-test.com/","logTime":"2025-05-28","referrerUrl":"-","sha256Sum":"-","uriQuery":"-","serverPeerTime":"123","downstreamByteUsage":"2430","dlpKeywords":"-","location":"us-central","time":"06:45:50","vendorAccountId":"313117","username":"test-user","heuristicScore":"0"}
+      grok:
+        supportRules: ""
+        matchRules: event_logs_parsing_rule <%{integer}>(%{date("MMM dd
+          hh:mm:ss")}|%{date("MMM  d hh:mm:ss")}) %{notSpace:hostname}
+          %{data::json}
+    - type: grok-parser
+      name: Parsing `categoryName` attribute
+      enabled: true
+      source: categoryName
+      samples:
+        - Malware Content;Phishing
+      grok:
+        supportRules: ""
+        matchRules: category_name_parsing_rule %{data:categoryName:array("",";")}
+    - type: string-builder-processor
+      name: Build `timestamp` string
+      enabled: true
+      template: "%{logTime}T%{time}Z"
+      target: timestamp
+      replaceMissing: false
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: attribute-remapper
+      name: Map `sourceIpAddress` to `network.client.ip`
+      enabled: true
+      sources:
+        - sourceIpAddress
+      sourceType: attribute
+      target: network.client.ip
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `sourcePort` to `network.client.port`
+      enabled: true
+      sources:
+        - sourcePort
+      sourceType: attribute
+      target: network.client.port
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `ipAddress` to `network.destination.ip`
+      enabled: true
+      sources:
+        - ipAddress
+      sourceType: attribute
+      target: network.destination.ip
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `destinationPort` to `network.destination.port`
+      enabled: true
+      sources:
+        - destinationPort
+      sourceType: attribute
+      target: network.destination.port
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: geo-ip-parser
+      name: Extracting geolocation information from the Client IP
+      enabled: true
+      sources:
+        - network.client.ip
+      target: network.client.geoip
+      ip_processing_behavior: do-nothing
+    - type: geo-ip-parser
+      name: Extracting geolocation information from the Destination IP
+      enabled: true
+      sources:
+        - network.destination.ip
+      target: network.destination.geoip
+      ip_processing_behavior: do-nothing
+    - type: attribute-remapper
+      name: Map `upstreamByteUsage` to `network.bytes_read`
+      enabled: true
+      sources:
+        - upstreamByteUsage
+      sourceType: attribute
+      target: network.bytes_read
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `downstreamByteUsage` to `network.bytes_written`
+      enabled: true
+      sources:
+        - downstreamByteUsage
+      sourceType: attribute
+      target: network.bytes_written
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `logType` to `evt.name`
+      enabled: true
+      sources:
+        - logType
+      sourceType: attribute
+      target: evt.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `username` to `usr.name`
+      enabled: true
+      sources:
+        - username
+      sourceType: attribute
+      target: usr.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `iboss` to `serverComputerName`
+      enabled: true
+      sources:
+        - iboss
+      sourceType: attribute
+      target: serverComputerName
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `proxyTotalTime` to `iboss.proxyTotalTime`
+      enabled: true
+      sources:
+        - proxyTotalTime
+      sourceType: attribute
+      target: iboss.proxyTotalTime
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `clientPeerTime` to `iboss.clientPeerTime`
+      enabled: true
+      sources:
+        - clientPeerTime
+      sourceType: attribute
+      target: iboss.clientPeerTime
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `serverPeerTime` to `iboss.serverPeerTime`
+      enabled: true
+      sources:
+        - serverPeerTime
+      sourceType: attribute
+      target: iboss.serverPeerTime
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `useTime` to `iboss.useTime`
+      enabled: true
+      sources:
+        - useTime
+      sourceType: attribute
+      target: iboss.useTime
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `proxyDnsLookupTime` to `iboss.proxyDnsLookupTime`
+      enabled: true
+      sources:
+        - proxyDnsLookupTime
+      sourceType: attribute
+      target: iboss.proxyDnsLookupTime
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: pipeline
+      name: Parse Web and DLP logs
+      enabled: true
+      filter:
+        query: "@evt.name:(WEB_LOG OR DLP)"
+      processors:
+        - type: attribute-remapper
+          name: Map `url` to `http.url`
+          enabled: true
+          sources:
+            - url
+          sourceType: attribute
+          target: http.url
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `requestMethod` to `http.method`
+          enabled: true
+          sources:
+            - requestMethod
+          sourceType: attribute
+          target: http.method
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `scheme` to `http.url_details.scheme`
+          enabled: true
+          sources:
+            - scheme
+          sourceType: attribute
+          target: http.url_details.scheme
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `uriPath` to `http.url_details.path`
+          enabled: true
+          sources:
+            - uriPath
+          sourceType: attribute
+          target: http.url_details.path
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `uriQuery` to `http.url_details.queryString`
+          enabled: true
+          sources:
+            - uriQuery
+          sourceType: attribute
+          target: http.url_details.queryString
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `host` to `http.url_details.host`
+          enabled: true
+          sources:
+            - host
+          sourceType: attribute
+          target: http.url_details.host
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `responseCode` to `http.status_code`
+          enabled: true
+          sources:
+            - responseCode
+          sourceType: attribute
+          target: http.status_code
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: category-processor
+          name: HTTP status category processor
+          enabled: true
+          categories:
+            - filter:
+                query: "@http.status_code:0"
+              name: No Response
+            - filter:
+                query: "@http.status_code:[100 TO 199]"
+              name: Informational
+            - filter:
+                query: "@http.status_code:[200 TO 299]"
+              name: Successful
+            - filter:
+                query: "@http.status_code:[300 TO 399]"
+              name: Redirection
+            - filter:
+                query: "@http.status_code:[400 TO 499]"
+              name: Client Error
+            - filter:
+                query: "@http.status_code:[500 TO 599]"
+              name: Server Error
+          target: http.status_category
+        - type: attribute-remapper
+          name: Map `userAgent` to `http.useragent`
+          enabled: true
+          sources:
+            - userAgent
+          sourceType: attribute
+          target: http.useragent
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: user-agent-parser
+          name: Parsing user agent
+          enabled: true
+          sources:
+            - http.useragent
+          target: http.useragent_details
+          encoded: false
+          combineVersionDetails: false
+    - type: pipeline
+      name: Extract Search Keyword
+      enabled: true
+      filter:
+        query: '@evt.name:WEB_LOG @http.url_details.path:"/search"'
+      processors:
+        - type: grok-parser
+          name: extracting keyword from URL query string
+          enabled: true
+          source: http.url_details.queryString
+          samples:
+            - q=test1&oq=test2
+            - q=test1&sq=test2&oq=test3
+            - q=test1
+            - oq=test2&q=test1
+          grok:
+            supportRules: ""
+            matchRules: extract_search_keyword
+              (q=%{regex("[^&]+"):search_keyword}(&%{data})*|%{regex(".*(?=&q=)")}&q=%{regex("[^&]+"):search_keyword}(&%{data})*)

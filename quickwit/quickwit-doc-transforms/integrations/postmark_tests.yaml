@@ -1,0 +1,468 @@
+id: postmark
+tests:
+ -
+  sample: |-
+    {
+      "Details" : "smtp;250 2.0.0 OK 1729492532 af79cd13be357-7b165ab4182si321600985a.706 - gsmtp",
+      "ServerID" : 14542485,
+      "RecordType" : "Delivery",
+      "DeliveredAt" : "2024-10-21T06:35:32Z",
+      "MessageStream" : "outbound",
+      "Recipient" : "example@abc.com",
+      "Tag" : "",
+      "MessageID" : "fc7e2258-279b-4f76-9af7-7efa94b97853"
+    }
+  result:
+    custom:
+      Details: "smtp;250 2.0.0 OK 1729492532 af79cd13be357-7b165ab4182si321600985a.706 - gsmtp"
+      MessageID: "fc7e2258-279b-4f76-9af7-7efa94b97853"
+      MessageStream: "outbound"
+      ServerID: 14542485
+      Tag: ""
+      evt:
+        name: "Delivery"
+      status: "Success"
+      timestamp: "2024-10-21T06:35:32Z"
+      usr:
+        email: "example@abc.com"
+    message: |-
+      {
+        "Details" : "smtp;250 2.0.0 OK 1729492532 af79cd13be357-7b165ab4182si321600985a.706 - gsmtp",
+        "ServerID" : 14542485,
+        "RecordType" : "Delivery",
+        "DeliveredAt" : "2024-10-21T06:35:32Z",
+        "MessageStream" : "outbound",
+        "Recipient" : "example@abc.com",
+        "Tag" : "",
+        "MessageID" : "fc7e2258-279b-4f76-9af7-7efa94b97853"
+      }
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1729492532000
+ -
+  sample: |-
+    {
+      "OS" : {
+        "Company" : "Microsoft Corporation.",
+        "Family" : "Windows",
+        "Name" : "Windows 10"
+      },
+      "Platform" : "WebMail",
+      "FirstOpen" : true,
+      "Recipient" : "example@abc.com",
+      "ReadSeconds" : 0,
+      "Geo" : {
+        "IP" : "10.10.10.10",
+        "Country" : "abc",
+        "Coords" : "37.751,-97.822",
+        "CountryISOCode" : "AA"
+      },
+      "RecordType" : "Open",
+      "MessageStream" : "outbound",
+      "UserAgent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/42.0.2311.135 Safari/537.36 Edge/12.246 Mozilla/5.0",
+      "Tag" : "",
+      "Client" : {
+        "Company" : "Microsoft Corporation.",
+        "Family" : "Microsoft Edge",
+        "Name" : "Microsoft Edge 12.246"
+      },
+      "ReceivedAt" : "2024-10-21T06:35:33Z",
+      "MessageID" : "fc7e2258-279b-4f76-9af7-7efa94b97853"
+    }
+  result:
+    custom:
+      Client:
+        Company: "Microsoft Corporation."
+        Family: "Microsoft Edge"
+        Name: "Microsoft Edge 12.246"
+      FirstOpen: true
+      Geo:
+        Coords: "37.751,-97.822"
+        Country: "abc"
+        CountryISOCode: "AA"
+      MessageID: "fc7e2258-279b-4f76-9af7-7efa94b97853"
+      MessageStream: "outbound"
+      OS:
+        Company: "Microsoft Corporation."
+        Family: "Windows"
+        Name: "Windows 10"
+      Platform: "WebMail"
+      ReadSeconds: 0
+      Tag: ""
+      evt:
+        name: "Open"
+      http:
+        useragent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/42.0.2311.135 Safari/537.36 Edge/12.246 Mozilla/5.0"
+        useragent_details:
+          browser:
+            family: "Edge"
+            major: "12"
+            minor: "246"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Windows"
+            major: "10"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+      timestamp: "2024-10-21T06:35:33Z"
+      usr:
+        email: "example@abc.com"
+    message: |-
+      {
+        "OS" : {
+          "Company" : "Microsoft Corporation.",
+          "Family" : "Windows",
+          "Name" : "Windows 10"
+        },
+        "Platform" : "WebMail",
+        "FirstOpen" : true,
+        "Recipient" : "example@abc.com",
+        "ReadSeconds" : 0,
+        "Geo" : {
+          "IP" : "10.10.10.10",
+          "Country" : "abc",
+          "Coords" : "37.751,-97.822",
+          "CountryISOCode" : "AA"
+        },
+        "RecordType" : "Open",
+        "MessageStream" : "outbound",
+        "UserAgent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/42.0.2311.135 Safari/537.36 Edge/12.246 Mozilla/5.0",
+        "Tag" : "",
+        "Client" : {
+          "Company" : "Microsoft Corporation.",
+          "Family" : "Microsoft Edge",
+          "Name" : "Microsoft Edge 12.246"
+        },
+        "ReceivedAt" : "2024-10-21T06:35:33Z",
+        "MessageID" : "fc7e2258-279b-4f76-9af7-7efa94b97853"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1729492533000
+ -
+  sample: |-
+    {
+      "OS" : {
+        "Company" : "Microsoft Corporation.",
+        "Family" : "Windows",
+        "Name" : "Windows 10"
+      },
+      "Platform" : "Desktop",
+      "ClickLocation" : "HTML",
+      "Recipient" : "example@abc.com",
+      "Geo" : {
+        "Zip" : "900009",
+        "IP" : "10.10.10.10",
+        "Country" : "Abc",
+        "Region" : "Xyz",
+        "City" : "Mno",
+        "Coords" : "23.3207,33.2018",
+        "CountryISOCode" : "AA",
+        "RegionISOCode" : "MM"
+      },
+      "RecordType" : "Click",
+      "MessageStream" : "outbound",
+      "UserAgent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+      "Tag" : "",
+      "Client" : {
+        "Company" : "Google Inc.",
+        "Family" : "Chrome",
+        "Name" : "Chrome 130.0.0.0"
+      },
+      "OriginalLink" : "https://example.com",
+      "ReceivedAt" : "2024-10-21T06:35:40Z",
+      "MessageID" : "fc7e2258-279b-4f76-9af7-7efa94b97853"
+    }
+  result:
+    custom:
+      ClickLocation: "HTML"
+      Client:
+        Company: "Google Inc."
+        Family: "Chrome"
+        Name: "Chrome 130.0.0.0"
+      Geo:
+        City: "Mno"
+        Coords: "23.3207,33.2018"
+        Country: "Abc"
+        CountryISOCode: "AA"
+        Region: "Xyz"
+        RegionISOCode: "MM"
+        Zip: "900009"
+      MessageID: "fc7e2258-279b-4f76-9af7-7efa94b97853"
+      MessageStream: "outbound"
+      OS:
+        Company: "Microsoft Corporation."
+        Family: "Windows"
+        Name: "Windows 10"
+      Platform: "Desktop"
+      Tag: ""
+      evt:
+        name: "Click"
+      http:
+        url: "https://example.com"
+        url_details:
+          host: "example.com"
+          path: ""
+          scheme: "https"
+        useragent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "130"
+            minor: "0"
+            patch: "0"
+            patch_minor: "0"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Windows"
+            major: "10"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+      timestamp: "2024-10-21T06:35:40Z"
+      usr:
+        email: "example@abc.com"
+    message: |-
+      {
+        "OS" : {
+          "Company" : "Microsoft Corporation.",
+          "Family" : "Windows",
+          "Name" : "Windows 10"
+        },
+        "Platform" : "Desktop",
+        "ClickLocation" : "HTML",
+        "Recipient" : "example@abc.com",
+        "Geo" : {
+          "Zip" : "900009",
+          "IP" : "10.10.10.10",
+          "Country" : "Abc",
+          "Region" : "Xyz",
+          "City" : "Mno",
+          "Coords" : "23.3207,33.2018",
+          "CountryISOCode" : "AA",
+          "RegionISOCode" : "MM"
+        },
+        "RecordType" : "Click",
+        "MessageStream" : "outbound",
+        "UserAgent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+        "Tag" : "",
+        "Client" : {
+          "Company" : "Google Inc.",
+          "Family" : "Chrome",
+          "Name" : "Chrome 130.0.0.0"
+        },
+        "OriginalLink" : "https://example.com",
+        "ReceivedAt" : "2024-10-21T06:35:40Z",
+        "MessageID" : "fc7e2258-279b-4f76-9af7-7efa94b97853"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1729492540000
+ -
+  sample: |-
+    {
+      "Description" : "It is a spam complaint",
+      "Email" : "example@abc.com",
+      "TypeCode" : 512,
+      "DumpAvailable" : true,
+      "Metadata" : {
+        "example_2" : "value",
+        "example" : "value"
+      },
+      "From" : "sender@example.com",
+      "Subject" : "Test subject1",
+      "Name" : "Spam complaint",
+      "Type" : "SpamComplaint",
+      "ServerID" : 1234,
+      "Details" : "Test spam complaint details",
+      "RecordType" : "SpamComplaint",
+      "MessageStream" : "outbound",
+      "BouncedAt" : "2024-10-21T08:28:14.7036479Z",
+      "Inactive" : true,
+      "ID" : 42,
+      "Tag" : "Test123456",
+      "MessageID" : "10000000-0000-0000-0000-000000000000",
+      "CanActivate" : false
+    }
+  result:
+    custom:
+      CanActivate: false
+      Description: "It is a spam complaint"
+      Details: "Test spam complaint details"
+      DumpAvailable: true
+      From: "sender@example.com"
+      ID: 42
+      Inactive: true
+      MessageID: "10000000-0000-0000-0000-000000000000"
+      MessageStream: "outbound"
+      Metadata:
+        example: "value"
+        example_2: "value"
+      Name: "Spam complaint"
+      ServerID: 1234
+      Subject: "Test subject1"
+      Tag: "Test123456"
+      Type: "SpamComplaint"
+      TypeCode: 512
+      evt:
+        name: "SpamComplaint"
+      status: "warning"
+      timestamp: "2024-10-21T08:28:14.7036479Z"
+      usr:
+        email: "example@abc.com"
+    message: |-
+      {
+        "Description" : "It is a spam complaint",
+        "Email" : "example@abc.com",
+        "TypeCode" : 512,
+        "DumpAvailable" : true,
+        "Metadata" : {
+          "example_2" : "value",
+          "example" : "value"
+        },
+        "From" : "sender@example.com",
+        "Subject" : "Test subject1",
+        "Name" : "Spam complaint",
+        "Type" : "SpamComplaint",
+        "ServerID" : 1234,
+        "Details" : "Test spam complaint details",
+        "RecordType" : "SpamComplaint",
+        "MessageStream" : "outbound",
+        "BouncedAt" : "2024-10-21T08:28:14.7036479Z",
+        "Inactive" : true,
+        "ID" : 42,
+        "Tag" : "Test123456",
+        "MessageID" : "10000000-0000-0000-0000-000000000000",
+        "CanActivate" : false
+      }
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1729499294703
+ -
+  sample: |-
+    {
+      "Origin" : "Recipient",
+      "ServerID" : 14542485,
+      "RecordType" : "SubscriptionChange",
+      "MessageStream" : "outbound",
+      "ChangedAt" : "2024-10-21T06:40:49Z",
+      "SuppressSending" : true,
+      "Recipient" : "example@abc.com",
+      "Tag" : "",
+      "SuppressionReason" : "HardBounce",
+      "MessageID" : "970c7577-f92c-4ce6-b22c-b99988f130bf"
+    }
+  result:
+    custom:
+      MessageID: "970c7577-f92c-4ce6-b22c-b99988f130bf"
+      MessageStream: "outbound"
+      Origin: "Recipient"
+      ServerID: 14542485
+      SuppressSending: true
+      SuppressionReason: "HardBounce"
+      Tag: ""
+      evt:
+        name: "SubscriptionChange"
+      status: "warning"
+      timestamp: "2024-10-21T06:40:49Z"
+      usr:
+        email: "example@abc.com"
+    message: |-
+      {
+        "Origin" : "Recipient",
+        "ServerID" : 14542485,
+        "RecordType" : "SubscriptionChange",
+        "MessageStream" : "outbound",
+        "ChangedAt" : "2024-10-21T06:40:49Z",
+        "SuppressSending" : true,
+        "Recipient" : "example@abc.com",
+        "Tag" : "",
+        "SuppressionReason" : "HardBounce",
+        "MessageID" : "970c7577-f92c-4ce6-b22c-b99988f130bf"
+      }
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1729492849000
+ -
+  sample: |-
+    {
+      "Description" : "The server was unable to deliver your message (ex: unknown user, mailbox not found).",
+      "Email" : "example1@abc.com",
+      "TypeCode" : 1,
+      "DumpAvailable" : true,
+      "From" : "example@abc.com",
+      "Subject" : "Set up a new password for product_name_Value",
+      "Name" : "Hard bounce",
+      "Type" : "HardBounce",
+      "ServerID" : 14542485,
+      "Details" : "smtp;550 4.4.4 Error: unable to route: no mail hosts for domain",
+      "RecordType" : "Bounce",
+      "Content" : "Return-Path: <MAILER-DAEMON>\r\nReceived: from mta196a-ord.mtasv.net (mta196a-ord.mtasv.net [10.10.10.10])\r\n\tby pm.mtasv.net (i-016e41cf6892f6df8) with ESMTP id 4XX5Ks1VgSzlVjW\r\n\tfor <pm_bounces@pm.mtasv.net>; Mon, 21 Oct 2024 06:40:49 +0000 (UTC)\r\nDKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; s=pm20241004; d=pm.mtasv.net;\r\n h=Date:From:Subject:To:MIME-Version:Content-Type:Date:From:Message-ID:\r\n Reply-To:Sender:Subject:To:CC; t=1729492849; x=1729579249;\r\n bh=VWcjt1dZwlMugB5l4IrSArrh2MZd7GnSlz3UhPKw+LQ=;\r\n b=MeQU7aTH9Wus5jF+HhAwmez7eq53El8yzHj+hXMnBkKt3AJu34PIif5EMtPgstjjL+G7jy+zMsxw\r\n   OU9D7gy9rQwb4tlFEBYZhNJ5rcxMGBBSjqF04eqC8/E/vO6Rx1PbEP5wW4QgGGkp+C+K/RFJ1uFi\r\n   kcg+gpV/QkSBg+1ibNmd9GU6SjUvQvGFMmWaNfX/KgOWEfRTOQAK7nKCtHodMdjn8iTLmlKVkAlY\r\n   LfjKb+DuZzW6osLMFB0CP2lkk5VF/RqagpiPP+Z534PZ8yyhypwfN4dg+h0exPPbwKtIPluFyjfT\r\n   0/o+YuVtLgyuEBE489hAuiK2YL0Lr+Ito3cIZQ==\r\nDate: Mon, 21 Oct 2024 02:40:49 -0400\r\nFrom: postmaster@mta196a-ord.mtasv.net\r\nSubject: Delivery report\r\nTo: pm_bounces@pm.mtasv.net\r\nMIME-Version: 1.0\r\nContent-Type: multipart/report; report-type=delivery-status;\r\n    boundary=\"report6715F771@mta196a-ord.mtasv.net\"\r\n\r\n--report6715F771@mta196a-ord.mtasv.net\r\nContent-Type: text/plain\r\n\r\nHello, this is the mail server on mta196a-ord.mtasv.net.\r\n\r\nI am sending you this message to inform you on the delivery status of a\r\nmessage you previously sent.  Immediately below you will find a list of\r\nthe affected recipients;  also attached is a Delivery Status Notification\r\n(DSN) report in standard format, as well as the headers of the original\r\nmessage.\r\n\r\n  <example@abc.com>  delivery failed; will not continue trying\r\n\r\n--report6715F771@mta196a-ord.mtasv.net\r\nContent-Type: message/delivery-status\r\n\r\nReporting-MTA: dns;mta196a-ord.mtasv.net\r\nX-PowerMTA-VirtualMTA: ord-104-245-209-196\r\nReceived-From-MTA: dns;ip-172-26-31-34.us-east-2.compute.internal (10.10.10.10)\r\nArrival-Date: Mon, 21 Oct 2024 02:39:49 -0400\r\n\r\nFinal-Recipient: rfc822;example@abc.com\r\nAction: failed\r\nStatus: 4.4.4 (unable to route: no mail hosts for domain)\r\nX-PowerMTA-BounceCategory: routing-errors\r\n\r\n--report6715F771@mta196a-ord.mtasv.net\r\nContent-Type: text/rfc822-headers\r\n\r\nDKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; s=pm20241004; d=pm.mtasv.net;\r\n h=From:Date:Subject:Message-Id:Reply-To:To:MIME-Version:Content-Type:Date:\r\n From:Message-ID:Reply-To:Sender:Subject:To:CC; t=1729492849; x=1729579249;\r\n bh=gZTiACFk/ZWyVhA96Ly20sCItAlEhgpOG0YB2a4ZFWg=;\r\n b=f/9vfDcQkHmovvvXJ8/oF+nvWstuDgExnnWQgf/a6MTzZkcJZDo8Gfx4IL+kI6IjYgKkeJmSMR/f\r\n   mgZri3VHZKnENOSkpWDHgRC3FHpawRSXo0A5f9cQar46vDlRiAbtEGptVd8CWp8TJ8W0uuOmxgdp\r\n   4uK6YeWTC6mxJpCFJVj4Tq79+4gkuhsAnqwlkIfh2sNE357XhdgsOu6IUrqxPMXlgzealvFUyTmd\r\n   SgGLoUWSxeu+NcubpWMmhADTb9874fcIreGlMTPaANwhL6QsxmKqHpk19nuoJSHb0wQveIlTv/ui\r\n   EXVzXko1FaG5WVHxo4Tk8y4JM5TtCYDCMEYTMg==\r\nReceived: by mta196a-ord.mtasv.net id h2nrn23864or for <example@abc.com>; Mon, 21 Oct 2024 02:39:49 -0400 (envelope-from <pm_bounces@pm.mtasv.net>)\r\nX-PM-IP: 10.10.10.10\r\nX-IADB-IP: 10.10.10.10\r\nX-IADB-IP-REVERSE: 196.209.245.104\r\nFrom: Test1 <example1@abc.com>\r\nDate: Mon, 21 Oct 2024 06:39:49 +0000\r\nSubject: Set up a new password for product_name_Value\r\nMessage-Id: <970c7577-f92c-4ce6-b22c-b99988f130bf@mtasv.net>\r\nReply-To: example1@abc.com\r\nTo: example@abc.com\r\nFeedback-ID: s14542485-_:s14542485:a356316:postmark\r\nX-Complaints-To: abuse@postmarkapp.com\r\nX-PM-Message-Id: 970c7577-f92c-4ce6-b22c-b99988f130bf\r\nX-PM-RCPT: =?utf-8?q?|bTB8MzU2MzE2fDE0NTQyNDg1fEhhcmRCb3VuY2VAYm91bmNlLXRlc3Rpbmcu?=\r\n =?utf-8?q?cG9zdG1hcmthcHAuY29t|?=\r\nX-PM-Message-Options: v1;1.Sp4WuIbBlQJWtbaC-wTqZQ.X-nEE87Cx15qqdDHxXJvLsTb5F1oo3QluxfQmvERNvBonFtOSh8_1a3NkIf3GGB_LKX8pH_lyg_q7dak0yoiVnfrL_JZ3qdUqTPXL3T4H7Sae6oW3Rf7cVlLv0jZvXIe7YO1wzqBL9MGmyfl1OiFDNmGu0jF2e9Fz199s1W5I2fRKluTnZJSbYDI_d1XpYP6\r\nX-PM-MTA-Pool: transactional-2\r\nMIME-Version: 1.0\r\nContent-Type: multipart/alternative;\r\n\tboundary=mk3-bb7770afcfdf40759e443201b63b6498; charset=UTF-8\r\n\r\n--report6715F771@mta196a-ord.mtasv.net--\r\n",
+      "MessageStream" : "outbound",
+      "BouncedAt" : "2024-10-21T06:40:49Z",
+      "Inactive" : true,
+      "ID" : 3315994443,
+      "Tag" : "",
+      "MessageID" : "970c7577-f92c-4ce6-b22c-b99988f130bf",
+      "CanActivate" : true
+    }
+  result:
+    custom:
+      CanActivate: true
+      Content: "Return-Path: <MAILER-DAEMON>\r\nReceived: from mta196a-ord.mtasv.net (mta196a-ord.mtasv.net [10.10.10.10])\r\n\tby pm.mtasv.net (i-016e41cf6892f6df8) with ESMTP id 4XX5Ks1VgSzlVjW\r\n\tfor <pm_bounces@pm.mtasv.net>; Mon, 21 Oct 2024 06:40:49 +0000 (UTC)\r\nDKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; s=pm20241004; d=pm.mtasv.net;\r\n h=Date:From:Subject:To:MIME-Version:Content-Type:Date:From:Message-ID:\r\n Reply-To:Sender:Subject:To:CC; t=1729492849; x=1729579249;\r\n bh=VWcjt1dZwlMugB5l4IrSArrh2MZd7GnSlz3UhPKw+LQ=;\r\n b=MeQU7aTH9Wus5jF+HhAwmez7eq53El8yzHj+hXMnBkKt3AJu34PIif5EMtPgstjjL+G7jy+zMsxw\r\n   OU9D7gy9rQwb4tlFEBYZhNJ5rcxMGBBSjqF04eqC8/E/vO6Rx1PbEP5wW4QgGGkp+C+K/RFJ1uFi\r\n   kcg+gpV/QkSBg+1ibNmd9GU6SjUvQvGFMmWaNfX/KgOWEfRTOQAK7nKCtHodMdjn8iTLmlKVkAlY\r\n   LfjKb+DuZzW6osLMFB0CP2lkk5VF/RqagpiPP+Z534PZ8yyhypwfN4dg+h0exPPbwKtIPluFyjfT\r\n   0/o+YuVtLgyuEBE489hAuiK2YL0Lr+Ito3cIZQ==\r\nDate: Mon, 21 Oct 2024 02:40:49 -0400\r\nFrom: postmaster@mta196a-ord.mtasv.net\r\nSubject: Delivery report\r\nTo: pm_bounces@pm.mtasv.net\r\nMIME-Version: 1.0\r\nContent-Type: multipart/report; report-type=delivery-status;\r\n    boundary=\"report6715F771@mta196a-ord.mtasv.net\"\r\n\r\n--report6715F771@mta196a-ord.mtasv.net\r\nContent-Type: text/plain\r\n\r\nHello, this is the mail server on mta196a-ord.mtasv.net.\r\n\r\nI am sending you this message to inform you on the delivery status of a\r\nmessage you previously sent.  Immediately below you will find a list of\r\nthe affected recipients;  also attached is a Delivery Status Notification\r\n(DSN) report in standard format, as well as the headers of the original\r\nmessage.\r\n\r\n  <example@abc.com>  delivery failed; will not continue trying\r\n\r\n--report6715F771@mta196a-ord.mtasv.net\r\nContent-Type: message/delivery-status\r\n\r\nReporting-MTA: dns;mta196a-ord.mtasv.net\r\nX-PowerMTA-VirtualMTA: ord-104-245-209-196\r\nReceived-From-MTA: dns;ip-172-26-31-34.us-east-2.compute.internal (10.10.10.10)\r\nArrival-Date: Mon, 21 Oct 2024 02:39:49 -0400\r\n\r\nFinal-Recipient: rfc822;example@abc.com\r\nAction: failed\r\nStatus: 4.4.4 (unable to route: no mail hosts for domain)\r\nX-PowerMTA-BounceCategory: routing-errors\r\n\r\n--report6715F771@mta196a-ord.mtasv.net\r\nContent-Type: text/rfc822-headers\r\n\r\nDKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; s=pm20241004; d=pm.mtasv.net;\r\n h=From:Date:Subject:Message-Id:Reply-To:To:MIME-Version:Content-Type:Date:\r\n From:Message-ID:Reply-To:Sender:Subject:To:CC; t=1729492849; x=1729579249;\r\n bh=gZTiACFk/ZWyVhA96Ly20sCItAlEhgpOG0YB2a4ZFWg=;\r\n b=f/9vfDcQkHmovvvXJ8/oF+nvWstuDgExnnWQgf/a6MTzZkcJZDo8Gfx4IL+kI6IjYgKkeJmSMR/f\r\n   mgZri3VHZKnENOSkpWDHgRC3FHpawRSXo0A5f9cQar46vDlRiAbtEGptVd8CWp8TJ8W0uuOmxgdp\r\n   4uK6YeWTC6mxJpCFJVj4Tq79+4gkuhsAnqwlkIfh2sNE357XhdgsOu6IUrqxPMXlgzealvFUyTmd\r\n   SgGLoUWSxeu+NcubpWMmhADTb9874fcIreGlMTPaANwhL6QsxmKqHpk19nuoJSHb0wQveIlTv/ui\r\n   EXVzXko1FaG5WVHxo4Tk8y4JM5TtCYDCMEYTMg==\r\nReceived: by mta196a-ord.mtasv.net id h2nrn23864or for <example@abc.com>; Mon, 21 Oct 2024 02:39:49 -0400 (envelope-from <pm_bounces@pm.mtasv.net>)\r\nX-PM-IP: 10.10.10.10\r\nX-IADB-IP: 10.10.10.10\r\nX-IADB-IP-REVERSE: 196.209.245.104\r\nFrom: Test1 <example1@abc.com>\r\nDate: Mon, 21 Oct 2024 06:39:49 +0000\r\nSubject: Set up a new password for product_name_Value\r\nMessage-Id: <970c7577-f92c-4ce6-b22c-b99988f130bf@mtasv.net>\r\nReply-To: example1@abc.com\r\nTo: example@abc.com\r\nFeedback-ID: s14542485-_:s14542485:a356316:postmark\r\nX-Complaints-To: abuse@postmarkapp.com\r\nX-PM-Message-Id: 970c7577-f92c-4ce6-b22c-b99988f130bf\r\nX-PM-RCPT: =?utf-8?q?|bTB8MzU2MzE2fDE0NTQyNDg1fEhhcmRCb3VuY2VAYm91bmNlLXRlc3Rpbmcu?=\r\n =?utf-8?q?cG9zdG1hcmthcHAuY29t|?=\r\nX-PM-Message-Options: v1;1.Sp4WuIbBlQJWtbaC-wTqZQ.X-nEE87Cx15qqdDHxXJvLsTb5F1oo3QluxfQmvERNvBonFtOSh8_1a3NkIf3GGB_LKX8pH_lyg_q7dak0yoiVnfrL_JZ3qdUqTPXL3T4H7Sae6oW3Rf7cVlLv0jZvXIe7YO1wzqBL9MGmyfl1OiFDNmGu0jF2e9Fz199s1W5I2fRKluTnZJSbYDI_d1XpYP6\r\nX-PM-MTA-Pool: transactional-2\r\nMIME-Version: 1.0\r\nContent-Type: multipart/alternative;\r\n\tboundary=mk3-bb7770afcfdf40759e443201b63b6498; charset=UTF-8\r\n\r\n--report6715F771@mta196a-ord.mtasv.net--\r\n"
+      Description: "The server was unable to deliver your message (ex: unknown user, mailbox not found)."
+      Details: "smtp;550 4.4.4 Error: unable to route: no mail hosts for domain"
+      DumpAvailable: true
+      From: "example@abc.com"
+      ID: 3315994443
+      Inactive: true
+      MessageID: "970c7577-f92c-4ce6-b22c-b99988f130bf"
+      MessageStream: "outbound"
+      Name: "Hard bounce"
+      ServerID: 14542485
+      Subject: "Set up a new password for product_name_Value"
+      Tag: ""
+      Type: "HardBounce"
+      TypeCode: 1
+      evt:
+        name: "Bounce"
+      status: "error"
+      timestamp: "2024-10-21T06:40:49Z"
+      usr:
+        email: "example1@abc.com"
+    message: |-
+      {
+        "Description" : "The server was unable to deliver your message (ex: unknown user, mailbox not found).",
+        "Email" : "example1@abc.com",
+        "TypeCode" : 1,
+        "DumpAvailable" : true,
+        "From" : "example@abc.com",
+        "Subject" : "Set up a new password for product_name_Value",
+        "Name" : "Hard bounce",
+        "Type" : "HardBounce",
+        "ServerID" : 14542485,
+        "Details" : "smtp;550 4.4.4 Error: unable to route: no mail hosts for domain",
+        "RecordType" : "Bounce",
+        "Content" : "Return-Path: <MAILER-DAEMON>\r\nReceived: from mta196a-ord.mtasv.net (mta196a-ord.mtasv.net [10.10.10.10])\r\n\tby pm.mtasv.net (i-016e41cf6892f6df8) with ESMTP id 4XX5Ks1VgSzlVjW\r\n\tfor <pm_bounces@pm.mtasv.net>; Mon, 21 Oct 2024 06:40:49 +0000 (UTC)\r\nDKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; s=pm20241004; d=pm.mtasv.net;\r\n h=Date:From:Subject:To:MIME-Version:Content-Type:Date:From:Message-ID:\r\n Reply-To:Sender:Subject:To:CC; t=1729492849; x=1729579249;\r\n bh=VWcjt1dZwlMugB5l4IrSArrh2MZd7GnSlz3UhPKw+LQ=;\r\n b=MeQU7aTH9Wus5jF+HhAwmez7eq53El8yzHj+hXMnBkKt3AJu34PIif5EMtPgstjjL+G7jy+zMsxw\r\n   OU9D7gy9rQwb4tlFEBYZhNJ5rcxMGBBSjqF04eqC8/E/vO6Rx1PbEP5wW4QgGGkp+C+K/RFJ1uFi\r\n   kcg+gpV/QkSBg+1ibNmd9GU6SjUvQvGFMmWaNfX/KgOWEfRTOQAK7nKCtHodMdjn8iTLmlKVkAlY\r\n   LfjKb+DuZzW6osLMFB0CP2lkk5VF/RqagpiPP+Z534PZ8yyhypwfN4dg+h0exPPbwKtIPluFyjfT\r\n   0/o+YuVtLgyuEBE489hAuiK2YL0Lr+Ito3cIZQ==\r\nDate: Mon, 21 Oct 2024 02:40:49 -0400\r\nFrom: postmaster@mta196a-ord.mtasv.net\r\nSubject: Delivery report\r\nTo: pm_bounces@pm.mtasv.net\r\nMIME-Version: 1.0\r\nContent-Type: multipart/report; report-type=delivery-status;\r\n    boundary=\"report6715F771@mta196a-ord.mtasv.net\"\r\n\r\n--report6715F771@mta196a-ord.mtasv.net\r\nContent-Type: text/plain\r\n\r\nHello, this is the mail server on mta196a-ord.mtasv.net.\r\n\r\nI am sending you this message to inform you on the delivery status of a\r\nmessage you previously sent.  Immediately below you will find a list of\r\nthe affected recipients;  also attached is a Delivery Status Notification\r\n(DSN) report in standard format, as well as the headers of the original\r\nmessage.\r\n\r\n  <example@abc.com>  delivery failed; will not continue trying\r\n\r\n--report6715F771@mta196a-ord.mtasv.net\r\nContent-Type: message/delivery-status\r\n\r\nReporting-MTA: dns;mta196a-ord.mtasv.net\r\nX-PowerMTA-VirtualMTA: ord-104-245-209-196\r\nReceived-From-MTA: dns;ip-172-26-31-34.us-east-2.compute.internal (10.10.10.10)\r\nArrival-Date: Mon, 21 Oct 2024 02:39:49 -0400\r\n\r\nFinal-Recipient: rfc822;example@abc.com\r\nAction: failed\r\nStatus: 4.4.4 (unable to route: no mail hosts for domain)\r\nX-PowerMTA-BounceCategory: routing-errors\r\n\r\n--report6715F771@mta196a-ord.mtasv.net\r\nContent-Type: text/rfc822-headers\r\n\r\nDKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; s=pm20241004; d=pm.mtasv.net;\r\n h=From:Date:Subject:Message-Id:Reply-To:To:MIME-Version:Content-Type:Date:\r\n From:Message-ID:Reply-To:Sender:Subject:To:CC; t=1729492849; x=1729579249;\r\n bh=gZTiACFk/ZWyVhA96Ly20sCItAlEhgpOG0YB2a4ZFWg=;\r\n b=f/9vfDcQkHmovvvXJ8/oF+nvWstuDgExnnWQgf/a6MTzZkcJZDo8Gfx4IL+kI6IjYgKkeJmSMR/f\r\n   mgZri3VHZKnENOSkpWDHgRC3FHpawRSXo0A5f9cQar46vDlRiAbtEGptVd8CWp8TJ8W0uuOmxgdp\r\n   4uK6YeWTC6mxJpCFJVj4Tq79+4gkuhsAnqwlkIfh2sNE357XhdgsOu6IUrqxPMXlgzealvFUyTmd\r\n   SgGLoUWSxeu+NcubpWMmhADTb9874fcIreGlMTPaANwhL6QsxmKqHpk19nuoJSHb0wQveIlTv/ui\r\n   EXVzXko1FaG5WVHxo4Tk8y4JM5TtCYDCMEYTMg==\r\nReceived: by mta196a-ord.mtasv.net id h2nrn23864or for <example@abc.com>; Mon, 21 Oct 2024 02:39:49 -0400 (envelope-from <pm_bounces@pm.mtasv.net>)\r\nX-PM-IP: 10.10.10.10\r\nX-IADB-IP: 10.10.10.10\r\nX-IADB-IP-REVERSE: 196.209.245.104\r\nFrom: Test1 <example1@abc.com>\r\nDate: Mon, 21 Oct 2024 06:39:49 +0000\r\nSubject: Set up a new password for product_name_Value\r\nMessage-Id: <970c7577-f92c-4ce6-b22c-b99988f130bf@mtasv.net>\r\nReply-To: example1@abc.com\r\nTo: example@abc.com\r\nFeedback-ID: s14542485-_:s14542485:a356316:postmark\r\nX-Complaints-To: abuse@postmarkapp.com\r\nX-PM-Message-Id: 970c7577-f92c-4ce6-b22c-b99988f130bf\r\nX-PM-RCPT: =?utf-8?q?|bTB8MzU2MzE2fDE0NTQyNDg1fEhhcmRCb3VuY2VAYm91bmNlLXRlc3Rpbmcu?=\r\n =?utf-8?q?cG9zdG1hcmthcHAuY29t|?=\r\nX-PM-Message-Options: v1;1.Sp4WuIbBlQJWtbaC-wTqZQ.X-nEE87Cx15qqdDHxXJvLsTb5F1oo3QluxfQmvERNvBonFtOSh8_1a3NkIf3GGB_LKX8pH_lyg_q7dak0yoiVnfrL_JZ3qdUqTPXL3T4H7Sae6oW3Rf7cVlLv0jZvXIe7YO1wzqBL9MGmyfl1OiFDNmGu0jF2e9Fz199s1W5I2fRKluTnZJSbYDI_d1XpYP6\r\nX-PM-MTA-Pool: transactional-2\r\nMIME-Version: 1.0\r\nContent-Type: multipart/alternative;\r\n\tboundary=mk3-bb7770afcfdf40759e443201b63b6498; charset=UTF-8\r\n\r\n--report6715F771@mta196a-ord.mtasv.net--\r\n",
+        "MessageStream" : "outbound",
+        "BouncedAt" : "2024-10-21T06:40:49Z",
+        "Inactive" : true,
+        "ID" : 3315994443,
+        "Tag" : "",
+        "MessageID" : "970c7577-f92c-4ce6-b22c-b99988f130bf",
+        "CanActivate" : true
+      }
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1729492849000

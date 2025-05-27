@@ -1,0 +1,72 @@
+id: "celerdata"
+tests:
+ -
+  sample: "2024-03-28 10:21:53,960 INFO (main|1) [AuthorizationMgr.initBuiltinRoleUnlocked():282] create built-in role cluster_admin[-3]"
+  result:
+    custom:
+      class_name: "AuthorizationMgr"
+      file_line: 282
+      loglevel: "INFO"
+      method_name: "initBuiltinRoleUnlocked"
+      timestamp: 1711621313960
+    message: "create built-in role cluster_admin[-3]"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1711621313960
+ -
+  sample: "2024-03-28 18:58:43,380 INFO (nioEventLoopGroup-4-3|154) [RestBaseAction.handleRequest():73] receive http request. url=/api/health"
+  result:
+    custom:
+      class_name: "RestBaseAction"
+      file_line: 73
+      loglevel: "INFO"
+      method_name: "handleRequest"
+      timestamp: 1711652323380
+    message: "receive http request. url=/api/health"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1711652323380
+ -
+   sample: "2024-04-10 10:32:23.937+08:00 INFO (stateChangeExecutor|95) [StateChangeExecutor.runOneCycle():179] finished to transfer FE type from INIT to LEADER"
+   result:
+     custom:
+       class_name: "StateChangeExecutor"
+       file_line: 179
+       loglevel: "INFO"
+       method_name: "runOneCycle"
+       timestamp: 1712716343937
+     message: "finished to transfer FE type from INIT to LEADER"
+     status: "info"
+     tags:
+       - "source:LOGS_SOURCE"
+     timestamp: 1712716343937
+ -
+   sample: "I0211 13:17:55.023299 127358726047296 query_context.cpp:60] finished query_id:837ca8a5-e8a4-11ef-89f3-0e809d90bae3 context life time:1476324 cpu costs:428108 peak memusage:298504 scan_bytes:5139 spilled bytes:0"
+   result:
+     custom:
+       file_line: 60
+       file_name: "query_context.cpp"
+       loglevel: "I"
+       thread_id: 127358726047296
+       timestamp: 35126275023
+     message: "finished query_id:837ca8a5-e8a4-11ef-89f3-0e809d90bae3 context life time:1476324 cpu costs:428108 peak memusage:298504 scan_bytes:5139 spilled bytes:0"
+     status: "info"
+     tags:
+      - "source:LOGS_SOURCE"
+     timestamp: 35126275023
+ -
+   sample: "I20250211 13:17:55.023299 127358726047296 query_context.cpp:60] finished query_id:837ca8a5-e8a4-11ef-89f3-0e809d90bae3 context life time:1476324 cpu costs:428108 peak memusage:298504 scan_bytes:5139 spilled bytes:0"
+   result:
+     custom:
+       file_line: 60
+       file_name: "query_context.cpp"
+       loglevel: "I"
+       thread_id: 127358726047296
+       timestamp: 1739279875023
+     message: "finished query_id:837ca8a5-e8a4-11ef-89f3-0e809d90bae3 context life time:1476324 cpu costs:428108 peak memusage:298504 scan_bytes:5139 spilled bytes:0"
+     status: "info"
+     tags:
+      - "source:LOGS_SOURCE"
+     timestamp: 1739279875023

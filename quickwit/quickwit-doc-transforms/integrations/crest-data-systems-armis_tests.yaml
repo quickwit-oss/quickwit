@@ -1,0 +1,575 @@
+id: "crest-data-systems-armis"
+tests:
+ -
+  sample: |-
+    {
+      "firstReferencePublishDate" : "1970-01-01T00:00:00+00:00",
+      "cveUid" : "CVE-2020-11896",
+      "hasRansomware" : false,
+      "availabilityImpact" : "High",
+      "numOfExploits" : 3,
+      "description" : "The Treck TCP/IP stack before 6.0.1.66 allows Remote Code Execution, related to IPv4 tunneling.",
+      "privilegesRequired" : "None",
+      "type" : "OS",
+      "userInteraction" : "None",
+      "reportedByGoogleZeroDays" : false,
+      "score" : 10,
+      "threatTags" : [ "Publicly Available", "Weaponized" ],
+      "cvssScore" : 10,
+      "attackComplexity" : "Low",
+      "lastDetected" : "2024-08-01T10:31:57.625507+00:00",
+      "scope" : "Changed",
+      "attackVector" : "Network",
+      "integrityImpact" : "High",
+      "id" : "CVE-2020-11896",
+      "severity" : "Critical",
+      "exploitabilityScore" : 3.9,
+      "firstWeaponizedReferencePublishDate" : "2020-06-16T00:00:00+00:00",
+      "firstDetected" : "2024-06-16T17:41:02.150962+00:00",
+      "numberOfThreatActors" : 0,
+      "avmRating" : "MEDIUM",
+      "latestExploitUpdate" : "2022-11-30T00:00:00+00:00",
+      "confidentialityImpact" : "High",
+      "avmRatingManualChangedBy" : "",
+      "isWeaponized" : true,
+      "affectedDevicesCount" : 1,
+      "publishedDate" : "2023-06-03T18:08:17.597498+00:00",
+      "hasRemediationInfo" : "No",
+      "impactScore" : 6,
+      "status" : "Open"
+    }
+  service: "cd.armis.armis_vulnerabilities"
+  result:
+    custom:
+      affectedDevicesCount: 1
+      attackComplexity: "Low"
+      attackVector: "Network"
+      availabilityImpact: "High"
+      avmRating: "MEDIUM"
+      avmRatingManualChangedBy: ""
+      confidentialityImpact: "High"
+      cveUid: "CVE-2020-11896"
+      cvssScore: 10
+      description: "The Treck TCP/IP stack before 6.0.1.66 allows Remote Code Execution, related to IPv4 tunneling."
+      exploitabilityScore: 3.9
+      firstDetected: "2024-06-16T17:41:02.150962+00:00"
+      firstReferencePublishDate: "1970-01-01T00:00:00+00:00"
+      firstWeaponizedReferencePublishDate: "2020-06-16T00:00:00+00:00"
+      hasRansomware: false
+      hasRemediationInfo: "No"
+      id: "CVE-2020-11896"
+      impactScore: 6
+      integrityImpact: "High"
+      isWeaponized: true
+      lastDetected: "2024-08-01T10:31:57.625507+00:00"
+      latestExploitUpdate: "2022-11-30T00:00:00+00:00"
+      numOfExploits: 3
+      numberOfThreatActors: 0
+      privilegesRequired: "None"
+      publishedDate: "2023-06-03T18:08:17.597498+00:00"
+      reportedByGoogleZeroDays: false
+      scope: "Changed"
+      score: 10
+      severity: "Critical"
+      status: "info"
+      threatTags:
+       - "Publicly Available"
+       - "Weaponized"
+      timestamp: 1722508317625
+      type: "OS"
+      userInteraction: "None"
+      vulnerability_status: "Open"
+    message: |-
+      {
+        "firstReferencePublishDate" : "1970-01-01T00:00:00+00:00",
+        "cveUid" : "CVE-2020-11896",
+        "hasRansomware" : false,
+        "availabilityImpact" : "High",
+        "numOfExploits" : 3,
+        "description" : "The Treck TCP/IP stack before 6.0.1.66 allows Remote Code Execution, related to IPv4 tunneling.",
+        "privilegesRequired" : "None",
+        "type" : "OS",
+        "userInteraction" : "None",
+        "reportedByGoogleZeroDays" : false,
+        "score" : 10,
+        "threatTags" : [ "Publicly Available", "Weaponized" ],
+        "cvssScore" : 10,
+        "attackComplexity" : "Low",
+        "lastDetected" : "2024-08-01T10:31:57.625507+00:00",
+        "scope" : "Changed",
+        "attackVector" : "Network",
+        "integrityImpact" : "High",
+        "id" : "CVE-2020-11896",
+        "severity" : "Critical",
+        "exploitabilityScore" : 3.9,
+        "firstWeaponizedReferencePublishDate" : "2020-06-16T00:00:00+00:00",
+        "firstDetected" : "2024-06-16T17:41:02.150962+00:00",
+        "numberOfThreatActors" : 0,
+        "avmRating" : "MEDIUM",
+        "latestExploitUpdate" : "2022-11-30T00:00:00+00:00",
+        "confidentialityImpact" : "High",
+        "avmRatingManualChangedBy" : "",
+        "isWeaponized" : true,
+        "affectedDevicesCount" : 1,
+        "publishedDate" : "2023-06-03T18:08:17.597498+00:00",
+        "hasRemediationInfo" : "No",
+        "impactScore" : 6,
+        "status" : "Open"
+      }
+    service: "cd.armis.armis_vulnerabilities"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1722508317625
+ -
+  sample: |-
+    {
+      "purdueLevel" : 4,
+      "riskLevel" : 9,
+      "visibility" : "Full",
+      "firstSeen" : "2024-07-16T14:21:09.508411+00:00",
+      "ipAddress" : "192.168.2.165",
+      "businessImpact" : "Unassigned",
+      "type" : "IP Cameras",
+      "operatingSystem" : "Linux",
+      "manufacturer" : "Axis Communications",
+      "tags" : [ "Privileged" ],
+      "macAddress" : "17:1C:1B:9B:D2:AA",
+      "operatingSystemVersion" : "4.4.27",
+      "site" : {
+        "name" : "Geneva Enterprise",
+        "location" : "Geneva"
+      },
+      "lastSeen" : "2024-08-01T19:40:12.771411+00:00",
+      "names" : "axis-accc9",
+      "name" : "axis-accc89",
+      "boundaries" : "Corporate",
+      "model" : "M3045-V Network Camera",
+      "sensor" : {
+        "name" : "WLC1 Enterprise",
+        "type" : "Wireless LAN Controller"
+      },
+      "id" : 1060,
+      "category" : "Imaging",
+      "dataSources" : [ {
+        "types" : [ "Traffic Inspection", "Data Analysis" ],
+        "lastSeen" : "2024-08-01T19:40:12.771411+00:00",
+        "firstSeen" : "2024-07-16T14:21:09.508411+00:00",
+        "name" : "Knowledge Base"
+      }, {
+        "types" : [ "Switch" ],
+        "lastSeen" : "2022-02-28T15:35:48.677411+00:00",
+        "instances" : [ {
+          "lastSeen" : "2022-02-28T15:35:48.677411+00:00",
+          "firstSeen" : "2022-02-27T21:52:21.677411+00:00",
+          "name" : "ServiceNow"
+        } ],
+        "firstSeen" : "2022-02-27T21:52:21.677411+00:00",
+        "name" : "SPAN/TAP"
+      }, {
+        "types" : [ "Traffic Inspection", "Data Analysis" ],
+        "lastSeen" : "2024-07-29T17:21:36.244411+00:00",
+        "firstSeen" : "2022-07-18T15:35:48.677411+00:00",
+        "name" : "Traffic Inspection"
+      }, {
+        "types" : [ "Data Upload" ],
+        "lastSeen" : "2024-07-25T01:57:26.267404+00:00",
+        "firstSeen" : "2024-02-14T08:08:29.267404+00:00",
+        "name" : "User"
+      } ]
+    }
+  service: "cd.armis.armis_devices"
+  result:
+    custom:
+      armis_device_id: 1060
+      boundaries: "Corporate"
+      businessImpact: "Unassigned"
+      category: "Imaging"
+      dataSources:
+       -
+        types:
+         - "Traffic Inspection"
+         - "Data Analysis"
+        lastSeen: "2024-08-01T19:40:12.771411+00:00"
+        firstSeen: "2024-07-16T14:21:09.508411+00:00"
+        name: "Knowledge Base"
+       -
+        types:
+         - "Switch"
+        lastSeen: "2022-02-28T15:35:48.677411+00:00"
+        instances:
+         -
+          lastSeen: "2022-02-28T15:35:48.677411+00:00"
+          firstSeen: "2022-02-27T21:52:21.677411+00:00"
+          name: "ServiceNow"
+        firstSeen: "2022-02-27T21:52:21.677411+00:00"
+        name: "SPAN/TAP"
+       -
+        types:
+         - "Traffic Inspection"
+         - "Data Analysis"
+        lastSeen: "2024-07-29T17:21:36.244411+00:00"
+        firstSeen: "2022-07-18T15:35:48.677411+00:00"
+        name: "Traffic Inspection"
+       -
+        types:
+         - "Data Upload"
+        lastSeen: "2024-07-25T01:57:26.267404+00:00"
+        firstSeen: "2024-02-14T08:08:29.267404+00:00"
+        name: "User"
+      firstSeen: "2024-07-16T14:21:09.508411+00:00"
+      lastSeen: "2024-08-01T19:40:12.771411+00:00"
+      macAddress: "17:1C:1B:9B:D2:AA"
+      manufacturer: "Axis Communications"
+      model: "M3045-V Network Camera"
+      name: "axis-accc89"
+      names: "axis-accc9"
+      network:
+        client:
+          ip: "192.168.2.165"
+      operatingSystem: "Linux"
+      operatingSystemVersion: "4.4.27"
+      purdueLevel: 4
+      riskLevel: 9
+      sensor:
+        name: "WLC1 Enterprise"
+        type: "Wireless LAN Controller"
+      site:
+        location: "Geneva"
+        name: "Geneva Enterprise"
+      tags:
+       - "Privileged"
+      timestamp: 1722541212771
+      type: "IP Cameras"
+      visibility: "Full"
+    message: |-
+      {
+        "purdueLevel" : 4,
+        "riskLevel" : 9,
+        "visibility" : "Full",
+        "firstSeen" : "2024-07-16T14:21:09.508411+00:00",
+        "ipAddress" : "192.168.2.165",
+        "businessImpact" : "Unassigned",
+        "type" : "IP Cameras",
+        "operatingSystem" : "Linux",
+        "manufacturer" : "Axis Communications",
+        "tags" : [ "Privileged" ],
+        "macAddress" : "17:1C:1B:9B:D2:AA",
+        "operatingSystemVersion" : "4.4.27",
+        "site" : {
+          "name" : "Geneva Enterprise",
+          "location" : "Geneva"
+        },
+        "lastSeen" : "2024-08-01T19:40:12.771411+00:00",
+        "names" : "axis-accc9",
+        "name" : "axis-accc89",
+        "boundaries" : "Corporate",
+        "model" : "M3045-V Network Camera",
+        "sensor" : {
+          "name" : "WLC1 Enterprise",
+          "type" : "Wireless LAN Controller"
+        },
+        "id" : 1060,
+        "category" : "Imaging",
+        "dataSources" : [ {
+          "types" : [ "Traffic Inspection", "Data Analysis" ],
+          "lastSeen" : "2024-08-01T19:40:12.771411+00:00",
+          "firstSeen" : "2024-07-16T14:21:09.508411+00:00",
+          "name" : "Knowledge Base"
+        }, {
+          "types" : [ "Switch" ],
+          "lastSeen" : "2022-02-28T15:35:48.677411+00:00",
+          "instances" : [ {
+            "lastSeen" : "2022-02-28T15:35:48.677411+00:00",
+            "firstSeen" : "2022-02-27T21:52:21.677411+00:00",
+            "name" : "ServiceNow"
+          } ],
+          "firstSeen" : "2022-02-27T21:52:21.677411+00:00",
+          "name" : "SPAN/TAP"
+        }, {
+          "types" : [ "Traffic Inspection", "Data Analysis" ],
+          "lastSeen" : "2024-07-29T17:21:36.244411+00:00",
+          "firstSeen" : "2022-07-18T15:35:48.677411+00:00",
+          "name" : "Traffic Inspection"
+        }, {
+          "types" : [ "Data Upload" ],
+          "lastSeen" : "2024-07-25T01:57:26.267404+00:00",
+          "firstSeen" : "2024-02-14T08:08:29.267404+00:00",
+          "name" : "User"
+        } ]
+      }
+    service: "cd.armis.armis_devices"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1722541212771
+ -
+  sample: |-
+    {
+      "lastSeen" : "2024-08-01T07:28:43.635392+00:00",
+      "devices" : 591,
+      "firstSeen" : "2024-06-19T01:04:42.635392+00:00",
+      "name" : "CrowdSTRIKE-TEST",
+      "version" : "6.25.13909.0"
+    }
+  service: "cd.armis.armis_device_applications"
+  result:
+    custom:
+      application_id: "CrowdSTRIKE-TEST-6.25.13909.0"
+      devices: 591
+      firstSeen: "2024-06-19T01:04:42.635392+00:00"
+      lastSeen: "2024-08-01T07:28:43.635392+00:00"
+      name: "CrowdSTRIKE-TEST"
+      timestamp: 1722497323635
+      version: "6.25.13909.0"
+    message: |-
+      {
+        "lastSeen" : "2024-08-01T07:28:43.635392+00:00",
+        "devices" : 591,
+        "firstSeen" : "2024-06-19T01:04:42.635392+00:00",
+        "name" : "CrowdSTRIKE-TEST",
+        "version" : "6.25.13909.0"
+      }
+    service: "cd.armis.armis_device_applications"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1722497323635
+ -
+  sample: |-
+    {
+      "severity" : "Critical",
+      "deviceIds" : [ 790, 279 ],
+      "statusChangeTime" : "2024-07-31T23:40:12.771411+00:00",
+      "description" : "The Armis security platform has detected a violation of a policy and generated an alert.",
+      "activityUUIDs" : [ "1be97709-8b13-41da-8bf7-7f44abc647f1" ],
+      "classification" : "Security - Other",
+      "title" : "[Threat] Heavy Port Scan in Network",
+      "type" : "System Policy Violation",
+      "affectedDevicesCount" : 2,
+      "alertId" : 701,
+      "time" : "2024-07-31T23:40:12.771411+00:00",
+      "activityDetails" : [ {
+        "deviceIds" : [ 1050 ],
+        "decisionData" : {
+          "riskFactorId" : 116
+        },
+        "sensor" : {
+          "name" : "WLC2 Enterprise",
+          "type" : "Wireless LAN Controller"
+        },
+        "time" : "2024-07-31T21:55:01+00:00",
+        "title" : "782cc32e_5b3 Risk Factor 'Vulnerability Score' set to 10",
+        "type" : "Risk Factor Updated",
+        "content" : "Vulnerability Score",
+        "activityUUID" : "1be97709-8b13-41da-8bf7-7f44abc647f1"
+      } ],
+      "status" : "Unhandled"
+    }
+  service: "cd.armis.armis_alerts"
+  result:
+    custom:
+      activityDetails:
+       -
+        deviceIds:
+         - 1050
+        decisionData:
+          riskFactorId: 116
+        sensor:
+          name: "WLC2 Enterprise"
+          type: "Wireless LAN Controller"
+        time: "2024-07-31T21:55:01+00:00"
+        title: "782cc32e_5b3 Risk Factor 'Vulnerability Score' set to 10"
+        type: "Risk Factor Updated"
+        content: "Vulnerability Score"
+        activityUUID: "1be97709-8b13-41da-8bf7-7f44abc647f1"
+      activityUUIDs:
+       - "1be97709-8b13-41da-8bf7-7f44abc647f1"
+      affectedDevicesCount: 2
+      alert_status: "Unhandled"
+      armis_alert_id: 701
+      classification: "Security - Other"
+      description: "The Armis security platform has detected a violation of a policy and generated an alert."
+      deviceIds:
+       - 790
+       - 279
+      severity: "Critical"
+      status: "info"
+      statusChangeTime: "2024-07-31T23:40:12.771411+00:00"
+      time: "2024-07-31T23:40:12.771411+00:00"
+      timestamp: 1722469212771
+      title: "[Threat] Heavy Port Scan in Network"
+      type: "System Policy Violation"
+    message: |-
+      {
+        "severity" : "Critical",
+        "deviceIds" : [ 790, 279 ],
+        "statusChangeTime" : "2024-07-31T23:40:12.771411+00:00",
+        "description" : "The Armis security platform has detected a violation of a policy and generated an alert.",
+        "activityUUIDs" : [ "1be97709-8b13-41da-8bf7-7f44abc647f1" ],
+        "classification" : "Security - Other",
+        "title" : "[Threat] Heavy Port Scan in Network",
+        "type" : "System Policy Violation",
+        "affectedDevicesCount" : 2,
+        "alertId" : 701,
+        "time" : "2024-07-31T23:40:12.771411+00:00",
+        "activityDetails" : [ {
+          "deviceIds" : [ 1050 ],
+          "decisionData" : {
+            "riskFactorId" : 116
+          },
+          "sensor" : {
+            "name" : "WLC2 Enterprise",
+            "type" : "Wireless LAN Controller"
+          },
+          "time" : "2024-07-31T21:55:01+00:00",
+          "title" : "782cc32e_5b3 Risk Factor 'Vulnerability Score' set to 10",
+          "type" : "Risk Factor Updated",
+          "content" : "Vulnerability Score",
+          "activityUUID" : "1be97709-8b13-41da-8bf7-7f44abc647f1"
+        } ],
+        "status" : "Unhandled"
+      }
+    service: "cd.armis.armis_alerts"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1722469212771
+ -
+  sample: |-
+    {
+      "isEnabled" : true,
+      "ruleType" : "ACTIVITY",
+      "name" : "Authentication Failure - Signifies a failure in the authentication process, hindering access to secured resources.",
+      "riskFactorData" : {
+        "score" : 7,
+        "description" : "Signifies a failure in the authentication process, hindering access to secured resources.",
+        "category" : "BEHAVIOURAL",
+        "type" : "Authentication Failure",
+        "user" : "user",
+        "group" : "CONFIGURATION"
+      },
+      "action" : {
+        "params" : {
+          "endpoint" : "DESTINATION",
+          "customRiskFactorId" : 161
+        },
+        "type" : "risk_factor"
+      },
+      "rules" : {
+        "and" : [ "type:\"Authentication Failure\"" ]
+      },
+      "id" : "179763",
+      "actions" : [ {
+        "params" : {
+          "endpoint" : "DESTINATION",
+          "customRiskFactorId" : 161
+        },
+        "type" : "risk_factor"
+      } ]
+    }
+  service: "cd.armis.armis_policies"
+  result:
+    custom:
+      action:
+        params:
+          customRiskFactorId: 161
+          endpoint: "DESTINATION"
+        type: "risk_factor"
+      actions:
+       -
+        params:
+          endpoint: "DESTINATION"
+          customRiskFactorId: 161
+        type: "risk_factor"
+      isEnabled: true
+      name: "Authentication Failure - Signifies a failure in the authentication process, hindering access to secured resources."
+      policy_id: "179763"
+      riskFactorData:
+        category: "BEHAVIOURAL"
+        description: "Signifies a failure in the authentication process, hindering access to secured resources."
+        group: "CONFIGURATION"
+        score: 7
+        type: "Authentication Failure"
+        user: "user"
+      ruleType: "ACTIVITY"
+      rules:
+        and:
+         - "type:\"Authentication Failure\""
+    message: |-
+      {
+        "isEnabled" : true,
+        "ruleType" : "ACTIVITY",
+        "name" : "Authentication Failure - Signifies a failure in the authentication process, hindering access to secured resources.",
+        "riskFactorData" : {
+          "score" : 7,
+          "description" : "Signifies a failure in the authentication process, hindering access to secured resources.",
+          "category" : "BEHAVIOURAL",
+          "type" : "Authentication Failure",
+          "user" : "user",
+          "group" : "CONFIGURATION"
+        },
+        "action" : {
+          "params" : {
+            "endpoint" : "DESTINATION",
+            "customRiskFactorId" : 161
+          },
+          "type" : "risk_factor"
+        },
+        "rules" : {
+          "and" : [ "type:\"Authentication Failure\"" ]
+        },
+        "id" : "179763",
+        "actions" : [ {
+          "params" : {
+            "endpoint" : "DESTINATION",
+            "customRiskFactorId" : 161
+          },
+          "type" : "risk_factor"
+        } ]
+      }
+    service: "cd.armis.armis_policies"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+        "dataSources": [],
+        "deviceIds": [],
+        "displayName": "One User",
+        "email": "one_user@test.com",
+        "firstSeen": "2024-09-17T01:38:53.223584+00:00",
+        "id": 5,
+        "lastSeen": "2024-09-23T22:36:47.223584+00:00",
+        "lastUsedDevice": null,
+        "name": "One User",
+        "phone": "+792-555-124-5454",
+        "properties": {},
+        "username": "One User"
+    }
+  service: "cd.armis.armis_users"
+  result:
+    custom:
+      armis_user_id: 5
+      displayName: "One User"
+      email: "one_user@test.com"
+      firstSeen: "2024-09-17T01:38:53.223584+00:00"
+      lastSeen: "2024-09-23T22:36:47.223584+00:00"
+      name: "One User"
+      phone: "+792-555-124-5454"
+      timestamp: 1727131007223
+      username: "One User"
+    message: |-
+      {
+        "lastSeen" : "2024-09-23T22:36:47.223584+00:00",
+        "phone" : "+792-555-124-5454",
+        "displayName" : "One User",
+        "firstSeen" : "2024-09-17T01:38:53.223584+00:00",
+        "name" : "One User",
+        "id" : 5,
+        "email" : "one_user@test.com",
+        "username" : "One User"
+      }
+    service: "cd.armis.armis_users"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1727131007223

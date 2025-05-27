@@ -1,0 +1,152 @@
+id: ping-one
+tests:
+ -
+  sample: |-
+    {
+      "result" : {
+        "description" : "Passed role access control",
+        "status" : "SUCCESS"
+      },
+      "createdAt" : "2024-07-01T09:28:18.244Z",
+      "actors" : {
+        "client" : {
+          "environment" : {
+            "id" : "77624d50-34ef-4fe8-bf56-375fcb8wregwc69eb"
+          },
+          "name" : "PingOne Admin Console",
+          "id" : "84daa836-7c81-4505-9cac-b9428d4gwrg5695d",
+          "href" : "https://api.pingone.com.au/v1/environments/77624d50-34ef-4fe8-bf56-375fcb8c6wegrg9eb/applications/84daa836-7c81-4505-9cac-b9428gwrgwd45695d",
+          "type" : "CLIENT"
+        },
+        "user" : {
+          "environment" : {
+            "id" : "77624wred50-34ef-4fe8-bf56-375fcb8c6wterwret9eb"
+          },
+          "name" : "saroy49757@mposhop.com",
+          "id" : "9c6awertcf81-2d00-412a-b62c-fccbe74cegrw730a",
+          "href" : "https://api.pingone.com.au/v1/environments/77624d50-34ef-4fe8-bf56-375fcb8twrec69eb/users/9c6acf81-2d00-412a-b62c-fccbgsdfe74c730a",
+          "type" : "USER",
+          "population" : {
+            "id" : "312d7495-f0ff-4d10-b579-954f1664wre64ca"
+          }
+        }
+      },
+      "_links" : {
+        "self" : {
+          "href" : "https://api.pingone.com.au/v1/environments/77624d50-34ef-4fe8-bf56-375fcb8ctyrt69eb/activities/e157rtwr9fb1-d2b6-4892-b3e6-9fd5a52d0d03"
+        }
+      },
+      "recordedAt" : "2024-07-01T09:28:18.229Z",
+      "action" : {
+        "description" : "User Access Allowed",
+        "type" : "USER.ACCESS_ALLOWED"
+      },
+      "resources" : [ {
+        "environment" : {
+          "id" : "77624dgsj50-34ef-4fe8-bf56-375fcb8c69eb"
+        },
+        "name" : "saroy49757@mposhop.com",
+        "id" : "9c6acf81-2d00-412a-b62c-fccbe74crgw730a",
+        "href" : "https://api.pingone.com.au/v1/environments/77624d50-34ef-4fe8-bf56-375fcb8geruc69eb/users/9c6acf81-2d00-412a-b62c-fccbe74ctew730a",
+        "type" : "USER",
+        "population" : {
+          "id" : "312d7495-f0ff-4d10-b579-954f1wtg66464ca"
+        }
+      } ],
+      "correlationId" : "f49d6werg6e3-630e-401rgw6-8f7d-5f6d7082d46e",
+      "internalCorrelation" : {
+        "transactionId" : "fbf3e62gwrge-af77-4486-a3c7-43a7b4b49476"
+      },
+      "id" : "e1579fb1-d2b6-4892-b3e6-9fd5agegwrg52d0d03",
+      "source" : {
+        "ipAddress" : "185.64.148.0",
+        "userAgent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 Edg/126.0.0.0"
+      }
+    }
+  result:
+    custom:
+      _links:
+        self:
+          href: "https://api.pingone.com.au/v1/environments/77624d50-34ef-4fe8-bf56-375fcb8ctyrt69eb/activities/e157rtwr9fb1-d2b6-4892-b3e6-9fd5a52d0d03"
+      action:
+        description: "User Access Allowed"
+        type: "USER.ACCESS_ALLOWED"
+      actors:
+        client:
+          environment:
+            id: "77624d50-34ef-4fe8-bf56-375fcb8wregwc69eb"
+          href: "https://api.pingone.com.au/v1/environments/77624d50-34ef-4fe8-bf56-375fcb8c6wegrg9eb/applications/84daa836-7c81-4505-9cac-b9428gwrgwd45695d"
+        user:
+          environment:
+            id: "77624wred50-34ef-4fe8-bf56-375fcb8c6wterwret9eb"
+          href: "https://api.pingone.com.au/v1/environments/77624d50-34ef-4fe8-bf56-375fcb8twrec69eb/users/9c6acf81-2d00-412a-b62c-fccbgsdfe74c730a"
+          population:
+            id: "312d7495-f0ff-4d10-b579-954f1664wre64ca"
+      correlationId: "f49d6werg6e3-630e-401rgw6-8f7d-5f6d7082d46e"
+      createdAt: "2024-07-01T09:28:18.244Z"
+      http:
+        useragent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 Edg/126.0.0.0"
+        useragent_details:
+          browser:
+            family: "Edge"
+            major: "126"
+            minor: "0"
+            patch: "0"
+            patch_minor: "0"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Windows"
+            major: "10"
+      internalCorrelation:
+        transactionId: "fbf3e62gwrge-af77-4486-a3c7-43a7b4b49476"
+      network:
+        client:
+          geoip:
+            city:
+              name: "Paris"
+            continent:
+              code: "EU"
+              name: "Europe"
+            country:
+              iso_code: "FR"
+              name: "France"
+            ipAddress: "185.64.148.0"
+            location:
+              latitude: 48.90654
+              longitude: 2.33339
+            subdivision:
+              iso_code: "FR-IDF"
+              name: "Île-de-France"
+            timezone: "Europe/Paris"
+          ip: "185.64.148.0"
+      ping_one:
+        actors:
+          client:
+            id: "84daa836-7c81-4505-9cac-b9428d4gwrg5695d"
+            name: "PingOne Admin Console"
+            type: "CLIENT"
+          user:
+            type: "USER"
+        id: "e1579fb1-d2b6-4892-b3e6-9fd5agegwrg52d0d03"
+        result:
+          status: "SUCCESS"
+      recordedAt: "2024-07-01T09:28:18.229Z"
+      resources:
+       -
+        environment:
+          id: "77624dgsj50-34ef-4fe8-bf56-375fcb8c69eb"
+        name: "saroy49757@mposhop.com"
+        id: "9c6acf81-2d00-412a-b62c-fccbe74crgw730a"
+        href: "https://api.pingone.com.au/v1/environments/77624d50-34ef-4fe8-bf56-375fcb8geruc69eb/users/9c6acf81-2d00-412a-b62c-fccbe74ctew730a"
+        type: "USER"
+        population:
+          id: "312d7495-f0ff-4d10-b579-954f1wtg66464ca"
+      usr:
+        id: "9c6awertcf81-2d00-412a-b62c-fccbe74cegrw730a"
+        name: "saroy49757@mposhop.com"
+    message: "Passed role access control"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1719826098229

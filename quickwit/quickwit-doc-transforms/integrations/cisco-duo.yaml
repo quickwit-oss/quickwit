@@ -1,0 +1,185 @@
+id: cisco-duo
+metric_id: cisco-duo
+backend_only: false
+facets:
+- facetType: range
+  groups:
+  - Cisco Duo
+  name: Credits
+  path: cisco.duo.credits
+  source: log
+  type: double
+- groups:
+  - User
+  name: User Email
+  path: usr.email
+  source: log
+- groups:
+  - User
+  name: User Name
+  path: usr.name
+  source: log
+- groups:
+  - Event
+  name: Event Name
+  path: evt.name
+  source: log
+- groups:
+  - Event
+  name: Event Outcome
+  path: evt.outcome
+  source: log
+pipeline:
+  type: pipeline
+  name: Cisco Duo
+  enabled: true
+  filter:
+    query: "source:cisco-duo"
+  processors:
+    - type: date-remapper
+      name: Define `isotimestamp`, `ts` as the official date of the log
+      enabled: true
+      sources:
+        - isotimestamp
+        - ts
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: pipeline
+      name: Cisco Duo Authentication
+      enabled: true
+      filter:
+        query: "service:authentication"
+      processors:
+        - type: geo-ip-parser
+          name: GeoIP Parser for `access_device.ip`
+          enabled: true
+          sources:
+            - access_device.ip
+          target: access_device.geoip
+          ip_processing_behavior: do-nothing
+        - type: geo-ip-parser
+          name: GeoIP Parser for `auth_device.ip`
+          enabled: true
+          sources:
+            - auth_device.ip
+          target: auth_device.geoip
+          ip_processing_behavior: do-nothing
+        - type: attribute-remapper
+          name: Map `result` to `evt.outcome`
+          enabled: true
+          sources:
+            - result
+          sourceType: attribute
+          target: evt.outcome
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `email` to `usr.email`
+          enabled: true
+          sources:
+            - email
+          sourceType: attribute
+          target: usr.email
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `event_type` to `evt.name`
+          enabled: true
+          sources:
+            - event_type
+          sourceType: attribute
+          target: evt.name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `user.name` to `usr.name`
+          enabled: true
+          sources:
+            - user.name
+          sourceType: attribute
+          target: usr.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Cisco Duo Activity
+      enabled: true
+      filter:
+        query: "service:activity"
+      processors:
+        - type: geo-ip-parser
+          name: GeoIP Parser for `access_device.ip.address`
+          enabled: true
+          sources:
+            - access_device.ip.address
+          target: access_device.geoip
+          ip_processing_behavior: do-nothing
+        - type: attribute-remapper
+          name: Map `target` to `duo_target`
+          enabled: true
+          sources:
+            - target
+          sourceType: attribute
+          target: duo_target
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Cisco Duo Administrator
+      enabled: true
+      filter:
+        query: "service:administrator"
+      processors:
+        - type: attribute-remapper
+          name: Map `username` to `usr.name`
+          enabled: true
+          sources:
+            - username
+          sourceType: attribute
+          target: usr.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Cisco Duo Offline Enrollment
+      enabled: true
+      filter:
+        query: "service:offline_enrollment"
+      processors:
+        - type: attribute-remapper
+          name: Map `username` to `usr.name`
+          enabled: true
+          sources:
+            - username
+          sourceType: attribute
+          target: usr.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `action` to `cisco.duo.action`
+      enabled: true
+      sources:
+        - action
+      sourceType: attribute
+      target: cisco.duo.action
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `credits` to `cisco.duo.credits`
+      enabled: true
+      sources:
+        - credits
+      sourceType: attribute
+      target: cisco.duo.credits
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+

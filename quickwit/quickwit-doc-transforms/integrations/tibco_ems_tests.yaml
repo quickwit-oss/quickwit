@@ -1,0 +1,34 @@
+id: "tibco_ems"
+tests:
+ -
+  sample: "2024-07-31 18:32:12.436 Set server properties 'large_destination_memory' and 'large_destination_count' respectively to alter these thresholds."
+  result:
+    custom:
+      timestamp: 1722450732436
+    message: "Set server properties 'large_destination_memory' and 'large_destination_count' respectively to alter these thresholds."
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1722450732436
+ -
+  sample: "2024-07-31 17:41:26.135 WARNING: Route Warning: host of this name does not exist: /test"
+  result:
+    custom:
+      level: "WARNING"
+      timestamp: 1722447686135
+    message: "Route Warning: host of this name does not exist: /test"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1722447686135
+ -
+  sample: "2024-07-31 18:02:35.249 [admin@d3ce69f9df4f]: connect failed: not authorized to connect"
+  result:
+    custom:
+      tibco:
+        server_name: "d3ce69f9df4f"
+        user: "admin"
+      timestamp: 1722448955249
+    message: "connect failed: not authorized to connect"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1722448955249

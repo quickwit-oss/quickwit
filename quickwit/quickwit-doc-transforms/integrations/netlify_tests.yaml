@@ -1,0 +1,80 @@
+id: "netlify"
+tests:
+ -
+  sample: |-
+    {
+      "referer" : "https://www.netlify.com/",
+      "status_code" : 200,
+      "method" : "GET",
+      "status_category" : "info",
+      "useragent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.159 Safari/537.36",
+      "request_id" : "01FEGYZ0CNBT7PW288ZJ1ZEA21",
+      "url" : "http://www.netlify.com/v3/img/build/68a3f2d-320.jpeg"
+    }
+  result:
+    custom:
+      http:
+        method: "GET"
+        request_id: "01FEGYZ0CNBT7PW288ZJ1ZEA21"
+        status_category: "info"
+        status_code: 200
+      method: "GET"
+      referer: "https://www.netlify.com/"
+      request_id: "01FEGYZ0CNBT7PW288ZJ1ZEA21"
+      status_category: "info"
+      status_code: 200
+      url: "http://www.netlify.com/v3/img/build/68a3f2d-320.jpeg"
+      useragent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.159 Safari/537.36"
+    message: |-
+      {
+        "referer" : "https://www.netlify.com/",
+        "status_code" : 200,
+        "method" : "GET",
+        "status_category" : "info",
+        "useragent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.159 Safari/537.36",
+        "request_id" : "01FEGYZ0CNBT7PW288ZJ1ZEA21",
+        "url" : "http://www.netlify.com/v3/img/build/68a3f2d-320.jpeg"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "path" : "/.netlify/functions/test_function",
+      "log_type" : "functions",
+      "status_code" : 200,
+      "account_id" : "my_id",
+      "status_category" : "info",
+      "function_name" : "test_function",
+      "function_type" : "normal",
+      "message" : "REPORT RequestId: ece907e2-848d-11e8-b0d2-01bad55f3174    Duration: 3056.26 ms      Billed Duration: 3100 ms      Memory Size: 128 MB       Max Memory Used: 85 MB",
+      "request_id" : "01FEGYZ0CNBT7PW288ZJ1ZEA21",
+      "deploy_id" : "my_deploy_id"
+    }
+  result:
+    custom:
+      account_id: "my_id"
+      deploy_id: "my_deploy_id"
+      duration: 3056.26
+      function_name: "test_function"
+      function_type: "normal"
+      http:
+        request_id: "01FEGYZ0CNBT7PW288ZJ1ZEA21"
+        status_category: "info"
+        status_code: 200
+      lambda:
+        max_memory_used: 85.0
+        memorysize: 128.0
+        request_id: "ece907e2-848d-11e8-b0d2-01bad55f3174"
+      level: "REPORT"
+      log_type: "functions"
+      path: "/.netlify/functions/test_function"
+      request_id: "01FEGYZ0CNBT7PW288ZJ1ZEA21"
+      status_category: "info"
+      status_code: 200
+    message: "REPORT RequestId: ece907e2-848d-11e8-b0d2-01bad55f3174    Duration: 3056.26 ms      Billed Duration: 3100 ms      Memory Size: 128 MB       Max Memory Used: 85 MB"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+

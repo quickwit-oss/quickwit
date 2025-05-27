@@ -1,0 +1,107 @@
+id: "impala"
+tests:
+ -
+  sample: "I0909 12:54:20.375062     1 HiveMetaStoreClient.java:251] HMS client filtering is enabled."
+  result:
+    custom:
+      file:
+        line: 251
+        name: "HiveMetaStoreClient.java"
+      level: "I"
+      logger:
+        thread_name: "1"
+      timestamp: 21732860375
+    message: "HMS client filtering is enabled."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 21732860375
+ -
+  sample: "I0722 08:49:07.843855     1 thrift-server.cc:456] ThriftServer 'hiveserver2-http-frontend' started on port: 28000"
+  result:
+    custom:
+      file:
+        line: 456
+        name: "thrift-server.cc"
+      level: "I"
+      logger:
+        thread_name: "1"
+      network:
+        destination:
+          name: "hiveserver2-http-frontend"
+          port: "28000"
+      timestamp: 17484547843
+    message: "ThriftServer 'hiveserver2-http-frontend' started on port: 28000"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 17484547843
+ -
+  sample: "I0722 08:49:04.990258    64 TAcceptQueueServer.cpp:340] New connection to server CatalogService from client <Host: 172.26.0.5 Port: 58642>"
+  result:
+    custom:
+      file:
+        line: 340
+        name: "TAcceptQueueServer.cpp"
+      level: "I"
+      logger:
+        thread_name: "64"
+      network:
+        destination:
+          ip: "172.26.0.5"
+          name: "CatalogService"
+          port: "58642"
+      timestamp: 17484544990
+    message: "New connection to server CatalogService from client <Host: 172.26.0.5 Port: 58642>"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 17484544990
+ -
+  sample: "I0722 08:49:08.039357    34 statestore.cc:278] Preparing initial impala-membership topic update for impalad@172.26.0.5:27000. Size = 148.00 B"
+  result:
+    custom:
+      file:
+        line: 278
+        name: "statestore.cc"
+      level: "I"
+      logger:
+        thread_name: "34"
+      network:
+        destination:
+          ip: "172.26.0.5"
+          name: "impalad"
+          port: "27000"
+      timestamp: 17484548039
+      topic:
+        name: "impala-membership"
+        size: "148.00"
+    message: "Preparing initial impala-membership topic update for impalad@172.26.0.5:27000. Size = 148.00 B"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 17484548039
+ -
+  sample: |-
+    I0906 08:11:07.063410   591 cluster-membership-mgr.cc:287] Adding backend 5f45a790bd0dc864:ea6f64dd0bdfaab7 to group name: "default"
+    min_size: 1
+  result:
+    custom:
+      backend:
+        group_name: "default"
+        name: "5f45a790bd0dc864:ea6f64dd0bdfaab7"
+      file:
+        line: 287
+        name: "cluster-membership-mgr.cc"
+      level: "I"
+      logger:
+        thread_name: "591"
+      timestamp: 21456667063
+    message: |-
+      Adding backend 5f45a790bd0dc864:ea6f64dd0bdfaab7 to group name: "default"
+      min_size: 1
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 21456667063
+

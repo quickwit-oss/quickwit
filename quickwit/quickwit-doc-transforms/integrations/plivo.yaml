@@ -1,0 +1,307 @@
+id: plivo
+metric_id: plivo
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - facetType: range
+    groups:
+      - plivo
+    name: Billed Duration
+    path: plivo.billed_duration
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - plivo
+    name: Call Duration
+    path: plivo.call_duration
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - plivo
+    name: Carrier Fees
+    path: plivo.carrier_fees
+    source: log
+    type: double
+  - facetType: list
+    groups:
+      - plivo
+    name: Conversation ID
+    path: plivo.messaging.conversation_id
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - plivo
+    name: Error Message
+    path: plivo.error.message
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - plivo
+    name: Error Type
+    path: plivo.error.type
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - plivo
+    name: Message ID
+    path: plivo.messaging.message_id
+    source: log
+    type: string
+  - facetType: range
+    groups:
+      - plivo
+    name: Total Amount
+    path: plivo.total_amount
+    source: log
+    type: double
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+pipeline:
+  type: pipeline
+  name: Plivo
+  enabled: true
+  filter:
+    query: "source:plivo"
+  processors:
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: pipeline
+      name: Voice
+      enabled: true
+      filter:
+        query: "service:voice"
+      processors:
+        - type: grok-parser
+          name: Parsing `end_time` to `timestamp` (epoch)
+          enabled: true
+          source: end_time
+          samples:
+            - 2024-10-09 18:21:39+05:30
+            - 2024-10-09 18:21:39-04:30
+          grok:
+            supportRules: ""
+            matchRules: date_rule %{date("yyyy-MM-dd HH:mm:ssZZ"):timestamp}
+        - type: attribute-remapper
+          name: Map `call_duration` to `plivo.call_duration`
+          enabled: true
+          sources:
+            - call_duration
+          sourceType: attribute
+          target: plivo.call_duration
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `billed_duration` to `plivo.billed_duration`
+          enabled: true
+          sources:
+            - billed_duration
+          sourceType: attribute
+          target: plivo.billed_duration
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `source_ip` to `network.client.ip`
+          enabled: true
+          sources:
+            - source_ip
+          sourceType: attribute
+          target: network.client.ip
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `hangup_cause_code` to `plivo.error.type`
+          enabled: true
+          sources:
+            - hangup_cause_code
+          sourceType: attribute
+          target: plivo.error.type
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `hangup_cause_name` to `plivo.error.message`
+          enabled: true
+          sources:
+            - hangup_cause_name
+          sourceType: attribute
+          target: plivo.error.message
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Messages
+      enabled: true
+      filter:
+        query: "service:messages"
+      processors:
+        - type: grok-parser
+          name: Parsing `message_time` to `timestamp` (epoch)
+          enabled: true
+          source: message_time
+          samples:
+            - 2024-09-09 10:32:50.037663+05:30
+            - 2024-09-09 10:32:50.03766-05:30
+          grok:
+            supportRules: ""
+            matchRules: date_rule %{date("yyyy-MM-dd
+              HH:mm:ss.SSSSSSZZ"):timestamp}|%{date("yyyy-MM-dd
+              HH:mm:ss.SSSSSZZ"):timestamp}
+        - type: attribute-remapper
+          name: Map `requester_ip` to `network.client.ip`
+          enabled: true
+          sources:
+            - requester_ip
+          sourceType: attribute
+          target: network.client.ip
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `destination_country_iso2` to `geo.country_iso_code`
+          enabled: true
+          sources:
+            - destination_country_iso2
+          sourceType: attribute
+          target: geo.country_iso_code
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `message_uuid` to `plivo.messaging.message_id`
+          enabled: true
+          sources:
+            - message_uuid
+          sourceType: attribute
+          target: plivo.messaging.message_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `error_message` to `plivo.error.message`
+          enabled: true
+          sources:
+            - error_message
+          sourceType: attribute
+          target: plivo.error.message
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `error_code` to `plivo.error.type`
+          enabled: true
+          sources:
+            - error_code
+          sourceType: attribute
+          target: plivo.error.type
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - name: Lookup for `message_state` to `status`
+          enabled: true
+          source: message_state
+          target: status
+          lookupTable: |-
+            undelivered,warning
+            delivered,info
+            sent,info
+            failed,critical
+            received,info
+            queued,info
+            read,info
+            rejected,high
+          type: lookup-processor
+        - type: status-remapper
+          name: Define `status` as the official status of the log
+          enabled: true
+          sources:
+            - status
+        - type: attribute-remapper
+          name: Map `carrier_fees` to `plivo.carrier_fees`
+          enabled: true
+          sources:
+            - carrier_fees
+          sourceType: attribute
+          target: plivo.carrier_fees
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `conversation_id` to `plivo.messaging.conversation_id`
+          enabled: true
+          sources:
+            - conversation_id
+          sourceType: attribute
+          target: plivo.messaging.conversation_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: geo-ip-parser
+      name: GeoIP for the `network.client.ip`
+      enabled: true
+      sources:
+        - network.client.ip
+      target: network.client.geoip
+      ip_processing_behavior: do-nothing
+    - type: attribute-remapper
+      name: Map `total_amount` to `plivo.total_amount`
+      enabled: true
+      sources:
+        - total_amount
+      sourceType: attribute
+      target: plivo.total_amount
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false

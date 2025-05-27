@@ -1,0 +1,100 @@
+id: "ray"
+tests:
+ -
+  sample: "[2023-08-29 08:30:56,041 W 325 362] (python-core-worker-c868e54d820f1c7753223de1a1c88a1e805e2478ddb1453efa390d55) reference_count.cc:396: Tried to decrease ref count for nonexistent object ID: 685e172318b7aa3448435dc2817a544720a5639a0100000003000000"
+  result:
+    custom:
+      component:
+        name: "python-core-worker-c868e54d820f1c7753223de1a1c88a1e805e2478ddb1453efa390d55"
+      file:
+        line: "396:"
+        name: "reference_count.cc"
+      level: "W"
+      logger:
+        thread_name: "362"
+      pid: 325
+      timestamp: 1693297856041
+    message: "Tried to decrease ref count for nonexistent object ID: 685e172318b7aa3448435dc2817a544720a5639a0100000003000000"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1693297856041
+ -
+  sample: "[2023-08-30 01:05:18,830 I 91 91] (raylet) worker_pool.cc:489: Started worker process with pid 22736, the token is 234"
+  result:
+    custom:
+      component:
+        name: "raylet"
+      file:
+        line: "489:"
+        name: "worker_pool.cc"
+      level: "I"
+      logger:
+        thread_name: "91"
+      pid: 91
+      timestamp: 1693357518830
+      worker:
+        pid: 22736
+        token: 234
+    message: "Started worker process with pid 22736, the token is 234"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1693357518830
+ -
+  sample: "2023-06-01 09:15:34,601\tINFO job_manager.py:408 -- Submitting job with RAY_ADDRESS = 10.0.24.73:6379"
+  result:
+    custom:
+      file:
+        line: "408"
+        name: "job_manager.py"
+      level: "INFO"
+      network:
+        client:
+          ip: "10.0.24.73"
+          port: "6379"
+      timestamp: 1685610934601
+    message: "Submitting job with RAY_ADDRESS = 10.0.24.73:6379"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1685610934601
+ -
+  sample: "2023-08-29 08:30:58,303\tINFO (monitor) autoscaler.py:141 -- The autoscaler took 0.0 seconds to fetch the list of non-terminated nodes."
+  result:
+    custom:
+      component:
+        name: "monitor"
+      file:
+        line: "141"
+        name: "autoscaler.py"
+      level: "INFO"
+      timestamp: 1693297858303
+    message: "The autoscaler took 0.0 seconds to fetch the list of non-terminated nodes."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1693297858303
+ -
+  sample: "[2023-08-30 01:05:18,630 I 22661 22704] (python-core-driver-5e000000ffffffffffffffffffffffffffffffffffffffffffffffff) grpc_server.cc:129: driver server started, listening on port 10329."
+  result:
+    custom:
+      component:
+        name: "python-core-driver-5e000000ffffffffffffffffffffffffffffffffffffffffffffffff"
+      file:
+        line: "129:"
+        name: "grpc_server.cc"
+      level: "I"
+      logger:
+        thread_name: "22704"
+      network:
+        client:
+          port: "10329"
+      pid: 22661
+      timestamp: 1693357518630
+    message: "driver server started, listening on port 10329."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1693357518630
+

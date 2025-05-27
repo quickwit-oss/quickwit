@@ -1,0 +1,240 @@
+id: "airflow"
+tests:
+ -
+  sample: "[2019-12-26 17:33:29,431] {{dag_processing.py:820}} INFO - Processing files using up to 1 processes at a time"
+  result:
+    custom:
+      filename: "dag_processing.py"
+      level: "INFO"
+      lineno: 820
+      timestamp: 1577381609431
+    message: "Processing files using up to 1 processes at a time"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1577381609431
+ -
+  sample: "[2020-07-29 15:21:23,192] {scheduler_job.py:1409} DEBUG - Harvested 0 SimpleDAGs"
+  result:
+    custom:
+      filename: "scheduler_job.py"
+      level: "DEBUG"
+      lineno: 1409
+      timestamp: 1596036083192
+    message: "Harvested 0 SimpleDAGs"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1596036083192
+ -
+  sample: "[2019-12-26 17:39:25,646] {{logging_mixin.py:112}} INFO - [2019-12-26 17:39:25,646] {{settings.py:211}} DEBUG - Setting up DB connection pool (PID 711)"
+  result:
+    custom:
+      filename: "settings.py"
+      level: "DEBUG"
+      lineno: 211
+      timestamp: 1577381965646
+    message: "Setting up DB connection pool (PID 711)"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1577381965646
+ -
+  sample: "[2019-12-26 17:34:48,568] {{base_task_runner.py:115}} INFO - Job 8: Subtask hello_world_fail_task [2019-12-26 17:34:48,568] {{settings.py:211}} DEBUG - Setting up DB connection pool (PID 202)"
+  result:
+    custom:
+      filename: "settings.py"
+      jobid: 8
+      level: "DEBUG"
+      lineno: 211
+      subtask: "hello_world_fail_task"
+      timestamp: 1577381688568
+    message: "Setting up DB connection pool (PID 202)"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1577381688568
+ -
+  sample: |
+    [2019-12-26 17:34:49,039] {{taskinstance.py:1058}} ERROR - Hello world fail!
+    Traceback (most recent call last):
+      File "/usr/local/lib/python3.7/site-packages/airflow/models/taskinstance.py", line 930, in _run_raw_task
+      result = task_copy.execute(context=context)
+      File "/usr/local/lib/python3.7/site-packages/airflow/operators/python_operator.py", line 113, in execute
+      return_value = self.execute_callable()
+      File "/usr/local/lib/python3.7/site-packages/airflow/operators/python_operator.py", line 118, in execute_callable
+      return self.python_callable(*self.op_args, **self.op_kwargs)
+      File "/usr/local/airflow/dags/task_fail.py", line 9, in print_hello
+      raise Exception('Hello world fail!')
+    Exception: Hello world fail!
+  result:
+    custom:
+      error:
+        kind: "Exception"
+        message: "Hello world fail!"
+        stack: |2-
+            File "/usr/local/lib/python3.7/site-packages/airflow/models/taskinstance.py", line 930, in _run_raw_task
+            result = task_copy.execute(context=context)
+            File "/usr/local/lib/python3.7/site-packages/airflow/operators/python_operator.py", line 113, in execute
+            return_value = self.execute_callable()
+            File "/usr/local/lib/python3.7/site-packages/airflow/operators/python_operator.py", line 118, in execute_callable
+            return self.python_callable(*self.op_args, **self.op_kwargs)
+            File "/usr/local/airflow/dags/task_fail.py", line 9, in print_hello
+            raise Exception('Hello world fail!')
+          Exception: Hello world fail!
+      filename: "taskinstance.py"
+      level: "ERROR"
+      lineno: 1058
+      timestamp: 1577381689039
+    message: "Hello world fail!"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1577381689039
+ -
+  sample: |
+    [2019-12-26 17:33:44,038] {{logging_mixin.py:112}} INFO - [2019-12-26 17:33:44,033] {{dagbag.py:207}} ERROR - Failed to import: /usr/local/airflow/dags/dag_file_error.py
+    Traceback (most recent call last):
+      File "/usr/local/lib/python3.7/site-packages/airflow/models/dagbag.py", line 204, in process_file
+        m = imp.load_source(mod_name, filepath)
+      File "/usr/local/lib/python3.7/imp.py", line 171, in load_source
+        module = _load(spec)
+      File "<frozen importlib._bootstrap>", line 696, in _load
+      File "<frozen importlib._bootstrap>", line 677, in _load_unlocked
+      File "<frozen importlib._bootstrap_external>", line 728, in exec_module
+      File "<frozen importlib._bootstrap>", line 219, in _call_with_frames_removed
+      File "/usr/local/airflow/dags/dag_file_error.py", line 17, in <module>
+        catchup=True,
+      File "/usr/local/lib/python3.7/site-packages/airflow/models/dag.py", line 244, in __init__
+        validate_key(dag_id)
+      File "/usr/local/lib/python3.7/site-packages/airflow/utils/helpers.py", line 65, in validate_key
+        "dots and underscores exclusively".format(k=k))
+    airflow.exceptions.AirflowException: The key (hello_world invalid DAG name) has to be made of alphanumeric characters, dashes, dots and underscores exclusively
+  result:
+    custom:
+      error:
+        kind: "airflow.exceptions.AirflowException"
+        message: "The key (hello_world invalid DAG name) has to be made of alphanumeric characters, dashes, dots and underscores exclusively"
+        stack: |2-
+            File "/usr/local/lib/python3.7/site-packages/airflow/models/dagbag.py", line 204, in process_file
+              m = imp.load_source(mod_name, filepath)
+            File "/usr/local/lib/python3.7/imp.py", line 171, in load_source
+              module = _load(spec)
+            File "<frozen importlib._bootstrap>", line 696, in _load
+            File "<frozen importlib._bootstrap>", line 677, in _load_unlocked
+            File "<frozen importlib._bootstrap_external>", line 728, in exec_module
+            File "<frozen importlib._bootstrap>", line 219, in _call_with_frames_removed
+            File "/usr/local/airflow/dags/dag_file_error.py", line 17, in <module>
+              catchup=True,
+            File "/usr/local/lib/python3.7/site-packages/airflow/models/dag.py", line 244, in __init__
+              validate_key(dag_id)
+            File "/usr/local/lib/python3.7/site-packages/airflow/utils/helpers.py", line 65, in validate_key
+              "dots and underscores exclusively".format(k=k))
+          airflow.exceptions.AirflowException: The key (hello_world invalid DAG name) has to be made of alphanumeric characters, dashes, dots and underscores exclusively
+      filename: "dagbag.py"
+      level: "ERROR"
+      lineno: 207
+      timestamp: 1577381624033
+    message: "Failed to import: /usr/local/airflow/dags/dag_file_error.py"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1577381624033
+ -
+  sample: |
+    [2019-12-26 17:33:29,452] {{dag_processing.py:1246}} DEBUG - Queuing the following files for processing:
+      /usr/local/airflow/dags/task_fail.py
+      /usr/local/airflow/dags/task_sleep5.py
+      /usr/local/airflow/dags/dag_file_error.py
+      /usr/local/airflow/dags/task_sleep10.py
+      /usr/local/airflow/dags/task_ok.py
+      /usr/local/airflow/dags/tuto.py
+  result:
+    custom:
+      filename: "dag_processing.py"
+      level: "DEBUG"
+      lineno: 1246
+      timestamp: 1577381609452
+    message: |-
+      Queuing the following files for processing:
+        /usr/local/airflow/dags/task_fail.py
+        /usr/local/airflow/dags/task_sleep5.py
+        /usr/local/airflow/dags/dag_file_error.py
+        /usr/local/airflow/dags/task_sleep10.py
+        /usr/local/airflow/dags/task_ok.py
+        /usr/local/airflow/dags/tuto.py
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1577381609452
+ -
+  sample: |
+    [2019-12-26 17:34:49,039] {{python_operator.py:105}} INFO - Exporting the following env vars:
+    AIRFLOW_CTX_DAG_ID=hello_world_fail
+    AIRFLOW_CTX_TASK_ID=hello_world_fail_task
+    AIRFLOW_CTX_EXECUTION_DATE=2017-03-20T00:00:00+00:00
+    AIRFLOW_CTX_DAG_RUN_ID=scheduled__2017-03-20T00:00:00+00:00
+  result:
+    custom:
+      env_vars:
+        AIRFLOW_CTX_DAG_ID: "hello_world_fail"
+        AIRFLOW_CTX_DAG_RUN_ID: "scheduled__2017-03-20T00:00:00+00:00"
+        AIRFLOW_CTX_EXECUTION_DATE: "2017-03-20T00:00:00+00:00"
+        AIRFLOW_CTX_TASK_ID: "hello_world_fail_task"
+      filename: "python_operator.py"
+      level: "INFO"
+      lineno: 105
+      timestamp: 1577381689039
+    message: |
+      [2019-12-26 17:34:49,039] {{python_operator.py:105}} INFO - Exporting the following env vars:
+      AIRFLOW_CTX_DAG_ID=hello_world_fail
+      AIRFLOW_CTX_TASK_ID=hello_world_fail_task
+      AIRFLOW_CTX_EXECUTION_DATE=2017-03-20T00:00:00+00:00
+      AIRFLOW_CTX_DAG_RUN_ID=scheduled__2017-03-20T00:00:00+00:00
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1577381689039
+ -
+  sample: |
+    [2019-12-26 17:34:49,039] {{python_operator.py:105}} INFO - Random content
+    foo
+    bar
+  result:
+    custom:
+      filename: "python_operator.py"
+      level: "INFO"
+      lineno: 105
+      timestamp: 1577381689039
+    message: |-
+      Random content
+      foo
+      bar
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1577381689039
+ -
+  sample: "[2025-02-18 14:46:00,123] {{python_operator.py:105}} INFO - Task started"
+  tags:
+    - "dirname:path/to/airflow/logs/dag_id_airflow_dag_0/run_id_scheduled__2025-02-18T14_46_00+00_00/task_id_print_task_0"
+  result:
+    custom:
+      airflow:
+        dagRun:
+          dag_id: "airflow_dag_0"
+          run_id: "scheduled__2025-02-18T14_46_00+00_00"
+        task:
+          task_id: "print_task_0"
+      dirname: "path/to/airflow/logs/dag_id_airflow_dag_0/run_id_scheduled__2025-02-18T14_46_00+00_00/task_id_print_task_0"
+      filename: "python_operator.py"
+      level: "INFO"
+      lineno: 105
+      timestamp: 1739889960123
+    message: "Task started"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "dirname:path/to/airflow/logs/dag_id_airflow_dag_0/run_id_scheduled__2025-02-18T14_46_00+00_00/task_id_print_task_0"
+    timestamp: 1739889960123
+

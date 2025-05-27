@@ -1,0 +1,196 @@
+id: abnormal-security
+metric_id: abnormal-security
+backend_only: false
+facets:
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+  - groups:
+      - Event
+    name: Event Outcome
+    path: evt.outcome
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - User
+    name: User Email
+    path: usr.email
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+pipeline:
+  type: pipeline
+  name: Abnormal Security
+  enabled: true
+  filter:
+    query: "source:abnormal-security"
+  processors:
+    - type: pipeline
+      name: Abnormal Security Threats
+      enabled: true
+      filter:
+        query: "service:abnormal-security-threats"
+      processors:
+        - type: date-remapper
+          name: Define `receivedTime` as the official date of the log
+          enabled: true
+          sources:
+            - receivedTime
+        - type: attribute-remapper
+          name: Map `attackType` to `evt.name`
+          enabled: true
+          sources:
+            - attackType
+          sourceType: attribute
+          target: evt.name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `remediationStatus` to `evt.outcome`
+          enabled: true
+          sources:
+            - remediationStatus
+          sourceType: attribute
+          target: evt.outcome
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `fromName` to `usr.name`
+          enabled: true
+          sources:
+            - fromName
+          sourceType: attribute
+          target: usr.name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `fromAddress` to `usr.email`
+          enabled: true
+          sources:
+            - fromAddress
+          sourceType: attribute
+          target: usr.email
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+    - type: pipeline
+      name: Abnormal Security Cases
+      enabled: true
+      filter:
+        query: "service:abnormal-security-cases"
+      processors:
+        - type: date-remapper
+          name: Define `customerVisibleTime` as the official date of the log
+          enabled: true
+          sources:
+            - customerVisibleTime
+        - type: attribute-remapper
+          name: Map `analysis` to `evt.name`
+          enabled: true
+          sources:
+            - analysis
+          sourceType: attribute
+          target: evt.name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `case_status` to `evt.outcome`
+          enabled: true
+          sources:
+            - case_status
+          sourceType: attribute
+          target: evt.outcome
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+    - type: pipeline
+      name: Abnormal Security Audit Logs
+      enabled: true
+      filter:
+        query: "service:abnormal-security-audit-logs"
+      processors: []
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: attribute-remapper
+      name: Map `action` to `evt.name`
+      enabled: true
+      sources:
+        - action
+      sourceType: attribute
+      target: evt.name
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `status` to `evt.outcome`
+      enabled: true
+      sources:
+        - status
+      sourceType: attribute
+      target: evt.outcome
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `user.email` to `usr.email`
+      enabled: true
+      sources:
+        - user.email
+      sourceType: attribute
+      target: usr.email
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: geo-ip-parser
+      name: Set Geo IP
+      enabled: true
+      sources:
+        - sourceIp
+      target: network.client.geoip
+      ip_processing_behavior: do-nothing

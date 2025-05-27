@@ -1,0 +1,84 @@
+id: couchdb
+metric_id: couchdb
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: URL Host
+    path: http.url_details.host
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Web Access
+    name: URL Port
+    path: http.url_details.port
+    source: log
+  - groups:
+      - Web Access
+    name: URL scheme
+    path: http.url_details.scheme
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+pipeline:
+  type: pipeline
+  name: CouchDb
+  enabled: true
+  filter:
+    query: source:couchdb
+  processors:
+    - type: grok-parser
+      name: Parsing CouchDB logs
+      enabled: true
+      source: message
+      samples:
+        - '[Wed, 29 Aug 2018 11:53:11 GMT] [info] [<0.404.0>] 127.0.0.1 - - DELETE /new_database/random_task?rev=2-4cc3dfb6e76befd665faf124b36b7f1c 200'
+        - 2015-12-18 14:44:52.722 [info] Undefined <0.7.0> Application runtime_tools started on node 'node3@127.0.0.1'
+        - '[info] 2017-08-10T04:22:55.373227Z couchdb@localhost <0.7.0> -------- Application fabric started on node couchdb@localhost'
+      grok:
+        supportRules: |
+          _date_access (%{date("EEE, dd MMM yyyy HH:mm:ss z"):date_access}|%{date("EEE, d MMM yyyy HH:mm:ss z"):date_access})
+          _date %{date("yyyy-MM-dd'T'HH:mm:ss.SSSSSSZ"):date_access}
+          _level %{word:level}
+          _method %{word:http.method}
+          _url %{notSpace:http.url}
+          _status_code %{number:http.status_code}
+          _client_ip %{notSpace:network.client.ip}
+          _user %{notSpace:db.user}
+        matchRules: |
+          http_rule \[%{_date_access}\] \[%{_level}\] %{notSpace} %{_client_ip} - - %{_method} %{_url} %{_status_code}.*
+          default_format \[%{_level}\] %{_date} %{_user}@%{_client_ip} %{notSpace} (-------- CRASH REPORT\s*%{data:error.stack}|%{data::keyvalue(":")})
+          fallback_format %{date("yyyy-MM-dd HH:mm:ss.SSS"):date_access} \[%{_level}\] .*
+    - type: date-remapper
+      name: Define `date_access` as the official date of the log
+      enabled: true
+      sources:
+        - date_access
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: url-parser
+      name: ''
+      enabled: true
+      sources:
+        - http.url
+      target: http.url_details

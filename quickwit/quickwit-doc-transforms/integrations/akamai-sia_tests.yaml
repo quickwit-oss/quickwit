@@ -1,0 +1,1066 @@
+id: "akamai-sia"
+tests:
+  - sample: |-
+      {
+        "configId" : "1041",
+        "l7Protocol" : "DNS",
+        "query" : {
+          "dnsIp" : "192.0.2.51",
+          "clientIp" : "185.64.148.140",
+          "domain" : "la4.company.com.",
+          "time" : "2023-05-26T06:34:53Z",
+          "deviceId" : "c37a4c4e-a7cd-400f-820d-b82762c52975",
+          "deviceName" : "LAX-USER4",
+          "uuid" : "1a2b3c4d-1590474893-46281-35384",
+          "queryType" : "A",
+          "resolved" : [ {
+            "asname" : "N/A",
+            "response" : "192.0.2.207",
+            "type" : "A",
+            "asn" : "14340"
+          }, {
+            "asname" : "N/A",
+            "response" : "192.0.2.106",
+            "type" : "A",
+            "asn" : "14340"
+          }, {
+            "asname" : "N/A",
+            "response" : "192.0.2.214",
+            "type" : "A",
+            "asn" : "14340"
+          } ]
+        },
+        "id" : "0",
+        "event" : {
+          "threatId" : 2000,
+          "reason" : "Akamai Intelligence (DNS)",
+          "correlatedSinkholeEvents" : [ {
+            "destinationPort" : 80,
+            "eventId" : "1590113794976#ac4bde1e-7d3d-4ff5-9cf8-772df0b1ce11#28301",
+            "sourcePort" : 48022,
+            "hitCount" : 1,
+            "l4Protocol" : "TCP",
+            "sinkholeIP" : "192.0.2.114",
+            "userAgent" : "curl/7.47.0",
+            "internalIP" : "192.0.2.57",
+            "url" : "/",
+            "sinkholeName" : "SIA_DNS",
+            "hostname" : "lax4.company.com",
+            "configId" : 1041,
+            "l7Protocol" : "HTTP",
+            "eventTime" : "2023-05-22T02:16:34Z",
+            "machineNames" : [ "N/A" ],
+            "sinkholeId" : "ac4bde1e-7d3d-4ff5-9cf8-772df0b1ce11"
+          } ],
+          "description" : "None",
+          "siteName" : "LAX-LAB2",
+          "confidenceId" : "-1",
+          "categoryName" : "24",
+          "onRamp" : "Yes",
+          "internalClientIP" : "N/A",
+          "listId" : "24",
+          "severityLevel" : "Unclassified",
+          "severityId" : 0,
+          "detectionTime" : "2023-05-26T06:34:53Z",
+          "onrampType" : "etp-client",
+          "policyEvaluationSource" : "dns",
+          "policyName" : "E2E-CML-stage",
+          "clientRequestId" : "00019749",
+          "trigger" : "domain",
+          "detectionType" : "inline",
+          "policyId" : "38307",
+          "threatName" : "AUP",
+          "actionId" : "6",
+          "siteId" : "51284",
+          "listName" : "24",
+          "categoryId" : "24",
+          "confidenceName" : "Unknown",
+          "actionName" : "Classify"
+        }
+      }
+    result:
+      custom:
+        akamai_sia:
+          detectionType: "inline"
+          severityLevel: "Unclassified"
+          threatName: "AUP"
+        configId: "1041"
+        dns:
+          answer:
+            name: "192.0.2.51"
+          question:
+            name: "la4.company.com."
+            type: "A"
+        event:
+          actionId: "6"
+          categoryId: "24"
+          confidenceId: "-1"
+          confidenceName: "Unknown"
+          correlatedSinkholeEvents:
+            - destinationPort: 80
+              eventId: "1590113794976#ac4bde1e-7d3d-4ff5-9cf8-772df0b1ce11#28301"
+              sourcePort: 48022
+              hitCount: 1
+              l4Protocol: "TCP"
+              sinkholeIP: "192.0.2.114"
+              userAgent: "curl/7.47.0"
+              internalIP: "192.0.2.57"
+              url: "/"
+              sinkholeName: "SIA_DNS"
+              hostname: "lax4.company.com"
+              configId: 1041
+              l7Protocol: "HTTP"
+              eventTime: "2023-05-22T02:16:34Z"
+              machineNames:
+                - "N/A"
+              sinkholeId: "ac4bde1e-7d3d-4ff5-9cf8-772df0b1ce11"
+          description: "None"
+          detectionTime: "2023-05-26T06:34:53Z"
+          internalClientIP: "N/A"
+          listId: "24"
+          listName: "24"
+          onRamp: "Yes"
+          onrampType: "etp-client"
+          policyEvaluationSource: "dns"
+          policyId: "38307"
+          reason: "Akamai Intelligence (DNS)"
+          severityId: 0
+          siteId: "51284"
+          siteName: "LAX-LAB2"
+          threatId: 2000
+          trigger: "domain"
+        evt:
+          category: "24"
+          name: "E2E-CML-stage"
+          outcome: "Classify"
+        http:
+          request_id: "00019749"
+        id: "0"
+        l7Protocol: "DNS"
+        network:
+          client:
+            geoip:
+              city:
+                name: "Paris"
+              continent:
+                code: "EU"
+                name: "Europe"
+              country:
+                iso_code: "FR"
+                name: "France"
+              ipAddress: "185.64.148.140"
+              location:
+                latitude: 48.90654
+                longitude: 2.33339
+              subdivision:
+                iso_code: "FR-IDF"
+                name: "Île-de-France"
+              timezone: "Europe/Paris"
+            ip: "185.64.148.140"
+        query:
+          deviceId: "c37a4c4e-a7cd-400f-820d-b82762c52975"
+          deviceName: "LAX-USER4"
+          resolved:
+            - asname: "N/A"
+              response: "192.0.2.207"
+              type: "A"
+              asn: "14340"
+            - asname: "N/A"
+              response: "192.0.2.106"
+              type: "A"
+              asn: "14340"
+            - asname: "N/A"
+              response: "192.0.2.214"
+              type: "A"
+              asn: "14340"
+          time: "2023-05-26T06:34:53Z"
+          uuid: "1a2b3c4d-1590474893-46281-35384"
+      message: |-
+        {
+          "configId" : "1041",
+          "l7Protocol" : "DNS",
+          "query" : {
+            "dnsIp" : "192.0.2.51",
+            "clientIp" : "185.64.148.140",
+            "domain" : "la4.company.com.",
+            "time" : "2023-05-26T06:34:53Z",
+            "deviceId" : "c37a4c4e-a7cd-400f-820d-b82762c52975",
+            "deviceName" : "LAX-USER4",
+            "uuid" : "1a2b3c4d-1590474893-46281-35384",
+            "queryType" : "A",
+            "resolved" : [ {
+              "asname" : "N/A",
+              "response" : "192.0.2.207",
+              "type" : "A",
+              "asn" : "14340"
+            }, {
+              "asname" : "N/A",
+              "response" : "192.0.2.106",
+              "type" : "A",
+              "asn" : "14340"
+            }, {
+              "asname" : "N/A",
+              "response" : "192.0.2.214",
+              "type" : "A",
+              "asn" : "14340"
+            } ]
+          },
+          "id" : "0",
+          "event" : {
+            "threatId" : 2000,
+            "reason" : "Akamai Intelligence (DNS)",
+            "correlatedSinkholeEvents" : [ {
+              "destinationPort" : 80,
+              "eventId" : "1590113794976#ac4bde1e-7d3d-4ff5-9cf8-772df0b1ce11#28301",
+              "sourcePort" : 48022,
+              "hitCount" : 1,
+              "l4Protocol" : "TCP",
+              "sinkholeIP" : "192.0.2.114",
+              "userAgent" : "curl/7.47.0",
+              "internalIP" : "192.0.2.57",
+              "url" : "/",
+              "sinkholeName" : "SIA_DNS",
+              "hostname" : "lax4.company.com",
+              "configId" : 1041,
+              "l7Protocol" : "HTTP",
+              "eventTime" : "2023-05-22T02:16:34Z",
+              "machineNames" : [ "N/A" ],
+              "sinkholeId" : "ac4bde1e-7d3d-4ff5-9cf8-772df0b1ce11"
+            } ],
+            "description" : "None",
+            "siteName" : "LAX-LAB2",
+            "confidenceId" : "-1",
+            "categoryName" : "24",
+            "onRamp" : "Yes",
+            "internalClientIP" : "N/A",
+            "listId" : "24",
+            "severityLevel" : "Unclassified",
+            "severityId" : 0,
+            "detectionTime" : "2023-05-26T06:34:53Z",
+            "onrampType" : "etp-client",
+            "policyEvaluationSource" : "dns",
+            "policyName" : "E2E-CML-stage",
+            "clientRequestId" : "00019749",
+            "trigger" : "domain",
+            "detectionType" : "inline",
+            "policyId" : "38307",
+            "threatName" : "AUP",
+            "actionId" : "6",
+            "siteId" : "51284",
+            "listName" : "24",
+            "categoryId" : "24",
+            "confidenceName" : "Unknown",
+            "actionName" : "Classify"
+          }
+        }
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1685082893000
+  - sample: |-
+      {
+      "configId" : "1041",
+      "l7Protocol" : "DNS",
+      "query" : {
+        "dnsIp" : "192.0.2.151",
+        "clientIp" : "185.64.148.140",
+        "domain" : "d.la1-c2-ia4.salesforceliveagent.com.",
+        "time" : "2020-05-26T06:34:53Z",
+        "deviceId" : "c37a4c4e-a7cd-400f-820d-b82762c52975",
+        "deviceName" : "BOS-WPX5E",
+        "uuid" : "198.18.193.241-198.18.193.228-1590474893-46281-35384",
+        "queryType" : "A",
+        "resolved" : [ {
+          "asname" : "N/A",
+          "response" : "192.0.2.62",
+          "type" : "A",
+          "asn" : "14340"
+        }, {
+          "asname" : "N/A",
+          "response" : "192.0.2.178",
+          "type" : "A",
+          "asn" : "14340"
+        }, {
+          "asname" : "N/A",
+          "response" : "192.0.2.183",
+          "type" : "A",
+          "asn" : "14340"
+        } ]
+      },
+      "id" : "0",
+      "event" : {
+        "threatId" : 2000,
+        "reason" : "Akamai Intelligence (DNS)",
+        "correlatedSinkholeEvents" : [ {
+          "destinationPort" : 80,
+          "eventId" : "1590113794976#ac4bde1e-7d3d-4ff5-9cf8-772df0b1ce11#28301",
+          "sourcePort" : 48022,
+          "hitCount" : 1,
+          "l4Protocol" : "TCP",
+          "sinkholeIP" : "192.0.2.222",
+          "userAgent" : "curl/7.47.0",
+          "internalIP" : "192.0.2.0",
+          "url" : "/",
+          "sinkholeName" : "SIA_DNS_SINKHOLE",
+          "hostname" : "akamaisiacnc.com",
+          "configId" : 1041,
+          "l7Protocol" : "HTTP",
+          "eventTime" : "2020-05-22T02:16:34Z",
+          "machineNames" : [ "N/A" ],
+          "sinkholeId" : "ac4bde1e-7d3d-4ff5-9cf8-772df0b1ce11"
+        } ],
+        "description" : "None",
+        "siteName" : "E2E WIN 174.232 site",
+        "confidenceId" : "-1",
+        "categoryName" : "24",
+        "onRamp" : "Yes",
+        "internalClientIP" : "N/A",
+        "listId" : "24",
+        "severityLevel" : "Unclassified",
+        "severityId" : 0,
+        "detectionTime" : "2020-05-26T06:34:53Z",
+        "onrampType" : "etp-client",
+        "policyEvaluationSource" : "dns",
+        "policyName" : "E2E-CML",
+        "clientRequestId" : "00019749",
+        "trigger" : "domain",
+        "detectionType" : "inline",
+        "policyId" : "38307",
+        "threatName" : "AUP",
+        "actionId" : "6",
+        "siteId" : "51284",
+        "listName" : "24",
+        "categoryId" : "24",
+        "confidenceName" : "Unknown",
+        "actionName" : "Classify"
+      }
+      }
+    result:
+      custom:
+        akamai_sia:
+          detectionType: "inline"
+          severityLevel: "Unclassified"
+          threatName: "AUP"
+        configId: "1041"
+        dns:
+          answer:
+            name: "192.0.2.151"
+          question:
+            name: "d.la1-c2-ia4.salesforceliveagent.com."
+            type: "A"
+        event:
+          actionId: "6"
+          categoryId: "24"
+          confidenceId: "-1"
+          confidenceName: "Unknown"
+          correlatedSinkholeEvents:
+            - destinationPort: 80
+              eventId: "1590113794976#ac4bde1e-7d3d-4ff5-9cf8-772df0b1ce11#28301"
+              sourcePort: 48022
+              hitCount: 1
+              l4Protocol: "TCP"
+              sinkholeIP: "192.0.2.222"
+              userAgent: "curl/7.47.0"
+              internalIP: "192.0.2.0"
+              url: "/"
+              sinkholeName: "SIA_DNS_SINKHOLE"
+              hostname: "akamaisiacnc.com"
+              configId: 1041
+              l7Protocol: "HTTP"
+              eventTime: "2020-05-22T02:16:34Z"
+              machineNames:
+                - "N/A"
+              sinkholeId: "ac4bde1e-7d3d-4ff5-9cf8-772df0b1ce11"
+          description: "None"
+          detectionTime: "2020-05-26T06:34:53Z"
+          internalClientIP: "N/A"
+          listId: "24"
+          listName: "24"
+          onRamp: "Yes"
+          onrampType: "etp-client"
+          policyEvaluationSource: "dns"
+          policyId: "38307"
+          reason: "Akamai Intelligence (DNS)"
+          severityId: 0
+          siteId: "51284"
+          siteName: "E2E WIN 174.232 site"
+          threatId: 2000
+          trigger: "domain"
+        evt:
+          category: "24"
+          name: "E2E-CML"
+          outcome: "Classify"
+        http:
+          request_id: "00019749"
+        id: "0"
+        l7Protocol: "DNS"
+        network:
+          client:
+            geoip:
+              city:
+                name: "Paris"
+              continent:
+                code: "EU"
+                name: "Europe"
+              country:
+                iso_code: "FR"
+                name: "France"
+              ipAddress: "185.64.148.140"
+              location:
+                latitude: 48.90654
+                longitude: 2.33339
+              subdivision:
+                iso_code: "FR-IDF"
+                name: "Île-de-France"
+              timezone: "Europe/Paris"
+            ip: "185.64.148.140"
+        query:
+          deviceId: "c37a4c4e-a7cd-400f-820d-b82762c52975"
+          deviceName: "BOS-WPX5E"
+          resolved:
+            - asname: "N/A"
+              response: "192.0.2.62"
+              type: "A"
+              asn: "14340"
+            - asname: "N/A"
+              response: "192.0.2.178"
+              type: "A"
+              asn: "14340"
+            - asname: "N/A"
+              response: "192.0.2.183"
+              type: "A"
+              asn: "14340"
+          time: "2020-05-26T06:34:53Z"
+          uuid: "198.18.193.241-198.18.193.228-1590474893-46281-35384"
+      message: |-
+        {
+          "configId" : "1041",
+          "l7Protocol" : "DNS",
+          "query" : {
+            "dnsIp" : "192.0.2.151",
+            "clientIp" : "185.64.148.140",
+            "domain" : "d.la1-c2-ia4.salesforceliveagent.com.",
+            "time" : "2020-05-26T06:34:53Z",
+            "deviceId" : "c37a4c4e-a7cd-400f-820d-b82762c52975",
+            "deviceName" : "BOS-WPX5E",
+            "uuid" : "198.18.193.241-198.18.193.228-1590474893-46281-35384",
+            "queryType" : "A",
+            "resolved" : [ {
+              "asname" : "N/A",
+              "response" : "192.0.2.62",
+              "type" : "A",
+              "asn" : "14340"
+            }, {
+              "asname" : "N/A",
+              "response" : "192.0.2.178",
+              "type" : "A",
+              "asn" : "14340"
+            }, {
+              "asname" : "N/A",
+              "response" : "192.0.2.183",
+              "type" : "A",
+              "asn" : "14340"
+            } ]
+          },
+          "id" : "0",
+          "event" : {
+            "threatId" : 2000,
+            "reason" : "Akamai Intelligence (DNS)",
+            "correlatedSinkholeEvents" : [ {
+              "destinationPort" : 80,
+              "eventId" : "1590113794976#ac4bde1e-7d3d-4ff5-9cf8-772df0b1ce11#28301",
+              "sourcePort" : 48022,
+              "hitCount" : 1,
+              "l4Protocol" : "TCP",
+              "sinkholeIP" : "192.0.2.222",
+              "userAgent" : "curl/7.47.0",
+              "internalIP" : "192.0.2.0",
+              "url" : "/",
+              "sinkholeName" : "SIA_DNS_SINKHOLE",
+              "hostname" : "akamaisiacnc.com",
+              "configId" : 1041,
+              "l7Protocol" : "HTTP",
+              "eventTime" : "2020-05-22T02:16:34Z",
+              "machineNames" : [ "N/A" ],
+              "sinkholeId" : "ac4bde1e-7d3d-4ff5-9cf8-772df0b1ce11"
+            } ],
+            "description" : "None",
+            "siteName" : "E2E WIN 174.232 site",
+            "confidenceId" : "-1",
+            "categoryName" : "24",
+            "onRamp" : "Yes",
+            "internalClientIP" : "N/A",
+            "listId" : "24",
+            "severityLevel" : "Unclassified",
+            "severityId" : 0,
+            "detectionTime" : "2020-05-26T06:34:53Z",
+            "onrampType" : "etp-client",
+            "policyEvaluationSource" : "dns",
+            "policyName" : "E2E-CML",
+            "clientRequestId" : "00019749",
+            "trigger" : "domain",
+            "detectionType" : "inline",
+            "policyId" : "38307",
+            "threatName" : "AUP",
+            "actionId" : "6",
+            "siteId" : "51284",
+            "listName" : "24",
+            "categoryId" : "24",
+            "confidenceName" : "Unknown",
+            "actionName" : "Classify"
+          }
+        }
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1590474893000
+  - sample: |-
+      {
+        "alexaRanking" : -1,
+        "hitCount" : 1,
+        "configId" : "1041",
+        "query" : {
+          "dnsIp" : "192.0.2.166",
+          "clientIp" : "192.0.2.239",
+          "domain" : "1590448430.akamaisiamalware.com.",
+          "time" : "2020-05-26T06:00:00Z",
+          "deviceId" : "N/A",
+          "deviceName" : "Not Available",
+          "queryType" : "A",
+          "resolved" : [ {
+            "asname" : "aws",
+            "response" : "192.0.2.40",
+            "type" : "A",
+            "asn" : "14618"
+          } ]
+        },
+        "id" : "0",
+        "event" : {
+          "policyEvaluationSource" : "dns",
+          "policyName" : "Default",
+          "clientRequestId" : "",
+          "siteName" : "Unidentified IPs",
+          "trigger" : "null",
+          "onRamp" : "No",
+          "internalClientIP" : "N/A",
+          "policyId" : "2240",
+          "deepScanned" : false,
+          "actionId" : "1",
+          "siteId" : "-1",
+          "confidenceName" : "Unknown",
+          "actionName" : "Monitor",
+          "onrampType" : ""
+        }
+      }
+    result:
+      custom:
+        alexaRanking: -1
+        configId: "1041"
+        dns:
+          answer:
+            name: "192.0.2.166"
+          question:
+            name: "1590448430.akamaisiamalware.com."
+            type: "A"
+        event:
+          actionId: "1"
+          confidenceName: "Unknown"
+          deepScanned: false
+          internalClientIP: "N/A"
+          onRamp: "No"
+          onrampType: ""
+          policyEvaluationSource: "dns"
+          policyId: "2240"
+          siteId: "-1"
+          siteName: "Unidentified IPs"
+          trigger: "null"
+        evt:
+          name: "Default"
+          outcome: "Monitor"
+        hitCount: 1
+        http:
+          request_id: ""
+        id: "0"
+        network:
+          client:
+            geoip: {}
+            ip: "192.0.2.239"
+        query:
+          deviceId: "N/A"
+          deviceName: "Not Available"
+          resolved:
+            - asname: "aws"
+              response: "192.0.2.40"
+              type: "A"
+              asn: "14618"
+          time: "2020-05-26T06:00:00Z"
+      message: |-
+        {
+          "alexaRanking" : -1,
+          "hitCount" : 1,
+          "configId" : "1041",
+          "query" : {
+            "dnsIp" : "192.0.2.166",
+            "clientIp" : "192.0.2.239",
+            "domain" : "1590448430.akamaisiamalware.com.",
+            "time" : "2020-05-26T06:00:00Z",
+            "deviceId" : "N/A",
+            "deviceName" : "Not Available",
+            "queryType" : "A",
+            "resolved" : [ {
+              "asname" : "aws",
+              "response" : "192.0.2.40",
+              "type" : "A",
+              "asn" : "14618"
+            } ]
+          },
+          "id" : "0",
+          "event" : {
+            "policyEvaluationSource" : "dns",
+            "policyName" : "Default",
+            "clientRequestId" : "",
+            "siteName" : "Unidentified IPs",
+            "trigger" : "null",
+            "onRamp" : "No",
+            "internalClientIP" : "N/A",
+            "policyId" : "2240",
+            "deepScanned" : false,
+            "actionId" : "1",
+            "siteId" : "-1",
+            "confidenceName" : "Unknown",
+            "actionName" : "Monitor",
+            "onrampType" : ""
+          }
+        }
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1590472800000
+  - sample: |-
+      {
+        "destinationPort" : 80,
+        "ovfActionName" : "N/A",
+        "policyAction" : "onramp",
+        "connEndTime" : "2020-05-26T06:34:48Z",
+        "clientRequestId" : "4655ba63-0adb-4ce5-a5a9-ae0fd616ef36-15904748887626277-3075",
+        "siteName" : "Off Network SIA Clients",
+        "httpUserAgent" : "EtpClient:3.0.0",
+        "connStartTime" : "2020-05-26T06:34:48Z",
+        "machineName" : "DESKTOP-5FL9GBR",
+        "dropInfo" : {
+          "droppedReason" : "N/A",
+          "wasDropped" : false
+        },
+        "destinationIP" : "192.0.2.36",
+        "internalClientIP" : "192.0.2.150",
+        "httpVersion" : "1.1",
+        "machineId" : "4655ba63-0adb-4ce5-a5a9-ae0fd616ef36",
+        "stats" : {
+          "httpRequestCount" : 1,
+          "outBytes" : 0,
+          "inBytes" : 0
+        },
+        "clientIP" : "192.0.2.4",
+        "domain" : "nevada-stage.akasia.net.",
+        "clientPort" : 37565,
+        "connectionId" : "0x3706B3154FB0D3711164C",
+        "siteId" : 5003,
+        "id" : "0",
+        "ovfActionId" : -1,
+        "onrampType" : "etp_offnet_client"
+      }
+    result:
+      custom:
+        akamai_sia:
+          machineName: "DESKTOP-5FL9GBR"
+        connEndTime: "2020-05-26T06:34:48Z"
+        connStartTime: "2020-05-26T06:34:48Z"
+        connectionId: "0x3706B3154FB0D3711164C"
+        domain: "nevada-stage.akasia.net."
+        dropInfo:
+          droppedReason: "N/A"
+          wasDropped: false
+        http:
+          request_id: "4655ba63-0adb-4ce5-a5a9-ae0fd616ef36-15904748887626277-3075"
+          useragent: "EtpClient:3.0.0"
+          useragent_details:
+            browser:
+              family: "Other"
+            device:
+              category: "Other"
+              family: "Other"
+            os:
+              family: "Other"
+          version: "1.1"
+        id: "0"
+        internalClientIP: "192.0.2.150"
+        machineId: "4655ba63-0adb-4ce5-a5a9-ae0fd616ef36"
+        network:
+          bytes_written: 0
+          client:
+            geoip: {}
+            ip: "192.0.2.4"
+            port: 37565
+          destination:
+            ip: "192.0.2.36"
+            port: 80
+          read_bytes: 0
+        onrampType: "etp_offnet_client"
+        ovfActionId: -1
+        ovfActionName: "N/A"
+        policyAction: "onramp"
+        siteId: 5003
+        siteName: "Off Network SIA Clients"
+        stats:
+          httpRequestCount: 1
+      message: |-
+        {
+          "destinationPort" : 80,
+          "ovfActionName" : "N/A",
+          "policyAction" : "onramp",
+          "connEndTime" : "2020-05-26T06:34:48Z",
+          "clientRequestId" : "4655ba63-0adb-4ce5-a5a9-ae0fd616ef36-15904748887626277-3075",
+          "siteName" : "Off Network SIA Clients",
+          "httpUserAgent" : "EtpClient:3.0.0",
+          "connStartTime" : "2020-05-26T06:34:48Z",
+          "machineName" : "DESKTOP-5FL9GBR",
+          "dropInfo" : {
+            "droppedReason" : "N/A",
+            "wasDropped" : false
+          },
+          "destinationIP" : "192.0.2.36",
+          "internalClientIP" : "192.0.2.150",
+          "httpVersion" : "1.1",
+          "machineId" : "4655ba63-0adb-4ce5-a5a9-ae0fd616ef36",
+          "stats" : {
+            "httpRequestCount" : 1,
+            "outBytes" : 0,
+            "inBytes" : 0
+          },
+          "clientIP" : "192.0.2.4",
+          "domain" : "nevada-stage.akasia.net.",
+          "clientPort" : 37565,
+          "connectionId" : "0x3706B3154FB0D3711164C",
+          "siteId" : 5003,
+          "id" : "0",
+          "ovfActionId" : -1,
+          "onrampType" : "etp_offnet_client"
+        }
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1590474888000
+  - sample: |-
+      {
+        "request" : {
+          "destinationIP" : "192.0.2.122",
+          "destinationPort" : 80,
+          "headers" : [ {
+            "name" : "Cache-Control",
+            "value" : "no-cache"
+          }, {
+            "name" : "Content-Length",
+            "value" : "2369"
+          }, {
+            "name" : "Content-Type",
+            "value" : "text/xml; charset=utf-8"
+          }, {
+            "name" : "Host",
+            "value" : "statsfe2.ws.microsoft.com"
+          }, {
+            "name" : "Pragma",
+            "value" : "no-cache"
+          }, {
+            "name" : "User-Agent",
+            "value" : "Windows-Update-Agent/7.9.9600.19670 Client-Protocol/1.21 EtpClient:3.0.0"
+          }, {
+            "name" : "X-Forwarded-For",
+            "value" : "172.25.162.210, 172.25.162.210"
+          } ],
+          "method" : "POST",
+          "clientIp" : "192.0.2.168",
+          "domain" : "statsfe2.ws.microsoft.com.",
+          "clientPort" : 48176,
+          "connectionId" : "0x3706B3124FAFAF8C9574",
+          "startTime" : 1590474813791,
+          "uri" : "/ReportingWebService/ReportingWebService.asmx",
+          "uuid" : "1b72e77c-254a-4ba9-a456-2a1b4407d65b"
+        },
+        "response" : {
+          "endTime" : 1590474813793,
+          "hash" : "",
+          "responseCode" : "200"
+        },
+        "l7Protocol" : "HTTP",
+        "id" : "0",
+        "userIdentity" : {
+          "encryptedUserName" : "",
+          "encryptedUserID" : ""
+        },
+        "event" : {
+          "reason" : "Acceptable use policy",
+          "correlatedSinkholeEvents" : [ {
+            "destinationPort" : 80,
+            "eventId" : "1590113794976#ac4bde1e-7d3d-4ff5-9cf8-772df0b1ce11#28301",
+            "sourcePort" : 48022,
+            "hitCount" : 1,
+            "l4Protocol" : "TCP",
+            "sinkholeIP" : "192.0.2.89",
+            "userAgent" : "curl/7.47.0",
+            "internalIP" : "192.0.2.235",
+            "url" : "/",
+            "sinkholeName" : "SIA_DNS_SINKHOLE",
+            "hostname" : "akamaisiacncstage.com",
+            "configId" : 1041,
+            "l7Protocol" : "HTTP",
+            "eventTime" : "2020-05-22T02:16:34Z",
+            "machineNames" : [ "N/A" ],
+            "sinkholeId" : "ac4bde1e-7d3d-4ff5-9cf8-772df0b1ce11"
+          } ],
+          "siteName" : "Off Network SIA Clients",
+          "confidenceId" : "-1",
+          "categoryName" : "73",
+          "deviceId" : "dc475a9e-c192-4b0b-a34e-a95c0f8dfcad",
+          "deviceName" : "WIN81-ENT-210",
+          "internalClientIP" : "192.0.2.7",
+          "listId" : "-1",
+          "severityLevel" : "Unclassified",
+          "httpVersion" : "1.1",
+          "deepScanned" : false,
+          "deepscanReportPath" : "",
+          "severityId" : 0,
+          "detectionTime" : "2020-05-26T06:33:33Z",
+          "onrampType" : "etp_offnet_client",
+          "policyName" : "Westford OFF Network policy",
+          "clientRequestId" : "dc475a9e-c192-4b0b-a34e-a95c0f8dfcad-15904747363383674-1195",
+          "trigger" : "null",
+          "httpUserAgent" : "Windows-Update-Agent/7.9.9600.19670 Client-Protocol/1.21 EtpClient:3.0.0",
+          "detectionType" : "inline",
+          "blockDescription" : "The URL hosts malware.",
+          "policyId" : "32965",
+          "listIdentifiers" : [ {
+            "listId" : -1,
+            "threatId" : 0,
+            "threatName" : "Unclassified",
+            "confidenceId" : -1,
+            "listName" : "unknown",
+            "categoryName" : "73",
+            "categoryId" : 73,
+            "confidenceName" : "Unknown"
+          } ],
+          "actionId" : "4",
+          "siteId" : "5003",
+          "listName" : "unknown",
+          "categoryId" : "73",
+          "confidenceName" : "Unknown",
+          "actionName" : "Block - Error Page"
+        },
+        "isEvent" : true
+      }
+    result:
+      custom:
+        akamai_sia:
+          blockDescription: "The URL hosts malware."
+          detectionType: "inline"
+          severityLevel: "Unclassified"
+        event:
+          actionId: "4"
+          categoryId: "73"
+          confidenceId: "-1"
+          confidenceName: "Unknown"
+          correlatedSinkholeEvents:
+            - destinationPort: 80
+              eventId: "1590113794976#ac4bde1e-7d3d-4ff5-9cf8-772df0b1ce11#28301"
+              sourcePort: 48022
+              hitCount: 1
+              l4Protocol: "TCP"
+              sinkholeIP: "192.0.2.89"
+              userAgent: "curl/7.47.0"
+              internalIP: "192.0.2.235"
+              url: "/"
+              sinkholeName: "SIA_DNS_SINKHOLE"
+              hostname: "akamaisiacncstage.com"
+              configId: 1041
+              l7Protocol: "HTTP"
+              eventTime: "2020-05-22T02:16:34Z"
+              machineNames:
+                - "N/A"
+              sinkholeId: "ac4bde1e-7d3d-4ff5-9cf8-772df0b1ce11"
+          deepScanned: false
+          deepscanReportPath: ""
+          detectionTime: "2020-05-26T06:33:33Z"
+          deviceId: "dc475a9e-c192-4b0b-a34e-a95c0f8dfcad"
+          deviceName: "WIN81-ENT-210"
+          httpUserAgent: "Windows-Update-Agent/7.9.9600.19670 Client-Protocol/1.21 EtpClient:3.0.0"
+          internalClientIP: "192.0.2.7"
+          listId: "-1"
+          listIdentifiers:
+            - listId: -1
+              threatId: 0
+              threatName: "Unclassified"
+              confidenceId: -1
+              listName: "unknown"
+              categoryName: "73"
+              categoryId: 73
+              confidenceName: "Unknown"
+          listName: "unknown"
+          onrampType: "etp_offnet_client"
+          policyId: "32965"
+          reason: "Acceptable use policy"
+          severityId: 0
+          siteId: "5003"
+          siteName: "Off Network SIA Clients"
+          trigger: "null"
+        evt:
+          category: "73"
+          name: "Westford OFF Network policy"
+          outcome: "Block - Error Page"
+        http:
+          method: "POST"
+          request_id: "dc475a9e-c192-4b0b-a34e-a95c0f8dfcad-15904747363383674-1195"
+          status_code: "200"
+          version: "1.1"
+        id: "0"
+        isEvent: true
+        l7Protocol: "HTTP"
+        network:
+          client:
+            geoip: {}
+            ip: "192.0.2.168"
+          destination:
+            ip: "192.0.2.122"
+            port: 80
+        request:
+          clientPort: 48176
+          connectionId: "0x3706B3124FAFAF8C9574"
+          domain: "statsfe2.ws.microsoft.com."
+          headers:
+            - name: "Cache-Control"
+              value: "no-cache"
+            - name: "Content-Length"
+              value: "2369"
+            - name: "Content-Type"
+              value: "text/xml; charset=utf-8"
+            - name: "Host"
+              value: "statsfe2.ws.microsoft.com"
+            - name: "Pragma"
+              value: "no-cache"
+            - name: "User-Agent"
+              value: "Windows-Update-Agent/7.9.9600.19670 Client-Protocol/1.21 EtpClient:3.0.0"
+            - name: "X-Forwarded-For"
+              value: "172.25.162.210, 172.25.162.210"
+          startTime: 1590474813791
+          uri: "/ReportingWebService/ReportingWebService.asmx"
+          uuid: "1b72e77c-254a-4ba9-a456-2a1b4407d65b"
+        response:
+          endTime: 1590474813793
+          hash: ""
+        userIdentity:
+          encryptedUserID: ""
+          encryptedUserName: ""
+      message: |-
+        {
+          "request" : {
+            "destinationIP" : "192.0.2.122",
+            "destinationPort" : 80,
+            "headers" : [ {
+              "name" : "Cache-Control",
+              "value" : "no-cache"
+            }, {
+              "name" : "Content-Length",
+              "value" : "2369"
+            }, {
+              "name" : "Content-Type",
+              "value" : "text/xml; charset=utf-8"
+            }, {
+              "name" : "Host",
+              "value" : "statsfe2.ws.microsoft.com"
+            }, {
+              "name" : "Pragma",
+              "value" : "no-cache"
+            }, {
+              "name" : "User-Agent",
+              "value" : "Windows-Update-Agent/7.9.9600.19670 Client-Protocol/1.21 EtpClient:3.0.0"
+            }, {
+              "name" : "X-Forwarded-For",
+              "value" : "172.25.162.210, 172.25.162.210"
+            } ],
+            "method" : "POST",
+            "clientIp" : "192.0.2.168",
+            "domain" : "statsfe2.ws.microsoft.com.",
+            "clientPort" : 48176,
+            "connectionId" : "0x3706B3124FAFAF8C9574",
+            "startTime" : 1590474813791,
+            "uri" : "/ReportingWebService/ReportingWebService.asmx",
+            "uuid" : "1b72e77c-254a-4ba9-a456-2a1b4407d65b"
+          },
+          "response" : {
+            "endTime" : 1590474813793,
+            "hash" : "",
+            "responseCode" : "200"
+          },
+          "l7Protocol" : "HTTP",
+          "id" : "0",
+          "userIdentity" : {
+            "encryptedUserName" : "",
+            "encryptedUserID" : ""
+          },
+          "event" : {
+            "reason" : "Acceptable use policy",
+            "correlatedSinkholeEvents" : [ {
+              "destinationPort" : 80,
+              "eventId" : "1590113794976#ac4bde1e-7d3d-4ff5-9cf8-772df0b1ce11#28301",
+              "sourcePort" : 48022,
+              "hitCount" : 1,
+              "l4Protocol" : "TCP",
+              "sinkholeIP" : "192.0.2.89",
+              "userAgent" : "curl/7.47.0",
+              "internalIP" : "192.0.2.235",
+              "url" : "/",
+              "sinkholeName" : "SIA_DNS_SINKHOLE",
+              "hostname" : "akamaisiacncstage.com",
+              "configId" : 1041,
+              "l7Protocol" : "HTTP",
+              "eventTime" : "2020-05-22T02:16:34Z",
+              "machineNames" : [ "N/A" ],
+              "sinkholeId" : "ac4bde1e-7d3d-4ff5-9cf8-772df0b1ce11"
+            } ],
+            "siteName" : "Off Network SIA Clients",
+            "confidenceId" : "-1",
+            "categoryName" : "73",
+            "deviceId" : "dc475a9e-c192-4b0b-a34e-a95c0f8dfcad",
+            "deviceName" : "WIN81-ENT-210",
+            "internalClientIP" : "192.0.2.7",
+            "listId" : "-1",
+            "severityLevel" : "Unclassified",
+            "httpVersion" : "1.1",
+            "deepScanned" : false,
+            "deepscanReportPath" : "",
+            "severityId" : 0,
+            "detectionTime" : "2020-05-26T06:33:33Z",
+            "onrampType" : "etp_offnet_client",
+            "policyName" : "Westford OFF Network policy",
+            "clientRequestId" : "dc475a9e-c192-4b0b-a34e-a95c0f8dfcad-15904747363383674-1195",
+            "trigger" : "null",
+            "httpUserAgent" : "Windows-Update-Agent/7.9.9600.19670 Client-Protocol/1.21 EtpClient:3.0.0",
+            "detectionType" : "inline",
+            "blockDescription" : "The URL hosts malware.",
+            "policyId" : "32965",
+            "listIdentifiers" : [ {
+              "listId" : -1,
+              "threatId" : 0,
+              "threatName" : "Unclassified",
+              "confidenceId" : -1,
+              "listName" : "unknown",
+              "categoryName" : "73",
+              "categoryId" : 73,
+              "confidenceName" : "Unknown"
+            } ],
+            "actionId" : "4",
+            "siteId" : "5003",
+            "listName" : "unknown",
+            "categoryId" : "73",
+            "confidenceName" : "Unknown",
+            "actionName" : "Block - Error Page"
+          },
+          "isEvent" : true
+        }
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1590474813000

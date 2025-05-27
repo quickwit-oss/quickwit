@@ -1,0 +1,63 @@
+id: solr
+metric_id: solr
+backend_only: false
+facets:
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+  - groups:
+      - Source Code
+    name: Thread Name
+    path: logger.thread_name
+    source: log
+pipeline:
+  type: pipeline
+  name: Solr
+  enabled: true
+  filter:
+    query: source:solr
+  processors:
+    - type: grok-parser
+      name: Parsing Solr Server logs
+      enabled: true
+      source: message
+      samples:
+        - 2020-07-13 20:09:11.293 INFO  (searcherExecutor-10-thread-1-processing-x:gettingstarted) [   x:gettingstarted] o.a.s.c.SolrCore [gettingstarted] Registered new searcher Searcher@3436eb2f[gettingstarted] main{ExitableDirectoryReader(UninvertingDirectoryReader())}
+        - 2020-07-13 20:09:06.603 INFO  (main) [   ] o.e.j.s.Server Started @4938ms
+        - '2020-07-13 20:09:06.550 INFO  (coreLoadExecutor-9-thread-1) [   x:gettingstarted] o.a.s.c.SolrConfig Using Lucene MatchVersion: 8.5.0'
+        - 2020-07-13 20:09:05.559 WARN  (main) [   ] o.e.j.u.s.S.config Trusting all certificates configured for Client@73844119[provider=null,keyStore=null,trustStore=null]
+        - 2020-07-15 15:22:50.019 INFO  (qtp2036775591-23) [c:gettingstarted3 s:shard1 r:core_node2 x:gettingstarted3_shard1_replica_n1] o.a.s.c.S.Request [gettingstarted3_shard1_replica_n1]  webapp=/solr path=/replication params={wt=json&command=details&_=1594826546034} status=0 QTime=1
+      grok:
+        matchRules: |
+          solr %{date("yyyy-MM-dd HH:mm:ss.SSS"):timestamp}\s%{word:level}\s+\(%{notSpace:logger.thread_name}\)\s+\[\s*(%{data:collection:keyvalue(":")})?\]\s+%{notSpace:logger.name}\s+%{data:message}((\n|\t)%{data:error.stack})?
+        supportRules: ''
+    - type: grok-parser
+      name: Parsing Stack traces
+      enabled: true
+      source: error.stack
+      grok:
+        supportRules: |
+        matchRules: |
+          error_rule %{notSpace:error.kind}: %{data:error.message}(\n|\t).*
+      samples:
+        - |
+          org.apache.solr.common.SolrException: Error initializing QueryElevationComponent
+            at org.apache.solr.servlet.SolrDispatchFilter.authenticateRequest(SolrDispatchFilter.java:254)
+            at org.apache.solr.servlet.SolrDispatchFilter.doFilter(SolrDispatchFilter.java:203)
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message

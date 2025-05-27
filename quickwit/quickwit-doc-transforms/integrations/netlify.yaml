@@ -1,0 +1,223 @@
+id: netlify
+metric_id: netlify
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: Referer
+    path: http.referer
+    source: log
+  - groups:
+      - Web Access
+    name: Request ID
+    path: http.request_id
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url
+    source: log
+  - groups:
+      - Web Access
+    name: URL Host
+    path: http.url_details.host
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Web Access
+    name: URL Port
+    path: http.url_details.port
+    source: log
+  - groups:
+      - Web Access
+    name: URL scheme
+    path: http.url_details.scheme
+    source: log
+  - groups:
+      - Web Access
+    name: User-Agent
+    path: http.useragent
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+pipeline:
+  type: pipeline
+  name: Netlify
+  enabled: true
+  filter:
+    query: source:netlify
+  processors:
+    - type: attribute-remapper
+      name: Map `request_id` to `http.request_id`
+      enabled: true
+      sources:
+        - request_id
+      sourceType: attribute
+      target: http.request_id
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `method` to `http.method`
+      enabled: true
+      sources:
+        - method
+      sourceType: attribute
+      target: http.method
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `status_code` to `http.status_code`
+      enabled: true
+      sources:
+        - status_code
+      sourceType: attribute
+      target: http.status_code
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: category-processor
+      name: Categorize status code
+      enabled: true
+      categories:
+        - filter:
+            query: '@http.status_code:[200 TO 399]'
+          name: info
+        - filter:
+            query: '@http.status_code:[400 TO 499]'
+          name: warn
+        - filter:
+            query: '@http.status_code:[500 TO 599]'
+          name: error
+      target: http.status_category
+    - type: pipeline
+      name: Netlify Functions
+      enabled: true
+      filter:
+        query: '@log_type:functions'
+      processors:
+        - type: grok-parser
+          name: Lambda logs
+          enabled: true
+          source: message
+          samples:
+            - 'REPORT RequestId: ece907e2-848d-11e8-b0d2-01bad55f3174    Duration: 3056.26 ms      Billed Duration: 3100 ms      Memory Size: 128 MB       Max Memory Used: 85 MB'
+            - "2019-07-18T18:58:55.265Z\t189a9433-fb77-4659-90d4-bc06edb890e0\tERROR\tInvoke Error\t{\"errorType\":\"Error\",\"errorMessage\":\"A test error\"}"
+            - "2019-07-18T19:47:18.146Z\t95ce2ab7-cf99-4030-bede-2055a69cedec\tERROR\tThis is a regular node error"
+          grok:
+            supportRules: |
+              _timestamp (?:%{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):timestamp}|%{date("yyyy-MM-dd'T'HH:mm:ss.SSZ"):timestamp}|%{date("yyyy-MM-dd'T'HH:mm:ss.SZ"):timestamp})
+              _request_id RequestId: %{notSpace:lambda.request_id}
+            matchRules: |-
+              # Common
+              report_rule %{regex("REPORT"):level} %{_request_id}\s+Duration: %{number:duration} ms\s+Billed Duration: %{number} ms\s+Memory Size: %{number:lambda.memorysize} MB\s+Max Memory Used: %{number:lambda.max_memory_used} MB(\s+Init Duration: %{number:lambda.init_duration} ms)?
+
+              default_request_rule %{word:lambda.step}\s+%{_request_id}(\s+Version: %{notSpace:lambda.version})?
+
+              timeout_rule %{_timestamp}\s+%{notSpace:lambda.request_id}\s+%{regex("Task timed out"):error.message} after (%{number:duration:scale(1000000000)} seconds|%{number:duration:scale(1000000)} milliseconds)
+
+              process_error_rule %{_request_id} (%{regex("Process exited before completing request"):error.message}|%{regex("Error"):level}:%{data:error.message})
+
+              # Node
+              node_json_rule %{_timestamp}\s+%{notSpace:lambda.request_id}\s+(\[)?+%{word:level}+(\])?(\s*Invoke Error\s*)?%{data::json}
+
+        - type: status-remapper
+          name: Define `level` as the official status of the log
+          enabled: true
+          sources:
+            - level
+
+        - type: date-remapper
+          name: Define `timestamp` as the official date of the log
+          enabled: true
+          sources:
+            - timestamp
+
+    - type: pipeline
+      name: Netlify Traffic
+      enabled: true
+      filter:
+        query: '@log_type:traffic'
+      processors:
+        - type: attribute-remapper
+          name: Map `url` to `http.url`
+          enabled: true
+          sources:
+            - url
+          sourceType: attribute
+          target: http.url
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+
+        - type: attribute-remapper
+          name: Map `referrer` to `http.referer`
+          enabled: true
+          sources:
+            - referrer
+          sourceType: attribute
+          target: http.referer
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+
+        - type: attribute-remapper
+          name: Map `user_agent` to `http.useragent`
+          enabled: true
+          sources:
+            - user_agent
+          sourceType: attribute
+          target: http.useragent
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+
+        - type: url-parser
+          name: Parse url
+          enabled: true
+          sources:
+            - http.url
+          target: http.url_details
+          normalizeEndingSlashes: false
+
+        - type: user-agent-parser
+          name: Parse useragent
+          enabled: true
+          sources:
+            - http.useragent
+          target: http.useragent_details
+          encoded: true
+
+        - type: status-remapper
+          name: Define `http.status_category` as the official status of the log
+          enabled: true
+          sources:
+            - http.status_category

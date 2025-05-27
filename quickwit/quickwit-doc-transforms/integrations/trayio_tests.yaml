@@ -1,0 +1,221 @@
+id: "trayio"
+tests:
+ -
+  sample: |-
+    {
+      "logType" : "execution_event",
+      "errorType" : "input",
+      "created" : "2021-01-27T12:39:17.061Z",
+      "executionCreated" : "2021-01-22T11:08:16.729Z",
+      "workflowTitle" : "lastfm bot",
+      "errorMessage" : "Reference: $.steps.trigger.event.text in property: 'variables[].value' did not resolve to any value.",
+      "eventType" : "failed",
+      "errorStepName" : "script-3",
+      "ddsource" : "trayio",
+      "organizationId" : "cf888ac9-3e65-4a61-b720-224cde44192a",
+      "executionId" : "fceb45fb-3c9e-4845-ac51-c5759531f5b6",
+      "dataRetention" : "standard",
+      "hostname" : "fluentd",
+      "errorStepTitle" : "Script",
+      "service" : "workflow-logs:org:tray",
+      "header" : {
+        "payloadSize" : 865,
+        "version" : 1
+      },
+      "errorId" : "8da9425d1a",
+      "workflowId" : "87e88570-f492-44c3-9a70-72a6a9de77d1"
+    }
+  result:
+    custom:
+      created: "2021-01-27T12:39:17.061Z"
+      dataRetention: "standard"
+      date: 1611751157061
+      ddsource: "trayio"
+      errorId: "8da9425d1a"
+      errorStepName: "script-3"
+      errorStepTitle: "Script"
+      errorType: "input"
+      eventType: "failed"
+      executionCreated: "2021-01-22T11:08:16.729Z"
+      executionId: "fceb45fb-3c9e-4845-ac51-c5759531f5b6"
+      header:
+        payloadSize: 865
+        version: 1
+      hostname: "fluentd"
+      http:
+        status_category: "Error"
+      logType: "execution_event"
+      organizationId: "cf888ac9-3e65-4a61-b720-224cde44192a"
+      service: "workflow-logs:org:tray"
+      workflowId: "87e88570-f492-44c3-9a70-72a6a9de77d1"
+      workflowTitle: "lastfm bot"
+    message: "Reference: $.steps.trigger.event.text in property: 'variables[].value' did not resolve to any value."
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1611751157061
+ -
+  sample: |-
+    {
+      "logType" : "audit",
+      "organizationId" : "31eec536-46e4-4fb0-b658-9a386520233e",
+      "hostname" : "fluentd",
+      "service" : "audit-events",
+      "clientIp" : "176.168.153.244",
+      "calledBy" : {
+        "userId" : "da99b48b-356b-437b-97be-397dad57a64f",
+        "email" : "name.surname@domain.com"
+      },
+      "header" : {
+        "payloadSize" : 544,
+        "version" : 1
+      },
+      "details" : {
+        "workflowVersionId" : "65ab0e94-2287-468e-aedd-80e4d8eed6fa",
+        "workflowTitle" : "VOXY - Update Enrollments - PREVIEW",
+        "workflowId" : "cab0d555-0cce-4566-b8ab-328aa88a24c4"
+      },
+      "eventType" : "WorkflowViewed",
+      "clientIpIsInternal" : false,
+      "ddsource" : "trayio",
+      "timestamp" : "2021-01-27T12:39:17.061Z"
+    }
+  result:
+    custom:
+      calledBy:
+        email: "name.surname@domain.com"
+        userId: "da99b48b-356b-437b-97be-397dad57a64f"
+      clientIp: "176.168.153.244"
+      clientIpIsInternal: false
+      date: 1611751157061
+      ddsource: "trayio"
+      details:
+        workflowId: "cab0d555-0cce-4566-b8ab-328aa88a24c4"
+        workflowTitle: "VOXY - Update Enrollments - PREVIEW"
+        workflowVersionId: "65ab0e94-2287-468e-aedd-80e4d8eed6fa"
+      eventType: "WorkflowViewed"
+      header:
+        payloadSize: 544
+        version: 1
+      hostname: "fluentd"
+      logType: "audit"
+      network:
+        client:
+          geoip: {}
+          ip: "176.168.153.244"
+      organizationId: "31eec536-46e4-4fb0-b658-9a386520233e"
+      service: "audit-events"
+      timestamp: "2021-01-27T12:39:17.061Z"
+    message: |-
+      {
+        "logType" : "audit",
+        "organizationId" : "31eec536-46e4-4fb0-b658-9a386520233e",
+        "hostname" : "fluentd",
+        "service" : "audit-events",
+        "clientIp" : "176.168.153.244",
+        "calledBy" : {
+          "userId" : "da99b48b-356b-437b-97be-397dad57a64f",
+          "email" : "name.surname@domain.com"
+        },
+        "header" : {
+          "payloadSize" : 544,
+          "version" : 1
+        },
+        "details" : {
+          "workflowVersionId" : "65ab0e94-2287-468e-aedd-80e4d8eed6fa",
+          "workflowTitle" : "VOXY - Update Enrollments - PREVIEW",
+          "workflowId" : "cab0d555-0cce-4566-b8ab-328aa88a24c4"
+        },
+        "eventType" : "WorkflowViewed",
+        "clientIpIsInternal" : false,
+        "ddsource" : "trayio",
+        "timestamp" : "2021-01-27T12:39:17.061Z"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1611751157061
+ -
+  sample: |-
+    {
+      "logType" : "step_output",
+      "created" : "2021-02-05T10:24:17.076Z",
+      "stepState" : "failure",
+      "executionCreated" : "2021-02-05T10:24:17.076Z",
+      "workflowTitle" : "slack http",
+      "ddsource" : "trayio",
+      "organizationId" : "cf888ac9-3e65-4a61-b720-224cde44192a",
+      "executionId" : "5829a81c-4df0-4eb7-8445-246959261a9c",
+      "dataRetention" : "standard",
+      "hostname" : "fluentd",
+      "stepName" : "trigger",
+      "service" : "workflow-logs:org:tray",
+      "isLastStep" : false,
+      "executionStepUuid" : "f20bd504-17b3-47e8-b29e-584b3fb5d3c7",
+      "connectorVersion" : "1.0",
+      "connectorName" : "noop",
+      "header" : {
+        "payloadSize" : 872,
+        "version" : 1
+      },
+      "correlationId" : "aec91194-e9f6-4f0b-8fdb-0ecc46bafc7e",
+      "operation" : "trigger",
+      "workflowId" : "91c10fcd-c5d1-4200-aa35-2b94b2f37adb"
+    }
+  result:
+    custom:
+      connectorName: "noop"
+      connectorVersion: "1.0"
+      correlationId: "aec91194-e9f6-4f0b-8fdb-0ecc46bafc7e"
+      created: "2021-02-05T10:24:17.076Z"
+      dataRetention: "standard"
+      date: 1612520657076
+      ddsource: "trayio"
+      executionCreated: "2021-02-05T10:24:17.076Z"
+      executionId: "5829a81c-4df0-4eb7-8445-246959261a9c"
+      executionStepUuid: "f20bd504-17b3-47e8-b29e-584b3fb5d3c7"
+      header:
+        payloadSize: 872
+        version: 1
+      hostname: "fluentd"
+      http:
+        status_category: "Error"
+      isLastStep: false
+      logType: "step_output"
+      operation: "trigger"
+      organizationId: "cf888ac9-3e65-4a61-b720-224cde44192a"
+      service: "workflow-logs:org:tray"
+      stepName: "trigger"
+      stepState: "failure"
+      workflowId: "91c10fcd-c5d1-4200-aa35-2b94b2f37adb"
+      workflowTitle: "slack http"
+    message: |-
+      {
+        "logType" : "step_output",
+        "created" : "2021-02-05T10:24:17.076Z",
+        "stepState" : "failure",
+        "executionCreated" : "2021-02-05T10:24:17.076Z",
+        "workflowTitle" : "slack http",
+        "ddsource" : "trayio",
+        "organizationId" : "cf888ac9-3e65-4a61-b720-224cde44192a",
+        "executionId" : "5829a81c-4df0-4eb7-8445-246959261a9c",
+        "dataRetention" : "standard",
+        "hostname" : "fluentd",
+        "stepName" : "trigger",
+        "service" : "workflow-logs:org:tray",
+        "isLastStep" : false,
+        "executionStepUuid" : "f20bd504-17b3-47e8-b29e-584b3fb5d3c7",
+        "connectorVersion" : "1.0",
+        "connectorName" : "noop",
+        "header" : {
+          "payloadSize" : 872,
+          "version" : 1
+        },
+        "correlationId" : "aec91194-e9f6-4f0b-8fdb-0ecc46bafc7e",
+        "operation" : "trigger",
+        "workflowId" : "91c10fcd-c5d1-4200-aa35-2b94b2f37adb"
+      }
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1612520657076
+

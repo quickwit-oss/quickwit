@@ -1,0 +1,76 @@
+id: doppler
+metric_id: doppler
+backend_only: false
+facets:
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - groups:
+      - User
+    name: User Email
+    path: usr.email
+    source: log
+  - groups:
+      - Event
+    name: Type
+    path: type
+    source: log
+pipeline:
+  type: pipeline
+  name: Doppler
+  enabled: true
+  filter:
+    query: "source:doppler"
+  processors:
+    - type: date-remapper
+      name: Define `createdAt` as the official date of the log
+      enabled: true
+      sources:
+        - createdAt
+    - type: message-remapper
+      name: Define `text` as the official message of the log
+      enabled: true
+      sources:
+        - text
+    - type: attribute-remapper
+      name: Map `user.name` to `usr.name`
+      enabled: true
+      sources:
+        - user.name
+      sourceType: attribute
+      target: usr.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `user.email` to `usr.email`
+      enabled: true
+      sources:
+        - user.email
+      sourceType: attribute
+      target: usr.email
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `user.username` to `usr.username`
+      enabled: true
+      sources:
+        - user.username
+      sourceType: attribute
+      target: usr.username
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `user.profile_image_url` to `usr.profileImageUrl`
+      enabled: true
+      sources:
+        - user.profile_image_url
+      sourceType: attribute
+      target: usr.profileImageUrl
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false

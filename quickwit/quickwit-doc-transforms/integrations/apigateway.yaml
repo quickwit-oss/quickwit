@@ -1,0 +1,237 @@
+id: apigateway
+metric_id: amazon-api-gateway
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: Request ID
+    path: http.request_id
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url
+    source: log
+  - groups:
+      - Web Access
+    name: URL Host
+    path: http.url_details.host
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Web Access
+    name: URL Port
+    path: http.url_details.port
+    source: log
+  - groups:
+      - Web Access
+    name: URL scheme
+    path: http.url_details.scheme
+    source: log
+  - groups:
+      - Web Access
+    name: Version
+    path: http.version
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - AWS
+    name: Log Group
+    path: aws.awslogs.logGroup
+    source: log
+pipeline:
+  type: pipeline
+  name: AWS Api Gateway
+  enabled: true
+  filter:
+    query: source:apigateway
+  processors:
+    - type: grok-parser
+      name: Parsing Api Gateway logs
+      enabled: true
+      source: message
+      samples:
+        - 127.0.0.1 - frank [10/Oct/2000:13:55:36 -0700] "GET /apache_pb.gif HTTP/1.0" 200 2326 123432135
+        - 127.0.0.1,-,frank,10/Oct/2000:13:55:36 -0700,GET,/apache_pb.gif,HTTP/1.0,200,2326,123432135
+      grok:
+        supportRules: |
+          _auth %{notSpace:http.auth:nullIf("-")}
+          _bytes_written %{integer:network.bytes_written}
+          _client_ip %{ipOrHost:network.client.ip}
+          _version HTTP\/%{regex("\\d+\\.\\d+"):http.version}
+          _url %{notSpace:http.url}
+          _ident %{notSpace:http.ident:nullIf("-")}
+          _user_agent %{regex("[^\\\"]*"):http.useragent}
+          _referer %{notSpace:http.referer}
+          _status_code %{integer:http.status_code}
+          _method %{word:http.method}
+          _date_access %{date("dd/MMM/yyyy:HH:mm:ss Z"):date_access}
+          _x_forwarded_for %{regex("[^\\\"]*"):http._x_forwarded_for:nullIf("-")}
+        matchRules: |
+          access.common %{_client_ip} %{_ident} %{_auth} \[%{_date_access}\] "(?>%{_method} |)%{_url}(?> %{_version}|)" %{_status_code} (?>%{_bytes_written}|-) %{notSpace:http.request_id}
+
+          Csv_format %{_client_ip},%{_ident},%{_auth},%{_date_access},%{_method},%{_url},(?>%{_version}|),%{_status_code},%{_bytes_written},%{notSpace:http.request_id}
+    - type: pipeline
+      name: HTTP Access Log
+      enabled: true
+      filter:
+        query: '@requestId:*= NOT @httpMethod:"-" '
+      processors:
+        - type: arithmetic-processor
+          name: Epoch in second to Epoch in Milli
+          enabled: true
+          expression: requestTime * 1000
+          target: requestTime
+          replaceMissing: false
+    - type: attribute-remapper
+      name: Map `requestId` to `http.request_id`
+      enabled: true
+      sources:
+        - requestId
+      target: http.request_id
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `ip` to `network.client.ip`
+      enabled: true
+      sources:
+        - ip
+      target: network.client.ip
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `caller` to `http.ident`
+      enabled: true
+      sources:
+        - caller
+      target: http.ident
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `user` to `http.auth`
+      enabled: true
+      sources:
+        - user
+      target: http.auth
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `requestTime` to `date_access`
+      enabled: true
+      sources:
+        - requestTime
+      target: date_access
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `httpMethod` to `http.method`
+      enabled: true
+      sources:
+        - httpMethod
+      target: http.method
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `resourcePath` to `http.url`
+      enabled: true
+      sources:
+        - resourcePath
+      target: http.url
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `protocol` to `http.version`
+      enabled: true
+      sources:
+        - protocol
+      target: http.version
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `status` to `http.status_code`
+      enabled: true
+      sources:
+        - status
+      target: http.status_code
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetFormat: integer
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `responseLength` to `network.bytes_written`
+      enabled: true
+      sources:
+        - responseLength
+      target: network.bytes_written
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: url-parser
+      name: ''
+      enabled: true
+      sources:
+        - http.url
+      target: http.url_details
+    - type: date-remapper
+      name: Define `date_access` as the official date of the log
+      enabled: true
+      sources:
+        - date_access
+    - type: category-processor
+      name: Categorise status code
+      enabled: true
+      categories:
+        - filter:
+            query: '@http.status_code:[200 TO 299]'
+          name: OK
+        - filter:
+            query: '@http.status_code:[300 TO 399]'
+          name: notice
+        - filter:
+            query: '@http.status_code:[400 TO 499]'
+          name: warning
+        - filter:
+            query: '@http.status_code:[500 TO 599]'
+          name: error
+      target: http.status_category
+    - type: status-remapper
+      name: Define `http.status_category` as the official status of the log
+      enabled: true
+      sources:
+        - http.status_category

@@ -1,0 +1,321 @@
+id: "csharp"
+tests:
+ -
+  sample: |-
+    {
+      "date" : "2017-03-10T15:13:53.1302217+01:00",
+      "appname" : "ConsoleApplication1.vshost.exe",
+      "level" : "INFO",
+      "logger" : "ConsoleApplication1.Program",
+      "thread" : "10",
+      "message" : "A calculation is about to start: 10x5"
+    }
+  result:
+    custom:
+      appname: "ConsoleApplication1.vshost.exe"
+      date: "2017-03-10T15:13:53.1302217+01:00"
+      level: "INFO"
+      logger:
+        name: "ConsoleApplication1.Program"
+        thread_name: "10"
+    message: "A calculation is about to start: 10x5"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1489155233130
+ -
+  sample: "2016-09-02T15:02:29.648Z INFO this is my message"
+  result:
+    custom:
+      date: 1472828549648
+      level: "INFO"
+    message: "this is my message"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1472828549648
+ -
+  sample: "2016-05-24 15:53:35.7175 INFO this my my log example"
+  result:
+    custom:
+      date: 1464105215717
+      level: "INFO"
+    message: "this my my log example"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1464105215717
+ -
+  sample: "2017-03-10 15:13:53.130 ERROR [10] ConsoleApplication1.Program mymethod:32 - an error occured while processing"
+  result:
+    custom:
+      date: 1489158833130
+      level: "ERROR"
+      line: 32
+      logger:
+        name: "ConsoleApplication1.Program"
+        thread_name: "10"
+      method: "mymethod"
+    message: "an error occured while processing"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1489158833130
+ -
+  sample: "2019-10-24 19:58:29,582 [1] INFO  Log4NetExample.Program [(null)] {order-number=1024, log4net:UserName=NOT AVAILABLE, dd.span_id=\"1413846021656668177\", log4net:HostName=LAPTOP-KUAFQR15, log4net:Identity=NOT AVAILABLE, dd.trace_id=\"4603319493700240667\"} - Message example"
+  result:
+    custom:
+      Properties:
+        dd:
+          span_id: "1413846021656668177"
+        order-number: 1024
+      date: 1571947109582
+      level: "INFO"
+      logger:
+        name: "Log4NetExample.Program"
+    message: "2019-10-24 19:58:29,582 [1] INFO  Log4NetExample.Program [(null)] {order-number=1024, log4net:UserName=NOT AVAILABLE, dd.span_id=\"1413846021656668177\", log4net:HostName=LAPTOP-KUAFQR15, log4net:Identity=NOT AVAILABLE, dd.trace_id=\"4603319493700240667\"} - Message example"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1571947109582
+    trace_id: "4603319493700240667"
+ -
+  sample: |-
+    {
+      "dd" : {
+        "trace_id" : "4878079399117499473",
+        "span_id" : "5142026215797304283"
+      },
+      "@t" : "2019-10-24T21:27:13.8349907Z",
+      "@mt" : "Message inside a trace.",
+      "@x" : "System.NullReferenceException: Object reference not set to an instance of an object.\n   at FormApp.Form1.button_toggle(Object sender, EventArgs e) in Form1.cs:line 29",
+      "order-number" : 1024
+    }
+  result:
+    custom:
+      '@t': "2019-10-24T21:27:13.8349907Z"
+      dd:
+        span_id: "5142026215797304283"
+      error:
+        kind: "System.NullReferenceException"
+        message: "Object reference not set to an instance of an object."
+        stack: |-
+          System.NullReferenceException: Object reference not set to an instance of an object.
+             at FormApp.Form1.button_toggle(Object sender, EventArgs e) in Form1.cs:line 29
+      order-number: 1024
+    message: "Message inside a trace."
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1571952433834
+    trace_id: "4878079399117499473"
+ -
+  sample: |-
+    {
+      "MessageTemplate" : "Processed {@Position} in {Elapsed:000} ms.",
+      "Renderings" : {
+        "Elapsed" : [ {
+          "Format" : "000",
+          "Rendering" : "034"
+        } ]
+      },
+      "RenderedMessage" : "Processed { Latitude: 25, Longitude: 134 } in 034 ms.",
+      "Level" : "Information",
+      "Properties" : {
+        "Position" : {
+          "Latitude" : 25,
+          "Longitude" : 134
+        },
+        "Elapsed" : 34
+      },
+      "Timestamp" : "2016-09-02T15:02:29.648Z"
+    }
+  result:
+    custom:
+      Level: "Information"
+      MessageTemplate: "Processed {@Position} in {Elapsed:000} ms."
+      Properties:
+        Elapsed: 34
+        Position:
+          Latitude: 25
+          Longitude: 134
+      Renderings:
+        Elapsed:
+         -
+          Format: "000"
+          Rendering: "034"
+      Timestamp: "2016-09-02T15:02:29.648Z"
+    message: "Processed { Latitude: 25, Longitude: 134 } in 034 ms."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "@t" : "2020-05-20T04:15:28.6898801Z",
+      "Position" : {
+        "Latitude" : 25,
+        "Longitude" : 134
+      },
+      "Elapsed" : 34,
+      "@i" : "d1eb2146",
+      "@m" : "Processed { Latitude: 25, Longitude: 134 } in 034 ms."
+    }
+  result:
+    custom:
+      '@i': "d1eb2146"
+      '@t': "2020-05-20T04:15:28.6898801Z"
+      Elapsed: 34
+      Position:
+        Latitude: 25
+        Longitude: 134
+    message: "Processed { Latitude: 25, Longitude: 134 } in 034 ms."
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1589948128689
+ -
+  sample: |-
+    {
+      "RequestPath" : "/",
+      "dd_span_id" : "1716695354597411619",
+      "@t" : "2020-10-08T22:57:43.6528621Z",
+      "dd_trace_id" : "6500362470500556863",
+      "dd_service" : "AspNetCoreWithSerilog",
+      "dd_version" : "1.0.0",
+      "dd_env" : "Development",
+      "@m" : "Entered Home/Index action",
+      "SourceContext" : "AspNetCoreWithSerilog.Controllers.HomeController"
+    }
+  result:
+    custom:
+      '@t': "2020-10-08T22:57:43.6528621Z"
+      RequestPath: "/"
+      SourceContext: "AspNetCoreWithSerilog.Controllers.HomeController"
+      dd_service: "AspNetCoreWithSerilog"
+      dd_span_id: "1716695354597411619"
+    message: "Entered Home/Index action"
+    service: "AspNetCoreWithSerilog"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "env:development"
+     - "version:1.0.0"
+    timestamp: 1602197863652
+    trace_id: "6500362470500556863"
+ -
+  sample: "2019-11-25 11:21:32.6282|INFO|NLogExample.Program|{dd.trace_id=\"4424326124026709723\", dd.span_id=\"249969541933646857\"} Message during a trace."
+  result:
+    custom:
+      date: 1574680892628
+      dd:
+        span_id: "249969541933646857"
+      level: "INFO"
+      logger:
+        name: "NLogExample.Program"
+    message: "2019-11-25 11:21:32.6282|INFO|NLogExample.Program|{dd.trace_id=\"4424326124026709723\", dd.span_id=\"249969541933646857\"} Message during a trace."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1574680892628
+    trace_id: "4424326124026709723"
+ -
+  sample: "2019-12-02 11:47:20.467 -08:00 [INF] { dd.span_id: \"4014120331748607290\", dd.trace_id: \"2762343115747197096\", order-number: 1024 } Message during a trace."
+  result:
+    custom:
+      date: 1575316040467
+      dd:
+        span_id: "4014120331748607290"
+      level: "INF"
+      order-number: 1024
+    message: "2019-12-02 11:47:20.467 -08:00 [INF] { dd.span_id: \"4014120331748607290\", dd.trace_id: \"2762343115747197096\", order-number: 1024 } Message during a trace."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1575316040467
+    trace_id: "2762343115747197096"
+ -
+  sample: "2019-12-02 11:47:20.467 -08:00 [INF] { dd.service: excelsior dd.env: prod dd.version=abc123 dd.span_id: \"4014120331748607290\", dd.trace_id: \"2762343115747197096\", order-number: 1024 } Message during a trace."
+  result:
+    custom:
+      date: 1575316040467
+      dd:
+        service: "excelsior"
+        span_id: "4014120331748607290"
+      level: "INF"
+      order-number: 1024
+    message: "2019-12-02 11:47:20.467 -08:00 [INF] { dd.service: excelsior dd.env: prod dd.version=abc123 dd.span_id: \"4014120331748607290\", dd.trace_id: \"2762343115747197096\", order-number: 1024 } Message during a trace."
+    service: "excelsior"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "env:prod"
+    timestamp: 1575316040467
+    trace_id: "2762343115747197096"
+ -
+  sample: "2019-11-25 11:21:32.6282|INFO|NLogExample.Program|{dd.service=excelsior dd.env=prod dd.version=abc123 dd.trace_id=\"4424326124026709723\", dd.span_id=\"249969541933646857\"} Message during a trace."
+  result:
+    custom:
+      date: 1574680892628
+      dd:
+        service: "excelsior"
+        span_id: "249969541933646857"
+      level: "INFO"
+      logger:
+        name: "NLogExample.Program"
+    message: "2019-11-25 11:21:32.6282|INFO|NLogExample.Program|{dd.service=excelsior dd.env=prod dd.version=abc123 dd.trace_id=\"4424326124026709723\", dd.span_id=\"249969541933646857\"} Message during a trace."
+    service: "excelsior"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "env:prod"
+     - "version:abc123"
+    timestamp: 1574680892628
+    trace_id: "4424326124026709723"
+ -
+  sample: "2019-10-24 19:58:29,582 [1] INFO  Log4NetExample.Program [(null)] {order-number=1024, log4net:UserName=NOT AVAILABLE, dd.span_id=\"1413846021656668177\", dd.service=excelsior, dd.env=prod, dd.version=abc123, log4net:HostName=LAPTOP-KUAFQR15, log4net:Identity=NOT AVAILABLE, dd.trace_id=\"4603319493700240667\"} - Message example"
+  result:
+    custom:
+      Properties:
+        dd:
+          service: "excelsior"
+          span_id: "1413846021656668177"
+        order-number: 1024
+      date: 1571947109582
+      level: "INFO"
+      logger:
+        name: "Log4NetExample.Program"
+    message: "2019-10-24 19:58:29,582 [1] INFO  Log4NetExample.Program [(null)] {order-number=1024, log4net:UserName=NOT AVAILABLE, dd.span_id=\"1413846021656668177\", dd.service=excelsior, dd.env=prod, dd.version=abc123, log4net:HostName=LAPTOP-KUAFQR15, log4net:Identity=NOT AVAILABLE, dd.trace_id=\"4603319493700240667\"} - Message example"
+    service: "excelsior"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "env:prod"
+     - "version:abc123"
+    timestamp: 1571947109582
+    trace_id: "4603319493700240667"
+ -
+  sample: |-
+    {
+      "dd" : {
+        "trace_id" : "4878079399117499473",
+        "span_id" : "5142026215797304283"
+      },
+      "@t" : "2019-10-24T21:27:13.8349907Z",
+      "@mt" : "this is the message template",
+      "@l" : "Error",
+      "@m" : "Message inside a trace.",
+      "order-number" : 1024
+    }
+  result:
+    custom:
+      '@l': "Error"
+      '@mt': "this is the message template"
+      '@t': "2019-10-24T21:27:13.8349907Z"
+      dd:
+        span_id: "5142026215797304283"
+      order-number: 1024
+    message: "Message inside a trace."
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1571952433834
+    trace_id: "4878079399117499473"

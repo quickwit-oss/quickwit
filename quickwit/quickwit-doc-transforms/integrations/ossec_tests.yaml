@@ -1,0 +1,75 @@
+id: "ossec"
+tests:
+ -
+  sample: "** Alert 1510376401.0: - syslog,errors,           2017 Nov 11 00:00:01 ix->/var/log/messages           Rule: 1005 (level 5) -> 'Syslogd restarted.'           Nov 11 00:00:01 ix syslogd[72090]: restart"
+  result:
+    custom:
+      hostname: "ix"
+      id: "1510376401.0"
+      location: "/var/log/messages"
+      rule:
+        group: "syslog,errors,"
+        level: 5.0
+        sidid: 1005.0
+        status: "info"
+      timestamp: 1510358401000
+      title: "Syslogd restarted."
+    message: "Nov 11 00:00:01 ix syslogd[72090]: restart"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1510358401000
+ -
+  sample: "** Alert 1563374748.162530: - ossec,rootcheck,           2019 Jul 17 14:45:48 (prod-node-sub-her) any->rootcheck           Rule: 510 (level 7) -> 'Host-based anomaly detection event (rootcheck).'           File '/dev/.blkid.tab.old' present on /dev. Possible hidden file."
+  result:
+    custom:
+      hostname: "prod-node-sub-her"
+      id: "1563374748.162530"
+      location: "rootcheck"
+      rule:
+        group: "ossec,rootcheck,"
+        level: 7.0
+        sidid: 510.0
+        status: "warning"
+      timestamp: 1563374748000
+      title: "Host-based anomaly detection event (rootcheck)."
+    message: "File '/dev/.blkid.tab.old' present on /dev. Possible hidden file."
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1563374748000
+ -
+  sample: |-
+    {
+      "hostname" : "ix",
+      "program_name" : "syslogd",
+      "rule" : {
+        "level" : 5,
+        "comment" : "Syslogd restarted.",
+        "sidid" : 1005,
+        "group" : "syslog,errors,"
+      },
+      "location" : "/var/log/messages",
+      "id" : "1510376401.0",
+      "TimeStamp" : 1510376401000,
+      "full_log" : "Nov 11 00:00:01 ix syslogd[72090]: restart"
+    }
+  result:
+    custom:
+      TimeStamp: 1510376401000
+      hostname: "ix"
+      id: "1510376401.0"
+      location: "/var/log/messages"
+      program_name: "syslogd"
+      rule:
+        group: "syslog,errors,"
+        level: 5
+        sidid: 1005
+        status: "info"
+      title: "Syslogd restarted."
+    message: "Nov 11 00:00:01 ix syslogd[72090]: restart"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1510376401000
+

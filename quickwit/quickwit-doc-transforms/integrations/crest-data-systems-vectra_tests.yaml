@@ -1,0 +1,800 @@
+id: "crest-data-systems-vectra"
+tests:
+ -
+  sample: |-
+    {
+      "severity" : "Critical",
+      "last_detection_timestamp" : "2024-11-13T10:56:40Z",
+      "account_type" : [ "aws" ],
+      "velocity_contrib" : 2,
+      "notes" : [ {
+        "note" : "(*@)&#*&)!(&#^%$",
+        "date_created" : "2024-11-08T08:57:15Z",
+        "id" : 9078,
+        "created_by" : "api_client_a7f5be37ee144f3495ec08c150146c7a"
+      }, {
+        "note" : "Incident is being tracked in Sentinel with link:https://portal.azure.com/#asset/Microsoft_Azure_Security_Insights/Incident/subscriptions/b3fe75ab-94a2-4322-84af-016eb01ff43e/resourceGroups/rg-vectra-rux/providers/Microsoft.OperationalInsights/workspaces/la-vectra-rux/providers/Microsoft.SecurityInsights/Incidents/2b16f78c-55c8-4066-b7f5-5e43825d96a5",
+        "date_created" : "2024-08-07T19:50:22Z",
+        "id" : 4742,
+        "created_by" : "api_client_e26db93fec0149dfb765b3eb12b65ed0"
+      } ],
+      "importance" : 1,
+      "attack_rating" : 7,
+      "last_modified_timestamp" : "2024-11-13T13:03:35Z",
+      "type" : "account",
+      "entity_importance" : 1,
+      "is_prioritized" : true,
+      "url" : "https://308714519558.cc1.portal.vectra.ai/api/v3.3/accounts/31",
+      "tags" : [ "tag4", "teams_tag", "mytag100" ],
+      "breadth_contrib" : 2,
+      "entity_type" : "account",
+      "sensors" : [ "z7hmcp0z" ],
+      "urgency_score" : 71,
+      "name" : "AWS:621050298995",
+      "detection_set" : [ "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/2637", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/2773", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/2774", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/2775", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/2788", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/2823", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3234", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3235", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3236", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3237", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3257", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3258", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3342", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3343", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3344", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3345", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3421", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3430", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3431", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3432", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3433", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3434", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3452", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3464", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3467", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3482", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3483", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3484", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3485", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3488", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3768", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3769", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3770", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3771", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3776", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3777", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/4065", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/4066", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/4067", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/4068", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/4069", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/4078", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/32929" ],
+      "id" : 31,
+      "state" : "active",
+      "attack_profile" : "AWS Threat Actor"
+    }
+  service: "cd.vectra.entities"
+  result:
+    custom:
+      account_type:
+       - "aws"
+      attack_rating: 7
+      breadth_contrib: 2
+      cd_vectra:
+        attack_profile: "AWS Threat Actor"
+        entities:
+          id: 31
+      detection_set:
+       - "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/2637"
+       - "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/2773"
+       - "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/2774"
+       - "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/2775"
+       - "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/2788"
+       - "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/2823"
+       - "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3234"
+       - "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3235"
+       - "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3236"
+       - "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3237"
+       - "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3257"
+       - "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3258"
+       - "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3342"
+       - "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3343"
+       - "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3344"
+       - "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3345"
+       - "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3421"
+       - "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3430"
+       - "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3431"
+       - "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3432"
+       - "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3433"
+       - "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3434"
+       - "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3452"
+       - "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3464"
+       - "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3467"
+       - "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3482"
+       - "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3483"
+       - "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3484"
+       - "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3485"
+       - "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3488"
+       - "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3768"
+       - "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3769"
+       - "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3770"
+       - "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3771"
+       - "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3776"
+       - "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3777"
+       - "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/4065"
+       - "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/4066"
+       - "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/4067"
+       - "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/4068"
+       - "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/4069"
+       - "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/4078"
+       - "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/32929"
+      entity_importance: 1
+      entity_type: "account"
+      importance: 1
+      is_prioritized: true
+      last_detection_timestamp: "2024-11-13T10:56:40Z"
+      last_modified_timestamp: "2024-11-13T13:03:35Z"
+      name: "AWS:621050298995"
+      notes:
+       -
+        note: "(*@)&#*&)!(&#^%$"
+        date_created: "2024-11-08T08:57:15Z"
+        id: 9078
+        created_by: "api_client_a7f5be37ee144f3495ec08c150146c7a"
+       -
+        note: "Incident is being tracked in Sentinel with link:https://portal.azure.com/#asset/Microsoft_Azure_Security_Insights/Incident/subscriptions/b3fe75ab-94a2-4322-84af-016eb01ff43e/resourceGroups/rg-vectra-rux/providers/Microsoft.OperationalInsights/workspaces/la-vectra-rux/providers/Microsoft.SecurityInsights/Incidents/2b16f78c-55c8-4066-b7f5-5e43825d96a5"
+        date_created: "2024-08-07T19:50:22Z"
+        id: 4742
+        created_by: "api_client_e26db93fec0149dfb765b3eb12b65ed0"
+      sensors:
+       - "z7hmcp0z"
+      severity: "Critical"
+      state: "active"
+      tags:
+       - "tag4"
+       - "teams_tag"
+       - "mytag100"
+      timestamp: 1731503015000
+      type: "account"
+      urgency_score: 71
+      url: "https://308714519558.cc1.portal.vectra.ai/api/v3.3/accounts/31"
+      velocity_contrib: 2
+    message: |-
+      {
+        "severity" : "Critical",
+        "last_detection_timestamp" : "2024-11-13T10:56:40Z",
+        "account_type" : [ "aws" ],
+        "velocity_contrib" : 2,
+        "notes" : [ {
+          "note" : "(*@)&#*&)!(&#^%$",
+          "date_created" : "2024-11-08T08:57:15Z",
+          "id" : 9078,
+          "created_by" : "api_client_a7f5be37ee144f3495ec08c150146c7a"
+        }, {
+          "note" : "Incident is being tracked in Sentinel with link:https://portal.azure.com/#asset/Microsoft_Azure_Security_Insights/Incident/subscriptions/b3fe75ab-94a2-4322-84af-016eb01ff43e/resourceGroups/rg-vectra-rux/providers/Microsoft.OperationalInsights/workspaces/la-vectra-rux/providers/Microsoft.SecurityInsights/Incidents/2b16f78c-55c8-4066-b7f5-5e43825d96a5",
+          "date_created" : "2024-08-07T19:50:22Z",
+          "id" : 4742,
+          "created_by" : "api_client_e26db93fec0149dfb765b3eb12b65ed0"
+        } ],
+        "importance" : 1,
+        "attack_rating" : 7,
+        "last_modified_timestamp" : "2024-11-13T13:03:35Z",
+        "type" : "account",
+        "entity_importance" : 1,
+        "is_prioritized" : true,
+        "url" : "https://308714519558.cc1.portal.vectra.ai/api/v3.3/accounts/31",
+        "tags" : [ "tag4", "teams_tag", "mytag100" ],
+        "breadth_contrib" : 2,
+        "entity_type" : "account",
+        "sensors" : [ "z7hmcp0z" ],
+        "urgency_score" : 71,
+        "name" : "AWS:621050298995",
+        "detection_set" : [ "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/2637", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/2773", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/2774", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/2775", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/2788", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/2823", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3234", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3235", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3236", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3237", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3257", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3258", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3342", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3343", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3344", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3345", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3421", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3430", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3431", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3432", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3433", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3434", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3452", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3464", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3467", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3482", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3483", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3484", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3485", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3488", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3768", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3769", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3770", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3771", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3776", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3777", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/4065", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/4066", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/4067", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/4068", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/4069", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/4078", "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/32929" ],
+        "id" : 31,
+        "state" : "active",
+        "attack_profile" : "AWS Threat Actor"
+      }
+    service: "cd.vectra.entities"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1731503015000
+ -
+  sample: |-
+    {
+      "last_timestamp" : "2024-05-22T17:57:13Z",
+      "detection_url" : "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3092",
+      "filtered_by_user" : false,
+      "filtered_by_ai" : false,
+      "type" : "host",
+      "src_ip" : "192.168.53.165",
+      "grouped_details" : [ {
+        "last_timestamp" : "2024-05-22T17:57:13Z",
+        "role" : "File Server"
+      }, {
+        "last_timestamp" : "2024-05-02T16:46:34Z",
+        "role" : "File Server"
+      } ],
+      "targets_key_asset" : false,
+      "id" : 3092,
+      "state" : "inactive",
+      "c_score" : 0,
+      "is_marked_custom" : false,
+      "summary" : {
+        "last_timestamp" : "2024-05-22T17:57:13Z",
+        "roles" : [ "File Server" ],
+        "description" : "This is the first time this host role was identified on this host."
+      },
+      "detection" : "New Host Role",
+      "is_custom_model" : false,
+      "is_triaged" : false,
+      "certainty" : 0,
+      "created_timestamp" : "2024-05-02T16:54:50Z",
+      "src_host" : {
+        "ip" : "192.168.53.165",
+        "name" : "00:50:56:93:bb:b1",
+        "certainty" : 0,
+        "id" : 20459,
+        "threat" : 0,
+        "is_key_asset" : false,
+        "url" : "https://308714519558.cc1.portal.vectra.ai/api/v3.3/hosts/20459"
+      },
+      "data_source" : {
+        "connection_name" : "Unknown sensor name",
+        "connection_id" : "None",
+        "type" : "Unknown sensor type"
+      },
+      "url" : "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3092",
+      "is_targeting_key_asset" : false,
+      "filtered_by_rule" : false,
+      "first_timestamp" : "2024-05-02T16:46:34Z",
+      "detection_category" : "info",
+      "t_score" : 0,
+      "detection_type" : "New Host Role",
+      "sensor" : "None",
+      "threat" : 0,
+      "category" : "info",
+      "sensor_name" : "Vectra X"
+    }
+  service: "cd.vectra.detections"
+  result:
+    custom:
+      c_score: 0
+      category: "info"
+      cd_vectra:
+        data_source:
+          type: "Unknown sensor type"
+        detection_category: "info"
+        detections:
+          id: 3092
+        src_host:
+          name: "00:50:56:93:bb:b1"
+        src_ip: "192.168.53.165"
+      certainty: 0
+      created_timestamp: "2024-05-02T16:54:50Z"
+      data_source:
+        connection_id: "None"
+        connection_name: "Unknown sensor name"
+      detection: "New Host Role"
+      detection_type: "New Host Role"
+      detection_url: "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3092"
+      filtered_by_ai: false
+      filtered_by_rule: false
+      filtered_by_user: false
+      first_timestamp: "2024-05-02T16:46:34Z"
+      grouped_details:
+       -
+        last_timestamp: "2024-05-22T17:57:13Z"
+        role: "File Server"
+       -
+        last_timestamp: "2024-05-02T16:46:34Z"
+        role: "File Server"
+      is_custom_model: false
+      is_marked_custom: false
+      is_targeting_key_asset: false
+      is_triaged: false
+      last_timestamp: "2024-05-22T17:57:13Z"
+      sensor: "None"
+      sensor_name: "Vectra X"
+      src_host:
+        certainty: 0
+        id: 20459
+        ip: "192.168.53.165"
+        is_key_asset: false
+        threat: 0
+        url: "https://308714519558.cc1.portal.vectra.ai/api/v3.3/hosts/20459"
+      state: "inactive"
+      summary:
+        description: "This is the first time this host role was identified on this host."
+        last_timestamp: "2024-05-22T17:57:13Z"
+        roles:
+         - "File Server"
+      t_score: 0
+      targets_key_asset: false
+      threat: 0
+      timestamp: 1714668890000
+      type: "host"
+      url: "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3092"
+    message: |-
+      {
+        "last_timestamp" : "2024-05-22T17:57:13Z",
+        "detection_url" : "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3092",
+        "filtered_by_user" : false,
+        "filtered_by_ai" : false,
+        "type" : "host",
+        "src_ip" : "192.168.53.165",
+        "grouped_details" : [ {
+          "last_timestamp" : "2024-05-22T17:57:13Z",
+          "role" : "File Server"
+        }, {
+          "last_timestamp" : "2024-05-02T16:46:34Z",
+          "role" : "File Server"
+        } ],
+        "targets_key_asset" : false,
+        "id" : 3092,
+        "state" : "inactive",
+        "c_score" : 0,
+        "is_marked_custom" : false,
+        "summary" : {
+          "last_timestamp" : "2024-05-22T17:57:13Z",
+          "roles" : [ "File Server" ],
+          "description" : "This is the first time this host role was identified on this host."
+        },
+        "detection" : "New Host Role",
+        "is_custom_model" : false,
+        "is_triaged" : false,
+        "certainty" : 0,
+        "created_timestamp" : "2024-05-02T16:54:50Z",
+        "src_host" : {
+          "ip" : "192.168.53.165",
+          "name" : "00:50:56:93:bb:b1",
+          "certainty" : 0,
+          "id" : 20459,
+          "threat" : 0,
+          "is_key_asset" : false,
+          "url" : "https://308714519558.cc1.portal.vectra.ai/api/v3.3/hosts/20459"
+        },
+        "data_source" : {
+          "connection_name" : "Unknown sensor name",
+          "connection_id" : "None",
+          "type" : "Unknown sensor type"
+        },
+        "url" : "https://308714519558.cc1.portal.vectra.ai/api/v3.3/detections/3092",
+        "is_targeting_key_asset" : false,
+        "filtered_by_rule" : false,
+        "first_timestamp" : "2024-05-02T16:46:34Z",
+        "detection_category" : "info",
+        "t_score" : 0,
+        "detection_type" : "New Host Role",
+        "sensor" : "None",
+        "threat" : 0,
+        "category" : "info",
+        "sensor_name" : "Vectra X"
+      }
+    service: "cd.vectra.detections"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1714668890000
+ -
+  sample: |-
+    {
+      "severity" : "High",
+      "velocity_contrib" : 0,
+      "importance" : 1,
+      "attack_rating" : 6,
+      "active_detection_types" : [ "Azure AD Admin Account Creation", "Azure AD Redundant Access Creation", "M365 Risky Exchange Operation", "M365 Suspicious Mailbox Rule", "M365 Suspicious eDiscovery Exfil" ],
+      "entity_id" : 19,
+      "event_timestamp" : "2024-11-12T15:49:39Z",
+      "type" : "account",
+      "entity_importance" : 1,
+      "is_prioritized" : false,
+      "url" : "https://308714519558.cc1.portal.vectra.ai/accounts/19",
+      "last_detection" : {
+        "id" : 33187,
+        "type" : "M365 Suspicious Mailbox Rule",
+        "url" : "https://308714519558.cc1.portal.vectra.ai/detections/33187"
+      },
+      "breadth_contrib" : 1,
+      "entity_type" : "account",
+      "urgency_score" : 56,
+      "last_detection_id" : 33187,
+      "last_detection_url" : "https://308714519558.cc1.portal.vectra.ai/detections/33187",
+      "name" : "O365:mscott@demolab.vectra.ai",
+      "last_detection_type" : "M365 Suspicious Mailbox Rule",
+      "id" : 20518,
+      "category" : "ACCOUNT SCORING"
+    }
+  service: "cd.vectra.account_entity_events"
+  result:
+    custom:
+      active_detection_types:
+       - "Azure AD Admin Account Creation"
+       - "Azure AD Redundant Access Creation"
+       - "M365 Risky Exchange Operation"
+       - "M365 Suspicious Mailbox Rule"
+       - "M365 Suspicious eDiscovery Exfil"
+      attack_rating: 6
+      breadth_contrib: 1
+      category: "ACCOUNT SCORING"
+      entity_id: 19
+      entity_importance: 1
+      entity_type: "account"
+      event_timestamp: "2024-11-12T15:49:39Z"
+      id: 20518
+      importance: 1
+      is_prioritized: false
+      last_detection:
+        id: 33187
+        type: "M365 Suspicious Mailbox Rule"
+        url: "https://308714519558.cc1.portal.vectra.ai/detections/33187"
+      last_detection_id: 33187
+      last_detection_type: "M365 Suspicious Mailbox Rule"
+      last_detection_url: "https://308714519558.cc1.portal.vectra.ai/detections/33187"
+      name: "O365:mscott@demolab.vectra.ai"
+      severity: "High"
+      timestamp: 1731426579000
+      type: "account"
+      urgency_score: 56
+      url: "https://308714519558.cc1.portal.vectra.ai/accounts/19"
+      velocity_contrib: 0
+    message: |-
+      {
+        "severity" : "High",
+        "velocity_contrib" : 0,
+        "importance" : 1,
+        "attack_rating" : 6,
+        "active_detection_types" : [ "Azure AD Admin Account Creation", "Azure AD Redundant Access Creation", "M365 Risky Exchange Operation", "M365 Suspicious Mailbox Rule", "M365 Suspicious eDiscovery Exfil" ],
+        "entity_id" : 19,
+        "event_timestamp" : "2024-11-12T15:49:39Z",
+        "type" : "account",
+        "entity_importance" : 1,
+        "is_prioritized" : false,
+        "url" : "https://308714519558.cc1.portal.vectra.ai/accounts/19",
+        "last_detection" : {
+          "id" : 33187,
+          "type" : "M365 Suspicious Mailbox Rule",
+          "url" : "https://308714519558.cc1.portal.vectra.ai/detections/33187"
+        },
+        "breadth_contrib" : 1,
+        "entity_type" : "account",
+        "urgency_score" : 56,
+        "last_detection_id" : 33187,
+        "last_detection_url" : "https://308714519558.cc1.portal.vectra.ai/detections/33187",
+        "name" : "O365:mscott@demolab.vectra.ai",
+        "last_detection_type" : "M365 Suspicious Mailbox Rule",
+        "id" : 20518,
+        "category" : "ACCOUNT SCORING"
+      }
+    service: "cd.vectra.account_entity_events"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1731426579000
+ -
+  sample: |-
+    {
+      "severity" : "High",
+      "velocity_contrib" : 2,
+      "importance" : 1,
+      "attack_rating" : 7,
+      "active_detection_types" : [ "si_new_host", "port_scan", "port_sweep", "smb_enum_share", "smb_psexec", "kerberos_user_account_scan", "kerberoasting_cipher_downgrade", "smash_n_grab" ],
+      "entity_id" : 64524,
+      "event_timestamp" : "2024-11-11T09:53:29Z",
+      "type" : "host",
+      "entity_importance" : 1,
+      "is_prioritized" : true,
+      "url" : "https://308714519558.cc1.portal.vectra.ai/hosts/64524",
+      "last_detection" : {
+        "id" : 33032,
+        "type" : "smash_n_grab",
+        "url" : "https://308714519558.cc1.portal.vectra.ai/detections/33032"
+      },
+      "breadth_contrib" : 1,
+      "entity_type" : "host",
+      "urgency_score" : 76,
+      "last_detection_id" : 33032,
+      "last_detection_url" : "https://308714519558.cc1.portal.vectra.ai/detections/33032",
+      "name" : "deltics-4",
+      "last_detection_type" : "smash_n_grab",
+      "id" : 77370,
+      "category" : "HOST_SCORING"
+    }
+  service: "cd.vectra.host_entity_events"
+  result:
+    custom:
+      active_detection_types:
+       - "si_new_host"
+       - "port_scan"
+       - "port_sweep"
+       - "smb_enum_share"
+       - "smb_psexec"
+       - "kerberos_user_account_scan"
+       - "kerberoasting_cipher_downgrade"
+       - "smash_n_grab"
+      attack_rating: 7
+      breadth_contrib: 1
+      category: "HOST_SCORING"
+      entity_id: 64524
+      entity_importance: 1
+      entity_type: "host"
+      event_timestamp: "2024-11-11T09:53:29Z"
+      id: 77370
+      importance: 1
+      is_prioritized: true
+      last_detection:
+        id: 33032
+        type: "smash_n_grab"
+        url: "https://308714519558.cc1.portal.vectra.ai/detections/33032"
+      last_detection_id: 33032
+      last_detection_type: "smash_n_grab"
+      last_detection_url: "https://308714519558.cc1.portal.vectra.ai/detections/33032"
+      name: "deltics-4"
+      severity: "High"
+      timestamp: 1731318809000
+      type: "host"
+      urgency_score: 76
+      url: "https://308714519558.cc1.portal.vectra.ai/hosts/64524"
+      velocity_contrib: 2
+    message: |-
+      {
+        "severity" : "High",
+        "velocity_contrib" : 2,
+        "importance" : 1,
+        "attack_rating" : 7,
+        "active_detection_types" : [ "si_new_host", "port_scan", "port_sweep", "smb_enum_share", "smb_psexec", "kerberos_user_account_scan", "kerberoasting_cipher_downgrade", "smash_n_grab" ],
+        "entity_id" : 64524,
+        "event_timestamp" : "2024-11-11T09:53:29Z",
+        "type" : "host",
+        "entity_importance" : 1,
+        "is_prioritized" : true,
+        "url" : "https://308714519558.cc1.portal.vectra.ai/hosts/64524",
+        "last_detection" : {
+          "id" : 33032,
+          "type" : "smash_n_grab",
+          "url" : "https://308714519558.cc1.portal.vectra.ai/detections/33032"
+        },
+        "breadth_contrib" : 1,
+        "entity_type" : "host",
+        "urgency_score" : 76,
+        "last_detection_id" : 33032,
+        "last_detection_url" : "https://308714519558.cc1.portal.vectra.ai/detections/33032",
+        "name" : "deltics-4",
+        "last_detection_type" : "smash_n_grab",
+        "id" : 77370,
+        "category" : "HOST_SCORING"
+      }
+    service: "cd.vectra.host_entity_events"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1731318809000
+ -
+  sample: |-
+    {
+      "severity" : 7,
+      "triaged" : false,
+      "detection_href" : "https://308714519558.cc1.portal.vectra.ai/detections/32929?detail_id=102862",
+      "certainty" : 50,
+      "entity_id" : 31,
+      "event_timestamp" : "2024-11-13T13:03:00Z",
+      "type" : "account",
+      "url" : "https://308714519558.cc1.portal.vectra.ai/accounts/31",
+      "entity_type" : "account",
+      "entity_uid" : "AWS:621050298995",
+      "detection_type" : "AWS Suspect Credential Access from EC2",
+      "mitre" : [ "T1552" ],
+      "detail" : {
+        "role_sequence" : [ "AWS:621050298995", "SecurityAuditExtended" ],
+        "account_id" : "621050298995",
+        "event_id" : "22fb51d3-39d3-472e-872e-633b1a7b3409",
+        "last_timestamp" : "2024-11-13T10:49:27Z",
+        "aws_region" : "us-west-2",
+        "assumed_role" : "SecurityAuditExtended",
+        "event_name" : "DescribeInstanceAttribute",
+        "src_external_host" : {
+          "name" : "AWS-Internal"
+        },
+        "identity_type" : "AWS External Account",
+        "request_parameters" : "{\"attribute\":\"userData\",\"instanceId\":\"i-0e8b25245988750ed\"}",
+        "user_agent" : "AWS Internal"
+      },
+      "id" : 101323,
+      "threat" : 70,
+      "category" : "reconnaissance",
+      "detection_id" : 32929,
+      "d_type_vname" : "AWS Suspect Credential Access from EC2"
+    }
+  service: "cd.vectra.account_detection_events"
+  result:
+    custom:
+      category: "reconnaissance"
+      cd_vectra:
+        severity: 7
+      certainty: 50
+      d_type_vname: "AWS Suspect Credential Access from EC2"
+      detail:
+        account_id: "621050298995"
+        assumed_role: "SecurityAuditExtended"
+        aws_region: "us-west-2"
+        event_id: "22fb51d3-39d3-472e-872e-633b1a7b3409"
+        event_name: "DescribeInstanceAttribute"
+        identity_type: "AWS External Account"
+        last_timestamp: "2024-11-13T10:49:27Z"
+        request_parameters: "{\"attribute\":\"userData\",\"instanceId\":\"i-0e8b25245988750ed\"}"
+        role_sequence:
+         - "AWS:621050298995"
+         - "SecurityAuditExtended"
+        src_external_host:
+          name: "AWS-Internal"
+        user_agent: "AWS Internal"
+      detection_href: "https://308714519558.cc1.portal.vectra.ai/detections/32929?detail_id=102862"
+      detection_id: 32929
+      detection_type: "AWS Suspect Credential Access from EC2"
+      entity_id: 31
+      entity_type: "account"
+      entity_uid: "AWS:621050298995"
+      event_timestamp: "2024-11-13T13:03:00Z"
+      id: 101323
+      mitre:
+       - "T1552"
+      status: "Info"
+      threat: 70
+      timestamp: 1731502980000
+      triaged: false
+      type: "account"
+      url: "https://308714519558.cc1.portal.vectra.ai/accounts/31"
+    message: |-
+      {
+        "severity" : 7,
+        "triaged" : false,
+        "detection_href" : "https://308714519558.cc1.portal.vectra.ai/detections/32929?detail_id=102862",
+        "certainty" : 50,
+        "entity_id" : 31,
+        "event_timestamp" : "2024-11-13T13:03:00Z",
+        "type" : "account",
+        "url" : "https://308714519558.cc1.portal.vectra.ai/accounts/31",
+        "entity_type" : "account",
+        "entity_uid" : "AWS:621050298995",
+        "detection_type" : "AWS Suspect Credential Access from EC2",
+        "mitre" : [ "T1552" ],
+        "detail" : {
+          "role_sequence" : [ "AWS:621050298995", "SecurityAuditExtended" ],
+          "account_id" : "621050298995",
+          "event_id" : "22fb51d3-39d3-472e-872e-633b1a7b3409",
+          "last_timestamp" : "2024-11-13T10:49:27Z",
+          "aws_region" : "us-west-2",
+          "assumed_role" : "SecurityAuditExtended",
+          "event_name" : "DescribeInstanceAttribute",
+          "src_external_host" : {
+            "name" : "AWS-Internal"
+          },
+          "identity_type" : "AWS External Account",
+          "request_parameters" : "{\"attribute\":\"userData\",\"instanceId\":\"i-0e8b25245988750ed\"}",
+          "user_agent" : "AWS Internal"
+        },
+        "id" : 101323,
+        "threat" : 70,
+        "category" : "reconnaissance",
+        "detection_id" : 32929,
+        "d_type_vname" : "AWS Suspect Credential Access from EC2"
+      }
+    service: "cd.vectra.account_detection_events"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1731502980000
+ -
+  sample: |-
+    {
+      "severity" : 0,
+      "triaged" : false,
+      "detection_href" : "https://308714519558.cc1.portal.vectra.ai/detections/33185?detail_id=102550",
+      "certainty" : 0,
+      "entity_id" : 976,
+      "event_timestamp" : "2024-11-10T13:53:24Z",
+      "type" : "host",
+      "url" : "https://308714519558.cc1.portal.vectra.ai/hosts/976",
+      "entity_type" : "host",
+      "entity_uid" : "IP-192.168.49.140",
+      "detection_type" : "Hidden HTTPS Tunnel",
+      "mitre" : [ "T1043", "T1094", "T1024", "T1132", "T1001", "T1008", "T1071", "T1032", "T1105", "T1108" ],
+      "detail" : {
+        "first_timestamp" : "2024-11-10T13:41:22Z",
+        "num_sessions" : 22,
+        "last_timestamp" : "2024-11-10T13:51:22Z",
+        "dst_dns" : "update2.vectranetworks.com",
+        "session" : {
+          "first_timestamp" : "2024-11-10T13:41:22Z",
+          "protocol" : "tcp",
+          "last_timestamp" : "2024-11-10T13:51:22Z",
+          "bytes_received" : 113852,
+          "dst_port" : 443,
+          "bytes_sent" : 51315,
+          "tunnel_type" : "Multiple short TCP sessions - Abnormal Beacon",
+          "dst_ip" : "54.200.5.9"
+        },
+        "bytes_received" : 113852,
+        "dst_port" : 443,
+        "ja3s_hash" : "263c859c5391203d774bc0599793d915",
+        "ja3_hash" : "8d9f7747675e24454cd9b7ed35c58707",
+        "external_target" : {
+          "ip" : "54.200.5.9",
+          "name" : "update2.vectranetworks.com"
+        },
+        "bytes_sent" : 51315,
+        "dst_ip" : "54.200.5.9"
+      },
+      "id" : 101011,
+      "threat" : 0,
+      "category" : "command_and_control",
+      "detection_id" : 33185,
+      "d_type_vname" : "Hidden HTTPS Tunnel"
+    }
+  service: "cd.vectra.host_detection_events"
+  result:
+    custom:
+      category: "command_and_control"
+      cd_vectra:
+        severity: 0
+      certainty: 0
+      command_and_control_server: "54.200.5.9(update2.vectranetworks.com)"
+      d_type_vname: "Hidden HTTPS Tunnel"
+      detail:
+        bytes_received: 113852
+        bytes_sent: 51315
+        dst_dns: "update2.vectranetworks.com"
+        dst_ip: "54.200.5.9"
+        dst_port: 443
+        external_target:
+          ip: "54.200.5.9"
+          name: "update2.vectranetworks.com"
+        first_timestamp: "2024-11-10T13:41:22Z"
+        ja3_hash: "8d9f7747675e24454cd9b7ed35c58707"
+        ja3s_hash: "263c859c5391203d774bc0599793d915"
+        last_timestamp: "2024-11-10T13:51:22Z"
+        num_sessions: 22
+        session:
+          bytes_received: 113852
+          bytes_sent: 51315
+          dst_ip: "54.200.5.9"
+          dst_port: 443
+          first_timestamp: "2024-11-10T13:41:22Z"
+          last_timestamp: "2024-11-10T13:51:22Z"
+          protocol: "tcp"
+          tunnel_type: "Multiple short TCP sessions - Abnormal Beacon"
+      detection_href: "https://308714519558.cc1.portal.vectra.ai/detections/33185?detail_id=102550"
+      detection_id: 33185
+      detection_type: "Hidden HTTPS Tunnel"
+      entity_id: 976
+      entity_type: "host"
+      entity_uid: "IP-192.168.49.140"
+      event_timestamp: "2024-11-10T13:53:24Z"
+      id: 101011
+      mitre:
+       - "T1043"
+       - "T1094"
+       - "T1024"
+       - "T1132"
+       - "T1001"
+       - "T1008"
+       - "T1071"
+       - "T1032"
+       - "T1105"
+       - "T1108"
+      status: "Info"
+      threat: 0
+      timestamp: 1731246804000
+      triaged: false
+      type: "host"
+      url: "https://308714519558.cc1.portal.vectra.ai/hosts/976"
+    message: |-
+      {
+        "severity" : 0,
+        "triaged" : false,
+        "detection_href" : "https://308714519558.cc1.portal.vectra.ai/detections/33185?detail_id=102550",
+        "certainty" : 0,
+        "entity_id" : 976,
+        "event_timestamp" : "2024-11-10T13:53:24Z",
+        "type" : "host",
+        "url" : "https://308714519558.cc1.portal.vectra.ai/hosts/976",
+        "entity_type" : "host",
+        "entity_uid" : "IP-192.168.49.140",
+        "detection_type" : "Hidden HTTPS Tunnel",
+        "mitre" : [ "T1043", "T1094", "T1024", "T1132", "T1001", "T1008", "T1071", "T1032", "T1105", "T1108" ],
+        "detail" : {
+          "first_timestamp" : "2024-11-10T13:41:22Z",
+          "num_sessions" : 22,
+          "last_timestamp" : "2024-11-10T13:51:22Z",
+          "dst_dns" : "update2.vectranetworks.com",
+          "session" : {
+            "first_timestamp" : "2024-11-10T13:41:22Z",
+            "protocol" : "tcp",
+            "last_timestamp" : "2024-11-10T13:51:22Z",
+            "bytes_received" : 113852,
+            "dst_port" : 443,
+            "bytes_sent" : 51315,
+            "tunnel_type" : "Multiple short TCP sessions - Abnormal Beacon",
+            "dst_ip" : "54.200.5.9"
+          },
+          "bytes_received" : 113852,
+          "dst_port" : 443,
+          "ja3s_hash" : "263c859c5391203d774bc0599793d915",
+          "ja3_hash" : "8d9f7747675e24454cd9b7ed35c58707",
+          "external_target" : {
+            "ip" : "54.200.5.9",
+            "name" : "update2.vectranetworks.com"
+          },
+          "bytes_sent" : 51315,
+          "dst_ip" : "54.200.5.9"
+        },
+        "id" : 101011,
+        "threat" : 0,
+        "category" : "command_and_control",
+        "detection_id" : 33185,
+        "d_type_vname" : "Hidden HTTPS Tunnel"
+      }
+    service: "cd.vectra.host_detection_events"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1731246804000

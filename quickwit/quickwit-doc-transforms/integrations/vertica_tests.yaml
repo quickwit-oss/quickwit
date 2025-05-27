@@ -1,0 +1,48 @@
+id: "vertica"
+tests:
+ -
+  sample: "2019-05-29 02:07:16.002 Spread Service InOrder Queue:7fe51e7fc700 [Init] <INFO> Startup [Waiting for Cluster Invite] Ready to be invited"
+  result:
+    custom:
+      application:
+        id: "Spread Service InOrder Queue"
+      level: "INFO"
+      logger:
+        name: "Init"
+      timestamp: 1559095636002
+    message: "2019-05-29 02:07:16.002 Spread Service InOrder Queue:7fe51e7fc700 [Init] <INFO> Startup [Waiting for Cluster Invite] Ready to be invited"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1559095636002
+ -
+  sample: "2019-05-29 02:07:36.000 MetadataPoolMonitor:7fe51cff9700 <LOG> @v_datadog_node0001: 00000/7794: Updated metadata pool:  Memory(KB): 39665"
+  result:
+    custom:
+      application:
+        id: "MetadataPoolMonitor"
+      level: "notice"
+      logger:
+        name: "v_datadog_node0001"
+      timestamp: 1559095656000
+    message: "2019-05-29 02:07:36.000 MetadataPoolMonitor:7fe51cff9700 <LOG> @v_datadog_node0001: 00000/7794: Updated metadata pool:  Memory(KB): 39665"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1559095656000
+ -
+  sample: "2019-05-29 02:07:20.551 Cluster Inviter:7fe50b7fe700-fff0000000000d00 <WARNING> @v_datadog_node0001: 01000/8850: Ignoring line: #   name = value , in the config file"
+  result:
+    custom:
+      application:
+        id: "Cluster Inviter"
+      level: "WARNING"
+      logger:
+        name: "v_datadog_node0001"
+      timestamp: 1559095640551
+    message: "2019-05-29 02:07:20.551 Cluster Inviter:7fe50b7fe700-fff0000000000d00 <WARNING> @v_datadog_node0001: 01000/8850: Ignoring line: #   name = value , in the config file"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1559095640551
+

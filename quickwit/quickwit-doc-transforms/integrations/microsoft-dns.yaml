@@ -1,0 +1,297 @@
+id: microsoft-dns
+metric_id: microsoft-dns
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+pipeline:
+  type: pipeline
+  name: Microsoft DNS
+  enabled: true
+  filter:
+    query: source:microsoft-dns
+  processors:
+    - type: date-remapper
+      name: Define `Event.System.TimeCreated.SystemTime` as the official date of the
+        log
+      enabled: true
+      sources:
+        - Event.System.TimeCreated.SystemTime
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - name: Lookup for `Event.System.EventID` to `title`
+      enabled: true
+      source: Event.System.EventID
+      target: title
+      lookupTable: |-
+        512,Zone create
+        513,Zone delete
+        514,Zone updated
+        515,Record create
+        516,Record delete
+        517,RRSET delete
+        518,Node delete
+        519,Record create - dynamic update
+        520,Record delete - dynamic update
+        521,Record scavenge
+        522,Zone scope create
+        523,Zone scope delete
+        525,Zone sign
+        526,Zone unsign
+        527,Zone re-sign
+        528,Key rollover start
+        529,Key rollover end
+        530,Key retire
+        531,Key rollover triggered
+        533,Key poke rollover
+        534,Export DNSSEC
+        535,Import DNSSEC
+        536,Cache purge
+        537,Forwarder reset
+        540,Root hints
+        541,Server setting
+        542,Server scope create
+        543,Server scope delete
+        544,Add trust point DNSKEY
+        545,Add trust point DS
+        546,Remove trust point
+        547,Add trust point root
+        548,Restart server
+        549,Clear debug logs
+        550,Write dirty zones
+        551,Clear statistics
+        552,Start scavenging
+        553,Enlist directory partition
+        554,Abort scavenging
+        555,Prepare for demotion
+        556,Write root hints
+        557,Listen address
+        558,Active refresh trust points
+        559,Pause zone
+        560,Resume zone
+        561,Reload zone
+        562,Refresh zone
+        563,Expire zone
+        564,Update from DS
+        565,Write and notify
+        566,Force aging
+        567,Scavenge servers
+        568,Transfer key master
+        569,Add SKD
+        570,Modify SKD
+        571,Delete SKD
+        572,Modify SKD state
+        573,Add delegation
+        574,Create client subnet record
+        575,Delete client subnet record
+        576,Update client subnet record
+        577,Create server level policy
+        578,Create zone level policy
+        579,Create forwarding policy
+        580,Delete server level policy
+        581,Delete zone level policy
+        582,Delete forwarding policy
+      type: lookup-processor
+    - type: attribute-remapper
+      name: Map `Event.System.EventID` to `evt.id`
+      enabled: true
+      sources:
+        - Event.System.EventID
+      sourceType: attribute
+      target: evt.id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: pipeline
+      name: Process Dynamic Update Events
+      enabled: true
+      filter:
+        query: "@evt.id:(519 OR 520)"
+      processors:
+        - type: attribute-remapper
+          name: Map `Event.EventData.Data.Source` to `network.client.ip`
+          enabled: true
+          sources:
+            - Event.EventData.Data.Source
+          sourceType: attribute
+          target: network.client.ip
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - name: Lookup for `Event.EventData.Data.Type` to `Event.EventData.Data.TypeName`
+          enabled: true
+          source: Event.EventData.Data.Type
+          target: Event.EventData.Data.TypeName
+          lookupTable: |-
+            1,Address record
+            28,IPv6 address record
+            18,AFS database record
+            42,Address Prefix List
+            257,Certification Authority Authorization
+            60,Child copy of DNSKEY record
+            59,Child DS
+            37,Certificate record
+            5,Canonical name record
+            62,Child-to-Parent Synchronization
+            49,DHCP identifier
+            32769,DNSSEC Lookaside Validation record
+            39,Delegation name record
+            48,DNS Key record
+            43,Delegation signer
+            108,MAC address (EUI-48)
+            109,MAC address (EUI-64)
+            13,Host Information
+            55,Host Identity Protocol
+            65,HTTPS Binding
+            45,IPsec Key
+            25,Key record
+            36,Key Exchanger record
+            29,Location record
+            15,Mail exchange record
+            35,Naming Authority Pointer
+            2,Name server record
+            47,Next Secure record
+            50,Next Secure record version 3
+            51,NSEC3 parameters
+            61,OpenPGP public key record
+            12,PTR Resource Record
+            17,Responsible Person
+            46,DNSSEC signature
+            24,Signature
+            53,S/MIME cert association
+            6,Start of [a zone of] authority record
+            33,Service locator
+            44,SSH Public Key Fingerprint
+            64,Service Binding
+            32768,DNSSEC Trust Authorities
+            249,Transaction Key record
+            52,TLSA certificate association
+            250,Transaction Signature
+            16,Text record
+            256,Uniform Resource Identifier
+            63,Message Digests for DNS Zones
+          defaultLookup: Other
+          type: lookup-processor
+    - type: pipeline
+      name: Lookup for Resource Record Type
+      enabled: true
+      filter:
+        query: "@evt.id:(515 OR 516 OR 517 OR 521)"
+      processors:
+        - name: Lookup for `Event.EventData.Data.Type` to `Event.EventData.Data.TypeName`
+          enabled: true
+          source: Event.EventData.Data.Type
+          target: Event.EventData.Data.TypeName
+          lookupTable: |-
+            1,Address record
+            28,IPv6 address record
+            18,AFS database record
+            42,Address Prefix List
+            257,Certification Authority Authorization
+            60,Child copy of DNSKEY record
+            59,Child DS
+            37,Certificate record
+            5,Canonical name record
+            62,Child-to-Parent Synchronization
+            49,DHCP identifier
+            32769,DNSSEC Lookaside Validation record
+            39,Delegation name record
+            48,DNS Key record
+            43,Delegation signer
+            108,MAC address (EUI-48)
+            109,MAC address (EUI-64)
+            13,Host Information
+            55,Host Identity Protocol
+            65,HTTPS Binding
+            45,IPsec Key
+            25,Key record
+            36,Key Exchanger record
+            29,Location record
+            15,Mail exchange record
+            35,Naming Authority Pointer
+            2,Name server record
+            47,Next Secure record
+            50,Next Secure record version 3
+            51,NSEC3 parameters
+            61,OpenPGP public key record
+            12,PTR Resource Record
+            17,Responsible Person
+            46,DNSSEC signature
+            24,Signature
+            53,S/MIME cert association
+            6,Start of [a zone of] authority record
+            33,Service locator
+            44,SSH Public Key Fingerprint
+            64,Service Binding
+            32768,DNSSEC Trust Authorities
+            249,Transaction Key record
+            52,TLSA certificate association
+            250,Transaction Signature
+            16,Text record
+            256,Uniform Resource Identifier
+            63,Message Digests for DNS Zones
+          defaultLookup: Other
+          type: lookup-processor
+    - type: attribute-remapper
+      name: Map `Event.EventData.Data.IpAddress` to `network.client.ip`
+      enabled: true
+      sources:
+        - Event.EventData.Data.IpAddress
+      sourceType: attribute
+      target: network.client.ip
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: geo-ip-parser
+      name: Parse network.client.ip
+      enabled: true
+      sources:
+        - network.client.ip
+      target: network.client.geoip
+      ip_processing_behavior: do-nothing

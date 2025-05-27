@@ -1,0 +1,59 @@
+id: "sqlserver"
+tests:
+ -
+  sample: "2020-05-12 12:10:54.49 spid51      Using 'dbghelp.dll' version '4.0.5'"
+  result:
+    custom:
+      logger:
+        thread_name: "spid51"
+      timestamp: 1589285454490
+    message: "Using 'dbghelp.dll' version '4.0.5'"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1589285454490
+ -
+  sample: "2020-05-12 12:12:37.01 spid51      Warning: The join order has been enforced because a local join hint is used."
+  result:
+    custom:
+      level: "Warning"
+      logger:
+        thread_name: "spid51"
+      timestamp: 1589285557010
+    message: "The join order has been enforced because a local join hint is used."
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1589285557010
+ -
+  sample: "2018-05-16 10:38:27.86 spid52      Error: 5105, Severity: 16, State: 2."
+  result:
+    custom:
+      level: "Error"
+      logger:
+        thread_name: "spid52"
+      timestamp: 1526467107860
+    message: "5105, Severity: 16, State: 2."
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1526467107860
+ -
+  sample: |-
+    2020-05-12 12:05:52.12 Server      Microsoft SQL Server 2017 (RTM-CU20) (KB4541283) - 14.0.3294.2 (X64)
+        Mar 13 2020 14:53:45
+        Copyright (C) 2017 Microsoft Corporation
+        Developer Edition (64-bit) on Linux (Ubuntu 16.04.6 LTS)
+  result:
+    custom:
+      logger:
+        thread_name: "Server"
+      timestamp: 1589285152120
+    message: |-
+      Microsoft SQL Server 2017 (RTM-CU20) (KB4541283) - 14.0.3294.2 (X64)
+          Mar 13 2020 14:53:45
+          Copyright (C) 2017 Microsoft Corporation
+          Developer Edition (64-bit) on Linux (Ubuntu 16.04.6 LTS)
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1589285152120
+

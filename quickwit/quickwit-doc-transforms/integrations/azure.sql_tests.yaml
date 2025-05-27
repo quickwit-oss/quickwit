@@ -1,0 +1,197 @@
+id: "azure.sql"
+tests:
+ -
+  sample: |-
+    {
+      "resourceId" : "/SUBSCRIPTIONS/8c56d827-5f07-45ce-8f2b-6c5001db5c6f/resourceGroups/ECLAIRSTANDARDLBGROUP/providers/MICROSOFT.SQL/SERVERS/STEVE-TUTORIAL-SQLDB-APPDBSERVER/DATABASES/STEVE-TUTORIAL-SQLDB-APP_DB",
+      "SubscriptionId" : "8c56d827-5f07-45ce-8f2b-6c5001db5c6f",
+      "operationName" : "QueryStoreRuntimeStatisticsEvent",
+      "LogicalServerName" : "steve-tutorial-sqldb-appdbserver",
+      "time" : "2020-04-08T12:01:27.7348213Z",
+      "category" : "QueryStoreRuntimeStatistics",
+      "ResourceGroup" : "eclairStandardLBGroup",
+      "properties" : {
+        "max_query_max_used_memory" : 0,
+        "dop" : 2,
+        "query_id" : 20,
+        "physical_io_reads" : 0,
+        "max_physical_io_reads" : 0,
+        "ElasticPoolName" : "",
+        "duration" : 139,
+        "query_hash" : "0x60BCA798C4ED116D",
+        "max_num_physical_io_reads" : 0,
+        "log_bytes_used" : 0,
+        "logical_io_reads" : 8,
+        "execution_type" : 0,
+        "max_rowcount" : 1,
+        "cpu_time" : 139,
+        "max_logical_io_writes" : 0,
+        "rowcount" : 2,
+        "max_log_bytes_used" : 0,
+        "statement_sql_handle" : "0x09001659A38339695ABEDEEF0E723BF6C1BB0000000000000000000000000000000000000000000000000000",
+        "DatabaseName" : "steve-tutorial-sqldb-app_db",
+        "max_duration" : 74,
+        "count_executions" : 2,
+        "num_physical_io_reads" : 0,
+        "interval_start_time" : 188665040291392,
+        "max_logical_io_reads" : 4,
+        "logical_io_writes" : 0,
+        "max_cpu_time" : 74,
+        "plan_id" : 3,
+        "max_dop" : 1,
+        "query_max_used_memory" : 0
+      }
+    }
+  result:
+    custom:
+      LogicalServerName: "steve-tutorial-sqldb-appdbserver"
+      ResourceGroup: "eclairStandardLBGroup"
+      SubscriptionId: "8c56d827-5f07-45ce-8f2b-6c5001db5c6f"
+      db:
+        instance: "steve-tutorial-sqldb-app_db"
+      duration: 1.39E8
+      evt:
+        category: "QueryStoreRuntimeStatistics"
+        name: "QueryStoreRuntimeStatisticsEvent"
+      properties:
+        DatabaseName: "steve-tutorial-sqldb-app_db"
+        ElasticPoolName: ""
+        count_executions: 2
+        cpu_time: 139
+        dop: 2
+        duration: 139
+        execution_type: 0
+        interval_start_time: 188665040291392
+        log_bytes_used: 0
+        logical_io_reads: 8
+        logical_io_writes: 0
+        max_cpu_time: 74
+        max_dop: 1
+        max_duration: 74
+        max_log_bytes_used: 0
+        max_logical_io_reads: 4
+        max_logical_io_writes: 0
+        max_num_physical_io_reads: 0
+        max_physical_io_reads: 0
+        max_query_max_used_memory: 0
+        max_rowcount: 1
+        num_physical_io_reads: 0
+        physical_io_reads: 0
+        plan_id: 3
+        query_hash: "0x60BCA798C4ED116D"
+        query_id: 20
+        query_max_used_memory: 0
+        rowcount: 2
+        statement_sql_handle: "0x09001659A38339695ABEDEEF0E723BF6C1BB0000000000000000000000000000000000000000000000000000"
+      resourceId: "/SUBSCRIPTIONS/8c56d827-5f07-45ce-8f2b-6c5001db5c6f/resourceGroups/ECLAIRSTANDARDLBGROUP/providers/MICROSOFT.SQL/SERVERS/STEVE-TUTORIAL-SQLDB-APPDBSERVER/DATABASES/STEVE-TUTORIAL-SQLDB-APP_DB"
+      resource_name: "steve-tutorial-sqldb-app_db"
+      time: "2020-04-08T12:01:27.7348213Z"
+    message: |-
+      {
+        "resourceId" : "/SUBSCRIPTIONS/8c56d827-5f07-45ce-8f2b-6c5001db5c6f/resourceGroups/ECLAIRSTANDARDLBGROUP/providers/MICROSOFT.SQL/SERVERS/STEVE-TUTORIAL-SQLDB-APPDBSERVER/DATABASES/STEVE-TUTORIAL-SQLDB-APP_DB",
+        "SubscriptionId" : "8c56d827-5f07-45ce-8f2b-6c5001db5c6f",
+        "operationName" : "QueryStoreRuntimeStatisticsEvent",
+        "LogicalServerName" : "steve-tutorial-sqldb-appdbserver",
+        "time" : "2020-04-08T12:01:27.7348213Z",
+        "category" : "QueryStoreRuntimeStatistics",
+        "ResourceGroup" : "eclairStandardLBGroup",
+        "properties" : {
+          "max_query_max_used_memory" : 0,
+          "dop" : 2,
+          "query_id" : 20,
+          "physical_io_reads" : 0,
+          "max_physical_io_reads" : 0,
+          "ElasticPoolName" : "",
+          "duration" : 139,
+          "query_hash" : "0x60BCA798C4ED116D",
+          "max_num_physical_io_reads" : 0,
+          "log_bytes_used" : 0,
+          "logical_io_reads" : 8,
+          "execution_type" : 0,
+          "max_rowcount" : 1,
+          "cpu_time" : 139,
+          "max_logical_io_writes" : 0,
+          "rowcount" : 2,
+          "max_log_bytes_used" : 0,
+          "statement_sql_handle" : "0x09001659A38339695ABEDEEF0E723BF6C1BB0000000000000000000000000000000000000000000000000000",
+          "DatabaseName" : "steve-tutorial-sqldb-app_db",
+          "max_duration" : 74,
+          "count_executions" : 2,
+          "num_physical_io_reads" : 0,
+          "interval_start_time" : 188665040291392,
+          "max_logical_io_reads" : 4,
+          "logical_io_writes" : 0,
+          "max_cpu_time" : 74,
+          "plan_id" : 3,
+          "max_dop" : 1,
+          "query_max_used_memory" : 0
+        }
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1586347287734
+ -
+  sample: |-
+    {
+      "callerIpAddress" : "52.159.172.17",
+      "resourceId" : "/SUBSCRIPTIONS/8C56D827-5F07-45CE-8F2B-6C5001DB5C6F/RESOURCEGROUPS/GARNER-TEST2/PROVIDERS/MICROSOFT.SQL/SERVERS/MONKEYAPPSQL",
+      "level" : "Warning",
+      "identity" : {
+        "authorization" : {
+          "evidence" : {
+            "principalId" : "5f6793e4783e49a2bfb8cdaasdada"
+          }
+        }
+      },
+      "operationName" : "MICROSOFT.AUTHORIZATION/POLICIES/AUDIT/ACTION",
+      "correlationId" : "d6e77f2d-8baa-4ae9-aa6e-eaf20b2260ee",
+      "time" : "2020-04-08T00:25:40.9569992Z",
+      "category" : "Administrative",
+      "resultType" : "Success",
+      "durationMs" : 123,
+      "resultSignature" : "Succeeded."
+    }
+  result:
+    custom:
+      correlationId: "d6e77f2d-8baa-4ae9-aa6e-eaf20b2260ee"
+      duration: 1.23E8
+      durationMs: 123
+      evt:
+        category: "Administrative"
+        name: "MICROSOFT.AUTHORIZATION/POLICIES/AUDIT/ACTION"
+        outcome: "Success"
+      level: "Warning"
+      network:
+        client:
+          ip: "52.159.172.17"
+      resourceId: "/SUBSCRIPTIONS/8C56D827-5F07-45CE-8F2B-6C5001DB5C6F/RESOURCEGROUPS/GARNER-TEST2/PROVIDERS/MICROSOFT.SQL/SERVERS/MONKEYAPPSQL"
+      resource_name: "monkeyappsql"
+      resultSignature: "Succeeded."
+      time: "2020-04-08T00:25:40.9569992Z"
+      usr:
+        id: "5f6793e4783e49a2bfb8cdaasdada"
+    message: |-
+      {
+        "callerIpAddress" : "52.159.172.17",
+        "resourceId" : "/SUBSCRIPTIONS/8C56D827-5F07-45CE-8F2B-6C5001DB5C6F/RESOURCEGROUPS/GARNER-TEST2/PROVIDERS/MICROSOFT.SQL/SERVERS/MONKEYAPPSQL",
+        "level" : "Warning",
+        "identity" : {
+          "authorization" : {
+            "evidence" : {
+              "principalId" : "5f6793e4783e49a2bfb8cdaasdada"
+            }
+          }
+        },
+        "operationName" : "MICROSOFT.AUTHORIZATION/POLICIES/AUDIT/ACTION",
+        "correlationId" : "d6e77f2d-8baa-4ae9-aa6e-eaf20b2260ee",
+        "time" : "2020-04-08T00:25:40.9569992Z",
+        "category" : "Administrative",
+        "resultType" : "Success",
+        "durationMs" : 123,
+        "resultSignature" : "Succeeded."
+      }
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1586305540956
+

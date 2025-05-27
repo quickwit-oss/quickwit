@@ -1,0 +1,137 @@
+id: verified-access
+metric_id: amazon-verified-access
+backend_only: false
+facets:
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+  - groups:
+      - Event
+    name: Event Outcome
+    path: evt.outcome
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - User
+    name: User Email
+    path: usr.email
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - groups:
+      - Core
+    name: host
+    path: host
+    source: log
+pipeline:
+  type: pipeline
+  name: AWS Verified Access
+  enabled: true
+  filter:
+    query: source:verified-access
+  processors:
+    - type: attribute-remapper
+      name: Map `activity` to `evt.name`
+      enabled: true
+      sources:
+        - activity
+      target: evt.name
+      sourceType: attribute
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `src_endpoint.ip` to `network.client.ip`
+      enabled: true
+      sources:
+        - src_endpoint.ip
+      target: network.client.ip
+      sourceType: attribute
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `http_request.url.path` to `http.url`
+      enabled: true
+      sources:
+        - http_request.url.path
+      target: http.url
+      sourceType: attribute
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `identity.user.name` to `usr.name`
+      enabled: true
+      sources:
+        - identity.user.name
+      target: usr.name
+      sourceType: attribute
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `identity.user.email_addr` to `usr.email`
+      enabled: true
+      sources:
+        - identity.user.email_addr
+      target: usr.email
+      sourceType: attribute
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `identity.user.uid` to `usr.id`
+      enabled: true
+      sources:
+        - identity.user.uid
+      target: usr.id
+      sourceType: attribute
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `status` to `evt.outcome`
+      enabled: true
+      sources:
+        - status
+      target: evt.outcome
+      sourceType: attribute
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: category-processor
+      name: Set 'evt.category:authentication' for all `source:verified-access`
+      enabled: true
+      categories:
+        - filter:
+            query: source:verified-access
+          name: authentication
+      target: evt.category
+    - type: category-processor
+      name: Set `evt.outcome:Success` to `evt.outcome:SUCCESS`
+      enabled: true
+      categories:
+        - filter:
+            query: '@evt.outcome:Success'
+          name: SUCCESS
+      target: evt.outcome

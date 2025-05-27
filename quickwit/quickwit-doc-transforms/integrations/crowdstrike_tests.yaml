@@ -1,0 +1,342 @@
+id: "crowdstrike"
+tests:
+ -
+  sample: |-
+    {
+      "metadata" : {
+        "event_type" : "AuthActivityAuditEvent",
+        "offset" : 1362,
+        "event_creation_time" : 1647971709750,
+        "customer_id_string" : "f352a149c6ef24625e5",
+        "version" : "1.0"
+      },
+      "service" : "crowdstrike",
+      "event" : {
+        "operation_name" : "twoFactorAuthenticate",
+        "user_ip" : "185.64.148.140",
+        "user_id" : "abcd12345",
+        "success" : true,
+        "service_name" : "CrowdStrike Authentication",
+        "utc_timestamp" : 1647971709750
+      }
+    }
+  result:
+    custom:
+      event:
+        utc_timestamp: 1647971709750
+      evt:
+        name: "twoFactorAuthenticate"
+        outcome: "true"
+        service: "CrowdStrike Authentication"
+        timestamp: 1647971709750
+        type: "AuthActivityAuditEvent"
+      metadata:
+        customer_id_string: "f352a149c6ef24625e5"
+        offset: 1362
+        version: "1.0"
+      network:
+        client:
+          geoip:
+            city:
+              name: "Paris"
+            continent:
+              code: "EU"
+              name: "Europe"
+            country:
+              iso_code: "FR"
+              name: "France"
+            ipAddress: "185.64.148.140"
+            location:
+              latitude: 48.90654
+              longitude: 2.33339
+            subdivision:
+              iso_code: "FR-IDF"
+              name: "Île-de-France"
+            timezone: "Europe/Paris"
+          ip: "185.64.148.140"
+      service: "crowdstrike"
+      usr:
+        id: "abcd12345"
+    message: |-
+      {
+        "metadata" : {
+          "event_type" : "AuthActivityAuditEvent",
+          "offset" : 1362,
+          "event_creation_time" : 1647971709750,
+          "customer_id_string" : "f352a149c6ef24625e5",
+          "version" : "1.0"
+        },
+        "service" : "crowdstrike",
+        "event" : {
+          "operation_name" : "twoFactorAuthenticate",
+          "user_ip" : "185.64.148.140",
+          "user_id" : "abcd12345",
+          "success" : true,
+          "service_name" : "CrowdStrike Authentication",
+          "utc_timestamp" : 1647971709750
+        }
+      }
+    service: "crowdstrike"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1647971709750
+ -
+  sample: |-
+    {
+      "id" : "AQAAAYSAuBb4hfMuzAAAAABBWVNBdmZzaEFBRGFrSVJvVkFaajJRQUE",
+      "content" : {
+        "service" : "crowdstrike",
+        "attributes" : {
+          "evt" : {
+            "type" : "DetectionSummaryEvent",
+            "timestamp" : 1668606859000
+          },
+          "metadata" : {
+            "offset" : 1204022,
+            "customer_id_string" : "511b26feb97d40df83b116135bed2d01",
+            "version" : "1.0"
+          },
+          "service" : "crowdstrike",
+          "event" : {
+            "parent_process_id" : 679028471205,
+            "file_path" : "\\Device\\HarddiskVolume3\\Program Files (x86)\\WinDock",
+            "process_id" : 680154307306,
+            "grandparent_command_line" : "C:\\Windows\\Explorer.EXE",
+            "pattern_disposition_flags" : {
+              "indicator" : false,
+              "registry_operation_blocked" : false,
+              "bootup_safeguard_enabled" : false,
+              "rooting" : false,
+              "quarantine_machine" : false,
+              "kill_parent" : false,
+              "handle_operation_downgraded" : false,
+              "blocking_unsupported_or_disabled" : false,
+              "detect" : false,
+              "kill_process" : false,
+              "fs_operation_blocked" : false,
+              "suspend_process" : false,
+              "quarantine_file" : false,
+              "critical_process_disabled" : false,
+              "operation_blocked" : false,
+              "inddet_mask" : false,
+              "policy_disabled" : true,
+              "kill_sub_process" : false,
+              "suspend_parent" : false,
+              "sensor_only" : false,
+              "process_blocked" : true,
+              "kill_action_failed" : false
+            },
+            "falcon_host_link" : "https://falcon.crowdstrike.com/activity/detections/detail/b0c2928f09704ac28c99f86868f65d6f/223338418481?_cid=g03000sljgsv2nobh23al2zovvrtuiaq",
+            "user_name" : "ben.busser@walkme.com",
+            "associated_file" : "\\Device\\HarddiskVolume3\\Program Files (x86)\\WinDock\\WinDockDaemon.exe",
+            "technique" : "Sensor-based ML",
+            "pattern_disposition_value" : 2304,
+            "pattern_disposition_description" : "Detection, process would have been blocked if related prevention policy setting was enabled.",
+            "machine_domain" : "WALKME",
+            "process_start_time" : 1668606857,
+            "tactic" : "Machine Learning",
+            "objective" : "Falcon Detection Method",
+            "sensor_id" : "b0c2928f09704ac28c99f86868f65d6f",
+            "detect_id" : "ldt:b0c2928f09704ac28c99f86868f65d6f:223338418481",
+            "detect_description" : "This file meets the machine learning-based on-sensor AV protection's lowest-confidence threshold for malicious files.",
+            "sha1_string" : "0000000000000000000000000000000000000000",
+            "mac_address" : "f4-26-79-20-ab-a2",
+            "md5_string" : "de2ddf70d8838ca4d29a53507c1f7b91",
+            "grandparent_image_file_name" : "\\Device\\HarddiskVolume3\\Windows\\explorer.exe",
+            "sha256_string" : "1df8c12dc3024c308b116097096a33f561eea71692b5b4d87fc95076a8d3158f",
+            "severity" : 1,
+            "computer_name" : "WM-LAPTOP",
+            "parent_command_line" : "\"C:\\Program Files (x86)\\WinDock\\WinDock.exe\" ",
+            "file_name" : "WinDockDaemon.exe",
+            "process_end_time" : 0,
+            "ioc_value" : "1df8c12dc3024c308b116097096a33f561eea71692b5b4d87fc95076a8d3158f",
+            "severity_name" : "Informational",
+            "ioc_type" : "hash_sha256",
+            "parent_image_file_name" : "\\Device\\HarddiskVolume3\\Program Files (x86)\\WinDock\\WinDock.exe",
+            "local_ip" : "192.168.1.56",
+            "detect_name" : "NGAV",
+            "command_line" : "\"C:\\Program Files (x86)\\WinDock\\WinDockDaemon.exe\"",
+            "host_groups" : "3b31941d587749538cb1e4c3fcdef635"
+          },
+          "network" : {
+            "ip" : {
+              "list" : [ "192.168.1.56" ]
+            }
+          }
+        },
+        "timestamp" : "2022-11-16T13:54:19.000Z",
+        "tags" : [ "env:corporate", "source:crowdstrike" ]
+      }
+    }
+  result:
+    custom:
+      content:
+        attributes:
+          event:
+            associated_file: "\\Device\\HarddiskVolume3\\Program Files (x86)\\WinDock\\WinDockDaemon.exe"
+            command_line: "\"C:\\Program Files (x86)\\WinDock\\WinDockDaemon.exe\""
+            computer_name: "WM-LAPTOP"
+            detect_description: "This file meets the machine learning-based on-sensor AV protection's lowest-confidence threshold for malicious files."
+            detect_id: "ldt:b0c2928f09704ac28c99f86868f65d6f:223338418481"
+            detect_name: "NGAV"
+            falcon_host_link: "https://falcon.crowdstrike.com/activity/detections/detail/b0c2928f09704ac28c99f86868f65d6f/223338418481?_cid=g03000sljgsv2nobh23al2zovvrtuiaq"
+            file_name: "WinDockDaemon.exe"
+            file_path: "\\Device\\HarddiskVolume3\\Program Files (x86)\\WinDock"
+            grandparent_command_line: "C:\\Windows\\Explorer.EXE"
+            grandparent_image_file_name: "\\Device\\HarddiskVolume3\\Windows\\explorer.exe"
+            host_groups: "3b31941d587749538cb1e4c3fcdef635"
+            ioc_type: "hash_sha256"
+            ioc_value: "1df8c12dc3024c308b116097096a33f561eea71692b5b4d87fc95076a8d3158f"
+            local_ip: "192.168.1.56"
+            mac_address: "f4-26-79-20-ab-a2"
+            machine_domain: "WALKME"
+            md5_string: "de2ddf70d8838ca4d29a53507c1f7b91"
+            objective: "Falcon Detection Method"
+            parent_command_line: "\"C:\\Program Files (x86)\\WinDock\\WinDock.exe\" "
+            parent_image_file_name: "\\Device\\HarddiskVolume3\\Program Files (x86)\\WinDock\\WinDock.exe"
+            parent_process_id: 679028471205
+            pattern_disposition_description: "Detection, process would have been blocked if related prevention policy setting was enabled."
+            pattern_disposition_flags:
+              blocking_unsupported_or_disabled: false
+              bootup_safeguard_enabled: false
+              critical_process_disabled: false
+              detect: false
+              fs_operation_blocked: false
+              handle_operation_downgraded: false
+              inddet_mask: false
+              indicator: false
+              kill_action_failed: false
+              kill_parent: false
+              kill_process: false
+              kill_sub_process: false
+              operation_blocked: false
+              policy_disabled: true
+              process_blocked: true
+              quarantine_file: false
+              quarantine_machine: false
+              registry_operation_blocked: false
+              rooting: false
+              sensor_only: false
+              suspend_parent: false
+              suspend_process: false
+            pattern_disposition_value: 2304
+            process_end_time: 0
+            process_id: 680154307306
+            process_start_time: 1668606857
+            sensor_id: "b0c2928f09704ac28c99f86868f65d6f"
+            severity: 1
+            severity_name: "Informational"
+            sha1_string: "0000000000000000000000000000000000000000"
+            sha256_string: "1df8c12dc3024c308b116097096a33f561eea71692b5b4d87fc95076a8d3158f"
+            tactic: "Machine Learning"
+            technique: "Sensor-based ML"
+            user_name: "ben.busser@walkme.com"
+          evt:
+            timestamp: 1668606859000
+            type: "DetectionSummaryEvent"
+          metadata:
+            customer_id_string: "511b26feb97d40df83b116135bed2d01"
+            offset: 1204022
+            version: "1.0"
+          network:
+            ip:
+              list:
+               - "192.168.1.56"
+          service: "crowdstrike"
+        service: "crowdstrike"
+        tags:
+         - "env:corporate"
+         - "source:crowdstrike"
+        timestamp: "2022-11-16T13:54:19.000Z"
+      id: "AQAAAYSAuBb4hfMuzAAAAABBWVNBdmZzaEFBRGFrSVJvVkFaajJRQUE"
+    message: |-
+      {
+        "id" : "AQAAAYSAuBb4hfMuzAAAAABBWVNBdmZzaEFBRGFrSVJvVkFaajJRQUE",
+        "content" : {
+          "service" : "crowdstrike",
+          "attributes" : {
+            "evt" : {
+              "type" : "DetectionSummaryEvent",
+              "timestamp" : 1668606859000
+            },
+            "metadata" : {
+              "offset" : 1204022,
+              "customer_id_string" : "511b26feb97d40df83b116135bed2d01",
+              "version" : "1.0"
+            },
+            "service" : "crowdstrike",
+            "event" : {
+              "parent_process_id" : 679028471205,
+              "file_path" : "\\Device\\HarddiskVolume3\\Program Files (x86)\\WinDock",
+              "process_id" : 680154307306,
+              "grandparent_command_line" : "C:\\Windows\\Explorer.EXE",
+              "pattern_disposition_flags" : {
+                "indicator" : false,
+                "registry_operation_blocked" : false,
+                "bootup_safeguard_enabled" : false,
+                "rooting" : false,
+                "quarantine_machine" : false,
+                "kill_parent" : false,
+                "handle_operation_downgraded" : false,
+                "blocking_unsupported_or_disabled" : false,
+                "detect" : false,
+                "kill_process" : false,
+                "fs_operation_blocked" : false,
+                "suspend_process" : false,
+                "quarantine_file" : false,
+                "critical_process_disabled" : false,
+                "operation_blocked" : false,
+                "inddet_mask" : false,
+                "policy_disabled" : true,
+                "kill_sub_process" : false,
+                "suspend_parent" : false,
+                "sensor_only" : false,
+                "process_blocked" : true,
+                "kill_action_failed" : false
+              },
+              "falcon_host_link" : "https://falcon.crowdstrike.com/activity/detections/detail/b0c2928f09704ac28c99f86868f65d6f/223338418481?_cid=g03000sljgsv2nobh23al2zovvrtuiaq",
+              "user_name" : "ben.busser@walkme.com",
+              "associated_file" : "\\Device\\HarddiskVolume3\\Program Files (x86)\\WinDock\\WinDockDaemon.exe",
+              "technique" : "Sensor-based ML",
+              "pattern_disposition_value" : 2304,
+              "pattern_disposition_description" : "Detection, process would have been blocked if related prevention policy setting was enabled.",
+              "machine_domain" : "WALKME",
+              "process_start_time" : 1668606857,
+              "tactic" : "Machine Learning",
+              "objective" : "Falcon Detection Method",
+              "sensor_id" : "b0c2928f09704ac28c99f86868f65d6f",
+              "detect_id" : "ldt:b0c2928f09704ac28c99f86868f65d6f:223338418481",
+              "detect_description" : "This file meets the machine learning-based on-sensor AV protection's lowest-confidence threshold for malicious files.",
+              "sha1_string" : "0000000000000000000000000000000000000000",
+              "mac_address" : "f4-26-79-20-ab-a2",
+              "md5_string" : "de2ddf70d8838ca4d29a53507c1f7b91",
+              "grandparent_image_file_name" : "\\Device\\HarddiskVolume3\\Windows\\explorer.exe",
+              "sha256_string" : "1df8c12dc3024c308b116097096a33f561eea71692b5b4d87fc95076a8d3158f",
+              "severity" : 1,
+              "computer_name" : "WM-LAPTOP",
+              "parent_command_line" : "\"C:\\Program Files (x86)\\WinDock\\WinDock.exe\" ",
+              "file_name" : "WinDockDaemon.exe",
+              "process_end_time" : 0,
+              "ioc_value" : "1df8c12dc3024c308b116097096a33f561eea71692b5b4d87fc95076a8d3158f",
+              "severity_name" : "Informational",
+              "ioc_type" : "hash_sha256",
+              "parent_image_file_name" : "\\Device\\HarddiskVolume3\\Program Files (x86)\\WinDock\\WinDock.exe",
+              "local_ip" : "192.168.1.56",
+              "detect_name" : "NGAV",
+              "command_line" : "\"C:\\Program Files (x86)\\WinDock\\WinDockDaemon.exe\"",
+              "host_groups" : "3b31941d587749538cb1e4c3fcdef635"
+            },
+            "network" : {
+              "ip" : {
+                "list" : [ "192.168.1.56" ]
+              }
+            }
+          },
+          "timestamp" : "2022-11-16T13:54:19.000Z",
+          "tags" : [ "env:corporate", "source:crowdstrike" ]
+        }
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+

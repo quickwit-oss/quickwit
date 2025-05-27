@@ -1,0 +1,499 @@
+id: microsoft-graph
+tests:
+  - sample: >2
+          {
+              "id": "ada2caff4b41c12896cfa9e01a1639cbb003a53029",
+              "providerAlertId": "663aab2136b13426ce8a1ad17ce301b8ef1d269d0c9ca4ec96adefb8084f114b",
+              "incidentId": "1001",
+              "status": "new",
+              "severity": "info",
+              "classification": null,
+              "determination": null,
+              "serviceSource": "azureAdIdentityProtection",
+              "detectionSource": "azureAdIdentityProtection",
+              "productName": "AAD Identity Protection",
+              "detectorId": "AnomalousToken",
+              "tenantId": "4d3bac44-0230-4732-9e70-cc00736f0a97",
+              "title": "Anomalous Token",
+              "description": "Anomalous token indicates that there are abnormal characteristics in the token such as token duration and authentication from unfamiliar IP address",
+              "recommendedActions": "",
+              "category": "InitialAccess",
+              "assignedTo": null,
+              "alertWebUrl": "https://security.microsoft.com/alerts/ada2caff4b41c12896cfa9e01a1639cbb003a53029?tid=4d3bac44-0230-4732-9e70-cc00736f0a97",
+              "incidentWebUrl": "https://security.microsoft.com/incidents/1001?tid=4d3bac44-0230-4732-9e70-cc00736f0a97",
+              "actorDisplayName": null,
+              "threatDisplayName": null,
+              "threatFamilyName": null,
+              "mitreTechniques": [],
+              "createdDateTime": "2024-05-14T06:54:28.2466667Z",
+              "lastUpdateDateTime": "2024-05-14T06:54:29.1566667Z",
+              "resolvedDateTime": null,
+              "firstActivityDateTime": "2024-05-13T17:44:44.546222Z",
+              "lastActivityDateTime": "2024-05-13T17:44:44.546222Z",
+              "systemTags": [],
+              "alertPolicyId": null,
+              "additionalData": null,
+              "comments": [],
+              "evidence": [
+                  {
+                      "@odata.type": "#microsoft.graph.security.userEvidence",
+                      "createdDateTime": "2024-05-14T06:54:28.35Z",
+                      "verdict": "unknown",
+                      "remediationStatus": "none",
+                      "remediationStatusDetails": null,
+                      "roles": [],
+                      "detailedRoles": [],
+                      "tags": [],
+                      "stream": null,
+                      "userAccount": {
+                          "accountName": "hunter.foster",
+                          "domainName": null,
+                          "userSid": "S-1-12-1-1131289255-1306919169-2928870561-3471909964",
+                          "azureAdUserId": "436e1aa7-0101-4de6-a104-93ae4c24f1ce",
+                          "userPrincipalName": "hunter.foster@devdatadoghq.onmicrosoft.com",
+                          "displayName": "Hunter Foster"
+                      }
+                  },
+                  {
+                      "@odata.type": "#microsoft.graph.security.ipEvidence",
+                      "createdDateTime": "2024-05-14T06:54:28.35Z",
+                      "verdict": "unknown",
+                      "remediationStatus": "none",
+                      "remediationStatusDetails": null,
+                      "roles": [],
+                      "detailedRoles": [],
+                      "tags": [],
+                      "ipAddress": "2600:8807:9a05:3300:d4b0:8a41:a0b7:421d",
+                      "countryLetterCode": "US",
+                      "stream": null,
+                      "location": {
+                          "countryName": null,
+                          "state": "Florida",
+                          "city": "Niceville",
+                          "longitude": -86.45843,
+                          "latitude": 30.50271
+                      }
+                  }
+              ]
+          }
+    result:
+      custom:
+        alertWebUrl: "https://security.microsoft.com/alerts/ada2caff4b41c12896cfa9e01a1639cbb003a53029?tid=4d3bac44-0230-4732-9e70-cc00736f0a97"
+        category: "InitialAccess"
+        createdDateTime: "2024-05-14T06:54:28.2466667Z"
+        description: "Anomalous token indicates that there are abnormal characteristics in the token such as token duration and authentication from unfamiliar IP address"
+        detectionSource: "azureAdIdentityProtection"
+        detectorId: "AnomalousToken"
+        evidence:
+          - verdict: "unknown"
+            userAccount:
+              accountName: "hunter.foster"
+              displayName: "Hunter Foster"
+              userSid: "S-1-12-1-1131289255-1306919169-2928870561-3471909964"
+              azureAdUserId: "436e1aa7-0101-4de6-a104-93ae4c24f1ce"
+              userPrincipalName: "hunter.foster@devdatadoghq.onmicrosoft.com"
+            "@odata":
+              type: "#microsoft.graph.security.userEvidence"
+            createdDateTime: "2024-05-14T06:54:28.35Z"
+            remediationStatus: "none"
+          - countryLetterCode: "US"
+            verdict: "unknown"
+            "@odata":
+              type: "#microsoft.graph.security.ipEvidence"
+            ipAddress: "2600:8807:9a05:3300:d4b0:8a41:a0b7:421d"
+            createdDateTime: "2024-05-14T06:54:28.35Z"
+            location:
+              city: "Niceville"
+              latitude: 30.50271
+              state: "Florida"
+              longitude: -86.45843
+            remediationStatus: "none"
+        firstActivityDateTime: "2024-05-13T17:44:44.546222Z"
+        id: "ada2caff4b41c12896cfa9e01a1639cbb003a53029"
+        incidentId: "1001"
+        incidentWebUrl: "https://security.microsoft.com/incidents/1001?tid=4d3bac44-0230-4732-9e70-cc00736f0a97"
+        lastActivityDateTime: "2024-05-13T17:44:44.546222Z"
+        lastUpdateDateTime: "2024-05-14T06:54:29.1566667Z"
+        productName: "AAD Identity Protection"
+        providerAlertId: "663aab2136b13426ce8a1ad17ce301b8ef1d269d0c9ca4ec96adefb8084f114b"
+        recommendedActions: ""
+        serviceSource: "azureAdIdentityProtection"
+        severity: "info"
+        status: "new"
+        tenantId: "4d3bac44-0230-4732-9e70-cc00736f0a97"
+        title: "Anomalous Token"
+      message: |-
+        {
+          "severity" : "info",
+          "lastUpdateDateTime" : "2024-05-14T06:54:29.1566667Z",
+          "firstActivityDateTime" : "2024-05-13T17:44:44.546222Z",
+          "serviceSource" : "azureAdIdentityProtection",
+          "evidence" : [ {
+            "verdict" : "unknown",
+            "userAccount" : {
+              "accountName" : "hunter.foster",
+              "displayName" : "Hunter Foster",
+              "userSid" : "S-1-12-1-1131289255-1306919169-2928870561-3471909964",
+              "azureAdUserId" : "436e1aa7-0101-4de6-a104-93ae4c24f1ce",
+              "userPrincipalName" : "hunter.foster@devdatadoghq.onmicrosoft.com"
+            },
+            "@odata" : {
+              "type" : "#microsoft.graph.security.userEvidence"
+            },
+            "createdDateTime" : "2024-05-14T06:54:28.35Z",
+            "remediationStatus" : "none"
+          }, {
+            "countryLetterCode" : "US",
+            "verdict" : "unknown",
+            "@odata" : {
+              "type" : "#microsoft.graph.security.ipEvidence"
+            },
+            "ipAddress" : "2600:8807:9a05:3300:d4b0:8a41:a0b7:421d",
+            "createdDateTime" : "2024-05-14T06:54:28.35Z",
+            "location" : {
+              "city" : "Niceville",
+              "latitude" : 30.50271,
+              "state" : "Florida",
+              "longitude" : -86.45843
+            },
+            "remediationStatus" : "none"
+          } ],
+          "description" : "Anomalous token indicates that there are abnormal characteristics in the token such as token duration and authentication from unfamiliar IP address",
+          "createdDateTime" : "2024-05-14T06:54:28.2466667Z",
+          "title" : "Anomalous Token",
+          "productName" : "AAD Identity Protection",
+          "detectorId" : "AnomalousToken",
+          "incidentWebUrl" : "https://security.microsoft.com/incidents/1001?tid=4d3bac44-0230-4732-9e70-cc00736f0a97",
+          "tenantId" : "4d3bac44-0230-4732-9e70-cc00736f0a97",
+          "alertWebUrl" : "https://security.microsoft.com/alerts/ada2caff4b41c12896cfa9e01a1639cbb003a53029?tid=4d3bac44-0230-4732-9e70-cc00736f0a97",
+          "providerAlertId" : "663aab2136b13426ce8a1ad17ce301b8ef1d269d0c9ca4ec96adefb8084f114b",
+          "detectionSource" : "azureAdIdentityProtection",
+          "id" : "ada2caff4b41c12896cfa9e01a1639cbb003a53029",
+          "recommendedActions" : "",
+          "lastActivityDateTime" : "2024-05-13T17:44:44.546222Z",
+          "incidentId" : "1001",
+          "category" : "InitialAccess",
+          "status" : "new"
+        }
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1715669669156
+  - sample: >2-
+          {
+              "id": "dc2516863571999999999_e6edcae6ed22921dd9cab5fbe8a5db77",
+              "providerAlertId": "2516863571999999999_e6edcae6ed22921dd9cab5fbe8a5db77",
+              "incidentId": "1002",
+              "status": "new",
+              "severity": "low",
+              "classification": null,
+              "determination": null,
+              "serviceSource": "unknownFutureValue",
+              "detectionSource": "unknownFutureValue",
+              "productName": "Microsoft Defender for Cloud",
+              "detectorId": "${RDP_Incoming_BF_OneToOne}",
+              "tenantId": "4d3bac44-0230-4732-9e70-cc00736f0a97",
+              "title": "Suspicious incoming RDP network activity",
+              "description": "Network traffic analysis detected anomalous incoming Remote Desktop Protocol (RDP) communication to 52.224.88.41, associated with your resource Test-FW01, from 46.219.77.107. When the compromised resource is a load balancer or an application gateway, the suspected incoming traffic has been forwarded to one or more of the resources in the backend pool (of the load balancer or application gateway).Specifically, sampled network data shows 435.0 incoming connections to your resource, which is considered abnormal for this environment.This activity may indicate an attempt to brute force your RDP end point",
+              "recommendedActions": "When the compromised resource is a load balancer or an application gateway, you may want to trace which resources behind it have been impacted by the suspicious traffic, by following these steps:\r\n1. Find the suspicious machines, by reviewing the load balancer / application gateway backend pools.\r\nhttps://docs.microsoft.com/en-us/azure/load-balancer/\r\nhttps://docs.microsoft.com/en-us/azure/application-gateway/\r\n2.  When the compromised resource is a load balancer, review the configured load balancing rules in order to reach the affected machines.\r\nhttps://docs.microsoft.com/en-us/azure/load-balancer/\r\n3. To filter the relevant machines you can:\r\n• Check the active status of the machine during the suspicious activity using machine logs / current status.\r\n• Check for additional alerts on the resources during the suspicious activity which may indicate the machines that were compromised.\r\n• Check for unfamiliar processes running on the machine\r\n• Check for traces in other log sources (if they exist) such as: firewall logs, activity logs, WAF and more...\r\n4. Run the following remediation steps for each machine which might have been compromised by the suspicious activity.\r\n1. Add 46.219.77.107 to a Network Security Group block list for 24 hours. (See https://azure.microsoft.com/en-us/documentation/articles/virtual-networks-nsg/)\r\n2. Enforce the use of strong passwords and do not reuse them across multiple resources. (See http://windows.microsoft.com/en-us/Windows7/Tips-for-creating-strong-passwords-and-passphrases) \r\n3. Create an allow list for RDP access in NSG. (See https://azure.microsoft.com/en-us/documentation/articles/virtual-networks-nsg/)",
+              "category": "InitialAccess",
+              "assignedTo": null,
+              "alertWebUrl": "https://security.microsoft.com/alerts/dc2516863571999999999_e6edcae6ed22921dd9cab5fbe8a5db77?tid=4d3bac44-0230-4732-9e70-cc00736f0a97",
+              "incidentWebUrl": "https://security.microsoft.com/incidents/1002?tid=4d3bac44-0230-4732-9e70-cc00736f0a97",
+              "actorDisplayName": null,
+              "threatDisplayName": null,
+              "threatFamilyName": null,
+              "mitreTechniques": [],
+              "createdDateTime": "2024-05-17T16:01:36.47Z",
+              "lastUpdateDateTime": "2024-05-17T16:05:10.3066667Z",
+              "resolvedDateTime": null,
+              "firstActivityDateTime": "2024-05-17T11:00:00Z",
+              "lastActivityDateTime": "2024-05-17T11:00:00Z",
+              "systemTags": [],
+              "alertPolicyId": null,
+              "comments": [],
+              "evidence": [
+                  {
+                      "@odata.type": "#microsoft.graph.security.deviceEvidence",
+                      "createdDateTime": "2024-05-17T16:01:36.58Z",
+                      "verdict": "unknown",
+                      "remediationStatus": "none",
+                      "remediationStatusDetails": null,
+                      "roles": [],
+                      "detailedRoles": [],
+                      "tags": [],
+                      "firstSeenDateTime": null,
+                      "mdeDeviceId": null,
+                      "azureAdDeviceId": null,
+                      "deviceDnsName": "Test-FW01",
+                      "hostName": null,
+                      "ntDomain": null,
+                      "dnsDomain": null,
+                      "osPlatform": null,
+                      "osBuild": null,
+                      "version": null,
+                      "healthStatus": null,
+                      "riskScore": null,
+                      "rbacGroupId": null,
+                      "rbacGroupName": null,
+                      "onboardingStatus": null,
+                      "defenderAvStatus": null,
+                      "lastIpAddress": null,
+                      "lastExternalIpAddress": null,
+                      "ipInterfaces": [],
+                      "vmMetadata": null,
+                      "loggedOnUsers": []
+                  },
+                  {
+                      "@odata.type": "#microsoft.graph.security.ipEvidence",
+                      "createdDateTime": "2024-05-17T16:01:36.58Z",
+                      "verdict": "unknown",
+                      "remediationStatus": "none",
+                      "remediationStatusDetails": null,
+                      "roles": [],
+                      "detailedRoles": [],
+                      "tags": [],
+                      "ipAddress": "46.219.77.107",
+                      "countryLetterCode": "UA",
+                      "stream": null,
+                      "location": {
+                          "countryName": "Ukraine",
+                          "state": "Zhytomyrs'ka Oblast'",
+                          "city": "Zhytomyr",
+                          "longitude": 28.6587,
+                          "latitude": 50.2547
+                      }
+                  },
+                  {
+                      "@odata.type": "#microsoft.graph.security.ipEvidence",
+                      "createdDateTime": "2024-05-17T16:01:36.58Z",
+                      "verdict": "unknown",
+                      "remediationStatus": "none",
+                      "remediationStatusDetails": null,
+                      "roles": [],
+                      "detailedRoles": [],
+                      "tags": [],
+                      "ipAddress": "52.224.88.41",
+                      "countryLetterCode": "US",
+                      "stream": null,
+                      "location": {
+                          "countryName": "United States",
+                          "state": "Virginia",
+                          "city": "Washington",
+                          "longitude": -78.159,
+                          "latitude": 38.713
+                      }
+                  },
+                  {
+                      "@odata.type": "#microsoft.graph.security.azureResourceEvidence",
+                      "createdDateTime": "2024-05-17T16:01:36.58Z",
+                      "verdict": "unknown",
+                      "remediationStatus": "none",
+                      "remediationStatusDetails": null,
+                      "roles": [],
+                      "detailedRoles": [],
+                      "tags": [],
+                      "resourceType": "Networking",
+                      "resourceName": "Test-FW01",
+                      "resourceId": "/subscriptions/8c56d827-5f07-45ce-8f2b-6c5001db5c6f/resourceGroups/Test-FW-RG/providers/Microsoft.Network/azureFirewalls/Test-FW01"
+                  }
+              ],
+              "additionalData": {
+                  "OriginalAlertProductName": "Detection-Network",
+                  "OriginalAlertProviderName": "Microsoft Defender for Cloud",
+                  "AlertUri": "https://portal.azure.com/#blade/Microsoft_Azure_Security_AzureDefenderForData/AlertBlade/alertId/2516863571999999999_e6edcae6ed22921dd9cab5fbe8a5db77/subscriptionId/8c56d827-5f07-45ce-8f2b-6c5001db5c6f/resourceGroup/Test-FW-RG/referencedFrom/alertDeepLink/location/centralus",
+                  "TimeGenerated": "2024-05-17T16:01:24.414Z",
+                  "ProcessingEndTime": "2024-05-17T16:01:24.1741202Z",
+                  "Intent@odata.type": "#Int64",
+                  "Intent": 1,
+                  "Number of Connections": "435",
+                  "Attacked Protocol": "RDP",
+                  "Attacker IP": "46.219.77.107",
+                  "Compromised Host": "Test-FW01",
+                  "Victim IP": "52.224.88.41",
+                  "Business Impact": "Low",
+                  "Attacked Port": "3389",
+                  "EffectiveAzureResourceId": "/subscriptions/8c56d827-5f07-45ce-8f2b-6c5001db5c6f/resourceGroups/Test-FW-RG/providers/Microsoft.Network/azureFirewalls/Test-FW01",
+                  "ProductComponentName": "Network",
+                  "EffectiveSubscriptionId": "8c56d827-5f07-45ce-8f2b-6c5001db5c6f"
+              }
+          }
+    result:
+      custom:
+        additionalData:
+          AlertUri: "https://portal.azure.com/#blade/Microsoft_Azure_Security_AzureDefenderForData/AlertBlade/alertId/2516863571999999999_e6edcae6ed22921dd9cab5fbe8a5db77/subscriptionId/8c56d827-5f07-45ce-8f2b-6c5001db5c6f/resourceGroup/Test-FW-RG/referencedFrom/alertDeepLink/location/centralus"
+          Attacked Port: "3389"
+          Attacked Protocol: "RDP"
+          Attacker IP: "46.219.77.107"
+          Business Impact: "Low"
+          Compromised Host: "Test-FW01"
+          EffectiveAzureResourceId: "/subscriptions/8c56d827-5f07-45ce-8f2b-6c5001db5c6f/resourceGroups/Test-FW-RG/providers/Microsoft.Network/azureFirewalls/Test-FW01"
+          EffectiveSubscriptionId: "8c56d827-5f07-45ce-8f2b-6c5001db5c6f"
+          Intent: 1
+          Intent@odata:
+            type: "#Int64"
+          Number of Connections: "435"
+          OriginalAlertProductName: "Detection-Network"
+          OriginalAlertProviderName: "Microsoft Defender for Cloud"
+          ProcessingEndTime: "2024-05-17T16:01:24.1741202Z"
+          ProductComponentName: "Network"
+          TimeGenerated: "2024-05-17T16:01:24.414Z"
+          Victim IP: "52.224.88.41"
+        alertWebUrl: "https://security.microsoft.com/alerts/dc2516863571999999999_e6edcae6ed22921dd9cab5fbe8a5db77?tid=4d3bac44-0230-4732-9e70-cc00736f0a97"
+        category: "InitialAccess"
+        createdDateTime: "2024-05-17T16:01:36.47Z"
+        description: "Network traffic analysis detected anomalous incoming Remote Desktop Protocol (RDP) communication to 52.224.88.41, associated with your resource Test-FW01, from 46.219.77.107. When the compromised resource is a load balancer or an application gateway, the suspected incoming traffic has been forwarded to one or more of the resources in the backend pool (of the load balancer or application gateway).Specifically, sampled network data shows 435.0 incoming connections to your resource, which is considered abnormal for this environment.This activity may indicate an attempt to brute force your RDP end point"
+        detectionSource: "unknownFutureValue"
+        detectorId: "${RDP_Incoming_BF_OneToOne}"
+        evidence:
+          - verdict: "unknown"
+            "@odata":
+              type: "#microsoft.graph.security.deviceEvidence"
+            createdDateTime: "2024-05-17T16:01:36.58Z"
+            remediationStatus: "none"
+            deviceDnsName: "Test-FW01"
+          - countryLetterCode: "UA"
+            verdict: "unknown"
+            "@odata":
+              type: "#microsoft.graph.security.ipEvidence"
+            ipAddress: "46.219.77.107"
+            createdDateTime: "2024-05-17T16:01:36.58Z"
+            location:
+              city: "Zhytomyr"
+              latitude: 50.2547
+              countryName: "Ukraine"
+              state: "Zhytomyrs'ka Oblast'"
+              longitude: 28.6587
+            remediationStatus: "none"
+          - countryLetterCode: "US"
+            verdict: "unknown"
+            "@odata":
+              type: "#microsoft.graph.security.ipEvidence"
+            ipAddress: "52.224.88.41"
+            createdDateTime: "2024-05-17T16:01:36.58Z"
+            location:
+              city: "Washington"
+              latitude: 38.713
+              countryName: "United States"
+              state: "Virginia"
+              longitude: -78.159
+            remediationStatus: "none"
+          - resourceId: "/subscriptions/8c56d827-5f07-45ce-8f2b-6c5001db5c6f/resourceGroups/Test-FW-RG/providers/Microsoft.Network/azureFirewalls/Test-FW01"
+            verdict: "unknown"
+            "@odata":
+              type: "#microsoft.graph.security.azureResourceEvidence"
+            createdDateTime: "2024-05-17T16:01:36.58Z"
+            resourceName: "Test-FW01"
+            remediationStatus: "none"
+            resourceType: "Networking"
+        firstActivityDateTime: "2024-05-17T11:00:00Z"
+        id: "dc2516863571999999999_e6edcae6ed22921dd9cab5fbe8a5db77"
+        incidentId: "1002"
+        incidentWebUrl: "https://security.microsoft.com/incidents/1002?tid=4d3bac44-0230-4732-9e70-cc00736f0a97"
+        lastActivityDateTime: "2024-05-17T11:00:00Z"
+        lastUpdateDateTime: "2024-05-17T16:05:10.3066667Z"
+        productName: "Microsoft Defender for Cloud"
+        providerAlertId: "2516863571999999999_e6edcae6ed22921dd9cab5fbe8a5db77"
+        recommendedActions: "When the compromised resource is a load balancer or an application gateway, you may want to trace which resources behind it have been impacted by the suspicious traffic, by following these steps:\r\n1. Find the suspicious machines, by reviewing the load balancer / application gateway backend pools.\r\nhttps://docs.microsoft.com/en-us/azure/load-balancer/\r\nhttps://docs.microsoft.com/en-us/azure/application-gateway/\r\n2.  When the compromised resource is a load balancer, review the configured load balancing rules in order to reach the affected machines.\r\nhttps://docs.microsoft.com/en-us/azure/load-balancer/\r\n3. To filter the relevant machines you can:\r\n• Check the active status of the machine during the suspicious activity using machine logs / current status.\r\n• Check for additional alerts on the resources during the suspicious activity which may indicate the machines that were compromised.\r\n• Check for unfamiliar processes running on the machine\r\n• Check for traces in other log sources (if they exist) such as: firewall logs, activity logs, WAF and more...\r\n4. Run the following remediation steps for each machine which might have been compromised by the suspicious activity.\r\n1. Add 46.219.77.107 to a Network Security Group block list for 24 hours. (See https://azure.microsoft.com/en-us/documentation/articles/virtual-networks-nsg/)\r\n2. Enforce the use of strong passwords and do not reuse them across multiple resources. (See http://windows.microsoft.com/en-us/Windows7/Tips-for-creating-strong-passwords-and-passphrases) \r\n3. Create an allow list for RDP access in NSG. (See https://azure.microsoft.com/en-us/documentation/articles/virtual-networks-nsg/)"
+        serviceSource: "unknownFutureValue"
+        severity: "low"
+        status: "new"
+        tenantId: "4d3bac44-0230-4732-9e70-cc00736f0a97"
+        title: "Suspicious incoming RDP network activity"
+      message: |-
+        {
+          "severity" : "low",
+          "lastUpdateDateTime" : "2024-05-17T16:05:10.3066667Z",
+          "firstActivityDateTime" : "2024-05-17T11:00:00Z",
+          "serviceSource" : "unknownFutureValue",
+          "evidence" : [ {
+            "verdict" : "unknown",
+            "@odata" : {
+              "type" : "#microsoft.graph.security.deviceEvidence"
+            },
+            "createdDateTime" : "2024-05-17T16:01:36.58Z",
+            "remediationStatus" : "none",
+            "deviceDnsName" : "Test-FW01"
+          }, {
+            "countryLetterCode" : "UA",
+            "verdict" : "unknown",
+            "@odata" : {
+              "type" : "#microsoft.graph.security.ipEvidence"
+            },
+            "ipAddress" : "46.219.77.107",
+            "createdDateTime" : "2024-05-17T16:01:36.58Z",
+            "location" : {
+              "city" : "Zhytomyr",
+              "latitude" : 50.2547,
+              "countryName" : "Ukraine",
+              "state" : "Zhytomyrs'ka Oblast'",
+              "longitude" : 28.6587
+            },
+            "remediationStatus" : "none"
+          }, {
+            "countryLetterCode" : "US",
+            "verdict" : "unknown",
+            "@odata" : {
+              "type" : "#microsoft.graph.security.ipEvidence"
+            },
+            "ipAddress" : "52.224.88.41",
+            "createdDateTime" : "2024-05-17T16:01:36.58Z",
+            "location" : {
+              "city" : "Washington",
+              "latitude" : 38.713,
+              "countryName" : "United States",
+              "state" : "Virginia",
+              "longitude" : -78.159
+            },
+            "remediationStatus" : "none"
+          }, {
+            "resourceId" : "/subscriptions/8c56d827-5f07-45ce-8f2b-6c5001db5c6f/resourceGroups/Test-FW-RG/providers/Microsoft.Network/azureFirewalls/Test-FW01",
+            "verdict" : "unknown",
+            "@odata" : {
+              "type" : "#microsoft.graph.security.azureResourceEvidence"
+            },
+            "createdDateTime" : "2024-05-17T16:01:36.58Z",
+            "resourceName" : "Test-FW01",
+            "remediationStatus" : "none",
+            "resourceType" : "Networking"
+          } ],
+          "description" : "Network traffic analysis detected anomalous incoming Remote Desktop Protocol (RDP) communication to 52.224.88.41, associated with your resource Test-FW01, from 46.219.77.107. When the compromised resource is a load balancer or an application gateway, the suspected incoming traffic has been forwarded to one or more of the resources in the backend pool (of the load balancer or application gateway).Specifically, sampled network data shows 435.0 incoming connections to your resource, which is considered abnormal for this environment.This activity may indicate an attempt to brute force your RDP end point",
+          "createdDateTime" : "2024-05-17T16:01:36.47Z",
+          "title" : "Suspicious incoming RDP network activity",
+          "productName" : "Microsoft Defender for Cloud",
+          "detectorId" : "${RDP_Incoming_BF_OneToOne}",
+          "incidentWebUrl" : "https://security.microsoft.com/incidents/1002?tid=4d3bac44-0230-4732-9e70-cc00736f0a97",
+          "tenantId" : "4d3bac44-0230-4732-9e70-cc00736f0a97",
+          "alertWebUrl" : "https://security.microsoft.com/alerts/dc2516863571999999999_e6edcae6ed22921dd9cab5fbe8a5db77?tid=4d3bac44-0230-4732-9e70-cc00736f0a97",
+          "providerAlertId" : "2516863571999999999_e6edcae6ed22921dd9cab5fbe8a5db77",
+          "detectionSource" : "unknownFutureValue",
+          "id" : "dc2516863571999999999_e6edcae6ed22921dd9cab5fbe8a5db77",
+          "recommendedActions" : "When the compromised resource is a load balancer or an application gateway, you may want to trace which resources behind it have been impacted by the suspicious traffic, by following these steps:\r\n1. Find the suspicious machines, by reviewing the load balancer / application gateway backend pools.\r\nhttps://docs.microsoft.com/en-us/azure/load-balancer/\r\nhttps://docs.microsoft.com/en-us/azure/application-gateway/\r\n2.  When the compromised resource is a load balancer, review the configured load balancing rules in order to reach the affected machines.\r\nhttps://docs.microsoft.com/en-us/azure/load-balancer/\r\n3. To filter the relevant machines you can:\r\n• Check the active status of the machine during the suspicious activity using machine logs / current status.\r\n• Check for additional alerts on the resources during the suspicious activity which may indicate the machines that were compromised.\r\n• Check for unfamiliar processes running on the machine\r\n• Check for traces in other log sources (if they exist) such as: firewall logs, activity logs, WAF and more...\r\n4. Run the following remediation steps for each machine which might have been compromised by the suspicious activity.\r\n1. Add 46.219.77.107 to a Network Security Group block list for 24 hours. (See https://azure.microsoft.com/en-us/documentation/articles/virtual-networks-nsg/)\r\n2. Enforce the use of strong passwords and do not reuse them across multiple resources. (See http://windows.microsoft.com/en-us/Windows7/Tips-for-creating-strong-passwords-and-passphrases) \r\n3. Create an allow list for RDP access in NSG. (See https://azure.microsoft.com/en-us/documentation/articles/virtual-networks-nsg/)",
+          "lastActivityDateTime" : "2024-05-17T11:00:00Z",
+          "additionalData" : {
+            "OriginalAlertProductName" : "Detection-Network",
+            "Attacker IP" : "46.219.77.107",
+            "TimeGenerated" : "2024-05-17T16:01:24.414Z",
+            "Number of Connections" : "435",
+            "Attacked Protocol" : "RDP",
+            "OriginalAlertProviderName" : "Microsoft Defender for Cloud",
+            "Intent" : 1,
+            "Compromised Host" : "Test-FW01",
+            "Attacked Port" : "3389",
+            "EffectiveSubscriptionId" : "8c56d827-5f07-45ce-8f2b-6c5001db5c6f",
+            "ProcessingEndTime" : "2024-05-17T16:01:24.1741202Z",
+            "Victim IP" : "52.224.88.41",
+            "AlertUri" : "https://portal.azure.com/#blade/Microsoft_Azure_Security_AzureDefenderForData/AlertBlade/alertId/2516863571999999999_e6edcae6ed22921dd9cab5fbe8a5db77/subscriptionId/8c56d827-5f07-45ce-8f2b-6c5001db5c6f/resourceGroup/Test-FW-RG/referencedFrom/alertDeepLink/location/centralus",
+            "EffectiveAzureResourceId" : "/subscriptions/8c56d827-5f07-45ce-8f2b-6c5001db5c6f/resourceGroups/Test-FW-RG/providers/Microsoft.Network/azureFirewalls/Test-FW01",
+            "Intent@odata" : {
+              "type" : "#Int64"
+            },
+            "ProductComponentName" : "Network",
+            "Business Impact" : "Low"
+          },
+          "incidentId" : "1002",
+          "category" : "InitialAccess",
+          "status" : "new"
+        }
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1715961910306

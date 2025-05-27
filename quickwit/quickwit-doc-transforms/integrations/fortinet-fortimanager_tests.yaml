@@ -1,0 +1,189 @@
+id: fortinet-fortimanager
+tests:
+  - sample: |-
+      {
+        "_metadata": {
+            "#": 398,
+            "archive": false,
+            "logid": 14,
+            "roll": 65533,
+            "timestamp": 1739371278000
+        },
+        "action": "close",
+        "app": "tcp/32526",
+        "date": "2025-02-12",
+        "dstcountry": "United States",
+        "dstintf": "port1",
+        "dstintfrole": "undefined",
+        "dstip": "168.63.129.16",
+        "dstport": 32526,
+        "duration": 2,
+        "eventtime": 1739371278377089459,
+        "level": "notice",
+        "logid": "0001000014",
+        "policyid": 0,
+        "proto": 6,
+        "rcvdbyte": 351,
+        "rcvdpkt": 4,
+        "sentbyte": 2692,
+        "sentpkt": 7,
+        "service": "tcp/32526",
+        "sessionid": 111524,
+        "srccountry": "Reserved",
+        "srcintf": "root",
+        "srcintfrole": "undefined",
+        "srcip": "172.16.0.4",
+        "srcport": 16750,
+        "subtype": "local",
+        "time": "06:41:18",
+        "trandisp": "noop",
+        "type": "traffic",
+        "tz": "-0800",
+        "vd": "root"
+      }
+    result:
+      custom:
+        _metadata:
+          '#': 398
+          archive: false
+          logid: 14
+          roll: 65533
+          timestamp: 1739371278000
+        action: "close"
+        app: "tcp/32526"
+        date: "2025-02-12"
+        dstcountry: "United States"
+        dstintf: "port1"
+        dstintfrole: "undefined"
+        dstip: "168.63.129.16"
+        dstport: 32526
+        duration: 2
+        eventtime: 1739371278377089459
+        evt:
+          name: "close"
+          type: "tcp/32526"
+        level: "notice"
+        logid: "0001000014"
+        network:
+          client:
+            geoip: {}
+            ip: "172.16.0.4"
+          destination:
+            geoip: {}
+            ip: "168.63.129.16"
+        policyid: 0
+        proto: 6
+        rcvdbyte: 351
+        rcvdpkt: 4
+        sentbyte: 2692
+        sentpkt: 7
+        sessionid: 111524
+        srccountry: "Reserved"
+        srcintf: "root"
+        srcintfrole: "undefined"
+        srcip: "172.16.0.4"
+        srcport: 16750
+        subtype: "local"
+        time: "06:41:18"
+        trandisp: "noop"
+        type: "traffic"
+        tz: "-0800"
+        vd: "root"
+      message: |-
+        {
+          "date" : "2025-02-12",
+          "srcip" : "172.16.0.4",
+          "srcintfrole" : "undefined",
+          "dstport" : 32526,
+          "tz" : "-0800",
+          "eventtime" : 1739371278377089459,
+          "sentpkt" : 7,
+          "sessionid" : 111524,
+          "type" : "traffic",
+          "duration" : 2,
+          "srccountry" : "Reserved",
+          "policyid" : 0,
+          "subtype" : "local",
+          "action" : "close",
+          "dstip" : "168.63.129.16",
+          "_metadata" : {
+            "#" : 398,
+            "roll" : 65533,
+            "archive" : false,
+            "logid" : 14,
+            "timestamp" : 1739371278000
+          },
+          "dstintf" : "port1",
+          "trandisp" : "noop",
+          "app" : "tcp/32526",
+          "sentbyte" : 2692,
+          "srcintf" : "root",
+          "level" : "notice",
+          "vd" : "root",
+          "dstintfrole" : "undefined",
+          "service" : "tcp/32526",
+          "proto" : 6,
+          "srcport" : 16750,
+          "logid" : "0001000014",
+          "time" : "06:41:18",
+          "dstcountry" : "United States",
+          "rcvdbyte" : 351,
+          "rcvdpkt" : 4
+        }
+      status: "notice"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1739371278000
+  - sample: >-
+      {
+        "_metadata": {
+            "#": 1,
+            "logid": 32021,
+            "roll": 0,
+            "timestamp": 1739372311000
+        },
+        "action": "login",
+        "date": "2025-02-12",
+        "eventtime": 1739372311458236859,
+        "level": "alert",
+        "logdesc": "Admin login disabled",
+        "logid": "0100032021",
+        "msg": "Login disabled from IP 218.92.0.244 for 60 seconds because of 3 bad attempts",
+        "reason": "exceed_limit",
+        "status": "failed",
+        "subtype": "system",
+        "time": "06:58:31",
+        "type": "event",
+        "tz": "-0800",
+        "ui": "218.92.0.244",
+        "vd": "root"
+      }
+    result:
+      custom:
+        _metadata:
+          '#': 1
+          logid: 32021
+          roll: 0
+          timestamp: 1739372311000
+        action: "login"
+        date: "2025-02-12"
+        eventtime: 1739372311458236859
+        evt:
+          name: "login"
+          outcome: "failed"
+        level: "alert"
+        logdesc: "Admin login disabled"
+        logid: "0100032021"
+        reason: "exceed_limit"
+        status: "failed"
+        subtype: "system"
+        time: "06:58:31"
+        type: "event"
+        tz: "-0800"
+        ui: "218.92.0.244"
+        vd: "root"
+      message: "Login disabled from IP 218.92.0.244 for 60 seconds because of 3 bad attempts"
+      status: "alert"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1739372311000

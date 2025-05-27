@@ -1,0 +1,902 @@
+id: cisco-secure-firewall
+metric_id: cisco-secure-firewall
+backend_only: false
+facets:
+  - facetType: range
+    groups:
+      - Cisco Secure Firewall
+    name: Initiator Bytes
+    path: cisco.secure.firewall.InitiatorBytes
+    source: log
+    type: integer
+    unit:
+      family: bytes
+      name: byte
+  - facetType: range
+    groups:
+      - Cisco Secure Firewall
+    name: Initiator Packets
+    path: cisco.secure.firewall.InitiatorPackets
+    source: log
+    type: integer
+  - facetType: range
+    groups:
+      - Cisco Secure Firewall
+    name: Responder Bytes
+    path: cisco.secure.firewall.ResponderBytes
+    source: log
+    type: integer
+    unit:
+      family: bytes
+      name: byte
+  - facetType: range
+    groups:
+      - Cisco Secure Firewall
+    name: Responder Packets
+    path: cisco.secure.firewall.ResponderPackets
+    source: log
+    type: integer
+  - facetType: range
+    groups:
+      - Cisco Secure Firewall
+    name: Bytes
+    path: cisco.secure.firewall.snmp_bytes
+    source: log
+    type: integer
+    unit:
+      family: bytes
+      name: byte
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Client Port
+    path: network.client.port
+    source: log
+  - groups:
+      - Web Access
+    name: Destination IP
+    path: network.destination.ip
+    source: log
+  - facetType: range
+    groups:
+      - Web Access
+    name: Network Bytes Read
+    path: network.bytes_read
+    source: log
+    type: double
+    unit:
+      family: bytes
+      name: byte
+  - facetType: range
+    groups:
+      - Web Access
+    name: Bytes Written
+    path: network.bytes_written
+    source: log
+    type: double
+    unit:
+      family: bytes
+      name: byte
+  - groups:
+      - Web Access
+    name: Destination Port
+    path: network.destination.port
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+pipeline:
+  type: pipeline
+  name: Cisco Secure Firewall
+  enabled: true
+  filter:
+    query: "source:cisco-secure-firewall"
+  processors:
+    - type: grok-parser
+      name: Parsing Cisco Secure Firewall Logs
+      enabled: true
+      source: message
+      samples:
+        - "<190>2024-01-17T09:07:34Z: %FTD-6-110002: Failed to locate egress
+          interface for UDP from diagnostic:10.50.5.157/137 to 10.50.15.255/137"
+        - "2024-01-05T05:45:16Z   %FTD-1-430003: EventPriority: Low, DeviceUUID:
+          fbf9ef28-9b2a-11ee-805f-e9384ce3a258, InstanceID: 1,
+          FirstPacketSecond: 2024-01-05T05:43:14Z, ConnectionID: 38902,
+          AccessControlRuleAction: Allow, SrcIP: 10.40.1.16, DstIP:
+          142.250.182.194, SrcPort: 50689, DstPort: 443, Protocol: tcp,
+          IngressInterface: LAN, EgressInterface: WAN, IngressZone: LAN,
+          EgressZone: WAN, IngressVRF: Global, EgressVRF: Global, ACPolicy:
+          default, AccessControlRuleName: New-rule, Prefilter Policy: Default
+          Prefilter Policy, User: TEST-AD\\\\nilay.modi, Client: SSL client,
+          ApplicationProtocol: HTTPS, WebApplication: Google,
+          ConnectionDuration: 122, InitiatorPackets: 14, ResponderPackets: 15,
+          InitiatorBytes: 636, ResponderBytes: 4167, NAPPolicy: Balanced
+          Security and Connectivity, URLCategory: Advertisements, URLReputation:
+          Trusted, URL: https://adservice.google.com, NAT_InitiatorPort: 50689,
+          NAT_ResponderPort: 443, NAT_InitiatorIP: 10.50.9.175, NAT_ResponderIP:
+          142.250.182.194"
+        - "<190>2024-01-23T07:00:00Z: %FTD-1-735002: Cooling Fan DS-X97-SF1-K9 :
+          Failure Detected"
+        - <181>2024-01-05T05:45:16Z %FTD-1-111111 system or infrastructure error
+          message
+        - "<181>2024-01-05T05:45:16Z %FTD-1-735002 IPMI: Cooling Fan var1 :
+          Failure Detected"
+      grok:
+        supportRules: >-
+          pri <%{integer:}>
+
+          timeFormat (%{date("MMM dd yyyy HH:mm:ss"):timestamp}|%{date("yyyy-MM-dd'T'HH:mm:ssZ"):timestamp})
+
+          deviceID %{regex("[^:]*"):device_id}%{_space}
+
+          _space %{regex("(\\s)*"):}
+        matchRules: cisco_secure_firewall
+          (%{pri})?%{timeFormat}%{_space}(%{deviceID})?(:)?
+          %FTD-%{integer:severity}-%{word:message_id}%{_space}(:)?%{_space}%{data:message_text}
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - name: Lookup for `severity` to `syslog.severity`
+      enabled: true
+      source: severity
+      target: syslog.severity
+      lookupTable: |-
+        0, emergency
+        1,Alert
+        2,Critical
+        3,Error
+        4,Warning
+        5,Notification
+        6,Informational
+        7,Debugging
+      type: lookup-processor
+    - type: status-remapper
+      name: Define `syslog.severity` as the official status of the log
+      enabled: true
+      sources:
+        - syslog.severity
+    - type: pipeline
+      name: Application Firewall
+      enabled: true
+      filter:
+        query: "@message_id:(415020) "
+      processors:
+        - type: grok-parser
+          name: Parsing Application Firewall logs
+          enabled: true
+          source: message_text
+          samples:
+            - HTTP - matched “ser” in policy-map testmap1 , a non-ASCII
+              character was matched drop from inside :103.10.249.255 /54125 to
+              eth0 :11.1.1.40 /90
+            - HTTP - matched match in policy-map internal_policy, a non-ASCII
+              character was matched Dropping the connection from DNS
+              :103.10.249.255 /514 to outside :11.1.1.40 /7001
+          grok:
+            supportRules: _space %{regex("(\\s)*"):}
+            matchRules: application_firewall_415020 HTTP - matched %{notSpace} in policy-map
+              %{notSpace}%{_space}, a non-ASCII character was matched
+              %{regex("[a-zA-Z0-9_. ]*"):} from
+              %{notSpace}%{_space}:%{ip:network.client.ip}%{_space}/%{integer:network.client.port}
+              to
+              %{notSpace}%{_space}:%{ip:network.destination.ip}%{_space}/%{integer:network.destination.port}
+    - type: pipeline
+      name: Transparent Firewall
+      enabled: true
+      filter:
+        query: "@message_id:(110002 OR 110003 OR 110004) "
+      processors:
+        - type: grok-parser
+          name: Parsing Transparent Firewall logs
+          enabled: true
+          source: message_text
+          samples:
+            - Failed to locate egress interface for UDP from
+              diagnostic:10.50.5.157/137 to 10.50.15.255/137
+            - Routing failed to locate next hop for TCP from
+              identity:10.40.1.122/25067 to LAN:10.50.5.152/9009
+            - Egress interface changed from old_active_ifc to new_active_ifc on
+              ip_protocol connection 123 for outside_zone /parent_outside_ifc
+              :10.10.10.10 /514 (10.10.10.11 /5191 ) to inside_zone
+              /parent_inside_ifc :20.20.20.20/914 (20.20.20.21 /8251 )
+            - Routing failed to locate next hop for udp from NP Identity
+              Ifc:10.40.1.122/514 to LAN:10.50.5.209/514
+          grok:
+            supportRules: _space %{regex("(\\s)*"):}
+            matchRules: >-
+              transparent_firewall_110002 Failed to locate egress interface for
+              %{word:protocol} from
+              %{notSpace:src_interface}%{_space}:%{ip:network.client.ip}%{_space}/%{integer:network.client.port}
+              to
+              %{ip:network.destination.ip}%{_space}/%{integer:network.destination.port}
+
+
+              transparent_firewall_110003 Routing failed to locate next hop for %{word:protocol} from %{regex("[-a-zA-Z0-9_,. ]*"):src_interface}%{_space}:%{ip:network.client.ip}%{_space}/%{integer:network.client.port} to %{notSpace:dest_interface}%{_space}:%{ip:network.destination.ip}%{_space}/%{integer:network.destination.port}
+
+
+              transparent_firewall_110004 Egress interface changed from %{notSpace:old_active_ifc} to %{notSpace:new_active_ifc} on %{notSpace:ip_protocol} connection %{word:connection_id} for %{notSpace:outside_zone}%{_space}/%{_space}%{notSpace:parent_outside_ifc}%{_space}:%{_space}%{ip:outside_address}%{_space}/%{_space}%{integer:outside_port}%{_space}\(%{_space}%{ip:outside_mapped_address}%{_space}/%{integer:outside_mapped_port}%{_space}\) to %{notSpace:inside_zone}%{_space}/%{notSpace:parent_inside_ifc}%{_space}:%{_space}%{ip:inside_address}%{_space}/%{integer:inside_port}%{_space}\(%{_space}%{ip:inside_mapped_address}%{_space}/%{integer:inside_mapped_port}%{_space}\)
+    - type: pipeline
+      name: Identity-based Firewall
+      enabled: true
+      filter:
+        query: "@message_id:(746014 OR 746015 OR 746016) "
+      processors:
+        - type: grok-parser
+          name: Parsing Identity-based Firewall logs
+          enabled: true
+          source: message_text
+          samples:
+            - "user-identity: [FQDN] fqdn address 10.10.10.10 obsolete."
+            - "user-identity: [FQDN] fqdn resolved 10.10.10.10 ."
+            - "user-identity: DNS lookup failed, reason: reason for error"
+            - "user-identity: [FQDN] Ftp.yourdomainname.com address 10.50.3.1
+              obsolete."
+          grok:
+            supportRules: _space %{regex("(\\s)*"):}
+            matchRules: >-
+              identity_based_firewall_746014 user-identity: \[FQDN] %{notSpace:}
+              address %{ip:ip_address} obsolete%{_space}(.)?
+
+
+              identity_based_firewall_746015 user-identity: (\[)?FQDN] %{notSpace:} resolved %{ip:ip_address}%{_space}%{_space}(.)?
+
+
+              identity_based_firewall_746016 user-identity:%{_space}DNS lookup failed,%{_space}reason: %{data:reason}
+    - type: pipeline
+      name: User Authentication
+      enabled: true
+      filter:
+        query: "@message_id:(109011 OR 109012 OR 109016 OR 113001 OR 113005 OR 113006 OR
+          113007 OR 113019 OR 113021) "
+      processors:
+        - type: grok-parser
+          name: Parsing User Authentication logs
+          enabled: true
+          source: message_text
+          samples:
+            - "Authen Session Start: user 'testuser1', sid 23"
+            - "Authen Session End: user 'user', sid 23, elapsed 512 seconds"
+            - "AAA user authentication Rejected: reason = AAA failure: server =
+              213.23.12.12 : user = admin: user IP = 11.1.1.40"
+            - Unable to open AAA session. Session limit [15624 ] reached.
+            - Can't find authorization ACL 2782 for user ' testuser123 '
+          grok:
+            supportRules: _space %{regex("(\\s)*"):}
+            matchRules: >-
+              user_authentication_109011 Authen Session Start: user
+              '%{notSpace:usr.name}%{_space}'.*
+
+
+              user_authentication_109012 Authen Session End: user '%{notSpace:usr.name}%{_space}',%{regex("[^,]*"):},%{_space}elapsed %{integer:elapsed_time} seconds
+
+
+              user_authentication_109016 Can't find authorization ACL %{notSpace:acl_id} for user '%{_space}%{notSpace:usr.name}%{_space}'
+
+
+              user_authentication_113001 Unable to open AAA session. Session limit \[%{integer:limit}%{_space}] reached%{_space}.
+
+
+              user_authentication_113005 AAA user authentication Rejected:%{_space}reason = %{regex("[^:]*"):}:%{_space}server = %{ip:server_ip}%{_space}:%{_space}user = %{regex("[^:]*"):}:%{_space}user IP = %{ip:user_ip}
+
+
+              user_authentication_113006 User %{notSpace:usr.name} locked out on exceeding %{integer:} successive failed authentication attempts
+
+
+              user_authentication_113007 User %{notSpace:usr.name} unlocked by %{notSpace:administrator}
+
+
+              user_authentication_113019 Group = %{notSpace:group}%{_space},%{_space}Username = %{notSpace:usr.name}%{_space},%{_space}IP = %{ip:peer_address}%{_space}, Session disconnected. Session Type:%{_space}%{notSpace:session_type}%{_space},%{_space}Duration:%{_space}%{date("HH:mm:ss"):duration_sec}%{_space},%{_space}Bytes xmt:%{_space}%{integer:network.bytes_read}%{_space},%{_space}Bytes rcv:%{_space}%{integer:network.bytes_written}%{_space},%{_space}Reason:%{_space}%{data:reason}
+
+
+              user_authentication_113021 Attempted console login failed. User %{notSpace:usr.name} did NOT have appropriate Admin Rights.
+    - type: pipeline
+      name: Security Events
+      enabled: true
+      filter:
+        query: "@message_id:(430001 OR 430002 OR 430003 OR 430004 OR 430005) "
+      processors:
+        - type: grok-parser
+          name: Parsing Security Events
+          enabled: true
+          source: message_text
+          samples:
+            - "EventPriority: Low, DeviceUUID:
+              fbf9ef28-9b2a-11ee-805f-e9384ce3a258, InstanceID: 1,
+              FirstPacketSecond: 2024-01-05T05:43:14Z, ConnectionID: 38902,
+              AccessControlRuleAction: Allow, SrcIP: 10.40.1.16, DstIP:
+              142.250.182.194, SrcPort: 50689, DstPort: 443, Protocol: tcp,
+              IngressInterface: LAN, EgressInterface: WAN, IngressZone: LAN,
+              EgressZone: WAN, IngressVRF: Global, EgressVRF: Global, ACPolicy:
+              default, AccessControlRuleName: New-rule, Prefilter Policy:
+              Default Prefilter Policy, User: TEST-AD\\\\nilay.modi, Client: SSL
+              client, ApplicationProtocol: HTTPS, WebApplication: Google,
+              ConnectionDuration: 122, InitiatorPackets: 14, ResponderPackets:
+              15, InitiatorBytes: 636, ResponderBytes: 4167, NAPPolicy: Balanced
+              Security and Connectivity, URLCategory: Advertisements,
+              URLReputation: Trusted, URL: https://adservice.google.com,
+              NAT_InitiatorPort: 50689, NAT_ResponderPort: 443, NAT_InitiatorIP:
+              10.50.9.175, NAT_ResponderIP: 142.250.182.194"
+          grok:
+            supportRules: _space %{regex("(\\s)*"):}
+            matchRules: 'security_events %{data::keyvalue(": "," \\\\/:")}'
+        - type: attribute-remapper
+          name: Map `SrcIP` to `network.client.ip`
+          enabled: true
+          sources:
+            - SrcIP
+          sourceType: attribute
+          target: network.client.ip
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `DstIP` to `network.destination.ip`
+          enabled: true
+          sources:
+            - DstIP
+          sourceType: attribute
+          target: network.destination.ip
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `SrcPort` to `network.client.port`
+          enabled: true
+          sources:
+            - SrcPort
+          sourceType: attribute
+          target: network.client.port
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `DstPort` to `network.destination.port`
+          enabled: true
+          sources:
+            - DstPort
+          sourceType: attribute
+          target: network.destination.port
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `User` to `usr.name`
+          enabled: true
+          sources:
+            - User
+          sourceType: attribute
+          target: usr.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - name: Lookup for `message_id` to `security_event_name`
+          enabled: true
+          source: message_id
+          target: security_event_name
+          lookupTable: |-
+            430001, Intrusion Event
+            430002, Connection Started
+            430003, Connection Ended
+            430004, File Detected
+            430005, File Malware Detected
+          type: lookup-processor
+        - type: geo-ip-parser
+          name: GeoIP Parser for `network.client.ip`
+          enabled: true
+          sources:
+            - network.client.ip
+          target: network.client.geoip
+          ip_processing_behavior: do-nothing
+        - type: attribute-remapper
+          name: Map `InitiatorBytes` to `cisco.secure.firewall.InitiatorBytes`
+          enabled: true
+          sources:
+            - InitiatorBytes
+          sourceType: attribute
+          target: cisco.secure.firewall.InitiatorBytes
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `InitiatorPackets` to `cisco.secure.firewall.InitiatorPackets`
+          enabled: true
+          sources:
+            - InitiatorPackets
+          sourceType: attribute
+          target: cisco.secure.firewall.InitiatorPackets
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `ResponderBytes` to `cisco.secure.firewall.ResponderBytes`
+          enabled: true
+          sources:
+            - ResponderBytes
+          sourceType: attribute
+          target: cisco.secure.firewall.ResponderBytes
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `ResponderPackets` to `cisco.secure.firewall.ResponderPackets`
+          enabled: true
+          sources:
+            - ResponderPackets
+          sourceType: attribute
+          target: cisco.secure.firewall.ResponderPackets
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Command Interface
+      enabled: true
+      filter:
+        query: "@message_id:(111008 OR 111111) "
+      processors:
+        - type: grok-parser
+          name: Parsing Command Interface Events
+          enabled: true
+          source: message_text
+          samples:
+            - User 'user' executed the command 'config-'
+            - system or infrastructure error message
+            - User 'enable_1' executed the command 'dir disk0:/dap.xml'.
+          grok:
+            supportRules: _space %{regex("(\\s)*"):}
+            matchRules: >-
+              command_interface_111008 User (')?%{regex("[^']*"):usr.name}(')?
+              executed the command
+              (')?%{regex("[^']*"):cisco_secure_firewall_command}(')?(.)?
+
+
+              command_interface_111111 %{data:error_message}
+    - type: pipeline
+      name: VPN Failover
+      enabled: true
+      filter:
+        query: "@message_id:(720054 OR 720064) "
+      processors:
+        - type: grok-parser
+          name: Parsing VPN Failover Events
+          enabled: true
+          source: message_text
+          samples:
+            - (VPN-Primary ) Failed to add new cTCP record, peer=10.10.10.10 ,
+              port=54126 .
+            - (VPN-Primary ) Failed to update cTCP database record for
+              peer=10.10.10.10 , port=54231 during bulk sync.
+          grok:
+            supportRules: _space %{regex("(\\s)*"):}
+            matchRules: >-
+              vpn_failover_720054 \(VPN-%{word:unit}%{_space}\) Failed to add
+              new cTCP
+              record,%{_space}peer=%{ip:peer_ip_address}%{_space},%{_space}port=%{integer:port}%{_space}.
+
+
+              vpn_failover_720064 \(VPN-%{word:unit}%{_space}\) Failed to update cTCP database record for peer=%{ip:peer_ip_address}%{_space},%{_space}port=%{integer:port} during bulk sync.
+    - type: pipeline
+      name: Threat Detection
+      enabled: true
+      filter:
+        query: "@message_id:(733100 OR 733101 OR 733102 OR 733103) "
+      processors:
+        - type: grok-parser
+          name: Parsing Threat Detection Events
+          enabled: true
+          source: message_text
+          samples:
+            - "[ Scanning] drop rate 1 exceeded. Current burst rate is 22 per
+              second, max configured rate is 10; Current average rate is 42 per
+              second, max configured rate is 5; Cumulative total count is 25627"
+            - Subnet 100.0.0.0 is targeted. Current burst rate is 200 per
+              second, max configured rate is 0; Current average rate is 0 per
+              second, max configured rate is 0; Cumulative total count is
+              2028  .
+            - >
+              Host 175.0.0.1 is attacking. Current burst rate is 200 per second,
+              max configured rate is 0; Current average rate is 0 per second,
+              max configured rate is 0; Cumulative total count is 2024 .
+            - Threat-detection adds host 11.1.1.40 to shun list
+            - Threat-detection removes host 11.1.1.40 from shun list
+          grok:
+            supportRules: _space %{regex("(\\s)*"):}
+            matchRules: >
+              threat_detection_733100
+              \[%{_space}%{regex("[^]]*?"):drop_object}%{_space}\] drop
+              %{regex("[-a-zA-Z0-9_!@#$%^&* )]*")} exceeded. Current burst rate
+              is %{integer:current_burst_rate} per second, max configured rate
+              is %{integer:max_configured_burst_rate}%{_space}; Current average
+              rate is %{integer:current_average_rate} per second, max configured
+              rate is %{integer:max_configured_average_rate}%{_space};
+              Cumulative total count is
+              %{integer:cumulative_total_count}%{_space}(.)?
+
+
+              threat_detection_733101 %{word:object_type} %{ip:object_ip_address} is %{word:type}%{_space}. Current burst rate is %{integer:current_burst_rate} per second, max configured rate is %{integer:max_configured_burst_rate}%{_space}; Current average rate is %{integer:current_average_rate} per second, max configured rate is %{integer:max_configured_average_rate}%{_space}; Cumulative total count is %{integer:cumulative_total_count}%{_space}(.)?
+
+
+              threat_detection_733102 Threat-detection adds host %{ip:shun_host} to shun list
+
+
+              threat_detection_733103 Threat-detection removes host %{ip:shun_host} from shun list
+    - type: pipeline
+      name: SNMP
+      enabled: true
+      filter:
+        query: "@message_id:(212001 OR 212002 OR 212003 OR 212004 OR 212005 OR 212006 OR
+          212009 OR 212010) "
+      processors:
+        - type: grok-parser
+          name: Parsing SNMP Logs
+          enabled: true
+          source: message_text
+          samples:
+            - Unable to open SNMP channel (UDP port 54123 ) on interface 123,
+              error code = 1
+            - Unable to open SNMP trap channel (UDP port 54123 ) on interface
+              123, error code = 1
+            - Unable to receive an SNMP request on interface 123, error code = 1
+              , will try again.
+            - incoming SNMP request (3456 bytes) on interface interface_name
+              exceeds data buffer size, discarding this SNMP request.
+            - "Dropping SNMP request from 103.10.249.252 /234 to fc/23
+              :11.1.1.40 /443 because: authentication algorithm failure admin"
+          grok:
+            supportRules: _space %{regex("(\\s)*"):}
+            matchRules: >-
+              snmp_212001 Unable to open SNMP channel \(%{word} port
+              %{integer:port}%{_space}\) on interface
+              %{word:interface_number}%{_space}, error
+              code = %{integer:error_code_212001}
+
+
+              snmp_212002 Unable to open SNMP trap channel \(%{word} port %{integer:port}%{_space}\) on interface %{word:interface_number}%{_space}, error code = %{integer:error_code_212002}
+
+
+              snmp_212003 Unable to receive an SNMP request on interface %{word:interface_number}%{_space}, error code = %{integer:error_code_212003}%{_space}, will try again.
+
+
+              snmp_212004 Unable to send an SNMP response to IP Address %{ip:snmp_ip_address} Port %{integer:port} interface %{word:interface_number}%{_space}, error code = %{integer:error_code_212004}
+
+
+              snmp_212005 incoming SNMP request \(%{integer:cisco.secure.firewall.snmp_bytes} bytes\) on interface %{notSpace:interface_name} exceeds data buffer size, discarding this SNMP request.
+
+
+              snmp_212006 Dropping SNMP request from %{ip:src_address}%{_space}/%{integer:port} to %{notSpace:ifc}%{_space}:%{_space}%{ip:dst_address}%{_space}/%{integer:dst_port} because:%{_space}%{regex("[-a-zA-Z0-9_,. ]*"):snmp_drop_reason}%{_space}%{word:usr.name}
+
+
+              snmp_212009 Configuration request for SNMP group %{notSpace:groupname} failed. User %{notSpace:usr.name}%{_space}, %{regex("[^.]*"):snmp_failure_reason}%{_space}.
+
+
+              snmp_212010 Configuration request for SNMP user %{notSpace:usr.name} failed. Host %{notSpace:snmp_host} %{data:snmp_failure_reason}%{_space}.
+        - name: Lookup for `error_code_212001` to `error_message`
+          enabled: true
+          source: error_code_212001
+          target: error_message
+          lookupTable: >-
+            -1,Secure Firewall Threat Defense device cannot open the SNMP
+            transport for the interface
+
+            -2,Secure Firewall Threat Defense device cannot bind the SNMP transport for the interface
+          type: lookup-processor
+        - name: Lookup for `error_code_212002` to `error_message`
+          enabled: true
+          source: error_code_212002
+          target: error_message
+          lookupTable: >-
+            -1,Secure Firewall Threat Defense device cannot open the SNMP trap
+            transport for the interface
+
+            -2,Secure Firewall Threat Defense device cannot bind the SNMP trap transport for the interface
+
+            -3,Secure Firewall Threat Defense device cannot set the trap channel as write-only
+          type: lookup-processor
+        - name: Lookup for `error_code_212003` to `error_message`
+          enabled: true
+          source: error_code_212003
+          target: error_message
+          lookupTable: >-
+            -1,Secure Firewall Threat Defense device cannot find a supported
+            transport type for the interface
+
+            -5,Secure Firewall Threat Defense device received no data from the UDP channel for the interface
+
+            -7,Secure Firewall Threat Defense device received an incoming request that exceeded the supported buffer size
+
+            -14,Secure Firewall Threat Defense device cannot determine the source IP address from the UDP channel
+
+            -22,Secure Firewall Threat Defense device received an invalid parameter
+          type: lookup-processor
+        - name: Lookup for `error_code_212004` to `error_message`
+          enabled: true
+          source: error_code_212004
+          target: error_message
+          lookupTable: >-
+            -1,Secure Firewall Threat Defense device cannot find a supported
+            transport type for the interface
+
+            -2,Secure Firewall Threat Defense device sent an invalid parameter
+
+            -3,Secure Firewall Threat Defense device was unable to set the destination IP address in the UDP channel
+
+            -4,Secure Firewall Threat Defense device sent a PDU length that exceeded the supported UDP segment size
+
+            -5,Secure Firewall Threat Defense device was unable to allocate a system block to construct the PDU
+          type: lookup-processor
+    - type: pipeline
+      name: Intrusion Protection System
+      enabled: true
+      filter:
+        query: "@message_id:(401002 OR 401003 OR 401004 OR 401005) "
+      processors:
+        - type: grok-parser
+          name: Parsing Intrusion Protection System
+          enabled: true
+          source: message_text
+          samples:
+            - "Shun added: IP_address 213.23.12.12 port 34570"
+            - "Shun deleted: 11.1.1.40"
+            - "Shunned packet: IP_address = 111.1.1.39 on interface fc/12"
+            - "Shun add failed: unable to allocate resources for IP_address
+              110.1.1.39 port 2302"
+          grok:
+            supportRules: _space %{regex("(\\s)*"):}
+            matchRules: >-
+              intrusion_protection_system_401002 Shun added:%{_space}IP_address
+              %{ip:shun_ip_address} port
+              %{integer:shun_port}
+
+
+              intrusion_protection_system_401003 Shun deleted:%{_space}%{ip:shun_ip_adddress}
+
+
+              intrusion_protection_system_401004 Shunned packet:%{_space}IP_address%{_space}=%{_space}%{ip:shun_ip_address} on interface %{notSpace:interface_name}
+
+
+              intrusion_protection_system_401005 Shun add failed:%{_space}unable to allocate resources for IP_address %{ip:shun_ip_address} port %{integer:shun_port}
+    - type: pipeline
+      name: Dynamic Access Policies
+      enabled: true
+      filter:
+        query: "@message_id:(734004) "
+      processors:
+        - type: grok-parser
+          name: Parsing Dynamic Access Policies Logs
+          enabled: true
+          source: message_text
+          samples:
+            - "DAP: Processing error: Unable to process request."
+          grok:
+            supportRules: _space %{regex("(\\s)*"):}
+            matchRules: dynamic_access_policies_734004 DAP%{_space}:%{_space}Processing
+              error%{_space}:%{_space}%{data:internal_error_code}
+    - type: pipeline
+      name: Failover
+      enabled: true
+      filter:
+        query: "@message_id:(103001 OR 103004 OR 104001 OR 104002) "
+      processors:
+        - type: grok-parser
+          name: Parsing Failover Logs
+          enabled: true
+          source: message_text
+          samples:
+            - (Primary) No response from other firewall (reason code = 1)   .
+            - "(Primary) Other firewall reports this firewall failed. Reason:
+              Missed poll packets on failover command interface exceeded
+              threshold."
+            - "(Primary) Switching to ACTIVE (cause: state check)."
+            - "(Primary) Switching to STANDBY(cause: state check)    ."
+          grok:
+            supportRules: _space %{regex("(\\s)*"):}
+            matchRules: >-
+              failover_103001 \(%{word:unit}\) No response from other firewall
+              \(%{_space}reason
+              code%{_space}=%{_space}%{integer:code}%{_space}\)%{_space}(.)?
+
+
+              failover_103004 \(%{word:unit}\) Other firewall reports this firewall failed.%{_space}Reason:%{_space}%{regex("[-a-zA-Z0-9._ ]*"):reason_string}
+
+
+              failover_104001_104002 \(%{word:unit}\) Switching to (ACTIVE|STANDBY)%{_space}\(%{_space}cause:%{_space}%{regex("[^)]*"):cause}%{_space}\)%{_space}(.)?
+        - name: Map `code` to `reason_code`
+          enabled: true
+          source: code
+          target: reason_code
+          lookupTable: >-
+            1, The local unit is not receiving the hello packet on the failover
+            LAN interface when LAN failover occurs and declares that the peer is
+            down.
+
+            2, An interface did not pass one of the four failover tests. which are as follows: 1) Link Up 2) Monitor for Network Traffic 3) ARP and 4) Broadcast Ping.
+
+            3, No proper ACK for 15+ seconds after a command was sent on the serial cable.
+
+            4, The failover LAN interface is down and other data interfaces are not responding to additional interface testing. The local unit is declaring that the peer is down.
+
+            5, The standby peer went down during the configuration synchronization process.
+
+            6, Replication is not complete. the failover unit is not synchronized.
+          type: lookup-processor
+    - type: pipeline
+      name: OSPF Routing
+      enabled: true
+      filter:
+        query: "@message_id:(318001 OR 409003) "
+      processors:
+        - type: grok-parser
+          name: Parsing OSPF Routing Logs
+          enabled: true
+          source: message_text
+          samples:
+            - "Internal error: Failed to update database, due to some glitch in
+              the connection."
+            - "Received invalid packet: an internal error in the sender from
+              11.1.1.40 , fc5/33"
+            - "Received invalid packet: The cause might be an incorrect OSPF
+              configuration, or an internal error in the sender  from 10.50.1.1,
+              Ethernet0/1"
+          grok:
+            supportRules: _space %{regex("(\\s)*"):}
+            matchRules: >-
+              ospf_routing_318001 Internal error:%{_space}%{data:reason}
+
+
+              ospf_routing_409003 Received invalid packet:%{_space}%{regex("[-a-zA-Z0-9,._ ]*"):reason} from %{ip:ip_address}%{_space},%{_space}%{data:interface_name}
+    - type: pipeline
+      name: RIP Routing
+      enabled: true
+      filter:
+        query: "@message_id:(107001) "
+      processors:
+        - type: grok-parser
+          name: Parsing RIP Routing Logs
+          enabled: true
+          source: message_text
+          samples:
+            - "RIP auth failed from 110.1.1.39 : version=12, type=demo,
+              mode=dummy, sequence=13233 on interface fc1-1"
+            - "RIP auth failed from 10.1.1.2  : version=12,  type=demo
+              01,  mode=modeAuth Failed,  sequence=13233 on interface
+              Ethernet0/1"
+          grok:
+            supportRules: _space %{regex("(\\s)*"):}
+            matchRules: rip_routing_107001 RIP auth failed from
+              %{ip:ip_address}%{_space}:%{_space}version%{_space}=%{_space}%{integer:version}%{_space},%{_space}type%{_space}=%{_space}%{regex("[^,]*"):type}%{_space},%{_space}mode%{_space}=%{_space}%{regex("[^,]*"):mode}%{_space},%{_space}sequence%{_space}=%{_space}%{integer:sequence}
+              on interface %{notSpace:interface_name}
+    - type: pipeline
+      name: Resource Manager
+      enabled: true
+      filter:
+        query: "@message_id:(321001 OR 321002 OR 321005 OR 321006 OR 321007) "
+      processors:
+        - type: grok-parser
+          name: Parsing Resource Manager Logs
+          enabled: true
+          source: message_text
+          samples:
+            - Resource var1 limit of var2 reached
+            - Resource WinRes1 rate limit of CoS2 reached.
+            - System CPU utilization reached 95.23
+            - System memory usage reached 85.39
+            - System is low on free memory blocks of size 8192 (1234 CNT out of
+              5349 MAX)
+          grok:
+            supportRules: _space %{regex("(\\s)*"):}
+            matchRules: >-
+              resource_manager_321002 Resource %{regex("[-a-zA-Z0-9_.!@#$%
+              ]*"):resource} rate limit of
+              %{regex("[-a-zA-Z0-9_.!@#$% ]*"):} reached(.)?
+
+
+              resource_manager_321001 Resource %{regex("[-a-zA-Z0-9_.!@#$% ]*"):resource} limit of %{regex("[-a-zA-Z0-9_.!@#$% ]*"):} reached(.)?
+
+
+              resource_manager_321005 System CPU utilization reached %{number:cpu_utilization}
+
+
+              resource_manager_321006 System memory usage reached %{number:memory_usage}
+
+
+              resource_managr_321007 System is low on free memory blocks of size %{integer:block_size}%{_space}\(%{_space}%{integer:free_blocks} CNT out of %{integer:max_blocks} MAX%{_space}\)
+    - type: pipeline
+      name: IP Address Assignment
+      enabled: true
+      filter:
+        query: "@message_id:(735002 OR 735004) "
+      processors:
+        - type: grok-parser
+          name: Parsing IP Address Assignment Logs
+          enabled: true
+          source: message_text
+          samples:
+            - "IPMI: Cooling Fan WS2: Failure Detected"
+            - "IPMI: Power Supply COS1: Failure Detected"
+            - "IPMI: Cooling Fan var1: Failure Detected"
+          grok:
+            supportRules: _space %{regex("(\\s)*"):}
+            matchRules: >
+              ip_address_assignment_735002_735004
+              %{word:}%{_space}:%{_space}(Cooling Fan|Power Supply)
+              %{regex("[-a-zA-Z0-9_.!@#$%
+              ]*"):resource}%{_space}:%{_space}Failure Detected
+    - type: pipeline
+      name: IP Stack
+      enabled: true
+      filter:
+        query: "@message_id:(209003 OR 209004 OR 313001 OR 313004) "
+      processors:
+        - type: grok-parser
+          name: Parsing IP Stack Logs
+          enabled: true
+          source: message_text
+          samples:
+            - "Fragment database limit of 112 exceeded: src = 213.23.12.12 ,
+              dest = 111.1.1.39 , proto = TCP , id = 2112"
+            - "Invalid IP fragment, size = 1212211 exceeds maximum size = 63423
+              : src = 111.1.1.39 , dest = 11.1.1.40 , proto = TCP , id = 2112"
+            - Denied ICMP type=13 , code=34 from 213.23.12.12 on interface fc/1
+            - Denied ICMP type=Source quench , from 11.1.1.40 on interface
+              fc0/875 to 213.23.12.12 :no matching session
+          grok:
+            supportRules: _space %{regex("(\\s)*"):}
+            matchRules: >-
+              ip_stack_209003 Fragment database limit of %{integer:}
+              exceeded:%{_space}src%{_space}=%{_space}%{ip:source_address}%{_space},%{_space}dest%{_space}=%{_space}%{ip:destination_address}%{_space},%{_space}proto%{_space}=%{_space}%{notSpace:protocol}%{_space},%{_space}id%{_space}=%{_space}%{integer:id}
+
+
+              ip_stack_209004 Invalid IP fragment,%{_space}size%{_space}=%{_space}%{integer:bytes} exceeds maximum size%{_space}=%{_space}%{integer:max_bytes}%{_space}:%{_space}src%{_space}=%{_space}%{ip:source_address}%{_space},%{_space}dest%{_space}=%{_space}%{ip:destination_address}%{_space},%{_space}proto%{_space}=%{_space}%{word:protocol}%{_space},%{_space}id%{_space}=%{_space}%{integer:id}
+
+
+              ip_stack_313001 Denied ICMP type=%{regex("[^,]*"):type}%{_space},%{_space}code=%{integer:code} from %{ip:source_address} on interface %{notSpace:interface_name}
+
+
+              ip_stack_313004 Denied ICMP type=%{regex("[^,]*"):type}%{_space},%{_space}from (%{word} )?%{ip:source_address} on interface %{notSpace:interface_name} to %{ip:destination_address}%{_space}:%{_space}no matching session
+    - type: message-remapper
+      name: Define `message_text` as the official message of the log
+      enabled: true
+      sources:
+        - message_text

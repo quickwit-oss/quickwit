@@ -1,0 +1,86 @@
+id: akamai-eaa
+metric_id: akamai-zero-trust
+backend_only: false
+facets:
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+  - groups:
+      - User
+    name: User Email
+    path: usr.email
+    source: log
+pipeline:
+  type: pipeline
+  name: Akamai EAA
+  enabled: true
+  filter:
+    query: "source:akamai-eaa"
+  processors:
+    - type: date-remapper
+      name: Define `ts` as the official date of the log
+      enabled: true
+      sources:
+        - ts
+    - type: attribute-remapper
+      name: Map `event_ty` to `evt.category`
+      enabled: true
+      sources:
+        - event_ty
+      sourceType: attribute
+      target: evt.category
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `event` to `evt.name`
+      enabled: true
+      sources:
+        - event
+      sourceType: attribute
+      target: evt.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `uid` to `usr.email`
+      enabled: true
+      sources:
+        - uid
+      sourceType: attribute
+      target: usr.email
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `res_id` to `resource.id`
+      enabled: true
+      sources:
+        - res_id
+      sourceType: attribute
+      target: resource.id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `res_name` to `resource.name`
+      enabled: true
+      sources:
+        - res_name
+      sourceType: attribute
+      target: resource.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `res_ty` to `resource.type`
+      enabled: true
+      sources:
+        - res_ty
+      sourceType: attribute
+      target: resource.type
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false

@@ -1,0 +1,43 @@
+id: "ibm_ace"
+tests:
+ -
+  sample: |-
+    {
+      "ibm_processId" : "184",
+      "ibm_processName" : "",
+      "module" : "integration_server.ACESERVER",
+      "ibm_recordtype" : "log",
+      "ibm_sequence" : "1647035715112_0000000000001",
+      "type" : "ace_message",
+      "message" : "1990I: Integration server 'ACESERVER' starting initialization; version '12.0.3.0' (64-bit) ",
+      "ibm_product" : "IBM App Connect Enterprise",
+      "ibm_message_detail" : "1990I: Integration server 'ACESERVER' starting initialization; version '12.0.3.0' (64-bit) \nThe integration server is starting. \nNo user action required. ",
+      "ibm_serverName" : "ACESERVER",
+      "loglevel" : "INFO",
+      "host" : "9bbd4e2ff0e3",
+      "ibm_threadId" : "184",
+      "ibm_datetime" : "2022-03-11T21:55:15.112922",
+      "ibm_messageId" : "1990I"
+    }
+  result:
+    custom:
+      ibm_datetime: "2022-03-11T21:55:15.112922"
+      ibm_host: "9bbd4e2ff0e3"
+      ibm_processId: "184"
+      ibm_processName: ""
+      ibm_product: "IBM App Connect Enterprise"
+      ibm_recordtype: "log"
+      ibm_sequence: "1647035715112_0000000000001"
+      ibm_serverName: "ACESERVER"
+      ibm_threadId: "184"
+      logger:
+        name: "1990I"
+      loglevel: "INFO"
+      module: "integration_server.ACESERVER"
+      type: "ace_message"
+    message: "1990I: Integration server 'ACESERVER' starting initialization; version '12.0.3.0' (64-bit) \nThe integration server is starting. \nNo user action required. "
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1647035715112
+

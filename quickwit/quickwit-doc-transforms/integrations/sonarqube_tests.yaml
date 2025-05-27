@@ -1,0 +1,76 @@
+id: "sonarqube"
+tests:
+ -
+  sample: "2020.10.13 22:05:25 INFO  ce[][o.s.ce.app.CeServer] Compute Engine is operational"
+  result:
+    custom:
+      application:
+        id: "ce"
+      level: "INFO"
+      logger:
+        name: "o.s.ce.app.CeServer"
+      timestamp: 1602626725000
+    message: "Compute Engine is operational"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1602626725000
+ -
+  sample: "172.31.0.1 - Ayn [19/Oct/2020:15:04:57 +0000] \"GET /api/components/search_projects?ps=1 HTTP/1.1\" 200 96"
+  result:
+    custom:
+      date_access: 1603119897000
+      http:
+        auth: "Ayn"
+        method: "GET"
+        status_category: "OK"
+        status_code: 200
+        url: "/api/components/search_projects?ps=1"
+        url_details:
+          path: "/api/components/search_projects"
+          queryString:
+            ps: "1"
+        version: "1.1"
+      network:
+        bytes_written: 96
+        client:
+          ip: "172.31.0.1"
+    message: "172.31.0.1 - Ayn [19/Oct/2020:15:04:57 +0000] \"GET /api/components/search_projects?ps=1 HTTP/1.1\" 200 96"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1603119897000
+ -
+  sample: "192.168.0.1 - Karl [19/Oct/2020:15:10:53 +0000] \"GET /api/rules/app HTTP/1.1\" 200 - \"http://localhost:9000/about\" \"Mozilla/4.08 [en] (Win95)\" \"AXVBaccM7n9dqy9dAAAF\""
+  result:
+    custom:
+      date_access: 1603120253000
+      http:
+        auth: "Karl"
+        method: "GET"
+        referer: "http://localhost:9000/about"
+        status_category: "OK"
+        status_code: 200
+        url: "/api/rules/app"
+        url_details:
+          path: "/api/rules/app"
+        useragent: "Mozilla/4.08 [en] (Win95)"
+        useragent_details:
+          browser:
+            family: "Other"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Windows"
+            major: "95"
+        version: "1.1"
+      network:
+        client:
+          ip: "192.168.0.1"
+    message: "192.168.0.1 - Karl [19/Oct/2020:15:10:53 +0000] \"GET /api/rules/app HTTP/1.1\" 200 - \"http://localhost:9000/about\" \"Mozilla/4.08 [en] (Win95)\" \"AXVBaccM7n9dqy9dAAAF\""
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1603120253000
+

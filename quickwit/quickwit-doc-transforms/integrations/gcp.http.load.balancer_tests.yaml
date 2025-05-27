@@ -1,0 +1,266 @@
+id: "gcp.http.load.balancer"
+tests:
+ -
+  sample: |-
+    {
+      "data" : {
+        "severity" : "WARNING",
+        "spanId" : "7384bb13174770bb",
+        "trace" : "projects/datadog-sandbox/traces/8422b6831657e1f9a761a8e793d9a02b",
+        "logName" : "projects/datadog-sandbox/logs/requests",
+        "resource" : {
+          "type" : "http_load_balancer",
+          "labels" : {
+            "forwarding_rule_name" : "k8s-fw-symfony-ingress-test-ingress--fdfbc35361ed90b5",
+            "project_id" : "datadog-sandbox",
+            "target_proxy_name" : "k8s-tp-symfony-ingress-test-ingress--fdfbc35361ed90b5",
+            "zone" : "global",
+            "backend_service_name" : "",
+            "url_map_name" : "k8s-um-symfony-ingress-test-ingress--fdfbc35361ed90b5"
+          }
+        },
+        "jsonPayload" : {
+          "@type" : "type.googleapis.com/google.cloud.loadbalancing.type.LoadBalancerLogEntry",
+          "statusDetails" : "failed_to_pick_backend"
+        },
+        "httpRequest" : {
+          "remoteIp" : "203.150.109.197",
+          "requestUrl" : "http://35.190.27.230/cmd.php",
+          "requestMethod" : "GET",
+          "responseSize" : "488",
+          "userAgent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:61.0) Gecko/20100101 Firefox/61.0",
+          "requestSize" : "187",
+          "status" : 502
+        },
+        "receiveTimestamp" : "2019-04-08T12:58:01.713728121Z",
+        "insertId" : "x1ploycvfkziceu",
+        "timestamp" : "2019-04-08T12:58:01.210172649Z"
+      },
+      "attributes" : {
+        "logging" : {
+          "googleapis" : {
+            "com/timestamp" : "2019-04-08T13:11:33.977010855Z"
+          }
+        }
+      }
+    }
+  result:
+    custom:
+      attributes:
+        logging:
+          googleapis:
+            com/timestamp: "2019-04-08T13:11:33.977010855Z"
+      data:
+        httpRequest:
+          requestSize: "187"
+          requestUrl: "http://35.190.27.230/cmd.php"
+          responseSize: "488"
+          userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:61.0) Gecko/20100101 Firefox/61.0"
+        insertId: "x1ploycvfkziceu"
+        jsonPayload:
+          '@type': "type.googleapis.com/google.cloud.loadbalancing.type.LoadBalancerLogEntry"
+          statusDetails: "failed_to_pick_backend"
+        logName: "projects/datadog-sandbox/logs/requests"
+        receiveTimestamp: "2019-04-08T12:58:01.713728121Z"
+        resource:
+          labels:
+            backend_service_name: ""
+            forwarding_rule_name: "k8s-fw-symfony-ingress-test-ingress--fdfbc35361ed90b5"
+            project_id: "datadog-sandbox"
+            target_proxy_name: "k8s-tp-symfony-ingress-test-ingress--fdfbc35361ed90b5"
+            url_map_name: "k8s-um-symfony-ingress-test-ingress--fdfbc35361ed90b5"
+            zone: "global"
+          type: "http_load_balancer"
+        severity: "WARNING"
+        spanId: "7384bb13174770bb"
+        timestamp: "2019-04-08T12:58:01.210172649Z"
+        trace: "projects/datadog-sandbox/traces/8422b6831657e1f9a761a8e793d9a02b"
+      http:
+        method: "GET"
+        status_code: 502
+        url_details:
+          host: "35.190.27.230"
+          path: "/cmd.php"
+          scheme: "http"
+        useragent_details:
+          browser:
+            family: "Firefox"
+            major: "61"
+            minor: "0"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Windows"
+            major: "10"
+      network:
+        client:
+          ip: "203.150.109.197"
+    message: |-
+      {
+        "data" : {
+          "severity" : "WARNING",
+          "spanId" : "7384bb13174770bb",
+          "trace" : "projects/datadog-sandbox/traces/8422b6831657e1f9a761a8e793d9a02b",
+          "logName" : "projects/datadog-sandbox/logs/requests",
+          "resource" : {
+            "type" : "http_load_balancer",
+            "labels" : {
+              "forwarding_rule_name" : "k8s-fw-symfony-ingress-test-ingress--fdfbc35361ed90b5",
+              "project_id" : "datadog-sandbox",
+              "target_proxy_name" : "k8s-tp-symfony-ingress-test-ingress--fdfbc35361ed90b5",
+              "zone" : "global",
+              "backend_service_name" : "",
+              "url_map_name" : "k8s-um-symfony-ingress-test-ingress--fdfbc35361ed90b5"
+            }
+          },
+          "jsonPayload" : {
+            "@type" : "type.googleapis.com/google.cloud.loadbalancing.type.LoadBalancerLogEntry",
+            "statusDetails" : "failed_to_pick_backend"
+          },
+          "httpRequest" : {
+            "remoteIp" : "203.150.109.197",
+            "requestUrl" : "http://35.190.27.230/cmd.php",
+            "requestMethod" : "GET",
+            "responseSize" : "488",
+            "userAgent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:61.0) Gecko/20100101 Firefox/61.0",
+            "requestSize" : "187",
+            "status" : 502
+          },
+          "receiveTimestamp" : "2019-04-08T12:58:01.713728121Z",
+          "insertId" : "x1ploycvfkziceu",
+          "timestamp" : "2019-04-08T12:58:01.210172649Z"
+        },
+        "attributes" : {
+          "logging" : {
+            "googleapis" : {
+              "com/timestamp" : "2019-04-08T13:11:33.977010855Z"
+            }
+          }
+        }
+      }
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1554728281210
+ -
+  sample: |-
+    {
+      "severity" : "WARNING",
+      "spanId" : "7384bb13174770bb",
+      "trace" : "projects/datadog-sandbox/traces/8422b6831657e1f9a761a8e793d9a02b",
+      "logName" : "projects/datadog-sandbox/logs/requests",
+      "resource" : {
+        "type" : "http_load_balancer",
+        "labels" : {
+          "forwarding_rule_name" : "k8s-fw-symfony-ingress-test-ingress--fdfbc35361ed90b5",
+          "project_id" : "datadog-sandbox",
+          "target_proxy_name" : "k8s-tp-symfony-ingress-test-ingress--fdfbc35361ed90b5",
+          "zone" : "global",
+          "backend_service_name" : "",
+          "url_map_name" : "k8s-um-symfony-ingress-test-ingress--fdfbc35361ed90b5"
+        }
+      },
+      "jsonPayload" : {
+        "@type" : "type.googleapis.com/google.cloud.loadbalancing.type.LoadBalancerLogEntry",
+        "statusDetails" : "failed_to_pick_backend"
+      },
+      "httpRequest" : {
+        "remoteIp" : "203.150.109.197",
+        "requestUrl" : "http://35.190.27.230/cmd.php",
+        "requestMethod" : "GET",
+        "responseSize" : "488",
+        "userAgent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:61.0) Gecko/20100101 Firefox/61.0",
+        "requestSize" : "187",
+        "status" : 502
+      },
+      "receiveTimestamp" : "2019-04-08T12:58:01.713728121Z",
+      "insertId" : "x1ploycvfkziceu",
+      "timestamp" : "2019-04-08T12:58:01.210172649Z"
+    }
+  result:
+    custom:
+      http:
+        method: "GET"
+        status_code: 502
+        url_details:
+          host: "35.190.27.230"
+          path: "/cmd.php"
+          scheme: "http"
+        useragent_details:
+          browser:
+            family: "Firefox"
+            major: "61"
+            minor: "0"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Windows"
+            major: "10"
+      httpRequest:
+        requestSize: "187"
+        requestUrl: "http://35.190.27.230/cmd.php"
+        responseSize: "488"
+        userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:61.0) Gecko/20100101 Firefox/61.0"
+      insertId: "x1ploycvfkziceu"
+      jsonPayload:
+        '@type': "type.googleapis.com/google.cloud.loadbalancing.type.LoadBalancerLogEntry"
+        statusDetails: "failed_to_pick_backend"
+      logName: "projects/datadog-sandbox/logs/requests"
+      network:
+        client:
+          ip: "203.150.109.197"
+      receiveTimestamp: "2019-04-08T12:58:01.713728121Z"
+      resource:
+        labels:
+          backend_service_name: ""
+          forwarding_rule_name: "k8s-fw-symfony-ingress-test-ingress--fdfbc35361ed90b5"
+          project_id: "datadog-sandbox"
+          target_proxy_name: "k8s-tp-symfony-ingress-test-ingress--fdfbc35361ed90b5"
+          url_map_name: "k8s-um-symfony-ingress-test-ingress--fdfbc35361ed90b5"
+          zone: "global"
+        type: "http_load_balancer"
+      severity: "WARNING"
+      spanId: "7384bb13174770bb"
+      timestamp: "2019-04-08T12:58:01.210172649Z"
+      trace: "projects/datadog-sandbox/traces/8422b6831657e1f9a761a8e793d9a02b"
+    message: |-
+      {
+        "severity" : "WARNING",
+        "spanId" : "7384bb13174770bb",
+        "trace" : "projects/datadog-sandbox/traces/8422b6831657e1f9a761a8e793d9a02b",
+        "logName" : "projects/datadog-sandbox/logs/requests",
+        "resource" : {
+          "type" : "http_load_balancer",
+          "labels" : {
+            "forwarding_rule_name" : "k8s-fw-symfony-ingress-test-ingress--fdfbc35361ed90b5",
+            "project_id" : "datadog-sandbox",
+            "target_proxy_name" : "k8s-tp-symfony-ingress-test-ingress--fdfbc35361ed90b5",
+            "zone" : "global",
+            "backend_service_name" : "",
+            "url_map_name" : "k8s-um-symfony-ingress-test-ingress--fdfbc35361ed90b5"
+          }
+        },
+        "jsonPayload" : {
+          "@type" : "type.googleapis.com/google.cloud.loadbalancing.type.LoadBalancerLogEntry",
+          "statusDetails" : "failed_to_pick_backend"
+        },
+        "httpRequest" : {
+          "remoteIp" : "203.150.109.197",
+          "requestUrl" : "http://35.190.27.230/cmd.php",
+          "requestMethod" : "GET",
+          "responseSize" : "488",
+          "userAgent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:61.0) Gecko/20100101 Firefox/61.0",
+          "requestSize" : "187",
+          "status" : 502
+        },
+        "receiveTimestamp" : "2019-04-08T12:58:01.713728121Z",
+        "insertId" : "x1ploycvfkziceu",
+        "timestamp" : "2019-04-08T12:58:01.210172649Z"
+      }
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1554728281210
+

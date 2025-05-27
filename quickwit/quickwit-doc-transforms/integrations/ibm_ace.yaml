@@ -1,0 +1,74 @@
+id: ibm_ace
+metric_id: ibm-ace
+backend_only: false
+facets:
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+  - groups:
+      - IBM ACE
+    name: IBM ACE Server Name
+    path: ibm_serverName
+    source: log
+  - groups:
+      - IBM ACE
+    name: IBM ACE Host
+    path: ibm_host
+    source: log
+pipeline:
+  type: pipeline
+  name: IBM ACE
+  enabled: true
+  filter:
+    query: source:ibm_ace
+  processors:
+    - type: grok-parser
+      name: Parsing IBM ACE logs
+      enabled: true
+      source: message
+      samples:
+        - |
+          {"type":"ace_message","ibm_product":"IBM App Connect Enterprise","ibm_recordtype":"log","host":"9bbd4e2ff0e3","module":"integration_server.ACESERVER","ibm_serverName":"ACESERVER","ibm_processName":"","ibm_processId":"184","ibm_threadId":"184","ibm_datetime":"2022-03-11T21:55:15.112922","loglevel":"INFO","message":"1990I: Integration server 'ACESERVER' starting initialization; version '12.0.3.0' (64-bit) ","ibm_message_detail":"1990I: Integration server 'ACESERVER' starting initialization; version '12.0.3.0' (64-bit) \nThe integration server is starting. \nNo user action required. ","ibm_messageId":"1990I","ibm_sequence":"1647035715112_0000000000001"}
+        - |
+          {"type":"ace_message","ibm_product":"IBM App Connect Enterprise","ibm_recordtype":"log","host":"9bbd4e2ff0e3","module":"integration_server.ACESERVER","ibm_serverName":"ACESERVER","ibm_processName":"","ibm_processId":"184","ibm_threadId":"184","ibm_datetime":"2022-03-11T21:55:21.569650","loglevel":"INFO","message":"2269I: Deployed resource 'Caller' (uuid='Caller',type='MessageFlow') started successfully. ","ibm_message_detail":"2269I: Deployed resource 'Caller' (uuid='Caller',type='MessageFlow') started successfully. \nThe integration node received an operational control message containing an instruction to start the deployed resource 'Caller' (uuid='Caller',type='MessageFlow') and successfully performed this action. \nNo user action required. ","ibm_messageId":"2269I","ibm_sequence":"1647035721569_0000000000001"}
+      grok:
+        matchRules: |
+          ibm_ace_json %{data::json}
+        supportRules: ''
+    - type: attribute-remapper
+      name: Map `ibm_messageId` to `logger.name`
+      enabled: true
+      sources:
+        - ibm_messageId
+      target: logger.name
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `host` to `ibm_host`
+      enabled: true
+      sources:
+        - host
+      target: ibm_host
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: date-remapper
+      name: Define `ibm_datetime` as the official date of the log
+      enabled: true
+      sources:
+        - ibm_datetime
+    - type: status-remapper
+      name: Define `loglevel` as the official status of the log
+      enabled: true
+      sources:
+        - loglevel
+    - type: message-remapper
+      name: Define `ibm_message_detail` as the official message of the log
+      enabled: true
+      sources:
+        - ibm_message_detail

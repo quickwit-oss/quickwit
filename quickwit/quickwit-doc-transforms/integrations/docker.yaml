@@ -1,0 +1,55 @@
+id: docker
+metric_id: docker
+backend_only: false
+facets:
+pipeline:
+  type: pipeline
+  name: Docker
+  enabled: true
+  filter:
+    query: source:docker
+  processors:
+    - type: grok-parser
+      name: Parsing known docker logs formats
+      enabled: true
+      source: message
+      samples:
+        - 172.17.0.1 - - [06/Jan/2017:16:16:37 +0000] "GET /datadoghq/company?test=var1%20Pl HTTP/1.1" 200 612 "http://www.perdu.com/" "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36" "-"
+        - W0601 14:20:25.000572       1 manager.go:147] Failed to get all responses in time (got 3/4)
+        - 2018-07-05 10:08:08 GMT | INFO | (runner.go:309 in work) | Done running check network
+      grok:
+        supportRules: |
+          _auth %{notSpace:http.auth:nullIf("-")}
+          _bytes_written %{integer:network.bytes_written}
+          _client_ip %{ipOrHost:network.client.ip}
+          _version HTTP\/%{regex("\\d+\\.\\d+"):http.version}
+          _url %{notSpace:http.url}
+          _ident %{notSpace:http.ident:nullIf("-")}
+          _user_agent %{regex("[^\\\"]*"):http.useragent}
+          _referer %{notSpace:http.referer}
+          _status_code %{integer:http.status_code}
+          _method %{word:http.method}
+          _date_access %{date("dd/MMM/yyyy:HH:mm:ss Z"):timestamp}
+          _dd_date %{date("yyyy-MM-dd HH:mm:ss z"):timestamp}
+          _x_forwarded_for %{regex("[^\\\"]*"):http._x_forwarded_for:nullIf("-")}
+          _level %{regex("[\\w]"):level}
+          _kube_date %{date("MMdd HH:mm:ss.SSSSSS"):timestamp}
+          _thread_id %{number:logger.thread_id}
+          _logger_name %{notSpace:logger.name}
+          _line %{number:lineno}
+        matchRules: |
+          Kubernetes_format %{_level}%{_kube_date}\s+%{_thread_id} %{_logger_name}:%{_line}\].*
+
+          access.combined %{_client_ip} %{_ident} %{_auth} \[%{_date_access}\] "(?>%{_method} |)%{_url}(?> %{_version}|)" %{_status_code} (?>%{_bytes_written}|-) "%{_referer}" "%{_user_agent}"( "%{_x_forwarded_for}")?.*
+
+          datadog_format (?>\[ %{word:process.name} \] )?%{_dd_date} \| %{word:level} \| \(%{_logger_name}:%{_line} in %{word:datadog.process}\) \| .*
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level

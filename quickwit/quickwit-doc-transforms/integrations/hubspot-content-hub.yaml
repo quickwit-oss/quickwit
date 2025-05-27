@@ -1,0 +1,219 @@
+id: hubspot-content-hub
+metric_id: hubspot-content-hub
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: User-Agent
+    path: http.useragent
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - User
+    name: User Email
+    path: usr.email
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+pipeline:
+  type: pipeline
+  name: HubSpot Content Hub
+  enabled: true
+  filter:
+    query: "source:hubspot-content-hub"
+  processors:
+    - type: pipeline
+      name: Audit Logs
+      enabled: true
+      filter:
+        query: "service:audit"
+      processors:
+        - type: date-remapper
+          name: Define `occurredAt` as the official date of the log
+          enabled: true
+          sources:
+            - occurredAt
+        - type: attribute-remapper
+          name: Map `actingUser.userId` to `usr.id`
+          enabled: true
+          sources:
+            - actingUser.userId
+          sourceType: attribute
+          target: usr.id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `actingUser.userEmail` to `usr.email`
+          enabled: true
+          sources:
+            - actingUser.userEmail
+          sourceType: attribute
+          target: usr.email
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Login Logs
+      enabled: true
+      filter:
+        query: "service:login"
+      processors:
+        - type: date-remapper
+          name: Define `loginAt` as the official date of the log
+          enabled: true
+          sources:
+            - loginAt
+        - type: attribute-remapper
+          name: Map `userId` to `usr.id`
+          enabled: true
+          sources:
+            - userId
+          sourceType: attribute
+          target: usr.id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `email` to `usr.email`
+          enabled: true
+          sources:
+            - email
+          sourceType: attribute
+          target: usr.email
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `userAgent` to `http.useragent`
+          enabled: true
+          sources:
+            - userAgent
+          sourceType: attribute
+          target: http.useragent
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `ipAddress` to `network.client.ip`
+          enabled: true
+          sources:
+            - ipAddress
+          sourceType: attribute
+          target: network.client.ip
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: user-agent-parser
+          name: Extract details from `http.useragent`
+          enabled: true
+          sources:
+            - http.useragent
+          target: http.useragent_details
+          encoded: false
+          combineVersionDetails: false
+    - type: pipeline
+      name: Security Logs
+      enabled: true
+      filter:
+        query: "service:security"
+      processors:
+        - type: date-remapper
+          name: Define `createdAt` as the official date of the log
+          enabled: true
+          sources:
+            - createdAt
+        - type: attribute-remapper
+          name: Map `userId` to `usr.id`
+          enabled: true
+          sources:
+            - userId
+          sourceType: attribute
+          target: usr.id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `actingUser` to `usr.email`
+          enabled: true
+          sources:
+            - actingUser
+          sourceType: attribute
+          target: usr.email
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `ipAddress` to `network.client.ip`
+          enabled: true
+          sources:
+            - ipAddress
+          sourceType: attribute
+          target: network.client.ip
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: geo-ip-parser
+      name: GeoIP Parser for `network.client.ip` (ipAddress)
+      enabled: true
+      sources:
+        - network.client.ip
+      target: network.client.geoip
+      ip_processing_behavior: do-nothing

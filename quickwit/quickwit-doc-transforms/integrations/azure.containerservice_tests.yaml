@@ -1,0 +1,204 @@
+id: "azure.containerservice"
+tests:
+  - sample: |-
+      {
+        "callerIpAddress" : "34.224.243.198",
+        "resourceId" : "/subscriptions/8C56D827-5F07-45CE-8F2B-6C5001DB5C6F/resourceGroups/DEMO-11287-AKS/PROVIDERS/MICROSOFT.CONTAINERSERVICE/managedClusters/DEMO-11287-AKS-NORTHCENTRALUS",
+        "level" : "Warning",
+        "identity" : {
+          "authorization" : {
+            "evidence" : {
+              "principalId" : "5f6793e4783e49a2bfb8cdaasdada"
+            }
+          }
+        },
+        "operationName" : "Microsoft.ContainerService/managedClusters/diagnosticLogs/Read",
+        "correlationId" : "aea8188d-9be4-48c7-9e8f-3bf10a545ff3",
+        "time" : "2022-06-07T12:01:17.8810661Z",
+        "category" : "Administrative",
+        "resultType" : "Success",
+        "durationMs" : 123,
+        "properties" : {
+          "log" : "I0524 09:01:36.634762       1 event.go:291] \"Event occurred\" object=\"default/email-api-py\" kind=\"Endpoints\" apiVersion=\"v1\" type=\"Warning\" reason=\"FailedToUpdateEndpoint\" message=\"Failed to update endpoint default/email-api-py: Operation cannot be fulfilled on endpoints \"email-api-py\": the object has been modified; please apply your changes to the latest version and try again\""
+        },
+        "resultSignature" : "Succeeded."
+      }
+    result:
+      custom:
+        correlationId: "aea8188d-9be4-48c7-9e8f-3bf10a545ff3"
+        duration: 1.23E8
+        durationMs: 123
+        event:
+          apiVersion: "v1"
+          kind: "Endpoints"
+          object: "default/email-api-py"
+          reason: "FailedToUpdateEndpoint"
+          type: "Warning"
+        evt:
+          category: "Administrative"
+          name: "Microsoft.ContainerService/managedClusters/diagnosticLogs/Read"
+          outcome: "Success"
+        level: "Warning"
+        network:
+          client:
+            ip: "34.224.243.198"
+        properties:
+          log: 'I0524 09:01:36.634762       1 event.go:291] "Event occurred" object="default/email-api-py" kind="Endpoints" apiVersion="v1" type="Warning" reason="FailedToUpdateEndpoint" message="Failed to update endpoint default/email-api-py: Operation cannot be fulfilled on endpoints "email-api-py": the object has been modified; please apply your changes to the latest version and try again"'
+        resourceId: "/subscriptions/8C56D827-5F07-45CE-8F2B-6C5001DB5C6F/resourceGroups/DEMO-11287-AKS/PROVIDERS/MICROSOFT.CONTAINERSERVICE/managedClusters/DEMO-11287-AKS-NORTHCENTRALUS"
+        resource_name: "demo-11287-aks-northcentralus"
+        resultSignature: "Succeeded."
+        severity: "I"
+        time: "2022-06-07T12:01:17.8810661Z"
+        usr:
+          id: "5f6793e4783e49a2bfb8cdaasdada"
+      message: 'Failed to update endpoint default/email-api-py: Operation cannot be fulfilled on endpoints "email-api-py": the object has been modified; please apply your changes to the latest version and try again'
+      status: "warn"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1654603277881
+  - sample: |-
+      {
+        "callerIpAddress" : "34.224.243.198",
+        "resourceId" : "/SUBSCRIPTIONS/8C56D827-5F07-45CE-8F2B-6C5001DB5C6F/resourceGroups/DEMO-11287-AKS/PROVIDERS/MICROSOFT.CONTAINERSERVICE/managedClusters/DEMO-1867",
+        "level" : "Warning",
+        "identity" : {
+          "authorization" : {
+            "evidence" : {
+              "principalId" : "5f6793e4783e49a2bfb8cdaasdada"
+            }
+          }
+        },
+        "operationName" : "Microsoft.ContainerService/managedClusters/diagnosticLogs/Read",
+        "correlationId" : "aea8188d-9be4-48c7-9e8f-3bf10a545ff3",
+        "time" : "2022-06-07T12:01:17.8810661Z",
+        "category" : "Administrative",
+        "resultType" : "Success",
+        "durationMs" : 123,
+        "properties" : {
+          "log" : "E0404 17:36:04.881381       1 horizontal.go:227] failed to compute desired number of replicas based on listed metrics for Deployment/healthmonitor/healthmonitor: invalid metrics (2 invalid out of 2), first error is: failed to get memory utilization: missing request for memory"
+        },
+        "resultSignature" : "Succeeded."
+      }
+    result:
+      custom:
+        correlationId: "aea8188d-9be4-48c7-9e8f-3bf10a545ff3"
+        duration: 1.23E8
+        durationMs: 123
+        evt:
+          category: "Administrative"
+          name: "Microsoft.ContainerService/managedClusters/diagnosticLogs/Read"
+          outcome: "Success"
+        level: "Warning"
+        network:
+          client:
+            ip: "34.224.243.198"
+        properties:
+          log: "E0404 17:36:04.881381       1 horizontal.go:227] failed to compute desired number of replicas based on listed metrics for Deployment/healthmonitor/healthmonitor: invalid metrics (2 invalid out of 2), first error is: failed to get memory utilization: missing request for memory"
+        resourceId: "/SUBSCRIPTIONS/8C56D827-5F07-45CE-8F2B-6C5001DB5C6F/resourceGroups/DEMO-11287-AKS/PROVIDERS/MICROSOFT.CONTAINERSERVICE/managedClusters/DEMO-1867"
+        resource_name: "demo-1867"
+        resultSignature: "Succeeded."
+        severity: "E"
+        time: "2022-06-07T12:01:17.8810661Z"
+        usr:
+          id: "5f6793e4783e49a2bfb8cdaasdada"
+      message: "failed to compute desired number of replicas based on listed metrics for Deployment/healthmonitor/healthmonitor: invalid metrics (2 invalid out of 2), first error is: failed to get memory utilization: missing request for memory"
+      status: "warn"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1654603277881
+  - sample: |-
+      {
+        "resourceId" : "/SUBSCRIPTIONS/FA3F98D4-2D5C-44AE-950F-ECBB74B5FAB6/RESOURCEGROUPS/MARTIN-AKS-RESOURCE-GROUP/PROVIDERS/MICROSOFT.CONTAINERSERVICE/MANAGEDCLUSTERS/MARTIN-DOGFOOD-CLUSTER",
+        "serviceBuild" : "na",
+        "service" : "azure",
+        "operationName" : "Microsoft.ContainerService/managedClusters/diagnosticLogs/Read",
+        "time" : "2024-04-16T08:16:07.04258242Z",
+        "category" : "kube-audit",
+        "properties" : {
+          "pod" : "kube-apiserver-7b547c477f-8grj6",
+          "stream" : "stdout",
+          "log" : "{\"kind\":\"Event\",\"apiVersion\":\"audit.k8s.io/v1\",\"level\":\"Metadata\",\"auditID\":\"fdfc4cd1-65b4-45e9-a145-2e2a49e38846\",\"stage\":\"ResponseComplete\",\"requestURI\":\"/apis/coordination.k8s.io/v1/namespaces/kube-system/leases/external-resizer-file-csi-azure-com\",\"verb\":\"update\",\"user\":{\"username\":\"aksService\",\"groups\":[\"system:masters\",\"system:authenticated\"]},\"sourceIPs\":[\"172.31.7.198\"],\"userAgent\":\"csi-resizer/v0.0.0 (linux/amd64) kubernetes/$Format\",\"objectRef\":{\"resource\":\"leases\",\"namespace\":\"kube-system\",\"name\":\"external-resizer-file-csi-azure-com\",\"uid\":\"f8f9eaba-1862-47e5-a65f-6f2e4df37128\",\"apiGroup\":\"coordination.k8s.io\",\"apiVersion\":\"v1\",\"resourceVersion\":\"9761\"},\"responseStatus\":{\"metadata\":{},\"code\":200},\"requestReceivedTimestamp\":\"2024-04-16T08:16:59.753663Z\",\"stageTimestamp\":\"2024-04-16T08:16:59.759332Z\",\"annotations\":{\"authorization.k8s.io/decision\":\"allow\",\"authorization.k8s.io/reason\":\"\"}}",
+          "containerID" : "d062a3f5448cacbe5317567c1699e05d16d5880d74359909bb7d2a0706bc3e02"
+        }
+      }
+    result:
+      custom:
+        annotations:
+          authorization:
+            k8s:
+              io/decision: "allow"
+              io/reason: ""
+        apiVersion: "audit.k8s.io/v1"
+        auditID: "fdfc4cd1-65b4-45e9-a145-2e2a49e38846"
+        duration: 6000000.0
+        evt:
+          category: "kube-audit"
+          name: "Microsoft.ContainerService/managedClusters/diagnosticLogs/Read"
+        http:
+          method: "update"
+          status_category: "OK"
+          status_code: 200
+          url: "/apis/coordination.k8s.io/v1/namespaces/kube-system/leases/external-resizer-file-csi-azure-com"
+          url_details:
+            path: "/apis/coordination.k8s.io/v1/namespaces/kube-system/leases/external-resizer-file-csi-azure-com"
+          useragent: "csi-resizer/v0.0.0 (linux/amd64) kubernetes/$Format"
+          useragent_details:
+            browser:
+              family: "Other"
+            device:
+              category: "Desktop"
+              family: "Other"
+            os:
+              family: "Linux"
+        kind: "Event"
+        level: "Metadata"
+        objectRef:
+          apiGroup: "coordination.k8s.io"
+          apiVersion: "v1"
+          name: "external-resizer-file-csi-azure-com"
+          resource: "leases"
+          resourceVersion: "9761"
+          uid: "f8f9eaba-1862-47e5-a65f-6f2e4df37128"
+        properties:
+          containerID: "d062a3f5448cacbe5317567c1699e05d16d5880d74359909bb7d2a0706bc3e02"
+          log: '{"kind":"Event","apiVersion":"audit.k8s.io/v1","level":"Metadata","auditID":"fdfc4cd1-65b4-45e9-a145-2e2a49e38846","stage":"ResponseComplete","requestURI":"/apis/coordination.k8s.io/v1/namespaces/kube-system/leases/external-resizer-file-csi-azure-com","verb":"update","user":{"username":"aksService","groups":["system:masters","system:authenticated"]},"sourceIPs":["172.31.7.198"],"userAgent":"csi-resizer/v0.0.0 (linux/amd64) kubernetes/$Format","objectRef":{"resource":"leases","namespace":"kube-system","name":"external-resizer-file-csi-azure-com","uid":"f8f9eaba-1862-47e5-a65f-6f2e4df37128","apiGroup":"coordination.k8s.io","apiVersion":"v1","resourceVersion":"9761"},"responseStatus":{"metadata":{},"code":200},"requestReceivedTimestamp":"2024-04-16T08:16:59.753663Z","stageTimestamp":"2024-04-16T08:16:59.759332Z","annotations":{"authorization.k8s.io/decision":"allow","authorization.k8s.io/reason":""}}'
+          pod: "kube-apiserver-7b547c477f-8grj6"
+          stream: "stdout"
+        requestReceivedTimestamp: "2024-04-16T08:16:59.753663Z"
+        requestReceivedTimestamp_ms: 1713255419753
+        resourceId: "/SUBSCRIPTIONS/FA3F98D4-2D5C-44AE-950F-ECBB74B5FAB6/RESOURCEGROUPS/MARTIN-AKS-RESOURCE-GROUP/PROVIDERS/MICROSOFT.CONTAINERSERVICE/MANAGEDCLUSTERS/MARTIN-DOGFOOD-CLUSTER"
+        resource_name: "martin-dogfood-cluster"
+        service: "azure"
+        serviceBuild: "na"
+        sourceIPs:
+          - "172.31.7.198"
+        stage: "ResponseComplete"
+        stageTimestamp: "2024-04-16T08:16:59.759332Z"
+        stageTimestamp_ms: 1713255419759
+        time: "2024-04-16T08:16:07.04258242Z"
+        usr:
+          groups:
+            - "system:masters"
+            - "system:authenticated"
+          id: "aksService"
+          name: "aksService"
+      message: |-
+        {
+          "resourceId" : "/SUBSCRIPTIONS/FA3F98D4-2D5C-44AE-950F-ECBB74B5FAB6/RESOURCEGROUPS/MARTIN-AKS-RESOURCE-GROUP/PROVIDERS/MICROSOFT.CONTAINERSERVICE/MANAGEDCLUSTERS/MARTIN-DOGFOOD-CLUSTER",
+          "serviceBuild" : "na",
+          "service" : "azure",
+          "operationName" : "Microsoft.ContainerService/managedClusters/diagnosticLogs/Read",
+          "time" : "2024-04-16T08:16:07.04258242Z",
+          "category" : "kube-audit",
+          "properties" : {
+            "pod" : "kube-apiserver-7b547c477f-8grj6",
+            "stream" : "stdout",
+            "log" : "{\"kind\":\"Event\",\"apiVersion\":\"audit.k8s.io/v1\",\"level\":\"Metadata\",\"auditID\":\"fdfc4cd1-65b4-45e9-a145-2e2a49e38846\",\"stage\":\"ResponseComplete\",\"requestURI\":\"/apis/coordination.k8s.io/v1/namespaces/kube-system/leases/external-resizer-file-csi-azure-com\",\"verb\":\"update\",\"user\":{\"username\":\"aksService\",\"groups\":[\"system:masters\",\"system:authenticated\"]},\"sourceIPs\":[\"172.31.7.198\"],\"userAgent\":\"csi-resizer/v0.0.0 (linux/amd64) kubernetes/$Format\",\"objectRef\":{\"resource\":\"leases\",\"namespace\":\"kube-system\",\"name\":\"external-resizer-file-csi-azure-com\",\"uid\":\"f8f9eaba-1862-47e5-a65f-6f2e4df37128\",\"apiGroup\":\"coordination.k8s.io\",\"apiVersion\":\"v1\",\"resourceVersion\":\"9761\"},\"responseStatus\":{\"metadata\":{},\"code\":200},\"requestReceivedTimestamp\":\"2024-04-16T08:16:59.753663Z\",\"stageTimestamp\":\"2024-04-16T08:16:59.759332Z\",\"annotations\":{\"authorization.k8s.io/decision\":\"allow\",\"authorization.k8s.io/reason\":\"\"}}",
+            "containerID" : "d062a3f5448cacbe5317567c1699e05d16d5880d74359909bb7d2a0706bc3e02"
+          }
+        }
+      status: "ok"  
+      tags:
+        - "source:LOGS_SOURCE"
+        - "kube_namespace:kube-system"
+      timestamp: 1713255367042

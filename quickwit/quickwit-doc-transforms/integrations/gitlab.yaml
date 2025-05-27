@@ -1,0 +1,431 @@
+id: gitlab
+metric_id: gitlab
+backend_only: false
+facets:
+  - facetType: range
+    groups:
+      - Measure
+    name: Duration
+    path: duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: nanosecond
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: URL Host
+    path: http.url_details.host
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Web Access
+    name: URL Port
+    path: http.url_details.port
+    source: log
+  - groups:
+      - Web Access
+    name: URL scheme
+    path: http.url_details.scheme
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - Active Directory
+    name: Process Status
+    path: active_directory.process_status
+    source: log
+  - facetType: range
+    groups:
+      - Active Directory
+    name: Views
+    path: views
+    source: log
+    type: double
+    unit:
+      family: time
+      name: millisecond
+  - facetType: range
+    groups:
+      - Active Directory
+    name: Active Records
+    path: activerecord
+    source: log
+    type: double
+    unit:
+      family: time
+      name: millisecond
+pipeline:
+  type: pipeline
+  name: Gitlab
+  enabled: true
+  filter:
+    query: source:gitlab
+  processors:
+    # Rescale durations from json logs, must be before grok-parsers
+      # Duration is scaled to seconds to match duration in sec from keyvalue parser
+      # Later on in the pipeline the duration will be rescaled to nanosecond
+    - type: arithmetic-processor
+      name: Rescale duration from milisecond to second
+      enabled: true
+      expression: duration / 1000
+      target: duration
+      replaceMissing: false
+    - type: arithmetic-processor
+      name: Rescale gitaly_duration from milisecond to nanosecond
+      enabled: true
+      expression: gitaly_duration *1000000
+      target: gitaly_duration
+      replaceMissing: false
+    - type: arithmetic-processor
+      name: Rescale queue_duration from milisecond to nanosecond
+      enabled: true
+      expression: queue_duration *1000000
+      target: queue_duration
+      replaceMissing: false
+
+    # grok-parsers
+    - type: grok-parser
+      name: Gitlab application log parser
+      enabled: true
+      source: message
+      samples:
+        - 'October 06, 2014 11:56: Documentcloud created a new project "Documentcloud / Underscore"'
+        - 'June 16, 2019 16:43: User "Administrator" (admin@example.com) was created'
+      grok:
+        supportRules: |
+          _date %{date("MMMM dd, yyyy HH:mm"):date}
+
+        matchRules: |
+          # gitlab-rails/application.log
+
+          gitlab.application %{_date}: %{data:msg}
+
+    - type: grok-parser
+      name: Gitlab sidekiq/gitaly/gitlab-workhorse log parser
+      enabled: true
+      source: message
+      samples:
+        - '2019-06-17_10:30:10.80225 2019-06-17T10:30:10.802Z 1332 TID-oujf7ktz4 PagesDomainVerificationCronWorker JID-ca8a29fc8d6a1d933812e510 INFO: done: 0.008 sec'
+        - '2022-10-05T07:59:30.904Z pid=64 tid=a0tc class=Ci::RefDeleteUnlockArtifactsWorker jid=39a3193a8e0f66844f802029 elapsed=0.012 INFO: done'
+        - 'I, [1999-03-03T02:34:24.895701 #19074]  INFO -- : Completed 200 OK in 41ms (Views: 0.2ms | ActiveRecord: 6.2ms)'
+        - 'I, [2018-06-27T08:01:52.991728 #1]  INFO -- : Received: {"action":"cancel","order":{"id":1234567,"timestamp":153012312}}'
+        - 'E, [2015-10-21T22:12:52.402356 #50] ERROR -- : reaped #<Process::Status: pid 305 SIGKILL (signal 9)> worker=2'
+      grok:
+        supportRules: |
+          _gitlab_date %{date("yyyy-MM-dd_HH:mm:ss.SSSSS"):gitlab_date}
+
+          _sidekiq_class %{notSpace:sidekiq.class}
+          _sidekiq_thread_id %{notSpace:logger.thread_id}
+          _sidekiq_pid %{integer:pid}
+          _sidekiq_level %{word:level}
+          _sidekiq_jobid %{notSpace:sidekiq.jobid}
+          _sidekiq_date %{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):timestamp}
+          _sidekiq_duration %{number:duration}
+
+          _ruby_date (%{date("yyyy-MM-dd'T'HH:mm:ss.SSSSSS"):date}|%{date("yyyy-MM-dd'T'HH:mm:ss.SSS"):date})
+          _ruby_status %{word:level}
+          _ruby_thread_id %{word:logger.thread_id}
+          _ruby_thread_name %{notSpace:logger.thread_name}
+          _ruby_logger_name %{notSpace:logger.name}
+          _ruby_log_prefix %{word}, \[%{_ruby_date} #%{_ruby_thread_id}\]\s+%{_ruby_status}\s+--\s+(%{_ruby_logger_name})?:
+          _ruby_activate_ruby_status %{word:active_directory.process_status}
+
+          #Used for: ruby.gitlab_production
+          _date_access %{date("yyyy-MM-dd HH:mm:ss Z"):date_access}
+          _client_ip %{ipOrHost:network.client.ip}
+          _url %{notSpace:http.url}
+          _status_code %{integer:http.status_code}
+          _method %{word:http.method}
+          _class %{word:class}
+          _controller %{word:controller}
+          _action %{word:action}
+          _format %{word:format}
+          _duration %{number:duration:scale(0.001)}
+          _view %{number:view}
+          _activerecord %{number:activerecord}
+          _details %{data:details}
+
+        matchRules: |
+          ###  Sidekiq Logs ###
+
+          sidekiq.start_format %{_gitlab_date} %{_sidekiq_date} %{_sidekiq_pid} TID-%{_sidekiq_thread_id} %{_sidekiq_class} JID-%{_sidekiq_jobid} %{_sidekiq_level}: start
+          sidekiq.finish_format %{_gitlab_date} %{_sidekiq_date} %{_sidekiq_pid} TID-%{_sidekiq_thread_id} %{_sidekiq_class} JID-%{_sidekiq_jobid} %{_sidekiq_level}: done: %{_sidekiq_duration} sec
+          sidekiq.fallback_format %{_gitlab_date} %{_sidekiq_date} %{_sidekiq_pid} TID-%{_sidekiq_thread_id} %{_sidekiq_level}:.*
+
+          sidekiq.format_2 %{_sidekiq_date} pid=%{_sidekiq_pid} (tid=%{_sidekiq_thread_id} class=%{_sidekiq_class} )?jid=%{_sidekiq_jobid} (elapsed=%{_sidekiq_duration} )?%{_sidekiq_level}:.*
+
+          # Extra gitlab-rails/sidekiq.log samples:
+          # 2019-06-17_10:30:10.79384 2019-06-17T10:30:10.793Z 1332 TID-oujf7ktz4 PagesDomainVerificationCronWorker JID-ca8a29fc8d6a1d933812e510 INFO: start
+          # 2022-10-04T12:27:55.010Z pid=65 tid=s5cg9 class=BuildHooksWorker jid=21b448f228c0a5cc1152d144 INFO: start
+
+          ###  Ruby Rails logs ###
+
+          ruby.gitlab_production %{_ruby_log_prefix}\s+?Started %{_method} "%{_url}" for %{_client_ip} at %{_date_access}(\n|\t|\s)+Processing by (%{_class}::)?%{_controller}\#%{_action} as %{_format}(\t|\s|\n)+(%{_details})?Completed %{_status_code} %{word} in %{_duration}ms \(Views: %{_view}ms \| ActiveRecord: %{_activerecord}ms\)
+
+          ruby.completed_rule %{_ruby_log_prefix}\s+?%{_ruby_activate_ruby_status} %{integer:http.status_code}( %{word})? in %{number:duration:scale(0.001)}ms \((?>Views: %{number:views}ms \| )?ActiveRecord: %{number:activerecord}ms\)
+
+          ruby.processing_rule %{_ruby_log_prefix}\s+?%{_ruby_activate_ruby_status} by %{notSpace:processor}.*
+
+          ruby.started_rule %{_ruby_log_prefix}\s+?%{_ruby_activate_ruby_status} %{word:http.method} "%{notSpace:http.url_details.path}" for %{ipOrHost:network.client.ip}.*
+
+          ruby.received_rule %{_ruby_log_prefix}\s+?Received: %{data::json}
+
+          ## Default Ruby formats
+
+          ruby_error_keyvalue %{_ruby_log_prefix}\s+reaped\s+#<%{data:error.message}>%{data::keyvalue("=","/.:")}
+
+          ruby_default_keyvalue %{_ruby_log_prefix}\s+%{data::keyvalue("=","/.:")}
+
+          ruby_default %{_ruby_log_prefix}\s+%{data:error.message}(?>(\n|\t)%{data:error.stack})?
+
+          ruby_date_keyvalue %{_gitlab_date} %{data::keyvalue("=","/")}
+
+          ruby_keyvalue %{data::keyvalue("=","/")}
+
+          # Extra samples:
+
+          # I, [1999-03-03T02:34:24.895701 #19074]  INFO -- Main: Some error.
+          # I, [2015-02-13T06:14:46.680381 #9047]  INFO -- : Refreshing Gem list
+          # D, [2019-06-18T00:13:22.160544 #1310] DEBUG -- : waiting 31.0s after suspend/hibernation
+          # I, [2019-06-18T15:18:18.345105 #819]  INFO -- : worker=0 ready
+
+          # I, [1999-03-03T02:34:24.895701 #19074]  INFO -- : Started GET "/api/v1/example/query" for 123.123.123.123 at 1999-03-03 02:34:24+0000
+          # I, [1999-03-03T02:34:24.895701 #19074]  INFO -- : Processing by MyCheck::CheckController#index as JSON
+
+    - type: grok-parser
+      name: Gitlab Web Access (sidekiq exporter) log parser
+      enabled: true
+      source: message
+      samples:
+        - '[2019-06-17 12:18:36] 127.0.0.1 - - [17/Jun/2019:12:18:36 UTC] "GET /metrics HTTP/1.1" 200 3700 "-" "Prometheus/2.8.1"'
+      grok:
+        supportRules: |
+          _auth %{notSpace:http.auth:nullIf("-")}
+          _bytes_written %{integer:network.bytes_written}
+          _client_ip %{ipOrHost:network.client.ip}
+          _version HTTP\/%{regex("\\d+\\.\\d+"):http.version}
+          _url %{notSpace:http.url}
+          _ident %{notSpace:http.ident:nullIf("-")}
+          _user_agent %{regex("[^\\\"]*"):http.useragent}
+          _referer %{notSpace:http.referer}
+          _status_code %{integer:http.status_code}
+          _method %{word:http.method}
+          _date_access %{date("dd/MMM/yyyy:HH:mm:ss z"):date_access}
+          _x_forwarded_for %{regex("[^\\\"]*"):http._x_forwarded_for:nullIf("-")}
+          _gitlab_date \[%{date("yyyy-MM-dd HH:mm:ss"):gitlab_date}\]
+
+        matchRules: |
+          access.common %{_gitlab_date} %{_client_ip} %{_ident} %{_auth} \[%{_date_access}\] "(?>%{_method} |)%{_url}(?> %{_version}|)" %{_status_code} (?>%{_bytes_written}|-)
+          access.combined %{access.common} "%{_referer}" "%{_user_agent}"( "%{_x_forwarded_for}")?.*
+
+    - type: grok-parser
+      name: Gitlab production log parser
+      enabled: true
+      source: message
+      samples:
+        - |-
+          Started GET "/-/metrics" for 127.0.0.1 at 2019-06-17 13:40:27 +0000
+          Processing by MetricsController#index as HTML
+          Completed 200 OK in 2ms (Views: 0.4ms | ActiveRecord: 0.0ms)
+        - |-
+          Started GET "/gitlabhq/yaml_db/tree/master" for 168.111.56.1 at 2015-02-12 19:34:53 +0200
+          Processing by Projects::TreeController#show as HTML
+            Parameters: {"project_id"=>"gitlabhq/yaml_db", "id"=>"master"}
+            ... [CUT OUT]
+            Namespaces"."created_at" DESC, "namespaces"."id" DESC LIMIT 1 [["id", 26]]
+            Rendered layouts/_page.html.haml (32.9ms)
+          Completed 200 OK in 166ms (Views: 117.4ms | ActiveRecord: 27.2ms)
+      grok:
+        supportRules: |
+          _date_access %{date("yyyy-MM-dd HH:mm:ss Z"):date_access}
+          _client_ip %{ipOrHost:network.client.ip}
+          _url %{notSpace:http.url}
+          _status_code %{integer:http.status_code}
+          _method %{word:http.method}
+          _class %{word:class}
+          _controller %{word:controller}
+          _action %{word:action}
+          _format %{word:format}
+          _duration %{number:duration:scale(0.001)}
+          _view %{number:view:scale(1000000)}
+          _activerecord %{number:activerecord:scale(1000000)}
+          _details %{data:details}
+
+        matchRules: |
+          gitlab.production Started %{_method} "%{_url}" for %{_client_ip} at %{_date_access}(\n|\t|\s)+Processing by (%{_class}::)?%{_controller}\#%{_action} as %{_format}(\t|\s|\n)+(%{_details})?Completed %{_status_code} %{word} in %{_duration}ms \(Views: %{_view}ms \| ActiveRecord: %{_activerecord}ms\)
+
+    # date
+    - type: date-remapper
+      name: Define `time`, `date`, `ts`, `date_access` as the official date of the log
+      enabled: true
+      sources:
+        - time
+        - date
+        - ts
+        - date_access
+
+    # Rescale durations to nanosecond
+    - type: arithmetic-processor
+      name: Rescale duration from milisecond to nanosecond
+      enabled: true
+      expression: duration * 1000000000
+      target: duration
+      replaceMissing: false
+
+    # http
+    - type: attribute-remapper
+      name: Map `method` to `http.method`
+      enabled: true
+      sources:
+        - method
+      target: http.method
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `status` to `http.status_code`
+      enabled: true
+      sources:
+        - status
+      target: http.status_code
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: category-processor
+      name: Categorise status code
+      enabled: true
+      categories:
+        - filter:
+            query: '@http.status_code:[200 TO 299]'
+          name: OK
+        - filter:
+            query: '@http.status_code:[300 TO 399]'
+          name: notice
+        - filter:
+            query: '@http.status_code:[400 TO 499]'
+          name: warning
+        - filter:
+            query: '@http.status_code:[500 TO 599]'
+          name: error
+      target: http.status_category
+    - type: attribute-remapper
+      name: Map `path` to `http.url_details.path`
+      enabled: true
+      sources:
+        - path
+      target: http.url_details.path
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `host` to `http.url_details.host`
+      enabled: true
+      sources:
+        - host
+      target: http.url_details.host
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: user-agent-parser
+      name: Remap sources to http.useragent_details
+      enabled: true
+      sources:
+        - ua
+        - http.useragent
+      target: http.useragent_details
+      encoded: false
+    - type: url-parser
+      name: Remap sources to http.url_details
+      enabled: true
+      sources:
+        - http.url
+        - url
+      target: http.url_details
+
+    # severity/level
+    - type: status-remapper
+      name: Define `severity` as the official status of the log
+      enabled: true
+      sources:
+        - severity
+
+    # ruby/rails
+    - type: attribute-remapper
+      name: Map `db` to `activerecord`
+      enabled: true
+      sources:
+        - db
+      target: activerecord
+      preserveSource: false
+      overrideOnConflict: false
+
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `view` to `views`
+      enabled: true
+      sources:
+        - view
+      target: views
+      preserveSource: false
+      overrideOnConflict: false
+
+    # network
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `remote_ip`, `ip` to `network.client.ip`
+      enabled: true
+      sources:
+        - remote_ip
+        - ip
+      target: network.client.ip
+      preserveSource: false
+      overrideOnConflict: false
+
+    # message
+      sourceType: attribute
+      targetType: attribute
+    - type: message-remapper
+      name: Define `msg`, `message` as the official message of the log
+      enabled: true
+      sources:
+        - msg
+        - message

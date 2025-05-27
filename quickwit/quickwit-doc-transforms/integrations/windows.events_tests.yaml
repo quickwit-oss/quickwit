@@ -1,0 +1,122 @@
+id: "windows.events"
+tests:
+ -
+  sample: |-
+    {
+      "level" : "Information",
+      "Event" : {
+        "xmlns" : "http://schemas.microsoft.com/win/2004/08/events/event",
+        "EventData" : {
+          "Data" : {
+            "TargetLogonId" : "0xc5f5c66",
+            "LogonType" : "3",
+            "TargetUserName" : "STANFIELD-AD-02$",
+            "TargetDomainName" : "UP",
+            "TargetUserSid" : "S-1-5-18"
+          }
+        },
+        "System" : {
+          "Correlation" : "",
+          "Task" : "Logoff",
+          "Keywords" : "0x8020000000000000",
+          "Channel" : "Security",
+          "Opcode" : "Info",
+          "Security" : "",
+          "Provider" : {
+            "Guid" : "{54849625-5478-4994-A5BA-3E3B0328C30D}",
+            "Name" : "Microsoft-Windows-Security-Auditing"
+          },
+          "TimeCreated" : {
+            "SystemTime" : "2021-06-11T22:45:50.700564700Z"
+          },
+          "EventRecordID" : "1328976",
+          "Execution" : {
+            "ThreadID" : "900",
+            "ProcessID" : "608"
+          },
+          "Version" : "0",
+          "Computer" : "stanfield-ad-02.up.dog",
+          "EventID" : "4634",
+          "Level" : "0"
+        }
+      }
+    }
+  result:
+    custom:
+      Event:
+        EventData:
+          Data:
+            LogonDescription: "Network"
+            LogonType: "3"
+            TargetDomainName: "UP"
+            TargetLogonId: "0xc5f5c66"
+            TargetUserName: "STANFIELD-AD-02$"
+            TargetUserSid: "S-1-5-18"
+        System:
+          Channel: "Security"
+          Computer: "stanfield-ad-02.up.dog"
+          Correlation: ""
+          EventRecordID: "1328976"
+          Execution:
+            ProcessID: "608"
+            ThreadID: "900"
+          Keywords: "0x8020000000000000"
+          Level: "0"
+          Opcode: "Info"
+          Provider:
+            Guid: "{54849625-5478-4994-A5BA-3E3B0328C30D}"
+            Name: "Microsoft-Windows-Security-Auditing"
+          Security: ""
+          Task: "Logoff"
+          TimeCreated:
+            SystemTime: "2021-06-11T22:45:50.700564700Z"
+          Version: "0"
+        xmlns: "http://schemas.microsoft.com/win/2004/08/events/event"
+      evt:
+        id: "4634"
+      level: "Information"
+      title: "An account was logged off"
+    message: |-
+      {
+        "level" : "Information",
+        "Event" : {
+          "xmlns" : "http://schemas.microsoft.com/win/2004/08/events/event",
+          "EventData" : {
+            "Data" : {
+              "TargetLogonId" : "0xc5f5c66",
+              "LogonType" : "3",
+              "TargetUserName" : "STANFIELD-AD-02$",
+              "TargetDomainName" : "UP",
+              "TargetUserSid" : "S-1-5-18"
+            }
+          },
+          "System" : {
+            "Correlation" : "",
+            "Task" : "Logoff",
+            "Keywords" : "0x8020000000000000",
+            "Channel" : "Security",
+            "Opcode" : "Info",
+            "Security" : "",
+            "Provider" : {
+              "Guid" : "{54849625-5478-4994-A5BA-3E3B0328C30D}",
+              "Name" : "Microsoft-Windows-Security-Auditing"
+            },
+            "TimeCreated" : {
+              "SystemTime" : "2021-06-11T22:45:50.700564700Z"
+            },
+            "EventRecordID" : "1328976",
+            "Execution" : {
+              "ThreadID" : "900",
+              "ProcessID" : "608"
+            },
+            "Version" : "0",
+            "Computer" : "stanfield-ad-02.up.dog",
+            "EventID" : "4634",
+            "Level" : "0"
+          }
+        }
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1623451550700
+

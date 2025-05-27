@@ -1,0 +1,101 @@
+id: "azure.iot_edge"
+tests:
+ -
+  sample: "<6> 2020-09-18 09:58:12.881 +00:00 [INF] - Started task to cleanup processed and stale messages"
+  result:
+    custom:
+      level: "INF"
+      timestamp: 1600423092881
+    message: "Started task to cleanup processed and stale messages"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1600423092881
+ -
+  sample: "<6> 2020-09-18 09:58:12.881 +00:00 [INF] - Request starting HTTP/1.1 GET http://localhost:9601/metrics"
+  result:
+    custom:
+      http:
+        method: "GET"
+        url: "http://localhost:9601/metrics"
+        url_details:
+          host: "localhost"
+          path: "/metrics"
+          port: 9601
+          scheme: "http"
+        version: "1.1"
+      level: "INF"
+      timestamp: 1600423092881
+    message: "<6> 2020-09-18 09:58:12.881 +00:00 [INF] - Request starting HTTP/1.1 GET http://localhost:9601/metrics"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1600423092881
+ -
+  sample: "<6> 2020-09-18 09:58:12.881 +00:00 [INF] - Request finished in 1.6008ms 200 text/plain; version=0.0.4; charset=utf-8"
+  result:
+    custom:
+      duration: 1600800.0
+      http:
+        content_type: "text/plain"
+        fields:
+          charset: "utf-8"
+          version: "0.0.4"
+        status_category: "OK"
+        status_code: 200
+      level: "INF"
+      timestamp: 1600423092881
+    message: "<6> 2020-09-18 09:58:12.881 +00:00 [INF] - Request finished in 1.6008ms 200 text/plain; version=0.0.4; charset=utf-8"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1600423092881
+ -
+  sample: "<6> 2020-09-18 09:58:12.881 +00:00 [INF] - Installing certificates [CN=Test Edge Owner CA:12/17/2020 09:57:59] to Root"
+  result:
+    custom:
+      level: "INF"
+      timestamp: 1600423092881
+    message: "Installing certificates [CN=Test Edge Owner CA:12/17/2020 09:57:59] to Root"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1600423092881
+ -
+  sample: "<6>2020-11-19T13:11:59Z [INFO] - Querying system resources..."
+  result:
+    custom:
+      level: "INFO"
+      timestamp: 1605791519000
+    message: "Querying system resources..."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1605791519000
+ -
+  sample: "<6>2020-11-19T13:12:04Z [INFO] - [mgmt] - - - [2020-11-19 13:12:04.084402100 UTC] \"GET /modules?api-version=2020-07-07 HTTP/1.1\" 200 OK 2099 \"-\" \"-\" auth_id(-)"
+  result:
+    custom:
+      http:
+        method: "GET"
+        reason_phrase: "OK"
+        status_category: "OK"
+        status_code: 200
+        url: "/modules?api-version=2020-07-07"
+        url_details:
+          path: "/modules"
+          queryString:
+            api-version: "2020-07-07"
+        version: "1.1"
+      level: "INFO"
+      logger:
+        name: "mgmt"
+      network:
+        bytes_written: 2099
+      timestamp: 1605791524000
+    message: "<6>2020-11-19T13:12:04Z [INFO] - [mgmt] - - - [2020-11-19 13:12:04.084402100 UTC] \"GET /modules?api-version=2020-07-07 HTTP/1.1\" 200 OK 2099 \"-\" \"-\" auth_id(-)"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1605791524000
+

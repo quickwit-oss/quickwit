@@ -1,0 +1,47 @@
+id: "lighttpd"
+tests:
+ -
+  sample: "172.26.0.1 localhost:9449 - [18/Sep/2020:14:25:39 +0000] \"GET /server-status HTTP/1.1\" 200 5695 \"-\" \"Datadog Agent/7.23.0\""
+  result:
+    custom:
+      http:
+        ident: "localhost:9449"
+        method: "GET"
+        referer: "-"
+        status_category: "OK"
+        status_code: 200
+        url: "/server-status"
+        url_details:
+          path: "/server-status"
+        useragent: "Datadog Agent/7.23.0"
+        useragent_details:
+          browser:
+            family: "Other"
+          device:
+            category: "Other"
+            family: "Other"
+          os:
+            family: "Other"
+        version: "1.1"
+      network:
+        bytes_written: 5695
+        client:
+          ip: "172.26.0.1"
+      timestamp: 1600439139000
+    message: "172.26.0.1 localhost:9449 - [18/Sep/2020:14:25:39 +0000] \"GET /server-status HTTP/1.1\" 200 5695 \"-\" \"Datadog Agent/7.23.0\""
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "2020-09-18 14:25:35: (response.c.450) URI-authority   :  localhost:9449"
+  result:
+    custom:
+      _timestamp: 1600439135000
+      lighttpd:
+        file_name: "response.c"
+        line_number: 450.0
+      message: "URI-authority   :  localhost:9449"
+    message: "2020-09-18 14:25:35: (response.c.450) URI-authority   :  localhost:9449"
+    tags:
+     - "source:LOGS_SOURCE"
+

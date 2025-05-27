@@ -1,0 +1,751 @@
+id: "ivanti-connect-secure"
+tests:
+ -
+  sample: "937 <134>1 2024-12-04T01:18:01-05:00 test.com PulseSecure: - - - {\"message_id\":\"WEB20174\",\"date\":\"2024-12-04\",\"timestamp\":\"1733289822\",\"us_timestamp\":\"1733289822.723791\",\"opaque_id\":\"2084\",\"gateway_id\":\"\",\"gateway_name\":\"\",\"unique_id\":\"uid_1234\",\"sev_num\":\"1\",\"sev_string\":\"info\",\"source_ip\":\"10.10.10.10\", \"macaddr\":\"\", \"user\":\"user@test.com\",\"realm_name\":\"test-realm\",\"roles\":\"kit-common, kit-desktops, kit-automation\",\"session_id\":\"1a2c3acf3b\",\"useragent\":\"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36\",\"device_id\":\"\",\"browser_id\":\"742cafa1236662fa57a7231740c11111\",\"tenant_id\":\"\",\"cert_hash\":\"\",\"additional_details\":[],\"raw_message\":\"WebRequest completed, GET to [http://10.0.0.0:8080/test] from [10.0.0.0] result=[200] sent=[62] received=[49280] in [10] seconds\"}"
+  result:
+    custom:
+      browser_id: "742cafa1236662fa57a7231740c11111"
+      cert_hash: ""
+      date: "2024-12-04"
+      device_id: ""
+      event_type: "WEB"
+      gateway_id: ""
+      gateway_name: ""
+      http:
+        method: "GET"
+        status_category: "Successful"
+        status_code: 200
+        url: "http://10.0.0.0:8080/test"
+        useragent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "131"
+            minor: "0"
+            patch: "0"
+            patch_minor: "0"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Windows"
+            major: "10"
+      ivanti_connect_secure:
+        time_taken: 10
+      macaddr: ""
+      message_id: "WEB20174"
+      network:
+        bytes_read: 49280
+        bytes_written: 62
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+      opaque_id: "2084"
+      realm_name: "test-realm"
+      roles:
+       - "kit-common"
+       - "kit-desktops"
+       - "kit-automation"
+      session_id: "1a2c3acf3b"
+      sev_num: "1"
+      sev_string: "info"
+      status: "Info"
+      tenant_id: ""
+      timestamp: 1.733289822E12
+      unique_id: "uid_1234"
+      us_timestamp: "1733289822.723791"
+      usr:
+        name: "user@test.com"
+    message: "WebRequest completed, GET to [http://10.0.0.0:8080/test] from [10.0.0.0] result=[200] sent=[62] received=[49280] in [10] seconds"
+    service: "WEB"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1733289822000
+ -
+  sample: "577 <134>1 2024-12-04T01:18:24-05:00 test.com PulseSecure: - - - {\"message_id\":\"WEB30441\",\"date\":\"2024-12-04\",\"timestamp\":\"1733293104\",\"us_timestamp\":\"1733293104.48858\",\"opaque_id\":\"2304\",\"gateway_id\":\"\",\"gateway_name\":\"\",\"unique_id\":\"uid_1234\",\"sev_num\":\"2\",\"sev_string\":\"info\",\"source_ip\":\"10.10.10.10\", \"macaddr\":\"\", \"user\":\"user@test.com\",\"realm_name\":\"\",\"roles\":\"\",\"session_id\":\"\",\"useragent\":\"\",\"device_id\":\"\",\"browser_id\":\"\",\"tenant_id\":\"\",\"cert_hash\":\"\",\"additional_details\":[],\"raw_message\":\"WebRequest Failed : Host: example.com, Request: http://example.com/ Reason failure-reason\"}"
+  result:
+    custom:
+      browser_id: ""
+      cert_hash: ""
+      date: "2024-12-04"
+      device_id: ""
+      event_type: "WEB"
+      gateway_id: ""
+      gateway_name: ""
+      http:
+        url: "http://example.com/"
+        url_details:
+          host: "example.com"
+        useragent: "N/A"
+      macaddr: ""
+      message_id: "WEB30441"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+      opaque_id: "2304"
+      realm_name: "N/A"
+      reason: "failure-reason"
+      roles: ""
+      session_id: ""
+      sev_num: "2"
+      sev_string: "info"
+      status: "Info"
+      tenant_id: ""
+      timestamp: 1.733293104E12
+      unique_id: "uid_1234"
+      us_timestamp: "1733293104.48858"
+      usr:
+        name: "user@test.com"
+    message: "WebRequest Failed : Host: example.com, Request: http://example.com/ Reason failure-reason"
+    service: "WEB"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1733293104000
+ -
+  sample: "577 <134>1 2024-12-04T01:18:24-05:00 test.com PulseSecure: - - - {\"message_id\":\"WEB23290\",\"date\":\"2024-12-04\",\"timestamp\":\"1733293104\",\"us_timestamp\":\"1733293104.48858\",\"opaque_id\":\"2304\",\"gateway_id\":\"\",\"gateway_name\":\"\",\"unique_id\":\"uid_1234\",\"sev_num\":\"3\",\"sev_string\":\"info\",\"source_ip\":\"10.10.10.10\", \"macaddr\":\"\", \"user\":\"user@test.com\",\"realm_name\":\"\",\"roles\":\"\",\"session_id\":\"\",\"useragent\":\"\",\"device_id\":\"\",\"browser_id\":\"\",\"tenant_id\":\"\",\"cert_hash\":\"\",\"additional_details\":[],\"raw_message\":\"Access blocked to invalid SSL site - Host: example.com, Port: 1234, Request: http://example.com/\"}"
+  result:
+    custom:
+      browser_id: ""
+      cert_hash: ""
+      date: "2024-12-04"
+      device_id: ""
+      event_type: "WEB"
+      gateway_id: ""
+      gateway_name: ""
+      http:
+        url: "http://example.com/"
+        url_details:
+          host: "example.com"
+        useragent: "N/A"
+      macaddr: ""
+      message_id: "WEB23290"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+      opaque_id: "2304"
+      port: 1234
+      realm_name: "N/A"
+      reason: "Access blocked to invalid SSL site"
+      roles: ""
+      session_id: ""
+      sev_num: "3"
+      sev_string: "info"
+      status: "Info"
+      tenant_id: ""
+      timestamp: 1.733293104E12
+      unique_id: "uid_1234"
+      us_timestamp: "1733293104.48858"
+      usr:
+        name: "user@test.com"
+    message: "Access blocked to invalid SSL site - Host: example.com, Port: 1234, Request: http://example.com/"
+    service: "WEB"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1733293104000
+ -
+  sample: "577 <134>1 2024-12-04T01:18:24-05:00 test.com PulseSecure: - - - {\"message_id\":\"WEB20171\",\"date\":\"2024-12-04\",\"timestamp\":\"1733293104\",\"us_timestamp\":\"1733293104.48858\",\"opaque_id\":\"2304\",\"gateway_id\":\"\",\"gateway_name\":\"\",\"unique_id\":\"uid_1234\",\"sev_num\":\"4\",\"sev_string\":\"info\",\"source_ip\":\"10.10.10.10\", \"macaddr\":\"\", \"user\":\"user@test.com\",\"realm_name\":\"\",\"roles\":\"\",\"session_id\":\"\",\"useragent\":\"\",\"device_id\":\"\",\"browser_id\":\"\",\"tenant_id\":\"\",\"cert_hash\":\"\",\"additional_details\":[],\"raw_message\":\"Access denied because outbound secure http connections are disabled - Host: example.com, Request: http://example.com/\"}"
+  result:
+    custom:
+      browser_id: ""
+      cert_hash: ""
+      date: "2024-12-04"
+      device_id: ""
+      event_type: "WEB"
+      gateway_id: ""
+      gateway_name: ""
+      http:
+        url: "http://example.com/"
+        url_details:
+          host: "example.com"
+        useragent: "N/A"
+      macaddr: ""
+      message_id: "WEB20171"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+      opaque_id: "2304"
+      realm_name: "N/A"
+      roles: ""
+      session_id: ""
+      sev_num: "4"
+      sev_string: "info"
+      status: "Info"
+      tenant_id: ""
+      timestamp: 1.733293104E12
+      unique_id: "uid_1234"
+      us_timestamp: "1733293104.48858"
+      usr:
+        name: "user@test.com"
+    message: "Access denied because outbound secure http connections are disabled - Host: example.com, Request: http://example.com/"
+    service: "WEB"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1733293104000
+ -
+  sample: "577 <134>1 2024-12-04T01:18:24-05:00 test.com PulseSecure: - - - {\"message_id\":\"AUT31556\",\"date\":\"2024-12-04\",\"timestamp\":\"1733293104\",\"us_timestamp\":\"1733293104.48858\",\"opaque_id\":\"2304\",\"gateway_id\":\"\",\"gateway_name\":\"\",\"unique_id\":\"uid_1234\",\"sev_num\":\"5\",\"sev_string\":\"minor\",\"source_ip\":\"10.10.10.10\", \"macaddr\":\"\", \"user\":\"user@test.com\",\"realm_name\":\"\",\"roles\":\"\",\"session_id\":\"\",\"useragent\":\"\",\"device_id\":\"\",\"browser_id\":\"\",\"tenant_id\":\"\",\"cert_hash\":\"\",\"additional_details\":[],\"raw_message\":\"Unauthenticated request url /test came from IP 10.10.10.10.\"}"
+  result:
+    custom:
+      browser_id: ""
+      cert_hash: ""
+      date: "2024-12-04"
+      device_id: ""
+      event_type: "AUT"
+      gateway_id: ""
+      gateway_name: ""
+      http:
+        url: "/test"
+        useragent: "N/A"
+      macaddr: ""
+      message_id: "AUT31556"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+      opaque_id: "2304"
+      realm_name: "N/A"
+      roles: ""
+      session_id: ""
+      sev_num: "5"
+      sev_string: "minor"
+      status: "Notice"
+      tenant_id: ""
+      timestamp: 1.733293104E12
+      unique_id: "uid_1234"
+      us_timestamp: "1733293104.48858"
+      usr:
+        name: "user@test.com"
+    message: "Unauthenticated request url /test came from IP 10.10.10.10."
+    service: "AUT"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1733293104000
+ -
+  sample: "577 <134>1 2024-12-04T01:18:24-05:00 test.com PulseSecure: - - - {\"message_id\":\"AUT23457\",\"date\":\"2024-12-04\",\"timestamp\":\"1733293104\",\"us_timestamp\":\"1733293104.48858\",\"opaque_id\":\"2304\",\"gateway_id\":\"\",\"gateway_name\":\"\",\"unique_id\":\"uid_1234\",\"sev_num\":\"6\",\"sev_string\":\"minor\",\"source_ip\":\"10.10.10.10\", \"macaddr\":\"\", \"user\":\"user@test.com\",\"realm_name\":\"\",\"roles\":\"\",\"session_id\":\"\",\"useragent\":\"\",\"device_id\":\"\",\"browser_id\":\"\",\"tenant_id\":\"\",\"cert_hash\":\"\",\"additional_details\":[],\"raw_message\":\"Login failed using auth server System Local. Reason: failure reason\"}"
+  result:
+    custom:
+      browser_id: ""
+      cert_hash: ""
+      date: "2024-12-04"
+      device_id: ""
+      event_type: "AUT"
+      gateway_id: ""
+      gateway_name: ""
+      http:
+        useragent: "N/A"
+      macaddr: ""
+      message_id: "AUT23457"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+      opaque_id: "2304"
+      realm_name: "N/A"
+      reason: "failure reason"
+      roles: ""
+      session_id: ""
+      sev_num: "6"
+      sev_string: "minor"
+      status: "Notice"
+      tenant_id: ""
+      timestamp: 1.733293104E12
+      unique_id: "uid_1234"
+      us_timestamp: "1733293104.48858"
+      usr:
+        name: "user@test.com"
+    message: "Login failed using auth server System Local. Reason: failure reason"
+    service: "AUT"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1733293104000
+ -
+  sample: "577 <134>1 2024-12-04T01:18:24-05:00 test.com PulseSecure: - - - {\"message_id\":\"AUT21051\",\"date\":\"2024-12-04\",\"timestamp\":\"1733293104\",\"us_timestamp\":\"1733293104.48858\",\"opaque_id\":\"2304\",\"gateway_id\":\"\",\"gateway_name\":\"\",\"unique_id\":\"uid_1234\",\"sev_num\":\"7\",\"sev_string\":\"minor\",\"source_ip\":\"10.10.10.10\", \"macaddr\":\"\", \"user\":\"user@test.com\",\"realm_name\":\"\",\"roles\":\"\",\"session_id\":\"\",\"useragent\":\"\",\"device_id\":\"\",\"browser_id\":\"\",\"tenant_id\":\"\",\"cert_hash\":\"\",\"additional_details\":[],\"raw_message\":\"Login rejected login from IP 10.10.10.10. Missing username or password.\"}"
+  result:
+    custom:
+      browser_id: ""
+      cert_hash: ""
+      date: "2024-12-04"
+      device_id: ""
+      event_type: "AUT"
+      gateway_id: ""
+      gateway_name: ""
+      http:
+        useragent: "N/A"
+      macaddr: ""
+      message_id: "AUT21051"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+      opaque_id: "2304"
+      realm_name: "N/A"
+      reason: "Missing username or password"
+      roles: ""
+      session_id: ""
+      sev_num: "7"
+      sev_string: "minor"
+      status: "Notice"
+      tenant_id: ""
+      timestamp: 1.733293104E12
+      unique_id: "uid_1234"
+      us_timestamp: "1733293104.48858"
+      usr:
+        name: "user@test.com"
+    message: "Login rejected login from IP 10.10.10.10. Missing username or password."
+    service: "AUT"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1733293104000
+ -
+  sample: "577 <134>1 2024-12-04T01:18:24-05:00 test.com PulseSecure: - - - {\"message_id\":\"AUT24326\",\"date\":\"2024-12-04\",\"timestamp\":\"1733293104\",\"us_timestamp\":\"1733293104.48858\",\"opaque_id\":\"2304\",\"gateway_id\":\"\",\"gateway_name\":\"\",\"unique_id\":\"uid_1234\",\"sev_num\":\"8\",\"sev_string\":\"major\",\"source_ip\":\"10.10.10.10\", \"macaddr\":\"\", \"user\":\"user@test.com\",\"realm_name\":\"\",\"roles\":\"\",\"session_id\":\"\",\"useragent\":\"\",\"device_id\":\"\",\"browser_id\":\"\",\"tenant_id\":\"\",\"cert_hash\":\"\",\"additional_details\":[],\"raw_message\":\"Primary authentication failed for authentication successful for demouser/System Local from 10.10.10.10\"}"
+  result:
+    custom:
+      browser_id: ""
+      cert_hash: ""
+      date: "2024-12-04"
+      device_id: ""
+      event_type: "AUT"
+      gateway_id: ""
+      gateway_name: ""
+      http:
+        useragent: "N/A"
+      macaddr: ""
+      message_id: "AUT24326"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+      opaque_id: "2304"
+      realm_name: "System Local"
+      roles: ""
+      session_id: ""
+      sev_num: "8"
+      sev_string: "major"
+      status: "Warning"
+      tenant_id: ""
+      timestamp: 1.733293104E12
+      unique_id: "uid_1234"
+      us_timestamp: "1733293104.48858"
+      usr:
+        name: "authentication successful for demouser"
+    message: "Primary authentication failed for authentication successful for demouser/System Local from 10.10.10.10"
+    service: "AUT"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1733293104000
+ -
+  sample: "577 <134>1 2024-12-04T01:18:24-05:00 test.com PulseSecure: - - - {\"message_id\":\"AUT24604\",\"date\":\"2024-12-04\",\"timestamp\":\"1733293104\",\"us_timestamp\":\"1733293104.48858\",\"opaque_id\":\"2304\",\"gateway_id\":\"\",\"gateway_name\":\"\",\"unique_id\":\"uid_1234\",\"sev_num\":\"9\",\"sev_string\":\"major\",\"source_ip\":\"10.10.10.10\", \"macaddr\":\"\", \"user\":\"user@test.com\",\"realm_name\":\"\",\"roles\":\"\",\"session_id\":\"\",\"useragent\":\"\",\"device_id\":\"\",\"browser_id\":\"\",\"tenant_id\":\"\",\"cert_hash\":\"\",\"additional_details\":[],\"raw_message\":\"SSL negotiation failed while client at source IP '10.10.10.10' was trying to connect to '10.0.0.0'. Reason: 'http request'\"}"
+  result:
+    custom:
+      browser_id: ""
+      cert_hash: ""
+      date: "2024-12-04"
+      device_id: ""
+      event_type: "AUT"
+      gateway_id: ""
+      gateway_name: ""
+      http:
+        useragent: "N/A"
+      macaddr: ""
+      message_id: "AUT24604"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+        destination:
+          ip: "10.0.0.0"
+      opaque_id: "2304"
+      realm_name: "N/A"
+      reason: "http request"
+      roles: ""
+      session_id: ""
+      sev_num: "9"
+      sev_string: "major"
+      status: "Warning"
+      tenant_id: ""
+      timestamp: 1.733293104E12
+      unique_id: "uid_1234"
+      us_timestamp: "1733293104.48858"
+      usr:
+        name: "user@test.com"
+    message: "SSL negotiation failed while client at source IP '10.10.10.10' was trying to connect to '10.0.0.0'. Reason: 'http request'"
+    service: "AUT"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1733293104000
+ -
+  sample: "577 <134>1 2024-12-04T01:18:24-05:00 test.com PulseSecure: - - - {\"message_id\":\"AUT20919\",\"date\":\"2024-12-04\",\"timestamp\":\"1733293104\",\"us_timestamp\":\"1733293104.48858\",\"opaque_id\":\"2304\",\"gateway_id\":\"\",\"gateway_name\":\"\",\"unique_id\":\"uid_1234\",\"sev_num\":\"9\",\"sev_string\":\"major\",\"source_ip\":\"10.10.10.10\", \"macaddr\":\"\", \"user\":\"user@test.com\",\"realm_name\":\"\",\"roles\":\"\",\"session_id\":\"\",\"useragent\":\"\",\"device_id\":\"\",\"browser_id\":\"\",\"tenant_id\":\"\",\"cert_hash\":\"\",\"additional_details\":[],\"raw_message\":\"Remote address for user user@test.com/test-realm changed from 10.10.10.10 to 20.20.20.20 forwarded-for changed from 10.0.0.0 to .\"}"
+  result:
+    custom:
+      browser_id: ""
+      cert_hash: ""
+      date: "2024-12-04"
+      device_id: ""
+      event_type: "AUT"
+      gateway_id: ""
+      gateway_name: ""
+      http:
+        useragent: "N/A"
+      macaddr: ""
+      message_id: "AUT20919"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+      new_client_ip: "20.20.20.20"
+      old_client_ip: "10.10.10.10"
+      opaque_id: "2304"
+      realm_name: "test-realm"
+      roles: ""
+      session_id: ""
+      sev_num: "9"
+      sev_string: "major"
+      status: "Warning"
+      tenant_id: ""
+      timestamp: 1.733293104E12
+      unique_id: "uid_1234"
+      us_timestamp: "1733293104.48858"
+      usr:
+        name: "user@test.com"
+    message: "Remote address for user user@test.com/test-realm changed from 10.10.10.10 to 20.20.20.20 forwarded-for changed from 10.0.0.0 to ."
+    service: "AUT"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1733293104000
+ -
+  sample: "577 <134>1 2024-12-04T01:18:24-05:00 test.com PulseSecure: - - - {\"message_id\":\"JAV20023\",\"date\":\"2024-12-04\",\"timestamp\":\"1733293104\",\"us_timestamp\":\"1733293104.48858\",\"opaque_id\":\"2304\",\"gateway_id\":\"\",\"gateway_name\":\"\",\"unique_id\":\"uid_1234\",\"sev_num\":\"9\",\"sev_string\":\"major\",\"source_ip\":\"10.10.10.10\", \"macaddr\":\"\", \"user\":\"user@test.com\",\"realm_name\":\"\",\"roles\":\"\",\"session_id\":\"\",\"useragent\":\"\",\"device_id\":\"\",\"browser_id\":\"\",\"tenant_id\":\"\",\"cert_hash\":\"\",\"additional_details\":[],\"raw_message\":\"Closed connection to test.com port 3389 after 7 seconds, with 1286 bytes read (in 5 chunks) and 1364 bytes written (in 5 chunks)\"}"
+  result:
+    custom:
+      browser_id: ""
+      cert_hash: ""
+      date: "2024-12-04"
+      device_id: ""
+      event_type: "JAV"
+      gateway_id: ""
+      gateway_name: ""
+      hostname: "test.com"
+      http:
+        useragent: "N/A"
+      ivanti_connect_secure:
+        duration: 7
+      macaddr: ""
+      message_id: "JAV20023"
+      network:
+        bytes_read: 1286
+        bytes_written: 1364
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+        destination:
+          port: "3389"
+      opaque_id: "2304"
+      read_chunks: 5
+      realm_name: "N/A"
+      roles: ""
+      session_id: ""
+      sev_num: "9"
+      sev_string: "major"
+      status: "Warning"
+      tenant_id: ""
+      timestamp: 1.733293104E12
+      unique_id: "uid_1234"
+      us_timestamp: "1733293104.48858"
+      usr:
+        name: "user@test.com"
+      written_chunks: 5
+    message: "Closed connection to test.com port 3389 after 7 seconds, with 1286 bytes read (in 5 chunks) and 1364 bytes written (in 5 chunks)"
+    service: "JAV"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1733293104000
+ -
+  sample: "577 <134>1 2024-12-04T01:18:24-05:00 test.com PulseSecure: - - - {\"message_id\":\"ERR24670\",\"date\":\"2024-12-04\",\"timestamp\":\"1733293104\",\"us_timestamp\":\"1733293104.48858\",\"opaque_id\":\"2304\",\"gateway_id\":\"\",\"gateway_name\":\"\",\"unique_id\":\"uid_1234\",\"sev_num\":\"10\",\"sev_string\":\"critical\",\"source_ip\":\"10.10.10.10\", \"macaddr\":\"\", \"user\":\"user@test.com\",\"realm_name\":\"\",\"roles\":\"\",\"session_id\":\"\",\"useragent\":\"\",\"device_id\":\"\",\"browser_id\":\"\",\"tenant_id\":\"\",\"cert_hash\":\"\",\"additional_details\":[],\"raw_message\":\"VPN Tunneling: ACL count = 24.\"}"
+  result:
+    custom:
+      browser_id: ""
+      cert_hash: ""
+      date: "2024-12-04"
+      device_id: ""
+      event_type: "ERR"
+      gateway_id: ""
+      gateway_name: ""
+      http:
+        useragent: "N/A"
+      ivanti_connect_secure:
+        acl_count: 24
+      macaddr: ""
+      message_id: "ERR24670"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+      opaque_id: "2304"
+      realm_name: "N/A"
+      roles: ""
+      session_id: ""
+      sev_num: "10"
+      sev_string: "critical"
+      status: "Critical"
+      tenant_id: ""
+      timestamp: 1.733293104E12
+      unique_id: "uid_1234"
+      us_timestamp: "1733293104.48858"
+      usr:
+        name: "user@test.com"
+    message: "VPN Tunneling: ACL count = 24."
+    service: "ERR"
+    status: "critical"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1733293104000
+ -
+  sample: "577 <134>1 2024-12-04T01:18:24-05:00 test.com PulseSecure: - - - {\"message_id\":\"ERR31271\",\"date\":\"2024-12-04\",\"timestamp\":\"1733293104\",\"us_timestamp\":\"1733293104.48858\",\"opaque_id\":\"2304\",\"gateway_id\":\"\",\"gateway_name\":\"\",\"unique_id\":\"uid_1234\",\"sev_num\":\"10\",\"sev_string\":\"critical\",\"source_ip\":\"10.10.10.10\", \"macaddr\":\"\", \"user\":\"user@test.com\",\"realm_name\":\"\",\"roles\":\"\",\"session_id\":\"\",\"useragent\":\"\",\"device_id\":\"\",\"browser_id\":\"\",\"tenant_id\":\"\",\"cert_hash\":\"\",\"additional_details\":[],\"raw_message\":\"VPN Tunneling: Optimized ACL count = 10.\"}"
+  result:
+    custom:
+      browser_id: ""
+      cert_hash: ""
+      date: "2024-12-04"
+      device_id: ""
+      event_type: "ERR"
+      gateway_id: ""
+      gateway_name: ""
+      http:
+        useragent: "N/A"
+      ivanti_connect_secure:
+        optimized_acl_count: 10
+      macaddr: ""
+      message_id: "ERR31271"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+      opaque_id: "2304"
+      realm_name: "N/A"
+      roles: ""
+      session_id: ""
+      sev_num: "10"
+      sev_string: "critical"
+      status: "Critical"
+      tenant_id: ""
+      timestamp: 1.733293104E12
+      unique_id: "uid_1234"
+      us_timestamp: "1733293104.48858"
+      usr:
+        name: "user@test.com"
+    message: "VPN Tunneling: Optimized ACL count = 10."
+    service: "ERR"
+    status: "critical"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1733293104000
+ -
+  sample: "577 <134>1 2024-12-04T01:18:24-05:00 test.com PulseSecure: - - - {\"message_id\":\"NWC23464\",\"date\":\"2024-12-04\",\"timestamp\":\"1733293104\",\"us_timestamp\":\"1733293104.48858\",\"opaque_id\":\"2304\",\"gateway_id\":\"\",\"gateway_name\":\"\",\"unique_id\":\"uid_1234\",\"sev_num\":\"9\",\"sev_string\":\"major\",\"source_ip\":\"10.10.10.10\", \"macaddr\":\"\", \"user\":\"user@test.com\",\"realm_name\":\"\",\"roles\":\"\",\"session_id\":\"\",\"useragent\":\"\",\"device_id\":\"\",\"browser_id\":\"\",\"tenant_id\":\"\",\"cert_hash\":\"\",\"additional_details\":[],\"raw_message\":\"VPN Tunneling: Session started for user (session: sid1234) with IPv4 address 10.10.10.10, hostname demohost.com\"}"
+  result:
+    custom:
+      browser_id: ""
+      cert_hash: ""
+      date: "2024-12-04"
+      device_id: ""
+      event_type: "NWC"
+      gateway_id: ""
+      gateway_name: ""
+      hostname: "demohost.com"
+      http:
+        useragent: "N/A"
+      macaddr: ""
+      message_id: "NWC23464"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+      opaque_id: "2304"
+      realm_name: "N/A"
+      roles: ""
+      session_id: "sid1234"
+      sev_num: "9"
+      sev_string: "major"
+      status: "Warning"
+      tenant_id: ""
+      timestamp: 1.733293104E12
+      unique_id: "uid_1234"
+      us_timestamp: "1733293104.48858"
+      usr:
+        name: "user@test.com"
+    message: "VPN Tunneling: Session started for user (session: sid1234) with IPv4 address 10.10.10.10, hostname demohost.com"
+    service: "NWC"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1733293104000
+ -
+  sample: "577 <134>1 2024-12-04T01:18:24-05:00 test.com PulseSecure: - - - {\"message_id\":\"STS20641\",\"date\":\"2024-12-04\",\"timestamp\":\"1733293104\",\"us_timestamp\":\"1733293104.48858\",\"opaque_id\":\"2304\",\"gateway_id\":\"\",\"gateway_name\":\"\",\"unique_id\":\"uid_1234\",\"sev_num\":\"9\",\"sev_string\":\"major\",\"source_ip\":\"10.10.10.10\", \"macaddr\":\"\", \"user\":\"user@test.com\",\"realm_name\":\"\",\"roles\":\"\",\"session_id\":\"\",\"useragent\":\"\",\"device_id\":\"\",\"browser_id\":\"\",\"tenant_id\":\"\",\"cert_hash\":\"\",\"additional_details\":[],\"raw_message\":\"Number of concurrent users logged in to the device: 2\"}"
+  result:
+    custom:
+      browser_id: ""
+      cert_hash: ""
+      date: "2024-12-04"
+      device_id: ""
+      event_type: "STS"
+      gateway_id: ""
+      gateway_name: ""
+      http:
+        useragent: "N/A"
+      ivanti_connect_secure:
+        concurrent_users: 2
+      macaddr: ""
+      message_id: "STS20641"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+      opaque_id: "2304"
+      realm_name: "N/A"
+      roles: ""
+      session_id: ""
+      sev_num: "9"
+      sev_string: "major"
+      status: "Warning"
+      tenant_id: ""
+      timestamp: 1.733293104E12
+      unique_id: "uid_1234"
+      us_timestamp: "1733293104.48858"
+      usr:
+        name: "user@test.com"
+    message: "Number of concurrent users logged in to the device: 2"
+    service: "STS"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1733293104000
+ -
+  sample: "577 <134>1 2024-12-04T01:18:24-05:00 test.com PulseSecure: - - - {\"message_id\":\"SYS32100\",\"date\":\"2024-12-04\",\"timestamp\":\"1733293104\",\"us_timestamp\":\"1733293104.48858\",\"opaque_id\":\"2304\",\"gateway_id\":\"\",\"gateway_name\":\"\",\"unique_id\":\"uid_1234\",\"sev_num\":\"9\",\"sev_string\":\"major\",\"source_ip\":\"10.10.10.10\", \"macaddr\":\"\", \"user\":\"user@test.com\",\"realm_name\":\"\",\"roles\":\"\",\"session_id\":\"\",\"useragent\":\"\",\"device_id\":\"\",\"browser_id\":\"\",\"tenant_id\":\"\",\"cert_hash\":\"\",\"additional_details\":[],\"raw_message\":\"Integrity Scan Completed: Integrity Scan Results : Matched Files 18773, Newly Detected Files 10, Mismatched Files 10\"}"
+  result:
+    custom:
+      browser_id: ""
+      cert_hash: ""
+      date: "2024-12-04"
+      device_id: ""
+      event_type: "SYS"
+      gateway_id: ""
+      gateway_name: ""
+      http:
+        useragent: "N/A"
+      ivanti_connect_secure:
+        detected_files: 10
+        matched_files: 18773
+        mismatched_files: 10
+      macaddr: ""
+      message_id: "SYS32100"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+      opaque_id: "2304"
+      realm_name: "N/A"
+      roles: ""
+      session_id: ""
+      sev_num: "9"
+      sev_string: "major"
+      status: "Warning"
+      tenant_id: ""
+      timestamp: 1.733293104E12
+      unique_id: "uid_1234"
+      us_timestamp: "1733293104.48858"
+      usr:
+        name: "user@test.com"
+    message: "Integrity Scan Completed: Integrity Scan Results : Matched Files 18773, Newly Detected Files 10, Mismatched Files 10"
+    service: "SYS"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1733293104000
+ -
+  sample: "577 <134>1 2024-12-04T01:18:24-05:00 test.com PulseSecure: - - - {\"message_id\":\"ADM22798\",\"date\":\"2024-12-04\",\"timestamp\":\"1733293104\",\"us_timestamp\":\"1733293104.48858\",\"opaque_id\":\"2304\",\"gateway_id\":\"\",\"gateway_name\":\"\",\"unique_id\":\"uid_1234\",\"sev_num\":\"9\",\"sev_string\":\"major\",\"source_ip\":\"10.10.10.10\", \"macaddr\":\"\", \"user\":\"user@test.com\",\"realm_name\":\"\",\"roles\":\"\",\"session_id\":\"\",\"useragent\":\"\",\"device_id\":\"\",\"browser_id\":\"\",\"tenant_id\":\"\",\"cert_hash\":\"\",\"additional_details\":[],\"raw_message\":\"Login failed from 10.10.10.10 for adminuser/System Local.\"}"
+  result:
+    custom:
+      browser_id: ""
+      cert_hash: ""
+      date: "2024-12-04"
+      device_id: ""
+      event_type: "ADM"
+      gateway_id: ""
+      gateway_name: ""
+      http:
+        useragent: "N/A"
+      macaddr: ""
+      message_id: "ADM22798"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+      opaque_id: "2304"
+      realm_name: "System Local"
+      roles: ""
+      session_id: ""
+      sev_num: "9"
+      sev_string: "major"
+      status: "Warning"
+      tenant_id: ""
+      timestamp: 1.733293104E12
+      unique_id: "uid_1234"
+      us_timestamp: "1733293104.48858"
+      usr:
+        name: "adminuser"
+    message: "Login failed from 10.10.10.10 for adminuser/System Local."
+    service: "ADM"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1733293104000
+ -
+  sample: "577 <134>1 2024-12-04T01:18:24-05:00 test.com PulseSecure: - - - {\"message_id\":\"ADM22668\",\"date\":\"2024-12-04\",\"timestamp\":\"1733293104\",\"us_timestamp\":\"1733293104.48858\",\"opaque_id\":\"2304\",\"gateway_id\":\"\",\"gateway_name\":\"\",\"unique_id\":\"uid_1234\",\"sev_num\":\"9\",\"sev_string\":\"major\",\"source_ip\":\"10.10.10.10\", \"macaddr\":\"\", \"user\":\"user@test.com\",\"realm_name\":\"\",\"roles\":\"\",\"session_id\":\"\",\"useragent\":\"\",\"device_id\":\"\",\"browser_id\":\"\",\"tenant_id\":\"\",\"cert_hash\":\"\",\"additional_details\":[],\"raw_message\":\"Login succeeded for adminuser/System Local from IP 10.10.10.10 via 3221 port.\"}"
+  result:
+    custom:
+      browser_id: ""
+      cert_hash: ""
+      date: "2024-12-04"
+      device_id: ""
+      event_type: "ADM"
+      gateway_id: ""
+      gateway_name: ""
+      http:
+        useragent: "N/A"
+      macaddr: ""
+      message_id: "ADM22668"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+          port: "3221"
+      opaque_id: "2304"
+      realm_name: "System Local"
+      roles: ""
+      session_id: ""
+      sev_num: "9"
+      sev_string: "major"
+      status: "Warning"
+      tenant_id: ""
+      timestamp: 1.733293104E12
+      unique_id: "uid_1234"
+      us_timestamp: "1733293104.48858"
+      usr:
+        name: "adminuser"
+    message: "Login succeeded for adminuser/System Local from IP 10.10.10.10 via 3221 port."
+    service: "ADM"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1733293104000

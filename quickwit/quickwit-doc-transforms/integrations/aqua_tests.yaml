@@ -1,0 +1,103 @@
+id: "aqua"
+tests:
+ -
+  sample: "Mar 13 17:42:44 ip-172-31-9-170.us-west-2.compute.internal aquasec[1743]: action=create,user=root,uid=0,image=alpine:latest,imageid=13213123,result=deny,container=azeb,containerid=1232312"
+  result:
+    custom:
+      container: "azeb"
+      containerid: 1232312
+      imageid: 13213123
+      pid: 1743.0
+      result: "deny"
+      syslog:
+        appname: "aquasec"
+        hostname: "ip-172-31-9-170.us-west-2.compute.internal"
+      system:
+        action: "create"
+        user: "root"
+      timestamp: 37734164000
+      uid: 0
+      vulnerability:
+        image_name: "alpine:latest"
+    message: "Mar 13 17:42:44 ip-172-31-9-170.us-west-2.compute.internal aquasec[1743]: action=create,user=root,uid=0,image=alpine:latest,imageid=13213123,result=deny,container=azeb,containerid=1232312"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 37734164000
+ -
+  sample: |-
+    {
+      "image" : "datadog/agent:6.6.0",
+      "data" : "high: 2, medium: 1, low: 2",
+      "medium" : 1,
+      "type" : "CVE",
+      "result" : 3,
+      "high" : 2,
+      "low" : 2,
+      "imagehash" : "d16f762fc9f77e55be69110abd0ae939ac7fc10aace96a4e8508e6a13434a082",
+      "action" : "Scan",
+      "id" : 0,
+      "time" : 1546511426,
+      "category" : "CVE",
+      "user" : "administrator"
+    }
+  result:
+    custom:
+      category: "CVE"
+      high: 2
+      id: 0
+      imagehash: "d16f762fc9f77e55be69110abd0ae939ac7fc10aace96a4e8508e6a13434a082"
+      low: 2
+      medium: 1
+      result: 3
+      system:
+        action: "Scan"
+        user: "administrator"
+      time: 1546511426
+      type: "CVE"
+      vulnerability:
+        image_name: "datadog/agent:6.6.0"
+    message: "high: 2, medium: 1, low: 2"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "image" : "datadog/agent:6.6.0",
+      "controls" : [ "max_severity" ],
+      "data" : "{\"policy_id\":1,\"policy_name\":\"Default\",\"blocking\":true,\"controls\":[\"max_severity\"]}",
+      "policy_id" : 1,
+      "policy_name" : "Default",
+      "type" : "alert",
+      "result" : 4,
+      "blocking" : true,
+      "imagehash" : "d16f762fc9f77e55be69110abd0ae939ac7fc10aace96a4e8508e6a13434a082",
+      "action" : "policy.failure",
+      "id" : 0,
+      "time" : 1546511103,
+      "category" : "image",
+      "user" : "image.policy"
+    }
+  result:
+    custom:
+      blocking: true
+      category: "image"
+      controls:
+       - "max_severity"
+      id: 0
+      imagehash: "d16f762fc9f77e55be69110abd0ae939ac7fc10aace96a4e8508e6a13434a082"
+      policy_id: 1
+      policy_name: "Default"
+      result: 4
+      system:
+        action: "policy.failure"
+        user: "image.policy"
+      time: 1546511103
+      type: "alert"
+      vulnerability:
+        image_name: "datadog/agent:6.6.0"
+    message: "{\"policy_id\":1,\"policy_name\":\"Default\",\"blocking\":true,\"controls\":[\"max_severity\"]}"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+
