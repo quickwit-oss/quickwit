@@ -1,6 +1,6 @@
 variables:
-  BAZEL_CI_IMAGE: registry.ddbuild.io/bazel:5
-  DOCKER_CI_IMAGE: registry.ddbuild.io/docker:27.3.1
+  BAZEL_CI_IMAGE: registry.ddbuild.io/images/bazel:5-gbi-jammy
+  DOCKER_CI_IMAGE: registry.ddbuild.io/images/docker:27.4.0-gbi-dind
 
 workflow:
   rules:
