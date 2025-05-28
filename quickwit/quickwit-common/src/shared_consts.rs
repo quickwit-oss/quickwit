@@ -73,7 +73,7 @@ pub const DEFAULT_SHARD_THROUGHPUT_LIMIT: ByteSize = ByteSize::mib(5);
 pub const DEFAULT_SHARD_BURST_LIMIT: ByteSize = ByteSize::mib(50);
 
 /// A compromise between "exponential" scale up and moderate shard count increase.
-pub const DEFAULT_SHARD_SCALE_UP_FACTOR: f32 = 1.5;
+pub const DEFAULT_SHARD_SCALE_UP_FACTOR: f32 = 1.1;
 
 // (Just a reexport).
 pub use bytesize::MIB;
