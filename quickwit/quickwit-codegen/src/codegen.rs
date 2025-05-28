@@ -559,6 +559,11 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
             pub fn as_grpc_service(&self, max_message_size: bytesize::ByteSize) -> #grpc_server_package_name::#grpc_server_name<#grpc_server_adapter_name> {
                 let adapter = #grpc_server_adapter_name::new(self.clone());
                 #grpc_server_package_name::#grpc_server_name::new(adapter)
+                    // Servers accept both Gzip and Zstd. The order is not important because the client decides which encoding to use.
+                    .accept_compressed(tonic::codec::CompressionEncoding::Gzip)
+                    .accept_compressed(tonic::codec::CompressionEncoding::Zstd)
+                    .send_compressed(tonic::codec::CompressionEncoding::Gzip)
+                    .send_compressed(tonic::codec::CompressionEncoding::Zstd)
                     .max_decoding_message_size(max_message_size.0 as usize)
                     .max_encoding_message_size(max_message_size.0 as usize)
             }
@@ -567,19 +572,17 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
                 addr: std::net::SocketAddr,
                 channel: tonic::transport::Channel,
                 max_message_size: bytesize::ByteSize,
-                accept_compression_encodings: &[tonic::codec::CompressionEncoding],
-                send_compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
+                compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
             ) -> Self
             {
                 let (_, connection_keys_watcher) = tokio::sync::watch::channel(std::collections::HashSet::from_iter([addr]));
                 let mut client = #grpc_client_package_name::#grpc_client_name::new(channel)
                     .max_decoding_message_size(max_message_size.0 as usize)
                     .max_encoding_message_size(max_message_size.0 as usize);
-                for accept_compression_encoding in accept_compression_encodings {
-                    client = client.accept_compressed(*accept_compression_encoding);
-                }
-                if let Some(send_compression_encoding) = send_compression_encoding_opt {
-                    client = client.send_compressed(send_compression_encoding);
+                if let Some(compression_encoding) = compression_encoding_opt {
+                    client = client
+                        .accept_compressed(compression_encoding)
+                        .send_compressed(compression_encoding);
                 }
                 let adapter = #grpc_client_adapter_name::new(client, connection_keys_watcher);
                 Self::new(adapter)
@@ -588,19 +591,17 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
             pub fn from_balance_channel(
                 balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
                 max_message_size: bytesize::ByteSize,
-                accept_compression_encodings: &[tonic::codec::CompressionEncoding],
-                send_compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
+                compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
             ) -> #client_name
             {
                 let connection_keys_watcher = balance_channel.connection_keys_watcher();
                 let mut client = #grpc_client_package_name::#grpc_client_name::new(balance_channel)
                     .max_decoding_message_size(max_message_size.0 as usize)
                     .max_encoding_message_size(max_message_size.0 as usize);
-                for accept_compression_encoding in accept_compression_encodings {
-                    client = client.accept_compressed(*accept_compression_encoding);
-                }
-                if let Some(send_compression_encoding) = send_compression_encoding_opt {
-                    client = client.send_compressed(send_compression_encoding);
+                if let Some(compression_encoding) = compression_encoding_opt {
+                    client = client
+                        .accept_compressed(compression_encoding)
+                        .send_compressed(compression_encoding);
                 }
                 let adapter = #grpc_client_adapter_name::new(client, connection_keys_watcher);
                 Self::new(adapter)
@@ -926,11 +927,10 @@ fn generate_layer_stack_impl(context: &CodegenContext) -> TokenStream {
                 addr: std::net::SocketAddr,
                 channel: tonic::transport::Channel,
                 max_message_size: bytesize::ByteSize,
-                accept_compression_encodings: &[tonic::codec::CompressionEncoding],
-                send_compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
+                compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
             ) -> #client_name
             {
-                let client =  #client_name::from_channel(addr, channel, max_message_size, accept_compression_encodings, send_compression_encoding_opt);
+                let client =  #client_name::from_channel(addr, channel, max_message_size, compression_encoding_opt);
                 let inner_client = client.inner;
                 self.build_from_inner_client(inner_client)
             }
@@ -939,11 +939,10 @@ fn generate_layer_stack_impl(context: &CodegenContext) -> TokenStream {
                 self,
                 balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
                 max_message_size: bytesize::ByteSize,
-                accept_compression_encodings: &[tonic::codec::CompressionEncoding],
-                send_compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
+                compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
             ) -> #client_name
             {
-                let client =  #client_name::from_balance_channel(balance_channel, max_message_size, accept_compression_encodings, send_compression_encoding_opt);
+                let client =  #client_name::from_balance_channel(balance_channel, max_message_size, compression_encoding_opt);
                 let inner_client = client.inner;
                 self.build_from_inner_client(inner_client)
             }

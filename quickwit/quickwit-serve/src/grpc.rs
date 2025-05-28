@@ -125,9 +125,7 @@ pub(crate) async fn start_grpc_server(
 
         let ingest_router_service = services
             .ingest_router_service
-            .as_grpc_service(grpc_config.max_message_size)
-            .accept_compressed(CompressionEncoding::Zstd)
-            .send_compressed(CompressionEncoding::Zstd);
+            .as_grpc_service(grpc_config.max_message_size);
         Some(ingest_router_service)
     } else {
         None
@@ -136,10 +134,7 @@ pub(crate) async fn start_grpc_server(
     let ingester_grpc_service = if let Some(ingester_service) = services.ingester_service() {
         enabled_grpc_services.insert("ingester");
         file_descriptor_sets.push(quickwit_proto::ingest::INGEST_FILE_DESCRIPTOR_SET);
-        let ingester_grpc_service = ingester_service
-            .as_grpc_service(grpc_config.max_message_size)
-            .accept_compressed(CompressionEncoding::Zstd)
-            .send_compressed(CompressionEncoding::Zstd);
+        let ingester_grpc_service = ingester_service.as_grpc_service(grpc_config.max_message_size);
         Some(ingester_grpc_service)
     } else {
         None
@@ -216,8 +211,6 @@ pub(crate) async fn start_grpc_server(
 
         DeveloperServiceClient::new(developer_service)
             .as_grpc_service(DeveloperApiServer::MAX_GRPC_MESSAGE_SIZE)
-            .accept_compressed(CompressionEncoding::Zstd)
-            .send_compressed(CompressionEncoding::Zstd)
     };
     enabled_grpc_services.insert("health");
     file_descriptor_sets.push(HEALTH_FILE_DESCRIPTOR_SET);

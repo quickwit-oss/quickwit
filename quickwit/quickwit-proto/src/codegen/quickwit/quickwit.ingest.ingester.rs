@@ -646,6 +646,10 @@ impl IngesterServiceClient {
     > {
         let adapter = IngesterServiceGrpcServerAdapter::new(self.clone());
         ingester_service_grpc_server::IngesterServiceGrpcServer::new(adapter)
+            .accept_compressed(tonic::codec::CompressionEncoding::Gzip)
+            .accept_compressed(tonic::codec::CompressionEncoding::Zstd)
+            .send_compressed(tonic::codec::CompressionEncoding::Gzip)
+            .send_compressed(tonic::codec::CompressionEncoding::Zstd)
             .max_decoding_message_size(max_message_size.0 as usize)
             .max_encoding_message_size(max_message_size.0 as usize)
     }
@@ -653,8 +657,7 @@ impl IngesterServiceClient {
         addr: std::net::SocketAddr,
         channel: tonic::transport::Channel,
         max_message_size: bytesize::ByteSize,
-        accept_compression_encodings: &[tonic::codec::CompressionEncoding],
-        send_compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
+        compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
     ) -> Self {
         let (_, connection_keys_watcher) = tokio::sync::watch::channel(
             std::collections::HashSet::from_iter([addr]),
@@ -664,11 +667,10 @@ impl IngesterServiceClient {
             )
             .max_decoding_message_size(max_message_size.0 as usize)
             .max_encoding_message_size(max_message_size.0 as usize);
-        for accept_compression_encoding in accept_compression_encodings {
-            client = client.accept_compressed(*accept_compression_encoding);
-        }
-        if let Some(send_compression_encoding) = send_compression_encoding_opt {
-            client = client.send_compressed(send_compression_encoding);
+        if let Some(compression_encoding) = compression_encoding_opt {
+            client = client
+                .accept_compressed(compression_encoding)
+                .send_compressed(compression_encoding);
         }
         let adapter = IngesterServiceGrpcClientAdapter::new(
             client,
@@ -679,8 +681,7 @@ impl IngesterServiceClient {
     pub fn from_balance_channel(
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
         max_message_size: bytesize::ByteSize,
-        accept_compression_encodings: &[tonic::codec::CompressionEncoding],
-        send_compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
+        compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
     ) -> IngesterServiceClient {
         let connection_keys_watcher = balance_channel.connection_keys_watcher();
         let mut client = ingester_service_grpc_client::IngesterServiceGrpcClient::new(
@@ -688,11 +689,10 @@ impl IngesterServiceClient {
             )
             .max_decoding_message_size(max_message_size.0 as usize)
             .max_encoding_message_size(max_message_size.0 as usize);
-        for accept_compression_encoding in accept_compression_encodings {
-            client = client.accept_compressed(*accept_compression_encoding);
-        }
-        if let Some(send_compression_encoding) = send_compression_encoding_opt {
-            client = client.send_compressed(send_compression_encoding);
+        if let Some(compression_encoding) = compression_encoding_opt {
+            client = client
+                .accept_compressed(compression_encoding)
+                .send_compressed(compression_encoding);
         }
         let adapter = IngesterServiceGrpcClientAdapter::new(
             client,
@@ -1650,15 +1650,13 @@ impl IngesterServiceTowerLayerStack {
         addr: std::net::SocketAddr,
         channel: tonic::transport::Channel,
         max_message_size: bytesize::ByteSize,
-        accept_compression_encodings: &[tonic::codec::CompressionEncoding],
-        send_compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
+        compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
     ) -> IngesterServiceClient {
         let client = IngesterServiceClient::from_channel(
             addr,
             channel,
             max_message_size,
-            accept_compression_encodings,
-            send_compression_encoding_opt,
+            compression_encoding_opt,
         );
         let inner_client = client.inner;
         self.build_from_inner_client(inner_client)
@@ -1667,14 +1665,12 @@ impl IngesterServiceTowerLayerStack {
         self,
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
         max_message_size: bytesize::ByteSize,
-        accept_compression_encodings: &[tonic::codec::CompressionEncoding],
-        send_compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
+        compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
     ) -> IngesterServiceClient {
         let client = IngesterServiceClient::from_balance_channel(
             balance_channel,
             max_message_size,
-            accept_compression_encodings,
-            send_compression_encoding_opt,
+            compression_encoding_opt,
         );
         let inner_client = client.inner;
         self.build_from_inner_client(inner_client)

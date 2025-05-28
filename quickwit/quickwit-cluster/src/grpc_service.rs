@@ -43,7 +43,7 @@ pub(crate) async fn cluster_grpc_client(
 
     ClusterServiceClient::tower()
         .stack_layer(CLUSTER_GRPC_CLIENT_METRICS_LAYER.clone())
-        .build_from_channel(socket_addr, channel, MAX_MESSAGE_SIZE, &[], None)
+        .build_from_channel(socket_addr, channel, MAX_MESSAGE_SIZE, None)
 }
 
 pub fn cluster_grpc_server(

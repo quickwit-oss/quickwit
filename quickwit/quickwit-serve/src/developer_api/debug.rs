@@ -110,7 +110,6 @@ async fn get_node_debug_infos(
                 ready_node.grpc_advertise_addr(),
                 ready_node.channel(),
                 DeveloperApiServer::MAX_GRPC_MESSAGE_SIZE,
-                &[CompressionEncoding::Zstd],
                 Some(CompressionEncoding::Zstd),
             );
             let roles = target_roles.iter().map(|role| role.to_string()).collect();
