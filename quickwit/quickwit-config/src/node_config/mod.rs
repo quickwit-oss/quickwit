@@ -29,7 +29,7 @@ use quickwit_common::shared_consts::{
     DEFAULT_SHARD_BURST_LIMIT, DEFAULT_SHARD_SCALE_UP_FACTOR, DEFAULT_SHARD_THROUGHPUT_LIMIT,
 };
 use quickwit_common::uri::Uri;
-use quickwit_proto::indexing::CpuCapacity;
+use quickwit_proto::indexing::{CpuCapacity, PIPELINE_THROUGHPUT};
 use quickwit_proto::types::NodeId;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
@@ -456,9 +456,9 @@ impl IngestApiConfig {
         );
         ensure!(
             self.shard_throughput_limit >= ByteSize::mib(1)
-                && self.shard_throughput_limit <= ByteSize::mib(20),
-            "shard_throughput_limit ({}) must be within 1mb and 20mb",
-            self.shard_throughput_limit
+                && self.shard_throughput_limit <= PIPELINE_THROUGHPUT,
+            "shard_throughput_limit ({}) must be within 1.0 MB and {PIPELINE_THROUGHPUT}",
+            self.shard_throughput_limit,
         );
         // The newline delimited format is persisted as something a bit larger
         // (lines prefixed with their length)
@@ -745,7 +745,7 @@ mod tests {
             .unwrap();
             assert_eq!(
                 ingest_api_config.validate().unwrap_err().to_string(),
-                "shard_throughput_limit (21.0 MB) must be within 1mb and 20mb"
+                "shard_throughput_limit (21.0 MB) must be within 1.0 MB and 20.0 MB"
             );
         }
     }
