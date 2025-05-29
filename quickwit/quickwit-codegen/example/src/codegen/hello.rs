@@ -100,6 +100,10 @@ impl HelloClient {
     ) -> hello_grpc_server::HelloGrpcServer<HelloGrpcServerAdapter> {
         let adapter = HelloGrpcServerAdapter::new(self.clone());
         hello_grpc_server::HelloGrpcServer::new(adapter)
+            .accept_compressed(tonic::codec::CompressionEncoding::Gzip)
+            .accept_compressed(tonic::codec::CompressionEncoding::Zstd)
+            .send_compressed(tonic::codec::CompressionEncoding::Gzip)
+            .send_compressed(tonic::codec::CompressionEncoding::Zstd)
             .max_decoding_message_size(max_message_size.0 as usize)
             .max_encoding_message_size(max_message_size.0 as usize)
     }
@@ -107,24 +111,36 @@ impl HelloClient {
         addr: std::net::SocketAddr,
         channel: tonic::transport::Channel,
         max_message_size: bytesize::ByteSize,
+        compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
     ) -> Self {
         let (_, connection_keys_watcher) = tokio::sync::watch::channel(
             std::collections::HashSet::from_iter([addr]),
         );
-        let client = hello_grpc_client::HelloGrpcClient::new(channel)
+        let mut client = hello_grpc_client::HelloGrpcClient::new(channel)
             .max_decoding_message_size(max_message_size.0 as usize)
             .max_encoding_message_size(max_message_size.0 as usize);
+        if let Some(compression_encoding) = compression_encoding_opt {
+            client = client
+                .accept_compressed(compression_encoding)
+                .send_compressed(compression_encoding);
+        }
         let adapter = HelloGrpcClientAdapter::new(client, connection_keys_watcher);
         Self::new(adapter)
     }
     pub fn from_balance_channel(
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
         max_message_size: bytesize::ByteSize,
+        compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
     ) -> HelloClient {
         let connection_keys_watcher = balance_channel.connection_keys_watcher();
-        let client = hello_grpc_client::HelloGrpcClient::new(balance_channel)
+        let mut client = hello_grpc_client::HelloGrpcClient::new(balance_channel)
             .max_decoding_message_size(max_message_size.0 as usize)
             .max_encoding_message_size(max_message_size.0 as usize);
+        if let Some(compression_encoding) = compression_encoding_opt {
+            client = client
+                .accept_compressed(compression_encoding)
+                .send_compressed(compression_encoding);
+        }
         let adapter = HelloGrpcClientAdapter::new(client, connection_keys_watcher);
         Self::new(adapter)
     }
@@ -497,8 +513,14 @@ impl HelloTowerLayerStack {
         addr: std::net::SocketAddr,
         channel: tonic::transport::Channel,
         max_message_size: bytesize::ByteSize,
+        compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
     ) -> HelloClient {
-        let client = HelloClient::from_channel(addr, channel, max_message_size);
+        let client = HelloClient::from_channel(
+            addr,
+            channel,
+            max_message_size,
+            compression_encoding_opt,
+        );
         let inner_client = client.inner;
         self.build_from_inner_client(inner_client)
     }
@@ -506,10 +528,12 @@ impl HelloTowerLayerStack {
         self,
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
         max_message_size: bytesize::ByteSize,
+        compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
     ) -> HelloClient {
         let client = HelloClient::from_balance_channel(
             balance_channel,
             max_message_size,
+            compression_encoding_opt,
         );
         let inner_client = client.inner;
         self.build_from_inner_client(inner_client)

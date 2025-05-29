@@ -70,6 +70,10 @@ impl IndexingServiceClient {
     > {
         let adapter = IndexingServiceGrpcServerAdapter::new(self.clone());
         indexing_service_grpc_server::IndexingServiceGrpcServer::new(adapter)
+            .accept_compressed(tonic::codec::CompressionEncoding::Gzip)
+            .accept_compressed(tonic::codec::CompressionEncoding::Zstd)
+            .send_compressed(tonic::codec::CompressionEncoding::Gzip)
+            .send_compressed(tonic::codec::CompressionEncoding::Zstd)
             .max_decoding_message_size(max_message_size.0 as usize)
             .max_encoding_message_size(max_message_size.0 as usize)
     }
@@ -77,15 +81,21 @@ impl IndexingServiceClient {
         addr: std::net::SocketAddr,
         channel: tonic::transport::Channel,
         max_message_size: bytesize::ByteSize,
+        compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
     ) -> Self {
         let (_, connection_keys_watcher) = tokio::sync::watch::channel(
             std::collections::HashSet::from_iter([addr]),
         );
-        let client = indexing_service_grpc_client::IndexingServiceGrpcClient::new(
+        let mut client = indexing_service_grpc_client::IndexingServiceGrpcClient::new(
                 channel,
             )
             .max_decoding_message_size(max_message_size.0 as usize)
             .max_encoding_message_size(max_message_size.0 as usize);
+        if let Some(compression_encoding) = compression_encoding_opt {
+            client = client
+                .accept_compressed(compression_encoding)
+                .send_compressed(compression_encoding);
+        }
         let adapter = IndexingServiceGrpcClientAdapter::new(
             client,
             connection_keys_watcher,
@@ -95,13 +105,19 @@ impl IndexingServiceClient {
     pub fn from_balance_channel(
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
         max_message_size: bytesize::ByteSize,
+        compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
     ) -> IndexingServiceClient {
         let connection_keys_watcher = balance_channel.connection_keys_watcher();
-        let client = indexing_service_grpc_client::IndexingServiceGrpcClient::new(
+        let mut client = indexing_service_grpc_client::IndexingServiceGrpcClient::new(
                 balance_channel,
             )
             .max_decoding_message_size(max_message_size.0 as usize)
             .max_encoding_message_size(max_message_size.0 as usize);
+        if let Some(compression_encoding) = compression_encoding_opt {
+            client = client
+                .accept_compressed(compression_encoding)
+                .send_compressed(compression_encoding);
+        }
         let adapter = IndexingServiceGrpcClientAdapter::new(
             client,
             connection_keys_watcher,
@@ -274,11 +290,13 @@ impl IndexingServiceTowerLayerStack {
         addr: std::net::SocketAddr,
         channel: tonic::transport::Channel,
         max_message_size: bytesize::ByteSize,
+        compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
     ) -> IndexingServiceClient {
         let client = IndexingServiceClient::from_channel(
             addr,
             channel,
             max_message_size,
+            compression_encoding_opt,
         );
         let inner_client = client.inner;
         self.build_from_inner_client(inner_client)
@@ -287,10 +305,12 @@ impl IndexingServiceTowerLayerStack {
         self,
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
         max_message_size: bytesize::ByteSize,
+        compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
     ) -> IndexingServiceClient {
         let client = IndexingServiceClient::from_balance_channel(
             balance_channel,
             max_message_size,
+            compression_encoding_opt,
         );
         let inner_client = client.inner;
         self.build_from_inner_client(inner_client)

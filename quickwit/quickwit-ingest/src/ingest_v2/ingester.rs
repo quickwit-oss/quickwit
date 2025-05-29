@@ -2529,6 +2529,7 @@ mod tests {
             "127.0.0.1:7777".parse().unwrap(),
             follower_channel,
             MAX_GRPC_MESSAGE_SIZE,
+            None,
         );
 
         leader_ctx

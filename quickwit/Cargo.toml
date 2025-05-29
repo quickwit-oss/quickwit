@@ -10,10 +10,10 @@ members = [
   "quickwit-common",
   "quickwit-config",
   "quickwit-control-plane",
-  "quickwit-index-management",
   "quickwit-datetime",
   "quickwit-directories",
   "quickwit-doc-mapper",
+  "quickwit-index-management",
   "quickwit-indexing",
   "quickwit-ingest",
   "quickwit-integration-tests",
@@ -245,9 +245,10 @@ tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-util = { version = "0.7", features = ["full"] }
 toml = "0.7"
 tonic = { version = "0.13", features = [
-  "gzip",
   "_tls-any",
+  "gzip",
   "tls-native-roots",
+  "zstd",
 ] }
 tonic-build = "0.13"
 tonic-health = "0.13"

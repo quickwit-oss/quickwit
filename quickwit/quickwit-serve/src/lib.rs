@@ -298,6 +298,7 @@ async fn start_ingest_client_if_needed(
         let ingest_service = IngestServiceClient::from_balance_channel(
             balance_channel,
             node_config.grpc_config.max_message_size,
+            node_config.ingest_api_config.grpc_compression_encoding(),
         );
         Ok(ingest_service)
     }
@@ -364,7 +365,11 @@ async fn start_control_plane_if_needed(
         let control_plane_server_opt = None;
         let control_plane_client = ControlPlaneServiceClient::tower()
             .stack_layer(CP_GRPC_CLIENT_METRICS_LAYER.clone())
-            .build_from_balance_channel(balance_channel, node_config.grpc_config.max_message_size);
+            .build_from_balance_channel(
+                balance_channel,
+                node_config.grpc_config.max_message_size,
+                None,
+            );
         Ok((control_plane_server_opt, control_plane_client))
     }
 }
@@ -474,7 +479,7 @@ pub async fn serve_quickwit(
                 .stack_layer(tower::limit::GlobalConcurrencyLimitLayer::new(
                     get_metastore_client_max_concurrency(),
                 ))
-                .build_from_balance_channel(balance_channel, grpc_config.max_message_size)
+                .build_from_balance_channel(balance_channel, grpc_config.max_message_size, None)
         };
     // Instantiate a control plane server if the `control-plane` role is enabled on the node.
     // Otherwise, instantiate a control plane client.
@@ -864,6 +869,7 @@ async fn setup_ingest_v2(
 ) -> anyhow::Result<(IngestRouter, IngestRouterServiceClient, Option<Ingester>)> {
     // Instantiate ingest router.
     let self_node_id: NodeId = cluster.self_node_id().into();
+    let grpc_compression_encoding_opt = node_config.ingest_api_config.grpc_compression_encoding();
     let replication_factor = node_config
         .ingest_api_config
         .replication_factor()
@@ -959,6 +965,7 @@ async fn setup_ingest_v2(
                                 node.grpc_advertise_addr(),
                                 node.channel(),
                                 max_message_size,
+                                grpc_compression_encoding_opt,
                             );
                         Some(Change::Insert(node_id, ingester_service))
                     }
@@ -1161,6 +1168,7 @@ fn setup_indexer_pool(
                                 node.grpc_advertise_addr(),
                                 node.channel(),
                                 max_message_size,
+                                None,
                             );
                         let change = Change::Insert(
                             node_id.clone(),
