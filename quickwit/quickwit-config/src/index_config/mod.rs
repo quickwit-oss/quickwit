@@ -15,6 +15,7 @@
 pub(crate) mod serialize;
 
 use std::hash::{Hash, Hasher};
+use std::num::NonZeroUsize;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -34,6 +35,28 @@ use tracing::warn;
 
 use crate::index_config::serialize::VersionedIndexConfig;
 use crate::merge_policy_config::MergePolicyConfig;
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct IngestSettings {
+    #[schema(default = 1)]
+    #[serde(default = "IngestSettings::default_min_shards")]
+    pub min_shards: NonZeroUsize,
+}
+
+impl IngestSettings {
+    pub fn default_min_shards() -> NonZeroUsize {
+        NonZeroUsize::new(1).unwrap()
+    }
+}
+
+impl Default for IngestSettings {
+    fn default() -> Self {
+        Self {
+            min_shards: Self::default_min_shards(),
+        }
+    }
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
@@ -250,6 +273,7 @@ pub struct IndexConfig {
     pub index_id: IndexId,
     pub index_uri: Uri,
     pub doc_mapping: DocMapping,
+    pub ingest_settings: IngestSettings,
     pub indexing_settings: IndexingSettings,
     pub search_settings: SearchSettings,
     pub retention_policy_opt: Option<RetentionPolicy>,
@@ -358,9 +382,10 @@ impl IndexConfig {
             index_id: index_id.to_string(),
             index_uri,
             doc_mapping,
+            ingest_settings: IngestSettings::default(),
             indexing_settings,
             search_settings,
-            retention_policy_opt: Default::default(),
+            retention_policy_opt: None,
         }
     }
 }
@@ -463,6 +488,7 @@ impl crate::TestableForRegression for IndexConfig {
             index_id: "my-index".to_string(),
             index_uri: Uri::for_test("s3://quickwit-indexes/my-index"),
             doc_mapping,
+            ingest_settings: IngestSettings::default(),
             indexing_settings,
             retention_policy_opt: retention_policy,
             search_settings,
@@ -581,6 +607,7 @@ mod tests {
             index_config.doc_mapping.timestamp_field.unwrap(),
             "timestamp"
         );
+        assert_eq!(index_config.ingest_settings.min_shards.get(), 12);
         assert_eq!(index_config.indexing_settings.commit_timeout_secs, 61);
         assert_eq!(
             index_config.indexing_settings.merge_policy,
@@ -639,6 +666,7 @@ mod tests {
             assert_eq!(index_config.doc_mapping.field_mappings.len(), 1);
             assert_eq!(index_config.doc_mapping.field_mappings[0].name, "body");
             assert!(!index_config.doc_mapping.store_source);
+            assert_eq!(index_config.ingest_settings, IngestSettings::default());
             assert_eq!(index_config.indexing_settings, IndexingSettings::default());
             assert_eq!(
                 index_config.search_settings,
@@ -902,5 +930,22 @@ mod tests {
         schedule_test_helper_fn("weekly");
         schedule_test_helper_fn("monthly");
         schedule_test_helper_fn("* * * ? * ?");
+    }
+
+    #[test]
+    fn test_ingest_settings_serde() {
+        let ingest_settings = IngestSettings {
+            min_shards: NonZeroUsize::new(1).unwrap(),
+        };
+        let ingest_settings_yaml = serde_yaml::to_string(&ingest_settings).unwrap();
+        let ingest_settings_roundtrip: IngestSettings =
+            serde_yaml::from_str(&ingest_settings_yaml).unwrap();
+        assert_eq!(ingest_settings, ingest_settings_roundtrip);
+
+        let ingest_settings_yaml = r#"
+            min_shards: 0
+        "#;
+        let error = serde_yaml::from_str::<IngestSettings>(ingest_settings_yaml).unwrap_err();
+        assert!(error.to_string().contains("expected a nonzero"));
     }
 }
