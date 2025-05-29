@@ -293,7 +293,7 @@ mod tests {
     fn make_source_config() -> SourceConfig {
         SourceConfig {
             source_id: INGEST_API_SOURCE_ID.to_string(),
-            num_pipelines: NonZeroUsize::new(1).unwrap(),
+            num_pipelines: NonZeroUsize::MIN,
             enabled: true,
             source_params: SourceParams::IngestApi,
             transform_config: None,

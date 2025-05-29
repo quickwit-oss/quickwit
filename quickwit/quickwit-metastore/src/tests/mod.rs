@@ -222,6 +222,13 @@ macro_rules! metastore_test_suite {
 
             #[tokio::test]
             #[serial_test::file_serial]
+            async fn test_metastore_update_ingest_settings() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::index::test_metastore_update_ingest_settings::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::file_serial]
             async fn test_metastore_create_index_enforces_index_id_maximum_length() {
                 let _ = tracing_subscriber::fmt::try_init();
                 $crate::tests::index::test_metastore_create_index_enforces_index_id_maximum_length::<

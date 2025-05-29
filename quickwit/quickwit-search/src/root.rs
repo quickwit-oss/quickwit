@@ -1763,7 +1763,9 @@ mod tests {
 
     use quickwit_common::ServiceStream;
     use quickwit_common::shared_consts::SCROLL_BATCH_LEN;
-    use quickwit_config::{DocMapping, IndexConfig, IndexingSettings, SearchSettings};
+    use quickwit_config::{
+        DocMapping, IndexConfig, IndexingSettings, IngestSettings, SearchSettings,
+    };
     use quickwit_indexing::MockSplitBuilder;
     use quickwit_metastore::{IndexMetadata, ListSplitsRequestExt, ListSplitsResponseExt};
     use quickwit_proto::metastore::{
@@ -1856,6 +1858,7 @@ mod tests {
         }"#;
         let doc_mapping = serde_json::from_str(doc_mapping_json).unwrap();
         let indexing_settings = IndexingSettings::default();
+        let ingest_settings = IngestSettings::default();
         let search_settings = SearchSettings {
             default_search_fields: vec!["body".to_string()],
         };
@@ -1864,8 +1867,9 @@ mod tests {
             index_uri,
             doc_mapping,
             indexing_settings,
+            ingest_settings,
             search_settings,
-            retention_policy_opt: Default::default(),
+            retention_policy_opt: None,
         })
     }
 
@@ -2027,6 +2031,7 @@ mod tests {
             "store_source": true
         }"#;
         let doc_mapping = serde_json::from_str(doc_mapping_json).unwrap();
+        let ingest_settings = IngestSettings::default();
         let indexing_settings = IndexingSettings::default();
         let search_settings = SearchSettings {
             default_search_fields: vec!["body".to_string()],
@@ -2035,9 +2040,10 @@ mod tests {
             index_id: index_id.to_string(),
             index_uri,
             doc_mapping,
+            ingest_settings,
             indexing_settings,
             search_settings,
-            retention_policy_opt: Default::default(),
+            retention_policy_opt: None,
         })
     }
 

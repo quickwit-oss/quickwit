@@ -20,7 +20,7 @@ use quickwit_proto::types::{DocMappingUid, IndexId};
 use serde::{Deserialize, Serialize};
 pub use serialize::{IndexTemplateV0_8, VersionedIndexTemplate};
 
-use crate::index_config::validate_index_config;
+use crate::index_config::{IngestSettings, validate_index_config};
 use crate::{
     DocMapping, IndexConfig, IndexingSettings, RetentionPolicy, SearchSettings,
     validate_identifier, validate_index_id_pattern,
@@ -44,6 +44,8 @@ pub struct IndexTemplate {
     pub doc_mapping: DocMapping,
     #[serde(default)]
     pub indexing_settings: IndexingSettings,
+    #[serde(default)]
+    pub ingest_settings: IngestSettings,
     #[serde(default)]
     pub search_settings: SearchSettings,
     #[serde(rename = "retention")]
@@ -72,6 +74,7 @@ impl IndexTemplate {
             index_uri,
             doc_mapping,
             indexing_settings: self.indexing_settings.clone(),
+            ingest_settings: self.ingest_settings.clone(),
             search_settings: self.search_settings.clone(),
             retention_policy_opt: self.retention_policy_opt.clone(),
         };
@@ -128,6 +131,7 @@ impl IndexTemplate {
             description: Some("Test description.".to_string()),
             doc_mapping,
             indexing_settings: IndexingSettings::default(),
+            ingest_settings: IngestSettings::default(),
             search_settings: SearchSettings::default(),
             retention_policy_opt: None,
         }
@@ -168,6 +172,7 @@ impl crate::TestableForRegression for IndexTemplate {
             description: Some("Test description.".to_string()),
             doc_mapping,
             indexing_settings: IndexingSettings::default(),
+            ingest_settings: IngestSettings::default(),
             search_settings: SearchSettings::default(),
             retention_policy_opt: Some(RetentionPolicy {
                 retention_period: "42 days".to_string(),

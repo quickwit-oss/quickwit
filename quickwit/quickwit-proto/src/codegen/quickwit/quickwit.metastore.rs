@@ -23,14 +23,18 @@ pub struct CreateIndexResponse {
 pub struct UpdateIndexRequest {
     #[prost(message, optional, tag = "1")]
     pub index_uid: ::core::option::Option<crate::types::IndexUid>,
+    #[prost(string, tag = "5")]
+    pub doc_mapping_json: ::prost::alloc::string::String,
+    #[prost(string, tag = "4")]
+    pub indexing_settings_json: ::prost::alloc::string::String,
+    #[prost(string, tag = "6")]
+    pub ingest_settings_json: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub search_settings_json: ::prost::alloc::string::String,
     #[prost(string, optional, tag = "3")]
-    pub retention_policy_json: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(string, tag = "4")]
-    pub indexing_settings_json: ::prost::alloc::string::String,
-    #[prost(string, tag = "5")]
-    pub doc_mapping_json: ::prost::alloc::string::String,
+    pub retention_policy_json_opt: ::core::option::Option<
+        ::prost::alloc::string::String,
+    >,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
