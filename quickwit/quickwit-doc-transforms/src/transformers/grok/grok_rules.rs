@@ -28,10 +28,12 @@ pub(super) type SourceToGrokPatterns = BTreeMap<String, Vec<GrokRule>>;
 
 pub fn get_grok_rules_by_source() -> &'static SourceToGrokPatterns {
     OP_GROK_RULES.get_or_init(|| {
-        // The path is relative to this file.
         let json_str = include_str!("rules.json");
-        let op_grok_rules: Vec<OPGrokRules> =
+        let mut op_grok_rules: Vec<OPGrokRules> =
             serde_json::from_str(json_str).expect("Failed to parse JSON");
+        for op_grok_rules in &mut op_grok_rules {
+            op_grok_rules.normalize();
+        }
         build_grok_rules_with_source(&op_grok_rules)
     })
 }
@@ -43,6 +45,19 @@ pub struct OPGrokRules {
     pub support_rules: Vec<Rule>,
     pub match_rules: Vec<Rule>,
     pub samples: Vec<Sample>,
+}
+impl OPGrokRules {
+    pub fn normalize(&mut self) {
+        // Normalize the rules by removing leading and trailing whitespace.
+        for rule in &mut self.support_rules {
+            rule.name = rule.name.trim().to_string();
+            rule.rule = rule.rule.trim().to_string();
+        }
+        for rule in &mut self.match_rules {
+            rule.name = rule.name.trim().to_string();
+            rule.rule = rule.rule.trim().to_string();
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Hash)]
@@ -88,8 +103,8 @@ pub fn parse_rules(rules_str: &str) -> Vec<Rule> {
             } else {
                 // Split each line at the first space.
                 trimmed.split_once(' ').map(|(name, rule)| Rule {
-                    name: name.to_string(),
-                    rule: rule.to_string(),
+                    name: name.trim().to_string(),
+                    rule: rule.trim().to_string(),
                 })
             }
         })
@@ -139,6 +154,9 @@ fn build_grok_rules_with_source(rules: &[OPGrokRules]) -> SourceToGrokPatterns {
 
 #[cfg(test)]
 mod tests {
+
+    use vrl::datadog_grok::parse_grok::parse_grok;
+
     use super::*;
 
     #[test]
@@ -211,5 +229,146 @@ mod tests {
         assert_eq!(rules.match_rules[0].rule, "%{_timestamp}");
         assert_eq!(rules.match_rules[1].name, "mongo.test2");
         assert_eq!(rules.match_rules[1].rule, "%{_context}");
+    }
+
+    #[test]
+    fn test_vrl_grok_parser_datadog_agent() {
+        let results = r#"[   
+            {
+                "sample" : "2020-07-01 09:48:14 UTC | CORE | INFO | (pkg/collector/runner/runner.go:327 in work) | check:network,type:core | Done running check",
+                "result" : {
+                    "agent" : "CORE",
+                    "process" : "work",
+                    "filename" : "pkg/collector/runner/runner.go",
+                    "lineno" : 327.0,
+                    "level" : "INFO",
+                    "check" : "network",
+                    "type" : "core",
+                    "timestamp" : 1593596894000
+                }
+            }, {
+                "sample" : "2020-09-15 10:00:07 UTC | CORE | INFO | (pkg/collector/python/datadog_agent.go:120 in LogMessage) | kafka_cluster_status:8ca7b736f0aa43e5 | (kafka_cluster_status.py:213) | Checking for out of sync partition replicas",
+                "result" : {
+                    "agent" : "CORE",
+                    "process" : "LogMessage",
+                    "filename" : "pkg/collector/python/datadog_agent.go",
+                    "lineno" : 120.0,
+                    "level" : "INFO",
+                    "pyFilename" : "kafka_cluster_status.py",
+                    "kafka_cluster_status" : "8ca7b736f0aa43e5",
+                    "pyLineno" : 213.0,
+                    "timestamp" : 1600164007000
+                }
+            }, {
+                "sample" : "2019-04-08 13:53:48 UTC | TRACE | INFO | (pkg/trace/agent/agent.go:145 in loop) | exiting",
+                "result" : {
+                    "agent" : "TRACE",
+                    "process" : "loop",
+                    "filename" : "pkg/trace/agent/agent.go",
+                    "lineno" : 145.0,
+                    "level" : "INFO",
+                    "timestamp" : 1554731628000
+                }
+            }, {
+                "sample" : "2019-02-01 16:59:41 UTC | INFO | (connection_manager.go:124 in CloseConnection) | Connection closed",
+                "result" : {
+                    "process" : "CloseConnection",
+                    "filename" : "connection_manager.go",
+                    "lineno" : 124.0,
+                    "level" : "INFO",
+                    "timestamp" : 1549040381000
+                }
+            }, {
+                "sample" : "2020-11-18 10:31:13 UTC | JMX | INFO  | App | Successfully initialized instance: cassandra-localhost-7199",
+                "result" : {
+                    "agent" : "JMX",
+                    "level" : "INFO",
+                    "class" : "App",
+                    "timestamp" : 1605695473000
+                }
+        }]"#;
+        let results: Vec<serde_json::Value> = serde_json::from_str(results).unwrap();
+
+        #[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Hash)]
+        pub struct LogsProcessingGrokRulesDeser {
+            // Use a custom deserializer to transform the multiline string into Vec<Rule>
+            #[serde(alias = "supportRules")]
+            #[serde(default)]
+            pub support_rules: Vec<Rule>,
+            #[serde(alias = "matchRules")]
+            pub match_rules: Vec<Rule>,
+        }
+        let grok_rules = r#"{
+                "supportRules": [],
+                "matchRules": [
+                    {
+                        "name": "agent_rule",
+                        "rule": "%{date(\"yyyy-MM-dd HH:mm:ss z\"):timestamp} \\| %{notSpace:agent} \\| %{word:level} \\| \\(%{notSpace:filename}:%{number:lineno} in %{word:process}\\) \\|( %{data::keyvalue(\":\")} \\|)?( - \\|)?( \\(%{notSpace:pyFilename}:%{number:pyLineno}\\) \\|)?%{data}"
+                    },
+                    {
+                        "name": "agent_rule_pre_611",
+                        "rule": "%{date(\"yyyy-MM-dd HH:mm:ss z\"):timestamp} \\| %{word:level} \\| \\(%{notSpace:filename}:%{number:lineno} in %{word:process}\\)%{data}"
+                    },
+                    {
+                        "name": "jmxfetch_rule",
+                        "rule": "%{date(\"yyyy-MM-dd HH:mm:ss z\"):timestamp} \\| %{notSpace:agent} \\| %{word:level}\\s+\\| %{word:class} \\| %{data}"
+                    }
+                ]
+        }"#;
+        let grok_rules_tmp: LogsProcessingGrokRulesDeser =
+            serde_json::from_str(grok_rules).unwrap();
+        let grok_rules = LogsProcessingGrokRules {
+            support_rules: grok_rules_tmp.support_rules,
+            match_rules: grok_rules_tmp.match_rules,
+        };
+
+        let parsed_rules = build_grok_rules(&grok_rules.support_rules, &grok_rules.match_rules)
+            .expect("Failed to parse grok rules");
+
+        // Validate the parsed rules
+        assert_eq!(parsed_rules.len(), 3);
+
+        // Validate the parsed results
+        for (i, result) in results.iter().enumerate() {
+            let sample = result["sample"].as_str().unwrap();
+            let mut expected_result = result["result"].clone();
+
+            let result = parse_grok(sample, &parsed_rules).unwrap();
+            let mut json_val =
+                serde_json::to_value(result.parsed).expect("Failed to convert to JSON");
+
+            normalize_numbers(&mut expected_result);
+            normalize_numbers(&mut json_val);
+
+            assert!(json_val.is_object(), "Grok parser should return an object");
+            assert_eq!(
+                json_val, expected_result,
+                "Sample {}: Expected {:?}, got {:?}",
+                i, expected_result, json_val
+            );
+        }
+    }
+
+    fn normalize_numbers(value: &mut Value) {
+        match value {
+            Value::Number(n) => {
+                if let Some(val) = n.as_u64() {
+                    *value = Value::Number(serde_json::Number::from_f64(val as f64).unwrap());
+                } else if let Some(val) = n.as_i64() {
+                    *value = Value::Number(serde_json::Number::from_f64(val as f64).unwrap());
+                }
+            }
+            Value::Array(arr) => {
+                for item in arr {
+                    normalize_numbers(item);
+                }
+            }
+            Value::Object(map) => {
+                for val in map.values_mut() {
+                    normalize_numbers(val);
+                }
+            }
+            _ => {}
+        }
     }
 }

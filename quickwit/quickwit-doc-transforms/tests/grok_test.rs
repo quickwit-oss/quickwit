@@ -61,7 +61,7 @@ fn test_grok_parser_compat_test() {
         let mut matched_for_source = 0;
         for sample_result in test.sample_results {
             let mut agent_log = ProcessedLog::from_datadog_log_msg(make_datadog_log_msg());
-            agent_log.message = sample_result.sample;
+            agent_log.message = sample_result.sample.to_string();
             agent_log.source = test.source.clone();
 
             step.apply(&mut agent_log).unwrap();
@@ -69,6 +69,13 @@ fn test_grok_parser_compat_test() {
             let mut expected = sample_result.result.clone();
             normalize_numbers_in_obj(&mut expected);
             normalize_numbers_in_obj(&mut agent_log.custom);
+
+            if agent_log.custom != expected && test.source == "agent" {
+                println!(
+                    "{}: ❌ test failed for sample: {}. Expected: {:?}, got: {:?}",
+                    test.source, sample_result.sample, expected, agent_log.custom
+                );
+            }
 
             if agent_log.custom == expected {
                 matched_samples += 1;
@@ -90,10 +97,10 @@ fn test_grok_parser_compat_test() {
             );
         }
     }
-    assert_eq!(matched_samples, 416);
+    assert_eq!(matched_samples, 423);
     assert_eq!(total_samples, 520);
 
-    assert_eq!(matched_sources, 109);
+    assert_eq!(matched_sources, 113);
     assert_eq!(parsed_sources, 154);
 }
 
