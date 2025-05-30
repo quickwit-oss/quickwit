@@ -53,6 +53,9 @@
         "period": "90 days",
         "schedule": "daily"
     },
+    "ingest_settings": {
+        "min_shards": 12
+    },
     "indexing_settings": {
         "commit_timeout_secs": 61,
         "split_num_docs_target": 10000001,
