@@ -50,13 +50,18 @@ impl<A: Actor> Envelope<A> {
         }
     }
 
-    /// Execute the captured handle function.
+    /// Executes the captured handle function.
+    ///
+    /// When exiting, also returns the message type name.
     pub async fn handle_message(
         &mut self,
         actor: &mut A,
         ctx: &ActorContext<A>,
-    ) -> Result<(), ActorExitStatus> {
-        self.handler_envelope.handle_message(actor, ctx).await?;
+    ) -> Result<(), (ActorExitStatus, &'static str)> {
+        let handling_res = self.handler_envelope.handle_message(actor, ctx).await;
+        if let Err(exit_status) = handling_res {
+            return Err((exit_status, self.handler_envelope.message_type_name()));
+        }
         Ok(())
     }
 }
@@ -70,6 +75,8 @@ impl<A: Actor> fmt::Debug for Envelope<A> {
 
 #[async_trait]
 trait EnvelopeT<A: Actor>: Send {
+    fn message_type_name(&self) -> &'static str;
+
     fn debug_msg(&self) -> String;
 
     /// Returns the message as a boxed any.
@@ -91,6 +98,10 @@ where
     A: DeferableReplyHandler<M>,
     M: fmt::Debug + Send + 'static,
 {
+    fn message_type_name(&self) -> &'static str {
+        std::any::type_name::<M>()
+    }
+
     fn debug_msg(&self) -> String {
         #[allow(clippy::needless_option_take)]
         if let Some((_response_tx, msg)) = self.as_ref().take() {
