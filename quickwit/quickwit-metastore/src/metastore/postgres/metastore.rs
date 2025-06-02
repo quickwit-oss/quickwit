@@ -415,19 +415,22 @@ impl MetastoreService for PostgresqlMetastore {
         &self,
         request: UpdateIndexRequest,
     ) -> MetastoreResult<IndexMetadataResponse> {
-        let retention_policy_opt = request.deserialize_retention_policy()?;
-        let search_settings = request.deserialize_search_settings()?;
-        let indexing_settings = request.deserialize_indexing_settings()?;
         let doc_mapping = request.deserialize_doc_mapping()?;
+        let indexing_settings = request.deserialize_indexing_settings()?;
+        let ingest_settings = request.deserialize_ingest_settings()?;
+        let search_settings = request.deserialize_search_settings()?;
+        let retention_policy_opt = request.deserialize_retention_policy()?;
 
         let index_uid: IndexUid = request.index_uid().clone();
         let updated_index_metadata = run_with_tx!(self.connection_pool, tx, "update index", {
             mutate_index_metadata::<MetastoreError, _>(tx, index_uid, |index_metadata| {
-                let mut mutation_occurred =
-                    index_metadata.set_retention_policy(retention_policy_opt);
-                mutation_occurred |= index_metadata.set_search_settings(search_settings);
-                mutation_occurred |= index_metadata.set_indexing_settings(indexing_settings);
-                mutation_occurred |= index_metadata.set_doc_mapping(doc_mapping);
+                let mutation_occurred = index_metadata.update_index_config(
+                    doc_mapping,
+                    indexing_settings,
+                    ingest_settings,
+                    search_settings,
+                    retention_policy_opt,
+                );
                 Ok(MutationOccurred::from(mutation_occurred))
             })
             .await

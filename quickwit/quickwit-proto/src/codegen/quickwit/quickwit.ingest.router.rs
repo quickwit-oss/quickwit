@@ -2,6 +2,7 @@
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IngestRequestV2 {
+    /// There should be at most one subrequest per index per request.
     #[prost(message, repeated, tag = "1")]
     pub subrequests: ::prost::alloc::vec::Vec<IngestSubrequest>,
     #[prost(enumeration = "super::CommitTypeV2", tag = "2")]

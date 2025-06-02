@@ -79,7 +79,7 @@ mod tests {
         let index_uid = IndexUid::new_with_random_ulid("test-index");
         let source_config = SourceConfig {
             source_id: "test-void-source".to_string(),
-            num_pipelines: NonZeroUsize::new(1).unwrap(),
+            num_pipelines: NonZeroUsize::MIN,
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,
@@ -99,7 +99,7 @@ mod tests {
         let index_uid = IndexUid::new_with_random_ulid("test-index");
         let source_config = SourceConfig {
             source_id: "test-void-source".to_string(),
-            num_pipelines: NonZeroUsize::new(1).unwrap(),
+            num_pipelines: NonZeroUsize::MIN,
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,
