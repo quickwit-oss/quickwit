@@ -32,7 +32,6 @@ pub(crate) enum VersionedFileBackedIndex {
     V0_9(FileBackedIndexV0_8),
     // Retro compatibility.
     #[serde(alias = "0.8")]
-    #[serde(alias = "0.7")]
     V0_8(FileBackedIndexV0_8),
 }
 

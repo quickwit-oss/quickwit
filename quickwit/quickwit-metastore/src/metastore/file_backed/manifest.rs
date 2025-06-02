@@ -74,7 +74,6 @@ enum VersionedManifest {
     #[serde(rename = "0.9")]
     V0_9(ManifestV0_8),
     #[serde(alias = "0.8")]
-    #[serde(alias = "0.7")]
     V0_8(ManifestV0_8),
 }
 

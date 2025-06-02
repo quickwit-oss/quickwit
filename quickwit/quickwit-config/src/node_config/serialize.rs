@@ -149,7 +149,6 @@ pub async fn load_node_config_with_env(
 enum VersionedNodeConfig {
     #[serde(rename = "0.8")]
     // Retro compatibility.
-    #[serde(alias = "0.7")]
     V0_8(NodeConfigBuilder),
 }
 

@@ -39,7 +39,6 @@ pub(crate) enum VersionedIndexConfig {
     V0_9(IndexConfigV0_8),
     // Retro compatibility
     #[serde(rename = "0.8")]
-    #[serde(alias = "0.7")]
     V0_8(IndexConfigV0_8),
 }
 

@@ -33,15 +33,11 @@ pub enum VersionedSourceConfig {
     #[serde(rename = "0.9")]
     #[serde(alias = "0.8")]
     V0_8(SourceConfigV0_8),
-    // Retro compatibility.
-    #[serde(rename = "0.7")]
-    V0_7(SourceConfigV0_7),
 }
 
 impl From<VersionedSourceConfig> for SourceConfigForSerialization {
     fn from(versioned_source_config: VersionedSourceConfig) -> Self {
         match versioned_source_config {
-            VersionedSourceConfig::V0_7(v0_7) => v0_7.into(),
             VersionedSourceConfig::V0_8(v0_8) => v0_8,
         }
     }
@@ -200,36 +196,6 @@ fn default_source_enabled() -> bool {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
-pub struct SourceConfigV0_7 {
-    #[schema(value_type = String)]
-    pub source_id: SourceId,
-
-    #[serde(
-        default = "default_max_num_pipelines_per_indexer",
-        alias = "num_pipelines"
-    )]
-    pub max_num_pipelines_per_indexer: usize,
-
-    #[serde(default = "default_num_pipelines")]
-    pub desired_num_pipelines: usize,
-
-    // Denotes if this source is enabled.
-    #[serde(default = "default_source_enabled")]
-    pub enabled: bool,
-
-    #[serde(flatten)]
-    pub source_params: SourceParams,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub transform: Option<TransformConfig>,
-
-    // Denotes the input data format.
-    #[serde(default)]
-    pub input_format: SourceInputFormat,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
-#[serde(deny_unknown_fields)]
 pub struct SourceConfigV0_8 {
     #[schema(value_type = String)]
     pub source_id: SourceId,
@@ -250,26 +216,4 @@ pub struct SourceConfigV0_8 {
     // Denotes the input data format.
     #[serde(default)]
     pub input_format: SourceInputFormat,
-}
-
-impl From<SourceConfigV0_7> for SourceConfigV0_8 {
-    fn from(source_config_v0_7: SourceConfigV0_7) -> Self {
-        let SourceConfigV0_7 {
-            source_id,
-            max_num_pipelines_per_indexer: _,
-            desired_num_pipelines,
-            enabled,
-            source_params,
-            transform,
-            input_format,
-        } = source_config_v0_7;
-        SourceConfigV0_8 {
-            source_id,
-            num_pipelines: desired_num_pipelines,
-            enabled,
-            source_params,
-            transform,
-            input_format,
-        }
-    }
 }
