@@ -25,7 +25,7 @@ pub struct CoreStringAttrRemapStep {
     pub core_attr: CoreStringAttr,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum CoreStringAttr {
     Message,
     Service,
@@ -62,6 +62,10 @@ impl PipelineStep for CoreStringAttrRemapStep {
                         }
                     }
                 }
+                // Message attributes delete the source key
+                if self.core_attr == CoreStringAttr::Message {
+                    remove_nested_from_map(&mut value.custom, from_path.segments.as_ref());
+                }
                 break;
             }
         }
@@ -79,7 +83,6 @@ mod tests {
 
     #[test]
     fn test_core_string_attr_remap_step() {
-        // Set up initial log
         let mut log = ProcessedLog::from_datadog_log_msg(make_datadog_log_msg());
 
         // Insert an entry in `log.custom` at key "foo"
@@ -95,6 +98,79 @@ mod tests {
         step.apply(&mut log).unwrap();
 
         // Check the result
+        assert_eq!(log.message, "bar_value");
+    }
+
+    #[test]
+    fn test_core_string_attr_remap_step_multiple_sources() {
+        let mut log = ProcessedLog::from_datadog_log_msg(make_datadog_log_msg());
+
+        // Insert entries in `log.custom`
+        log.custom.insert("asdf".to_string(), json!("bar_value"));
+        log.custom.insert("baz".to_string(), json!("baz_value"));
+
+        // Create the RemapStep with multiple sources
+        let step = CoreStringAttrRemapStep {
+            sources: vec!["foo".into(), "baz".into()],
+            core_attr: CoreStringAttr::Service,
+        };
+
+        step.apply(&mut log).unwrap();
+        assert_eq!(log.service, "baz_value");
+    }
+    #[test]
+    fn test_core_string_attr_remap_step_no_match() {
+        let mut log = ProcessedLog::from_datadog_log_msg(make_datadog_log_msg());
+
+        // Create the RemapStep with a source that doesn't exist
+        let step = CoreStringAttrRemapStep {
+            sources: vec!["non_existent_key".into()],
+            core_attr: CoreStringAttr::Message,
+        };
+
+        step.apply(&mut log).unwrap();
+        assert_eq!(log.message, "Test log message");
+    }
+
+    #[test]
+    fn test_core_string_attr_remap_step_message_deletion() {
+        let mut log = ProcessedLog::from_datadog_log_msg(make_datadog_log_msg());
+
+        log.custom.insert("foo".to_string(), json!("bar_value"));
+
+        let step = CoreStringAttrRemapStep {
+            sources: vec!["foo".into()],
+            core_attr: CoreStringAttr::Message,
+        };
+
+        step.apply(&mut log).unwrap();
+
+        assert!(!log.custom.contains_key("foo"));
+        assert_eq!(log.message, "bar_value");
+    }
+    #[test]
+    fn test_core_string_attr_remap_step_message_deletion_nested() {
+        let mut log = ProcessedLog::from_datadog_log_msg(make_datadog_log_msg());
+
+        // Insert a nested entry in `log.custom`
+        log.custom
+            .insert("nested".to_string(), json!({"foo": "bar_value"}));
+
+        let step = CoreStringAttrRemapStep {
+            sources: vec!["nested.foo".into()],
+            core_attr: CoreStringAttr::Message,
+        };
+
+        step.apply(&mut log).unwrap();
+
+        assert!(
+            !log.custom
+                .get("nested")
+                .expect("expect nested")
+                .as_object()
+                .unwrap()
+                .contains_key("foo")
+        );
         assert_eq!(log.message, "bar_value");
     }
 }
