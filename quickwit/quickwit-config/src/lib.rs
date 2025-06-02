@@ -83,7 +83,7 @@ pub use crate::node_config::{
     SplitCacheLimits, StorageTimeoutPolicy, TlsConfig,
 };
 pub use crate::serde_utils::HumanDuration;
-use crate::source_config::serialize::{SourceConfigV0_7, SourceConfigV0_8, VersionedSourceConfig};
+use crate::source_config::serialize::{SourceConfigV0_8, VersionedSourceConfig};
 pub use crate::storage_config::{
     AzureStorageConfig, ChecksumAlgorithm, FileStorageConfig, GoogleCloudStorageConfig,
     RamStorageConfig, S3StorageConfig, StorageBackend, StorageBackendFlavor, StorageConfig,
@@ -124,7 +124,6 @@ pub fn disable_ingest_v1() -> bool {
     RegionOrEndpoint,
     RetentionPolicy,
     SearchSettings,
-    SourceConfigV0_7,
     SourceConfigV0_8,
     SourceInputFormat,
     SourceParams,

@@ -8,7 +8,7 @@ method: POST
 api_root: http://localhost:7280/api/v1/
 endpoint: indexes/
 json:
-  version: "0.7"
+  version: "0.8"
   index_id: search_after
   doc_mapping:
     mode: dynamic

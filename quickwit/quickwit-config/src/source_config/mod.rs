@@ -79,12 +79,12 @@ impl SourceConfig {
     pub fn params(&self) -> JsonValue {
         match &self.source_params {
             SourceParams::File(params) => serde_json::to_value(params),
-            SourceParams::PubSub(params) => serde_json::to_value(params),
             SourceParams::Ingest => serde_json::to_value(()),
             SourceParams::IngestApi => serde_json::to_value(()),
             SourceParams::IngestCli => serde_json::to_value(()),
             SourceParams::Kafka(params) => serde_json::to_value(params),
             SourceParams::Kinesis(params) => serde_json::to_value(params),
+            SourceParams::PubSub(params) => serde_json::to_value(params),
             SourceParams::Pulsar(params) => serde_json::to_value(params),
             SourceParams::Stdin => serde_json::to_value(()),
             SourceParams::Vec(params) => serde_json::to_value(params),
@@ -758,7 +758,6 @@ mod tests {
             input_format: SourceInputFormat::Json,
         };
         assert_eq!(source_config, expected_source_config);
-        assert_eq!(source_config.num_pipelines.get(), 2);
     }
 
     #[test]
@@ -853,7 +852,6 @@ mod tests {
             input_format: SourceInputFormat::Json,
         };
         assert_eq!(source_config, expected_source_config);
-        assert_eq!(source_config.num_pipelines.get(), 1);
     }
 
     #[tokio::test]
@@ -861,39 +859,17 @@ mod tests {
         {
             let content = r#"
             {
-                "version": "0.7",
+                "version": "0.8",
                 "source_id": "hdfs-logs-void-source",
-                "desired_num_pipelines": 0,
-                "max_num_pipelines_per_indexer": 1,
+                "num_pipelines": 0,
                 "source_type": "void",
                 "params": {}
             }
             "#;
             let error = load_source_config_from_user_config(ConfigFormat::Json, content.as_bytes())
                 .unwrap_err();
-            assert!(
-                error
-                    .to_string()
-                    .contains("`desired_num_pipelines` must be")
-            );
+            assert!(format!("{error:#}").contains("nonzero"));
         }
-        // {
-        //     let content = r#"
-        //     {
-        //         "version": "0.7",
-        //         "source_id": "hdfs-logs-void-source",
-        //         "desired_num_pipelines": 1,
-        //         "max_num_pipelines_per_indexer": 0,
-        //         "source_type": "void",
-        //         "params": {}
-        //     }
-        //     "#;
-        //     let error = load_source_config_from_user_config(ConfigFormat::Json,
-        // content.as_bytes())         .unwrap_err();
-        //     assert!(error
-        //         .to_string()
-        //         .contains("`max_num_pipelines_per_indexer` must be"));
-        // }
         {
             let content = r#"
             {
@@ -907,63 +883,6 @@ mod tests {
             let error = load_source_config_from_user_config(ConfigFormat::Json, content.as_bytes())
                 .unwrap_err();
             assert!(error.to_string().contains("supports multiple pipelines"));
-        }
-        {
-            let content = r#"
-            {
-                "version": "0.7",
-                "source_id": "hdfs-logs-void-source",
-                "desired_num_pipelines": 2,
-                "max_num_pipelines_per_indexer": 1,
-                "source_type": "void",
-                "params": {}
-            }
-            "#;
-            let error = load_source_config_from_user_config(ConfigFormat::Json, content.as_bytes())
-                .unwrap_err();
-            assert!(error.to_string().contains("supports multiple pipelines"));
-        }
-    }
-
-    #[tokio::test]
-    async fn test_load_valid_distributed_source_config_0_7() {
-        {
-            let content = r#"
-            {
-                "version": "0.7",
-                "source_id": "hdfs-logs-kafka-source",
-                "desired_num_pipelines": 3,
-                "max_num_pipelines_per_indexer": 3,
-                "source_type": "kafka",
-                "params": {
-                    "topic": "my-topic"
-                }
-            }
-            "#;
-            let source_config =
-                load_source_config_from_user_config(ConfigFormat::Json, content.as_bytes())
-                    .unwrap();
-            assert_eq!(source_config.num_pipelines.get(), 3);
-        }
-        {
-            let content = r#"
-            {
-                "version": "0.7",
-                "source_id": "hdfs-logs-pulsar-source",
-                "desired_num_pipelines": 3,
-                "max_num_pipelines_per_indexer": 3,
-                "source_type": "pulsar",
-                "params": {
-                    "topics": ["my-topic"],
-                    "address": "http://localhost:6650"
-                }
-            }
-            "#;
-            load_source_config_from_user_config(ConfigFormat::Json, content.as_bytes())
-                .unwrap_err();
-            // TODO: uncomment asserts once distributed indexing is activated for pulsar.
-            // assert_eq!(source_config.num_pipelines(), 3);
-            // assert_eq!(source_config.max_num_pipelines_per_indexer(), 3);
         }
     }
 
@@ -995,7 +914,7 @@ mod tests {
                 filepath: source-path.json
             "#;
             let file_params_deserialized = serde_yaml::from_str::<FileSourceParams>(yaml).unwrap();
-            let uri = Uri::from_str("source-path.json").unwrap();
+            let uri = Uri::for_test("source-path.json");
             assert_eq!(file_params_deserialized, FileSourceParams::Filepath(uri));
             let file_params_reserialized = serde_json::to_value(file_params_deserialized).unwrap();
             file_params_reserialized
@@ -1463,10 +1382,9 @@ mod tests {
     #[tokio::test]
     async fn test_source_config_plain_text_input_format() {
         let file_content = r#"{
-            "version": "0.7",
+            "version": "0.8",
             "source_id": "logs-file-source",
-            "desired_num_pipelines": 1,
-            "max_num_pipelines_per_indexer": 1,
+            "num_pipelines": 1,
             "source_type": "file",
             "params": {
               "filepath": "s3://mybucket/test_non_json_corpus.txt"

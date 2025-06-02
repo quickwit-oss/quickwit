@@ -2,7 +2,7 @@
 method: POST
 endpoint: indexes/
 json:
-  version: "0.7"
+  version: "0.8"
   index_id: allowedtypes
   doc_mapping:
     mode: dynamic
@@ -23,7 +23,7 @@ json:
 method: POST
 endpoint: indexes/
 json:
-  version: "0.7"
+  version: "0.8"
   index_id: tokenizedtype
   doc_mapping:
     mode: dynamic
@@ -38,7 +38,7 @@ status_code: 400
 method: POST
 endpoint: indexes/
 json:
-  version: "0.7"
+  version: "0.8"
   index_id: floattype
   doc_mapping:
     mode: dynamic
@@ -52,7 +52,7 @@ status_code: 400
 method: POST
 endpoint: indexes/
 json:
-  version: "0.7"
+  version: "0.8"
   index_id: booltype
   doc_mapping:
     mode: dynamic
@@ -66,7 +66,7 @@ status_code: 400
 method: POST
 endpoint: indexes/
 json:
-  version: "0.7"
+  version: "0.8"
   index_id: jsontype
   doc_mapping:
     mode: dynamic
@@ -80,7 +80,7 @@ status_code: 400
 method: POST
 endpoint: indexes/
 json:
-  version: "0.7"
+  version: "0.8"
   index_id: iptype
   doc_mapping:
     mode: dynamic
@@ -94,7 +94,7 @@ status_code: 400
 method: POST
 endpoint: indexes/
 json:
-  version: "0.7"
+  version: "0.8"
   index_id: bytestype
   doc_mapping:
     mode: dynamic
@@ -108,7 +108,7 @@ status_code: 400
 method: POST
 endpoint: indexes/
 json:
-  version: "0.7"
+  version: "0.8"
   index_id: datetype
   doc_mapping:
     mode: dynamic
@@ -124,7 +124,7 @@ status_code: 400
 method: POST
 endpoint: indexes/
 json:
-  version: "0.7"
+  version: "0.8"
   index_id: dynamictype
   doc_mapping:
     mode: dynamic

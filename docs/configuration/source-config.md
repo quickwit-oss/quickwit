@@ -174,7 +174,7 @@ If no region is specified, Quickwit will attempt to find one in multiple other l
 
 ```bash
 cat << EOF > source-config.yaml
-version: 0.7
+version: 0.8
 source_id: my-kinesis-source
 source_type: kinesis
 params:
@@ -203,7 +203,7 @@ The Pulsar source consumes `topics` using the client library [pulsar-rs](https:/
 
 ```bash
 cat << EOF > source-config.yaml
-version: 0.7
+version: 0.8
 source_id: my-pulsar-source
 source_type: pulsar
 params:

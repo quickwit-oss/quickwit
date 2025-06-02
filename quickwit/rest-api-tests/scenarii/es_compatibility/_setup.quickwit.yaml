@@ -21,7 +21,7 @@ method: POST
 api_root: http://localhost:7280/api/v1/
 endpoint: indexes/
 json:
-  version: "0.7"
+  version: "0.8"
   index_id: empty_index
   doc_mapping:
     field_mappings:
@@ -35,7 +35,7 @@ method: POST
 api_root: http://localhost:7280/api/v1/
 endpoint: indexes/
 json:
-  version: "0.7"
+  version: "0.8"
   index_id: gharchive
   doc_mapping:
     index_field_presence: true
@@ -84,7 +84,7 @@ method: POST
 api_root: http://localhost:7280/api/v1/
 endpoint: indexes/
 json:
-  version: "0.7"
+  version: "0.8"
   index_id: fast_only
   doc_mapping:
     field_mappings:
@@ -117,7 +117,7 @@ method: POST
 api_root: http://localhost:7280/api/v1/
 endpoint: indexes/
 json:
-  version: "0.7"
+  version: "0.8"
   index_id: simple_es_compat
   doc_mapping:
     field_mappings:

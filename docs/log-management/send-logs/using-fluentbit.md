@@ -26,7 +26,7 @@ In this guide, we will show you how to connect it to Quickwit.
 Let's create a schemaless index with only one field `timestamp`. The mode `dynamic` indicates that Quickwit will index all fields even if they are not defined in the doc mapping.
 
 ```yaml title="index-config.yaml"
-version: 0.7
+version: 0.8
 
 index_id: fluentbit-logs
 

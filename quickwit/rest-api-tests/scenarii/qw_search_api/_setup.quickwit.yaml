@@ -7,7 +7,7 @@ status_code: null
 method: POST
 endpoint: indexes/
 json:
-  version: "0.7"
+  version: "0.8"
   index_id: simple
   doc_mapping:
     timestamp_field: ts
@@ -51,7 +51,7 @@ status_code: null
 method: POST
 endpoint: indexes/
 json:
-  version: "0.7"
+  version: "0.8"
   index_id: nested
   doc_mapping:
     index_field_presence: true
@@ -106,7 +106,7 @@ status_code: null
 method: POST
 endpoint: indexes/
 json:
-  version: "0.7"
+  version: "0.8"
   index_id: millisec
   doc_mapping:
     timestamp_field: ts

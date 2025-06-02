@@ -708,7 +708,7 @@ mod tests {
                 .path("/indexes?overwrite=true")
                 .method("POST")
                 .json(&true)
-                .body(r#"{"version": "0.7", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]}}"#)
+                .body(r#"{"version": "0.8", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]}}"#)
                 .reply(&index_management_handler)
                 .await;
             assert_eq!(resp.status(), 200);
@@ -718,7 +718,7 @@ mod tests {
                 .path("/indexes?overwrite=true")
                 .method("POST")
                 .json(&true)
-                .body(r#"{"version": "0.7", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]}}"#)
+                .body(r#"{"version": "0.8", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]}}"#)
                 .reply(&index_management_handler)
                 .await;
             assert_eq!(resp.status(), 200);
@@ -728,7 +728,7 @@ mod tests {
                 .path("/indexes")
                 .method("POST")
                 .json(&true)
-                .body(r#"{"version": "0.7", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]}}"#)
+                .body(r#"{"version": "0.8", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]}}"#)
                 .reply(&index_management_handler)
                 .await;
             assert_eq!(resp.status(), 400);
@@ -747,7 +747,7 @@ mod tests {
             .path("/indexes")
             .method("POST")
             .json(&true)
-            .body(r#"{"version": "0.7", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]}}"#)
+            .body(r#"{"version": "0.8", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]}}"#)
             .reply(&index_management_handler)
             .await;
         assert_eq!(resp.status(), 200);
@@ -761,7 +761,7 @@ mod tests {
         assert_json_include!(actual: resp_json, expected: expected_response_json);
 
         // Create source.
-        let source_config_body = r#"{"version": "0.7", "source_id": "vec-source", "source_type": "vec", "params": {"docs": [], "batch_num_docs": 10}}"#;
+        let source_config_body = r#"{"version": "0.8", "source_id": "vec-source", "source_type": "vec", "params": {"docs": [], "batch_num_docs": 10}}"#;
         let resp = warp::test::request()
             .path("/indexes/hdfs-logs/sources")
             .method("POST")
@@ -911,7 +911,7 @@ mod tests {
             .header("content-type", "application/toml")
             .body(
                 r#"
-            version = "0.7"
+            version = "0.8"
             index_id = "hdfs-logs"
             [doc_mapping]
             field_mappings = [
@@ -967,7 +967,7 @@ mod tests {
             .method("POST")
             .json(&true)
             .body(
-                r#"{"version": "0.7", "index_id": "hdfs-log", "doc_mapping":
+                r#"{"version": "0.8", "index_id": "hdfs-log", "doc_mapping":
     {"field_mappings":[{"name": "timestamp", "type": "unknown", "fast": true, "indexed":
     true}]}}"#,
             )
@@ -992,7 +992,7 @@ mod tests {
                 .path("/indexes")
                 .method("POST")
                 .json(&true)
-                .body(r#"{"version": "0.7", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]},"search_settings":{"default_search_fields":["body"]}}"#)
+                .body(r#"{"version": "0.8", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]},"search_settings":{"default_search_fields":["body"]}}"#)
                 .reply(&index_management_handler)
                 .await;
             assert_eq!(resp.status(), 200);
@@ -1011,7 +1011,7 @@ mod tests {
                 .path("/indexes/hdfs-logs")
                 .method("PUT")
                 .json(&true)
-                .body(r#"{"version": "0.7", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]},"search_settings":{"default_search_fields":["severity_text", "body"]}}"#)
+                .body(r#"{"version": "0.8", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]},"search_settings":{"default_search_fields":["severity_text", "body"]}}"#)
                 .reply(&index_management_handler)
                 .await;
             assert_eq!(resp.status(), 200);
@@ -1045,7 +1045,7 @@ mod tests {
                 .path("/indexes")
                 .method("POST")
                 .json(&true)
-                .body(r#"{"version": "0.7", "index_id": "hdfs-logs2", "index_uri": "s3://my-bucket", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]},"search_settings":{"default_search_fields":["body"]}}"#)
+                .body(r#"{"version": "0.8", "index_id": "hdfs-logs2", "index_uri": "s3://my-bucket", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]},"search_settings":{"default_search_fields":["body"]}}"#)
                 .reply(&index_management_handler)
                 .await;
             let body = std::str::from_utf8(resp.body()).unwrap();
@@ -1056,7 +1056,7 @@ mod tests {
                 .path("/indexes/hdfs-logs2")
                 .method("PUT")
                 .json(&true)
-                .body(r#"{"version": "0.7", "index_id": "hdfs-logs2", "index_uri": "s3://my-bucket", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]},"search_settings":{"default_search_fields":["severity_text", "body"]}}"#)
+                .body(r#"{"version": "0.8", "index_id": "hdfs-logs2", "index_uri": "s3://my-bucket", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]},"search_settings":{"default_search_fields":["severity_text", "body"]}}"#)
                 .reply(&index_management_handler)
                 .await;
             let body = std::str::from_utf8(resp.body()).unwrap();
@@ -1150,7 +1150,7 @@ mod tests {
             .path("/indexes")
             .method("POST")
             .json(&true)
-            .body(r#"{"version": "0.7", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]}}"#)
+            .body(r#"{"version": "0.8", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]}}"#)
             .reply(&index_management_handler)
             .await;
         assert_eq!(resp.status(), 200);
@@ -1165,7 +1165,7 @@ mod tests {
 
         // Create source.
         let source_config_body = serde_json::json!({
-            "version": "0.7",
+            "version": "0.8",
             "source_id": "sqs-source",
             "source_type": "file",
             "params": {"notifications": [{"type": "sqs", "queue_url": queue_url, "message_type": "s3_notification"}]},
@@ -1182,7 +1182,7 @@ mod tests {
         {
             // Update the source.
             let update_source_config_body = serde_json::json!({
-                "version": "0.7",
+                "version": "0.8",
                 "source_id": "sqs-source",
                 "source_type": "file",
                 "params": {"notifications": [{"type": "sqs", "queue_url": queue_url, "message_type": "s3_notification"}]},
@@ -1212,7 +1212,7 @@ mod tests {
         {
             // Update the source with a different source_id (forbidden)
             let update_source_config_body = serde_json::json!({
-                "version": "0.7",
+                "version": "0.8",
                 "source_id": "new-source-id",
                 "source_type": "file",
                 "params": {"notifications": [{"type": "sqs", "queue_url": queue_url, "message_type": "s3_notification"}]},

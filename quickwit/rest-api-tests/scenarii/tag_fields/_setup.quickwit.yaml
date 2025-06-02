@@ -10,7 +10,7 @@ status_code: null
 method: POST
 endpoint: indexes/
 json:
-  version: "0.7"
+  version: "0.8"
   index_id: simple
   doc_mapping:
     field_mappings:

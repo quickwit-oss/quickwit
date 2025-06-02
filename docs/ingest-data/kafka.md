@@ -22,7 +22,7 @@ First, let's create a new index. Here is the index config and doc mapping corres
 #
 # Index config file for gh-archive dataset.
 #
-version: 0.7
+version: 0.8
 
 index_id: gh-archive
 

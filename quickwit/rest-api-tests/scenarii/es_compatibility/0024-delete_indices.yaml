@@ -5,7 +5,7 @@ method: POST
 api_root: http://localhost:7280/api/v1/
 endpoint: indexes/
 json:
-  version: "0.7"
+  version: "0.8"
   index_id: test_index1
   doc_mapping:
     mode: dynamic
@@ -17,7 +17,7 @@ method: POST
 api_root: http://localhost:7280/api/v1/
 endpoint: indexes/
 json:
-  version: "0.7"
+  version: "0.8"
   index_id: test_index2
   doc_mapping:
     mode: dynamic

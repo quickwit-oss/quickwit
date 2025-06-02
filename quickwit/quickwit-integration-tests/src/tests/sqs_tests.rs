@@ -70,10 +70,9 @@ async fn test_sqs_with_duplicates() {
     let source_id: &str = "test-sqs-single-node-cluster";
     let source_config_input = format!(
         r#"
-            version: 0.7
+            version: 0.8
             source_id: {source_id}
-            desired_num_pipelines: 1
-            max_num_pipelines_per_indexer: 1
+            num_pipelines: 1
             source_type: file
             params:
                 notifications:
@@ -173,10 +172,9 @@ async fn test_sqs_garbage_collect() {
     let source_id: &str = "test-sqs-single-node-cluster";
     let source_config_input = format!(
         r#"
-            version: 0.7
+            version: 0.8
             source_id: {source_id}
-            desired_num_pipelines: 1
-            max_num_pipelines_per_indexer: 1
+            num_pipelines: 1
             source_type: file
             params:
                 notifications:
@@ -296,10 +294,9 @@ async fn test_update_source_multi_node_cluster() {
     let source_id: &str = "test-update-source-cluster";
     let source_config_input = format!(
         r#"
-            version: 0.7
+            version: 0.8
             source_id: {source_id}
-            desired_num_pipelines: 1
-            max_num_pipelines_per_indexer: 1
+            num_pipelines: 1
             source_type: file
             params:
                 notifications:
@@ -324,10 +321,9 @@ async fn test_update_source_multi_node_cluster() {
     // increase the number of pipelines to 3
     let source_config_input = format!(
         r#"
-            version: 0.7
+            version: 0.8
             source_id: {source_id}
-            desired_num_pipelines: 3
-            max_num_pipelines_per_indexer: 3
+            num_pipelines: 3
             source_type: file
             params:
                 notifications:

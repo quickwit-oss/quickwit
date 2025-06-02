@@ -185,7 +185,7 @@ In another terminal, in the Quickwit install directory, create an index:
 
 ```bash
 cat << EOF > tutorial-sqs-file-index.yaml
-version: 0.7
+version: 0.8
 index_id: tutorial-sqs-file
 doc_mapping:
   mode: dynamic

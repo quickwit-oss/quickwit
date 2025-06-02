@@ -32,7 +32,7 @@ Below is the doc mapping of the `otel-trace-v0_7` index:
 
 ```yaml
 
-version: 0.7
+version: 0.8
 
 index_id: otel-trace-v0_7
 

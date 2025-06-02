@@ -476,7 +476,7 @@ GET /api/v1/indexes/stackoverflow/splits?offset=0&limit=10
       "split_state": "Published",
       "update_timestamp": 1695642901,
       "publish_timestamp": 1695642901,
-      "version": "0.7",
+      "version": "0.9",
       "split_id": "01HB632HD8W6WHNM7CZFH3KG1X",
       "index_uid": "stackoverflow:01HB6321TDT3SP58D4EZP14KSX",
       "partition_id": 0,
