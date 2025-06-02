@@ -153,7 +153,7 @@ fn build_grok_rules_with_source(rules: &[OPGrokRules]) -> SourceToGrokPatterns {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
 
     use vrl::datadog_grok::parse_grok::parse_grok;
 
@@ -348,8 +348,14 @@ mod tests {
             );
         }
     }
-
-    fn normalize_numbers(value: &mut Value) {
+    /// Convert numbers to f64 recursively
+    fn normalize_numbers_in_obj(value: &mut serde_json::Map<String, serde_json::Value>) {
+        for val in value.values_mut() {
+            normalize_numbers(val);
+        }
+    }
+    /// Convert numbers to f64 recursively
+    pub fn normalize_numbers(value: &mut Value) {
         match value {
             Value::Number(n) => {
                 if let Some(val) = n.as_u64() {
@@ -364,11 +370,9 @@ mod tests {
                 }
             }
             Value::Object(map) => {
-                for val in map.values_mut() {
-                    normalize_numbers(val);
-                }
+                normalize_numbers_in_obj(map);
             }
-            _ => {}
+            Value::Null | Value::Bool(_) | Value::String(_) => {}
         }
     }
 }
