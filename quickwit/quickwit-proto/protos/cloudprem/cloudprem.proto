@@ -105,7 +105,7 @@ message FetchOneRequest {
 }
 
 message FetchOneResponse {
-  Event event = 1;
+  optional Event event = 1;
   Statistics statistics = 2;
 }
 

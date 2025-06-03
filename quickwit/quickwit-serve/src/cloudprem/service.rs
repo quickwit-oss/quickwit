@@ -182,10 +182,9 @@ impl CloudPremService for CloudPremServiceImpl {
 
         if search_response.hits.is_empty() {
             warn!("document not found on fetch one");
-            return Err(CloudPremError::DocumentNotFound {
-                id: event_tracker.id.clone(),
-                split_id: event_tracker.fragment_id.clone(),
-                doc_id: event_tracker.row_number,
+            return Ok(FetchOneResponse {
+                event: None,
+                statistics: None,
             });
         }
 
