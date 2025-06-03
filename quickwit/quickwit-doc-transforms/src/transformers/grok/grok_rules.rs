@@ -290,7 +290,7 @@ pub mod tests {
         let results: Vec<serde_json::Value> = serde_json::from_str(results).unwrap();
 
         #[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Hash)]
-        pub struct LogsProcessingGrokRulesDeser {
+        struct LogsProcessingGrokRulesDeser {
             // Use a custom deserializer to transform the multiline string into Vec<Rule>
             #[serde(alias = "supportRules")]
             #[serde(default)]
