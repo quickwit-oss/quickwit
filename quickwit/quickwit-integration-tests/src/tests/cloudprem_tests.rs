@@ -297,6 +297,7 @@ async fn test_fetch_one() {
         let mut source_event_tracker = list_res.streams[0].events[i].tracker.clone().unwrap();
         let fetch_request = FetchOneRequest {
             event_tracker: Some(source_event_tracker.clone()),
+            restriction_query: None,
             org_id: 2,
         };
         let fetch_res = client
@@ -311,6 +312,7 @@ async fn test_fetch_one() {
         source_event_tracker.fragment_id = Some("01JRAZ6KW4QVQESE2JCDGN3TFM".to_string());
         let fetch_request = FetchOneRequest {
             event_tracker: Some(source_event_tracker),
+            restriction_query: None,
             org_id: 2,
         };
         let fetch_res = client
@@ -319,6 +321,94 @@ async fn test_fetch_one() {
             .unwrap();
         let fetch_res = fetch_res.into_inner();
         assert_eq!(fetch_res.event.unwrap(), list_res.streams[0].events[i]);
+    }
+
+    sandbox.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn test_fetch_one_unknown_id() {
+    let mut data: Vec<Value> = serde_json::from_slice(TEST_DATA).unwrap();
+    let sandbox = setup_env(&mut data).await;
+
+    let mut client = sandbox.cloudprem_client();
+
+    let fetch_request = FetchOneRequest {
+        event_tracker: Some(EventTracker {
+            id: "unknown id".to_string(),
+            epoch_ms: 123456789,
+            tiebreaker: 0,
+            fragment_id: None,
+            row_number: None,
+        }),
+        restriction_query: None,
+        org_id: 2,
+    };
+    let fetch_res = client
+        .fetch_one(authenticated_request(fetch_request))
+        .await
+        .unwrap();
+    let fetch_res = fetch_res.into_inner();
+    assert!(fetch_res.event.is_none());
+
+    sandbox.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn test_fetch_one_restriction() {
+    let mut data: Vec<Value> = serde_json::from_slice(TEST_DATA).unwrap();
+    let sandbox = setup_env(&mut data).await;
+
+    let mut client = sandbox.cloudprem_client();
+
+    let query_node = QueryNode {
+        node: Some(query_node::Node::All(MatchAllQueryNode {})),
+    };
+    let list_request = build_list_request(&query_node);
+
+    let list_res = client
+        .list(authenticated_request(list_request))
+        .await
+        .unwrap();
+    let list_res = list_res.into_inner();
+
+    for i in 0..data.len() {
+        let source_event_tracker = list_res.streams[0].events[i].tracker.clone().unwrap();
+        let fetch_request = FetchOneRequest {
+            event_tracker: Some(source_event_tracker.clone()),
+            restriction_query: Some(Any {
+                type_url: "type.googleapis.com/queryparser_proto.QueryNode".to_string(),
+                value: QueryNode {
+                    node: Some(query_node::Node::All(MatchAllQueryNode {})),
+                }
+                .encode_to_vec(),
+            }),
+            org_id: 2,
+        };
+        let fetch_res = client
+            .fetch_one(authenticated_request(fetch_request))
+            .await
+            .unwrap();
+        let fetch_res = fetch_res.into_inner();
+        assert_eq!(fetch_res.event.unwrap(), list_res.streams[0].events[i]);
+
+        let fetch_request = FetchOneRequest {
+            event_tracker: Some(source_event_tracker),
+            restriction_query: Some(Any {
+                type_url: "type.googleapis.com/queryparser_proto.QueryNode".to_string(),
+                value: QueryNode {
+                    node: Some(query_node::Node::None(MatchNoneQueryNode {})),
+                }
+                .encode_to_vec(),
+            }),
+            org_id: 2,
+        };
+        let fetch_res = client
+            .fetch_one(authenticated_request(fetch_request))
+            .await
+            .unwrap();
+        let fetch_res = fetch_res.into_inner();
+        assert!(fetch_res.event.is_none());
     }
 
     sandbox.shutdown().await.unwrap();

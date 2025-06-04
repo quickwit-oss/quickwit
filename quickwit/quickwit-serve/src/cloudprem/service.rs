@@ -12,7 +12,7 @@ use quickwit_proto::search::{
     SortField, SortOrder,
 };
 use quickwit_query::MatchAllOrNone;
-use quickwit_query::query_ast::{FullTextMode, FullTextParams, FullTextQuery, QueryAst};
+use quickwit_query::query_ast::{BoolQuery, FullTextMode, FullTextParams, FullTextQuery, QueryAst};
 use quickwit_search::SearchService;
 use serde_json::Value as JsonValue;
 use tracing::{debug, error, info, warn};
@@ -37,7 +37,7 @@ impl From<Arc<dyn SearchService>> for CloudPremServiceImpl {
     }
 }
 
-fn query_ast_to_search_doc_id(doc_id: &str) -> QueryAst {
+fn doc_id_to_query_ast(doc_id: &str) -> QueryAst {
     let full_text_params = FullTextParams {
         tokenizer: None,
         mode: FullTextMode::Bool {
@@ -154,7 +154,27 @@ impl CloudPremService for CloudPremServiceImpl {
         };
 
         info!(id=%event_tracker.id, "received FetchOne request");
-        let query_ast = query_ast_to_search_doc_id(&event_tracker.id);
+
+        let restriction_query = if let Some(query) = fetch_one_request.restriction_query {
+            let query_evp_ast = quickwit_query::cloudprem::parse_query(query).map_err(|err| {
+                CloudPremError::InvalidQuery(format!("failed to parse query: {err}"))
+            })?;
+
+            debug!("received ast: {query_evp_ast:?}");
+            let query_ast = quickwit_query::cloudprem::to_quickwit_query(query_evp_ast)?;
+            debug!("converted ast: {query_ast:?}");
+            query_ast
+        } else {
+            QueryAst::MatchAll
+        };
+
+        let fetch_id_query = doc_id_to_query_ast(&event_tracker.id);
+
+        let query_ast = QueryAst::Bool(BoolQuery {
+            must: vec![fetch_id_query, restriction_query],
+            ..BoolQuery::default()
+        });
+
         let query_ast_json = serde_json::to_string(&query_ast)
             .map_err(|e| CloudPremError::Internal(e.to_string()))?;
 
