@@ -50,7 +50,8 @@ impl QueueLocalState {
     pub fn is_read_in_progress(&self, partition_id: &PartitionId) -> bool {
         self.read_in_progress
             .as_ref()
-            .is_some_and(|msg| &msg.partition_id == partition_id)
+            .map(|msg| &msg.partition_id == partition_id)
+            .unwrap_or(false)
     }
 
     pub fn is_awaiting_commit(&self, partition_id: &PartitionId) -> bool {
