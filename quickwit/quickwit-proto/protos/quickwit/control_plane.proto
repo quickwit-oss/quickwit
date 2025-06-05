@@ -74,6 +74,7 @@ service ControlPlaneService {
 // Shard API
 
 message GetOrCreateOpenShardsRequest {
+  // There should be at most one subrequest per index per request.
   repeated GetOrCreateOpenShardsSubrequest subrequests = 1;
   repeated quickwit.ingest.ShardIds closed_shards = 2;
   // The control plane should return shards that are not present on the supplied leaders.

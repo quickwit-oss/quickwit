@@ -18,6 +18,12 @@ use quickwit_common::metrics::MEMORY_METRICS;
 use tikv_jemallocator::Jemalloc;
 use tracing::error;
 
+#[cfg(feature = "jemalloc-profiled")]
+#[global_allocator]
+pub static GLOBAL: quickwit_common::jemalloc_profiled::JemallocProfiled =
+    quickwit_common::jemalloc_profiled::JemallocProfiled(Jemalloc);
+
+#[cfg(not(feature = "jemalloc-profiled"))]
 #[global_allocator]
 pub static GLOBAL: Jemalloc = Jemalloc;
 

@@ -29,6 +29,7 @@ mod leaf_cache;
 mod list_fields;
 mod list_fields_cache;
 mod list_terms;
+mod metrics_trackers;
 mod retry;
 mod root;
 mod scroll_context;
@@ -60,7 +61,7 @@ pub type Result<T> = std::result::Result<T, SearchError>;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::{Arc, OnceLock};
 
-pub use find_trace_ids_collector::FindTraceIdsCollector;
+pub use find_trace_ids_collector::{FindTraceIdsCollector, Span};
 use quickwit_config::SearcherConfig;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_metastore::{
@@ -362,7 +363,7 @@ fn merge_resource_stats(
             stat_accs.cpu_thread_pool_wait_microsecs += new_stats.cpu_thread_pool_wait_microsecs;
             stat_accs.cpu_microsecs += new_stats.cpu_microsecs;
         } else {
-            *stat_accs_opt = Some(new_stats.clone());
+            *stat_accs_opt = Some(*new_stats);
         }
     }
 }

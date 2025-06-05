@@ -111,9 +111,9 @@ impl StorageDirectory {
 }
 
 fn unsupported_operation(path: &Path) -> io::Error {
-    let msg = "Unsupported operation. StorageDirectory only supports async reads";
-    error!(path=?path, msg);
-    io::Error::new(io::ErrorKind::Other, format!("{msg}: {path:?}"))
+    let error = "unsupported operation: `StorageDirectory` only supports async reads";
+    error!(error, ?path);
+    io::Error::other(format!("{error}: {}", path.display()))
 }
 
 impl Directory for StorageDirectory {

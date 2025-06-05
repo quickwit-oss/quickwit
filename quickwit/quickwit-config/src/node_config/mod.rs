@@ -23,18 +23,20 @@ use std::time::Duration;
 
 use anyhow::{bail, ensure};
 use bytesize::ByteSize;
-use http::HeaderMap;
+use legacy_http::HeaderMap;
 use quickwit_common::net::HostAddr;
 use quickwit_common::shared_consts::{
     DEFAULT_SHARD_BURST_LIMIT, DEFAULT_SHARD_SCALE_UP_FACTOR, DEFAULT_SHARD_THROUGHPUT_LIMIT,
 };
 use quickwit_common::uri::Uri;
 use quickwit_proto::indexing::CpuCapacity;
+use quickwit_proto::tonic::codec::CompressionEncoding;
 use quickwit_proto::types::NodeId;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
 use crate::node_config::serialize::load_node_config_with_env;
+use crate::serde_utils::DurationAsStr;
 use crate::service::QuickwitService;
 use crate::storage_config::StorageConfigs;
 use crate::{ConfigFormat, MetastoreConfigs};
@@ -59,6 +61,42 @@ pub struct GrpcConfig {
     pub max_message_size: ByteSize,
     #[serde(default)]
     pub tls: Option<TlsConfig>,
+    // If set, keeps idle connection alive by periodically perform a
+    // keep alive ping request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keep_alive: Option<KeepAliveConfig>,
+}
+
+fn default_http2_keep_alive_interval() -> DurationAsStr {
+    DurationAsStr::try_from("10s".to_string()).unwrap()
+}
+
+fn default_keep_alive_timeout() -> DurationAsStr {
+    DurationAsStr::try_from("5s".to_string()).unwrap()
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct KeepAliveConfig {
+    // Set the HTTP/2 KEEP_ALIVE_INTERVAL. This is the time the connection
+    // should be idle before sending a keepalive ping.
+    #[serde(default = "default_http2_keep_alive_interval")]
+    pub interval: DurationAsStr,
+
+    // Set the HTTP/2 KEEP_ALIVE_TIMEOUT. This is the time to wait for an ACK
+    // after sending a keepalive ping. If the server doesn't respond within
+    // this time, the connection might be considered dead.
+    // Tonic uses hyper's default (20 seconds) if not set.
+    #[serde(default = "default_keep_alive_timeout")]
+    pub timeout: DurationAsStr,
+}
+
+impl From<KeepAliveConfig> for quickwit_common::tower::KeepAliveConfig {
+    fn from(val: KeepAliveConfig) -> Self {
+        quickwit_common::tower::KeepAliveConfig {
+            interval: *val.interval,
+            timeout: *val.timeout,
+        }
+    }
 }
 
 impl GrpcConfig {
@@ -81,6 +119,7 @@ impl Default for GrpcConfig {
         Self {
             max_message_size: Self::default_max_message_size(),
             tls: None,
+            keep_alive: None,
         }
     }
 }
@@ -155,8 +194,7 @@ impl IndexerConfig {
     }
 
     pub fn default_merge_concurrency() -> NonZeroUsize {
-        NonZeroUsize::new(quickwit_common::num_cpus() * 2 / 3)
-            .unwrap_or(NonZeroUsize::new(1).unwrap())
+        NonZeroUsize::new(quickwit_common::num_cpus() * 2 / 3).unwrap_or(NonZeroUsize::MIN)
     }
 
     fn default_cpu_capacity() -> CpuCapacity {
@@ -341,6 +379,13 @@ impl SearcherConfig {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CompressionAlgorithm {
+    Gzip,
+    Zstd,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct IngestApiConfig {
     /// Maximum memory space taken by the ingest WAL
@@ -359,6 +404,8 @@ pub struct IngestApiConfig {
     /// Setting this too high will be cancelled out by the arbiter that prevents
     /// creating too many shards at once.
     pub shard_scale_up_factor: f32,
+    #[serde(default)]
+    pub grpc_compression_algorithm: Option<CompressionAlgorithm>,
 }
 
 impl Default for IngestApiConfig {
@@ -371,6 +418,7 @@ impl Default for IngestApiConfig {
             shard_throughput_limit: DEFAULT_SHARD_THROUGHPUT_LIMIT,
             shard_burst_limit: DEFAULT_SHARD_BURST_LIMIT,
             shard_scale_up_factor: DEFAULT_SHARD_SCALE_UP_FACTOR,
+            grpc_compression_algorithm: None,
         }
     }
 }
@@ -397,6 +445,15 @@ impl IngestApiConfig {
         );
         Ok(NonZeroUsize::new(self.replication_factor)
             .expect("replication factor should be either 1 or 2"))
+    }
+
+    pub fn grpc_compression_encoding(&self) -> Option<CompressionEncoding> {
+        self.grpc_compression_algorithm
+            .as_ref()
+            .map(|algorithm| match algorithm {
+                CompressionAlgorithm::Gzip => CompressionEncoding::Gzip,
+                CompressionAlgorithm::Zstd => CompressionEncoding::Zstd,
+            })
     }
 
     fn validate(&self) -> anyhow::Result<()> {
@@ -676,12 +733,17 @@ mod tests {
             let ingest_api_config: IngestApiConfig = serde_yaml::from_str(
                 r#"
                     max_queue_disk_usage: 100M
+                    grpc_compression_algorithm: zstd
                 "#,
             )
             .unwrap();
             assert_eq!(
                 ingest_api_config.validate().unwrap_err().to_string(),
                 "max_queue_disk_usage must be at least 256 MiB, got `100.0 MB`"
+            );
+            assert_eq!(
+                ingest_api_config.grpc_compression_encoding().unwrap(),
+                CompressionEncoding::Zstd
             );
         }
         {
@@ -712,8 +774,47 @@ mod tests {
         }
     }
 
+    #[track_caller]
+    fn test_keepalive_config_serialization_aux(
+        keep_alive_json: serde_json::Value,
+        expected: quickwit_common::tower::KeepAliveConfig,
+    ) {
+        let keep_alive_config: KeepAliveConfig =
+            serde_json::from_value(keep_alive_json.clone()).unwrap();
+        let keep_alive_deser: quickwit_common::tower::KeepAliveConfig =
+            keep_alive_config.clone().into();
+        assert_eq!(&keep_alive_deser, &expected);
+        let keep_alive_config_deser_ser = serde_json::to_value(keep_alive_config).unwrap();
+        let keep_alive_config_deser_ser_deser: KeepAliveConfig =
+            serde_json::from_value(keep_alive_config_deser_ser).unwrap();
+        let keep_alive_config_deser_ser_deser: quickwit_common::tower::KeepAliveConfig =
+            keep_alive_config_deser_ser_deser.into();
+        assert_eq!(&keep_alive_config_deser_ser_deser, &expected);
+    }
+
     #[test]
-    fn test_grpc_config_serialization() {
+    fn test_keepalive_config_serialization() {
+        test_keepalive_config_serialization_aux(
+            serde_json::json!({}),
+            quickwit_common::tower::KeepAliveConfig {
+                interval: Duration::from_secs(10),
+                timeout: Duration::from_secs(5),
+            },
+        );
+        test_keepalive_config_serialization_aux(
+            serde_json::json!({
+                "interval": "3s",
+                "timeout": "1s",
+            }),
+            quickwit_common::tower::KeepAliveConfig {
+                interval: Duration::from_secs(3),
+                timeout: Duration::from_secs(1),
+            },
+        );
+    }
+
+    #[test]
+    fn test_grpc_config_serialization_default() {
         let grpc_config: GrpcConfig = serde_json::from_str(r#"{}"#).unwrap();
         assert_eq!(
             grpc_config.max_message_size,
@@ -734,12 +835,14 @@ mod tests {
         let grpc_config = GrpcConfig {
             max_message_size: ByteSize::mb(1),
             tls: None,
+            keep_alive: None,
         };
         assert!(grpc_config.validate().is_ok());
 
         let grpc_config = GrpcConfig {
             max_message_size: ByteSize::kb(1),
             tls: None,
+            keep_alive: None,
         };
         assert!(grpc_config.validate().is_err());
     }

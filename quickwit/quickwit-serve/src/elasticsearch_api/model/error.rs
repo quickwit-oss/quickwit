@@ -13,7 +13,6 @@
 // limitations under the License.
 
 use elasticsearch_dsl::search::ErrorCause;
-use hyper::StatusCode;
 use quickwit_common::{rate_limited_debug, rate_limited_error};
 use quickwit_index_management::IndexServiceError;
 use quickwit_ingest::IngestServiceError;
@@ -21,6 +20,9 @@ use quickwit_proto::ServiceError;
 use quickwit_proto::ingest::IngestV2Error;
 use quickwit_search::SearchError;
 use serde::{Deserialize, Serialize};
+use warp::hyper::StatusCode;
+
+use crate::convert_status_code_to_legacy_http;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ElasticsearchError {
@@ -69,7 +71,7 @@ impl From<SearchError> for ElasticsearchError {
             additional_details: Default::default(),
         };
         ElasticsearchError {
-            status,
+            status: crate::convert_status_code_to_legacy_http(status),
             error: reason,
         }
     }
@@ -77,7 +79,9 @@ impl From<SearchError> for ElasticsearchError {
 
 impl From<IngestServiceError> for ElasticsearchError {
     fn from(ingest_service_error: IngestServiceError) -> Self {
-        let status = ingest_service_error.error_code().http_status_code();
+        let status = crate::convert_status_code_to_legacy_http(
+            ingest_service_error.error_code().http_status_code(),
+        );
 
         let reason = ErrorCause {
             reason: Some(ingest_service_error.to_string()),
@@ -109,7 +113,7 @@ impl From<IngestV2Error> for ElasticsearchError {
             additional_details: Default::default(),
         };
         ElasticsearchError {
-            status,
+            status: crate::convert_status_code_to_legacy_http(status),
             error: reason,
         }
     }
@@ -129,7 +133,7 @@ impl From<IndexServiceError> for ElasticsearchError {
             additional_details: Default::default(),
         };
         ElasticsearchError {
-            status,
+            status: convert_status_code_to_legacy_http(status),
             error: reason,
         }
     }

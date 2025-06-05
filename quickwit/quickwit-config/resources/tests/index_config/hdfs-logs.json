@@ -66,6 +66,9 @@
             "heap_size": "3G"
         }
     },
+    "ingest_settings": {
+        "min_shards": 12
+    },
     "search_settings": {
         "default_search_fields": ["severity_text", "body"]
     }

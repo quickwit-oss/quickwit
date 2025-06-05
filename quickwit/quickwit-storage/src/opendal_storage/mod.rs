@@ -19,4 +19,4 @@ mod google_cloud_storage;
 
 pub use google_cloud_storage::GoogleCloudStorageFactory;
 #[cfg(feature = "integration-testsuite")]
-pub use google_cloud_storage::new_emulated_google_cloud_storage;
+pub use google_cloud_storage::test_config_helpers;

@@ -15,7 +15,6 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
-use hyper::StatusCode;
 use itertools::Itertools;
 use quickwit_jaeger::JaegerService;
 use quickwit_proto::jaeger::storage::v1::{
@@ -26,6 +25,7 @@ use quickwit_proto::tonic;
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::error;
+use warp::hyper::StatusCode;
 use warp::{Filter, Rejection};
 
 use super::model::build_jaeger_traces;
@@ -477,7 +477,7 @@ mod tests {
                     hits: Vec::new(),
                     elapsed_time_micros: 0,
                     errors: Vec::new(),
-                    aggregation: None,
+                    aggregation_postcard: None,
                     scroll_id: None,
                     failed_splits: Vec::new(),
                     num_successful_splits: 1,
@@ -510,7 +510,7 @@ mod tests {
                     hits: Vec::new(),
                     elapsed_time_micros: 0,
                     errors: Vec::new(),
-                    aggregation: None,
+                    aggregation_postcard: None,
                     scroll_id: None,
                     failed_splits: Vec::new(),
                     num_successful_splits: 1,

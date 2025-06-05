@@ -183,6 +183,7 @@ fn decode_error<E: DeserializeOwned>(header_value: &BinaryMetadataValue) -> anyh
     Ok(service_error)
 }
 
+#[allow(clippy::result_large_err)]
 pub fn convert_to_grpc_result<T, E: GrpcServiceError>(
     result: Result<T, E>,
 ) -> tonic::Result<tonic::Response<T>> {

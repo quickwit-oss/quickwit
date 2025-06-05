@@ -257,6 +257,11 @@ async fn balance_channel_for_service(
     BalanceChannel::from_stream(service_change_stream)
 }
 
+fn convert_status_code_to_legacy_http(status_code: http::StatusCode) -> warp::http::StatusCode {
+    warp::http::StatusCode::from_u16(status_code.as_u16())
+        .unwrap_or(warp::http::StatusCode::INTERNAL_SERVER_ERROR)
+}
+
 async fn start_ingest_client_if_needed(
     node_config: &NodeConfig,
     universe: &Universe,
@@ -293,6 +298,7 @@ async fn start_ingest_client_if_needed(
         let ingest_service = IngestServiceClient::from_balance_channel(
             balance_channel,
             node_config.grpc_config.max_message_size,
+            node_config.ingest_api_config.grpc_compression_encoding(),
         );
         Ok(ingest_service)
     }
@@ -359,7 +365,11 @@ async fn start_control_plane_if_needed(
         let control_plane_server_opt = None;
         let control_plane_client = ControlPlaneServiceClient::tower()
             .stack_layer(CP_GRPC_CLIENT_METRICS_LAYER.clone())
-            .build_from_balance_channel(balance_channel, node_config.grpc_config.max_message_size);
+            .build_from_balance_channel(
+                balance_channel,
+                node_config.grpc_config.max_message_size,
+                None,
+            );
         Ok((control_plane_server_opt, control_plane_client))
     }
 }
@@ -463,13 +473,13 @@ pub async fn serve_quickwit(
                 bail!("could not find any metastore node in the cluster");
             }
             MetastoreServiceClient::tower()
-                .stack_layer(TimeoutLayer::new(GRPC_METASTORE_SERVICE_TIMEOUT))
                 .stack_layer(RetryLayer::new(RetryPolicy::from(RetryParams::standard())))
+                .stack_layer(TimeoutLayer::new(GRPC_METASTORE_SERVICE_TIMEOUT))
                 .stack_layer(METASTORE_GRPC_CLIENT_METRICS_LAYER.clone())
                 .stack_layer(tower::limit::GlobalConcurrencyLimitLayer::new(
                     get_metastore_client_max_concurrency(),
                 ))
-                .build_from_balance_channel(balance_channel, grpc_config.max_message_size)
+                .build_from_balance_channel(balance_channel, grpc_config.max_message_size, None)
         };
     // Instantiate a control plane server if the `control-plane` role is enabled on the node.
     // Otherwise, instantiate a control plane client.
@@ -735,6 +745,7 @@ pub async fn serve_quickwit(
             debug!("REST server shutdown trigger sender was dropped");
         }
     });
+
     let rest_server = rest::start_rest_server(
         tcp_listener_resolver.resolve(rest_listen_addr).await?,
         quickwit_services,
@@ -782,6 +793,7 @@ pub async fn serve_quickwit(
             .expect("tasks running the gRPC server should not panic or be cancelled")
             .context("gRPC server failed")
     };
+
     let rest_join_handle = async move {
         spawn_named_task(rest_server, "rest_server")
             .await
@@ -792,6 +804,7 @@ pub async fn serve_quickwit(
     if let Err(err) = tokio::try_join!(grpc_join_handle, rest_join_handle) {
         error!("server failed: {err:?}");
     }
+
     let actor_exit_statuses = shutdown_handle
         .await
         .context("failed to gracefully shutdown services")?;
@@ -856,6 +869,7 @@ async fn setup_ingest_v2(
 ) -> anyhow::Result<(IngestRouter, IngestRouterServiceClient, Option<Ingester>)> {
     // Instantiate ingest router.
     let self_node_id: NodeId = cluster.self_node_id().into();
+    let grpc_compression_encoding_opt = node_config.ingest_api_config.grpc_compression_encoding();
     let replication_factor = node_config
         .ingest_api_config
         .replication_factor()
@@ -951,6 +965,7 @@ async fn setup_ingest_v2(
                                 node.grpc_advertise_addr(),
                                 node.channel(),
                                 max_message_size,
+                                grpc_compression_encoding_opt,
                             );
                         Some(Change::Insert(node_id, ingester_service))
                     }
@@ -1153,6 +1168,7 @@ fn setup_indexer_pool(
                                 node.grpc_advertise_addr(),
                                 node.channel(),
                                 max_message_size,
+                                None,
                             );
                         let change = Change::Insert(
                             node_id.clone(),
@@ -1210,7 +1226,7 @@ async fn node_readiness_reporting_task(
     ingester_opt: Option<impl IngesterService>,
     grpc_readiness_signal_rx: oneshot::Receiver<()>,
     rest_readiness_signal_rx: oneshot::Receiver<()>,
-    mut health_reporter: HealthReporter,
+    health_reporter: HealthReporter,
 ) {
     let mut node_ready = false;
     cluster.set_self_node_readiness(node_ready).await;
@@ -1420,12 +1436,13 @@ mod tests {
         let mut client_opt = Some(client);
         let connector = tower::service_fn(move |_: http::Uri| {
             let client = client_opt.take().unwrap();
-            async move { Ok::<_, Infallible>(client) }
+            async move { Ok::<_, Infallible>(hyper_util::rt::TokioIo::new(client)) }
         });
         let channel = Channel::builder("http://[::]:50051".parse().unwrap())
             .connect_with_connector(connector)
             .await
             .unwrap();
+
         let mut health_client = HealthClient::new(channel);
 
         tokio::spawn(node_readiness_reporting_task(

@@ -74,7 +74,7 @@ pub use self::object_storage::{
 #[cfg(feature = "gcs")]
 pub use self::opendal_storage::GoogleCloudStorageFactory;
 #[cfg(all(feature = "gcs", feature = "integration-testsuite"))]
-pub use self::opendal_storage::new_emulated_google_cloud_storage;
+pub use self::opendal_storage::test_config_helpers;
 pub use self::ram_storage::{RamStorage, RamStorageBuilder};
 pub use self::split::{SplitPayload, SplitPayloadBuilder};
 #[cfg(any(test, feature = "testsuite"))]

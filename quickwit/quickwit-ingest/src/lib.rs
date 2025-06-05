@@ -84,7 +84,7 @@ pub async fn init_ingest_api(
     Ok(ingest_api_service)
 }
 
-/// Returns the instance of the single IngestApiService via a copy of it's Mailbox.
+/// Returns the instance of the single IngestApiService via a copy of its Mailbox.
 pub async fn get_ingest_api_service(
     queues_dir_path: &Path,
 ) -> anyhow::Result<Mailbox<IngestApiService>> {

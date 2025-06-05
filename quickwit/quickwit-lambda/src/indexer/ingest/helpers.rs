@@ -82,7 +82,7 @@ pub(super) async fn create_empty_cluster(
         config.gossip_interval,
         FailureDetectorConfig::default(),
         &ChannelTransport::default(),
-        None,
+        Default::default(),
     )
     .await?;
     Ok(cluster)
@@ -141,7 +141,7 @@ pub(super) async fn configure_source(
     let source_params = SourceParams::file_from_uri(input_uri);
     Ok(SourceConfig {
         source_id: LAMBDA_SOURCE_ID.to_owned(),
-        num_pipelines: NonZeroUsize::new(1).expect("1 is always non-zero."),
+        num_pipelines: NonZeroUsize::MIN,
         enabled: true,
         source_params,
         transform_config,

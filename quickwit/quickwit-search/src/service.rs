@@ -38,12 +38,12 @@ use tantivy::aggregation::AggregationLimitsGuard;
 use tokio::sync::Semaphore;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
-use crate::leaf::multi_leaf_search;
+use crate::leaf::multi_index_leaf_search;
 use crate::leaf_cache::LeafSearchCache;
 use crate::list_fields::{leaf_list_fields, root_list_fields};
 use crate::list_fields_cache::ListFieldsCache;
 use crate::list_terms::{leaf_list_terms, root_list_terms};
-use crate::metrics::SEARCH_METRICS;
+use crate::metrics_trackers::LeafSearchMetricsFuture;
 use crate::root::fetch_docs_phase;
 use crate::scroll_context::{MiniKV, ScrollContext, ScrollKeyAndStartOffset};
 use crate::search_permit_provider::SearchPermitProvider;
@@ -198,30 +198,23 @@ impl SearchService for SearchServiceImpl {
         if leaf_search_request.search_request.is_none() {
             return Err(SearchError::Internal("no search request".to_string()));
         }
-        let start = Instant::now();
-        let leaf_search_response_result = multi_leaf_search(
-            self.searcher_context.clone(),
-            leaf_search_request,
-            &self.storage_resolver,
-        )
-        .await;
+        let num_splits = leaf_search_request
+            .leaf_requests
+            .iter()
+            .map(|req| req.split_offsets.len())
+            .sum::<usize>();
 
-        let elapsed = start.elapsed().as_secs_f64();
-        let label_values = if leaf_search_response_result.is_ok() {
-            ["success"]
-        } else {
-            ["error"]
-        };
-        SEARCH_METRICS
-            .leaf_search_requests_total
-            .with_label_values(label_values)
-            .inc();
-        SEARCH_METRICS
-            .leaf_search_request_duration_seconds
-            .with_label_values(label_values)
-            .observe(elapsed);
-
-        leaf_search_response_result
+        LeafSearchMetricsFuture {
+            tracked: multi_index_leaf_search(
+                self.searcher_context.clone(),
+                leaf_search_request,
+                &self.storage_resolver,
+            ),
+            start: Instant::now(),
+            targeted_splits: num_splits,
+            status: None,
+        }
+        .await
     }
 
     async fn fetch_docs(
@@ -447,7 +440,7 @@ pub(crate) async fn scroll(
         elapsed_time_micros: start.elapsed().as_micros() as u64,
         scroll_id: Some(next_scroll_id.to_string()),
         errors: Vec::new(),
-        aggregation: None,
+        aggregation_postcard: None,
         failed_splits: scroll_context.failed_splits,
         num_successful_splits: scroll_context.num_successful_splits,
     })

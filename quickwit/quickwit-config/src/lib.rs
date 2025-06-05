@@ -34,6 +34,7 @@ pub mod merge_policy_config;
 mod metastore_config;
 mod node_config;
 mod qw_env_vars;
+pub(crate) mod serde_utils;
 pub mod service;
 mod source_config;
 mod storage_config;
@@ -44,8 +45,8 @@ pub use cluster_config::ClusterConfig;
 // See #2048
 use index_config::serialize::{IndexConfigV0_8, VersionedIndexConfig};
 pub use index_config::{
-    IndexConfig, IndexingResources, IndexingSettings, RetentionPolicy, SearchSettings,
-    build_doc_mapper, load_index_config_from_user_config, load_index_config_update,
+    IndexConfig, IndexingResources, IndexingSettings, IngestSettings, RetentionPolicy,
+    SearchSettings, build_doc_mapper, load_index_config_from_user_config, load_index_config_update,
 };
 pub use quickwit_doc_mapper::DocMapping;
 use serde::Serialize;
@@ -71,8 +72,9 @@ pub use crate::metastore_config::{
     MetastoreBackend, MetastoreConfig, MetastoreConfigs, PostgresMetastoreConfig,
 };
 pub use crate::node_config::{
-    DEFAULT_QW_CONFIG_PATH, GrpcConfig, IndexerConfig, IngestApiConfig, JaegerConfig, NodeConfig,
-    RestConfig, SearcherConfig, SplitCacheLimits, StorageTimeoutPolicy, TlsConfig,
+    DEFAULT_QW_CONFIG_PATH, GrpcConfig, IndexerConfig, IngestApiConfig, JaegerConfig,
+    KeepAliveConfig, NodeConfig, RestConfig, SearcherConfig, SplitCacheLimits,
+    StorageTimeoutPolicy, TlsConfig,
 };
 use crate::source_config::serialize::{SourceConfigV0_7, SourceConfigV0_8, VersionedSourceConfig};
 pub use crate::storage_config::{
@@ -96,35 +98,36 @@ pub fn disable_ingest_v1() -> bool {
 
 #[derive(utoipa::OpenApi)]
 #[openapi(components(schemas(
-    IndexingResources,
-    IndexingSettings,
-    SearchSettings,
-    RetentionPolicy,
-    MergePolicyConfig,
+    ConstWriteAmplificationMergePolicyConfig,
     DocMapping,
-    VersionedSourceConfig,
-    SourceConfigV0_7,
-    SourceConfigV0_8,
-    VersionedIndexConfig,
-    IndexConfigV0_8,
-    VersionedIndexTemplate,
-    IndexTemplateV0_8,
-    SourceInputFormat,
-    SourceParams,
     FileSourceMessageType,
     FileSourceNotification,
     FileSourceParamsForSerde,
     FileSourceSqs,
-    PubSubSourceParams,
+    IndexConfigV0_8,
+    IndexingResources,
+    IndexingSettings,
+    IndexTemplateV0_8,
+    IngestSettings,
     KafkaSourceParams,
     KinesisSourceParams,
-    PulsarSourceParams,
+    MergePolicyConfig,
+    PubSubSourceParams,
     PulsarSourceAuth,
+    PulsarSourceParams,
     RegionOrEndpoint,
-    ConstWriteAmplificationMergePolicyConfig,
+    RetentionPolicy,
+    SearchSettings,
+    SourceConfigV0_7,
+    SourceConfigV0_8,
+    SourceInputFormat,
+    SourceParams,
     StableLogMergePolicyConfig,
     TransformConfig,
     VecSourceParams,
+    VersionedIndexConfig,
+    VersionedIndexTemplate,
+    VersionedSourceConfig,
     VoidSourceParams,
 )))]
 /// Schema used for the OpenAPI generation which are apart of this crate.

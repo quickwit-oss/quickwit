@@ -16,7 +16,6 @@ use std::collections::HashSet;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
-use http::Method;
 use quickwit_config::SearcherConfig;
 use quickwit_config::service::QuickwitService;
 use quickwit_proto::metastore::MetastoreServiceClient;
@@ -127,7 +126,7 @@ pub async fn setup_searcher_api()
 
     let before_hook = warp::path::full()
         .and(warp::method())
-        .and_then(|route: FullPath, method: Method| async move {
+        .and_then(|route: FullPath, method: warp::http::Method| async move {
             info!(
                 method = method.as_str(),
                 route = route.as_str(),

@@ -559,26 +559,50 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
             pub fn as_grpc_service(&self, max_message_size: bytesize::ByteSize) -> #grpc_server_package_name::#grpc_server_name<#grpc_server_adapter_name> {
                 let adapter = #grpc_server_adapter_name::new(self.clone());
                 #grpc_server_package_name::#grpc_server_name::new(adapter)
+                    // Servers accept both Gzip and Zstd. The order is not important because the client decides which encoding to use.
+                    .accept_compressed(tonic::codec::CompressionEncoding::Gzip)
+                    .accept_compressed(tonic::codec::CompressionEncoding::Zstd)
+                    .send_compressed(tonic::codec::CompressionEncoding::Gzip)
+                    .send_compressed(tonic::codec::CompressionEncoding::Zstd)
                     .max_decoding_message_size(max_message_size.0 as usize)
                     .max_encoding_message_size(max_message_size.0 as usize)
             }
 
-            pub fn from_channel(addr: std::net::SocketAddr, channel: tonic::transport::Channel, max_message_size: bytesize::ByteSize) -> Self
+            pub fn from_channel(
+                addr: std::net::SocketAddr,
+                channel: tonic::transport::Channel,
+                max_message_size: bytesize::ByteSize,
+                compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
+            ) -> Self
             {
                 let (_, connection_keys_watcher) = tokio::sync::watch::channel(std::collections::HashSet::from_iter([addr]));
-                let client = #grpc_client_package_name::#grpc_client_name::new(channel)
+                let mut client = #grpc_client_package_name::#grpc_client_name::new(channel)
                     .max_decoding_message_size(max_message_size.0 as usize)
                     .max_encoding_message_size(max_message_size.0 as usize);
+                if let Some(compression_encoding) = compression_encoding_opt {
+                    client = client
+                        .accept_compressed(compression_encoding)
+                        .send_compressed(compression_encoding);
+                }
                 let adapter = #grpc_client_adapter_name::new(client, connection_keys_watcher);
                 Self::new(adapter)
             }
 
-            pub fn from_balance_channel(balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>, max_message_size: bytesize::ByteSize) -> #client_name
+            pub fn from_balance_channel(
+                balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
+                max_message_size: bytesize::ByteSize,
+                compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
+            ) -> #client_name
             {
                 let connection_keys_watcher = balance_channel.connection_keys_watcher();
-                let client = #grpc_client_package_name::#grpc_client_name::new(balance_channel)
+                let mut client = #grpc_client_package_name::#grpc_client_name::new(balance_channel)
                     .max_decoding_message_size(max_message_size.0 as usize)
                     .max_encoding_message_size(max_message_size.0 as usize);
+                if let Some(compression_encoding) = compression_encoding_opt {
+                    client = client
+                        .accept_compressed(compression_encoding)
+                        .send_compressed(compression_encoding);
+                }
                 let adapter = #grpc_client_adapter_name::new(client, connection_keys_watcher);
                 Self::new(adapter)
             }
@@ -898,16 +922,27 @@ fn generate_layer_stack_impl(context: &CodegenContext) -> TokenStream {
                 self.build_from_inner_client(inner_client)
             }
 
-            pub fn build_from_channel(self, addr: std::net::SocketAddr, channel: tonic::transport::Channel, max_message_size: bytesize::ByteSize) -> #client_name
+            pub fn build_from_channel(
+                self,
+                addr: std::net::SocketAddr,
+                channel: tonic::transport::Channel,
+                max_message_size: bytesize::ByteSize,
+                compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
+            ) -> #client_name
             {
-                let client =  #client_name::from_channel(addr, channel, max_message_size);
+                let client =  #client_name::from_channel(addr, channel, max_message_size, compression_encoding_opt);
                 let inner_client = client.inner;
                 self.build_from_inner_client(inner_client)
             }
 
-            pub fn build_from_balance_channel(self, balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>, max_message_size: bytesize::ByteSize) -> #client_name
+            pub fn build_from_balance_channel(
+                self,
+                balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
+                max_message_size: bytesize::ByteSize,
+                compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
+            ) -> #client_name
             {
-                let client =  #client_name::from_balance_channel(balance_channel, max_message_size);
+                let client =  #client_name::from_balance_channel(balance_channel, max_message_size, compression_encoding_opt);
                 let inner_client = client.inner;
                 self.build_from_inner_client(inner_client)
             }
@@ -1129,7 +1164,7 @@ fn generate_grpc_client_adapter(context: &CodegenContext) -> TokenStream {
         #[async_trait::async_trait]
         impl<T> #service_name for #grpc_client_adapter_name<#grpc_client_package_name::#grpc_client_name<T>>
         where
-            T: tonic::client::GrpcService<tonic::body::BoxBody> + std::fmt::Debug + Clone + Send + Sync + 'static,
+            T: tonic::client::GrpcService<tonic::body::Body> + std::fmt::Debug + Clone + Send + Sync + 'static,
             T::ResponseBody: tonic::codegen::Body<Data = tonic::codegen::Bytes> + Send + 'static,
             <T::ResponseBody as tonic::codegen::Body>::Error: Into<tonic::codegen::StdError> + Send,
             T::Future: Send

@@ -10,10 +10,10 @@ members = [
   "quickwit-common",
   "quickwit-config",
   "quickwit-control-plane",
-  "quickwit-index-management",
   "quickwit-datetime",
   "quickwit-directories",
   "quickwit-doc-mapper",
+  "quickwit-index-management",
   "quickwit-indexing",
   "quickwit-ingest",
   "quickwit-integration-tests",
@@ -85,63 +85,59 @@ assert-json-diff = "2"
 async-compression = { version = "0.4", features = ["tokio", "gzip"] }
 async-speed-limit = "0.4"
 async-trait = "0.1"
+backtrace = "0.3"
 base64 = "0.22"
 binggan = { version = "0.14" }
 bytes = { version = "1", features = ["serde"] }
-bytesize = { version = "1.3.0", features = ["serde"] }
-bytestring = "1.3.0"
+bytesize = { version = "1.3", features = ["serde"] }
+bytestring = "1.4"
 chitchat = { git = "https://github.com/quickwit-oss/chitchat.git", rev = "13968f0" }
 chrono = { version = "0.4", default-features = false, features = [
   "clock",
   "std",
 ] }
-clap = { version = "4.5.0", features = ["env", "string"] }
-coarsetime = "0.1.33"
-colored = "2.1.0"
-console-subscriber = "0.1.8"
+clap = { version = "4.5", features = ["env", "string"] }
+coarsetime = "0.1"
+colored = "2.2"
+console-subscriber = "0.1"
 criterion = { version = "0.5", features = ["async_tokio"] }
-cron = "0.12.0"
-dialoguer = "0.10.3"
+cron = "0.12"
+dialoguer = "0.10"
 dotenvy = "0.15"
-dyn-clone = "1.0.10"
+dyn-clone = "1.0"
 enum-iterator = "1.5"
 env_logger = "0.10"
 fail = "0.5"
+flate2 = "1.1"
 flume = "0.11"
 fnv = "1"
-flate2 = "1.0"
 futures = "0.3"
-futures-util = { version = "0.3.25", default-features = false }
+futures-util = { version = "0.3", default-features = false }
 glob = "0.3"
-google-cloud-auth = "0.12.0"
-google-cloud-gax = "0.15.0"
-google-cloud-googleapis = { version = "0.10.0", features = ["pubsub"] }
-google-cloud-pubsub = "0.18.0"
-heck = "0.4.1"
-hex = "0.4.3"
-home = "0.5.4"
+google-cloud-auth = "0.12"
+google-cloud-gax = "0.15"
+google-cloud-googleapis = { version = "0.10", features = ["pubsub"] }
+google-cloud-pubsub = "0.18"
+heck = "0.5"
+hex = "0.4"
+home = "0.5"
 hostname = "0.3"
-http = "0.2.9"
-http-serde = "1.1.2"
-humantime = "2.1.0"
-hyper = { version = "0.14", features = [
-  "client",
-  "http1",
-  "http2",
-  "server",
-  "stream",
-  "tcp",
-] }
-hyper-rustls = "0.24"
-indexmap = { version = "2.1.0", features = ["serde"] }
-indicatif = "0.17.3"
-itertools = "0.13"
+http = "1.3"
+http-body-util = "0.1.3"
+http-serde = "1.1"
+humantime = "2.2"
+hyper = { version = "1.6", features = ["client", "http1", "http2", "server"] }
+hyper-rustls = "0.27"
+hyper-util = { version = "0.1", features = ["full"] }
+indexmap = { version = "2.9", features = ["serde"] }
+indicatif = "0.17"
+itertools = "0.14"
 json_comments = "0.2"
-libz-sys = "1.1.8"
-lru = "0.13"
-lindera-core = "0.27.0"
-lindera-dictionary = "0.27.0"
-lindera-tokenizer = { version = "0.27.0", features = [
+legacy-http = { version = "0.2", package = "http" }
+libz-sys = "1.1"
+lindera-core = "0.27"
+lindera-dictionary = "0.27"
+lindera-tokenizer = { version = "0.27", features = [
   "cc-cedict-compress",
   "cc-cedict",
   "ipadic-compress",
@@ -149,45 +145,46 @@ lindera-tokenizer = { version = "0.27.0", features = [
   "ko-dic-compress",
   "ko-dic",
 ] }
-matches = "0.1.9"
+lru = "0.13"
+matches = "0.1"
 md5 = "0.7"
-mime_guess = "2.0.4"
+mime_guess = "2.0"
 mockall = "0.11"
 mrecordlog = { git = "https://github.com/quickwit-oss/mrecordlog", rev = "306c0a7" }
-new_string_template = "1.5.1"
-nom = "7.1.3"
-numfmt = "1.1.1"
+new_string_template = "1.5"
+nom = "7.1"
+numfmt = "1.1"
 once_cell = "1"
-oneshot = "0.1.8"
-openssl = { version = "0.10.70", default-features = false }
-openssl-probe = "0.1.5"
+oneshot = "0.1"
+openssl = { version = "0.10", default-features = false }
+openssl-probe = "0.1"
 opentelemetry = "0.27"
 opentelemetry_sdk = { version = "0.27", features = ["rt-tokio"] }
 opentelemetry-otlp = "0.27"
-ouroboros = "0.18.0"
-percent-encoding = "2.3.1"
-pin-project = "1.1.0"
-pnet = { version = "0.33.0", features = ["std"] }
-postcard = { version = "1.0.4", features = [
+ouroboros = "0.18"
+percent-encoding = "2.3"
+pin-project = "1.1"
+pnet = { version = "0.33", features = ["std"] }
+postcard = { version = "1.1", features = [
   "use-std",
 ], default-features = false }
-predicates = "3"
-prettyplease = "0.2.0"
 pprof = { version = "0.13", features = ["flamegraph"] }
-proc-macro2 = "1.0.50"
+predicates = "3"
+prettyplease = "0.2"
+proc-macro2 = "1.0"
 prometheus = { version = "0.13", features = ["process"] }
 proptest = "1"
-prost = { version = "0.11.6", default-features = false, features = [
+prost = { version = "0.13", default-features = false, features = [
   "prost-derive",
 ] }
-prost-build = "0.11.6"
-prost-types = "0.11.6"
+prost-build = "0.13"
+prost-types = "0.13"
 pulsar = { version = "6.3", default-features = false, features = [
   "auth-oauth2",
   "compression",
   "tokio-runtime",
 ] }
-quote = "1.0.23"
+quote = "1.0"
 rand = "0.8"
 rand_distr = "0.4"
 rayon = "1.10"
@@ -198,29 +195,32 @@ rdkafka = { version = "0.33", default-features = false, features = [
   "tokio",
   "zstd",
 ] }
-regex = "1.10.0"
+regex = "1.11"
 regex-syntax = "0.8"
-reqwest = { version = "0.11", default-features = false, features = [
+reqwest = { version = "0.12", default-features = false, features = [
   "json",
   "rustls-tls",
 ] }
-rust-embed = "6.8.1"
+reqwest-middleware = "0.4"
+reqwest-retry = "0.7"
+rust-embed = "6.8"
+rustc-hash = "2.1"
 rustls = "0.21"
-rustls-pemfile = "1.0.0"
+rustls-pemfile = "1.0"
 sea-query = { version = "0.30" }
 sea-query-binder = { version = "0.5", features = [
   "runtime-tokio-rustls",
   "sqlx-postgres",
 ] }
 # ^1.0.184 due to serde-rs/serde#2538
-serde = { version = "1.0.184", features = ["derive", "rc"] }
+serde = { version = "1.0.219", features = ["derive", "rc"] }
 serde_json = "1.0"
 serde_json_borrow = "0.5"
 serde_qs = { version = "0.12", features = ["warp"] }
-serde_with = "3.9.0"
+serde_with = "3.12"
 serde_yaml = "0.9"
-serial_test = { version = "3.1.1", features = ["file_locks"] }
-siphasher = "0.3"
+serial_test = { version = "3.2", features = ["file_locks"] }
+siphasher = "1.0"
 smallvec = "1"
 sqlx = { version = "0.7", features = [
   "migrate",
@@ -228,36 +228,42 @@ sqlx = { version = "0.7", features = [
   "runtime-tokio-rustls",
   "time",
 ] }
-syn = { version = "2.0.11", features = ["extra-traits", "full", "parsing"] }
-sync_wrapper = "0.1.2"
-sysinfo = "0.33.1"
+syn = { version = "2.0", features = ["extra-traits", "full", "parsing"] }
+sync_wrapper = "1"
+sysinfo = "0.33"
 tabled = { version = "0.14", features = ["color"] }
 tempfile = "3"
-thiserror = "1"
-thousands = "0.2.0"
+thiserror = "2"
+thousands = "0.2"
 tikv-jemalloc-ctl = "0.5"
 tikv-jemallocator = "0.5"
 time = { version = "0.3", features = ["std", "formatting", "macros"] }
-tokio = { version = "1.40", features = ["full"] }
-tokio-metrics = { version = "0.3.1", features = ["rt"] }
-tokio-rustls = { version = "0.24.0", default-features = false }
+tokio = { version = "1.45", features = ["full"] }
+tokio-metrics = { version = "0.3", features = ["rt"] }
+tokio-rustls = { version = "0.24", default-features = false }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-util = { version = "0.7", features = ["full"] }
-toml = "0.7.6"
-tonic = { version = "0.9.0", features = ["gzip"] }
-tonic-build = "0.9.0"
-tonic-health = "0.9.0"
-tonic-reflection = "0.9" 
-tower = { version = "0.4.13", features = [
+toml = "0.7"
+tonic = { version = "0.13", features = [
+  "_tls-any",
+  "gzip",
+  "tls-native-roots",
+  "zstd",
+] }
+tonic-build = "0.13"
+tonic-health = "0.13"
+tonic-reflection = "0.13"
+tower = { version = "0.5", features = [
   "balance",
   "buffer",
   "load",
   "retry",
   "util",
 ] }
-tower-http = { version = "0.4.0", features = [
-  "compression-zstd",
+# legacy version because of warp
+tower-http = { version = "0.4", features = [
   "compression-gzip",
+  "compression-zstd",
   "cors",
 ] }
 tracing = "0.1"
@@ -270,10 +276,10 @@ tracing-subscriber = { version = "0.3", features = [
 ] }
 ttl_cache = "0.5"
 typetag = "0.2"
-ulid = "1.1"
+ulid = "1.2"
 username = "0.2"
 utoipa = { version = "4.2", features = ["time", "ulid"] }
-uuid = { version = "1.10", features = ["v4", "serde"] }
+uuid = { version = "1.17", features = ["v4", "serde"] }
 vrl = { version = "0.22", default-features = false, features = [
   "compiler",
   "diagnostic",
@@ -282,30 +288,34 @@ vrl = { version = "0.22", default-features = false, features = [
 ] }
 warp = "0.3"
 whichlang = "0.1"
-wiremock = "0.5"
-zstd = "0.13.0"
+wiremock = "0.6"
+zstd = "0.13"
 
-aws-config = "1.5.4"
+aws-config = "1.6"
 aws-credential-types = { version = "1.2", features = ["hardcoded-credentials"] }
-aws-runtime = "1.3.1"
-aws-sdk-kinesis = "1.37"
+aws-runtime = "1.5"
+aws-sdk-kinesis = "1.74"
 aws-sdk-s3 = "=1.62"
-aws-sdk-sqs = "1.36"
+aws-sdk-sqs = "1.70"
 aws-smithy-async = "1.2"
-aws-smithy-runtime = "1.6.2"
-aws-smithy-types = { version = "1.2", features = ["byte-stream-poll-next"] }
-aws-types = "1.3.3"
+aws-smithy-http-client = { version = "1.0" }
+aws-smithy-runtime = "1.8"
+aws-smithy-types = { version = "1.3", features = [
+  "byte-stream-poll-next",
+  "http-body-1-x",
+] }
+aws-types = "1.3"
 
 azure_core = { version = "0.13.0", features = ["enable_reqwest_rustls"] }
 azure_storage = { version = "0.13.0", default-features = false, features = [
   "enable_reqwest_rustls",
 ] }
-azure_storage_blobs = { version = "0.13.0", default-features = false, features = [
+azure_storage_blobs = { version = "0.13", default-features = false, features = [
   "enable_reqwest_rustls",
 ] }
 
-opendal = { version = "0.44", default-features = false }
-reqsign = { version = "0.14", default-features = false }
+opendal = { version = "0.53", default-features = false }
+reqsign = { version = "0.16", default-features = false }
 
 quickwit-actors = { path = "quickwit-actors" }
 quickwit-aws = { path = "quickwit-aws" }
@@ -316,10 +326,10 @@ quickwit-codegen-example = { path = "quickwit-codegen/example" }
 quickwit-common = { path = "quickwit-common" }
 quickwit-config = { path = "quickwit-config" }
 quickwit-control-plane = { path = "quickwit-control-plane" }
-quickwit-index-management = { path = "quickwit-index-management" }
 quickwit-datetime = { path = "quickwit-datetime" }
 quickwit-directories = { path = "quickwit-directories" }
 quickwit-doc-mapper = { path = "quickwit-doc-mapper" }
+quickwit-index-management = { path = "quickwit-index-management" }
 quickwit-indexing = { path = "quickwit-indexing" }
 quickwit-ingest = { path = "quickwit-ingest" }
 quickwit-integration-tests = { path = "quickwit-integration-tests" }

@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use std::fmt;
-use std::io::{self, ErrorKind};
+use std::io::{self};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
@@ -162,17 +162,13 @@ impl DownloadTempFile {
     /// Creates or truncate temp file.
     pub async fn with_target_path(target_filepath: PathBuf) -> io::Result<DownloadTempFile> {
         let Some(filename) = target_filepath.file_name() else {
-            return Err(io::Error::new(
-                ErrorKind::Other,
+            return Err(io::Error::other(
                 "Target filepath is not a directory path. Expected a filepath.",
             ));
         };
-        let filename: &str = filename.to_str().ok_or_else(|| {
-            io::Error::new(
-                ErrorKind::Other,
-                "Target filepath is not a valid UTF-8 string.",
-            )
-        })?;
+        let filename: &str = filename
+            .to_str()
+            .ok_or_else(|| io::Error::other("target filepath is not a valid UTF-8 string"))?;
         let mut temp_filepath = target_filepath.clone();
         temp_filepath.set_file_name(format!("{filename}.temp"));
         let file = tokio::fs::File::create(temp_filepath.clone()).await?;
@@ -245,8 +241,7 @@ mod tests {
     async fn test_copy_to_file_deletes_tempfile_on_failure() {
         let mut storage = MockStorage::default();
         storage.expect_copy_to().return_once(|_, _| {
-            Box::pin(futures::future::err(StorageError::from(io::Error::new(
-                io::ErrorKind::Other,
+            Box::pin(futures::future::err(StorageError::from(io::Error::other(
                 "fake storage error",
             ))))
         });

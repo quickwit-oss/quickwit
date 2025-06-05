@@ -282,11 +282,11 @@ impl JaegerService {
         };
         let search_response = self.search_service.root_search(search_request).await?;
 
-        let Some(agg_result_json) = search_response.aggregation else {
+        let Some(agg_result_postcard) = search_response.aggregation_postcard else {
             debug!("the query matched no traces");
             return Ok((Vec::new(), 0..=0));
         };
-        let trace_ids = collect_trace_ids(&agg_result_json)?;
+        let trace_ids = collect_trace_ids(&agg_result_postcard)?;
         debug!("the query matched {} traces.", trace_ids.0.len());
         Ok(trace_ids)
     }
@@ -756,6 +756,7 @@ fn build_aggregations_query(num_traces: usize) -> String {
     query
 }
 
+#[allow(clippy::result_large_err)]
 fn qw_span_to_jaeger_span(qw_span_json: &str) -> Result<JaegerSpan, Status> {
     let mut qw_span: QwSpan = json_deserialize(qw_span_json, "span")?;
 
@@ -1027,6 +1028,7 @@ fn otlp_attributes_to_jaeger_tags_inner(
 
 /// Converts OpenTelemetry links to Jaeger span references.
 /// <https://opentelemetry.io/docs/specs/otel/trace/sdk_exporters/jaeger/#links>
+#[allow(clippy::result_large_err)]
 fn otlp_links_to_jaeger_references(
     trace_id: &TraceId,
     parent_span_id_opt: Option<SpanId>,
@@ -1058,6 +1060,7 @@ fn otlp_links_to_jaeger_references(
     Ok(references)
 }
 
+#[allow(clippy::result_large_err)]
 fn qw_event_to_jaeger_log(event: QwEvent) -> Result<JaegerLog, Status> {
     let timestamp = to_well_known_timestamp(event.event_timestamp_nanos);
     // "OpenTelemetry Event’s name field should be added to Jaeger Log’s fields map as follows: name
@@ -1087,9 +1090,12 @@ fn qw_event_to_jaeger_log(event: QwEvent) -> Result<JaegerLog, Status> {
     Ok(log)
 }
 
-fn collect_trace_ids(trace_ids_json: &str) -> Result<(Vec<TraceId>, TimeIntervalSecs), Status> {
+#[allow(clippy::result_large_err)]
+fn collect_trace_ids(
+    trace_ids_postcard: &[u8],
+) -> Result<(Vec<TraceId>, TimeIntervalSecs), Status> {
     let collector_fruit: <FindTraceIdsCollector as Collector>::Fruit =
-        json_deserialize(trace_ids_json, "trace IDs aggregation")?;
+        postcard_deserialize(trace_ids_postcard, "trace IDs aggregation")?;
     if collector_fruit.is_empty() {
         return Ok((Vec::new(), 0..=0));
     }
@@ -1105,9 +1111,24 @@ fn collect_trace_ids(trace_ids_json: &str) -> Result<(Vec<TraceId>, TimeInterval
     Ok((trace_ids, start..=end))
 }
 
+#[allow(clippy::result_large_err)]
 fn json_deserialize<'a, T>(json: &'a str, label: &'static str) -> Result<T, Status>
 where T: Deserialize<'a> {
     match serde_json::from_str(json) {
+        Ok(deserialized) => Ok(deserialized),
+        Err(error) => {
+            error!("failed to deserialize {label}: {error:?}");
+            Err(Status::internal(format!(
+                "Failed to deserialize {label}: {error:?}."
+            )))
+        }
+    }
+}
+
+#[allow(clippy::result_large_err)]
+fn postcard_deserialize<'a, T>(json: &'a [u8], label: &'static str) -> Result<T, Status>
+where T: Deserialize<'a> {
+    match postcard::from_bytes(json) {
         Ok(deserialized) => Ok(deserialized),
         Err(error) => {
             error!("failed to deserialize {label}: {error:?}");
@@ -2496,34 +2517,50 @@ mod tests {
 
     #[test]
     fn test_collect_trace_ids() {
+        use quickwit_opentelemetry::otlp::TraceId;
+        use quickwit_search::Span;
+        use tantivy::DateTime;
         {
-            let agg_result_json = r#"[]"#;
-            let (trace_ids, _span_timestamps_range) = collect_trace_ids(agg_result_json).unwrap();
+            let agg_result: Vec<Span> = Vec::new();
+            let agg_result_postcard = postcard::to_stdvec(&agg_result).unwrap();
+            let (trace_ids, _span_timestamps_range) =
+                collect_trace_ids(&agg_result_postcard).unwrap();
             assert!(trace_ids.is_empty());
         }
         {
-            let agg_result_json = r#"[
-                {
-                    "trace_id": "01010101010101010101010101010101",
-                    "span_timestamp": 1684857492783747000
-                }
-            ]"#;
-            let (trace_ids, span_timestamps_range) = collect_trace_ids(agg_result_json).unwrap();
+            let agg_result = vec![Span {
+                trace_id: TraceId::new([
+                    0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+                    0x01, 0x01, 0x01,
+                ]),
+                span_timestamp: DateTime::from_timestamp_nanos(1684857492783747000),
+            }];
+            let agg_result_postcard = postcard::to_stdvec(&agg_result).unwrap();
+            let (trace_ids, span_timestamps_range) =
+                collect_trace_ids(&agg_result_postcard).unwrap();
             assert_eq!(trace_ids.len(), 1);
             assert_eq!(span_timestamps_range, 1684857492..=1684857492);
         }
         {
-            let agg_result_json = r#"[
-                {
-                    "trace_id": "0102030405060708090a0b0c0d0e0f10",
-                    "span_timestamp": 1684857492783747000
+            let agg_result = vec![
+                Span {
+                    trace_id: TraceId::new([
+                        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c,
+                        0x0d, 0x0e, 0x0f, 0x10,
+                    ]),
+                    span_timestamp: DateTime::from_timestamp_nanos(1684857492783747000),
                 },
-                {
-                    "trace_id": "02020202020202020202020202020202",
-                    "span_timestamp": 1684857826019627000
-                }
-            ]"#;
-            let (trace_ids, span_timestamps_range) = collect_trace_ids(agg_result_json).unwrap();
+                Span {
+                    trace_id: TraceId::new([
+                        0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02,
+                        0x02, 0x02, 0x02, 0x02,
+                    ]),
+                    span_timestamp: DateTime::from_timestamp_nanos(1684857826019627000),
+                },
+            ];
+            let agg_result_postcard = postcard::to_stdvec(&agg_result).unwrap();
+            let (trace_ids, span_timestamps_range) =
+                collect_trace_ids(&agg_result_postcard).unwrap();
             assert_eq!(trace_ids.len(), 2);
             assert_eq!(span_timestamps_range, 1684857492..=1684857826);
         }

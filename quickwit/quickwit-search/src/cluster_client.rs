@@ -138,7 +138,7 @@ impl ClusterClient {
         mut client: SearchServiceClient,
     ) -> UnboundedReceiverStream<crate::Result<LeafSearchStreamResponse>> {
         // We need a dedicated channel to send results with retry. First we send only the successful
-        // responses and and ignore errors. If there are some errors, we make one retry and
+        // responses and ignore errors. If there are some errors, we make one retry and
         // in this case we send all results.
         let (result_sender, result_receiver) = unbounded_channel();
         let client_pool = self.search_job_placer.clone();
