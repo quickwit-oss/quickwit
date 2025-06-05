@@ -61,12 +61,12 @@ impl PipelineStep for CoreStringAttrRemapStep {
                             value.host = from_val.to_string();
                         }
                     }
+                    // Message attributes delete the source key
+                    if self.core_attr == CoreStringAttr::Message {
+                        remove_nested_from_map(&mut value.custom, from_path.segments.as_ref());
+                    }
+                    break;
                 }
-                // Message attributes delete the source key
-                if self.core_attr == CoreStringAttr::Message {
-                    remove_nested_from_map(&mut value.custom, from_path.segments.as_ref());
-                }
-                break;
             }
         }
 
@@ -172,5 +172,33 @@ mod tests {
                 .contains_key("foo")
         );
         assert_eq!(log.message, "bar_value");
+    }
+    #[test]
+    fn test_core_string_attr_remap_step_message_no_deletion_json() {
+        let mut log = ProcessedLog::from_datadog_log_msg(make_datadog_log_msg());
+
+        // Insert a json in a msg remap candidate
+        log.custom.insert(
+            "nested".to_string(),
+            json!({"foo": json!({"foo": "bar_value"})}),
+        );
+
+        let step = CoreStringAttrRemapStep {
+            sources: vec!["nested.foo".into()],
+            core_attr: CoreStringAttr::Message,
+        };
+
+        step.apply(&mut log).unwrap();
+
+        // We don't remap the message because the value is not a string
+        assert!(
+            log.custom
+                .get("nested")
+                .expect("expect nested")
+                .as_object()
+                .unwrap()
+                .contains_key("foo")
+        );
+        assert_eq!(log.message, "Test log message");
     }
 }
