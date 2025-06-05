@@ -1,4 +1,4 @@
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock};
 use std::task::{Context as TaskContext, Poll};
 
 use anyhow::{Context, bail};
@@ -55,19 +55,29 @@ static CA_CERT_PUBLIC_KEY: LazyLock<PKey<Public>> = LazyLock::new(|| {
 });
 
 const CLOUDPREM_PATH: &str = "/cloudprem";
+pub(crate) const AWS_MTLS_HEADER: &str = "X-Amzn-Mtls-Clientcert";
 
-/// AWS mTLS interceptor.
+/// mTLS header interceptor.
 ///
 /// This interceptor parses and verifies the CloudPrem bridge client certificate.
 ///
-/// The AWS ALB forwards the client certificate to the backend via the URL-encoded
-/// `X-Amzn-Mtls-Clientcert` header. It can also carry intermediate certificates, but in the context
-/// of CloudPrem, we always expect a single certificate.
+/// Some load balancers support terminating mTLS connections and forwarding the client certificate
+/// as a header. They can also carry intermediate certificates, but in the context of CloudPrem,
+/// we always expect exactly one certificate.
 ///
-/// https://docs.aws.amazon.com/elasticloadbalancing/latest/application/mutual-authentication.html
-fn aws_mtls_interceptor_impl<T>(
+/// The AWS ALB is such a load balancer, it forwards URL-encoded certs in the
+/// `X-Amzn-Mtls-Clientcert` header. https://docs.aws.amazon.com/elasticloadbalancing/latest/application/mutual-authentication.html
+///
+/// Traefik also supports this feature, and forwards certs stripped from newlines in the
+/// `X-Forwarded-Tls-Client-Cert` header. https://doc.traefik.io/traefik/middlewares/http/passtlsclientcert/
+///
+/// Newlines are always ignored and decoding a document containing no `%` leaves content
+/// unmodified, so we can trivially support both those cases by always URL-decoding received
+/// certificates.
+fn mtls_header_interceptor_impl<T>(
     request: Request<T>,
     ca_cert_public_key: &PKeyRef<Public>,
+    header_name: &str,
     protected_path: &str,
 ) -> Result<Request<T>, Status> {
     let path = request.uri().path();
@@ -76,7 +86,7 @@ fn aws_mtls_interceptor_impl<T>(
     if !is_external_traffic {
         return Ok(request);
     }
-    let Some(encoded_client_cert) = request.headers().get("X-Amzn-Mtls-Clientcert") else {
+    let Some(encoded_client_cert) = request.headers().get(header_name) else {
         return Err(Status::unauthenticated("could not find client certificate"));
     };
     let client_cert = urlencoding::decode_binary(encoded_client_cert.as_bytes());
@@ -137,13 +147,14 @@ fn verify_client_cert(
 }
 
 #[derive(Clone)]
-pub(crate) struct AwsMtlsInterceptor<'a, S> {
+pub(crate) struct MtlsHeaderInterceptor<'a, S> {
     inner: S,
     ca_cert_public_key: &'a PKeyRef<Public>,
+    header_name: Arc<str>,
     protected_path: &'a str,
 }
 
-impl<S> Service<Request<Body>> for AwsMtlsInterceptor<'_, S>
+impl<S> Service<Request<Body>> for MtlsHeaderInterceptor<'_, S>
 where S: Service<Request<Body>, Response = Response<BoxBody>>
 {
     type Response = S::Response;
@@ -155,7 +166,12 @@ where S: Service<Request<Body>, Response = Response<BoxBody>>
     }
 
     fn call(&mut self, request: Request<Body>) -> Self::Future {
-        match aws_mtls_interceptor_impl(request, self.ca_cert_public_key, self.protected_path) {
+        match mtls_header_interceptor_impl(
+            request,
+            self.ca_cert_public_key,
+            &self.header_name,
+            self.protected_path,
+        ) {
             Ok(request) => Either::Left(self.inner.call(request)),
             Err(status) => Either::Right(ready(Ok(status.to_http()))),
         }
@@ -163,33 +179,40 @@ where S: Service<Request<Body>, Response = Response<BoxBody>>
 }
 
 #[derive(Clone)]
-pub(crate) struct AwsMtlsInterceptorLayer<'a> {
+pub(crate) struct MtlsHeaderInterceptorLayer<'a> {
     ca_cert_public_key: &'a PKeyRef<Public>,
+    header_name: Arc<str>,
     protected_path: &'a str,
 }
 
-impl AwsMtlsInterceptorLayer<'static> {
-    pub fn for_cloudprem_port() -> Self {
+impl MtlsHeaderInterceptorLayer<'static> {
+    pub fn for_cloudprem_port(header_name: Option<String>) -> Self {
         Self {
             ca_cert_public_key: &CA_CERT_PUBLIC_KEY,
+            header_name: header_name
+                .unwrap_or_else(|| AWS_MTLS_HEADER.to_string())
+                .into(),
             protected_path: "", // on the CloudPrem port, we do auth for everything
         }
     }
+
     pub fn for_grpc_port() -> Self {
         Self {
             ca_cert_public_key: &CA_CERT_PUBLIC_KEY,
+            header_name: AWS_MTLS_HEADER.to_string().into(),
             protected_path: CLOUDPREM_PATH,
         }
     }
 }
 
-impl<'a, S> Layer<S> for AwsMtlsInterceptorLayer<'a> {
-    type Service = AwsMtlsInterceptor<'a, S>;
+impl<'a, S> Layer<S> for MtlsHeaderInterceptorLayer<'a> {
+    type Service = MtlsHeaderInterceptor<'a, S>;
 
     fn layer(&self, inner: S) -> Self::Service {
         Self::Service {
             inner,
             ca_cert_public_key: self.ca_cert_public_key,
+            header_name: self.header_name.clone(),
             protected_path: self.protected_path,
         }
     }
@@ -210,15 +233,26 @@ mod tests {
         include_bytes!("../../../quickwit-integration-tests/test_data/server.crt");
 
     #[test]
-    fn test_aws_mtls_interceptor_impl() {
+    fn test_mtls_header_interceptor_impl() {
         // Internal traffic should be allowed
         let request = Request::builder().uri("/api/v1/indexes").body(()).unwrap();
-        aws_mtls_interceptor_impl(request, &CA_CERT_PUBLIC_KEY, CLOUDPREM_PATH).unwrap();
+        mtls_header_interceptor_impl(
+            request,
+            &CA_CERT_PUBLIC_KEY,
+            AWS_MTLS_HEADER,
+            CLOUDPREM_PATH,
+        )
+        .unwrap();
 
         // External traffic without client certificate should be rejected
         let request = Request::builder().uri("/cloudprem").body(()).unwrap();
-        let status =
-            aws_mtls_interceptor_impl(request, &CA_CERT_PUBLIC_KEY, CLOUDPREM_PATH).unwrap_err();
+        let status = mtls_header_interceptor_impl(
+            request,
+            &CA_CERT_PUBLIC_KEY,
+            AWS_MTLS_HEADER,
+            CLOUDPREM_PATH,
+        )
+        .unwrap_err();
         assert_eq!(status.code(), Code::Unauthenticated);
 
         // External traffic with invalid client certificate should be rejected
@@ -229,8 +263,13 @@ mod tests {
             .header("x-amzn-mtls-clientcert", &encoded_client_cert)
             .body(())
             .unwrap();
-        let status =
-            aws_mtls_interceptor_impl(request, &CA_CERT_PUBLIC_KEY, CLOUDPREM_PATH).unwrap_err();
+        let status = mtls_header_interceptor_impl(
+            request,
+            &CA_CERT_PUBLIC_KEY,
+            AWS_MTLS_HEADER,
+            CLOUDPREM_PATH,
+        )
+        .unwrap_err();
         assert_eq!(status.code(), Code::Unauthenticated);
 
         // External traffic with valid client certificate should be allowed
@@ -240,14 +279,80 @@ mod tests {
             .body(())
             .unwrap();
         let test_ca_cert_public_key = X509::from_pem(TEST_CA_CERT).unwrap().public_key().unwrap();
-        aws_mtls_interceptor_impl(request, &test_ca_cert_public_key, CLOUDPREM_PATH).unwrap();
+        mtls_header_interceptor_impl(
+            request,
+            &test_ca_cert_public_key,
+            AWS_MTLS_HEADER,
+            CLOUDPREM_PATH,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_traefik_mtls_interceptor_impl() {
+        const TRAEFIK_MTLS_HEADER: &str = "X-Forwarded-Tls-Client-Cert";
+        // Internal traffic should be allowed
+        let request = Request::builder().uri("/api/v1/indexes").body(()).unwrap();
+        mtls_header_interceptor_impl(
+            request,
+            &CA_CERT_PUBLIC_KEY,
+            TRAEFIK_MTLS_HEADER,
+            CLOUDPREM_PATH,
+        )
+        .unwrap();
+
+        // External traffic without client certificate should be rejected
+        let request = Request::builder().uri("/cloudprem").body(()).unwrap();
+        let status = mtls_header_interceptor_impl(
+            request,
+            &CA_CERT_PUBLIC_KEY,
+            TRAEFIK_MTLS_HEADER,
+            CLOUDPREM_PATH,
+        )
+        .unwrap_err();
+        assert_eq!(status.code(), Code::Unauthenticated);
+
+        // External traffic with invalid client certificate should be rejected
+        let encoded_client_cert = std::str::from_utf8(TEST_CLIENT_CERT)
+            .unwrap()
+            .replace('\n', "");
+
+        let request = Request::builder()
+            .uri("/cloudprem")
+            .header(TRAEFIK_MTLS_HEADER, &encoded_client_cert)
+            .body(())
+            .unwrap();
+        let status = mtls_header_interceptor_impl(
+            request,
+            &CA_CERT_PUBLIC_KEY,
+            TRAEFIK_MTLS_HEADER,
+            CLOUDPREM_PATH,
+        )
+        .unwrap_err();
+        assert_eq!(status.code(), Code::Unauthenticated);
+
+        // External traffic with valid client certificate should be allowed
+        let request = Request::builder()
+            .uri("/cloudprem")
+            .header(TRAEFIK_MTLS_HEADER, &encoded_client_cert)
+            .body(())
+            .unwrap();
+        let test_ca_cert_public_key = X509::from_pem(TEST_CA_CERT).unwrap().public_key().unwrap();
+        mtls_header_interceptor_impl(
+            request,
+            &test_ca_cert_public_key,
+            TRAEFIK_MTLS_HEADER,
+            CLOUDPREM_PATH,
+        )
+        .unwrap();
     }
 
     #[tokio::test]
-    async fn test_aws_mtls_interceptor_layer() {
+    async fn test_mtls_header_interceptor_layer() {
         let test_ca_cert_public_key = X509::from_pem(TEST_CA_CERT).unwrap().public_key().unwrap();
-        let interceptor = AwsMtlsInterceptorLayer {
+        let interceptor = MtlsHeaderInterceptorLayer {
             ca_cert_public_key: &test_ca_cert_public_key,
+            header_name: AWS_MTLS_HEADER.to_string().into(),
             protected_path: CLOUDPREM_PATH,
         };
         let service = service_fn(|_request: Request<Body>| async {

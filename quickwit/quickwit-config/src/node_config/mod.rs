@@ -547,7 +547,22 @@ impl Default for JaegerConfig {
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CloudPremConfig {
+    #[serde(default)]
+    pub mtls_header: Option<String>,
+    #[serde(flatten, default)]
+    pub grpc_config: GrpcConfig,
+}
+
+impl CloudPremConfig {
+    pub fn validate(&self) -> anyhow::Result<()> {
+        self.grpc_config.validate()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct NodeConfig {
     pub cluster_id: String,
     pub node_id: NodeId,
@@ -564,7 +579,7 @@ pub struct NodeConfig {
     pub default_index_root_uri: Uri,
     pub rest_config: RestConfig,
     pub grpc_config: GrpcConfig,
-    pub cloudprem_grpc_config: GrpcConfig,
+    pub cloudprem_config: CloudPremConfig,
     pub storage_configs: StorageConfigs,
     pub metastore_configs: MetastoreConfigs,
     pub indexer_config: IndexerConfig,

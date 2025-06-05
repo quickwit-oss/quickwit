@@ -3,7 +3,7 @@ use std::error::Error;
 use std::sync::Arc;
 
 use quickwit_common::tower::BoxFutureInfaillible;
-use quickwit_config::GrpcConfig;
+use quickwit_config::CloudPremConfig;
 use quickwit_config::service::QuickwitService;
 use quickwit_proto::cloudprem::CloudPremServiceClient;
 use quickwit_proto::tonic::transport::Server;
@@ -12,7 +12,7 @@ use tokio::net::TcpListener;
 use tracing::*;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
-use super::auth::AwsMtlsInterceptorLayer;
+use super::auth::MtlsHeaderInterceptorLayer;
 use super::service::CloudPremServiceImpl;
 use crate::QuickwitServices;
 use crate::grpc::HttpHeadersCarrier;
@@ -23,13 +23,14 @@ pub(crate) const DISABLE_CERTIFICATE_VERIFICATION_ENV_KEY: &str =
 /// Starts and binds gRPC services to `grpc_listen_addr`.
 pub(crate) async fn start_cloudprem_server(
     tcp_listener: TcpListener,
-    grpc_config: GrpcConfig,
+    cloudprem_config: CloudPremConfig,
     services: Arc<QuickwitServices>,
     readiness_trigger: BoxFutureInfaillible<()>,
     shutdown_signal: BoxFutureInfaillible<()>,
 ) -> anyhow::Result<()> {
     let mut enabled_grpc_services = BTreeSet::new();
     let mut file_descriptor_sets = Vec::new();
+    let grpc_config = cloudprem_config.grpc_config;
 
     let server = Server::builder().trace_fn(|request| {
         let method = request.method();
@@ -87,13 +88,15 @@ pub(crate) async fn start_cloudprem_server(
 
     let disable_security =
         quickwit_common::get_bool_from_env(DISABLE_CERTIFICATE_VERIFICATION_ENV_KEY, false);
-    let aws_mtls_interceptor_layer_opt: Option<AwsMtlsInterceptorLayer<'static>> =
+    let aws_mtls_interceptor_layer_opt: Option<MtlsHeaderInterceptorLayer<'static>> =
         if disable_security {
             tracing::warn!("mTLS client certificate verification disabled");
             None
         } else {
             tracing::info!("mTLS client certificate verification enabled");
-            Some(AwsMtlsInterceptorLayer::for_cloudprem_port())
+            Some(MtlsHeaderInterceptorLayer::for_cloudprem_port(
+                cloudprem_config.mtls_header,
+            ))
         };
 
     let server_router = server

@@ -42,7 +42,7 @@ use tracing::*;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use crate::cloudprem::{
-    AwsMtlsInterceptorLayer, CloudPremServiceImpl, DISABLE_CERTIFICATE_VERIFICATION_ENV_KEY,
+    CloudPremServiceImpl, DISABLE_CERTIFICATE_VERIFICATION_ENV_KEY, MtlsHeaderInterceptorLayer,
 };
 use crate::developer_api::DeveloperApiServer;
 use crate::search_api::GrpcSearchAdapter;
@@ -268,11 +268,11 @@ pub(crate) async fn start_grpc_server(
 
     let disable_security =
         quickwit_common::get_bool_from_env(DISABLE_CERTIFICATE_VERIFICATION_ENV_KEY, false);
-    let aws_mtls_interceptor_layer_opt: Option<AwsMtlsInterceptorLayer<'static>> =
+    let aws_mtls_interceptor_layer_opt: Option<MtlsHeaderInterceptorLayer<'static>> =
         if disable_security {
             None
         } else {
-            Some(AwsMtlsInterceptorLayer::for_grpc_port())
+            Some(MtlsHeaderInterceptorLayer::for_grpc_port())
         };
 
     let server_router = server
