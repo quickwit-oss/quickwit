@@ -893,7 +893,8 @@ mod tests {
                         let replication_position_inclusive = subrequest
                             .from_position_exclusive()
                             .as_usize()
-                            .map_or(batch_len - 1, |pos| pos + batch_len);
+                            .map(|pos| pos + batch_len)
+                            .unwrap_or(batch_len - 1);
                         ReplicateSuccess {
                             subrequest_id: subrequest.subrequest_id,
                             index_uid: subrequest.index_uid.clone(),

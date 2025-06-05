@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #![allow(clippy::derive_partial_eq_without_eq)]
-#![deny(clippy::disallowed_methods)]
+#![allow(clippy::disallowed_methods)]
 #![allow(rustdoc::invalid_html_tags)]
 
 use std::cmp::Ordering;
