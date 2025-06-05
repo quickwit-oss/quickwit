@@ -34,7 +34,7 @@ tantivy-fst = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
-tower = { workspace = true }
+tower = { workspace = true, features = ["timeout"] }
 tracing = { workspace = true }
 ttl_cache = { workspace = true }
 ulid = { workspace = true }

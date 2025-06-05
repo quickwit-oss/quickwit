@@ -16,16 +16,18 @@ async-trait = { workspace = true }
 base64 = { workspace = true }
 bytes = { workspace = true }
 bytesize = { workspace = true }
-elasticsearch-dsl = "0.4.15"
+elasticsearch-dsl = "0.4"
 flate2 = { workspace = true }
 futures = { workspace = true }
 futures-util = { workspace = true }
 glob = { workspace = true }
 hex = { workspace = true }
+http = { workspace = true }
 http-serde = { workspace = true }
 humantime = { workspace = true }
 hyper = { workspace = true }
 hyper-rustls = { workspace = true }
+hyper-util = {workspace = true}
 itertools = { workspace = true }
 mime_guess = { workspace = true }
 once_cell = { workspace = true }
@@ -49,7 +51,7 @@ tokio-stream = { workspace = true }
 tokio-util = { workspace = true }
 tonic-health = { workspace = true }
 tonic-reflection = { workspace = true }
-tower = { workspace = true }
+tower = { workspace = true, features = ["limit"] }
 tower-http = { workspace = true }
 tracing = { workspace = true }
 utoipa = { workspace = true }
@@ -85,8 +87,8 @@ itertools = { workspace = true }
 mockall = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true }
-tonic = { workspace = true }
 tokio-stream = { workspace = true }
+tonic = { workspace = true }
 
 quickwit-actors = { workspace = true, features = ["testsuite"] }
 quickwit-cluster = { workspace = true, features = ["testsuite"] }

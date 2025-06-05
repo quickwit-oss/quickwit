@@ -143,7 +143,7 @@ pub fn convert_to_es_field_capabilities_response(
             .entry(list_field_resp.field_name.to_string())
             .or_default();
 
-        let field_type = ListFieldType::from_i32(list_field_resp.field_type).unwrap();
+        let field_type = ListFieldType::try_from(list_field_resp.field_type).unwrap();
         let add_entry =
             FieldCapabilityEntryResponse::from_list_field_entry_response(list_field_resp);
         let types = match field_type {
@@ -179,6 +179,7 @@ pub fn convert_to_es_field_capabilities_response(
     FieldCapabilityResponse { indices, fields }
 }
 
+#[allow(clippy::result_large_err)]
 pub fn build_list_field_request_for_es_api(
     index_id_patterns: Vec<String>,
     search_params: FieldCapabilityQueryParams,

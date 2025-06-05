@@ -945,7 +945,7 @@ fn get_sort_field_datetime_format(
     if let Some(sort_field) = sort_field {
         if let Some(sort_field_datetime_format_int) = &sort_field.sort_datetime_format {
             let sort_field_datetime_format =
-                SortDatetimeFormat::from_i32(*sort_field_datetime_format_int)
+                SortDatetimeFormat::try_from(*sort_field_datetime_format_int)
                     .context("invalid sort datetime format")?;
             return Ok(Some(sort_field_datetime_format));
         }
@@ -1377,7 +1377,7 @@ fn convert_search_after_datetime_values(
             let Some(datetime_format_int) = sort_field.sort_datetime_format else {
                 continue;
             };
-            let input_datetime_format = SortDatetimeFormat::from_i32(datetime_format_int)
+            let input_datetime_format = SortDatetimeFormat::try_from(datetime_format_int)
                 .context("invalid sort datetime format")?;
             convert_sort_datetime_value_into_nanos(search_after_sort_value, input_datetime_format)?;
         }
@@ -1508,10 +1508,8 @@ impl ExtractTimestampRange<'_> {
             // a match_none, but the visitor doesn't allow mutation.
             lower_bound = lower_bound.saturating_add(1);
         }
-        self.start_timestamp = Some(
-            self.start_timestamp
-                .map_or(lower_bound, |current| current.max(lower_bound)),
-        );
+
+        self.start_timestamp = self.start_timestamp.max(Some(lower_bound));
     }
 
     fn update_end_timestamp(&mut self, upper_bound: &quickwit_query::JsonLiteral, included: bool) {
@@ -1526,10 +1524,9 @@ impl ExtractTimestampRange<'_> {
             // a match_none, but the visitor doesn't allow mutation.
             upper_bound = upper_bound.saturating_add(1);
         }
-        self.end_timestamp = Some(
-            self.end_timestamp
-                .map_or(upper_bound, |current| current.min(upper_bound)),
-        );
+
+        let new_end_timestamp = self.end_timestamp.unwrap_or(upper_bound).min(upper_bound);
+        self.end_timestamp = Some(new_end_timestamp);
     }
 }
 
@@ -1763,7 +1760,9 @@ mod tests {
 
     use quickwit_common::ServiceStream;
     use quickwit_common::shared_consts::SCROLL_BATCH_LEN;
-    use quickwit_config::{DocMapping, IndexConfig, IndexingSettings, SearchSettings};
+    use quickwit_config::{
+        DocMapping, IndexConfig, IndexingSettings, IngestSettings, SearchSettings,
+    };
     use quickwit_indexing::MockSplitBuilder;
     use quickwit_metastore::{IndexMetadata, ListSplitsRequestExt, ListSplitsResponseExt};
     use quickwit_proto::metastore::{
@@ -1856,6 +1855,7 @@ mod tests {
         }"#;
         let doc_mapping = serde_json::from_str(doc_mapping_json).unwrap();
         let indexing_settings = IndexingSettings::default();
+        let ingest_settings = IngestSettings::default();
         let search_settings = SearchSettings {
             default_search_fields: vec!["body".to_string()],
         };
@@ -1864,8 +1864,9 @@ mod tests {
             index_uri,
             doc_mapping,
             indexing_settings,
+            ingest_settings,
             search_settings,
-            retention_policy_opt: Default::default(),
+            retention_policy_opt: None,
         })
     }
 
@@ -2027,6 +2028,7 @@ mod tests {
             "store_source": true
         }"#;
         let doc_mapping = serde_json::from_str(doc_mapping_json).unwrap();
+        let ingest_settings = IngestSettings::default();
         let indexing_settings = IndexingSettings::default();
         let search_settings = SearchSettings {
             default_search_fields: vec!["body".to_string()],
@@ -2035,9 +2037,10 @@ mod tests {
             index_id: index_id.to_string(),
             index_uri,
             doc_mapping,
+            ingest_settings,
             indexing_settings,
             search_settings,
-            retention_policy_opt: Default::default(),
+            retention_policy_opt: None,
         })
     }
 

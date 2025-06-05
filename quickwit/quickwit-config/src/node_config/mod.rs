@@ -23,13 +23,14 @@ use std::time::Duration;
 
 use anyhow::{bail, ensure};
 use bytesize::ByteSize;
-use http::HeaderMap;
+use legacy_http::HeaderMap;
 use quickwit_common::net::HostAddr;
 use quickwit_common::shared_consts::{
     DEFAULT_SHARD_BURST_LIMIT, DEFAULT_SHARD_SCALE_UP_FACTOR, DEFAULT_SHARD_THROUGHPUT_LIMIT,
 };
 use quickwit_common::uri::Uri;
 use quickwit_proto::indexing::CpuCapacity;
+use quickwit_proto::tonic::codec::CompressionEncoding;
 use quickwit_proto::types::NodeId;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
@@ -193,8 +194,7 @@ impl IndexerConfig {
     }
 
     pub fn default_merge_concurrency() -> NonZeroUsize {
-        NonZeroUsize::new(quickwit_common::num_cpus() * 2 / 3)
-            .unwrap_or(NonZeroUsize::new(1).unwrap())
+        NonZeroUsize::new(quickwit_common::num_cpus() * 2 / 3).unwrap_or(NonZeroUsize::MIN)
     }
 
     fn default_cpu_capacity() -> CpuCapacity {
@@ -379,6 +379,13 @@ impl SearcherConfig {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CompressionAlgorithm {
+    Gzip,
+    Zstd,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct IngestApiConfig {
     /// Maximum memory space taken by the ingest WAL
@@ -397,6 +404,8 @@ pub struct IngestApiConfig {
     /// Setting this too high will be cancelled out by the arbiter that prevents
     /// creating too many shards at once.
     pub shard_scale_up_factor: f32,
+    #[serde(default)]
+    pub grpc_compression_algorithm: Option<CompressionAlgorithm>,
 }
 
 impl Default for IngestApiConfig {
@@ -409,6 +418,7 @@ impl Default for IngestApiConfig {
             shard_throughput_limit: DEFAULT_SHARD_THROUGHPUT_LIMIT,
             shard_burst_limit: DEFAULT_SHARD_BURST_LIMIT,
             shard_scale_up_factor: DEFAULT_SHARD_SCALE_UP_FACTOR,
+            grpc_compression_algorithm: None,
         }
     }
 }
@@ -435,6 +445,15 @@ impl IngestApiConfig {
         );
         Ok(NonZeroUsize::new(self.replication_factor)
             .expect("replication factor should be either 1 or 2"))
+    }
+
+    pub fn grpc_compression_encoding(&self) -> Option<CompressionEncoding> {
+        self.grpc_compression_algorithm
+            .as_ref()
+            .map(|algorithm| match algorithm {
+                CompressionAlgorithm::Gzip => CompressionEncoding::Gzip,
+                CompressionAlgorithm::Zstd => CompressionEncoding::Zstd,
+            })
     }
 
     fn validate(&self) -> anyhow::Result<()> {
@@ -714,12 +733,17 @@ mod tests {
             let ingest_api_config: IngestApiConfig = serde_yaml::from_str(
                 r#"
                     max_queue_disk_usage: 100M
+                    grpc_compression_algorithm: zstd
                 "#,
             )
             .unwrap();
             assert_eq!(
                 ingest_api_config.validate().unwrap_err().to_string(),
                 "max_queue_disk_usage must be at least 256 MiB, got `100.0 MB`"
+            );
+            assert_eq!(
+                ingest_api_config.grpc_compression_encoding().unwrap(),
+                CompressionEncoding::Zstd
             );
         }
         {

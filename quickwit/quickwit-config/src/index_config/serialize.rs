@@ -21,7 +21,7 @@ use quickwit_proto::types::{DocMappingUid, IndexId};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
-use super::validate_index_config;
+use super::{IngestSettings, validate_index_config};
 use crate::{
     ConfigFormat, DocMapping, IndexConfig, IndexingSettings, RetentionPolicy, SearchSettings,
     validate_identifier,
@@ -185,6 +185,7 @@ impl IndexConfigForSerialization {
             index_uri,
             doc_mapping: self.doc_mapping,
             indexing_settings: self.indexing_settings,
+            ingest_settings: self.ingest_settings,
             search_settings: self.search_settings,
             retention_policy_opt: self.retention_policy_opt,
         };
@@ -231,6 +232,8 @@ pub struct IndexConfigV0_8 {
     #[serde(default)]
     pub indexing_settings: IndexingSettings,
     #[serde(default)]
+    pub ingest_settings: IngestSettings,
+    #[serde(default)]
     pub search_settings: SearchSettings,
     #[serde(rename = "retention")]
     #[serde(default)]
@@ -244,6 +247,7 @@ impl From<IndexConfig> for IndexConfigV0_8 {
             index_uri: Some(index_config.index_uri),
             doc_mapping: index_config.doc_mapping,
             indexing_settings: index_config.indexing_settings,
+            ingest_settings: index_config.ingest_settings,
             search_settings: index_config.search_settings,
             retention_policy_opt: index_config.retention_policy_opt,
         }

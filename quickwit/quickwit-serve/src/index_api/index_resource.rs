@@ -394,10 +394,11 @@ pub async fn update_index(
 
     let update_request = UpdateIndexRequest::try_from_updates(
         index_uid,
+        &new_index_config.doc_mapping,
+        &new_index_config.indexing_settings,
+        &new_index_config.ingest_settings,
         &new_index_config.search_settings,
         &new_index_config.retention_policy_opt,
-        &new_index_config.indexing_settings,
-        &new_index_config.doc_mapping,
     )?;
     let update_resp = metastore.update_index(update_request).await?;
     Ok(update_resp.deserialize_index_metadata()?)

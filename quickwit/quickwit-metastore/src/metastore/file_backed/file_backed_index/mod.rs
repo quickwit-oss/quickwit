@@ -26,7 +26,7 @@ use std::ops::Bound;
 use itertools::Itertools;
 use quickwit_common::pretty::PrettySample;
 use quickwit_config::{
-    DocMapping, IndexingSettings, RetentionPolicy, SearchSettings, SourceConfig,
+    DocMapping, IndexingSettings, IngestSettings, RetentionPolicy, SearchSettings, SourceConfig,
 };
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsResponse, DeleteQuery, DeleteShardsRequest,
@@ -214,24 +214,21 @@ impl FileBackedIndex {
         &self.metadata
     }
 
-    /// Replaces the retention policy in the index config, returning whether a mutation occurred.
-    pub fn set_retention_policy(&mut self, retention_policy_opt: Option<RetentionPolicy>) -> bool {
-        self.metadata.set_retention_policy(retention_policy_opt)
-    }
-
-    /// Replaces the search settings in the index config, returning whether a mutation occurred.
-    pub fn set_search_settings(&mut self, search_settings: SearchSettings) -> bool {
-        self.metadata.set_search_settings(search_settings)
-    }
-
-    /// Replaces the indexing settings in the index config, returning whether a mutation occurred.
-    pub fn set_indexing_settings(&mut self, search_settings: IndexingSettings) -> bool {
-        self.metadata.set_indexing_settings(search_settings)
-    }
-
-    /// Replaces the doc mapping in the index config, returning whether a mutation occurred.
-    pub fn set_doc_mapping(&mut self, doc_mapping: DocMapping) -> bool {
-        self.metadata.set_doc_mapping(doc_mapping)
+    pub fn update_index_config(
+        &mut self,
+        doc_mapping: DocMapping,
+        indexing_settings: IndexingSettings,
+        ingest_settings: IngestSettings,
+        search_settings: SearchSettings,
+        retention_policy_opt: Option<RetentionPolicy>,
+    ) -> bool {
+        self.metadata.update_index_config(
+            doc_mapping,
+            indexing_settings,
+            ingest_settings,
+            search_settings,
+            retention_policy_opt,
+        )
     }
 
     /// Stages a single split.

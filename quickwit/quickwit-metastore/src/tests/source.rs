@@ -53,7 +53,7 @@ pub async fn test_metastore_add_source<MetastoreToTest: MetastoreServiceExt + De
 
     let source = SourceConfig {
         source_id: source_id.to_string(),
-        num_pipelines: NonZeroUsize::new(1).unwrap(),
+        num_pipelines: NonZeroUsize::MIN,
         enabled: true,
         source_params: SourceParams::void(),
         transform_config: None,
@@ -153,7 +153,7 @@ pub async fn test_metastore_update_source<MetastoreToTest: MetastoreServiceExt +
 
     let mut source = SourceConfig {
         source_id: source_id.to_string(),
-        num_pipelines: NonZeroUsize::new(1).unwrap(),
+        num_pipelines: NonZeroUsize::MIN,
         enabled: true,
         source_params: SourceParams::void(),
         transform_config: None,
@@ -258,7 +258,7 @@ pub async fn test_metastore_toggle_source<MetastoreToTest: MetastoreServiceExt +
     let source_id = format!("{index_id}--source");
     let source = SourceConfig {
         source_id: source_id.to_string(),
-        num_pipelines: NonZeroUsize::new(1).unwrap(),
+        num_pipelines: NonZeroUsize::MIN,
         enabled: true,
         source_params: SourceParams::void(),
         transform_config: None,
@@ -324,7 +324,7 @@ pub async fn test_metastore_delete_source<MetastoreToTest: MetastoreServiceExt +
 
     let source = SourceConfig {
         source_id: source_id.to_string(),
-        num_pipelines: NonZeroUsize::new(1).unwrap(),
+        num_pipelines: NonZeroUsize::MIN,
         enabled: true,
         source_params: SourceParams::void(),
         transform_config: None,
@@ -445,7 +445,7 @@ pub async fn test_metastore_reset_checkpoint<
     for (source_id, split_id) in source_ids.iter().zip(split_ids.iter()) {
         let source = SourceConfig {
             source_id: source_id.clone(),
-            num_pipelines: NonZeroUsize::new(1).unwrap(),
+            num_pipelines: NonZeroUsize::MIN,
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,

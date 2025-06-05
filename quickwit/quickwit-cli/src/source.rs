@@ -835,7 +835,7 @@ mod tests {
             .collect();
         let sources = vec![SourceConfig {
             source_id: "foo-source".to_string(),
-            num_pipelines: NonZeroUsize::new(1).unwrap(),
+            num_pipelines: NonZeroUsize::MIN,
             enabled: true,
             source_params: SourceParams::file_from_str("path/to/file").unwrap(),
             transform_config: None,
@@ -896,7 +896,7 @@ mod tests {
         let sources = [
             SourceConfig {
                 source_id: "foo-source".to_string(),
-                num_pipelines: NonZeroUsize::new(1).unwrap(),
+                num_pipelines: NonZeroUsize::MIN,
                 enabled: true,
                 source_params: SourceParams::stdin(),
                 transform_config: None,
@@ -904,7 +904,7 @@ mod tests {
             },
             SourceConfig {
                 source_id: "bar-source".to_string(),
-                num_pipelines: NonZeroUsize::new(1).unwrap(),
+                num_pipelines: NonZeroUsize::MIN,
                 enabled: true,
                 source_params: SourceParams::stdin(),
                 transform_config: None,

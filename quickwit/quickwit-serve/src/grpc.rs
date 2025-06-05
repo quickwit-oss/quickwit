@@ -13,7 +13,6 @@
 // limitations under the License.
 
 use std::collections::BTreeSet;
-use std::error::Error;
 use std::sync::Arc;
 
 use anyhow::Context;
@@ -33,8 +32,8 @@ use quickwit_proto::tonic::transport::{Certificate, Identity, Server, ServerTlsC
 use tokio::net::TcpListener;
 use tonic_health::pb::FILE_DESCRIPTOR_SET as HEALTH_FILE_DESCRIPTOR_SET;
 use tonic_health::pb::health_server::{Health, HealthServer};
-use tonic_reflection::pb::FILE_DESCRIPTOR_SET as REFLECTION_FILE_DESCRIPTOR_SET;
-use tonic_reflection::server::{ServerReflection, ServerReflectionServer};
+use tonic_reflection::pb::v1::FILE_DESCRIPTOR_SET as REFLECTION_FILE_DESCRIPTOR_SET;
+use tonic_reflection::server::v1::{ServerReflection, ServerReflectionServer};
 use tracing::*;
 
 use crate::developer_api::DeveloperApiServer;
@@ -135,7 +134,8 @@ pub(crate) async fn start_grpc_server(
     let ingester_grpc_service = if let Some(ingester_service) = services.ingester_service() {
         enabled_grpc_services.insert("ingester");
         file_descriptor_sets.push(quickwit_proto::ingest::INGEST_FILE_DESCRIPTOR_SET);
-        Some(ingester_service.as_grpc_service(grpc_config.max_message_size))
+        let ingester_grpc_service = ingester_service.as_grpc_service(grpc_config.max_message_size);
+        Some(ingester_grpc_service)
     } else {
         None
     };
@@ -161,7 +161,8 @@ pub(crate) async fn start_grpc_server(
         if let Some(otlp_traces_service) = services.otlp_traces_service_opt.clone() {
             enabled_grpc_services.insert("otlp-traces");
             let trace_service = TraceServiceServer::new(otlp_traces_service)
-                .accept_compressed(CompressionEncoding::Gzip);
+                .accept_compressed(CompressionEncoding::Gzip)
+                .accept_compressed(CompressionEncoding::Zstd);
             Some(trace_service)
         } else {
             None
@@ -170,7 +171,8 @@ pub(crate) async fn start_grpc_server(
         if let Some(otlp_logs_service) = services.otlp_logs_service_opt.clone() {
             enabled_grpc_services.insert("otlp-logs");
             let logs_service = LogsServiceServer::new(otlp_logs_service)
-                .accept_compressed(CompressionEncoding::Gzip);
+                .accept_compressed(CompressionEncoding::Gzip)
+                .accept_compressed(CompressionEncoding::Zstd);
             Some(logs_service)
         } else {
             None
@@ -240,8 +242,9 @@ pub(crate) async fn start_grpc_server(
         "starting gRPC server listening on {grpc_listen_addr}"
     );
     // nodelay=true and keepalive=None are the default values for Server::builder()
-    let tcp_incoming = TcpIncoming::from_listener(tcp_listener, true, None)
-        .map_err(|err: Box<dyn Error + Send + Sync>| anyhow::anyhow!(err))?;
+    let tcp_incoming = TcpIncoming::from(tcp_listener)
+        .with_nodelay(Some(true))
+        .with_keepalive(None);
     let serve_fut = server_router.serve_with_incoming_shutdown(tcp_incoming, shutdown_signal);
     let (serve_res, _trigger_res) = tokio::join!(serve_fut, readiness_trigger);
     serve_res?;
@@ -257,6 +260,6 @@ fn build_reflection_service(
         builder = builder.register_encoded_file_descriptor_set(file_descriptor_set)
     }
     builder
-        .build()
+        .build_v1()
         .context("failed to build reflection service")
 }

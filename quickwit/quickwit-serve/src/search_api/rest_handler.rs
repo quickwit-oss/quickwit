@@ -16,8 +16,6 @@ use std::convert::TryFrom;
 use std::sync::Arc;
 
 use futures::stream::StreamExt;
-use hyper::HeaderMap;
-use hyper::header::HeaderValue;
 use percent_encoding::percent_decode_str;
 use quickwit_config::validate_index_id_pattern;
 use quickwit_proto::ServiceError;
@@ -28,8 +26,8 @@ use quickwit_search::{SearchError, SearchPlanResponseRest, SearchResponseRest, S
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 use serde_json::Value as JsonValue;
 use tracing::info;
-use warp::hyper::StatusCode;
-use warp::hyper::header::CONTENT_TYPE;
+use warp::hyper::header::{CONTENT_TYPE, HeaderValue};
+use warp::hyper::{HeaderMap, StatusCode};
 use warp::{Filter, Rejection, Reply, reply};
 
 use crate::rest_api_response::into_rest_api_response;
@@ -534,7 +532,7 @@ async fn search_stream_endpoint(
     index_id: IndexId,
     search_request: SearchStreamRequestQueryString,
     search_service: &dyn SearchService,
-) -> Result<hyper::Body, SearchError> {
+) -> Result<warp::hyper::Body, SearchError> {
     let query_ast = query_ast_from_user_text(&search_request.query, search_request.search_fields);
     let query_ast_json = serde_json::to_string(&query_ast)?;
     let request = quickwit_proto::search::SearchStreamRequest {
@@ -548,7 +546,7 @@ async fn search_stream_endpoint(
         partition_by_field: search_request.partition_by_field,
     };
     let mut data = search_service.root_search_stream(request).await?;
-    let (mut sender, body) = hyper::Body::channel();
+    let (mut sender, body) = warp::hyper::Body::channel();
     tokio::spawn(async move {
         while let Some(result) = data.next().await {
             match result {
@@ -582,7 +580,7 @@ async fn search_stream_endpoint(
     Ok(body)
 }
 
-fn make_streaming_reply(result: Result<hyper::Body, SearchError>) -> impl Reply {
+fn make_streaming_reply(result: Result<warp::hyper::Body, SearchError>) -> impl Reply {
     let status_code: StatusCode;
     let body = match result {
         Ok(body) => {
@@ -590,8 +588,9 @@ fn make_streaming_reply(result: Result<hyper::Body, SearchError>) -> impl Reply 
             warp::reply::Response::new(body)
         }
         Err(error) => {
-            status_code = error.error_code().http_status_code();
-            warp::reply::Response::new(hyper::Body::from(error.to_string()))
+            status_code =
+                crate::convert_status_code_to_legacy_http(error.error_code().http_status_code());
+            warp::reply::Response::new(warp::hyper::Body::from(error.to_string()))
         }
     };
     reply::with_status(body, status_code)
