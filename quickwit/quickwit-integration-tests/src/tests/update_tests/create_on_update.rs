@@ -23,7 +23,134 @@ use crate::ingest_json;
 use crate::test_utils::{ClusterSandboxBuilder, ingest};
 
 #[tokio::test]
-async fn test_update_search_settings_on_multi_nodes_cluster() {
+async fn test_update_missing_no_create() {
+    quickwit_common::setup_logging_for_tests();
+    let sandbox = ClusterSandboxBuilder::default()
+        .add_node([QuickwitService::Searcher])
+        .add_node([QuickwitService::Metastore])
+        .add_node([QuickwitService::Indexer])
+        .add_node([QuickwitService::ControlPlane])
+        .add_node([QuickwitService::Janitor])
+        .build_and_start()
+        .await;
+
+    {
+        // Wait for indexer to fully start.
+        // The starting time is a bit long for a cluster.
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        let indexing_service_counters = sandbox
+            .rest_client(QuickwitService::Indexer)
+            .node_stats()
+            .indexing()
+            .await
+            .unwrap();
+        assert_eq!(indexing_service_counters.num_running_pipelines, 0);
+    }
+
+    assert!(
+        sandbox
+            .rest_client(QuickwitService::Indexer)
+            .node_health()
+            .is_live()
+            .await
+            .unwrap()
+    );
+
+    let status_code = sandbox
+        .rest_client(QuickwitService::Indexer)
+        .indexes()
+        .update(
+            "my-updatable-index",
+            r#"
+            version: 0.8
+            index_id: my-updatable-index
+            doc_mapping:
+              field_mappings:
+              - name: title
+                type: text
+              - name: body
+                type: text
+            indexing_settings:
+              commit_timeout_secs: 1
+            search_settings:
+              default_search_fields: [title, body]
+            "#,
+            quickwit_config::ConfigFormat::Yaml,
+            false,
+        )
+        .await
+        .unwrap_err()
+        .status_code()
+        .unwrap();
+    assert_eq!(status_code, 404);
+
+    sandbox.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn test_update_missing_create() {
+    quickwit_common::setup_logging_for_tests();
+    let sandbox = ClusterSandboxBuilder::default()
+        .add_node([QuickwitService::Searcher])
+        .add_node([QuickwitService::Metastore])
+        .add_node([QuickwitService::Indexer])
+        .add_node([QuickwitService::ControlPlane])
+        .add_node([QuickwitService::Janitor])
+        .build_and_start()
+        .await;
+
+    {
+        // Wait for indexer to fully start.
+        // The starting time is a bit long for a cluster.
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        let indexing_service_counters = sandbox
+            .rest_client(QuickwitService::Indexer)
+            .node_stats()
+            .indexing()
+            .await
+            .unwrap();
+        assert_eq!(indexing_service_counters.num_running_pipelines, 0);
+    }
+
+    assert!(
+        sandbox
+            .rest_client(QuickwitService::Indexer)
+            .node_health()
+            .is_live()
+            .await
+            .unwrap()
+    );
+
+    sandbox
+        .rest_client(QuickwitService::Indexer)
+        .indexes()
+        .update(
+            "my-updatable-index",
+            r#"
+            version: 0.8
+            index_id: my-updatable-index
+            doc_mapping:
+              field_mappings:
+              - name: title
+                type: text
+              - name: body
+                type: text
+            indexing_settings:
+              commit_timeout_secs: 1
+            search_settings:
+              default_search_fields: [title, body]
+            "#,
+            quickwit_config::ConfigFormat::Yaml,
+            true,
+        )
+        .await
+        .unwrap();
+
+    sandbox.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn test_update_create_existing_doesnt_clear() {
     quickwit_common::setup_logging_for_tests();
     let sandbox = ClusterSandboxBuilder::default()
         .add_node([QuickwitService::Searcher])
@@ -95,7 +222,7 @@ async fn test_update_search_settings_on_multi_nodes_cluster() {
     // Wait until split is committed
     tokio::time::sleep(Duration::from_secs(4)).await;
 
-    // No hit because `default_search_fields`` only covers the `title` field
+    // No hit because `default_search_fields` only covers the `title` field
     assert_hits_unordered(&sandbox, "my-updatable-index", "record", Ok(&[])).await;
 
     // Update the index to also search `body` by default, the same search should
@@ -120,7 +247,7 @@ async fn test_update_search_settings_on_multi_nodes_cluster() {
               default_search_fields: [title, body]
             "#,
             quickwit_config::ConfigFormat::Yaml,
-            false,
+            true,
         )
         .await
         .unwrap();

@@ -76,6 +76,9 @@ pub fn build_index_command() -> Command {
                 arg!(--"index-config" <INDEX_CONFIG> "Location of the index config file.")
                     .display_order(2)
                     .required(true),
+                arg!(--"create" "Create the index if it does not already exists.")
+                    .display_order(3)
+                    .required(false),
             ])
         )
         .subcommand(
@@ -212,6 +215,7 @@ pub struct UpdateIndexArgs {
     pub client_args: ClientArgs,
     pub index_id: IndexId,
     pub index_config_uri: Uri,
+    pub create: bool,
     pub assume_yes: bool,
 }
 
@@ -335,12 +339,14 @@ impl IndexCliCommand {
             .remove_one::<String>("index-config")
             .map(|uri| Uri::from_str(&uri))
             .expect("`index-config` should be a required arg")?;
+        let create = matches.get_flag("create");
         let assume_yes = matches.get_flag("yes");
 
         Ok(Self::Update(UpdateIndexArgs {
             index_id,
             client_args,
             index_config_uri,
+            create,
             assume_yes,
         }))
     }
@@ -548,7 +554,12 @@ pub async fn update_index_cli(args: UpdateIndexArgs) -> anyhow::Result<()> {
     }
     qw_client
         .indexes()
-        .update(&args.index_id, &index_config_str, config_format)
+        .update(
+            &args.index_id,
+            &index_config_str,
+            config_format,
+            args.create,
+        )
         .await?;
     println!("{} Index successfully updated.", "✔".color(GREEN_COLOR));
     Ok(())
