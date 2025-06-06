@@ -51,6 +51,21 @@ pub fn create_source_handler(
         .boxed()
 }
 
+#[allow(clippy::result_large_err)]
+fn check_source_type(source_params: &SourceParams) -> Result<(), IndexServiceError> {
+    // Note: This check is performed here instead of the source config serde
+    // because many tests use the file source, and can't store that config in
+    // the metastore without going through the validation.
+    if let SourceParams::File(FileSourceParams::Filepath(_)) = source_params {
+        return Err(IndexServiceError::InvalidConfig(anyhow::anyhow!(
+            "path based file sources are limited to a local usage, please use the CLI command \
+             `quickwit tool local-ingest` to ingest data from a specific file or setup a \
+             notification based file source"
+        )));
+    }
+    Ok(())
+}
+
 #[utoipa::path(
     post,
     tag = "Sources",
@@ -74,16 +89,7 @@ pub async fn create_source(
     let source_config: SourceConfig =
         load_source_config_from_user_config(config_format, &source_config_bytes)
             .map_err(IndexServiceError::InvalidConfig)?;
-    // Note: This check is performed here instead of the source config serde
-    // because many tests use the file source, and can't store that config in
-    // the metastore without going through the validation.
-    if let SourceParams::File(FileSourceParams::Filepath(_)) = &source_config.source_params {
-        return Err(IndexServiceError::InvalidConfig(anyhow::anyhow!(
-            "path based file sources are limited to a local usage, please use the CLI command \
-             `quickwit tool local-ingest` to ingest data from a specific file or setup a \
-             notification based file source"
-        )));
-    }
+    check_source_type(&source_config.source_params)?;
     let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
     let index_uid: IndexUid = index_service
         .metastore()
@@ -166,17 +172,7 @@ pub async fn update_source(
                     "`source_id` in config file does not match source_id from query path"
                 )));
             }
-            // Note: This check is performed here instead of the source config serde
-            // because many tests use the file source, and can't store that config in
-            // the metastore without going through the validation.
-            if let SourceParams::File(FileSourceParams::Filepath(_)) = &source_config.source_params
-            {
-                return Err(IndexServiceError::InvalidConfig(anyhow::anyhow!(
-                    "path based file sources are limited to a local usage, please use the CLI \
-                     command `quickwit tool local-ingest` to ingest data from a specific file or \
-                     setup a notification based file source"
-                )));
-            }
+            check_source_type(&source_config.source_params)?;
             info!(index_id = %index_id, source_id = %source_config.source_id, "create-source-on-update");
             // TODO handle already exists?
             return index_service

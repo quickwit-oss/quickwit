@@ -222,7 +222,7 @@ async fn test_update_create_existing_doesnt_clear() {
     // Wait until split is committed
     tokio::time::sleep(Duration::from_secs(4)).await;
 
-    // No hit because `default_search_fields`` only covers the `title` field
+    // No hit because `default_search_fields` only covers the `title` field
     assert_hits_unordered(&sandbox, "my-updatable-index", "record", Ok(&[])).await;
 
     // Update the index to also search `body` by default, the same search should

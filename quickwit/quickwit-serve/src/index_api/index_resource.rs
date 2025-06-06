@@ -368,7 +368,7 @@ pub async fn update_index(
             info!(index_id = %index_config.index_id, "create-index-on-update");
             match index_service.create_index(index_config, false).await {
                 Err(IndexServiceError::Metastore(MetastoreError::AlreadyExists(_))) => {
-                    // Ff the index was created just after we tried to update it, try to update as
+                    // If the index was created just after we tried to update it, try to update as
                     // if nothing happened. But if it gets deleted again before we update it, just
                     // error out
                     let index_metadata_request =
