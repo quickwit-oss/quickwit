@@ -49,6 +49,7 @@ message NotQueryNode {
 message BooleanQueryNode {
   BooleanOperator operator = 1;
   repeated QueryNode clauses = 2;
+  bool shouldCache = 3;
 }
 
 message AttributeTermQueryNode {

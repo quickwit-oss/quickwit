@@ -110,6 +110,9 @@ pub struct FetchOneRequest {
     pub event_tracker: ::core::option::Option<EventTracker>,
     #[prost(int64, tag = "2")]
     pub org_id: i64,
+    /// this is always a com.dd.queryparser.proto.QueryNode, but we can't import logs-backend protobuf from here
+    #[prost(message, optional, tag = "3")]
+    pub restriction_query: ::core::option::Option<::prost_types::Any>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
