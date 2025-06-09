@@ -78,6 +78,7 @@ impl Source {
 pub struct SchedulingProblem {
     sources: Vec<Source>,
     indexer_cpu_capacities: Vec<CpuCapacity>,
+    unscaled_cpu_capacities: Vec<CpuCapacity>,
 }
 
 impl SchedulingProblem {
@@ -97,6 +98,7 @@ impl SchedulingProblem {
         // TODO assert for affinity.
         SchedulingProblem {
             sources: Vec::new(),
+            unscaled_cpu_capacities: indexer_cpu_capacities.clone(),
             indexer_cpu_capacities,
         }
     }
@@ -107,6 +109,11 @@ impl SchedulingProblem {
 
     pub fn indexer_cpu_capacity(&self, indexer_ord: IndexerOrd) -> CpuCapacity {
         self.indexer_cpu_capacities[indexer_ord]
+    }
+
+    /// Gets the original cpu capacities before scaling.
+    pub fn unscaled_indexer_cpu_capacities(&self) -> &[CpuCapacity] {
+        &self.unscaled_cpu_capacities
     }
 
     /// Scales the cpu capacity by the given scaling factor.
