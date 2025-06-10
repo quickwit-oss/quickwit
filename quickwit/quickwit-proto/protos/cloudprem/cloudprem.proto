@@ -102,10 +102,12 @@ message EventTracker {
 message FetchOneRequest {
   EventTracker event_tracker = 1;
   int64 org_id = 2;
+  // this is always a com.dd.queryparser.proto.QueryNode, but we can't import logs-backend protobuf from here
+  google.protobuf.Any restriction_query = 3;
 }
 
 message FetchOneResponse {
-  Event event = 1;
+  optional Event event = 1;
   Statistics statistics = 2;
 }
 

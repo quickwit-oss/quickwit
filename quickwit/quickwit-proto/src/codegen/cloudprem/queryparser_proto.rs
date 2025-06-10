@@ -85,6 +85,8 @@ pub struct BooleanQueryNode {
     pub operator: i32,
     #[prost(message, repeated, tag = "2")]
     pub clauses: ::prost::alloc::vec::Vec<QueryNode>,
+    #[prost(bool, tag = "3")]
+    pub should_cache: bool,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
