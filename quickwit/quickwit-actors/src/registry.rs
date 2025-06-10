@@ -166,8 +166,7 @@ impl ActorRegistry {
 
     pub fn get_one<A: Actor>(&self) -> Option<Mailbox<A>> {
         let mut lock = self.actors.write().unwrap();
-        let opt = get_iter::<A>(&mut lock).next();
-        opt
+        get_iter::<A>(&mut lock).next()
     }
 
     fn gc(&self) {

@@ -18,6 +18,7 @@ bytes = { workspace = true }
 bytesize = { workspace = true }
 fnv = { workspace = true }
 futures = { workspace = true }
+http-body-util = { workspace = true}
 hyper = { workspace = true }
 lru = { workspace = true }
 md5 = { workspace = true }

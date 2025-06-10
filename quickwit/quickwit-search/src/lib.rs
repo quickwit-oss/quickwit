@@ -29,6 +29,7 @@ mod leaf_cache;
 mod list_fields;
 mod list_fields_cache;
 mod list_terms;
+mod metrics_trackers;
 mod retry;
 mod root;
 mod scroll_context;
@@ -362,7 +363,7 @@ fn merge_resource_stats(
             stat_accs.cpu_thread_pool_wait_microsecs += new_stats.cpu_thread_pool_wait_microsecs;
             stat_accs.cpu_microsecs += new_stats.cpu_microsecs;
         } else {
-            *stat_accs_opt = Some(new_stats.clone());
+            *stat_accs_opt = Some(*new_stats);
         }
     }
 }

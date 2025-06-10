@@ -14,10 +14,10 @@
 
 use std::fmt;
 
-use hyper::header::CONTENT_TYPE;
 use quickwit_config::ConfigFormat;
 use serde::{self, Deserialize, Serialize, Serializer};
 use thiserror::Error;
+use warp::hyper::header::CONTENT_TYPE;
 use warp::{Filter, Rejection};
 
 /// Body output format used for the REST API.

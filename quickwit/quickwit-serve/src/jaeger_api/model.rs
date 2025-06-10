@@ -15,13 +15,13 @@
 use std::collections::HashMap;
 
 use base64::prelude::{BASE64_STANDARD, Engine};
-use hyper::StatusCode;
 use itertools::Itertools;
 use prost_types::{Duration, Timestamp};
 use quickwit_proto::jaeger::api_v2::{KeyValue, Log, Process, Span, SpanRef, ValueType};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use serde_with::serde_as;
+use warp::hyper::StatusCode;
 
 pub(super) const DEFAULT_NUMBER_OF_TRACES: i32 = 20;
 

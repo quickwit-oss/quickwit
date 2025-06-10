@@ -1,4 +1,3 @@
-use std::error::Error;
 use std::sync::Arc;
 
 use quickwit_config::JaegerConfig;
@@ -16,8 +15,7 @@ pub async fn grpc_server(
     let jaeger_service = JaegerService::new(JaegerConfig::default(), search_service.clone());
     let jaeger_grpc_service = SpanReaderPluginServer::new(jaeger_service);
 
-    let tcp_incoming = TcpIncoming::from_listener(tcp_listener, true, None)
-        .map_err(|err: Box<dyn Error + Send + Sync>| anyhow::anyhow!(err))?;
+    let tcp_incoming = TcpIncoming::from(tcp_listener).with_nodelay(Some(true));
 
     Server::builder()
         .add_service(jaeger_grpc_service)

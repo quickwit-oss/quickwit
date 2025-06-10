@@ -6,9 +6,8 @@ use futures::future::{Either, Ready, ready};
 use openssl::pkey::{PKey, PKeyRef, Public};
 use openssl::x509::X509;
 use quickwit_proto::tonic::Status;
-use quickwit_proto::tonic::body::BoxBody;
+use quickwit_proto::tonic::body::Body;
 use quickwit_proto::tonic::codegen::http::{Request, Response};
-use quickwit_proto::tonic::transport::Body;
 use tower::{Layer, Service};
 use tracing::info;
 
@@ -79,7 +78,7 @@ fn mtls_header_interceptor_impl<T>(
     ca_cert_public_key: &PKeyRef<Public>,
     header_name: &str,
     protected_path: &str,
-) -> Result<Request<T>, Status> {
+) -> Result<Request<T>, Box<Status>> {
     let path = request.uri().path();
     let is_external_traffic = path.starts_with(protected_path);
 
@@ -87,7 +86,9 @@ fn mtls_header_interceptor_impl<T>(
         return Ok(request);
     }
     let Some(encoded_client_cert) = request.headers().get(header_name) else {
-        return Err(Status::unauthenticated("could not find client certificate"));
+        return Err(Box::new(Status::unauthenticated(
+            "could not find client certificate",
+        )));
     };
     let client_cert = urlencoding::decode_binary(encoded_client_cert.as_bytes());
     let verify_result = verify_client_cert(&client_cert, ca_cert_public_key);
@@ -102,16 +103,18 @@ fn mtls_header_interceptor_impl<T>(
             else {
                 // this shouldn't happen, but if it does, it seems better to reject the query than
                 // accept an unauditable one.
-                return Err(Status::invalid_argument("unparseable subject".to_string()));
+                return Err(Box::new(Status::invalid_argument(
+                    "unparseable subject".to_string(),
+                )));
             };
             let subject = subject.join(", ");
             info!(target: "audit_log", path, subject, "received request");
             Ok(request)
         }
-        Ok(None) => Err(Status::unauthenticated(
+        Ok(None) => Err(Box::new(Status::unauthenticated(
             "failed to verify client certificate",
-        )),
-        Err(error) => Err(Status::invalid_argument(error.to_string())),
+        ))),
+        Err(error) => Err(Box::new(Status::invalid_argument(error.to_string()))),
     }
 }
 
@@ -155,7 +158,7 @@ pub(crate) struct MtlsHeaderInterceptor<'a, S> {
 }
 
 impl<S> Service<Request<Body>> for MtlsHeaderInterceptor<'_, S>
-where S: Service<Request<Body>, Response = Response<BoxBody>>
+where S: Service<Request<Body>, Response = Response<Body>>
 {
     type Response = S::Response;
     type Error = S::Error;
@@ -173,7 +176,7 @@ where S: Service<Request<Body>, Response = Response<BoxBody>>
             self.protected_path,
         ) {
             Ok(request) => Either::Left(self.inner.call(request)),
-            Err(status) => Either::Right(ready(Ok(status.to_http()))),
+            Err(status) => Either::Right(ready(Ok(status.into_http()))),
         }
     }
 }
@@ -222,7 +225,6 @@ impl<'a, S> Layer<S> for MtlsHeaderInterceptorLayer<'a> {
 mod tests {
     use hyper::StatusCode;
     use quickwit_proto::tonic::{Code, Status};
-    use tonic::body::empty_body;
     use tower::service_fn;
 
     use super::*;
@@ -359,7 +361,7 @@ mod tests {
             let response = Response::builder()
                 .status(StatusCode::OK)
                 .header("grpc-status", "0")
-                .body(empty_body())
+                .body(Body::empty())
                 .unwrap();
             Ok::<_, Status>(response)
         });

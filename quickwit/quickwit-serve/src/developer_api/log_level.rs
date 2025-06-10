@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use hyper::StatusCode;
 use serde::Deserialize;
 use tracing::{error, info};
+use warp::hyper::StatusCode;
 use warp::{Filter, Rejection};
 
 use crate::{EnvFilterReloadFn, with_arg};

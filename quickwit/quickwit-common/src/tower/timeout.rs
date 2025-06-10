@@ -95,6 +95,9 @@ where
 ///
 /// If the inner service does not complete within the specified duration,
 /// the response will be aborted with the error `TimeoutExceeded`.
+///
+/// Note that when used in combination with a retry layer, this should be
+/// stacked on top of it for the timeout to be retried.
 #[derive(Debug, Clone)]
 pub struct TimeoutLayer {
     timeout: Duration,

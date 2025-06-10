@@ -15,9 +15,9 @@
 use std::collections::HashSet;
 use std::ops::AddAssign;
 
-use hyper::StatusCode;
 use quickwit_metastore::{IndexMetadata, SplitMetadata};
 use serde::{Deserialize, Serialize, Serializer};
+use warp::hyper::StatusCode;
 
 use super::ElasticsearchError;
 use crate::simple_list::{from_simple_list, to_simple_list};
@@ -53,6 +53,7 @@ pub struct CatIndexQueryParams {
     pub v: Option<bool>,
 }
 impl CatIndexQueryParams {
+    #[allow(clippy::result_large_err)]
     pub fn validate(&self) -> Result<(), ElasticsearchError> {
         if let Some(format) = &self.format {
             if format.to_lowercase() != "json" {

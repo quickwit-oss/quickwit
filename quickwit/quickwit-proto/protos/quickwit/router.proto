@@ -26,6 +26,7 @@ service IngestRouterService {
 }
 
 message IngestRequestV2 {
+  // There should be at most one subrequest per index per request.
   repeated IngestSubrequest subrequests = 1;
   quickwit.ingest.CommitTypeV2 commit_type = 2;
 }

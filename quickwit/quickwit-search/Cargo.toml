@@ -22,6 +22,7 @@ http = { workspace = true }
 itertools = { workspace = true }
 mockall = { workspace = true }
 once_cell = { workspace = true }
+pin-project = { workspace = true }
 postcard = { workspace = true }
 prost = { workspace = true }
 rayon = { workspace = true }
@@ -33,7 +34,7 @@ tantivy-fst = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
-tower = { workspace = true }
+tower = { workspace = true, features = ["timeout"] }
 tracing = { workspace = true }
 ttl_cache = { workspace = true }
 ulid = { workspace = true }

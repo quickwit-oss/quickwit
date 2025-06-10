@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use hyper::server::conn::AddrIncoming;
 use quickwit_config::JaegerConfig;
 use quickwit_jaeger::JaegerService;
 use quickwit_search::SearchService;
@@ -10,6 +9,7 @@ use quickwit_serve::rest::search_routes;
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
 use tower::make::Shared;
+use warp::hyper::server::conn::AddrIncoming;
 use warp::{Filter, Rejection};
 
 fn api_v1_routes(
@@ -44,7 +44,7 @@ pub async fn rest_server(
 
     let incoming = AddrIncoming::from_listener(tcp_listener)?;
 
-    hyper::Server::builder(incoming)
+    warp::hyper::Server::builder(incoming)
         .serve(Shared::new(service))
         .await?;
     Ok(())

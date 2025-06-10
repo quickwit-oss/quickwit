@@ -558,19 +558,22 @@ impl MetastoreService for FileBackedMetastore {
         &self,
         request: UpdateIndexRequest,
     ) -> MetastoreResult<IndexMetadataResponse> {
-        let retention_policy_opt = request.deserialize_retention_policy()?;
-        let search_settings = request.deserialize_search_settings()?;
-        let indexing_settings = request.deserialize_indexing_settings()?;
-        let doc_mapping = request.deserialize_doc_mapping()?;
         let index_uid = request.index_uid();
+        let doc_mapping = request.deserialize_doc_mapping()?;
+        let indexing_settings = request.deserialize_indexing_settings()?;
+        let ingest_settings = request.deserialize_ingest_settings()?;
+        let search_settings = request.deserialize_search_settings()?;
+        let retention_policy_opt = request.deserialize_retention_policy()?;
 
         let index_metadata = self
             .mutate(index_uid, |index| {
-                let mut mutation_occurred = index.set_retention_policy(retention_policy_opt);
-                mutation_occurred |= index.set_search_settings(search_settings);
-                mutation_occurred |= index.set_indexing_settings(indexing_settings);
-                mutation_occurred |= index.set_doc_mapping(doc_mapping);
-
+                let mutation_occurred = index.update_index_config(
+                    doc_mapping,
+                    indexing_settings,
+                    ingest_settings,
+                    search_settings,
+                    retention_policy_opt,
+                );
                 let index_metadata = index.metadata().clone();
 
                 if mutation_occurred {

@@ -59,10 +59,7 @@ impl MultiRecordLogAsync {
         .await
         .map_err(|join_err| {
             error!(error=?join_err, "failed to load WAL");
-            ReadRecordError::IoError(io::Error::new(
-                io::ErrorKind::Other,
-                "loading wal from directory failed",
-            ))
+            ReadRecordError::IoError(io::Error::other("loading wal from directory failed"))
         })??;
         Ok(Self {
             mrecordlog_opt: Some(mrecordlog),

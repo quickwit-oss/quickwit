@@ -18,6 +18,7 @@ mod doc_batch;
 pub mod error;
 mod ingest_api_service;
 #[path = "codegen/ingest_service.rs"]
+#[allow(clippy::disallowed_methods)]
 mod ingest_service;
 mod ingest_v2;
 mod memory_capacity;

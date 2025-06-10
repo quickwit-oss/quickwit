@@ -26,7 +26,7 @@ pub fn matches(query: &str, text: &str) -> bool {
             if !text_tokens.iter().any(|t| re.is_match(t)) {
                 return false;
             }
-        } else if !text_tokens.iter().any(|t| *t == qtoken) {
+        } else if !text_tokens.contains(&qtoken) {
             return false;
         }
     }

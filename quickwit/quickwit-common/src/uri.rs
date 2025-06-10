@@ -14,7 +14,6 @@
 
 use std::borrow::Cow;
 use std::env;
-use std::ffi::OsStr;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::path::{Component, Path, PathBuf};
@@ -126,7 +125,7 @@ impl Uri {
 
     /// Returns the extension of the URI.
     pub fn extension(&self) -> Option<&str> {
-        Path::new(&self.uri).extension().and_then(OsStr::to_str)
+        Path::new(&self.uri).extension()?.to_str()
     }
 
     /// Returns the URI as a string slice.

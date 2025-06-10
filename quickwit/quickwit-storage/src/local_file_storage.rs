@@ -452,7 +452,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_try_delete_dir_all() -> anyhow::Result<()> {
-        let path_root = tempfile::tempdir()?.into_path();
+        let path_root = tempfile::tempdir()?.keep();
         let dir_path = path_root.clone().join("foo/bar/baz");
         tokio::fs::create_dir_all(dir_path.clone()).await?;
 
