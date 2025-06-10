@@ -785,11 +785,10 @@ mod kafka_broker_tests {
     }
 
     fn create_admin_client() -> AdminClient<DefaultClientContext> {
-        let admin_client = ClientConfig::new()
+        ClientConfig::new()
             .set("bootstrap.servers", "localhost:9092")
             .create()
-            .unwrap();
-        admin_client
+            .unwrap()
     }
 
     async fn create_topic(
@@ -875,7 +874,7 @@ mod kafka_broker_tests {
         let source_id = append_random_suffix("test-kafka-source--source");
         let source_config = SourceConfig {
             source_id: source_id.clone(),
-            num_pipelines: NonZeroUsize::new(1).unwrap(),
+            num_pipelines: NonZeroUsize::MIN,
             enabled: true,
             source_params: SourceParams::Kafka(KafkaSourceParams {
                 topic: topic.to_string(),

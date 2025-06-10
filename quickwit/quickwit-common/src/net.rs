@@ -327,10 +327,9 @@ fn _get_hostname(hostname: OsString) -> io::Result<String> {
     if is_valid_hostname(&hostname_lossy) {
         Ok(hostname_lossy.to_string())
     } else {
-        Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("invalid hostname: `{hostname_lossy}`"),
-        ))
+        Err(io::Error::other(format!(
+            "invalid hostname: `{hostname_lossy}`"
+        )))
     }
 }
 

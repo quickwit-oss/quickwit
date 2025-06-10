@@ -279,7 +279,7 @@ pub struct IndexMetasForLeafSearch {
 }
 
 /// Performs a distributed list fields request.
-/// 1. Sends leaf request over gRPC to multiple leaf nodes.
+/// 1. Sends leaf requests over gRPC to multiple leaf nodes.
 /// 2. Merges the search results.
 /// 3. Builds the response and returns.
 pub async fn root_list_fields(

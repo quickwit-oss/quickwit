@@ -887,8 +887,7 @@ mod tests {
     use aws_sdk_s3::config::{Credentials, Region};
     use aws_sdk_s3::primitives::SdkBody;
     use aws_smithy_runtime::client::http::test_util::{ReplayEvent, StaticReplayClient};
-    use bytes::Bytes;
-    use hyper::{Body, http};
+    use hyper::http;
     use quickwit_aws::aws_behavior_version;
     use quickwit_common::chunk_range;
     use quickwit_common::uri::Uri;
@@ -985,20 +984,12 @@ mod tests {
     async fn test_s3_compatible_storage_bulk_delete_single() {
         let client = StaticReplayClient::new(vec![
             ReplayEvent::new(
-                http::Request::builder()
-                    .body(SdkBody::from_body_0_4(Body::empty()))
-                    .unwrap(),
-                http::Response::builder()
-                    .body(SdkBody::from_body_0_4(Body::empty()))
-                    .unwrap(),
+                http::Request::builder().body(SdkBody::empty()).unwrap(),
+                http::Response::builder().body(SdkBody::empty()).unwrap(),
             ),
             ReplayEvent::new(
-                http::Request::builder()
-                    .body(SdkBody::from_body_0_4(Body::empty()))
-                    .unwrap(),
-                http::Response::builder()
-                    .body(SdkBody::from_body_0_4(Body::empty()))
-                    .unwrap(),
+                http::Request::builder().body(SdkBody::empty()).unwrap(),
+                http::Response::builder().body(SdkBody::empty()).unwrap(),
             ),
         ]);
         let credentials = Credentials::new("mock_key", "mock_secret", None, None, "mock_provider");
@@ -1035,12 +1026,8 @@ mod tests {
     #[tokio::test]
     async fn test_s3_compatible_storage_bulk_delete_multi() {
         let client = StaticReplayClient::new(vec![ReplayEvent::new(
-            http::Request::builder()
-                .body(SdkBody::from_body_0_4(Body::empty()))
-                .unwrap(),
-            http::Response::builder()
-                .body(SdkBody::from_body_0_4(Body::empty()))
-                .unwrap(),
+            http::Request::builder().body(SdkBody::empty()).unwrap(),
+            http::Response::builder().body(SdkBody::empty()).unwrap(),
         )]);
         let credentials = Credentials::new("mock_key", "mock_secret", None, None, "mock_provider");
         let config = aws_sdk_s3::Config::builder()
@@ -1084,7 +1071,7 @@ mod tests {
                 http::Request::builder().body(SdkBody::empty()).unwrap(),
                 http::Response::builder()
                     .status(200)
-                    .body(SdkBody::from_body_0_4(Body::from(Bytes::from(
+                    .body(SdkBody::from(
                         r#"<?xml version="1.0" encoding="UTF-8"?>
                         <DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
                             <Deleted>
@@ -1101,7 +1088,7 @@ mod tests {
                                 <Message>Access Denied</Message>
                             </Error>
                         </DeleteResult>"#
-                    ))))
+                    ))
                     .unwrap()
             ),
             ReplayEvent::new(
@@ -1109,10 +1096,10 @@ mod tests {
                 // but may in future, that being said, there is no way to know what the
                 // request should look like until it raises an error in reality as this
                 // is up to how the validation is implemented.
-                http::Request::builder().body(SdkBody::from_body_0_4(Body::empty())).unwrap(),
+                http::Request::builder().body(SdkBody::empty()).unwrap(),
                 http::Response::builder()
                     .status(400)
-                    .body(SdkBody::from_body_0_4(Body::from(Bytes::from(
+                    .body(SdkBody::from(
                         r#"<?xml version="1.0" encoding="UTF-8"?>
                         <Error>
                             <Code>MalformedXML</Code>
@@ -1120,7 +1107,7 @@ mod tests {
                             <RequestId>264A17BF16E9E80A</RequestId>
                             <HostId>P3xqrhuhYxlrefdw3rEzmJh8z5KDtGzb+/FB7oiQaScI9Yaxd8olYXc7d1111ab+</HostId>
                         </Error>"#
-                    ))))
+                    ))
                     .unwrap()
             ),
         ]);
@@ -1192,7 +1179,7 @@ mod tests {
                 http::Request::builder().body(SdkBody::empty()).unwrap(),
                 http::Response::builder()
                     .status(429)
-                    .body(SdkBody::from_body_0_4(Body::from(Bytes::from(
+                    .body(SdkBody::from(
                         r#"<?xml version="1.0" encoding="UTF-8"?>
                         <Error>
                           <Code>SlowDown</Code>
@@ -1200,7 +1187,7 @@ mod tests {
                           <Resource>/my-path</Resource>
                           <RequestId>4442587FB7D0A2F9</RequestId>
                         </Error>"#,
-                    ))))
+                    ))
                     .unwrap(),
             ),
             ReplayEvent::new(
@@ -1208,12 +1195,10 @@ mod tests {
                 // but may in future, that being said, there is no way to know what the
                 // request should look like until it raises an error in reality as this
                 // is up to how the validation is implemented.
-                http::Request::builder()
-                    .body(SdkBody::from_body_0_4(Body::empty()))
-                    .unwrap(),
+                http::Request::builder().body(SdkBody::empty()).unwrap(),
                 http::Response::builder()
                     .status(200)
-                    .body(SdkBody::from_body_0_4(Body::empty()))
+                    .body(SdkBody::empty())
                     .unwrap(),
             ),
         ]);

@@ -79,6 +79,9 @@
         "period": "42 days",
         "schedule": "daily"
       },
+      "ingest_settings": {
+        "min_shards": 1
+      },
       "search_settings": {
         "default_search_fields": []
       },

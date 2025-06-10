@@ -23,15 +23,15 @@ s3-localstack-tests = []
 
 [dependencies]
 anyhow = { workspace = true }
-aws_lambda_events = "0.15.0"
+aws_lambda_events = "0.16"
 bytesize = { workspace = true }
 chitchat = { workspace = true }
 chrono = { workspace = true }
 flate2 = { workspace = true }
 http = { workspace = true }
-lambda_http = "0.8.0"
-lambda_runtime = "0.13.0"
-mime_guess =  { workspace = true }
+lambda_http = "0.14"
+lambda_runtime = "0.13"
+mime_guess = { workspace = true }
 once_cell = { workspace = true }
 opentelemetry = { workspace = true }
 opentelemetry_sdk = { workspace = true }
@@ -49,7 +49,7 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["json"] }
-warp = {  workspace = true , features = ["compression-gzip"] }
+warp = { workspace = true, features = ["compression-gzip"] }
 
 
 quickwit-actors = { workspace = true }

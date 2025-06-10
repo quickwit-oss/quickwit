@@ -27,7 +27,7 @@ use azure_storage::prelude::*;
 use azure_storage_blobs::blob::operations::GetBlobResponse;
 use azure_storage_blobs::prelude::*;
 use bytes::Bytes;
-use futures::io::{Error as FutureError, ErrorKind as FutureErrorKind};
+use futures::io::Error as FutureError;
 use futures::stream::{StreamExt, TryStreamExt};
 use md5::Digest;
 use once_cell::sync::OnceCell;
@@ -349,7 +349,7 @@ impl Storage for AzureBlobStorage {
             let chunk_response = chunk_result.map_err(AzureErrorWrapper::from)?;
             let chunk_response_body_stream = chunk_response
                 .data
-                .map_err(|err| FutureError::new(FutureErrorKind::Other, err))
+                .map_err(FutureError::other)
                 .into_async_read()
                 .compat();
             let mut body_stream_reader = BufReader::new(chunk_response_body_stream);
@@ -448,13 +448,9 @@ impl Storage for AzureBlobStorage {
                 .range(range)
                 .into_stream();
             let mut bytes_stream = page_stream
-                .map(|page_res| {
-                    page_res
-                        .map(|page| page.data)
-                        .map_err(|err| FutureError::new(FutureErrorKind::Other, err))
-                })
+                .map(|page_res| page_res.map(|page| page.data).map_err(FutureError::other))
                 .try_flatten()
-                .map(|e| e.map_err(|err| FutureError::new(FutureErrorKind::Other, err)));
+                .map(|bytes_res| bytes_res.map_err(FutureError::other));
             // Peek into the stream so that any early error can be retried
             let first_chunk = bytes_stream.next().await;
             let reader: Box<dyn AsyncRead + Send + Unpin> = if let Some(res) = first_chunk {
@@ -552,7 +548,7 @@ async fn download_all(
         let chunk_response = chunk_result?;
         let chunk_response_body_stream = chunk_response
             .data
-            .map_err(|err| FutureError::new(FutureErrorKind::Other, err))
+            .map_err(FutureError::other)
             .into_async_read()
             .compat();
         let mut body_stream_reader = BufReader::new(chunk_response_body_stream);

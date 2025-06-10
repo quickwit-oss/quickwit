@@ -19,7 +19,8 @@ use std::collections::hash_map::Entry;
 
 use quickwit_common::uri::Uri;
 use quickwit_config::{
-    DocMapping, IndexConfig, IndexingSettings, RetentionPolicy, SearchSettings, SourceConfig,
+    DocMapping, IndexConfig, IndexingSettings, IngestSettings, RetentionPolicy, SearchSettings,
+    SourceConfig,
 };
 use quickwit_proto::metastore::{EntityKind, MetastoreError, MetastoreResult};
 use quickwit_proto::types::{IndexUid, SourceId};
@@ -95,44 +96,40 @@ impl IndexMetadata {
         &self.index_config().index_uri
     }
 
-    /// Replaces or removes the current retention policy, returning whether a mutation occurred.
-    pub fn set_retention_policy(&mut self, retention_policy_opt: Option<RetentionPolicy>) -> bool {
-        if self.index_config.retention_policy_opt != retention_policy_opt {
-            self.index_config.retention_policy_opt = retention_policy_opt;
-            true
-        } else {
-            false
-        }
-    }
+    /// Updates the index config.
+    ///
+    /// Returns whether a mutation occurred.
+    pub fn update_index_config(
+        &mut self,
+        doc_mapping: DocMapping,
+        indexing_settings: IndexingSettings,
+        ingest_settings: IngestSettings,
+        search_settings: SearchSettings,
+        retention_policy_opt: Option<RetentionPolicy>,
+    ) -> bool {
+        let mut mutation_occurred = false;
 
-    /// Replaces the current search settings, returning whether a mutation occurred.
-    pub fn set_search_settings(&mut self, search_settings: SearchSettings) -> bool {
-        if self.index_config.search_settings != search_settings {
-            self.index_config.search_settings = search_settings;
-            true
-        } else {
-            false
-        }
-    }
-
-    /// Replaces the current indexing settings, returning whether a mutation occurred.
-    pub fn set_indexing_settings(&mut self, indexing_settings: IndexingSettings) -> bool {
-        if self.index_config.indexing_settings != indexing_settings {
-            self.index_config.indexing_settings = indexing_settings;
-            true
-        } else {
-            false
-        }
-    }
-
-    /// Replaces the current doc mapping, returning whether a mutation occurred.
-    pub fn set_doc_mapping(&mut self, doc_mapping: DocMapping) -> bool {
-        if self.index_config.doc_mapping != doc_mapping {
+        if doc_mapping != self.index_config.doc_mapping {
             self.index_config.doc_mapping = doc_mapping;
-            true
-        } else {
-            false
+            mutation_occurred = true;
         }
+        if indexing_settings != self.index_config.indexing_settings {
+            self.index_config.indexing_settings = indexing_settings;
+            mutation_occurred = true;
+        }
+        if ingest_settings != self.index_config.ingest_settings {
+            self.index_config.ingest_settings = ingest_settings;
+            mutation_occurred = true;
+        }
+        if search_settings != self.index_config.search_settings {
+            self.index_config.search_settings = search_settings;
+            mutation_occurred = true;
+        }
+        if retention_policy_opt != self.index_config.retention_policy_opt {
+            self.index_config.retention_policy_opt = retention_policy_opt;
+            mutation_occurred = true;
+        }
+        mutation_occurred
     }
 
     /// Adds a source to the index. Returns an error if the source already exists.

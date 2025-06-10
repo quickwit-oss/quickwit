@@ -102,6 +102,7 @@ async fn validate_search_across_doc_mapping_updates(
             })
             .to_string(),
             quickwit_config::ConfigFormat::Json,
+            false,
         )
         .await
         .unwrap();
@@ -688,6 +689,7 @@ async fn test_update_doc_validation() {
             })
             .to_string(),
             quickwit_config::ConfigFormat::Json,
+            false,
         )
         .await
         .unwrap();

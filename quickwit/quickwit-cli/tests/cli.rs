@@ -564,6 +564,7 @@ async fn test_cmd_update_index() {
         client_args: test_env.default_client_args(),
         index_id: index_id.clone(),
         index_config_uri: test_env.resource_files.index_config_with_retention.clone(),
+        create: false,
         assume_yes: true,
     };
     update_index_cli(args).await.unwrap();
@@ -582,6 +583,7 @@ async fn test_cmd_update_index() {
         client_args: test_env.default_client_args(),
         index_id,
         index_config_uri: test_env.resource_files.index_config.clone(),
+        create: false,
         assume_yes: true,
     };
     update_index_cli(args).await.unwrap();

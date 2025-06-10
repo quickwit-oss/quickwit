@@ -21,7 +21,6 @@ use bytes::Bytes;
 use elasticsearch_dsl::search::Hit as ElasticHit;
 use elasticsearch_dsl::{HitsMetadata, ShardStatistics, Source, TotalHits, TotalHitsRelation};
 use futures_util::StreamExt;
-use hyper::StatusCode;
 use itertools::Itertools;
 use quickwit_cluster::Cluster;
 use quickwit_common::truncate_str;
@@ -41,6 +40,7 @@ use quickwit_search::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use warp::hyper::StatusCode;
 use warp::reply::with_status;
 use warp::{Filter, Rejection};
 
@@ -302,6 +302,7 @@ pub fn es_compat_scroll_handler(
         .boxed()
 }
 
+#[allow(clippy::result_large_err)]
 fn build_request_for_es_api(
     index_id_patterns: Vec<String>,
     search_params: SearchQueryParams,
@@ -418,6 +419,7 @@ fn is_doc_field(field: &quickwit_proto::search::SortField) -> bool {
     field.field_name == "_shard_doc" || field.field_name == "_doc"
 }
 
+#[allow(clippy::result_large_err)]
 fn partial_hit_from_search_after_param(
     search_after: Vec<serde_json::Value>,
     sort_order: &[quickwit_proto::search::SortField],
@@ -991,6 +993,7 @@ fn convert_to_es_stats_response(
     ElasticsearchStatsResponse { _all, indices }
 }
 
+#[allow(clippy::result_large_err)]
 fn convert_to_es_search_response(
     resp: SearchResponse,
     append_shard_doc: bool,
@@ -1057,8 +1060,8 @@ pub(crate) fn str_lines(body: &str) -> impl Iterator<Item = &str> {
 
 #[cfg(test)]
 mod tests {
-    use hyper::StatusCode;
     use quickwit_proto::search::SplitSearchError;
+    use warp::hyper::StatusCode;
 
     use super::{partial_hit_from_search_after_param, *};
 

@@ -6,9 +6,8 @@ use futures::future::{Either, Ready, ready};
 use openssl::pkey::{PKey, PKeyRef, Public};
 use openssl::x509::X509;
 use quickwit_proto::tonic::Status;
-use quickwit_proto::tonic::body::BoxBody;
+use quickwit_proto::tonic::body::Body;
 use quickwit_proto::tonic::codegen::http::{Request, Response};
-use quickwit_proto::tonic::transport::Body;
 use tower::{Layer, Service};
 use tracing::info;
 
@@ -155,7 +154,7 @@ pub(crate) struct MtlsHeaderInterceptor<'a, S> {
 }
 
 impl<S> Service<Request<Body>> for MtlsHeaderInterceptor<'_, S>
-where S: Service<Request<Body>, Response = Response<BoxBody>>
+where S: Service<Request<Body>, Response = Response<Body>>
 {
     type Response = S::Response;
     type Error = S::Error;
@@ -173,7 +172,7 @@ where S: Service<Request<Body>, Response = Response<BoxBody>>
             self.protected_path,
         ) {
             Ok(request) => Either::Left(self.inner.call(request)),
-            Err(status) => Either::Right(ready(Ok(status.to_http()))),
+            Err(status) => Either::Right(ready(Ok(status.into_http()))),
         }
     }
 }
@@ -222,7 +221,6 @@ impl<'a, S> Layer<S> for MtlsHeaderInterceptorLayer<'a> {
 mod tests {
     use hyper::StatusCode;
     use quickwit_proto::tonic::{Code, Status};
-    use tonic::body::empty_body;
     use tower::service_fn;
 
     use super::*;
@@ -359,7 +357,7 @@ mod tests {
             let response = Response::builder()
                 .status(StatusCode::OK)
                 .header("grpc-status", "0")
-                .body(empty_body())
+                .body(Body::empty())
                 .unwrap();
             Ok::<_, Status>(response)
         });

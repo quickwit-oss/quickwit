@@ -57,6 +57,8 @@ pub fn build_source_command() -> Command {
                         .required(true),
                     arg!(--"source-config" <SOURCE_CONFIG> "Path to source config file. Please, refer to the documentation for more details.")
                         .required(true),
+                    arg!(--"create" "Create the index if it does not already exists.")
+                        .required(false),
                 ])
             )
         .subcommand(
@@ -162,6 +164,7 @@ pub struct UpdateSourceArgs {
     pub index_id: IndexId,
     pub source_id: SourceId,
     pub source_config_uri: Uri,
+    pub create: bool,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -276,11 +279,14 @@ impl SourceCliCommand {
             .remove_one::<String>("source-config")
             .map(|uri_str| Uri::from_str(&uri_str))
             .expect("`source-config` should be a required arg.")?;
+        let create = matches.get_flag("create");
+
         Ok(UpdateSourceArgs {
             client_args,
             index_id,
             source_id,
             source_config_uri,
+            create,
         })
     }
 
@@ -393,7 +399,12 @@ async fn update_source_cli(args: UpdateSourceArgs) -> anyhow::Result<()> {
     let qw_client = args.client_args.client();
     qw_client
         .sources(&args.index_id)
-        .update(&args.source_id, source_config_str, config_format)
+        .update(
+            &args.source_id,
+            source_config_str,
+            config_format,
+            args.create,
+        )
         .await?;
     println!("{} Source successfully updated.", "✔".color(GREEN_COLOR));
     Ok(())
@@ -683,6 +694,7 @@ mod tests {
                 index_id: "hdfs-logs".to_string(),
                 source_id: "kafka-foo".to_string(),
                 source_config_uri: Uri::from_str("file:///source-conf.yaml").unwrap(),
+                create: false,
             }));
         assert_eq!(command, expected_command);
     }
@@ -823,7 +835,7 @@ mod tests {
             .collect();
         let sources = vec![SourceConfig {
             source_id: "foo-source".to_string(),
-            num_pipelines: NonZeroUsize::new(1).unwrap(),
+            num_pipelines: NonZeroUsize::MIN,
             enabled: true,
             source_params: SourceParams::file_from_str("path/to/file").unwrap(),
             transform_config: None,
@@ -884,7 +896,7 @@ mod tests {
         let sources = [
             SourceConfig {
                 source_id: "foo-source".to_string(),
-                num_pipelines: NonZeroUsize::new(1).unwrap(),
+                num_pipelines: NonZeroUsize::MIN,
                 enabled: true,
                 source_params: SourceParams::stdin(),
                 transform_config: None,
@@ -892,7 +904,7 @@ mod tests {
             },
             SourceConfig {
                 source_id: "bar-source".to_string(),
-                num_pipelines: NonZeroUsize::new(1).unwrap(),
+                num_pipelines: NonZeroUsize::MIN,
                 enabled: true,
                 source_params: SourceParams::stdin(),
                 transform_config: None,

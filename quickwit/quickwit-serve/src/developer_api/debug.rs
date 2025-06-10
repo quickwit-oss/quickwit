@@ -18,15 +18,16 @@ use std::time::Duration;
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 use glob::{MatchOptions, Pattern as GlobPattern};
-use hyper::StatusCode;
 use quickwit_cluster::Cluster;
 use quickwit_config::service::QuickwitService;
 use quickwit_proto::developer::{DeveloperService, DeveloperServiceClient, GetDebugInfoRequest};
+use quickwit_proto::tonic::codec::CompressionEncoding;
 use quickwit_proto::types::{NodeId, NodeIdRef};
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
 use tokio::time::timeout;
 use tracing::error;
+use warp::hyper::StatusCode;
 use warp::{Filter, Rejection, Reply};
 
 use super::DeveloperApiServer;
@@ -109,6 +110,7 @@ async fn get_node_debug_infos(
                 ready_node.grpc_advertise_addr(),
                 ready_node.channel(),
                 DeveloperApiServer::MAX_GRPC_MESSAGE_SIZE,
+                Some(CompressionEncoding::Zstd),
             );
             let roles = target_roles.iter().map(|role| role.to_string()).collect();
             let request = GetDebugInfoRequest { roles };

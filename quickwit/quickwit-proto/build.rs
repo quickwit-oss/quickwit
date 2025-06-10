@@ -233,7 +233,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .type_attribute("SortByValue", "#[derive(Ord, PartialOrd)]")
         .type_attribute("SortField", "#[derive(Eq, Hash)]")
         .out_dir("src/codegen/quickwit")
-        .compile_with_config(prost_config, &["protos/quickwit/search.proto"], &["protos"])?;
+        .compile_protos_with_config(prost_config, &["protos/quickwit/search.proto"], &["protos"])?;
 
     // Jaeger proto
     let protos = find_protos("protos/third-party/jaeger");
@@ -243,7 +243,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tonic_build::configure()
         .out_dir("src/codegen/jaeger")
-        .compile_with_config(
+        .compile_protos_with_config(
             prost_config,
             &protos,
             &["protos/third-party/jaeger", "protos/third-party"],
@@ -262,7 +262,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             r#"#[derive(utoipa::ToSchema)]"#,
         )
         .out_dir("src/codegen/opentelemetry")
-        .compile_with_config(prost_config, &protos, &["protos/third-party"])?;
+        .compile_protos_with_config(prost_config, &protos, &["protos/third-party"])?;
     Ok(())
 }
 

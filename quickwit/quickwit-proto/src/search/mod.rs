@@ -53,7 +53,7 @@ impl fmt::Display for SplitSearchError {
 }
 
 impl Eq for SortByValue {}
-impl Copy for SortByValue {}
+
 impl From<SortValue> for SortByValue {
     fn from(sort_value: SortValue) -> Self {
         SortByValue {
@@ -128,7 +128,6 @@ impl SortByValue {
 // This is terrible because this means Eq, PartialEq are not really in line with Ord's
 // implementation. if in presence of NaN.
 impl Eq for SortValue {}
-impl Copy for SortValue {}
 
 impl Ord for SortValue {
     #[inline]
@@ -263,6 +262,7 @@ pub fn deserialize_split_fields<R: Read>(mut reader: R) -> io::Result<ListFields
 }
 
 /// Reads the Split fields from a stream of bytes
+#[allow(clippy::unbuffered_bytes)]
 fn read_split_fields_from_zstd<R: Read>(reader: R) -> io::Result<ListFields> {
     let all_bytes: Vec<_> = reader.bytes().collect::<io::Result<_>>()?;
     let serialized_list_fields: ListFields = prost::Message::decode(&all_bytes[..])?;

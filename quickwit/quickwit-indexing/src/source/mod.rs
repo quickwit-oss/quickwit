@@ -683,7 +683,7 @@ mod tests {
         {
             let source_config = SourceConfig {
                 source_id: "void".to_string(),
-                num_pipelines: NonZeroUsize::new(1).unwrap(),
+                num_pipelines: NonZeroUsize::MIN,
                 enabled: true,
                 source_params: SourceParams::void(),
                 transform_config: None,
@@ -694,7 +694,7 @@ mod tests {
         {
             let source_config = SourceConfig {
                 source_id: "vec".to_string(),
-                num_pipelines: NonZeroUsize::new(1).unwrap(),
+                num_pipelines: NonZeroUsize::MIN,
                 enabled: true,
                 source_params: SourceParams::Vec(VecSourceParams::default()),
                 transform_config: None,
@@ -705,7 +705,7 @@ mod tests {
         {
             let source_config = SourceConfig {
                 source_id: "file".to_string(),
-                num_pipelines: NonZeroUsize::new(1).unwrap(),
+                num_pipelines: NonZeroUsize::MIN,
                 enabled: true,
                 source_params: SourceParams::file_from_str("file-does-not-exist.json").unwrap(),
                 transform_config: None,
@@ -720,7 +720,7 @@ mod tests {
         {
             let source_config = SourceConfig {
                 source_id: "file".to_string(),
-                num_pipelines: NonZeroUsize::new(1).unwrap(),
+                num_pipelines: NonZeroUsize::MIN,
                 enabled: true,
                 source_params: SourceParams::file_from_str("data/test_corpus.json").unwrap(),
                 transform_config: None,

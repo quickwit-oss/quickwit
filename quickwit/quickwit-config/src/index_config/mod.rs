@@ -15,6 +15,7 @@
 pub(crate) mod serialize;
 
 use std::hash::{Hash, Hasher};
+use std::num::NonZeroUsize;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -161,6 +162,30 @@ impl Default for IndexingSettings {
     }
 }
 
+/// Settings for ingestion.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct IngestSettings {
+    /// Configures the minimum number of shards to use for ingestion.
+    #[schema(default = 1, value_type = usize)]
+    #[serde(default = "IngestSettings::default_min_shards")]
+    pub min_shards: NonZeroUsize,
+}
+
+impl IngestSettings {
+    pub fn default_min_shards() -> NonZeroUsize {
+        NonZeroUsize::MIN
+    }
+}
+
+impl Default for IngestSettings {
+    fn default() -> Self {
+        Self {
+            min_shards: Self::default_min_shards(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SearchSettings {
@@ -251,6 +276,7 @@ pub struct IndexConfig {
     pub index_uri: Uri,
     pub doc_mapping: DocMapping,
     pub indexing_settings: IndexingSettings,
+    pub ingest_settings: IngestSettings,
     pub search_settings: SearchSettings,
     pub retention_policy_opt: Option<RetentionPolicy>,
 }
@@ -359,8 +385,9 @@ impl IndexConfig {
             index_uri,
             doc_mapping,
             indexing_settings,
+            ingest_settings: IngestSettings::default(),
             search_settings,
-            retention_policy_opt: Default::default(),
+            retention_policy_opt: None,
         }
     }
 }
@@ -435,10 +462,6 @@ impl crate::TestableForRegression for IndexConfig {
             store_source: true,
             tokenizers: vec![tokenizer],
         };
-        let retention_policy = Some(RetentionPolicy {
-            retention_period: "90 days".to_string(),
-            evaluation_schedule: "daily".to_string(),
-        });
         let stable_log_config = StableLogMergePolicyConfig {
             merge_factor: 9,
             max_merge_factor: 11,
@@ -456,16 +479,24 @@ impl crate::TestableForRegression for IndexConfig {
             resources: indexing_resources,
             ..Default::default()
         };
+        let ingest_settings = IngestSettings {
+            min_shards: NonZeroUsize::new(12).unwrap(),
+        };
         let search_settings = SearchSettings {
             default_search_fields: vec!["message".to_string()],
         };
+        let retention_policy_opt = Some(RetentionPolicy {
+            retention_period: "90 days".to_string(),
+            evaluation_schedule: "daily".to_string(),
+        });
         IndexConfig {
             index_id: "my-index".to_string(),
             index_uri: Uri::for_test("s3://quickwit-indexes/my-index"),
             doc_mapping,
             indexing_settings,
-            retention_policy_opt: retention_policy,
+            ingest_settings,
             search_settings,
+            retention_policy_opt,
         }
     }
 
@@ -474,7 +505,9 @@ impl crate::TestableForRegression for IndexConfig {
         assert_eq!(self.index_uri, other.index_uri);
         assert_eq!(self.doc_mapping, other.doc_mapping);
         assert_eq!(self.indexing_settings, other.indexing_settings);
+        assert_eq!(self.ingest_settings, other.ingest_settings);
         assert_eq!(self.search_settings, other.search_settings);
+        assert_eq!(self.retention_policy_opt, other.retention_policy_opt);
     }
 }
 
@@ -488,7 +521,8 @@ pub fn build_doc_mapper(
         default_search_fields: search_settings.default_search_fields.clone(),
         legacy_type_tag: None,
     };
-    Ok(Arc::new(builder.try_build()?))
+    let doc_mapper = builder.try_build()?;
+    Ok(Arc::new(doc_mapper))
 }
 
 /// Validates the objects that make up an index configuration. This is a "free" function as opposed
@@ -598,6 +632,7 @@ mod tests {
                 ..Default::default()
             }
         );
+        assert_eq!(index_config.ingest_settings.min_shards.get(), 12);
         assert_eq!(
             index_config.search_settings,
             SearchSettings {
@@ -640,12 +675,13 @@ mod tests {
             assert_eq!(index_config.doc_mapping.field_mappings[0].name, "body");
             assert!(!index_config.doc_mapping.store_source);
             assert_eq!(index_config.indexing_settings, IndexingSettings::default());
-            assert_eq!(
-                index_config.search_settings,
-                SearchSettings {
-                    default_search_fields: vec!["body".to_string()],
-                }
-            );
+            assert_eq!(index_config.ingest_settings, IngestSettings::default());
+
+            let expected_search_settings = SearchSettings {
+                default_search_fields: vec!["body".to_string()],
+            };
+            assert_eq!(index_config.search_settings, expected_search_settings);
+            assert!(index_config.retention_policy_opt.is_none());
         }
         {
             let index_config_filepath = get_index_config_filepath("partial-hdfs-logs.yaml");
@@ -902,5 +938,22 @@ mod tests {
         schedule_test_helper_fn("weekly");
         schedule_test_helper_fn("monthly");
         schedule_test_helper_fn("* * * ? * ?");
+    }
+
+    #[test]
+    fn test_ingest_settings_serde() {
+        let ingest_settings = IngestSettings {
+            min_shards: NonZeroUsize::MIN,
+        };
+        let ingest_settings_yaml = serde_yaml::to_string(&ingest_settings).unwrap();
+        let ingest_settings_roundtrip: IngestSettings =
+            serde_yaml::from_str(&ingest_settings_yaml).unwrap();
+        assert_eq!(ingest_settings, ingest_settings_roundtrip);
+
+        let ingest_settings_yaml = r#"
+            min_shards: 0
+        "#;
+        let error = serde_yaml::from_str::<IngestSettings>(ingest_settings_yaml).unwrap_err();
+        assert!(error.to_string().contains("expected a nonzero"));
     }
 }

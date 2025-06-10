@@ -1,5 +1,4 @@
 use std::collections::BTreeSet;
-use std::error::Error;
 use std::sync::Arc;
 
 use quickwit_common::tower::BoxFutureInfaillible;
@@ -110,8 +109,7 @@ pub(crate) async fn start_cloudprem_server(
         "starting gRPC server listening on {grpc_listen_addr}"
     );
     // nodelay=true and keepalive=None are the default values for Server::builder()
-    let tcp_incoming = TcpIncoming::from_listener(tcp_listener, true, None)
-        .map_err(|err: Box<dyn Error + Send + Sync>| anyhow::anyhow!(err))?;
+    let tcp_incoming = TcpIncoming::from(tcp_listener).with_nodelay(Some(true));
     let serve_fut = server_router.serve_with_incoming_shutdown(tcp_incoming, shutdown_signal);
     let (serve_res, _trigger_res) = tokio::join!(serve_fut, readiness_trigger);
     serve_res?;

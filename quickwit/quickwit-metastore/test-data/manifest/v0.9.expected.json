@@ -74,6 +74,9 @@
         },
         "split_num_docs_target": 10000000
       },
+      "ingest_settings": {
+        "min_shards": 1
+      },
       "priority": 100,
       "retention": {
         "period": "42 days",
