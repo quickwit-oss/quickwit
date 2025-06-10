@@ -576,7 +576,7 @@ fn add_shard_to_indexer(
     }
 }
 
-// If the total node capacities is lower than 110% of the problem load, this
+// If the total node capacities is lower than 120% of the problem load, this
 // function scales the load of the indexer to reach this limit.
 fn inflate_node_capacities_if_necessary(problem: &mut SchedulingProblem) {
     // First we scale the problem to the point where any indexer can fit the largest shard.
