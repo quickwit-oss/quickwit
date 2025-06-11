@@ -24,7 +24,7 @@ use crate::split::{SplitCliCommand, build_split_command};
 use crate::tool::{ToolCliCommand, build_tool_command};
 
 pub fn build_cli() -> Command {
-    Command::new("Quickwit")
+    Command::new("CloudPrem")
         .arg(
             // Following https://no-color.org/
             Arg::new("no-color")
