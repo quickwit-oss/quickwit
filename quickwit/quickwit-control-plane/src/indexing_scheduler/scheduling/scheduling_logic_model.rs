@@ -229,7 +229,7 @@ impl IndexerAssignment {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct SchedulingSolution {
     pub indexer_assignments: Vec<IndexerAssignment>,
     // used for tests

@@ -536,7 +536,10 @@ fn assert_post_condition_physical_plan_match_solution(
     assert_eq!(num_indexers, id_to_ord_map.indexer_ids.len());
     let mut reconstructed_solution = SchedulingSolution::with_num_indexers(num_indexers);
     convert_physical_plan_to_solution(physical_plan, id_to_ord_map, &mut reconstructed_solution);
-    assert_eq!(solution, &reconstructed_solution);
+    assert_eq!(
+        solution.indexer_assignments,
+        reconstructed_solution.indexer_assignments
+    );
 }
 
 fn add_shard_to_indexer(
