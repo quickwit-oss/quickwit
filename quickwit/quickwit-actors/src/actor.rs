@@ -173,7 +173,7 @@ pub trait Actor: Send + Sized + 'static {
     /// This hook is called only once.
     ///
     /// It is always called regardless of the reason why the actor exited.
-    /// The exit status is passed as an argument to make it possible to act conditionnally
+    /// The exit status is passed as an argument to make it possible to act conditionally
     /// upon it.
     /// For instance, it is often better to do as little work as possible on a killed actor.
     /// It can be done by checking the `exit_status` and performing an early-exit if it is
