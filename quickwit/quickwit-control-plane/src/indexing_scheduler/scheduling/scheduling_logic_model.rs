@@ -209,7 +209,12 @@ impl IndexerAssignment {
             .unwrap_or(0u32)
     }
 
+    /// Add shards to a source (noop of `num_shards` is 0).
     pub fn add_shards(&mut self, source_ord: u32, num_shards: u32) {
+        // No need to fill indexer_assignments with empty assignments.
+        if num_shards == 0 {
+            return;
+        }
         *self.num_shards_per_source.entry(source_ord).or_default() += num_shards;
     }
 
