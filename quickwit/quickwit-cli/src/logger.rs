@@ -285,7 +285,7 @@ pub(super) mod jemalloc_profiled {
             ctx.format_fields(writer.by_ref(), event)?;
             writeln!(writer)?;
 
-            // Print a backtrace to help idenify the callsite
+            // Print a backtrace to help identify the callsite
             backtrace::trace(|frame| {
                 backtrace::resolve_frame(frame, |symbol| {
                     if let Some(symbole_name) = symbol.name() {
