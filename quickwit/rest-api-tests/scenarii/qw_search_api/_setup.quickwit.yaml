@@ -72,7 +72,11 @@ json:
           - name: object_fast_field
             type: u64
             fast: true
-            
+      - name: text_and_fast
+        type: text
+        fast: true
+        indexed: true
+
 ---
 method: POST
 endpoint: nested/ingest
@@ -85,3 +89,4 @@ ndjson:
   - {"object_multi": {"object_text_field": "multi hello"}}
   - {"object_multi": {"object_fast_field": 1}}
   - {"object_multi": {"object_fast_field": 2}}
+  - {"text_and_fast": "both-fast-and-tokenized"}

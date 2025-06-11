@@ -1,0 +1,30 @@
+endpoint: nested/search
+params:
+  query: "text_and_fast:tokenized"
+expected:
+  num_hits: 1
+---
+endpoint: nested/search
+params:
+  query: "text_and_fast:both-fast-and-tokenized"
+expected:
+  num_hits: 1
+---
+endpoint: nested/search
+params:
+  query: "text_and_fast:both_fast_and_tokenized"
+expected:
+  num_hits: 1
+---
+endpoint: nested/search
+params:
+  query: "text_and_fast:[both-fast-and-tokenized TO both-fast-and-tokenized]"
+expected:
+  num_hits: 1
+---
+endpoint: nested/search
+params:
+  query: "text_and_fast:[both_fast_and_tokenized TO both_fast_and_tokenized]"
+expected:
+  num_hits: 0
+---
