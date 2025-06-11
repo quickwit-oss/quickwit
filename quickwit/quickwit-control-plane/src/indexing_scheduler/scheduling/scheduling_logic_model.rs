@@ -229,15 +229,18 @@ impl IndexerAssignment {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct SchedulingSolution {
     pub indexer_assignments: Vec<IndexerAssignment>,
+    // used for tests
+    pub capacity_scaling_iterations: usize,
 }
 
 impl SchedulingSolution {
     pub fn with_num_indexers(num_indexers: usize) -> SchedulingSolution {
         SchedulingSolution {
             indexer_assignments: (0..num_indexers).map(IndexerAssignment::new).collect(),
+            capacity_scaling_iterations: 0,
         }
     }
     pub fn num_indexers(&self) -> usize {
