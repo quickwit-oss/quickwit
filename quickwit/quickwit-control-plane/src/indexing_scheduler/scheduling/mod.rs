@@ -26,6 +26,7 @@ use scheduling_logic_model::{IndexerOrd, SourceOrd};
 use tracing::{error, warn};
 
 use crate::indexing_plan::PhysicalIndexingPlan;
+use crate::indexing_scheduler::MAX_LOAD_PER_PIPELINE;
 use crate::indexing_scheduler::scheduling::scheduling_logic_model::{
     IndexerAssignment, SchedulingProblem, SchedulingSolution,
 };
@@ -43,9 +44,6 @@ use crate::model::ShardLocations;
 /// Coming back to a single pipeline requires having a load per pipeline
 /// of 30%. Which translates into an overall load of 60%.
 const CPU_PER_PIPELINE_LOAD_LOWER_THRESHOLD: CpuCapacity = CpuCapacity::from_cpu_millis(1_200);
-
-/// That's 80% of a period
-const MAX_LOAD_PER_PIPELINE: CpuCapacity = CpuCapacity::from_cpu_millis(3_200);
 
 fn populate_problem(
     source: &SourceToSchedule,
@@ -757,8 +755,8 @@ mod tests {
         convert_scheduling_solution_to_physical_plan_single_node_single_source,
     };
     use crate::indexing_plan::PhysicalIndexingPlan;
-    use crate::indexing_scheduler::get_shard_locality_metrics;
     use crate::indexing_scheduler::scheduling::assign_shards;
+    use crate::indexing_scheduler::{MAX_LOAD_PER_PIPELINE, get_shard_locality_metrics};
     use crate::model::ShardLocations;
 
     fn source_id() -> SourceUid {
@@ -937,6 +935,68 @@ mod tests {
             assert_eq!(&expected_tasks[1].source_id, &source_uid1.source_id);
             assert!(expected_tasks[1].shard_ids.is_empty());
         }
+    }
+
+    #[test]
+    fn test_build_physical_plan_with_pipeline_limit() {
+        let indexer1 = "indexer1".to_string();
+        let indexer2 = "indexer2".to_string();
+        let source_uid0 = source_id();
+        let source_uid1 = source_id();
+        let source_0 = SourceToSchedule {
+            source_uid: source_uid0.clone(),
+            source_type: SourceToScheduleType::Sharded {
+                shard_ids: (0..16).map(ShardId::from).collect(),
+                load_per_shard: NonZeroU32::new(800).unwrap(),
+            },
+            params_fingerprint: 0,
+        };
+        let source_1 = SourceToSchedule {
+            source_uid: source_uid1.clone(),
+            source_type: SourceToScheduleType::NonSharded {
+                num_pipelines: 4,
+                load_per_pipeline: NonZeroU32::new(MAX_LOAD_PER_PIPELINE.cpu_millis()).unwrap(),
+            },
+            params_fingerprint: 0,
+        };
+        let mut indexer_id_to_cpu_capacities = FnvHashMap::default();
+        indexer_id_to_cpu_capacities.insert(indexer1.clone(), mcpu(16_000));
+        indexer_id_to_cpu_capacities.insert(indexer2.clone(), mcpu(16_000));
+        let shard_locations = ShardLocations::default();
+        let indexing_plan = build_physical_indexing_plan(
+            &[source_0, source_1],
+            &indexer_id_to_cpu_capacities,
+            None,
+            &shard_locations,
+        );
+        assert_eq!(indexing_plan.indexing_tasks_per_indexer().len(), 2);
+
+        let node1_plan = indexing_plan.indexer(&indexer1).unwrap();
+        let node2_plan = indexing_plan.indexer(&indexer2).unwrap();
+
+        let source_0_on_node1 = node1_plan
+            .iter()
+            .filter(|task| task.source_id == source_uid0.source_id)
+            .count();
+        let source_0_on_node2 = node2_plan
+            .iter()
+            .filter(|task| task.source_id == source_uid0.source_id)
+            .count();
+        assert!(source_0_on_node1 <= 3);
+        assert!(source_0_on_node2 <= 3);
+        assert_eq!(source_0_on_node1 + source_0_on_node2, 4);
+
+        let source_1_on_node1 = node1_plan
+            .iter()
+            .filter(|task| task.source_id == source_uid1.source_id)
+            .count();
+        let source_1_on_node2 = node2_plan
+            .iter()
+            .filter(|task| task.source_id == source_uid1.source_id)
+            .count();
+        assert!(source_1_on_node1 <= 3);
+        assert!(source_1_on_node2 <= 3);
+        assert_eq!(source_1_on_node1 + source_1_on_node2, 4);
     }
 
     fn make_indexing_tasks(

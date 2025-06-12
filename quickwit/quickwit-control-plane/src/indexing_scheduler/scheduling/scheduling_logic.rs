@@ -20,6 +20,7 @@ use itertools::Itertools;
 use quickwit_proto::indexing::CpuCapacity;
 
 use super::scheduling_logic_model::*;
+use crate::indexing_scheduler::MAX_LOAD_PER_PIPELINE;
 use crate::indexing_scheduler::scheduling::inflate_node_capacities_if_necessary;
 
 // ------------------------------------------------------------------------------------
@@ -242,6 +243,7 @@ fn attempt_place_unassigned_shards(
         place_unassigned_shards_single_source(
             source,
             indexers_with_most_available_capacity,
+            problem.num_indexers(),
             &mut solution,
         )?;
     }
@@ -278,6 +280,7 @@ fn place_unassigned_shards_with_affinity(
         let _ = place_unassigned_shards_single_source(
             source,
             indexers_with_affinity_and_available_capacity,
+            problem.num_indexers(),
             solution,
         );
     }
@@ -349,15 +352,31 @@ struct NotEnoughCapacity;
 fn place_unassigned_shards_single_source(
     source: &Source,
     mut indexer_with_capacities: impl Iterator<Item = (IndexerOrd, CpuCapacity)>,
+    num_indexers: usize,
     solution: &mut SchedulingSolution,
 ) -> Result<(), NotEnoughCapacity> {
     let mut num_shards = source.num_shards;
+    // To ensure that merges can keep up, we try not to assign more than 3
+    // pipelines per indexer for a source (except if there aren't enough nodes).
+    let target_limit_num_shards_per_indexer_per_source =
+        3 * MAX_LOAD_PER_PIPELINE.cpu_millis() / source.load_per_shard.get();
+    let limit_num_shards_per_indexer_per_source = target_limit_num_shards_per_indexer_per_source
+        .max(num_shards.div_ceil(num_indexers as u32));
     while num_shards > 0 {
         let Some((indexer_ord, available_capacity)) = indexer_with_capacities.next() else {
             return Err(NotEnoughCapacity);
         };
-        let num_placable_shards = available_capacity.cpu_millis() / source.load_per_shard;
-        let num_shards_to_place = num_placable_shards.min(num_shards);
+        let current_num_shards_for_indexer_and_source = *solution.indexer_assignments[indexer_ord]
+            .num_shards_per_source
+            .get(&source.source_ord)
+            .unwrap_or(&0);
+        let num_placable_shards_for_available_capacity =
+            available_capacity.cpu_millis() / source.load_per_shard;
+        let num_placable_shards_for_limit = limit_num_shards_per_indexer_per_source
+            .saturating_sub(current_num_shards_for_indexer_and_source);
+        let num_shards_to_place = num_shards
+            .min(num_placable_shards_for_available_capacity)
+            .min(num_placable_shards_for_limit);
         // Update the solution, the shard load, and the number of shards to place.
         solution.indexer_assignments[indexer_ord]
             .add_shards(source.source_ord, num_shards_to_place);
@@ -598,6 +617,25 @@ mod tests {
         place_unassigned_shards_with_affinity(&problem, &mut solution);
         assert_eq!(solution.indexer_assignments[0].num_shards(1), 4);
         assert_eq!(solution.indexer_assignments[1].num_shards(0), 4);
+    }
+
+    #[test]
+    fn test_limit_placement_to_three_pipelines() {
+        let mut problem =
+            SchedulingProblem::with_indexer_cpu_capacities(vec![mcpu(16_000), mcpu(16_000)]);
+        let max_load_per_pipeline = NonZeroU32::new(MAX_LOAD_PER_PIPELINE.cpu_millis()).unwrap();
+        problem.add_source(4, max_load_per_pipeline);
+        problem.add_source(4, max_load_per_pipeline);
+        problem.inc_affinity(0, 1);
+        problem.inc_affinity(0, 1);
+        problem.inc_affinity(0, 0);
+        problem.inc_affinity(1, 0);
+        let mut solution = problem.new_solution();
+        place_unassigned_shards_with_affinity(&problem, &mut solution);
+        assert_eq!(solution.indexer_assignments[0].num_shards(1), 3);
+        assert_eq!(solution.indexer_assignments[0].num_shards(0), 1);
+        assert_eq!(solution.indexer_assignments[1].num_shards(0), 3);
+        assert_eq!(solution.indexer_assignments[1].num_shards(1), 0);
     }
 
     #[test]
