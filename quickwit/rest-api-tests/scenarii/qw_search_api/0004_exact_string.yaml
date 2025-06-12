@@ -60,7 +60,7 @@ expected:
 endpoint: nested/search
 method: POST
 json:
-  query: "text_fast:[fast_text_value TO fast_text_value]"
+  query: "text_fast:[fast-text-value TO fast-text-value]"
 expected:
   num_hits: 0
 ---
