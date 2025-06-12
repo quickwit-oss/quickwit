@@ -20,6 +20,7 @@ use itertools::Itertools;
 use quickwit_proto::indexing::CpuCapacity;
 
 use super::scheduling_logic_model::*;
+use crate::indexing_scheduler::MAX_LOAD_PER_PIPELINE;
 use crate::indexing_scheduler::scheduling::inflate_node_capacities_if_necessary;
 
 // ------------------------------------------------------------------------------------
@@ -355,9 +356,12 @@ fn place_unassigned_shards_single_source(
     solution: &mut SchedulingSolution,
 ) -> Result<(), NotEnoughCapacity> {
     let mut num_shards = source.num_shards;
-    // To ensure that merges can keep up, try not to assign more than 3
-    // shards per indexer for a source (except if there aren't enough nodes)
-    let limit_num_shards_per_indexer_per_source = 3.max(num_shards.div_ceil(num_indexers as u32));
+    // To ensure that merges can keep up, we try not to assign more than 3
+    // pipelines per indexer for a source (except if there aren't enough nodes).
+    let target_limit_num_shards_per_indexer_per_source =
+        3 * MAX_LOAD_PER_PIPELINE.cpu_millis() / source.load_per_shard.get();
+    let limit_num_shards_per_indexer_per_source = target_limit_num_shards_per_indexer_per_source
+        .max(num_shards.div_ceil(num_indexers as u32));
     while num_shards > 0 {
         let Some((indexer_ord, available_capacity)) = indexer_with_capacities.next() else {
             return Err(NotEnoughCapacity);
@@ -607,6 +611,21 @@ mod tests {
             SchedulingProblem::with_indexer_cpu_capacities(vec![mcpu(4_000), mcpu(4000)]);
         problem.add_source(4, NonZeroU32::new(1_000).unwrap());
         problem.add_source(4, NonZeroU32::new(1_000).unwrap());
+        problem.inc_affinity(0, 1);
+        problem.inc_affinity(1, 0);
+        let mut solution = problem.new_solution();
+        place_unassigned_shards_with_affinity(&problem, &mut solution);
+        assert_eq!(solution.indexer_assignments[0].num_shards(1), 4);
+        assert_eq!(solution.indexer_assignments[1].num_shards(0), 4);
+    }
+
+    #[test]
+    fn test_limit_placement_to_three_pipelines() {
+        let mut problem =
+            SchedulingProblem::with_indexer_cpu_capacities(vec![mcpu(16_000), mcpu(16_000)]);
+        let max_load_per_pipeline = NonZeroU32::new(MAX_LOAD_PER_PIPELINE.cpu_millis()).unwrap();
+        problem.add_source(4, max_load_per_pipeline);
+        problem.add_source(4, max_load_per_pipeline);
         problem.inc_affinity(0, 1);
         problem.inc_affinity(0, 1);
         problem.inc_affinity(0, 0);
