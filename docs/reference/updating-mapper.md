@@ -44,7 +44,7 @@ Conversion from a type to itself is omitted. Conversions that never succeed and 
 | date | text | convert to rfc3339 textual representation |
 | ip | text | convert to IPv6 representation. For IPv4, convert to IPv4-mapped IPv6 address (`::ffff:1.2.3.4`) |
 | bool | text | convert to "true" or false" |
-| u64/i64/f64 | bool | convert 0/0.0 to false and 1/1.0 to true, otherise omit |
+| u64/i64/f64 | bool | convert 0/0.0 to false and 1/1.0 to true, otherwise omit |
 | text | bool | convert if "true" or "false" (lowercase), otherwise omit |
 | text | ip | convert if valid IPv4 or IPv6, otherwise omit |
 | text | f64 | convert if valid floating point number, otherwise omit |
