@@ -287,7 +287,7 @@ urlencoding = "2"
 username = "0.2"
 utoipa = { version = "4.2", features = ["time", "ulid"] }
 uuid = { version = "1.17", features = ["v4", "serde"] }
-vrl = { version = "0.22", default-features = false, features = [
+vrl = { version = "0.24", default-features = false, features = [
   "compiler",
   "diagnostic",
   "stdlib",
