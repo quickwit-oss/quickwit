@@ -417,17 +417,14 @@ fn place_unassigned_shards_single_source(
     for PlacementCandidate {
         indexer_ord,
         available_capacity,
+        current_num_shards,
         ..
     } in sorted_candidates
     {
-        let current_num_shards_for_indexer_and_source = *solution.indexer_assignments[*indexer_ord]
-            .num_shards_per_source
-            .get(&source.source_ord)
-            .unwrap_or(&0);
         let num_placable_shards_for_available_capacity =
             available_capacity.cpu_millis() / source.load_per_shard;
-        let num_placable_shards_for_limit = limit_num_shards_per_indexer_per_source
-            .saturating_sub(current_num_shards_for_indexer_and_source);
+        let num_placable_shards_for_limit =
+            limit_num_shards_per_indexer_per_source.saturating_sub(*current_num_shards);
         let num_shards_to_place = num_shards
             .min(num_placable_shards_for_available_capacity)
             .min(num_placable_shards_for_limit);
