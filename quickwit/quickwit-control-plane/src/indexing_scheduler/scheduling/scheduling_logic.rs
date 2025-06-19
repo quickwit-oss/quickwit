@@ -305,10 +305,12 @@ fn place_unassigned_shards_ignoring_affinity(
         match attempt_place_unassigned_shards(&unassigned_shards[..], &problem, partial_solution) {
             Ok(mut solution) => {
                 // the higher the attempt number, the more unbalanced the solution
-                tracing::warn!(
-                    attempt_number = attempt_number,
-                    "capacity re-scaled, scheduling solution likely unbalanced"
-                );
+                if attempt_number > 0 {
+                    tracing::warn!(
+                        attempt_number = attempt_number,
+                        "capacity re-scaled, scheduling solution likely unbalanced"
+                    );
+                }
                 solution.capacity_scaling_iterations = attempt_number;
                 return solution;
             }
