@@ -16,6 +16,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use anyhow::bail;
 use quickwit_metastore::checkpoint::PartitionId;
+use time::OffsetDateTime;
 
 use super::message::{InProgressMessage, ReadyMessage};
 
@@ -34,8 +35,8 @@ pub struct QueueLocalState {
     /// Message that is currently being read and sent to the `DocProcessor`
     read_in_progress: Option<InProgressMessage>,
     /// Partitions that were read and are still being indexed, with their
-    /// associated ack_id
-    awaiting_commit: BTreeMap<PartitionId, String>,
+    /// associated ack_id and optional creation timestamp
+    awaiting_commit: BTreeMap<PartitionId, (String, Option<OffsetDateTime>)>,
     /// Partitions that were fully indexed and committed
     completed: BTreeSet<PartitionId>,
 }
@@ -94,7 +95,10 @@ impl QueueLocalState {
         if let Some(in_progress) = self.read_in_progress.take() {
             self.awaiting_commit.insert(
                 in_progress.partition_id.clone(),
-                in_progress.visibility_handle.ack_id().to_string(),
+                (
+                    in_progress.visibility_handle.ack_id().to_string(),
+                    in_progress.timestamp_opt,
+                ),
             );
             in_progress
                 .visibility_handle
@@ -117,10 +121,13 @@ impl QueueLocalState {
         Ok(())
     }
 
-    /// Returns the ack_id if that message was awaiting_commit
-    pub fn mark_completed(&mut self, partition_id: PartitionId) -> Option<String> {
-        let ack_id_opt = self.awaiting_commit.remove(&partition_id);
+    /// Returns the ack_id and creation timestamp if that message was awaiting_commit
+    pub fn mark_completed(
+        &mut self,
+        partition_id: PartitionId,
+    ) -> Option<(String, Option<OffsetDateTime>)> {
+        let completed_opt = self.awaiting_commit.remove(&partition_id);
         self.completed.insert(partition_id);
-        ack_id_opt
+        completed_opt
     }
 }

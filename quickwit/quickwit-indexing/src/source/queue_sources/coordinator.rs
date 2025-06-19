@@ -18,6 +18,7 @@ use std::time::Duration;
 
 use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, Mailbox};
+use quickwit_common::metrics::source_label;
 use quickwit_common::rate_limited_error;
 use quickwit_config::{FileSourceMessageType, FileSourceSqs};
 use quickwit_metastore::checkpoint::SourceCheckpoint;
@@ -26,6 +27,7 @@ use quickwit_proto::metastore::SourceType;
 use quickwit_proto::types::SourceUid;
 use quickwit_storage::StorageResolver;
 use serde::Serialize;
+use time::OffsetDateTime;
 use ulid::Ulid;
 
 use super::Queue;
@@ -302,8 +304,20 @@ impl QueueCoordinator {
             .collect::<Vec<_>>();
         let mut completed = Vec::new();
         for partition_id in committed_partition_ids {
-            let ack_id_opt = self.local_state.mark_completed(partition_id);
-            if let Some(ack_id) = ack_id_opt {
+            let completed_opt = self.local_state.mark_completed(partition_id);
+            if let Some((ack_id, timestamp_opt)) = completed_opt {
+                if let Some(timestamp) = timestamp_opt {
+                    let duration = OffsetDateTime::now_utc() - timestamp;
+                    let label = source_label(
+                        &self.pipeline_id.index_uid.index_id,
+                        &self.pipeline_id.source_id,
+                    );
+                    crate::metrics::INDEXER_METRICS
+                        .queue_source_index_duration_seconds
+                        .with_label_values([&label])
+                        .observe(duration.as_seconds_f64());
+                }
+
                 completed.push(ack_id);
             }
         }
