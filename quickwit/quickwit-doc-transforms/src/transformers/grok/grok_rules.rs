@@ -497,7 +497,7 @@ pub mod tests {
         let grok_rules = json!({
           "support_rules": [
             { "name": "_timestamp", "rule": "%{date(\"yyyy-MM-dd'T'HH:mm:ss.SSSZ\"):db.date}" },
-            { "name": "_severity", "rule": "?>%{notSpace:db.severity}" },
+            { "name": "_severity", "rule": "%{?>notSpace:db.severity}" },
             { "name": "_context", "rule": "\\[%{notSpace:mongo.context}\\]" },
             { "name": "_client_ip", "rule": "%{ipOrHost:network.client.ip}" },
             { "name": "_client_port", "rule": "%{integer:network.client.port}" },
