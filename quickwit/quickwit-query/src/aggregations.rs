@@ -30,7 +30,7 @@ use tantivy::aggregation::metric::{
 // hopefully all From in this module are no-ops, otherwise, this is a very sad situation
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-/// The final aggegation result.
+/// The final aggregation result.
 pub struct AggregationResults(pub Vec<(String, AggregationResult)>);
 
 impl From<TantivyAggregationResults> for AggregationResults {
