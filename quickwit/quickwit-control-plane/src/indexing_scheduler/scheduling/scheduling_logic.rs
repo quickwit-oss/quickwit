@@ -228,7 +228,7 @@ fn assert_enforce_nodes_cpu_capacity_post_condition(
 // If this algorithm fails to place all remaining shards, we inflate
 // the node capacities by 20% in the scheduling problem and start from the beginning.
 
-#[derive(Debug, PartialEq, Eq, Ord)]
+#[derive(Debug, PartialEq, Eq)]
 struct PlacementCandidate {
     indexer_ord: IndexerOrd,
     current_num_shards: u32,
@@ -236,25 +236,31 @@ struct PlacementCandidate {
     affinity: u32,
 }
 
-impl PartialOrd for PlacementCandidate {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+impl Ord for PlacementCandidate {
+    fn cmp(&self, other: &Self) -> Ordering {
         // Higher affinity is better
         match self.affinity.cmp(&other.affinity) {
             Ordering::Equal => {}
-            ordering => return Some(ordering.reverse()),
+            ordering => return ordering.reverse(),
         }
         // If tie, pick the node with shards already assigned first
         match self.current_num_shards.cmp(&other.current_num_shards) {
             Ordering::Equal => {}
-            ordering => return Some(ordering.reverse()),
+            ordering => return ordering.reverse(),
         }
         // If tie, pick the node with the highest available capacity
         match self.available_capacity.cmp(&other.available_capacity) {
             Ordering::Equal => {}
-            ordering => return Some(ordering.reverse()),
+            ordering => return ordering.reverse(),
         }
         // Final tie-breaker: indexer ID for deterministic ordering
-        Some(self.indexer_ord.cmp(&other.indexer_ord).reverse())
+        self.indexer_ord.cmp(&other.indexer_ord).reverse()
+    }
+}
+
+impl PartialOrd for PlacementCandidate {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 
