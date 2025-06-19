@@ -805,4 +805,35 @@ mod tests {
 
         assert_eq!(solution.capacity_scaling_iterations, 1);
     }
+
+    #[test]
+    fn test_shard_fragmentation_when_iterating() {
+        // Create a problem where affinity constraints cause suboptimal placement
+        // requiring iterative scaling despite initial capacity scaling.
+        let mut problem =
+            SchedulingProblem::with_indexer_cpu_capacities(vec![mcpu(3000), mcpu(3000)]);
+        problem.add_source(1, NonZeroU32::new(1000).unwrap());
+        problem.add_source(1, NonZeroU32::new(1000).unwrap());
+        problem.add_source(1, NonZeroU32::new(1000).unwrap());
+        let empty_solution = problem.new_solution();
+        let first_solution = solve(problem, empty_solution);
+
+        let mut updated_problem =
+            SchedulingProblem::with_indexer_cpu_capacities(vec![mcpu(3000), mcpu(3000)]);
+        updated_problem.add_source(2, NonZeroU32::new(1000).unwrap());
+        updated_problem.add_source(2, NonZeroU32::new(1000).unwrap());
+        updated_problem.add_source(2, NonZeroU32::new(1000).unwrap());
+
+        let second_solution = solve(updated_problem, first_solution);
+
+        for source in 0..2 {
+            let num_shards_per_indexer = second_solution
+                .indexer_assignments
+                .iter()
+                .map(|indexer_assignment| indexer_assignment.num_shards(source))
+                .collect_vec();
+            assert!(num_shards_per_indexer.contains(&2));
+            assert!(num_shards_per_indexer.contains(&0));
+        }
+    }
 }
