@@ -12,11 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::cmp::Reverse;
+use std::cmp::{Ordering, Reverse};
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 
-use itertools::Itertools;
 use quickwit_proto::indexing::CpuCapacity;
 
 use super::scheduling_logic_model::*;
@@ -229,6 +228,36 @@ fn assert_enforce_nodes_cpu_capacity_post_condition(
 // If this algorithm fails to place all remaining shards, we inflate
 // the node capacities by 20% in the scheduling problem and start from the beginning.
 
+#[derive(Debug, PartialEq, Eq, Ord)]
+struct PlacementCandidate {
+    indexer_ord: IndexerOrd,
+    current_num_shards: u32,
+    available_capacity: CpuCapacity,
+    affinity: u32,
+}
+
+impl PartialOrd for PlacementCandidate {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        // Higher affinity is better
+        match self.affinity.cmp(&other.affinity) {
+            Ordering::Equal => {}
+            ordering => return Some(ordering.reverse()),
+        }
+        // If tie, pick the node with shards already assigned first
+        match self.current_num_shards.cmp(&other.current_num_shards) {
+            Ordering::Equal => {}
+            ordering => return Some(ordering.reverse()),
+        }
+        // If tie, pick the node with the highest available capacity
+        match self.available_capacity.cmp(&other.available_capacity) {
+            Ordering::Equal => {}
+            ordering => return Some(ordering.reverse()),
+        }
+        // Final tie-breaker: indexer ID for deterministic ordering
+        Some(self.indexer_ord.cmp(&other.indexer_ord).reverse())
+    }
+}
+
 fn attempt_place_unassigned_shards(
     unassigned_shards: &[Source],
     problem: &SchedulingProblem,
@@ -236,14 +265,24 @@ fn attempt_place_unassigned_shards(
 ) -> Result<SchedulingSolution, NotEnoughCapacity> {
     let mut solution = partial_solution.clone();
     for source in unassigned_shards {
-        let indexers_with_most_available_capacity =
-            compute_indexer_available_capacity(problem, &solution)
-                .sorted_by_key(|(indexer_ord, capacity)| Reverse((*capacity, *indexer_ord)));
-        place_unassigned_shards_single_source(
-            source,
-            indexers_with_most_available_capacity,
-            &mut solution,
-        )?;
+        let mut placements: Vec<PlacementCandidate> = solution
+            .indexer_assignments
+            .iter()
+            .map(|indexer_assignment: &IndexerAssignment| {
+                let available_capacity = indexer_assignment.indexer_available_capacity(problem);
+                assert!(available_capacity >= 0i32);
+                let available_capacity = CpuCapacity::from_cpu_millis(available_capacity as u32);
+                let current_num_shards = indexer_assignment.num_shards(source.source_ord);
+                PlacementCandidate {
+                    affinity: 0,
+                    current_num_shards,
+                    available_capacity,
+                    indexer_ord: indexer_assignment.indexer_ord,
+                }
+            })
+            .collect();
+        placements.sort();
+        place_unassigned_shards_single_source(source, &placements, &mut solution)?;
     }
     assert_place_unassigned_shards_post_condition(problem, &solution);
     Ok(solution)
@@ -259,27 +298,26 @@ fn place_unassigned_shards_with_affinity(
         Reverse(load)
     });
     for source in &unassigned_shards {
-        // List of indexer with a non-null affinity and some available capacity, sorted by
-        // (affinity, available capacity) in that order.
-        let indexers_with_affinity_and_available_capacity = source
+        let mut placements: Vec<PlacementCandidate> = source
             .affinities
             .iter()
             .filter(|&(_, &affinity)| affinity != 0u32)
-            .map(|(&indexer_ord, affinity)| {
+            .map(|(&indexer_ord, &affinity)| {
                 let available_capacity =
                     solution.indexer_assignments[indexer_ord].indexer_available_capacity(problem);
-                let capacity = CpuCapacity::from_cpu_millis(available_capacity as u32);
-                (indexer_ord, affinity, capacity)
+                let available_capacity = CpuCapacity::from_cpu_millis(available_capacity as u32);
+                let current_num_shards =
+                    solution.indexer_assignments[indexer_ord].num_shards(source.source_ord);
+                PlacementCandidate {
+                    affinity,
+                    current_num_shards,
+                    available_capacity,
+                    indexer_ord,
+                }
             })
-            .sorted_by_key(|(indexer_ord, affinity, capacity)| {
-                Reverse((*affinity, *capacity, *indexer_ord))
-            })
-            .map(|(indexer_ord, _, capacity)| (indexer_ord, capacity));
-        let _ = place_unassigned_shards_single_source(
-            source,
-            indexers_with_affinity_and_available_capacity,
-            solution,
-        );
+            .collect();
+        placements.sort();
+        let _ = place_unassigned_shards_single_source(source, &placements, solution);
     }
 }
 
@@ -350,22 +388,27 @@ struct NotEnoughCapacity;
 /// amongst the node with their given node capacity.
 fn place_unassigned_shards_single_source(
     source: &Source,
-    mut indexer_with_capacities: impl Iterator<Item = (IndexerOrd, CpuCapacity)>,
+    sorted_candidates: &[PlacementCandidate],
     solution: &mut SchedulingSolution,
 ) -> Result<(), NotEnoughCapacity> {
     let mut num_shards = source.num_shards;
-    while num_shards > 0 {
-        let Some((indexer_ord, available_capacity)) = indexer_with_capacities.next() else {
-            return Err(NotEnoughCapacity);
-        };
+    for PlacementCandidate {
+        indexer_ord,
+        available_capacity,
+        ..
+    } in sorted_candidates
+    {
         let num_placable_shards = available_capacity.cpu_millis() / source.load_per_shard;
         let num_shards_to_place = num_placable_shards.min(num_shards);
         // Update the solution, the shard load, and the number of shards to place.
-        solution.indexer_assignments[indexer_ord]
+        solution.indexer_assignments[*indexer_ord]
             .add_shards(source.source_ord, num_shards_to_place);
         num_shards -= num_shards_to_place;
+        if num_shards == 0 {
+            return Ok(());
+        }
     }
-    Ok(())
+    Err(NotEnoughCapacity)
 }
 
 /// Compute the sources/shards that have not been assigned to any indexer yet.
@@ -394,30 +437,11 @@ fn compute_unassigned_sources(
     unassigned_sources.into_values().collect()
 }
 
-/// Builds a BinaryHeap with the different indexer capacities.
-///
-/// Panics if one of the indexer is over-assigned.
-fn compute_indexer_available_capacity<'a>(
-    problem: &'a SchedulingProblem,
-    solution: &'a SchedulingSolution,
-) -> impl Iterator<Item = (IndexerOrd, CpuCapacity)> + 'a {
-    solution
-        .indexer_assignments
-        .iter()
-        .map(|indexer_assignment| {
-            let available_capacity: i32 = indexer_assignment.indexer_available_capacity(problem);
-            assert!(available_capacity >= 0i32);
-            (
-                indexer_assignment.indexer_ord,
-                CpuCapacity::from_cpu_millis(available_capacity as u32),
-            )
-        })
-}
-
 #[cfg(test)]
 mod tests {
     use std::num::NonZeroU32;
 
+    use itertools::Itertools;
     use proptest::prelude::*;
     use quickwit_proto::indexing::mcpu;
 
