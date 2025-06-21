@@ -14,8 +14,8 @@
 
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
-    IntCounter, IntCounterVec, IntGauge, IntGaugeVec, new_counter, new_counter_vec, new_gauge,
-    new_gauge_vec,
+    HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec, linear_buckets, new_counter,
+    new_counter_vec, new_gauge, new_gauge_vec, new_histogram_vec,
 };
 
 pub struct IndexerMetrics {
@@ -30,6 +30,8 @@ pub struct IndexerMetrics {
     // We use a lazy counter, as most users do not use Kafka.
     #[cfg_attr(not(feature = "kafka"), allow(dead_code))]
     pub kafka_rebalance_total: Lazy<IntCounter>,
+    #[cfg_attr(not(feature = "queue-sources"), allow(dead_code))]
+    pub queue_source_index_duration_seconds: Lazy<HistogramVec<1>>,
 }
 
 impl Default for IndexerMetrics {
@@ -96,6 +98,18 @@ impl Default for IndexerMetrics {
                     "Number of kafka rebalances",
                     "indexing",
                     &[],
+                )
+            }),
+            queue_source_index_duration_seconds: Lazy::new(|| {
+                new_histogram_vec(
+                    "queue_source_index_duration_seconds",
+                    "Number of seconds it took since the message was generated until it was sent \
+                     to be acknowledged (deleted).",
+                    "indexing",
+                    &[],
+                    ["source"],
+                    // 15 seconds up to 3 minutes
+                    linear_buckets(15.0, 15.0, 12).unwrap(),
                 )
             }),
         }
