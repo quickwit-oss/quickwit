@@ -141,7 +141,7 @@ fast:
 
 | Tokenizer     | Description   |
 | ------------- | ------------- |
-| `raw`         | Does not process nor tokenize text. Filters out tokens larger than 255 bytes.  |
+| `raw`         | Does not process nor tokenize text. Filters out tokens larger than 255 bytes. This is similar to the `keyword` type in Elasticsearch. |
 | `raw_lowercase` | Does not tokenize text, but lowercase it. Filters out tokens larger than 255 bytes.  |
 | `default`     | Chops the text on according to whitespace and punctuation, removes tokens that are too long, and converts to lowercase. Filters out tokens larger than 255 bytes. |
 | `en_stem`     | Like `default`, but also applies stemming on the resulting tokens. Filters out tokens larger than 255 bytes.  |
