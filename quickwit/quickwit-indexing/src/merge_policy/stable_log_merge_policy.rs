@@ -47,8 +47,8 @@ use crate::merge_policy::{MergeOperation, MergePolicy, splits_short_debug};
 /// `l_0 = 3 x self.min_level_num_docs`.
 ///
 /// Assuming level N-1 has been built, level N is given by
-/// `l_N = min(num_docs(split_l_{N_1})` * 3, self.max_merge_docs)`.
-/// We stop once l_N = self.max_merge_docs is reached.
+/// `l_N = min(num_docs(split_l_{N_1})` * 3, self.split_num_docs_target)`.
+/// We stop once l_N = self.split_num_docs_target is reached.
 ///
 /// As a result, each level interval is at least 3 times larger than the previous one,
 /// forming a logscale over the number of documents.
@@ -153,7 +153,7 @@ enum MergeCandidateSize {
     /// This can happen for any of the two following reasons:
     /// - the number of splits involved already reached `merge_factor_max`.
     /// - the overall number of docs that will end up in the merged segment already exceeds
-    ///   `max_merge_docs`.
+    ///   `split_num_docs_target`.
     OneMoreSplitWouldBeTooBig,
 }
 
@@ -213,13 +213,13 @@ impl StableLogMergePolicy {
     /// but should behave decently (not create too many levels) if they are not.
     ///
     /// All splits are required to have a number of documents lower than
-    /// `self.max_merge_docs`
+    /// `self.split_num_docs_target`
     pub(crate) fn build_split_levels(&self, splits: &[SplitMetadata]) -> Vec<Range<usize>> {
         assert!(
             splits
                 .iter()
                 .all(|split| split.num_docs < self.split_num_docs_target),
-            "All splits are expected to be smaller than `max_merge_docs`."
+            "All splits are expected to be smaller than `split_num_docs_target`."
         );
         if splits.is_empty() {
             return Vec::new();
@@ -370,7 +370,8 @@ mod tests {
     #[test]
     fn test_split_is_mature() {
         let merge_policy = StableLogMergePolicy::default();
-        // Split under max_merge_docs and created before now() - maturation_period is not mature.
+        // Split under split_num_docs_target and created before now() - maturation_period is not
+        // mature.
         assert_eq!(
             merge_policy.split_maturity(9_000_000, 0),
             SplitMaturity::Immature {
@@ -381,7 +382,7 @@ mod tests {
             merge_policy.split_maturity(&merge_policy.split_num_docs_target + 1, 0),
             SplitMaturity::Mature
         );
-        // Split under max_merge_docs but with create_timestamp >= now + maturity duration is
+        // Split under split_num_docs_target but with create_timestamp >= now + maturity duration is
         // mature.
         assert_eq!(
             merge_policy.split_maturity(9_000_000, 0),
@@ -439,8 +440,8 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "All splits are expected to be smaller than `max_merge_docs`.")]
-    fn test_stable_log_merge_policy_build_split_panics_if_exceeding_max_merge_docs() {
+    #[should_panic(expected = "All splits are expected to be smaller than `split_num_docs_target`.")]
+    fn test_stable_log_merge_policy_build_split_panics_if_exceeding_split_num_docs_target() {
         let merge_policy = StableLogMergePolicy::default();
         let splits = create_splits(&merge_policy, vec![11_000_000]);
         merge_policy.build_split_levels(&splits);
@@ -545,7 +546,7 @@ mod tests {
     }
 
     #[test]
-    fn test_stable_log_merge_policy_above_max_merge_docs_is_ignored() {
+    fn test_stable_log_merge_policy_above_split_num_docs_target_is_ignored() {
         let merge_policy = StableLogMergePolicy::default();
         let mut splits = create_splits(
             &merge_policy,
