@@ -420,6 +420,7 @@ mod tests {
         prop_oneof![Just("path1"), Just("path2"),]
     }
 
+    #[allow(deprecated)]
     fn range_strategy() -> impl Strategy<Value = Range<usize>> {
         (0usize..11usize).prop_perturb(|start, mut rng| start..rng.gen_range(start..12usize))
     }
