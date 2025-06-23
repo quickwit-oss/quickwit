@@ -18,7 +18,6 @@ use std::collections::btree_map::Entry;
 
 use itertools::Itertools;
 use quickwit_proto::indexing::CpuCapacity;
-use tracing::warn;
 
 use super::scheduling_logic_model::*;
 use crate::indexing_scheduler::scheduling::inflate_node_capacities_if_necessary;
@@ -41,7 +40,7 @@ pub fn solve(
     previous_solution: SchedulingSolution,
 ) -> SchedulingSolution {
     // We first inflate the indexer capacities to make sure they globally
-    // have at least 110% of the total problem load. This is done proportionally
+    // have at least 120% of the total problem load. This is done proportionally
     // to their original capacity.
     inflate_node_capacities_if_necessary(&mut problem);
     // As a heuristic, to offer stability, we work iteratively
@@ -294,21 +293,23 @@ fn place_unassigned_shards_ignoring_affinity(
         Reverse(load)
     });
 
-    // Thanks to the call to `inflate_node_capacities_if_necessary`,
-    // we are certain that even on our first attempt, the total capacity of the indexer exceeds 120%
-    // of the partial solution.
+    // Thanks to the call to `inflate_node_capacities_if_necessary`, we are
+    // certain that even on our first attempt, the total capacity of the indexer
+    // exceeds 120% of the partial solution. If a large shard needs to be placed
+    // in an already well balanced solution, it may not fit on any node. In that
+    // case, we iteratively grow the virtual capacity until it can be placed.
     //
-    // 1.2^30 is about 240.
-    // If we reach 30 attempts we are certain to have a logical bug.
+    // 1.2^30 is about 240. If we reach 30 attempts we are certain to have a
+    // logical bug.
     for attempt_number in 0..30 {
         match attempt_place_unassigned_shards(&unassigned_shards[..], &problem, partial_solution) {
-            Ok(solution) => {
-                if attempt_number != 0 {
-                    warn!(
-                        attempt_number = attempt_number,
-                        "required to scale node capacity"
-                    );
-                }
+            Ok(mut solution) => {
+                // the higher the attempt number, the more unbalanced the solution
+                tracing::warn!(
+                    attempt_number = attempt_number,
+                    "capacity re-scaled, scheduling solution likely unbalanced"
+                );
+                solution.capacity_scaling_iterations = attempt_number;
                 return solution;
             }
             Err(NotEnoughCapacity) => {
@@ -782,5 +783,20 @@ mod tests {
         fn test_proptest_post_conditions((problem, solution) in problem_solution_strategy()) {
             solve(problem, solution);
         }
+    }
+
+    #[test]
+    fn test_capacity_scaling_iteration_required() {
+        // Create a problem where affinity constraints cause suboptimal placement
+        // requiring iterative scaling despite initial capacity scaling.
+        let mut problem =
+            SchedulingProblem::with_indexer_cpu_capacities(vec![mcpu(3000), mcpu(3000)]);
+        problem.add_source(1, NonZeroU32::new(2500).unwrap()); // Source 0
+        problem.add_source(1, NonZeroU32::new(2500).unwrap()); // Source 1
+        problem.add_source(1, NonZeroU32::new(1500).unwrap()); // Source 2
+        let previous_solution = problem.new_solution();
+        let solution = solve(problem, previous_solution);
+
+        assert_eq!(solution.capacity_scaling_iterations, 1);
     }
 }

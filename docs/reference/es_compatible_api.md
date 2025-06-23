@@ -672,6 +672,12 @@ Moreover, while Quickwit does not support `best_fields` or `cross_fields`, it wi
 
 [Elasticsearch reference documentation](https://www.elastic.co/guide/en/elasticsearch/reference/8.8/query-dsl-term-query.html)
 
+:::note
+
+When working on text, it is recommended to only use `term` queries on fields configured with `tokenizer: raw`. This is the Quickwit equivalent of the Elasticsearch `keyword` type.
+
+:::
+
 #### Example
 
 ```json

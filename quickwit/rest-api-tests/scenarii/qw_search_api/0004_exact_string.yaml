@@ -1,0 +1,85 @@
+## using an index (with the raw tokenizer)
+endpoint: nested/search
+method: POST
+json:
+  query: "text_raw:indexed-with-raw-tokenizer-dashes"
+expected:
+  num_hits: 1
+---
+endpoint: nested/search
+method: POST
+json:
+  query: "text_raw:indexed_with_raw_tokenizer_dashes"
+expected:
+  num_hits: 0
+---
+endpoint: nested/search
+method: POST
+json:
+  query: "text_raw:indexed-with-raw"
+expected:
+  num_hits: 0
+---
+endpoint: nested/search
+method: POST
+json:
+  query: 'text_raw:"indexed with raw tokenizer dashes"'
+expected:
+  num_hits: 1
+---
+endpoint: nested/search
+method: POST
+json:
+  query: 'text_raw:"indexed with raw"'
+expected:
+  num_hits: 0
+---
+## using a fast field (use a range query to force using the fast field)
+endpoint: nested/search
+method: POST
+json:
+  query: "text_fast:fast-text-value-dashes"
+status_code: 400
+expected:
+  message: "invalid query: query is incompatible with schema. field text_fast is not full-text searchable)"
+---
+endpoint: nested/search
+method: POST
+json:
+  query: "text_fast:[fast-text-value-dashes TO fast-text-value-dashes]"
+expected:
+  num_hits: 1
+---
+endpoint: nested/search
+method: POST
+json:
+  query: "text_fast:[fast_text_value_dashes TO fast_text_value_dashes]"
+expected:
+  num_hits: 0
+---
+endpoint: nested/search
+method: POST
+json:
+  query: "text_fast:[fast-text-value TO fast-text-value]"
+expected:
+  num_hits: 0
+---
+# unfortunately, the query parser does not support escaping whitespaces
+# use the Elasticsearch API instead
+endpoint: nested/search
+method: POST
+json:
+  query: 'text_fast:["fast text value whitespaces" TO "fast text value whitespacesd"]'
+status_code: 400
+---
+endpoint: nested/search
+method: POST
+json:
+  query: "text_fast:[fast text value whitespaces TO fast text value whitespaces]"
+status_code: 400
+---
+endpoint: nested/search
+method: POST
+json:
+  query: "text_fast:[fast\ text\ value\ whitespaces TO fast\ text\ value\ whitespaces]"
+status_code: 400

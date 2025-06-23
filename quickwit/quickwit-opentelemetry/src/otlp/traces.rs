@@ -755,6 +755,7 @@ impl OtlpGrpcTracesService {
     }
 
     #[instrument(skip_all, parent = parent_span, fields(num_spans = Empty, num_bytes = Empty, num_parse_errors = Empty))]
+    #[allow(clippy::result_large_err)]
     fn parse_spans(
         request: ExportTraceServiceRequest,
         parent_span: RuntimeSpan,

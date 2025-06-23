@@ -312,7 +312,7 @@ mod tests {
     #[test]
     fn test_get_from_env() {
         // SAFETY: this test may not be entirely sound if not run with nextest or --test-threads=1
-        // as this is only a test, and it would be extremly inconvenient to run it in a different
+        // as this is only a test, and it would be extremely inconvenient to run it in a different
         // way, we are keeping it that way
 
         const TEST_KEY: &str = "TEST_KEY";
