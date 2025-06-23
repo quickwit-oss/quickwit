@@ -163,10 +163,10 @@ impl SearchPermitActor {
                     permits.push(SearchPermitFuture(rx));
                 }
                 self.assign_available_permits();
-                permit_sender
-                    .send(permits)
-                    // This is a request response pattern, so we can safely ignore the error.
-                    .expect("Receiver lives longer than sender");
+                // The receiver could be dropped in the (unlikely) situation
+                // where the future requesting these permits is cancelled before
+                // this message is processed.
+                let _ = permit_sender.send(permits);
             }
             SearchPermitMessage::UpdateMemory { memory_delta } => {
                 if self.total_memory_allocated as i64 + memory_delta < 0 {
