@@ -291,10 +291,11 @@ impl OtlpGrpcLogsService {
     }
 
     #[instrument(skip_all, parent = parent_span, fields(num_log_records = Empty, num_bytes = Empty, num_parse_errors = Empty))]
+    #[allow(clippy::result_large_err)]
     fn parse_logs(
         request: ExportLogsServiceRequest,
         parent_span: RuntimeSpan,
-    ) -> Result<ParsedLogRecords, Status> {
+    ) -> tonic::Result<ParsedLogRecords> {
         let log_records = parse_otlp_logs(request)?;
         let mut num_parse_errors = 0;
         let num_log_records = log_records.len() as u64;
