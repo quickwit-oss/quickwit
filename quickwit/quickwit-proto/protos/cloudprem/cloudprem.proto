@@ -45,7 +45,7 @@ message NodeMetrics {
     // The usage of http status code is arbitrary here. It can be the result of a conversion from a grpc status code,
     // or the interpretation of a timeout for instance.
     uint32 status_code = 2;
-    repeated quickwit.developer.MetricTag metric_tags = 3;
+    repeated quickwit.developer.Label node_labels = 3;
     repeated quickwit.developer.MetricFamily metric_families = 4;
 }
 

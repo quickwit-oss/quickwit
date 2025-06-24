@@ -18,25 +18,85 @@ pub struct PullMetricsResponse {
     pub metric_families: ::prost::alloc::vec::Vec<MetricFamily>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Label {
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub value: ::prost::alloc::string::String,
+}
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct Gauge {
+    #[prost(double, tag = "1")]
+    pub value: f64,
+}
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct Counter {
+    #[prost(double, tag = "1")]
+    pub value: f64,
+}
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct Quantile {
+    #[prost(double, tag = "1")]
+    pub quantile: f64,
+    #[prost(double, tag = "2")]
+    pub value: f64,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Summary {
+    #[prost(uint64, tag = "1")]
+    pub sample_count: u64,
+    #[prost(double, tag = "2")]
+    pub sample_sum: f64,
+    #[prost(message, repeated, tag = "3")]
+    pub quantile: ::prost::alloc::vec::Vec<Quantile>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Histogram {
+    #[prost(uint64, tag = "1")]
+    pub sample_count: u64,
+    #[prost(double, tag = "2")]
+    pub sample_sum: f64,
+    /// Ordered in increasing order of upper_bound, +Inf bucket is optional.
+    #[prost(message, repeated, tag = "3")]
+    pub buckets: ::prost::alloc::vec::Vec<Bucket>,
+}
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct Bucket {
+    /// Cumulative in increasing order.
+    #[prost(uint64, tag = "1")]
+    pub cumulative_count: u64,
+    /// Inclusive.
+    #[prost(double, tag = "2")]
+    pub upper_bound: f64,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Metric {
+    #[prost(message, repeated, tag = "1")]
+    pub labels: ::prost::alloc::vec::Vec<Label>,
+    #[prost(oneof = "metric::MetricValue", tags = "2, 3, 7")]
+    pub metric_value: ::core::option::Option<metric::MetricValue>,
+}
+/// Nested message and enum types in `Metric`.
+pub mod metric {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum MetricValue {
+        #[prost(double, tag = "2")]
+        Gauge(f64),
+        #[prost(uint64, tag = "3")]
+        Counter(u64),
+        /// Summary   summary = 4;
+        #[prost(message, tag = "7")]
+        Histogram(super::Histogram),
+    }
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct MetricFamily {
     #[prost(string, tag = "1")]
     pub name: ::prost::alloc::string::String,
-    #[prost(message, repeated, tag = "2")]
-    pub counters: ::prost::alloc::vec::Vec<Counter>,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Counter {
-    #[prost(message, repeated, tag = "1")]
-    pub tags: ::prost::alloc::vec::Vec<MetricTag>,
-    #[prost(uint64, tag = "2")]
-    pub value: u64,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct MetricTag {
-    #[prost(string, tag = "1")]
-    pub key: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
-    pub value: ::prost::alloc::string::String,
+    pub help: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "3")]
+    pub metrics: ::prost::alloc::vec::Vec<Metric>,
 }
 /// BEGIN quickwit-codegen
 #[allow(unused_imports)]

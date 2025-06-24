@@ -17,7 +17,7 @@ pub struct NodeMetrics {
     #[prost(uint32, tag = "2")]
     pub status_code: u32,
     #[prost(message, repeated, tag = "3")]
-    pub metric_tags: ::prost::alloc::vec::Vec<super::quickwit::developer::MetricTag>,
+    pub node_labels: ::prost::alloc::vec::Vec<super::quickwit::developer::Label>,
     #[prost(message, repeated, tag = "4")]
     pub metric_families: ::prost::alloc::vec::Vec<
         super::quickwit::developer::MetricFamily,

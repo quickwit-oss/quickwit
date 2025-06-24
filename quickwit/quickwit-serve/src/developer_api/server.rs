@@ -27,8 +27,8 @@ use quickwit_config::service::QuickwitService;
 use quickwit_control_plane::control_plane::{ControlPlane, GetDebugInfo};
 use quickwit_ingest::{IngestRouter, Ingester};
 use quickwit_proto::developer::{
-    Counter, DeveloperError, DeveloperResult, DeveloperService, GetDebugInfoRequest,
-    GetDebugInfoResponse, MetricTag, PullMetricsResponse,
+    Bucket, DeveloperError, DeveloperResult, DeveloperService, GetDebugInfoRequest,
+    GetDebugInfoResponse, Histogram, Metric, MetricFamily, PullMetricsResponse,
 };
 use serde_json::json;
 
@@ -121,44 +121,86 @@ impl DeveloperService for DeveloperApiServer {
         &self,
         _: quickwit_proto::developer::PullMetricsRequest,
     ) -> DeveloperResult<PullMetricsResponse> {
-        let mut metric_families_proto = Vec::new();
-        for mut metric_family in prometheus::default_registry().gather() {
-            if metric_family.get_field_type() != MetricType::COUNTER {
-                continue;
-            }
-            let metric_family_name = metric_family.take_name();
-            let mut counters_proto: Vec<Counter> = Vec::new();
-            for mut metric in metric_family.take_metric() {
-                if !metric.has_counter() {
-                    continue;
-                }
-                let counter = metric.get_counter();
-                let Some(counter_value) = safe_f64_to_u64_truncate(counter.get_value()) else {
-                    continue;
-                };
-                let tags: Vec<MetricTag> = metric
-                    .take_label()
-                    .into_iter()
-                    .map(|mut label| MetricTag {
-                        key: label.take_name(),
-                        value: label.take_value(),
-                    })
-                    .collect();
-                counters_proto.push(Counter {
-                    tags,
-                    value: counter_value,
-                });
-            }
-            let metric_family_proto = quickwit_proto::developer::MetricFamily {
-                name: metric_family_name.to_string(),
-                counters: counters_proto,
-            };
-            metric_families_proto.push(metric_family_proto);
-        }
+        let metric_families_proto: Vec<MetricFamily> = prometheus::default_registry()
+            .gather()
+            .into_iter()
+            .flat_map(convert_metric_family)
+            .collect();
         Ok(PullMetricsResponse {
             metric_families: metric_families_proto,
         })
     }
+}
+
+fn convert_metric(
+    metric_type: prometheus::proto::MetricType,
+    mut metric: prometheus::proto::Metric,
+) -> Option<quickwit_proto::developer::Metric> {
+    let metric_value = match metric_type {
+        MetricType::COUNTER => {
+            let counter = metric.take_counter();
+            let counter_value = safe_f64_to_u64_truncate(counter.get_value())?;
+            quickwit_proto::developer::metric::MetricValue::Counter(counter_value)
+        }
+        MetricType::GAUGE => {
+            let gauge = metric.take_gauge();
+            let gauge_value = gauge.get_value();
+            quickwit_proto::developer::metric::MetricValue::Gauge(gauge_value)
+        }
+        MetricType::HISTOGRAM => {
+            let mut histogram: prometheus::proto::Histogram = metric.take_histogram();
+            let buckets: Vec<Bucket> = histogram
+                .take_bucket()
+                .into_iter()
+                .map(|bucket| Bucket {
+                    cumulative_count: bucket.get_cumulative_count(),
+                    upper_bound: bucket.get_upper_bound(),
+                })
+                .collect();
+            quickwit_proto::developer::metric::MetricValue::Histogram(Histogram {
+                sample_count: histogram.get_sample_count(),
+                sample_sum: histogram.get_sample_sum(),
+                buckets,
+            })
+        }
+        MetricType::SUMMARY | MetricType::UNTYPED => {
+            return None;
+        }
+    };
+    let labels: Vec<quickwit_proto::developer::Label> = metric
+        .take_label()
+        .into_iter()
+        .map(|label| quickwit_proto::developer::Label {
+            name: label.get_name().to_string(),
+            value: label.get_value().to_string(),
+        })
+        .collect();
+    Some(Metric {
+        labels,
+        metric_value: Some(metric_value),
+    })
+}
+
+fn convert_metric_family(
+    mut metric_family: prometheus::proto::MetricFamily,
+) -> Option<quickwit_proto::developer::MetricFamily> {
+    // let metric_type =  convert_metric_type(metric_family.get_field_type())?;
+    let name = metric_family.take_name();
+    let help = metric_family.take_help();
+    let metric_type = metric_family.get_field_type();
+    let metrics: Vec<quickwit_proto::developer::Metric> = metric_family
+        .take_metric()
+        .into_iter()
+        .flat_map(|metric| convert_metric(metric_type, metric))
+        .collect();
+    if metrics.is_empty() {
+        return None;
+    }
+    Some(quickwit_proto::developer::MetricFamily {
+        name: name,
+        help: help,
+        metrics,
+    })
 }
 
 fn safe_f64_to_u64_truncate(val: f64) -> Option<u64> {

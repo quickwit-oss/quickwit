@@ -403,7 +403,7 @@ async fn build_node_metric_future(ready_node: ClusterNode) -> NodeMetrics {
     NodeMetrics {
         node_id: node_id.to_string(),
         status_code: status_code.as_u16() as u32,
-        metric_tags: Vec::new(),
+        node_labels: Vec::new(),
         metric_families,
     }
 }
