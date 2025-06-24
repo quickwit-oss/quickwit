@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
 use quickwit_cluster::{Cluster, ClusterNode};
 use quickwit_proto::ServiceError as _;
+use quickwit_proto::cloudprem::metrics::MetricFamily;
 use quickwit_proto::cloudprem::{
     AggregationRequest, AggregationResponse, CloudPremError, CloudPremResult, CloudPremService,
     Event, EventTracker, FetchOneRequest, FetchOneResponse, ListRequest, ListResponse, NodeMetrics,
@@ -13,8 +14,7 @@ use quickwit_proto::cloudprem::{
     SetClusterAddressResponse, Statistics,
 };
 use quickwit_proto::developer::{
-    DeveloperService as _, DeveloperServiceClient, MetricFamily, PullMetricsRequest,
-    PullMetricsResponse,
+    DeveloperService as _, DeveloperServiceClient, PullMetricsRequest, PullMetricsResponse,
 };
 use quickwit_proto::search::{
     CountHits, Hit, ListTermsRequest, ListTermsResponse, PartialHit, SearchRequest, SearchResponse,

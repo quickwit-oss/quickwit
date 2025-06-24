@@ -14,6 +14,8 @@
 
 syntax = "proto3";
 
+import "metrics.proto";
+
 package quickwit.developer;
 
 service DeveloperService {
@@ -33,59 +35,5 @@ message GetDebugInfoResponse {
 message PullMetricsRequest {}
 
 message PullMetricsResponse {
-    repeated MetricFamily metric_families = 1;
-}
-
-// Adapted from
-// https://github.com/tikv/rust-prometheus/blob/master/proto/proto_model.proto
-
-message Label {
-  string name  = 1;
-  string value = 2;
-}
-
-message Gauge {
-  double value = 1;
-}
-
-message Counter {
-  double value = 1;
-}
-
-message Quantile {
-  double quantile = 1;
-  double value = 2;
-}
-
-message Summary {
-  uint64 sample_count = 1;
-  double sample_sum   = 2;
-  repeated Quantile quantile     = 3;
-}
-
-message Histogram {
-  uint64 sample_count = 1;
-  double sample_sum   = 2;
-  repeated Bucket buckets = 3; // Ordered in increasing order of upper_bound, +Inf bucket is optional.
-}
-
-message Bucket {
-  uint64 cumulative_count = 1; // Cumulative in increasing order.
-  double upper_bound = 2;      // Inclusive.
-}
-
-message Metric {
-  repeated Label labels = 1;
-  oneof metric_value {
-    double     gauge = 2;
-    uint64   counter = 3;
-    // Summary   summary = 4;
-    Histogram histogram = 7;
-  }
-}
-
-message MetricFamily {
-  string name   = 1;
-  string help   = 2;
-  repeated Metric metrics = 3;
+    repeated cloudprem.metrics.MetricFamily metric_families = 1;
 }

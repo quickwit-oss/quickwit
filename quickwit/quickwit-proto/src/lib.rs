@@ -29,16 +29,15 @@ pub mod cloudprem;
 pub mod cluster;
 pub mod control_plane;
 pub use {bytes, tonic};
-pub mod developer;
 pub mod error;
 mod getters;
 pub mod indexing;
 pub mod ingest;
 pub mod metastore;
-pub mod search;
+pub mod quickwit;
 pub mod types;
-
 pub use error::{GrpcServiceError, ServiceError, ServiceErrorCode};
+pub use quickwit::{developer, search};
 use search::ReportSplitsRequest;
 
 pub mod jaeger {
@@ -103,12 +102,6 @@ pub mod opentelemetry {
             }
         }
     }
-}
-
-pub(crate) mod quickwit {
-    // Cloudprem wants these modules here, and it's easier to give it than to edit codegen so it
-    // search in the right place
-    pub use crate::{developer, search};
 }
 
 impl TryFrom<search::SearchStreamRequest> for search::SearchRequest {

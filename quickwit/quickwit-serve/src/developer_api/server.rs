@@ -26,9 +26,11 @@ use quickwit_config::NodeConfig;
 use quickwit_config::service::QuickwitService;
 use quickwit_control_plane::control_plane::{ControlPlane, GetDebugInfo};
 use quickwit_ingest::{IngestRouter, Ingester};
+use quickwit_proto::cloudprem::metrics::metric::MetricValue;
+use quickwit_proto::cloudprem::metrics::*;
 use quickwit_proto::developer::{
-    Bucket, DeveloperError, DeveloperResult, DeveloperService, GetDebugInfoRequest,
-    GetDebugInfoResponse, Histogram, Metric, MetricFamily, PullMetricsResponse,
+    DeveloperError, DeveloperResult, DeveloperService, GetDebugInfoRequest, GetDebugInfoResponse,
+    PullMetricsResponse,
 };
 use serde_json::json;
 
@@ -135,29 +137,29 @@ impl DeveloperService for DeveloperApiServer {
 fn convert_metric(
     metric_type: prometheus::proto::MetricType,
     mut metric: prometheus::proto::Metric,
-) -> Option<quickwit_proto::developer::Metric> {
+) -> Option<Metric> {
     let metric_value = match metric_type {
         MetricType::COUNTER => {
             let counter = metric.take_counter();
             let counter_value = safe_f64_to_u64_truncate(counter.get_value())?;
-            quickwit_proto::developer::metric::MetricValue::Counter(counter_value)
+            MetricValue::Counter(counter_value)
         }
         MetricType::GAUGE => {
             let gauge = metric.take_gauge();
             let gauge_value = gauge.get_value();
-            quickwit_proto::developer::metric::MetricValue::Gauge(gauge_value)
+            MetricValue::Gauge(gauge_value)
         }
         MetricType::HISTOGRAM => {
             let mut histogram: prometheus::proto::Histogram = metric.take_histogram();
-            let buckets: Vec<Bucket> = histogram
+            let buckets: Vec<HistogramBucket> = histogram
                 .take_bucket()
                 .into_iter()
-                .map(|bucket| Bucket {
+                .map(|bucket| HistogramBucket {
                     cumulative_count: bucket.get_cumulative_count(),
                     upper_bound: bucket.get_upper_bound(),
                 })
                 .collect();
-            quickwit_proto::developer::metric::MetricValue::Histogram(Histogram {
+            MetricValue::Histogram(Histogram {
                 sample_count: histogram.get_sample_count(),
                 sample_sum: histogram.get_sample_sum(),
                 buckets,
@@ -167,10 +169,10 @@ fn convert_metric(
             return None;
         }
     };
-    let labels: Vec<quickwit_proto::developer::Label> = metric
+    let labels: Vec<Label> = metric
         .take_label()
         .into_iter()
-        .map(|label| quickwit_proto::developer::Label {
+        .map(|label| Label {
             name: label.get_name().to_string(),
             value: label.get_value().to_string(),
         })
@@ -183,12 +185,12 @@ fn convert_metric(
 
 fn convert_metric_family(
     mut metric_family: prometheus::proto::MetricFamily,
-) -> Option<quickwit_proto::developer::MetricFamily> {
+) -> Option<MetricFamily> {
     // let metric_type =  convert_metric_type(metric_family.get_field_type())?;
     let name = metric_family.take_name();
     let help = metric_family.take_help();
     let metric_type = metric_family.get_field_type();
-    let metrics: Vec<quickwit_proto::developer::Metric> = metric_family
+    let metrics: Vec<Metric> = metric_family
         .take_metric()
         .into_iter()
         .flat_map(|metric| convert_metric(metric_type, metric))
@@ -196,7 +198,7 @@ fn convert_metric_family(
     if metrics.is_empty() {
         return None;
     }
-    Some(quickwit_proto::developer::MetricFamily {
+    Some(MetricFamily {
         name: name,
         help: help,
         metrics,

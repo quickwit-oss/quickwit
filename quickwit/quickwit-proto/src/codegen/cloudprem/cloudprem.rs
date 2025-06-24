@@ -17,11 +17,9 @@ pub struct NodeMetrics {
     #[prost(uint32, tag = "2")]
     pub status_code: u32,
     #[prost(message, repeated, tag = "3")]
-    pub node_labels: ::prost::alloc::vec::Vec<super::quickwit::developer::Label>,
+    pub node_labels: ::prost::alloc::vec::Vec<metrics::Label>,
     #[prost(message, repeated, tag = "4")]
-    pub metric_families: ::prost::alloc::vec::Vec<
-        super::quickwit::developer::MetricFamily,
-    >,
+    pub metric_families: ::prost::alloc::vec::Vec<metrics::MetricFamily>,
 }
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct PingRequest {
