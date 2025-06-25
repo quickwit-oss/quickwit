@@ -385,7 +385,7 @@ impl Cluster {
         info!(
             cluster_id=%self.cluster_id,
             node_id=%self.self_chitchat_id.node_id,
-            "Leaving the cluster."
+            "leaving the cluster"
         );
         self.set_self_node_readiness(false).await;
         tokio::time::sleep(self.gossip_interval * 2).await;
@@ -898,6 +898,7 @@ mod tests {
             .unwrap();
 
         node_1.leave().await;
+        drop(node_1);
 
         let cluster_changes: Vec<ClusterChange> = node_1_change_stream.collect().await;
         assert_eq!(cluster_changes.len(), 6);
