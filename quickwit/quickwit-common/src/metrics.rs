@@ -18,9 +18,9 @@ use std::sync::OnceLock;
 use once_cell::sync::Lazy;
 use prometheus::{Gauge, HistogramOpts, Opts, TextEncoder};
 pub use prometheus::{
-    Histogram, HistogramTimer, HistogramVec as PrometheusHistogramVec, IntCounter,
-    IntCounterVec as PrometheusIntCounterVec, IntGauge, IntGaugeVec as PrometheusIntGaugeVec,
-    exponential_buckets, linear_buckets,
+    exponential_buckets, linear_buckets, Histogram, HistogramTimer,
+    HistogramVec as PrometheusHistogramVec, IntCounter, IntCounterVec as PrometheusIntCounterVec,
+    IntGauge, IntGaugeVec as PrometheusIntGaugeVec,
 };
 
 #[derive(Clone)]
@@ -429,15 +429,27 @@ impl InFlightDataGauges {
     }
 }
 
+fn is_per_index_metrics_enabled() -> bool {
+    static PER_INDEX_METRICS_ENABLED: OnceLock<bool> = OnceLock::new();
+    *PER_INDEX_METRICS_ENABLED
+        .get_or_init(|| !crate::get_bool_from_env("QW_DISABLE_PER_INDEX_METRICS", false))
+}
+
 /// This function returns `index_name` or projects it to `<any>` if per-index metrics are disabled.
 pub fn index_label(index_name: &str) -> &str {
-    static PER_INDEX_METRICS_ENABLED: OnceLock<bool> = OnceLock::new();
-    let per_index_metrics_enabled: bool = *PER_INDEX_METRICS_ENABLED
-        .get_or_init(|| !crate::get_bool_from_env("QW_DISABLE_PER_INDEX_METRICS", false));
-    if per_index_metrics_enabled {
+    if is_per_index_metrics_enabled() {
         index_name
     } else {
         "__any__"
+    }
+}
+
+/// This function returns `index_name-source_name` or projects it to `<any>` if per-index metrics are disabled.
+pub fn source_label(index_name: &str, source_name: &str) -> String {
+    if is_per_index_metrics_enabled() {
+        format!("{index_name}-{source_name}")
+    } else {
+        "__any__".to_string()
     }
 }
 
