@@ -380,8 +380,8 @@ impl Cluster {
         }
     }
 
-    /// Leaves the cluster.
-    pub async fn shutdown(self) {
+    #[cfg(any(test, feature = "testsuite"))]
+    pub async fn leave(&self) {
         info!(
             cluster_id=%self.cluster_id,
             node_id=%self.self_chitchat_id.node_id,
@@ -389,6 +389,10 @@ impl Cluster {
         );
         self.set_self_node_readiness(false).await;
         tokio::time::sleep(self.gossip_interval * 2).await;
+    }
+
+    pub async fn initiate_shutdown(&self) -> anyhow::Result<()> {
+        self.inner.read().await.chitchat_handle.initiate_shutdown()
     }
 
     /// This exposes in chitchat some metrics about the CPU usage of cooperative pipelines.
@@ -432,6 +436,16 @@ impl Cluster {
 
     pub async fn chitchat(&self) -> Arc<Mutex<Chitchat>> {
         self.inner.read().await.chitchat_handle.chitchat()
+    }
+
+    pub async fn chitchat_server_termination_watcher(
+        &self,
+    ) -> impl Future<Output = anyhow::Result<()>> {
+        self.inner
+            .read()
+            .await
+            .chitchat_handle
+            .termination_watcher()
     }
 }
 
@@ -834,7 +848,7 @@ mod tests {
             self_node_state.get(READINESS_KEY).unwrap(),
             READINESS_VALUE_NOT_READY
         );
-        node.shutdown().await;
+        node.leave().await;
     }
 
     #[tokio::test]
@@ -871,19 +885,19 @@ mod tests {
         expected_members.sort();
         assert_eq!(members, expected_members);
 
-        node_2.shutdown().await;
+        node_2.leave().await;
         node_1
             .wait_for_ready_members(|members| members.len() == 2, wait_secs)
             .await
             .unwrap();
 
-        node_3.shutdown().await;
+        node_3.leave().await;
         node_1
             .wait_for_ready_members(|members| members.len() == 1, wait_secs)
             .await
             .unwrap();
 
-        node_1.shutdown().await;
+        node_1.leave().await;
 
         let cluster_changes: Vec<ClusterChange> = node_1_change_stream.collect().await;
         assert_eq!(cluster_changes.len(), 6);
