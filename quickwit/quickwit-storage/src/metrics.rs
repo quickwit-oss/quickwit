@@ -16,7 +16,7 @@
 
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
-    GaugeGuard, Histogram, IntCounter, IntCounterVec, IntGauge, new_counter, new_counter_vec,
+    GaugeGuard, HistogramVec, IntCounter, IntCounterVec, IntGauge, new_counter, new_counter_vec,
     new_gauge, new_histogram_vec,
 };
 
@@ -30,19 +30,13 @@ pub struct StorageMetrics {
     pub searcher_split_cache: CacheMetrics,
     pub get_slice_timeout_successes: [IntCounter; 3],
     pub get_slice_timeout_all_timeouts: IntCounter,
-    pub object_storage_get_total: IntCounter,
-    pub object_storage_get_errors_total: IntCounterVec<1>,
+    pub object_storage_requests_total: IntCounterVec<2>,
+    pub object_storage_request_duration: HistogramVec<2>,
     pub object_storage_get_slice_in_flight_count: IntGauge,
     pub object_storage_get_slice_in_flight_num_bytes: IntGauge,
-    pub object_storage_put_total: IntCounter,
-    pub object_storage_put_parts: IntCounter,
     pub object_storage_download_num_bytes: IntCounter,
+    pub object_storage_download_errors: IntCounterVec<1>,
     pub object_storage_upload_num_bytes: IntCounter,
-
-    pub object_storage_delete_requests_total: IntCounter,
-    pub object_storage_bulk_delete_requests_total: IntCounter,
-    pub object_storage_delete_request_duration: Histogram,
-    pub object_storage_bulk_delete_request_duration: Histogram,
 }
 
 impl Default for StorageMetrics {
@@ -63,31 +57,6 @@ impl Default for StorageMetrics {
         let get_slice_timeout_all_timeouts =
             get_slice_timeout_outcome_total_vec.with_label_values(["all_timeouts"]);
 
-        let object_storage_requests_total = new_counter_vec(
-            "object_storage_requests_total",
-            "Total number of object storage requests performed.",
-            "storage",
-            &[],
-            ["action"],
-        );
-        let object_storage_delete_requests_total =
-            object_storage_requests_total.with_label_values(["delete_object"]);
-        let object_storage_bulk_delete_requests_total =
-            object_storage_requests_total.with_label_values(["delete_objects"]);
-
-        let object_storage_request_duration = new_histogram_vec(
-            "object_storage_request_duration_seconds",
-            "Duration of object storage requests in seconds.",
-            "storage",
-            &[],
-            ["action"],
-            vec![0.1, 0.5, 1.0, 5.0, 10.0, 30.0, 60.0],
-        );
-        let object_storage_delete_request_duration =
-            object_storage_request_duration.with_label_values(["delete_object"]);
-        let object_storage_bulk_delete_request_duration =
-            object_storage_request_duration.with_label_values(["delete_objects"]);
-
         StorageMetrics {
             fast_field_cache: CacheMetrics::for_component("fastfields"),
             fd_cache_metrics: CacheMetrics::for_component("fd"),
@@ -97,19 +66,23 @@ impl Default for StorageMetrics {
             split_footer_cache: CacheMetrics::for_component("splitfooter"),
             get_slice_timeout_successes,
             get_slice_timeout_all_timeouts,
-            object_storage_get_total: new_counter(
-                "object_storage_gets_total",
-                "Number of objects fetched. Might be lower than get_slice_timeout_outcome if \
-                 queries are debounced.",
+            object_storage_requests_total: new_counter_vec(
+                "object_storage_requests_total",
+                "Number of requests to the object store, by action and status. Requests are \
+                 recorded when the response headers are returned, download failures will not \
+                 appear as errors.",
                 "storage",
                 &[],
+                ["action", "status"],
             ),
-            object_storage_get_errors_total: new_counter_vec::<1>(
-                "object_storage_get_errors_total",
-                "Number of GetObject errors.",
+            object_storage_request_duration: new_histogram_vec(
+                "object_storage_request_duration",
+                "Durations until the response headers are returned from the object store, by \
+                 action and status. This does not measure the download time.",
                 "storage",
                 &[],
-                ["code"],
+                ["action", "status"],
+                vec![0.1, 0.5, 1.0, 5.0, 10.0, 30.0, 60.0],
             ),
             object_storage_get_slice_in_flight_count: new_gauge(
                 "object_storage_get_slice_in_flight_count",
@@ -124,24 +97,19 @@ impl Default for StorageMetrics {
                 "storage",
                 &[],
             ),
-            object_storage_put_total: new_counter(
-                "object_storage_puts_total",
-                "Number of objects uploaded. May differ from object_storage_requests_parts due to \
-                 multipart upload.",
-                "storage",
-                &[],
-            ),
-            object_storage_put_parts: new_counter(
-                "object_storage_puts_parts",
-                "Number of object parts uploaded.",
-                "",
-                &[],
-            ),
             object_storage_download_num_bytes: new_counter(
                 "object_storage_download_num_bytes",
                 "Amount of data downloaded from an object storage.",
                 "storage",
                 &[],
+            ),
+            object_storage_download_errors: new_counter_vec(
+                "object_storage_download_errors",
+                "Number of download requests that received successfull response headers but \
+                 failed during download.",
+                "storage",
+                &[],
+                ["status"],
             ),
             object_storage_upload_num_bytes: new_counter(
                 "object_storage_upload_num_bytes",
@@ -149,10 +117,6 @@ impl Default for StorageMetrics {
                 "storage",
                 &[],
             ),
-            object_storage_delete_requests_total,
-            object_storage_bulk_delete_requests_total,
-            object_storage_delete_request_duration,
-            object_storage_bulk_delete_request_duration,
         }
     }
 }
