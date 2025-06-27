@@ -6,7 +6,7 @@ We call the result of this decision the indexing physical plan.
 We also want to observe some interesting properties such as:
 - (A) we want to avoid moving indexing tasks from one indexer to another one needlessly.
 - (B) we want a source to be spread amongst as few nodes as possible
-- (C) we want to balance the load between nodes as soon as the load is significative (>30%)
+- (C) we want to balance the load between nodes as soon as the load is significatively (>30%) higher than the average (target) load
 - (D) when we are working with the Ingest API source, we prefer to colocate indexers on
   the ingesters holding the data.
 
