@@ -208,6 +208,27 @@ fn assert_enforce_nodes_cpu_capacity_post_condition(
     );
 }
 
+// ----------------------------------------------------
+// Phase 3
+// Place unassigned sources.
+//
+// We use a greedy algorithm as a simple heuristic here.
+//
+// We go through the sources in decreasing order of their load,
+// in two passes.
+//
+// In the first pass, we have a look at
+// the nodes with which there is an affinity.
+//
+// If one of them has room for all of the shards, then we assign all
+// of the shards to it.
+//
+// In the second pass, we just put as many shards as possible on the node
+// with the highest available capacity.
+//
+// If this algorithm fails to place all remaining shards, we inflate
+// the node capacities by 20% in the scheduling problem and start from the beginning.
+
 fn attempt_place_unassigned_shards(
     unassigned_shards: &[Source],
     problem: &SchedulingProblem,
@@ -262,26 +283,6 @@ fn place_unassigned_shards_with_affinity(
     }
 }
 
-// ----------------------------------------------------
-// Phase 3
-// Place unassigned sources.
-//
-// We use a greedy algorithm as a simple heuristic here.
-//
-// We go through the sources in decreasing order of their load,
-// in two passes.
-//
-// In the first pass, we have a look at
-// the nodes with which there is an affinity.
-//
-// If one of them has room for all of the shards, then we assign all
-// of the shards to it.
-//
-// In the second pass, we just put as many shards as possible on the node
-// with the highest available capacity.
-//
-// If this algorithm fails to place all remaining shards, we inflate
-// the node capacities by 20% in the scheduling problem and start from the beginning.
 #[must_use]
 fn place_unassigned_shards_ignoring_affinity(
     mut problem: SchedulingProblem,
@@ -360,10 +361,6 @@ fn place_unassigned_shards_single_source(
         let num_placable_shards = available_capacity.cpu_millis() / source.load_per_shard;
         let num_shards_to_place = num_placable_shards.min(num_shards);
         // Update the solution, the shard load, and the number of shards to place.
-        if num_shards_to_place == 0u32 {
-            // No need to fill indexer_assignments with empty assignments.
-            continue;
-        }
         solution.indexer_assignments[indexer_ord]
             .add_shards(source.source_ord, num_shards_to_place);
         num_shards -= num_shards_to_place;
@@ -783,7 +780,16 @@ mod tests {
     proptest! {
         #[test]
         fn test_proptest_post_conditions((problem, solution) in problem_solution_strategy()) {
-            solve(problem, solution);
+            let solution_1 = solve(problem.clone(), solution);
+            let solution_2 = solve(problem.clone(), solution_1.clone());
+            // TODO: This assert actually fails for some scenarii. We say it is fine
+            // for now as long as the solution does not change again during the
+            // next resolution:
+            // let has_solution_changed_once = solution_1.indexer_assignments != solution_2.indexer_assignments;
+            // assert!(!has_solution_changed_once, "Solution changed for same problem\nSolution 1:{solution_1:?}\nSolution 2: {solution_2:?}");
+            let solution_3 = solve(problem, solution_2.clone());
+            let has_solution_changed_again = solution_2.indexer_assignments != solution_3.indexer_assignments;
+            assert!(!has_solution_changed_again, "solution unstable!!!\nSolution 1: {solution_1:?}\nSolution 2: {solution_2:?}\nSolution 3: {solution_3:?}");
         }
     }
 
