@@ -90,7 +90,7 @@ The Google Cloud Storage flavor (`gcs`) turns off multi-object delete requests a
 
 *MinIO flavor*
 
-The MinIO flavor (`minio`) forces path-style access.
+The MinIO flavor (`minio`) overrides the `region` parameter to `minio` and forces path-style access.
 
 Example of a storage configuration for Google Cloud Storage in YAML format:
 
