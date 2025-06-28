@@ -267,7 +267,7 @@ impl ClusterSandbox {
         self.node_configs
             .iter()
             .find(|config| config.1.contains(&service))
-            .unwrap_or_else(|| panic!("No {:?} node", service))
+            .unwrap_or_else(|| panic!("No {service:?} node"))
             .0
             .clone()
     }
@@ -543,8 +543,7 @@ impl ClusterSandbox {
         );
         assert_eq!(
             search_response.num_hits, expected_num_hits,
-            "unexpected num_hits for query {}",
-            query
+            "unexpected num_hits for query {query}"
         );
     }
 

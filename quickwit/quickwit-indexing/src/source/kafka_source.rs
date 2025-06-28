@@ -521,7 +521,7 @@ impl Source for KafkaSource {
     }
 
     fn name(&self) -> String {
-        format!("{:?}", self)
+        format!("{self:?}")
     }
 
     fn observable_state(&self) -> JsonValue {

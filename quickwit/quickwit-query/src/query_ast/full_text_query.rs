@@ -55,7 +55,7 @@ impl FullTextParams {
             .unwrap_or(text_field_indexing.tokenizer());
         tokenizer_manager
             .get_tokenizer(tokenizer_name)
-            .with_context(|| format!("no tokenizer named `{}` is registered", tokenizer_name))
+            .with_context(|| format!("no tokenizer named `{tokenizer_name}` is registered"))
     }
 
     pub(crate) fn tokenize_text_into_terms_json(
@@ -68,7 +68,7 @@ impl FullTextParams {
     ) -> anyhow::Result<Vec<(usize, Term)>> {
         let text_indexing_options = json_options
             .get_text_indexing_options()
-            .with_context(|| format!("Json field text `{}` is not indexed", json_path))?;
+            .with_context(|| format!("Json field text `{json_path}` is not indexed"))?;
         let mut text_analyzer: TextAnalyzer =
             self.text_analyzer(text_indexing_options, tokenizer_manager)?;
         let mut token_stream = text_analyzer.token_stream(text);
@@ -361,7 +361,7 @@ mod tests {
             .unwrap();
         let leaf = ast.as_leaf().unwrap();
         assert_eq!(
-            &format!("{:?}", leaf),
+            &format!("{leaf:?}"),
             "PhraseQuery { field: Field(0), phrase_terms: [(0, Term(field=0, type=Str, \
              \"hello\")), (1, Term(field=0, type=Str, \"world\"))], slop: 1 }"
         );
@@ -392,7 +392,7 @@ mod tests {
             .unwrap();
         let leaf = ast.as_leaf().unwrap();
         assert_eq!(
-            &format!("{:?}", leaf),
+            &format!("{leaf:?}"),
             r#"TermQuery(Term(field=0, type=Str, "Hello world"))"#
         );
     }

@@ -288,7 +288,7 @@ pub async fn upload_test_file(
     filename: &str,
 ) -> Uri {
     let test_data = tokio::fs::read(local_src_path).await.unwrap();
-    let src_location = format!("s3://{}/{}", bucket, prefix);
+    let src_location = format!("s3://{bucket}/{prefix}");
     let storage_uri = Uri::from_str(&src_location).unwrap();
     let storage = storage_resolver.resolve(&storage_uri).await.unwrap();
     storage

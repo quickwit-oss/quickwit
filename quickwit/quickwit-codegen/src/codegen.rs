@@ -513,8 +513,8 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
     let mock_name = &context.mock_name;
     let mock_wrapper_name = quote::format_ident!("{}Wrapper", mock_name);
     let error_message = format!(
-        "`{}` must be wrapped in a `{}`: use `{}::from_mock(mock)` to instantiate the client",
-        mock_name, mock_wrapper_name, client_name
+        "`{mock_name}` must be wrapped in a `{mock_wrapper_name}`: use \
+         `{client_name}::from_mock(mock)` to instantiate the client"
     );
     let extra_client_methods = if context.generate_extra_service_methods {
         generate_extra_methods_calling_inner()

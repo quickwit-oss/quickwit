@@ -88,7 +88,7 @@ impl fmt::Display for EntityKind {
                 index_id,
                 source_id,
             } => write!(f, "checkpoint delta `{index_id}/{source_id}`"),
-            EntityKind::Index { index_id } => write!(f, "index `{}`", index_id),
+            EntityKind::Index { index_id } => write!(f, "index `{index_id}`"),
             EntityKind::Indexes { index_ids } => write!(f, "indexes `{}`", index_ids.join(", ")),
             EntityKind::Shard { queue_id } => write!(f, "shard `{queue_id}`"),
             EntityKind::Source {
@@ -98,7 +98,7 @@ impl fmt::Display for EntityKind {
             EntityKind::Split { split_id } => write!(f, "split `{split_id}`"),
             EntityKind::Splits { split_ids } => write!(f, "splits `{}`", split_ids.join(", ")),
             EntityKind::IndexTemplate { template_id } => {
-                write!(f, "index template `{}`", template_id)
+                write!(f, "index template `{template_id}`")
             }
         }
     }
@@ -335,7 +335,7 @@ impl fmt::Display for SourceType {
             SourceType::Vec => "vec",
             SourceType::Void => "void",
         };
-        write!(f, "{}", source_type_str)
+        write!(f, "{source_type_str}")
     }
 }
 

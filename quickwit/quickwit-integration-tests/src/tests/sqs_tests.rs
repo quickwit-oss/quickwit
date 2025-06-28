@@ -31,7 +31,7 @@ use crate::test_utils::ClusterSandboxBuilder;
 fn create_mock_data_file(num_lines: usize) -> (NamedTempFile, Uri) {
     let mut temp_file = tempfile::NamedTempFile::new().unwrap();
     for i in 0..num_lines {
-        writeln!(temp_file, "{{\"body\": \"hello {}\"}}", i).unwrap()
+        writeln!(temp_file, "{{\"body\": \"hello {i}\"}}").unwrap()
     }
     temp_file.flush().unwrap();
     let path = temp_file.path().to_str().unwrap();
@@ -47,15 +47,14 @@ async fn test_sqs_with_duplicates() {
     let index_config = format!(
         r#"
             version: 0.8
-            index_id: {}
+            index_id: {index_id}
             doc_mapping:
                 field_mappings:
                 - name: body
                   type: text
             indexing_settings:
                 commit_timeout_secs: 3
-            "#,
-        index_id
+            "#
     );
 
     let sqs_client = sqs_test_helpers::get_localstack_sqs_client().await.unwrap();
@@ -72,18 +71,17 @@ async fn test_sqs_with_duplicates() {
     let source_config_input = format!(
         r#"
             version: 0.7
-            source_id: {}
+            source_id: {source_id}
             desired_num_pipelines: 1
             max_num_pipelines_per_indexer: 1
             source_type: file
             params:
                 notifications:
                   - type: sqs
-                    queue_url: {}
+                    queue_url: {queue_url}
                     message_type: raw_uri
             input_format: plain_text
-        "#,
-        source_id, queue_url
+        "#
     );
 
     sandbox
@@ -152,15 +150,14 @@ async fn test_sqs_garbage_collect() {
     let index_config = format!(
         r#"
             version: 0.8
-            index_id: {}
+            index_id: {index_id}
             doc_mapping:
                 field_mappings:
                 - name: body
                   type: text
             indexing_settings:
                 commit_timeout_secs: 1
-            "#,
-        index_id
+            "#
     );
 
     let sqs_client = sqs_test_helpers::get_localstack_sqs_client().await.unwrap();
@@ -177,20 +174,19 @@ async fn test_sqs_garbage_collect() {
     let source_config_input = format!(
         r#"
             version: 0.7
-            source_id: {}
+            source_id: {source_id}
             desired_num_pipelines: 1
             max_num_pipelines_per_indexer: 1
             source_type: file
             params:
                 notifications:
                   - type: sqs
-                    queue_url: {}
+                    queue_url: {queue_url}
                     message_type: raw_uri
                     deduplication_window_max_messages: 5
                     deduplication_cleanup_interval_secs: 3
             input_format: plain_text
-        "#,
-        source_id, queue_url
+        "#
     );
 
     sandbox
@@ -277,15 +273,14 @@ async fn test_update_source_multi_node_cluster() {
     let index_config = format!(
         r#"
         version: 0.8
-        index_id: {}
+        index_id: {index_id}
         doc_mapping:
             field_mappings:
             - name: body
               type: text
         indexing_settings:
             commit_timeout_secs: 1
-        "#,
-        index_id
+        "#
     );
     sandbox
         .rest_client(QuickwitService::Indexer)
@@ -302,20 +297,19 @@ async fn test_update_source_multi_node_cluster() {
     let source_config_input = format!(
         r#"
             version: 0.7
-            source_id: {}
+            source_id: {source_id}
             desired_num_pipelines: 1
             max_num_pipelines_per_indexer: 1
             source_type: file
             params:
                 notifications:
                   - type: sqs
-                    queue_url: {}
+                    queue_url: {queue_url}
                     message_type: raw_uri
                     deduplication_window_max_messages: 5
                     deduplication_cleanup_interval_secs: 3
             input_format: plain_text
-        "#,
-        source_id, queue_url
+        "#
     );
     sandbox
         .rest_client(QuickwitService::Indexer)
@@ -331,20 +325,19 @@ async fn test_update_source_multi_node_cluster() {
     let source_config_input = format!(
         r#"
             version: 0.7
-            source_id: {}
+            source_id: {source_id}
             desired_num_pipelines: 3
             max_num_pipelines_per_indexer: 3
             source_type: file
             params:
                 notifications:
                   - type: sqs
-                    queue_url: {}
+                    queue_url: {queue_url}
                     message_type: raw_uri
                     deduplication_window_max_messages: 5
                     deduplication_cleanup_interval_secs: 3
             input_format: plain_text
-        "#,
-        source_id, queue_url
+        "#
     );
     sandbox
         .rest_client(QuickwitService::Metastore)

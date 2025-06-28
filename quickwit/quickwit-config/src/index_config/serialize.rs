@@ -410,7 +410,7 @@ mod test {
                 &original_config,
             )
             .unwrap_err();
-            assert!(format!("{:?}", load_error).contains("`index_uri` cannot be updated"));
+            assert!(format!("{load_error:?}").contains("`index_uri` cannot be updated"));
         }
     }
 

@@ -800,7 +800,7 @@ mod tests {
             .await
             .unwrap();
 
-        let split_path_str = format!("{}.split", split_id);
+        let split_path_str = format!("{split_id}.split");
         let split_path = Path::new(&split_path_str);
         let payload: Box<dyn PutPayload> = Box::new(vec![0]);
         storage.put(split_path, payload).await.unwrap();

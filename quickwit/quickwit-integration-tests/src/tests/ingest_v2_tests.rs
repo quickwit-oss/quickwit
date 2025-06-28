@@ -40,7 +40,7 @@ async fn test_ingest_recreated_index() {
     let index_config = format!(
         r#"
             version: 0.8
-            index_id: {}
+            index_id: {index_id}
             doc_mapping:
                 field_mappings:
                 - name: body
@@ -51,8 +51,7 @@ async fn test_ingest_recreated_index() {
                     type: stable_log
                     merge_factor: 3
                     max_merge_factor: 3
-            "#,
-        index_id
+            "#
     );
     let current_index_metadata = sandbox
         .rest_client(QuickwitService::Indexer)
@@ -171,7 +170,7 @@ async fn test_indexing_directory_cleanup() {
     let index_config = format!(
         r#"
             version: 0.8
-            index_id: {}
+            index_id: {index_id}
             doc_mapping:
                 field_mappings:
                 - name: body
@@ -182,8 +181,7 @@ async fn test_indexing_directory_cleanup() {
                     type: stable_log
                     merge_factor: 3
                     max_merge_factor: 3
-            "#,
-        index_id
+            "#
     );
     sandbox
         .rest_client(QuickwitService::Indexer)

@@ -43,15 +43,14 @@ async fn test_search_after_control_plane_shutdown() {
     let index_config = format!(
         r#"
             version: 0.8
-            index_id: {}
+            index_id: {index_id}
             doc_mapping:
                 field_mappings:
                 - name: body
                   type: text
             indexing_settings:
                 commit_timeout_secs: 1
-            "#,
-        index_id
+            "#
     );
 
     sandbox
@@ -102,7 +101,7 @@ async fn test_searcher_and_metastore_without_control_plane() {
         );
         assert_eq!(code.as_u16(), 404);
     } else {
-        panic!("unexpected error: {:?}", search_error);
+        panic!("unexpected error: {search_error:?}");
     }
 
     sandbox.shutdown().await.unwrap();

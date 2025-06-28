@@ -254,7 +254,7 @@ pub fn deserialize_split_fields<R: Read>(mut reader: R) -> io::Result<ListFields
     if format_version != 2 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            format!("Unsupported split field format version: {}", format_version),
+            format!("Unsupported split field format version: {format_version}"),
         ));
     }
     let reader = zstd::Decoder::new(reader)?;

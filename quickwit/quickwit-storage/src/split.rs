@@ -178,7 +178,7 @@ impl SplitPayloadBuilder {
             .ok_or_else(|| {
                 io::Error::new(
                     io::ErrorKind::InvalidData,
-                    format!("Invalid file name in path {:?}", path),
+                    format!("Invalid file name in path {path:?}"),
                 )
             })?;
 

@@ -177,7 +177,7 @@ async fn jaeger_services(
         .await
         .map_err(|error| JaegerError {
             status: StatusCode::INTERNAL_SERVER_ERROR,
-            message: format!("failed to fetch services: {}", error),
+            message: format!("failed to fetch services: {error}"),
         })?;
     Ok(JaegerResponseBody::<Vec<String>> {
         data: get_services_response.services,

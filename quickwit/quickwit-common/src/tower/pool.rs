@@ -104,8 +104,8 @@ where
         self.pool
             .read()
             .expect("lock should not be poisoned")
-            .iter()
-            .map(|(key, _)| key.clone())
+            .keys()
+            .cloned()
             .collect()
     }
 
@@ -114,8 +114,8 @@ where
         self.pool
             .read()
             .expect("lock should not be poisoned")
-            .iter()
-            .map(|(_, value)| value.clone())
+            .values()
+            .cloned()
             .collect()
     }
 

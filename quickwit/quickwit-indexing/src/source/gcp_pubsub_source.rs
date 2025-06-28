@@ -216,7 +216,7 @@ impl Source for GcpPubSubSource {
     }
 
     fn name(&self) -> String {
-        format!("{:?}", self)
+        format!("{self:?}")
     }
 
     fn observable_state(&self) -> JsonValue {
@@ -377,7 +377,7 @@ mod gcp_pubsub_emulator_tests {
         let mut pubsub_messages = Vec::with_capacity(6);
         for i in 0..6 {
             let pubsub_message = PubsubMessage {
-                data: format!("Message {}", i).into(),
+                data: format!("Message {i}").into(),
                 ..Default::default()
             };
             pubsub_messages.push(pubsub_message);

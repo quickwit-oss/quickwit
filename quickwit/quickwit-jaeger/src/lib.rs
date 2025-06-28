@@ -1152,7 +1152,7 @@ mod tests {
     fn get_must(ast: QueryAst) -> Vec<QueryAst> {
         match ast {
             QueryAst::Bool(boolean_query) => boolean_query.must,
-            _ => panic!("expected `QueryAst::Bool`, got `{:?}`", ast),
+            _ => panic!("expected `QueryAst::Bool`, got `{ast:?}`"),
         }
     }
 
@@ -1160,7 +1160,7 @@ mod tests {
     fn get_must_not(ast: QueryAst) -> Vec<QueryAst> {
         match ast {
             QueryAst::Bool(boolean_query) => boolean_query.must_not,
-            _ => panic!("expected `QueryAst::Bool`, got `{:?}`", ast),
+            _ => panic!("expected `QueryAst::Bool`, got `{ast:?}`"),
         }
     }
 

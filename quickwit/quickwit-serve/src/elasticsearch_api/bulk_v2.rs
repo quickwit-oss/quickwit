@@ -369,7 +369,7 @@ fn make_invalid_index_id_item(index_id: String, es_doc_id: Option<String>) -> El
     let error = ElasticBulkError {
         index_id: Some(index_id.clone()),
         exception: ElasticException::IllegalArgument,
-        reason: format!("invalid index id [{}]", index_id),
+        reason: format!("invalid index id [{index_id}]"),
     };
     ElasticBulkItem {
         index_id,

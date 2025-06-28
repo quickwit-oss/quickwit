@@ -733,7 +733,7 @@ pub async fn create_cluster_for_test(
 
     static GOSSIP_ADVERTISE_PORT_SEQUENCE: AtomicU16 = AtomicU16::new(1u16);
     let gossip_advertise_port = GOSSIP_ADVERTISE_PORT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-    let node_id: NodeId = format!("node-{}", gossip_advertise_port).into();
+    let node_id: NodeId = format!("node-{gossip_advertise_port}").into();
 
     let enabled_services = enabled_services
         .iter()

@@ -441,8 +441,7 @@ impl TryFrom<ColumnType> for SortFieldType {
             ColumnType::DateTime => Ok(SortFieldType::DateTime),
             ColumnType::Bool => Ok(SortFieldType::Bool),
             _ => Err(TantivyError::InvalidArgument(format!(
-                "Unsupported sort field type `{:?}`.",
-                column_type
+                "Unsupported sort field type `{column_type:?}`."
             ))),
         }
     }
@@ -1598,8 +1597,8 @@ mod tests {
                                 )
                             })
                             .collect::<Vec<_>>();
-                        eprintln!("expected: {:#?}", expected_docids);
-                        eprintln!("got: {:#?}", got_docids);
+                        eprintln!("expected: {expected_docids:#?}");
+                        eprintln!("got: {got_docids:#?}");
                         panic!("mismatch ordering for \"{sort_str}\":{slice_len}");
                     }
                 }

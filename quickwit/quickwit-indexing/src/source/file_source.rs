@@ -101,7 +101,7 @@ impl Source for FileSource {
     }
 
     fn name(&self) -> String {
-        format!("{:?}", self)
+        format!("{self:?}")
     }
 
     #[allow(unused_variables)]

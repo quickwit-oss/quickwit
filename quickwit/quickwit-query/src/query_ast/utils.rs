@@ -60,7 +60,7 @@ pub fn find_subfields<'a>(
     path: &'a str,
     schema: &'a TantivySchema,
 ) -> Vec<(Field, &'a FieldEntry)> {
-    let prefix = format!("{}.", path);
+    let prefix = format!("{path}.");
     schema
         .fields()
         .filter(|(_, field_entry)| field_entry.name().starts_with(&prefix))

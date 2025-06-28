@@ -3416,7 +3416,7 @@ mod tests {
     fn test_allocate_shards_aux(shard_counts: &[usize]) {
         let mut shard_counts_map: HashMap<NodeId, usize> = HashMap::new();
         let shards: Vec<String> = (0..shard_counts.len())
-            .map(|i| format!("shard-{}", i))
+            .map(|i| format!("shard-{i}"))
             .collect();
         for (shard, &shard_count) in shards.into_iter().zip(shard_counts.iter()) {
             shard_counts_map.insert(NodeId::from(shard), shard_count);

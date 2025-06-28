@@ -37,14 +37,9 @@ async fn assert_hits_unordered(
         )
         .await;
     if let Ok(expected_hits) = expected_result {
-        let resp = search_res.unwrap_or_else(|err| panic!("query: {}, error: {}", query, err));
-        assert_eq!(resp.errors.len(), 0, "query: {}", query);
-        assert_eq!(
-            resp.num_hits,
-            expected_hits.len() as u64,
-            "query: {}",
-            query
-        );
+        let resp = search_res.unwrap_or_else(|err| panic!("query: {query}, error: {err}"));
+        assert_eq!(resp.errors.len(), 0, "query: {query}");
+        assert_eq!(resp.num_hits, expected_hits.len() as u64, "query: {query}");
         for expected_hit in expected_hits {
             assert!(
                 resp.hits.contains(expected_hit),
@@ -55,7 +50,7 @@ async fn assert_hits_unordered(
             );
         }
     } else if let Ok(search_response) = search_res {
-        assert!(!search_response.errors.is_empty(), "query: {}", query);
+        assert!(!search_response.errors.is_empty(), "query: {query}");
     }
 }
 

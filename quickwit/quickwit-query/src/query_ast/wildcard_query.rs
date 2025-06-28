@@ -313,7 +313,7 @@ mod tests {
             full_path: missing_field_full_path,
         } = err
         else {
-            panic!("unexpected error: {:?}", err);
+            panic!("unexpected error: {err:?}");
         };
         assert_eq!(missing_field_full_path, "my_missing_field");
     }
