@@ -347,6 +347,7 @@ impl S3StorageConfig {
                 self.disable_multipart_upload = true;
             }
             Some(StorageBackendFlavor::MinIO) => {
+                self.region = Some("minio".to_string());
                 self.force_path_style_access = true;
             }
             _ => {}
@@ -497,6 +498,7 @@ mod tests {
         assert!(gcs_storage_config.disable_multipart_upload);
 
         let minio_storage_config = storage_configs[3].as_s3().unwrap();
+        assert_eq!(minio_storage_config.region, Some("minio".to_string()));
         assert!(minio_storage_config.force_path_style_access);
     }
 
