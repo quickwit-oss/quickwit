@@ -115,6 +115,7 @@ pub use vec_source::{VecSource, VecSourceFactory};
 pub use void_source::{VoidSource, VoidSourceFactory};
 
 use self::doc_file_reader::dir_and_filename;
+use self::stdin_source::StdinSourceFactory;
 use crate::actors::DocProcessor;
 use crate::models::RawDocBatch;
 use crate::source::ingest::IngestSourceFactory;
@@ -415,6 +416,7 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
         source_factory.add_source(SourceType::Kinesis, KinesisSourceFactory);
         #[cfg(feature = "pulsar")]
         source_factory.add_source(SourceType::Pulsar, PulsarSourceFactory);
+        source_factory.add_source(SourceType::Stdin, StdinSourceFactory);
         source_factory.add_source(SourceType::Vec, VecSourceFactory);
         source_factory.add_source(SourceType::Void, VoidSourceFactory);
         source_factory
