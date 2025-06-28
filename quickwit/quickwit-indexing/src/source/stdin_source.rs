@@ -108,10 +108,10 @@ impl Source for StdinSource {
     }
 }
 
-pub struct FileSourceFactory;
+pub struct StdinSourceFactory;
 
 #[async_trait]
-impl TypedSourceFactory for FileSourceFactory {
+impl TypedSourceFactory for StdinSourceFactory {
     type Source = StdinSource;
     type Params = ();
 
