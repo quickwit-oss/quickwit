@@ -387,7 +387,7 @@ async fn test_scheduler_scheduling_multiple_indexers() {
     assert_eq!(scheduler_state.num_schedule_indexing_plan, 1);
 
     // Shutdown cluster and wait until the new scheduling.
-    cluster_indexer_2.shutdown().await;
+    cluster_indexer_2.leave().await;
 
     cluster
         .wait_for_ready_members(
