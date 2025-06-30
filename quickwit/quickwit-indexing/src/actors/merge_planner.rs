@@ -18,7 +18,7 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
-use quickwit_metastore::SplitMetadata;
+use quickwit_metastore::{SplitMaturity, SplitMetadata};
 use quickwit_proto::indexing::MergePipelineId;
 use quickwit_proto::types::DocMappingUid;
 use serde::Serialize;
@@ -273,6 +273,14 @@ impl MergePlanner {
     // - do not belong to the current timeline.
     fn record_splits_if_necessary(&mut self, split_metadatas: Vec<SplitMetadata>) {
         for new_split in split_metadatas {
+            if let SplitMaturity::Mature = self
+                .merge_policy
+                .split_maturity(new_split.num_docs, new_split.num_merge_ops)
+            {
+                // This can happen if the merge policy changed (e.g, decreased
+                // split_num_docs_target).
+                continue;
+            }
             if new_split.is_mature(OffsetDateTime::now_utc()) {
                 continue;
             }
