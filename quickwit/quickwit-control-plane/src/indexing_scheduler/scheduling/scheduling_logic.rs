@@ -245,7 +245,9 @@ impl Ord for PlacementCandidate {
             ordering => return ordering.reverse(),
         }
         // If tie, pick the node with shards already assigned first
-        match self.current_num_shards.cmp(&other.current_num_shards) {
+        let current_shard_presence = self.current_num_shards.clamp(0, 1);
+        let other_shard_presence = other.current_num_shards.clamp(0, 1);
+        match current_shard_presence.cmp(&other_shard_presence) {
             Ordering::Equal => {}
             ordering => return ordering.reverse(),
         }
