@@ -380,17 +380,21 @@ impl CloudPremService for CloudPremServiceImpl {
 /// Computes the labels that apply to the entire pod.
 /// Right now, we only have the `services` label.
 fn node_labels(ready_node: &ClusterNode) -> Vec<Label> {
+    // Multivalued labels (several values for one key) are supported by datadog.
+    //
+    // I suspect they might lead to wrong/confusing metrics so I prefer
+    // emitting the set as a comma-separated string.
     let service_label_value: String = ready_node
         .enabled_services()
         .iter()
         .map(QuickwitService::as_str)
         .sorted()
         .join(",");
-
-    vec![Label {
+    let services_label = Label {
         name: "services".to_string(),
         value: service_label_value,
-    }]
+    };
+    vec![services_label]
 }
 
 async fn build_node_metric_future(ready_node: ClusterNode) -> NodeMetrics {
@@ -511,5 +515,34 @@ impl HitMapper {
             segment_ord: 0,
             doc_id: event.row_number.unwrap_or_default() as u32,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_node_labels() {
+        let cluster_node = ClusterNode::for_test(
+            "my_node",
+            10001,
+            true,
+            &[
+                QuickwitService::Indexer.as_str(),
+                QuickwitService::Searcher.as_str(),
+            ],
+            &[],
+        )
+        .await;
+        let node_labels: Vec<Label> = node_labels(&cluster_node);
+        assert_eq!(node_labels.len(), 1);
+        assert_eq!(
+            node_labels[0],
+            Label {
+                name: "services".to_string(),
+                value: "indexer,searcher".to_string()
+            }
+        );
     }
 }
