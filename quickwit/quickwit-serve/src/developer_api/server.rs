@@ -141,7 +141,7 @@ fn convert_metric(
     let metric_value = match metric_type {
         MetricType::COUNTER => {
             let counter = metric.take_counter();
-            let counter_value = safe_f64_to_u64_truncate(counter.get_value())?;
+            let counter_value = safe_f64_to_u64(counter.get_value())?;
             MetricValue::Counter(counter_value)
         }
         MetricType::GAUGE => {
@@ -186,7 +186,6 @@ fn convert_metric(
 fn convert_metric_family(
     mut metric_family: prometheus::proto::MetricFamily,
 ) -> Option<MetricFamily> {
-    // let metric_type =  convert_metric_type(metric_family.get_field_type())?;
     let name = metric_family.take_name();
     let help = metric_family.take_help();
     let metric_type = metric_family.get_field_type();
@@ -205,17 +204,9 @@ fn convert_metric_family(
     })
 }
 
-fn safe_f64_to_u64_truncate(val: f64) -> Option<u64> {
-    if !val.is_finite() {
-        return None;
-    }
-    if val.fract() != 0.0 {
-        return None;
-    }
-    if val < 0.0 {
-        return None;
-    }
-    if val > u64::MAX as f64 {
+fn safe_f64_to_u64(val: f64) -> Option<u64> {
+    // This treats NaN as well.
+    if !val.is_finite() || val.is_sign_negative() {
         return None;
     }
     Some(val as u64)
@@ -227,6 +218,18 @@ mod tests {
     use serde_json::Value as JsonValue;
 
     use super::*;
+
+    #[test]
+    fn test_safe_f64_to_u64() {
+        assert_eq!(safe_f64_to_u64(1.0), Some(1));
+        assert_eq!(safe_f64_to_u64(0.0), Some(0));
+        assert_eq!(safe_f64_to_u64(-1.0), None);
+        assert_eq!(safe_f64_to_u64(f64::NAN), None);
+        assert_eq!(safe_f64_to_u64(f64::INFINITY), None);
+        assert_eq!(safe_f64_to_u64(1.1), Some(1));
+        assert_eq!(safe_f64_to_u64(1.9), Some(1));
+        assert_eq!(safe_f64_to_u64(2.0), Some(2));
+    }
 
     #[tokio::test]
     async fn test_developer_api_server_get_debug_info() {
