@@ -14,6 +14,9 @@ pub mod metrics {
 pub const CLOUDPREM_FILE_DESCRIPTOR_SET: &[u8] =
     include_bytes!("../codegen/cloudprem/descriptor.bin");
 
+pub const CLOUDPREM_METRICS_FILE_DESCRIPTOR_SET: &[u8] =
+    include_bytes!("../codegen/cloudprem/metrics_descriptor.bin");
+
 #[derive(Debug, thiserror::Error, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CloudPremError {

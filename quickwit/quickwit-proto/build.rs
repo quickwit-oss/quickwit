@@ -203,7 +203,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut cloudprem_metrics_prost_config = prost_build::Config::default();
     cloudprem_metrics_prost_config
-        .file_descriptor_set_path("src/codegen/cloudprem/metrics/descriptor.bin");
+        .file_descriptor_set_path("src/codegen/cloudprem/metrics_descriptor.bin");
     Codegen::builder()
         .with_prost_config(cloudprem_metrics_prost_config)
         .with_protos(&["protos/cloudprem/metrics.proto"])

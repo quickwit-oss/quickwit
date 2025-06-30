@@ -186,8 +186,8 @@ fn convert_metric(
 fn convert_metric_family(
     mut metric_family: prometheus::proto::MetricFamily,
 ) -> Option<MetricFamily> {
-    let name = metric_family.take_name();
-    let help = metric_family.take_help();
+    let name: String = metric_family.take_name();
+    let help: String = metric_family.take_help();
     let metric_type = metric_family.get_field_type();
     let metrics: Vec<Metric> = metric_family
         .take_metric()
@@ -198,8 +198,8 @@ fn convert_metric_family(
         return None;
     }
     Some(MetricFamily {
-        name: name,
-        help: help,
+        name,
+        help,
         metrics,
     })
 }
