@@ -187,7 +187,6 @@ fn convert_metric_family(
     mut metric_family: prometheus::proto::MetricFamily,
 ) -> Option<MetricFamily> {
     let name: String = metric_family.take_name();
-    let help: String = metric_family.take_help();
     let metric_type = metric_family.get_field_type();
     let metrics: Vec<Metric> = metric_family
         .take_metric()
@@ -197,11 +196,7 @@ fn convert_metric_family(
     if metrics.is_empty() {
         return None;
     }
-    Some(MetricFamily {
-        name,
-        help,
-        metrics,
-    })
+    Some(MetricFamily { name, metrics })
 }
 
 fn safe_f64_to_u64(val: f64) -> Option<u64> {

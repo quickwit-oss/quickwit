@@ -4,9 +4,11 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
+use itertools::Itertools;
 use quickwit_cluster::{Cluster, ClusterNode};
+use quickwit_config::service::QuickwitService;
 use quickwit_proto::ServiceError as _;
-use quickwit_proto::cloudprem::metrics::MetricFamily;
+use quickwit_proto::cloudprem::metrics::{Label, MetricFamily};
 use quickwit_proto::cloudprem::{
     AggregationRequest, AggregationResponse, CloudPremError, CloudPremResult, CloudPremService,
     Event, EventTracker, FetchOneRequest, FetchOneResponse, ListRequest, ListResponse, NodeMetrics,
@@ -375,8 +377,25 @@ impl CloudPremService for CloudPremServiceImpl {
     }
 }
 
+/// Computes the labels that apply to the entire pod.
+/// Right now, we only have the `services` label.
+fn node_labels(ready_node: &ClusterNode) -> Vec<Label> {
+    let service_label_value: String = ready_node
+        .enabled_services()
+        .iter()
+        .map(QuickwitService::as_str)
+        .sorted()
+        .join(",");
+
+    vec![Label {
+        name: "services".to_string(),
+        value: service_label_value,
+    }]
+}
+
 async fn build_node_metric_future(ready_node: ClusterNode) -> NodeMetrics {
     let node_id = ready_node.node_id().to_owned();
+    let node_labels = node_labels(&ready_node);
     let client = DeveloperServiceClient::from_channel(
         ready_node.grpc_advertise_addr(),
         ready_node.channel(),
@@ -403,7 +422,7 @@ async fn build_node_metric_future(ready_node: ClusterNode) -> NodeMetrics {
     NodeMetrics {
         node_id: node_id.to_string(),
         status_code: status_code.as_u16() as u32,
-        node_labels: Vec::new(),
+        node_labels,
         metric_families,
     }
 }

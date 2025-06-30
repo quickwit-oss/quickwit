@@ -13,14 +13,6 @@ message Label {
   string value = 2;
 }
 
-message Gauge {
-  double value = 1;
-}
-
-message Counter {
-  double value = 1;
-}
-
 message Histogram {
   uint64 sample_count = 1;
   double sample_sum   = 2;
@@ -43,6 +35,5 @@ message Metric {
 
 message MetricFamily {
   string name   = 1;
-  string help   = 2;
   repeated Metric metrics = 3;
 }
