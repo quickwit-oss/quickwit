@@ -7,8 +7,15 @@ include!("../codegen/cloudprem/calcfieldspb.rs");
 include!("../codegen/cloudprem/cloudprem.rs");
 include!("../codegen/cloudprem/queryparser_proto.rs");
 
+pub mod metrics {
+    include!("../codegen/cloudprem/cloudprem.metrics.rs");
+}
+
 pub const CLOUDPREM_FILE_DESCRIPTOR_SET: &[u8] =
     include_bytes!("../codegen/cloudprem/descriptor.bin");
+
+pub const CLOUDPREM_METRICS_FILE_DESCRIPTOR_SET: &[u8] =
+    include_bytes!("../codegen/cloudprem/metrics_descriptor.bin");
 
 #[derive(Debug, thiserror::Error, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

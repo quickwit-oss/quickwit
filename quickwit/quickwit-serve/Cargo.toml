@@ -37,6 +37,7 @@ opentelemetry = { workspace = true }
 pem = { workspace = true }
 percent-encoding = { workspace = true }
 pprof = { workspace = true, optional = true }
+prometheus = { workspace = true }
 prost = { workspace = true }
 prost-types = { workspace = true }
 regex = { workspace = true }

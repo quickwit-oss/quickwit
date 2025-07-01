@@ -16,10 +16,10 @@ use thiserror;
 
 use crate::{GrpcServiceError, ServiceError, ServiceErrorCode};
 
-include!("../codegen/quickwit/quickwit.developer.rs");
+include!("../../codegen/quickwit/quickwit.developer.rs");
 
 pub const DEVELOPER_FILE_DESCRIPTOR_SET: &[u8] =
-    include_bytes!("../codegen/quickwit/developer_descriptor.bin");
+    include_bytes!("../../codegen/quickwit/developer_descriptor.bin");
 
 pub type DeveloperResult<T> = std::result::Result<T, DeveloperError>;
 

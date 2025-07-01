@@ -19,14 +19,18 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use bytes::Bytes;
 use bytesize::ByteSize;
+use prometheus::proto::MetricType;
 use quickwit_actors::Mailbox;
 use quickwit_cluster::Cluster;
 use quickwit_config::NodeConfig;
 use quickwit_config::service::QuickwitService;
 use quickwit_control_plane::control_plane::{ControlPlane, GetDebugInfo};
 use quickwit_ingest::{IngestRouter, Ingester};
+use quickwit_proto::cloudprem::metrics::metric::MetricValue;
+use quickwit_proto::cloudprem::metrics::*;
 use quickwit_proto::developer::{
     DeveloperError, DeveloperResult, DeveloperService, GetDebugInfoRequest, GetDebugInfoResponse,
+    PullMetricsResponse,
 };
 use serde_json::json;
 
@@ -114,6 +118,93 @@ impl DeveloperService for DeveloperApiServer {
         };
         Ok(response)
     }
+
+    async fn pull_metrics(
+        &self,
+        _: quickwit_proto::developer::PullMetricsRequest,
+    ) -> DeveloperResult<PullMetricsResponse> {
+        let metric_families_proto: Vec<MetricFamily> = prometheus::default_registry()
+            .gather()
+            .into_iter()
+            .flat_map(convert_metric_family)
+            .collect();
+        Ok(PullMetricsResponse {
+            metric_families: metric_families_proto,
+        })
+    }
+}
+
+fn convert_metric(
+    metric_type: prometheus::proto::MetricType,
+    mut metric: prometheus::proto::Metric,
+) -> Option<Metric> {
+    let metric_value = match metric_type {
+        MetricType::COUNTER => {
+            let counter = metric.take_counter();
+            let counter_value = safe_f64_to_u64(counter.get_value())?;
+            MetricValue::Counter(counter_value)
+        }
+        MetricType::GAUGE => {
+            let gauge = metric.take_gauge();
+            let gauge_value = gauge.get_value();
+            MetricValue::Gauge(gauge_value)
+        }
+        MetricType::HISTOGRAM => {
+            let mut histogram: prometheus::proto::Histogram = metric.take_histogram();
+            let buckets: Vec<HistogramBucket> = histogram
+                .take_bucket()
+                .into_iter()
+                .map(|bucket| HistogramBucket {
+                    cumulative_count: bucket.get_cumulative_count(),
+                    upper_bound: bucket.get_upper_bound(),
+                })
+                .collect();
+            MetricValue::Histogram(Histogram {
+                sample_count: histogram.get_sample_count(),
+                sample_sum: histogram.get_sample_sum(),
+                buckets,
+            })
+        }
+        MetricType::SUMMARY | MetricType::UNTYPED => {
+            return None;
+        }
+    };
+    let labels: Vec<Label> = metric
+        .take_label()
+        .into_iter()
+        .map(|label| Label {
+            name: label.get_name().to_string(),
+            value: label.get_value().to_string(),
+        })
+        .collect();
+    Some(Metric {
+        labels,
+        metric_value: Some(metric_value),
+    })
+}
+
+fn convert_metric_family(
+    mut metric_family: prometheus::proto::MetricFamily,
+) -> Option<MetricFamily> {
+    let name: String = metric_family.take_name();
+    let metric_type = metric_family.get_field_type();
+    let metrics: Vec<Metric> = metric_family
+        .take_metric()
+        .into_iter()
+        .flat_map(|metric| convert_metric(metric_type, metric))
+        .collect();
+    if metrics.is_empty() {
+        return None;
+    }
+    Some(MetricFamily { name, metrics })
+}
+
+fn safe_f64_to_u64(val: f64) -> Option<u64> {
+    // This treats NaN as well.
+    if !val.is_finite() || val.is_sign_negative() {
+        return None;
+    }
+    Some(val as u64)
 }
 
 #[cfg(test)]
@@ -122,6 +213,18 @@ mod tests {
     use serde_json::Value as JsonValue;
 
     use super::*;
+
+    #[test]
+    fn test_safe_f64_to_u64() {
+        assert_eq!(safe_f64_to_u64(1.0), Some(1));
+        assert_eq!(safe_f64_to_u64(0.0), Some(0));
+        assert_eq!(safe_f64_to_u64(-1.0), None);
+        assert_eq!(safe_f64_to_u64(f64::NAN), None);
+        assert_eq!(safe_f64_to_u64(f64::INFINITY), None);
+        assert_eq!(safe_f64_to_u64(1.1), Some(1));
+        assert_eq!(safe_f64_to_u64(1.9), Some(1));
+        assert_eq!(safe_f64_to_u64(2.0), Some(2));
+    }
 
     #[tokio::test]
     async fn test_developer_api_server_get_debug_info() {

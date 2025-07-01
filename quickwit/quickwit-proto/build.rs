@@ -65,6 +65,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Codegen::builder()
         .with_prost_config(prost_config)
         .with_protos(&["protos/quickwit/developer.proto"])
+        .with_includes(&["protos/cloudprem", "protos/quickwit"])
         .with_output_dir("src/codegen/quickwit")
         .with_result_type_path("crate::developer::DeveloperResult")
         .with_error_type_path("crate::developer::DeveloperError")
@@ -190,11 +191,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Codegen::builder()
         .with_prost_config(cloudprem_prost_config)
         .with_protos(&["protos/cloudprem/cloudprem.proto"])
-        .with_includes(&["protos", "protos/quickwit"])
+        .with_includes(&["protos", "protos/quickwit", "protos/cloudprem"])
         .with_output_dir("src/codegen/cloudprem")
         .with_result_type_path("crate::cloudprem::CloudPremResult")
         .with_error_type_path("crate::cloudprem::CloudPremError")
         .type_attribute("")
+        .enum_attribute("")
+        .generate_rpc_name_impls()
+        .run()
+        .unwrap();
+
+    let mut cloudprem_metrics_prost_config = prost_build::Config::default();
+    cloudprem_metrics_prost_config
+        .file_descriptor_set_path("src/codegen/cloudprem/metrics_descriptor.bin");
+    Codegen::builder()
+        .with_prost_config(cloudprem_metrics_prost_config)
+        .with_protos(&["protos/cloudprem/metrics.proto"])
+        .with_includes(&["protos", "protos/quickwit", "protos/cloudprem"])
+        .with_output_dir("src/codegen/cloudprem")
+        .with_result_type_path("crate::cloudprem::CloudPremResult")
+        .with_error_type_path("crate::cloudprem::CloudPremError")
+        .type_attribute("#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]")
         .enum_attribute("")
         .generate_rpc_name_impls()
         .run()

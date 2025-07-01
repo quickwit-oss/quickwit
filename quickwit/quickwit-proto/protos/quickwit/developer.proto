@@ -14,12 +14,13 @@
 
 syntax = "proto3";
 
+import "metrics.proto";
+
 package quickwit.developer;
 
 service DeveloperService {
   rpc GetDebugInfo(GetDebugInfoRequest) returns (GetDebugInfoResponse);
-
-  // rpc SetLogLevel(SetLogLevelRequest) returns (SetLogLevelResponse);
+  rpc PullMetrics(PullMetricsRequest) returns (PullMetricsResponse);
 }
 
 message GetDebugInfoRequest {
@@ -29,4 +30,10 @@ message GetDebugInfoRequest {
 
 message GetDebugInfoResponse {
   bytes debug_info_json = 1;
+}
+
+message PullMetricsRequest {}
+
+message PullMetricsResponse {
+    repeated cloudprem.metrics.MetricFamily metric_families = 1;
 }

@@ -14,12 +14,15 @@ option java_outer_classname = "CloudPremProto";
 
 import "google/protobuf/any.proto";
 import "search.proto";
+import "metrics.proto";
 
 service CloudPremService {
   rpc Ping(PingRequest) returns (PingResponse);
   rpc List(ListRequest) returns (ListResponse);
   rpc FetchOne(FetchOneRequest) returns (FetchOneResponse);
   rpc Aggregate(AggregationRequest) returns (AggregationResponse);
+  // Gather metrics information from all nodes in the cluster, and returns a list of `NodeMetrics` objects.
+  rpc PullClusterMetrics(PullClusterMetricsRequest) returns (PullClusterMetricsResponse);
 
   // Add a temporary backdoor to add cluster addresses dynamically without having to push a PR on dd-source and redeploy the bridge.
   rpc SetClusterAddress(SetClusterAddressRequest) returns (SetClusterAddressResponse);
@@ -27,6 +30,29 @@ service CloudPremService {
   // These are endpoints to use the capabilities of the underlying quickwit searcher
   rpc RootSearch(quickwit.search.SearchRequest) returns (quickwit.search.SearchResponse);
   rpc RootListTerms(quickwit.search.ListTermsRequest) returns (quickwit.search.ListTermsResponse);
+}
+
+message PullClusterMetricsRequest {
+}
+
+message PullClusterMetricsResponse {
+    // One `NodeMetrics` object per node in the cluster.
+    repeated NodeMetrics node_metrics = 1;
+}
+
+message NodeMetrics {
+    string node_id = 1;
+    // A http status code expressing the success or the cause of failure of pull metrics for this
+    // specific node.
+    // The usage of http status code is arbitrary here. It can be the result of a conversion from a grpc status code,
+    // or the interpretation of a timeout for instance.
+    uint32 status_code = 2;
+    // `node_labels` contains the list of labels that should be associated to the metrics of that node.
+    // e.g. the service. Note that cloudprem-bridge may extend the set of labels with cluster-level information.
+    // (region etc.)
+    repeated cloudprem.metrics.Label node_labels = 3;
+    // The actual metrics of the node.
+    repeated cloudprem.metrics.MetricFamily metric_families = 4;
 }
 
 message PingRequest {

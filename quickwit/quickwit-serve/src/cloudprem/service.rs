@@ -1,28 +1,46 @@
 use std::fmt;
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
+use futures::stream::FuturesUnordered;
+use itertools::Itertools;
+use quickwit_cluster::{Cluster, ClusterNode};
+use quickwit_config::service::QuickwitService;
+use quickwit_proto::ServiceError as _;
+use quickwit_proto::cloudprem::metrics::{Label, MetricFamily};
 use quickwit_proto::cloudprem::{
     AggregationRequest, AggregationResponse, CloudPremError, CloudPremResult, CloudPremService,
-    Event, EventTracker, FetchOneRequest, FetchOneResponse, ListRequest, ListResponse, PingRequest,
-    PingResponse, SetClusterAddressRequest, SetClusterAddressResponse, Statistics,
+    Event, EventTracker, FetchOneRequest, FetchOneResponse, ListRequest, ListResponse, NodeMetrics,
+    PingRequest, PingResponse, PullClusterMetricsResponse, SetClusterAddressRequest,
+    SetClusterAddressResponse, Statistics,
+};
+use quickwit_proto::developer::{
+    DeveloperService as _, DeveloperServiceClient, PullMetricsRequest, PullMetricsResponse,
 };
 use quickwit_proto::search::{
     CountHits, Hit, ListTermsRequest, ListTermsResponse, PartialHit, SearchRequest, SearchResponse,
     SortField, SortOrder,
 };
+use quickwit_proto::tonic::codec::CompressionEncoding;
 use quickwit_query::MatchAllOrNone;
 use quickwit_query::query_ast::{BoolQuery, FullTextMode, FullTextParams, FullTextQuery, QueryAst};
 use quickwit_search::SearchService;
 use serde_json::Value as JsonValue;
+use tokio_stream::StreamExt as _;
 use tracing::{debug, error, info, warn};
+
+use crate::developer_api::DeveloperApiServer;
 
 // TODO this should become configurable and sent by EVP
 const CLOUD_PREM_INDEX_ID_PATTERN: &str = "datadog*";
 
+const PULL_METRICS_TIMEOUT: Duration = Duration::from_secs(1);
+
 #[allow(dead_code)]
 pub struct CloudPremServiceImpl {
     search_service: Arc<dyn SearchService>,
+    cluster: Cluster,
 }
 
 impl fmt::Debug for CloudPremServiceImpl {
@@ -31,9 +49,12 @@ impl fmt::Debug for CloudPremServiceImpl {
     }
 }
 
-impl From<Arc<dyn SearchService>> for CloudPremServiceImpl {
-    fn from(search_service: Arc<dyn SearchService>) -> Self {
-        CloudPremServiceImpl { search_service }
+impl CloudPremServiceImpl {
+    pub fn new(search_service: Arc<dyn SearchService>, cluster: Cluster) -> Self {
+        CloudPremServiceImpl {
+            search_service,
+            cluster,
+        }
     }
 }
 
@@ -333,6 +354,81 @@ impl CloudPremService for CloudPremServiceImpl {
             .await
             .map_err(Into::into)
     }
+
+    async fn pull_cluster_metrics(
+        &self,
+        _request: quickwit_proto::cloudprem::PullClusterMetricsRequest,
+    ) -> CloudPremResult<quickwit_proto::cloudprem::PullClusterMetricsResponse> {
+        let ready_nodes = self.cluster.ready_nodes().await;
+
+        let mut pull_metrics_futures = FuturesUnordered::new();
+        let mut node_metrics: Vec<quickwit_proto::cloudprem::NodeMetrics> =
+            Vec::with_capacity(ready_nodes.len());
+
+        for ready_node in ready_nodes {
+            let pull_metrics_fut = async move { build_node_metric_future(ready_node).await };
+            pull_metrics_futures.push(pull_metrics_fut);
+        }
+
+        while let Some(single_node_metrics) = pull_metrics_futures.next().await {
+            node_metrics.push(single_node_metrics);
+        }
+        Ok(PullClusterMetricsResponse { node_metrics })
+    }
+}
+
+/// Computes the labels that apply to the entire pod.
+/// Right now, we only have the `services` label.
+fn node_labels(ready_node: &ClusterNode) -> Vec<Label> {
+    // Multivalued labels (several values for one key) are supported by datadog.
+    //
+    // I suspect they might lead to wrong/confusing metrics so I prefer
+    // emitting the set as a comma-separated string.
+    let service_label_value: String = ready_node
+        .enabled_services()
+        .iter()
+        .map(QuickwitService::as_str)
+        .sorted()
+        .join(",");
+    let services_label = Label {
+        name: "services".to_string(),
+        value: service_label_value,
+    };
+    vec![services_label]
+}
+
+async fn build_node_metric_future(ready_node: ClusterNode) -> NodeMetrics {
+    let node_id = ready_node.node_id().to_owned();
+    let node_labels = node_labels(&ready_node);
+    let client = DeveloperServiceClient::from_channel(
+        ready_node.grpc_advertise_addr(),
+        ready_node.channel(),
+        DeveloperApiServer::MAX_GRPC_MESSAGE_SIZE,
+        Some(CompressionEncoding::Zstd),
+    );
+    let pull_metrics_result = tokio::time::timeout(
+        PULL_METRICS_TIMEOUT,
+        client.pull_metrics(PullMetricsRequest {}),
+    )
+    .await;
+    let metric_families_res: Result<Vec<MetricFamily>, http::StatusCode> = match pull_metrics_result
+    {
+        Ok(Ok(PullMetricsResponse { metric_families })) => Ok(metric_families),
+        Err(_) => Err(http::StatusCode::REQUEST_TIMEOUT),
+        Ok(Err(err)) => Err(err.error_code().http_status_code()),
+    };
+    let status_code: http::StatusCode = metric_families_res
+        .as_ref()
+        .err()
+        .cloned()
+        .unwrap_or(http::StatusCode::OK);
+    let metric_families = metric_families_res.unwrap_or_default();
+    NodeMetrics {
+        node_id: node_id.to_string(),
+        status_code: status_code.as_u16() as u32,
+        node_labels,
+        metric_families,
+    }
 }
 
 fn filter_safe_indexes(index_id_patterns: &mut Vec<String>) {
@@ -419,5 +515,34 @@ impl HitMapper {
             segment_ord: 0,
             doc_id: event.row_number.unwrap_or_default() as u32,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_node_labels() {
+        let cluster_node = ClusterNode::for_test(
+            "my_node",
+            10001,
+            true,
+            &[
+                QuickwitService::Indexer.as_str(),
+                QuickwitService::Searcher.as_str(),
+            ],
+            &[],
+        )
+        .await;
+        let node_labels: Vec<Label> = node_labels(&cluster_node);
+        assert_eq!(node_labels.len(), 1);
+        assert_eq!(
+            node_labels[0],
+            Label {
+                name: "services".to_string(),
+                value: "indexer,searcher".to_string()
+            }
+        );
     }
 }
