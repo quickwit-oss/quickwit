@@ -40,14 +40,17 @@ pub fn log_level_handler(
                     Ok(_) => {
                         info!(filter = env_filter.filter, "setting log level");
                         warp::reply::with_status(
-                            format!("set log level to:[{}]", env_filter.filter),
+                            format!("set log level to: [{}]", env_filter.filter),
                             StatusCode::OK,
                         )
                     }
-                    Err(_) => {
-                        error!(filter = env_filter.filter, "invalid log level");
+                    Err(err) => {
+                        error!(filter = env_filter.filter, %err, "failed to set log level");
                         warp::reply::with_status(
-                            format!("invalid log level:[{}]", env_filter.filter),
+                            format!(
+                                "failed to set log level to: [{}], {}",
+                                env_filter.filter, err
+                            ),
                             StatusCode::BAD_REQUEST,
                         )
                     }
