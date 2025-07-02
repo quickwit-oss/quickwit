@@ -149,6 +149,7 @@ impl AzureBlobStorage {
     /// Sets the multipart policy.
     ///
     /// See `MultiPartPolicy`.
+    #[cfg(feature = "integration-testsuite")]
     pub fn set_policy(&mut self, multipart_policy: MultiPartPolicy) {
         self.multipart_policy = multipart_policy;
     }
