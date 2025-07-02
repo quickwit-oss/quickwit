@@ -1,3 +1,17 @@
+// Copyright 2021-Present Datadog, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use std::borrow::Cow;
 use std::io;
 use std::marker::PhantomData;
@@ -12,6 +26,7 @@ use crate::STORAGE_METRICS;
 
 pub enum Status {
     Pending,
+    #[allow(dead_code)]
     Done,
     Ready(String),
 }
@@ -167,8 +182,10 @@ where E: aws_sdk_s3::error::ProvideErrorMetadata
     }
 }
 
+#[cfg(feature = "azure")]
 pub struct AzureMarker;
 
+#[cfg(feature = "azure")]
 impl<R> AsStatus<AzureMarker> for Result<R, azure_storage::Error> {
     fn as_status(&self) -> Status {
         let Err(err) = self else {
@@ -187,6 +204,7 @@ impl<R> AsStatus<AzureMarker> for Result<R, azure_storage::Error> {
 
 // The Azure SDK get_blob request returns Option<Result> because it chunks
 // the download into a stream of get requests.
+#[cfg(feature = "azure")]
 impl<R> AsStatus<AzureMarker> for Option<Result<R, azure_storage::Error>> {
     fn as_status(&self) -> Status {
         match self {
