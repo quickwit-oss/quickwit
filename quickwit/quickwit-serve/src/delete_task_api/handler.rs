@@ -12,6 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use axum::extract::Path;
+use axum::response::{IntoResponse, Json};
+use axum::routing::{get, post};
+use axum::{Extension, Router};
 use quickwit_config::build_doc_mapper;
 use quickwit_janitor::error::JanitorError;
 use quickwit_metastore::IndexMetadataResponseExt;
@@ -23,12 +27,9 @@ use quickwit_proto::search::SearchRequest;
 use quickwit_proto::types::{IndexId, IndexUid};
 use quickwit_query::query_ast::{QueryAst, query_ast_from_user_text};
 use serde::Deserialize;
-use warp::{Filter, Rejection};
 
-use crate::format::extract_format_from_qs;
-use crate::rest::recover_fn;
+use crate::format::BodyFormat;
 use crate::rest_api_response::into_rest_api_response;
-use crate::with_arg;
 
 #[derive(utoipa::OpenApi)]
 #[openapi(
@@ -55,24 +56,31 @@ pub struct DeleteQueryRequest {
 }
 
 /// Delete query API handlers.
-pub fn delete_task_api_handlers(
-    metastore: MetastoreServiceClient,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    get_delete_tasks_handler(metastore.clone())
-        .or(post_delete_tasks_handler(metastore.clone()))
-        .recover(recover_fn)
-        .boxed()
+pub fn delete_task_api_handlers() -> Router {
+    Router::new()
+        .route("/:index_id/delete-tasks", get(get_delete_tasks_handler))
+        .route("/:index_id/delete-tasks", post(post_delete_tasks_handler))
 }
 
-pub fn get_delete_tasks_handler(
-    metastore: MetastoreServiceClient,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path!(String / "delete-tasks")
-        .and(warp::get())
-        .and(with_arg(metastore))
-        .then(get_delete_tasks)
-        .and(extract_format_from_qs())
-        .map(into_rest_api_response)
+/// Handler for GET /{index_id}/delete-tasks.
+async fn get_delete_tasks_handler(
+    Path(index_id): Path<String>,
+    Extension(metastore): Extension<MetastoreServiceClient>,
+) -> impl IntoResponse {
+    let delete_tasks_result = get_delete_tasks(index_id, metastore).await;
+    // TODO: use the format from query param
+    into_rest_api_response(delete_tasks_result, BodyFormat::default())
+}
+
+/// Handler for POST /{index_id}/delete-tasks
+async fn post_delete_tasks_handler(
+    Path(index_id): Path<String>,
+    Extension(metastore): Extension<MetastoreServiceClient>,
+    Json(delete_request): Json<DeleteQueryRequest>,
+) -> impl IntoResponse {
+    let delete_request_result = post_delete_request(index_id, delete_request, metastore).await;
+    // TODO: use the format from query param
+    into_rest_api_response(delete_request_result, BodyFormat::default())
 }
 
 #[utoipa::path(
@@ -109,18 +117,6 @@ pub async fn get_delete_tasks(
         .await?
         .delete_tasks;
     Ok(delete_tasks)
-}
-
-pub fn post_delete_tasks_handler(
-    metastore: MetastoreServiceClient,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path!(String / "delete-tasks")
-        .and(warp::body::json())
-        .and(warp::post())
-        .and(with_arg(metastore))
-        .then(post_delete_request)
-        .and(extract_format_from_qs())
-        .map(into_rest_api_response)
 }
 
 #[utoipa::path(
@@ -181,11 +177,9 @@ pub async fn post_delete_request(
 
 #[cfg(test)]
 mod tests {
+    use axum_test::TestServer;
     use quickwit_indexing::TestSandbox;
     use quickwit_proto::metastore::DeleteTask;
-    use warp::Filter;
-
-    use crate::rest::recover_fn;
 
     #[tokio::test]
     async fn test_delete_task_api() {
@@ -205,19 +199,21 @@ mod tests {
             .await
             .unwrap();
         let metastore = test_sandbox.metastore();
-        let delete_query_api_handlers =
-            super::delete_task_api_handlers(metastore).recover(recover_fn);
+
+        let app = super::delete_task_api_handlers().layer(axum::Extension(metastore));
+        let server = TestServer::new(app).unwrap();
 
         // POST a delete query with explicit field name in query
-        let resp = warp::test::request()
-            .path("/test-delete-task-rest/delete-tasks")
-            .method("POST")
-            .json(&true)
-            .body(r#"{"query": "body:myterm", "start_timestamp": 1, "end_timestamp": 10}"#)
-            .reply(&delete_query_api_handlers)
+        let resp = server
+            .post("/test-delete-task-rest/delete-tasks")
+            .json(&serde_json::json!({
+                "query": "body:myterm",
+                "start_timestamp": 1,
+                "end_timestamp": 10
+            }))
             .await;
-        assert_eq!(resp.status(), 200);
-        let created_delete_task: DeleteTask = serde_json::from_slice(resp.body()).unwrap();
+        resp.assert_status_ok();
+        let created_delete_task: DeleteTask = resp.json();
         assert_eq!(created_delete_task.opstamp, 1);
         let created_delete_query = created_delete_task.delete_query.unwrap();
         assert_eq!(created_delete_query.index_uid(), &test_sandbox.index_uid());
@@ -229,15 +225,17 @@ mod tests {
         assert_eq!(created_delete_query.end_timestamp, Some(10));
 
         // POST a delete query with specified default field
-        let resp = warp::test::request()
-            .path("/test-delete-task-rest/delete-tasks")
-            .method("POST")
-            .json(&true)
-            .body(r#"{"query": "myterm", "start_timestamp": 1, "end_timestamp": 10, "search_field": ["body"]}"#)
-            .reply(&delete_query_api_handlers)
+        let resp = server
+            .post("/test-delete-task-rest/delete-tasks")
+            .json(&serde_json::json!({
+                "query": "myterm",
+                "start_timestamp": 1,
+                "end_timestamp": 10,
+                "search_field": ["body"]
+            }))
             .await;
-        assert_eq!(resp.status(), 200);
-        let created_delete_task: DeleteTask = serde_json::from_slice(resp.body()).unwrap();
+        resp.assert_status_ok();
+        let created_delete_task: DeleteTask = resp.json();
         assert_eq!(created_delete_task.opstamp, 2);
         let created_delete_query = created_delete_task.delete_query.unwrap();
         assert_eq!(created_delete_query.index_uid(), &test_sandbox.index_uid());
@@ -249,15 +247,16 @@ mod tests {
         assert_eq!(created_delete_query.end_timestamp, Some(10));
 
         // POST a delete query using the config default field
-        let resp = warp::test::request()
-            .path("/test-delete-task-rest/delete-tasks")
-            .method("POST")
-            .json(&true)
-            .body(r#"{"query": "myterm", "start_timestamp": 1, "end_timestamp": 10}"#)
-            .reply(&delete_query_api_handlers)
+        let resp = server
+            .post("/test-delete-task-rest/delete-tasks")
+            .json(&serde_json::json!({
+                "query": "myterm",
+                "start_timestamp": 1,
+                "end_timestamp": 10
+            }))
             .await;
-        assert_eq!(resp.status(), 200);
-        let created_delete_task: DeleteTask = serde_json::from_slice(resp.body()).unwrap();
+        resp.assert_status_ok();
+        let created_delete_task: DeleteTask = resp.json();
         assert_eq!(created_delete_task.opstamp, 3);
         let created_delete_query = created_delete_task.delete_query.unwrap();
         assert_eq!(created_delete_query.index_uid(), &test_sandbox.index_uid());
@@ -269,23 +268,23 @@ mod tests {
         assert_eq!(created_delete_query.end_timestamp, Some(10));
 
         // POST an invalid delete query.
-        let resp = warp::test::request()
-            .path("/test-delete-task-rest/delete-tasks")
-            .method("POST")
-            .json(&true)
-            .body(r#"{"query": "unknown_field:test", "start_timestamp": 1, "end_timestamp": 10}"#)
-            .reply(&delete_query_api_handlers)
+        let resp = server
+            .post("/test-delete-task-rest/delete-tasks")
+            .json(&serde_json::json!({
+                "query": "unknown_field:test",
+                "start_timestamp": 1,
+                "end_timestamp": 10
+            }))
             .await;
-        assert_eq!(resp.status(), 400);
-        assert!(String::from_utf8_lossy(resp.body()).contains("invalid delete query"));
+        resp.assert_status(axum::http::StatusCode::BAD_REQUEST);
+        let error_body = resp.text();
+        // The error response is JSON formatted with an "error" field
+        assert!(error_body.contains("invalid query"));
 
         // GET delete tasks.
-        let resp = warp::test::request()
-            .path("/test-delete-task-rest/delete-tasks")
-            .reply(&delete_query_api_handlers)
-            .await;
-        assert_eq!(resp.status(), 200);
-        let delete_tasks: Vec<DeleteTask> = serde_json::from_slice(resp.body()).unwrap();
+        let resp = server.get("/test-delete-task-rest/delete-tasks").await;
+        resp.assert_status_ok();
+        let delete_tasks: Vec<DeleteTask> = resp.json();
         assert_eq!(delete_tasks.len(), 3);
 
         test_sandbox.assert_quit().await;

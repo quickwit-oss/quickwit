@@ -16,7 +16,6 @@ mod response;
 mod rest_handler;
 
 pub use response::{RestIngestResponse, RestParseFailure};
-#[cfg(test)]
-pub(crate) use rest_handler::tests::setup_ingest_v1_service;
-pub use rest_handler::{IngestApi, IngestApiSchemas};
-pub(crate) use rest_handler::{ingest_api_handlers, lines};
+// Deprecated warp handlers - use axum ingest_routes() instead
+pub(crate) use rest_handler::lines;
+pub use rest_handler::{IngestApi, IngestApiSchemas, ingest_routes};

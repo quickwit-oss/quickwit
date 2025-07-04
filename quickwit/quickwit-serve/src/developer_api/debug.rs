@@ -15,31 +15,38 @@
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
+use axum::Extension;
+use axum::extract::Query;
+use axum::response::IntoResponse;
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 use glob::{MatchOptions, Pattern as GlobPattern};
 use quickwit_cluster::Cluster;
 use quickwit_config::service::QuickwitService;
-use quickwit_proto::developer::{DeveloperService, DeveloperServiceClient, GetDebugInfoRequest};
+use quickwit_proto::developer::{
+    DeveloperError, DeveloperService, DeveloperServiceClient, GetDebugInfoRequest,
+};
 use quickwit_proto::tonic::codec::CompressionEncoding;
 use quickwit_proto::types::{NodeId, NodeIdRef};
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
 use tokio::time::timeout;
 use tracing::error;
-use warp::hyper::StatusCode;
-use warp::{Filter, Rejection, Reply};
 
 use super::DeveloperApiServer;
-use crate::with_arg;
+use crate::BodyFormat;
+use crate::rest_api_response::into_rest_api_response;
 
 #[derive(Deserialize)]
-struct DebugInfoQueryParams {
+pub(super) struct DebugInfoQueryParams {
     // Comma-separated list of case insensitive node ID glob patterns to restrict the debug
     // information to.
     node_ids: Option<String>,
     // Comma-separated list of roles to restrict the debug information to.
     roles: Option<String>,
+    // Output format
+    #[serde(default)]
+    format: BodyFormat,
 }
 
 #[utoipa::path(
@@ -51,53 +58,41 @@ struct DebugInfoQueryParams {
     ),
 )]
 /// Get debug information for the nodes in the cluster.
-pub(super) fn debug_handler(
-    cluster: Cluster,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path("debug")
-        .and(warp::path::end())
-        .and(with_arg(cluster))
-        .and(warp::query::<DebugInfoQueryParams>())
-        .then(get_node_debug_infos)
+pub(super) async fn debug_handler(
+    Extension(cluster): Extension<Cluster>,
+    Query(query_params): Query<DebugInfoQueryParams>,
+) -> impl IntoResponse {
+    let format = query_params.format;
+    let result = get_node_debug_infos(cluster, query_params).await;
+    into_rest_api_response(result, format)
 }
 
 async fn get_node_debug_infos(
     cluster: Cluster,
     query_params: DebugInfoQueryParams,
-) -> warp::reply::Response {
+) -> Result<HashMap<NodeId, JsonValue>, DeveloperError> {
     let node_id_patterns = if let Some(node_ids) = &query_params.node_ids {
-        match NodeIdGlobPatterns::try_from_comma_separated_patterns(node_ids) {
-            Ok(node_id_patterns) => node_id_patterns,
-            Err(error) => {
-                return warp::reply::with_status(
-                    format!(
-                        "failed to parse node ID glob patterns `{}`: {error}",
-                        query_params.node_ids.as_deref().unwrap_or("")
-                    ),
-                    StatusCode::BAD_REQUEST,
-                )
-                .into_response();
-            }
-        }
+        NodeIdGlobPatterns::try_from_comma_separated_patterns(node_ids).map_err(|error| {
+            DeveloperError::InvalidArgument(format!(
+                "failed to parse node ID glob patterns `{}`: {error}",
+                query_params.node_ids.as_deref().unwrap_or("")
+            ))
+        })?
     } else {
         NodeIdGlobPatterns::default()
     };
     let target_roles: HashSet<QuickwitService> = if let Some(roles) = query_params.roles {
-        let target_roles_res = roles.split(',').map(|role| role.parse()).collect();
-
-        match target_roles_res {
-            Ok(target_roles) => target_roles,
-            Err(error) => {
-                return warp::reply::with_status(
-                    format!("failed to parse roles `{roles}`: {error}"),
-                    StatusCode::BAD_REQUEST,
-                )
-                .into_response();
-            }
-        }
+        roles
+            .split(',')
+            .map(|role| role.parse())
+            .collect::<Result<_, _>>()
+            .map_err(|error| {
+                DeveloperError::InvalidArgument(format!("failed to parse roles `{roles}`: {error}"))
+            })?
     } else {
         HashSet::new()
     };
+
     let ready_nodes = cluster.ready_nodes().await;
     let mut debug_infos: HashMap<NodeId, JsonValue> = HashMap::with_capacity(ready_nodes.len());
 
@@ -142,7 +137,7 @@ async fn get_node_debug_infos(
             }
         }
     }
-    warp::reply::json(&debug_infos).into_response()
+    Ok(debug_infos)
 }
 
 #[derive(Debug)]
@@ -185,6 +180,8 @@ impl NodeIdGlobPatterns {
 
 #[cfg(test)]
 mod tests {
+    use axum::http::StatusCode;
+    use axum_test::TestServer;
     use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
 
     use super::*;
@@ -203,28 +200,21 @@ mod tests {
         .await
         .unwrap();
 
-        let debug_handler = debug_handler(cluster);
+        // Create axum app with debug handler
+        let app = axum::Router::new()
+            .route("/debug", axum::routing::get(debug_handler))
+            .layer(axum::Extension(cluster));
 
-        let response = warp::test::request()
-            .path("/debug?roles=foo")
-            .method("GET")
-            .reply(&debug_handler)
-            .await;
-        assert_eq!(response.status(), 400);
+        let server = TestServer::new(app).unwrap();
 
-        let response = warp::test::request()
-            .path("/debug?node_ids=[")
-            .method("GET")
-            .reply(&debug_handler)
-            .await;
-        assert_eq!(response.status(), 400);
+        let response = server.get("/debug?roles=foo").await;
+        response.assert_status(StatusCode::BAD_REQUEST);
 
-        let response = warp::test::request()
-            .path("/debug")
-            .method("GET")
-            .reply(&debug_handler)
-            .await;
-        assert_eq!(response.status(), 200);
+        let response = server.get("/debug?node_ids=[").await;
+        response.assert_status(StatusCode::BAD_REQUEST);
+
+        let response = server.get("/debug").await;
+        response.assert_status(StatusCode::OK);
 
         // TODO: Refactor handler and test against mock developer service servers.
     }

@@ -78,12 +78,6 @@ struct FormatQueryString {
     pub format: BodyFormat,
 }
 
-pub(crate) fn extract_format_from_qs()
--> impl Filter<Extract = (BodyFormat,), Error = Rejection> + Clone {
-    serde_qs::warp::query::<FormatQueryString>(serde_qs::Config::default())
-        .map(|format_qs: FormatQueryString| format_qs.format)
-}
-
 #[derive(Debug, Error)]
 #[error(
     "request's content-type is not supported: supported media types are `application/json`, \
@@ -93,6 +87,7 @@ pub(crate) struct UnsupportedMediaType;
 
 impl warp::reject::Reject for UnsupportedMediaType {}
 
+#[allow(dead_code)]
 pub(crate) fn extract_config_format()
 -> impl Filter<Extract = (ConfigFormat,), Error = Rejection> + Copy {
     warp::filters::header::optional::<mime_guess::Mime>(CONTENT_TYPE.as_str()).and_then(

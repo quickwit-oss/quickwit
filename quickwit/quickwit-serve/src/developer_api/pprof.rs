@@ -12,10 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::OnceLock;
+use std::sync::{Arc, Mutex, OnceLock};
 
+use axum::Router;
+use axum::extract::{Extension, Query};
+use axum::response::{IntoResponse, Response};
+use axum::routing::get;
+use pprof::ProfilerGuard;
 use regex::Regex;
-use warp::Filter;
+use serde::Deserialize;
+use tokio::time::{self, Duration};
 
 fn remove_trailing_numbers(thread_name: &mut String) {
     static REMOVE_TRAILING_NUMBER_PTN: OnceLock<Regex> = OnceLock::new();
@@ -31,6 +37,83 @@ fn frames_post_processor(frames: &mut pprof::Frames) {
     remove_trailing_numbers(&mut frames.thread_name);
 }
 
+struct ProfilerState {
+    profiler_guard: Option<ProfilerGuard<'static>>,
+    // We will keep the latest flamegraph and return it at the flamegraph endpoint
+    // A new run will overwrite the flamegraph_data
+    flamegraph_data: Option<Vec<u8>>,
+}
+
+type ProfilerStateArc = Arc<Mutex<ProfilerState>>;
+
+#[derive(Deserialize)]
+struct ProfilerQueryParams {
+    duration: Option<u64>, // max allowed value is 300 seconds, default is 30 seconds
+    sampling: Option<i32>, // max value is 1000, default is 100
+}
+
+async fn start_profiler_handler(
+    Query(params): Query<ProfilerQueryParams>,
+    Extension(profiler_state): Extension<ProfilerStateArc>,
+) -> impl IntoResponse {
+    let mut state = profiler_state.lock().unwrap();
+
+    if state.profiler_guard.is_none() {
+        let duration = params.duration.unwrap_or(30).min(300);
+        let sampling = params.sampling.unwrap_or(100).min(1000);
+        state.profiler_guard = Some(pprof::ProfilerGuard::new(sampling).unwrap());
+        let profiler_state = Arc::clone(&profiler_state);
+        tokio::spawn(async move {
+            time::sleep(Duration::from_secs(duration)).await;
+            save_flamegraph(profiler_state).await;
+        });
+        (axum::http::StatusCode::OK, "CPU profiling started")
+    } else {
+        (
+            axum::http::StatusCode::BAD_REQUEST,
+            "CPU profiling is already running",
+        )
+    }
+}
+
+async fn get_flamegraph_handler(
+    Extension(profiler_state): Extension<ProfilerStateArc>,
+) -> impl IntoResponse {
+    let state = profiler_state.lock().unwrap();
+
+    if let Some(data) = state.flamegraph_data.clone() {
+        Response::builder()
+            .status(axum::http::StatusCode::OK)
+            .header("Content-Type", "image/svg+xml")
+            .body(axum::body::Body::from(data))
+            .unwrap()
+    } else {
+        Response::builder()
+            .status(axum::http::StatusCode::BAD_REQUEST)
+            .body(axum::body::Body::from("flamegraph is not available"))
+            .unwrap()
+    }
+}
+
+async fn save_flamegraph(profiler_state: ProfilerStateArc) {
+    let handle = quickwit_common::thread_pool::run_cpu_intensive(move || {
+        let mut state = profiler_state.lock().unwrap();
+        if let Some(profiler) = state.profiler_guard.take() {
+            if let Ok(report) = profiler
+                .report()
+                .frames_post_processor(frames_post_processor)
+                .build()
+            {
+                let mut buffer = Vec::new();
+                if report.flamegraph(&mut buffer).is_ok() {
+                    state.flamegraph_data = Some(buffer);
+                }
+            }
+        }
+    });
+    let _ = handle.await;
+}
+
 /// pprof/start to start cpu profiling.
 /// pprof/start?duration=5&sampling=1000 to start a short high frequency cpu profiling
 /// pprof/flamegraph to stop the current cpu profiling and return a flamegraph or return the last
@@ -39,116 +122,23 @@ fn frames_post_processor(frames: &mut pprof::Frames) {
 /// Query parameters:
 /// - duration: duration of the profiling in seconds, default is 30 seconds. max value is 300
 /// - sampling: the sampling rate, default is 100, max value is 1000
-pub fn pprof_handlers() -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone
-{
-    use std::sync::{Arc, Mutex};
-
-    use pprof::ProfilerGuard;
-    use serde::Deserialize;
-    use tokio::time::{self, Duration};
-    use warp::reply::Reply;
-
-    struct ProfilerState {
-        profiler_guard: Option<ProfilerGuard<'static>>,
-        // We will keep the latest flamegraph and return it at the flamegraph endpoint
-        // A new run will overwrite the flamegraph_data
-        flamegraph_data: Option<Vec<u8>>,
-    }
-
+pub(super) fn pprof_routes() -> Router {
     let profiler_state = Arc::new(Mutex::new(ProfilerState {
         profiler_guard: None,
         flamegraph_data: None,
     }));
 
-    #[derive(Deserialize)]
-    struct ProfilerQueryParams {
-        duration: Option<u64>, // max allowed value is 300 seconds, default is 30 seconds
-        sampling: Option<i32>, // max value is 1000, default is 100
-    }
-
-    let start_profiler = {
-        let profiler_state = Arc::clone(&profiler_state);
-        warp::path!("pprof" / "start")
-            .and(warp::query::<ProfilerQueryParams>())
-            .and_then(move |params: ProfilerQueryParams| {
-                start_profiler_handler(profiler_state.clone(), params)
-            })
-    };
-
-    let stop_profiler = {
-        let profiler_state = Arc::clone(&profiler_state);
-        warp::path!("pprof" / "flamegraph")
-            .and_then(move || get_flamegraph_handler(Arc::clone(&profiler_state)))
-    };
-
-    async fn start_profiler_handler(
-        profiler_state: Arc<Mutex<ProfilerState>>,
-        params: ProfilerQueryParams,
-    ) -> Result<impl warp::Reply, warp::Rejection> {
-        let mut state = profiler_state.lock().unwrap();
-
-        if state.profiler_guard.is_none() {
-            let duration = params.duration.unwrap_or(30).min(300);
-            let sampling = params.sampling.unwrap_or(100).min(1000);
-            state.profiler_guard = Some(pprof::ProfilerGuard::new(sampling).unwrap());
-            let profiler_state = Arc::clone(&profiler_state);
-            tokio::spawn(async move {
-                time::sleep(Duration::from_secs(duration)).await;
-                save_flamegraph(profiler_state).await;
-            });
-            Ok(warp::reply::with_status(
-                "CPU profiling started",
-                warp::http::StatusCode::OK,
-            ))
-        } else {
-            Ok(warp::reply::with_status(
-                "CPU profiling is already running",
-                warp::http::StatusCode::BAD_REQUEST,
-            ))
-        }
-    }
-
-    async fn get_flamegraph_handler(
-        profiler_state: Arc<Mutex<ProfilerState>>,
-    ) -> Result<impl warp::Reply, warp::Rejection> {
-        let state = profiler_state.lock().unwrap();
-
-        if let Some(data) = state.flamegraph_data.clone() {
-            Ok(warp::reply::with_header(data, "Content-Type", "image/svg+xml").into_response())
-        } else {
-            Ok(warp::reply::with_status(
-                "flamegraph is not available",
-                warp::http::StatusCode::BAD_REQUEST,
-            )
-            .into_response())
-        }
-    }
-
-    async fn save_flamegraph(profiler_state: Arc<Mutex<ProfilerState>>) {
-        let handle = quickwit_common::thread_pool::run_cpu_intensive(move || {
-            let mut state = profiler_state.lock().unwrap();
-            if let Some(profiler) = state.profiler_guard.take() {
-                if let Ok(report) = profiler
-                    .report()
-                    .frames_post_processor(frames_post_processor)
-                    .build()
-                {
-                    let mut buffer = Vec::new();
-                    if report.flamegraph(&mut buffer).is_ok() {
-                        state.flamegraph_data = Some(buffer);
-                    }
-                }
-            }
-        });
-        let _ = handle.await;
-    }
-
-    start_profiler.or(stop_profiler)
+    Router::new()
+        .route("/pprof/start", get(start_profiler_handler))
+        .route("/pprof/flamegraph", get(get_flamegraph_handler))
+        .layer(Extension(profiler_state))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::remove_trailing_numbers;
+    use axum_test::TestServer;
+
+    use super::*;
 
     #[track_caller]
     fn test_remove_trailing_numbers_aux(thread_name: &str, expected: &str) {
@@ -165,5 +155,27 @@ mod tests {
         test_remove_trailing_numbers_aux("thread-1-2", "thread");
         test_remove_trailing_numbers_aux("thread-1-2", "thread");
         test_remove_trailing_numbers_aux("12-aa", "12-aa");
+    }
+
+    #[tokio::test]
+    async fn test_pprof_endpoints() {
+        // Create test server with pprof routes
+        let app = pprof_routes();
+        let server = TestServer::new(app).unwrap();
+
+        // Test start endpoint
+        let response = server.get("/pprof/start").await;
+        response.assert_status(axum::http::StatusCode::OK);
+        response.assert_text("CPU profiling started");
+
+        // Test start endpoint with parameters
+        let response = server.get("/pprof/start?duration=5&sampling=200").await;
+        response.assert_status(axum::http::StatusCode::BAD_REQUEST);
+        response.assert_text("CPU profiling is already running");
+
+        // Test flamegraph endpoint (should return not available initially)
+        let response = server.get("/pprof/flamegraph").await;
+        response.assert_status(axum::http::StatusCode::BAD_REQUEST);
+        response.assert_text("flamegraph is not available");
     }
 }

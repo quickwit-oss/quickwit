@@ -13,6 +13,9 @@ license.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
+axum = { workspace = true }
+axum-extra = { version = "0.9", features = ["typed-header"] }
+axum-server = { version = "0.7", features = ["tls-rustls"] }
 base64 = { workspace = true }
 bytes = { workspace = true }
 bytesize = { workspace = true }
@@ -82,6 +85,7 @@ time = { workspace = true }
 
 [dev-dependencies]
 assert-json-diff = { workspace = true }
+axum-test = "15.0"
 http = { workspace = true }
 itertools = { workspace = true }
 mockall = { workspace = true }
@@ -89,6 +93,7 @@ tempfile = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
 tonic = { workspace = true }
+tower = { workspace = true }
 
 quickwit-actors = { workspace = true, features = ["testsuite"] }
 quickwit-cluster = { workspace = true, features = ["testsuite"] }

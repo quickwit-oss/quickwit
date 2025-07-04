@@ -13,7 +13,7 @@
 // limitations under the License.
 
 mod api;
+pub mod axum_lambda;
 mod environment;
-pub mod warp_lambda;
 
 pub use api::setup_searcher_api;

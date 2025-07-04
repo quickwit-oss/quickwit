@@ -82,6 +82,7 @@ license = "Apache-2.0"
 anyhow = "1"
 arc-swap = "1.7"
 assert-json-diff = "2"
+axum = "0.7"
 async-compression = { version = "0.4", features = ["tokio", "gzip"] }
 async-speed-limit = "0.4"
 async-trait = "0.1"

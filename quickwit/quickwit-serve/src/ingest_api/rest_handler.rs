@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use axum::extract::{DefaultBodyLimit, Path, Query};
+use axum::routing::{get, post};
+use axum::{Extension, Router};
 use bytes::{Buf, Bytes};
 use quickwit_config::{INGEST_V2_SOURCE_ID, IngestApiConfig, validate_identifier};
 use quickwit_ingest::{
@@ -24,13 +27,18 @@ use quickwit_proto::ingest::router::{
 };
 use quickwit_proto::types::{DocUidGenerator, IndexId};
 use serde::Deserialize;
-use warp::{Filter, Rejection};
 
 use super::RestIngestResponse;
-use crate::decompression::get_body_bytes;
-use crate::format::extract_format_from_qs;
+use crate::BodyFormat;
+use crate::decompression::DecompressedBody;
 use crate::rest_api_response::into_rest_api_response;
-use crate::{Body, BodyFormat, with_arg};
+
+// Wrapper types to distinguish between the two boolean Extension values
+#[derive(Clone, Copy)]
+struct EnableIngestV1(bool);
+
+#[derive(Clone, Copy)]
+struct EnableIngestV2(bool);
 
 #[derive(utoipa::OpenApi)]
 #[openapi(paths(ingest, tail_endpoint,))]
@@ -71,63 +79,60 @@ impl IngestOptions {
     }
 }
 
-pub(crate) fn ingest_api_handlers(
+// Axum routes
+pub fn ingest_routes(
     ingest_router: IngestRouterServiceClient,
     ingest_service: IngestServiceClient,
     config: IngestApiConfig,
     enable_ingest_v1: bool,
     enable_ingest_v2: bool,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    ingest_handler(
+) -> Router {
+    let mut router = Router::new().route("/:index_id/tail", get(tail_handler_axum));
+
+    // Apply content length limit to ingest route
+    let ingest_route = post(ingest_handler_axum).layer(DefaultBodyLimit::max(
+        config.content_length_limit.as_u64() as usize,
+    ));
+
+    router = router.route("/:index_id/ingest", ingest_route);
+
+    router
+        .layer(axum::Extension(ingest_router))
+        .layer(axum::Extension(ingest_service))
+        .layer(axum::Extension(config))
+        .layer(axum::Extension(EnableIngestV1(enable_ingest_v1)))
+        .layer(axum::Extension(EnableIngestV2(enable_ingest_v2)))
+}
+
+async fn ingest_handler_axum(
+    Path(index_id): Path<String>,
+    Query(ingest_options): Query<IngestOptions>,
+    Extension(ingest_router): Extension<IngestRouterServiceClient>,
+    Extension(ingest_service): Extension<IngestServiceClient>,
+    Extension(EnableIngestV1(enable_ingest_v1)): Extension<EnableIngestV1>,
+    Extension(EnableIngestV2(enable_ingest_v2)): Extension<EnableIngestV2>,
+    body: DecompressedBody,
+) -> impl axum::response::IntoResponse {
+    let result = ingest(
+        index_id,
+        body.0,
+        ingest_options,
         ingest_router,
-        ingest_service.clone(),
-        config,
+        ingest_service,
         enable_ingest_v1,
         enable_ingest_v2,
     )
-    .or(tail_handler(ingest_service))
-    .boxed()
+    .await;
+
+    into_rest_api_response(result, BodyFormat::default())
 }
 
-fn ingest_filter(
-    config: IngestApiConfig,
-) -> impl Filter<Extract = (String, Body, IngestOptions), Error = Rejection> + Clone {
-    warp::path!(String / "ingest")
-        .and(warp::post())
-        .and(warp::body::content_length_limit(
-            config.content_length_limit.as_u64(),
-        ))
-        .and(get_body_bytes())
-        .and(serde_qs::warp::query::<IngestOptions>(
-            serde_qs::Config::default(),
-        ))
-}
-
-fn ingest_handler(
-    ingest_router: IngestRouterServiceClient,
-    ingest_service: IngestServiceClient,
-    config: IngestApiConfig,
-    enable_ingest_v1: bool,
-    enable_ingest_v2: bool,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    ingest_filter(config)
-        .and(with_arg(ingest_router))
-        .and(with_arg(ingest_service))
-        .then(
-            move |index_id, body, ingest_options, ingest_router, ingest_service| {
-                ingest(
-                    index_id,
-                    body,
-                    ingest_options,
-                    ingest_router,
-                    ingest_service,
-                    enable_ingest_v1,
-                    enable_ingest_v2,
-                )
-            },
-        )
-        .map(|result| into_rest_api_response(result, BodyFormat::default()))
-        .boxed()
+async fn tail_handler_axum(
+    Path(index_id): Path<String>,
+    Extension(ingest_service): Extension<IngestServiceClient>,
+) -> impl axum::response::IntoResponse {
+    let result = tail_endpoint(index_id, ingest_service).await;
+    into_rest_api_response(result, BodyFormat::default())
 }
 
 #[utoipa::path(
@@ -146,7 +151,7 @@ fn ingest_handler(
 /// Ingest documents
 async fn ingest(
     index_id: IndexId,
-    body: Body,
+    body: Bytes,
     ingest_options: IngestOptions,
     ingest_router: IngestRouterServiceClient,
     ingest_service: IngestServiceClient,
@@ -166,7 +171,7 @@ async fn ingest(
 /// Ingest documents
 async fn ingest_v1(
     index_id: IndexId,
-    body: Body,
+    body: Bytes,
     ingest_options: IngestOptions,
     ingest_service: IngestServiceClient,
 ) -> Result<RestIngestResponse, IngestServiceError> {
@@ -177,8 +182,8 @@ async fn ingest_v1(
     }
     // The size of the body should be an upper bound of the size of the batch. The removal of the
     // end of line character for each doc compensates the addition of the `DocCommand` header.
-    let mut doc_batch_builder = DocBatchBuilder::with_capacity(index_id, body.content.remaining());
-    for line in lines(&body.content) {
+    let mut doc_batch_builder = DocBatchBuilder::with_capacity(index_id, body.remaining());
+    for line in lines(&body) {
         doc_batch_builder.ingest_doc(line);
     }
     let ingest_req = IngestRequest {
@@ -191,22 +196,24 @@ async fn ingest_v1(
 
 async fn ingest_v2(
     index_id: IndexId,
-    body: Body,
+    body: Bytes,
     ingest_options: IngestOptions,
     ingest_router: IngestRouterServiceClient,
 ) -> Result<RestIngestResponse, IngestServiceError> {
     let mut doc_batch_builder = DocBatchV2Builder::default();
     let mut doc_uid_generator = DocUidGenerator::default();
 
-    for doc in lines(&body.content) {
-        doc_batch_builder.add_doc(doc_uid_generator.next_doc_uid(), doc);
+    for line in lines(&body) {
+        if is_empty_or_blank_line(line) {
+            continue;
+        }
+        let doc_uid = doc_uid_generator.next_doc_uid();
+        doc_batch_builder.add_doc(doc_uid, line);
     }
     drop(body);
     let doc_batch_opt = doc_batch_builder.build();
-
     let Some(doc_batch) = doc_batch_opt else {
-        let response = RestIngestResponse::default();
-        return Ok(response);
+        return Ok(RestIngestResponse::default());
     };
     let num_docs_for_processing = doc_batch.num_docs() as u64;
     let doc_batch_clone_opt = if ingest_options.detailed_response {
@@ -239,21 +246,6 @@ async fn ingest_v2(
         doc_batch_clone_opt.as_ref(),
         num_docs_for_processing,
     )
-}
-
-pub fn tail_handler(
-    ingest_service: IngestServiceClient,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    tail_filter()
-        .and(with_arg(ingest_service))
-        .then(tail_endpoint)
-        .and(extract_format_from_qs())
-        .map(into_rest_api_response)
-        .boxed()
-}
-
-fn tail_filter() -> impl Filter<Extract = (String,), Error = Rejection> + Clone {
-    warp::path!(String / "tail").and(warp::get())
 }
 
 #[utoipa::path(
@@ -291,7 +283,9 @@ pub(crate) mod tests {
     use std::str;
     use std::time::Duration;
 
+    use axum_test::TestServer;
     use bytes::Bytes;
+    use http::StatusCode;
     use quickwit_actors::{Mailbox, Universe};
     use quickwit_config::IngestApiConfig;
     use quickwit_ingest::{
@@ -300,8 +294,25 @@ pub(crate) mod tests {
     };
     use quickwit_proto::ingest::router::IngestRouterServiceClient;
 
-    use super::{RestIngestResponse, ingest_api_handlers};
+    use super::{RestIngestResponse, ingest_routes};
     use crate::ingest_api::lines;
+
+    fn create_test_server(
+        ingest_router: quickwit_proto::ingest::router::IngestRouterServiceClient,
+        ingest_service: IngestServiceClient,
+        config: IngestApiConfig,
+        enable_ingest_v1: bool,
+        enable_ingest_v2: bool,
+    ) -> TestServer {
+        let app = ingest_routes(
+            ingest_router,
+            ingest_service,
+            config,
+            enable_ingest_v1,
+            enable_ingest_v2,
+        );
+        TestServer::new(app).unwrap()
+    }
 
     #[test]
     fn test_process_lines() {
@@ -354,31 +365,25 @@ pub(crate) mod tests {
         let (universe, _temp_dir, ingest_service, _) =
             setup_ingest_v1_service(&["my-index"], &IngestApiConfig::default()).await;
         let ingest_router = IngestRouterServiceClient::mocked();
-        let ingest_api_handlers = ingest_api_handlers(
+        let server = create_test_server(
             ingest_router,
             ingest_service,
             IngestApiConfig::default(),
             true,
             false,
         );
-        let resp = warp::test::request()
-            .path("/my-index/ingest")
-            .method("POST")
-            .json(&true)
-            .body(r#"{"id": 1, "message": "push"}"#)
-            .reply(&ingest_api_handlers)
+
+        let response = server
+            .post("/my-index/ingest")
+            .json(&serde_json::json!({"id": 1, "message": "push"}))
             .await;
-        assert_eq!(resp.status(), 200);
-        let ingest_response: RestIngestResponse = serde_json::from_slice(resp.body()).unwrap();
+        assert_eq!(response.status_code(), StatusCode::OK);
+        let ingest_response: RestIngestResponse = response.json();
         assert_eq!(ingest_response.num_docs_for_processing, 1);
 
-        let resp = warp::test::request()
-            .path("/my-index/tail")
-            .method("GET")
-            .reply(&ingest_api_handlers)
-            .await;
-        assert_eq!(resp.status(), 200);
-        let fetch_response: FetchResponse = serde_json::from_slice(resp.body()).unwrap();
+        let response = server.get("/my-index/tail").await;
+        assert_eq!(response.status_code(), StatusCode::OK);
+        let fetch_response: FetchResponse = response.json();
         let doc_batch = fetch_response.doc_batch.unwrap();
         assert_eq!(doc_batch.index_id, "my-index");
         assert_eq!(doc_batch.num_docs(), 1);
@@ -395,7 +400,7 @@ pub(crate) mod tests {
         let (universe, _temp_dir, ingest_service, _) =
             setup_ingest_v1_service(&["my-index"], &IngestApiConfig::default()).await;
         let ingest_router = IngestRouterServiceClient::mocked();
-        let ingest_api_handlers = ingest_api_handlers(
+        let server = create_test_server(
             ingest_router,
             ingest_service,
             IngestApiConfig::default(),
@@ -406,14 +411,9 @@ pub(crate) mod tests {
             {"id": 1, "message": "push"}
             {"id": 2, "message": "push"}
             {"id": 3, "message": "push"}"#;
-        let resp = warp::test::request()
-            .path("/my-index/ingest")
-            .method("POST")
-            .body(payload)
-            .reply(&ingest_api_handlers)
-            .await;
-        assert_eq!(resp.status(), 200);
-        let ingest_response: RestIngestResponse = serde_json::from_slice(resp.body()).unwrap();
+        let response = server.post("/my-index/ingest").text(payload).await;
+        assert_eq!(response.status_code(), StatusCode::OK);
+        let ingest_response: RestIngestResponse = response.json();
         assert_eq!(ingest_response.num_docs_for_processing, 3);
 
         universe.assert_quit().await;
@@ -426,21 +426,18 @@ pub(crate) mod tests {
         let (universe, _temp_dir, ingest_service, _) =
             setup_ingest_v1_service(&["my-index"], &config).await;
         let ingest_router = IngestRouterServiceClient::mocked();
-        let ingest_api_handlers = ingest_api_handlers(
+        let server = create_test_server(
             ingest_router,
             ingest_service,
             IngestApiConfig::default(),
             true,
             false,
         );
-        let resp = warp::test::request()
-            .path("/my-index/ingest")
-            .method("POST")
-            .json(&true)
-            .body(r#"{"id": 1, "message": "push"}"#)
-            .reply(&ingest_api_handlers)
+        let response = server
+            .post("/my-index/ingest")
+            .text(r#"{"id": 1, "message": "push"}"#)
             .await;
-        assert_eq!(resp.status(), 429);
+        assert_eq!(response.status_code(), StatusCode::TOO_MANY_REQUESTS);
         universe.assert_quit().await;
     }
 
@@ -451,16 +448,12 @@ pub(crate) mod tests {
         let (universe, _temp_dir, ingest_service, _) =
             setup_ingest_v1_service(&["my-index"], &IngestApiConfig::default()).await;
         let ingest_router = IngestRouterServiceClient::mocked();
-        let ingest_api_handlers =
-            ingest_api_handlers(ingest_router, ingest_service, config.clone(), true, false);
-        let resp = warp::test::request()
-            .path("/my-index/ingest")
-            .method("POST")
-            .json(&true)
-            .body(r#"{"id": 1, "message": "push"}"#)
-            .reply(&ingest_api_handlers)
+        let server = create_test_server(ingest_router, ingest_service, config.clone(), true, false);
+        let response = server
+            .post("/my-index/ingest")
+            .text(r#"{"id": 1, "message": "push"}"#)
             .await;
-        assert_eq!(resp.status(), 413);
+        assert_eq!(response.status_code(), StatusCode::PAYLOAD_TOO_LARGE);
         universe.assert_quit().await;
     }
 
@@ -469,27 +462,33 @@ pub(crate) mod tests {
         let (universe, _temp_dir, ingest_service_client, ingest_service_mailbox) =
             setup_ingest_v1_service(&["my-index"], &IngestApiConfig::default()).await;
         let ingest_router = IngestRouterServiceClient::mocked();
-        let ingest_api_handlers = ingest_api_handlers(
+        let server = create_test_server(
             ingest_router,
             ingest_service_client,
             IngestApiConfig::default(),
             true,
             false,
         );
-        let handle = tokio::spawn(async move {
-            let resp = warp::test::request()
-                .path("/my-index/ingest?commit=wait_for")
-                .method("POST")
-                .json(&true)
-                .body(r#"{"id": 1, "message": "push"}"#)
-                .reply(&ingest_api_handlers)
-                .await;
-            assert_eq!(resp.status(), 200);
-            let ingest_response: RestIngestResponse = serde_json::from_slice(resp.body()).unwrap();
-            assert_eq!(ingest_response.num_docs_for_processing, 1);
-        });
-        universe.sleep(Duration::from_secs(10)).await;
-        assert!(!handle.is_finished());
+
+        // Start the request in the background
+        let request_future = server
+            .post("/my-index/ingest?commit=wait_for")
+            .text(r#"{"id": 1, "message": "push"}"#);
+
+        // Use tokio::select! to test that the request blocks
+        let result = tokio::select! {
+            _response = request_future => {
+                panic!("Request should have blocked but completed immediately");
+            }
+            _ = universe.sleep(Duration::from_secs(1)) => {
+                // Expected: request should still be blocking after 1 second
+                "blocked"
+            }
+        };
+
+        assert_eq!(result, "blocked");
+
+        // Verify data was ingested
         assert_eq!(
             ingest_service_mailbox
                 .ask_for_res(FetchRequest {
@@ -504,6 +503,8 @@ pub(crate) mod tests {
                 .num_docs(),
             1
         );
+
+        // Complete the commit
         ingest_service_mailbox
             .ask_for_res(SuggestTruncateRequest {
                 index_id: "my-index".to_string(),
@@ -511,7 +512,7 @@ pub(crate) mod tests {
             })
             .await
             .unwrap();
-        handle.await.unwrap();
+
         universe.assert_quit().await;
     }
 
@@ -520,27 +521,33 @@ pub(crate) mod tests {
         let (universe, _temp_dir, ingest_service_client, ingest_service_mailbox) =
             setup_ingest_v1_service(&["my-index"], &IngestApiConfig::default()).await;
         let ingest_router = IngestRouterServiceClient::mocked();
-        let ingest_api_handlers = ingest_api_handlers(
+        let server = create_test_server(
             ingest_router,
             ingest_service_client,
             IngestApiConfig::default(),
             true,
             false,
         );
-        let handle = tokio::spawn(async move {
-            let resp = warp::test::request()
-                .path("/my-index/ingest?commit=force")
-                .method("POST")
-                .json(&true)
-                .body(r#"{"id": 1, "message": "push"}"#)
-                .reply(&ingest_api_handlers)
-                .await;
-            assert_eq!(resp.status(), 200);
-            let ingest_response: RestIngestResponse = serde_json::from_slice(resp.body()).unwrap();
-            assert_eq!(ingest_response.num_docs_for_processing, 1);
-        });
-        universe.sleep(Duration::from_secs(10)).await;
-        assert!(!handle.is_finished());
+
+        // Start the request in the background
+        let request_future = server
+            .post("/my-index/ingest?commit=force")
+            .text(r#"{"id": 1, "message": "push"}"#);
+
+        // Use tokio::select! to test that the request blocks
+        let result = tokio::select! {
+            _response = request_future => {
+                panic!("Request should have blocked but completed immediately");
+            }
+            _ = universe.sleep(Duration::from_secs(1)) => {
+                // Expected: request should still be blocking after 1 second
+                "blocked"
+            }
+        };
+
+        assert_eq!(result, "blocked");
+
+        // Verify data was ingested (force should ingest 2 docs)
         assert_eq!(
             ingest_service_mailbox
                 .ask_for_res(FetchRequest {
@@ -555,6 +562,8 @@ pub(crate) mod tests {
                 .num_docs(),
             2
         );
+
+        // Complete the commit
         ingest_service_mailbox
             .ask_for_res(SuggestTruncateRequest {
                 index_id: "my-index".to_string(),
@@ -562,7 +571,7 @@ pub(crate) mod tests {
             })
             .await
             .unwrap();
-        handle.await.unwrap();
+
         universe.assert_quit().await;
     }
 
@@ -571,21 +580,18 @@ pub(crate) mod tests {
         let (universe, _temp_dir, ingest_service, _) =
             setup_ingest_v1_service(&["my-index"], &IngestApiConfig::default()).await;
         let ingest_router = IngestRouterServiceClient::mocked();
-        let ingest_api_handlers = ingest_api_handlers(
+        let server = create_test_server(
             ingest_router,
             ingest_service,
             IngestApiConfig::default(),
             true,
             false,
         );
-        let resp = warp::test::request()
-            .path("/my-index/ingest?detailed_response=true")
-            .method("POST")
-            .json(&true)
-            .body(r#"{"id": 1, "message": "push"}"#)
-            .reply(&ingest_api_handlers)
+        let response = server
+            .post("/my-index/ingest?detailed_response=true")
+            .text(r#"{"id": 1, "message": "push"}"#)
             .await;
-        assert_eq!(resp.status(), 400);
+        assert_eq!(response.status_code(), StatusCode::BAD_REQUEST);
         universe.assert_quit().await;
     }
 }

@@ -12,18 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use warp::Filter;
+use axum::Router;
+use axum::http::StatusCode;
+use axum::response::IntoResponse;
+use axum::routing::get;
 
-fn not_implemented_handler() -> impl warp::Reply {
-    warp::reply::with_status(
+async fn not_implemented_handler() -> impl IntoResponse {
+    (
+        StatusCode::NOT_IMPLEMENTED,
         "Quickwit was compiled without the `jemalloc-profiled` feature",
-        warp::http::StatusCode::NOT_IMPLEMENTED,
     )
 }
 
-pub fn heap_prof_handlers()
--> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
-    let start_profiler = { warp::path!("heap-prof" / "start").map(not_implemented_handler) };
-    let stop_profiler = { warp::path!("heap-prof" / "stop").map(not_implemented_handler) };
-    start_profiler.or(stop_profiler)
+/// Creates routes for disabled heap profiling endpoints
+pub(super) fn heap_prof_routes() -> Router {
+    Router::new()
+        .route("/heap-prof/start", get(not_implemented_handler))
+        .route("/heap-prof/stop", get(not_implemented_handler))
 }

@@ -13,14 +13,13 @@
 // limitations under the License.
 
 use quickwit_lambda::logger;
-use quickwit_lambda::searcher::{setup_searcher_api, warp_lambda};
+use quickwit_lambda::searcher::{axum_lambda, setup_searcher_api};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     logger::setup_lambda_tracer(tracing::Level::INFO)?;
-    let routes = setup_searcher_api().await?;
-    let warp_service = warp::service(routes);
-    warp_lambda::run(warp_service)
+    let app = setup_searcher_api().await?;
+    axum_lambda::run_axum(app)
         .await
         .map_err(|e| anyhow::anyhow!(e))
 }

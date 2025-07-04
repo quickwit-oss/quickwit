@@ -12,16 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use axum::Router;
+use axum::extract::Path;
+use axum::http::{StatusCode, header};
+use axum::response::{IntoResponse, Response};
+use axum::routing::get;
 use once_cell::sync::Lazy;
 use quickwit_telemetry::payload::TelemetryEvent;
 use regex::Regex;
 use rust_embed::RustEmbed;
-use warp::hyper::header::HeaderValue;
-use warp::path::Tail;
-use warp::reply::Response;
-use warp::{Filter, Rejection};
-
-use crate::rest::recover_fn;
 
 /// Regular expression to identify which path should serve an asset file.
 /// If not matched, the server serves the `index.html` file.
@@ -33,19 +32,32 @@ const UI_INDEX_FILE_NAME: &str = "index.html";
 #[folder = "../quickwit-ui/build/"]
 struct Asset;
 
-pub fn ui_handler() -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path("ui")
-        .and(warp::path::tail())
-        .and_then(serve_file)
-        .recover(recover_fn)
-        .boxed()
+/// Axum routes for the UI handler
+pub fn ui_routes() -> Router {
+    Router::new()
+        .route("/ui/*path", get(serve_file_axum))
+        .route("/ui", get(serve_ui_root))
+        // Root redirect to UI
+        .route("/", get(redirect_root_to_ui))
 }
 
-async fn serve_file(path: Tail) -> Result<impl warp::Reply, Rejection> {
-    serve_impl(path.as_str()).await
+/// Axum handler for serving UI files
+async fn serve_file_axum(Path(path): Path<String>) -> impl IntoResponse {
+    serve_impl_axum(&path).await
 }
 
-async fn serve_impl(path: &str) -> Result<impl warp::Reply + use<>, Rejection> {
+/// Axum handler for serving UI root (when no path is provided)
+async fn serve_ui_root() -> impl IntoResponse {
+    serve_impl_axum("").await
+}
+
+/// Axum handler for redirecting root to UI
+async fn redirect_root_to_ui() -> impl IntoResponse {
+    axum::response::Redirect::permanent("/ui/search")
+}
+
+/// Axum implementation of serve_impl
+async fn serve_impl_axum(path: &str) -> Response {
     static PATH_PTN: Lazy<Regex> = Lazy::new(|| Regex::new(PATH_PATTERN).unwrap());
     let path_to_file = if PATH_PTN.is_match(path) {
         path
@@ -57,19 +69,25 @@ async fn serve_impl(path: &str) -> Result<impl warp::Reply + use<>, Rejection> {
         quickwit_telemetry::send_telemetry_event(TelemetryEvent::UiIndexPageLoad).await;
         UI_INDEX_FILE_NAME
     };
-    let asset = Asset::get(path_to_file).ok_or_else(warp::reject::not_found)?;
-    let mime = mime_guess::from_path(path_to_file).first_or_octet_stream();
 
-    let mut res = Response::new(asset.data.into());
-    res.headers_mut().insert(
-        "content-type",
-        HeaderValue::from_str(mime.as_ref()).unwrap(),
-    );
-    Ok(res)
+    match Asset::get(path_to_file) {
+        Some(asset) => {
+            let mime = mime_guess::from_path(path_to_file).first_or_octet_stream();
+            (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, mime.as_ref())],
+                asset.data.into_owned(),
+            )
+                .into_response()
+        }
+        None => (StatusCode::NOT_FOUND, "File not found").into_response(),
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use axum_test::TestServer;
+
     use super::*;
 
     #[test]
@@ -82,5 +100,27 @@ mod tests {
         assert!(path_ptn.is_match("android-chrome-192x192.png"));
         assert!(!path_ptn.is_match("search"));
         assert!(!path_ptn.is_match(""));
+    }
+
+    #[tokio::test]
+    async fn test_ui_routes_axum() {
+        let app = ui_routes();
+        let server = TestServer::new(app).unwrap();
+
+        // Test root redirect
+        let response = server.get("/").await;
+        assert_eq!(response.status_code(), 308); // Permanent redirect
+
+        // Test UI root returns 404 when no assets are embedded (in test environment)
+        let response = server.get("/ui").await;
+        assert_eq!(response.status_code(), 404);
+
+        // Test UI path returns 404 when no assets are embedded (in test environment)
+        let response = server.get("/ui/search").await;
+        assert_eq!(response.status_code(), 404);
+
+        // Test 404 for non-existent assets
+        let response = server.get("/ui/nonexistent.js").await;
+        assert_eq!(response.status_code(), 404);
     }
 }

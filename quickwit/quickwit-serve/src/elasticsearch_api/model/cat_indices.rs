@@ -15,9 +15,9 @@
 use std::collections::HashSet;
 use std::ops::AddAssign;
 
+use axum::http::StatusCode;
 use quickwit_metastore::{IndexMetadata, SplitMetadata};
 use serde::{Deserialize, Serialize, Serializer};
-use warp::hyper::StatusCode;
 
 use super::ElasticsearchError;
 use crate::simple_list::{from_simple_list, to_simple_list};

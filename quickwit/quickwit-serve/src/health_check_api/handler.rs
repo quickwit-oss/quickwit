@@ -12,51 +12,31 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use axum::response::{IntoResponse, Json};
+use axum::routing::get;
+use axum::{Extension, Router};
 use quickwit_actors::{Healthz, Mailbox};
 use quickwit_cluster::Cluster;
 use quickwit_indexing::IndexingService;
 use quickwit_janitor::JanitorService;
 use tracing::error;
-use warp::hyper::StatusCode;
-use warp::reply::with_status;
-use warp::{Filter, Rejection};
-
-use crate::rest::recover_fn;
-use crate::with_arg;
 
 #[derive(utoipa::OpenApi)]
 #[openapi(paths(get_liveness, get_readiness))]
 pub struct HealthCheckApi;
 
-/// Health check handlers.
-pub(crate) fn health_check_handlers(
+/// Creates routes for health check endpoints
+pub(crate) fn health_check_routes(
     cluster: Cluster,
     indexer_service_opt: Option<Mailbox<IndexingService>>,
     janitor_service_opt: Option<Mailbox<JanitorService>>,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    liveness_handler(indexer_service_opt, janitor_service_opt).or(readiness_handler(cluster))
-}
-
-fn liveness_handler(
-    indexer_service_opt: Option<Mailbox<IndexingService>>,
-    janitor_service_opt: Option<Mailbox<JanitorService>>,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path!("health" / "livez")
-        .and(warp::get())
-        .and(with_arg(indexer_service_opt))
-        .and(with_arg(janitor_service_opt))
-        .then(get_liveness)
-        .recover(recover_fn)
-}
-
-fn readiness_handler(
-    cluster: Cluster,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path!("health" / "readyz")
-        .and(warp::get())
-        .and(with_arg(cluster))
-        .then(get_readiness)
-        .recover(recover_fn)
+) -> Router {
+    Router::new()
+        .route("/health/livez", get(get_liveness))
+        .route("/health/readyz", get(get_readiness))
+        .layer(Extension(cluster))
+        .layer(Extension(indexer_service_opt))
+        .layer(Extension(janitor_service_opt))
 }
 
 #[utoipa::path(
@@ -70,9 +50,9 @@ fn readiness_handler(
 )]
 /// Get Node Liveliness
 async fn get_liveness(
-    indexer_service_opt: Option<Mailbox<IndexingService>>,
-    janitor_service_opt: Option<Mailbox<JanitorService>>,
-) -> impl warp::Reply {
+    Extension(indexer_service_opt): Extension<Option<Mailbox<IndexingService>>>,
+    Extension(janitor_service_opt): Extension<Option<Mailbox<JanitorService>>>,
+) -> impl IntoResponse {
     let mut is_live = true;
 
     if let Some(indexer_service) = indexer_service_opt {
@@ -88,11 +68,11 @@ async fn get_liveness(
         }
     }
     let status_code = if is_live {
-        StatusCode::OK
+        axum::http::StatusCode::OK
     } else {
-        StatusCode::SERVICE_UNAVAILABLE
+        axum::http::StatusCode::SERVICE_UNAVAILABLE
     };
-    with_status(warp::reply::json(&is_live), status_code)
+    (status_code, Json(is_live))
 }
 
 #[utoipa::path(
@@ -105,19 +85,19 @@ async fn get_liveness(
     ),
 )]
 /// Get Node Readiness
-async fn get_readiness(cluster: Cluster) -> impl warp::Reply {
+async fn get_readiness(Extension(cluster): Extension<Cluster>) -> impl IntoResponse {
     let is_ready = cluster.is_self_node_ready().await;
     let status_code = if is_ready {
-        StatusCode::OK
+        axum::http::StatusCode::OK
     } else {
-        StatusCode::SERVICE_UNAVAILABLE
+        axum::http::StatusCode::SERVICE_UNAVAILABLE
     };
-    with_status(warp::reply::json(&is_ready), status_code)
+    (status_code, Json(is_ready))
 }
 
 #[cfg(test)]
 mod tests {
-
+    use axum_test::TestServer;
     use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
 
     #[tokio::test]
@@ -126,22 +106,17 @@ mod tests {
         let cluster = create_cluster_for_test(Vec::new(), &[], &transport, false)
             .await
             .unwrap();
-        let health_check_handler = super::health_check_handlers(cluster.clone(), None, None);
-        let resp = warp::test::request()
-            .path("/health/livez")
-            .reply(&health_check_handler)
-            .await;
-        assert_eq!(resp.status(), 200);
-        let resp = warp::test::request()
-            .path("/health/readyz")
-            .reply(&health_check_handler)
-            .await;
-        assert_eq!(resp.status(), 503);
+        let health_routes = super::health_check_routes(cluster.clone(), None, None);
+        let server = TestServer::new(health_routes).unwrap();
+
+        let resp = server.get("/health/livez").await;
+        assert_eq!(resp.status_code(), 200);
+
+        let resp = server.get("/health/readyz").await;
+        assert_eq!(resp.status_code(), 503);
+
         cluster.set_self_node_readiness(true).await;
-        let resp = warp::test::request()
-            .path("/health/readyz")
-            .reply(&health_check_handler)
-            .await;
-        assert_eq!(resp.status(), 200);
+        let resp = server.get("/health/readyz").await;
+        assert_eq!(resp.status_code(), 200);
     }
 }

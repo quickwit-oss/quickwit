@@ -17,8 +17,6 @@ use std::time::Duration;
 use quickwit_common::metrics::{GaugeGuard, IntGauge};
 use tokio::sync::{Semaphore, SemaphorePermit};
 
-use crate::rest::TooManyRequests;
-
 pub struct LoadShield {
     in_flight_semaphore_opt: Option<Semaphore>, // This one is doing the load shedding.
     concurrency_semaphore_opt: Option<Semaphore>,
@@ -59,7 +57,7 @@ impl LoadShield {
 
     async fn acquire_in_flight_permit(
         &'static self,
-    ) -> Result<Option<SemaphorePermit<'static>>, warp::Rejection> {
+    ) -> Result<Option<SemaphorePermit<'static>>, axum::http::StatusCode> {
         let Some(in_flight_semaphore) = &self.in_flight_semaphore_opt else {
             return Ok(None);
         };
@@ -67,7 +65,7 @@ impl LoadShield {
             // Wait a little to deal before load shedding. The point is to lower the load associated
             // with super aggressive clients.
             tokio::time::sleep(Duration::from_millis(100)).await;
-            return Err(warp::reject::custom(TooManyRequests));
+            return Err(axum::http::StatusCode::TOO_MANY_REQUESTS);
         };
         Ok(Some(in_flight_permit))
     }
@@ -77,7 +75,7 @@ impl LoadShield {
         Some(concurrency_semaphore.acquire().await.unwrap())
     }
 
-    pub async fn acquire_permit(&'static self) -> Result<LoadShieldPermit, warp::Rejection> {
+    pub async fn acquire_permit(&'static self) -> Result<LoadShieldPermit, axum::http::StatusCode> {
         let mut pending_gauge_guard = GaugeGuard::from_gauge(&self.pending_gauge);
         pending_gauge_guard.add(1);
         let in_flight_permit_opt = self.acquire_in_flight_permit().await?;

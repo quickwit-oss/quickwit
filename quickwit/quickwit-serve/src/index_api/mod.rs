@@ -17,6 +17,5 @@ mod rest_handler;
 mod source_resource;
 mod split_resource;
 
-pub use self::index_resource::get_index_metadata_handler;
-pub use self::rest_handler::{IndexApi, index_management_handlers};
+pub use self::rest_handler::index_management_routes;
 pub use self::split_resource::{ListSplitsQueryParams, ListSplitsResponse};

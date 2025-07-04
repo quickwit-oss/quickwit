@@ -14,13 +14,11 @@
 
 use std::convert::Infallible;
 
+use axum::routing::get;
+use axum::{Extension, Router};
 use quickwit_actors::{AskError, Mailbox, Observe};
 use quickwit_indexing::actors::{IndexingService, IndexingServiceCounters};
-use warp::{Filter, Rejection};
 
-use crate::format::extract_format_from_qs;
-use crate::require;
-use crate::rest::recover_fn;
 use crate::rest_api_response::into_rest_api_response;
 
 #[derive(utoipa::OpenApi)]
@@ -44,18 +42,20 @@ async fn indexing_endpoint(
     Ok(counters)
 }
 
-fn indexing_get_filter() -> impl Filter<Extract = (), Error = Rejection> + Clone {
-    warp::path!("indexing").and(warp::get())
+async fn indexing_handler_axum(
+    Extension(indexing_service_mailbox_opt): Extension<Option<Mailbox<IndexingService>>>,
+) -> impl axum::response::IntoResponse {
+    let result = match indexing_service_mailbox_opt {
+        Some(mailbox) => indexing_endpoint(mailbox).await,
+        None => {
+            // Return a service unavailable error
+            Err(quickwit_actors::AskError::MessageNotDelivered)
+        }
+    };
+
+    into_rest_api_response(result, crate::format::BodyFormat::default())
 }
 
-pub fn indexing_get_handler(
-    indexing_service_mailbox_opt: Option<Mailbox<IndexingService>>,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    indexing_get_filter()
-        .and(require(indexing_service_mailbox_opt))
-        .then(indexing_endpoint)
-        .and(extract_format_from_qs())
-        .map(into_rest_api_response)
-        .recover(recover_fn)
-        .boxed()
+pub fn indexing_routes() -> Router {
+    Router::new().route("/indexing", get(indexing_handler_axum))
 }

@@ -12,46 +12,45 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use axum::extract::Query;
+use axum::response::IntoResponse;
+use axum::routing::get;
+use axum::{Extension, Router};
 use serde::Deserialize;
 use tracing::{error, info};
-use warp::hyper::StatusCode;
-use warp::{Filter, Rejection};
 
-use crate::{EnvFilterReloadFn, with_arg};
+use crate::EnvFilterReloadFn;
 
 #[derive(Deserialize)]
 struct EnvFilter {
     filter: String,
 }
 
+/// Creates routes for log level endpoints
+pub(super) fn log_level_routes() -> Router {
+    Router::new().route("/log-level", get(log_level_handler).post(log_level_handler))
+}
+
 /// Dynamically Quickwit's log level
 #[utoipa::path(get, tag = "Debug", path = "/log-level")]
-pub fn log_level_handler(
-    env_filter_reload_fn: EnvFilterReloadFn,
-) -> impl warp::Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path("log-level")
-        .and(warp::get().or(warp::post()).unify())
-        .and(warp::path::end())
-        .and(with_arg(env_filter_reload_fn))
-        .and(warp::query::<EnvFilter>())
-        .then(
-            |env_filter_reload_fn: EnvFilterReloadFn, env_filter: EnvFilter| async move {
-                match env_filter_reload_fn(&env_filter.filter) {
-                    Ok(_) => {
-                        info!(filter = env_filter.filter, "setting log level");
-                        warp::reply::with_status(
-                            format!("set log level to:[{}]", env_filter.filter),
-                            StatusCode::OK,
-                        )
-                    }
-                    Err(_) => {
-                        error!(filter = env_filter.filter, "invalid log level");
-                        warp::reply::with_status(
-                            format!("invalid log level:[{}]", env_filter.filter),
-                            StatusCode::BAD_REQUEST,
-                        )
-                    }
-                }
-            },
-        )
+async fn log_level_handler(
+    Extension(env_filter_reload_fn): Extension<EnvFilterReloadFn>,
+    Query(env_filter): Query<EnvFilter>,
+) -> impl IntoResponse {
+    match env_filter_reload_fn(&env_filter.filter) {
+        Ok(_) => {
+            info!(filter = env_filter.filter, "setting log level");
+            (
+                axum::http::StatusCode::OK,
+                format!("set log level to:[{}]", env_filter.filter),
+            )
+        }
+        Err(_) => {
+            error!(filter = env_filter.filter, "invalid log level");
+            (
+                axum::http::StatusCode::BAD_REQUEST,
+                format!("invalid log level:[{}]", env_filter.filter),
+            )
+        }
+    }
 }
