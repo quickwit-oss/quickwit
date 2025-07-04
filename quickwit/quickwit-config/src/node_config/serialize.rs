@@ -1373,6 +1373,7 @@ mod tests {
                         tls: None,
                         keep_alive: None,
                     },
+                    websocket_url: None,
                 },
                 ..NodeConfigBuilder::default()
                     .build_and_validate(&HashMap::new())

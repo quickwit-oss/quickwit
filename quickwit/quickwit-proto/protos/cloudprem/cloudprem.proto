@@ -30,6 +30,42 @@ service CloudPremService {
   // These are endpoints to use the capabilities of the underlying quickwit searcher
   rpc RootSearch(quickwit.search.SearchRequest) returns (quickwit.search.SearchResponse);
   rpc RootListTerms(quickwit.search.ListTermsRequest) returns (quickwit.search.ListTermsResponse);
+
+  // Endpoint to send request from the gRPC server to the gRPC client
+  rpc InvertedRequestStream(stream AnyResponse) returns (stream AnyRequest);
+}
+
+message AnyRequest {
+    uint64 req_id = 1;
+    string trace_id = 2;
+
+    oneof request {
+        PingRequest ping = 11;
+        ListRequest list = 12;
+        FetchOneRequest fetch_one = 13;
+        AggregationRequest aggregation = 14;
+        PullClusterMetricsRequest pull_cluster_metrics = 15;
+        SetClusterAddressRequest set_cluster_address = 16;
+        quickwit.search.SearchRequest root_search = 17;
+        quickwit.search.ListTermsRequest root_list_terms = 18;
+    }
+}
+
+message AnyResponse {
+    uint64 req_id = 1;
+    uint32 grpc_code = 2;
+    oneof response {
+        // this is a pseudoresponse returned when an error occured
+        string grpc_message = 10;
+        PingResponse ping = 11;
+        ListResponse list = 12;
+        FetchOneResponse fetch_one = 13;
+        AggregationResponse aggregation = 14;
+        PullClusterMetricsResponse pull_cluster_metrics = 15;
+        SetClusterAddressResponse set_cluster_address = 16;
+        quickwit.search.SearchResponse root_search = 17;
+        quickwit.search.ListTermsResponse root_list_terms = 18;
+    }
 }
 
 message PullClusterMetricsRequest {

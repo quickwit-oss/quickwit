@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
 use itertools::Itertools;
 use quickwit_cluster::{Cluster, ClusterNode};
+use quickwit_common::ServiceStream;
 use quickwit_config::service::QuickwitService;
 use quickwit_proto::ServiceError as _;
 use quickwit_proto::cloudprem::metrics::{Label, MetricFamily};
@@ -374,6 +375,16 @@ impl CloudPremService for CloudPremServiceImpl {
             node_metrics.push(single_node_metrics);
         }
         Ok(PullClusterMetricsResponse { node_metrics })
+    }
+
+    async fn inverted_request_stream(
+        &self,
+        _: ServiceStream<quickwit_proto::cloudprem::AnyResponse>,
+    ) -> Result<
+        ServiceStream<Result<quickwit_proto::cloudprem::AnyRequest, CloudPremError>>,
+        CloudPremError,
+    > {
+        Err(CloudPremError::Unimplemented)
     }
 }
 
