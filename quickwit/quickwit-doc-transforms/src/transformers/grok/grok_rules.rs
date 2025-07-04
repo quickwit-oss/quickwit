@@ -200,15 +200,24 @@ pub(crate) fn build_grok_rules(
     Ok(rules)
 }
 
-/// Normalize grok rules by replacing: %{?> with ?>%{
-/// This is necessary to ensure the rule can be parsed correctly by the grok parser.
-/// The syntax does not allow regex after %{, but it needs to start with IDENTIFIER
+/// Legacy grok rules fix:
+/// Normalize grok rules by replacing: %{?> with %{
+/// This is necessary to ensure the rule can be parsed by the grok parser.
 ///
-/// OP did something similar here (it's unmerged though): https://github.com/DataDog/dd-source/pull/96123/files#diff-dea463ad95c8f1d02e590541078d9b172dcf982f1b4476b9846a1fe8323abde7R184
+/// The syntax does not allow regex after %{, it needs to start with IDENTIFIER
+/// This kind of grammar should not be used in the grok rules, but it is.
+///
+/// The Java Backend ignores errors in the lexer to handle this kind of rules.
+/// https://github.com/DataDog/logs-backend/blob/9b494d3875c917607bdfd460409096673fcef49d/domains/event-platform/libs/processing/processing-parsing/src/main/java/com/fsmatic/shared/parse/grok/GrokInterpreter.java#L51
+///
+/// OP doesn't support this syntax.
+///
+/// NOTE: This is a targeted workaround. Since the grok rules are not validated when being added to
+/// the integrations repositories, other invalid rules may be introduced in the future.
 pub fn normalize_grok_rules(rules: &mut [Rule]) {
     for rule in rules.iter_mut() {
-        // Replace %{?> with ?>%{ to ensure compatibility with the grok parser.
-        rule.rule = rule.rule.replace("%{?>", "?>%{");
+        // Replace %{?> with %{ to fix the invalid legacy grok rules.
+        rule.rule = rule.rule.replace("%{?>", "%{");
     }
 }
 
@@ -459,8 +468,39 @@ pub mod tests {
     }
 
     #[test]
-    // TODO: Some samples are not passing the test.
-    fn test_vrl_grok_parser_mongodb() {
+    // Make sure we can handle the invalid grok syntax in this rule:
+    // %{?>notSpace:db.severity}
+    // (Used in mongodb and some other rules)
+    fn test_legacy_rule_fix() {
+        let grok_rules = json!({
+          "support_rules": [
+            { "name": "_timestamp", "rule": "%{date(\"yyyy-MM-dd'T'HH:mm:ss.SSSZ\"):db.date}" },
+            { "name": "_severity", "rule": "%{?>notSpace:db.severity}" },
+          ],
+          "match_rules": [
+            {
+              "name": "mongo.accepted_connections",
+              "rule": "%{_timestamp} %{_severity}"
+            }
+          ]
+        });
+
+        let grok_rules: LogsProcessingGrokRules = serde_json::from_value(grok_rules).unwrap();
+        let parsed_rules = build_grok_rules(&grok_rules.support_rules, &grok_rules.match_rules)
+            .expect("Failed to parse grok rules");
+
+        let sample = "2016-11-29T16:19:27.663+0000 INFO";
+        let parsed = parse_grok(sample, &parsed_rules).expect("Failed to parse grok");
+        let actual = serde_json::to_value(parsed.parsed).expect("Failed to convert to JSON");
+        assert!(actual.is_object(), "Grok parser should return an object");
+        assert_eq!(actual["db"]["date"], 1480436367663i64);
+        assert_eq!(actual["db"]["severity"], "INFO");
+    }
+
+    #[test]
+    // Make sure the grok parser can parse MongoDB logs (only partially currently)
+    //
+    fn integration_test_vrl_grok_parser_mongodb() {
         let results = r#"[   
         {
             "sample": "2016-11-29T16:19:27.663+0000 [conn118457] command logs.$cmd command: findAndModify { findandmodify: \"alert_events\", query: { date: new Date(1480430820000), scope: \"prod_102\", alertId: ObjectId('5624ca7de8e3f50a009a1a3a'), type: \"open\", breached: \"/cart/select-payment-method.html\" }, sort: { _id: 1 }, new: 1, remove: 0, upsert: 1, update: { $set: { date: new Date(1480430820000), scope: \"prod_102\", alertId: ObjectId('5624ca7de8e3f50a009a1a3a'), type: \"open\", breached: \"/cart/select-payment-method.html\", value: 5, computeDate: new Date(1480436348272) } } } keyUpdates:0 numYields:0 locks(micros) w:245033 reslen:340 245ms",

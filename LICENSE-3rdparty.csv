@@ -599,7 +599,6 @@ tokio-util,https://github.com/tokio-rs/tokio,MIT,Tokio Contributors <team@tokio.
 toml,https://github.com/toml-rs/toml,MIT OR Apache-2.0,Alex Crichton <alex@alexcrichton.com>
 toml_datetime,https://github.com/toml-rs/toml,MIT OR Apache-2.0,The toml_datetime Authors
 toml_edit,https://github.com/toml-rs/toml,MIT OR Apache-2.0,"Andronik Ordian <write@reusable.software>, Ed Page <eopage@gmail.com>"
-toml_edit,https://github.com/toml-rs/toml,MIT OR Apache-2.0,The toml_edit Authors
 tonic,https://github.com/hyperium/tonic,MIT,Lucio Franco <luciofranco14@gmail.com>
 tonic-build,https://github.com/hyperium/tonic,MIT,Lucio Franco <luciofranco14@gmail.com>
 tonic-health,https://github.com/hyperium/tonic,MIT,James Nugent <james@jen20.com>
