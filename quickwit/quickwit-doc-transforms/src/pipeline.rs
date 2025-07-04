@@ -21,14 +21,14 @@ use vrl::datadog_filter::Matcher;
 
 use crate::error::PipelineError;
 use crate::filter::build_vrl_matcher;
-use crate::path_access::parse_path;
+use crate::path_access::{ParsedPath, parse_path};
 use crate::processed_log::ProcessedLog;
 use crate::transformers::grok_auto_step::build_grok_parser_auto_step;
 use crate::transformers::grok_rules::LogsProcessingGrokRules;
 use crate::transformers::{
     AttributeRemapStep, CategoryProcessorMapping, CategoryProcessorStep, CompiledTemplateString,
     CoreStringAttr, CoreStringAttrRemapStep, DateRemapStep, FilteredStep, StatusRemapStep,
-    StringBuilderStep, build_grok_parser_step,
+    StringBuilderStep, UserAgentParserStep, build_grok_parser_step,
 };
 
 /// Trait for steps in the pipeline. Each step mutates a `ProcessedLog`.
@@ -97,7 +97,23 @@ pub enum PipelineStepConfig {
     #[serde(rename = "url-parser")]
     UrlParser {},
     #[serde(rename = "user-agent-parser")]
-    UserAgentParser {},
+    UserAgentParser {
+        #[serde(flatten)]
+        common: CommonConfig,
+        /// Defaults to `http.useragent`
+        sources: Option<Vec<String>>,
+        /// Defaults to `http.useragent_details`
+        target: Option<String>,
+        #[serde(default)]
+        #[serde(alias = "encoded")]
+        /// Need to URL decode the source before parsing.
+        is_encoded: bool,
+        #[serde(default)]
+        #[serde(alias = "combineVersionDetails")]
+        /// Is this used? It's not part of the official API and can't be set in the UI.
+        /// It is sent to the UI though.
+        combine_version_details: bool,
+    },
     #[serde(rename = "geo-ip-parser")]
     GeoIpParser {},
     #[serde(rename = "category-processor")]
@@ -275,9 +291,9 @@ impl PipelineStepConfig {
             | PipelineStepConfig::MessageRemapper { .. }
             | PipelineStepConfig::TraceIdRemapper { .. }
             | PipelineStepConfig::SpanIdRemapper { .. }
+            | PipelineStepConfig::UserAgentParser { .. }
             | PipelineStepConfig::ServiceRemapper { .. } => true,
-            PipelineStepConfig::UrlParser {}
-            | PipelineStepConfig::UserAgentParser {}
+            PipelineStepConfig::UrlParser { .. }
             | PipelineStepConfig::GeoIpParser {}
             | PipelineStepConfig::ArithmeticProcessor {}
             | PipelineStepConfig::LookupProcessor {} => false,
@@ -471,7 +487,8 @@ pub fn build_step(cfg: &PipelineStepConfig) -> Result<Box<dyn PipelineStep>, Pip
         }
         PipelineStepConfig::StatusRemapper { common, sources } => {
             let filter = build_vrl_matcher_from_config(common)?;
-            let sources = sources.iter().map(AsRef::as_ref).map(parse_path).collect();
+            let sources: Vec<ParsedPath> =
+                sources.iter().map(AsRef::as_ref).map(parse_path).collect();
             let remap = StatusRemapStep { sources };
             Ok(Box::new(FilteredStep::new(filter, remap)))
         }
@@ -527,6 +544,30 @@ pub fn build_step(cfg: &PipelineStepConfig) -> Result<Box<dyn PipelineStep>, Pip
         }
         PipelineStepConfig::ServiceRemapper { common, sources } => {
             string_core_attr_remapper(common, sources, CoreStringAttr::Service)
+        }
+        PipelineStepConfig::UserAgentParser {
+            common,
+            sources,
+            target,
+            is_encoded,
+            combine_version_details,
+        } => {
+            let filter = build_vrl_matcher_from_config(common)?;
+            let sources = sources
+                .as_ref()
+                .map(|s| s.iter().map(AsRef::as_ref).map(parse_path).collect())
+                .unwrap_or_else(|| vec![parse_path("http.useragent")]);
+            let target = target
+                .as_ref()
+                .map(|t| parse_path(t))
+                .unwrap_or_else(|| parse_path("http.useragent_details"));
+            let step = UserAgentParserStep {
+                sources,
+                to_path: target,
+                is_encoded: *is_encoded,
+                combine_version_details: *combine_version_details,
+            };
+            Ok(Box::new(FilteredStep::new(filter, step)))
         }
         _ => {
             let val = serde_json::to_value(cfg).map_err(|e| PipelineError::Other {
