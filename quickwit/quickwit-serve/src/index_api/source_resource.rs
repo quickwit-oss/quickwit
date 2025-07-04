@@ -28,28 +28,6 @@ use quickwit_proto::metastore::{
 use quickwit_proto::types::{IndexId, IndexUid, SourceId};
 use serde::Deserialize;
 use tracing::info;
-use warp::{Filter, Rejection};
-
-use super::rest_handler::{json_body, log_failure};
-use crate::format::{extract_config_format, extract_format_from_qs};
-use crate::rest_api_response::into_rest_api_response;
-use crate::with_arg;
-
-pub fn create_source_handler(
-    index_service: IndexService,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path!("indexes" / String / "sources")
-        .and(warp::post())
-        .and(extract_config_format())
-        .and(warp::body::content_length_limit(1024 * 1024))
-        .and(warp::filters::body::bytes())
-        .and(with_arg(index_service))
-        .then(create_source)
-        .map(log_failure("failed to create source"))
-        .and(extract_format_from_qs())
-        .map(into_rest_api_response)
-        .boxed()
-}
 
 #[allow(clippy::result_large_err)]
 fn check_source_type(source_params: &SourceParams) -> Result<(), IndexServiceError> {
@@ -108,27 +86,6 @@ pub struct UpdateQueryParams {
     /// Create the source if it doesn't exist yet
     #[serde(default)]
     pub create: bool,
-}
-
-fn update_source_qp() -> impl Filter<Extract = (UpdateQueryParams,), Error = Rejection> + Clone {
-    serde_qs::warp::query::<UpdateQueryParams>(serde_qs::Config::default())
-}
-
-pub fn update_source_handler(
-    index_service: IndexService,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path!("indexes" / String / "sources" / String)
-        .and(warp::put())
-        .and(extract_config_format())
-        .and(update_source_qp())
-        .and(warp::body::content_length_limit(1024 * 1024))
-        .and(warp::filters::body::bytes())
-        .and(with_arg(index_service))
-        .then(update_source)
-        .map(log_failure("failed to update source"))
-        .and(extract_format_from_qs())
-        .map(into_rest_api_response)
-        .boxed()
 }
 
 #[utoipa::path(
@@ -198,18 +155,6 @@ pub async fn update_source(
         .await
 }
 
-pub fn get_source_handler(
-    metastore: MetastoreServiceClient,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path!("indexes" / String / "sources" / String)
-        .and(warp::get())
-        .and(with_arg(metastore))
-        .then(get_source)
-        .and(extract_format_from_qs())
-        .map(into_rest_api_response)
-        .boxed()
-}
-
 pub async fn get_source(
     index_id: IndexId,
     source_id: SourceId,
@@ -230,18 +175,6 @@ pub async fn get_source(
             })
         })?;
     Ok(source_config)
-}
-
-pub fn reset_source_checkpoint_handler(
-    metastore: MetastoreServiceClient,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path!("indexes" / String / "sources" / String / "reset-checkpoint")
-        .and(warp::put())
-        .and(with_arg(metastore))
-        .then(reset_source_checkpoint)
-        .and(extract_format_from_qs())
-        .map(into_rest_api_response)
-        .boxed()
 }
 
 #[utoipa::path(
@@ -277,19 +210,6 @@ pub async fn reset_source_checkpoint(
         .reset_source_checkpoint(reset_source_checkpoint_request)
         .await?;
     Ok(())
-}
-
-pub fn toggle_source_handler(
-    metastore: MetastoreServiceClient,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path!("indexes" / String / "sources" / String / "toggle")
-        .and(warp::put())
-        .and(json_body())
-        .and(with_arg(metastore))
-        .then(toggle_source)
-        .and(extract_format_from_qs())
-        .map(into_rest_api_response)
-        .boxed()
 }
 
 #[derive(Deserialize, utoipa::ToSchema)]
@@ -340,18 +260,6 @@ pub async fn toggle_source(
     Ok(())
 }
 
-pub fn delete_source_handler(
-    metastore: MetastoreServiceClient,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path!("indexes" / String / "sources" / String)
-        .and(warp::delete())
-        .and(with_arg(metastore))
-        .then(delete_source)
-        .and(extract_format_from_qs())
-        .map(into_rest_api_response)
-        .boxed()
-}
-
 #[utoipa::path(
     delete,
     tag = "Sources",
@@ -389,18 +297,6 @@ pub async fn delete_source(
     };
     metastore.delete_source(delete_source_request).await?;
     Ok(())
-}
-
-pub fn get_source_shards_handler(
-    metastore: MetastoreServiceClient,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path!("indexes" / String / "sources" / String / "shards")
-        .and(warp::get())
-        .and(with_arg(metastore))
-        .then(get_source_shards)
-        .and(extract_format_from_qs())
-        .map(into_rest_api_response)
-        .boxed()
 }
 
 pub async fn get_source_shards(

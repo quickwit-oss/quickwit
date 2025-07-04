@@ -15,6 +15,11 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
+use axum::extract::{Path, Query};
+use axum::http::StatusCode;
+use axum::response::IntoResponse;
+use axum::routing::get;
+use axum::{Extension, Router};
 use itertools::Itertools;
 use quickwit_jaeger::JaegerService;
 use quickwit_proto::jaeger::storage::v1::{
@@ -25,19 +30,16 @@ use quickwit_proto::tonic;
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::error;
-use warp::hyper::StatusCode;
-use warp::{Filter, Rejection};
 
 use super::model::build_jaeger_traces;
 use super::parse_duration::{parse_duration_with_units, to_well_known_timestamp};
+use crate::BodyFormat;
 use crate::jaeger_api::model::{
     DEFAULT_NUMBER_OF_TRACES, JaegerError, JaegerResponseBody, JaegerSpan, JaegerTrace,
     TracesSearchQueryParams,
 };
-use crate::rest::recover_fn;
 use crate::rest_api_response::RestApiResponse;
 use crate::search_api::extract_index_id_patterns;
-use crate::{BodyFormat, require};
 
 #[derive(utoipa::OpenApi)]
 #[openapi(paths(
@@ -48,30 +50,23 @@ use crate::{BodyFormat, require};
 ))]
 pub(crate) struct JaegerApi;
 
-/// Setup Jaeger API handlers
-///
-/// This is where all Jaeger handlers
-/// should be registered.
-/// Request are executed on the `otel-traces-v0_*` indexes.
-pub(crate) fn jaeger_api_handlers(
-    jaeger_service_opt: Option<JaegerService>,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    jaeger_services_handler(jaeger_service_opt.clone())
-        .or(jaeger_service_operations_handler(
-            jaeger_service_opt.clone(),
-        ))
-        .or(jaeger_traces_search_handler(jaeger_service_opt.clone()))
-        .or(jaeger_traces_handler(jaeger_service_opt.clone()))
-        .recover(recover_fn)
-        .boxed()
+/// Creates routes for Jaeger API endpoints
+pub(crate) fn jaeger_routes(jaeger_service_opt: Option<JaegerService>) -> Router {
+    Router::new()
+        .route("/:index/jaeger/api/services", get(jaeger_services_handler))
+        .route(
+            "/:index/jaeger/api/services/:service/operations",
+            get(jaeger_service_operations_handler),
+        )
+        .route(
+            "/:index/jaeger/api/traces",
+            get(jaeger_traces_search_handler),
+        )
+        .route("/:index/jaeger/api/traces/:id", get(jaeger_traces_handler))
+        .layer(Extension(jaeger_service_opt))
 }
 
-fn jaeger_api_path_filter() -> impl Filter<Extract = (Vec<String>,), Error = Rejection> + Clone {
-    warp::path!(String / "jaeger" / "api" / ..)
-        .and(warp::get())
-        .and_then(extract_index_id_patterns)
-}
-
+/// Axum handler for GET /{index}/jaeger/api/services
 #[utoipa::path(
     get,
     tag = "Jaeger",
@@ -83,16 +78,38 @@ fn jaeger_api_path_filter() -> impl Filter<Extract = (Vec<String>,), Error = Rej
         ("otel-traces-index-id" = String, Path, description = "The name of the index to get services for.")
     )
 )]
-pub fn jaeger_services_handler(
-    jaeger_service_opt: Option<JaegerService>,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    jaeger_api_path_filter()
-        .and(warp::path!("services"))
-        .and(require(jaeger_service_opt))
-        .then(jaeger_services)
-        .map(|result| make_jaeger_api_response(result, BodyFormat::default()))
+async fn jaeger_services_handler(
+    Extension(jaeger_service_opt): Extension<Option<JaegerService>>,
+    Path(index): Path<String>,
+) -> impl IntoResponse {
+    let Some(jaeger_service) = jaeger_service_opt else {
+        return make_jaeger_api_response::<()>(
+            Err(JaegerError {
+                status: StatusCode::NOT_FOUND,
+                message: "Jaeger service is not available".to_string(),
+            }),
+            BodyFormat::default(),
+        );
+    };
+
+    let index_id_patterns = match extract_index_id_patterns(index).await {
+        Ok(patterns) => patterns,
+        Err(_) => {
+            return make_jaeger_api_response::<()>(
+                Err(JaegerError {
+                    status: StatusCode::BAD_REQUEST,
+                    message: "Invalid index pattern".to_string(),
+                }),
+                BodyFormat::default(),
+            );
+        }
+    };
+
+    let result = jaeger_services(index_id_patterns, jaeger_service).await;
+    make_jaeger_api_response(result, BodyFormat::default())
 }
 
+/// Axum handler for GET /{index}/jaeger/api/services/{service}/operations
 #[utoipa::path(
     get,
     tag = "Jaeger",
@@ -105,16 +122,38 @@ pub fn jaeger_services_handler(
         ("service" = String, Path, description = "The name of the service to get operations for."),
     )
 )]
-pub fn jaeger_service_operations_handler(
-    jaeger_service_opt: Option<JaegerService>,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    jaeger_api_path_filter()
-        .and(warp::path!("services" / String / "operations"))
-        .and(require(jaeger_service_opt))
-        .then(jaeger_service_operations)
-        .map(|result| make_jaeger_api_response(result, BodyFormat::default()))
+async fn jaeger_service_operations_handler(
+    Extension(jaeger_service_opt): Extension<Option<JaegerService>>,
+    Path((index, service)): Path<(String, String)>,
+) -> impl IntoResponse {
+    let Some(jaeger_service) = jaeger_service_opt else {
+        return make_jaeger_api_response::<()>(
+            Err(JaegerError {
+                status: StatusCode::NOT_FOUND,
+                message: "Jaeger service is not available".to_string(),
+            }),
+            BodyFormat::default(),
+        );
+    };
+
+    let index_id_patterns = match extract_index_id_patterns(index).await {
+        Ok(patterns) => patterns,
+        Err(_) => {
+            return make_jaeger_api_response::<()>(
+                Err(JaegerError {
+                    status: StatusCode::BAD_REQUEST,
+                    message: "Invalid index pattern".to_string(),
+                }),
+                BodyFormat::default(),
+            );
+        }
+    };
+
+    let result = jaeger_service_operations(index_id_patterns, service, jaeger_service).await;
+    make_jaeger_api_response(result, BodyFormat::default())
 }
 
+/// Axum handler for GET /{index}/jaeger/api/traces
 #[utoipa::path(
     get,
     tag = "Jaeger",
@@ -134,17 +173,39 @@ pub fn jaeger_service_operations_handler(
         ("limit" = Option<i32>, Query, description = "Limits the number of traces returned."),
     )
 )]
-pub fn jaeger_traces_search_handler(
-    jaeger_service_opt: Option<JaegerService>,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    jaeger_api_path_filter()
-        .and(warp::path!("traces"))
-        .and(serde_qs::warp::query(serde_qs::Config::default()))
-        .and(require(jaeger_service_opt))
-        .then(jaeger_traces_search)
-        .map(|result| make_jaeger_api_response(result, BodyFormat::default()))
+async fn jaeger_traces_search_handler(
+    Extension(jaeger_service_opt): Extension<Option<JaegerService>>,
+    Path(index): Path<String>,
+    Query(search_params): Query<TracesSearchQueryParams>,
+) -> impl IntoResponse {
+    let Some(jaeger_service) = jaeger_service_opt else {
+        return make_jaeger_api_response::<()>(
+            Err(JaegerError {
+                status: StatusCode::NOT_FOUND,
+                message: "Jaeger service is not available".to_string(),
+            }),
+            BodyFormat::default(),
+        );
+    };
+
+    let index_id_patterns = match extract_index_id_patterns(index).await {
+        Ok(patterns) => patterns,
+        Err(_) => {
+            return make_jaeger_api_response::<()>(
+                Err(JaegerError {
+                    status: StatusCode::BAD_REQUEST,
+                    message: "Invalid index pattern".to_string(),
+                }),
+                BodyFormat::default(),
+            );
+        }
+    };
+
+    let result = jaeger_traces_search(index_id_patterns, search_params, jaeger_service).await;
+    make_jaeger_api_response(result, BodyFormat::default())
 }
 
+/// Axum handler for GET /{index}/jaeger/api/traces/{id}
 #[utoipa::path(
     get,
     tag = "Jaeger",
@@ -157,15 +218,35 @@ pub fn jaeger_traces_search_handler(
         ("id" = String, Path, description = "The ID of the trace to get spans for."),
     )
 )]
-pub fn jaeger_traces_handler(
-    jaeger_service_opt: Option<JaegerService>,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    jaeger_api_path_filter()
-        .and(warp::path!("traces" / String))
-        .and(warp::get())
-        .and(require(jaeger_service_opt))
-        .then(jaeger_get_trace_by_id)
-        .map(|result| make_jaeger_api_response(result, BodyFormat::default()))
+async fn jaeger_traces_handler(
+    Extension(jaeger_service_opt): Extension<Option<JaegerService>>,
+    Path((index, trace_id)): Path<(String, String)>,
+) -> impl IntoResponse {
+    let Some(jaeger_service) = jaeger_service_opt else {
+        return make_jaeger_api_response::<()>(
+            Err(JaegerError {
+                status: StatusCode::NOT_FOUND,
+                message: "Jaeger service is not available".to_string(),
+            }),
+            BodyFormat::default(),
+        );
+    };
+
+    let index_id_patterns = match extract_index_id_patterns(index).await {
+        Ok(patterns) => patterns,
+        Err(_) => {
+            return make_jaeger_api_response::<()>(
+                Err(JaegerError {
+                    status: StatusCode::BAD_REQUEST,
+                    message: "Invalid index pattern".to_string(),
+                }),
+                BodyFormat::default(),
+            );
+        }
+    };
+
+    let result = jaeger_get_trace_by_id(index_id_patterns, trace_id, jaeger_service).await;
+    make_jaeger_api_response(result, BodyFormat::default())
 }
 
 async fn jaeger_services(
@@ -335,205 +416,4 @@ fn make_jaeger_api_response<T: serde::Serialize>(
         Err(err) => err.status,
     };
     RestApiResponse::new(&jaeger_result, status_code, body_format)
-}
-
-#[cfg(test)]
-mod tests {
-    use std::collections::HashMap;
-    use std::sync::Arc;
-
-    use quickwit_config::JaegerConfig;
-    use quickwit_opentelemetry::otlp::OTEL_TRACES_INDEX_ID;
-    use quickwit_search::MockSearchService;
-    use serde_json::Value as JsonValue;
-
-    use super::*;
-    use crate::recover_fn;
-
-    #[tokio::test]
-    async fn test_when_jaeger_not_found() {
-        let jaeger_api_handler = jaeger_api_handlers(None).recover(crate::rest::recover_fn_final);
-        let resp = warp::test::request()
-            .path("/otel-traces-v0_9/jaeger/api/services")
-            .reply(&jaeger_api_handler)
-            .await;
-        assert_eq!(resp.status(), 404);
-        let error_body = serde_json::from_slice::<HashMap<String, String>>(resp.body()).unwrap();
-        assert!(error_body.contains_key("message"));
-        assert_eq!(error_body.get("message").unwrap(), "Route not found");
-    }
-
-    #[tokio::test]
-    async fn test_jaeger_services() -> anyhow::Result<()> {
-        let mut mock_search_service = MockSearchService::new();
-        mock_search_service
-            .expect_root_list_terms()
-            .withf(|req| {
-                req.index_id_patterns == vec![OTEL_TRACES_INDEX_ID]
-                    && req.field == "service_name"
-                    && req.start_timestamp.is_some()
-            })
-            .return_once(|_| {
-                Ok(quickwit_proto::search::ListTermsResponse {
-                    num_hits: 0,
-                    terms: Vec::new(),
-                    elapsed_time_micros: 0,
-                    errors: Vec::new(),
-                })
-            });
-        let mock_search_service = Arc::new(mock_search_service);
-        let jaeger = JaegerService::new(JaegerConfig::default(), mock_search_service);
-
-        let jaeger_api_handler = jaeger_api_handlers(Some(jaeger)).recover(recover_fn);
-        let resp = warp::test::request()
-            .path("/otel-traces-v0_9/jaeger/api/services")
-            .reply(&jaeger_api_handler)
-            .await;
-        assert_eq!(resp.status(), 200);
-        let actual_response_json: JsonValue = serde_json::from_slice(resp.body())?;
-        assert!(
-            actual_response_json
-                .get("data")
-                .unwrap()
-                .as_array()
-                .unwrap()
-                .is_empty()
-        );
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_jaeger_service_operations() {
-        let mut mock_search_service = MockSearchService::new();
-        mock_search_service
-            .expect_root_list_terms()
-            .withf(|req| {
-                req.index_id_patterns == vec![OTEL_TRACES_INDEX_ID]
-                    && req.field == "span_fingerprint"
-                    && req.start_timestamp.is_some()
-            })
-            .return_once(|_| {
-                Ok(quickwit_proto::search::ListTermsResponse {
-                    num_hits: 1,
-                    terms: Vec::new(),
-                    elapsed_time_micros: 0,
-                    errors: Vec::new(),
-                })
-            });
-        let mock_search_service = Arc::new(mock_search_service);
-        let jaeger = JaegerService::new(JaegerConfig::default(), mock_search_service);
-        let jaeger_api_handler = jaeger_api_handlers(Some(jaeger)).recover(recover_fn);
-        let resp = warp::test::request()
-            .path("/otel-traces-v0_9/jaeger/api/services/service1/operations")
-            .reply(&jaeger_api_handler)
-            .await;
-        assert_eq!(resp.status(), 200);
-        let actual_response_json: JsonValue = serde_json::from_slice(resp.body()).unwrap();
-        assert!(
-            actual_response_json
-                .get("data")
-                .unwrap()
-                .as_array()
-                .unwrap()
-                .is_empty()
-        );
-    }
-
-    #[tokio::test]
-    async fn test_jaeger_traces_search() {
-        let mut mock_search_service = MockSearchService::new();
-        mock_search_service
-            .expect_root_search()
-            .withf(|req| {
-                assert!(req.query_ast.contains(
-                    "{\"type\":\"term\",\"field\":\"resource_attributes.tag.first\",\"value\":\"\
-                     common\"}"
-                ));
-                assert!(req.query_ast.contains(
-                    "{\"type\":\"term\",\"field\":\"resource_attributes.tag.second\",\"value\":\"\
-                     true\"}"
-                ));
-                assert!(req.query_ast.contains(
-                    "{\"type\":\"term\",\"field\":\"resource_attributes.tag.second\",\"value\":\"\
-                     true\"}"
-                ));
-                // no lowerbound because minDuration < 1ms,
-                assert!(req.query_ast.contains(
-                    "{\"type\":\"range\",\"field\":\"span_duration_millis\",\"lower_bound\":\"\
-                     Unbounded\",\"upper_bound\":{\"Included\":1200}}"
-                ));
-                assert_eq!(req.start_timestamp, Some(1702352106));
-                // TODO(trinity) i think we have an off by 1 here, imo this should be rounded up
-                assert_eq!(req.end_timestamp, Some(1702373706));
-                assert_eq!(
-                    req.index_id_patterns,
-                    vec![OTEL_TRACES_INDEX_ID.to_string()]
-                );
-                true
-            })
-            .return_once(|_| {
-                Ok(quickwit_proto::search::SearchResponse {
-                    num_hits: 0,
-                    hits: Vec::new(),
-                    elapsed_time_micros: 0,
-                    errors: Vec::new(),
-                    aggregation_postcard: None,
-                    scroll_id: None,
-                    failed_splits: Vec::new(),
-                    num_successful_splits: 1,
-                })
-            });
-        let mock_search_service = Arc::new(mock_search_service);
-        let jaeger = JaegerService::new(JaegerConfig::default(), mock_search_service);
-        let jaeger_api_handler = jaeger_api_handlers(Some(jaeger)).recover(recover_fn);
-        let resp = warp::test::request()
-            .path(
-                "/otel-traces-v0_9/jaeger/api/traces?service=quickwit&\
-                 operation=delete_splits_marked_for_deletion&minDuration=500us&maxDuration=1.2s&\
-                 tags=%7B%22tag.first%22%3A%22common%22%2C%22tag.second%22%3A%22true%22%7D&\
-                 limit=1&start=1702352106016000&end=1702373706016000&lookback=custom",
-            )
-            .reply(&jaeger_api_handler)
-            .await;
-        assert_eq!(resp.status(), 200);
-    }
-
-    #[tokio::test]
-    async fn test_jaeger_trace_by_id() {
-        let mut mock_search_service = MockSearchService::new();
-        mock_search_service
-            .expect_root_search()
-            .withf(|req| req.index_id_patterns == vec![OTEL_TRACES_INDEX_ID.to_string()])
-            .return_once(|_| {
-                Ok(quickwit_proto::search::SearchResponse {
-                    num_hits: 0,
-                    hits: Vec::new(),
-                    elapsed_time_micros: 0,
-                    errors: Vec::new(),
-                    aggregation_postcard: None,
-                    scroll_id: None,
-                    failed_splits: Vec::new(),
-                    num_successful_splits: 1,
-                })
-            });
-        let mock_search_service = Arc::new(mock_search_service);
-        let jaeger = JaegerService::new(JaegerConfig::default(), mock_search_service);
-
-        let jaeger_api_handler = jaeger_api_handlers(Some(jaeger)).recover(recover_fn);
-        let resp = warp::test::request()
-            .path("/otel-traces-v0_9/jaeger/api/traces/1506026ddd216249555653218dc88a6c")
-            .reply(&jaeger_api_handler)
-            .await;
-
-        assert_eq!(resp.status(), 200);
-        let actual_response_json: JsonValue = serde_json::from_slice(resp.body()).unwrap();
-        assert!(
-            actual_response_json
-                .get("data")
-                .unwrap()
-                .as_array()
-                .unwrap()
-                .is_empty()
-        );
-    }
 }

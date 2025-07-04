@@ -17,6 +17,10 @@ use std::str::from_utf8;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use axum::extract::{Extension, FromRequestParts, Path, Query};
+use axum::http::StatusCode;
+use axum::http::request::Parts;
+use axum::response::{IntoResponse, Json};
 use bytes::Bytes;
 use elasticsearch_dsl::search::Hit as ElasticHit;
 use elasticsearch_dsl::{HitsMetadata, ShardStatistics, Source, TotalHits, TotalHitsRelation};
@@ -40,130 +44,136 @@ use quickwit_search::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use warp::hyper::StatusCode;
-use warp::reply::with_status;
-use warp::{Filter, Rejection};
 
-use super::filter::{
-    elastic_cat_indices_filter, elastic_cluster_health_filter, elastic_cluster_info_filter,
-    elastic_delete_index_filter, elastic_field_capabilities_filter,
-    elastic_index_cat_indices_filter, elastic_index_count_filter,
-    elastic_index_field_capabilities_filter, elastic_index_search_filter,
-    elastic_index_stats_filter, elastic_multi_search_filter, elastic_resolve_index_filter,
-    elastic_scroll_filter, elastic_stats_filter, elasticsearch_filter,
-};
+use super::TrackTotalHits;
 use super::model::{
     CatIndexQueryParams, DeleteQueryParams, ElasticsearchCatIndexResponse, ElasticsearchError,
     ElasticsearchResolveIndexEntryResponse, ElasticsearchResolveIndexResponse,
-    ElasticsearchResponse, ElasticsearchStatsResponse, FieldCapabilityQueryParams,
-    FieldCapabilityRequestBody, FieldCapabilityResponse, MultiSearchHeader, MultiSearchQueryParams,
-    MultiSearchResponse, MultiSearchSingleResponse, ScrollQueryParams, SearchBody,
-    SearchQueryParams, SearchQueryParamsCount, StatsResponseEntry,
+    ElasticsearchResponse, ElasticsearchResult, ElasticsearchStatsResponse,
+    FieldCapabilityQueryParams, FieldCapabilityRequestBody, FieldCapabilityResponse,
+    MultiSearchHeader, MultiSearchQueryParams, MultiSearchResponse, MultiSearchSingleResponse,
+    ScrollQueryParams, SearchBody, SearchQueryParams, SearchQueryParamsCount, StatsResponseEntry,
     build_list_field_request_for_es_api, convert_to_es_field_capabilities_response,
 };
-use super::{TrackTotalHits, make_elastic_api_response};
-use crate::format::BodyFormat;
-use crate::rest::recover_fn;
-use crate::rest_api_response::{RestApiError, RestApiResponse};
-use crate::{BuildInfo, with_arg};
+use crate::BuildInfo;
+
+/// Custom IndexPatterns extractor for Elasticsearch API that works with {index} path parameters
+#[derive(Debug, Clone)]
+pub struct ElasticIndexPatterns(pub Vec<String>);
+
+#[axum::async_trait]
+impl<S> FromRequestParts<S> for ElasticIndexPatterns
+where S: Send + Sync
+{
+    type Rejection = axum::response::Response;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        // Extract the index path parameter
+        let Path(index): Path<String> =
+            Path::from_request_parts(parts, state).await.map_err(|_| {
+                (StatusCode::BAD_REQUEST, "Missing index parameter in path").into_response()
+            })?;
+
+        // Simple validation and parsing of index patterns
+        use percent_encoding::percent_decode_str;
+        use quickwit_config::validate_index_id_pattern;
+
+        let percent_decoded_index = percent_decode_str(&index).decode_utf8().map_err(|_| {
+            (
+                StatusCode::BAD_REQUEST,
+                "Failed to percent decode index parameter",
+            )
+                .into_response()
+        })?;
+
+        let mut index_id_patterns = Vec::new();
+        for index_id_pattern in percent_decoded_index.split(',') {
+            validate_index_id_pattern(index_id_pattern, true).map_err(|_| {
+                (StatusCode::BAD_REQUEST, "Invalid index ID pattern").into_response()
+            })?;
+            index_id_patterns.push(index_id_pattern.to_string());
+        }
+
+        if index_id_patterns.is_empty() {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                "At least one index pattern is required",
+            )
+                .into_response());
+        }
+
+        Ok(ElasticIndexPatterns(index_id_patterns))
+    }
+}
 
 /// Elastic compatible cluster info handler.
-pub fn es_compat_cluster_info_handler(
-    node_config: Arc<NodeConfig>,
-    build_info: &'static BuildInfo,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    elastic_cluster_info_filter()
-        .and(with_arg(node_config.clone()))
-        .and(with_arg(build_info))
-        .then(
-            |config: Arc<NodeConfig>, build_info: &'static BuildInfo| async move {
-                warp::reply::json(&json!({
-                    "name" : config.node_id,
-                    "cluster_name" : config.cluster_id,
-                    "version" : {
-                        "distribution" : "quickwit",
-                        "number" : build_info.version,
-                        "build_hash" : build_info.commit_hash,
-                        "build_date" : build_info.build_date,
-                    }
-                }))
-            },
-        )
-        .boxed()
+pub async fn es_compat_cluster_info_handler(
+    Extension(node_config): Extension<Arc<NodeConfig>>,
+) -> impl IntoResponse {
+    let build_info = BuildInfo::get();
+    Json(json!({
+        "name" : node_config.node_id,
+        "cluster_name" : node_config.cluster_id,
+        "version" : {
+            "distribution" : "quickwit",
+            "number" : build_info.version,
+            "build_hash" : build_info.commit_hash,
+            "build_date" : build_info.build_date,
+        }
+    }))
 }
 
 /// GET or POST _elastic/_search
-pub fn es_compat_search_handler(
-    _search_service: Arc<dyn SearchService>,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    elasticsearch_filter()
-        .then(|_params: SearchQueryParams| async move {
-            // TODO
-            let api_error = RestApiError {
-                status_code: StatusCode::NOT_IMPLEMENTED,
-                message: "_elastic/_search is not supported yet. Please try the index search \
-                          endpoint (_elastic/{index}/search)"
-                    .to_string(),
-            };
-            RestApiResponse::new::<(), _>(
-                &Err(api_error),
-                StatusCode::NOT_IMPLEMENTED,
-                BodyFormat::default(),
-            )
-        })
-        .recover(recover_fn)
+pub async fn es_compat_search_handler(
+    Query(_params): Query<SearchQueryParams>,
+) -> impl IntoResponse {
+    let error_response = json!({
+        "error": {
+            "type": "not_implemented",
+            "reason": "_elastic/_search is not supported yet. Please try the index search endpoint (_elastic/{index}/search)"
+        }
+    });
+    (StatusCode::NOT_IMPLEMENTED, Json(error_response))
 }
 
 /// GET or POST _elastic/{index}/_field_caps
-pub fn es_compat_index_field_capabilities_handler(
-    search_service: Arc<dyn SearchService>,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    elastic_index_field_capabilities_filter()
-        .or(elastic_field_capabilities_filter())
-        .unify()
-        .and(with_arg(search_service))
-        .then(es_compat_index_field_capabilities)
-        .map(|result| make_elastic_api_response(result, BodyFormat::default()))
-        .recover(recover_fn)
+pub async fn es_compat_index_field_capabilities_handler(
+    ElasticIndexPatterns(index_id_patterns): ElasticIndexPatterns,
+    Extension(search_service): Extension<Arc<dyn SearchService>>,
+    Query(search_params): Query<FieldCapabilityQueryParams>,
+    Json(search_body): Json<FieldCapabilityRequestBody>,
+) -> ElasticsearchResult<FieldCapabilityResponse> {
+    es_compat_index_field_capabilities(
+        index_id_patterns,
+        search_params,
+        search_body,
+        search_service,
+    )
+    .await
+    .into()
 }
 
-/// DELETE _elastic/{index}
-pub fn es_compat_delete_index_handler(
-    index_service: IndexService,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    elastic_delete_index_filter()
-        .and(with_arg(index_service))
-        .then(es_compat_delete_index)
-        .map(|result| make_elastic_api_response(result, BodyFormat::default()))
-        .boxed()
+/// DELETE _elastic/{index}.
+pub async fn es_compat_delete_index_handler(
+    ElasticIndexPatterns(index_id_patterns): ElasticIndexPatterns,
+    Query(query_params): Query<DeleteQueryParams>,
+    Extension(index_service): Extension<IndexService>,
+) -> ElasticsearchResult<ElasticsearchDeleteResponse> {
+    es_compat_delete_index(index_id_patterns, query_params, index_service)
+        .await
+        .into()
 }
 
 /// GET _elastic/_stats
-pub fn es_compat_stats_handler(
-    metastore_service: MetastoreServiceClient,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    elastic_stats_filter()
-        .and(with_arg(metastore_service))
-        .then(es_compat_stats)
-        .map(|result| make_elastic_api_response(result, BodyFormat::default()))
-        .recover(recover_fn)
-        .boxed()
+pub async fn es_compat_stats_handler(
+    Extension(metastore): Extension<MetastoreServiceClient>,
+) -> ElasticsearchResult<ElasticsearchStatsResponse> {
+    es_compat_stats(metastore).await.into()
 }
 
 /// Check if the parameter is a known query parameter to reject
 fn is_unsupported_qp(param: &str) -> bool {
     ["wait_for_status", "timeout", "level"].contains(&param)
-}
-
-/// GET _elastic/_cluster/health
-pub fn es_compat_cluster_health_handler(
-    cluster: Cluster,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    elastic_cluster_health_filter()
-        .and(warp::query::<HashMap<String, String>>())
-        .and(with_arg(cluster))
-        .then(es_compat_cluster_health)
-        .recover(recover_fn)
 }
 
 #[utoipa::path(
@@ -176,130 +186,136 @@ pub fn es_compat_cluster_health_handler(
     ),
 )]
 /// Get Node Liveliness
-async fn es_compat_cluster_health(
-    query_params: HashMap<String, String>,
-    cluster: Cluster,
-) -> impl warp::Reply {
+pub async fn es_compat_cluster_health_handler(
+    Query(query_params): Query<HashMap<String, String>>,
+    Extension(cluster): Extension<Cluster>,
+) -> impl IntoResponse {
     if let Some(invalid_param) = query_params.keys().find(|key| is_unsupported_qp(key)) {
-        let error_body = warp::reply::json(&json!({
+        let error_body = json!({
             "error": "Unsupported parameter.",
             "param": invalid_param
-        }));
-        return with_status(error_body, StatusCode::BAD_REQUEST);
+        });
+        return (StatusCode::BAD_REQUEST, Json(error_body));
     }
+
     let is_ready = cluster.is_self_node_ready().await;
     if is_ready {
-        with_status(
-            warp::reply::json(&json!({"status": "green"})),
-            StatusCode::OK,
-        )
+        (StatusCode::OK, Json(json!({"status": "green"})))
     } else {
-        with_status(
-            warp::reply::json(&json!({"status": "red"})),
+        (
             StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"status": "red"})),
         )
     }
 }
 
 /// GET _elastic/{index}/_stats
-pub fn es_compat_index_stats_handler(
-    metastore_service: MetastoreServiceClient,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    elastic_index_stats_filter()
-        .and(with_arg(metastore_service))
-        .then(es_compat_index_stats)
-        .map(|result| make_elastic_api_response(result, BodyFormat::default()))
-        .recover(recover_fn)
-        .boxed()
+pub async fn es_compat_index_stats_handler(
+    ElasticIndexPatterns(index_id_patterns): ElasticIndexPatterns,
+    Extension(metastore): Extension<MetastoreServiceClient>,
+) -> ElasticsearchResult<ElasticsearchStatsResponse> {
+    es_compat_index_stats(index_id_patterns, metastore)
+        .await
+        .into()
 }
 
 /// GET _elastic/_cat/indices
-pub fn es_compat_cat_indices_handler(
-    metastore_service: MetastoreServiceClient,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    elastic_cat_indices_filter()
-        .and(with_arg(metastore_service))
-        .then(es_compat_cat_indices)
-        .map(|result| make_elastic_api_response(result, BodyFormat::default()))
-        .recover(recover_fn)
-        .boxed()
+pub async fn es_compat_cat_indices_handler(
+    Query(query_params): Query<CatIndexQueryParams>,
+    Extension(metastore): Extension<MetastoreServiceClient>,
+) -> ElasticsearchResult<Vec<serde_json::Value>> {
+    es_compat_cat_indices(query_params, metastore).await.into()
 }
 
-/// GET _elastic/_cat/indices/{index}
-pub fn es_compat_index_cat_indices_handler(
-    metastore_service: MetastoreServiceClient,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    elastic_index_cat_indices_filter()
-        .and(with_arg(metastore_service))
-        .then(es_compat_index_cat_indices)
-        .map(|result| make_elastic_api_response(result, BodyFormat::default()))
-        .recover(recover_fn)
-        .boxed()
+/// GET _elastic/{index}/_cat/indices
+pub async fn es_compat_index_cat_indices_handler(
+    ElasticIndexPatterns(index_id_patterns): ElasticIndexPatterns,
+    Query(query_params): Query<CatIndexQueryParams>,
+    Extension(metastore): Extension<MetastoreServiceClient>,
+) -> ElasticsearchResult<Vec<serde_json::Value>> {
+    es_compat_index_cat_indices(index_id_patterns, query_params, metastore)
+        .await
+        .into()
 }
 
-/// GET  _elastic/_resolve/index/{index}
-pub fn es_compat_resolve_index_handler(
-    metastore_service: MetastoreServiceClient,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    elastic_resolve_index_filter()
-        .and(with_arg(metastore_service))
-        .then(es_compat_resolve_index)
-        .map(|result| make_elastic_api_response(result, BodyFormat::default()))
-        .boxed()
+/// GET _elastic/_resolve/index/{index}
+pub async fn es_compat_resolve_index_handler(
+    ElasticIndexPatterns(index_id_patterns): ElasticIndexPatterns,
+    Extension(metastore): Extension<MetastoreServiceClient>,
+) -> ElasticsearchResult<ElasticsearchResolveIndexResponse> {
+    es_compat_resolve_index(index_id_patterns, metastore)
+        .await
+        .into()
 }
 
 /// GET or POST _elastic/{index}/_search
-pub fn es_compat_index_search_handler(
-    search_service: Arc<dyn SearchService>,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    elastic_index_search_filter()
-        .and(with_arg(search_service))
-        .then(es_compat_index_search)
-        .map(|result| make_elastic_api_response(result, BodyFormat::default()))
-        .recover(recover_fn)
-        .boxed()
+pub async fn es_compat_index_search_handler(
+    ElasticIndexPatterns(index_id_patterns): ElasticIndexPatterns,
+    Extension(search_service): Extension<Arc<dyn SearchService>>,
+    Query(search_params): Query<SearchQueryParams>,
+    Json(search_body): Json<SearchBody>,
+) -> ElasticsearchResult<ElasticsearchResponse> {
+    es_compat_index_search(
+        index_id_patterns,
+        search_params,
+        search_body,
+        search_service,
+    )
+    .await
+    .into()
 }
 
 /// GET or POST _elastic/{index}/_count
-pub fn es_compat_index_count_handler(
-    search_service: Arc<dyn SearchService>,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    elastic_index_count_filter()
-        .and(with_arg(search_service))
-        .then(es_compat_index_count)
-        .map(|result| make_elastic_api_response(result, BodyFormat::default()))
-        .recover(recover_fn)
-        .boxed()
+pub async fn es_compat_index_count_handler(
+    ElasticIndexPatterns(index_id_patterns): ElasticIndexPatterns,
+    Extension(search_service): Extension<Arc<dyn SearchService>>,
+    Query(search_params): Query<SearchQueryParamsCount>,
+    Json(search_body): Json<SearchBody>,
+) -> ElasticsearchResult<ElasticsearchCountResponse> {
+    es_compat_index_count(
+        index_id_patterns,
+        search_params,
+        search_body,
+        search_service,
+    )
+    .await
+    .into()
 }
 
-/// POST _elastic/_msearch
-pub fn es_compat_index_multi_search_handler(
-    search_service: Arc<dyn SearchService>,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    elastic_multi_search_filter()
-        .and(with_arg(search_service))
-        .then(es_compat_index_multi_search)
-        .map(|result: Result<MultiSearchResponse, ElasticsearchError>| {
-            let status_code = match &result {
-                Ok(_) => StatusCode::OK,
-                Err(err) => err.status,
-            };
-            RestApiResponse::new(&result, status_code, BodyFormat::default())
-        })
-        .recover(recover_fn)
-        .boxed()
+/// GET or POST _elastic/_msearch
+pub async fn es_compat_multi_search_handler(
+    Query(multi_search_params): Query<MultiSearchQueryParams>,
+    Extension(search_service): Extension<Arc<dyn SearchService>>,
+    payload: Bytes,
+) -> ElasticsearchResult<MultiSearchResponse> {
+    es_compat_index_multi_search(payload, multi_search_params, search_service)
+        .await
+        .into()
 }
 
 /// GET or POST _elastic/_search/scroll
-pub fn es_compat_scroll_handler(
-    search_service: Arc<dyn SearchService>,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    elastic_scroll_filter()
-        .and(with_arg(search_service))
-        .then(es_scroll)
-        .map(|result| make_elastic_api_response(result, BodyFormat::default()))
-        .recover(recover_fn)
-        .boxed()
+pub async fn es_compat_scroll_handler(
+    Query(scroll_params): Query<ScrollQueryParams>,
+    Extension(search_service): Extension<Arc<dyn SearchService>>,
+) -> ElasticsearchResult<ElasticsearchResponse> {
+    es_scroll(scroll_params, search_service).await.into()
+}
+
+/// GET or POST _elastic/_field_caps
+pub async fn es_compat_field_capabilities_handler(
+    Extension(search_service): Extension<Arc<dyn SearchService>>,
+    Query(search_params): Query<FieldCapabilityQueryParams>,
+    Json(search_body): Json<FieldCapabilityRequestBody>,
+) -> ElasticsearchResult<FieldCapabilityResponse> {
+    let index_id_patterns = vec!["*".to_string()]; // Default to all indices for global endpoint
+    es_compat_index_field_capabilities(
+        index_id_patterns,
+        search_params,
+        search_body,
+        search_service,
+    )
+    .await
+    .into()
 }
 
 #[allow(clippy::result_large_err)]
@@ -479,7 +495,7 @@ fn partial_hit_from_search_after_param(
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct ElasticsearchCountResponse {
+pub struct ElasticsearchCountResponse {
     count: u64,
 }
 
@@ -1061,7 +1077,6 @@ pub(crate) fn str_lines(body: &str) -> impl Iterator<Item = &str> {
 #[cfg(test)]
 mod tests {
     use quickwit_proto::search::SplitSearchError;
-    use warp::hyper::StatusCode;
 
     use super::{partial_hit_from_search_after_param, *};
 

@@ -14,6 +14,7 @@
 
 use std::collections::HashMap;
 
+use axum::http::StatusCode;
 use base64::prelude::{BASE64_STANDARD, Engine};
 use itertools::Itertools;
 use prost_types::{Duration, Timestamp};
@@ -21,7 +22,8 @@ use quickwit_proto::jaeger::api_v2::{KeyValue, Log, Process, Span, SpanRef, Valu
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use serde_with::serde_as;
-use warp::hyper::StatusCode;
+
+use crate::http_utils::{deserialize_status_code, serialize_status_code};
 
 pub(super) const DEFAULT_NUMBER_OF_TRACES: i32 = 20;
 
@@ -310,7 +312,10 @@ impl From<Process> for JaegerProcess {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JaegerError {
-    #[serde(with = "http_serde::status_code")]
+    #[serde(
+        serialize_with = "serialize_status_code",
+        deserialize_with = "deserialize_status_code"
+    )]
     pub status: StatusCode,
     pub message: String,
 }

@@ -14,4 +14,4 @@
 
 mod rest_handler;
 
-pub use rest_handler::{ClusterApi, cluster_handler};
+pub use rest_handler::{ClusterApi, cluster_routes};

@@ -19,10 +19,11 @@ mod cluster_api;
 mod decompression;
 mod delete_task_api;
 mod developer_api;
-mod elasticsearch_api;
+pub mod elasticsearch_api;
 mod format;
 mod grpc;
 mod health_check_api;
+mod http_utils;
 mod index_api;
 mod indexing_api;
 mod ingest_api;
@@ -43,7 +44,6 @@ mod template_api;
 mod ui_handler;
 
 use std::collections::{HashMap, HashSet};
-use std::convert::Infallible;
 use std::fs;
 use std::net::SocketAddr;
 use std::num::NonZeroUsize;
@@ -52,7 +52,6 @@ use std::time::Duration;
 
 use anyhow::{Context, bail};
 use bytesize::ByteSize;
-pub(crate) use decompression::Body;
 pub use format::BodyFormat;
 use futures::StreamExt;
 use itertools::Itertools;
@@ -124,8 +123,6 @@ pub use crate::index_api::{ListSplitsQueryParams, ListSplitsResponse};
 pub use crate::ingest_api::{RestIngestResponse, RestParseFailure};
 pub use crate::metrics::SERVE_METRICS;
 use crate::rate_modulator::RateModulator;
-#[cfg(test)]
-use crate::rest::recover_fn;
 pub use crate::search_api::{SearchRequestQueryString, SortBy, search_request_from_api_request};
 
 const READINESS_REPORTING_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
@@ -255,11 +252,6 @@ async fn balance_channel_for_service(
         })
     });
     BalanceChannel::from_stream(service_change_stream)
-}
-
-fn convert_status_code_to_legacy_http(status_code: http::StatusCode) -> warp::http::StatusCode {
-    warp::http::StatusCode::from_u16(status_code.as_u16())
-        .unwrap_or(warp::http::StatusCode::INTERNAL_SERVER_ERROR)
 }
 
 async fn start_ingest_client_if_needed(
@@ -746,7 +738,16 @@ pub async fn serve_quickwit(
         }
     });
 
-    let rest_server = rest::start_rest_server(
+    // Comment out warp server for migration
+    // let rest_server = rest::start_rest_server(
+    //     tcp_listener_resolver.resolve(rest_listen_addr).await?,
+    //     quickwit_services,
+    //     rest_readiness_trigger,
+    //     rest_shutdown_signal,
+    // );
+
+    // Use simplified axum server with only migrated APIs
+    let rest_server = rest::start_axum_rest_server(
         tcp_listener_resolver.resolve(rest_listen_addr).await?,
         quickwit_services,
         rest_readiness_trigger,
@@ -1200,6 +1201,7 @@ fn setup_indexer_pool(
     indexer_pool.listen_for_changes(indexer_change_stream);
 }
 
+#[allow(dead_code)]
 fn require<T: Clone + Send>(
     val_opt: Option<T>,
 ) -> impl Filter<Extract = (T,), Error = Rejection> + Clone {
@@ -1213,10 +1215,6 @@ fn require<T: Clone + Send>(
             }
         }
     })
-}
-
-fn with_arg<T: Clone + Send>(arg: T) -> impl Filter<Extract = (T,), Error = Infallible> + Clone {
-    warp::any().map(move || arg.clone())
 }
 
 /// Reports node readiness to chitchat cluster every 10 seconds (25 ms for tests).
@@ -1331,20 +1329,27 @@ async fn check_cluster_configuration(
 }
 
 pub mod lambda_search_api {
+    // Native search API handlers
+    // Deprecated handlers removed - use axum routes instead
+
+    // Index API handlers
+    // pub use crate::index_api::get_index_metadata_handler;
+
+    // Elasticsearch API axum handlers
     pub use crate::elasticsearch_api::{
-        es_compat_cat_indices_handler, es_compat_index_cat_indices_handler,
+        es_compat_cat_indices_handler, es_compat_delete_index_handler,
+        es_compat_field_capabilities_handler, es_compat_index_cat_indices_handler,
         es_compat_index_count_handler, es_compat_index_field_capabilities_handler,
-        es_compat_index_multi_search_handler, es_compat_index_search_handler,
-        es_compat_index_stats_handler, es_compat_resolve_index_handler, es_compat_scroll_handler,
+        es_compat_index_search_handler, es_compat_index_stats_handler,
+        es_compat_multi_search_handler, es_compat_resolve_index_handler, es_compat_scroll_handler,
         es_compat_search_handler, es_compat_stats_handler,
     };
-    pub use crate::index_api::get_index_metadata_handler;
-    pub use crate::rest::recover_fn;
-    pub use crate::search_api::{search_get_handler, search_post_handler};
 }
 
 #[cfg(test)]
 mod tests {
+    use std::convert::Infallible;
+
     use quickwit_cluster::{ChannelTransport, ClusterNode, create_cluster_for_test};
     use quickwit_common::ServiceStream;
     use quickwit_common::uri::Uri;

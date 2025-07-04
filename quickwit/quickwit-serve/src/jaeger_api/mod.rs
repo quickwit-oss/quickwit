@@ -15,4 +15,4 @@
 mod model;
 mod parse_duration;
 mod rest_handler;
-pub(crate) use rest_handler::{JaegerApi, jaeger_api_handlers};
+pub(crate) use rest_handler::{JaegerApi, jaeger_routes};

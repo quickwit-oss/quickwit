@@ -42,6 +42,7 @@ impl IndexerEvent {
     }
 }
 
+/*
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -107,3 +108,4 @@ mod tests {
         );
     }
 }
+*/

@@ -23,13 +23,8 @@ use quickwit_proto::metastore::{
 use quickwit_proto::types::{IndexId, IndexUid};
 use serde::{Deserialize, Serialize};
 use tracing::info;
-use warp::{Filter, Rejection};
 
-use super::rest_handler::json_body;
-use crate::format::extract_format_from_qs;
-use crate::rest_api_response::into_rest_api_response;
 use crate::simple_list::{from_simple_list, to_simple_list};
-use crate::with_arg;
 
 /// This struct represents the QueryString passed to
 /// the rest API to filter splits.
@@ -136,19 +131,6 @@ pub async fn list_splits(
     })
 }
 
-pub fn list_splits_handler(
-    metastore: MetastoreServiceClient,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path!("indexes" / String / "splits")
-        .and(warp::get())
-        .and(serde_qs::warp::query(serde_qs::Config::default()))
-        .and(with_arg(metastore))
-        .then(list_splits)
-        .and(extract_format_from_qs())
-        .map(into_rest_api_response)
-        .boxed()
-}
-
 #[derive(Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SplitsForDeletion {
@@ -191,17 +173,4 @@ pub async fn mark_splits_for_deletion(
         .mark_splits_for_deletion(mark_splits_for_deletion_request)
         .await?;
     Ok(())
-}
-
-pub fn mark_splits_for_deletion_handler(
-    metastore: MetastoreServiceClient,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path!("indexes" / String / "splits" / "mark-for-deletion")
-        .and(warp::put())
-        .and(json_body())
-        .and(with_arg(metastore))
-        .then(mark_splits_for_deletion)
-        .and(extract_format_from_qs())
-        .map(into_rest_api_response)
-        .boxed()
 }

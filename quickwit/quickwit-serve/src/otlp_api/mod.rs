@@ -14,4 +14,4 @@
 
 mod rest_handler;
 pub use rest_handler::OtlpApi;
-pub(crate) use rest_handler::otlp_ingest_api_handlers;
+pub(crate) use rest_handler::otlp_routes;

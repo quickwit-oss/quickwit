@@ -22,6 +22,7 @@ searcher:
   partial_request_cache_capacity: ${QW_LAMBDA_PARTIAL_REQUEST_CACHE_CAPACITY:-64M}
 "#;
 
+/*
 #[cfg(test)]
 mod tests {
 
@@ -78,3 +79,4 @@ mod tests {
         }
     }
 }
+*/

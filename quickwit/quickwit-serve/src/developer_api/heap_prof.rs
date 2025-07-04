@@ -12,45 +12,63 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use axum::Router;
+use axum::extract::Query;
+use axum::response::IntoResponse;
+use axum::routing::get;
 use quickwit_common::jemalloc_profiled::{start_profiling, stop_profiling};
 use serde::Deserialize;
-use warp::Filter;
-use warp::reply::Reply;
 
-pub fn heap_prof_handlers()
--> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
-    #[derive(Deserialize)]
-    struct ProfilerQueryParams {
-        min_alloc_size: Option<u64>,
-        backtrace_every: Option<u64>,
+#[derive(Deserialize)]
+struct ProfilerQueryParams {
+    min_alloc_size: Option<u64>,
+    backtrace_every: Option<u64>,
+}
+
+async fn start_profiler_handler(Query(params): Query<ProfilerQueryParams>) -> impl IntoResponse {
+    start_profiling(params.min_alloc_size, params.backtrace_every);
+    (axum::http::StatusCode::OK, "Heap profiling started")
+}
+
+async fn stop_profiler_handler() -> impl IntoResponse {
+    stop_profiling();
+    (axum::http::StatusCode::OK, "Heap profiling stopped")
+}
+
+/// Creates routes for heap profiling endpoints
+pub(super) fn heap_prof_routes() -> Router {
+    Router::new()
+        .route("/heap-prof/start", get(start_profiler_handler))
+        .route("/heap-prof/stop", get(stop_profiler_handler))
+}
+
+#[cfg(test)]
+mod tests {
+    use axum_test::TestServer;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_heap_prof_endpoints() {
+        // Create test server with heap profiling routes
+        let app = heap_prof_routes();
+        let server = TestServer::new(app).unwrap();
+
+        // Test start endpoint without parameters
+        let response = server.get("/heap-prof/start").await;
+        response.assert_status(axum::http::StatusCode::OK);
+        response.assert_text("Heap profiling started");
+
+        // Test start endpoint with parameters
+        let response = server
+            .get("/heap-prof/start?min_alloc_size=1024&backtrace_every=100")
+            .await;
+        response.assert_status(axum::http::StatusCode::OK);
+        response.assert_text("Heap profiling started");
+
+        // Test stop endpoint
+        let response = server.get("/heap-prof/stop").await;
+        response.assert_status(axum::http::StatusCode::OK);
+        response.assert_text("Heap profiling stopped");
     }
-
-    let start_profiler = {
-        warp::path!("heap-prof" / "start")
-            .and(warp::query::<ProfilerQueryParams>())
-            .and_then(move |params: ProfilerQueryParams| start_profiler_handler(params))
-    };
-
-    let stop_profiler = { warp::path!("heap-prof" / "stop").and_then(stop_profiler_handler) };
-
-    async fn start_profiler_handler(
-        params: ProfilerQueryParams,
-    ) -> Result<warp::hyper::Response<warp::hyper::Body>, warp::Rejection> {
-        start_profiling(params.min_alloc_size, params.backtrace_every);
-        let response =
-            warp::reply::with_status("Heap profiling started", warp::http::StatusCode::OK)
-                .into_response();
-        Ok(response)
-    }
-
-    async fn stop_profiler_handler()
-    -> Result<warp::hyper::Response<warp::hyper::Body>, warp::Rejection> {
-        stop_profiling();
-        let response =
-            warp::reply::with_status("Heap profiling stopped", warp::http::StatusCode::OK)
-                .into_response();
-        Ok(response)
-    }
-
-    start_profiler.or(stop_profiler)
 }

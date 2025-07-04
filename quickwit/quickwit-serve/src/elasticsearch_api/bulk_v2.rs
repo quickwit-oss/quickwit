@@ -15,6 +15,8 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
+use axum::http::StatusCode;
+use bytes::Bytes;
 use quickwit_common::rate_limited_error;
 use quickwit_config::{INGEST_V2_SOURCE_ID, validate_identifier};
 use quickwit_ingest::IngestRequestV2Builder;
@@ -24,15 +26,14 @@ use quickwit_proto::ingest::router::{
 };
 use quickwit_proto::types::{DocUid, IndexId};
 use serde::{Deserialize, Serialize};
-use warp::hyper::StatusCode;
 
 use super::model::ElasticException;
-use crate::Body;
 use crate::elasticsearch_api::model::{BulkAction, ElasticBulkOptions, ElasticsearchError};
+use crate::http_utils::{deserialize_status_code, serialize_status_code};
 use crate::ingest_api::lines;
 
 #[derive(Debug, Default, Serialize, Deserialize)]
-pub(crate) struct ElasticBulkResponse {
+pub struct ElasticBulkResponse {
     #[serde(rename = "took")]
     pub took_millis: u64,
     pub errors: bool,
@@ -54,7 +55,10 @@ pub(crate) struct ElasticBulkItem {
     pub index_id: IndexId,
     #[serde(rename = "_id")]
     pub es_doc_id: Option<String>,
-    #[serde(with = "http_serde::status_code")]
+    #[serde(
+        serialize_with = "serialize_status_code",
+        deserialize_with = "deserialize_status_code"
+    )]
     pub status: StatusCode,
     pub error: Option<ElasticBulkError>,
 }
@@ -82,13 +86,13 @@ struct DocHandle {
 
 pub(crate) async fn elastic_bulk_ingest_v2(
     default_index_id: Option<IndexId>,
-    body: Body,
+    body: Bytes,
     bulk_options: ElasticBulkOptions,
     ingest_router: IngestRouterServiceClient,
 ) -> Result<ElasticBulkResponse, ElasticsearchError> {
     let now = Instant::now();
     let mut ingest_request_builder = IngestRequestV2Builder::default();
-    let mut lines = lines(&body.content).enumerate();
+    let mut lines = lines(&body).enumerate();
     let mut per_subrequest_doc_handles: HashMap<u32, Vec<DocHandle>> = HashMap::new();
     let mut action_count = 0;
     let mut invalid_index_id_items = Vec::new();
@@ -381,22 +385,18 @@ fn make_invalid_index_id_item(index_id: String, es_doc_id: Option<String>) -> El
 
 #[cfg(test)]
 mod tests {
-    use bytesize::ByteSize;
+    use axum_test::TestServer;
+    use http::StatusCode as HttpStatusCode;
     use quickwit_proto::ingest::router::{
         IngestFailure, IngestFailureReason, IngestResponseV2, IngestSuccess,
         MockIngestRouterService,
     };
     use quickwit_proto::ingest::{ParseFailure, ParseFailureReason};
     use quickwit_proto::types::{IndexUid, Position, ShardId};
-    use warp::{Filter, Rejection, Reply};
 
     use super::*;
     use crate::elasticsearch_api::bulk_v2::ElasticBulkResponse;
-    use crate::elasticsearch_api::filter::elastic_bulk_filter;
-    use crate::elasticsearch_api::make_elastic_api_response;
     use crate::elasticsearch_api::model::ElasticsearchError;
-    use crate::format::extract_format_from_qs;
-    use crate::with_arg;
 
     impl ElasticBulkAction {
         fn index_id(&self) -> &IndexId {
@@ -428,17 +428,41 @@ mod tests {
         }
     }
 
-    fn es_compat_bulk_handler_v2(
-        ingest_router: IngestRouterServiceClient,
-        content_length_limit: ByteSize,
-    ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-        elastic_bulk_filter(content_length_limit)
-            .and(with_arg(ingest_router))
-            .then(|body, bulk_options, ingest_router| {
-                elastic_bulk_ingest_v2(None, body, bulk_options, ingest_router)
-            })
-            .and(extract_format_from_qs())
-            .map(make_elastic_api_response)
+    async fn create_bulk_v2_test_server(ingest_router: IngestRouterServiceClient) -> TestServer {
+        use std::sync::Arc;
+
+        use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
+        use quickwit_config::NodeConfig;
+        use quickwit_index_management::IndexService;
+        use quickwit_ingest::IngestServiceClient;
+        use quickwit_metastore::metastore_for_test;
+        use quickwit_proto::metastore::MetastoreServiceClient;
+        use quickwit_search::MockSearchService;
+        use quickwit_storage::StorageResolver;
+
+        let config = Arc::new(NodeConfig::for_test());
+        let search_service = Arc::new(MockSearchService::new());
+        let index_service =
+            IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
+
+        let transport = ChannelTransport::default();
+        let cluster = create_cluster_for_test(Vec::new(), &[], &transport, false)
+            .await
+            .unwrap();
+
+        let routes = crate::elasticsearch_api::elastic_api_routes(
+            cluster,
+            config,
+            search_service,
+            IngestServiceClient::mocked(),
+            ingest_router,
+            MetastoreServiceClient::mocked(),
+            index_service,
+            false,
+            true, // Enable ingest v2
+        );
+
+        TestServer::new(routes).unwrap()
     }
 
     #[tokio::test]
@@ -491,7 +515,6 @@ mod tests {
                 })
             });
         let ingest_router = IngestRouterServiceClient::from_mock(mock_ingest_router);
-        let handler = es_compat_bulk_handler_v2(ingest_router, ByteSize::mb(10));
 
         let payload = r#"
             {"create": {"_index": "my-index-1", "_id" : "1"}}
@@ -501,15 +524,11 @@ mod tests {
             {"create": {"_index": "my-index-1"}}
             {"ts": 2, "message": "my-message-2"}
         "#;
-        let response = warp::test::request()
-            .path("/_elastic/_bulk")
-            .method("POST")
-            .body(payload)
-            .reply(&handler)
-            .await;
-        assert_eq!(response.status(), 200);
+        let server = create_bulk_v2_test_server(ingest_router).await;
+        let response = server.post("/_elastic/_bulk").text(payload).await;
+        assert_eq!(response.status_code(), HttpStatusCode::OK);
 
-        let bulk_response: ElasticBulkResponse = serde_json::from_slice(response.body()).unwrap();
+        let bulk_response: ElasticBulkResponse = response.json();
         assert!(!bulk_response.errors);
 
         let mut items = bulk_response
@@ -543,17 +562,12 @@ mod tests {
     #[tokio::test]
     async fn test_bulk_api_accepts_empty_requests() {
         let ingest_router = IngestRouterServiceClient::mocked();
-        let handler = es_compat_bulk_handler_v2(ingest_router, ByteSize::mb(10));
 
-        let response = warp::test::request()
-            .path("/_elastic/_bulk")
-            .method("POST")
-            .body("")
-            .reply(&handler)
-            .await;
-        assert_eq!(response.status(), 200);
+        let server = create_bulk_v2_test_server(ingest_router).await;
+        let response = server.post("/_elastic/_bulk").text("").await;
+        assert_eq!(response.status_code(), HttpStatusCode::OK);
 
-        let bulk_response: ElasticBulkResponse = serde_json::from_slice(response.body()).unwrap();
+        let bulk_response: ElasticBulkResponse = response.json();
         assert!(!bulk_response.errors)
     }
 
@@ -588,7 +602,6 @@ mod tests {
                 })
             });
         let ingest_router = IngestRouterServiceClient::from_mock(mock_ingest_router);
-        let handler = es_compat_bulk_handler_v2(ingest_router, ByteSize::mb(10));
 
         let payload = r#"
 
@@ -596,36 +609,27 @@ mod tests {
 
             {"ts": 1, "message": "my-message-1"}
         "#;
-        let response = warp::test::request()
-            .path("/_elastic/_bulk")
-            .method("POST")
-            .body(payload)
-            .reply(&handler)
-            .await;
-        assert_eq!(response.status(), 200);
+        let server = create_bulk_v2_test_server(ingest_router).await;
+        let response = server.post("/_elastic/_bulk").text(payload).await;
+        assert_eq!(response.status_code(), HttpStatusCode::OK);
 
-        let bulk_response: ElasticBulkResponse = serde_json::from_slice(response.body()).unwrap();
+        let bulk_response: ElasticBulkResponse = response.json();
         assert!(!bulk_response.errors);
     }
 
     #[tokio::test]
     async fn test_bulk_api_handles_malformed_requests() {
         let ingest_router = IngestRouterServiceClient::mocked();
-        let handler = es_compat_bulk_handler_v2(ingest_router, ByteSize::mb(10));
+        let server = create_bulk_v2_test_server(ingest_router).await;
 
         let payload = r#"
             {"create": {"_index": "my-index-1", "_id" : "1"},}
             {"ts": 1, "message": "my-message-1"}
         "#;
-        let response = warp::test::request()
-            .path("/_elastic/_bulk")
-            .method("POST")
-            .body(payload)
-            .reply(&handler)
-            .await;
-        assert_eq!(response.status(), 400);
+        let response = server.post("/_elastic/_bulk").text(payload).await;
+        assert_eq!(response.status_code(), HttpStatusCode::BAD_REQUEST);
 
-        let es_error: ElasticsearchError = serde_json::from_slice(response.body()).unwrap();
+        let es_error: ElasticsearchError = response.json();
         assert_eq!(es_error.status, StatusCode::BAD_REQUEST);
 
         let reason = es_error.error.reason.unwrap();
@@ -637,15 +641,10 @@ mod tests {
         let payload = r#"
             {"create": {"_index": "my-index-1", "_id" : "1"}}
         "#;
-        let response = warp::test::request()
-            .path("/_elastic/_bulk")
-            .method("POST")
-            .body(payload)
-            .reply(&handler)
-            .await;
-        assert_eq!(response.status(), 400);
+        let response = server.post("/_elastic/_bulk").text(payload).await;
+        assert_eq!(response.status_code(), HttpStatusCode::BAD_REQUEST);
 
-        let es_error: ElasticsearchError = serde_json::from_slice(response.body()).unwrap();
+        let es_error: ElasticsearchError = response.json();
         assert_eq!(es_error.status, StatusCode::BAD_REQUEST);
 
         let reason = es_error.error.reason.unwrap();
@@ -655,15 +654,10 @@ mod tests {
             {"create": {"_id" : "1"}}
             {"ts": 1, "message": "my-message-1"}
         "#;
-        let response = warp::test::request()
-            .path("/_elastic/_bulk")
-            .method("POST")
-            .body(payload)
-            .reply(&handler)
-            .await;
-        assert_eq!(response.status(), 400);
+        let response = server.post("/_elastic/_bulk").text(payload).await;
+        assert_eq!(response.status_code(), HttpStatusCode::BAD_REQUEST);
 
-        let es_error: ElasticsearchError = serde_json::from_slice(response.body()).unwrap();
+        let es_error: ElasticsearchError = response.json();
         assert_eq!(es_error.status, StatusCode::BAD_REQUEST);
 
         let reason = es_error.error.reason.unwrap();
@@ -712,7 +706,6 @@ mod tests {
                 })
             });
         let ingest_router = IngestRouterServiceClient::from_mock(mock_ingest_router);
-        let handler = es_compat_bulk_handler_v2(ingest_router, ByteSize::mb(10));
 
         let payload = r#"
             {"index": {"_index": "my-index-1", "_id" : "1"}}
@@ -722,15 +715,11 @@ mod tests {
             {"index": {"_index": "my-index-2", "_id" : "1"}}
             {"ts": 3, "message": "my-message-2"}
         "#;
-        let response = warp::test::request()
-            .path("/_elastic/_bulk")
-            .method("POST")
-            .body(payload)
-            .reply(&handler)
-            .await;
-        assert_eq!(response.status(), 200);
+        let server = create_bulk_v2_test_server(ingest_router).await;
+        let response = server.post("/_elastic/_bulk").text(payload).await;
+        assert_eq!(response.status_code(), HttpStatusCode::OK);
 
-        let bulk_response: ElasticBulkResponse = serde_json::from_slice(response.body()).unwrap();
+        let bulk_response: ElasticBulkResponse = response.json();
         assert!(bulk_response.errors);
         assert_eq!(bulk_response.actions.len(), 3);
     }
@@ -856,17 +845,15 @@ mod tests {
                 })
             });
         let ingest_router = IngestRouterServiceClient::from_mock(mock_ingest_router);
-        let handler = es_compat_bulk_handler_v2(ingest_router, ByteSize::mb(10));
 
         let payload = r#"
             {"create": {"_index": "my-index-1", "_id" : "1"}}
             {"ts": 1, "message": "my-message-1"}
         "#;
-        warp::test::request()
-            .path("/_elastic/_bulk?refresh=wait_for")
-            .method("POST")
-            .body(payload)
-            .reply(&handler)
+        let server = create_bulk_v2_test_server(ingest_router).await;
+        let _response = server
+            .post("/_elastic/_bulk?refresh=wait_for")
+            .text(payload)
             .await;
     }
 
@@ -903,7 +890,6 @@ mod tests {
                 })
             });
         let ingest_router = IngestRouterServiceClient::from_mock(mock_ingest_router);
-        let handler = es_compat_bulk_handler_v2(ingest_router, ByteSize::mb(10));
 
         let payload = r#"
             {"create": {"_index": "my-index-1"}}
@@ -914,15 +900,11 @@ mod tests {
             {"ts": 1, "message": "my-message-3"}
 
         "#;
-        let response = warp::test::request()
-            .path("/_elastic/_bulk")
-            .method("POST")
-            .body(payload)
-            .reply(&handler)
-            .await;
-        assert_eq!(response.status(), 200);
+        let server = create_bulk_v2_test_server(ingest_router).await;
+        let response = server.post("/_elastic/_bulk").text(payload).await;
+        assert_eq!(response.status_code(), HttpStatusCode::OK);
 
-        let bulk_response: ElasticBulkResponse = serde_json::from_slice(response.body()).unwrap();
+        let bulk_response: ElasticBulkResponse = response.json();
         assert!(bulk_response.errors);
 
         let items = bulk_response

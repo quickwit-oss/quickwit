@@ -12,9 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use axum::Router;
+use axum::response::IntoResponse;
+use axum::routing::get;
 use tracing::error;
-use warp::hyper::StatusCode;
-use warp::reply::with_status;
 
 #[derive(utoipa::OpenApi)]
 #[openapi(paths(metrics_handler))]
@@ -25,6 +26,11 @@ use warp::reply::with_status;
 /// Then it should have its own specific API group.
 pub struct MetricsApi;
 
+// Axum routes
+pub fn metrics_routes() -> Router {
+    Router::new().route("/metrics", get(metrics_handler))
+}
+
 #[utoipa::path(
     get,
     tag = "Get Metrics",
@@ -34,15 +40,36 @@ pub struct MetricsApi;
         (status = 500, description = "Metrics not available.", body = String),
     ),
 )]
-/// Get Node Metrics
-///
-/// These are in the form of prometheus metrics.
-pub fn metrics_handler() -> impl warp::Reply {
+async fn metrics_handler() -> impl IntoResponse {
     match quickwit_common::metrics::metrics_text_payload() {
-        Ok(metrics) => with_status(metrics, StatusCode::OK),
+        Ok(metrics) => (axum::http::StatusCode::OK, metrics),
         Err(e) => {
             error!("failed to encode prometheus metrics: {e}");
-            with_status(String::new(), StatusCode::INTERNAL_SERVER_ERROR)
+            (axum::http::StatusCode::INTERNAL_SERVER_ERROR, String::new())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use axum_test::TestServer;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_metrics_handler_axum() {
+        let app = metrics_routes();
+        let server = TestServer::new(app).unwrap();
+
+        let response = server.get("/metrics").await;
+
+        // Should return 200 OK (the metrics system might not be initialized in tests,
+        // but the handler should still return a successful response)
+        assert_eq!(response.status_code(), axum::http::StatusCode::OK);
+
+        // Should return text content (might be empty if no metrics are registered)
+        let body = response.text();
+        // Just verify we can get the response body without panicking
+        let _ = body.len();
     }
 }

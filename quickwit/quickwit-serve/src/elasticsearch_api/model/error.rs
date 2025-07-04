@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Json};
 use elasticsearch_dsl::search::ErrorCause;
 use quickwit_common::{rate_limited_debug, rate_limited_error};
 use quickwit_index_management::IndexServiceError;
@@ -20,13 +22,15 @@ use quickwit_proto::ServiceError;
 use quickwit_proto::ingest::IngestV2Error;
 use quickwit_search::SearchError;
 use serde::{Deserialize, Serialize};
-use warp::hyper::StatusCode;
 
-use crate::convert_status_code_to_legacy_http;
+use crate::http_utils::{deserialize_status_code, serialize_status_code};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ElasticsearchError {
-    #[serde(with = "http_serde::status_code")]
+    #[serde(
+        serialize_with = "serialize_status_code",
+        deserialize_with = "deserialize_status_code"
+    )]
     pub status: StatusCode,
     pub error: ErrorCause,
 }
@@ -57,6 +61,27 @@ impl ElasticsearchError {
     }
 }
 
+/// Wrapper type for Elasticsearch API results to work around orphan rule
+pub struct ElasticsearchResult<T>(pub Result<T, ElasticsearchError>);
+
+impl<T> From<Result<T, ElasticsearchError>> for ElasticsearchResult<T> {
+    fn from(result: Result<T, ElasticsearchError>) -> Self {
+        ElasticsearchResult(result)
+    }
+}
+
+impl<T: Serialize> IntoResponse for ElasticsearchResult<T> {
+    fn into_response(self) -> axum::response::Response {
+        match self.0 {
+            Ok(value) => (StatusCode::OK, Json(value)).into_response(),
+            Err(error) => {
+                // No conversion needed since we're already using axum's StatusCode
+                (error.status, Json(error)).into_response()
+            }
+        }
+    }
+}
+
 impl From<SearchError> for ElasticsearchError {
     fn from(search_error: SearchError) -> Self {
         let status = search_error.error_code().http_status_code();
@@ -71,7 +96,9 @@ impl From<SearchError> for ElasticsearchError {
             additional_details: Default::default(),
         };
         ElasticsearchError {
-            status: crate::convert_status_code_to_legacy_http(status),
+            // Convert from http::StatusCode to axum::http::StatusCode
+            status: StatusCode::from_u16(status.as_u16())
+                .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
             error: reason,
         }
     }
@@ -79,9 +106,7 @@ impl From<SearchError> for ElasticsearchError {
 
 impl From<IngestServiceError> for ElasticsearchError {
     fn from(ingest_service_error: IngestServiceError) -> Self {
-        let status = crate::convert_status_code_to_legacy_http(
-            ingest_service_error.error_code().http_status_code(),
-        );
+        let status = ingest_service_error.error_code().http_status_code();
 
         let reason = ErrorCause {
             reason: Some(ingest_service_error.to_string()),
@@ -93,7 +118,9 @@ impl From<IngestServiceError> for ElasticsearchError {
             additional_details: Default::default(),
         };
         ElasticsearchError {
-            status,
+            // Convert from http::StatusCode to axum::http::StatusCode
+            status: StatusCode::from_u16(status.as_u16())
+                .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
             error: reason,
         }
     }
@@ -113,7 +140,9 @@ impl From<IngestV2Error> for ElasticsearchError {
             additional_details: Default::default(),
         };
         ElasticsearchError {
-            status: crate::convert_status_code_to_legacy_http(status),
+            // Convert from http::StatusCode to axum::http::StatusCode
+            status: StatusCode::from_u16(status.as_u16())
+                .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
             error: reason,
         }
     }
@@ -133,7 +162,9 @@ impl From<IndexServiceError> for ElasticsearchError {
             additional_details: Default::default(),
         };
         ElasticsearchError {
-            status: convert_status_code_to_legacy_http(status),
+            // Convert from http::StatusCode to axum::http::StatusCode
+            status: StatusCode::from_u16(status.as_u16())
+                .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
             error: reason,
         }
     }

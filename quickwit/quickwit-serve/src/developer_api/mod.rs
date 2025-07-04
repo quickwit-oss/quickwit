@@ -21,31 +21,31 @@ mod log_level;
 mod pprof;
 mod server;
 
+use axum::routing::get;
+use axum::{Extension, Router};
 use debug::debug_handler;
-use heap_prof::heap_prof_handlers;
-use log_level::log_level_handler;
-use pprof::pprof_handlers;
+use heap_prof::heap_prof_routes;
+use log_level::log_level_routes;
+use pprof::pprof_routes;
 use quickwit_cluster::Cluster;
 pub(crate) use server::DeveloperApiServer;
-use warp::{Filter, Rejection};
 
 use crate::EnvFilterReloadFn;
-use crate::rest::recover_fn;
 
 #[derive(utoipa::OpenApi)]
-#[openapi(paths(debug::debug_handler, log_level::log_level_handler))]
+#[openapi(paths())]
 pub struct DeveloperApi;
 
-pub(crate) fn developer_api_routes(
+/// Creates routes for developer API endpoints
+pub(crate) fn developer_routes(
     cluster: Cluster,
     env_filter_reload_fn: EnvFilterReloadFn,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path!("api" / "developer" / ..)
-        .and(
-            debug_handler(cluster.clone())
-                .or(log_level_handler(env_filter_reload_fn.clone()).boxed())
-                .or(pprof_handlers())
-                .or(heap_prof_handlers()),
-        )
-        .recover(recover_fn)
+) -> Router {
+    Router::new()
+        .route("/debug", get(debug_handler))
+        .merge(log_level_routes())
+        .merge(pprof_routes())
+        .merge(heap_prof_routes())
+        .layer(Extension(cluster))
+        .layer(Extension(env_filter_reload_fn))
 }

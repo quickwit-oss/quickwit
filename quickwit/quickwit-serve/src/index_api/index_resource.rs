@@ -34,23 +34,7 @@ use serde::{Deserialize, Serialize};
 use tracing::info;
 use warp::{Filter, Rejection};
 
-use super::rest_handler::log_failure;
-use crate::format::{extract_config_format, extract_format_from_qs};
-use crate::rest_api_response::into_rest_api_response;
 use crate::simple_list::from_simple_list;
-use crate::with_arg;
-
-pub fn get_index_metadata_handler(
-    metastore: MetastoreServiceClient,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path!("indexes" / String)
-        .and(warp::get())
-        .and(with_arg(metastore))
-        .then(get_index_metadata)
-        .and(extract_format_from_qs())
-        .map(into_rest_api_response)
-        .boxed()
-}
 
 pub async fn get_index_metadata(
     index_id: IndexId,
@@ -74,19 +58,6 @@ pub struct ListIndexesQueryParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub index_id_patterns: Option<Vec<String>>,
-}
-
-pub fn list_indexes_metadata_handler(
-    metastore: MetastoreServiceClient,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path!("indexes")
-        .and(warp::get())
-        .and(serde_qs::warp::query(serde_qs::Config::default()))
-        .and(with_arg(metastore))
-        .then(list_indexes_metadata)
-        .and(extract_format_from_qs())
-        .map(into_rest_api_response)
-        .boxed()
 }
 
 /// Describes an index with its main information and statistics.
@@ -175,18 +146,6 @@ pub async fn describe_index(
     Ok(index_stats)
 }
 
-pub fn describe_index_handler(
-    metastore: MetastoreServiceClient,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path!("indexes" / String / "describe")
-        .and(warp::get())
-        .and(with_arg(metastore))
-        .then(describe_index)
-        .and(extract_format_from_qs())
-        .map(into_rest_api_response)
-        .boxed()
-}
-
 #[utoipa::path(
     get,
     tag = "Indexes",
@@ -232,25 +191,6 @@ pub struct CreateIndexQueryParams {
     overwrite: bool,
 }
 
-pub fn create_index_handler(
-    index_service: IndexService,
-    node_config: Arc<NodeConfig>,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path!("indexes")
-        .and(warp::post())
-        .and(serde_qs::warp::query(serde_qs::Config::default()))
-        .and(extract_config_format())
-        .and(warp::body::content_length_limit(1024 * 1024))
-        .and(warp::filters::body::bytes())
-        .and(with_arg(index_service))
-        .and(with_arg(node_config))
-        .then(create_index)
-        .map(log_failure("failed to create index"))
-        .and(extract_format_from_qs())
-        .map(into_rest_api_response)
-        .boxed()
-}
-
 #[utoipa::path(
     post,
     tag = "Indexes",
@@ -293,27 +233,9 @@ pub struct UpdateQueryParams {
     pub create: bool,
 }
 
+#[allow(dead_code)]
 fn update_index_qp() -> impl Filter<Extract = (UpdateQueryParams,), Error = Rejection> + Clone {
     serde_qs::warp::query::<UpdateQueryParams>(serde_qs::Config::default())
-}
-
-pub fn update_index_handler(
-    index_service: IndexService,
-    node_config: Arc<NodeConfig>,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path!("indexes" / String)
-        .and(warp::put())
-        .and(extract_config_format())
-        .and(update_index_qp())
-        .and(warp::body::content_length_limit(1024 * 1024))
-        .and(warp::filters::body::bytes())
-        .and(with_arg(index_service))
-        .and(with_arg(node_config))
-        .then(update_index)
-        .map(log_failure("failed to update index"))
-        .and(extract_format_from_qs())
-        .map(into_rest_api_response)
-        .boxed()
 }
 
 #[utoipa::path(
@@ -404,18 +326,6 @@ pub async fn update_index(
     Ok(update_resp.deserialize_index_metadata()?)
 }
 
-pub fn clear_index_handler(
-    index_service: IndexService,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path!("indexes" / String / "clear")
-        .and(warp::put())
-        .and(with_arg(index_service))
-        .then(clear_index)
-        .and(extract_format_from_qs())
-        .map(into_rest_api_response)
-        .boxed()
-}
-
 #[utoipa::path(
     put,
     tag = "Indexes",
@@ -442,19 +352,6 @@ pub async fn clear_index(
 pub struct DeleteIndexQueryParam {
     #[serde(default)]
     dry_run: bool,
-}
-
-pub fn delete_index_handler(
-    index_service: IndexService,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path!("indexes" / String)
-        .and(warp::delete())
-        .and(serde_qs::warp::query(serde_qs::Config::default()))
-        .and(with_arg(index_service))
-        .then(delete_index)
-        .and(extract_format_from_qs())
-        .map(into_rest_api_response)
-        .boxed()
 }
 
 #[utoipa::path(

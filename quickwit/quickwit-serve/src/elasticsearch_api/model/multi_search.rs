@@ -12,15 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use axum::http::StatusCode;
 use elasticsearch_dsl::ErrorCause;
 use serde::{Deserialize, Serialize};
 use serde_with::formats::PreferMany;
 use serde_with::{OneOrMany, serde_as};
-use warp::hyper::StatusCode;
 
 use super::ElasticsearchError;
 use super::search_query_params::ExpandWildcards;
 use super::search_response::ElasticsearchResponse;
+use crate::http_utils::serialize_status_code;
 use crate::simple_list::{from_simple_list, to_simple_list};
 
 // Multi search doc: https://www.elastic.co/guide/en/elasticsearch/reference/current/search-multi-search.html
@@ -107,7 +108,7 @@ pub struct MultiSearchResponse {
 
 #[derive(Serialize, Debug)]
 pub struct MultiSearchSingleResponse {
-    #[serde(with = "http_serde::status_code")]
+    #[serde(serialize_with = "serialize_status_code")]
     pub status: StatusCode,
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]

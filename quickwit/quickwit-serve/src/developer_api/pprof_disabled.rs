@@ -12,20 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use warp::Filter;
+use axum::Router;
+use axum::response::IntoResponse;
+use axum::routing::get;
 
-fn not_implemented_handler() -> impl warp::Reply {
-    warp::reply::with_status(
+async fn not_implemented_handler() -> impl IntoResponse {
+    (
+        axum::http::StatusCode::NOT_IMPLEMENTED,
         "Quickwit was compiled without the `pprof` feature",
-        warp::http::StatusCode::NOT_IMPLEMENTED,
     )
 }
 
 /// pprof/start disabled
 /// pprof/flamegraph disabled
-pub fn pprof_handlers() -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone
-{
-    let start_profiler = { warp::path!("pprof" / "start").map(not_implemented_handler) };
-    let stop_profiler = { warp::path!("pprof" / "flamegraph").map(not_implemented_handler) };
-    start_profiler.or(stop_profiler)
+pub(super) fn pprof_routes() -> Router {
+    Router::new()
+        .route("/pprof/start", get(not_implemented_handler))
+        .route("/pprof/flamegraph", get(not_implemented_handler))
 }

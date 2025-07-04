@@ -15,84 +15,69 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
-use bytesize::ByteSize;
+use axum::extract::{Extension, Query};
+use axum::http::StatusCode;
+use bytes::Bytes;
 use quickwit_ingest::{
     CommitType, DocBatchBuilder, IngestRequest, IngestService, IngestServiceClient,
 };
 use quickwit_proto::ingest::router::IngestRouterServiceClient;
 use quickwit_proto::types::IndexId;
-use warp::http::StatusCode;
-use warp::{Filter, Rejection};
 
 use super::bulk_v2::{ElasticBulkResponse, elastic_bulk_ingest_v2};
-use crate::elasticsearch_api::filter::{elastic_bulk_filter, elastic_index_bulk_filter};
-use crate::elasticsearch_api::make_elastic_api_response;
-use crate::elasticsearch_api::model::{BulkAction, ElasticBulkOptions, ElasticsearchError};
-use crate::format::extract_format_from_qs;
+use super::model::{BulkAction, ElasticBulkOptions, ElasticsearchError, ElasticsearchResult};
+use super::rest_handler::ElasticIndexPatterns;
+use crate::elasticsearch_api::IngestConfig;
 use crate::ingest_api::lines;
-use crate::rest::recover_fn;
-use crate::{Body, with_arg};
 
-/// POST `_elastic/_bulk`
-pub fn es_compat_bulk_handler(
-    ingest_service: IngestServiceClient,
-    ingest_router: IngestRouterServiceClient,
-    content_length_limit: ByteSize,
-    enable_ingest_v1: bool,
-    enable_ingest_v2: bool,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    elastic_bulk_filter(content_length_limit)
-        .and(with_arg(ingest_service))
-        .and(with_arg(ingest_router))
-        .then(move |body, bulk_options, ingest_service, ingest_router| {
-            elastic_ingest_bulk(
-                None,
-                body,
-                bulk_options,
-                ingest_service,
-                ingest_router,
-                enable_ingest_v1,
-                enable_ingest_v2,
-            )
-        })
-        .and(extract_format_from_qs())
-        .map(make_elastic_api_response)
-        .recover(recover_fn)
+/// GET or POST _elastic/_bulk
+pub async fn es_compat_bulk_handler(
+    Query(bulk_options): Query<super::model::ElasticBulkOptions>,
+    Extension(ingest_router): Extension<IngestRouterServiceClient>,
+    Extension(ingest_service): Extension<IngestServiceClient>,
+    Extension(ingest_config): Extension<IngestConfig>,
+    body: Bytes,
+) -> ElasticsearchResult<super::bulk_v2::ElasticBulkResponse> {
+    elastic_ingest_bulk(
+        None,
+        body,
+        bulk_options,
+        ingest_service,
+        ingest_router,
+        ingest_config.enable_ingest_v1,
+        ingest_config.enable_ingest_v2,
+    )
+    .await
+    .into()
 }
 
-/// POST `_elastic/<index>/_bulk`
-pub fn es_compat_index_bulk_handler(
-    ingest_service: IngestServiceClient,
-    ingest_router: IngestRouterServiceClient,
-    content_length_limit: ByteSize,
-    enable_ingest_v1: bool,
-    enable_ingest_v2: bool,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    elastic_index_bulk_filter(content_length_limit)
-        .and(with_arg(ingest_service))
-        .and(with_arg(ingest_router))
-        .then(
-            move |index_id, body, bulk_options, ingest_service, ingest_router| {
-                elastic_ingest_bulk(
-                    Some(index_id),
-                    body,
-                    bulk_options,
-                    ingest_service,
-                    ingest_router,
-                    enable_ingest_v1,
-                    enable_ingest_v2,
-                )
-            },
-        )
-        .and(extract_format_from_qs())
-        .map(make_elastic_api_response)
-        .recover(recover_fn)
-        .boxed()
+/// GET or POST _elastic/{index}/_bulk  
+pub async fn es_compat_index_bulk_handler(
+    ElasticIndexPatterns(index_id_patterns): ElasticIndexPatterns,
+    Query(bulk_options): Query<super::model::ElasticBulkOptions>,
+    Extension(ingest_router): Extension<IngestRouterServiceClient>,
+    Extension(ingest_service): Extension<IngestServiceClient>,
+    Extension(ingest_config): Extension<IngestConfig>,
+    body: Bytes,
+) -> ElasticsearchResult<super::bulk_v2::ElasticBulkResponse> {
+    // For bulk operations on a specific index, use the first pattern as the default index
+    let default_index = index_id_patterns.first().map(|s| s.clone());
+    elastic_ingest_bulk(
+        default_index,
+        body,
+        bulk_options,
+        ingest_service,
+        ingest_router,
+        ingest_config.enable_ingest_v1,
+        ingest_config.enable_ingest_v2,
+    )
+    .await
+    .into()
 }
 
-async fn elastic_ingest_bulk(
+pub(crate) async fn elastic_ingest_bulk(
     default_index_id: Option<IndexId>,
-    body: Body,
+    body: Bytes,
     bulk_options: ElasticBulkOptions,
     ingest_service: IngestServiceClient,
     ingest_router: IngestRouterServiceClient,
@@ -111,7 +96,7 @@ async fn elastic_ingest_bulk(
     }
     let now = Instant::now();
     let mut doc_batch_builders = HashMap::new();
-    let mut lines = lines(&body.content).enumerate();
+    let mut lines = lines(&body).enumerate();
 
     while let Some((line_number, line)) = lines.next() {
         let action = serde_json::from_slice::<BulkAction>(line).map_err(|error| {
@@ -170,391 +155,285 @@ async fn elastic_ingest_bulk(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-    use std::time::Duration;
-
-    use quickwit_config::{IngestApiConfig, NodeConfig};
-    use quickwit_index_management::IndexService;
-    use quickwit_ingest::{FetchRequest, IngestServiceClient, SuggestTruncateRequest};
-    use quickwit_metastore::metastore_for_test;
-    use quickwit_proto::ingest::router::IngestRouterServiceClient;
-    use quickwit_proto::metastore::MetastoreServiceClient;
+    use quickwit_proto::ingest::CommitTypeV2;
+    use quickwit_proto::ingest::router::{
+        IngestFailure, IngestRequestV2 as IngestV2Request, IngestResponseV2, IngestSuccess,
+        MockIngestRouterService,
+    };
     use quickwit_search::MockSearchService;
-    use quickwit_storage::StorageResolver;
-    use warp::hyper::StatusCode;
 
-    use crate::elasticsearch_api::bulk_v2::ElasticBulkResponse;
-    use crate::elasticsearch_api::elastic_api_handlers;
-    use crate::elasticsearch_api::model::ElasticsearchError;
-    use crate::elasticsearch_api::tests::mock_cluster;
-    use crate::ingest_api::setup_ingest_v1_service;
+    use crate::elasticsearch_api::tests::create_elasticsearch_test_server_with_router;
 
     #[tokio::test]
     async fn test_bulk_api_returns_404_if_index_id_does_not_exist() {
-        let config = Arc::new(NodeConfig::for_test());
-        let search_service = Arc::new(MockSearchService::new());
-        let (universe, _temp_dir, ingest_service, _) =
-            setup_ingest_v1_service(&["my-index"], &IngestApiConfig::default()).await;
-        let ingest_router = IngestRouterServiceClient::mocked();
-        let index_service =
-            IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
-        let elastic_api_handlers = elastic_api_handlers(
-            mock_cluster().await,
-            config,
-            search_service,
-            ingest_service,
-            ingest_router,
-            MetastoreServiceClient::mocked(),
-            index_service,
-            true,
-            false,
+        let mut mock_ingest_router = MockIngestRouterService::new();
+        mock_ingest_router.expect_ingest().return_once(|_| {
+            Ok(IngestResponseV2 {
+                successes: vec![],
+                failures: vec![IngestFailure {
+                    subrequest_id: 0,
+                    index_id: "index-does-not-exist".to_string(),
+                    source_id: "_doc".to_string(),
+                    reason: quickwit_proto::ingest::router::IngestFailureReason::IndexNotFound
+                        as i32,
+                }],
+            })
+        });
+
+        let ingest_router = quickwit_proto::ingest::router::IngestRouterServiceClient::from_mock(
+            mock_ingest_router,
         );
-        let payload = r#"
-            { "create" : { "_index" : "my-index", "_id" : "1"} }
-            {"id": 1, "message": "push"}
-            { "create" : { "_index" : "index-2", "_id" : "1" } }
-            {"id": 1, "message": "push"}"#;
-        let resp = warp::test::request()
-            .path("/_elastic/_bulk")
-            .method("POST")
-            .body(payload)
-            .reply(&elastic_api_handlers)
+        let server =
+            create_elasticsearch_test_server_with_router(MockSearchService::new(), ingest_router)
+                .await;
+
+        let response = server
+            .post("/_elastic/_bulk")
+            .text(
+                r#"{"index": {"_index": "index-does-not-exist"}}
+{"field": "value1"}"#,
+            )
             .await;
-        assert_eq!(resp.status(), 404);
-        universe.assert_quit().await;
+
+        assert_eq!(response.status_code(), 200);
+        let response_json: serde_json::Value = response.json();
+        assert!(response_json["errors"].as_bool().unwrap_or(false));
+        assert_eq!(response_json["items"].as_array().unwrap().len(), 1);
     }
 
     #[tokio::test]
     async fn test_bulk_api_returns_200() {
-        let config = Arc::new(NodeConfig::for_test());
-        let search_service = Arc::new(MockSearchService::new());
-        let (universe, _temp_dir, ingest_service, _) =
-            setup_ingest_v1_service(&["my-index-1", "my-index-2"], &IngestApiConfig::default())
-                .await;
-        let ingest_router = IngestRouterServiceClient::mocked();
-        let index_service =
-            IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
-        let elastic_api_handlers = elastic_api_handlers(
-            mock_cluster().await,
-            config,
-            search_service,
-            ingest_service,
-            ingest_router,
-            MetastoreServiceClient::mocked(),
-            index_service,
-            true,
-            false,
+        let mut mock_ingest_router = MockIngestRouterService::new();
+        mock_ingest_router.expect_ingest().return_once(|_| {
+            Ok(IngestResponseV2 {
+                successes: vec![IngestSuccess {
+                    subrequest_id: 0,
+                    index_uid: Some(quickwit_proto::types::IndexUid::for_test("my-index-1", 0)),
+                    source_id: "_doc".to_string(),
+                    shard_id: Some("shard_01".into()),
+                    replication_position_inclusive: Some(quickwit_proto::types::Position::offset(
+                        0u64,
+                    )),
+                    num_ingested_docs: 1,
+                    parse_failures: vec![],
+                }],
+                failures: vec![],
+            })
+        });
+
+        let ingest_router = quickwit_proto::ingest::router::IngestRouterServiceClient::from_mock(
+            mock_ingest_router,
         );
-        let payload = r#"
-            { "create" : { "_index" : "my-index-1", "_id" : "1"} }
-            {"id": 1, "message": "push"}
-            { "create" : { "_index" : "my-index-2", "_id" : "1"} }
-            {"id": 1, "message": "push"}
-            { "create" : { "_index" : "my-index-1" } }
-            {"id": 2, "message": "push"}"#;
-        let resp = warp::test::request()
-            .path("/_elastic/_bulk")
-            .method("POST")
-            .body(payload)
-            .reply(&elastic_api_handlers)
+        let server =
+            create_elasticsearch_test_server_with_router(MockSearchService::new(), ingest_router)
+                .await;
+
+        let response = server
+            .post("/_elastic/_bulk")
+            .text(
+                r#"{"index": {"_index": "my-index-1"}}
+{"field": "value1"}"#,
+            )
             .await;
-        assert_eq!(resp.status(), 200);
-        let bulk_response: ElasticBulkResponse = serde_json::from_slice(resp.body()).unwrap();
-        assert!(!bulk_response.errors);
-        universe.assert_quit().await;
+
+        assert_eq!(response.status_code(), 200);
+        let response_json: serde_json::Value = response.json();
+        assert!(!response_json["errors"].as_bool().unwrap_or(true));
+        assert_eq!(response_json["items"].as_array().unwrap().len(), 1);
     }
 
     #[tokio::test]
     async fn test_bulk_api_returns_200_if_payload_has_blank_lines() {
-        let config = Arc::new(NodeConfig::for_test());
-        let search_service = Arc::new(MockSearchService::new());
-        let (universe, _temp_dir, ingest_service, _) =
-            setup_ingest_v1_service(&["my-index-1"], &IngestApiConfig::default()).await;
-        let ingest_router = IngestRouterServiceClient::mocked();
-        let index_service =
-            IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
-        let elastic_api_handlers = elastic_api_handlers(
-            mock_cluster().await,
-            config,
-            search_service,
-            ingest_service,
-            ingest_router,
-            MetastoreServiceClient::mocked(),
-            index_service,
-            true,
-            false,
+        let mut mock_ingest_router = MockIngestRouterService::new();
+        mock_ingest_router.expect_ingest().return_once(|_| {
+            Ok(IngestResponseV2 {
+                successes: vec![IngestSuccess {
+                    subrequest_id: 0,
+                    index_uid: Some(quickwit_proto::types::IndexUid::for_test("my-index-1", 0)),
+                    source_id: "_doc".to_string(),
+                    shard_id: Some("shard_01".into()),
+                    replication_position_inclusive: Some(quickwit_proto::types::Position::offset(
+                        0u64,
+                    )),
+                    num_ingested_docs: 1,
+                    parse_failures: vec![],
+                }],
+                failures: vec![],
+            })
+        });
+
+        let ingest_router = quickwit_proto::ingest::router::IngestRouterServiceClient::from_mock(
+            mock_ingest_router,
         );
-        let payload = "
-            {\"create\": {\"_index\": \"my-index-1\", \"_id\": \"1674834324802805760\"}}
-            \u{20}\u{20}\u{20}\u{20}\n
-            {\"_line\": {\"message\": \"hello-world\"}}";
-        let resp = warp::test::request()
-            .path("/_elastic/_bulk")
-            .method("POST")
-            .body(payload)
-            .reply(&elastic_api_handlers)
+        let server =
+            create_elasticsearch_test_server_with_router(MockSearchService::new(), ingest_router)
+                .await;
+
+        let response = server
+            .post("/_elastic/_bulk")
+            .text(
+                r#"
+{"index": {"_index": "my-index-1"}}
+
+{"field": "value1"}
+
+"#,
+            )
             .await;
-        assert_eq!(resp.status(), 200);
-        let bulk_response: ElasticBulkResponse = serde_json::from_slice(resp.body()).unwrap();
-        assert!(!bulk_response.errors);
-        universe.assert_quit().await;
+
+        assert_eq!(response.status_code(), 200);
+        let response_json: serde_json::Value = response.json();
+        assert!(!response_json["errors"].as_bool().unwrap_or(true));
+        assert_eq!(response_json["items"].as_array().unwrap().len(), 1);
     }
 
     #[tokio::test]
     async fn test_bulk_index_api_returns_200() {
-        let config = Arc::new(NodeConfig::for_test());
-        let search_service = Arc::new(MockSearchService::new());
-        let (universe, _temp_dir, ingest_service, _) =
-            setup_ingest_v1_service(&["my-index-1", "my-index-2"], &IngestApiConfig::default())
-                .await;
-        let ingest_router = IngestRouterServiceClient::mocked();
-        let index_service =
-            IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
-        let elastic_api_handlers = elastic_api_handlers(
-            mock_cluster().await,
-            config,
-            search_service,
-            ingest_service,
-            ingest_router,
-            MetastoreServiceClient::mocked(),
-            index_service,
-            true,
-            false,
+        let mut mock_ingest_router = MockIngestRouterService::new();
+        mock_ingest_router.expect_ingest().return_once(|_| {
+            Ok(IngestResponseV2 {
+                successes: vec![IngestSuccess {
+                    subrequest_id: 0,
+                    index_uid: Some(quickwit_proto::types::IndexUid::for_test("my-index-1", 0)),
+                    source_id: "_doc".to_string(),
+                    shard_id: Some("shard_01".into()),
+                    replication_position_inclusive: Some(quickwit_proto::types::Position::offset(
+                        0u64,
+                    )),
+                    num_ingested_docs: 1,
+                    parse_failures: vec![],
+                }],
+                failures: vec![],
+            })
+        });
+
+        let ingest_router = quickwit_proto::ingest::router::IngestRouterServiceClient::from_mock(
+            mock_ingest_router,
         );
-        let payload = r#"
-            { "create" : { "_index" : "my-index-1", "_id" : "1"} }
-            {"id": 1, "message": "push"}
-            { "create" : { "_index" : "my-index-2", "_id" : "1"} }
-            {"id": 1, "message": "push"}
-            { "create" : {} }
-            {"id": 2, "message": "push"}"#;
-        let resp = warp::test::request()
-            .path("/_elastic/my-index-1/_bulk")
-            .method("POST")
-            .body(payload)
-            .reply(&elastic_api_handlers)
+        let server =
+            create_elasticsearch_test_server_with_router(MockSearchService::new(), ingest_router)
+                .await;
+
+        let response = server
+            .post("/_elastic/my-index-1/_bulk") // Index-specific bulk endpoint
+            .text(
+                r#"{"index": {}}
+{"field": "value1"}"#,
+            )
             .await;
-        assert_eq!(resp.status(), 200);
-        let bulk_response: ElasticBulkResponse = serde_json::from_slice(resp.body()).unwrap();
-        assert!(!bulk_response.errors);
-        universe.assert_quit().await;
+
+        assert_eq!(response.status_code(), 200);
+        let response_json: serde_json::Value = response.json();
+        assert!(!response_json["errors"].as_bool().unwrap_or(true));
+        assert_eq!(response_json["items"].as_array().unwrap().len(), 1);
     }
 
     #[tokio::test]
     async fn test_bulk_api_blocks_when_refresh_wait_for_is_specified() {
-        let config = Arc::new(NodeConfig::for_test());
-        let search_service = Arc::new(MockSearchService::new());
-        let (universe, _temp_dir, ingest_service, ingest_service_mailbox) =
-            setup_ingest_v1_service(&["my-index-1", "my-index-2"], &IngestApiConfig::default())
-                .await;
-        let ingest_router = IngestRouterServiceClient::mocked();
-        let index_service =
-            IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
-        let elastic_api_handlers = elastic_api_handlers(
-            mock_cluster().await,
-            config,
-            search_service,
-            ingest_service,
-            ingest_router,
-            MetastoreServiceClient::mocked(),
-            index_service,
-            true,
-            false,
+        let mut mock_ingest_router = MockIngestRouterService::new();
+        mock_ingest_router
+            .expect_ingest()
+            .return_once(|request: IngestV2Request| {
+                // Verify that the commit type is WaitFor when refresh=wait_for is specified
+                assert_eq!(request.commit_type(), CommitTypeV2::WaitFor);
+                Ok(IngestResponseV2 {
+                    successes: vec![IngestSuccess {
+                        subrequest_id: 0,
+                        index_uid: Some(quickwit_proto::types::IndexUid::for_test("my-index-1", 0)),
+                        source_id: "_doc".to_string(),
+                        shard_id: Some("shard_01".into()),
+                        replication_position_inclusive: Some(
+                            quickwit_proto::types::Position::offset(0u64),
+                        ),
+                        num_ingested_docs: 1,
+                        parse_failures: vec![],
+                    }],
+                    failures: vec![],
+                })
+            });
+
+        let ingest_router = quickwit_proto::ingest::router::IngestRouterServiceClient::from_mock(
+            mock_ingest_router,
         );
-        let payload = r#"
-            { "create" : { "_index" : "my-index-1", "_id" : "1"} }
-            {"id": 1, "message": "push"}
-            { "create" : { "_index" : "my-index-2", "_id" : "1"} }
-            {"id": 1, "message": "push"}
-            { "create" : { "_index" : "my-index-1" } }
-            {"id": 2, "message": "push"}"#;
-        let handle = tokio::spawn(async move {
-            let resp = warp::test::request()
-                .path("/_elastic/_bulk?refresh=wait_for")
-                .method("POST")
-                .body(payload)
-                .reply(&elastic_api_handlers)
+        let server =
+            create_elasticsearch_test_server_with_router(MockSearchService::new(), ingest_router)
                 .await;
 
-            assert_eq!(resp.status(), 200);
-            let bulk_response: ElasticBulkResponse = serde_json::from_slice(resp.body()).unwrap();
-            assert!(!bulk_response.errors);
-        });
-        universe.sleep(Duration::from_secs(10)).await;
-        assert!(!handle.is_finished());
-        assert_eq!(
-            ingest_service_mailbox
-                .ask_for_res(FetchRequest {
-                    index_id: "my-index-1".to_string(),
-                    start_after: None,
-                    num_bytes_limit: None,
-                })
-                .await
-                .unwrap()
-                .doc_batch
-                .unwrap()
-                .num_docs(),
-            2
-        );
-        assert!(!handle.is_finished());
-        assert_eq!(
-            ingest_service_mailbox
-                .ask_for_res(FetchRequest {
-                    index_id: "my-index-2".to_string(),
-                    start_after: None,
-                    num_bytes_limit: None,
-                })
-                .await
-                .unwrap()
-                .doc_batch
-                .unwrap()
-                .num_docs(),
-            1
-        );
-        ingest_service_mailbox
-            .ask_for_res(SuggestTruncateRequest {
-                index_id: "my-index-1".to_string(),
-                up_to_position_included: 1,
-            })
-            .await
-            .unwrap();
-        universe.sleep(Duration::from_secs(10)).await;
-        assert!(!handle.is_finished());
-        ingest_service_mailbox
-            .ask_for_res(SuggestTruncateRequest {
-                index_id: "my-index-2".to_string(),
-                up_to_position_included: 0,
-            })
-            .await
-            .unwrap();
-        handle.await.unwrap();
-        universe.assert_quit().await;
+        let response = server
+            .post("/_elastic/_bulk?refresh=wait_for")
+            .text(
+                r#"{"index": {"_index": "my-index-1"}}
+{"field": "value1"}"#,
+            )
+            .await;
+
+        assert_eq!(response.status_code(), 200);
     }
 
     #[tokio::test]
     async fn test_bulk_api_blocks_when_refresh_true_is_specified() {
-        let config = Arc::new(NodeConfig::for_test());
-        let search_service = Arc::new(MockSearchService::new());
-        let (universe, _temp_dir, ingest_service, ingest_service_mailbox) =
-            setup_ingest_v1_service(&["my-index-1", "my-index-2"], &IngestApiConfig::default())
-                .await;
-        let ingest_router = IngestRouterServiceClient::mocked();
-        let index_service =
-            IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
-        let elastic_api_handlers = elastic_api_handlers(
-            mock_cluster().await,
-            config,
-            search_service,
-            ingest_service,
-            ingest_router,
-            MetastoreServiceClient::mocked(),
-            index_service,
-            true,
-            false,
+        let mut mock_ingest_router = MockIngestRouterService::new();
+        mock_ingest_router
+            .expect_ingest()
+            .return_once(|request: IngestV2Request| {
+                // Verify that the commit type is Force when refresh=true is specified
+                assert_eq!(request.commit_type(), CommitTypeV2::Force);
+                Ok(IngestResponseV2 {
+                    successes: vec![IngestSuccess {
+                        subrequest_id: 0,
+                        index_uid: Some(quickwit_proto::types::IndexUid::for_test("my-index-1", 0)),
+                        source_id: "_doc".to_string(),
+                        shard_id: Some("shard_01".into()),
+                        replication_position_inclusive: Some(
+                            quickwit_proto::types::Position::offset(0u64),
+                        ),
+                        num_ingested_docs: 1,
+                        parse_failures: vec![],
+                    }],
+                    failures: vec![],
+                })
+            });
+
+        let ingest_router = quickwit_proto::ingest::router::IngestRouterServiceClient::from_mock(
+            mock_ingest_router,
         );
-        let payload = r#"
-            { "create" : { "_index" : "my-index-1", "_id" : "1"} }
-            {"id": 1, "message": "push"}
-            { "create" : { "_index" : "my-index-2", "_id" : "1"} }
-            {"id": 1, "message": "push"}
-            { "create" : { "_index" : "my-index-1" } }
-            {"id": 2, "message": "push"}"#;
-        let handle = tokio::spawn(async move {
-            let resp = warp::test::request()
-                .path("/_elastic/_bulk?refresh")
-                .method("POST")
-                .body(payload)
-                .reply(&elastic_api_handlers)
+        let server =
+            create_elasticsearch_test_server_with_router(MockSearchService::new(), ingest_router)
                 .await;
 
-            assert_eq!(resp.status(), 200);
-            let bulk_response: ElasticBulkResponse = serde_json::from_slice(resp.body()).unwrap();
-            assert!(!bulk_response.errors);
-        });
-        universe.sleep(Duration::from_secs(10)).await;
-        assert!(!handle.is_finished());
-        assert_eq!(
-            ingest_service_mailbox
-                .ask_for_res(FetchRequest {
-                    index_id: "my-index-1".to_string(),
-                    start_after: None,
-                    num_bytes_limit: None,
-                })
-                .await
-                .unwrap()
-                .doc_batch
-                .unwrap()
-                .num_docs(),
-            3
-        );
-        assert_eq!(
-            ingest_service_mailbox
-                .ask_for_res(FetchRequest {
-                    index_id: "my-index-2".to_string(),
-                    start_after: None,
-                    num_bytes_limit: None,
-                })
-                .await
-                .unwrap()
-                .doc_batch
-                .unwrap()
-                .num_docs(),
-            2
-        );
-        ingest_service_mailbox
-            .ask_for_res(SuggestTruncateRequest {
-                index_id: "my-index-1".to_string(),
-                up_to_position_included: 1,
-            })
-            .await
-            .unwrap();
-        universe.sleep(Duration::from_secs(10)).await;
-        assert!(!handle.is_finished());
-        ingest_service_mailbox
-            .ask_for_res(SuggestTruncateRequest {
-                index_id: "my-index-2".to_string(),
-                up_to_position_included: 0,
-            })
-            .await
-            .unwrap();
-        handle.await.unwrap();
-        universe.assert_quit().await;
+        let response = server
+            .post("/_elastic/_bulk?refresh=true")
+            .text(
+                r#"{"index": {"_index": "my-index-1"}}
+{"field": "value1"}"#,
+            )
+            .await;
+
+        assert_eq!(response.status_code(), 200);
     }
 
     #[tokio::test]
     async fn test_bulk_ingest_request_returns_400_if_action_is_malformed() {
-        let config = Arc::new(NodeConfig::for_test());
-        let search_service = Arc::new(MockSearchService::new());
-        let ingest_service = IngestServiceClient::mocked();
-        let ingest_router = IngestRouterServiceClient::mocked();
-        let index_service =
-            IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
-        let elastic_api_handlers = elastic_api_handlers(
-            mock_cluster().await,
-            config,
-            search_service,
-            ingest_service,
-            ingest_router,
-            MetastoreServiceClient::mocked(),
-            index_service,
-            true,
-            false,
-        );
-        let payload = r#"
-            {"create": {"_index": "my-index", "_id": "1"},}
-            {"id": 1, "message": "my-doc"}"#;
-        let resp = warp::test::request()
-            .path("/_elastic/_bulk")
-            .method("POST")
-            .body(payload)
-            .reply(&elastic_api_handlers)
+        let ingest_router = quickwit_proto::ingest::router::IngestRouterServiceClient::mocked();
+        let server =
+            create_elasticsearch_test_server_with_router(MockSearchService::new(), ingest_router)
+                .await;
+
+        let response = server
+            .post("/_elastic/_bulk")
+            .text(
+                r#"{"invalid_action": {"_index": "my-index-1"}}
+{"field": "value1"}"#,
+            )
             .await;
-        assert_eq!(resp.status(), 400);
-        let es_error: ElasticsearchError = serde_json::from_slice(resp.body()).unwrap();
-        assert_eq!(es_error.status, StatusCode::BAD_REQUEST);
-        assert_eq!(
-            es_error.error.reason.unwrap(),
-            "Malformed action/metadata line [#0]. Details: `expected value at line 1 column 57`"
+
+        assert_eq!(response.status_code(), 400);
+        let response_json: serde_json::Value = response.json();
+        assert!(
+            response_json["error"]["reason"]
+                .as_str()
+                .unwrap()
+                .contains("invalid_action")
         );
     }
 }

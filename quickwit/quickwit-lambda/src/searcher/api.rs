@@ -16,9 +16,13 @@ use std::collections::HashSet;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
+use axum::extract::Query;
+use axum::response::IntoResponse;
+use axum::routing::get;
+use axum::{Extension, Router, middleware};
 use quickwit_config::SearcherConfig;
 use quickwit_config::service::QuickwitService;
-use quickwit_proto::metastore::MetastoreServiceClient;
+use quickwit_proto::metastore::{MetastoreService, MetastoreServiceClient};
 use quickwit_search::{
     ClusterClient, SearchJobPlacer, SearchService, SearchServiceClient, SearchServiceImpl,
     SearcherContext, SearcherPool,
@@ -26,10 +30,7 @@ use quickwit_search::{
 use quickwit_serve::lambda_search_api::*;
 use quickwit_storage::StorageResolver;
 use quickwit_telemetry::payload::{QuickwitFeature, QuickwitTelemetryInfo, TelemetryEvent};
-use tracing::{error, info};
-use warp::Filter;
-use warp::filters::path::FullPath;
-use warp::reject::Rejection;
+use tracing::info;
 
 use crate::searcher::environment::CONFIGURATION_TEMPLATE;
 use crate::utils::load_node_config;
@@ -58,56 +59,178 @@ async fn create_local_search_service(
     search_service
 }
 
-fn native_api(
-    search_service: Arc<dyn SearchService>,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    search_get_handler(search_service.clone()).or(search_post_handler(search_service))
+fn native_api_routes() -> Router {
+    Router::new().route(
+        "/search",
+        get(search_get_handler_axum).post(search_post_handler_axum),
+    )
 }
 
-fn es_compat_api(
-    search_service: Arc<dyn SearchService>,
-    metastore: MetastoreServiceClient,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    es_compat_search_handler(search_service.clone())
-        .or(es_compat_index_search_handler(search_service.clone()))
-        .or(es_compat_index_count_handler(search_service.clone()))
-        .or(es_compat_scroll_handler(search_service.clone()))
-        .or(es_compat_index_multi_search_handler(search_service.clone()))
-        .or(es_compat_index_field_capabilities_handler(
-            search_service.clone(),
-        ))
-        .or(es_compat_index_stats_handler(metastore.clone()))
-        .or(es_compat_stats_handler(metastore.clone()))
-        .or(es_compat_index_cat_indices_handler(metastore.clone()))
-        .or(es_compat_cat_indices_handler(metastore.clone()))
-        .or(es_compat_resolve_index_handler(metastore.clone()))
+// Axum wrappers for search handlers
+async fn search_get_handler_axum(
+    Query(search_query_params): Query<quickwit_serve::SearchRequestQueryString>,
+    Extension(search_service): Extension<Arc<dyn SearchService>>,
+) -> impl axum::response::IntoResponse {
+    let _body_format = search_query_params.format;
+    let index_id_patterns = vec!["*".to_string()]; // Default to all indexes for lambda
+
+    // Use the same search_endpoint function that the main search API uses
+    let result = search_endpoint(
+        index_id_patterns,
+        search_query_params,
+        search_service.as_ref(),
+    )
+    .await;
+    match result {
+        Ok(search_response) => axum::Json(search_response).into_response(),
+        Err(error) => {
+            let status_code = match error {
+                quickwit_search::SearchError::IndexesNotFound { .. } => {
+                    axum::http::StatusCode::NOT_FOUND
+                }
+                quickwit_search::SearchError::InvalidQuery(_) => {
+                    axum::http::StatusCode::BAD_REQUEST
+                }
+                _ => axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            };
+            (status_code, axum::Json(error)).into_response()
+        }
+    }
 }
 
-fn index_api(
-    metastore: MetastoreServiceClient,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    get_index_metadata_handler(metastore)
+async fn search_post_handler_axum(
+    Extension(search_service): Extension<Arc<dyn SearchService>>,
+    axum::extract::Json(search_query_params): axum::extract::Json<
+        quickwit_serve::SearchRequestQueryString,
+    >,
+) -> impl axum::response::IntoResponse {
+    let _body_format = search_query_params.format;
+    let index_id_patterns = vec!["*".to_string()]; // Default to all indexes for lambda
+
+    // Use the same search_endpoint function that the main search API uses
+    let result = search_endpoint(
+        index_id_patterns,
+        search_query_params,
+        search_service.as_ref(),
+    )
+    .await;
+    match result {
+        Ok(search_response) => axum::Json(search_response).into_response(),
+        Err(error) => {
+            let status_code = match error {
+                quickwit_search::SearchError::IndexesNotFound { .. } => {
+                    axum::http::StatusCode::NOT_FOUND
+                }
+                quickwit_search::SearchError::InvalidQuery(_) => {
+                    axum::http::StatusCode::BAD_REQUEST
+                }
+                _ => axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            };
+            (status_code, axum::Json(error)).into_response()
+        }
+    }
 }
 
-fn v1_searcher_api(
-    search_service: Arc<dyn SearchService>,
-    metastore: MetastoreServiceClient,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path!("api" / "v1" / ..)
-        .and(
-            native_api(search_service.clone())
-                .or(es_compat_api(search_service, metastore.clone()))
-                .or(index_api(metastore)),
+// Helper function to reuse the search endpoint logic
+async fn search_endpoint(
+    index_id_patterns: Vec<String>,
+    search_request: quickwit_serve::SearchRequestQueryString,
+    search_service: &dyn SearchService,
+) -> Result<quickwit_search::SearchResponseRest, quickwit_search::SearchError> {
+    let allow_failed_splits = search_request.allow_failed_splits;
+    let search_request =
+        quickwit_serve::search_request_from_api_request(index_id_patterns, search_request)?;
+    let search_response =
+        search_service
+            .root_search(search_request)
+            .await
+            .and_then(|search_response| {
+                if !allow_failed_splits || search_response.num_successful_splits == 0 {
+                    if let Some(search_error) = quickwit_search::SearchError::from_split_errors(
+                        &search_response.failed_splits[..],
+                    ) {
+                        return Err(search_error);
+                    }
+                }
+                Ok(search_response)
+            })?;
+    let search_response_rest = quickwit_search::SearchResponseRest::try_from(search_response)?;
+    Ok(search_response_rest)
+}
+
+fn es_compat_api_routes() -> Router {
+    Router::new()
+        // Global elasticsearch endpoints
+        .route("/_elastic/_search", get(es_compat_search_handler))
+    // .route("/_elastic/_search", post(es_compat_search_handler))
+    // .route("/_elastic/_stats", get(es_compat_stats_handler_axum))
+    // .route("/_elastic/_cat/indices", get(es_compat_cat_indices_handler))
+    // .route("/_elastic/_field_caps", get(es_compat_field_capabilities_handler_axum))
+    // .route("/_elastic/_field_caps", post(es_compat_field_capabilities_handler_axum))
+    // .route("/_elastic/_msearch", post(es_compat_multi_search_handler_axum))
+    // .route("/_elastic/_search/scroll", get(es_compat_scroll_handler_axum))
+    // .route("/_elastic/_search/scroll", post(es_compat_scroll_handler_axum))
+    // .route("/_elastic/_bulk", post(es_compat_bulk_handler))
+    // .route("/_elastic/_cluster/health", get(es_compat_cluster_health_handler_axum))
+
+    // // Index-specific elasticsearch endpoints
+    // .route("/_elastic/{index}/_search", get(es_compat_index_search_handler))
+    // .route("/_elastic/{index}/_search", post(es_compat_index_search_handler))
+    // .route("/_elastic/{index}/_count", get(es_compat_index_count_handler_axum))
+    // .route("/_elastic/{index}/_count", post(es_compat_index_count_handler_axum))
+    // .route("/_elastic/{index}/_stats", get(es_compat_index_stats_handler_axum))
+    // .route("/_elastic/{index}/_field_caps", get(es_compat_index_field_capabilities_handler_axum))
+    // .route("/_elastic/{index}/_field_caps",
+    // post(es_compat_index_field_capabilities_handler_axum)) .route("/_elastic/{index}/_bulk",
+    // post(es_compat_index_bulk_handler_axum)) .route("/_elastic/_cat/indices/{index}",
+    // get(es_compat_index_cat_indices_handler_axum)) .route("/_elastic/_resolve/index/{index}",
+    // get(es_compat_resolve_index_handler_axum)) .route("/_elastic/{index}",
+    // axum::routing::delete(es_compat_delete_index_handler_axum))
+}
+
+async fn get_index_metadata_handler_axum(
+    axum::extract::Path(index_id): axum::extract::Path<String>,
+    Extension(metastore): Extension<MetastoreServiceClient>,
+) -> impl axum::response::IntoResponse {
+    // Simple wrapper for the metadata handler
+    match metastore
+        .index_metadata(
+            quickwit_proto::metastore::IndexMetadataRequest::for_index_id(index_id.clone()),
         )
-        .with(warp::filters::compression::gzip())
-        .recover(|rejection| {
-            error!(?rejection, "request rejected");
-            recover_fn(rejection)
-        })
+        .await
+    {
+        Ok(response) => axum::Json(response.index_metadata_serialized_json).into_response(),
+        Err(error) => {
+            let status_code = axum::http::StatusCode::INTERNAL_SERVER_ERROR;
+            (
+                status_code,
+                axum::Json(format!(
+                    "Error fetching metadata for index {}: {}",
+                    index_id, error
+                )),
+            )
+                .into_response()
+        }
+    }
 }
 
-pub async fn setup_searcher_api()
--> anyhow::Result<impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone> {
+fn index_api_routes() -> Router {
+    Router::new().route(
+        "/indexes/{index_id}/metadata",
+        get(get_index_metadata_handler_axum),
+    )
+}
+
+fn v1_searcher_api_routes() -> Router {
+    Router::new().nest(
+        "/api/v1",
+        native_api_routes()
+            .merge(es_compat_api_routes())
+            .merge(index_api_routes()),
+    )
+}
+
+pub async fn setup_searcher_api() -> anyhow::Result<Router> {
     let (node_config, storage_resolver, metastore) =
         load_node_config(CONFIGURATION_TEMPLATE).await?;
 
@@ -124,27 +247,25 @@ pub async fn setup_searcher_api()
     )
     .await;
 
-    let before_hook = warp::path::full()
-        .and(warp::method())
-        .and_then(|route: FullPath, method: warp::http::Method| async move {
-            info!(
-                method = method.as_str(),
-                route = route.as_str(),
-                "new request"
-            );
+    // Setup middleware for telemetry and logging
+    let telemetry_layer = middleware::from_fn(
+        |req: axum::extract::Request, next: axum::middleware::Next| async move {
+            let method = req.method().to_string();
+            let uri = req.uri().to_string();
+            info!(method = %method, route = %uri, "new request");
             quickwit_telemetry::send_telemetry_event(TelemetryEvent::RunCommand).await;
-            Ok::<_, std::convert::Infallible>(())
-        })
-        .untuple_one();
 
-    let after_hook = warp::log::custom(|info| {
-        info!(status = info.status().as_str(), "request completed");
-    });
+            let response = next.run(req).await;
+            let status = response.status().as_u16();
+            info!(status = %status, "request completed");
+            response
+        },
+    );
 
-    let api = warp::any()
-        .and(before_hook)
-        .and(v1_searcher_api(search_service, metastore))
-        .with(after_hook);
+    let api = v1_searcher_api_routes()
+        .layer(Extension(search_service))
+        .layer(Extension(metastore))
+        .layer(telemetry_layer);
 
     Ok(api)
 }
