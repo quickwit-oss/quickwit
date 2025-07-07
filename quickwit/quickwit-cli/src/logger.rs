@@ -305,7 +305,8 @@ pub(super) mod jemalloc_profiled {
     ///
     /// The the jemalloc profiler formatter disables the env filter reloading
     /// because the [tracing_subscriber::reload::Layer] seems to overwrite the
-    /// TRACE level span filter even though it's applied to a separate layer.
+    /// filter configured by [profiler_tracing_filter()] even though when it's
+    /// applied to a separate layer.
     pub(super) fn configure_registry<S>(
         registry: S,
         event_format: EventFormat<'static>,
