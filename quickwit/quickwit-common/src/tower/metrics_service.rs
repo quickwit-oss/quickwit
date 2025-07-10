@@ -81,14 +81,14 @@ impl ServiceMetricsLayer {
         Self {
             requests_total: new_counter_vec(
                 "service_requests_total",
-                "Total number of gRPC requests processed.",
+                "Total number of service requests processed.",
                 subsystem,
                 &[("kind", kind)],
                 ["rpc", "status"],
             ),
             requests_in_flight: new_gauge_vec(
                 "service_requests_in_flight",
-                "Number of gRPC requests in-flight.",
+                "Number of service requests in-flight.",
                 subsystem,
                 &[("kind", kind)],
                 ["rpc"],

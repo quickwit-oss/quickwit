@@ -30,11 +30,9 @@ use crate::metrics::{
 
 fn extract_rpc_name_from_path(path: &str) -> &str {
     // gRPC paths are typically: /package.Service/Method
-    if let Some(last_slash_pos) = path.rfind('/') {
-        &path[last_slash_pos + 1..]
-    } else {
-        "unknown"
-    }
+    path.rsplit_once('/')
+        .map(|(_left, right)| right)
+        .unwrap_or("unknown")
 }
 
 fn get_content_length(headers: &http::HeaderMap) -> u64 {
