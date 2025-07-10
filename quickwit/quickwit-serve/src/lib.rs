@@ -395,7 +395,12 @@ fn start_shard_positions_service(
     });
 }
 
-async fn shutdown_handler(
+/// Waits for the shutdown signal and notifies all other services when it
+/// occurs.
+///
+/// Usually called when receiving a SIGTERM signal, e.g. k8s trying to
+/// decomission a pod.
+async fn shutdown_signal_handler(
     shutdown_signal: BoxFutureInfaillible<()>,
     universe: Universe,
     ingester_opt: Option<Ingester>,
@@ -797,7 +802,7 @@ pub async fn serve_quickwit(
         "node_readiness_reporting",
     );
 
-    let shutdown_handle = tokio::spawn(shutdown_handler(
+    let shutdown_handle = tokio::spawn(shutdown_signal_handler(
         shutdown_signal,
         universe,
         ingester_opt,
