@@ -231,7 +231,7 @@ pub(super) mod jemalloc_profiled {
 
     /// An event formatter specific to the memory profiler output.
     ///
-    /// Also displays a backtrace after spans and the fields of the tracing
+    /// Also displays a backtrace after the spans and fields of the tracing
     /// event (into separate lines).
     struct ProfilingFormat {
         time_formatter: UtcTime<Vec<BorrowedFormatItem<'static>>>,
@@ -305,7 +305,7 @@ pub(super) mod jemalloc_profiled {
     ///
     /// The the jemalloc profiler formatter disables the env filter reloading
     /// because the [tracing_subscriber::reload::Layer] seems to overwrite the
-    /// filter configured by [profiler_tracing_filter()] even though when it's
+    /// filter configured by [profiler_tracing_filter()] even though it is
     /// applied to a separate layer.
     pub(super) fn configure_registry<S>(
         registry: S,
