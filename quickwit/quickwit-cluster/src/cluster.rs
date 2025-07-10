@@ -440,7 +440,7 @@ impl Cluster {
 
     pub async fn chitchat_server_termination_watcher(
         &self,
-    ) -> impl Future<Output = anyhow::Result<()>> {
+    ) -> impl Future<Output = anyhow::Result<()>> + use<> {
         self.inner
             .read()
             .await
