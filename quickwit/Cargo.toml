@@ -188,7 +188,7 @@ quote = "1.0"
 rand = "0.8"
 rand_distr = "0.4"
 rayon = "1.10"
-rdkafka = { version = "0.33", default-features = false, features = [
+rdkafka = { version = "0.38", default-features = false, features = [
   "cmake-build",
   "libz",
   "ssl",
