@@ -127,7 +127,7 @@ macro_rules! return_if_err {
 /// The API of the rebalance callback is better explained in the docs of `librdkafka`:
 /// <https://docs.confluent.io/2.0.0/clients/librdkafka/classRdKafka_1_1RebalanceCb.html>
 impl ConsumerContext for RdKafkaContext {
-    fn pre_rebalance(&self, rebalance: &Rebalance) {
+    fn pre_rebalance(&self, _consumer: &BaseConsumer<Self>, rebalance: &Rebalance) {
         crate::metrics::INDEXER_METRICS.kafka_rebalance_total.inc();
         quickwit_common::rate_limited_info!(limit_per_min = 3, topic = self.topic, "rebalance");
         if let Rebalance::Revoke(tpl) = rebalance {
