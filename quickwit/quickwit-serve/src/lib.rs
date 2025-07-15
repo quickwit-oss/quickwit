@@ -395,6 +395,41 @@ fn start_shard_positions_service(
     });
 }
 
+/// Waits for the shutdown signal and notifies all other services when it
+/// occurs.
+///
+/// Usually called when receiving a SIGTERM signal, e.g. k8s trying to
+/// decomission a pod.
+async fn shutdown_signal_handler(
+    shutdown_signal: BoxFutureInfaillible<()>,
+    universe: Universe,
+    ingester_opt: Option<Ingester>,
+    grpc_shutdown_trigger_tx: oneshot::Sender<()>,
+    rest_shutdown_trigger_tx: oneshot::Sender<()>,
+    cluster: Cluster,
+) -> HashMap<String, ActorExitStatus> {
+    shutdown_signal.await;
+    // We must decommission the ingester first before terminating the indexing pipelines that
+    // may consume from it. We also need to keep the gRPC server running while doing so.
+    if let Some(ingester) = ingester_opt {
+        if let Err(error) = wait_for_ingester_decommission(ingester).await {
+            error!("failed to decommission ingester gracefully: {:?}", error);
+        }
+    }
+    let actor_exit_statuses = universe.quit().await;
+
+    if grpc_shutdown_trigger_tx.send(()).is_err() {
+        debug!("gRPC server shutdown signal receiver was dropped");
+    }
+    if rest_shutdown_trigger_tx.send(()).is_err() {
+        debug!("REST server shutdown signal receiver was dropped");
+    }
+    if let Err(err) = cluster.initiate_shutdown().await {
+        debug!("{err}");
+    }
+    actor_exit_statuses
+}
+
 pub async fn serve_quickwit(
     node_config: NodeConfig,
     runtimes_config: RuntimesConfig,
@@ -757,7 +792,7 @@ pub async fn serve_quickwit(
     // Thus readiness task is started once gRPC and REST servers are started.
     spawn_named_task(
         node_readiness_reporting_task(
-            cluster,
+            cluster.clone(),
             metastore_through_control_plane,
             ingester_opt.clone(),
             grpc_readiness_signal_rx,
@@ -767,26 +802,14 @@ pub async fn serve_quickwit(
         "node_readiness_reporting",
     );
 
-    let shutdown_handle = tokio::spawn(async move {
-        shutdown_signal.await;
-
-        // We must decommission the ingester first before terminating the indexing pipelines that
-        // may consume from it. We also need to keep the gRPC server running while doing so.
-        if let Some(ingester) = ingester_opt {
-            if let Err(error) = wait_for_ingester_decommission(ingester).await {
-                error!("failed to decommission ingester gracefully: {:?}", error);
-            }
-        }
-        let actor_exit_statuses = universe.quit().await;
-
-        if grpc_shutdown_trigger_tx.send(()).is_err() {
-            debug!("gRPC server shutdown signal receiver was dropped");
-        }
-        if rest_shutdown_trigger_tx.send(()).is_err() {
-            debug!("REST server shutdown signal receiver was dropped");
-        }
-        actor_exit_statuses
-    });
+    let shutdown_handle = tokio::spawn(shutdown_signal_handler(
+        shutdown_signal,
+        universe,
+        ingester_opt,
+        grpc_shutdown_trigger_tx,
+        rest_shutdown_trigger_tx,
+        cluster.clone(),
+    ));
     let grpc_join_handle = async move {
         spawn_named_task(grpc_server, "grpc_server")
             .await
@@ -801,7 +824,9 @@ pub async fn serve_quickwit(
             .context("REST server failed")
     };
 
-    if let Err(err) = tokio::try_join!(grpc_join_handle, rest_join_handle) {
+    let chitchat_server_handle = cluster.chitchat_server_termination_watcher().await;
+
+    if let Err(err) = tokio::try_join!(grpc_join_handle, rest_join_handle, chitchat_server_handle) {
         error!("server failed: {err:?}");
     }
 
