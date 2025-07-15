@@ -84,7 +84,7 @@ cbor-diag,https://github.com/Nullus157/cbor-diag-rs,MIT OR Apache-2.0,The cbor-d
 cc,https://github.com/rust-lang/cc-rs,MIT OR Apache-2.0,Alex Crichton <alex@alexcrichton.com>
 census,https://github.com/quickwit-inc/census,MIT,Paul Masurel <paul.masurel@gmail.com>
 cexpr,https://github.com/jethrogb/rust-cexpr,Apache-2.0 OR MIT,Jethro Beekman <jethro@jbeekman.nl>
-cfg-if,https://github.com/alexcrichton/cfg-if,MIT OR Apache-2.0,Alex Crichton <alex@alexcrichton.com>
+cfg-if,https://github.com/rust-lang/cfg-if,MIT OR Apache-2.0,Alex Crichton <alex@alexcrichton.com>
 chitchat,https://github.com/quickwit-oss/chitchat,MIT,"Quickwit, Inc. <hello@quickwit.io>"
 chrono,https://github.com/chronotope/chrono,MIT OR Apache-2.0,The chrono Authors
 ciborium,https://github.com/enarx/ciborium,Apache-2.0,Nathaniel McCallum <npmccallum@profian.com>
@@ -96,7 +96,7 @@ clap,https://github.com/clap-rs/clap,MIT OR Apache-2.0,The clap Authors
 clap_builder,https://github.com/clap-rs/clap,MIT OR Apache-2.0,The clap_builder Authors
 clap_lex,https://github.com/clap-rs/clap,MIT OR Apache-2.0,The clap_lex Authors
 coarsetime,https://github.com/jedisct1/rust-coarsetime,ISC,Frank Denis <github@pureftpd.org>
-cobs,https://github.com/jamesmunns/cobs.rs,MIT OR Apache-2.0,"Allen Welkie <>, James Munns <james.munns@ferrous-systems.com>"
+cobs,https://github.com/jamesmunns/cobs.rs,MIT OR Apache-2.0,"Allen Welkie <>, James Munns <james@onevariable.com>"
 colorchoice,https://github.com/rust-cli/anstyle,MIT OR Apache-2.0,The colorchoice Authors
 colored,https://github.com/mackwic/colored,MPL-2.0,Thomas Wickham <mackwic@gmail.com>
 console,https://github.com/console-rs/console,MIT,Armin Ronacher <armin.ronacher@active-4.com>
@@ -156,7 +156,6 @@ enum-iterator-derive,https://github.com/stephaneyfx/enum-iterator,0BSD,Stephane 
 env_logger,https://github.com/rust-cli/env_logger,MIT OR Apache-2.0,The env_logger Authors
 equivalent,https://github.com/indexmap-rs/equivalent,Apache-2.0 OR MIT,The equivalent Authors
 errno,https://github.com/lambda-fairy/rust-errno,MIT OR Apache-2.0,"Chris Wong <lambda.fairy@gmail.com>, Dan Gohman <dev@sunfishcode.online>"
-extend,https://github.com/davidpdrsn/ext,MIT,David Pedersen <david.pdrsn@gmail.com>
 fail,https://github.com/tikv/fail-rs,Apache-2.0,The TiKV Project Developers
 fastdivide,https://github.com/fulmicoton/fastdivide,zlib-acknowledgement OR MIT,Paul Masurel <paul.masurel@gmail.com>
 fastrand,https://github.com/smol-rs/fastrand,Apache-2.0 OR MIT,Stjepan Glavina <stjepang@gmail.com>
@@ -230,8 +229,10 @@ indexmap,https://github.com/indexmap-rs/indexmap,Apache-2.0 OR MIT,The indexmap 
 indicatif,https://github.com/console-rs/indicatif,MIT,The indicatif Authors
 inout,https://github.com/RustCrypto/utils,MIT OR Apache-2.0,RustCrypto Developers
 instant,https://github.com/sebcrozet/instant,BSD-3-Clause,sebcrozet <developer@crozet.re>
+io-uring,https://github.com/tokio-rs/io-uring,MIT OR Apache-2.0,quininer <quininer@live.com>
 ipnet,https://github.com/krisprice/ipnet,MIT OR Apache-2.0,Kris Price <kris@krisprice.nz>
 ipnetwork,https://github.com/achanda/ipnetwork,MIT OR Apache-2.0,"Abhishek Chanda <abhishek.becs@gmail.com>, Linus Färnstrand <faern@faern.net>"
+iri-string,https://github.com/lo48576/iri-string,MIT OR Apache-2.0,YOSHIOKA Takuma <nop_thread@nops.red>
 is-terminal,https://github.com/sunfishcode/is-terminal,MIT,"softprops <d.tangren@gmail.com>, Dan Gohman <dev@sunfishcode.online>"
 is_terminal_polyfill,https://github.com/polyfill-rs/is_terminal_polyfill,MIT OR Apache-2.0,The is_terminal_polyfill Authors
 itertools,https://github.com/rust-itertools/itertools,MIT OR Apache-2.0,bluss
@@ -388,6 +389,8 @@ rand_xorshift,https://github.com/rust-random/rngs,MIT OR Apache-2.0,"The Rand Pr
 rayon,https://github.com/rayon-rs/rayon,MIT OR Apache-2.0,"Niko Matsakis <niko@alum.mit.edu>, Josh Stone <cuviper@gmail.com>"
 rayon-core,https://github.com/rayon-rs/rayon,MIT OR Apache-2.0,"Niko Matsakis <niko@alum.mit.edu>, Josh Stone <cuviper@gmail.com>"
 redox_syscall,https://gitlab.redox-os.org/redox-os/syscall,MIT,Jeremy Soller <jackpot51@gmail.com>
+ref-cast,https://github.com/dtolnay/ref-cast,MIT OR Apache-2.0,David Tolnay <dtolnay@gmail.com>
+ref-cast-impl,https://github.com/dtolnay/ref-cast,MIT OR Apache-2.0,David Tolnay <dtolnay@gmail.com>
 regex,https://github.com/rust-lang/regex,MIT OR Apache-2.0,"The Rust Project Developers, Andrew Gallant <jamslam@gmail.com>"
 regex-automata,https://github.com/BurntSushi/regex-automata,Unlicense OR MIT,Andrew Gallant <jamslam@gmail.com>
 regex-automata,https://github.com/rust-lang/regex/tree/master/regex-automata,MIT OR Apache-2.0,"The Rust Project Developers, Andrew Gallant <jamslam@gmail.com>"
@@ -422,6 +425,7 @@ ryu,https://github.com/dtolnay/ryu,Apache-2.0 OR BSL-1.0,David Tolnay <dtolnay@g
 same-file,https://github.com/BurntSushi/same-file,Unlicense OR MIT,Andrew Gallant <jamslam@gmail.com>
 scc,https://github.com/wvwwvwwv/scalable-concurrent-containers,Apache-2.0,wvwwvwwv <wvwwvwwv@me.com>
 schannel,https://github.com/steffengy/schannel-rs,MIT,"Steven Fackler <sfackler@gmail.com>, Steffen Butzer <steffen.butzer@outlook.com>"
+schemars,https://github.com/GREsau/schemars,MIT,Graham Esau <gesau@hotmail.co.uk>
 scoped-tls,https://github.com/alexcrichton/scoped-tls,MIT OR Apache-2.0,Alex Crichton <alex@alexcrichton.com>
 scopeguard,https://github.com/bluss/scopeguard,MIT OR Apache-2.0,bluss
 sct,https://github.com/rustls/sct.rs,Apache-2.0 OR ISC OR MIT,Joseph Birr-Pixton <jpixton@gmail.com>
@@ -466,6 +470,8 @@ syn,https://github.com/dtolnay/syn,MIT OR Apache-2.0,David Tolnay <dtolnay@gmail
 sync_wrapper,https://github.com/Actyx/sync_wrapper,Apache-2.0,Actyx AG <developer@actyx.io>
 synstructure,https://github.com/mystor/synstructure,MIT,Nika Layzell <nika@thelayzells.com>
 sysinfo,https://github.com/GuillaumeGomez/sysinfo,MIT,Guillaume Gomez <guillaume1.gomez@gmail.com>
+system-configuration,https://github.com/mullvad/system-configuration-rs,MIT OR Apache-2.0,Mullvad VPN
+system-configuration-sys,https://github.com/mullvad/system-configuration-rs,MIT OR Apache-2.0,Mullvad VPN
 tabled,https://github.com/zhiburt/tabled,MIT,Maxim Zhiburt <zhiburt@gmail.com>
 tabled_derive,https://github.com/zhiburt/tabled,MIT,Maxim Zhiburt <zhiburt@gmail.com>
 tantivy,https://github.com/quickwit-oss/tantivy,MIT,Paul Masurel <paul.masurel@gmail.com>
@@ -500,7 +506,7 @@ tokio-stream,https://github.com/tokio-rs/tokio,MIT,Tokio Contributors <team@toki
 tokio-tungstenite,https://github.com/snapview/tokio-tungstenite,MIT,"Daniel Abramov <dabramov@snapview.de>, Alexey Galakhov <agalakhov@snapview.de>"
 tokio-util,https://github.com/tokio-rs/tokio,MIT,Tokio Contributors <team@tokio.rs>
 toml,https://github.com/toml-rs/toml,MIT OR Apache-2.0,Alex Crichton <alex@alexcrichton.com>
-toml_datetime,https://github.com/toml-rs/toml,MIT OR Apache-2.0,Alex Crichton <alex@alexcrichton.com>
+toml_datetime,https://github.com/toml-rs/toml,MIT OR Apache-2.0,The toml_datetime Authors
 toml_edit,https://github.com/toml-rs/toml,MIT OR Apache-2.0,"Andronik Ordian <write@reusable.software>, Ed Page <eopage@gmail.com>"
 tonic,https://github.com/hyperium/tonic,MIT,Lucio Franco <luciofranco14@gmail.com>
 tonic-build,https://github.com/hyperium/tonic,MIT,Lucio Franco <luciofranco14@gmail.com>

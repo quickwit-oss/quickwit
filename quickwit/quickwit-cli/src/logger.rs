@@ -50,6 +50,8 @@ fn startup_env_filter(level: Level) -> anyhow::Result<EnvFilter> {
     Ok(env_filter)
 }
 
+type ReloadLayer = tracing_subscriber::reload::Layer<EnvFilter, tracing_subscriber::Registry>;
+
 pub fn setup_logging_and_tracing(
     level: Level,
     ansi_colors: bool,
@@ -63,9 +65,31 @@ pub fn setup_logging_and_tracing(
         }
     }
     global::set_text_map_propagator(TraceContextPropagator::new());
-    let (reloadable_env_filter, reload_handle) =
-        tracing_subscriber::reload::Layer::new(startup_env_filter(level)?);
+
+    let event_format = EventFormat::get_from_env();
+    let fmt_fields = event_format.format_fields();
     let registry = tracing_subscriber::registry();
+
+    let (reloadable_env_filter, reload_handle) = ReloadLayer::new(startup_env_filter(level)?);
+
+    #[cfg(not(feature = "jemalloc-profiled"))]
+    let registry = registry.with(reloadable_env_filter).with(
+        tracing_subscriber::fmt::layer()
+            .event_format(event_format)
+            .fmt_fields(fmt_fields)
+            .with_ansi(ansi_colors),
+    );
+
+    #[cfg(feature = "jemalloc-profiled")]
+    let registry = jemalloc_profiled::configure_registry(
+        registry,
+        event_format,
+        fmt_fields,
+        ansi_colors,
+        level,
+        reloadable_env_filter,
+    )?;
+
     // Note on disabling ANSI characters: setting the ansi boolean on event format is insufficient.
     // It is thus set on layers, see https://github.com/tokio-rs/tracing/issues/1817
     if get_bool_from_env(QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY, false) {
@@ -92,40 +116,11 @@ pub fn setup_logging_and_tracing(
             .build();
         let tracer = provider.tracer("quickwit");
         let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
-
-        let event_format = EventFormat::get_from_env();
-        let fmt_fields = event_format.format_fields();
-
         registry
-            .with(reloadable_env_filter)
             .with(telemetry_layer)
-            .with(
-                tracing_subscriber::fmt::layer()
-                    .event_format(event_format)
-                    .fmt_fields(fmt_fields)
-                    .with_ansi(ansi_colors),
-            )
             .try_init()
             .context("failed to register tracing subscriber")?;
     } else {
-        let event_format = EventFormat::get_from_env();
-        let fmt_fields = event_format.format_fields();
-        #[cfg(not(feature = "jemalloc-profiled"))]
-        let registry = registry.with(reloadable_env_filter).with(
-            tracing_subscriber::fmt::layer()
-                .event_format(event_format)
-                .fmt_fields(fmt_fields)
-                .with_ansi(ansi_colors),
-        );
-        #[cfg(feature = "jemalloc-profiled")]
-        let registry = jemalloc_profiled::configure_registry(
-            registry,
-            event_format,
-            fmt_fields,
-            ansi_colors,
-            level,
-        )?;
-
         registry
             .try_init()
             .context("failed to register tracing subscriber")?;
@@ -232,10 +227,11 @@ pub(super) mod jemalloc_profiled {
     use tracing_subscriber::registry::LookupSpan;
 
     use super::{EventFormat, FieldFormat, startup_env_filter, time_formatter};
+    use crate::logger::ReloadLayer;
 
     /// An event formatter specific to the memory profiler output.
     ///
-    /// Also displays a backtrace after spans and the fields of the tracing
+    /// Also displays a backtrace after the spans and fields of the tracing
     /// event (into separate lines).
     struct ProfilingFormat {
         time_formatter: UtcTime<Vec<BorrowedFormatItem<'static>>>,
@@ -309,13 +305,15 @@ pub(super) mod jemalloc_profiled {
     ///
     /// The the jemalloc profiler formatter disables the env filter reloading
     /// because the [tracing_subscriber::reload::Layer] seems to overwrite the
-    /// TRACE level span filter even though it's applied to a separate layer.
+    /// filter configured by [profiler_tracing_filter()] even though it is
+    /// applied to a separate layer.
     pub(super) fn configure_registry<S>(
         registry: S,
         event_format: EventFormat<'static>,
         fmt_fields: FieldFormat,
         ansi_colors: bool,
         level: Level,
+        _reloadable_env_filter: ReloadLayer,
     ) -> anyhow::Result<impl Subscriber + for<'span> LookupSpan<'span>>
     where
         S: Subscriber + for<'span> LookupSpan<'span>,
