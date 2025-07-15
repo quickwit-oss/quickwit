@@ -78,7 +78,7 @@ impl Default for StorageMetrics {
             object_storage_request_duration: new_histogram_vec(
                 "object_storage_request_duration",
                 "Durations until the response headers are returned from the object store, by \
-                 action and status. This does not measure the download time.",
+                 action and status. This does not measure the download time for the body content.",
                 "storage",
                 &[],
                 ["action", "status"],
@@ -86,14 +86,14 @@ impl Default for StorageMetrics {
             ),
             object_storage_get_slice_in_flight_count: new_gauge(
                 "object_storage_get_slice_in_flight_count",
-                "Number of GetObject for which the memory was allocated but the download is still \
-                 in progress.",
+                "Number of get_object for which the memory was allocated but the download is \
+                 still in progress.",
                 "storage",
                 &[],
             ),
             object_storage_get_slice_in_flight_num_bytes: new_gauge(
                 "object_storage_get_slice_in_flight_num_bytes",
-                "Memory allocated for GetObject requests that are still in progress.",
+                "Memory allocated for get_object requests that are still in progress.",
                 "storage",
                 &[],
             ),
@@ -106,6 +106,9 @@ impl Default for StorageMetrics {
             ),
             object_storage_download_errors: new_counter_vec(
                 "object_storage_download_errors",
+                // Download errors are recorded separately because the associated
+                // get_object requests were already recorded as successful in
+                // object_storage_requests_total
                 "Number of download requests that received successful response headers but failed \
                  during download.",
                 "storage",
