@@ -45,7 +45,9 @@ use tracing::{instrument, warn};
 
 use crate::debouncer::DebouncedStorage;
 use crate::metrics::object_storage_get_slice_in_flight_guards;
-use crate::object_storage::metrics_wrappers::{S3MetricsWrapperExt, copy_with_download_metrics};
+use crate::object_storage::metrics_wrappers::{
+    ActionLabel, RequestMetricsWrapperExt, copy_with_download_metrics,
+};
 use crate::storage::SendableAsync;
 use crate::{
     BulkDeleteError, DeleteFailure, MultiPartPolicy, PutPayload, Storage, StorageError,
@@ -226,9 +228,6 @@ impl AzureBlobStorage {
         name: &'a str,
         payload: Box<dyn crate::PutPayload>,
     ) -> StorageResult<()> {
-        crate::STORAGE_METRICS
-            .object_storage_upload_num_bytes
-            .inc_by(payload.len());
         retry(&self.retry_params, || async {
             let data = Bytes::from(payload.read_all().await?.to_vec());
             let hash = azure_storage_blobs::prelude::Hash::from(md5::compute(&data[..]).0);
@@ -237,7 +236,7 @@ impl AzureBlobStorage {
                 .put_block_blob(data)
                 .hash(hash)
                 .into_future()
-                .with_count_metric("put_block_blob")
+                .with_count_and_upload_metrics(ActionLabel::PutObject, payload.len())
                 .await?;
             Result::<(), AzureErrorWrapper>::Ok(())
         })
@@ -262,9 +261,6 @@ impl AzureBlobStorage {
             .map(|(num, range)| {
                 let moved_blob_client = blob_client.clone();
                 let moved_payload = payload.clone();
-                crate::STORAGE_METRICS
-                    .object_storage_upload_num_bytes
-                    .inc_by(range.end - range.start);
                 async move {
                     retry(&self.retry_params, || async {
                         let block_id = format!("block:{num}");
@@ -276,7 +272,10 @@ impl AzureBlobStorage {
                             .put_block(block_id.clone(), data)
                             .hash(hash)
                             .into_future()
-                            .with_count_metric("put_block")
+                            .with_count_and_upload_metrics(
+                                ActionLabel::UploadPart,
+                                range.end - range.start,
+                            )
                             .await?;
                         Result::<_, AzureErrorWrapper>::Ok(block_id)
                     })
@@ -300,7 +299,7 @@ impl AzureBlobStorage {
         blob_client
             .put_block_list(block_list)
             .into_future()
-            .with_count_metric("put_block_list")
+            .with_count_metric(ActionLabel::CompleteMultipartUpload)
             .await
             .map_err(AzureErrorWrapper::from)?;
 
@@ -317,6 +316,7 @@ impl Storage for AzureBlobStorage {
             .max_results(NonZeroU32::new(1u32).expect("1 is always non-zero."))
             .into_stream()
             .next()
+            .with_count_metric(ActionLabel::ListObjects)
             .await
         {
             let _ = first_blob_result?;
@@ -346,7 +346,11 @@ impl Storage for AzureBlobStorage {
         let name = self.blob_name(path);
         let mut output_stream = self.container_client.blob_client(name).get().into_stream();
 
-        while let Some(chunk_result) = output_stream.next().with_count_metric("get_blob").await {
+        while let Some(chunk_result) = output_stream
+            .next()
+            .with_count_metric(ActionLabel::GetObject)
+            .await
+        {
             let chunk_response = chunk_result.map_err(AzureErrorWrapper::from)?;
             let chunk_response_body_stream = chunk_response
                 .data
@@ -367,7 +371,7 @@ impl Storage for AzureBlobStorage {
             .blob_client(blob_name)
             .delete()
             .into_future()
-            .with_count_metric("delete_blob")
+            .with_count_metric(ActionLabel::DeleteObject)
             .await
             .map_err(|err| AzureErrorWrapper::from(err).into());
         ignore_error_kind!(StorageErrorKind::NotFound, delete_res)?;
@@ -490,6 +494,7 @@ impl Storage for AzureBlobStorage {
             .blob_client(name)
             .get_properties()
             .into_future()
+            .with_count_metric(ActionLabel::HeadObject)
             .await;
         match properties_result {
             Ok(response) => Ok(response.blob.properties.content_length),
@@ -543,7 +548,11 @@ async fn download_all(
     output: &mut Vec<u8>,
 ) -> Result<(), AzureErrorWrapper> {
     output.clear();
-    while let Some(chunk_result) = chunk_stream.next().with_count_metric("get_blob").await {
+    while let Some(chunk_result) = chunk_stream
+        .next()
+        .with_count_metric(ActionLabel::GetObject)
+        .await
+    {
         let chunk_response = chunk_result?;
         let chunk_response_body_stream = chunk_response
             .data

@@ -34,9 +34,9 @@ pub struct StorageMetrics {
     pub object_storage_request_duration: HistogramVec<2>,
     pub object_storage_get_slice_in_flight_count: IntGauge,
     pub object_storage_get_slice_in_flight_num_bytes: IntGauge,
-    pub object_storage_download_num_bytes: IntCounter,
+    pub object_storage_download_num_bytes: IntCounterVec<1>,
     pub object_storage_download_errors: IntCounterVec<1>,
-    pub object_storage_upload_num_bytes: IntCounter,
+    pub object_storage_upload_num_bytes: IntCounterVec<1>,
 }
 
 impl Default for StorageMetrics {
@@ -97,25 +97,28 @@ impl Default for StorageMetrics {
                 "storage",
                 &[],
             ),
-            object_storage_download_num_bytes: new_counter(
+            object_storage_download_num_bytes: new_counter_vec(
                 "object_storage_download_num_bytes",
-                "Amount of data downloaded from an object storage.",
-                "storage",
-                &[],
-            ),
-            object_storage_download_errors: new_counter_vec(
-                "object_storage_download_errors",
-                "Number of download requests that received successfull response headers but \
-                 failed during download.",
+                "Amount of data downloaded from object storage.",
                 "storage",
                 &[],
                 ["status"],
             ),
-            object_storage_upload_num_bytes: new_counter(
-                "object_storage_upload_num_bytes",
-                "Amount of data uploaded to an object storage.",
+            object_storage_download_errors: new_counter_vec(
+                "object_storage_download_errors",
+                "Number of download requests that received successful response headers but failed \
+                 during download.",
                 "storage",
                 &[],
+                ["status"],
+            ),
+            object_storage_upload_num_bytes: new_counter_vec(
+                "object_storage_upload_num_bytes",
+                "Amount of data uploaded to object storage. The value recorded for failed and \
+                 aborted uploads is the full payload size.",
+                "storage",
+                &[],
+                ["status"],
             ),
         }
     }
