@@ -16,8 +16,8 @@
 
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
-    GaugeGuard, HistogramVec, IntCounter, IntCounterVec, IntGauge, new_counter, new_counter_vec,
-    new_gauge, new_histogram_vec,
+    GaugeGuard, HistogramVec, IntCounter, IntCounterVec, IntGauge, MEMORY_METRICS, new_counter,
+    new_counter_vec, new_gauge, new_histogram_vec,
 };
 
 /// Counters associated to storage operations.
@@ -32,8 +32,6 @@ pub struct StorageMetrics {
     pub get_slice_timeout_all_timeouts: IntCounter,
     pub object_storage_requests_total: IntCounterVec<2>,
     pub object_storage_request_duration: HistogramVec<2>,
-    pub object_storage_get_slice_in_flight_count: IntGauge,
-    pub object_storage_get_slice_in_flight_num_bytes: IntGauge,
     pub object_storage_download_num_bytes: IntCounterVec<1>,
     pub object_storage_download_errors: IntCounterVec<1>,
     pub object_storage_upload_num_bytes: IntCounterVec<1>,
@@ -83,19 +81,6 @@ impl Default for StorageMetrics {
                 &[],
                 ["action", "status"],
                 vec![0.1, 0.5, 1.0, 5.0, 10.0, 30.0, 60.0],
-            ),
-            object_storage_get_slice_in_flight_count: new_gauge(
-                "object_storage_get_slice_in_flight_count",
-                "Number of get_object for which the memory was allocated but the download is \
-                 still in progress.",
-                "storage",
-                &[],
-            ),
-            object_storage_get_slice_in_flight_num_bytes: new_gauge(
-                "object_storage_get_slice_in_flight_num_bytes",
-                "Memory allocated for get_object requests that are still in progress.",
-                "storage",
-                &[],
             ),
             object_storage_download_num_bytes: new_counter_vec(
                 "object_storage_download_num_bytes",
@@ -199,15 +184,11 @@ pub static STORAGE_METRICS: Lazy<StorageMetrics> = Lazy::new(StorageMetrics::def
 pub static CACHE_METRICS_FOR_TESTS: Lazy<CacheMetrics> =
     Lazy::new(|| CacheMetrics::for_component("fortest"));
 
-pub fn object_storage_get_slice_in_flight_guards(
-    get_request_size: usize,
-) -> (GaugeGuard<'static>, GaugeGuard<'static>) {
-    let mut bytes_guard = GaugeGuard::from_gauge(
-        &crate::STORAGE_METRICS.object_storage_get_slice_in_flight_num_bytes,
-    );
+/// Helps tracking pre-allocated memory for downloads that are still in progress.
+///
+/// This is actually recorded as a memory metric and not a storage metric.
+pub fn object_storage_get_slice_in_flight_guards(get_request_size: usize) -> GaugeGuard<'static> {
+    let mut bytes_guard = GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.get_object);
     bytes_guard.add(get_request_size as i64);
-    let mut count_guard =
-        GaugeGuard::from_gauge(&crate::STORAGE_METRICS.object_storage_get_slice_in_flight_count);
-    count_guard.add(1);
-    (bytes_guard, count_guard)
+    bytes_guard
 }
