@@ -60,16 +60,21 @@ POST api/v1/<index id>/search
 
 | Variable            | Type       | Description     | Default value   |
 |---------------------|------------|-----------------|-----------------|
-| `query`           | `String`   | Query text. See the [query language doc](query-language.md) | _required_ |
-| `start_timestamp` | `i64`      | If set, restrict search to documents with a `timestamp >= start_timestamp`, taking advantage of potential time pruning opportunities. The value must be in seconds. | |
-| `end_timestamp`   | `i64`      | If set, restrict search to documents with a `timestamp < end_timestamp`, taking advantage of potential time pruning opportunities. The value must be in seconds.    | |
-| `start_offset`    | `Integer`  | Number of documents to skip | `0` |
-| `max_hits`        | `Integer`  | Maximum number of hits to return (by default 20) | `20` |
-| `search_field`    | `[String]` | Fields to search on if no field name is specified in the query. Comma-separated list, e.g. "field1,field2"  | index_config.search_settings.default_search_fields |
-| `snippet_fields`  | `[String]` | Fields to extract snippet on. Comma-separated list, e.g. "field1,field2"  | |
-| `sort_by`         | `[String]` | Fields to sort the query results on. You can sort by one or two fast fields or by BM25 `_score` (requires fieldnorms). By default, hits are sorted in reverse order of their [document ID](/docs/overview/concepts/querying.md#document-id) (to show recent events first). | |
-| `format`          | `Enum`     | The output format. Allowed values are "json" or "pretty_json" | `pretty_json` |
-| `aggs`            | `JSON`     | The aggregations request. See the [aggregations doc](aggregation.md) for supported aggregations. | |
+| `query`           | `String`     | Query text. See the [query language doc](query-language.md) | _required_ |
+| `start_timestamp` | `i64`        | If set, restrict search to documents with a `timestamp >= start_timestamp`, taking advantage of potential time pruning opportunities. The value must be in seconds. | |
+| `end_timestamp`   | `i64`        | If set, restrict search to documents with a `timestamp < end_timestamp`, taking advantage of potential time pruning opportunities. The value must be in seconds.    | |
+| `start_offset`    | `Integer`.   | Number of documents to skip | `0` |
+| `max_hits`        | `Integer`    | Maximum number of hits to return (by default 20) | `20` |
+| `search_field`    | `[String]`\* | Fields to search on if no field name is specified in the query. | index_config.search_settings.default_search_fields |
+| `snippet_fields`  | `[String]`\* | Fields to extract snippet on. | |
+| `sort_by`         | `[String]`\* | Fields to sort the query results on. You can sort by one or two fast fields or by BM25 `_score` (requires fieldnorms). By default, fields are sorted in descending order, to sort by ascending order prepend `-` (e.g "-field1"). If no field is specified, hits are sorted in reverse order of their [document ID](/docs/overview/concepts/querying.md#document-id) (to show recent events first). | |
+| `format`          | `Enum`       | The output format. Allowed values are "json" or "pretty_json" | `pretty_json` |
+| `aggs`            | `JSON`       | The aggregations request. See the [aggregations doc](aggregation.md) for supported aggregations. | |
+
+
+
+\* Field lists of type `[String]` (`search_field`, `snippet_field` and `sort_by`) are comma-separated lists, e.g "field1,field2".
+
 
 :::info
 The `start_timestamp` and `end_timestamp` should be specified in seconds regardless of the timestamp field precision.
