@@ -1,0 +1,30 @@
+endpoint: simple/search
+params:
+  query: "ts_nano:>=1751128201918247000"
+  sort_by: "-ts_nano"
+expected:
+  num_hits: 2
+  hits:
+    - ts_nano: 1751128201918247000
+    - ts_nano: 1800000000000000000
+
+---
+endpoint: simple/search
+params:
+  query: "ts_nano:>=1751128201918247001"
+  sort_by: "-ts_nano"
+expected:
+  num_hits: 1
+  hits:
+    - ts_nano: 1800000000000000000
+---
+endpoint: simple/search
+params:
+  query: "ts_nano:>=1751128201918247001"
+  sort_by: "-ts_nano"
+  max_hits: 1
+expected:
+  num_hits: 1
+  hits:
+    - ts_nano: 1800000000000000000
+---

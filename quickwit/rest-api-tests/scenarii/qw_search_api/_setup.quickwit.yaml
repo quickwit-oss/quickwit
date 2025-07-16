@@ -18,7 +18,14 @@ json:
         fast: true
       - name: not_fast
         type: datetime
+        fast: false
+      - name: ts_nano
+        type: datetime
         fast: true
+        fast_precision: nanoseconds
+        output_format: unix_timestamp_nanos
+        input_formats:
+        - iso8601
     dynamic_mapping:
       tokenizer: default
       expand_dots: true
@@ -30,8 +37,8 @@ endpoint: simple/ingest
 params:
   commit: force
 ndjson:
-  - {"ts": 1684993001, "not_fast": 1684993001}
-  - {"ts": 1684993002, "not_fast": 1684993002}
+  - {"ts": 1684993001, "not_fast": 1684993001, ts_nano: "2025-06-28T16:30:01.918247+00:00"}
+  - {"ts": 1684993002, "not_fast": 1684993002, ts_nano: "2027-01-15T08:00:00+00:00"}
 ---
 # Ingest documents split #2
 method: POST
