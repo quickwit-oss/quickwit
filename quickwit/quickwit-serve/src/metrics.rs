@@ -52,14 +52,14 @@ impl Default for ServeMetrics {
             ),
             ongoing_requests: new_gauge_vec(
                 "ongoing_requests",
-                "Number of ongoing requests.",
+                "Number of ongoing requests on specific endpoint groups",
                 "",
                 &[],
                 ["endpoint_group"],
             ),
             pending_requests: new_gauge_vec(
                 "pending_requests",
-                "Number of pending requests.",
+                "Number of pending requests on specific endpoint groups",
                 "",
                 &[],
                 ["endpoint_group"],

@@ -13,18 +13,14 @@
 // limitations under the License.
 
 use once_cell::sync::Lazy;
-use quickwit_common::metrics::{IntCounter, IntGauge, new_counter, new_counter_vec, new_gauge};
+use quickwit_common::metrics::{IntCounter, new_counter_vec};
 
 pub struct IngestMetrics {
+    // With ingest V1 all ingested documents are considered valid
     pub ingested_docs_bytes_valid: IntCounter,
+    pub ingested_docs_valid: IntCounter,
     pub ingested_docs_bytes_invalid: IntCounter,
     pub ingested_docs_invalid: IntCounter,
-    pub ingested_docs_valid: IntCounter,
-
-    pub replicated_num_bytes_total: IntCounter,
-    pub replicated_num_docs_total: IntCounter,
-    #[allow(dead_code)] // this really shouldn't be dead, it needs to be used somewhere
-    pub queue_count: IntGauge,
 }
 
 impl Default for IngestMetrics {
@@ -56,24 +52,6 @@ impl Default for IngestMetrics {
             ingested_docs_bytes_invalid,
             ingested_docs_valid,
             ingested_docs_invalid,
-            replicated_num_bytes_total: new_counter(
-                "replicated_num_bytes_total",
-                "Total size in bytes of the replicated docs.",
-                "ingest",
-                &[],
-            ),
-            replicated_num_docs_total: new_counter(
-                "replicated_num_docs_total",
-                "Total number of docs replicated.",
-                "ingest",
-                &[],
-            ),
-            queue_count: new_gauge(
-                "queue_count",
-                "Number of queues currently active",
-                "ingest",
-                &[],
-            ),
         }
     }
 }
