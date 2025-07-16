@@ -853,7 +853,7 @@ mod kafka_broker_tests {
                     Duration::from_secs(1),
                 )
                 .await
-                .map(|(partition, offset)| (id, partition, offset))
+                .map(|delivery| (id, delivery.partition, delivery.offset)) 
                 .map_err(|(err, _)| err)
         });
         let message_map = futures::future::try_join_all(tasks)
