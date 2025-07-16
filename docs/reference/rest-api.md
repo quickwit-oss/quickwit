@@ -67,7 +67,7 @@ POST api/v1/<index id>/search
 | `max_hits`        | `Integer`  | Maximum number of hits to return (by default 20) | `20` |
 | `search_field`    | `[String]` | Fields to search on if no field name is specified in the query. Comma-separated list, e.g. "field1,field2"  | index_config.search_settings.default_search_fields |
 | `snippet_fields`  | `[String]` | Fields to extract snippet on. Comma-separated list, e.g. "field1,field2"  | |
-| `sort_by`         | `[String]` | Fields to sort the query results on. You can sort by one or two fast fields or by BM25 `_score` (requires fieldnorms). By default, hits are sorted in reverse order of their [document ID](/docs/overview/concepts/querying.md#document-id) (to show recent events first). | |
+| `sort_by`         | `[String]` | Fields to sort the query results on. You can sort by one or two fast fields or by BM25 `_score` (requires fieldnorms). By default, hits are sorted in reverse order of their [document ID](/docs/overview/concepts/querying.md#document-id) (to show recent events first). [Sorting](docs/internals/sorting.md) is Descending by default. The sorting order can be reversed by prefixing a field name with a hyphen `-`. | |
 | `format`          | `Enum`     | The output format. Allowed values are "json" or "pretty_json" | `pretty_json` |
 | `aggs`            | `JSON`     | The aggregations request. See the [aggregations doc](aggregation.md) for supported aggregations. | |
 
