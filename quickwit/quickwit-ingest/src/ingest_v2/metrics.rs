@@ -16,7 +16,8 @@ use mrecordlog::ResourceUsage;
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
     Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec, exponential_buckets,
-    linear_buckets, new_counter_vec, new_gauge, new_gauge_vec, new_histogram, new_histogram_vec,
+    linear_buckets, new_counter, new_counter_vec, new_gauge, new_gauge_vec, new_histogram,
+    new_histogram_vec,
 };
 
 // Counter vec counting the different outcomes of ingest requests as
@@ -82,6 +83,8 @@ pub(super) struct IngestV2Metrics {
     pub wal_disk_used_bytes: IntGauge,
     pub wal_memory_used_bytes: IntGauge,
     pub ingest_results: IngestResultMetrics,
+    pub replicated_num_bytes_total: IntCounter,
+    pub replicated_num_docs_total: IntCounter,
 }
 
 impl Default for IngestV2Metrics {
@@ -143,6 +146,18 @@ impl Default for IngestV2Metrics {
             wal_memory_used_bytes: new_gauge(
                 "wal_memory_used_bytes",
                 "WAL memory used in bytes.",
+                "ingest",
+                &[],
+            ),
+            replicated_num_bytes_total: new_counter(
+                "replicated_num_bytes_total",
+                "Total size in bytes of the replicated docs.",
+                "ingest",
+                &[],
+            ),
+            replicated_num_docs_total: new_counter(
+                "replicated_num_docs_total",
+                "Total number of docs replicated.",
                 "ingest",
                 &[],
             ),

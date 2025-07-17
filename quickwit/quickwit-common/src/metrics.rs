@@ -342,6 +342,7 @@ pub struct InFlightDataGauges {
     pub doc_processor_mailbox: IntGauge,
     pub indexer_mailbox: IntGauge,
     pub index_writer: IntGauge,
+    pub get_object: IntGauge,
     in_flight_gauge_vec: IntGaugeVec<1>,
 }
 
@@ -365,6 +366,7 @@ impl Default for InFlightDataGauges {
             doc_processor_mailbox: in_flight_gauge_vec.with_label_values(["doc_processor_mailbox"]),
             indexer_mailbox: in_flight_gauge_vec.with_label_values(["indexer_mailbox"]),
             index_writer: in_flight_gauge_vec.with_label_values(["index_writer"]),
+            get_object: in_flight_gauge_vec.with_label_values(["get_object"]),
             in_flight_gauge_vec: in_flight_gauge_vec.clone(),
         }
     }

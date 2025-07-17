@@ -18,7 +18,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 2,
+  "id": 4,
   "links": [],
   "liveNow": false,
   "panels": [
@@ -307,18 +307,18 @@
             "uid": "${datasource}"
           },
           "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "rate(quickwit_storage_object_storage_gets_total{instance=~\"$instance\"}[$__rate_interval])",
+          "editorMode": "code",
+          "expr": "sum(rate(quickwit_storage_object_storage_requests_total{instance=~\"$instance\"}[$__rate_interval])) by (action)",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
-          "legendFormat": "Total",
+          "legendFormat": "{{action}} req/sec",
           "range": true,
           "refId": "A",
           "useBackend": false
         }
       ],
-      "title": "Number of GET requests",
+      "title": "Object store requests",
       "type": "timeseries"
     },
     {
@@ -407,18 +407,18 @@
             "uid": "${datasource}"
           },
           "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "quickwit_storage_object_storage_download_num_bytes{instance=~\"$instance\"}",
+          "editorMode": "code",
+          "expr": "rate(quickwit_storage_object_storage_download_num_bytes{instance=~\"$instance\"}[$__rate_interval])",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
-          "legendFormat": "Downloaded bytes",
+          "legendFormat": "Download bytes / sec ",
           "range": true,
           "refId": "A",
           "useBackend": false
         }
       ],
-      "title": "Size of GET requests (bytes)",
+      "title": "Object store download rate",
       "type": "timeseries"
     },
     {
@@ -506,8 +506,8 @@
             "uid": "${datasource}"
           },
           "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "rate(quickwit_cache_cache_hits_total{instance=~\"$instance\"}[$__rate_interval])",
+          "editorMode": "code",
+          "expr": "sum(rate(quickwit_cache_cache_hits_total{instance=~\"$instance\"}[$__rate_interval])) by (component_name)",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -710,7 +710,7 @@
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
-          "legendFormat": "Split footer",
+          "legendFormat": "{{component_name}}",
           "range": true,
           "refId": "A",
           "useBackend": false
@@ -810,7 +810,7 @@
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
-          "legendFormat": "Split footer",
+          "legendFormat": "{{component_name}}",
           "range": true,
           "refId": "A",
           "useBackend": false
@@ -874,7 +874,6 @@
         "sort": 0,
         "type": "query"
       }
-
     ]
   },
   "time": {
@@ -885,6 +884,6 @@
   "timezone": "",
   "title": "Quickwit Searchers",
   "uid": "quickwit-searchers",
-  "version": 1,
+  "version": 4,
   "weekStart": ""
 }

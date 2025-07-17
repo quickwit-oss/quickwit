@@ -25,6 +25,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
+  "id": 1,
   "links": [],
   "liveNow": false,
   "panels": [
@@ -745,7 +746,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "builder",
-          "expr": "sum by(pod) (rate(quickwit_storage_object_storage_upload_num_bytes{namespace=\"$namespace\", pod=~\"$pod\", instance=~\"$instance\"}[$__rate_interval]))",
+          "expr": "sum by(pod) (rate(quickwit_storage_object_storage_upload_num_bytes{instance=~\"$instance\"}[$__rate_interval]))",
           "hide": false,
           "legendFormat": "Upload bytes / sec - {{pod}}",
           "range": true,
@@ -806,8 +807,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -910,8 +910,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -965,23 +964,12 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "editorMode": "builder",
-          "expr": "sum(rate(quickwit_storage_object_storage_gets_total{instance=~\"$instance\"}[$__rate_interval]))",
-          "legendFormat": "GET req/sec",
-          "range": true,
-          "refId": "Download"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "editorMode": "builder",
-          "expr": "sum(rate(quickwit_storage_object_storage_puts_total{namespace=\"$namespace\", pod=~\"$pod\", instance=~\"$instance\"}[$__rate_interval]))",
+          "editorMode": "code",
+          "expr": "sum(rate(quickwit_storage_object_storage_requests_total{instance=~\"$instance\"}[$__rate_interval])) by (action)",
           "hide": false,
-          "legendFormat": "PUT req/sec",
+          "legendFormat": "{{action}} req/sec",
           "range": true,
-          "refId": "Upload"
+          "refId": "Requests"
         }
       ],
       "title": "Requests on object storage",
@@ -1034,8 +1022,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -1130,8 +1117,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -1191,7 +1177,7 @@
     "list": [
       {
         "current": {
-          "selected": true,
+          "selected": false,
           "text": "Prometheus",
           "value": "PBFA97CFB590B2093"
         },
@@ -1245,6 +1231,6 @@
   "timezone": "",
   "title": "Quickwit Indexers",
   "uid": "quickwit-indexers",
-  "version": 2,
+  "version": 6,
   "weekStart": ""
 }
