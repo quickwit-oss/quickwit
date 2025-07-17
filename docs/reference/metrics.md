@@ -178,7 +178,7 @@ Note that the legacy ingest (V1) only records the `docs_total` and `docs_bytes_t
 | `quickwit_search` | `leaf_search_split_duration_secs` | Number of seconds required to run a leaf search over a single split. The timer starts after the semaphore is obtained | | `histogram` |
 | `quickwit_search` | `leaf_search_single_split_tasks` | Number of single split search tasks pending or ongoing | [`status`] | `gauge` |
 | `quickwit_search` | `leaf_search_single_split_warmup_num_bytes` | Size of the short lived cache for a single split once the warmup is done | | `histogram` |
-| `quickwit_search` | `job_assigned_total` | Number of jobs assigned to searchers, per affinity rank | [`affinity`] | `counter` |
+| `quickwit_search` | `job_assigned_total` | Number of jobs assigned from this searcher (root) to other searchers (leafs), per affinity rank | [`affinity`] | `counter` |
 | `quickwit_search` | `searcher_local_kv_store_size_bytes` | Size of the searcher kv store in bytes. This store is used to cache scroll contexts | | `gauge` |
 
 ## Storage Metrics
