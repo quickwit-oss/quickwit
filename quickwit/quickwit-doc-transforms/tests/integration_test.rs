@@ -264,7 +264,7 @@ fn test_integrations_processor() {
     check_counters.print();
 
     println!("{global_num_succeeded_checks}/{global_num_checks} checks succeeded");
-    assert_eq!(global_num_succeeded_checks, 5727);
+    assert_eq!(global_num_succeeded_checks, 5745);
     assert_eq!(global_num_checks, 8041);
 }
 
