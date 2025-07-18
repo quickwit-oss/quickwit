@@ -14,6 +14,8 @@
 
 mod error;
 
+mod metrics_wrappers;
+
 mod s3_compatible_storage;
 pub use self::s3_compatible_storage::S3CompatibleObjectStorage;
 pub use self::s3_compatible_storage_resolver::S3CompatibleObjectStorageFactory;
