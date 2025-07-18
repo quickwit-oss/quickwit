@@ -2110,6 +2110,17 @@ mod tests {
             sql.to_string(PostgresQueryBuilder),
             r#"SELECT * FROM "splits" WHERE "split_state" IN ('Staged')"#
         );
+
+        let mut select_statement = Query::select();
+        let sql = select_statement.column(Asterisk).from(Splits::Table);
+
+        let query = ListSplitsQuery::for_all_indexes().with_max_time_range_end(42);
+        append_query_filters_and_order_by(sql, &query);
+
+        assert_eq!(
+            sql.to_string(PostgresQueryBuilder),
+            r#"SELECT * FROM "splits" WHERE "time_range_end" <= 42"#
+        );
     }
 
     #[test]

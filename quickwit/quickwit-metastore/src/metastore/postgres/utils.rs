@@ -122,6 +122,10 @@ pub(super) fn append_query_filters_and_order_by(
         sql.cond_where(generate_sql_condition(tags));
     };
 
+    if let Some(v) = query.max_time_range_end {
+        sql.cond_where(Expr::col(Splits::TimeRangeEnd).lte(v));
+    }
+
     match query.time_range.start {
         Bound::Included(v) => {
             sql.cond_where(any![

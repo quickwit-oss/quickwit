@@ -735,6 +735,11 @@ fn split_query_predicate(split: &&Split, query: &ListSplitsQuery) -> bool {
         if !query.time_range.overlaps_with(range.clone()) {
             return false;
         }
+        if let Some(v) = query.max_time_range_end {
+            if range.end() > &v {
+                return false;
+            }
+        }
     }
 
     if let Some(node_id) = &query.node_id {
@@ -888,6 +893,12 @@ mod tests {
             });
         assert!(split_query_predicate(&&split_1, &query));
         assert!(!split_query_predicate(&&split_2, &query));
+        assert!(!split_query_predicate(&&split_3, &query));
+
+        let query = ListSplitsQuery::for_index(IndexUid::new_with_random_ulid("test-index"))
+            .with_max_time_range_end(50);
+        assert!(split_query_predicate(&&split_1, &query));
+        assert!(split_query_predicate(&&split_2, &query));
         assert!(!split_query_predicate(&&split_3, &query));
     }
 
