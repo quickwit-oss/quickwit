@@ -518,7 +518,7 @@ pub fn write_hotcache<D: Directory>(
             for byte_range in intervals {
                 let len = byte_range.len();
                 // We do not want to store slices that are too large in the hotcache,
-                // but on the other hand, the term dictionray index and the docstore
+                // but on the other hand, the term dictionary index and the docstore
                 // index are required for quickwit to work.
                 //
                 // Warning: we need to work on string here because `Path::ends_with`
