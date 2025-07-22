@@ -360,8 +360,8 @@ fn field_metadata_to_list_field_serialized(
     ListFieldsEntryResponse {
         field_name: field_metadata.field_name.to_string(),
         field_type: tantivy_type_to_list_field_type(field_metadata.typ) as i32,
-        searchable: field_metadata.indexed,
-        aggregatable: field_metadata.fast,
+        searchable: field_metadata.postings_size.is_some(),
+        aggregatable: field_metadata.fast_size.is_some(),
         index_ids: Vec::new(),
         non_searchable_index_ids: Vec::new(),
         non_aggregatable_index_ids: Vec::new(),
@@ -386,7 +386,7 @@ mod tests {
     use quickwit_proto::types::{DocMappingUid, IndexUid, NodeId};
     use tantivy::directory::MmapDirectory;
     use tantivy::schema::{FAST, NumericOptions, STRING, Schema, TEXT, Type};
-    use tantivy::{DateTime, IndexBuilder, IndexSettings, doc};
+    use tantivy::{ByteCount, DateTime, IndexBuilder, IndexSettings, doc};
     use tracing::Span;
 
     use super::*;
@@ -398,23 +398,29 @@ mod tests {
             FieldMetadata {
                 field_name: "test".to_string(),
                 typ: Type::Str,
-                indexed: true,
+                term_dictionary_size: None,
+                positions_size: None,
+                postings_size: Some(ByteCount::from(2_500u64)),
                 stored: true,
-                fast: true,
+                fast_size: Some(ByteCount::from(2_500u64)),
             },
             FieldMetadata {
                 field_name: "test2".to_string(),
                 typ: Type::Str,
-                indexed: true,
+                postings_size: Some(ByteCount::from(2_500u64)),
                 stored: false,
-                fast: false,
+                fast_size: None,
+                term_dictionary_size: None,
+                positions_size: None,
             },
             FieldMetadata {
                 field_name: "test3".to_string(),
                 typ: Type::U64,
-                indexed: true,
+                postings_size: Some(ByteCount::from(2_500u64)),
                 stored: false,
-                fast: true,
+                fast_size: Some(ByteCount::from(2_500u64)),
+                term_dictionary_size: None,
+                positions_size: None,
             },
         ];
 
