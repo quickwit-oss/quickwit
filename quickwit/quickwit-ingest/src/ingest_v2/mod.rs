@@ -174,6 +174,14 @@ impl JsonDocBatchV2Builder {
             doc_lengths: self.doc_lengths,
         }
     }
+
+    pub fn with_num_docs(num_docs: usize) -> Self {
+        Self {
+            doc_uids: Vec::with_capacity(num_docs),
+            doc_lengths: Vec::with_capacity(num_docs),
+            ..Default::default()
+        }
+    }
 }
 
 /// Helper struct to build an [`IngestRequestV2`].
