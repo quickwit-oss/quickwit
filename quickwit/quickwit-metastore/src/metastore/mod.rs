@@ -655,6 +655,9 @@ pub struct ListSplitsQuery {
     /// The time range to filter by.
     pub time_range: FilterRange<i64>,
 
+    /// The maximum time range end to filter by.
+    pub max_time_range_end: Option<i64>,
+
     /// The delete opstamp range to filter by.
     pub delete_opstamp: FilterRange<u64>,
 
@@ -721,6 +724,7 @@ impl ListSplitsQuery {
             split_states: Vec::new(),
             tags: None,
             time_range: Default::default(),
+            max_time_range_end: None,
             delete_opstamp: Default::default(),
             update_timestamp: Default::default(),
             create_timestamp: Default::default(),
@@ -744,6 +748,7 @@ impl ListSplitsQuery {
             split_states: Vec::new(),
             tags: None,
             time_range: Default::default(),
+            max_time_range_end: None,
             delete_opstamp: Default::default(),
             update_timestamp: Default::default(),
             create_timestamp: Default::default(),
@@ -763,6 +768,7 @@ impl ListSplitsQuery {
             split_states: Vec::new(),
             tags: None,
             time_range: Default::default(),
+            max_time_range_end: None,
             delete_opstamp: Default::default(),
             update_timestamp: Default::default(),
             create_timestamp: Default::default(),
@@ -833,6 +839,13 @@ impl ListSplitsQuery {
     /// *greater than* the provided value.
     pub fn with_time_range_start_gt(mut self, v: i64) -> Self {
         self.time_range.start = Bound::Excluded(v);
+        self
+    }
+
+    /// Retains only splits with a time range end that is
+    /// *less than or equal to* the provided value.
+    pub fn with_max_time_range_end(mut self, v: i64) -> Self {
+        self.max_time_range_end = Some(v);
         self
     }
 

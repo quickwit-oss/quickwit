@@ -127,7 +127,7 @@ macro_rules! return_if_err {
 /// The API of the rebalance callback is better explained in the docs of `librdkafka`:
 /// <https://docs.confluent.io/2.0.0/clients/librdkafka/classRdKafka_1_1RebalanceCb.html>
 impl ConsumerContext for RdKafkaContext {
-    fn pre_rebalance(&self, rebalance: &Rebalance) {
+    fn pre_rebalance(&self, _consumer: &BaseConsumer<Self>, rebalance: &Rebalance) {
         crate::metrics::INDEXER_METRICS.kafka_rebalance_total.inc();
         quickwit_common::rate_limited_info!(limit_per_min = 3, topic = self.topic, "rebalance");
         if let Rebalance::Revoke(tpl) = rebalance {
@@ -853,7 +853,7 @@ mod kafka_broker_tests {
                     Duration::from_secs(1),
                 )
                 .await
-                .map(|(partition, offset)| (id, partition, offset))
+                .map(|delivery| (id, delivery.partition, delivery.offset))
                 .map_err(|(err, _)| err)
         });
         let message_map = futures::future::try_join_all(tasks)
