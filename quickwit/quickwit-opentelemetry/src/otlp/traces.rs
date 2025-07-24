@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::cmp::{Ord, Ordering, PartialEq, PartialOrd};
-use std::collections::{BTreeSet, HashMap, btree_set};
+use std::cmp::PartialEq;
+use std::collections::HashMap;
 use std::str::FromStr;
 
 use async_trait::async_trait;
@@ -323,43 +323,6 @@ impl Span {
     }
 }
 
-/// A wrapper around `Span` that implements `Ord` to allow insertion of spans into a `BTreeSet`.
-#[derive(Debug)]
-struct OrdSpan(Span);
-
-impl Ord for OrdSpan {
-    /// Sort spans by trace ID, span name, start timestamp, and span ID in an attempt to group the
-    /// spans by trace ID and span name in the same docstore blocks. At some point, the
-    /// cost–benefit of this approach should be evaluated via a benchmark and revisited if
-    /// necessary.
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.0
-            .trace_id
-            .cmp(&other.0.trace_id)
-            .then(self.0.span_name.cmp(&other.0.span_name))
-            .then(
-                self.0
-                    .span_start_timestamp_nanos
-                    .cmp(&other.0.span_start_timestamp_nanos),
-            )
-            .then(self.0.span_id.cmp(&other.0.span_id))
-    }
-}
-
-impl PartialOrd for OrdSpan {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl PartialEq for OrdSpan {
-    fn eq(&self, other: &Self) -> bool {
-        self.cmp(other) == Ordering::Equal
-    }
-}
-
-impl Eq for OrdSpan {}
-
 #[derive(Debug, Clone)]
 pub struct SpanKind(i32);
 
@@ -650,10 +613,14 @@ impl Link {
     }
 }
 
-fn parse_otlp_spans(
-    request: ExportTraceServiceRequest,
-) -> Result<BTreeSet<OrdSpan>, OtlpTracesError> {
-    let mut spans = BTreeSet::new();
+fn parse_otlp_spans(request: ExportTraceServiceRequest) -> Result<Vec<Span>, OtlpTracesError> {
+    let num_spans = request
+        .resource_spans
+        .iter()
+        .flat_map(|resource_spans| resource_spans.scope_spans.iter())
+        .map(|scope_spans| scope_spans.spans.len())
+        .sum();
+    let mut spans = Vec::with_capacity(num_spans);
 
     for resource_spans in request.resource_spans {
         let resource = resource_spans
@@ -664,7 +631,7 @@ fn parse_otlp_spans(
             let scope = scope_spans.scope.map(Scope::from_otlp).unwrap_or_default();
             for span in scope_spans.spans {
                 let span = Span::from_otlp(span, &resource, &scope)?;
-                spans.insert(OrdSpan(span));
+                spans.push(span);
             }
         }
     }
@@ -765,11 +732,11 @@ impl OtlpGrpcTracesService {
         let mut num_parse_errors = 0;
         let mut error_message = String::new();
 
-        let mut doc_batch_builder = JsonDocBatchV2Builder::default();
+        let mut doc_batch_builder = JsonDocBatchV2Builder::with_num_docs(num_spans as usize);
         let mut doc_uid_generator = DocUidGenerator::default();
         for span in spans {
             let doc_uid = doc_uid_generator.next_doc_uid();
-            if let Err(error) = doc_batch_builder.add_doc(doc_uid, span.0) {
+            if let Err(error) = doc_batch_builder.add_doc(doc_uid, span) {
                 error!(error=?error, "failed to JSON serialize span");
                 error_message = format!("failed to JSON serialize span: {error:?}");
                 num_parse_errors += 1;
@@ -859,7 +826,7 @@ impl TraceService for OtlpGrpcTracesService {
 
 /// An iterator of JSON OTLP spans for use in the doc processor.
 pub struct JsonSpanIterator {
-    spans: btree_set::IntoIter<OrdSpan>,
+    spans: std::vec::IntoIter<Span>,
     current_span_idx: usize,
     num_spans: usize,
     avg_span_size: usize,
@@ -867,7 +834,7 @@ pub struct JsonSpanIterator {
 }
 
 impl JsonSpanIterator {
-    fn new(spans: BTreeSet<OrdSpan>, num_bytes: usize) -> Self {
+    fn new(spans: Vec<Span>, num_bytes: usize) -> Self {
         let num_spans = spans.len();
         let avg_span_size = num_bytes.checked_div(num_spans).unwrap_or(0);
         let avg_span_size_rem = avg_span_size + num_bytes.checked_rem(num_spans).unwrap_or(0);
@@ -886,9 +853,10 @@ impl Iterator for JsonSpanIterator {
     type Item = (JsonValue, usize);
 
     fn next(&mut self) -> Option<Self::Item> {
-        let span_opt = self.spans.next().map(|OrdSpan(span)| {
-            serde_json::to_value(span).expect("`Span` should be JSON serializable")
-        });
+        let span_opt = self
+            .spans
+            .next()
+            .map(|span| serde_json::to_value(span).expect("`Span` should be JSON serializable"));
         if span_opt.is_some() {
             self.current_span_idx += 1;
         }
@@ -1348,7 +1316,7 @@ mod tests {
 
     #[test]
     fn test_json_span_iterator() {
-        let mut json_span_iterator = JsonSpanIterator::new(BTreeSet::new(), 0);
+        let mut json_span_iterator = JsonSpanIterator::new(Vec::new(), 0);
         assert!(json_span_iterator.next().is_none());
 
         let span_0 = Span {
@@ -1384,7 +1352,7 @@ mod tests {
             links: Vec::new(),
         };
 
-        let spans = BTreeSet::from_iter([OrdSpan(span_0.clone())]);
+        let spans = vec![span_0.clone()];
         let mut json_span_iterator = JsonSpanIterator::new(spans, 3);
 
         assert_eq!(
@@ -1396,7 +1364,7 @@ mod tests {
         let mut span_1 = span_0.clone();
         span_1.span_id = SpanId::new([3; 8]);
 
-        let spans = BTreeSet::from_iter([OrdSpan(span_0.clone()), OrdSpan(span_1.clone())]);
+        let spans = vec![span_0.clone(), span_1.clone()];
         let mut json_span_iterator = JsonSpanIterator::new(spans, 7);
 
         assert_eq!(
