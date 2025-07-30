@@ -8,18 +8,6 @@ pub struct Label {
     pub value: ::prost::alloc::string::String,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
-pub struct Gauge {
-    #[prost(double, tag = "1")]
-    pub value: f64,
-}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
-pub struct Counter {
-    #[prost(double, tag = "1")]
-    pub value: f64,
-}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Histogram {
     #[prost(uint64, tag = "1")]
@@ -28,11 +16,11 @@ pub struct Histogram {
     pub sample_sum: f64,
     /// Ordered in increasing order of upper_bound, +Inf bucket is optional.
     #[prost(message, repeated, tag = "3")]
-    pub buckets: ::prost::alloc::vec::Vec<Bucket>,
+    pub buckets: ::prost::alloc::vec::Vec<HistogramBucket>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
-pub struct Bucket {
+pub struct HistogramBucket {
     /// Cumulative in increasing order.
     #[prost(uint64, tag = "1")]
     pub cumulative_count: u64,
@@ -67,8 +55,6 @@ pub mod metric {
 pub struct MetricFamily {
     #[prost(string, tag = "1")]
     pub name: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub help: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "3")]
     pub metrics: ::prost::alloc::vec::Vec<Metric>,
 }

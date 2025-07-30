@@ -1,8 +1,13 @@
+use std::collections::{BTreeSet, HashMap};
 use std::ops::Bound;
 
 use prost::{DecodeError, Message};
 use quickwit_proto::cloudprem::query_node::Node;
-use quickwit_proto::cloudprem::{BooleanOperator, QueryNode, SearchQueryMode, WildcardPattern};
+use quickwit_proto::cloudprem::{
+    AttributePrefixQueryNode, AttributeQuotedQueryNode, AttributeRangeQueryNode,
+    AttributeSearchQueryNode, AttributeTermInQueryNode, AttributeWildcardQueryNode,
+    BooleanOperator, QueryNode, SearchQueryMode, WildcardPattern,
+};
 use serde_json::Number;
 
 use super::{missing_required, unsupported_query_error};
@@ -14,14 +19,16 @@ use crate::{InvalidQuery, JsonLiteral};
 
 const EVP_WES_FIELD: &str = "*";
 const QW_WES_FIELD: &str = "all";
+const QW_MESSAGE_FIELD: &str = "message";
+const QW_ERROR_FIELD: &str = "error";
 const EVP_DEFAULT_FIELD: &str = "_default_";
-const QW_DEFAULT_FIELD: &str = "default";
 
 pub fn parse_query(raw_message: prost_types::Any) -> Result<QueryNode, DecodeError> {
     // TODO this can be cleaner once we upgrade to prost 0.12+
     QueryNode::decode(raw_message.value.as_ref())
 }
 
+// path is only used to provide a better error message.
 fn value_to_string(
     value: Option<quickwit_proto::cloudprem::Value>,
     path: &str,
@@ -57,6 +64,244 @@ fn value_to_json_literal(
     }
 }
 
+// Returns a query ast that match all of the documents that DO NOT match the `ast` passed as
+// argument.
+fn negate(ast: QueryAst) -> QueryAst {
+    BoolQuery {
+        must_not: vec![ast],
+        ..BoolQuery::default()
+    }
+    .into()
+}
+
+// Returns a query ast that match all of the `asts` passed as arguments.
+fn intersection(asts: Vec<QueryAst>) -> QueryAst {
+    BoolQuery {
+        must: asts,
+        ..BoolQuery::default()
+    }
+    .into()
+}
+
+// Returns a query ast that match any of `asts` passed as arguments.
+fn union(asts: Vec<QueryAst>) -> QueryAst {
+    BoolQuery {
+        should: asts,
+        ..BoolQuery::default()
+    }
+    .into()
+}
+
+fn build_term_query(
+    term_query_node: quickwit_proto::cloudprem::AttributeTermQueryNode,
+) -> Result<QueryAst, InvalidQuery> {
+    let targetted_fields = expand_virtual_fields(term_query_node.attribute);
+    let text = value_to_string(term_query_node.value, "term.value")?;
+    let asts: Vec<QueryAst> = targetted_fields
+        .into_iter()
+        .map(|field| {
+            crate::query_ast::FullTextQuery {
+                field,
+                text: text.clone(),
+                params: FullTextParams {
+                    tokenizer: None,
+                    mode: FullTextMode::Bool {
+                        operator: crate::BooleanOperand::And,
+                    },
+                    zero_terms_query: crate::MatchAllOrNone::MatchNone,
+                },
+                lenient: false,
+            }
+            .into()
+        })
+        .collect();
+    Ok(union(asts))
+}
+
+fn build_range_query_helper(
+    field: String,
+    lower_bound: Bound<JsonLiteral>,
+    upper_bound: Bound<JsonLiteral>,
+) -> Result<QueryAst, InvalidQuery> {
+    // We do not support our two virtual fields.
+    if field == EVP_WES_FIELD || field == EVP_DEFAULT_FIELD {
+        let extract_bound_type = |bound: Bound<JsonLiteral>| {
+            let json_literal = match &bound {
+                Bound::Included(val) | Bound::Excluded(val) => Some(val),
+                Bound::Unbounded => None,
+            };
+            match json_literal? {
+                JsonLiteral::Bool(_) => Some("bool"),
+                JsonLiteral::String(_) => Some("string"),
+                JsonLiteral::Number(_) => Some("number"),
+            }
+        };
+        let value_type = extract_bound_type(lower_bound)
+            .or_else(|| extract_bound_type(upper_bound))
+            .unwrap_or("unknown");
+        return Err(InvalidQuery::RangeQueryNotSupportedForField {
+            field_name: field,
+            value_type,
+        });
+    }
+    Ok(RangeQuery {
+        field,
+        lower_bound,
+        upper_bound,
+    }
+    .into())
+}
+
+fn build_range_query(range_query: AttributeRangeQueryNode) -> Result<QueryAst, InvalidQuery> {
+    let to_bound = |value, inclusive| {
+        if inclusive {
+            Bound::Included(value)
+        } else {
+            Bound::Excluded(value)
+        }
+    };
+    let lower_bound = to_bound(
+        value_to_json_literal(range_query.lower, "range.lower")?,
+        range_query.lower_inclusive,
+    );
+    let upper_bound = to_bound(
+        value_to_json_literal(range_query.upper, "range.upper")?,
+        range_query.upper_inclusive,
+    );
+    build_range_query_helper(range_query.attribute, lower_bound, upper_bound)
+}
+
+fn build_exists_query(field_name: String) -> QueryAst {
+    let exist_queries: Vec<QueryAst> = expand_virtual_fields(field_name)
+        .into_iter()
+        .map(|field| { FieldPresenceQuery { field } }.into())
+        .collect();
+    union(exist_queries)
+}
+
+fn build_phrase_prefix_query(prefix_query_node: AttributePrefixQueryNode) -> QueryAst {
+    // TODO maybe we want to make this into a wildcard query instead?
+    // or give infinite expansion
+    let phrase_prefix_queries: Vec<QueryAst> = expand_virtual_fields(prefix_query_node.attribute)
+        .into_iter()
+        .map(|field| {
+            PhrasePrefixQuery {
+                field,
+                phrase: prefix_query_node.prefix.clone(),
+                max_expansions: crate::query_ast::DEFAULT_PHRASE_QUERY_MAX_EXPANSION,
+                params: FullTextParams {
+                    tokenizer: None,
+                    mode: FullTextMode::Phrase { slop: 0 },
+                    zero_terms_query: crate::MatchAllOrNone::MatchNone,
+                },
+                lenient: false,
+            }
+            .into()
+        })
+        .collect();
+    union(phrase_prefix_queries)
+}
+
+fn build_wildcard_query(wildcard_query: AttributeWildcardQueryNode) -> QueryAst {
+    let string_wildcard = if let Some(pattern) = wildcard_query.pattern {
+        wildcard_pattern_to_string(&pattern)
+    } else {
+        // we only do this if upstream did not provide us with a preparsed
+        // (non deprecated) input
+        #[allow(deprecated)]
+        wildcard_query.wildcard
+    };
+    let wildcard_query_asts: Vec<QueryAst> = expand_virtual_fields(wildcard_query.attribute)
+        .into_iter()
+        .map(|field| {
+            WildcardQuery {
+                field,
+                value: string_wildcard.clone(),
+                lenient: false,
+            }
+            .into()
+        })
+        .collect();
+    union(wildcard_query_asts)
+}
+
+fn build_term_in_query(term_in_query: AttributeTermInQueryNode) -> Result<QueryAst, InvalidQuery> {
+    let terms: BTreeSet<String> = term_in_query
+        .values
+        .into_iter()
+        .map(|val| value_to_string(Some(val), "termIn.values[]"))
+        .collect::<Result<_, _>>()?;
+    let terms_per_field: HashMap<String, BTreeSet<String>> =
+        expand_virtual_fields(term_in_query.attribute)
+            .into_iter()
+            .map(|field| (field, terms.clone()))
+            .collect();
+    Ok(TermSetQuery { terms_per_field }.into())
+}
+
+fn build_quoted_query(quote_query_node: AttributeQuotedQueryNode) -> QueryAst {
+    let asts: Vec<QueryAst> = expand_virtual_fields(quote_query_node.attribute)
+        .into_iter()
+        .map(|field| {
+            FullTextQuery {
+                field,
+                text: quote_query_node.text.clone(),
+                params: FullTextParams {
+                    tokenizer: None,
+                    mode: FullTextMode::Phrase { slop: 0 },
+                    zero_terms_query: crate::MatchAllOrNone::MatchNone,
+                },
+                lenient: false,
+            }
+            .into()
+        })
+        .collect();
+    union(asts)
+}
+
+fn build_search_query(search_query: AttributeSearchQueryNode) -> Result<QueryAst, InvalidQuery> {
+    // this is a *:xxx query (full text on all fields)
+    let mode = match search_query.mode() {
+        SearchQueryMode::InvalidSearchMode => return Err(missing_required("search.mode")),
+
+        SearchQueryMode::Wes => FullTextMode::Bool {
+            operator: crate::BooleanOperand::And,
+        },
+        SearchQueryMode::WesQuoted => FullTextMode::Phrase { slop: 0 },
+        SearchQueryMode::WesPrefix => {
+            return Err(unsupported_query_error("WES prefix query"));
+        }
+        SearchQueryMode::WesGlob => {
+            return Err(unsupported_query_error("WES globing query"));
+        }
+    };
+    let string_pattern = if let Some(pattern) = search_query.structured_text {
+        wildcard_pattern_to_string(&pattern)
+    } else {
+        // we only do this if upstream did not provide us with a preparsed
+        // (non deprecated) input
+        #[allow(deprecated)]
+        search_query.text
+    };
+    let asts: Vec<QueryAst> = expand_virtual_fields(search_query.attribute)
+        .into_iter()
+        .map(|field| {
+            FullTextQuery {
+                field,
+                text: string_pattern.clone(),
+                params: FullTextParams {
+                    tokenizer: None,
+                    mode,
+                    zero_terms_query: crate::MatchAllOrNone::MatchNone,
+                },
+                lenient: false,
+            }
+            .into()
+        })
+        .collect();
+    Ok(union(asts))
+}
+
 pub fn to_quickwit_query(cloudprem_query: QueryNode) -> Result<QueryAst, InvalidQuery> {
     let Some(node) = cloudprem_query.node else {
         return Err(missing_required("node"));
@@ -68,72 +313,27 @@ pub fn to_quickwit_query(cloudprem_query: QueryNode) -> Result<QueryAst, Invalid
             let inner_query = *not_query
                 .inner
                 .ok_or_else(|| missing_required("not.inner"))?;
-            BoolQuery {
-                must_not: vec![to_quickwit_query(inner_query)?],
-                ..BoolQuery::default()
-            }
-            .into()
+            let negated_query = to_quickwit_query(inner_query)?;
+            negate(negated_query)
         }
         Node::Boolean(boolean) => {
             let operator = boolean.operator();
-            let clauses = boolean
+            let clauses: Vec<QueryAst> = boolean
                 .clauses
                 .into_iter()
                 .map(to_quickwit_query)
                 .collect::<Result<Vec<_>, _>>()?;
             match operator {
-                BooleanOperator::And => BoolQuery {
-                    must: clauses,
-                    ..BoolQuery::default()
-                }
-                .into(),
-                BooleanOperator::Or => BoolQuery {
-                    should: clauses,
-                    ..BoolQuery::default()
-                }
-                .into(),
+                BooleanOperator::And => intersection(clauses),
+                BooleanOperator::Or => union(clauses),
                 BooleanOperator::InvalidBooleanOperator => {
                     return Err(missing_required("boolean.operator"));
                 }
             }
         }
         // TODO verify terms are already splited when we receive them
-        Node::Term(term_query) => FullTextQuery {
-            field: map_field_name(term_query.attribute),
-            text: value_to_string(term_query.value, "term.value")?,
-            params: FullTextParams {
-                tokenizer: None,
-                mode: FullTextMode::Bool {
-                    operator: crate::BooleanOperand::And,
-                },
-                zero_terms_query: crate::MatchAllOrNone::MatchNone,
-            },
-            lenient: false,
-        }
-        .into(),
-        Node::Range(range_query) => {
-            let to_bound = |value, inclusive| {
-                if inclusive {
-                    Bound::Included(value)
-                } else {
-                    Bound::Excluded(value)
-                }
-            };
-            let lower_bound = to_bound(
-                value_to_json_literal(range_query.lower, "range.lower")?,
-                range_query.lower_inclusive,
-            );
-            let upper_bound = to_bound(
-                value_to_json_literal(range_query.upper, "range.upper")?,
-                range_query.upper_inclusive,
-            );
-            RangeQuery {
-                field: map_field_name(range_query.attribute),
-                lower_bound,
-                upper_bound,
-            }
-            .into()
-        }
+        Node::Term(term_query) => build_term_query(term_query)?,
+        Node::Range(range_query) => build_range_query(range_query)?,
         Node::Comparison(comparison_query) => {
             use quickwit_proto::cloudprem::ComparisonOperator;
             let operator = comparison_query.operator();
@@ -147,123 +347,20 @@ pub fn to_quickwit_query(cloudprem_query: QueryNode) -> Result<QueryAst, Invalid
                     return Err(missing_required("comparison.operator"));
                 }
             };
-            RangeQuery {
-                field: map_field_name(comparison_query.attribute),
-                lower_bound,
-                upper_bound,
-            }
-            .into()
+            build_range_query_helper(comparison_query.attribute, lower_bound, upper_bound)?
         }
-        Node::Exist(exist_query) => FieldPresenceQuery {
-            field: map_field_name(exist_query.attribute),
-        }
-        .into(),
-        Node::Missing(missing_query) => BoolQuery {
-            must_not: vec![
-                FieldPresenceQuery {
-                    field: map_field_name(missing_query.attribute),
-                }
-                .into(),
-            ],
-            ..BoolQuery::default()
-        }
-        .into(),
-        Node::Prefix(prefix_query) => {
-            // TODO maybe we want to make this into a wildcard query instead?
-            // or give infinite expansion
-            PhrasePrefixQuery {
-                field: map_field_name(prefix_query.attribute),
-                phrase: prefix_query.prefix,
-                max_expansions: crate::query_ast::DEFAULT_PHRASE_QUERY_MAX_EXPANSION,
-                params: FullTextParams {
-                    tokenizer: None,
-                    mode: FullTextMode::Phrase { slop: 0 },
-                    zero_terms_query: crate::MatchAllOrNone::MatchNone,
-                },
-                lenient: false,
-            }
-            .into()
-        }
-        Node::Wildcard(wildcard_query) => {
-            let string_wildcard = if let Some(pattern) = wildcard_query.pattern {
-                wildcard_pattern_to_string(&pattern)
-            } else {
-                // we only do this if upstream did not provide us with a preparsed
-                // (non deprecated) input
-                #[allow(deprecated)]
-                wildcard_query.wildcard
-            };
-            WildcardQuery {
-                field: map_field_name(wildcard_query.attribute),
-                value: string_wildcard,
-                lenient: false,
-            }
-            .into()
-        }
-        Node::Quoted(quoted_query) => FullTextQuery {
-            field: map_field_name(quoted_query.attribute),
-            text: quoted_query.text,
-            params: FullTextParams {
-                tokenizer: None,
-                mode: FullTextMode::Phrase { slop: 0 },
-                zero_terms_query: crate::MatchAllOrNone::MatchNone,
-            },
-            lenient: false,
-        }
-        .into(),
-        Node::TermIn(term_in_query) => {
-            let terms = term_in_query
-                .values
-                .into_iter()
-                .map(|val| value_to_string(Some(val), "termIn.values[]"))
-                .collect::<Result<_, _>>()?;
-            TermSetQuery {
-                terms_per_field: std::iter::once((map_field_name(term_in_query.attribute), terms))
-                    .collect(),
-            }
-            .into()
-        }
+        Node::Exist(exist_query) => build_exists_query(exist_query.attribute),
+        Node::Missing(missing_query) => negate(build_exists_query(missing_query.attribute)),
+        Node::Prefix(prefix_query) => build_phrase_prefix_query(prefix_query),
+        Node::Wildcard(wildcard_query) => build_wildcard_query(wildcard_query),
+        Node::Quoted(quoted_query) => build_quoted_query(quoted_query),
+        Node::TermIn(term_in_query) => build_term_in_query(term_in_query)?,
         Node::Cidr(_) => {
             // TODO we are likely to support this via an automaton matching on strings.
             // not critical on MVP, and dependant on how we tokenize => reported until later.
             return Err(unsupported_query_error("cidr query"));
         }
-        Node::Search(search_query) => {
-            // this is a *:xxx query (full text on all fields)
-            let mode = match search_query.mode() {
-                SearchQueryMode::InvalidSearchMode => return Err(missing_required("search.mode")),
-
-                SearchQueryMode::Wes => FullTextMode::Bool {
-                    operator: crate::BooleanOperand::And,
-                },
-                SearchQueryMode::WesQuoted => FullTextMode::Phrase { slop: 0 },
-                SearchQueryMode::WesPrefix => {
-                    return Err(unsupported_query_error("WES prefix query"));
-                }
-                SearchQueryMode::WesGlob => {
-                    return Err(unsupported_query_error("WES globing query"));
-                }
-            };
-            let string_pattern = if let Some(pattern) = search_query.structured_text {
-                wildcard_pattern_to_string(&pattern)
-            } else {
-                // we only do this if upstream did not provide us with a preparsed
-                // (non deprecated) input
-                #[allow(deprecated)]
-                search_query.text
-            };
-            FullTextQuery {
-                field: map_field_name(search_query.attribute),
-                text: string_pattern,
-                params: FullTextParams {
-                    tokenizer: None,
-                    mode,
-                    zero_terms_query: crate::MatchAllOrNone::MatchNone,
-                },
-                lenient: false,
-            }
-            .into()
-        }
+        Node::Search(search_query) => build_search_query(search_query)?,
     };
     Ok(ast)
 }
@@ -301,12 +398,115 @@ fn wildcard_pattern_to_string(pattern: &WildcardPattern) -> String {
     string_wildcard
 }
 
-fn map_field_name(field_name: String) -> String {
+/// We have two virtual fields: `EVP_DEFAULT_FIELD` is the field used
+/// targetted when the user does not target a field explicitly.
+/// This is your typical full text query.
+///
+/// We target `message` and `error` in that case.
+///
+/// `EVP_WES_FIELD` on the other hand, is a whole event search.
+/// This is what we get when we search using the syntax `*:something`.
+///
+/// In that case, we expand the request into `all` and `message`.
+/// `all` is a `concatenate` field that combines several fields. We
+/// excluded `message` from it:
+/// - to have the raw_tokenizer for these fields
+/// - because duplicating the indexing of `message` took a significant amount of space.
+fn expand_virtual_fields(field_name: String) -> Vec<String> {
     if field_name == EVP_DEFAULT_FIELD {
-        QW_DEFAULT_FIELD.to_string()
+        vec![QW_MESSAGE_FIELD.to_string(), QW_ERROR_FIELD.to_string()]
     } else if field_name == EVP_WES_FIELD {
-        QW_WES_FIELD.to_string()
+        vec![QW_MESSAGE_FIELD.to_string(), QW_WES_FIELD.to_string()]
     } else {
-        field_name
+        vec![field_name]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use quickwit_proto::cloudprem::{AttributeTermQueryNode, Value, value};
+
+    use super::*;
+
+    #[test]
+    fn test_term_query_expand_all() {
+        let term_query_node = AttributeTermQueryNode {
+            attribute: super::EVP_WES_FIELD.to_string(),
+            value: Some(Value {
+                value: Some(value::Value::Str("hello".to_string())),
+            }),
+        };
+        let term_ast: QueryAst = super::build_term_query(term_query_node).unwrap();
+        let expected_ast: QueryAst = QueryAst::Bool(BoolQuery {
+            should: vec![
+                QueryAst::FullText(FullTextQuery {
+                    field: "message".to_string(),
+                    text: "hello".to_string(),
+                    params: FullTextParams {
+                        tokenizer: None,
+                        mode: FullTextMode::Bool {
+                            operator: crate::BooleanOperand::And,
+                        },
+                        zero_terms_query: crate::MatchAllOrNone::MatchNone,
+                    },
+                    lenient: false,
+                }),
+                QueryAst::FullText(FullTextQuery {
+                    field: "all".to_string(),
+                    text: "hello".to_string(),
+                    params: FullTextParams {
+                        tokenizer: None,
+                        mode: FullTextMode::Bool {
+                            operator: crate::BooleanOperand::And,
+                        },
+                        zero_terms_query: crate::MatchAllOrNone::MatchNone,
+                    },
+                    lenient: false,
+                }),
+            ],
+            ..Default::default()
+        });
+        assert_eq!(term_ast, expected_ast);
+    }
+
+    #[test]
+    fn test_term_query_expand_default() {
+        let term_query_node = AttributeTermQueryNode {
+            attribute: super::EVP_DEFAULT_FIELD.to_string(),
+            value: Some(Value {
+                value: Some(value::Value::Str("hello".to_string())),
+            }),
+        };
+        let term_ast: QueryAst = super::build_term_query(term_query_node).unwrap();
+        let expected_ast: QueryAst = QueryAst::Bool(BoolQuery {
+            should: vec![
+                QueryAst::FullText(FullTextQuery {
+                    field: "message".to_string(),
+                    text: "hello".to_string(),
+                    params: FullTextParams {
+                        tokenizer: None,
+                        mode: FullTextMode::Bool {
+                            operator: crate::BooleanOperand::And,
+                        },
+                        zero_terms_query: crate::MatchAllOrNone::MatchNone,
+                    },
+                    lenient: false,
+                }),
+                QueryAst::FullText(FullTextQuery {
+                    field: "error".to_string(),
+                    text: "hello".to_string(),
+                    params: FullTextParams {
+                        tokenizer: None,
+                        mode: FullTextMode::Bool {
+                            operator: crate::BooleanOperand::And,
+                        },
+                        zero_terms_query: crate::MatchAllOrNone::MatchNone,
+                    },
+                    lenient: false,
+                }),
+            ],
+            ..Default::default()
+        });
+        assert_eq!(term_ast, expected_ast);
     }
 }
