@@ -20,6 +20,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use anyhow::{Context, bail};
 use async_trait::async_trait;
 use bytes::Bytes;
+use metrics::Counter;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::metrics::IntCounter;
 use quickwit_common::rate_limited_tracing::rate_limited_warn;
@@ -306,6 +307,7 @@ pub struct DocProcessorCounter {
     pub num_docs: AtomicU64,
     pub num_docs_metric: IntCounter,
     pub num_bytes_metric: IntCounter,
+    pub dd_num_docs_metric: Counter,
 }
 
 impl Serialize for DocProcessorCounter {
@@ -327,6 +329,9 @@ impl DocProcessorCounter {
             num_bytes_metric: crate::metrics::INDEXER_METRICS
                 .processed_bytes
                 .with_label_values(labels),
+            dd_num_docs_metric: crate::metrics::INDEXER_METRICS
+                .dd_processed_docs_count
+                .clone(),
         }
     }
 
@@ -339,6 +344,7 @@ impl DocProcessorCounter {
         self.num_docs.fetch_add(1, Ordering::Relaxed);
         self.num_docs_metric.inc();
         self.num_bytes_metric.inc_by(num_bytes);
+        self.dd_num_docs_metric.increment(1);
     }
 }
 

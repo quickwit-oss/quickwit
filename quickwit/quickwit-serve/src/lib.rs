@@ -777,6 +777,14 @@ pub async fn serve_quickwit(
         rest_shutdown_signal,
     );
 
+    #[cfg(not(any(test, feature = "testsuite")))]
+    {
+        metrics_exporter_dogstatsd::DogStatsDBuilder::default()
+            .set_global_prefix("pomsky")
+            .install()
+            .expect("failed to install DogStatsD recorder");
+    }
+
     // Node readiness indicates that the server is ready to receive requests.
     // Thus readiness task is started once gRPC and REST servers are started.
     spawn_named_task(

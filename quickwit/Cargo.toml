@@ -153,6 +153,8 @@ lindera-tokenizer = { version = "0.27", features = [
 lru = "0.13"
 matches = "0.1"
 md5 = "0.7"
+metrics = "0.24"
+metrics-exporter-dogstatsd = "0.9"
 mime_guess = "2.0"
 mockall = "0.11"
 mrecordlog = { git = "https://github.com/quickwit-oss/mrecordlog", rev = "306c0a7" }

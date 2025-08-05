@@ -3,6 +3,7 @@
 pub struct PullClusterMetricsRequest {}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PullClusterMetricsResponse {
+    /// One `NodeMetrics` object per node in the cluster.
     #[prost(message, repeated, tag = "1")]
     pub node_metrics: ::prost::alloc::vec::Vec<NodeMetrics>,
 }
@@ -16,8 +17,12 @@ pub struct NodeMetrics {
     /// or the interpretation of a timeout for instance.
     #[prost(uint32, tag = "2")]
     pub status_code: u32,
+    /// `node_labels` contains the list of labels that should be associated to the metrics of that node.
+    /// e.g. the service. Note that cloudprem-bridge may extend the set of labels with cluster-level information.
+    /// (region etc.)
     #[prost(message, repeated, tag = "3")]
     pub node_labels: ::prost::alloc::vec::Vec<metrics::Label>,
+    /// The actual metrics of the node.
     #[prost(message, repeated, tag = "4")]
     pub metric_families: ::prost::alloc::vec::Vec<metrics::MetricFamily>,
 }
@@ -554,6 +559,7 @@ pub trait CloudPremService: std::fmt::Debug + Send + Sync + 'static {
         &self,
         request: AggregationRequest,
     ) -> crate::cloudprem::CloudPremResult<AggregationResponse>;
+    /// Gather metrics information from all nodes in the cluster, and returns a list of `NodeMetrics` objects.
     async fn pull_cluster_metrics(
         &self,
         request: PullClusterMetricsRequest,
@@ -2260,6 +2266,7 @@ pub mod cloud_prem_service_grpc_client {
                 .insert(GrpcMethod::new("cloudprem.CloudPremService", "Aggregate"));
             self.inner.unary(req, path, codec).await
         }
+        /// Gather metrics information from all nodes in the cluster, and returns a list of `NodeMetrics` objects.
         pub async fn pull_cluster_metrics(
             &mut self,
             request: impl tonic::IntoRequest<super::PullClusterMetricsRequest>,
@@ -2403,6 +2410,7 @@ pub mod cloud_prem_service_grpc_server {
             tonic::Response<super::AggregationResponse>,
             tonic::Status,
         >;
+        /// Gather metrics information from all nodes in the cluster, and returns a list of `NodeMetrics` objects.
         async fn pull_cluster_metrics(
             &self,
             request: tonic::Request<super::PullClusterMetricsRequest>,
