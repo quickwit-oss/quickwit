@@ -93,6 +93,16 @@ async fn single_websocket(target: &str, service: CloudPremServiceClient) -> anyh
 
     let (mut ws, _) = connect_async(target).await?;
 
+    let cluster_identify = AnyResponse {
+        req_id: 0,
+        grpc_code: Code::Ok as u32,
+        response: Some(any_response::Response::ClusterIdentify(ClusterIdentify {
+            org_id: 0,
+        })),
+    };
+    let cluster_identify_ws = Message::binary(cluster_identify.encode_to_vec());
+    ws.send(cluster_identify_ws).await?;
+
     loop {
         tokio::select! {
                 // TODO handle ping

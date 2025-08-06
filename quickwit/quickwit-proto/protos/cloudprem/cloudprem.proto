@@ -31,7 +31,8 @@ service CloudPremService {
   rpc RootSearch(quickwit.search.SearchRequest) returns (quickwit.search.SearchResponse);
   rpc RootListTerms(quickwit.search.ListTermsRequest) returns (quickwit.search.ListTermsResponse);
 
-  // Endpoint to send request from the gRPC server to the gRPC client
+
+  // Response are sent to the bridge by the front, which initialised the connection
   rpc InvertedRequestStream(stream AnyResponse) returns (stream AnyRequest);
 }
 
@@ -54,7 +55,12 @@ message AnyRequest {
 message AnyResponse {
     uint64 req_id = 1;
     uint32 grpc_code = 2;
+
     oneof response {
+        // this packet serves to identify which cluster this connection is about. It must be the 1st message transmitted, and cannot be transmitted again later.
+        // If originating from outside Datadog, the message should be sanitized with the proper orgId before being transmitted.
+        // Violation of these constraints could lead to cluster impresonation, so all relevant component should enforce them and terminate any violating stream.
+        ClusterIdentify cluster_identify = 9;
         // this is a pseudoresponse returned when an error occured
         string grpc_message = 10;
         PingResponse ping = 11;
@@ -66,6 +72,10 @@ message AnyResponse {
         quickwit.search.SearchResponse root_search = 17;
         quickwit.search.ListTermsResponse root_list_terms = 18;
     }
+}
+
+message ClusterIdentify {
+    int64 orgId = 1;
 }
 
 message PullClusterMetricsRequest {
@@ -100,8 +110,8 @@ message PingResponse {}
 message SetClusterAddressRequest {
   int64 org_id = 1;
   string address = 2;
-  // the alternative name a certificate should be valid for for us to accept connecting
-  string authority = 3;
+  reserved 3;
+  bool secure = 4;
 }
 
 message SetClusterAddressResponse {

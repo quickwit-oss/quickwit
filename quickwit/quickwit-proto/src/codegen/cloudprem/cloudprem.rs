@@ -38,7 +38,7 @@ pub struct AnyResponse {
     pub grpc_code: u32,
     #[prost(
         oneof = "any_response::Response",
-        tags = "10, 11, 12, 13, 14, 15, 16, 17, 18"
+        tags = "9, 10, 11, 12, 13, 14, 15, 16, 17, 18"
     )]
     pub response: ::core::option::Option<any_response::Response>,
 }
@@ -46,6 +46,11 @@ pub struct AnyResponse {
 pub mod any_response {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Response {
+        /// this packet serves to identify which cluster this connection is about. It must be the 1st message transmitted, and cannot be transmitted again later.
+        /// If originating from outside Datadog, the message should be sanitized with the proper orgId before being transmitted.
+        /// Violation of these constraints could lead to cluster impresonation, so all relevant component should enforce them and terminate any violating stream.
+        #[prost(message, tag = "9")]
+        ClusterIdentify(super::ClusterIdentify),
         /// this is a pseudoresponse returned when an error occured
         #[prost(string, tag = "10")]
         GrpcMessage(::prost::alloc::string::String),
@@ -66,6 +71,11 @@ pub mod any_response {
         #[prost(message, tag = "18")]
         RootListTerms(super::super::quickwit::search::ListTermsResponse),
     }
+}
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct ClusterIdentify {
+    #[prost(int64, tag = "1")]
+    pub org_id: i64,
 }
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct PullClusterMetricsRequest {}
@@ -107,9 +117,8 @@ pub struct SetClusterAddressRequest {
     pub org_id: i64,
     #[prost(string, tag = "2")]
     pub address: ::prost::alloc::string::String,
-    /// the alternative name a certificate should be valid for for us to accept connecting
-    #[prost(string, tag = "3")]
-    pub authority: ::prost::alloc::string::String,
+    #[prost(bool, tag = "4")]
+    pub secure: bool,
 }
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct SetClusterAddressResponse {}
@@ -654,7 +663,7 @@ pub trait CloudPremService: std::fmt::Debug + Send + Sync + 'static {
         &self,
         request: super::quickwit::search::ListTermsRequest,
     ) -> crate::cloudprem::CloudPremResult<super::quickwit::search::ListTermsResponse>;
-    /// Endpoint to send request from the gRPC server to the gRPC client
+    /// Response are sent to the bridge by the front, which initialised the connection
     async fn inverted_request_stream(
         &self,
         request: quickwit_common::ServiceStream<AnyResponse>,
@@ -2626,7 +2635,7 @@ pub mod cloud_prem_service_grpc_client {
                 .insert(GrpcMethod::new("cloudprem.CloudPremService", "RootListTerms"));
             self.inner.unary(req, path, codec).await
         }
-        /// Endpoint to send request from the gRPC server to the gRPC client
+        /// Response are sent to the bridge by the front, which initialised the connection
         pub async fn inverted_request_stream(
             &mut self,
             request: impl tonic::IntoStreamingRequest<Message = super::AnyResponse>,
@@ -2730,7 +2739,7 @@ pub mod cloud_prem_service_grpc_server {
             >
             + std::marker::Send
             + 'static;
-        /// Endpoint to send request from the gRPC server to the gRPC client
+        /// Response are sent to the bridge by the front, which initialised the connection
         async fn inverted_request_stream(
             &self,
             request: tonic::Request<tonic::Streaming<super::AnyResponse>>,
