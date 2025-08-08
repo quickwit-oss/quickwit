@@ -221,4 +221,29 @@ mod tests {
             "TermQuery(Term(field=0, type=Bytes, [108, 105, 103, 104, 116, 32, 119]))"
         );
     }
+
+    #[test]
+    fn test_term_query_with_date_nanosecond() {
+        let term_query = TermQuery {
+            field: "timestamp".to_string(),
+            value: "2025-08-07T14:49:21.831343Z".to_string(),
+        };
+        let mut schema_builder = Schema::builder();
+        schema_builder.add_date_field("timestamp", INDEXED);
+        let schema = schema_builder.build();
+        let tantivy_query_ast = term_query
+            .build_tantivy_ast_call(
+                &schema,
+                &create_default_quickwit_tokenizer_manager(),
+                &[],
+                true,
+            )
+            .unwrap();
+        let leaf = tantivy_query_ast.as_leaf().unwrap();
+        // The date should have been truncated to seconds precision.
+        assert_eq!(
+            &format!("{leaf:?}"),
+            "TermQuery(Term(field=0, type=Date, 2025-08-07T14:49:21Z))"
+        );
+    }
 }
