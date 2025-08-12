@@ -95,10 +95,14 @@ impl fmt::Debug for AzureBlobStorage {
 
 impl AzureBlobStorage {
     /// Creates a new [`AzureBlobStorage`] instance.
-    pub fn new(account: String, access_key: String, uri: Uri, container_name: String) -> Self {
-        let storage_credentials = StorageCredentials::access_key(account.clone(), access_key);
-        let container_client =
-            BlobServiceClient::new(account, storage_credentials).container_client(container_name);
+    pub fn new(
+        storage_account_name: String,
+        storage_credentials: StorageCredentials,
+        uri: Uri,
+        container_name: String,
+    ) -> Self {
+        let container_client = BlobServiceClient::new(storage_account_name, storage_credentials)
+            .container_client(container_name);
         Self {
             container_client,
             uri,
@@ -159,26 +163,38 @@ impl AzureBlobStorage {
         azure_storage_config: &AzureStorageConfig,
         uri: &Uri,
     ) -> Result<AzureBlobStorage, StorageResolverError> {
-        let account_name = azure_storage_config.resolve_account_name().ok_or_else(|| {
-            let message = format!(
-                "could not find Azure account name in environment variable `{}` or storage config",
-                AzureStorageConfig::AZURE_STORAGE_ACCOUNT_ENV_VAR
-            );
-            StorageResolverError::InvalidConfig(message)
-        })?;
-        let access_key = azure_storage_config.resolve_access_key().ok_or_else(|| {
-            let message = format!(
-                "could not find Azure access key in environment variable `{}` or storage config",
-                AzureStorageConfig::AZURE_STORAGE_ACCESS_KEY_ENV_VAR
-            );
-            StorageResolverError::InvalidConfig(message)
-        })?;
+        let storage_account_name =
+            azure_storage_config.resolve_account_name().ok_or_else(|| {
+                let message = format!(
+                    "could not find Azure storage account name in environment variable `{}` or \
+                     storage config",
+                    AzureStorageConfig::AZURE_STORAGE_ACCOUNT_ENV_VAR
+                );
+                StorageResolverError::InvalidConfig(message)
+            })?;
+        let storage_credentials = if let Some(access_key) =
+            azure_storage_config.resolve_access_key()
+        {
+            StorageCredentials::access_key(storage_account_name.clone(), access_key)
+        } else if let Ok(credential) = azure_identity::create_credential() {
+            StorageCredentials::token_credential(credential)
+        } else {
+            return Err(StorageResolverError::InvalidConfig(
+                "could not find Azure storage account credentials using the following credential \
+                 providers: environment, managed identity, and storage account access key"
+                    .to_string(),
+            ));
+        };
         let (container_name, prefix) = parse_azure_uri(uri).ok_or_else(|| {
             let message = format!("failed to extract container name from Azure URI `{uri}`");
             StorageResolverError::InvalidUri(message)
         })?;
-        let azure_blob_storage =
-            AzureBlobStorage::new(account_name, access_key, uri.clone(), container_name);
+        let azure_blob_storage = AzureBlobStorage::new(
+            storage_account_name,
+            storage_credentials,
+            uri.clone(),
+            container_name,
+        );
         Ok(azure_blob_storage.with_prefix(prefix))
     }
 
