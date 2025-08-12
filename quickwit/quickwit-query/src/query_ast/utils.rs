@@ -143,7 +143,7 @@ fn compute_query_with_field(
         }
         FieldType::Date(_) => {
             let dt = parse_value_from_user_text(value, field_entry.name())?;
-            let term = Term::from_field_date(field, dt);
+            let term = Term::from_field_date_for_search(field, dt);
             Ok(make_term_query(term))
         }
         FieldType::Str(text_options) => {
