@@ -237,8 +237,7 @@ fn parse_sort_field_str(sort_field_str: &str) -> Result<SortField, SearchError> 
     if let Some((field, order_str)) = sort_field_str.split_once(':') {
         let order = parse_str_like_json(order_str).ok_or_else(|| {
             SearchError::InvalidArgument(format!(
-                "invalid sort order `{}`. expected `asc` or `desc`",
-                field
+                "invalid sort order `{field}`. expected `asc` or `desc`"
             ))
         })?;
         Ok(SortField {

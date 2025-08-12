@@ -63,7 +63,7 @@ impl fmt::Display for PrettyDurationDisplay<'_> {
         let duration_millis = self.0.as_millis();
 
         if duration_millis < 1_000 {
-            return write!(formatter, "{}ms", duration_millis);
+            return write!(formatter, "{duration_millis}ms");
         }
         write!(
             formatter,

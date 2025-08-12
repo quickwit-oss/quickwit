@@ -134,7 +134,7 @@ mod tests {
         filename: &str,
         data: Vec<u8>,
     ) -> Uri {
-        let src_location = format!("s3://{}/{}", bucket, prefix);
+        let src_location = format!("s3://{bucket}/{prefix}");
         let storage_uri = Uri::from_str(&src_location).unwrap();
         let storage = storage_resolver.resolve(&storage_uri).await.unwrap();
         storage

@@ -1262,7 +1262,7 @@ pub async fn multi_index_leaf_search(
             Err(err) => {
                 incremental_merge_collector.add_failed_split(SplitSearchError {
                     split_id: "unknown".to_string(),
-                    error: format!("{}", err),
+                    error: format!("{err}"),
                     retryable_error: true,
                 });
             }

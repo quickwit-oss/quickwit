@@ -373,13 +373,13 @@ mod tests {
         (0..message_number)
             .map(|i| PreProcessedMessage {
                 metadata: MessageMetadata {
-                    ack_id: format!("ackid{}", i),
+                    ack_id: format!("ackid{i}"),
                     delivery_attempts: 0,
                     initial_deadline: Instant::now(),
-                    message_id: format!("mid{}", i),
+                    message_id: format!("mid{i}"),
                 },
                 payload: PreProcessedPayload::ObjectUri(
-                    Uri::from_str(&format!("s3://bucket/key{}", i)).unwrap(),
+                    Uri::from_str(&format!("s3://bucket/key{i}")).unwrap(),
                 ),
             })
             .collect()

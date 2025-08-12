@@ -94,14 +94,14 @@ fn deserialize_match_query_for_one_field(
 fn validate_field_name(field_name: &str) -> Result<(), String> {
     if field_name.contains('^') {
         return Err(format!(
-            "Quickwit does not support field boosting in the multi match query fields (got `{}`)",
-            field_name
+            "Quickwit does not support field boosting in the multi match query fields (got \
+             `{field_name}`)"
         ));
     }
     if field_name.contains('*') {
         return Err(format!(
-            "Quickwit does not support wildcards in the multi match query fields (got `{}`)",
-            field_name
+            "Quickwit does not support wildcards in the multi match query fields (got \
+             `{field_name}`)"
         ));
     }
     Ok(())
@@ -173,7 +173,7 @@ mod tests {
         let err_msg: String = serde_json::from_str::<MultiMatchQuery>(json)
             .unwrap_err()
             .to_string();
-        assert!(err_msg.contains(expected_error_msg), "Got `{}`", err_msg);
+        assert!(err_msg.contains(expected_error_msg), "Got `{err_msg}`");
     }
 
     #[test]

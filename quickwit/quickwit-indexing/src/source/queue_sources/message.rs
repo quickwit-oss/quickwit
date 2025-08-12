@@ -160,7 +160,7 @@ fn uri_from_s3_notification(message: &[u8], ack_id: &str) -> Result<Uri, PreProc
     let encoded_key = percent_encoding::percent_decode(key.as_bytes())
         .decode_utf8()
         .context("invalid S3 notification: Records[0].s3.object.key could not be url decoded")?;
-    Uri::from_str(&format!("s3://{}/{}", bucket, encoded_key)).map_err(|e| e.into())
+    Uri::from_str(&format!("s3://{bucket}/{encoded_key}")).map_err(|e| e.into())
 }
 
 /// A message for which we know as much of the global processing status as

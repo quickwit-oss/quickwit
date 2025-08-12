@@ -991,8 +991,7 @@ mod tests {
             ),
         ] {
             let path = format!(
-                "/quickwit-demo-index/search?query=*&format=json&sort_by={}",
-                sort_by_query_param
+                "/quickwit-demo-index/search?query=*&format=json&sort_by={sort_by_query_param}"
             );
             let rest_search_api_filter = search_get_filter();
             let (_, req) = warp::test::request()

@@ -443,7 +443,7 @@ pub fn build_step(cfg: &PipelineStepConfig) -> Result<Box<dyn PipelineStep>, Pip
         }
         _ => {
             let val = serde_json::to_value(cfg).map_err(|e| PipelineError::Other {
-                error: format!("Failed to serialize step config: {}", e),
+                error: format!("Failed to serialize step config: {e}"),
             })?;
             let step_type = val.get("type").and_then(|t| t.as_str()).unwrap();
             Err(PipelineError::UnsupportedType {

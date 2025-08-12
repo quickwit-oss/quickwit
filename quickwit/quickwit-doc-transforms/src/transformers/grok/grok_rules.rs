@@ -434,8 +434,7 @@ pub mod tests {
             assert!(json_val.is_object(), "Grok parser should return an object");
             assert_eq!(
                 json_val, expected_result,
-                "Sample {}: Expected {:?}, got {:?}",
-                i, expected_result, json_val
+                "Sample {i}: Expected {expected_result:?}, got {json_val:?}"
             );
         }
     }

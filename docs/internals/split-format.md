@@ -5,7 +5,10 @@ Quickwit's index are divided into small independent immutable piece of index cal
 For convenience, a split consists in a single file, with the extension `.split`.
 
 In reality, this file hides an internal mini static filesystem,
-with the tantivy index files.
+with:
+- the Tantivy index files (`.idx`, `.pos`, `.term`...)
+- a Quickwit specific file with the list of fields, including those indexed as part of a JSON type. 
+It contains the field name, type and capabilities.
 
 The split file data layout looks like this:
 - concatenation all of the files in the split

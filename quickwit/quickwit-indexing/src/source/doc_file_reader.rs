@@ -295,7 +295,7 @@ pub mod file_test_helpers {
         let mut documents_bytes = Vec::new();
         for i in 0..lines {
             documents_bytes
-                .write_all(format!("{:0>7}\n", i).as_bytes())
+                .write_all(format!("{i:0>7}\n").as_bytes())
                 .unwrap();
         }
         write_to_tmp(documents_bytes, gzip).await
@@ -416,7 +416,7 @@ mod tests {
                 .unwrap()
                 .expect("EOF happened before stop_at_line");
             resume_offset = rec.next_offset as usize;
-            assert_eq!(Bytes::from(format!("{:0>7}\n", parsed_lines)), rec.doc);
+            assert_eq!(Bytes::from(format!("{parsed_lines:0>7}\n")), rec.doc);
             parsed_lines += 1;
         }
         // read the second part of the file
@@ -425,7 +425,7 @@ mod tests {
                 .await
                 .unwrap();
         while let Some(rec) = second_part_reader.next_record().await.unwrap() {
-            assert_eq!(Bytes::from(format!("{:0>7}\n", parsed_lines)), rec.doc);
+            assert_eq!(Bytes::from(format!("{parsed_lines:0>7}\n")), rec.doc);
             parsed_lines += 1;
         }
         assert_eq!(parsed_lines, expected_lines);

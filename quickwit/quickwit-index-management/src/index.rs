@@ -251,7 +251,7 @@ impl IndexService {
             if index_id_pattern.contains('*') {
                 return Err(IndexServiceError::Metastore(
                     MetastoreError::InvalidArgument {
-                        message: format!("index_id pattern {} contains *", index_id_pattern),
+                        message: format!("index_id pattern {index_id_pattern} contains *"),
                     },
                 ));
             }
@@ -324,14 +324,8 @@ impl IndexService {
             Ok(concatenated_split_infos)
         } else {
             Err(IndexServiceError::Metastore(MetastoreError::Internal {
-                message: format!(
-                    "errors occurred when deleting indexes: {:?}",
-                    index_id_patterns
-                ),
-                cause: format!(
-                    "errors: {:?}\ndeleted indexes: {:?}",
-                    delete_errors, delete_responses
-                ),
+                message: format!("errors occurred when deleting indexes: {index_id_patterns:?}"),
+                cause: format!("errors: {delete_errors:?}\ndeleted indexes: {delete_responses:?}"),
             }))
         }
     }
@@ -600,7 +594,7 @@ mod tests {
             .await
             .unwrap_err();
         let IndexServiceError::Metastore(inner_error) = error else {
-            panic!("expected `MetastoreError` variant, got {:?}", error)
+            panic!("expected `MetastoreError` variant, got {error:?}")
         };
         assert!(
             matches!(inner_error, MetastoreError::AlreadyExists(EntityKind::Index { index_id }) if index_id == index_metadata_0.index_id())
@@ -655,7 +649,7 @@ mod tests {
             .unwrap();
         assert_eq!(splits.len(), 1);
 
-        let split_path_str = format!("{}.split", split_id);
+        let split_path_str = format!("{split_id}.split");
         let split_path = Path::new(&split_path_str);
         let payload: Box<dyn PutPayload> = Box::new(vec![0]);
         storage.put(split_path, payload).await.unwrap();

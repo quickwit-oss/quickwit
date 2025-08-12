@@ -476,7 +476,7 @@ mod localstack_tests {
     async fn test_receive_wrong_queue() {
         let client = test_helpers::get_localstack_sqs_client().await.unwrap();
         let queue_url = test_helpers::create_queue(&client, "test-receive-existing-msg").await;
-        let bad_queue_url = format!("{}wrong", queue_url);
+        let bad_queue_url = format!("{queue_url}wrong");
         let queue = Arc::new(SqsQueue::try_new(bad_queue_url).await.unwrap());
         tokio::time::timeout(
             Duration::from_millis(500),

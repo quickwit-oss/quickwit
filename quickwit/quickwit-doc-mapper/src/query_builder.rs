@@ -423,7 +423,7 @@ mod test {
             true,
         );
         query_result
-            .map(|query| format!("{:?}", query))
+            .map(|query| format!("{query:?}"))
             .map_err(|err| err.to_string())
     }
 

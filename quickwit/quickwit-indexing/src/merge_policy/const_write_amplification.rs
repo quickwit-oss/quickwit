@@ -286,15 +286,15 @@ mod tests {
             .into_iter()
             .next()
             .unwrap();
-        // Split under max_merge_docs, num_merge_ops < max_merge_ops and created before now() -
-        // maturation_period is not mature.
+        // Split under split_num_docs_target, num_merge_ops < max_merge_ops and created before now()
+        // - maturation_period is not mature.
         assert_eq!(
             merge_policy.split_maturity(split.num_docs, split.num_merge_ops),
             SplitMaturity::Immature {
                 maturation_period: Duration::from_secs(3600)
             }
         );
-        // Split with docs > max_merge_docs is mature.
+        // Split with docs > split_num_docs_target is mature.
         assert_eq!(
             merge_policy
                 .split_maturity(merge_policy.split_num_docs_target + 1, split.num_merge_ops),

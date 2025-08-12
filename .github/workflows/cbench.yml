@@ -40,7 +40,7 @@ jobs:
         run: |
           echo 'users=["ddelemeny", "fmassot", "fulmicoton", "guilload", "PSeitz", "rdettai", "trinity-1686a"]' >> $GITHUB_OUTPUT
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         if: contains(fromJSON(steps.authorized-users.outputs.users), github.actor) && github.event_name == 'pull_request_target'
         name: Checkout quickwit (pull request commit)
         with:
@@ -48,7 +48,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           path: ./quickwit
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         if: contains(fromJSON(steps.authorized-users.outputs.users), github.actor) && github.event_name != 'pull_request_target'
         name: Checkout quickwit
         with:
@@ -57,7 +57,7 @@ jobs:
           path: ./quickwit
 
       - name: Checkout benchmarking code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         if: contains(fromJSON(steps.authorized-users.outputs.users), github.actor)
         with:
           repository: quickwit-oss/benchmarks

@@ -105,7 +105,7 @@ impl ClientId {
 
     fn new_publish_token(&self) -> String {
         let ulid = if cfg!(test) { Ulid::nil() } else { Ulid::new() };
-        format!("{}/{}", self, ulid)
+        format!("{self}/{ulid}")
     }
 }
 

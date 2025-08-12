@@ -570,7 +570,7 @@ mod vrl_matcher_tests {
         let filtered_chars = vec!["@", "^", "%", ":"];
         for c in filtered_chars {
             assert!(
-                check_query(&format!("\"Setting Handles {}\"", c), &log),
+                check_query(&format!("\"Setting Handles {c}\""), &log),
                 "{}",
                 c
             );

@@ -560,7 +560,7 @@ pub async fn local_search_cli(args: LocalSearchArgs) -> anyhow::Result<()> {
         single_node_search(search_request, metastore, storage_resolver).await?;
     let search_response_rest = SearchResponseRest::try_from(search_response)?;
     let search_response_json = serde_json::to_string_pretty(&search_response_rest)?;
-    println!("{}", search_response_json);
+    println!("{search_response_json}");
     Ok(())
 }
 

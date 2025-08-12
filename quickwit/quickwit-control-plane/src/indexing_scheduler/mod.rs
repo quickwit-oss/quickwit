@@ -571,12 +571,12 @@ fn get_indexing_plans_diff<'a>(
 ) -> IndexingPlansDiff<'a> {
     // Nodes diff.
     let running_node_ids: FnvHashSet<&str> = running_plan
-        .iter()
-        .map(|(node_id, _)| node_id.as_str())
+        .keys()
+        .map(|node_id| node_id.as_str())
         .collect();
     let planned_node_ids: FnvHashSet<&str> = last_applied_plan
-        .iter()
-        .map(|(node_id, _)| node_id.as_str())
+        .keys()
+        .map(|node_id| node_id.as_str())
         .collect();
     let missing_node_ids: FnvHashSet<&str> = planned_node_ids
         .difference(&running_node_ids)
