@@ -45,7 +45,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Ubuntu packages
         run: sudo apt-get -y install protobuf-compiler python3
       - uses: dorny/paths-filter@v3
@@ -99,7 +99,7 @@ jobs:
     runs-on: "ubuntu-latest"
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dorny/paths-filter@v3
         id: modified
         with:
@@ -158,7 +158,7 @@ jobs:
     name: Check Datadog third-party license file
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
