@@ -101,6 +101,9 @@ janitor:
       cpu: "500m"
       memory: "128Mi"
 
+serviceAccount:
+  name: pomsky
+
 config:
   metastore_uri: s3://logs-cloudprem-staging/indexes
   default_index_root_uri: s3://logs-cloudprem-staging/metastore
