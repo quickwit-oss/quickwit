@@ -306,7 +306,7 @@ aws-smithy-types = { version = "1.3", features = [
 ] }
 aws-types = "1.3"
 
-azure_core = { version = "0.21", features = ["enable_reqwest_rustls"] }
+azure_core = { version = "0.21", features = ["hmac_rust", "enable_reqwest_rustls"] }
 azure_identity = { version = "0.21" }
 azure_storage = { version = "0.21", default-features = false, features = [
   "enable_reqwest_rustls",
