@@ -176,6 +176,7 @@ impl Storage for LocalFileStorage {
         path: &Path,
         payload: Box<dyn crate::PutPayload>,
     ) -> crate::StorageResult<()> {
+        crate::STORAGE_METRICS.local_file_storage_put_total.inc();
         let full_path = self.full_path(path)?;
         let parent_dir = full_path.parent().ok_or_else(|| {
             let err = anyhow::anyhow!("no parent directory for {full_path:?}");
@@ -208,6 +209,7 @@ impl Storage for LocalFileStorage {
 
     #[tracing::instrument(skip(self), level = "debug")]
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
+        crate::STORAGE_METRICS.local_file_storage_get_total.inc();
         let full_path = self.full_path(path)?;
         tokio::task::spawn_blocking(move || {
             use std::io::{Read, Seek};
@@ -236,6 +238,7 @@ impl Storage for LocalFileStorage {
         path: &Path,
         range: Range<usize>,
     ) -> StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
+        crate::STORAGE_METRICS.local_file_storage_get_total.inc();
         let full_path = self.full_path(path)?;
         let mut file = tokio::fs::File::open(&full_path).await?;
         file.seek(SeekFrom::Start(range.start as u64)).await?;
@@ -243,6 +246,10 @@ impl Storage for LocalFileStorage {
     }
 
     async fn delete(&self, path: &Path) -> StorageResult<()> {
+        crate::STORAGE_METRICS.local_file_storage_delete_total.inc();
+        let _timer = crate::STORAGE_METRICS
+            .local_file_storage_delete_request_duration
+            .start_timer();
         self.delete_single_file(path).await?;
         if let Some(parent) = path.parent() {
             if let Err(error) = delete_all_dirs_if_empty(&self.root, parent).await {
@@ -307,6 +314,7 @@ impl Storage for LocalFileStorage {
     }
 
     async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
+        crate::STORAGE_METRICS.local_file_storage_get_total.inc();
         let full_path = self.full_path(path)?;
         let content_bytes = tokio::fs::read(full_path).await.map_err(|err| {
             StorageError::from(err).add_context(format!(

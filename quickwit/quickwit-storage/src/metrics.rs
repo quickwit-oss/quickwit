@@ -16,8 +16,8 @@
 
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
-    GaugeGuard, Histogram, IntCounter, IntCounterVec, IntGauge, new_counter, new_counter_vec,
-    new_gauge, new_histogram_vec,
+    GaugeGuard, Histogram, IntCounter, IntCounterVec, IntGauge, exponential_buckets, new_counter,
+    new_counter_vec, new_gauge, new_histogram, new_histogram_vec,
 };
 
 /// Counters associated to storage operations.
@@ -43,6 +43,11 @@ pub struct StorageMetrics {
     pub object_storage_bulk_delete_requests_total: IntCounter,
     pub object_storage_delete_request_duration: Histogram,
     pub object_storage_bulk_delete_request_duration: Histogram,
+
+    pub local_file_storage_get_total: IntCounter,
+    pub local_file_storage_put_total: IntCounter,
+    pub local_file_storage_delete_total: IntCounter,
+    pub local_file_storage_delete_request_duration: Histogram,
 }
 
 impl Default for StorageMetrics {
@@ -153,6 +158,30 @@ impl Default for StorageMetrics {
             object_storage_bulk_delete_requests_total,
             object_storage_delete_request_duration,
             object_storage_bulk_delete_request_duration,
+            local_file_storage_get_total: new_counter(
+                "local_file_storage_gets_total",
+                "Number of local file storage gets.",
+                "storage",
+                &[],
+            ),
+            local_file_storage_put_total: new_counter(
+                "local_file_storage_puts_total",
+                "Number of local file storage puts.",
+                "storage",
+                &[],
+            ),
+            local_file_storage_delete_total: new_counter(
+                "local_file_storage_deletes_total",
+                "Number of local file storage deletes.",
+                "storage",
+                &[],
+            ),
+            local_file_storage_delete_request_duration: new_histogram(
+                "local_file_storage_delete_request_duration_seconds",
+                "Duration of local file storage delete requests in seconds.",
+                "storage",
+                exponential_buckets(0.008, 2.0, 15).unwrap(),
+            ),
         }
     }
 }
