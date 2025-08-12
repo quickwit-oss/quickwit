@@ -59,10 +59,7 @@ pub async fn get_fields_from_split(
     let serialized_split_fields_len = serialized_split_fields.len();
     let mut list_fields = deserialize_split_fields(serialized_split_fields)
         .with_context(|| {
-            format!(
-                "could not read split fields (serialized len: {})",
-                serialized_split_fields_len,
-            )
+            format!("could not read split fields (serialized len: {serialized_split_fields_len})",)
         })?
         .fields;
     for list_field_entry in list_fields.iter_mut() {

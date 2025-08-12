@@ -266,7 +266,7 @@ impl Source for PulsarSource {
     }
 
     fn name(&self) -> String {
-        format!("{:?}", self)
+        format!("{self:?}")
     }
 
     async fn finalize(

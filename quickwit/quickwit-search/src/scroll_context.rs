@@ -222,7 +222,7 @@ impl fmt::Display for ScrollKeyAndStartOffset {
         serde_json::to_writer(&mut payload, &self.search_after)
             .expect("serializing PartialHit should never fail");
         let b64_payload = BASE64_STANDARD.encode(payload);
-        write!(formatter, "{}", b64_payload)
+        write!(formatter, "{b64_payload}")
     }
 }
 

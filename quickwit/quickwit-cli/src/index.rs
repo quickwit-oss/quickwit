@@ -697,7 +697,7 @@ fn display_timestamp(timestamp: &Option<i64>) -> String {
             let datetime = chrono::DateTime::from_timestamp_millis(*timestamp * 1000)
                 .map(|datetime| datetime.format("%Y-%m-%d %H:%M:%S").to_string())
                 .unwrap_or_else(|| "Invalid timestamp!".to_string());
-            format!("{} (Timestamp: {})", datetime, timestamp)
+            format!("{datetime} (Timestamp: {timestamp})")
         }
         _ => "Timestamp does not exist for the index.".to_string(),
     }
@@ -1101,16 +1101,16 @@ pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchRespons
             serde_json::from_str(&aggs_string).context("failed to deserialize aggregations")
         })
         .transpose()?;
-    let sort_by = args
-        .sort_by_score
-        .then_some(SortBy {
-            sort_fields: vec![SortField {
-                field_name: "_score".to_string(),
-                sort_order: SortOrder::Desc as i32,
-                sort_datetime_format: None,
-            }],
-        })
-        .unwrap_or_default();
+    let sort_fields = if args.sort_by_score {
+        vec![SortField {
+            field_name: "_score".to_string(),
+            sort_order: SortOrder::Desc as i32,
+            sort_datetime_format: None,
+        }]
+    } else {
+        Vec::new()
+    };
+    let sort_by = SortBy { sort_fields };
     let search_request = SearchRequestQueryString {
         query: args.query,
         aggs,

@@ -61,7 +61,7 @@ pub mod for_tests {
                 .lock()
                 .await
                 .remove(&addr)
-                .context(format!("No listener found for address {}", addr))
+                .context(format!("No listener found for address {addr}"))
         }
     }
 

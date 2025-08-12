@@ -415,7 +415,7 @@ mod tests {
             results.push(v.clone());
         });
 
-        assert_eq!(results.len(), 2, "{:?}", results);
+        assert_eq!(results.len(), 2, "{results:?}");
         assert_eq!(results[0], json!(1));
         assert_eq!(results[1], json!(2));
     }

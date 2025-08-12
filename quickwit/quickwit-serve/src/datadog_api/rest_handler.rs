@@ -128,7 +128,7 @@ fn deserialize_datadog_log(data: &[u8]) -> Result<Vec<DatadogLogMsg>, DatadogApi
             internal_log_rate_limit = true,
             error = ?error
         );
-        DatadogApiError::InvalidPayload(format!("Error parsing JSON: {:?}", error))
+        DatadogApiError::InvalidPayload(format!("Error parsing JSON: {error:?}"))
     })
 }
 

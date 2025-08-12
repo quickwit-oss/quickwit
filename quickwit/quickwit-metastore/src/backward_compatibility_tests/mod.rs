@@ -70,8 +70,8 @@ where T: TestableForRegression + std::fmt::Debug {
     let deserialized: T = deserialize_json_file(path)?;
     let expected_path = path.to_string_lossy().replace(".json", ".expected.json");
     let expected: T = deserialize_json_file(Path::new(&expected_path))?;
-    println!("---\nTest equality of {:?}", expected);
-    println!("---\nwith {:?}", deserialized);
+    println!("---\nTest equality of {expected:?}");
+    println!("---\nwith {deserialized:?}");
     deserialized.assert_equality(&expected);
     Ok(())
 }
@@ -107,8 +107,8 @@ where for<'a> T: std::fmt::Debug + Serialize + Deserialize<'a> {
         return Ok(false);
     }
     println!("---\nTest deserialization of {}", expected_path.display());
-    println!("---\nexpected {:?}", expected);
-    println!("---\nwith {:?}", expected_new_json_value);
+    println!("---\nexpected {expected:?}");
+    println!("---\nwith {expected_new_json_value:?}");
     let mut expected_new_json = serde_json::to_string_pretty(&expected_new_json_value)?;
     expected_new_json.push('\n');
     std::fs::write(
@@ -215,8 +215,7 @@ where T: TestableForRegression + std::fmt::Debug {
     if !updated_or_new_files.is_empty() {
         panic!(
             "Some files have been updated or created. Please check the diff and replace their \
-             counterparts when appropriate: {:?}",
-            updated_or_new_files
+             counterparts when appropriate: {updated_or_new_files:?}"
         );
     }
 

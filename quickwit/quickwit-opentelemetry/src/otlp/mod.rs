@@ -249,8 +249,7 @@ async fn ingest_doc_batch_v2(
     let num_responses = response.successes.len() + response.failures.len();
     if num_responses != 1 {
         return Err(IngestServiceError::Internal(format!(
-            "expected a single failure or success, got {}",
-            num_responses
+            "expected a single failure or success, got {num_responses}"
         )));
     }
     if response.successes.pop().is_some() {

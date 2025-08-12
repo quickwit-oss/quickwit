@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::cmp::{Ord, Ordering, PartialEq, PartialOrd};
-use std::collections::{BTreeSet, HashMap, btree_set};
+use std::collections::HashMap;
 
 use async_trait::async_trait;
 use prost::Message;
@@ -188,36 +187,6 @@ pub struct LogRecord {
     pub scope_dropped_attributes_count: u32,
 }
 
-/// A wrapper around `LogRecord` that implements `Ord` to allow insertion of log records into a
-/// `BTreeSet`.
-#[derive(Debug)]
-struct OrdLogRecord(LogRecord);
-
-impl Ord for OrdLogRecord {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.0
-            .service_name
-            .cmp(&other.0.service_name)
-            .then(self.0.timestamp_nanos.cmp(&other.0.timestamp_nanos))
-    }
-}
-
-impl PartialOrd for OrdLogRecord {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl PartialEq for OrdLogRecord {
-    fn eq(&self, other: &Self) -> bool {
-        self.0.timestamp_nanos == other.0.timestamp_nanos
-            && self.0.service_name == other.0.service_name
-            && self.0.body == other.0.body
-    }
-}
-
-impl Eq for OrdLogRecord {}
-
 struct ParsedLogRecords {
     doc_batch: DocBatchV2,
     num_log_records: u64,
@@ -301,11 +270,11 @@ impl OtlpGrpcLogsService {
         let num_log_records = log_records.len() as u64;
         let mut error_message = String::new();
 
-        let mut doc_batch_builder = JsonDocBatchV2Builder::default();
+        let mut doc_batch_builder = JsonDocBatchV2Builder::with_num_docs(num_log_records as usize);
         let mut doc_uid_generator = DocUidGenerator::default();
         for log_record in log_records {
             let doc_uid = doc_uid_generator.next_doc_uid();
-            if let Err(error) = doc_batch_builder.add_doc(doc_uid, log_record.0) {
+            if let Err(error) = doc_batch_builder.add_doc(doc_uid, log_record) {
                 error!(error=?error, "failed to JSON serialize span");
                 error_message = format!("failed to JSON serialize span: {error:?}");
                 num_parse_errors += 1;
@@ -393,19 +362,24 @@ impl LogsService for OtlpGrpcLogsService {
     }
 }
 
-fn parse_otlp_logs(
-    request: ExportLogsServiceRequest,
-) -> Result<BTreeSet<OrdLogRecord>, OtlpLogsError> {
-    let mut log_records = BTreeSet::new();
-    for resource_log in request.resource_logs {
+fn parse_otlp_logs(request: ExportLogsServiceRequest) -> Result<Vec<LogRecord>, OtlpLogsError> {
+    let num_log_records = request
+        .resource_logs
+        .iter()
+        .flat_map(|resource_log| resource_log.scope_logs.iter())
+        .map(|scope_logs| scope_logs.log_records.len())
+        .sum();
+    let mut log_records = Vec::with_capacity(num_log_records);
+
+    for resource_logs in request.resource_logs {
         let mut resource_attributes = extract_attributes(
-            resource_log
+            resource_logs
                 .resource
                 .clone()
                 .map(|rsrc| rsrc.attributes)
                 .unwrap_or_default(),
         );
-        let resource_dropped_attributes_count = resource_log
+        let resource_dropped_attributes_count = resource_logs
             .resource
             .map(|rsrc| rsrc.dropped_attributes_count)
             .unwrap_or(0);
@@ -414,31 +388,31 @@ fn parse_otlp_logs(
             Some(JsonValue::String(value)) => value.to_string(),
             _ => "unknown_service".to_string(),
         };
-        for scope_log in resource_log.scope_logs {
-            let scope_name = scope_log
+        for scope_logs in resource_logs.scope_logs {
+            let scope_name = scope_logs
                 .scope
                 .as_ref()
                 .map(|scope| &scope.name)
                 .filter(|name| !name.is_empty());
-            let scope_version = scope_log
+            let scope_version = scope_logs
                 .scope
                 .as_ref()
                 .map(|scope| &scope.version)
                 .filter(|version| !version.is_empty());
             let scope_attributes = extract_attributes(
-                scope_log
+                scope_logs
                     .scope
                     .clone()
                     .map(|scope| scope.attributes)
                     .unwrap_or_default(),
             );
-            let scope_dropped_attributes_count = scope_log
+            let scope_dropped_attributes_count = scope_logs
                 .scope
                 .as_ref()
                 .map(|scope| scope.dropped_attributes_count)
                 .unwrap_or(0);
 
-            for log_record in scope_log.log_records {
+            for log_record in scope_logs.log_records {
                 let observed_timestamp_nanos = if log_record.observed_time_unix_nano == 0 {
                     // As per OTEL model spec, this field SHOULD be set once the
                     // event is observed by OpenTelemetry. If it's not set, we
@@ -503,7 +477,7 @@ fn parse_otlp_logs(
                     scope_attributes: scope_attributes.clone(),
                     scope_dropped_attributes_count,
                 };
-                log_records.insert(OrdLogRecord(log_record));
+                log_records.push(log_record);
             }
         }
     }
@@ -512,7 +486,7 @@ fn parse_otlp_logs(
 
 /// An iterator of JSON OTLP log records for use in the doc processor.
 pub struct JsonLogIterator {
-    logs: btree_set::IntoIter<OrdLogRecord>,
+    logs: std::vec::IntoIter<LogRecord>,
     current_log_idx: usize,
     num_logs: usize,
     avg_log_size: usize,
@@ -520,7 +494,7 @@ pub struct JsonLogIterator {
 }
 
 impl JsonLogIterator {
-    fn new(logs: BTreeSet<OrdLogRecord>, num_bytes: usize) -> Self {
+    fn new(logs: Vec<LogRecord>, num_bytes: usize) -> Self {
         let num_logs = logs.len();
         let avg_log_size = num_bytes.checked_div(num_logs).unwrap_or(0);
         let avg_log_size_rem = avg_log_size + num_bytes.checked_rem(num_logs).unwrap_or(0);
@@ -539,9 +513,10 @@ impl Iterator for JsonLogIterator {
     type Item = (JsonValue, usize);
 
     fn next(&mut self) -> Option<Self::Item> {
-        let log_opt = self.logs.next().map(|OrdLogRecord(log)| {
-            serde_json::to_value(log).expect("`LogRecord` should be JSON serializable")
-        });
+        let log_opt = self
+            .logs
+            .next()
+            .map(|log| serde_json::to_value(log).expect("`LogRecord` should be JSON serializable"));
         if log_opt.is_some() {
             self.current_log_idx += 1;
         }

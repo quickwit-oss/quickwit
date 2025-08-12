@@ -162,7 +162,7 @@ mod tests {
         // Some punctuation like `@`, `^`, `%`, `:` is ignored
         let filtered_chars = vec!["@", "^", "%", ":"];
         for c in filtered_chars {
-            let query = format!("Setting Handles {}", c);
+            let query = format!("Setting Handles {c}");
             assert!(matches(&query, text), "Failed for: {}", &query);
         }
 

@@ -84,7 +84,7 @@ async fn test_ingest_traces_with_otlp_grpc_api() {
             .send_compressed(CompressionEncoding::Gzip),
     ];
     for (idx, mut tested_client) in tested_clients.into_iter().enumerate() {
-        let body = format!("hello{}", idx);
+        let body = format!("hello{idx}");
         let request = ExportTraceServiceRequest {
             resource_spans: build_span(body.clone()),
         };
@@ -106,7 +106,7 @@ async fn test_ingest_traces_with_otlp_grpc_api() {
             .await
             .unwrap();
         sandbox
-            .assert_hit_count(OTEL_TRACES_INDEX_ID, &format!("span_name:{}", body), 1)
+            .assert_hit_count(OTEL_TRACES_INDEX_ID, &format!("span_name:{body}"), 1)
             .await;
     }
 
@@ -177,7 +177,7 @@ async fn test_ingest_logs_with_otlp_grpc_api() {
             .send_compressed(CompressionEncoding::Gzip),
     ];
     for (idx, mut tested_client) in tested_clients.into_iter().enumerate() {
-        let body: String = format!("hello{}", idx);
+        let body: String = format!("hello{idx}");
         let request = ExportLogsServiceRequest {
             resource_logs: build_log(body.clone()),
         };
@@ -199,7 +199,7 @@ async fn test_ingest_logs_with_otlp_grpc_api() {
             .await
             .unwrap();
         sandbox
-            .assert_hit_count(OTEL_LOGS_INDEX_ID, &format!("body.message:{}", body), 1)
+            .assert_hit_count(OTEL_LOGS_INDEX_ID, &format!("body.message:{body}"), 1)
             .await;
     }
 

@@ -413,7 +413,7 @@ mod tests {
             )
             .unwrap();
         assert_eq!(
-            format!("{:?}", tantivy_ast),
+            format!("{tantivy_ast:?}"),
             "Bool(TantivyBoolQuery { must: [], must_not: [], should: [Leaf(FastFieldRangeQuery { \
              bounds: BoundsRange { lower_bound: Included(Term(field=6, type=Json, path=hello, \
              type=I64, 1980)), upper_bound: Included(Term(field=6, type=Json, path=hello, \

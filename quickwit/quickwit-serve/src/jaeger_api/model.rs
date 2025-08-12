@@ -105,7 +105,7 @@ impl JaegerTrace {
                 span.process_id = Some(process_id.clone());
             } else {
                 process_counter += 1;
-                current_process.key = format!("p{}", process_counter);
+                current_process.key = format!("p{process_counter}");
                 span.process_id = Some(current_process.key.clone());
                 process_map.insert(current_process.key.clone(), current_process.clone());
                 service_name_to_process_id.insert(

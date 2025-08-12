@@ -343,7 +343,7 @@ impl fmt::Debug for SourceCheckpoint {
         for (i, (partition_id, position)) in self.per_partition.iter().enumerate() {
             f.write_str(&partition_id.0)?;
             f.write_str(":")?;
-            write!(f, "{}", position)?;
+            write!(f, "{position}")?;
             let is_last = i == self.per_partition.len() - 1;
             if !is_last {
                 f.write_str(" ")?;

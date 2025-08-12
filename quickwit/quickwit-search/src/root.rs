@@ -1397,8 +1397,7 @@ fn convert_sort_datetime_value_into_nanos(
                 *value = value.checked_mul(1_000_000).ok_or_else(|| {
                     SearchError::Internal(format!(
                         "sort value defined in milliseconds is too large and cannot be converted \
-                         into nanoseconds: {}",
-                        value
+                         into nanoseconds: {value}"
                     ))
                 })?;
             }
@@ -1411,8 +1410,7 @@ fn convert_sort_datetime_value_into_nanos(
                 *value = value.checked_mul(1_000_000).ok_or_else(|| {
                     SearchError::Internal(format!(
                         "sort value defined in milliseconds is too large and cannot be converted \
-                         into nanoseconds: {}",
-                        value
+                         into nanoseconds: {value}"
                     ))
                 })?;
             }
@@ -1422,8 +1420,8 @@ fn convert_sort_datetime_value_into_nanos(
         },
         _ => {
             return Err(SearchError::Internal(format!(
-                "datetime conversion are only support for u64 and i64 sort values, not `{:?}`",
-                sort_value
+                "datetime conversion are only support for u64 and i64 sort values, not \
+                 `{sort_value:?}`"
             )));
         }
     }
@@ -1455,8 +1453,8 @@ fn convert_sort_datetime_value(
         },
         _ => {
             return Err(SearchError::Internal(format!(
-                "datetime conversion are only support for u64 and i64 sort values, not `{:?}`",
-                sort_value
+                "datetime conversion are only support for u64 and i64 sort values, not \
+                 `{sort_value:?}`"
             )));
         }
     }

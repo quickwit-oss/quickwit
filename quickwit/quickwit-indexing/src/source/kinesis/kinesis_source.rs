@@ -312,7 +312,7 @@ impl Source for KinesisSource {
     }
 
     fn name(&self) -> String {
-        format!("{:?}", self)
+        format!("{self:?}")
     }
 
     fn observable_state(&self) -> JsonValue {

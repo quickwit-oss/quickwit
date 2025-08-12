@@ -645,10 +645,8 @@ impl IndexingService {
         self.update_chitchat_running_plan().await;
 
         if !spawn_pipeline_failures.is_empty() {
-            let message = format!(
-                "failed to spawn indexing pipelines: {:?}",
-                spawn_pipeline_failures
-            );
+            let message =
+                format!("failed to spawn indexing pipelines: {spawn_pipeline_failures:?}");
             return Err(IndexingError::Internal(message));
         }
         Ok(())
