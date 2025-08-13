@@ -227,7 +227,7 @@ impl PartialHit {
 /// Serializes the Split fields.
 ///
 /// `fields_metadata` has to be sorted.
-pub fn serialize_split_fields(list_fields: ListFields) -> Vec<u8> {
+pub fn serialize_split_fields(list_fields: &ListFields) -> Vec<u8> {
     let payload = list_fields.encode_to_vec();
     let compression_level = 3;
     let payload_compressed = zstd::stream::encode_all(&mut &payload[..], compression_level)

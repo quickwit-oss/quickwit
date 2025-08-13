@@ -70,15 +70,15 @@ pub async fn get_fields_from_split(
         Ordering::Equal => left.field_type.cmp(&right.field_type),
         other => other,
     });
+    let list_fields = ListFields {
+        fields: list_fields,
+    };
     // Put result into cache
-    searcher_context.list_fields_cache.put(
-        split_and_footer_offsets.clone(),
-        ListFields {
-            fields: list_fields.clone(),
-        },
-    );
+    searcher_context
+        .list_fields_cache
+        .put(split_and_footer_offsets.clone(), &list_fields);
 
-    Ok(Box::new(list_fields.into_iter()))
+    Ok(Box::new(list_fields.fields.into_iter()))
 }
 
 /// `current_group` needs to contain at least one element.
