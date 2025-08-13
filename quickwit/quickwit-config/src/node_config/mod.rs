@@ -573,9 +573,10 @@ pub struct CloudPremConfig {
     pub mtls_header: Option<String>,
     #[serde(flatten, default)]
     pub grpc_config: GrpcConfig,
-    // TODO on the final system, this would be the DC to connect to, + some auth token
     #[serde(default)]
-    pub websocket_url: Option<String>,
+    pub connection_endpoint: Option<String>,
+    #[serde(default)]
+    pub dd_token: Option<String>,
 }
 
 impl CloudPremConfig {
