@@ -5,7 +5,7 @@ pub struct AnyRequest {
     pub req_id: u64,
     #[prost(string, tag = "2")]
     pub trace_id: ::prost::alloc::string::String,
-    #[prost(oneof = "any_request::Request", tags = "11, 12, 13, 14, 15, 16, 17, 18")]
+    #[prost(oneof = "any_request::Request", tags = "11, 12, 13, 14, 15, 16, 17, 18, 21")]
     pub request: ::core::option::Option<any_request::Request>,
 }
 /// Nested message and enum types in `AnyRequest`.
@@ -28,6 +28,9 @@ pub mod any_request {
         RootSearch(super::super::quickwit::search::SearchRequest),
         #[prost(message, tag = "18")]
         RootListTerms(super::super::quickwit::search::ListTermsRequest),
+        /// Same as a ping, but not propagated further
+        #[prost(message, tag = "21")]
+        LocalPing(super::PingRequest),
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -38,7 +41,7 @@ pub struct AnyResponse {
     pub grpc_code: u32,
     #[prost(
         oneof = "any_response::Response",
-        tags = "9, 10, 11, 12, 13, 14, 15, 16, 17, 18"
+        tags = "9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 21"
     )]
     pub response: ::core::option::Option<any_response::Response>,
 }
@@ -70,6 +73,9 @@ pub mod any_response {
         RootSearch(super::super::quickwit::search::SearchResponse),
         #[prost(message, tag = "18")]
         RootListTerms(super::super::quickwit::search::ListTermsResponse),
+        /// Same as a ping, but not propagated further
+        #[prost(message, tag = "21")]
+        LocalPing(super::PingResponse),
     }
 }
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]

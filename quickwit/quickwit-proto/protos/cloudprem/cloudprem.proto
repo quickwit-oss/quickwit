@@ -49,6 +49,9 @@ message AnyRequest {
         SetClusterAddressRequest set_cluster_address = 16;
         quickwit.search.SearchRequest root_search = 17;
         quickwit.search.ListTermsRequest root_list_terms = 18;
+
+        // Same as a ping, but not propagated further
+        PingRequest local_ping = 21;
     }
 }
 
@@ -71,6 +74,9 @@ message AnyResponse {
         SetClusterAddressResponse set_cluster_address = 16;
         quickwit.search.SearchResponse root_search = 17;
         quickwit.search.ListTermsResponse root_list_terms = 18;
+
+        // Same as a ping, but not propagated further
+        PingResponse local_ping = 21;
     }
 }
 
