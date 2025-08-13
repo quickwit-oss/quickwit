@@ -32,9 +32,13 @@ use quickwit_proto::search::{
 };
 use tantivy::index::FieldMetadata;
 use tantivy::schema::{FieldType, Type};
-use tantivy::{InvertedIndexReader, ReloadPolicy, SegmentMeta};
+use tantivy::{ByteCount, Index, InvertedIndexReader, ReloadPolicy, SegmentMeta};
 use tokio::runtime::Handle;
 use tracing::{debug, info, instrument, warn};
+
+const LIMIT_PACKAGED_FIELDS: usize = 1_000;
+
+const QW_MAX_PACKAGED_FIELDS_CAPS_ENV_KEY: &str = "QW_MAX_PACKAGED_FIELDS_CAPS";
 
 /// Maximum distinct values allowed for a tag field within a split.
 const MAX_VALUES_PER_TAG_FIELD: usize = if cfg!(any(test, feature = "testsuite")) {
@@ -268,6 +272,41 @@ fn try_extract_terms(
     Ok(terms)
 }
 
+fn total_num_bytes(field_metadata: &FieldMetadata) -> u64 {
+    let num_bytes =
+        |bytes_opt: &Option<ByteCount>| bytes_opt.map(|b| b.get_bytes()).unwrap_or(0u64);
+    num_bytes(&field_metadata.term_dictionary_size)
+        + num_bytes(&field_metadata.postings_size)
+        + num_bytes(&field_metadata.positions_size)
+        + num_bytes(&field_metadata.fast_size)
+}
+
+fn build_list_fields(index: &Index) -> anyhow::Result<ListFields> {
+    let fields_metadata: Vec<FieldMetadata> = index.fields_metadata()?;
+    let num_fields = fields_metadata.len();
+
+    let max_packaged_field_caps =
+        quickwit_common::get_from_env(QW_MAX_PACKAGED_FIELDS_CAPS_ENV_KEY, 1_000);
+    let fields_within_limit: Vec<FieldMetadata> = if num_fields > max_packaged_field_caps {
+        info!(
+            "truncate list field information num_fields={num_fields} limit={LIMIT_PACKAGED_FIELDS}"
+        );
+        fields_metadata
+            .into_iter()
+            .k_largest_by_key(LIMIT_PACKAGED_FIELDS, total_num_bytes)
+            .collect()
+    } else {
+        fields_metadata
+    };
+
+    let fields = fields_within_limit
+        .iter()
+        .map(field_metadata_to_list_field_serialized)
+        .collect::<Vec<_>>();
+
+    Ok(ListFields { fields })
+}
+
 fn create_packaged_split(
     segment_metas: &[SegmentMeta],
     split: IndexedSplit,
@@ -285,8 +324,6 @@ fn create_packaged_split(
         .reader_builder()
         .reload_policy(ReloadPolicy::Manual)
         .try_into()?;
-
-    let fields_metadata = split.index.fields_metadata()?;
 
     let mut tags = BTreeSet::default();
     for named_field in tag_fields {
@@ -314,7 +351,8 @@ fn create_packaged_split(
     build_hotcache(split.split_scratch_directory.path(), &mut hotcache_bytes)?;
     ctx.record_progress();
 
-    let serialized_split_fields = serialize_field_metadata(&fields_metadata);
+    let list_fields: ListFields = build_list_fields(&split.index)?;
+    let serialized_split_fields = serialize_split_fields(&list_fields);
 
     let packaged_split = PackagedSplit {
         serialized_split_fields,
@@ -325,18 +363,6 @@ fn create_packaged_split(
         hotcache_bytes,
     };
     Ok(packaged_split)
-}
-
-/// Serializes the Split fields.
-///
-/// `fields_metadata` has to be sorted.
-fn serialize_field_metadata(fields_metadata: &[FieldMetadata]) -> Vec<u8> {
-    let fields = fields_metadata
-        .iter()
-        .map(field_metadata_to_list_field_serialized)
-        .collect::<Vec<_>>();
-
-    serialize_split_fields(ListFields { fields })
 }
 
 fn tantivy_type_to_list_field_type(typ: Type) -> ListFieldType {
@@ -360,8 +386,8 @@ fn field_metadata_to_list_field_serialized(
     ListFieldsEntryResponse {
         field_name: field_metadata.field_name.to_string(),
         field_type: tantivy_type_to_list_field_type(field_metadata.typ) as i32,
-        searchable: field_metadata.indexed,
-        aggregatable: field_metadata.fast,
+        searchable: field_metadata.is_indexed(),
+        aggregatable: field_metadata.is_fast(),
         index_ids: Vec::new(),
         non_searchable_index_ids: Vec::new(),
         non_aggregatable_index_ids: Vec::new(),
@@ -385,7 +411,7 @@ mod tests {
     use quickwit_proto::search::{ListFieldsEntryResponse, deserialize_split_fields};
     use quickwit_proto::types::{DocMappingUid, IndexUid, NodeId};
     use tantivy::directory::MmapDirectory;
-    use tantivy::schema::{FAST, NumericOptions, STRING, Schema, TEXT, Type};
+    use tantivy::schema::{FAST, NumericOptions, STRING, Schema, TEXT};
     use tantivy::{DateTime, IndexBuilder, IndexSettings, doc};
     use tracing::Span;
 
@@ -393,37 +419,39 @@ mod tests {
     use crate::models::{PublishLock, SplitAttrs};
 
     #[test]
-    fn serialize_field_metadata_test() {
-        let fields_metadata = vec![
-            FieldMetadata {
-                field_name: "test".to_string(),
-                typ: Type::Str,
-                indexed: true,
-                stored: true,
-                fast: true,
-            },
-            FieldMetadata {
-                field_name: "test2".to_string(),
-                typ: Type::Str,
-                indexed: true,
-                stored: false,
-                fast: false,
-            },
-            FieldMetadata {
-                field_name: "test3".to_string(),
-                typ: Type::U64,
-                indexed: true,
-                stored: false,
-                fast: true,
-            },
-        ];
+    fn test_serialize_split_fields() {
+        let list_fields = ListFields {
+            fields: vec![
+                ListFieldsEntryResponse {
+                    field_name: "test".to_string(),
+                    field_type: ListFieldType::Str as i32,
+                    searchable: true,
+                    aggregatable: true,
+                    ..Default::default()
+                },
+                ListFieldsEntryResponse {
+                    field_name: "test2".to_string(),
+                    field_type: ListFieldType::Str as i32,
+                    searchable: true,
+                    aggregatable: false,
+                    ..Default::default()
+                },
+                ListFieldsEntryResponse {
+                    field_name: "test3".to_string(),
+                    field_type: ListFieldType::Str as i32,
+                    searchable: true,
+                    aggregatable: true,
+                    ..Default::default()
+                },
+            ],
+        };
 
-        let out = serialize_field_metadata(&fields_metadata);
+        let out = serialize_split_fields(&list_fields);
 
         let deserialized: Vec<ListFieldsEntryResponse> =
             deserialize_split_fields(&mut &out[..]).unwrap().fields;
 
-        assert_eq!(fields_metadata.len(), deserialized.len());
+        assert_eq!(list_fields.fields.len(), deserialized.len());
         assert_eq!(deserialized[0].field_name, "test");
         assert_eq!(deserialized[0].field_type, ListFieldType::Str as i32);
         assert!(deserialized[0].searchable);

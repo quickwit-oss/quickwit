@@ -41,9 +41,8 @@ impl ListFieldsCache {
         deserialize_split_fields(encoded_result).ok()
     }
 
-    pub fn put(&self, split_info: SplitIdAndFooterOffsets, list_fields: ListFields) {
+    pub fn put(&self, split_info: SplitIdAndFooterOffsets, list_fields: &ListFields) {
         let key = CacheKey::from_split_meta(split_info);
-
         let encoded_result = serialize_split_fields(list_fields);
         self.content.put(key, OwnedBytes::new(encoded_result));
     }
@@ -110,7 +109,7 @@ mod tests {
             fields: vec![result.clone()],
         };
 
-        cache.put(split_1.clone(), list_fields.clone());
+        cache.put(split_1.clone(), &list_fields);
         assert_eq!(cache.get(split_1.clone()).unwrap(), list_fields);
         assert!(cache.get(split_2).is_none());
     }
