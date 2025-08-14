@@ -1,0 +1,569 @@
+id: lastpass
+tests:
+  - sample: |-
+      {
+          "Time": "2024-08-06 05:16:17",
+          "Username": "abc@test.com",
+          "IP_Address": "10.10.10.10",
+          "Action": "Remove from group",
+          "Data": "'Group3' 'cdd@test.com'",
+          "timestamp": 1722921377000.0
+      }
+    result:
+      custom:
+        Data: "'Group3' 'cdd@test.com'"
+        Time: "2024-08-06 05:16:17"
+        evt:
+          name: "Remove from group"
+        group:
+          modified_user: "cdd@test.com"
+          name: "Group3"
+        network:
+          client:
+            geoip: { }
+            ip: "10.10.10.10"
+        timestamp: 1.722921377E12
+        usr:
+          name: "abc@test.com"
+      message: |-
+        {
+          "Action" : "Remove from group",
+          "Username" : "abc@test.com",
+          "Time" : "2024-08-06 05:16:17",
+          "Data" : "'Group3' 'cdd@test.com'",
+          "IP_Address" : "10.10.10.10",
+          "timestamp" : 1.722921377E12
+        }
+      tags:
+        - "source:LOGS_SOURCE"
+  - sample: |-
+      {
+          "Time": "2024-08-06 05:16:17",
+          "Username": "abc@test.com",
+          "IP_Address": "10.10.10.10",
+          "Action": "Adding user to group",
+          "Data": "cdd@test.com - Group3",
+          "timestamp": 1722921377000.0
+      }
+    result:
+      custom:
+        Data: "cdd@test.com - Group3"
+        Time: "2024-08-06 05:16:17"
+        evt:
+          name: "Adding user to group"
+        group:
+          modified_user: "cdd@test.com"
+          name: "Group3"
+        network:
+          client:
+            geoip: { }
+            ip: "10.10.10.10"
+        timestamp: 1.722921377E12
+        usr:
+          name: "abc@test.com"
+      message: |-
+        {
+          "Action" : "Adding user to group",
+          "Username" : "abc@test.com",
+          "Time" : "2024-08-06 05:16:17",
+          "Data" : "cdd@test.com - Group3",
+          "IP_Address" : "10.10.10.10",
+          "timestamp" : 1.722921377E12
+        }
+      tags:
+        - "source:LOGS_SOURCE"
+  - sample: |-
+      {
+          "Time": "2024-08-06 05:16:17",
+          "Username": "abc@test.com",
+          "IP_Address": "10.10.10.10",
+          "Action": "Add to shared folder",
+          "Data": "'shared by name1' 'cdd@test.com'",
+          "timestamp": 1722921377000.0
+      }
+    result:
+      custom:
+        Data: "'shared by name1' 'cdd@test.com'"
+        Time: "2024-08-06 05:16:17"
+        evt:
+          name: "Add to shared folder"
+        network:
+          client:
+            geoip: { }
+            ip: "10.10.10.10"
+        shared_folder:
+          modified_user: "cdd@test.com"
+          name: "shared by name1"
+        timestamp: 1.722921377E12
+        usr:
+          name: "abc@test.com"
+      message: |-
+        {
+          "Action" : "Add to shared folder",
+          "Username" : "abc@test.com",
+          "Time" : "2024-08-06 05:16:17",
+          "Data" : "'shared by name1' 'cdd@test.com'",
+          "IP_Address" : "10.10.10.10",
+          "timestamp" : 1.722921377E12
+        }
+      tags:
+        - "source:LOGS_SOURCE"
+  - sample: |-
+      {
+          "Time": "2024-08-06 05:16:17",
+          "Username": "abc@test.com",
+          "IP_Address": "10.10.10.10",
+          "Action": "Move to shared folder",
+          "Data": "VID: 4901555952779484761 to Common_DataDog_Creds",
+          "timestamp": 1722921377000.0
+      }
+    result:
+      custom:
+        Data: "VID: 4901555952779484761 to Common_DataDog_Creds"
+        Time: "2024-08-06 05:16:17"
+        evt:
+          name: "Move to shared folder"
+        network:
+          client:
+            geoip: { }
+            ip: "10.10.10.10"
+        shared_folder:
+          VID: "4901555952779484761"
+          name: "Common_DataDog_Creds"
+        timestamp: 1.722921377E12
+        usr:
+          name: "abc@test.com"
+      message: |-
+        {
+          "Action" : "Move to shared folder",
+          "Username" : "abc@test.com",
+          "Time" : "2024-08-06 05:16:17",
+          "Data" : "VID: 4901555952779484761 to Common_DataDog_Creds",
+          "IP_Address" : "10.10.10.10",
+          "timestamp" : 1.722921377E12
+        }
+      tags:
+        - "source:LOGS_SOURCE"
+  - sample: |-
+      {
+          "Time": "2024-08-06 05:16:17",
+          "Username": "abc@test.com",
+          "IP_Address": "10.10.10.10",
+          "Action": "Removed from shared folder",
+          "Data": "'Testing_data' 'cdd@test.com'",
+          "timestamp": 1722921377000.0
+      }
+    result:
+      custom:
+        Data: "'Testing_data' 'cdd@test.com'"
+        Time: "2024-08-06 05:16:17"
+        evt:
+          name: "Removed from shared folder"
+        network:
+          client:
+            geoip: { }
+            ip: "10.10.10.10"
+        shared_folder:
+          modified_user: "cdd@test.com"
+          name: "Testing_data"
+        timestamp: 1.722921377E12
+        usr:
+          name: "abc@test.com"
+      message: |-
+        {
+          "Action" : "Removed from shared folder",
+          "Username" : "abc@test.com",
+          "Time" : "2024-08-06 05:16:17",
+          "Data" : "'Testing_data' 'cdd@test.com'",
+          "IP_Address" : "10.10.10.10",
+          "timestamp" : 1.722921377E12
+        }
+      tags:
+        - "source:LOGS_SOURCE"
+  - sample: |-
+      {
+          "Time": "2024-08-06 05:16:17",
+          "Username": "abc@test.com",
+          "IP_Address": "10.10.10.10",
+          "Action": "Renamed shared folder",
+          "Data": "'shared by name1' 'shared by name2'",
+          "timestamp": 1722921377000.0   
+      }
+    result:
+      custom:
+        Data: "'shared by name1' 'shared by name2'"
+        Time: "2024-08-06 05:16:17"
+        evt:
+          name: "Renamed shared folder"
+        network:
+          client:
+            geoip: { }
+            ip: "10.10.10.10"
+        shared_folder:
+          name: "shared by name2"
+          old_name: "shared by name1"
+        timestamp: 1.722921377E12
+        usr:
+          name: "abc@test.com"
+      message: |-
+        {
+          "Action" : "Renamed shared folder",
+          "Username" : "abc@test.com",
+          "Time" : "2024-08-06 05:16:17",
+          "Data" : "'shared by name1' 'shared by name2'",
+          "IP_Address" : "10.10.10.10",
+          "timestamp" : 1.722921377E12
+        }
+      tags:
+        - "source:LOGS_SOURCE"
+  - sample: |-
+      {
+          "Time": "2024-08-06 05:16:17",
+          "Username": "abc@test.com",
+          "IP_Address": "10.10.10.10",
+          "Action": "Add policy",
+          "Data": "Length of site passwords",
+          "timestamp": 1722921377000.0   
+      }
+    result:
+      custom:
+        Data: "Length of site passwords"
+        Time: "2024-08-06 05:16:17"
+        evt:
+          name: "Add policy"
+        network:
+          client:
+            geoip: { }
+            ip: "10.10.10.10"
+        policy:
+          name: "Length of site passwords"
+        timestamp: 1.722921377E12
+        usr:
+          name: "abc@test.com"
+      message: |-
+        {
+          "Action" : "Add policy",
+          "Username" : "abc@test.com",
+          "Time" : "2024-08-06 05:16:17",
+          "Data" : "Length of site passwords",
+          "IP_Address" : "10.10.10.10",
+          "timestamp" : 1.722921377E12
+        }
+      tags:
+        - "source:LOGS_SOURCE"
+  - sample: |-
+      {
+          "Time": "2024-08-06 05:16:17",
+          "Username": "abc@test.com",
+          "IP_Address": "10.10.10.10",
+          "Action": "Edit policy",
+          "Data": "Length of site passwords New value: test.com=8",
+          "timestamp": 1722921377000.0  
+      }
+    result:
+      custom:
+        Data: "Length of site passwords New value: test.com=8"
+        Time: "2024-08-06 05:16:17"
+        evt:
+          name: "Edit policy"
+        network:
+          client:
+            geoip: { }
+            ip: "10.10.10.10"
+        policy:
+          name: "Length of site passwords"
+          new_values: "test.com=8"
+        timestamp: 1.722921377E12
+        usr:
+          name: "abc@test.com"
+      message: |-
+        {
+          "Action" : "Edit policy",
+          "Username" : "abc@test.com",
+          "Time" : "2024-08-06 05:16:17",
+          "Data" : "Length of site passwords New value: test.com=8",
+          "IP_Address" : "10.10.10.10",
+          "timestamp" : 1.722921377E12
+        }
+      tags:
+        - "source:LOGS_SOURCE"
+  - sample: |-
+      {
+          "Time": "2024-08-06 05:16:17",
+          "Username": "abc@test.com",
+          "IP_Address": "10.10.10.10",
+          "Action": "Site added",
+          "Data": "VID: 5516541713708306640 from SFolder33",
+          "timestamp": 1722921377000.0
+      }
+    result:
+      custom:
+        Data: "VID: 5516541713708306640 from SFolder33"
+        Time: "2024-08-06 05:16:17"
+        VID: "5516541713708306640"
+        evt:
+          name: "Site added"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+        shared_folder:
+          name: "SFolder33"
+        timestamp: 1.722921377E12
+        usr:
+          name: "abc@test.com"
+      message: |-
+        {
+          "Action" : "Site added",
+          "Username" : "abc@test.com",
+          "Time" : "2024-08-06 05:16:17",
+          "Data" : "VID: 5516541713708306640 from SFolder33",
+          "IP_Address" : "10.10.10.10",
+          "timestamp" : 1.722921377E12
+        }
+      tags:
+        - "source:LOGS_SOURCE"
+  - sample: |-
+      {
+          "Time": "2024-08-06 05:16:17",
+          "Username": "abc@test.com",
+          "IP_Address": "10.10.10.10",
+          "Action": "Username changed",
+          "Data": "VID: 4963227935627314198",
+          "timestamp": 1722921377000.0
+      }
+    result:
+      custom:
+        Data: "VID: 4963227935627314198"
+        Time: "2024-08-06 05:16:17"
+        VID: "4963227935627314198"
+        evt:
+          name: "Username changed"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+        timestamp: 1.722921377E12
+        usr:
+          name: "abc@test.com"
+      message: |-
+        {
+          "Action" : "Username changed",
+          "Username" : "abc@test.com",
+          "Time" : "2024-08-06 05:16:17",
+          "Data" : "VID: 4963227935627314198",
+          "IP_Address" : "10.10.10.10",
+          "timestamp" : 1.722921377E12
+        }
+      tags:
+        - "source:LOGS_SOURCE"
+  - sample: |-
+      {
+          "Time": "2024-08-06 05:16:17",
+          "Username": "abc@test.com",
+          "IP_Address": "10.10.10.10",
+          "Action": "Password changed",
+          "Data": "VID: 4963227935627314198",
+          "timestamp": 1722921377000.0
+      }
+    result:
+      custom:
+        Data: "VID: 4963227935627314198"
+        Time: "2024-08-06 05:16:17"
+        VID: "4963227935627314198"
+        evt:
+          name: "Password changed"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+        timestamp: 1.722921377E12
+        usr:
+          name: "abc@test.com"
+      message: |-
+        {
+          "Action" : "Password changed",
+          "Username" : "abc@test.com",
+          "Time" : "2024-08-06 05:16:17",
+          "Data" : "VID: 4963227935627314198",
+          "IP_Address" : "10.10.10.10",
+          "timestamp" : 1.722921377E12
+        }
+      tags:
+        - "source:LOGS_SOURCE"
+  - sample: |-
+      {
+          "Time": "2024-08-06 05:16:17",
+          "Username": "abc@test.com",
+          "IP_Address": "10.10.10.10",
+          "Action": "Site changed",
+          "Data": "VID: 8129207370202608594",
+          "timestamp": 1722921377000.0
+      }
+    result:
+      custom:
+        Data: "VID: 8129207370202608594"
+        Time: "2024-08-06 05:16:17"
+        VID: "8129207370202608594"
+        evt:
+          name: "Site changed"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+        timestamp: 1.722921377E12
+        usr:
+          name: "abc@test.com"
+      message: |-
+        {
+          "Action" : "Site changed",
+          "Username" : "abc@test.com",
+          "Time" : "2024-08-06 05:16:17",
+          "Data" : "VID: 8129207370202608594",
+          "IP_Address" : "10.10.10.10",
+          "timestamp" : 1.722921377E12
+        }
+      tags:
+        - "source:LOGS_SOURCE"
+  - sample: |-
+      {
+          "Time": "2024-08-06 05:16:17",
+          "Username": "abc@test.com",
+          "IP_Address": "10.10.10.10",
+          "Action": "Deleted sites",
+          "Data": "VID: 8802943594384138037",
+          "timestamp": 1722921377000.0
+      }
+    result:
+      custom:
+        Data: "VID: 8802943594384138037"
+        Time: "2024-08-06 05:16:17"
+        VID: "8802943594384138037"
+        evt:
+          name: "Deleted sites"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+        timestamp: 1.722921377E12
+        usr:
+          name: "abc@test.com"
+      message: |-
+        {
+          "Action" : "Deleted sites",
+          "Username" : "abc@test.com",
+          "Time" : "2024-08-06 05:16:17",
+          "Data" : "VID: 8802943594384138037",
+          "IP_Address" : "10.10.10.10",
+          "timestamp" : 1.722921377E12
+        }
+      tags:
+        - "source:LOGS_SOURCE"
+  - sample: |-
+      {
+          "Time": "2024-08-06 05:16:17",
+          "Username": "abc@test.com",
+          "IP_Address": "10.10.10.10",
+          "Action": "Log in",
+          "Data": "VID: 4963227935627314198",
+          "timestamp": 1722921377000.0
+      }
+    result:
+      custom:
+        Data: "VID: 4963227935627314198"
+        Time: "2024-08-06 05:16:17"
+        VID: "4963227935627314198"
+        evt:
+          name: "Log in"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+        timestamp: 1.722921377E12
+        usr:
+          name: "abc@test.com"
+      message: |-
+        {
+          "Action" : "Log in",
+          "Username" : "abc@test.com",
+          "Time" : "2024-08-06 05:16:17",
+          "Data" : "VID: 4963227935627314198",
+          "IP_Address" : "10.10.10.10",
+          "timestamp" : 1.722921377E12
+        }
+      tags:
+        - "source:LOGS_SOURCE"
+  - sample: |-
+      {
+          "Time": "2024-08-06 05:16:17",
+          "Username": "abc@test.com",
+          "IP_Address": "10.10.10.10",
+          "Action": "Open secure note",
+          "Data": "Secure Note (VID: 7608813617878138489)",
+          "timestamp": 1722921377000.0
+      }
+    result:
+      custom:
+        Data: "Secure Note (VID: 7608813617878138489)"
+        Time: "2024-08-06 05:16:17"
+        VID: "7608813617878138489"
+        evt:
+          name: "Open secure note"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+        timestamp: 1.722921377E12
+        usr:
+          name: "abc@test.com"
+      message: |-
+        {
+          "Action" : "Open secure note",
+          "Username" : "abc@test.com",
+          "Time" : "2024-08-06 05:16:17",
+          "Data" : "Secure Note (VID: 7608813617878138489)",
+          "IP_Address" : "10.10.10.10",
+          "timestamp" : 1.722921377E12
+        }
+      tags:
+        - "source:LOGS_SOURCE"
+  - sample: |-
+      {
+          "Action" : "Update folder permissions",
+          "Username" : "abc@test.com",
+          "Time" : "2024-08-06 05:16:17",
+          "Data" : "'SF5' 'cdd@test.com' 'Read only:yes Admin:yes Hide PW:yes'",
+          "IP_Address" : "10.10.10.10",
+          "timestamp" : 1.722921377E12
+      }
+    result:
+      custom:
+        Data: "'SF5' 'cdd@test.com' 'Read only:yes Admin:yes Hide PW:yes'"
+        Time: "2024-08-06 05:16:17"
+        evt:
+          name: "Update folder permissions"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+        shared_folder:
+          modified_user: "cdd@test.com"
+          name: "SF5"
+          permissions:
+            hide_password: "yes"
+            is_admin: "yes"
+            read_only: "yes"
+        timestamp: 1.722921377E12
+        usr:
+          name: "abc@test.com"
+      message: |-
+        {
+          "Action" : "Update folder permissions",
+          "Username" : "abc@test.com",
+          "Time" : "2024-08-06 05:16:17",
+          "Data" : "'SF5' 'cdd@test.com' 'Read only:yes Admin:yes Hide PW:yes'",
+          "IP_Address" : "10.10.10.10",
+          "timestamp" : 1.722921377E12
+        }
+      tags:
+       - "source:LOGS_SOURCE"

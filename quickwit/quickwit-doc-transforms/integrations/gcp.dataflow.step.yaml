@@ -1,0 +1,79 @@
+id: gcp.dataflow.step
+metric_id: google-cloud-dataflow
+backend_only: false
+facets:
+  - groups:
+      - GCP
+    name: Project ID
+    path: project_id
+    source: tag
+  - groups:
+      - DataFlow
+    name: Job Name
+    path: job_name
+    source: tag
+  - groups:
+      - DataFlow
+    name: Job ID
+    path: job_id
+    source: tag
+pipeline:
+  type: pipeline
+  name: Google Dataflow
+  enabled: true
+  filter:
+    query: source:gcp.dataflow.step
+  processors:
+    - type: date-remapper
+      name: Define `data.timestamp`, `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - data.timestamp
+        - timestamp
+    - type: status-remapper
+      name: Define `data.severity`, `severity` as the official status of the log
+      enabled: true
+      sources:
+        - data.severity
+        - severity
+    - type: message-remapper
+      name: Define `data.textPayload`, `textPayload`, `data.jsonPayload.message`, `jsonPayload.message` as the official message of the log
+      enabled: true
+      sources:
+        - data.textPayload
+        - textPayload
+        - data.jsonPayload.message
+        - jsonPayload.message
+    - type: attribute-remapper
+      name: Map `data.resource.labels.job_id`, `resource.labels.job_id` to `job_id`
+      enabled: true
+      sources:
+        - data.resource.labels.job_id
+        - resource.labels.job_id
+      sourceType: attribute
+      target: job_id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `data.resource.labels.job_name`, `resource.labels.job_name` to `job_name`
+      enabled: true
+      sources:
+        - data.resource.labels.job_name
+        - resource.labels.job_name
+      sourceType: attribute
+      target: job_name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `data.resource.labels.project_id`, `resource.labels.project_id` to `project_id`
+      enabled: true
+      sources:
+        - data.resource.labels.project_id
+        - resource.labels.project_id
+      sourceType: attribute
+      target: project_id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false

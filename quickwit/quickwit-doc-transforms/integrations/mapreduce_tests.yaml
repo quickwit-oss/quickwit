@@ -1,0 +1,69 @@
+id: "mapreduce"
+tests:
+ -
+  sample: "2020-08-19 15:21:01,647 INFO [main] org.apache.hadoop.mapred.MapTask: Processing split: hdfs://namenode:9000/user/root/input/hadoop-env.cmd:0+3999"
+  result:
+    custom:
+      level: "INFO"
+      logger:
+        component: "main"
+        name: "org.apache.hadoop.mapred.MapTask"
+      timestamp: 1597850461647
+    message: "Processing split: hdfs://namenode:9000/user/root/input/hadoop-env.cmd:0+3999"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1597850461647
+ -
+  sample: "2020-08-19 18:20:39,315 WARN [main] org.apache.hadoop.mapreduce.lib.output.FileOutputCommitter: Could not delete hdfs://namenode:9000/user/root/grep-temp-312857601/_temporary/1/_temporary/attempt_1597861183743_0001_m_000012_0"
+  result:
+    custom:
+      level: "WARN"
+      logger:
+        component: "main"
+        name: "org.apache.hadoop.mapreduce.lib.output.FileOutputCommitter"
+      mapreduce:
+        attempt:
+          attempt_id: "attempt_1597861183743_0001_m_000012_0"
+      timestamp: 1597861239315
+    message: "Could not delete hdfs://namenode:9000/user/root/grep-temp-312857601/_temporary/1/_temporary/attempt_1597861183743_0001_m_000012_0"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1597861239315
+ -
+  sample: "2020-08-19 15:53:06,319 INFO [Thread-106 #3] org.apache.hadoop.mapreduce.v2.app.launcher.ContainerLauncherImpl: KILLING attempt_1597851676689_0007_r_000000_0"
+  result:
+    custom:
+      level: "INFO"
+      logger:
+        component: "Thread-106 #3"
+        name: "org.apache.hadoop.mapreduce.v2.app.launcher.ContainerLauncherImpl"
+      mapreduce:
+        attempt:
+          attempt_id: "attempt_1597851676689_0007_r_000000_0"
+      timestamp: 1597852386319
+    message: "KILLING attempt_1597851676689_0007_r_000000_0"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1597852386319
+ -
+  sample: "2020-08-19 20:17:48,161 INFO [AsyncDispatcher event handler] org.apache.hadoop.mapreduce.v2.app.job.impl.TaskAttemptImpl: attempt_1597861183743_0008_r_000000_0 TaskAttempt Transitioned from SUCCESS_FINISHING_CONTAINER to SUCCEEDED"
+  result:
+    custom:
+      level: "INFO"
+      logger:
+        component: "AsyncDispatcher event handler"
+        name: "org.apache.hadoop.mapreduce.v2.app.job.impl.TaskAttemptImpl"
+      mapreduce:
+        attempt:
+          attempt_id: "attempt_1597861183743_0008_r_000000_0"
+          state: "SUCCEEDED"
+      timestamp: 1597868268161
+    message: "attempt_1597861183743_0008_r_000000_0 TaskAttempt Transitioned from SUCCESS_FINISHING_CONTAINER to SUCCEEDED"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1597868268161
+

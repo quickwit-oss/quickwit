@@ -1,0 +1,42 @@
+id: nfsstat
+backend_only: true # This integration has no ID and is defined as an exception in the declarative integration pipeline (no tile). For this reason, it should be a backend_only integration. https://github.com/DataDog/declarative-integration-pipeline/blob/4c0b97d57261c4af32525a7db0c2356ac8c09741/declarative_integrations/create_agent_integration/constants.py#L90-L136
+pipeline:
+  type: pipeline
+  name: Nfsstat
+  enabled: true
+  filter:
+    query: source:nfsstat
+  processors:
+    - type: grok-parser
+      name: Parsing NFSstat logs
+      enabled: true
+      source: message
+      samples:
+        - 'Sep 15 18:48:41 andrew-nfsstat-log kernel: [ 3762.965598] nfsd: fh_verify(20: 00060001 aa56281d c844aa94 bb77f4bd 39792991 00000000)'
+        - 'Sep 15 18:50:17 andrew-nfsstat-log kernel: [ 3859.354703] nfsd_dispatch: vers 4 proc 1'
+        - 'Oct  6 16:16:13 andrew-nfsiostat kernel:  NFSD: laundromat service - starting'
+        - 'Oct  6 16:18:16 andrew-nfsiostat agent[43967]: 2020-10-06 16:18:16 UTC | CORE | WARN | (pkg/collector/python/datadog_agent.go:119 in LogMessage) | nfsstat:5173c35fbc9f51af | (nfsstat.py:44) | No NFS mount points were found.'
+      grok:
+        supportRules: |
+          _timestamp (%{date("MMM dd HH:mm:ss"):timestamp}|%{date("MMM  d HH:mm:ss"):timestamp})
+          _host %{notSpace:syslog.hostname}
+          _app %{word:syslog.appname}
+          _system_time (\[( )?%{number:syslog.time}?\])?
+        matchRules: |
+          nfsstat %{_timestamp} %{_host} kernel: %{_system_time} %{_app}?: %{data:message}
+          nfsstat_nonkernel %{_timestamp} %{_host} %{_app}%{_system_time}: %{data:message}
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message
+    - type: service-remapper
+      name: Define `syslog.appname` as the official service of the log
+      enabled: true
+      sources:
+        - syslog.appname

@@ -1,0 +1,50 @@
+id: anecdote
+metric_id: anecdote
+backend_only: true
+pipeline:
+  type: pipeline
+  name: Anecdote
+  enabled: true
+  filter:
+    query: "source:anecdote"
+  processors:
+    - type: service-remapper
+      name: Define `content.service` as the official service of the log
+      enabled: true
+      sources:
+        - content.service
+    - type: date-remapper
+      name: Define `content.timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - content.timestamp
+    - type: attribute-remapper
+      name: Map `id` to `log_id`
+      enabled: true
+      sources:
+        - id
+      sourceType: attribute
+      target: log_id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `content.attributes.date` to `log_date`
+      enabled: true
+      sources:
+        - content.attributes.date
+      sourceType: attribute
+      target: log_date
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `content.tags` to `tags`
+      enabled: true
+      sources:
+        - content.tags
+      sourceType: attribute
+      target: tags
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false

@@ -1,0 +1,94 @@
+Expected sample output:
+id: "vonage"
+tests:
+ -
+  sample: |-
+    {
+      "country" : "IN",
+      "changed_from" : "",
+      "latency" : "",
+      "date_finalized" : "",
+      "network" : "405862",
+      "error_code_description" : "",
+      "concatenated" : "true",
+      "country_name" : "India",
+      "from" : "918060290593",
+      "currency" : "",
+      "date_received" : "2025-05-05T10:35:14+00:00",
+      "id" : "56379def-5102-4357-8677-572ca1a892b1",
+      "direction" : "outbound",
+      "account_ref" : "",
+      "total_price" : "0.07522000",
+      "client_ref" : "1|c000d643-6e45-453b-9829-10820b0de7be|1746441314087|ap-southeast-1",
+      "validity_period" : "250506113513100+",
+      "network_name" : "Reliance Jio Infocomm Limited - Karnataka",
+      "message_id" : "56379def-5102-4357-8677-572ca1a892b1",
+      "account_id" : "bf8d8cc9",
+      "udh" : "BQADIwQE",
+      "forced_from" : "",
+      "error_code" : "12",
+      "to" : "91636365187",
+      "status" : "rejected"
+    }
+  result:
+    custom:
+      account_id: "bf8d8cc9"
+      account_ref: ""
+      changed_from: ""
+      client_ref: "1|c000d643-6e45-453b-9829-10820b0de7be|1746441314087|ap-southeast-1"
+      concatenated: "true"
+      country: "IN"
+      country_name: "India"
+      currency: ""
+      date_finalized: ""
+      date_received: "2025-05-05T10:35:14+00:00"
+      direction: "outbound"
+      error_code: "12"
+      error_code_description: ""
+      forced_from: ""
+      from: "918060290593"
+      id: "56379def-5102-4357-8677-572ca1a892b1"
+      latency: ""
+      message_id: "56379def-5102-4357-8677-572ca1a892b1"
+      network:
+        client:
+          geoip:
+            country:
+              iso_code: "IN"
+      network_name: "Reliance Jio Infocomm Limited - Karnataka"
+      status: "rejected"
+      to: "91636365187"
+      total_price: "0.07522000"
+      udh: "BQADIwQE"
+      validity_period: "250506113513100+"
+    message: |-
+      {
+        "country" : "IN",
+        "changed_from" : "",
+        "latency" : "",
+        "date_finalized" : "",
+        "network" : "405862",
+        "error_code_description" : "",
+        "concatenated" : "true",
+        "country_name" : "India",
+        "from" : "918060290593",
+        "currency" : "",
+        "date_received" : "2025-05-05T10:35:14+00:00",
+        "id" : "56379def-5102-4357-8677-572ca1a892b1",
+        "direction" : "outbound",
+        "account_ref" : "",
+        "total_price" : "0.07522000",
+        "client_ref" : "1|c000d643-6e45-453b-9829-10820b0de7be|1746441314087|ap-southeast-1",
+        "validity_period" : "250506113513100+",
+        "network_name" : "Reliance Jio Infocomm Limited - Karnataka",
+        "message_id" : "56379def-5102-4357-8677-572ca1a892b1",
+        "account_id" : "bf8d8cc9",
+        "udh" : "BQADIwQE",
+        "forced_from" : "",
+        "error_code" : "12",
+        "to" : "91636365187",
+        "status" : "rejected"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1

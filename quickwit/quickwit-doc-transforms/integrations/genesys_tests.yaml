@@ -1,0 +1,95 @@
+id: genesys
+tests:
+  - sample: |-
+      {
+        "remoteIp" : [ "0.0.0.0" ],
+        "level" : "USER",
+        "entityType" : "Flow",
+        "transactionInitiator" : false,
+        "serviceName" : "Architect",
+        "application" : "",
+        "context" : {
+          "version" : "1.0",
+          "flowType" : "inboundcall"
+        },
+        "client" : {
+          "id" : ""
+        },
+        "action" : "Save",
+        "userHomeOrgId" : "f335b7ab-3de8-40d3-a7d1-597958cca6b",
+        "id" : "2d59394e-a10d-4618-933-67041fa562c3",
+        "user" : {
+          "selfUri" : "/api/v2/users/d1e4ddd6-7cdf-454d-b40c-97b9661b5ad",
+          "name" : "abc",
+          "id" : "d1e4ddd6-7cdf-454d-b40c-97b1966b5ad"
+        },
+        "entity" : {
+          "name" : "Inbound Call Flow",
+          "id" : "426315b4-b10a-41f2-b6b0-8d0d3519d84"
+        },
+        "eventDate" : "2024-11-21T04:59:22Z",
+        "status" : "SUCCESS"
+      }
+    service: "audit"
+    result:
+      custom:
+        action: "Save"
+        application: ""
+        client:
+          id: ""
+        context:
+          flowType: "inboundcall"
+          version: "1.0"
+        entity:
+          id: "426315b4-b10a-41f2-b6b0-8d0d3519d84"
+          name: "Inbound Call Flow"
+        entityType: "Flow"
+        eventDate: "2024-11-21T04:59:22Z"
+        id: "2d59394e-a10d-4618-933-67041fa562c3"
+        level: "USER"
+        remoteIp:
+        - "0.0.0.0"
+        serviceName: "Architect"
+        status: "info"
+        transactionInitiator: false
+        user:
+          selfUri: "/api/v2/users/d1e4ddd6-7cdf-454d-b40c-97b9661b5ad"
+        userHomeOrgId: "f335b7ab-3de8-40d3-a7d1-597958cca6b"
+        usr:
+          id: "d1e4ddd6-7cdf-454d-b40c-97b1966b5ad"
+          name: "abc"
+      message: |-
+        {
+          "remoteIp" : [ "0.0.0.0" ],
+          "level" : "USER",
+          "entityType" : "Flow",
+          "transactionInitiator" : false,
+          "serviceName" : "Architect",
+          "application" : "",
+          "context" : {
+            "version" : "1.0",
+            "flowType" : "inboundcall"
+          },
+          "client" : {
+            "id" : ""
+          },
+          "action" : "Save",
+          "userHomeOrgId" : "f335b7ab-3de8-40d3-a7d1-597958cca6b",
+          "id" : "2d59394e-a10d-4618-933-67041fa562c3",
+          "user" : {
+            "selfUri" : "/api/v2/users/d1e4ddd6-7cdf-454d-b40c-97b9661b5ad",
+            "name" : "abc",
+            "id" : "d1e4ddd6-7cdf-454d-b40c-97b1966b5ad"
+          },
+          "entity" : {
+            "name" : "Inbound Call Flow",
+            "id" : "426315b4-b10a-41f2-b6b0-8d0d3519d84"
+          },
+          "eventDate" : "2024-11-21T04:59:22Z",
+          "status" : "SUCCESS"
+        }
+      service: "audit"
+      status: "info"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1732165162000

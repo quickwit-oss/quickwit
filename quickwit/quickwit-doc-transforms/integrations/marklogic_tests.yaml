@@ -1,0 +1,172 @@
+id: "marklogic"
+tests:
+ -
+  sample: "72.23.68.8 - - [24/Oct/2018:00:00:01 +0100] \"POST /eval XDBC/1.0\" 401 0 - \"Java/1.8.0_181 MarkLogicXCC/8.0-5\""
+  result:
+    custom:
+      date_access: 1540335601000
+      http:
+        method: "POST"
+        status_category: "warning"
+        status_code: 401
+        url: "/eval"
+        url_details:
+          path: "/eval"
+        useragent: "Java/1.8.0_181 MarkLogicXCC/8.0-5"
+        useragent_details:
+          browser:
+            family: "Java"
+            major: "8"
+            minor: "0"
+            patch: "181"
+          device:
+            brand: "Spider"
+            category: "Bot"
+            family: "Spider"
+            model: "Desktop"
+          os:
+            family: "Other"
+        version: "1.0"
+      network:
+        bytes_written: 0
+        client:
+          ip: "72.23.68.8"
+    message: "72.23.68.8 - - [24/Oct/2018:00:00:01 +0100] \"POST /eval XDBC/1.0\" 401 0 - \"Java/1.8.0_181 MarkLogicXCC/8.0-5\""
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1540335601000
+ -
+  sample: "172.23.68.8 - isite2-content-reader [24/Oct/2018:00:00:01 +0100] \"POST /eval XDBC/1.0\" 200 138 - \"Java/1.8.0_181 MarkLogicXCC/8.0-5\""
+  result:
+    custom:
+      date_access: 1540335601000
+      http:
+        auth: "isite2-content-reader"
+        method: "POST"
+        status_category: "OK"
+        status_code: 200
+        url: "/eval"
+        url_details:
+          path: "/eval"
+        useragent: "Java/1.8.0_181 MarkLogicXCC/8.0-5"
+        useragent_details:
+          browser:
+            family: "Java"
+            major: "8"
+            minor: "0"
+            patch: "181"
+          device:
+            brand: "Spider"
+            category: "Bot"
+            family: "Spider"
+            model: "Desktop"
+          os:
+            family: "Other"
+        version: "1.0"
+      network:
+        bytes_written: 138
+        client:
+          ip: "172.23.68.8"
+    message: "172.23.68.8 - isite2-content-reader [24/Oct/2018:00:00:01 +0100] \"POST /eval XDBC/1.0\" 200 138 - \"Java/1.8.0_181 MarkLogicXCC/8.0-5\""
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1540335601000
+ -
+  sample: "2018-10-24 00:00:18.951 Info: [Event:id=Forest XA Prepare] Preparing Forest distributed transaction: name=sports-data-forest-09, sessionKey=3931620443949841057"
+  result:
+    custom:
+      date_access: 1540339218951
+      db:
+        operation: "Preparing"
+      event:
+        id: "Forest XA Prepare"
+      marklogic:
+        name: "sports-data-forest-09"
+        sessionKey: 3931620443949841057
+    message: "2018-10-24 00:00:18.951 Info: [Event:id=Forest XA Prepare] Preparing Forest distributed transaction: name=sports-data-forest-09, sessionKey=3931620443949841057"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1540339218951
+ -
+  sample: "2018-10-24 00:00:18.985 Info: [Event:id=Forest XA Complete] Completing prepared Forest distributed transaction: name=sports-data-forest-09, sessionKey=3931620443949841057, commit=1, remember=0"
+  result:
+    custom:
+      date_access: 1540339218985
+      db:
+        operation: "Completing"
+      event:
+        id: "Forest XA Complete"
+      marklogic:
+        commit: 1
+        name: "sports-data-forest-09"
+        remember: 0
+        sessionKey: 3931620443949841057
+    message: "2018-10-24 00:00:18.985 Info: [Event:id=Forest XA Complete] Completing prepared Forest distributed transaction: name=sports-data-forest-09, sessionKey=3931620443949841057, commit=1, remember=0"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1540339218985
+ -
+  sample: "2018-10-24 00:00:01.388 Debug: InMemoryStand /xstore/contentstore/Forests/sports-data-forest-08-replica/00048c53, disk=15MB, memory=655MB, list=512MB, tree=128MB, rangeIndex=16MB, reverseIndex=16MB, tripleIndex=64MB"
+  result:
+    custom:
+      date_access: 1540339201388
+      db:
+        table: "/xstore/contentstore/Forests/sports-data-forest-08-replica/00048c53,"
+      disk: "15MB"
+      level: "Debug"
+      list: "512MB"
+      memory: "655MB"
+      rangeIndex: "16MB"
+      reverseIndex: "16MB"
+      tree: "128MB"
+      tripleIndex: "64MB"
+    message: "2018-10-24 00:00:01.388 Debug: InMemoryStand /xstore/contentstore/Forests/sports-data-forest-08-replica/00048c53, disk=15MB, memory=655MB, list=512MB, tree=128MB, rangeIndex=16MB, reverseIndex=16MB, tripleIndex=64MB"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1540339201388
+ -
+  sample: "2018-10-24 00:00:06.626 Finest: Found FSN 36867381 in journal /xstore/contentstore/Forests/isite2-forest-04b-replica/Journals/Journal-20181019-145428-36783175-15399608667681800-3405124805805304401"
+  result:
+    custom:
+      date_access: 1540339206626
+      db:
+        table: "/xstore/contentstore/Forests/isite2-forest-04b-replica/Journals/Journal-20181019-145428-36783175-15399608667681800-3405124805805304401"
+      document: "FSN 36867381"
+    message: "2018-10-24 00:00:06.626 Finest: Found FSN 36867381 in journal /xstore/contentstore/Forests/isite2-forest-04b-replica/Journals/Journal-20181019-145428-36783175-15399608667681800-3405124805805304401"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1540339206626
+ -
+  sample: "2018-10-24 00:00:19.982 Info: [Event:id=Forest XA Complete] Completing prepared Forest distributed transaction: name=sports-data-forest-09, sessionKey=11481992789033467723, commit=1, remember=0"
+  result:
+    custom:
+      date_access: 1540339219982
+      db:
+        operation: "Completing"
+      event:
+        id: "Forest XA Complete"
+      marklogic:
+        commit: 1
+        name: "sports-data-forest-09"
+        remember: 0
+        sessionKey: "11481992789033467723"
+    message: "2018-10-24 00:00:19.982 Info: [Event:id=Forest XA Complete] Completing prepared Forest distributed transaction: name=sports-data-forest-09, sessionKey=11481992789033467723, commit=1, remember=0"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1540339219982
+ -
+  sample: "2018-10-24 00:00:00.275 Fine: Meters inserting document /14079118751028291617/3405124805805304401/1540335600/usage.xml"
+  result:
+    custom:
+      date_access: 1540339200275
+      db:
+        action: "inserting"
+        table: "/14079118751028291617/3405124805805304401/1540335600/usage.xml"
+    message: "2018-10-24 00:00:00.275 Fine: Meters inserting document /14079118751028291617/3405124805805304401/1540335600/usage.xml"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1540339200275
+

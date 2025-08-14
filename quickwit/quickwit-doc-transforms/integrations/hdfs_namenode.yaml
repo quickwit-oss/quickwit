@@ -1,0 +1,45 @@
+id: hdfs_namenode
+metric_id: hdfs-namenode
+backend_only: false
+facets:
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+pipeline:
+  type: pipeline
+  name: HDFS Namenode
+  enabled: true
+  filter:
+    query: source:hdfs_namenode
+  processors:
+    - type: grok-parser
+      name: Parsing HDFS Namenode logs
+      enabled: true
+      source: message
+      grok:
+        supportRules: |
+          _date1 %{date("yyyy-MM-dd HH:mm:ss,SSS"):syslog.timestamp}
+          _date2 %{date("yy/MM/dd HH:mm:ss"):syslog.timestamp}
+          _line_number \(%{notSpace:logger.file_name}:%{notSpace:logger.method_name}\(%{number:logger.line_number}\)\) -
+        matchRules: |
+          common (%{_date1}|%{_date2})\s+%{notSpace:syslog.severity}\s+%{notSpace:logger.name}( %{_line_number}|:) %{data:message}
+      samples:
+        - '2019-09-20 14:22:32,116 INFO org.apache.hadoop.hdfs.StateChange: BLOCK* allocate blk_1087224332_13483544, replicas=10.128.0.2:9866, 10.128.0.3:9866 for /tmp/hdfs_test_file.txt._COPYING_'
+        - '19/09/24 19:20:45 INFO hdfs.StateChange: STATE* Replication Queue initialization scan for invalid, over- and under-replicated blocks completed in 46 msec'
+    - type: date-remapper
+      name: Define `syslog.timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - syslog.timestamp
+    - type: status-remapper
+      name: Define `syslog.severity` as the official status of the log
+      enabled: true
+      sources:
+        - syslog.severity
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message

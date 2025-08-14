@@ -1,0 +1,227 @@
+id: okta-workflows
+metric_id: okta-workflows
+backend_only: false
+facets:
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+  - groups:
+      - Event
+    name: Event Outcome
+    path: evt.outcome
+    source: log
+  - groups:
+      - Web Access
+    name: User-Agent
+    path: http.useragent
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - User
+    name: User Email
+    path: usr.email
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - groups:
+      - Geoip
+    name: AS Domain
+    path: network.client.geoip.as.domain
+    source: log
+pipeline:
+  type: pipeline
+  name: Okta Workflows
+  enabled: true
+  filter:
+    query: source:okta-workflows
+  processors:
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: date-remapper
+      name: Define `log.published` as the official date of the log
+      enabled: true
+      sources:
+        - log.published
+    - type: message-remapper
+      name: Define `log.displayMessage` as the official message of the log
+      enabled: true
+      sources:
+        - log.displayMessage
+    - type: status-remapper
+      name: Define `log.severity` as the official status of the log
+      enabled: true
+      sources:
+        - log.severity
+    - type: attribute-remapper
+      name: Map `log.eventType` to `evt.name`
+      enabled: true
+      sources:
+        - log.eventType
+      sourceType: attribute
+      target: evt.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `log.outcome.result` to `evt.outcome`
+      enabled: true
+      sources:
+        - log.outcome.result
+      sourceType: attribute
+      target: evt.outcome
+      targetType: attribute
+      targetFormat: string
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `log.client.userAgent.rawUserAgent` to `http.useragent`
+      enabled: true
+      sources:
+        - log.client.userAgent.rawUserAgent
+      sourceType: attribute
+      target: http.useragent
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: user-agent-parser
+      name: User-Agent Parser for `http.useragent`
+      enabled: true
+      sources:
+        - http.useragent
+      target: http.useragent_details
+      encoded: false
+      combineVersionDetails: false
+    - type: attribute-remapper
+      name: Map `log.actor.id` to `usr.id`
+      enabled: true
+      sources:
+        - log.actor.id
+      sourceType: attribute
+      target: usr.id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `log.actor.alternateId` to `usr.email`
+      enabled: true
+      sources:
+        - log.actor.alternateId
+      sourceType: attribute
+      target: usr.email
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `log.actor.displayName` to `usr.name`
+      enabled: true
+      sources:
+        - log.actor.displayName
+      sourceType: attribute
+      target: usr.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `log.actor.type` to `usr.type`
+      enabled: true
+      sources:
+        - log.actor.type
+      sourceType: attribute
+      target: usr.type
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `log.actor.detailEntry` to `usr.details`
+      enabled: true
+      sources:
+        - log.actor.detailEntry
+      sourceType: attribute
+      target: usr.details
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `log.client.ipAddress` to `network.client.ip`
+      enabled: true
+      sources:
+        - log.client.ipAddress
+      sourceType: attribute
+      target: network.client.ip
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: geo-ip-parser
+      name: GeoIP for the `network.client.ip`
+      enabled: true
+      sources:
+        - network.client.ip
+      target: network.client.geoip
+      ip_processing_behavior: do-nothing

@@ -1,0 +1,355 @@
+id: "zscaler"
+tests:
+ -
+  sample: |-
+    {
+      "sourcetype" : "zscalernss-dns",
+      "event" : {
+        "dns_reqtype" : "A",
+        "srv_dip" : "185.64.148.0",
+        "clt_sip" : "185.64.148.0",
+        "reqrulelabel" : "Default Firewall DNS Rule",
+        "resrulelabel" : "Default Firewall DNS Rule",
+        "srv_dport" : "53",
+        "reqaction" : "Allow",
+        "dns_req" : "partner.googleadservices.com",
+        "datetime" : "Wed Mar 09 19:00:40 2022",
+        "odevicehostname" : "NA",
+        "dns_resp" : "185.64.148.0",
+        "resaction" : "Allow",
+        "location" : "London",
+        "category" : "Web Search",
+        "department" : "Default Department",
+        "odeviceowner" : "NA",
+        "durationms" : "0",
+        "user" : "London"
+      }
+    }
+  result:
+    custom:
+      date: 1646852440000
+      network:
+        destination:
+          geoip:
+            city:
+              name: "Paris"
+            continent:
+              code: "EU"
+              name: "Europe"
+            country:
+              iso_code: "FR"
+              name: "France"
+            ipAddress: "185.64.148.0"
+            location:
+              latitude: 48.90654
+              longitude: 2.33339
+            subdivision:
+              iso_code: "FR-IDF"
+              name: "Île-de-France"
+            timezone: "Europe/Paris"
+          ip: "185.64.148.0"
+          port: "53"
+      sourcetype: "zscalernss-dns"
+      usr:
+        id: "London"
+      zscaler:
+        category: "Web Search"
+        clt_sip: "185.64.148.0"
+        datetime: "Wed Mar 09 19:00:40 2022"
+        department: "Default Department"
+        dns_req: "partner.googleadservices.com"
+        dns_reqtype: "A"
+        dns_resp: "185.64.148.0"
+        durationms: "0"
+        location: "London"
+        odevicehostname: "NA"
+        odeviceowner: "NA"
+        reqaction: "Allow"
+        reqrulelabel: "Default Firewall DNS Rule"
+        resaction: "Allow"
+        resrulelabel: "Default Firewall DNS Rule"
+        srv_dip: "185.64.148.0"
+        srv_dport: "53"
+        user: "London"
+    message: |-
+      {
+        "sourcetype" : "zscalernss-dns",
+        "event" : {
+          "dns_reqtype" : "A",
+          "srv_dip" : "185.64.148.0",
+          "clt_sip" : "185.64.148.0",
+          "reqrulelabel" : "Default Firewall DNS Rule",
+          "resrulelabel" : "Default Firewall DNS Rule",
+          "srv_dport" : "53",
+          "reqaction" : "Allow",
+          "dns_req" : "partner.googleadservices.com",
+          "datetime" : "Wed Mar 09 19:00:40 2022",
+          "odevicehostname" : "NA",
+          "dns_resp" : "185.64.148.0",
+          "resaction" : "Allow",
+          "location" : "London",
+          "category" : "Web Search",
+          "department" : "Default Department",
+          "odeviceowner" : "NA",
+          "durationms" : "0",
+          "user" : "London"
+        }
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1646852440000
+ -
+  sample: |-
+    {
+      "date" : 1646852676000,
+      "threat_intel" : {
+        "indicators_matched" : [ "IP" ],
+        "results" : [ {
+          "indicator" : "185.64.148.0",
+          "attribute" : "network.client.ip",
+          "source" : {
+            "name" : "IPInfo.io",
+            "url" : "https://ipinfo.io/185.64.148.0"
+          },
+          "category" : "anonymizer",
+          "subcategory" : "vpn",
+          "type" : "IP",
+          "intention" : "unknown"
+        } ]
+      },
+      "sourcetype" : "zscalernss-web",
+      "event" : {
+        "filetype" : "None",
+        "reason" : "Allowed",
+        "requestmethod" : "NA",
+        "devicehostname" : "NA",
+        "fileclass" : "None",
+        "threatclass" : "None",
+        "clienttranstime" : "10764",
+        "useragent" : "Unknown",
+        "transactionsize" : "8310",
+        "urlclass" : "Productivity Loss",
+        "requestsize" : "610",
+        "refererURL" : "None",
+        "protocol" : "SSL",
+        "datetime" : "2022-03-09 19:04:36",
+        "hostname" : "www.bola.net",
+        "appname" : "General Browsing",
+        "responsesize" : "7700",
+        "clientpublicIP" : "185.64.148.0",
+        "vendor" : "Zscaler",
+        "pagerisk" : "0",
+        "serverip" : "185.64.148.0",
+        "action" : "Allowed",
+        "department" : "Default%20Department",
+        "product" : "NSS",
+        "dlpengine" : "None",
+        "appclass" : "General Browsing",
+        "bwthrottle" : "NO",
+        "urlsupercategory" : "Sports",
+        "unscannabletype" : "None",
+        "servertranstime" : "10764",
+        "ClientIP" : "185.64.148.0",
+        "threatname" : "None",
+        "url" : "www.bola.net",
+        "contenttype" : "Other",
+        "threatcategory" : "None",
+        "deviceowner" : "NA",
+        "event_id" : "7073178385324113921",
+        "urlcategory" : "Sports",
+        "dlpdictionaries" : "None",
+        "location" : "London",
+        "user" : "London",
+        "status" : "NA"
+      }
+    }
+  result:
+    custom:
+      date: 1646852676000
+      evt:
+        outcome: "Allowed"
+      http:
+        method: "NA"
+        referer: "None"
+        status_code: "NA"
+        url: "SSL://www.bola.net"
+        url_details:
+          host: "www.bola.net"
+          path: ""
+          scheme: "SSL"
+        useragent: "Unknown"
+        useragent_details:
+          browser:
+            family: "Other"
+          device:
+            category: "Other"
+            family: "Other"
+          os:
+            family: "Other"
+      network:
+        client:
+          geoip:
+            city:
+              name: "Paris"
+            continent:
+              code: "EU"
+              name: "Europe"
+            country:
+              iso_code: "FR"
+              name: "France"
+            ipAddress: "185.64.148.0"
+            location:
+              latitude: 48.90654
+              longitude: 2.33339
+            subdivision:
+              iso_code: "FR-IDF"
+              name: "Île-de-France"
+            timezone: "Europe/Paris"
+          ip: "185.64.148.0"
+        destination:
+          geoip:
+            city:
+              name: "Paris"
+            continent:
+              code: "EU"
+              name: "Europe"
+            country:
+              iso_code: "FR"
+              name: "France"
+            ipAddress: "185.64.148.0"
+            location:
+              latitude: 48.90654
+              longitude: 2.33339
+            subdivision:
+              iso_code: "FR-IDF"
+              name: "Île-de-France"
+            timezone: "Europe/Paris"
+          ip: "185.64.148.0"
+      sourcetype: "zscalernss-web"
+      threat_intel:
+        indicators_matched:
+         - "IP"
+        results:
+         -
+          indicator: "185.64.148.0"
+          attribute: "network.client.ip"
+          source:
+            name: "IPInfo.io"
+            url: "https://ipinfo.io/185.64.148.0"
+          category: "anonymizer"
+          subcategory: "vpn"
+          type: "IP"
+          intention: "unknown"
+      usr:
+        id: "London"
+      zscaler:
+        ClientIP: "185.64.148.0"
+        action: "Allowed"
+        appclass: "General Browsing"
+        appname: "General Browsing"
+        bwthrottle: "NO"
+        clientpublicIP: "185.64.148.0"
+        clienttranstime: "10764"
+        contenttype: "Other"
+        datetime: "2022-03-09 19:04:36"
+        department: "Default%20Department"
+        devicehostname: "NA"
+        deviceowner: "NA"
+        dlpdictionaries: "None"
+        dlpengine: "None"
+        event_id: "7073178385324113921"
+        fileclass: "None"
+        filetype: "None"
+        hostname: "www.bola.net"
+        location: "London"
+        pagerisk: "0"
+        product: "NSS"
+        protocol: "SSL"
+        reason: "Allowed"
+        refererURL: "None"
+        requestmethod: "NA"
+        requestsize: "610"
+        responsesize: "7700"
+        serverip: "185.64.148.0"
+        servertranstime: "10764"
+        status: "NA"
+        threatcategory: "None"
+        threatclass: "None"
+        threatname: "None"
+        transactionsize: "8310"
+        unscannabletype: "None"
+        url: "www.bola.net"
+        urlcategory: "Sports"
+        urlclass: "Productivity Loss"
+        urlsupercategory: "Sports"
+        user: "London"
+        useragent: "Unknown"
+        vendor: "Zscaler"
+    message: |-
+      {
+        "date" : 1646852676000,
+        "threat_intel" : {
+          "indicators_matched" : [ "IP" ],
+          "results" : [ {
+            "indicator" : "185.64.148.0",
+            "attribute" : "network.client.ip",
+            "source" : {
+              "name" : "IPInfo.io",
+              "url" : "https://ipinfo.io/185.64.148.0"
+            },
+            "category" : "anonymizer",
+            "subcategory" : "vpn",
+            "type" : "IP",
+            "intention" : "unknown"
+          } ]
+        },
+        "sourcetype" : "zscalernss-web",
+        "event" : {
+          "filetype" : "None",
+          "reason" : "Allowed",
+          "requestmethod" : "NA",
+          "devicehostname" : "NA",
+          "fileclass" : "None",
+          "threatclass" : "None",
+          "clienttranstime" : "10764",
+          "useragent" : "Unknown",
+          "transactionsize" : "8310",
+          "urlclass" : "Productivity Loss",
+          "requestsize" : "610",
+          "refererURL" : "None",
+          "protocol" : "SSL",
+          "datetime" : "2022-03-09 19:04:36",
+          "hostname" : "www.bola.net",
+          "appname" : "General Browsing",
+          "responsesize" : "7700",
+          "clientpublicIP" : "185.64.148.0",
+          "vendor" : "Zscaler",
+          "pagerisk" : "0",
+          "serverip" : "185.64.148.0",
+          "action" : "Allowed",
+          "department" : "Default%20Department",
+          "product" : "NSS",
+          "dlpengine" : "None",
+          "appclass" : "General Browsing",
+          "bwthrottle" : "NO",
+          "urlsupercategory" : "Sports",
+          "unscannabletype" : "None",
+          "servertranstime" : "10764",
+          "ClientIP" : "185.64.148.0",
+          "threatname" : "None",
+          "url" : "www.bola.net",
+          "contenttype" : "Other",
+          "threatcategory" : "None",
+          "deviceowner" : "NA",
+          "event_id" : "7073178385324113921",
+          "urlcategory" : "Sports",
+          "dlpdictionaries" : "None",
+          "location" : "London",
+          "user" : "London",
+          "status" : "NA"
+        }
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1646852676000
+

@@ -1,0 +1,383 @@
+---
+id: netskope
+tests:
+  - sample: >-
+      {
+                "date": "2024-11-05",
+                "time": "17:18:22",
+                "timestamp": "2024-11-05T17:18:22.0Z",
+                "time-taken": "79",
+                "cs-bytes": "3648",
+                "sc-bytes": "1987",
+                "bytes": "5635",
+                "c-ip": "10.60.4.44",
+                "s-ip": "23.192.228.75",
+                "cs-username": "taylor@eras.tour",
+                "cs-method": "GET",
+                "cs-uri-scheme": "https",
+                "cs-uri-query": "adpr=jd7CwJlXEW&afid=145854967&caid=cnn-fastchannel/livestream&conf_csid=cnn.com_live_desktop_fastchannel&nw=48804&playername=top-2.12.1&prof=48804:cnn_web_live&yo.asd=true&yo.pbr=true&yo.pst=true&playerType=standard&refDom=other&wm_vw=stlr&pg=landing_homepage&guID=65ea1c6608ec7c0a3f8cfa001671bb01&transactionID=17308266995069638643409588&_fw_gdpr=0&_fw_us_privacy=1YNN&audio=muted&vpmute=1&cep_params=MTZCNj1jZXBfc2VudCZzb3VyY2VfaWQ9c2VjdGlvbl9ob21lcGFnZTEmc2hvcnRfc291cmNlX2lkPXNlX2hvbWVwYWdlMQ%3D%3D&vpa=1&inFocus=false&paln=AQzzBGQEFiFYJtT_iLpJ1i7YUxlqXgEx1KZfR-TahVZeQOAsv9r4pJdQ3HtbRPSS5tVk7_1t2GGA3JieYCjk9Ydp9UUoNiPQ7lFZHwUsH_2a-oUsu2ljaO172FxPdwRBarfjS8ieoRmighF4oZgPbnQJQAg_Aq-8Pg21qK7qHK83N_HUvqQfVQAa_bINEQNJLzcfnu7vECIHlpqvExnjZpy-czXzRVqp46rWLq-Wne5hz32791VVEmw1s4PLCLjZ9W2zFx8nG3Wtqyl8yOMJgwNOMkKZ7FM_tdEmOk1pkdU_X32ruKfHY3IDZSR-38TSRUh_8OfpJVmv43BU0LUM_2QPejaWIMrjqhyglm9EN1pg26Np55cgVKxIV1uFHJiFhXABIqS1VXJ6OQlCddoenlFW2ym_YxC81e7AANFc62VpLJXIoX7XSORK0mmNkfT_T44NYF8OZMhq_Sr0O0v6vttivtYHrJ8KZ8LCFkUUyB72aP1umk4X3R13ITyaU6Qs83pJwsTU_s76cXHCk4uAtvlq2eZRfSeRBXO9SQ7VlDHV-B_NAdLwv_AYb7UqIH0JX0UImkX0FSWHAWJTFRlmZb7bMVHSyCwJgxW_84-f4hrwwxKG2tQURSoFGqWOZ1ZQaAPrgIcGLlG19WtXTORKZvpaxDQxeI6TrXe_cePBiQ2LsvBH66qwnrB1dz6ZuIrTk-QFOnZWIb-p_VYiNjlukPnaPTwsiFDYFI3UEk3BE7AIPtoJp3n29yj4fNe3zdr8I2_xrJOBTVCPbB_nCe0_bbdDsWSYxDeKKfGNx0r4lhXhD0sK_5uxv6bQQaLlsEaFFMJZ6pSFFkQQNRrUXidEA-wG5WJDwWpRVCUwBBsokLJO3PUIC5IyrwKon6zgEddxoRtlhXrkUSPLRxV8LC9AvD-yVcoJu0wV_nkwBxZuDZoVGv4f9So331ZMkZlqwLssYsTwxL0ZB6sxmhyMKrQSVS2u2aXF8aEn-C-i8KEWTctX9bZcfjACuYmXL5SyFgBpefP7MvFlwQL05R1QVzO0Uz7133AfSeNFfCy0K_8g-d6CKxP8NXI4cTrXHxvLTO0UwvK0X7a3emytiSS_ZGR6GB71ZyyvpFgJ_r3GZF21xhp_dnwcqfMf3Mbke_--8Oj9KF6-RzHOv4Qz-PnR6q7UW9lQicHtT5Zzn3-X_kow1zriUBA.&ias_optm_params=ZnI9ZmFsc2UmYWR0PXZlcnlMb3cmYWxjPXZlcnlMb3cmZGxtPXZlcnlMb3cmZHJnPXZlcnlMb3cmaGF0PXZlcnlMb3cmb2ZmPXZlcnlMb3cmdmlvPWxvdyZpZD0wNzNlMDAzNi05Yjk5LTExZWYtYTY4Mi03NmJlNzIxNTViNzMmaWFzLWt3PUlBU18zMDExOTAyX1BHJmlhcy1rdz1JQVNfMTUwNjgyOF9QRyZpYXMta3c9SUFTXzE1MDYxMjNfUEcmaWFzLWt3PUlBU18xNTEzNzQxX1BHJmlhcy1rdz1JQVNfMTUxMDI4NV9QRyZpYXMta3c9SUFTXzE1MTI3OTBfUEcmaWFzLWt3PUlBU18xNTAwOTAzX1BHJmlhcy1rdz1JQVNfMTUxMTM3NV9QRyZpYXMta3c9SUFTXzMwMDY2MzdfUEcmaWFzLWt3PUlBU18xNTAwOTAyX1BHJmlhcy1rdz1JQVNfMTUxMTM3N19QRyZpYXMta3c9SUFTXzMwMTAyMzlfUEc%3D&_fw_ar=0&_fw_cookie_consent=1&protocol=ssl&appView=web&_fw_vcid2=umw8c08_7344842640395204573&zwmc=3886944087656341862&ifyr=LTGN3NWQ-K-79MO&goiz=58e9fc15bd0b43d8a0a01db96357579b&kfyn=4DA7EF9B-02A1-485B-864A-00210369F81D&vcid=dbee31d3-e9a4-4884-a8cb-f4110eeb7b83&wmuk=dbee31d3-e9a4-4884-a8cb-f4110eeb7b83&app_csid=cnn.com_main_homepage&yo.av=3&yo.pdt=sync&yo.lpa=dur&yo.aas=true&yo.t.jt=1000&yo.t.pr=1000&yo.me=true&yo.ap=https://vod-media-aka.warnermediacdn.com&yo.po=-4&yo.up=https://live-media-fly.warnermediacdn.com&vip=163.116.140.164&yo.eb.fb=aHR0cHM6Ly9saXZlLW1lZGlhLWZseS53YXJuZXJtZWRpYWNkbi5jb20vY21hZi9saXZlLzIwMjg3MTUvY25uZmFzdC1kb21lc3RpYy9tYXN0ZXJfZGUubTN1OA==",
+                "cs-user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+                "cs-content-type": null,
+                "sc-status": "200",
+                "sc-content-type": "application/vnd.apple.mpegurl;charset=UTF-8",
+                "cs-dns": "live-manifests-fly.warnermediacdn.com",
+                "cs-host": "live-manifests-fly.warnermediacdn.com",
+                "cs-uri": "/csm/extlive/turnerprd01,2028715/8.m3u8;jsessionid=DBE5E3319F523D153AA7A31FDE29C025.csm-e-cewbdlausw2live-09a2e2
+            d82ead8b5e5.bln1.yospace.com?adpr=jd7CwJlXEW&afid=145854967&caid=cnn-fastchannel/livestream&conf_csid=cnn.com_live_desktop_fastchannel&nw=48804&playername=top-2.12.1&prof=48804:cnn_web_live&yo.asd=true&yo.pbr=true&yo.pst=true&playerType=standard&refDom=other&wm_vw=stlr&pg=landing_homepage&guID=65ea1c6608ec7c0a3f8cfa001671bb01&transactionID=17308266995069638643409588&_fw_gdpr=0&_fw_us_privacy=1YNN&audio=muted&vpmute=1&cep_params=MTZCNj1jZXBfc2VudCZzb3VyY2VfaWQ9c2VjdGlvbl9ob21lcGFnZTEmc2hvcnRfc291cmNlX2lkPXNlX2hvbWVwYWdlMQ%3D%3D&vpa=1&inFocus=false&paln=AQzzBGQEFiFYJtT_iLpJ1i7YUxlqXgEx1KZfR-TahVZeQOAsv9r4pJdQ3HtbRPSS5tVk7_1t2GGA3JieYCjk9Ydp9UUoNiPQ7lFZHwUsH_2a-oUsu2ljaO172FxPdwRBarfjS8ieoRmighF4oZgPbnQJQAg_Aq-8Pg21qK7qHK83N_HUvqQfVQAa_bINEQNJLzcfnu7vECIHlpqvExnjZpy-czXzRVqp46rWLq-Wne5hz32791VVEmw1s4PLCLjZ9W2zFx8nG3Wtqyl8yOMJgwNOMkKZ7FM_tdEmOk1pkdU_X32ruKfHY3IDZSR-38TSRUh_8OfpJVmv43BU0LUM_2QPejaWIMrjqhyglm9EN1pg26Np55cgVKxIV1uFHJiFhXABIqS1VXJ6OQlCddoenlFW2ym_YxC81e7AANFc62VpLJXIoX7XSORK0mmNkfT_T44NYF8OZMhq_Sr0O0v6vttivtYHrJ8KZ8LCFkUUyB72aP1umk4X3R13ITyaU6Qs83pJwsTU_s76cXHCk4uAtvlq2eZRfSeRBXO9SQ7VlDHV-B_NAdLwv_AYb7UqIH0JX0UImkX0FSWHAWJTFRlmZb7bMVHSyCwJgxW_84-f4hrwwxKG2tQURSoFGqWOZ1ZQaAPrgIcGLlG19WtXTORKZvpaxDQxeI6TrXe_cePBiQ2LsvBH66qwnrB1dz6ZuIrTk-QFOnZWIb-p_VYiNjlukPnaPTwsiFDYFI3UEk3BE7AIPtoJp3n29yj4fNe3zdr8I2_xrJOBTVCPbB_nCe0_bbdDsWSYxDeKKfGNx0r4lhXhD0sK_5uxv6bQQaLlsEaFFMJZ6pSFFkQQNRrUXidEA-wG5WJDwWpRVCUwBBsokLJO3PUIC5IyrwKon6zgEddxoRtlhXrkUSPLRxV8LC9AvD-yVcoJu0wV_nkwBxZuDZoVGv4f9So331ZMkZlqwLssYsTwxL0ZB6sxmhyMKrQSVS2u2aXF8aEn-C-i8KEWTctX9bZcfjACuYmXL5SyFgBpefP7MvFlwQL05R1QVzO0Uz7133AfSeNFfCy0K_8g-d6CKxP8NXI4cTrXHxvLTO0UwvK0X7a3emytiSS_ZGR6GB71ZyyvpFgJ_r3GZF21xhp_dnwcqfMf3Mbke_--8Oj9KF6-RzHOv4Qz-PnR6q7UW9lQicHtT5Zzn3-X_kow1zriUBA.&ias_optm_params=ZnI9ZmFsc2UmYWR0PXZlcnlMb3cmYWxjPXZlcnlMb3cmZGxtPXZlcnlMb3cmZHJnPXZlcnlMb3cmaGF0PXZlcnlMb3cmb2ZmPXZlcnlMb3cmdmlvPWxvdyZpZD0wNzNlMDAzNi05Yjk5LTExZWYtYTY4Mi03NmJlNzIxNTViNzMmaWFzLWt3PUlBU18zMDExOTAyX1BHJmlhcy1rdz1JQVNfMTUwNjgyOF9QRyZpYXMta3c9SUFTXzE1MDYxMjNfUEcmaWFzLWt3PUlBU18xNTEzNzQxX1BHJmlhcy1rdz1JQVNfMTUxMDI4NV9QRyZpYXMta3c9SUFTXzE1MTI3OTBfUEcmaWFzLWt3PUlBU18xNTAwOTAzX1BHJmlhcy1rdz1JQVNfMTUxMTM3NV9QRyZpYXMta3c9SUFTXzMwMDY2MzdfUEcmaWFzLWt3PUlBU18xNTAwOTAyX1BHJmlhcy1rdz1JQVNfMTUxMTM3N19QRyZpYXMta3c9SUFTXzMwMTAyMzlfUEc%3D&_fw_ar=0&_fw_cookie_consent=1&protocol=ssl&appView=web&_fw_vcid2=umw8c08_7344842640395204573&zwmc=3886944087656341862&ifyr=LTGN3NWQ-K-79MO&goiz=58e9fc15bd0b43d8a0a01db96357579b&kfyn=4DA7EF9B-02A1-485B-864A-00210369F81D&vcid=dbee31d3-e9a4-4884-a8cb-f4110eeb7b83&wmuk=dbee31d3-e9a4-4884-a8cb-f4110eeb7b83&app_csid=cnn.com_main_homepage&yo.av=3&yo.pdt=sync&yo.lpa=dur&yo.aas=true&yo.t.jt=1000&yo.t.pr=1000&yo.me=true&yo.ap=https://vod-media-aka.warnermediacdn.com&yo.po=-4&yo.up=https://live-media-fly.warnermediacdn.com&vip=163.116.140.164&yo.eb.fb=aHR0cHM6Ly9saXZlLW1lZGlhLWZseS53YXJuZXJtZWRpYWNkbi5jb20vY21hZi9saXZlLzIwMjg3MTUvY25uZmFzdC1kb21lc3RpYy9tYXN0ZXJfZGUubTN1OA==",
+                "cs-uri-port": "443",
+                "cs-referer": "https://www.cnn.com/",
+                "x-cs-session-id": "81806829232928851",
+                "x-cs-access-method": "Client",
+                "x-cs-app": null,
+                "x-s-country": "US",
+                "x-s-latitude": "37.353000",
+                "x-s-longitude": "-121.954300",
+                "x-s-location": "Santa Clara",
+                "x-s-region": "California",
+                "x-s-zipcode": "95052",
+                "x-c-country": "US",
+                "x-c-latitude": "37.302800",
+                "x-c-longitude": "-121.998200",
+                "x-c-location": "San Jose",
+                "x-c-region": "California",
+                "x-c-zipcode": "95129",
+                "x-c-os": "Windows 11",
+                "x-c-browser": "Chrome",
+                "x-c-browser-version": "130.0.0.0",
+                "x-c-device": "Windows Device",
+                "x-cs-site": "warnermediacdn",
+                "x-cs-timestamp": "1730827102",
+                "x-cs-page-id": "0",
+                "x-cs-userip": "10.60.4.44",
+                "x-cs-traffic-type": "Web",
+                "x-cs-tunnel-id": null,
+                "x-category": "Content Management",
+                "x-other-category": "Content Management",
+                "x-type": "http_transaction",
+                "x-server-ssl-err": null,
+                "x-client-ssl-err": null,
+                "x-transaction-id": "6447779818248036783",
+                "x-request-id": "2968013307170078208",
+                "x-cs-sni": "live-manifests-fly.warnermediacdn.com",
+                "x-cs-domain-fronted-sni": null,
+                "x-category-id": "11",
+                "x-other-category-id": "11",
+                "x-sr-headers-name": null,
+                "x-sr-headers-value": null,
+                "x-cs-ssl-ja3": "5aa18cfac57b7c452d21d96146ded2ab",
+                "x-sr-ssl-ja3s": "NotAvailable",
+                "x-ssl-bypass": "No",
+                "x-ssl-bypass-reason": null,
+                "x-r-cert-subject-cn": "NotChecked",
+                "x-r-cert-issuer-cn": "NotChecked",
+                "x-r-cert-startdate": "NotChecked",
+                "x-r-cert-enddate": "NotChecked",
+                "x-r-cert-valid": "NotChecked",
+                "x-r-cert-expired": "NotChecked",
+                "x-r-cert-untrusted-root": "NotChecked",
+                "x-r-cert-incomplete-chain": "NotChecked",
+                "x-r-cert-self-signed": "NotChecked",
+                "x-r-cert-revoked": "NotChecked",
+                "x-r-cert-revocation-check": "NotChecked",
+                "x-r-cert-mismatch": "NotChecked",
+                "x-cs-ssl-fronting-error": "No",
+                "x-cs-ssl-handshake-error": "No",
+                "x-sr-ssl-handshake-error": "NotChecked",
+                "x-sr-ssl-client-certificate-error": "NotChecked",
+                "x-sr-ssl-malformed-ssl": "NotChecked",
+                "x-s-custom-signing-ca-error": "No",
+                "x-cs-ssl-engine-action": "Allow",
+                "x-cs-ssl-engine-action-reason": "Established",
+                "x-sr-ssl-engine-action": "None",
+                "x-sr-ssl-engine-action-reason": "NotEstablished",
+                "x-ssl-policy-src-ip": null,
+                "x-ssl-policy-dst-ip": null,
+                "x-ssl-policy-dst-host": null,
+                "x-ssl-policy-dst-host-source": "Unknown",
+                "x-ssl-policy-categories": null,
+                "x-ssl-policy-action": "Decrypt",
+                "x-ssl-policy-name": null,
+                "x-cs-ssl-version": "TLSv1.3",
+                "x-cs-ssl-cipher": "TLS_AES_256_GCM_SHA384",
+                "x-sr-ssl-version": "NotChecked",
+                "x-sr-ssl-cipher": "NotChecked",
+                "x-cs-src-ip-egress": "12.151.36.5",
+                "x-s-dp-name": "US-SFO1",
+                "x-cs-src-ip": "10.60.4.44",
+                "x-cs-src-port": "19604",
+                "x-cs-dst-ip": "23.67.33.68",
+                "x-cs-dst-port": "443",
+                "x-sr-src-ip": null,
+                "x-sr-src-port": null,
+                "x-sr-dst-ip": "10.140.6.201",
+                "x-sr-dst-port": "791",
+                "x-cs-ip-connect-xff": null,
+                "x-cs-ip-xff": null,
+                "x-cs-connect-host": null,
+                "x-cs-connect-port": null,
+                "x-cs-connect-user-agent": null,
+                "x-cs-url": "https://live-manifests-fly.warnermediacdn.com/csm/extlive/turnerprd01,2028715/8.m3u8;jsessionid=DBE5E3319F523D153AA7A31FDE29C025.csm-e-cewbdlausw2live-09a2e2d82ead8b5e5.bln1.yospace.com?adpr=jd7CwJlXEW&afid=145854967&caid=cnn-fastchannel/livestream&conf_csid=cnn.com_live_desktop_fastchannel&nw=48804&playername=top-2.12.1&prof=48804:cnn_web_live&yo.asd=true&yo.pbr=true&yo.pst=true&playerType=standard&refDom=other&wm_vw=stlr&pg=landing_homepage&guID=65ea1c6608ec7c0a3f8cfa001671bb01&transactionID=17308266995069638643409588&_fw_gdpr=0&_fw_us_privacy=1YNN&audio=muted&vpmute=1&cep_params=MTZCNj1jZXBfc2VudCZzb3VyY2VfaWQ9c2VjdGlvbl9ob21lcGFnZTEmc2hvcnRfc291cmNlX2lkPXNlX2hvbWVwYWdlMQ%3D%3D&vpa=1&inFocus=false&paln=AQzzBGQEFiFYJtT_iLpJ1i7YUxlqXgEx1KZfR-TahVZeQOAsv9r4pJdQ3HtbRPSS5tVk7_1t2GGA3JieYCjk9Ydp9UUoNiPQ7lFZHwUsH_2a-oUsu2ljaO172FxPdwRBarfjS8ieoRmighF4oZgPbnQJQAg_Aq-8Pg21qK7qHK83N_HUvqQfVQAa_bINEQNJLzcfnu7vECIHlpqvExnjZpy-czXzRVqp46rWLq-Wne5hz32791VVEmw1s4PLCLjZ9W2zFx8nG3Wtqyl8yOMJgwNOMkKZ7FM_tdEmOk1pkdU_X32ruKfHY3IDZSR-38TSRUh_8OfpJVmv43BU0LUM_2QPejaWIMrjqhyglm9EN1pg26Np55cgVKxIV1uFHJiFhXABIqS1VXJ6OQlCddoenlFW2ym_YxC81e7AANFc62VpLJXIoX7XSORK0mmNkfT_T44NYF8OZMhq_Sr0O0v6vttivtYHrJ8KZ8LCFkUUyB72aP1umk4X3R13ITyaU6Qs83pJwsTU_s76cXHCk4uAtvlq2eZRfSeRBXO9SQ7VlDHV-B_NAdLwv_AYb7UqIH0JX0UImkX0FSWHAWJTFRlmZb7bMVHSyCwJgxW_84-f4hrwwxKG2tQURSoFGqWOZ1ZQaAPrgIcGLlG19WtXTORKZvpaxDQxeI6TrXe_cePBiQ2LsvBH66qwnrB1dz6ZuIrTk-QFOnZWIb-p_VYiNjlukPnaPTwsiFDYFI3UEk3BE7AIPtoJp3n29yj4fNe3zdr8I2_xrJOBTVCPbB_nCe0_bbdDsWSYxDeKKfGNx0r4lhXhD0sK_5uxv6bQQaLlsEaFFMJZ6pSFFkQQNRrUXidEA-wG5WJDwWpRVCUwBBsokLJO3PUIC5IyrwKon6zgEddxoRtlhXrkUSPLRxV8LC9AvD-yVcoJu0wV_nkwBxZuDZoVGv4f9So331ZMkZlqwLssYsTwxL0ZB6sxmhyMKrQSVS2u2aXF8aEn-C-i8KEWTctX9bZcfjACuYmXL5SyFgBpefP7MvFlwQL05R1QVzO0Uz7133AfSeNFfCy0K_8g-d6CKxP8NXI4cTrXHxvLTO0UwvK0X7a3emytiSS_ZGR6GB71ZyyvpFgJ_r3GZF21xhp_dnwcqfMf3Mbke_--8Oj9KF6-RzHOv4Qz-PnR6q7UW9lQicHtT5Zzn3-X_kow1zriUBA.&ias_optm_params=ZnI9ZmFsc2UmYWR0PXZlcnlMb3cmYWxjPXZlcnlMb3cmZGxtPXZlcnlMb3cmZHJnPXZlcnlMb3cmaGF0PXZlcnlMb3cmb2ZmPXZlcnlMb3cmdmlvPWxvdyZpZD0wNzNlMDAzNi05Yjk5LTExZWYtYTY4Mi03NmJlNzIxNTViNzMmaWFzLWt3PUlBU18zMDExOTAyX1BHJmlhcy1rdz1JQVNfMTUwNjgyOF9QRyZpYXMta3c9SUFTXzE1MDYxMjNfUEcmaWFzLWt3PUlBU18xNTEzNzQxX1BHJmlhcy1rdz1JQVNfMTUxMDI4NV9QRyZpYXMta3c9SUFTXzE1MTI3OTBfUEcmaWFzLWt3PUlBU18xNTAwOTAzX1BHJmlhcy1rdz1JQVNfMTUxMTM3NV9QRyZpYXMta3c9SUFTXzMwMDY2MzdfUEcmaWFzLWt3PUlBU18xNTAwOTAyX1BH
+            Jmlhcy1rdz1JQVNfMTUxMTM3N19QRyZpYXMta3c9SUFTXzMwMTAyMzlfUEc%3D&_fw_ar=0&_fw_cookie_consent=1&protocol=ssl&appView=web&_fw_vcid2=umw8c08_7344842640395204573&zwmc=3886944087656341862&ifyr=LTGN3NWQ-K-79MO&goiz=58e9fc15bd0b43d8a0a01db96357579b&kfyn=4DA7EF9B-02A1-485B-864A-00210369F81D&vcid=dbee31d3-e9a4-4884-a8cb-f4110eeb7b83&wmuk=dbee31d3-e9a4-4884-a8cb-f4110eeb7b83&app_csid=cnn.com_main_homepage&yo.av=3&yo.pdt=sync&yo.lpa=dur&yo.aas=true&yo.t.jt=1000&yo.t.pr=1000&yo.me=true&yo.ap=https://vod-media-aka.warnermediacdn.com&yo.po=-4&yo.up=https://live-media-fly.warnermediacdn.com&vip=163.116.140.164&yo.eb.fb=aHR0cHM6Ly9saXZlLW1lZGlhLWZseS53YXJuZXJtZWRpYWNkbi5jb20vY21hZi9saXZlLzIwMjg3MTUvY25uZmFzdC1kb21lc3RpYy9tYXN0ZXJfZGUubTN1OA==",
+                "x-cs-uri-path": "/csm/extlive/turnerprd01,2028715/8.m3u8",
+                "x-cs-http-version": "HTTP1.1",
+                "rs-status": "200",
+                "x-cs-app-category": null,
+                "x-cs-app-cci": null,
+                "x-cs-app-ccl": null,
+                "x-cs-app-tags": null,
+                "x-cs-app-suite": null,
+                "x-cs-app-instance-id": null,
+                "x-cs-app-instance-name": null,
+                "x-cs-app-instance-tag": null,
+                "x-cs-app-activity": "Browse",
+                "x-cs-app-from-user": null,
+                "x-cs-app-to-user": null,
+                "x-cs-app-object-type": "File",
+                "x-cs-app-object-name": null,
+                "x-cs-app-object-id": null,
+                "x-rs-file-type": "text/plain",
+                "x-rs-file-category": null,
+                "x-rs-file-language": null,
+                "x-rs-file-size": null,
+                "x-rs-file-md5": null,
+                "x-rs-file-sha256": null,
+                "x-error": null,
+                "x-c-local-time": "2024-11-05 09:18:00",
+                "x-policy-action": "allow_default",
+                "x-policy-name": "DefaultAction",
+                "x-policy-src-ip": "10.60.4.44",
+                "x-policy-dst-ip": "23.192.228.75",
+                "x-policy-dst-host": "live-manifests-fly.warnermediacdn.com",
+                "x-policy-dst-host-source": "HttpHostHeader",
+                "x-policy-justification-type": null,
+                "x-policy-justification-reason": null,
+                "x-sc-notification-name": null
+              }
+    result:
+      custom:
+        bytes: "5635"
+        c-ip: "10.60.4.44"
+        cs-bytes: "3648"
+        cs-dns: "live-manifests-fly.warnermediacdn.com"
+        cs-host: "live-manifests-fly.warnermediacdn.com"
+        cs-method: "GET"
+        cs-referer: "https://www.cnn.com/"
+        cs-uri: |-
+          /csm/extlive/turnerprd01,2028715/8.m3u8;jsessionid=DBE5E3319F523D153AA7A31FDE29C025.csm-e-cewbdlausw2live-09a2e2
+                d82ead8b5e5.bln1.yospace.com?adpr=jd7CwJlXEW&afid=145854967&caid=cnn-fastchannel/livestream&conf_csid=cnn.com_live_desktop_fastchannel&nw=48804&playername=top-2.12.1&prof=48804:cnn_web_live&yo.asd=true&yo.pbr=true&yo.pst=true&playerType=standard&refDom=other&wm_vw=stlr&pg=landing_homepage&guID=65ea1c6608ec7c0a3f8cfa001671bb01&transactionID=17308266995069638643409588&_fw_gdpr=0&_fw_us_privacy=1YNN&audio=muted&vpmute=1&cep_params=MTZCNj1jZXBfc2VudCZzb3VyY2VfaWQ9c2VjdGlvbl9ob21lcGFnZTEmc2hvcnRfc291cmNlX2lkPXNlX2hvbWVwYWdlMQ%3D%3D&vpa=1&inFocus=false&paln=AQzzBGQEFiFYJtT_iLpJ1i7YUxlqXgEx1KZfR-TahVZeQOAsv9r4pJdQ3HtbRPSS5tVk7_1t2GGA3JieYCjk9Ydp9UUoNiPQ7lFZHwUsH_2a-oUsu2ljaO172FxPdwRBarfjS8ieoRmighF4oZgPbnQJQAg_Aq-8Pg21qK7qHK83N_HUvqQfVQAa_bINEQNJLzcfnu7vECIHlpqvExnjZpy-czXzRVqp46rWLq-Wne5hz32791VVEmw1s4PLCLjZ9W2zFx8nG3Wtqyl8yOMJgwNOMkKZ7FM_tdEmOk1pkdU_X32ruKfHY3IDZSR-38TSRUh_8OfpJVmv43BU0LUM_2QPejaWIMrjqhyglm9EN1pg26Np55cgVKxIV1uFHJiFhXABIqS1VXJ6OQlCddoenlFW2ym_YxC81e7AANFc62VpLJXIoX7XSORK0mmNkfT_T44NYF8OZMhq_Sr0O0v6vttivtYHrJ8KZ8LCFkUUyB72aP1umk4X3R13ITyaU6Qs83pJwsTU_s76cXHCk4uAtvlq2eZRfSeRBXO9SQ7VlDHV-B_NAdLwv_AYb7UqIH0JX0UImkX0FSWHAWJTFRlmZb7bMVHSyCwJgxW_84-f4hrwwxKG2tQURSoFGqWOZ1ZQaAPrgIcGLlG19WtXTORKZvpaxDQxeI6TrXe_cePBiQ2LsvBH66qwnrB1dz6ZuIrTk-QFOnZWIb-p_VYiNjlukPnaPTwsiFDYFI3UEk3BE7AIPtoJp3n29yj4fNe3zdr8I2_xrJOBTVCPbB_nCe0_bbdDsWSYxDeKKfGNx0r4lhXhD0sK_5uxv6bQQaLlsEaFFMJZ6pSFFkQQNRrUXidEA-wG5WJDwWpRVCUwBBsokLJO3PUIC5IyrwKon6zgEddxoRtlhXrkUSPLRxV8LC9AvD-yVcoJu0wV_nkwBxZuDZoVGv4f9So331ZMkZlqwLssYsTwxL0ZB6sxmhyMKrQSVS2u2aXF8aEn-C-i8KEWTctX9bZcfjACuYmXL5SyFgBpefP7MvFlwQL05R1QVzO0Uz7133AfSeNFfCy0K_8g-d6CKxP8NXI4cTrXHxvLTO0UwvK0X7a3emytiSS_ZGR6GB71ZyyvpFgJ_r3GZF21xhp_dnwcqfMf3Mbke_--8Oj9KF6-RzHOv4Qz-PnR6q7UW9lQicHtT5Zzn3-X_kow1zriUBA.&ias_optm_params=ZnI9ZmFsc2UmYWR0PXZlcnlMb3cmYWxjPXZlcnlMb3cmZGxtPXZlcnlMb3cmZHJnPXZlcnlMb3cmaGF0PXZlcnlMb3cmb2ZmPXZlcnlMb3cmdmlvPWxvdyZpZD0wNzNlMDAzNi05Yjk5LTExZWYtYTY4Mi03NmJlNzIxNTViNzMmaWFzLWt3PUlBU18zMDExOTAyX1BHJmlhcy1rdz1JQVNfMTUwNjgyOF9QRyZpYXMta3c9SUFTXzE1MDYxMjNfUEcmaWFzLWt3PUlBU18xNTEzNzQxX1BHJmlhcy1rdz1JQVNfMTUxMDI4NV9QRyZpYXMta3c9SUFTXzE1MTI3OTBfUEcmaWFzLWt3PUlBU18xNTAwOTAzX1BHJmlhcy1rdz1JQVNfMTUxMTM3NV9QRyZpYXMta3c9SUFTXzMwMDY2MzdfUEcmaWFzLWt3PUlBU18xNTAwOTAyX1BHJmlhcy1rdz1JQVNfMTUxMTM3N19QRyZpYXMta3c9SUFTXzMwMTAyMzlfUEc%3D&_fw_ar=0&_fw_cookie_consent=1&protocol=ssl&appView=web&_fw_vcid2=umw8c08_7344842640395204573&zwmc=3886944087656341862&ifyr=LTGN3NWQ-K-79MO&goiz=58e9fc15bd0b43d8a0a01db96357579b&kfyn=4DA7EF9B-02A1-485B-864A-00210369F81D&vcid=dbee31d3-e9a4-4884-a8cb-f4110eeb7b83&wmuk=dbee31d3-e9a4-4884-a8cb-f4110eeb7b83&app_csid=cnn.com_main_homepage&yo.av=3&yo.pdt=sync&yo.lpa=dur&yo.aas=true&yo.t.jt=1000&yo.t.pr=1000&yo.me=true&yo.ap=https://vod-media-aka.warnermediacdn.com&yo.po=-4&yo.up=https://live-media-fly.warnermediacdn.com&vip=163.116.140.164&yo.eb.fb=aHR0cHM6Ly9saXZlLW1lZGlhLWZseS53YXJuZXJtZWRpYWNkbi5jb20vY21hZi9saXZlLzIwMjg3MTUvY25uZmFzdC1kb21lc3RpYy9tYXN0ZXJfZGUubTN1OA==
+        cs-uri-port: "443"
+        cs-uri-query: "adpr=jd7CwJlXEW&afid=145854967&caid=cnn-fastchannel/livestream&conf_csid=cnn.com_live_desktop_fastchannel&nw=48804&playername=top-2.12.1&prof=48804:cnn_web_live&yo.asd=true&yo.pbr=true&yo.pst=true&playerType=standard&refDom=other&wm_vw=stlr&pg=landing_homepage&guID=65ea1c6608ec7c0a3f8cfa001671bb01&transactionID=17308266995069638643409588&_fw_gdpr=0&_fw_us_privacy=1YNN&audio=muted&vpmute=1&cep_params=MTZCNj1jZXBfc2VudCZzb3VyY2VfaWQ9c2VjdGlvbl9ob21lcGFnZTEmc2hvcnRfc291cmNlX2lkPXNlX2hvbWVwYWdlMQ%3D%3D&vpa=1&inFocus=false&paln=AQzzBGQEFiFYJtT_iLpJ1i7YUxlqXgEx1KZfR-TahVZeQOAsv9r4pJdQ3HtbRPSS5tVk7_1t2GGA3JieYCjk9Ydp9UUoNiPQ7lFZHwUsH_2a-oUsu2ljaO172FxPdwRBarfjS8ieoRmighF4oZgPbnQJQAg_Aq-8Pg21qK7qHK83N_HUvqQfVQAa_bINEQNJLzcfnu7vECIHlpqvExnjZpy-czXzRVqp46rWLq-Wne5hz32791VVEmw1s4PLCLjZ9W2zFx8nG3Wtqyl8yOMJgwNOMkKZ7FM_tdEmOk1pkdU_X32ruKfHY3IDZSR-38TSRUh_8OfpJVmv43BU0LUM_2QPejaWIMrjqhyglm9EN1pg26Np55cgVKxIV1uFHJiFhXABIqS1VXJ6OQlCddoenlFW2ym_YxC81e7AANFc62VpLJXIoX7XSORK0mmNkfT_T44NYF8OZMhq_Sr0O0v6vttivtYHrJ8KZ8LCFkUUyB72aP1umk4X3R13ITyaU6Qs83pJwsTU_s76cXHCk4uAtvlq2eZRfSeRBXO9SQ7VlDHV-B_NAdLwv_AYb7UqIH0JX0UImkX0FSWHAWJTFRlmZb7bMVHSyCwJgxW_84-f4hrwwxKG2tQURSoFGqWOZ1ZQaAPrgIcGLlG19WtXTORKZvpaxDQxeI6TrXe_cePBiQ2LsvBH66qwnrB1dz6ZuIrTk-QFOnZWIb-p_VYiNjlukPnaPTwsiFDYFI3UEk3BE7AIPtoJp3n29yj4fNe3zdr8I2_xrJOBTVCPbB_nCe0_bbdDsWSYxDeKKfGNx0r4lhXhD0sK_5uxv6bQQaLlsEaFFMJZ6pSFFkQQNRrUXidEA-wG5WJDwWpRVCUwBBsokLJO3PUIC5IyrwKon6zgEddxoRtlhXrkUSPLRxV8LC9AvD-yVcoJu0wV_nkwBxZuDZoVGv4f9So331ZMkZlqwLssYsTwxL0ZB6sxmhyMKrQSVS2u2aXF8aEn-C-i8KEWTctX9bZcfjACuYmXL5SyFgBpefP7MvFlwQL05R1QVzO0Uz7133AfSeNFfCy0K_8g-d6CKxP8NXI4cTrXHxvLTO0UwvK0X7a3emytiSS_ZGR6GB71ZyyvpFgJ_r3GZF21xhp_dnwcqfMf3Mbke_--8Oj9KF6-RzHOv4Qz-PnR6q7UW9lQicHtT5Zzn3-X_kow1zriUBA.&ias_optm_params=ZnI9ZmFsc2UmYWR0PXZlcnlMb3cmYWxjPXZlcnlMb3cmZGxtPXZlcnlMb3cmZHJnPXZlcnlMb3cmaGF0PXZlcnlMb3cmb2ZmPXZlcnlMb3cmdmlvPWxvdyZpZD0wNzNlMDAzNi05Yjk5LTExZWYtYTY4Mi03NmJlNzIxNTViNzMmaWFzLWt3PUlBU18zMDExOTAyX1BHJmlhcy1rdz1JQVNfMTUwNjgyOF9QRyZpYXMta3c9SUFTXzE1MDYxMjNfUEcmaWFzLWt3PUlBU18xNTEzNzQxX1BHJmlhcy1rdz1JQVNfMTUxMDI4NV9QRyZpYXMta3c9SUFTXzE1MTI3OTBfUEcmaWFzLWt3PUlBU18xNTAwOTAzX1BHJmlhcy1rdz1JQVNfMTUxMTM3NV9QRyZpYXMta3c9SUFTXzMwMDY2MzdfUEcmaWFzLWt3PUlBU18xNTAwOTAyX1BHJmlhcy1rdz1JQVNfMTUxMTM3N19QRyZpYXMta3c9SUFTXzMwMTAyMzlfUEc%3D&_fw_ar=0&_fw_cookie_consent=1&protocol=ssl&appView=web&_fw_vcid2=umw8c08_7344842640395204573&zwmc=3886944087656341862&ifyr=LTGN3NWQ-K-79MO&goiz=58e9fc15bd0b43d8a0a01db96357579b&kfyn=4DA7EF9B-02A1-485B-864A-00210369F81D&vcid=dbee31d3-e9a4-4884-a8cb-f4110eeb7b83&wmuk=dbee31d3-e9a4-4884-a8cb-f4110eeb7b83&app_csid=cnn.com_main_homepage&yo.av=3&yo.pdt=sync&yo.lpa=dur&yo.aas=true&yo.t.jt=1000&yo.t.pr=1000&yo.me=true&yo.ap=https://vod-media-aka.warnermediacdn.com&yo.po=-4&yo.up=https://live-media-fly.warnermediacdn.com&vip=163.116.140.164&yo.eb.fb=aHR0cHM6Ly9saXZlLW1lZGlhLWZseS53YXJuZXJtZWRpYWNkbi5jb20vY21hZi9saXZlLzIwMjg3MTUvY25uZmFzdC1kb21lc3RpYy9tYXN0ZXJfZGUubTN1OA=="
+        cs-uri-scheme: "https"
+        cs-user-agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+        date: "2024-11-05"
+        evt:
+          name: "GET"
+          outcome: "200"
+        network:
+          client:
+            ip: "10.60.4.44"
+        timestamp: "2024-11-05T17:18:22.0Z"
+        rs-status: "200"
+        s-ip: "23.192.228.75"
+        sc-bytes: "1987"
+        sc-content-type: "application/vnd.apple.mpegurl;charset=UTF-8"
+        sc-status: "200"
+        time: "17:18:22"
+        time-taken: "79"
+        usr:
+          name: "taylor@eras.tour"
+        x-c-browser: "Chrome"
+        x-c-browser-version: "130.0.0.0"
+        x-c-country: "US"
+        x-c-device: "Windows Device"
+        x-c-latitude: "37.302800"
+        x-c-local-time: "2024-11-05 09:18:00"
+        x-c-location: "San Jose"
+        x-c-longitude: "-121.998200"
+        x-c-os: "Windows 11"
+        x-c-region: "California"
+        x-c-zipcode: "95129"
+        x-category: "Content Management"
+        x-category-id: "11"
+        x-cs-access-method: "Client"
+        x-cs-app-activity: "Browse"
+        x-cs-app-object-type: "File"
+        x-cs-dst-ip: "23.67.33.68"
+        x-cs-dst-port: "443"
+        x-cs-http-version: "HTTP1.1"
+        x-cs-page-id: "0"
+        x-cs-session-id: "81806829232928851"
+        x-cs-site: "warnermediacdn"
+        x-cs-sni: "live-manifests-fly.warnermediacdn.com"
+        x-cs-src-ip: "10.60.4.44"
+        x-cs-src-ip-egress: "12.151.36.5"
+        x-cs-src-port: "19604"
+        x-cs-ssl-cipher: "TLS_AES_256_GCM_SHA384"
+        x-cs-ssl-engine-action: "Allow"
+        x-cs-ssl-engine-action-reason: "Established"
+        x-cs-ssl-fronting-error: "No"
+        x-cs-ssl-handshake-error: "No"
+        x-cs-ssl-ja3: "5aa18cfac57b7c452d21d96146ded2ab"
+        x-cs-ssl-version: "TLSv1.3"
+        x-cs-timestamp: "1730827102"
+        x-cs-traffic-type: "Web"
+        x-cs-uri-path: "/csm/extlive/turnerprd01,2028715/8.m3u8"
+        x-cs-url: |-
+          https://live-manifests-fly.warnermediacdn.com/csm/extlive/turnerprd01,2028715/8.m3u8;jsessionid=DBE5E3319F523D153AA7A31FDE29C025.csm-e-cewbdlausw2live-09a2e2d82ead8b5e5.bln1.yospace.com?adpr=jd7CwJlXEW&afid=145854967&caid=cnn-fastchannel/livestream&conf_csid=cnn.com_live_desktop_fastchannel&nw=48804&playername=top-2.12.1&prof=48804:cnn_web_live&yo.asd=true&yo.pbr=true&yo.pst=true&playerType=standard&refDom=other&wm_vw=stlr&pg=landing_homepage&guID=65ea1c6608ec7c0a3f8cfa001671bb01&transactionID=17308266995069638643409588&_fw_gdpr=0&_fw_us_privacy=1YNN&audio=muted&vpmute=1&cep_params=MTZCNj1jZXBfc2VudCZzb3VyY2VfaWQ9c2VjdGlvbl9ob21lcGFnZTEmc2hvcnRfc291cmNlX2lkPXNlX2hvbWVwYWdlMQ%3D%3D&vpa=1&inFocus=false&paln=AQzzBGQEFiFYJtT_iLpJ1i7YUxlqXgEx1KZfR-TahVZeQOAsv9r4pJdQ3HtbRPSS5tVk7_1t2GGA3JieYCjk9Ydp9UUoNiPQ7lFZHwUsH_2a-oUsu2ljaO172FxPdwRBarfjS8ieoRmighF4oZgPbnQJQAg_Aq-8Pg21qK7qHK83N_HUvqQfVQAa_bINEQNJLzcfnu7vECIHlpqvExnjZpy-czXzRVqp46rWLq-Wne5hz32791VVEmw1s4PLCLjZ9W2zFx8nG3Wtqyl8yOMJgwNOMkKZ7FM_tdEmOk1pkdU_X32ruKfHY3IDZSR-38TSRUh_8OfpJVmv43BU0LUM_2QPejaWIMrjqhyglm9EN1pg26Np55cgVKxIV1uFHJiFhXABIqS1VXJ6OQlCddoenlFW2ym_YxC81e7AANFc62VpLJXIoX7XSORK0mmNkfT_T44NYF8OZMhq_Sr0O0v6vttivtYHrJ8KZ8LCFkUUyB72aP1umk4X3R13ITyaU6Qs83pJwsTU_s76cXHCk4uAtvlq2eZRfSeRBXO9SQ7VlDHV-B_NAdLwv_AYb7UqIH0JX0UImkX0FSWHAWJTFRlmZb7bMVHSyCwJgxW_84-f4hrwwxKG2tQURSoFGqWOZ1ZQaAPrgIcGLlG19WtXTORKZvpaxDQxeI6TrXe_cePBiQ2LsvBH66qwnrB1dz6ZuIrTk-QFOnZWIb-p_VYiNjlukPnaPTwsiFDYFI3UEk3BE7AIPtoJp3n29yj4fNe3zdr8I2_xrJOBTVCPbB_nCe0_bbdDsWSYxDeKKfGNx0r4lhXhD0sK_5uxv6bQQaLlsEaFFMJZ6pSFFkQQNRrUXidEA-wG5WJDwWpRVCUwBBsokLJO3PUIC5IyrwKon6zgEddxoRtlhXrkUSPLRxV8LC9AvD-yVcoJu0wV_nkwBxZuDZoVGv4f9So331ZMkZlqwLssYsTwxL0ZB6sxmhyMKrQSVS2u2aXF8aEn-C-i8KEWTctX9bZcfjACuYmXL5SyFgBpefP7MvFlwQL05R1QVzO0Uz7133AfSeNFfCy0K_8g-d6CKxP8NXI4cTrXHxvLTO0UwvK0X7a3emytiSS_ZGR6GB71ZyyvpFgJ_r3GZF21xhp_dnwcqfMf3Mbke_--8Oj9KF6-RzHOv4Qz-PnR6q7UW9lQicHtT5Zzn3-X_kow1zriUBA.&ias_optm_params=ZnI9ZmFsc2UmYWR0PXZlcnlMb3cmYWxjPXZlcnlMb3cmZGxtPXZlcnlMb3cmZHJnPXZlcnlMb3cmaGF0PXZlcnlMb3cmb2ZmPXZlcnlMb3cmdmlvPWxvdyZpZD0wNzNlMDAzNi05Yjk5LTExZWYtYTY4Mi03NmJlNzIxNTViNzMmaWFzLWt3PUlBU18zMDExOTAyX1BHJmlhcy1rdz1JQVNfMTUwNjgyOF9QRyZpYXMta3c9SUFTXzE1MDYxMjNfUEcmaWFzLWt3PUlBU18xNTEzNzQxX1BHJmlhcy1rdz1JQVNfMTUxMDI4NV9QRyZpYXMta3c9SUFTXzE1MTI3OTBfUEcmaWFzLWt3PUlBU18xNTAwOTAzX1BHJmlhcy1rdz1JQVNfMTUxMTM3NV9QRyZpYXMta3c9SUFTXzMwMDY2MzdfUEcmaWFzLWt3PUlBU18xNTAwOTAyX1BH
+                Jmlhcy1rdz1JQVNfMTUxMTM3N19QRyZpYXMta3c9SUFTXzMwMTAyMzlfUEc%3D&_fw_ar=0&_fw_cookie_consent=1&protocol=ssl&appView=web&_fw_vcid2=umw8c08_7344842640395204573&zwmc=3886944087656341862&ifyr=LTGN3NWQ-K-79MO&goiz=58e9fc15bd0b43d8a0a01db96357579b&kfyn=4DA7EF9B-02A1-485B-864A-00210369F81D&vcid=dbee31d3-e9a4-4884-a8cb-f4110eeb7b83&wmuk=dbee31d3-e9a4-4884-a8cb-f4110eeb7b83&app_csid=cnn.com_main_homepage&yo.av=3&yo.pdt=sync&yo.lpa=dur&yo.aas=true&yo.t.jt=1000&yo.t.pr=1000&yo.me=true&yo.ap=https://vod-media-aka.warnermediacdn.com&yo.po=-4&yo.up=https://live-media-fly.warnermediacdn.com&vip=163.116.140.164&yo.eb.fb=aHR0cHM6Ly9saXZlLW1lZGlhLWZseS53YXJuZXJtZWRpYWNkbi5jb20vY21hZi9saXZlLzIwMjg3MTUvY25uZmFzdC1kb21lc3RpYy9tYXN0ZXJfZGUubTN1OA==
+        x-cs-userip: "10.60.4.44"
+        x-other-category: "Content Management"
+        x-other-category-id: "11"
+        x-policy-action: "allow_default"
+        x-policy-dst-host: "live-manifests-fly.warnermediacdn.com"
+        x-policy-dst-host-source: "HttpHostHeader"
+        x-policy-dst-ip: "23.192.228.75"
+        x-policy-name: "DefaultAction"
+        x-policy-src-ip: "10.60.4.44"
+        x-r-cert-enddate: "NotChecked"
+        x-r-cert-expired: "NotChecked"
+        x-r-cert-incomplete-chain: "NotChecked"
+        x-r-cert-issuer-cn: "NotChecked"
+        x-r-cert-mismatch: "NotChecked"
+        x-r-cert-revocation-check: "NotChecked"
+        x-r-cert-revoked: "NotChecked"
+        x-r-cert-self-signed: "NotChecked"
+        x-r-cert-startdate: "NotChecked"
+        x-r-cert-subject-cn: "NotChecked"
+        x-r-cert-untrusted-root: "NotChecked"
+        x-r-cert-valid: "NotChecked"
+        x-request-id: "2968013307170078208"
+        x-rs-file-type: "text/plain"
+        x-s-country: "US"
+        x-s-custom-signing-ca-error: "No"
+        x-s-dp-name: "US-SFO1"
+        x-s-latitude: "37.353000"
+        x-s-location: "Santa Clara"
+        x-s-longitude: "-121.954300"
+        x-s-region: "California"
+        x-s-zipcode: "95052"
+        x-sr-dst-ip: "10.140.6.201"
+        x-sr-dst-port: "791"
+        x-sr-ssl-cipher: "NotChecked"
+        x-sr-ssl-client-certificate-error: "NotChecked"
+        x-sr-ssl-engine-action: "None"
+        x-sr-ssl-engine-action-reason: "NotEstablished"
+        x-sr-ssl-handshake-error: "NotChecked"
+        x-sr-ssl-ja3s: "NotAvailable"
+        x-sr-ssl-malformed-ssl: "NotChecked"
+        x-sr-ssl-version: "NotChecked"
+        x-ssl-bypass: "No"
+        x-ssl-policy-action: "Decrypt"
+        x-ssl-policy-dst-host-source: "Unknown"
+        x-transaction-id: "6447779818248036783"
+        x-type: "http_transaction"
+      message: |-
+        {
+          "x-r-cert-expired" : "NotChecked",
+          "cs-method" : "GET",
+          "x-c-browser-version" : "130.0.0.0",
+          "cs-username" : "taylor@eras.tour",
+          "x-cs-traffic-type" : "Web",
+          "x-s-custom-signing-ca-error" : "No",
+          "cs-host" : "live-manifests-fly.warnermediacdn.com",
+          "x-cs-session-id" : "81806829232928851",
+          "cs-dns" : "live-manifests-fly.warnermediacdn.com",
+          "sc-status" : "200",
+          "x-c-local-time" : "2024-11-05 09:18:00",
+          "rs-status" : "200",
+          "x-c-latitude" : "37.302800",
+          "x-type" : "http_transaction",
+          "x-c-region" : "California",
+          "x-rs-file-type" : "text/plain",
+          "x-s-region" : "California",
+          "x-request-id" : "2968013307170078208",
+          "cs-bytes" : "3648",
+          "x-c-country" : "US",
+          "x-policy-dst-host" : "live-manifests-fly.warnermediacdn.com",
+          "x-sr-ssl-handshake-error" : "NotChecked",
+          "x-cs-http-version" : "HTTP1.1",
+          "x-category-id" : "11",
+          "sc-bytes" : "1987",
+          "cs-uri-port" : "443",
+          "x-r-cert-valid" : "NotChecked",
+          "x-sr-dst-port" : "791",
+          "x-cs-userip" : "10.60.4.44",
+          "x-ssl-policy-dst-host-source" : "Unknown",
+          "x-s-latitude" : "37.353000",
+          "x-cs-ssl-ja3" : "5aa18cfac57b7c452d21d96146ded2ab",
+          "sc-content-type" : "application/vnd.apple.mpegurl;charset=UTF-8",
+          "x-sr-ssl-engine-action" : "None",
+          "timestamp" : "2024-11-05T17:18:22.0Z",
+          "x-c-location" : "San Jose",
+          "x-c-zipcode" : "95129",
+          "x-cs-dst-port" : "443",
+          "x-r-cert-mismatch" : "NotChecked",
+          "x-cs-app-object-type" : "File",
+          "x-transaction-id" : "6447779818248036783",
+          "x-cs-ssl-cipher" : "TLS_AES_256_GCM_SHA384",
+          "x-policy-dst-host-source" : "HttpHostHeader",
+          "x-cs-dst-ip" : "23.67.33.68",
+          "x-s-longitude" : "-121.954300",
+          "x-r-cert-subject-cn" : "NotChecked",
+          "x-cs-src-ip" : "10.60.4.44",
+          "x-cs-page-id" : "0",
+          "x-ssl-policy-action" : "Decrypt",
+          "x-sr-ssl-engine-action-reason" : "NotEstablished",
+          "date" : "2024-11-05",
+          "cs-uri-query" : "adpr=jd7CwJlXEW&afid=145854967&caid=cnn-fastchannel/livestream&conf_csid=cnn.com_live_desktop_fastchannel&nw=48804&playername=top-2.12.1&prof=48804:cnn_web_live&yo.asd=true&yo.pbr=true&yo.pst=true&playerType=standard&refDom=other&wm_vw=stlr&pg=landing_homepage&guID=65ea1c6608ec7c0a3f8cfa001671bb01&transactionID=17308266995069638643409588&_fw_gdpr=0&_fw_us_privacy=1YNN&audio=muted&vpmute=1&cep_params=MTZCNj1jZXBfc2VudCZzb3VyY2VfaWQ9c2VjdGlvbl9ob21lcGFnZTEmc2hvcnRfc291cmNlX2lkPXNlX2hvbWVwYWdlMQ%3D%3D&vpa=1&inFocus=false&paln=AQzzBGQEFiFYJtT_iLpJ1i7YUxlqXgEx1KZfR-TahVZeQOAsv9r4pJdQ3HtbRPSS5tVk7_1t2GGA3JieYCjk9Ydp9UUoNiPQ7lFZHwUsH_2a-oUsu2ljaO172FxPdwRBarfjS8ieoRmighF4oZgPbnQJQAg_Aq-8Pg21qK7qHK83N_HUvqQfVQAa_bINEQNJLzcfnu7vECIHlpqvExnjZpy-czXzRVqp46rWLq-Wne5hz32791VVEmw1s4PLCLjZ9W2zFx8nG3Wtqyl8yOMJgwNOMkKZ7FM_tdEmOk1pkdU_X32ruKfHY3IDZSR-38TSRUh_8OfpJVmv43BU0LUM_2QPejaWIMrjqhyglm9EN1pg26Np55cgVKxIV1uFHJiFhXABIqS1VXJ6OQlCddoenlFW2ym_YxC81e7AANFc62VpLJXIoX7XSORK0mmNkfT_T44NYF8OZMhq_Sr0O0v6vttivtYHrJ8KZ8LCFkUUyB72aP1umk4X3R13ITyaU6Qs83pJwsTU_s76cXHCk4uAtvlq2eZRfSeRBXO9SQ7VlDHV-B_NAdLwv_AYb7UqIH0JX0UImkX0FSWHAWJTFRlmZb7bMVHSyCwJgxW_84-f4hrwwxKG2tQURSoFGqWOZ1ZQaAPrgIcGLlG19WtXTORKZvpaxDQxeI6TrXe_cePBiQ2LsvBH66qwnrB1dz6ZuIrTk-QFOnZWIb-p_VYiNjlukPnaPTwsiFDYFI3UEk3BE7AIPtoJp3n29yj4fNe3zdr8I2_xrJOBTVCPbB_nCe0_bbdDsWSYxDeKKfGNx0r4lhXhD0sK_5uxv6bQQaLlsEaFFMJZ6pSFFkQQNRrUXidEA-wG5WJDwWpRVCUwBBsokLJO3PUIC5IyrwKon6zgEddxoRtlhXrkUSPLRxV8LC9AvD-yVcoJu0wV_nkwBxZuDZoVGv4f9So331ZMkZlqwLssYsTwxL0ZB6sxmhyMKrQSVS2u2aXF8aEn-C-i8KEWTctX9bZcfjACuYmXL5SyFgBpefP7MvFlwQL05R1QVzO0Uz7133AfSeNFfCy0K_8g-d6CKxP8NXI4cTrXHxvLTO0UwvK0X7a3emytiSS_ZGR6GB71ZyyvpFgJ_r3GZF21xhp_dnwcqfMf3Mbke_--8Oj9KF6-RzHOv4Qz-PnR6q7UW9lQicHtT5Zzn3-X_kow1zriUBA.&ias_optm_params=ZnI9ZmFsc2UmYWR0PXZlcnlMb3cmYWxjPXZlcnlMb3cmZGxtPXZlcnlMb3cmZHJnPXZlcnlMb3cmaGF0PXZlcnlMb3cmb2ZmPXZlcnlMb3cmdmlvPWxvdyZpZD0wNzNlMDAzNi05Yjk5LTExZWYtYTY4Mi03NmJlNzIxNTViNzMmaWFzLWt3PUlBU18zMDExOTAyX1BHJmlhcy1rdz1JQVNfMTUwNjgyOF9QRyZpYXMta3c9SUFTXzE1MDYxMjNfUEcmaWFzLWt3PUlBU18xNTEzNzQxX1BHJmlhcy1rdz1JQVNfMTUxMDI4NV9QRyZpYXMta3c9SUFTXzE1MTI3OTBfUEcmaWFzLWt3PUlBU18xNTAwOTAzX1BHJmlhcy1rdz1JQVNfMTUxMTM3NV9QRyZpYXMta3c9SUFTXzMwMDY2MzdfUEcmaWFzLWt3PUlBU18xNTAwOTAyX1BHJmlhcy1rdz1JQVNfMTUxMTM3N19QRyZpYXMta3c9SUFTXzMwMTAyMzlfUEc%3D&_fw_ar=0&_fw_cookie_consent=1&protocol=ssl&appView=web&_fw_vcid2=umw8c08_7344842640395204573&zwmc=3886944087656341862&ifyr=LTGN3NWQ-K-79MO&goiz=58e9fc15bd0b43d8a0a01db96357579b&kfyn=4DA7EF9B-02A1-485B-864A-00210369F81D&vcid=dbee31d3-e9a4-4884-a8cb-f4110eeb7b83&wmuk=dbee31d3-e9a4-4884-a8cb-f4110eeb7b83&app_csid=cnn.com_main_homepage&yo.av=3&yo.pdt=sync&yo.lpa=dur&yo.aas=true&yo.t.jt=1000&yo.t.pr=1000&yo.me=true&yo.ap=https://vod-media-aka.warnermediacdn.com&yo.po=-4&yo.up=https://live-media-fly.warnermediacdn.com&vip=163.116.140.164&yo.eb.fb=aHR0cHM6Ly9saXZlLW1lZGlhLWZseS53YXJuZXJtZWRpYWNkbi5jb20vY21hZi9saXZlLzIwMjg3MTUvY25uZmFzdC1kb21lc3RpYy9tYXN0ZXJfZGUubTN1OA==",
+          "x-cs-src-ip-egress" : "12.151.36.5",
+          "x-policy-name" : "DefaultAction",
+          "x-s-location" : "Santa Clara",
+          "x-c-browser" : "Chrome",
+          "x-other-category" : "Content Management",
+          "x-sr-dst-ip" : "10.140.6.201",
+          "x-s-dp-name" : "US-SFO1",
+          "x-cs-access-method" : "Client",
+          "x-cs-ssl-handshake-error" : "No",
+          "x-s-country" : "US",
+          "x-sr-ssl-cipher" : "NotChecked",
+          "x-cs-ssl-engine-action-reason" : "Established",
+          "x-r-cert-revocation-check" : "NotChecked",
+          "x-cs-uri-path" : "/csm/extlive/turnerprd01,2028715/8.m3u8",
+          "cs-user-agent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+          "x-r-cert-incomplete-chain" : "NotChecked",
+          "x-c-os" : "Windows 11",
+          "x-sr-ssl-malformed-ssl" : "NotChecked",
+          "time-taken" : "79",
+          "x-cs-site" : "warnermediacdn",
+          "x-cs-timestamp" : "1730827102",
+          "x-s-zipcode" : "95052",
+          "cs-referer" : "https://www.cnn.com/",
+          "x-sr-ssl-ja3s" : "NotAvailable",
+          "x-cs-app-activity" : "Browse",
+          "x-cs-ssl-version" : "TLSv1.3",
+          "x-policy-dst-ip" : "23.192.228.75",
+          "x-category" : "Content Management",
+          "cs-uri-scheme" : "https",
+          "x-policy-action" : "allow_default",
+          "x-policy-src-ip" : "10.60.4.44",
+          "x-cs-ssl-fronting-error" : "No",
+          "cs-uri" : "/csm/extlive/turnerprd01,2028715/8.m3u8;jsessionid=DBE5E3319F523D153AA7A31FDE29C025.csm-e-cewbdlausw2live-09a2e2\n      d82ead8b5e5.bln1.yospace.com?adpr=jd7CwJlXEW&afid=145854967&caid=cnn-fastchannel/livestream&conf_csid=cnn.com_live_desktop_fastchannel&nw=48804&playername=top-2.12.1&prof=48804:cnn_web_live&yo.asd=true&yo.pbr=true&yo.pst=true&playerType=standard&refDom=other&wm_vw=stlr&pg=landing_homepage&guID=65ea1c6608ec7c0a3f8cfa001671bb01&transactionID=17308266995069638643409588&_fw_gdpr=0&_fw_us_privacy=1YNN&audio=muted&vpmute=1&cep_params=MTZCNj1jZXBfc2VudCZzb3VyY2VfaWQ9c2VjdGlvbl9ob21lcGFnZTEmc2hvcnRfc291cmNlX2lkPXNlX2hvbWVwYWdlMQ%3D%3D&vpa=1&inFocus=false&paln=AQzzBGQEFiFYJtT_iLpJ1i7YUxlqXgEx1KZfR-TahVZeQOAsv9r4pJdQ3HtbRPSS5tVk7_1t2GGA3JieYCjk9Ydp9UUoNiPQ7lFZHwUsH_2a-oUsu2ljaO172FxPdwRBarfjS8ieoRmighF4oZgPbnQJQAg_Aq-8Pg21qK7qHK83N_HUvqQfVQAa_bINEQNJLzcfnu7vECIHlpqvExnjZpy-czXzRVqp46rWLq-Wne5hz32791VVEmw1s4PLCLjZ9W2zFx8nG3Wtqyl8yOMJgwNOMkKZ7FM_tdEmOk1pkdU_X32ruKfHY3IDZSR-38TSRUh_8OfpJVmv43BU0LUM_2QPejaWIMrjqhyglm9EN1pg26Np55cgVKxIV1uFHJiFhXABIqS1VXJ6OQlCddoenlFW2ym_YxC81e7AANFc62VpLJXIoX7XSORK0mmNkfT_T44NYF8OZMhq_Sr0O0v6vttivtYHrJ8KZ8LCFkUUyB72aP1umk4X3R13ITyaU6Qs83pJwsTU_s76cXHCk4uAtvlq2eZRfSeRBXO9SQ7VlDHV-B_NAdLwv_AYb7UqIH0JX0UImkX0FSWHAWJTFRlmZb7bMVHSyCwJgxW_84-f4hrwwxKG2tQURSoFGqWOZ1ZQaAPrgIcGLlG19WtXTORKZvpaxDQxeI6TrXe_cePBiQ2LsvBH66qwnrB1dz6ZuIrTk-QFOnZWIb-p_VYiNjlukPnaPTwsiFDYFI3UEk3BE7AIPtoJp3n29yj4fNe3zdr8I2_xrJOBTVCPbB_nCe0_bbdDsWSYxDeKKfGNx0r4lhXhD0sK_5uxv6bQQaLlsEaFFMJZ6pSFFkQQNRrUXidEA-wG5WJDwWpRVCUwBBsokLJO3PUIC5IyrwKon6zgEddxoRtlhXrkUSPLRxV8LC9AvD-yVcoJu0wV_nkwBxZuDZoVGv4f9So331ZMkZlqwLssYsTwxL0ZB6sxmhyMKrQSVS2u2aXF8aEn-C-i8KEWTctX9bZcfjACuYmXL5SyFgBpefP7MvFlwQL05R1QVzO0Uz7133AfSeNFfCy0K_8g-d6CKxP8NXI4cTrXHxvLTO0UwvK0X7a3emytiSS_ZGR6GB71ZyyvpFgJ_r3GZF21xhp_dnwcqfMf3Mbke_--8Oj9KF6-RzHOv4Qz-PnR6q7UW9lQicHtT5Zzn3-X_kow1zriUBA.&ias_optm_params=ZnI9ZmFsc2UmYWR0PXZlcnlMb3cmYWxjPXZlcnlMb3cmZGxtPXZlcnlMb3cmZHJnPXZlcnlMb3cmaGF0PXZlcnlMb3cmb2ZmPXZlcnlMb3cmdmlvPWxvdyZpZD0wNzNlMDAzNi05Yjk5LTExZWYtYTY4Mi03NmJlNzIxNTViNzMmaWFzLWt3PUlBU18zMDExOTAyX1BHJmlhcy1rdz1JQVNfMTUwNjgyOF9QRyZpYXMta3c9SUFTXzE1MDYxMjNfUEcmaWFzLWt3PUlBU18xNTEzNzQxX1BHJmlhcy1rdz1JQVNfMTUxMDI4NV9QRyZpYXMta3c9SUFTXzE1MTI3OTBfUEcmaWFzLWt3PUlBU18xNTAwOTAzX1BHJmlhcy1rdz1JQVNfMTUxMTM3NV9QRyZpYXMta3c9SUFTXzMwMDY2MzdfUEcmaWFzLWt3PUlBU18xNTAwOTAyX1BHJmlhcy1rdz1JQVNfMTUxMTM3N19QRyZpYXMta3c9SUFTXzMwMTAyMzlfUEc%3D&_fw_ar=0&_fw_cookie_consent=1&protocol=ssl&appView=web&_fw_vcid2=umw8c08_7344842640395204573&zwmc=3886944087656341862&ifyr=LTGN3NWQ-K-79MO&goiz=58e9fc15bd0b43d8a0a01db96357579b&kfyn=4DA7EF9B-02A1-485B-864A-00210369F81D&vcid=dbee31d3-e9a4-4884-a8cb-f4110eeb7b83&wmuk=dbee31d3-e9a4-4884-a8cb-f4110eeb7b83&app_csid=cnn.com_main_homepage&yo.av=3&yo.pdt=sync&yo.lpa=dur&yo.aas=true&yo.t.jt=1000&yo.t.pr=1000&yo.me=true&yo.ap=https://vod-media-aka.warnermediacdn.com&yo.po=-4&yo.up=https://live-media-fly.warnermediacdn.com&vip=163.116.140.164&yo.eb.fb=aHR0cHM6Ly9saXZlLW1lZGlhLWZseS53YXJuZXJtZWRpYWNkbi5jb20vY21hZi9saXZlLzIwMjg3MTUvY25uZmFzdC1kb21lc3RpYy9tYXN0ZXJfZGUubTN1OA==",
+          "x-cs-src-port" : "19604",
+          "x-sr-ssl-version" : "NotChecked",
+          "x-other-category-id" : "11",
+          "x-c-device" : "Windows Device",
+          "x-cs-sni" : "live-manifests-fly.warnermediacdn.com",
+          "x-c-longitude" : "-121.998200",
+          "x-r-cert-enddate" : "NotChecked",
+          "x-cs-url" : "https://live-manifests-fly.warnermediacdn.com/csm/extlive/turnerprd01,2028715/8.m3u8;jsessionid=DBE5E3319F523D153AA7A31FDE29C025.csm-e-cewbdlausw2live-09a2e2d82ead8b5e5.bln1.yospace.com?adpr=jd7CwJlXEW&afid=145854967&caid=cnn-fastchannel/livestream&conf_csid=cnn.com_live_desktop_fastchannel&nw=48804&playername=top-2.12.1&prof=48804:cnn_web_live&yo.asd=true&yo.pbr=true&yo.pst=true&playerType=standard&refDom=other&wm_vw=stlr&pg=landing_homepage&guID=65ea1c6608ec7c0a3f8cfa001671bb01&transactionID=17308266995069638643409588&_fw_gdpr=0&_fw_us_privacy=1YNN&audio=muted&vpmute=1&cep_params=MTZCNj1jZXBfc2VudCZzb3VyY2VfaWQ9c2VjdGlvbl9ob21lcGFnZTEmc2hvcnRfc291cmNlX2lkPXNlX2hvbWVwYWdlMQ%3D%3D&vpa=1&inFocus=false&paln=AQzzBGQEFiFYJtT_iLpJ1i7YUxlqXgEx1KZfR-TahVZeQOAsv9r4pJdQ3HtbRPSS5tVk7_1t2GGA3JieYCjk9Ydp9UUoNiPQ7lFZHwUsH_2a-oUsu2ljaO172FxPdwRBarfjS8ieoRmighF4oZgPbnQJQAg_Aq-8Pg21qK7qHK83N_HUvqQfVQAa_bINEQNJLzcfnu7vECIHlpqvExnjZpy-czXzRVqp46rWLq-Wne5hz32791VVEmw1s4PLCLjZ9W2zFx8nG3Wtqyl8yOMJgwNOMkKZ7FM_tdEmOk1pkdU_X32ruKfHY3IDZSR-38TSRUh_8OfpJVmv43BU0LUM_2QPejaWIMrjqhyglm9EN1pg26Np55cgVKxIV1uFHJiFhXABIqS1VXJ6OQlCddoenlFW2ym_YxC81e7AANFc62VpLJXIoX7XSORK0mmNkfT_T44NYF8OZMhq_Sr0O0v6vttivtYHrJ8KZ8LCFkUUyB72aP1umk4X3R13ITyaU6Qs83pJwsTU_s76cXHCk4uAtvlq2eZRfSeRBXO9SQ7VlDHV-B_NAdLwv_AYb7UqIH0JX0UImkX0FSWHAWJTFRlmZb7bMVHSyCwJgxW_84-f4hrwwxKG2tQURSoFGqWOZ1ZQaAPrgIcGLlG19WtXTORKZvpaxDQxeI6TrXe_cePBiQ2LsvBH66qwnrB1dz6ZuIrTk-QFOnZWIb-p_VYiNjlukPnaPTwsiFDYFI3UEk3BE7AIPtoJp3n29yj4fNe3zdr8I2_xrJOBTVCPbB_nCe0_bbdDsWSYxDeKKfGNx0r4lhXhD0sK_5uxv6bQQaLlsEaFFMJZ6pSFFkQQNRrUXidEA-wG5WJDwWpRVCUwBBsokLJO3PUIC5IyrwKon6zgEddxoRtlhXrkUSPLRxV8LC9AvD-yVcoJu0wV_nkwBxZuDZoVGv4f9So331ZMkZlqwLssYsTwxL0ZB6sxmhyMKrQSVS2u2aXF8aEn-C-i8KEWTctX9bZcfjACuYmXL5SyFgBpefP7MvFlwQL05R1QVzO0Uz7133AfSeNFfCy0K_8g-d6CKxP8NXI4cTrXHxvLTO0UwvK0X7a3emytiSS_ZGR6GB71ZyyvpFgJ_r3GZF21xhp_dnwcqfMf3Mbke_--8Oj9KF6-RzHOv4Qz-PnR6q7UW9lQicHtT5Zzn3-X_kow1zriUBA.&ias_optm_params=ZnI9ZmFsc2UmYWR0PXZlcnlMb3cmYWxjPXZlcnlMb3cmZGxtPXZlcnlMb3cmZHJnPXZlcnlMb3cmaGF0PXZlcnlMb3cmb2ZmPXZlcnlMb3cmdmlvPWxvdyZpZD0wNzNlMDAzNi05Yjk5LTExZWYtYTY4Mi03NmJlNzIxNTViNzMmaWFzLWt3PUlBU18zMDExOTAyX1BHJmlhcy1rdz1JQVNfMTUwNjgyOF9QRyZpYXMta3c9SUFTXzE1MDYxMjNfUEcmaWFzLWt3PUlBU18xNTEzNzQxX1BHJmlhcy1rdz1JQVNfMTUxMDI4NV9QRyZpYXMta3c9SUFTXzE1MTI3OTBfUEcmaWFzLWt3PUlBU18xNTAwOTAzX1BHJmlhcy1rdz1JQVNfMTUxMTM3NV9QRyZpYXMta3c9SUFTXzMwMDY2MzdfUEcmaWFzLWt3PUlBU18xNTAwOTAyX1BH\n      Jmlhcy1rdz1JQVNfMTUxMTM3N19QRyZpYXMta3c9SUFTXzMwMTAyMzlfUEc%3D&_fw_ar=0&_fw_cookie_consent=1&protocol=ssl&appView=web&_fw_vcid2=umw8c08_7344842640395204573&zwmc=3886944087656341862&ifyr=LTGN3NWQ-K-79MO&goiz=58e9fc15bd0b43d8a0a01db96357579b&kfyn=4DA7EF9B-02A1-485B-864A-00210369F81D&vcid=dbee31d3-e9a4-4884-a8cb-f4110eeb7b83&wmuk=dbee31d3-e9a4-4884-a8cb-f4110eeb7b83&app_csid=cnn.com_main_homepage&yo.av=3&yo.pdt=sync&yo.lpa=dur&yo.aas=true&yo.t.jt=1000&yo.t.pr=1000&yo.me=true&yo.ap=https://vod-media-aka.warnermediacdn.com&yo.po=-4&yo.up=https://live-media-fly.warnermediacdn.com&vip=163.116.140.164&yo.eb.fb=aHR0cHM6Ly9saXZlLW1lZGlhLWZseS53YXJuZXJtZWRpYWNkbi5jb20vY21hZi9saXZlLzIwMjg3MTUvY25uZmFzdC1kb21lc3RpYy9tYXN0ZXJfZGUubTN1OA==",
+          "x-r-cert-startdate" : "NotChecked",
+          "x-r-cert-revoked" : "NotChecked",
+          "x-cs-ssl-engine-action" : "Allow",
+          "s-ip" : "23.192.228.75",
+          "bytes" : "5635",
+          "x-r-cert-issuer-cn" : "NotChecked",
+          "x-r-cert-self-signed" : "NotChecked",
+          "x-sr-ssl-client-certificate-error" : "NotChecked",
+          "x-r-cert-untrusted-root" : "NotChecked",
+          "x-ssl-bypass" : "No",
+          "time" : "17:18:22",
+          "c-ip" : "10.60.4.44"
+        }
+      tags:
+        - "source:LOGS_SOURCE"

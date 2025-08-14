@@ -1,0 +1,425 @@
+id: mac-audit-logs
+metric_id: mac-audit-logs
+backend_only: false
+facets:
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - groups:
+      - Web Access
+    name: Destination IP
+    path: network.destination.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Destination Port
+    path: network.destination.port
+    source: log
+  - groups:
+      - Geoip
+    name: Destination City Name
+    path: network.destination.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Continent Code
+    path: network.destination.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Continent Name
+    path: network.destination.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Country ISO Code
+    path: network.destination.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Country Name
+    path: network.destination.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Subdivision ISO Code
+    path: network.destination.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Subdivision Name
+    path: network.destination.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Destination IP
+    path: network.destination.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Destination Port
+    path: network.destination.port
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+pipeline:
+  type: pipeline
+  name: Mac Audit Logs
+  enabled: true
+  filter:
+    query: source:mac-audit-logs
+  processors:
+    - type: grok-parser
+      name: Parse Mac Audit logs
+      enabled: true
+      source: message
+      samples:
+        - <record version="11" event="AUE_CLOSE" modifier="0" time="Tue Mar 25
+          17:50:51 2025" msec=" + 151 msec" ><argument arg-num="2" value="0x2c"
+          desc="fd" /><subject audit-uid="it" uid="root" gid="wheel" ruid="root"
+          rgid="wheel" pid="3673" sid="100003" tid="50331650 0.0.0.0" /><return
+          errval="success" retval="0" /><identity signer-type="0"
+          signing-id="agent" signing-id-truncated="no" team-id="JKFCB4CN7C"
+          team-id-truncated="no"
+          cdhash="0x8aff671c29041c7960994cf4f1475a8c717671d4" /></record>
+      grok:
+        supportRules: ""
+        matchRules: common_rule %{data::xml}
+    - type: grok-parser
+      name: Parsing `record.return.errval` attribute
+      enabled: true
+      source: record.return.errval
+      samples:
+        - "failure : Resource temporarily unavailable"
+        - success
+      grok:
+        supportRules: _space %{regex("[\\s]*")}
+        matchRules: common_rule %{word:result}%{_space}(:%{_space}%{data:reason})?
+    - type: grok-parser
+      name: Parsing `record.subject.tid` attribute
+      enabled: true
+      source: record.subject.tid
+      samples:
+        - 50331650 0.0.0.0
+      grok:
+        supportRules: _space %{regex("[\\s]*")}
+        matchRules: parse_subject_tid_rule
+          %{word:device-id}%{_space}%{ip:network.client.ip}
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: attribute-remapper
+      name: Map `record.subject.ruid` to `usr.name`
+      enabled: true
+      sources:
+        - record.subject.ruid
+      sourceType: attribute
+      target: usr.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `record.socket-inet.addr`, `record.socket-inet6.addr` to
+        `network.destination.ip`
+      enabled: true
+      sources:
+        - record.socket-inet.addr
+        - record.socket-inet6.addr
+      sourceType: attribute
+      target: network.destination.ip
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `record.socket-inet.port`, `record.socket-inet6.port` to
+        `network.destination.port`
+      enabled: true
+      sources:
+        - record.socket-inet.port
+        - record.socket-inet6.port
+      sourceType: attribute
+      target: network.destination.port
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: category-processor
+      name: Categorize the event types
+      enabled: true
+      categories:
+        - filter:
+            query: "@record.event:(AUE_DARWIN_auth_user OR AUE_DARWIN_ssconn OR
+              AUE_DARWIN_ssauthorize OR AUE_DARWIN_ssauthint OR AUE_auth_user OR
+              AUE_ssconn OR AUE_ssauthorize OR AUE_ssauthint OR AUE_sudo OR
+              AUE_ssauthmech)"
+          name: Authentication and Authorization
+        - filter:
+            query: "@record.event:(AUE_UMOUNT OR AUE_ACCT OR AUE_REBOOT OR AUE_SWAPON OR
+              AUE_SETHOSTNAME OR AUE_SETTIMEOFDAY OR AUE_ADJTIME OR AUE_NFS_SVC
+              OR AUE_UNMOUNT OR AUE_ASYNC_DAEMON OR AUE_NFS_GETFH OR
+              AUE_SETDOMAINNAME OR AUE_QUOTACTL OR AUE_EXPORTFS OR AUE_MOUNT OR
+              AUE_BSMSYS OR AUE_RFSSYS OR AUE_ASYNC_DAEMON_EXIT OR
+              AUE_NFSSVC_EXIT OR AUE_GETAUID OR AUE_SETAUID OR AUE_GETAUDIT OR
+              AUE_SETAUDIT OR AUE_GETUSERAUDIT OR AUE_SETUSERAUDIT OR
+              AUE_AUDITSVC OR AUE_AUDITUSER OR AUE_AUDITON OR
+              AUE_AUDITON_GTERMID OR AUE_AUDITON_STERMID OR AUE_AUDITON_GPOLICY
+              OR AUE_AUDITON_SPOLICY OR AUE_AUDITON_GESTATE OR
+              AUE_AUDITON_SESTATE OR AUE_AUDITON_GQCTRL OR AUE_AUDITON_SQCTRL OR
+              AUE_GETKERNSTATE OR AUE_SETKERNSTATE OR AUE_GETPORTAUDIT OR
+              AUE_AUDITSTAT OR AUE_ENTERPROM OR AUE_EXITPROM OR AUE_NFS OR
+              AUE_STIME OR AUE_AUDITON_GETKMASK OR AUE_AUDITON_SETKMASK OR
+              AUE_AUDITON_GETCWD OR AUE_AUDITON_GETCAR OR AUE_AUDITON_GETSTAT OR
+              AUE_AUDITON_SETSTAT OR AUE_AUDITON_SETUMASK OR
+              AUE_AUDITON_SETSMASK OR AUE_AUDITON_GETCOND OR AUE_AUDITON_SETCOND
+              OR AUE_AUDITON_GETCLASS OR AUE_AUDITON_SETCLASS OR AUE_UTSSYS OR
+              AUE_SYSINFO OR AUE_MODLOAD OR AUE_MODUNLOAD OR AUE_MODCONFIG OR
+              AUE_MODADDMAJ OR AUE_P_ONLINE OR AUE_PROCESSOR_BIND OR
+              AUE_INST_SYNC OR AUE_SETAUDIT_ADDR OR AUE_GETAUDIT_ADDR OR
+              AUE_UMOUNT2 OR AUE_CLOCK_SETTIME OR AUE_NTP_ADJTIME OR
+              AUE_MODDEVPLCY OR AUE_MODADDPRIV OR AUE_CRYPTOADM OR
+              AUE_CONFIGKSSL OR AUE_PF_POLICY_ADDRULE OR AUE_PF_POLICY_DELRULE
+              OR AUE_PF_POLICY_CLONE OR AUE_PF_POLICY_FLIP OR
+              AUE_PF_POLICY_FLUSH OR AUE_PF_POLICY_ALGS OR AUE_DARWIN_REBOOT OR
+              AUE_DARWIN_SETTIMEOFDAY OR AUE_DARWIN_NFSSVC OR
+              AUE_DARWIN_QUOTACTL OR AUE_DARWIN_SYSCTL OR AUE_DARWIN_AUDITCTL OR
+              AUE_DARWIN_SWAPOFF OR AUE_AUDITCTL OR AUE_SWAPOFF OR AUE_NMOUNT OR
+              AUE_BDFLUSH OR AUE_SCHED_GETSCHEDULER OR AUE_SCHED_SETSCHEDULER OR
+              AUE_SCHED_GETPARAM OR AUE_SCHED_SETPARAM OR
+              AUE_SCHED_GET_PRIORITY_MAX OR AUE_SCHED_GET_PRIORITY_MIN OR
+              AUE_SCHED_RR_GET_INTERVAL OR AUE_KENV OR AUE_JAIL_ATTACH OR
+              AUE_SYSCTL_WRITE OR AUE_IOPERM OR AUE_IOPL OR AUE_MAC_SYSCALL OR
+              AUE_MAC_MOUNT OR AUE_at_create OR AUE_at_delete OR AUE_cron_invoke
+              OR AUE_crontab_create OR AUE_crontab_delete OR AUE_halt OR
+              AUE_reboot OR AUE_shutdown OR AUE_poweroff OR AUE_crontab_mod OR
+              AUE_prof_cmd OR AUE_filesystem_add OR AUE_filesystem_delete OR
+              AUE_filesystem_modify OR AUE_create_user OR AUE_modify_user OR
+              AUE_delete_user OR AUE_disable_user OR AUE_enable_user OR
+              AUE_DARWIN_audit_startup OR AUE_DARWIN_audit_shutdown OR
+              AUE_DARWIN_sudo OR AUE_DARWIN_modify_password OR
+              AUE_DARWIN_create_group OR AUE_DARWIN_delete_group OR
+              AUE_DARWIN_modify_group OR AUE_DARWIN_add_to_group OR
+              AUE_DARWIN_remove_from_group OR AUE_audit_startup OR
+              AUE_audit_shutdown OR AUE_modify_password OR AUE_create_group OR
+              AUE_delete_group OR AUE_modify_group OR AUE_add_to_group OR
+              AUE_remove_from_group OR AUE_calife OR AUE_audit_recovery)"
+          name: Administrative
+        - filter:
+            query: "@record.event:(AUE_CONNECT OR AUE_ACCEPT OR AUE_BIND OR AUE_SETSOCKOPT
+              OR AUE_SHUTDOWN OR AUE_ONESIDE OR AUE_SOCKET OR AUE_SENDTO OR
+              AUE_SOCKETPAIR OR AUE_SEND OR AUE_SENDMSG OR AUE_RECV OR
+              AUE_RECVMSG OR AUE_RECVFROM OR AUE_PUTMSG OR AUE_GETMSG OR
+              AUE_PUTPMSG OR AUE_GETPMSG OR AUE_SOCKACCEPT OR AUE_SOCKCONNECT OR
+              AUE_SOCKSEND OR AUE_SOCKRECEIVE OR AUE_SOCKCONFIG OR
+              AUE_DARWIN_SOCKETPAIR OR AUE_SENDFILE OR AUE_LISTEN OR AUE_BINDAT
+              OR AUE_CONNECTAT OR AUE_SETFIB OR AUE_SCTP_PEELOFF OR
+              AUE_SCTP_GENERIC_SENDMSG OR AUE_SCTP_GENERIC_RECVMSG OR
+              AUE_SCTP_GENERIC_SENDMSG_IOV)"
+          name: Network
+        - filter:
+            query: "@record.event:AUE_IOCTL"
+          name: IOCTL
+        - filter:
+            query: "@record.event:(AUE_SEMSYS OR AUE_MSGSYS OR AUE_SHMSYS OR AUE_MSGCTL OR
+              AUE_MSGCTL_RMID OR AUE_MSGCTL_SET OR AUE_MSGCTL_STAT OR AUE_MSGGET
+              OR AUE_MSGRCV OR AUE_MSGSND OR AUE_SHMCTL OR AUE_SHMCTL_RMID OR
+              AUE_SHMCTL_SET OR AUE_SHMCTL_STAT OR AUE_SHMGET OR AUE_SHMAT OR
+              AUE_SHMDT OR AUE_SEMCTL OR AUE_SEMCTL_RMID OR AUE_SEMCTL_SET OR
+              AUE_SEMCTL_STAT OR AUE_SEMCTL_GETNCNT OR AUE_SEMCTL_GETPID OR
+              AUE_SEMCTL_GETVAL OR AUE_SEMCTL_GETALL OR AUE_SEMCTL_GETZCNT OR
+              AUE_SEMCTL_SETVAL OR AUE_SEMCTL_SETALL OR AUE_SEMGET OR AUE_SEMOP
+              OR AUE_MSGGETL OR AUE_MSGRCVL OR AUE_MSGSNDL OR AUE_SEMGETL OR
+              AUE_SHMGETL OR AUE_PIPE OR AUE_DOORFS_DOOR_CALL OR
+              AUE_DOORFS_DOOR_RETURN OR AUE_DOORFS_DOOR_CREATE OR
+              AUE_DOORFS_DOOR_REVOKE OR AUE_DOORFS_DOOR_INFO OR
+              AUE_DOORFS_DOOR_CRED OR AUE_DOORFS_DOOR_BIND OR
+              AUE_DOORFS_DOOR_UNBIND OR AUE_DARWIN_SEMCONFIG OR
+              AUE_DARWIN_SEMOPEN OR AUE_DARWIN_SEMCLOSE OR AUE_DARWIN_SEMUNLINK
+              OR AUE_DARWIN_SHMOPEN OR AUE_DARWIN_SHMUNLINK OR AUE_SEMCONFIG OR
+              AUE_SEMOPEN OR AUE_SEMCLOSE OR AUE_SEMUNLINK OR AUE_SHMOPEN OR
+              AUE_SHMUNLINK OR AUE_MQ_OPEN OR AUE_MQ_SETATTR OR
+              AUE_MQ_TIMEDRECEIVE OR AUE_MQ_TIMEDSEND OR AUE_MQ_NOTIFY OR
+              AUE_MQ_UNLINK OR AUE_POSIX_OPENPT OR AUE_SEMTIMEDWAIT OR
+              AUE_SEMDESTROY OR AUE_SEMGETVALUE OR AUE_SEMINIT OR AUE_SEMPOST OR
+              AUE_SEMTRYWAIT OR AUE_SEMWAIT OR AUE_FGETUUID OR AUE_GETUUID OR
+              AUE_LGETUUID OR AUE_SHMRENAME)"
+          name: IPC
+        - filter:
+            query: "@record.event:(AUE_EXIT OR AUE_FORK OR AUE_EXEC OR AUE_CHDIR OR AUE_KILL
+              OR AUE_EXECVE OR AUE_CHROOT OR AUE_VFORK OR AUE_SETGROUPS OR
+              AUE_SETPGRP OR AUE_SETPRIORITY OR AUE_VTRACE OR AUE_SETREUID OR
+              AUE_SETREGID OR AUE_SETRLIMIT OR AUE_KILLPG OR AUE_FCHDIR OR
+              AUE_FCHROOT OR AUE_SETUID OR AUE_NICE OR AUE_OSETPGRP OR
+              AUE_SETGID OR AUE_PRIOCNTLSYS OR AUE_SETEGID OR AUE_SETEUID OR
+              AUE_FORK1 OR AUE_SETPPRIV OR AUE_DARWIN_PTRACE OR
+              AUE_DARWIN_PROFILE OR AUE_DARWIN_KTRACE OR AUE_DARWIN_SETLOGIN OR
+              AUE_DARWIN_UMASK OR AUE_DARWIN_SETPRIORITY OR AUE_DARWIN_SETSID OR
+              AUE_DARWIN_SETPRIVEXEC OR AUE_DARWIN_ADDPROFILE OR
+              AUE_DARWIN_KDEBUGTRACE OR AUE_DARWIN_MLOCK OR AUE_DARWIN_MUNLOCK
+              OR AUE_DARWIN_MINHERIT OR AUE_DARWIN_PTHREADKILL OR
+              AUE_DARWIN_PTHREADSIGMASK OR AUE_DARWIN_RFORK OR
+              AUE_DARWIN_INITPROCESS OR AUE_DARWIN_TASKFORPID OR
+              AUE_DARWIN_PIDFORTASK OR AUE_PTRACE OR AUE_PROFILE OR AUE_KTRACE
+              OR AUE_SETLOGIN OR AUE_UMASK OR AUE_SETSID OR AUE_SETPRIVEXEC OR
+              AUE_ADDPROFILE OR AUE_KDEBUGTRACE OR AUE_MLOCK OR AUE_MUNLOCK OR
+              AUE_MINHERIT OR AUE_PTHREADKILL OR AUE_PTHREADSIGMASK OR AUE_RFORK
+              OR AUE_INITPROCESS OR AUE_TASKFORPID OR AUE_PIDFORTASK OR
+              AUE_GETRESUID OR AUE_SETRESUID OR AUE_GETRESGID OR AUE_SETRESGID
+              OR AUE_WAIT4 OR AUE_JAIL OR AUE_PERSONALITY OR AUE_PRCTL OR
+              AUE_GETCWD OR AUE_CAPGET OR AUE_CAPSET OR AUE_PIVOT_ROOT OR
+              AUE_RTPRIO OR AUE_VM86 OR AUE_MAC_GET_PROC OR AUE_MAC_SET_PROC OR
+              AUE_MAC_GET_PID OR AUE_MAC_EXECVE OR AUE_MLOCKALL OR
+              AUE_MUNLOCKALL OR AUE_FEXECVE OR AUE_MAC_GET_LCID OR
+              AUE_MAC_GET_LCTX OR AUE_MAC_SET_LCTX OR AUE_GETLCID OR AUE_SETLCID
+              OR AUE_TASKNAMEFORPID OR AUE_UMASK_EXTENDED OR AUE_CAP_ENTER OR
+              AUE_CAP_GETMODE OR AUE_POSIX_SPAWN OR AUE_PDFORK OR AUE_PDKILL OR
+              AUE_PDGETPID OR AUE_PDWAIT OR AUE_WAIT6 OR AUE_AIO_MLOCK OR
+              AUE_PROCCTL OR AUE_THR_CREATE OR AUE_THR_NEW OR AUE_THR_EXIT OR
+              AUE_THR_KILL OR AUE_THR_KILL2 OR AUE_SETUGID OR AUE_JAIL_GET OR
+              AUE_JAIL_SET OR AUE_JAIL_REMOVE OR AUE_GETLOGINCLASS OR
+              AUE_SETLOGINCLASS OR AUE_ABORT2 OR AUE_EXECVEAT)"
+          name: Process
+        - filter:
+            query: "@record.event:(AUE_EXEC OR AUE_EXECVE OR AUE_MAC_EXECVE OR AUE_FEXECVE
+              OR AUE_EXECVEAT)"
+          name: Exec
+        - filter:
+            query: "@record.event:(AUE_SYSTEMBOOT OR AUE_inetd_connect OR AUE_mountd_mount
+              OR AUE_mountd_umount)"
+          name: Non Attributable
+        - filter:
+            query: "@record.event:(AUE_AUDIT OR AUE_MEMCNTL OR AUE_BRANDSYS OR
+              AUE_DARWIN_SETPRIORITY OR AUE_DARWIN_RESETSHFILE OR
+              AUE_DARWIN_NEWSYSTEMSHREG OR AUE_DARWIN_SYSCTL_NONADMIN OR
+              AUE_SYSCTL OR AUE_RESETSHFILE OR AUE_NEWSYSTEMSHREG OR
+              AUE_SYSCTL_NONADMIN OR AUE_SETFSUID OR AUE_SETFSGID OR AUE_SYSARCH
+              OR AUE_FSGETPATH OR AUE_allocate_succ OR AUE_allocate_fail OR
+              AUE_deallocate_succ OR AUE_deallocate_fail OR AUE_listdevice_succ
+              OR AUE_listdevice_fail)"
+          name: Other
+        - filter:
+            query: "@record.event:(AUE_login OR AUE_logout OR AUE_telnet OR AUE_rlogin OR
+              AUE_rshd OR AUE_su OR AUE_rexecd OR AUE_passwd OR AUE_rexd OR
+              AUE_ftpd OR AUE_init OR AUE_ftpd_logout OR AUE_ssh OR
+              AUE_role_login OR AUE_newgrp_login OR AUE_admin_authenticate OR
+              AUE_DARWIN_lw_login OR AUE_DARWIN_lw_logout OR AUE_openssh OR
+              AUE_lw_login OR AUE_lw_logout)"
+          name: Login/Logout
+        - filter:
+            query: "@record.event:(AUE_krb5kdc_as_req OR AUE_krb5kdc_tgs_req OR
+              AUE_krb5kdc_tgs_req_2ndtktmm OR AUE_krb5kdc_tgs_req_alt_tgt)"
+          name: Application
+        - filter:
+            query: "@record.event:(AUE_ACCESS OR AUE_ACCESS_EXTENDED OR AUE_ACLSET OR
+              AUE_ACL_CHECK_FD OR AUE_ACL_CHECK_FILE OR AUE_ACL_CHECK_LINK OR
+              AUE_ACL_DELETE_FD OR AUE_ACL_DELETE_FILE OR AUE_ACL_DELETE_LINK OR
+              AUE_ACL_GET_FD OR AUE_ACL_GET_FILE OR AUE_ACL_GET_LINK OR
+              AUE_ACL_SET_FD OR AUE_ACL_SET_FILE OR AUE_ACL_SET_LINK OR
+              AUE_CAP_FCNTLS_GET OR AUE_CAP_FCNTLS_LIMIT OR AUE_CAP_IOCTLS_GET
+              OR AUE_CAP_IOCTLS_LIMIT OR AUE_CAP_NEW OR AUE_CAP_RIGHTS_GET OR
+              AUE_CAP_RIGHTS_LIMIT OR AUE_CHFLAGS OR AUE_CHFLAGSAT OR AUE_CHMOD
+              OR AUE_CHMOD_EXTENDED OR AUE_CHOWN OR AUE_COPYFILE OR AUE_CORE OR
+              AUE_CREAT OR AUE_DARWIN_CHFLAGS OR AUE_DARWIN_COPYFILE OR
+              AUE_DARWIN_EXCHANGEDATA OR AUE_DARWIN_FCHFLAGS OR AUE_DARWIN_FLOCK
+              OR AUE_DARWIN_FPATHCONF OR AUE_DARWIN_FSTAT OR
+              AUE_DARWIN_FTRUNCATE OR AUE_DARWIN_FUTIMES OR
+              AUE_DARWIN_GETATTRLIST OR AUE_DARWIN_GETDIRENTRIESATTR OR
+              AUE_DARWIN_GETFH OR AUE_DARWIN_GETFSSTAT OR AUE_DARWIN_LCHMOD OR
+              AUE_DARWIN_LOADSHFILE OR AUE_DARWIN_MAPFD OR AUE_DARWIN_MKFIFO OR
+              AUE_DARWIN_MPROTECT OR AUE_DARWIN_SEARCHFS OR
+              AUE_DARWIN_SETATTRLIST OR AUE_DARWIN_TRUNCATE OR
+              AUE_DARWIN_UNDELETE OR AUE_DARWIN_revoke_obj OR AUE_EACCESS OR
+              AUE_EXCHANGEDATA OR AUE_EXTATTRCTL OR AUE_EXTATTR_DELETE_FD OR
+              AUE_EXTATTR_DELETE_FILE OR AUE_EXTATTR_DELETE_LINK OR
+              AUE_EXTATTR_GET_FD OR AUE_EXTATTR_GET_FILE OR AUE_EXTATTR_GET_LINK
+              OR AUE_EXTATTR_LIST_FD OR AUE_EXTATTR_LIST_FILE OR
+              AUE_EXTATTR_LIST_LINK OR AUE_EXTATTR_SET_FD OR
+              AUE_EXTATTR_SET_FILE OR AUE_EXTATTR_SET_LINK OR AUE_FACCESSAT OR
+              AUE_FACLSET OR AUE_FCHFLAGS OR AUE_FCHMOD OR AUE_FCHMODAT OR
+              AUE_FCHMOD_EXTENDED OR AUE_FCHOWN OR AUE_FCHOWNAT OR AUE_FCNTL OR
+              AUE_FFSCTL OR AUE_FHOPEN OR AUE_FHSTAT OR AUE_FHSTATFS OR
+              AUE_FLOCK OR AUE_FPATHCONF OR AUE_FSCTL OR AUE_FSTAT OR
+              AUE_FSTATAT OR AUE_FSTATFS OR AUE_FSTAT_EXTENDED OR AUE_FSYNC OR
+              AUE_FTRUNCATE OR AUE_FUTIMES OR AUE_FUTIMESAT OR AUE_GETATTRLIST
+              OR AUE_GETDIRENTRIESATTR OR AUE_GETFSSTAT OR AUE_GETPATH_FROMADDR
+              OR AUE_GETPATH_FROMFD OR AUE_LCHFLAGS OR AUE_LCHMOD OR AUE_LCHOWN
+              OR AUE_LGETFH OR AUE_LINK OR AUE_LINKAT OR AUE_LOADSHFILE OR
+              AUE_LPATHCONF OR AUE_LSTAT OR AUE_LSTAT_EXTENDED OR AUE_LUTIMES OR
+              AUE_LXSTAT OR AUE_MAC_GETFSSTAT OR AUE_MAC_GET_FD OR
+              AUE_MAC_GET_FILE OR AUE_MAC_GET_LINK OR AUE_MAC_GET_MOUNT OR
+              AUE_MAC_SET_FD OR AUE_MAC_SET_FILE OR AUE_MAC_SET_LINK OR
+              AUE_MAPFD OR AUE_MKDIR OR AUE_MKDIRAT OR AUE_MKDIR_EXTENDED OR
+              AUE_MKFIFO OR AUE_MKFIFOAT OR AUE_MKFIFO_EXTENDED OR AUE_MKNOD OR
+              AUE_MKNODAT OR AUE_MPROTECT OR AUE_OPEN OR AUE_OPENAT OR
+              AUE_OPENAT_R OR AUE_OPENAT_RC OR AUE_OPENAT_RT OR AUE_OPENAT_RTC
+              OR AUE_OPENAT_RW OR AUE_OPENAT_RWC OR AUE_OPENAT_RWT OR
+              AUE_OPENAT_RWTC OR AUE_OPENAT_W OR AUE_OPENAT_WC OR AUE_OPENAT_WT
+              OR AUE_OPENAT_WTC OR AUE_OPENBSM_FSTAT OR AUE_OPEN_EXTENDED OR
+              AUE_OPEN_EXTENDED_R OR AUE_OPEN_EXTENDED_RC OR
+              AUE_OPEN_EXTENDED_RT OR AUE_OPEN_EXTENDED_RTC OR
+              AUE_OPEN_EXTENDED_RW OR AUE_OPEN_EXTENDED_RWC OR
+              AUE_OPEN_EXTENDED_RWT OR AUE_OPEN_EXTENDED_RWTC OR
+              AUE_OPEN_EXTENDED_W OR AUE_OPEN_EXTENDED_WC OR
+              AUE_OPEN_EXTENDED_WT OR AUE_OPEN_EXTENDED_WTC OR AUE_OPEN_R OR
+              AUE_OPEN_RC OR AUE_OPEN_RT OR AUE_OPEN_RTC OR AUE_OPEN_RW OR
+              AUE_OPEN_RWC OR AUE_OPEN_RWT OR AUE_OPEN_RWTC OR AUE_OPEN_W OR
+              AUE_OPEN_WC OR AUE_OPEN_WT OR AUE_OPEN_WTC OR AUE_OSTAT OR
+              AUE_PATHCONF OR AUE_PORTFS OR AUE_READLINK OR AUE_READLINKAT OR
+              AUE_REALPATHAT OR AUE_RENAME OR AUE_RENAMEAT OR AUE_RMDIR OR
+              AUE_SEARCHFS OR AUE_SETATTRLIST OR AUE_STAT OR AUE_STATFS OR
+              AUE_STATVFS OR AUE_STAT_EXTENDED OR AUE_SYMLINK OR AUE_SYMLINKAT
+              OR AUE_TRUNCATE OR AUE_UNDELETE OR AUE_UNLINK OR AUE_UNLINKAT OR
+              AUE_USELIB OR AUE_UTIME OR AUE_UTIMES OR AUE_XMKNOD OR AUE_XSTAT
+              OR AUE_revoke_obj OR AUE_CLOSE OR AUE_REVOKE OR AUE_MUNMAP OR
+              AUE_DARWIN_REVOKE OR AUE_OPENBSM_REVOKE OR AUE_CLOSEFROM OR
+              AUE_CLOSERANGE)"
+          name: File Access
+      target: event-category
+    - type: pipeline
+      name: Parsing Network logs
+      enabled: true
+      filter:
+        query: "@event-category:Network"
+      processors:
+        - type: string-builder-processor
+          name: Define default value for `action` field
+          enabled: true
+          template: allowed
+          target: action
+          replaceMissing: false
+        - type: category-processor
+          name: Categorize Network logs
+          enabled: true
+          categories:
+            - filter:
+                query: '@record.return.errval:(success OR "failure : Operation now in progress"
+                  OR "failure : Socket is already connected")'
+              name: allowed
+            - filter:
+                query: '@record.return.errval:("failure : No route to host" OR "failure :
+                  Resource busy" OR "failure: Unknown error: 250" OR "failure :
+                  Network is down" OR "failure : Interrupted system call" OR
+                  "failure : Operation timed out")'
+              name: failed
+            - filter:
+                query: '@record.return.errval:("failure : Operation not permitted" OR "failure :
+                  Connection refused")'
+              name: blocked
+          target: action
+    - type: geo-ip-parser
+      name: Extract Geolocation information from Destination IP
+      enabled: true
+      sources:
+        - network.destination.ip
+      target: network.destination.geoip
+      ip_processing_behavior: do-nothing

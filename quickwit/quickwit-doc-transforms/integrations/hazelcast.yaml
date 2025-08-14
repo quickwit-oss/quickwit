@@ -1,0 +1,71 @@
+id: hazelcast
+metric_id: hazelcast
+backend_only: false
+facets:
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+  - groups:
+      - Source Code
+    name: Thread Name
+    path: logger.thread_name
+    source: log
+  - groups:
+      - Hazelcast
+    name: Hazelcast Cluster Name
+    path: hazelcast.cluster
+    source: log
+  - groups:
+      - Hazelcast
+    name: Hazelcast Host
+    path: hazelcast.host
+    source: log
+  - groups:
+      - Hazelcast
+    name: Hazelcast Version
+    path: hazelcast.version
+    source: log
+pipeline:
+  type: pipeline
+  name: Hazelcast
+  enabled: true
+  filter:
+    query: source:hazelcast
+  processors:
+    - type: grok-parser
+      name: Parsing Hazelcast logs
+      enabled: true
+      source: message
+      samples:
+        - 2020-03-17 03:13:52 [main] INFO AbstractConfigLocator:69 - Loading 'hazelcast-default.xml' from the classpath.
+        - 2020-03-17 03:13:54 [main] INFO AddressPicker:176 - [LOCAL] [dev] [4.0] Prefer IPv4 stack is true, prefer IPv6 addresses is false
+        - 2020-03-17 03:13:54 [main] INFO BackpressureRegulator - [172.28.0.3]:5701 [dev] [4.0] Backpressure is disabled
+      grok:
+        supportRules: |
+          _date %{date("yyyy-MM-dd HH:mm:ss"):timestamp}
+          _thread_name \[%{notSpace:logger.thread_name}\]
+          _level %{word:level}
+          _logger_name %{regex("[^:]+"):logger.name}(:%{integer})?
+          _host \[%{notSpace:hazelcast.host}\](:%{integer})?
+          _cluster \[%{regex("[^]]+"):hazelcast.cluster}\]
+          _version \[%{notSpace:hazelcast.version}\]
+          _message %{regex("[\\S\\s]*"):message}
+        matchRules: |
+          hazelcast %{_date} %{_thread_name} %{_level} +%{_logger_name} - (%{_host} %{_cluster} %{_version} ?)?%{_message}
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message

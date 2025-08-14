@@ -1,0 +1,42 @@
+id: "flink"
+tests:
+ -
+  sample: "2020-02-03 18:43:07,009 WARN  org.apache.kafka.clients.producer.ProducerConfig              - The configuration 'group.id' was supplied but isn't a known config."
+  result:
+    custom:
+      level: "WARN"
+      logger:
+        name: "org.apache.kafka.clients.producer.ProducerConfig"
+      timestamp: 1580755387009
+    message: "The configuration 'group.id' was supplied but isn't a known config."
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1580755387009
+ -
+  sample: "2020-02-03 18:43:07,389 INFO  org.apache.kafka.common.utils.AppInfoParser                   - Kafka version: 2.2.0"
+  result:
+    custom:
+      level: "INFO"
+      logger:
+        name: "org.apache.kafka.common.utils.AppInfoParser"
+      timestamp: 1580755387389
+    message: "Kafka version: 2.2.0"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1580755387389
+ -
+  sample: "2020-02-03 18:43:12,251 INFO  org.apache.flink.streaming.api.functions.sink.TwoPhaseCommitSinkFunction  - FlinkKafkaProducer 1/2 - checkpoint 88 complete, committing transaction TransactionHolder{handle=KafkaTransactionState [transactionalId=null, producerId=-1, epoch=-1], transactionStartTime=1580755391235} from checkpoint 88"
+  result:
+    custom:
+      level: "INFO"
+      logger:
+        name: "org.apache.flink.streaming.api.functions.sink.TwoPhaseCommitSinkFunction"
+      timestamp: 1580755392251
+    message: "FlinkKafkaProducer 1/2 - checkpoint 88 complete, committing transaction TransactionHolder{handle=KafkaTransactionState [transactionalId=null, producerId=-1, epoch=-1], transactionStartTime=1580755391235} from checkpoint 88"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1580755392251
+

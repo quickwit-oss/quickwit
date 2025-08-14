@@ -1,0 +1,102 @@
+id: ray
+backend_only: false
+facets:
+  - groups:
+      - Source Code
+    name: Thread Name
+    path: logger.thread_name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Client Port
+    path: network.client.port
+    source: log
+  - groups:
+      - Ray
+    name: Component name
+    path: ray.component.name
+    source: log
+  - groups:
+      - Database
+    name: Redis PID
+    path: pid
+    source: log
+  - groups:
+      - Ray
+    name: Worker token
+    path: ray.worker.token
+    source: log
+  - groups:
+      - Ray
+    name: Worker Process ID
+    path: ray.worker.pid
+    source: log
+  - groups:
+      - Ray
+    name: Server name
+    path: ray.server.name
+    source: log
+pipeline:
+  type: pipeline
+  name: Ray
+  enabled: true
+  filter:
+    query: source:ray
+  processors:
+    - type: grok-parser
+      name: Parsing Ray logs
+      enabled: true
+      source: message
+      samples:
+        - '[2023-08-29 08:30:56,041 W 325 362] (python-core-worker-c868e54d820f1c7753223de1a1c88a1e805e2478ddb1453efa390d55) reference_count.cc:396: Tried to decrease ref count for nonexistent object ID: 685e172318b7aa3448435dc2817a544720a5639a0100000003000000'
+        - '[2023-08-30 01:05:18,830 I 91 91] (raylet) worker_pool.cc:489: Started worker process with pid 22736, the token is 234'
+        - "2023-06-01 09:15:34,601\tINFO job_manager.py:408 -- Submitting job with RAY_ADDRESS = 10.0.24.73:6379"
+        - "2023-08-29 08:30:58,303\tINFO (monitor) autoscaler.py:141 -- The autoscaler took 0.0 seconds to fetch the list of non-terminated nodes."
+        - '[2023-08-30 01:05:18,630 I 22661 22704] (python-core-driver-5e000000ffffffffffffffffffffffffffffffffffffffffffffffff) grpc_server.cc:129: driver server started, listening on port 10329.'
+      grok:
+        supportRules: |
+          _date %{date("yyyy-MM-dd HH:mm:ss,SSS", "UTC"):timestamp}
+          _log_level %{notSpace:level}
+          _component_name %{notSpace:component.name}
+          _file_name %{notSpace:file.name}
+          _file_line %{notSpace:file.line}
+          _thread_name %{notSpace:logger.thread_name}
+          _pid %{integer:pid}
+          _worker_pid %{integer:worker.pid}
+          _worker_token %{integer:worker.token}
+          _client_ip %{ipOrHost:network.client.ip}
+          _client_port %{port:network.client.port}
+          _server_name %{notSpace:server.name}
+          _file %{_file_name}:%{_file_line}
+          _component (\(%{_component_name}\)\s+)?
+          _date_and_log_level %{_date}\s+%{_log_level}
+          _default_message %{data}
+          _new_worker_message (Started worker process with pid %{_worker_pid}, the token is %{_worker_token})
+          _driver_started_message (driver server started, listening on port %{_client_port}.)
+          _new_job_message (Submitting job with RAY_ADDRESS = %{_client_ip}:%{_client_port})
+          _server_stopped_message (Specific server %{_server_name} is no longer running, freeing its port %{_client_port})
+          _message (%{_new_worker_message}|%{_driver_started_message}|%{_new_job_message}|%{_server_stopped_message}|%{_default_message})
+        matchRules: |
+          cpp_log \[%{_date_and_log_level}\s+%{_pid}\s+%{_thread_name}\]\s+%{_component}%{_file}\s+%{_message:message}
+          python_log %{_date_and_log_level}\s+%{_component}%{_file}\s+--\s+%{_message:message}
+          catch_all_log %{_message:message}
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level

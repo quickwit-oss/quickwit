@@ -1,0 +1,70 @@
+id: "lambdatest"
+tests:
+ -
+  sample: |-
+    {
+      "test_ended_at" : "2022-04-02 06:24:42",
+      "product" : "Manual App Testing Real Device",
+      "test_url" : "apps.apple.com",
+      "duration_in_secs" : 505,
+      "test_env_os" : "iOS 12.4",
+      "test_env_resolution" : "1920x1080",
+      "test_started_at" : "2022-04-02 06:16:17",
+      "test_env_browser" : "Safari 12",
+      "hostname" : "LambdaTest",
+      "service" : "LambdaTest",
+      "tunnel_used" : 0,
+      "test_env_device" : "iPhone 7 Plus",
+      "id" : "106749034",
+      "test_created_at" : "2022-04-02 06:16:16",
+      "status" : "Manual device test was a success",
+      "test_id" : "opmg2-uzd6r-5gq2j-14p2w"
+    }
+  result:
+    custom:
+      http:
+        url: "apps.apple.com"
+        useragent_details:
+          browser:
+            family: "Safari 12"
+          device:
+            family: "iPhone 7 Plus"
+          os:
+            family: "iOS 12.4"
+      id: "106749034"
+      product: "Manual App Testing Real Device"
+      service: "LambdaTest"
+      status: "Manual device test was a success"
+      syslog:
+        hostname: "LambdaTest"
+      test:
+        duration: 505
+        tunnel_used: 0
+      test_created_at: "2022-04-02 06:16:16"
+      test_ended_at: "2022-04-02 06:24:42"
+      test_env_resolution: "1920x1080"
+      test_id: "opmg2-uzd6r-5gq2j-14p2w"
+      test_started_at: "2022-04-02 06:16:17"
+    message: |-
+      {
+        "test_ended_at" : "2022-04-02 06:24:42",
+        "product" : "Manual App Testing Real Device",
+        "test_url" : "apps.apple.com",
+        "duration_in_secs" : 505,
+        "test_env_os" : "iOS 12.4",
+        "test_env_resolution" : "1920x1080",
+        "test_started_at" : "2022-04-02 06:16:17",
+        "test_env_browser" : "Safari 12",
+        "hostname" : "LambdaTest",
+        "service" : "LambdaTest",
+        "tunnel_used" : 0,
+        "test_env_device" : "iPhone 7 Plus",
+        "id" : "106749034",
+        "test_created_at" : "2022-04-02 06:16:16",
+        "status" : "Manual device test was a success",
+        "test_id" : "opmg2-uzd6r-5gq2j-14p2w"
+      }
+    service: "LambdaTest"
+    tags:
+     - "source:LOGS_SOURCE"
+

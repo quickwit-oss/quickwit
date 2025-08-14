@@ -1,0 +1,68 @@
+id: flink
+metric_id: flink
+backend_only: false
+facets:
+  - groups:
+      - Source Code
+    name: Error Type
+    path: error.kind
+    source: log
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+pipeline:
+  type: pipeline
+  name: Flink
+  enabled: true
+  filter:
+    query: source:flink
+  processors:
+    - type: grok-parser
+      name: Parsing Flink Server logs
+      enabled: true
+      source: message
+      samples:
+        - 2020-02-03 18:43:07,009 WARN  org.apache.kafka.clients.producer.ProducerConfig              - The configuration 'group.id' was supplied but isn't a known config.
+        - 2020-02-03 18:43:12,251 INFO  org.apache.flink.streaming.api.functions.sink.TwoPhaseCommitSinkFunction  - FlinkKafkaProducer 1/2 - checkpoint 88 complete, committing transaction TransactionHolder{handle=KafkaTransactionState [transactionalId=null, producerId=-1, epoch=-1], transactionStartTime=1580755391235} from checkpoint 88
+        - '2020-02-03 18:43:07,389 INFO  org.apache.kafka.common.utils.AppInfoParser                   - Kafka version: 2.2.0'
+      grok:
+        matchRules: |
+          flink %{date("yyyy-MM-dd HH:mm:ss,SSS"):timestamp}\s%{word:level}\s+%{notSpace:logger.name}\s+-\s+%{data:message}((\n|\t)%{data:error.stack})?
+        supportRules: ''
+    - type: grok-parser
+      name: Parsing Stack traces
+      enabled: true
+      source: error.stack
+      grok:
+        supportRules: |
+        matchRules: |
+          error_rule %{notSpace:error.kind}: %{data:error.message}(\n|\t).*
+      samples:
+        - |
+          org.apache.flink.streaming.runtime.tasks.StreamTaskException: Could not instantiate serializer.
+            at org.apache.flink.streaming.api.graph.StreamConfig.getTypeSerializerOut(StreamConfig.java:216) ~[flink-dist_2.12-1.12-SNAPSHOT.jar:1.12-SNAPSHOT]
+            at org.apache.flink.streaming.runtime.tasks.OperatorChain.createStreamOutput(OperatorChain.java:664) ~[flink-dist_2.12-1.12-SNAPSHOT.jar:1.12-SNAPSHOT]
+            at org.apache.flink.streaming.runtime.tasks.OperatorChain.createChainOutputs(OperatorChain.java:250) ~[flink-dist_2.12-1.12-SNAPSHOT.jar:1.12-SNAPSHOT]
+            at org.apache.flink.streaming.runtime.tasks.OperatorChain.<init>(OperatorChain.java:160) ~[flink-dist_2.12-1.12-SNAPSHOT.jar:1.12-SNAPSHOT]
+            at org.apache.flink.streaming.runtime.tasks.StreamTask.beforeInvoke(StreamTask.java:485) ~[flink-dist_2.12-1.12-SNAPSHOT.jar:1.12-SNAPSHOT]
+            at org.apache.flink.streaming.runtime.tasks.StreamTask.invoke(StreamTask.java:533) ~[flink-dist_2.12-1.12-SNAPSHOT.jar:1.12-SNAPSHOT]
+            at org.apache.flink.runtime.taskmanager.Task.doRun(Task.java:722) [flink-dist_2.12-1.12-SNAPSHOT.jar:1.12-SNAPSHOT]
+            at org.apache.flink.runtime.taskmanager.Task.run(Task.java:547) [flink-dist_2.12-1.12-SNAPSHOT.jar:1.12-SNAPSHOT]
+            at java.lang.Thread.run(Unknown Source) [?:?]
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message

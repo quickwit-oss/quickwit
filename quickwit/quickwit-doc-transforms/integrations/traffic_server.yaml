@@ -1,0 +1,99 @@
+id: traffic_server
+metric_id: traffic-server
+backend_only: false
+facets:
+  - groups:
+      - Source Code
+    name: Error Type
+    path: error.kind
+    source: log
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+pipeline:
+  type: pipeline
+  name: Traffic Server
+  enabled: true
+  filter:
+    query: source:traffic_server
+  processors:
+    - type: grok-parser
+      name: Parsing Traffic Server logs
+      enabled: true
+      source: message
+      samples:
+        - '[Mar 8 15:01:40.132] [ET_NET 1] WARNING: disk header different for disk /opt/ats/var/trafficserver/cache.db: clearing the disk'
+        - '[Mar  8 15:01:40.141] [ET_NET 1] DIAG: clearing cache directory /opt/ats/var/trafficserver/cache.db 16384:32766'
+        - '[Mar  8 15:01:40.160] traffic_server NOTE: remap.config finished loading'
+        - |
+          [Mar  8 15:01:40.160] traffic_crashlo ERROR: wrote crash log to /var/tmp/double/ts/log/crash-2021-06-14-122746.log
+          traffic_server: received signal 6 (Aborted)
+          traffic_server - STACK TRACE:
+          /var/tmp/double/ts/bin/traffic_server(_Z19crash_logger_invokeiP9siginfo)[0x786e44]
+          /lib64/libpthread.so.0(+0xf630)[0x2ab9050fb630]
+          /lib64/libc.so.6(gsignal+0x37)[0x2ab905d61387]
+          /lib64/libc.so.6(abort+0x148)[0x2ab905d62a78]
+          /var/jenkins/workspace/autest-github/15874/install/lib/libtscore.so.10(_Z11ink_warningPKcz+0x0)[0x2ab90398ad24]
+          /var/jenkins/workspace/autest-github/15874/install/lib/libtscore.so.10(_Z17ats_base64_encodePKhmPcmPm+0x0)[0x2ab90398692e]
+          /var/tmp/ausb-7939.15874/double/ts/bin/traffic_server(_ZN6HttpSM17state_api_calloutEiPv+0xcea)[0x82cbce]
+          /var/tmp/ausb-7939.15874/double/ts/bin/traffic_server(_ZN6HttpSM12main_handlerEiPv+0x42b)[0x832eab]
+          /var/tmp/ausb-7939.15874/double/ts/bin/traffic_server(_ZN12Continuation11handleEventEiPv+0xc9)[0x78d0a9]
+          /var/tmp/ausb-7939.15874/double/ts/bin/traffic_server[0xad3724]
+          /var/tmp/ausb-7939.15874/double/ts/bin/traffic_server[0xad3fbc]
+          /var/tmp/ausb-7939.15874/double/ts/bin/traffic_server[0xad467c]
+      grok:
+        matchRules: |
+          traffic_server \[(%{date("MMM  d HH:mm:ss.SSS"):timestamp}|%{date("MMM d HH:mm:ss.SSS"):timestamp})\] (\[%{data:logger.name}\]|%{notSpace:logger.name})\s+%{word:level}:\s+%{data:message}((\n|\t)%{data:error.stack})?
+        supportRules: ''
+    - type: grok-parser
+      name: Parsing Stack traces
+      enabled: true
+      source: error.stack
+      grok:
+        supportRules: |
+        matchRules: |
+          error_rule %{notSpace:error.kind}: %{data:error.message}(\n|\t).*
+      samples:
+        - |
+          traffic_server: received signal 6 (Aborted)
+          traffic_server - STACK TRACE:
+          /var/tmp/double/ts/bin/traffic_server(_Z19crash_logger_invokeiP9siginfo)[0x786e44]
+          /lib64/libpthread.so.0(+0xf630)[0x2ab9050fb630]
+          /lib64/libc.so.6(gsignal+0x37)[0x2ab905d61387]
+          /lib64/libc.so.6(abort+0x148)[0x2ab905d62a78]
+          /var/jenkins/workspace/autest-github/15874/install/lib/libtscore.so.10(_Z11ink_warningPKcz+0x0)[0x2ab90398ad24]
+          /var/jenkins/workspace/autest-github/15874/install/lib/libtscore.so.10(_Z17ats_base64_encodePKhmPcmPm+0x0)[0x2ab90398692e]
+          /var/tmp/ausb-7939.15874/double/ts/bin/traffic_server(_ZN6HttpSM17state_api_calloutEiPv+0xcea)[0x82cbce]
+          /var/tmp/ausb-7939.15874/double/ts/bin/traffic_server(_ZN6HttpSM12main_handlerEiPv+0x42b)[0x832eab]
+          /var/tmp/ausb-7939.15874/double/ts/bin/traffic_server(_ZN12Continuation11handleEventEiPv+0xc9)[0x78d0a9]
+          /var/tmp/ausb-7939.15874/double/ts/bin/traffic_server[0xad3724]
+          /var/tmp/ausb-7939.15874/double/ts/bin/traffic_server[0xad3fbc]
+          /var/tmp/ausb-7939.15874/double/ts/bin/traffic_server[0xad467c]
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: category-processor
+      name: Set the severity level
+      enabled: true
+      categories:
+        - filter:
+            query: '@level:"NOTE"'
+          name: NOTICE
+        - filter:
+            query: '@level:"DIAG"'
+          name: INFO
+      target: level
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message

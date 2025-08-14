@@ -1,0 +1,200 @@
+id: cisco-secure-endpoint
+metric_id: cisco-secure-endpoint
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - groups:
+      - Source Code
+    name: Error Type
+    path: error.kind
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+pipeline:
+  type: pipeline
+  name: Cisco Secure Endpoint
+  enabled: true
+  filter:
+    query: "source:cisco-secure-endpoint"
+  processors:
+    - type: pipeline
+      name: "Cisco Secure Endpoint: Events"
+      enabled: true
+      filter:
+        query: "service:event"
+      processors:
+        - type: date-remapper
+          name: Define `event.date` as the official date of the log
+          enabled: true
+          sources:
+            - event.date
+        - name: Lookup on `event.severity` to `event.status`
+          enabled: true
+          source: event.severity
+          target: event.status
+          lookupTable: |-
+            Low,info
+            Medium,warning
+            High,error
+            Critical,critical
+          type: lookup-processor
+        - type: status-remapper
+          name: Define `event.status` as the official status of the log
+          enabled: true
+          sources:
+            - event.status
+        - type: attribute-remapper
+          name: Map `event.computer.external_ip` to `network.client.ip`
+          enabled: true
+          sources:
+            - event.computer.external_ip
+          sourceType: attribute
+          target: network.client.ip
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: geo-ip-parser
+          name: GeoIP for the 'network.client.ip'
+          enabled: true
+          sources:
+            - network.client.ip
+          target: network.client.geoip
+          ip_processing_behavior: do-nothing
+        - type: attribute-remapper
+          name: Map `event.event_type` to `evt.name`
+          enabled: true
+          sources:
+            - event.event_type
+          sourceType: attribute
+          target: evt.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `event.computer.user` to `usr.name`
+          enabled: true
+          sources:
+            - event.computer.user
+          sourceType: attribute
+          target: usr.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `event.error.error_code` to `error.kind`
+          enabled: true
+          sources:
+            - event.error.error_code
+          sourceType: attribute
+          target: error.kind
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `event.error.description` to `error.message`
+          enabled: true
+          sources:
+            - event.error.description
+          sourceType: attribute
+          target: error.message
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: "Cisco Secure Endpoint : Audit"
+      enabled: true
+      filter:
+        query: "service:audit"
+      processors:
+        - type: date-remapper
+          name: Define `created_at` as the official date of the log
+          enabled: true
+          sources:
+            - created_at
+        - type: attribute-remapper
+          name: Map `audit_log_user` to `usr.name`
+          enabled: true
+          sources:
+            - audit_log_user
+          sourceType: attribute
+          target: usr.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `event` to `evt.name`
+          enabled: true
+          sources:
+            - event
+          sourceType: attribute
+          target: evt.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `audit_log_id` to `usr.id`
+          enabled: true
+          sources:
+            - audit_log_id
+          sourceType: attribute
+          target: usr.id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service

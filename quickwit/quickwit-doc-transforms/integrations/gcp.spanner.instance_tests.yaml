@@ -1,0 +1,332 @@
+id: "gcp.spanner.instance"
+tests:
+ -
+  sample: |-
+    {
+      "data" : {
+        "severity" : "INFO",
+        "logName" : "projects/datadog-sandbox/logs/cloudaudit.googleapis.com%2Fdata_access",
+        "resource" : {
+          "type" : "spanner_instance",
+          "labels" : {
+            "instance_id" : "spanner-test-testname",
+            "project_id" : "datadog-sandbox",
+            "instance_config" : "",
+            "location" : ""
+          }
+        },
+        "protoPayload" : {
+          "requestMetadata" : {
+            "requestAttributes" : {
+              "time" : "2019-05-02T21:17:09.203096717Z"
+            },
+            "callerSuppliedUserAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/73.0.3683.86 Safari/537.36,gzip(gfe)",
+            "callerIp" : "38.122.226.210"
+          },
+          "request" : {
+            "@type" : "type.googleapis.com/google.spanner.v1.DeleteSessionRequest",
+            "name" : "projects/datadog-sandbox/instances/spanner-test-testname/databases/test-database/sessions/AJSwhATLOK4YAZizrbsKDK8pf58JfF-COJMEVd5v88JZMh8NRzoMlMeT2jxH1A"
+          },
+          "authenticationInfo" : {
+            "principalEmail" : "testname.lastname@datadoghq.com"
+          },
+          "authorizationInfo" : [ {
+            "resource" : "projects/datadog-sandbox/instances/spanner-test-testname/databases/test-database/sessions/AJSwhATLOK4YAZizrbsKDK8pf58JfF-COJMEVd5v88JZMh8NRzoMlMeT2jxH1A",
+            "permission" : "spanner.sessions.delete",
+            "resourceAttributes" : {
+              "service" : "spanner",
+              "name" : "projects/datadog-sandbox/instances/spanner-test-testname/databases/test-database/sessions/AJSwhATLOK4YAZizrbsKDK8pf58JfF-COJMEVd5v88JZMh8NRzoMlMeT2jxH1A",
+              "type" : "spanner.sessions"
+            },
+            "granted" : true
+          } ],
+          "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+          "methodName" : "google.spanner.v1.Spanner.DeleteSession",
+          "resourceName" : "projects/datadog-sandbox/instances/spanner-test-testname/databases/test-database/sessions/AJSwhATLOK4YAZizrbsKDK8pf58JfF-COJMEVd5v88JZMh8NRzoMlMeT2jxH1A",
+          "serviceName" : "spanner.googleapis.com"
+        },
+        "receiveTimestamp" : "2019-05-02T21:17:10.432466939Z",
+        "insertId" : "u8xzrjc5ly",
+        "timestamp" : "2019-05-02T21:17:09.196104850Z"
+      }
+    }
+  result:
+    custom:
+      data:
+        insertId: "u8xzrjc5ly"
+        logName: "projects/datadog-sandbox/logs/cloudaudit.googleapis.com%2Fdata_access"
+        protoPayload:
+          '@type': "type.googleapis.com/google.cloud.audit.AuditLog"
+          authenticationInfo:
+            principalEmail: "testname.lastname@datadoghq.com"
+          authorizationInfo:
+           -
+            resource: "projects/datadog-sandbox/instances/spanner-test-testname/databases/test-database/sessions/AJSwhATLOK4YAZizrbsKDK8pf58JfF-COJMEVd5v88JZMh8NRzoMlMeT2jxH1A"
+            permission: "spanner.sessions.delete"
+            resourceAttributes:
+              service: "spanner"
+              name: "projects/datadog-sandbox/instances/spanner-test-testname/databases/test-database/sessions/AJSwhATLOK4YAZizrbsKDK8pf58JfF-COJMEVd5v88JZMh8NRzoMlMeT2jxH1A"
+              type: "spanner.sessions"
+            granted: true
+          methodName: "google.spanner.v1.Spanner.DeleteSession"
+          request:
+            '@type': "type.googleapis.com/google.spanner.v1.DeleteSessionRequest"
+            name: "projects/datadog-sandbox/instances/spanner-test-testname/databases/test-database/sessions/AJSwhATLOK4YAZizrbsKDK8pf58JfF-COJMEVd5v88JZMh8NRzoMlMeT2jxH1A"
+          requestMetadata:
+            callerIp: "38.122.226.210"
+            callerSuppliedUserAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/73.0.3683.86 Safari/537.36,gzip(gfe)"
+            requestAttributes:
+              time: "2019-05-02T21:17:09.203096717Z"
+          resourceName: "projects/datadog-sandbox/instances/spanner-test-testname/databases/test-database/sessions/AJSwhATLOK4YAZizrbsKDK8pf58JfF-COJMEVd5v88JZMh8NRzoMlMeT2jxH1A"
+          serviceName: "spanner.googleapis.com"
+        receiveTimestamp: "2019-05-02T21:17:10.432466939Z"
+        resource:
+          labels:
+            instance_config: ""
+            instance_id: "spanner-test-testname"
+            location: ""
+            project_id: "datadog-sandbox"
+          type: "spanner_instance"
+        severity: "INFO"
+        timestamp: "2019-05-02T21:17:09.196104850Z"
+      db:
+        instance: "test-database"
+        operation: "google.spanner.v1.Spanner.DeleteSession"
+      http:
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "73"
+            minor: "0"
+            patch: "3683"
+            patch_minor: "86"
+          device:
+            brand: "Apple"
+            category: "Desktop"
+            family: "Mac"
+            model: "Mac"
+          os:
+            family: "Mac OS X"
+            major: "10"
+            minor: "14"
+            patch: "3"
+      network:
+        client:
+          ip: "38.122.226.210"
+    message: |-
+      {
+        "data" : {
+          "severity" : "INFO",
+          "logName" : "projects/datadog-sandbox/logs/cloudaudit.googleapis.com%2Fdata_access",
+          "resource" : {
+            "type" : "spanner_instance",
+            "labels" : {
+              "instance_id" : "spanner-test-testname",
+              "project_id" : "datadog-sandbox",
+              "instance_config" : "",
+              "location" : ""
+            }
+          },
+          "protoPayload" : {
+            "requestMetadata" : {
+              "requestAttributes" : {
+                "time" : "2019-05-02T21:17:09.203096717Z"
+              },
+              "callerSuppliedUserAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/73.0.3683.86 Safari/537.36,gzip(gfe)",
+              "callerIp" : "38.122.226.210"
+            },
+            "request" : {
+              "@type" : "type.googleapis.com/google.spanner.v1.DeleteSessionRequest",
+              "name" : "projects/datadog-sandbox/instances/spanner-test-testname/databases/test-database/sessions/AJSwhATLOK4YAZizrbsKDK8pf58JfF-COJMEVd5v88JZMh8NRzoMlMeT2jxH1A"
+            },
+            "authenticationInfo" : {
+              "principalEmail" : "testname.lastname@datadoghq.com"
+            },
+            "authorizationInfo" : [ {
+              "resource" : "projects/datadog-sandbox/instances/spanner-test-testname/databases/test-database/sessions/AJSwhATLOK4YAZizrbsKDK8pf58JfF-COJMEVd5v88JZMh8NRzoMlMeT2jxH1A",
+              "permission" : "spanner.sessions.delete",
+              "resourceAttributes" : {
+                "service" : "spanner",
+                "name" : "projects/datadog-sandbox/instances/spanner-test-testname/databases/test-database/sessions/AJSwhATLOK4YAZizrbsKDK8pf58JfF-COJMEVd5v88JZMh8NRzoMlMeT2jxH1A",
+                "type" : "spanner.sessions"
+              },
+              "granted" : true
+            } ],
+            "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+            "methodName" : "google.spanner.v1.Spanner.DeleteSession",
+            "resourceName" : "projects/datadog-sandbox/instances/spanner-test-testname/databases/test-database/sessions/AJSwhATLOK4YAZizrbsKDK8pf58JfF-COJMEVd5v88JZMh8NRzoMlMeT2jxH1A",
+            "serviceName" : "spanner.googleapis.com"
+          },
+          "receiveTimestamp" : "2019-05-02T21:17:10.432466939Z",
+          "insertId" : "u8xzrjc5ly",
+          "timestamp" : "2019-05-02T21:17:09.196104850Z"
+        }
+      }
+    service: "spanner.googleapis.com"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1556831829196
+ -
+  sample: |-
+    {
+      "severity" : "INFO",
+      "logName" : "projects/datadog-sandbox/logs/cloudaudit.googleapis.com%2Fdata_access",
+      "resource" : {
+        "type" : "spanner_instance",
+        "labels" : {
+          "instance_id" : "spanner-test-testname",
+          "project_id" : "datadog-sandbox",
+          "instance_config" : "",
+          "location" : ""
+        }
+      },
+      "protoPayload" : {
+        "requestMetadata" : {
+          "requestAttributes" : {
+            "time" : "2019-05-02T21:17:09.203096717Z"
+          },
+          "callerSuppliedUserAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/73.0.3683.86 Safari/537.36,gzip(gfe)",
+          "callerIp" : "38.122.226.210"
+        },
+        "request" : {
+          "@type" : "type.googleapis.com/google.spanner.v1.DeleteSessionRequest",
+          "name" : "projects/datadog-sandbox/instances/spanner-test-testname/databases/test-database/sessions/AJSwhATLOK4YAZizrbsKDK8pf58JfF-COJMEVd5v88JZMh8NRzoMlMeT2jxH1A"
+        },
+        "authenticationInfo" : {
+          "principalEmail" : "testname.lastname@datadoghq.com"
+        },
+        "authorizationInfo" : [ {
+          "resource" : "projects/datadog-sandbox/instances/spanner-test-testname/databases/test-database/sessions/AJSwhATLOK4YAZizrbsKDK8pf58JfF-COJMEVd5v88JZMh8NRzoMlMeT2jxH1A",
+          "permission" : "spanner.sessions.delete",
+          "resourceAttributes" : {
+            "service" : "spanner",
+            "name" : "projects/datadog-sandbox/instances/spanner-test-testname/databases/test-database/sessions/AJSwhATLOK4YAZizrbsKDK8pf58JfF-COJMEVd5v88JZMh8NRzoMlMeT2jxH1A",
+            "type" : "spanner.sessions"
+          },
+          "granted" : true
+        } ],
+        "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+        "methodName" : "google.spanner.v1.Spanner.DeleteSession",
+        "resourceName" : "projects/datadog-sandbox/instances/spanner-test-testname/databases/test-database/sessions/AJSwhATLOK4YAZizrbsKDK8pf58JfF-COJMEVd5v88JZMh8NRzoMlMeT2jxH1A",
+        "serviceName" : "spanner.googleapis.com"
+      },
+      "receiveTimestamp" : "2019-05-02T21:17:10.432466939Z",
+      "insertId" : "u8xzrjc5ly",
+      "timestamp" : "2019-05-02T21:17:09.196104850Z"
+    }
+  result:
+    custom:
+      db:
+        instance: "test-database"
+        operation: "google.spanner.v1.Spanner.DeleteSession"
+      http:
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "73"
+            minor: "0"
+            patch: "3683"
+            patch_minor: "86"
+          device:
+            brand: "Apple"
+            category: "Desktop"
+            family: "Mac"
+            model: "Mac"
+          os:
+            family: "Mac OS X"
+            major: "10"
+            minor: "14"
+            patch: "3"
+      insertId: "u8xzrjc5ly"
+      logName: "projects/datadog-sandbox/logs/cloudaudit.googleapis.com%2Fdata_access"
+      network:
+        client:
+          ip: "38.122.226.210"
+      protoPayload:
+        '@type': "type.googleapis.com/google.cloud.audit.AuditLog"
+        authenticationInfo:
+          principalEmail: "testname.lastname@datadoghq.com"
+        authorizationInfo:
+         -
+          resource: "projects/datadog-sandbox/instances/spanner-test-testname/databases/test-database/sessions/AJSwhATLOK4YAZizrbsKDK8pf58JfF-COJMEVd5v88JZMh8NRzoMlMeT2jxH1A"
+          permission: "spanner.sessions.delete"
+          resourceAttributes:
+            service: "spanner"
+            name: "projects/datadog-sandbox/instances/spanner-test-testname/databases/test-database/sessions/AJSwhATLOK4YAZizrbsKDK8pf58JfF-COJMEVd5v88JZMh8NRzoMlMeT2jxH1A"
+            type: "spanner.sessions"
+          granted: true
+        methodName: "google.spanner.v1.Spanner.DeleteSession"
+        request:
+          '@type': "type.googleapis.com/google.spanner.v1.DeleteSessionRequest"
+          name: "projects/datadog-sandbox/instances/spanner-test-testname/databases/test-database/sessions/AJSwhATLOK4YAZizrbsKDK8pf58JfF-COJMEVd5v88JZMh8NRzoMlMeT2jxH1A"
+        requestMetadata:
+          callerIp: "38.122.226.210"
+          callerSuppliedUserAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/73.0.3683.86 Safari/537.36,gzip(gfe)"
+          requestAttributes:
+            time: "2019-05-02T21:17:09.203096717Z"
+        resourceName: "projects/datadog-sandbox/instances/spanner-test-testname/databases/test-database/sessions/AJSwhATLOK4YAZizrbsKDK8pf58JfF-COJMEVd5v88JZMh8NRzoMlMeT2jxH1A"
+        serviceName: "spanner.googleapis.com"
+      receiveTimestamp: "2019-05-02T21:17:10.432466939Z"
+      resource:
+        labels:
+          instance_config: ""
+          instance_id: "spanner-test-testname"
+          location: ""
+          project_id: "datadog-sandbox"
+        type: "spanner_instance"
+      severity: "INFO"
+      timestamp: "2019-05-02T21:17:09.196104850Z"
+    message: |-
+      {
+        "severity" : "INFO",
+        "logName" : "projects/datadog-sandbox/logs/cloudaudit.googleapis.com%2Fdata_access",
+        "resource" : {
+          "type" : "spanner_instance",
+          "labels" : {
+            "instance_id" : "spanner-test-testname",
+            "project_id" : "datadog-sandbox",
+            "instance_config" : "",
+            "location" : ""
+          }
+        },
+        "protoPayload" : {
+          "requestMetadata" : {
+            "requestAttributes" : {
+              "time" : "2019-05-02T21:17:09.203096717Z"
+            },
+            "callerSuppliedUserAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/73.0.3683.86 Safari/537.36,gzip(gfe)",
+            "callerIp" : "38.122.226.210"
+          },
+          "request" : {
+            "@type" : "type.googleapis.com/google.spanner.v1.DeleteSessionRequest",
+            "name" : "projects/datadog-sandbox/instances/spanner-test-testname/databases/test-database/sessions/AJSwhATLOK4YAZizrbsKDK8pf58JfF-COJMEVd5v88JZMh8NRzoMlMeT2jxH1A"
+          },
+          "authenticationInfo" : {
+            "principalEmail" : "testname.lastname@datadoghq.com"
+          },
+          "authorizationInfo" : [ {
+            "resource" : "projects/datadog-sandbox/instances/spanner-test-testname/databases/test-database/sessions/AJSwhATLOK4YAZizrbsKDK8pf58JfF-COJMEVd5v88JZMh8NRzoMlMeT2jxH1A",
+            "permission" : "spanner.sessions.delete",
+            "resourceAttributes" : {
+              "service" : "spanner",
+              "name" : "projects/datadog-sandbox/instances/spanner-test-testname/databases/test-database/sessions/AJSwhATLOK4YAZizrbsKDK8pf58JfF-COJMEVd5v88JZMh8NRzoMlMeT2jxH1A",
+              "type" : "spanner.sessions"
+            },
+            "granted" : true
+          } ],
+          "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+          "methodName" : "google.spanner.v1.Spanner.DeleteSession",
+          "resourceName" : "projects/datadog-sandbox/instances/spanner-test-testname/databases/test-database/sessions/AJSwhATLOK4YAZizrbsKDK8pf58JfF-COJMEVd5v88JZMh8NRzoMlMeT2jxH1A",
+          "serviceName" : "spanner.googleapis.com"
+        },
+        "receiveTimestamp" : "2019-05-02T21:17:10.432466939Z",
+        "insertId" : "u8xzrjc5ly",
+        "timestamp" : "2019-05-02T21:17:09.196104850Z"
+      }
+    service: "spanner.googleapis.com"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1556831829196
+

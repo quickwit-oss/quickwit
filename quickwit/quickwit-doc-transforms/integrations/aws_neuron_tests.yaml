@@ -1,0 +1,62 @@
+id: "aws_neuron"
+tests:
+ - 
+  sample: "INFO:Neuron:Number of arithmetic operators (pre-compilation) before = 565, fused = 548, percent fused = 96.99%"
+  result:
+    custom:
+      level: "INFO"
+    message: "Number of arithmetic operators (pre-compilation) before = 565, fused = 548, percent fused = 96.99%"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+ - 
+  sample: "INFO:Neuron: => aten::Int: 96"
+  result:
+    custom:
+      count: 96
+      level: "INFO"
+      operator:
+        library: "aten"
+        type: "Int"
+    message: "aten::Int: 96"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+ - 
+  sample: "INFO:Neuron: => aten::embedding: 3 [not supported]"
+  result:
+    custom:
+      count: 3
+      level: "INFO"
+      not_compiled_msg: "not supported"
+      operator:
+        library: "aten"
+        type: "embedding"
+    message: "aten::embedding: 3 [not supported]"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "2024-11-15 10:38:24.000103:  4938  ERROR ||NEURON_CC_WRAPPER||: Compilation failed for /tmp/ubuntu/neuroncc_compile_workdir/cf6cf570-d889-4a0c-a821-719e225d9bc8/model.MODULE_16150394314145281873+d7517139.hlo_module.pb after 0 retries."
+  result:
+    custom:
+      date: 1731667104000
+      level: "ERROR"
+      pid: 4938
+    message: "||NEURON_CC_WRAPPER||: Compilation failed for /tmp/ubuntu/neuroncc_compile_workdir/cf6cf570-d889-4a0c-a821-719e225d9bc8/model.MODULE_16150394314145281873+d7517139.hlo_module.pb after 0 retries."
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "2024-Nov-15 13:35:03.0879  6475:6475  ERROR   NRT:nrt_allocate_neuron_cores               NeuronCore(s) not available - Requested:16 Available:4"
+  result:
+    custom:
+      date: 1731677703087
+      level: "ERROR"
+      pid: 6475
+      tid: 6475
+    message: "  NRT:nrt_allocate_neuron_cores               NeuronCore(s) not available - Requested:16 Available:4"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+

@@ -1,0 +1,741 @@
+id: "stepfunction"
+tests:
+ -
+  sample: |-
+    {
+      "service" : "stepfunction",
+      "host" : "arn:aws:states:sa-east-1:601427279990:stateMachine:MyStateMachine",
+      "details" : {
+        "input" : "{\n    \"Comment\": \"Insert your JSON here\"\n}",
+        "name" : "Parallel",
+        "inputDetails" : {
+          "truncated" : false
+        }
+      },
+      "previous_event_id" : "0",
+      "id" : "2",
+      "type" : "ParallelStateEntered",
+      "event_timestamp" : "1648140946989",
+      "execution_arn" : "arn:aws:states:us-east-1:123412341234:express:StateMachineName:0320d06d-2abb-11f4-59b4-59049a95b8cb:3f66a266-0415-4729-b508-4f89b4d5cb9d",
+      "aws" : {
+        "awslogs" : {
+          "owner" : "601427279990",
+          "logGroup" : "/aws/vendedlogs/states/MyStateMachine-Logs",
+          "logStream" : "states/MyStateMachine/2022-04-11-15/ffffffff"
+        },
+        "invoked_function_arn" : "arn:aws:lambda:sa-east-1:601427279990:function:forwarder",
+        "function_version" : "$LATEST"
+      }
+    }
+  result:
+    custom:
+      aws:
+        awslogs:
+          logGroup: "/aws/vendedlogs/states/MyStateMachine-Logs"
+          logStream: "states/MyStateMachine/2022-04-11-15/ffffffff"
+          owner: "601427279990"
+        function_version: "$LATEST"
+        invoked_function_arn: "arn:aws:lambda:sa-east-1:601427279990:function:forwarder"
+      aws_region: "us-east-1"
+      details:
+        input:
+          Comment: "Insert your JSON here"
+        inputDetails:
+          truncated: false
+        name: "Parallel"
+      event_timestamp: "1648140946989"
+      evt:
+        name: "ParallelStateEntered"
+      execution_arn: "arn:aws:states:us-east-1:123412341234:express:StateMachineName:0320d06d-2abb-11f4-59b4-59049a95b8cb:3f66a266-0415-4729-b508-4f89b4d5cb9d"
+      execution_id: "0320d06d-2abb-11f4-59b4-59049a95b8cb:3f66a266-0415-4729-b508-4f89b4d5cb9d"
+      host: "arn:aws:states:us-east-1:123412341234:stateMachine:StateMachineName"
+      id: "2"
+      name: "StateMachineName"
+      previous_event_id: "0"
+      service: "stepfunction"
+      status: "info"
+      step_function_url: "https://console.aws.amazon.com/states/home#/statemachines/view/arn:aws:states:sa-east-1:601427279990:stateMachine:MyStateMachine"
+    message: |-
+      {
+        "service" : "stepfunction",
+        "host" : "arn:aws:states:sa-east-1:601427279990:stateMachine:MyStateMachine",
+        "details" : {
+          "input" : "{\n    \"Comment\": \"Insert your JSON here\"\n}",
+          "name" : "Parallel",
+          "inputDetails" : {
+            "truncated" : false
+          }
+        },
+        "previous_event_id" : "0",
+        "id" : "2",
+        "type" : "ParallelStateEntered",
+        "event_timestamp" : "1648140946989",
+        "execution_arn" : "arn:aws:states:us-east-1:123412341234:express:StateMachineName:0320d06d-2abb-11f4-59b4-59049a95b8cb:3f66a266-0415-4729-b508-4f89b4d5cb9d",
+        "aws" : {
+          "awslogs" : {
+            "owner" : "601427279990",
+            "logGroup" : "/aws/vendedlogs/states/MyStateMachine-Logs",
+            "logStream" : "states/MyStateMachine/2022-04-11-15/ffffffff"
+          },
+          "invoked_function_arn" : "arn:aws:lambda:sa-east-1:601427279990:function:forwarder",
+          "function_version" : "$LATEST"
+        }
+      }
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "statemachinearn:arn:aws:states:us-east-1:123412341234:statemachine:statemachinename"
+     - "state_machine_type:express"
+     - "aws_account:123412341234"
+    timestamp: 1648140946989
+ -
+  sample: |-
+    {
+      "service" : "stepfunction",
+      "host" : "arn:aws:states:sa-east-1:601427279990:stateMachine:MyStateMachineExpress",
+      "details" : {
+        "input" : "{\"name\":\"John\", \"age\":30}",
+        "inputDetails" : {
+          "truncated" : false
+        }
+      },
+      "previous_event_id" : "3",
+      "id" : "4",
+      "type" : "PassStateEntered",
+      "event_timestamp" : "1647542411321",
+      "execution_arn" : "arn:aws:states:us-east-1:123412341234:express:StateMachineName:0320d06d-2abb-11f4-59b4-59049a95b8cb:3f66a266-0415-4729-b508-4f89b4d5cb9d",
+      "aws" : {
+        "awslogs" : {
+          "owner" : "601427279990",
+          "logGroup" : "/aws/vendedlogs/states/MyStateMachineExpress-Logs",
+          "logStream" : "states/MyStateMachineExpress/2022-04-11-15/2022f30f"
+        },
+        "invoked_function_arn" : "arn:aws:lambda:sa-east-1:601427279990:function:forwarder",
+        "function_version" : "$LATEST"
+      }
+    }
+  result:
+    custom:
+      aws:
+        awslogs:
+          logGroup: "/aws/vendedlogs/states/MyStateMachineExpress-Logs"
+          logStream: "states/MyStateMachineExpress/2022-04-11-15/2022f30f"
+          owner: "601427279990"
+        function_version: "$LATEST"
+        invoked_function_arn: "arn:aws:lambda:sa-east-1:601427279990:function:forwarder"
+      aws_region: "us-east-1"
+      details:
+        input:
+          age: 30
+          name: "John"
+        inputDetails:
+          truncated: false
+      event_timestamp: "1647542411321"
+      evt:
+        name: "PassStateEntered"
+      execution_arn: "arn:aws:states:us-east-1:123412341234:express:StateMachineName:0320d06d-2abb-11f4-59b4-59049a95b8cb:3f66a266-0415-4729-b508-4f89b4d5cb9d"
+      execution_id: "0320d06d-2abb-11f4-59b4-59049a95b8cb:3f66a266-0415-4729-b508-4f89b4d5cb9d"
+      host: "arn:aws:states:us-east-1:123412341234:stateMachine:StateMachineName"
+      id: "4"
+      name: "StateMachineName"
+      previous_event_id: "3"
+      service: "stepfunction"
+      status: "info"
+      step_function_url: "https://console.aws.amazon.com/states/home#/statemachines/view/arn:aws:states:sa-east-1:601427279990:stateMachine:MyStateMachineExpress"
+    message: |-
+      {
+        "service" : "stepfunction",
+        "host" : "arn:aws:states:sa-east-1:601427279990:stateMachine:MyStateMachineExpress",
+        "details" : {
+          "input" : "{\"name\":\"John\", \"age\":30}",
+          "inputDetails" : {
+            "truncated" : false
+          }
+        },
+        "previous_event_id" : "3",
+        "id" : "4",
+        "type" : "PassStateEntered",
+        "event_timestamp" : "1647542411321",
+        "execution_arn" : "arn:aws:states:us-east-1:123412341234:express:StateMachineName:0320d06d-2abb-11f4-59b4-59049a95b8cb:3f66a266-0415-4729-b508-4f89b4d5cb9d",
+        "aws" : {
+          "awslogs" : {
+            "owner" : "601427279990",
+            "logGroup" : "/aws/vendedlogs/states/MyStateMachineExpress-Logs",
+            "logStream" : "states/MyStateMachineExpress/2022-04-11-15/2022f30f"
+          },
+          "invoked_function_arn" : "arn:aws:lambda:sa-east-1:601427279990:function:forwarder",
+          "function_version" : "$LATEST"
+        }
+      }
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "statemachinearn:arn:aws:states:us-east-1:123412341234:statemachine:statemachinename"
+     - "state_machine_type:express"
+     - "aws_account:123412341234"
+    timestamp: 1647542411321
+ -
+  sample: |-
+    {
+      "service" : "stepfunction",
+      "host" : "arn:aws:states:sa-east-1:601427279990:stateMachine:MyStateMachineExpress",
+      "details" : {
+        "input" : "{\"name\":\"John\", \"age\":30}",
+        "inputDetails" : {
+          "truncated" : false
+        }
+      },
+      "previous_event_id" : "3",
+      "id" : "4",
+      "type" : "FailStateEntered",
+      "event_timestamp" : "1647542411321",
+      "execution_arn" : "arn:aws:states:us-east-1:123412341234:express:StateMachineName:1f1aa77c-241b-16ad-26c9-0b4a8410cb44_0320d06d-2abb-11f4-59b4-59049a95b8cb:3f66a266-0415-4729-b508-4f89b4d5cb9d",
+      "aws" : {
+        "awslogs" : {
+          "owner" : "601427279990",
+          "logGroup" : "/aws/vendedlogs/states/MyStateMachineExpress-Logs",
+          "logStream" : "states/MyStateMachineExpress/2022-04-11-15/2022f30f"
+        },
+        "invoked_function_arn" : "arn:aws:lambda:sa-east-1:601427279990:function:forwarder",
+        "function_version" : "$LATEST"
+      }
+    }
+  result:
+    custom:
+      aws:
+        awslogs:
+          logGroup: "/aws/vendedlogs/states/MyStateMachineExpress-Logs"
+          logStream: "states/MyStateMachineExpress/2022-04-11-15/2022f30f"
+          owner: "601427279990"
+        function_version: "$LATEST"
+        invoked_function_arn: "arn:aws:lambda:sa-east-1:601427279990:function:forwarder"
+      aws_region: "us-east-1"
+      details:
+        input:
+          age: 30
+          name: "John"
+        inputDetails:
+          truncated: false
+      event_timestamp: "1647542411321"
+      evt:
+        name: "FailStateEntered"
+      execution_arn: "arn:aws:states:us-east-1:123412341234:express:StateMachineName:1f1aa77c-241b-16ad-26c9-0b4a8410cb44_0320d06d-2abb-11f4-59b4-59049a95b8cb:3f66a266-0415-4729-b508-4f89b4d5cb9d"
+      execution_id: "1f1aa77c-241b-16ad-26c9-0b4a8410cb44_0320d06d-2abb-11f4-59b4-59049a95b8cb:3f66a266-0415-4729-b508-4f89b4d5cb9d"
+      host: "arn:aws:states:us-east-1:123412341234:stateMachine:StateMachineName"
+      id: "4"
+      name: "StateMachineName"
+      previous_event_id: "3"
+      service: "stepfunction"
+      status: "error"
+      step_function_url: "https://console.aws.amazon.com/states/home#/statemachines/view/arn:aws:states:sa-east-1:601427279990:stateMachine:MyStateMachineExpress"
+    message: |-
+      {
+        "service" : "stepfunction",
+        "host" : "arn:aws:states:sa-east-1:601427279990:stateMachine:MyStateMachineExpress",
+        "details" : {
+          "input" : "{\"name\":\"John\", \"age\":30}",
+          "inputDetails" : {
+            "truncated" : false
+          }
+        },
+        "previous_event_id" : "3",
+        "id" : "4",
+        "type" : "FailStateEntered",
+        "event_timestamp" : "1647542411321",
+        "execution_arn" : "arn:aws:states:us-east-1:123412341234:express:StateMachineName:1f1aa77c-241b-16ad-26c9-0b4a8410cb44_0320d06d-2abb-11f4-59b4-59049a95b8cb:3f66a266-0415-4729-b508-4f89b4d5cb9d",
+        "aws" : {
+          "awslogs" : {
+            "owner" : "601427279990",
+            "logGroup" : "/aws/vendedlogs/states/MyStateMachineExpress-Logs",
+            "logStream" : "states/MyStateMachineExpress/2022-04-11-15/2022f30f"
+          },
+          "invoked_function_arn" : "arn:aws:lambda:sa-east-1:601427279990:function:forwarder",
+          "function_version" : "$LATEST"
+        }
+      }
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "statemachinearn:arn:aws:states:us-east-1:123412341234:statemachine:statemachinename"
+     - "state_machine_type:express"
+     - "aws_account:123412341234"
+    timestamp: 1647542411321
+ -
+  sample: |-
+    {
+      "service" : "stepfunction",
+      "host" : "arn:aws:states:sa-east-1:601427279990:stateMachine:MyStateMachineExpress",
+      "details" : {
+        "cause" : {
+          "trace" : [ "ValidationException: Invalid KeyConditionExpression: Syntax error; token: \"-\", near: \"pk-incorrect\"", "    at Request.extractError (/var/runtime/node_modules/aws-sdk/lib/protocol/json.js:61:27)", "    at Request.callListeners (/var/runtime/node_modules/aws-sdk/lib/sequential_executor.js:106:20)", "    at Request.emit (/var/runtime/node_modules/aws-sdk/lib/sequential_executor.js:78:10)", "    at Request.emit (/var/runtime/node_modules/aws-sdk/lib/request.js:686:14)", "    at Request.transition (/var/runtime/node_modules/aws-sdk/lib/request.js:22:10)", "    at AcceptorStateMachine.runTo (/var/runtime/node_modules/aws-sdk/lib/state_machine.js:14:12)", "    at /var/runtime/node_modules/aws-sdk/lib/state_machine.js:26:10", "    at Request.<anonymous> (/var/runtime/node_modules/aws-sdk/lib/request.js:38:9)", "    at Request.<anonymous> (/var/runtime/node_modules/aws-sdk/lib/request.js:688:12)", "    at Request.callListeners (/var/runtime/node_modules/aws-sdk/lib/sequential_executor.js:116:18)" ],
+          "errorType" : "ValidationException",
+          "errorMessage" : "Invalid KeyConditionExpression: Syntax error; token: \"-\", near: \"pk-incorrect\""
+        },
+        "error" : "ValidationException"
+      },
+      "previous_event_id" : "4",
+      "id" : "5",
+      "type" : "ExecutionFailed",
+      "event_timestamp" : "1690903685332",
+      "execution_arn" : "arn:aws:states:us-east-1:123412341234:express:StateMachineName:0320d06d-2abb-11f4-59b4-59049a95b8cb:3f66a266-0415-4729-b508-4f89b4d5cb9d",
+      "aws" : {
+        "awslogs" : {
+          "owner" : "601427279990",
+          "logGroup" : "/aws/vendedlogs/states/MyStateMachineExpress-Logs",
+          "logStream" : "states/MyStateMachineExpress/2022-04-11-15/2022f30f"
+        },
+        "invoked_function_arn" : "arn:aws:lambda:sa-east-1:601427279990:function:forwarder",
+        "function_version" : "$LATEST"
+      }
+    }
+  result:
+    custom:
+      aws:
+        awslogs:
+          logGroup: "/aws/vendedlogs/states/MyStateMachineExpress-Logs"
+          logStream: "states/MyStateMachineExpress/2022-04-11-15/2022f30f"
+          owner: "601427279990"
+        function_version: "$LATEST"
+        invoked_function_arn: "arn:aws:lambda:sa-east-1:601427279990:function:forwarder"
+      aws_region: "us-east-1"
+      details:
+        cause:
+          errorMessage: "Invalid KeyConditionExpression: Syntax error; token: \"-\", near: \"pk-incorrect\""
+          errorType: "ValidationException"
+          trace:
+           - "ValidationException: Invalid KeyConditionExpression: Syntax error; token: \"-\", near: \"pk-incorrect\""
+           - "    at Request.extractError (/var/runtime/node_modules/aws-sdk/lib/protocol/json.js:61:27)"
+           - "    at Request.callListeners (/var/runtime/node_modules/aws-sdk/lib/sequential_executor.js:106:20)"
+           - "    at Request.emit (/var/runtime/node_modules/aws-sdk/lib/sequential_executor.js:78:10)"
+           - "    at Request.emit (/var/runtime/node_modules/aws-sdk/lib/request.js:686:14)"
+           - "    at Request.transition (/var/runtime/node_modules/aws-sdk/lib/request.js:22:10)"
+           - "    at AcceptorStateMachine.runTo (/var/runtime/node_modules/aws-sdk/lib/state_machine.js:14:12)"
+           - "    at /var/runtime/node_modules/aws-sdk/lib/state_machine.js:26:10"
+           - "    at Request.<anonymous> (/var/runtime/node_modules/aws-sdk/lib/request.js:38:9)"
+           - "    at Request.<anonymous> (/var/runtime/node_modules/aws-sdk/lib/request.js:688:12)"
+           - "    at Request.callListeners (/var/runtime/node_modules/aws-sdk/lib/sequential_executor.js:116:18)"
+        error: "ValidationException"
+      error:
+        kind: "ValidationException"
+        message: "Invalid KeyConditionExpression: Syntax error; token: \"-\", near: \"pk-incorrect\""
+        stack:
+         - "ValidationException: Invalid KeyConditionExpression: Syntax error; token: \"-\", near: \"pk-incorrect\""
+         - "    at Request.extractError (/var/runtime/node_modules/aws-sdk/lib/protocol/json.js:61:27)"
+         - "    at Request.callListeners (/var/runtime/node_modules/aws-sdk/lib/sequential_executor.js:106:20)"
+         - "    at Request.emit (/var/runtime/node_modules/aws-sdk/lib/sequential_executor.js:78:10)"
+         - "    at Request.emit (/var/runtime/node_modules/aws-sdk/lib/request.js:686:14)"
+         - "    at Request.transition (/var/runtime/node_modules/aws-sdk/lib/request.js:22:10)"
+         - "    at AcceptorStateMachine.runTo (/var/runtime/node_modules/aws-sdk/lib/state_machine.js:14:12)"
+         - "    at /var/runtime/node_modules/aws-sdk/lib/state_machine.js:26:10"
+         - "    at Request.<anonymous> (/var/runtime/node_modules/aws-sdk/lib/request.js:38:9)"
+         - "    at Request.<anonymous> (/var/runtime/node_modules/aws-sdk/lib/request.js:688:12)"
+         - "    at Request.callListeners (/var/runtime/node_modules/aws-sdk/lib/sequential_executor.js:116:18)"
+      event_timestamp: "1690903685332"
+      evt:
+        name: "ExecutionFailed"
+      execution_arn: "arn:aws:states:us-east-1:123412341234:express:StateMachineName:0320d06d-2abb-11f4-59b4-59049a95b8cb:3f66a266-0415-4729-b508-4f89b4d5cb9d"
+      execution_id: "0320d06d-2abb-11f4-59b4-59049a95b8cb:3f66a266-0415-4729-b508-4f89b4d5cb9d"
+      host: "arn:aws:states:us-east-1:123412341234:stateMachine:StateMachineName"
+      id: "5"
+      name: "StateMachineName"
+      previous_event_id: "4"
+      service: "stepfunction"
+      status: "error"
+      step_function_url: "https://console.aws.amazon.com/states/home#/statemachines/view/arn:aws:states:sa-east-1:601427279990:stateMachine:MyStateMachineExpress"
+    message: |-
+      {
+        "service" : "stepfunction",
+        "host" : "arn:aws:states:sa-east-1:601427279990:stateMachine:MyStateMachineExpress",
+        "details" : {
+          "cause" : {
+            "trace" : [ "ValidationException: Invalid KeyConditionExpression: Syntax error; token: \"-\", near: \"pk-incorrect\"", "    at Request.extractError (/var/runtime/node_modules/aws-sdk/lib/protocol/json.js:61:27)", "    at Request.callListeners (/var/runtime/node_modules/aws-sdk/lib/sequential_executor.js:106:20)", "    at Request.emit (/var/runtime/node_modules/aws-sdk/lib/sequential_executor.js:78:10)", "    at Request.emit (/var/runtime/node_modules/aws-sdk/lib/request.js:686:14)", "    at Request.transition (/var/runtime/node_modules/aws-sdk/lib/request.js:22:10)", "    at AcceptorStateMachine.runTo (/var/runtime/node_modules/aws-sdk/lib/state_machine.js:14:12)", "    at /var/runtime/node_modules/aws-sdk/lib/state_machine.js:26:10", "    at Request.<anonymous> (/var/runtime/node_modules/aws-sdk/lib/request.js:38:9)", "    at Request.<anonymous> (/var/runtime/node_modules/aws-sdk/lib/request.js:688:12)", "    at Request.callListeners (/var/runtime/node_modules/aws-sdk/lib/sequential_executor.js:116:18)" ],
+            "errorType" : "ValidationException",
+            "errorMessage" : "Invalid KeyConditionExpression: Syntax error; token: \"-\", near: \"pk-incorrect\""
+          },
+          "error" : "ValidationException"
+        },
+        "previous_event_id" : "4",
+        "id" : "5",
+        "type" : "ExecutionFailed",
+        "event_timestamp" : "1690903685332",
+        "execution_arn" : "arn:aws:states:us-east-1:123412341234:express:StateMachineName:0320d06d-2abb-11f4-59b4-59049a95b8cb:3f66a266-0415-4729-b508-4f89b4d5cb9d",
+        "aws" : {
+          "awslogs" : {
+            "owner" : "601427279990",
+            "logGroup" : "/aws/vendedlogs/states/MyStateMachineExpress-Logs",
+            "logStream" : "states/MyStateMachineExpress/2022-04-11-15/2022f30f"
+          },
+          "invoked_function_arn" : "arn:aws:lambda:sa-east-1:601427279990:function:forwarder",
+          "function_version" : "$LATEST"
+        }
+      }
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "statemachinearn:arn:aws:states:us-east-1:123412341234:statemachine:statemachinename"
+     - "state_machine_type:express"
+     - "aws_account:123412341234"
+    timestamp: 1690903685332
+ -
+  sample: |-
+    {
+      "service" : "stepfunction",
+      "details" : {
+        "input" : "{\"name\":\"John\", \"age\":30}",
+        "inputDetails" : {
+          "truncated" : false
+        }
+      },
+      "previous_event_id" : "3",
+      "id" : "4",
+      "type" : "FailStateEntered",
+      "event_timestamp" : "1647542411321",
+      "execution_arn" : "arn:aws:states:sa-east-1:425362996713:execution:StepFunctionTestFirehoseOnly:0870ab81-a466-4c57-b63b-8966518d3ebf",
+      "aws" : {
+        "firehose" : {
+          "arn" : "arn:aws:firehose:sa-east-1:425362996713:deliverystream/PUT-DOG-StepFunction-Test"
+        },
+        "awslogs" : {
+          "owner" : "425362996713",
+          "logGroup" : "/aws/vendedlogs/states/StepFunctionTestFirehoseOnly-Logs",
+          "logStream" : "states/StepFunctionTestFirehoseOnly/2023-08-03-15/6f4b6612"
+        },
+        "invoked_function_arn" : "arn:aws:lambda:sa-east-1:601427279990:function:forwarder",
+        "function_version" : "$LATEST"
+      }
+    }
+  result:
+    custom:
+      aws:
+        awslogs:
+          logGroup: "/aws/vendedlogs/states/StepFunctionTestFirehoseOnly-Logs"
+          logStream: "states/StepFunctionTestFirehoseOnly/2023-08-03-15/6f4b6612"
+          owner: "425362996713"
+        firehose:
+          arn: "arn:aws:firehose:sa-east-1:425362996713:deliverystream/PUT-DOG-StepFunction-Test"
+        function_version: "$LATEST"
+        invoked_function_arn: "arn:aws:lambda:sa-east-1:601427279990:function:forwarder"
+      aws_region: "sa-east-1"
+      details:
+        input:
+          age: 30
+          name: "John"
+        inputDetails:
+          truncated: false
+      event_timestamp: "1647542411321"
+      evt:
+        name: "FailStateEntered"
+      execution_arn: "arn:aws:states:sa-east-1:425362996713:execution:StepFunctionTestFirehoseOnly:0870ab81-a466-4c57-b63b-8966518d3ebf"
+      execution_id: "0870ab81-a466-4c57-b63b-8966518d3ebf"
+      host: "arn:aws:states:sa-east-1:425362996713:stateMachine:StepFunctionTestFirehoseOnly"
+      id: "4"
+      name: "StepFunctionTestFirehoseOnly"
+      previous_event_id: "3"
+      service: "stepfunction"
+      status: "error"
+    message: |-
+      {
+        "service" : "stepfunction",
+        "details" : {
+          "input" : "{\"name\":\"John\", \"age\":30}",
+          "inputDetails" : {
+            "truncated" : false
+          }
+        },
+        "previous_event_id" : "3",
+        "id" : "4",
+        "type" : "FailStateEntered",
+        "event_timestamp" : "1647542411321",
+        "execution_arn" : "arn:aws:states:sa-east-1:425362996713:execution:StepFunctionTestFirehoseOnly:0870ab81-a466-4c57-b63b-8966518d3ebf",
+        "aws" : {
+          "firehose" : {
+            "arn" : "arn:aws:firehose:sa-east-1:425362996713:deliverystream/PUT-DOG-StepFunction-Test"
+          },
+          "awslogs" : {
+            "owner" : "425362996713",
+            "logGroup" : "/aws/vendedlogs/states/StepFunctionTestFirehoseOnly-Logs",
+            "logStream" : "states/StepFunctionTestFirehoseOnly/2023-08-03-15/6f4b6612"
+          },
+          "invoked_function_arn" : "arn:aws:lambda:sa-east-1:601427279990:function:forwarder",
+          "function_version" : "$LATEST"
+        }
+      }
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "statemachinearn:arn:aws:states:sa-east-1:425362996713:statemachine:stepfunctiontestfirehoseonly"
+     - "state_machine_type:standard"
+     - "aws_account:425362996713"
+    timestamp: 1647542411321
+ -
+  sample: |-
+    {
+      "service" : "stepfunction",
+      "details" : {
+        "input" : "{\"name\":\"John\", \"age\":30}",
+        "inputDetails" : {
+          "truncated" : false
+        }
+      },
+      "previous_event_id" : "3",
+      "id" : "4",
+      "type" : "FailStateEntered",
+      "event_timestamp" : "1647542411321",
+      "execution_arn" : "arn:aws:states:sa-east-1:425362996713:execution:StepFunctionTestFirehoseOnly\\0870ab81-a466-4c57-b63b-8966518d3ebf",
+      "aws" : {
+        "firehose" : {
+          "arn" : "arn:aws:firehose:sa-east-1:425362996713:deliverystream/PUT-DOG-StepFunction-Test"
+        },
+        "awslogs" : {
+          "owner" : "425362996713",
+          "logGroup" : "/aws/vendedlogs/states/StepFunctionTestFirehoseOnly-Logs",
+          "logStream" : "states/StepFunctionTestFirehoseOnly/2023-08-03-15/6f4b6612"
+        },
+        "invoked_function_arn" : "arn:aws:lambda:sa-east-1:601427279990:function:forwarder",
+        "function_version" : "$LATEST"
+      }
+    }
+  result:
+    custom:
+      aws:
+        awslogs:
+          logGroup: "/aws/vendedlogs/states/StepFunctionTestFirehoseOnly-Logs"
+          logStream: "states/StepFunctionTestFirehoseOnly/2023-08-03-15/6f4b6612"
+          owner: "425362996713"
+        firehose:
+          arn: "arn:aws:firehose:sa-east-1:425362996713:deliverystream/PUT-DOG-StepFunction-Test"
+        function_version: "$LATEST"
+        invoked_function_arn: "arn:aws:lambda:sa-east-1:601427279990:function:forwarder"
+      aws_region: "sa-east-1"
+      details:
+        input:
+          age: 30
+          name: "John"
+        inputDetails:
+          truncated: false
+      event_timestamp: "1647542411321"
+      evt:
+        name: "FailStateEntered"
+      execution_arn: "arn:aws:states:sa-east-1:425362996713:execution:StepFunctionTestFirehoseOnly\\0870ab81-a466-4c57-b63b-8966518d3ebf"
+      execution_id: "0870ab81-a466-4c57-b63b-8966518d3ebf"
+      host: "arn:aws:states:sa-east-1:425362996713:stateMachine:StepFunctionTestFirehoseOnly"
+      id: "4"
+      name: "StepFunctionTestFirehoseOnly"
+      previous_event_id: "3"
+      service: "stepfunction"
+      status: "error"
+    message: |-
+      {
+        "service" : "stepfunction",
+        "details" : {
+          "input" : "{\"name\":\"John\", \"age\":30}",
+          "inputDetails" : {
+            "truncated" : false
+          }
+        },
+        "previous_event_id" : "3",
+        "id" : "4",
+        "type" : "FailStateEntered",
+        "event_timestamp" : "1647542411321",
+        "execution_arn" : "arn:aws:states:sa-east-1:425362996713:execution:StepFunctionTestFirehoseOnly\\0870ab81-a466-4c57-b63b-8966518d3ebf",
+        "aws" : {
+          "firehose" : {
+            "arn" : "arn:aws:firehose:sa-east-1:425362996713:deliverystream/PUT-DOG-StepFunction-Test"
+          },
+          "awslogs" : {
+            "owner" : "425362996713",
+            "logGroup" : "/aws/vendedlogs/states/StepFunctionTestFirehoseOnly-Logs",
+            "logStream" : "states/StepFunctionTestFirehoseOnly/2023-08-03-15/6f4b6612"
+          },
+          "invoked_function_arn" : "arn:aws:lambda:sa-east-1:601427279990:function:forwarder",
+          "function_version" : "$LATEST"
+        }
+      }
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "statemachinearn:arn:aws:states:sa-east-1:425362996713:statemachine:stepfunctiontestfirehoseonly"
+     - "state_machine_type:standard"
+     - "aws_account:425362996713"
+    timestamp: 1647542411321
+ -
+  sample: |-
+    {
+      "service" : "stepfunction",
+      "details" : {
+        "input" : "{\"name\":\"John\", \"age\":30}",
+        "inputDetails" : {
+          "truncated" : false
+        }
+      },
+      "previous_event_id" : "3",
+      "id" : "4",
+      "type" : "FailStateEntered",
+      "event_timestamp" : "1647542411321",
+      "execution_arn" : "arn:aws:states:sa-east-1:425362996713:execution:StepFunctionTestFirehoseOnly:0870ab81-a466-4c57-b63b-8966518d3ebf",
+      "aws" : {
+        "firehose" : {
+          "arn" : "arn:aws:firehose:sa-east-1:425362996713:deliverystream/PUT-DOG-StepFunction-Test"
+        },
+        "awslogs" : {
+          "owner" : "425362996713",
+          "logGroup" : "/aws/vendedlogs/states/StepFunctionTestFirehoseOnly-Logs",
+          "logStream" : "states/StepFunctionTestFirehoseOnly/2023-08-03-15/6f4b6612"
+        },
+        "invoked_function_arn" : "arn:aws:lambda:sa-east-1:601427279990:function:forwarder",
+        "function_version" : "$LATEST"
+      }
+    }
+  result:
+    custom:
+      aws:
+        awslogs:
+          logGroup: "/aws/vendedlogs/states/StepFunctionTestFirehoseOnly-Logs"
+          logStream: "states/StepFunctionTestFirehoseOnly/2023-08-03-15/6f4b6612"
+          owner: "425362996713"
+        firehose:
+          arn: "arn:aws:firehose:sa-east-1:425362996713:deliverystream/PUT-DOG-StepFunction-Test"
+        function_version: "$LATEST"
+        invoked_function_arn: "arn:aws:lambda:sa-east-1:601427279990:function:forwarder"
+      aws_region: "sa-east-1"
+      details:
+        input:
+          age: 30
+          name: "John"
+        inputDetails:
+          truncated: false
+      event_timestamp: "1647542411321"
+      evt:
+        name: "FailStateEntered"
+      execution_arn: "arn:aws:states:sa-east-1:425362996713:execution:StepFunctionTestFirehoseOnly:0870ab81-a466-4c57-b63b-8966518d3ebf"
+      execution_id: "0870ab81-a466-4c57-b63b-8966518d3ebf"
+      host: "arn:aws:states:sa-east-1:425362996713:stateMachine:StepFunctionTestFirehoseOnly"
+      id: "4"
+      name: "StepFunctionTestFirehoseOnly"
+      previous_event_id: "3"
+      service: "stepfunction"
+      status: "error"
+    message: |-
+      {
+        "service" : "stepfunction",
+        "details" : {
+          "input" : "{\"name\":\"John\", \"age\":30}",
+          "inputDetails" : {
+            "truncated" : false
+          }
+        },
+        "previous_event_id" : "3",
+        "id" : "4",
+        "type" : "FailStateEntered",
+        "event_timestamp" : "1647542411321",
+        "execution_arn" : "arn:aws:states:sa-east-1:425362996713:execution:StepFunctionTestFirehoseOnly:0870ab81-a466-4c57-b63b-8966518d3ebf",
+        "aws" : {
+          "firehose" : {
+            "arn" : "arn:aws:firehose:sa-east-1:425362996713:deliverystream/PUT-DOG-StepFunction-Test"
+          },
+          "awslogs" : {
+            "owner" : "425362996713",
+            "logGroup" : "/aws/vendedlogs/states/StepFunctionTestFirehoseOnly-Logs",
+            "logStream" : "states/StepFunctionTestFirehoseOnly/2023-08-03-15/6f4b6612"
+          },
+          "invoked_function_arn" : "arn:aws:lambda:sa-east-1:601427279990:function:forwarder",
+          "function_version" : "$LATEST"
+        }
+      }
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "statemachinearn:arn:aws:states:sa-east-1:425362996713:statemachine:stepfunctiontestfirehoseonly"
+     - "state_machine_type:standard"
+     - "aws_account:425362996713"
+    timestamp: 1647542411321
+ -
+   sample: |-
+     {
+       "service" : "stepfunction",
+       "host" : "arn:aws:states:sa-east-1:123456123456:execution:ImageProcStateMachine/ProcessImageMap",
+       "details" : {
+         "output" : "{\"status\":\"processed\",\"key\":\"images/image_0044.jpg\"}",
+         "outputDetails" : {
+           "truncated" : false
+         },
+         "name" : "Lambda Invoke"
+       },
+       "previous_event_id" : "5",
+       "id" : "6",
+       "type" : "TaskStateExited",
+       "event_timestamp" : "1748959655408",
+       "execution_arn" : "arn:aws:states:sa-east-1:123456123456:execution:ImageProcStateMachine/ProcessImageMap:7e2ca384-34e1-328d-ac90-822688759925",
+       "aws" : {
+         "awslogs" : {
+           "owner" : "123456123456",
+           "logGroup" : "/aws/vendedlogs/states/ImageProcStateMachine-Logs",
+           "logStream" : "states/ImageProcStateMachine/2025-06-03-14/00000000"
+         },
+         "invoked_function_arn" : "arn:aws:lambda:sa-east-1:601427279990:function:forwarder",
+         "function_version" : "$LATEST"
+       }
+     }
+   result:
+     custom:
+       aws:
+         awslogs:
+           logGroup: "/aws/vendedlogs/states/ImageProcStateMachine-Logs"
+           logStream: "states/ImageProcStateMachine/2025-06-03-14/00000000"
+           owner: "123456123456"
+         function_version: "$LATEST"
+         invoked_function_arn: "arn:aws:lambda:sa-east-1:601427279990:function:forwarder"
+       aws_region: "sa-east-1"
+       details:
+         name: "Lambda Invoke"
+         output:
+           key: "images/image_0044.jpg"
+           status: "processed"
+         outputDetails:
+           truncated: false
+       event_timestamp: "1748959655408"
+       evt:
+         name: "TaskStateExited"
+       execution_arn: "arn:aws:states:sa-east-1:123456123456:execution:ImageProcStateMachine/ProcessImageMap:7e2ca384-34e1-328d-ac90-822688759925"
+       execution_id: "ProcessImageMap:7e2ca384-34e1-328d-ac90-822688759925"
+       host: "arn:aws:states:sa-east-1:123456123456:stateMachine:ImageProcStateMachine"
+       id: "6"
+       is_distributed_map_child: "true"
+       name: "ImageProcStateMachine"
+       previous_event_id: "5"
+       service: "stepfunction"
+       status: "info"
+       step_function_url: "https://console.aws.amazon.com/states/home#/statemachines/view/arn:aws:states:sa-east-1:123456123456:execution:ImageProcStateMachine/ProcessImageMap"
+     message: |-
+       {
+         "service" : "stepfunction",
+         "host" : "arn:aws:states:sa-east-1:123456123456:execution:ImageProcStateMachine/ProcessImageMap",
+         "details" : {
+           "output" : "{\"status\":\"processed\",\"key\":\"images/image_0044.jpg\"}",
+           "outputDetails" : {
+             "truncated" : false
+           },
+           "name" : "Lambda Invoke"
+         },
+         "previous_event_id" : "5",
+         "id" : "6",
+         "type" : "TaskStateExited",
+         "event_timestamp" : "1748959655408",
+         "execution_arn" : "arn:aws:states:sa-east-1:123456123456:execution:ImageProcStateMachine/ProcessImageMap:7e2ca384-34e1-328d-ac90-822688759925",
+         "aws" : {
+           "awslogs" : {
+             "owner" : "123456123456",
+             "logGroup" : "/aws/vendedlogs/states/ImageProcStateMachine-Logs",
+             "logStream" : "states/ImageProcStateMachine/2025-06-03-14/00000000"
+           },
+           "invoked_function_arn" : "arn:aws:lambda:sa-east-1:601427279990:function:forwarder",
+           "function_version" : "$LATEST"
+         }
+       }
+     status: "info"
+     tags:
+       - "source:LOGS_SOURCE"
+       - "statemachinearn:arn:aws:states:sa-east-1:123456123456:statemachine:imageprocstatemachine"
+       - "state_machine_type:standard"
+       - "aws_account:123456123456"
+     timestamp: 1748959655408

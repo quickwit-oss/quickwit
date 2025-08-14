@@ -1,0 +1,119 @@
+id: twistlock
+metric_id: twistlock
+backend_only: false
+facets:
+  - groups:
+      - Vulnerability
+    name: Package
+    path: vulnerability.package.name
+    source: log
+  - groups:
+      - Vulnerability
+    name: CVE
+    path: vulnerability.cve
+    source: log
+  - groups:
+      - Vulnerability
+    name: Affected Image Name
+    path: vulnerability.image_name
+    source: log
+  - groups:
+      - Vulnerability
+    name: Vulnerability Status
+    path: vulnerability.status
+    source: log
+  - groups:
+      - Vulnerability
+    name: Package Version
+    path: vulnerability.package.version
+    source: log
+  - groups:
+      - Vulnerability
+    name: Vulnerability Severity
+    path: vulnerability.severity
+    source: log
+pipeline:
+  type: pipeline
+  name: Twistlock logs
+  enabled: true
+  filter:
+    query: source:twistlock
+  processors:
+    - type: grok-parser
+      name: Parsing Twistlock logs
+      enabled: true
+      source: message
+      grok:
+        supportRules: |
+        matchRules: |
+          keyvalue_rule %{data:vulnerability:keyvalue}
+      samples:
+        - time="2018-12-17T23:04:53.405061747Z" type="registry_scan" log_type="vulnerability" vulnerability_id="46" description="Image contains vulnerable OS packages" cve="CVE-2017-13727" severity="low" package="tiff (used in libtiff5)" package_version="4.0.3-7ubuntu0.4" vendor_status="fixed in 4.0.3-7ubuntu0.8" rule="Default - alert all components" host="demo-jeremy-p-twistlock-com" image_id="sha256:abce18594030284839329484737358538983838383838383838383838383838a" image_name="registry.infra.svc.cluster.local:5000/infoslack/dvwa:latest"
+        - time="2018-12-17T23:04:53.405061747Z" type="registry_scan" log_type="vulnerability" vulnerability_id="46" description="Image contains vulnerable OS packages" cve="CVE-2017-13727" severity="low" package="tiff (used in libtiff5)" package_version="4.0.3-7ubuntu0.4" vendor_status="fixed in 4.0.3-7ubuntu0.8" rule="Default - alert all components" host="demo-jeremy-p-twistlock-com" image_id="sha256:abce18594030284839329484737358538983838383838383838383838383838a" image_name="registry.infra.svc.cluster.local:5000/infoslack/dvwa:latest"
+    - type: attribute-remapper
+      name: Map `vulnerability.vulnerability_id` to `vulnerability.id`
+      enabled: true
+      sources:
+        - vulnerability.vulnerability_id
+      target: vulnerability.id
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `vulnerability.vendor_status` to `vulnerability.status`
+      enabled: true
+      sources:
+        - vulnerability.vendor_status
+      target: vulnerability.status
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `vulnerability.package` to `vulnerability.package.name`
+      enabled: true
+      sources:
+        - vulnerability.package
+      target: vulnerability.package.name
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `vulnerability.package_version` to `vulnerability.package.version`
+      enabled: true
+      sources:
+        - vulnerability.package_version
+      target: vulnerability.package.version
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: category-processor
+      name: Categorise vulnerability severities
+      enabled: true
+      categories:
+        - filter:
+            query: '@vulnerability.severity:low'
+          name: info
+        - filter:
+            query: '@vulnerability.severity:medium'
+          name: warning
+        - filter:
+            query: '@vulnerability.severity:high'
+          name: error
+        - filter:
+            query: '@vulnerability.severity:critical'
+          name: emergency
+      target: level
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: date-remapper
+      name: Define `vulnerability.time` as the official date of the log
+      enabled: true
+      sources:
+        - vulnerability.time

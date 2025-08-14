@@ -1,0 +1,127 @@
+id: "oci.vcn"
+tests:
+  -
+    sample: |-
+      {
+        "oracle" : {
+          "compartmentid" : "ocid1.tenancy.oc1..aaaaaaaakyknye4jnwyh6rbcugpp4kh6iqzi7ir7pmguufdn5h7n5mnwlcoq",
+          "vcnOcid" : "ocid1.vcn.oc1.iad.amaaaaaaehwejaiagdidynaro3iomnxg7xtahm4vc3yvfqbffutcihxeh76a",
+          "vnicsubnetocid" : "ocid1.subnet.oc1.iad.aaaaaaaaftim62ibbm2utg2xolrqcokhuefixvs2rqak5ri7tbft6qdlmkma",
+          "filterOcid:" : "ocid1.capturefilter.oc1.iad.amaaaaaaehwejaiaatrnrngqbqn4ntjbgn6yxqarstzaqe7z5zcepmrxcn4a",
+          "format" : "IngestorFormat",
+          "ingestedtime" : "2025-01-16T17:19:23.707Z",
+          "loggroupid" : "ocid1.loggroup.oc1.iad.amaaaaaaehwejaiaht4xndklpulceh344esjzb7mgggagfzxoe3plkn3wl3q",
+          "tenantid" : "ocid1.tenancy.oc1..aaaaaaaakyknye4jnwyh6rbcugpp4kh6iqzi7ir7pmguufdn5h7n5mnwlcoq",
+          "instanceOcid:" : "ocid1.instance.oc1.iad.anuwcljrvpclpoqc74ojkl7646b4vu6c42rwp66t22ccsnfqz4hspb6iqfga",
+          "logid" : "ocid1.log.oc1.iad.amaaaaaaehwejaiak53b4rqfjujgoozjkagaxwpjio4ghpcxnarvp3bd6ujq",
+          "vniccompartmentocid" : "ocid1.tenancy.oc1..aaaaaaaakyknye4jnwyh6rbcugpp4kh6iqzi7ir7pmguufdn5h7n5mnwlcoq",
+          "vnicocid" : "ocid1.vnic.oc1.iad.abuwcljry73rptswo2he7jdbswiai5l5uoqzfhdy6vwk4ihp4od75rt74lba"
+        },
+        "data" : {
+          "destinationPort" : 443,
+          "sourcePort" : 46836,
+          "sourceAddress" : "10.0.138.25",
+          "destinationAddress" : "3.233.145.245",
+          "version" : "2",
+          "packets" : 16,
+          "protocol" : 6,
+          "protocolName" : "TCP",
+          "action" : "ACCEPT",
+          "startTime" : 1737047935,
+          "endTime" : 1737047935,
+          "flowid" : "6e46a8e4",
+          "bytesOut" : 7275,
+          "status" : "OK"
+        },
+        "service" : "oci",
+        "source" : "-",
+        "type" : "com.oraclecloud.vcn.flowlogs.DataEvent",
+        "ddsource" : "oci.vcn",
+        "timestamp" : "2025-01-16T17:18:55Z"
+      }
+    result:
+      custom:
+        data:
+          bytesOut: 7275
+          endTime: 1737047935
+          flowid: "6e46a8e4"
+          packets: 16
+          protocol: 6
+          protocolName: "TCP"
+          startTime: 1737047935
+          status: "OK"
+          version: "2"
+        ddsource: "oci.vcn"
+        evt:
+          name: "ACCEPT"
+        network:
+          client:
+            geoip: {}
+            ip: "10.0.138.25"
+            port: 46836
+          destination:
+            geoip: {}
+            ip: "3.233.145.245"
+            port: 443
+        oci:
+          compartment_ocid: "ocid1.tenancy.oc1..aaaaaaaakyknye4jnwyh6rbcugpp4kh6iqzi7ir7pmguufdn5h7n5mnwlcoq"
+          log_group_id: "ocid1.loggroup.oc1.iad.amaaaaaaehwejaiaht4xndklpulceh344esjzb7mgggagfzxoe3plkn3wl3q"
+          log_id: "ocid1.log.oc1.iad.amaaaaaaehwejaiak53b4rqfjujgoozjkagaxwpjio4ghpcxnarvp3bd6ujq"
+          status: "OK"
+          tenancy_ocid: "ocid1.tenancy.oc1..aaaaaaaakyknye4jnwyh6rbcugpp4kh6iqzi7ir7pmguufdn5h7n5mnwlcoq"
+          vcn_ocid: "ocid1.vcn.oc1.iad.amaaaaaaehwejaiagdidynaro3iomnxg7xtahm4vc3yvfqbffutcihxeh76a"
+          vnic_ocid: "ocid1.vnic.oc1.iad.abuwcljry73rptswo2he7jdbswiai5l5uoqzfhdy6vwk4ihp4od75rt74lba"
+          vnic_subnet_ocid: "ocid1.subnet.oc1.iad.aaaaaaaaftim62ibbm2utg2xolrqcokhuefixvs2rqak5ri7tbft6qdlmkma"
+          vnic_compartment_ocid: "ocid1.tenancy.oc1..aaaaaaaakyknye4jnwyh6rbcugpp4kh6iqzi7ir7pmguufdn5h7n5mnwlcoq"
+        oracle:
+          'filterOcid:': "ocid1.capturefilter.oc1.iad.amaaaaaaehwejaiaatrnrngqbqn4ntjbgn6yxqarstzaqe7z5zcepmrxcn4a"
+          format: "IngestorFormat"
+          ingestedtime: "2025-01-16T17:19:23.707Z"
+          'instanceOcid:': "ocid1.instance.oc1.iad.anuwcljrvpclpoqc74ojkl7646b4vu6c42rwp66t22ccsnfqz4hspb6iqfga"
+        service: "oci"
+        source: "-"
+        timestamp: "2025-01-16T17:18:55Z"
+        type: "com.oraclecloud.vcn.flowlogs.DataEvent"
+      message: |-
+        {
+          "oracle" : {
+            "compartmentid" : "ocid1.tenancy.oc1..aaaaaaaakyknye4jnwyh6rbcugpp4kh6iqzi7ir7pmguufdn5h7n5mnwlcoq",
+            "vcnOcid" : "ocid1.vcn.oc1.iad.amaaaaaaehwejaiagdidynaro3iomnxg7xtahm4vc3yvfqbffutcihxeh76a",
+            "vnicsubnetocid" : "ocid1.subnet.oc1.iad.aaaaaaaaftim62ibbm2utg2xolrqcokhuefixvs2rqak5ri7tbft6qdlmkma",
+            "filterOcid:" : "ocid1.capturefilter.oc1.iad.amaaaaaaehwejaiaatrnrngqbqn4ntjbgn6yxqarstzaqe7z5zcepmrxcn4a",
+            "format" : "IngestorFormat",
+            "ingestedtime" : "2025-01-16T17:19:23.707Z",
+            "loggroupid" : "ocid1.loggroup.oc1.iad.amaaaaaaehwejaiaht4xndklpulceh344esjzb7mgggagfzxoe3plkn3wl3q",
+            "tenantid" : "ocid1.tenancy.oc1..aaaaaaaakyknye4jnwyh6rbcugpp4kh6iqzi7ir7pmguufdn5h7n5mnwlcoq",
+            "instanceOcid:" : "ocid1.instance.oc1.iad.anuwcljrvpclpoqc74ojkl7646b4vu6c42rwp66t22ccsnfqz4hspb6iqfga",
+            "logid" : "ocid1.log.oc1.iad.amaaaaaaehwejaiak53b4rqfjujgoozjkagaxwpjio4ghpcxnarvp3bd6ujq",
+            "vniccompartmentocid" : "ocid1.tenancy.oc1..aaaaaaaakyknye4jnwyh6rbcugpp4kh6iqzi7ir7pmguufdn5h7n5mnwlcoq",
+            "vnicocid" : "ocid1.vnic.oc1.iad.abuwcljry73rptswo2he7jdbswiai5l5uoqzfhdy6vwk4ihp4od75rt74lba"
+          },
+          "data" : {
+            "destinationPort" : 443,
+            "sourcePort" : 46836,
+            "sourceAddress" : "10.0.138.25",
+            "destinationAddress" : "3.233.145.245",
+            "version" : "2",
+            "packets" : 16,
+            "protocol" : 6,
+            "protocolName" : "TCP",
+            "action" : "ACCEPT",
+            "startTime" : 1737047935,
+            "endTime" : 1737047935,
+            "flowid" : "6e46a8e4",
+            "bytesOut" : 7275,
+            "status" : "OK"
+          },
+          "service" : "oci",
+          "source" : "-",
+          "type" : "com.oraclecloud.vcn.flowlogs.DataEvent",
+          "ddsource" : "oci.vcn",
+          "timestamp" : "2025-01-16T17:18:55Z"
+        }
+      service: "oci"
+      status: "ok"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1737047935000

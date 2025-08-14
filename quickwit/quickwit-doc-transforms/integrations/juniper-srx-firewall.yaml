@@ -1,0 +1,625 @@
+id: juniper-srx-firewall
+metric_id: juniper-srx-firewall
+backend_only: false
+facets:
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Client Port
+    path: network.client.port
+    source: log
+  - groups:
+      - Geoip
+    name: Destination City Name
+    path: network.destination.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Continent Code
+    path: network.destination.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Continent Name
+    path: network.destination.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Country ISO Code
+    path: network.destination.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Country Name
+    path: network.destination.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Subdivision ISO Code
+    path: network.destination.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Subdivision Name
+    path: network.destination.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Destination IP
+    path: network.destination.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Destination Port
+    path: network.destination.port
+    source: log
+  - facetType: range
+    groups:
+      - Web Access
+    name: Network Bytes Read
+    path: network.bytes_read
+    source: log
+    type: double
+    unit:
+      family: bytes
+      name: byte
+  - facetType: range
+    groups:
+      - Web Access
+    name: Bytes Written
+    path: network.bytes_written
+    source: log
+    type: double
+    unit:
+      family: bytes
+      name: byte
+  - description: ""
+    facetType: range
+    groups:
+      - Juniper SRX Firewall
+    name: Elapsed Time
+    path: juniper_srx_firewall.elapsed_time
+    source: log
+    type: integer
+    unit:
+      family: time
+      name: second
+  - description: ""
+    facetType: range
+    groups:
+      - Juniper SRX Firewall
+    name: Inbound Bytes
+    path: juniper_srx_firewall.inbound_bytes
+    source: log
+    type: integer
+    unit:
+      family: bytes
+      name: byte
+  - description: ""
+    facetType: range
+    groups:
+      - Juniper SRX Firewall
+    name: Inbound Packets
+    path: juniper_srx_firewall.inbound_packets
+    source: log
+    type: integer
+  - description: ""
+    facetType: range
+    groups:
+      - Juniper SRX Firewall
+    name: Outbound Bytes
+    path: juniper_srx_firewall.outbound_bytes
+    source: log
+    type: integer
+    unit:
+      family: bytes
+      name: byte
+  - description: ""
+    facetType: range
+    groups:
+      - Juniper SRX Firewall
+    name: Outbound Packets
+    path: juniper_srx_firewall.outbound_packets
+    source: log
+    type: integer
+  - description: ""
+    facetType: range
+    groups:
+      - Juniper SRX Firewall
+    name: Packets From Client
+    path: juniper_srx_firewall.packets_from_client
+    source: log
+    type: integer
+  - description: ""
+    facetType: range
+    groups:
+      - Juniper SRX Firewall
+    name: Packets From Server
+    path: juniper_srx_firewall.packets_from_server
+    source: log
+    type: integer
+  - description: ""
+    facetType: range
+    groups:
+      - Juniper SRX Firewall
+    name: Threat Score
+    path: juniper_srx_firewall.threat_score
+    source: log
+    type: integer
+  - description: ""
+    facetType: range
+    groups:
+      - Juniper SRX Firewall
+    name: Verdict Number
+    path: juniper_srx_firewall.verdict_number
+    source: log
+    type: integer
+pipeline:
+  type: pipeline
+  name: Juniper SRX Firewall
+  enabled: true
+  filter:
+    query: source:juniper-srx-firewall
+  processors:
+    - type: string-builder-processor
+      name: Building a service attribute
+      enabled: true
+      template: juniper-srx-firewall
+      target: service
+      replaceMissing: false
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: date-remapper
+      name: Define `syslog.timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - syslog.timestamp
+    - type: status-remapper
+      name: Define `syslog.severity` as the official status of the log
+      enabled: true
+      sources:
+        - syslog.severity
+    - type: attribute-remapper
+      name: Map `username` to `usr.name`
+      enabled: true
+      sources:
+        - username
+      sourceType: attribute
+      target: usr.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `source-address`, `client-address`, `src-ip-str`, `b4-address` to `network.client.ip`
+      enabled: true
+      sources:
+        - source-address
+        - client-address
+        - src-ip-str
+        - b4-address
+      sourceType: attribute
+      target: network.client.ip
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `source-port` to `network.client.port`
+      enabled: true
+      sources:
+        - source-port
+      sourceType: attribute
+      target: network.client.port
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `destination-address` to `network.destination.ip`
+      enabled: true
+      sources:
+        - destination-address
+      sourceType: attribute
+      target: network.destination.ip
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `destination-port` to `network.destination.port`
+      enabled: true
+      sources:
+        - destination-port
+      sourceType: attribute
+      target: network.destination.port
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `bytes-from-client` to `network.bytes_read`
+      enabled: true
+      sources:
+        - bytes-from-client
+      sourceType: attribute
+      target: network.bytes_read
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `bytes-from-server` to `network.bytes_written`
+      enabled: true
+      sources:
+        - bytes-from-server
+      sourceType: attribute
+      target: network.bytes_written
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `verdict-number` to `juniper_srx_firewall.verdict_number`
+      enabled: true
+      sources:
+        - verdict-number
+      sourceType: attribute
+      target: juniper_srx_firewall.verdict_number
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `threat-score` to `juniper_srx_firewall.threat_score`
+      enabled: true
+      sources:
+        - threat-score
+      sourceType: attribute
+      target: juniper_srx_firewall.threat_score
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `elapsed-time` to `juniper_srx_firewall.elapsed_time`
+      enabled: true
+      sources:
+        - elapsed-time
+      sourceType: attribute
+      target: juniper_srx_firewall.elapsed_time
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `packets-from-client` to `juniper_srx_firewall.packets_from_client`
+      enabled: true
+      sources:
+        - packets-from-client
+      sourceType: attribute
+      target: juniper_srx_firewall.packets_from_client
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `packets-from-server` to `juniper_srx_firewall.packets_from_server`
+      enabled: true
+      sources:
+        - packets-from-server
+      sourceType: attribute
+      target: juniper_srx_firewall.packets_from_server
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `inbound-bytes` to `juniper_srx_firewall.inbound_bytes`
+      enabled: true
+      sources:
+        - inbound-bytes
+      sourceType: attribute
+      target: juniper_srx_firewall.inbound_bytes
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `outbound-bytes` to `juniper_srx_firewall.outbound_bytes`
+      enabled: true
+      sources:
+        - outbound-bytes
+      sourceType: attribute
+      target: juniper_srx_firewall.outbound_bytes
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `inbound-packets` to `juniper_srx_firewall.inbound_packets`
+      enabled: true
+      sources:
+        - inbound-packets
+      sourceType: attribute
+      target: juniper_srx_firewall.inbound_packets
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `outbound-packets` to `juniper_srx_firewall.outbound_packets`
+      enabled: true
+      sources:
+        - outbound-packets
+      sourceType: attribute
+      target: juniper_srx_firewall.outbound_packets
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: geo-ip-parser
+      name: Extracting geolocation information from the client IP
+      enabled: true
+      sources:
+        - network.client.ip
+      target: network.client.geoip
+      ip_processing_behavior: do-nothing
+    - type: geo-ip-parser
+      name: Extracting geolocation information from the destination IP
+      enabled: true
+      sources:
+        - network.destination.ip
+      target: network.destination.geoip
+      ip_processing_behavior: do-nothing
+    - type: category-processor
+      name: Category processor for create action from web content filtering logs
+      enabled: true
+      categories:
+        - filter:
+            query: "@syslog.msgid:WEBFILTER_URL_BLOCKED"
+          name: Blocked
+        - filter:
+            query: "@syslog.msgid:WEBFILTER_URL_PERMITTED"
+          name: Permitted
+      target: action
+    - type: category-processor
+      name: Category processor for create category from DoS attack logs
+      enabled: true
+      categories:
+        - filter:
+            query: "@syslog.msgid:RT_SCREEN_ICMP"
+          name: ICMP
+        - filter:
+            query: "@syslog.msgid:RT_SCREEN_TCP"
+          name: TCP
+        - filter:
+            query: "@syslog.msgid:RT_SCREEN_UDP"
+          name: UDP
+        - filter:
+            query: "@syslog.msgid:RT_SCREEN_IP"
+          name: IP
+        - filter:
+            query: "@syslog.msgid:RT_SCREEN_TCP_DST_IP"
+          name: TCP destination IP
+        - filter:
+            query: "@syslog.msgid:RT_SCREEN_TCP_SRC_IP"
+          name: TCP source IP
+      target: category
+    - type: category-processor
+      name: Category processor for create category from authentication logs
+      enabled: true
+      categories:
+        - filter:
+            query: "@syslog.msgid:(DYNAMIC_VPN_AUTH_FAIL OR DYNAMIC_VPN_AUTH_OK)"
+          name: Dynamic VPN Auth
+        - filter:
+            query: "@syslog.msgid:(REMOTE_ACCESS_VPN_AUTH_FAIL OR
+              REMOTE_ACCESS_VPN_AUTH_OK)"
+          name: Remote Access VPN Auth
+        - filter:
+            query: "@syslog.msgid:(JADE_AUTH_FAILURE OR JADE_AUTH_SUCCESS)"
+          name: JADE Auth
+        - filter:
+            query: "@syslog.msgid:(FWAUTH_WEBAUTH_FAIL OR FWAUTH_WEBAUTH_SUCCESS)"
+          name: Web Auth
+        - filter:
+            query: "@syslog.msgid:(FWAUTH_FTP_USER_AUTH_FAIL OR
+              FWAUTH_FTP_USER_AUTH_ACCEPTED)"
+          name: FTP User Auth
+        - filter:
+            query: "@syslog.msgid:(FWAUTH_HTTPS_USER_AUTH_FAIL OR
+              FWAUTH_HTTPS_USER_AUTH_ACCEPTED)"
+          name: HTTPs User Auth
+        - filter:
+            query: "@syslog.msgid:(FWAUTH_HTTP_USER_AUTH_FAIL OR
+              FWAUTH_HTTP_USER_AUTH_ACCEPTED)"
+          name: HTTP User Auth
+        - filter:
+            query: "@syslog.msgid:(FWAUTH_TELNET_USER_AUTH_FAIL OR
+              FWAUTH_TELNET_USER_AUTH_ACCEPTED)"
+          name: Telnet User Auth
+        - filter:
+            query: "@syslog.msgid:(WEB_AUTH_FAIL OR WEB_AUTH_SUCCESS)"
+          name: J-Web Auth
+        - filter:
+            query: "@syslog.msgid:SSHD_LOGIN_FAILED"
+          name: SSHD Auth
+      target: category
+    - name: Lookup for `protocol-id` to `protocol`
+      enabled: true
+      source: protocol-id
+      target: protocol
+      lookupTable: |-
+        0,HOPOPT
+        1,ICMP
+        2,IGMP
+        3,GGP
+        4,IPv4
+        5,ST
+        6,TCP
+        7,CBT
+        8,EGP
+        9,IGP
+        10,BBN-RCC-MON
+        11,NVP-II
+        12,PUP
+        14,EMCON
+        15,XNET
+        16,CHAOS
+        17,UDP
+        18,MUX
+        19,DCN-MEAS
+        20,HMP
+        21,PRM
+        22,XNS-IDP
+        23,TRUNK-1
+        24,TRUNK-2
+        25,LEAF-1
+        26,LEAF-2
+        27,RDP
+        28,IRTP
+        29,ISO-TP4
+        30,NETBLT
+        31,MFE-NSP
+        32,MERIT-INP
+        33,DCCP
+        34,3PC
+        35,IDPR
+        36,XTP
+        37,DDP
+        38,IDPR-CMTP
+        39,TP++
+        40,IL
+        41,IPv6
+        42,SDRP
+        43,IPv6-Route
+        44,IPv6-Frag
+        45,IDRP
+        46,RSVP
+        47,GRE
+        48,DSR
+        49,BNA
+        50,ESP
+        51,AH
+        52,I-NLSP
+        54,NARP
+        55,Min-IPv4
+        56,TLSP
+        57,SKIP
+        58,IPv6-ICMP
+        59,IPv6-NoNxt
+        60,IPv6-Opts
+        62,CFTP
+        64,SAT-EXPAK
+        65,KRYPTOLAN
+        66,RVD
+        67,IPPC
+        69,SAT-MON
+        70,VISA
+        71,IPCV
+        72,CPNX
+        73,CPHB
+        74,WSN
+        75,PVP
+        76,BR-SAT-MON
+        77,SUN-ND
+        78,WB-MON
+        79,WB-EXPAK
+        80,ISO-IP
+        81,VMTP
+        82,SECURE-VMTP
+        83,VINES
+        84,IPTM
+        85,NSFNET-IGP
+        86,DGP
+        87,TCF
+        88,EIGRP
+        89,OSPFIGP
+        90,Sprite-RPC
+        91,LARP
+        92,MTP
+        93,AX.25
+        94,IPIP
+        96,SCC-SP
+        97,ETHERIP
+        98,ENCAP
+        100,GMTP
+        101,IFMP
+        102,PNNI
+        103,PIM
+        104,ARIS
+        105,SCPS
+        106,QNX
+        107,A/N
+        108,IPComp
+        109,SNP
+        110,Compaq-Peer
+        111,IPX-in-IP
+        112,VRRP
+        113,PGM
+        115,L2TP
+        116,DDX
+        117,IATP
+        118,STP
+        119,SRP
+        120,UTI
+        121,SMP
+        123,PTP
+        124,ISIS over IPv4
+        125,FIRE
+        126,CRTP
+        127,CRUDP
+        128,SSCOPMCE
+        129,IPLT
+        130,SPS
+        131,PIPE
+        132,SCTP
+        133,FC
+        134,RSVP-E2E-IGNORE
+        135,Mobility Header
+        136,UDPLite
+        137,MPLS-in-IP
+        138,manet
+        139,HIP
+        140,Shim6
+        141,WESP
+        142,ROHC
+        143,Ethernet
+        144,AGGFRAG
+        145,NSH
+        146,Homa
+        147,BIT-EMU
+      defaultLookup: UNKNOWN
+      type: lookup-processor

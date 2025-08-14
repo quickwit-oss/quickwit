@@ -1,0 +1,929 @@
+id: crest_data_systems_picus_security
+metric_id: crest-data-systems-picus-security
+backend_only: false
+facets:
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems picus security
+    name: Activity Account ID
+    path: cds.picus_security.account_id
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems picus security
+    name: Activity Action
+    path: cds.picus_security.action
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems picus security
+    name: Activity Done with API
+    path: cds.picus_security.done_with_api
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems picus security
+    name: Activity Syslog Severity
+    path: cds.picus_security.syslog_severity
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems picus security
+    name: Activity Type
+    path: cds.picus_security.type
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems picus security
+    name: Activity User Email
+    path: cds.picus_security.user_email
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems picus security
+    name: Activity User First Name
+    path: cds.picus_security.user_first_name
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems picus security
+    name: Activity User ID
+    path: cds.picus_security.user_id
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems picus security
+    name: Activity User Last Name
+    path: cds.picus_security.user_last_name
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems picus security
+    name: Integration Agent ID
+    path: cds.picus_security.integration_agent.id
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems picus security
+    name: Integration Agent Installed
+    path: cds.picus_security.integration_agent.installed
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems picus security
+    name: Integration Agent Name
+    path: cds.picus_security.integration_agent.name
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems picus security
+    name: Integration Agent Status
+    path: cds.picus_security.integration_agent.status
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems picus security
+    name: Integration Agent Token Expired
+    path: cds.picus_security.integration_agent.token_expired
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems picus security
+    name: Integration ID
+    path: cds.picus_security.integration.id
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems picus security
+    name: Integration Name
+    path: cds.picus_security.integration.name
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems picus security
+    name: Integration Status
+    path: cds.picus_security.integration.status
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems picus security
+    name: Integration Type
+    path: cds.picus_security.integration.type
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems picus security
+    name: Picus Agent ID
+    path: cds.picus_security.picus_agent.id
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems picus security
+    name: Picus Agent Name
+    path: cds.picus_security.picus_agent.name
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems picus security
+    name: Picus Agent Platform Architecture
+    path: cds.picus_security.picus_agent.platform_architecture
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems picus security
+    name: Picus Agent Platform Name
+    path: cds.picus_security.picus_agent.platform_name
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems picus security
+    name: Picus Agent Status
+    path: cds.picus_security.picus_agent.status
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems picus security
+    name: Picus Agent Type
+    path: cds.picus_security.picus_agent.type
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems picus security
+    name: Picus Agent Version
+    path: cds.picus_security.picus_agent.version
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems picus security
+    name: Simulation Completion Ratio
+    path: cds.picus_security.simulation.completion_ratio
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems picus security
+    name: Simulation ID
+    path: cds.picus_security.simulation.id
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems picus security
+    name: Simulation Name
+    path: cds.picus_security.simulation.name
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems picus security
+    name: Simulation Status
+    path: cds.picus_security.simulation.status
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems picus security
+    name: Simulation Template ID
+    path: cds.picus_security.simulation.template_id
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems picus security
+    name: Simulation Template Name
+    path: cds.picus_security.simulation.template_name
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems picus security
+    name: Threat Affected OS
+    path: cds.picus_security.threat.affected_os
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems picus security
+    name: Threat ID
+    path: cds.picus_security.threat.id
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems picus security
+    name: Threat Name
+    path: cds.picus_security.threat.name
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems picus security
+    name: Threat Severity
+    path: cds.picus_security.threat.severity
+    source: log
+    type: string
+pipeline:
+  type: pipeline
+  name: Picus Security Pipeline
+  enabled: true
+  filter:
+    query: source:crest_data_systems_picus_security
+  processors:
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: pipeline
+      name: Picus Secuirty Picus Agents Pipeline
+      enabled: true
+      filter:
+        query: source:crest_data_systems_picus_security
+          service:cds.picus_security.picus_agents
+      processors:
+        - type: attribute-remapper
+          name: Map `id` to `cds.picus_security.picus_agent.id`
+          enabled: true
+          sources:
+            - id
+          sourceType: attribute
+          target: cds.picus_security.picus_agent.id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `name` to `cds.picus_security.picus_agent.name`
+          enabled: true
+          sources:
+            - name
+          sourceType: attribute
+          target: cds.picus_security.picus_agent.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `type` to `cds.picus_security.picus_agent.type`
+          enabled: true
+          sources:
+            - type
+          sourceType: attribute
+          target: cds.picus_security.picus_agent.type
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `version` to `cds.picus_security.picus_agent.version`
+          enabled: true
+          sources:
+            - version
+          sourceType: attribute
+          target: cds.picus_security.picus_agent.version
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `platform_architecture` to
+            `cds.picus_security.picus_agent.platform_architecture`
+          enabled: true
+          sources:
+            - platform_architecture
+          sourceType: attribute
+          target: cds.picus_security.picus_agent.platform_architecture
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `platform_name` to `cds.picus_security.picus_agent.platform_name`
+          enabled: true
+          sources:
+            - platform_name
+          sourceType: attribute
+          target: cds.picus_security.picus_agent.platform_name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `status` to `cds.picus_security.picus_agent.status`
+          enabled: true
+          sources:
+            - status
+          sourceType: attribute
+          target: cds.picus_security.picus_agent.status
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - name: Lookup 'cds.picus_security.picus_agent.status' to 'picus_agent_status'
+          enabled: true
+          source: cds.picus_security.picus_agent.status
+          target: picus_agent_status
+          lookupTable: |-
+            alive, info
+            dead, critical
+          defaultLookup: info
+          type: lookup-processor
+        - type: status-remapper
+          name: Define `picus_agent_status` as the official status of the log
+          enabled: true
+          sources:
+            - picus_agent_status
+    - type: pipeline
+      name: "Picus Security Integration Agents Pipeline "
+      enabled: true
+      filter:
+        query: source:crest_data_systems_picus_security
+          service:cds.picus_security.integration_agents
+      processors:
+        - type: attribute-remapper
+          name: Map `id` to `cds.picus_security.integration_agent.id`
+          enabled: true
+          sources:
+            - id
+          sourceType: attribute
+          target: cds.picus_security.integration_agent.id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `name` to `cds.picus_security.integration_agent.name`
+          enabled: true
+          sources:
+            - name
+          sourceType: attribute
+          target: cds.picus_security.integration_agent.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `installed` to `cds.picus_security.integration_agent.installed`
+          enabled: true
+          sources:
+            - installed
+          sourceType: attribute
+          target: cds.picus_security.integration_agent.installed
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `token_expired` to
+            `cds.picus_security.integration_agent.token_expired`
+          enabled: true
+          sources:
+            - token_expired
+          sourceType: attribute
+          target: cds.picus_security.integration_agent.token_expired
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `status` to `cds.picus_security.integration_agent.status`
+          enabled: true
+          sources:
+            - status
+          sourceType: attribute
+          target: cds.picus_security.integration_agent.status
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - name: Lookup 'cds.picus_security.integration_agent.status' to
+            'integration_agent_status'
+          enabled: true
+          source: cds.picus_security.integration_agent.status
+          target: integration_agent_status
+          lookupTable: |-
+            Dead, critical
+            Alive, info
+          defaultLookup: info
+          type: lookup-processor
+        - type: status-remapper
+          name: Define `integration_agent_status` as the official status of the log
+          enabled: true
+          sources:
+            - integration_agent_status
+    - type: pipeline
+      name: Picus Security Integrations Pipeline
+      enabled: true
+      filter:
+        query: source:crest_data_systems_picus_security
+          service:cds.picus_security.integrations
+      processors:
+        - type: attribute-remapper
+          name: Map `id` to `cds.picus_security.integration.id`
+          enabled: true
+          sources:
+            - id
+          sourceType: attribute
+          target: cds.picus_security.integration.id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `name` to `cds.picus_security.integration.name`
+          enabled: true
+          sources:
+            - name
+          sourceType: attribute
+          target: cds.picus_security.integration.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `type` to `cds.picus_security.integration.type`
+          enabled: true
+          sources:
+            - type
+          sourceType: attribute
+          target: cds.picus_security.integration.type
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `health_status.healthy` to `cds.picus_security.integration.status`
+          enabled: true
+          sources:
+            - health_status.healthy
+          sourceType: attribute
+          target: cds.picus_security.integration.status
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - name: Lookup 'cds.picus_security.integration.status' to 'integration_status'
+          enabled: true
+          source: cds.picus_security.integration.status
+          target: integration_status
+          lookupTable: |-
+            true, info
+            false, critical
+          defaultLookup: info
+          type: lookup-processor
+        - type: status-remapper
+          name: Define `integration_status` as the official status of the log
+          enabled: true
+          sources:
+            - integration_status
+    - type: pipeline
+      name: Picus Security Simulations Pipeline
+      enabled: true
+      filter:
+        query: source:crest_data_systems_picus_security
+          service:cds.picus_security.simulations
+      processors:
+        - type: attribute-remapper
+          name: Map `agent.id` to `cds.picus_security.picus_agent.id`
+          enabled: true
+          sources:
+            - agent.id
+          sourceType: attribute
+          target: cds.picus_security.picus_agent.id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `agent.name` to `cds.picus_security.picus_agent.name`
+          enabled: true
+          sources:
+            - agent.name
+          sourceType: attribute
+          target: cds.picus_security.picus_agent.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `agent.type` to `cds.picus_security.picus_agent.type`
+          enabled: true
+          sources:
+            - agent.type
+          sourceType: attribute
+          target: cds.picus_security.picus_agent.type
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `agent.status` to `cds.picus_security.picus_agent.status`
+          enabled: true
+          sources:
+            - agent.status
+          sourceType: attribute
+          target: cds.picus_security.picus_agent.status
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `agent.version` to `cds.picus_security.picus_agent.version`
+          enabled: true
+          sources:
+            - agent.version
+          sourceType: attribute
+          target: cds.picus_security.picus_agent.version
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `completion_ratio` to `cds.picus_security.simulation.completion_ratio`
+          enabled: true
+          sources:
+            - completion_ratio
+          sourceType: attribute
+          target: cds.picus_security.simulation.completion_ratio
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `simulation_id` to `cds.picus_security.simulation.id`
+          enabled: true
+          sources:
+            - simulation_id
+          sourceType: attribute
+          target: cds.picus_security.simulation.id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `simulation_name` to `cds.picus_security.simulation.name`
+          enabled: true
+          sources:
+            - simulation_name
+          sourceType: attribute
+          target: cds.picus_security.simulation.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `template_name` to `cds.picus_security.simulation.template_name`
+          enabled: true
+          sources:
+            - template_name
+          sourceType: attribute
+          target: cds.picus_security.simulation.template_name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `template_id` to `cds.picus_security.simulation.template_id`
+          enabled: true
+          sources:
+            - template_id
+          sourceType: attribute
+          target: cds.picus_security.simulation.template_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `status` to `cds.picus_security.simulation.status`
+          enabled: true
+          sources:
+            - status
+          sourceType: attribute
+          target: cds.picus_security.simulation.status
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - name: Lookup 'cds.picus_security.simulation.status' to 'simulation_status'
+          enabled: true
+          source: cds.picus_security.simulation.status
+          target: simulation_status
+          lookupTable: |-
+            NOT STARTED, warning
+            RUNNING, notice
+            COMPLETED, info
+          defaultLookup: info
+          type: lookup-processor
+        - type: status-remapper
+          name: Define `simulation_status` as the official status of the log
+          enabled: true
+          sources:
+            - simulation_status
+    - type: pipeline
+      name: Picus Security Threats Pipeline
+      enabled: true
+      filter:
+        query: source:crest_data_systems_picus_security
+          service:cds.picus_security.threats
+      processors:
+        - type: attribute-remapper
+          name: Map `id` to `cds.picus_security.threat.id`
+          enabled: true
+          sources:
+            - id
+          sourceType: attribute
+          target: cds.picus_security.threat.id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `name` to `cds.picus_security.threat.name`
+          enabled: true
+          sources:
+            - name
+          sourceType: attribute
+          target: cds.picus_security.threat.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `affected_os` to `cds.picus_security.threat.affected_os`
+          enabled: true
+          sources:
+            - affected_os
+          sourceType: attribute
+          target: cds.picus_security.threat.affected_os
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `severity` to `cds.picus_security.threat.severity`
+          enabled: true
+          sources:
+            - severity
+          sourceType: attribute
+          target: cds.picus_security.threat.severity
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - name: Lookup `cds.picus_security.threat.severity` to `threat_status`
+          enabled: true
+          source: cds.picus_security.threat.severity
+          target: threat_status
+          lookupTable: |-
+            Low, info
+            Medium, warning
+            High, critical
+          type: lookup-processor
+        - type: status-remapper
+          name: Define `threat_status` as the official status of the log
+          enabled: true
+          sources:
+            - threat_status
+    - type: pipeline
+      name: Picus Security Mitigation Devices
+      enabled: true
+      filter:
+        query: source:crest_data_systems_picus_security
+          service:cds.picus_security.mitigation_devices
+      processors:
+        - type: attribute-remapper
+          name: Map `id` to `mitigation_device_id`
+          enabled: true
+          sources:
+            - id
+          sourceType: attribute
+          target: mitigation_device_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Picus Security Activity Pipeline
+      enabled: true
+      filter:
+        query: service:cds.picus_security.activity
+      processors:
+        - type: grok-parser
+          name: Extract Activity Logs
+          enabled: true
+          source: message
+          samples:
+            - '<6>2025-02-17T06:46:46Z app.picussecurity.com PICUS[1]: {"common":{"unique_id":"609249cb-72b1-4c1e-9f97-760142b2a614","time":"2025-02-17T06:46:46.731407694Z","type":"User Management","action":"SuccessfulLogin","user_id":67513,"user_email":"kopen.j@example.com","user_first_name":"Dummy","user_last_name":"A","account_id":51912,"ip":"68.168.31.232","done_with_api":false,"platform_licences":null},"data":{"IpSSO":""}}'
+          grok:
+            supportRules: ""
+            matchRules: >-
+              parsing_rule <%{number:syslog_severity}>%{date("yyyy-MM-dd'T'HH:mm:ssZ"):date} %{notSpace:hostname} %{word:program.name}\[%{number:program.id}\]\:\s\{"common":%{greedyData:common:json},"data":%{greedyData:data:json}.*?
+        - type: attribute-remapper
+          name: Map `common.ip` to `network.client.ip`
+          enabled: true
+          sources:
+            - common.ip
+          sourceType: attribute
+          target: network.client.ip
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: geo-ip-parser
+          name: GeoIp Parser for `network.client.ip`
+          enabled: true
+          sources:
+            - network.client.ip
+          target: network.client.geoip
+          ip_processing_behavior: do-nothing
+        - type: attribute-remapper
+          name: Map `common.user_id` to `cds.picus_security.user_id`
+          enabled: true
+          sources:
+            - common.user_id
+          sourceType: attribute
+          target: cds.picus_security.user_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `common.user_first_name` to `cds.picus_security.user_first_name`
+          enabled: true
+          sources:
+            - common.user_first_name
+          sourceType: attribute
+          target: cds.picus_security.user_first_name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `common.user_last_name` to `cds.picus_security.user_last_name`
+          enabled: true
+          sources:
+            - common.user_last_name
+          sourceType: attribute
+          target: cds.picus_security.user_last_name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `common.user_email` to `cds.picus_security.user_email`
+          enabled: true
+          sources:
+            - common.user_email
+          sourceType: attribute
+          target: cds.picus_security.user_email
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `common.account_id` to `cds.picus_security.account_id`
+          enabled: true
+          sources:
+            - common.account_id
+          sourceType: attribute
+          target: cds.picus_security.account_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `common.action` to `cds.picus_security.action`
+          enabled: true
+          sources:
+            - common.action
+          sourceType: attribute
+          target: cds.picus_security.action
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `common.type` to `cds.picus_security.type`
+          enabled: true
+          sources:
+            - common.type
+          sourceType: attribute
+          target: cds.picus_security.type
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `common.done_with_api` to `cds.picus_security.done_with_api`
+          enabled: true
+          sources:
+            - common.done_with_api
+          sourceType: attribute
+          target: cds.picus_security.done_with_api
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `syslog_severity` to `cds.picus_security.syslog_severity`
+          enabled: true
+          sources:
+            - syslog_severity
+          sourceType: attribute
+          target: cds.picus_security.syslog_severity
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: category-processor
+          name: Picus Security Severity Processor
+          enabled: true
+          categories:
+            - filter:
+                query: cds.picus_security.syslog_severity:6
+              name: info
+            - filter:
+                query: cds.picus_security.syslog_severity:5
+              name: notice
+            - filter:
+                query: cds.picus_security.syslog_severity:7
+              name: debug
+            - filter:
+                query: cds.picus_security.syslog_severity:4
+              name: warning
+            - filter:
+                query: cds.picus_security.syslog_severity:3
+              name: error
+            - filter:
+                query: cds.picus_security.syslog_severity:2
+              name: critical
+            - filter:
+                query: cds.picus_security.syslog_severity:1
+              name: alert
+            - filter:
+                query: cds.picus_security.syslog_severity:0
+              name: emergency
+          target: cds.picus_security.severity
+        - type: status-remapper
+          name: Define `cds.picus_security.syslog_severity` as the official status of the log
+          enabled: true
+          sources:
+            - cds.picus_security.syslog_severity

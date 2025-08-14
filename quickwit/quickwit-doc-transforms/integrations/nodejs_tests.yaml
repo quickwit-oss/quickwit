@@ -1,0 +1,217 @@
+id: "nodejs"
+tests:
+ -
+  sample: |-
+    {
+      "msg" : "trace log",
+      "hostname" : "COMP11257.local",
+      "level" : 10,
+      "v" : 0,
+      "name" : "myapp",
+      "pid" : 10428,
+      "time" : "2019-10-21T19:13:23.185Z"
+    }
+  result:
+    custom:
+      bunyan_level: "trace"
+      hostname: "COMP11257.local"
+      level: 10
+      name: "myapp"
+      pid: 10428
+      time: "2019-10-21T19:13:23.185Z"
+      v: 0
+    message: "trace log"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1571685203185
+ -
+  sample: |-
+    {
+      "msg" : "error log",
+      "hostname" : "COMP11257.local",
+      "level" : 50,
+      "v" : 1,
+      "pid" : 10429,
+      "time" : 1571685203246
+    }
+  result:
+    custom:
+      bunyan_level: "error"
+      hostname: "COMP11257.local"
+      level: 50
+      pid: 10429
+      time: 1571685203246
+      v: 1
+    message: "error log"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1571685203246
+ -
+  sample: "[2019-10-21T15:13:23.419] [INFO] default - An info message"
+  result:
+    custom:
+      level: "INFO"
+      time: 1571670803419
+    message: "[2019-10-21T15:13:23.419] [INFO] default - An info message"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1571670803419
+ -
+  sample: "[dd.trace_id=123abc dd.span_id=1234abc] [2019-10-21T15:13:23.419] [INFO] default - An info message"
+  result:
+    custom:
+      dd:
+        span_id: "1234abc"
+      level: "INFO"
+      time: 1571670803419
+    message: "[dd.trace_id=123abc dd.span_id=1234abc] [2019-10-21T15:13:23.419] [INFO] default - An info message"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1571670803419
+    trace_id: "123abc"
+ -
+  sample: "[2019-10-21T15:13:23.419] [INFO] default - [dd.trace_id=123abc dd.span_id=1234abc] An info message"
+  result:
+    custom:
+      dd:
+        span_id: "1234abc"
+      level: "INFO"
+      time: 1571670803419
+    message: "[2019-10-21T15:13:23.419] [INFO] default - [dd.trace_id=123abc dd.span_id=1234abc] An info message"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1571670803419
+    trace_id: "123abc"
+ -
+  sample: "GET www.google.com 304 5000 - 2.306 ms"
+  result:
+    custom:
+      duration: 2306000.0
+      http:
+        method: "GET"
+        status_category: "notice"
+        status_code: 304.0
+        url: "www.google.com"
+        url_details:
+          path: "www.google.com"
+      network:
+        bytes_written: 5000.0
+    message: "GET www.google.com 304 5000 - 2.306 ms"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: "::1 - - [21/Oct/2019:19:16:34 +0000] \"GET / HTTP/1.1\" 504 - \"-\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/77.0.3865.90 Safari/537.36\""
+  result:
+    custom:
+      date_access: 1571685394000
+      http:
+        method: "GET"
+        referer: "-"
+        status_category: "error"
+        status_code: 504.0
+        url: "/"
+        url_details:
+          path: "/"
+        useragent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/77.0.3865.90 Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "77"
+            minor: "0"
+            patch: "3865"
+            patch_minor: "90"
+          device:
+            brand: "Apple"
+            category: "Desktop"
+            family: "Mac"
+            model: "Mac"
+          os:
+            family: "Mac OS X"
+            major: "10"
+            minor: "14"
+            patch: "6"
+        version: "1.1"
+      network:
+        client:
+          ip: "::1"
+    message: "::1 - - [21/Oct/2019:19:16:34 +0000] \"GET / HTTP/1.1\" 504 - \"-\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/77.0.3865.90 Safari/537.36\""
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: "[dd.trace_id=123abc dd.span_id=1234abc] { \"level\": \"info\", \"message\": \"This is a json message\" }"
+  result:
+    custom:
+      dd:
+        span_id: "1234abc"
+      level: "info"
+      message: "This is a json message"
+    message: "[dd.trace_id=123abc dd.span_id=1234abc] { \"level\": \"info\", \"message\": \"This is a json message\" }"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+    trace_id: "123abc"
+ -
+  sample: "[dd.service=excelsior dd.env=jesse-dev dd.version=abc123 dd.trace_id=123abc dd.span_id=1234abc] { \"level\": \"info\", \"message\": \"This is a json message\" }"
+  result:
+    custom:
+      dd:
+        service: "excelsior"
+        span_id: "1234abc"
+      level: "info"
+      message: "This is a json message"
+    message: "[dd.service=excelsior dd.env=jesse-dev dd.version=abc123 dd.trace_id=123abc dd.span_id=1234abc] { \"level\": \"info\", \"message\": \"This is a json message\" }"
+    service: "excelsior"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "env:jesse-dev"
+     - "version:abc123"
+    timestamp: 1
+    trace_id: "123abc"
+ -
+  sample: "[dd.service=excelsior dd.env=jesse-dev dd.version=abc123 dd.trace_id=123abc dd.span_id=1234abc] [2019-10-21T15:13:23.419] [INFO] default - An info message"
+  result:
+    custom:
+      dd:
+        service: "excelsior"
+        span_id: "1234abc"
+      level: "INFO"
+      time: 1571670803419
+    message: "[dd.service=excelsior dd.env=jesse-dev dd.version=abc123 dd.trace_id=123abc dd.span_id=1234abc] [2019-10-21T15:13:23.419] [INFO] default - An info message"
+    service: "excelsior"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "env:jesse-dev"
+     - "version:abc123"
+    timestamp: 1571670803419
+    trace_id: "123abc"
+ -
+  sample: "[2019-10-21T15:13:23.419] [INFO] default - [dd.service=excelsior dd.env=jesse-dev dd.version=abc123 dd.trace_id=123abc dd.span_id=1234abc] An info message"
+  result:
+    custom:
+      dd:
+        service: "excelsior"
+        span_id: "1234abc"
+      level: "INFO"
+      time: 1571670803419
+    message: "[2019-10-21T15:13:23.419] [INFO] default - [dd.service=excelsior dd.env=jesse-dev dd.version=abc123 dd.trace_id=123abc dd.span_id=1234abc] An info message"
+    service: "excelsior"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "env:jesse-dev"
+     - "version:abc123"
+    timestamp: 1571670803419
+    trace_id: "123abc"
+

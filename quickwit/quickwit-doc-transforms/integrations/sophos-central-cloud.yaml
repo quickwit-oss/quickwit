@@ -1,0 +1,173 @@
+id: sophos-central-cloud
+metric_id: sophos-central-cloud
+backend_only: false
+facets:
+  - groups:
+      - Event
+    name: Event Outcome
+    path: evt.outcome
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+pipeline:
+  type: pipeline
+  name: Sophos Central Cloud
+  enabled: true
+  filter:
+    query: "source:sophos-central-cloud"
+  processors:
+    - type: date-remapper
+      name: Define `log_message.created_at` as the official date of the log
+      enabled: true
+      sources:
+        - log_message.created_at
+    - type: pipeline
+      name: Alert
+      enabled: true
+      filter:
+        query: "service:alert"
+      processors:
+        - name: Lookup on `log_message.severity` to `log_message.status`
+          enabled: true
+          source: log_message.severity
+          target: log_message.status
+          lookupTable: |-
+            low, info
+            medium, warning
+            high, critical
+          type: lookup-processor
+        - type: status-remapper
+          name: Define `log_message.status` as the official status of the log
+          enabled: true
+          sources:
+            - log_message.status
+        - type: attribute-remapper
+          name: Map `log_message.customer_id` to `usr.id`
+          enabled: true
+          sources:
+            - log_message.customer_id
+          sourceType: attribute
+          target: usr.id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `log_message.data.source_info.ip` to `network.client.ip`
+          enabled: true
+          sources:
+            - log_message.data.source_info.ip
+          sourceType: attribute
+          target: network.client.ip
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Event
+      enabled: true
+      filter:
+        query: "service:event"
+      processors:
+        - name: Lookup on `log_message.severity` to `log_message.status`
+          enabled: true
+          source: log_message.severity
+          target: log_message.status
+          lookupTable: |-
+            low, info
+            medium, warning
+            high, critical
+            critical, critical
+          type: lookup-processor
+        - name: Lookup on `log_message.ips_threat_data.detectionType` to
+            `log_message.ips_threat_data.detectionTypeName`
+          enabled: true
+          source: log_message.ips_threat_data.detectionType
+          target: log_message.ips_threat_data.detectionTypeName
+          lookupTable: |-
+            0 , Inbound
+            1, Outbound
+          type: lookup-processor
+        - type: status-remapper
+          name: Define `log_message.status` as the official status of the log
+          enabled: true
+          sources:
+            - log_message.status
+        - type: attribute-remapper
+          name: Map `log_message.user_id` to `usr.id`
+          enabled: true
+          sources:
+            - log_message.user_id
+          sourceType: attribute
+          target: usr.id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `log_message.name` to `evt.outcome`
+          enabled: true
+          sources:
+            - log_message.name
+          sourceType: attribute
+          target: evt.outcome
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `log_message.source_info.ip` to `network.client.ip`
+          enabled: true
+          sources:
+            - log_message.source_info.ip
+          sourceType: attribute
+          target: network.client.ip
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: geo-ip-parser
+      name: GeoIp Parser for `network.client.ip`
+      enabled: true
+      sources:
+        - network.client.ip
+      target: network.client.geoip
+      ip_processing_behavior: do-nothing

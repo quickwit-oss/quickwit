@@ -1,0 +1,53 @@
+id: "itunified-ug-dbxplorer"
+tests:
+ -
+  sample: |-
+    {
+      "instance_number" : "1",
+      "cluster_name" : "dbsys7fa4r7vq",
+      "instance_name" : "db03271",
+      "sql_id" : "cadrj77q0pnh8",
+      "level" : "INFO",
+      "message" : "execution plan \n{\n  \"\" : \"SQL_ID cadrj77q0pnh8\\n--------------------\\nselect count(*) as PROC_COUNT from v$pq_slave\\n \\nPlan hash value: 2849881403\\n \\n-------------------------------------------------------------------\\n| Id  | Operation         | Name     | Rows  | Bytes | Cost (%CPU)|\\n-------------------------------------------------------------------\\n|   0 | SELECT STATEMENT  |          |       |       |     1 (100)|\\n|   1 |  SORT AGGREGATE   |          |     1 |     7 |            |\\n|*  2 |   FIXED TABLE FULL| X$KXFPDP |     1 |     7 |     0   (0)|\\n-------------------------------------------------------------------\\n \\nPredicate Information (identified by operation id):\\n---------------------------------------------------\\n \\n   2 - filter((BITAND(\\\"KXFPDPFLG\\\",8)<>0 AND \\n              \\\"INST_ID\\\"=USERENV('INSTANCE')))\\n \\n\"\n}",
+      "ddsource" : "itunified-ug-dbxplorer",
+      "plan_hash_value" : "2849881403",
+      "@timestamp" : "2024-05-31T18:03:36.121Z",
+      "db_name" : "db0327",
+      "thread_name" : "pool-1-thread-1",
+      "level_value" : 20000,
+      "dbid" : "1725176655",
+      "@version" : "1",
+      "db_unique_name" : "db0327_83g_fra",
+      "logger_name" : "io.dbxplorer.agent.metrics.oracle.Awr.SqlPlan",
+      "snap_id" : "1567",
+      "host_name" : "clext1021"
+    }
+  result:
+    custom:
+      db:
+        instance: "db03271"
+      dbx:
+        oracledb:
+          cluster_name: "dbsys7fa4r7vq"
+          db_unique_name: "db0327_83g_fra"
+          dbid: 1725176655
+          instance_id: "1"
+          name: "db0327"
+          sql:
+            plan_hash_value: "2849881403"
+            sql_id: "cadrj77q0pnh8"
+      ddsource: "itunified-ug-dbxplorer"
+      host: "clext1021"
+      level: "INFO"
+      level_value: 20000
+      logger:
+        name: "io.dbxplorer.agent.metrics.oracle.Awr.SqlPlan"
+        thread_name: "pool-1-thread-1"
+        version: "1"
+      snap_id: "1567"
+      timestamp: "2024-05-31T18:03:36.121Z"
+    message: "execution plan \n{\n  \"\" : \"SQL_ID cadrj77q0pnh8\\n--------------------\\nselect count(*) as PROC_COUNT from v$pq_slave\\n \\nPlan hash value: 2849881403\\n \\n-------------------------------------------------------------------\\n| Id  | Operation         | Name     | Rows  | Bytes | Cost (%CPU)|\\n-------------------------------------------------------------------\\n|   0 | SELECT STATEMENT  |          |       |       |     1 (100)|\\n|   1 |  SORT AGGREGATE   |          |     1 |     7 |            |\\n|*  2 |   FIXED TABLE FULL| X$KXFPDP |     1 |     7 |     0   (0)|\\n-------------------------------------------------------------------\\n \\nPredicate Information (identified by operation id):\\n---------------------------------------------------\\n \\n   2 - filter((BITAND(\\\"KXFPDPFLG\\\",8)<>0 AND \\n              \\\"INST_ID\\\"=USERENV('INSTANCE')))\\n \\n\"\n}"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1717178616121

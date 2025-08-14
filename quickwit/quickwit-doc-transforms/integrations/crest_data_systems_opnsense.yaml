@@ -1,0 +1,441 @@
+id: crest_data_systems_opnsense
+metric_id: crest-data-systems-opnsense
+backend_only: false
+facets:
+  - facetType: list
+    groups:
+      - Crest data systems opnsense
+    name: Action
+    path: cd_opnsense.action
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest data systems opnsense
+    name: Average Recursion Processing Time
+    path: cd_opnsense.average_recursion_processing_time
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest data systems opnsense
+    name: Cache Hits
+    path: cd_opnsense.cache_hits
+    source: log
+    type: integer
+  - facetType: list
+    groups:
+      - Crest data systems opnsense
+    name: Category
+    path: cd_opnsense.category
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest data systems opnsense
+    name: Destination IP
+    path: cd_opnsense.destination_ip
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest data systems opnsense
+    name: Destination Port
+    path: cd_opnsense.destination_port
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest data systems opnsense
+    name: Device Interface
+    path: cd_opnsense.device_interface
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest data systems opnsense
+    name: Device MAC
+    path: cd_opnsense.device_mac
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest data systems opnsense
+    name: Device Name
+    path: cd_opnsense.device_name
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest data systems opnsense
+    name: DHCP Message
+    path: cd_opnsense.dhcp_message
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest data systems opnsense
+    name: Interface
+    path: cd_opnsense.interface
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest data systems opnsense
+    name: IP Version
+    path: cd_opnsense.ip_version
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest data systems opnsense
+    name: Leased IP
+    path: cd_opnsense.leased_ip
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest data systems opnsense
+    name: OpenVPN Auth Action
+    path: cd_opnsense.openvpn_auth_action
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest data systems opnsense
+    name: OpenVPN User
+    path: cd_opnsense.openvpn_user
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest data systems opnsense
+    name: Percentile 25
+    path: cd_opnsense.percentile_25
+    source: log
+    type: double
+  - facetType: list
+    groups:
+      - Crest data systems opnsense
+    name: Percentile 50
+    path: cd_opnsense.percentile_50
+    source: log
+    type: double
+  - facetType: list
+    groups:
+      - Crest data systems opnsense
+    name: Percentile 75
+    path: cd_opnsense.percentile_75
+    source: log
+    type: double
+  - facetType: list
+    groups:
+      - Crest data systems opnsense
+    name: Prefetch
+    path: cd_opnsense.prefetch
+    source: log
+    type: integer
+  - facetType: list
+    groups:
+      - Crest data systems opnsense
+    name: Protocol Name
+    path: cd_opnsense.protocol_name
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest data systems opnsense
+    name: Recursions
+    path: cd_opnsense.recursions
+    source: log
+    type: integer
+  - facetType: list
+    groups:
+      - Crest data systems opnsense
+    name: Rejected Queries
+    path: cd_opnsense.rejected_queries
+    source: log
+    type: integer
+  - facetType: list
+    groups:
+      - Crest data systems opnsense
+    name: Signature
+    path: cd_opnsense.signature
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest data systems opnsense
+    name: Source IP
+    path: cd_opnsense.source_ip
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest data systems opnsense
+    name: Source Port
+    path: cd_opnsense.source_port
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest data systems opnsense
+    name: Total Queries
+    path: cd_opnsense.total_queries
+    source: log
+    type: integer
+pipeline:
+  type: pipeline
+  name: OPNsense
+  enabled: true
+  filter:
+    query: source:crest_data_systems_opnsense
+  processors:
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: grok-parser
+      name: Prefix generator
+      enabled: true
+      source: message
+      samples:
+        - "<134>Nov 21 15:26:17 OPNsense.localdomain filterlog[77392]:
+          9,,,02f4bab031b57d1e30553ce08e0ec131,vmx0,match,block,in,4,0x10,,16,0\
+          ,0,none,17,udp,382,0.0.0.0,255.255.255.255,5041,5041,362"
+        - "<15>Nov 21 15:26:33 OPNsense.localdomain devd[449]: Pushing table"
+        - '<14>Nov 21 15:27:09 OPNsense.localdomain devd[449]: Processing event
+          ''!system=CAM subsystem=periph type=error device=cd0
+          serial="00000000000000000001" cam_status="0x4cc" scsi_status=2
+          scsi_sense="70 02 3a 00" CDB="00 00 00 00 00 00 " '''
+        - "<134>Dec  2 10:12:33 OPNsense.localdomain filterlog[84477]:
+          61,,,fae559338f65e11c53669fc3642c93c2,vmx1,match,pass,out,4,0x0,,64,5\
+          6155,0,none,17,udp,81,10.40.1.38,10.40.0.1,47724,53,61"
+      grok:
+        supportRules: ""
+        matchRules: >-
+          rule1 (\<%{regex("[0-9]*"):priority}\>)?%{date("MMM DD
+          HH:mm:ss"):timestamp} %{notSpace:syslog.hostname}
+          %{word:sourcetype}\[%{number:process_id}\]%{data}
+
+          rule2 (\<%{regex("[0-9]*"):priority}\>)?%{date("MMM  D HH:mm:ss"):timestamp} %{notSpace:syslog.hostname} %{word:sourcetype}\[%{number:process_id}\]%{data}
+    - type: pipeline
+      name: Firewall
+      enabled: true
+      filter:
+        query: "@sourcetype:filterlog"
+      processors:
+        - type: grok-parser
+          name: Parsing attributes for OPNsense Firewall(Filter) logs
+          enabled: true
+          source: message
+          samples:
+            - "<134>Nov 21 15:26:17 OPNsense.localdomain filterlog[77392]:
+              6,,,02f4bab031b57d1e30553ce08e0ec131,vmx0,match,block,in,4,0x10,,\
+              16,0,0,none,17,udp,382,0.0.0.0,255.255.255.255,5041,5041,362"
+            - "<134>Nov 21 15:26:17 OPNsense.localdomain filterlog[77392]:
+              11,,,1d245529367b2e34eeaff16086aeafe9,vmx0,match,pass,in,6,0x00,0\
+              x00000,255,ipv6-icmp,58,32,fdfe:9042:c53d:0:5d50:1c62:5241:ac54,f\
+              f02::1,datalength=32"
+            - "<134>Dec 10 08:25:30 OPNsense.localdomain filterlog[41675]:
+              7,,,02f4bab031b57d1e30553ce08e0ec131,vmx0,match,block,in,4,0x0,,6\
+              4,0,0,DF,6,tcp,91,10.50.1.60,10.50.5.242,8089,5490,909,PA,7742756\
+              14:774276523,3302914870,436,,nop;nop;TS"
+            - "<134>Nov 21 15:26:17 OPNsense.localdomain filterlog[77392]:
+              60,,,fae559338f65e11c53669fc3642c93c2,lo0,match,pass,out,6,0x00,0\
+              xae4fb,64,udp,17,20,::1,::1,27332,123,20"
+            - "<134>Nov 26 17:18:37 OPNsense.localdomain filterlog[187]:
+              10,,,02f4bab031b57d1e30553ce08e0ec131,vmx1,match,block,in,6,0x00,\
+              0x00000,1,icmp,1,36,::,ff02::1,truncated-ip6=36"
+          grok:
+            supportRules: >-
+              _prefix (\<%{regex("[0-9]*"):priority}\>)?(%{date("MMM DD
+              HH:mm:ss"):timestamp})?(%{date("MMM  D HH:mm:ss"):timestamp})?
+              %{notSpace:syslog.hostname} %{word:sourcetype}\[%{number:process_id}\]:
+              %{integer:cd_opnsense.rule_number},(%{integer:cd_opnsense.sub_rule_number})?,(%{regex("[^,]*"):cd_opnsense.anchor})?,%{regex("[0-9a-zA-Z-_]*"):cd_opnsense.uuid},%{word:cd_opnsense.interface},%{word:cd_opnsense.reason},%{word:cd_opnsense.action},%{word:cd_opnsense.direction}
+
+              _ipv4data %{regex("4"):cd_opnsense.ip_version},(%{notSpace:cd_opnsense.toc})?,(%{notSpace:cd_opnsense.ecn})?,%{integer:cd_opnsense.ttl},%{integer:cd_opnsense.id},%{integer:cd_opnsense.offset},(%{notSpace:cd_opnsense.flags})?,%{integer:cd_opnsense.protocol_id}
+
+              _ipv6data %{regex("6"):cd_opnsense.ip_version},%{word:cd_opnsense.class},%{word:cd_opnsense.flow_label},%{integer:cd_opnsense.hope_limit}
+
+              _ipdata %{ip:cd_opnsense.source_ip},%{ip:cd_opnsense.destination_ip},%{port:cd_opnsense.source_port},%{port:cd_opnsense.destination_port}
+            matchRules: >-
+              ipv4UDP
+              %{_prefix},%{_ipv4data},%{regex("udp"):cd_opnsense.protocol_name:uppercase},%{integer:cd_opnsense.packet_length},%{_ipdata},%{integer:cd_opnsense.data_length}
+
+
+              ipv4TCP %{_prefix},%{_ipv4data},%{regex("tcp"):cd_opnsense.protocol_name:uppercase},%{integer:cd_opnsense.packet_length},%{_ipdata},%{integer:cd_opnsense.data_length},%{word:cd_opnsense.tcp_flags},(%{regex("[0-9:]*"):cd_opnsense.sequence})?,(%{integer:cd_opnsense.ack})?,%{integer:cd_opnsense.tcp_window},%{regex("[^,]*"):cd_opnsense.urgs},%{regex("[^,]*"):cd_opnsense.tcp_options}
+
+
+              ipv6UDP %{_prefix},%{_ipv6data},%{regex("udp"):cd_opnsense.protocol_name:uppercase},%{integer:cd_opnsense.protocol_id},%{integer:cd_opnsense.packet_length},%{_ipdata},%{integer:cd_opnsense.data_length}
+
+
+              ipv6Icmp %{_prefix},%{_ipv6data},%{regex("ipv6-icmp"):cd_opnsense.protocol_name:uppercase},%{integer:cd_opnsense.protocol_id},%{integer:cd_opnsense.packet_length},%{ip:cd_opnsense.source_ip},%{ip:cd_opnsense.destination_ip},%{data}
+
+
+              icmp %{_prefix},%{_ipv6data},%{regex("icmp"):cd_opnsense.protocol_name:uppercase},%{integer:cd_opnsense.icmp_type},%{integer:cd_opnsense.packet_size},%{ip:cd_opnsense.source_ip},%{ip:cd_opnsense.destination_ip},%{data}
+    - type: pipeline
+      name: DHCP
+      enabled: true
+      filter:
+        query: "@sourcetype:dhcpd"
+      processors:
+        - type: grok-parser
+          name: Parsing attributes for OPNsense DHCP logs
+          enabled: true
+          source: message
+          samples:
+            - >+
+              <190>Nov 15 10:45:06 OPNsense.localdomain dhcpd[22302]: DHCPINFORM
+              from 10.50.12.73 via vmx0
+
+            - >
+              <190>Nov 15 10:45:06 OPNsense.localdomain dhcpd[22302]: DHCPACK to
+              10.50.12.73 (00:00:00:00:00:00) via vmx0
+            - "<190>Nov 15 00:44:28 OPNsense.localdomain dhcpd[22302]:
+              DHCPDISCOVER from 00:50:56:81:16:e3 via vmx0"
+            - >
+              <190>Nov 15 00:44:28 OPNsense.localdomain dhcpd[22302]:
+              DHCPREQUEST for 10.50.12.69 (10.50.7.101) from 00:50:56:81:16:e3
+              via vmx0: unknown lease 10.50.12.69.
+            - "<131>Nov 15 00:44:28 OPNsense.localdomain dhcpd[22302]: DHCPOFFER
+              on 10.50.2.10 to 00:50:56:81:16:e3 (armisappliance) via vmx0"
+          grok:
+            supportRules:
+              'dhcpd_base (\<%{regex("[0-9]*"):priority}\>)?(%{date("MMM DD
+              HH:mm:ss"):timestamp})?(%{date("MMM  D HH:mm:ss"):timestamp})?
+              %{notSpace:syslog.hostname} %{word:sourcetype}\[%{number:process_id}\]:
+              %{regex("DHCP[A-Z]*"):cd_opnsense.dhcp_message}'
+            matchRules: >-
+              discover %{dhcpd_base} from %{mac:cd_opnsense.device_mac}
+              (\(%{notSpace:cd_opnsense.device_name}\) )?via
+              %{notSpace:cd_opnsense.device_interface}
+
+              inform %{dhcpd_base} from %{ip:cd_opnsense.leased_ip} (\(%{notSpace:cd_opnsense.device_name}\) )?via %{notSpace:cd_opnsense.device_interface}
+
+              offer_ack_nak %{dhcpd_base} on %{ip:cd_opnsense.leased_ip} to %{mac:cd_opnsense.device_mac} (\(%{notSpace:cd_opnsense.device_name}\) )?via %{notSpace:cd_opnsense.device_interface}
+
+              request %{dhcpd_base} for %{ip:cd_opnsense.leased_ip} (\(%{notSpace:}\) )?from %{mac:cd_opnsense.device_mac} (\(%{notSpace:cd_opnsense.device_name}\) )?via %{notSpace:cd_opnsense.device_interface}(:.*)?
+
+              decline %{dhcpd_base} of %{ip:cd_opnsense.leased_ip} from %{mac:cd_opnsense.device_mac} (\(%{notSpace:cd_opnsense.device_name}\) )?via %{notSpace:cd_opnsense.device_interface}(:.*)?
+
+              release %{dhcpd_base} of %{ip:cd_opnsense.leased_ip} from %{mac:cd_opnsense.device_mac} (\(%{notSpace:cd_opnsense.device_name}\) )?via %{notSpace:cd_opnsense.device_interface}(.*)?
+
+              ack_2 %{dhcpd_base} to %{ip:cd_opnsense.leased_ip} (\(%{mac:cd_opnsense.device_mac}\))? via %{notSpace:cd_opnsense.device_interface}
+        - type: geo-ip-parser
+          name: Leased IP
+          enabled: true
+          sources:
+            - cd_opnsense.leased_ip
+          target: cd_opnsense.leased_geoip
+          ip_processing_behavior: do-nothing
+    - type: pipeline
+      name: Unbound
+      enabled: true
+      filter:
+        query: "@sourcetype:unbound"
+      processors:
+        - type: grok-parser
+          name: Parsing attributes for OPNsense Unbound DNS logs
+          enabled: true
+          source: message
+          samples:
+            - "<30>Nov 25 11:00:25 OPNsense.localdomain unbound[21919]:
+              [21919:0] info: [25%]=2.5e-07 median[50%]=1.5e-07 [75%]=0.123"
+            - "<30>Nov 25 11:00:25 OPNsense.localdomain unbound[21919]:
+              [21919:0] info: average recursion processing time 0.287493 sec"
+            - "<30>Nov 25 11:00:25 OPNsense.localdomain unbound[21919]:
+              [21919:0] info: server stats for thread 3: 3 queries, 2 answers
+              from cache, 1 recursions, 0 prefetch, 0 rejected by ip
+              ratelimiting"
+          grok:
+            supportRules:
+              '_prefix (\<%{regex("[0-9]*"):priority}\>)?(%{date("MMM DD
+              HH:mm:ss"):timestamp})?(%{date("MMM  D HH:mm:ss"):timestamp})?
+              %{notSpace:syslog.hostname} %{word:sourcetype}\[%{number:process_id}\]:
+              \[%{integer:cd_opnsense.unbound_pid}:%{integer:cd_opnsense.thread}\]'
+            matchRules: >-
+              percentile %{_prefix} %{word:cd_opnsense.log_level}:
+              \[25\%\]=%{numberExt:cd_opnsense.percentile_25}
+              median\[50\%\]=%{numberExt:cd_opnsense.percentile_50}
+              \[75\%\]=%{numberExt:cd_opnsense.percentile_75}
+
+              avg_rec_time %{_prefix} %{word:cd_opnsense.log_level}: average recursion processing time %{numberExt:cd_opnsense.average_recursion_processing_time} sec
+
+              stats %{_prefix} %{word:cd_opnsense.log_level}: server stats for thread %{integer:cd_opnsense.thread_no}: %{integer:cd_opnsense.total_queries} queries, %{integer:cd_opnsense.cache_hits} answers from cache, %{integer:cd_opnsense.recursions} recursions, %{integer:cd_opnsense.prefetch} prefetch, %{integer:cd_opnsense.rejected_queries} rejected by ip ratelimiting
+    - type: pipeline
+      name: IDS
+      enabled: true
+      filter:
+        query: "@sourcetype:suricata"
+      processors:
+        - type: grok-parser
+          name: Parsing attributes for Intrusion Detection (Suricata) logs
+          enabled: true
+          source: message
+          samples:
+            - "<173>Dec 10 06:22:38 OPNsense.localdomain suricata[62913]:
+              [1:2027757:5] ET DNS Query for .to TLD [Classification:
+              Potentially Bad Traffic] [Priority: 2] {UDP} 10.50.8.58:30450 ->
+              108.162.192.219:53"
+          grok:
+            supportRules:
+              'ids_base (\<%{regex("[0-9]*"):priority}\>)?(%{date("MMM DD
+              HH:mm:ss"):timestamp})?(%{date("MMM  D HH:mm:ss"):timestamp})?
+              %{notSpace:syslog.hostname} %{word:sourcetype}\[%{number:process_id}\]:'
+            matchRules: 'ids %{ids_base}
+              \[%{integer:cd_opnsense.generator_id}:%{integer:cd_opnsense.signature_id}:%{integer:cd_opnsense.rule_revision}\]
+              %{regex("[0-9a-zA-Z-. ]*"):cd_opnsense.signature}
+              \[Classification: %{regex("[0-9a-zA-Z-.
+              ]*"):cd_opnsense.category}\] \[Priority:
+              %{integer:cd_opnsense.ids_priority}\]
+              \{%{word:cd_opnsense.protocol_name}\}
+              %{ip:cd_opnsense.source_ip}:%{port:cd_opnsense.source_port} ->
+              %{ip:cd_opnsense.destination_ip}:%{port:cd_opnsense.destination_port}'
+        - type: geo-ip-parser
+          name: Source IP
+          enabled: true
+          sources:
+            - cd_opnsense.source_ip
+          target: cd_opnsense.source_geoip
+          ip_processing_behavior: do-nothing
+        - type: geo-ip-parser
+          name: Destination IP
+          enabled: true
+          sources:
+            - cd_opnsense.destination_ip
+          target: cd_opnsense.destination_geoip
+          ip_processing_behavior: do-nothing
+    - type: pipeline
+      name: OpenVPN
+      enabled: true
+      filter:
+        query: "@sourcetype:openvpn"
+      processors:
+        - type: grok-parser
+          name: Parsing attributes for OpenVPN logs
+          enabled: true
+          source: message
+          samples:
+            - "<29>Nov 27 16:04:00 OPNsense.localdomain openvpn[88884]: user
+              'test1' authenticated using 'Local Database'"
+            - "<29>Nov 28 18:36:00 OPNsense.localdomain openvpn[88884]: user
+              'opnvpn' could not authenticate."
+          grok:
+            supportRules:
+              'openvpn_base (\<%{regex("[0-9]*"):priority}\>)?(%{date("MMM DD
+              HH:mm:ss"):timestamp})?(%{date("MMM  D HH:mm:ss"):timestamp})?
+              %{notSpace:syslog.hostname} %{word:sourcetype}\[%{number:process_id}\]:'
+            matchRules: >-
+              authentication %{openvpn_base} user
+              '%{notSpace:cd_opnsense.openvpn_user}'
+              %{regex("authenticated"):cd_opnsense.openvpn_auth_action} using
+              %{data}
+
+              authentication_fail %{openvpn_base} user '%{notSpace:cd_opnsense.openvpn_user}' %{regex("could not authenticate"):cd_opnsense.openvpn_auth_action}(\.)?
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp

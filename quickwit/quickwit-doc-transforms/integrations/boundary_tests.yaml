@@ -1,0 +1,1035 @@
+id: "boundary"
+tests:
+ -
+  sample: |-
+    {
+      "data" : {
+        "op" : "github.com/hashicorp/boundary/internal/observability/event.(*HclogLoggerAdapter).writeEvent",
+        "data" : {
+          "@original-log-name" : "aws",
+          "msg" : "configuring client automatic mTLS",
+          "@original-log-level" : "none"
+        },
+        "version" : "v0.1"
+      },
+      "specversion" : "1.0",
+      "id" : "ucZ3F62GB8",
+      "source" : "https://hashicorp.com/boundary/722bbe11f780/controller+worker",
+      "datacontentype" : "application/cloudevents",
+      "time" : "2022-08-25T17:09:18.3470639Z",
+      "type" : "system"
+    }
+  result:
+    custom:
+      _timestamp: "17:09:18"
+      data:
+        data:
+          '@original-log-level': "none"
+          '@original-log-name': "aws"
+        version: "v0.1"
+      evt:
+        category: "system"
+        content_type: "application/cloudevents"
+        operation: "github.com/hashicorp/boundary/internal/observability/event.(*HclogLoggerAdapter).writeEvent"
+      http:
+        referer: "https://hashicorp.com/boundary/722bbe11f780/controller+worker"
+      id: "ucZ3F62GB8"
+      logger:
+        version: "1.0"
+      time: "2022-08-25T17:09:18.3470639Z"
+    message: "configuring client automatic mTLS"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1661447358347
+ -
+  sample: |-
+    {
+      "data" : {
+        "latency-ms" : 0.3555,
+        "stop" : "2022-08-25T17:10:28.87016Z",
+        "request_info" : {
+          "path" : "/health",
+          "method" : "GET",
+          "client_ip" : "192.168.96.1",
+          "id" : "gtraceid_vGvf9iipt9SbzlfoPq0w"
+        },
+        "start" : "2022-08-25T17:10:28.8698045Z",
+        "version" : "v0.1",
+        "status" : 200
+      },
+      "specversion" : "1.0",
+      "id" : "QUQzCBiPGm",
+      "source" : "https://hashicorp.com/boundary/722bbe11f780/controller+worker",
+      "datacontentype" : "application/cloudevents",
+      "time" : "2022-08-25T17:10:28.870178Z",
+      "type" : "observation"
+    }
+  result:
+    custom:
+      _timestamp: "17:10:28"
+      data:
+        start: "2022-08-25T17:10:28.8698045Z"
+        stop: "2022-08-25T17:10:28.87016Z"
+        version: "v0.1"
+      duration: 355500.0
+      evt:
+        category: "observation"
+        content_type: "application/cloudevents"
+      http:
+        method: "GET"
+        referer: "https://hashicorp.com/boundary/722bbe11f780/controller+worker"
+        request_id: "gtraceid_vGvf9iipt9SbzlfoPq0w"
+        status_code: 200
+        url_details:
+          path: "/health"
+      id: "QUQzCBiPGm"
+      logger:
+        version: "1.0"
+      network:
+        client:
+          ip: "192.168.96.1"
+      time: "2022-08-25T17:10:28.870178Z"
+    message: |-
+      {
+        "data" : {
+          "latency-ms" : 0.3555,
+          "stop" : "2022-08-25T17:10:28.87016Z",
+          "request_info" : {
+            "path" : "/health",
+            "method" : "GET",
+            "client_ip" : "192.168.96.1",
+            "id" : "gtraceid_vGvf9iipt9SbzlfoPq0w"
+          },
+          "start" : "2022-08-25T17:10:28.8698045Z",
+          "version" : "v0.1",
+          "status" : 200
+        },
+        "specversion" : "1.0",
+        "id" : "QUQzCBiPGm",
+        "source" : "https://hashicorp.com/boundary/722bbe11f780/controller+worker",
+        "datacontentype" : "application/cloudevents",
+        "time" : "2022-08-25T17:10:28.870178Z",
+        "type" : "observation"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1661447428870
+ -
+  sample: |-
+    {
+      "serialized_hmac" : "hmac-sha256:iQuvbqa_OGbUs01IqMgP-cHWpkkVHViJPxqg0c548zk",
+      "data" : {
+        "response" : {
+          "status_code" : 200
+        },
+        "request_info" : {
+          "path" : "/health",
+          "method" : "GET",
+          "client_ip" : "192.168.96.1",
+          "id" : "gtraceid_4AdJhzSA9V3PB2QS5yg5"
+        },
+        "id" : "e_NxcuR8NFyE",
+        "type" : "APIRequest",
+        "version" : "v0.1",
+        "timestamp" : "2022-08-25T17:09:18.6464134Z"
+      },
+      "specversion" : "1.0",
+      "id" : "qilNChuSzk",
+      "source" : "https://hashicorp.com/boundary/722bbe11f780/controller+worker",
+      "datacontentype" : "application/cloudevents",
+      "time" : "2022-08-25T17:09:18.6464236Z",
+      "type" : "audit",
+      "serialized" : "eyJpZCI6InFpbE5DaHVTemsiLCJzb3VyY2UiOiJodHRwczovL2hhc2hpY29ycC5jb20vYm91bmRhcnkvNzIyYmJlMTFmNzgwL2NvbnRyb2xsZXIrd29ya2VyIiwic3BlY3ZlcnNpb24iOiIxLjAiLCJ0eXBlIjoiYXVkaXQiLCJkYXRhIjp7ImlkIjoiZV9OeGN1UjhORnlFIiwidmVyc2lvbiI6InYwLjEiLCJ0eXBlIjoiQVBJUmVxdWVzdCIsInRpbWVzdGFtcCI6IjIwMjItMDgtMjVUMTc6MDk6MTguNjQ2NDEzNFoiLCJyZXF1ZXN0X2luZm8iOnsiaWQiOiJndHJhY2VpZF80QWRKaHpTQTlWM1BCMlFTNXlnNSIsIm1ldGhvZCI6IkdFVCIsInBhdGgiOiIvaGVhbHRoIiwiY2xpZW50X2lwIjoiMTkyLjE2OC45Ni4xIn0sInJlcXVlc3QiOnsiZGV0YWlscyI6e319LCJyZXNwb25zZSI6eyJzdGF0dXNfY29kZSI6MjAwLCJkZXRhaWxzIjp7fX19LCJkYXRhY29udGVudHlwZSI6ImFwcGxpY2F0aW9uL2Nsb3VkZXZlbnRzIiwidGltZSI6IjIwMjItMDgtMjVUMTc6MDk6MTguNjQ2NDIzNloifQo"
+    }
+  result:
+    custom:
+      _timestamp: "17:09:18"
+      data:
+        id: "e_NxcuR8NFyE"
+        timestamp: "2022-08-25T17:09:18.6464134Z"
+        type: "APIRequest"
+        version: "v0.1"
+      evt:
+        category: "audit"
+        content_type: "application/cloudevents"
+      http:
+        method: "GET"
+        referer: "https://hashicorp.com/boundary/722bbe11f780/controller+worker"
+        request_id: "gtraceid_4AdJhzSA9V3PB2QS5yg5"
+        status_code: 200
+        url_details:
+          path: "/health"
+      id: "qilNChuSzk"
+      logger:
+        version: "1.0"
+      network:
+        client:
+          ip: "192.168.96.1"
+      serialized: "eyJpZCI6InFpbE5DaHVTemsiLCJzb3VyY2UiOiJodHRwczovL2hhc2hpY29ycC5jb20vYm91bmRhcnkvNzIyYmJlMTFmNzgwL2NvbnRyb2xsZXIrd29ya2VyIiwic3BlY3ZlcnNpb24iOiIxLjAiLCJ0eXBlIjoiYXVkaXQiLCJkYXRhIjp7ImlkIjoiZV9OeGN1UjhORnlFIiwidmVyc2lvbiI6InYwLjEiLCJ0eXBlIjoiQVBJUmVxdWVzdCIsInRpbWVzdGFtcCI6IjIwMjItMDgtMjVUMTc6MDk6MTguNjQ2NDEzNFoiLCJyZXF1ZXN0X2luZm8iOnsiaWQiOiJndHJhY2VpZF80QWRKaHpTQTlWM1BCMlFTNXlnNSIsIm1ldGhvZCI6IkdFVCIsInBhdGgiOiIvaGVhbHRoIiwiY2xpZW50X2lwIjoiMTkyLjE2OC45Ni4xIn0sInJlcXVlc3QiOnsiZGV0YWlscyI6e319LCJyZXNwb25zZSI6eyJzdGF0dXNfY29kZSI6MjAwLCJkZXRhaWxzIjp7fX19LCJkYXRhY29udGVudHlwZSI6ImFwcGxpY2F0aW9uL2Nsb3VkZXZlbnRzIiwidGltZSI6IjIwMjItMDgtMjVUMTc6MDk6MTguNjQ2NDIzNloifQo"
+      serialized_hmac: "hmac-sha256:iQuvbqa_OGbUs01IqMgP-cHWpkkVHViJPxqg0c548zk"
+      time: "2022-08-25T17:09:18.6464236Z"
+    message: |-
+      {
+        "serialized_hmac" : "hmac-sha256:iQuvbqa_OGbUs01IqMgP-cHWpkkVHViJPxqg0c548zk",
+        "data" : {
+          "response" : {
+            "status_code" : 200
+          },
+          "request_info" : {
+            "path" : "/health",
+            "method" : "GET",
+            "client_ip" : "192.168.96.1",
+            "id" : "gtraceid_4AdJhzSA9V3PB2QS5yg5"
+          },
+          "id" : "e_NxcuR8NFyE",
+          "type" : "APIRequest",
+          "version" : "v0.1",
+          "timestamp" : "2022-08-25T17:09:18.6464134Z"
+        },
+        "specversion" : "1.0",
+        "id" : "qilNChuSzk",
+        "source" : "https://hashicorp.com/boundary/722bbe11f780/controller+worker",
+        "datacontentype" : "application/cloudevents",
+        "time" : "2022-08-25T17:09:18.6464236Z",
+        "type" : "audit",
+        "serialized" : "eyJpZCI6InFpbE5DaHVTemsiLCJzb3VyY2UiOiJodHRwczovL2hhc2hpY29ycC5jb20vYm91bmRhcnkvNzIyYmJlMTFmNzgwL2NvbnRyb2xsZXIrd29ya2VyIiwic3BlY3ZlcnNpb24iOiIxLjAiLCJ0eXBlIjoiYXVkaXQiLCJkYXRhIjp7ImlkIjoiZV9OeGN1UjhORnlFIiwidmVyc2lvbiI6InYwLjEiLCJ0eXBlIjoiQVBJUmVxdWVzdCIsInRpbWVzdGFtcCI6IjIwMjItMDgtMjVUMTc6MDk6MTguNjQ2NDEzNFoiLCJyZXF1ZXN0X2luZm8iOnsiaWQiOiJndHJhY2VpZF80QWRKaHpTQTlWM1BCMlFTNXlnNSIsIm1ldGhvZCI6IkdFVCIsInBhdGgiOiIvaGVhbHRoIiwiY2xpZW50X2lwIjoiMTkyLjE2OC45Ni4xIn0sInJlcXVlc3QiOnsiZGV0YWlscyI6e319LCJyZXNwb25zZSI6eyJzdGF0dXNfY29kZSI6MjAwLCJkZXRhaWxzIjp7fX19LCJkYXRhY29udGVudHlwZSI6ImFwcGxpY2F0aW9uL2Nsb3VkZXZlbnRzIiwidGltZSI6IjIwMjItMDgtMjVUMTc6MDk6MTguNjQ2NDIzNloifQo"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1661447358646
+ -
+  sample: |-
+    {
+      "serialized_hmac" : "hmac-sha256:EUwvKt4GVYh076QlJdLbRdKSy2MERuru23GKXCHaUAs",
+      "data" : {
+        "request" : {
+          "details" : {
+            "auth_method_id" : "ampw_RYWiwp6CPP",
+            "Attrs" : {
+              "PasswordLoginAttributes" : {
+                "password" : "encrypted:CiQcLatkl6nrXzoqlMNkDB6rt-sb9DfuZhId1fs4Xbe3YKjcPCAqERoPa2Rrdl9IMnpYdnpzRzBy",
+                "login_name" : "user1"
+              }
+            },
+            "command" : "login"
+          }
+        },
+        "auth" : {
+          "user_info" : {
+            "id" : "u_anon"
+          },
+          "grants_info" : {
+            "grants" : [ {
+              "scope_id" : "global",
+              "role_id" : "r_HEFEclAk6K",
+              "grant" : "id=*;type=scope;actions=list,no-op"
+            }, {
+              "scope_id" : "global",
+              "role_id" : "r_HEFEclAk6K",
+              "grant" : "id=*;type=auth-method;actions=authenticate,list"
+            }, {
+              "scope_id" : "global",
+              "role_id" : "r_HEFEclAk6K",
+              "grant" : "id={{account.id}};actions=change-password,read"
+            }, {
+              "scope_id" : "global",
+              "role_id" : "r_HEFEclAk6K",
+              "grant" : "id=*;type=auth-token;actions=delete:self,list,read:self"
+            }, {
+              "scope_id" : "o_7ysLSf6Ujf",
+              "role_id" : "r_Z9w5BjN6Ej",
+              "grant" : "id=*;type=scope;actions=list,no-op"
+            }, {
+              "scope_id" : "o_7ysLSf6Ujf",
+              "role_id" : "r_Z9w5BjN6Ej",
+              "grant" : "id=*;type=auth-method;actions=authenticate,list"
+            }, {
+              "scope_id" : "o_7ysLSf6Ujf",
+              "role_id" : "r_Z9w5BjN6Ej",
+              "grant" : "id={{account.id}};actions=change-password,read"
+            }, {
+              "scope_id" : "o_7ysLSf6Ujf",
+              "role_id" : "r_Z9w5BjN6Ej",
+              "grant" : "id=*;type=auth-token;actions=delete:self,list,read:self"
+            }, {
+              "scope_id" : "global",
+              "role_id" : "r_877JfAIKvi",
+              "grant" : "id=*;type=auth-method;actions=authenticate,list"
+            }, {
+              "scope_id" : "global",
+              "role_id" : "r_877JfAIKvi",
+              "grant" : "id={{account.id}};actions=change-password,read"
+            }, {
+              "scope_id" : "global",
+              "role_id" : "r_877JfAIKvi",
+              "grant" : "type=scope;actions=list"
+            }, {
+              "scope_id" : "o_6Ry9uTXbwM",
+              "role_id" : "r_IHgOGXdfR3",
+              "grant" : "id=*;type=auth-method;actions=authenticate,list"
+            }, {
+              "scope_id" : "o_6Ry9uTXbwM",
+              "role_id" : "r_IHgOGXdfR3",
+              "grant" : "id={{account.id}};actions=change-password,read"
+            }, {
+              "scope_id" : "o_6Ry9uTXbwM",
+              "role_id" : "r_IHgOGXdfR3",
+              "grant" : "type=scope;actions=list"
+            } ]
+          },
+          "auth_token_id" : ""
+        },
+        "response" : {
+          "status_code" : 200,
+          "details" : {
+            "Attrs" : {
+              "AuthTokenResponse" : {
+                "approximate_last_used_time" : {
+                  "seconds" : 1667963812,
+                  "nanos" : 910169000
+                },
+                "auth_method_id" : "ampw_RYWiwp6CPP",
+                "created_time" : {
+                  "seconds" : 1667963812,
+                  "nanos" : 910169000
+                },
+                "updated_time" : {
+                  "seconds" : 1667963812,
+                  "nanos" : 910169000
+                },
+                "account_id" : "acctpw_7Lxbhaonkh",
+                "user_id" : "u_VOAom5EkmH",
+                "scope" : {
+                  "parent_scope_id" : "global",
+                  "id" : "o_6Ry9uTXbwM",
+                  "type" : "org"
+                },
+                "expiration_time" : {
+                  "seconds" : 1668568612
+                },
+                "id" : "at_BWjovnFCsp",
+                "token" : "encrypted:CrQBxe8DfSD-aYvk0Z2niDPenqWgnQ3aHulg-pqpip0Hj62R4AeG1dQ5cm_H4dUDSec7FVFotZhXpQEI8APmcpwHpCdpxLBOyTZuxjv_S_voCclWkZM2AiCoOuXuZgvcIPNWgZX-lfRrkc3XQha6l4qwsfwJLfzAV3aAm7UoH16qPLUc6XWvtfc6DhhcDpdxzGh95Z_rn4sbJYwI6KnwBZ0663WEU3cDcgh4hdJyKeZboXgLMTWsKhEaD2tka3ZfSDJ6WHZ6c0cwcg"
+              }
+            },
+            "command" : "login"
+          }
+        },
+        "request_info" : {
+          "path" : "/v1/auth-methods/ampw_RYWiwp6CPP:authenticate",
+          "method" : "POST",
+          "client_ip" : "172.18.0.1",
+          "id" : "gtraceid_hDpAwQcv6etsQe4NMSlg"
+        },
+        "id" : "e_VjusDp0D4I",
+        "type" : "APIRequest",
+        "version" : "v0.1",
+        "timestamp" : "2022-11-09T03:16:52.915626387Z"
+      },
+      "specversion" : "1.0",
+      "id" : "GeikHyFS9z",
+      "source" : "https://hashicorp.com/boundary/boundary/controller",
+      "datacontentype" : "application/cloudevents",
+      "time" : "2022-11-09T03:16:52.915647971Z",
+      "type" : "audit",
+      "serialized" : "eyJpZCI6IkdlaWtIeUZTOXoiLCJzb3VyY2UiOiJodHRwczovL2hhc2hpY29ycCtruncated"
+    }
+  result:
+    custom:
+      _timestamp: "03:16:52"
+      data:
+        auth:
+          auth_token_id: ""
+          grants_info:
+            grants:
+             -
+              scope_id: "global"
+              role_id: "r_HEFEclAk6K"
+              grant: "id=*;type=scope;actions=list,no-op"
+             -
+              scope_id: "global"
+              role_id: "r_HEFEclAk6K"
+              grant: "id=*;type=auth-method;actions=authenticate,list"
+             -
+              scope_id: "global"
+              role_id: "r_HEFEclAk6K"
+              grant: "id={{account.id}};actions=change-password,read"
+             -
+              scope_id: "global"
+              role_id: "r_HEFEclAk6K"
+              grant: "id=*;type=auth-token;actions=delete:self,list,read:self"
+             -
+              scope_id: "o_7ysLSf6Ujf"
+              role_id: "r_Z9w5BjN6Ej"
+              grant: "id=*;type=scope;actions=list,no-op"
+             -
+              scope_id: "o_7ysLSf6Ujf"
+              role_id: "r_Z9w5BjN6Ej"
+              grant: "id=*;type=auth-method;actions=authenticate,list"
+             -
+              scope_id: "o_7ysLSf6Ujf"
+              role_id: "r_Z9w5BjN6Ej"
+              grant: "id={{account.id}};actions=change-password,read"
+             -
+              scope_id: "o_7ysLSf6Ujf"
+              role_id: "r_Z9w5BjN6Ej"
+              grant: "id=*;type=auth-token;actions=delete:self,list,read:self"
+             -
+              scope_id: "global"
+              role_id: "r_877JfAIKvi"
+              grant: "id=*;type=auth-method;actions=authenticate,list"
+             -
+              scope_id: "global"
+              role_id: "r_877JfAIKvi"
+              grant: "id={{account.id}};actions=change-password,read"
+             -
+              scope_id: "global"
+              role_id: "r_877JfAIKvi"
+              grant: "type=scope;actions=list"
+             -
+              scope_id: "o_6Ry9uTXbwM"
+              role_id: "r_IHgOGXdfR3"
+              grant: "id=*;type=auth-method;actions=authenticate,list"
+             -
+              scope_id: "o_6Ry9uTXbwM"
+              role_id: "r_IHgOGXdfR3"
+              grant: "id={{account.id}};actions=change-password,read"
+             -
+              scope_id: "o_6Ry9uTXbwM"
+              role_id: "r_IHgOGXdfR3"
+              grant: "type=scope;actions=list"
+        id: "e_VjusDp0D4I"
+        request:
+          details:
+            Attrs:
+              PasswordLoginAttributes:
+                login_name: "user1"
+                password: "encrypted:CiQcLatkl6nrXzoqlMNkDB6rt-sb9DfuZhId1fs4Xbe3YKjcPCAqERoPa2Rrdl9IMnpYdnpzRzBy"
+            auth_method_id: "ampw_RYWiwp6CPP"
+            command: "login"
+        response:
+          details:
+            Attrs:
+              AuthTokenResponse:
+                account_id: "acctpw_7Lxbhaonkh"
+                approximate_last_used_time:
+                  nanos: 910169000
+                  seconds: 1667963812
+                auth_method_id: "ampw_RYWiwp6CPP"
+                created_time:
+                  nanos: 910169000
+                  seconds: 1667963812
+                expiration_time:
+                  seconds: 1668568612
+                id: "at_BWjovnFCsp"
+                scope:
+                  id: "o_6Ry9uTXbwM"
+                  parent_scope_id: "global"
+                  type: "org"
+                token: "encrypted:CrQBxe8DfSD-aYvk0Z2niDPenqWgnQ3aHulg-pqpip0Hj62R4AeG1dQ5cm_H4dUDSec7FVFotZhXpQEI8APmcpwHpCdpxLBOyTZuxjv_S_voCclWkZM2AiCoOuXuZgvcIPNWgZX-lfRrkc3XQha6l4qwsfwJLfzAV3aAm7UoH16qPLUc6XWvtfc6DhhcDpdxzGh95Z_rn4sbJYwI6KnwBZ0663WEU3cDcgh4hdJyKeZboXgLMTWsKhEaD2tka3ZfSDJ6WHZ6c0cwcg"
+                updated_time:
+                  nanos: 910169000
+                  seconds: 1667963812
+                user_id: "u_VOAom5EkmH"
+            command: "login"
+        timestamp: "2022-11-09T03:16:52.915626387Z"
+        type: "APIRequest"
+        version: "v0.1"
+      evt:
+        category: "audit"
+        content_type: "application/cloudevents"
+      http:
+        method: "POST"
+        referer: "https://hashicorp.com/boundary/boundary/controller"
+        request_id: "gtraceid_hDpAwQcv6etsQe4NMSlg"
+        status_code: 200
+        url_details:
+          path: "/v1/auth-methods/ampw_RYWiwp6CPP:authenticate"
+      id: "GeikHyFS9z"
+      logger:
+        version: "1.0"
+      network:
+        client:
+          ip: "172.18.0.1"
+      serialized: "eyJpZCI6IkdlaWtIeUZTOXoiLCJzb3VyY2UiOiJodHRwczovL2hhc2hpY29ycCtruncated"
+      serialized_hmac: "hmac-sha256:EUwvKt4GVYh076QlJdLbRdKSy2MERuru23GKXCHaUAs"
+      time: "2022-11-09T03:16:52.915647971Z"
+      usr:
+        id: "u_anon"
+    message: |-
+      {
+        "serialized_hmac" : "hmac-sha256:EUwvKt4GVYh076QlJdLbRdKSy2MERuru23GKXCHaUAs",
+        "data" : {
+          "request" : {
+            "details" : {
+              "auth_method_id" : "ampw_RYWiwp6CPP",
+              "Attrs" : {
+                "PasswordLoginAttributes" : {
+                  "password" : "encrypted:CiQcLatkl6nrXzoqlMNkDB6rt-sb9DfuZhId1fs4Xbe3YKjcPCAqERoPa2Rrdl9IMnpYdnpzRzBy",
+                  "login_name" : "user1"
+                }
+              },
+              "command" : "login"
+            }
+          },
+          "auth" : {
+            "user_info" : {
+              "id" : "u_anon"
+            },
+            "grants_info" : {
+              "grants" : [ {
+                "scope_id" : "global",
+                "role_id" : "r_HEFEclAk6K",
+                "grant" : "id=*;type=scope;actions=list,no-op"
+              }, {
+                "scope_id" : "global",
+                "role_id" : "r_HEFEclAk6K",
+                "grant" : "id=*;type=auth-method;actions=authenticate,list"
+              }, {
+                "scope_id" : "global",
+                "role_id" : "r_HEFEclAk6K",
+                "grant" : "id={{account.id}};actions=change-password,read"
+              }, {
+                "scope_id" : "global",
+                "role_id" : "r_HEFEclAk6K",
+                "grant" : "id=*;type=auth-token;actions=delete:self,list,read:self"
+              }, {
+                "scope_id" : "o_7ysLSf6Ujf",
+                "role_id" : "r_Z9w5BjN6Ej",
+                "grant" : "id=*;type=scope;actions=list,no-op"
+              }, {
+                "scope_id" : "o_7ysLSf6Ujf",
+                "role_id" : "r_Z9w5BjN6Ej",
+                "grant" : "id=*;type=auth-method;actions=authenticate,list"
+              }, {
+                "scope_id" : "o_7ysLSf6Ujf",
+                "role_id" : "r_Z9w5BjN6Ej",
+                "grant" : "id={{account.id}};actions=change-password,read"
+              }, {
+                "scope_id" : "o_7ysLSf6Ujf",
+                "role_id" : "r_Z9w5BjN6Ej",
+                "grant" : "id=*;type=auth-token;actions=delete:self,list,read:self"
+              }, {
+                "scope_id" : "global",
+                "role_id" : "r_877JfAIKvi",
+                "grant" : "id=*;type=auth-method;actions=authenticate,list"
+              }, {
+                "scope_id" : "global",
+                "role_id" : "r_877JfAIKvi",
+                "grant" : "id={{account.id}};actions=change-password,read"
+              }, {
+                "scope_id" : "global",
+                "role_id" : "r_877JfAIKvi",
+                "grant" : "type=scope;actions=list"
+              }, {
+                "scope_id" : "o_6Ry9uTXbwM",
+                "role_id" : "r_IHgOGXdfR3",
+                "grant" : "id=*;type=auth-method;actions=authenticate,list"
+              }, {
+                "scope_id" : "o_6Ry9uTXbwM",
+                "role_id" : "r_IHgOGXdfR3",
+                "grant" : "id={{account.id}};actions=change-password,read"
+              }, {
+                "scope_id" : "o_6Ry9uTXbwM",
+                "role_id" : "r_IHgOGXdfR3",
+                "grant" : "type=scope;actions=list"
+              } ]
+            },
+            "auth_token_id" : ""
+          },
+          "response" : {
+            "status_code" : 200,
+            "details" : {
+              "Attrs" : {
+                "AuthTokenResponse" : {
+                  "approximate_last_used_time" : {
+                    "seconds" : 1667963812,
+                    "nanos" : 910169000
+                  },
+                  "auth_method_id" : "ampw_RYWiwp6CPP",
+                  "created_time" : {
+                    "seconds" : 1667963812,
+                    "nanos" : 910169000
+                  },
+                  "updated_time" : {
+                    "seconds" : 1667963812,
+                    "nanos" : 910169000
+                  },
+                  "account_id" : "acctpw_7Lxbhaonkh",
+                  "user_id" : "u_VOAom5EkmH",
+                  "scope" : {
+                    "parent_scope_id" : "global",
+                    "id" : "o_6Ry9uTXbwM",
+                    "type" : "org"
+                  },
+                  "expiration_time" : {
+                    "seconds" : 1668568612
+                  },
+                  "id" : "at_BWjovnFCsp",
+                  "token" : "encrypted:CrQBxe8DfSD-aYvk0Z2niDPenqWgnQ3aHulg-pqpip0Hj62R4AeG1dQ5cm_H4dUDSec7FVFotZhXpQEI8APmcpwHpCdpxLBOyTZuxjv_S_voCclWkZM2AiCoOuXuZgvcIPNWgZX-lfRrkc3XQha6l4qwsfwJLfzAV3aAm7UoH16qPLUc6XWvtfc6DhhcDpdxzGh95Z_rn4sbJYwI6KnwBZ0663WEU3cDcgh4hdJyKeZboXgLMTWsKhEaD2tka3ZfSDJ6WHZ6c0cwcg"
+                }
+              },
+              "command" : "login"
+            }
+          },
+          "request_info" : {
+            "path" : "/v1/auth-methods/ampw_RYWiwp6CPP:authenticate",
+            "method" : "POST",
+            "client_ip" : "172.18.0.1",
+            "id" : "gtraceid_hDpAwQcv6etsQe4NMSlg"
+          },
+          "id" : "e_VjusDp0D4I",
+          "type" : "APIRequest",
+          "version" : "v0.1",
+          "timestamp" : "2022-11-09T03:16:52.915626387Z"
+        },
+        "specversion" : "1.0",
+        "id" : "GeikHyFS9z",
+        "source" : "https://hashicorp.com/boundary/boundary/controller",
+        "datacontentype" : "application/cloudevents",
+        "time" : "2022-11-09T03:16:52.915647971Z",
+        "type" : "audit",
+        "serialized" : "eyJpZCI6IkdlaWtIeUZTOXoiLCJzb3VyY2UiOiJodHRwczovL2hhc2hpY29ycCtruncated"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1667963812915
+ -
+  sample: |-
+    {
+      "serialized_hmac" : "hmac-sha256:Oer3w4wVvkIsziPxwc86YufxLAQy8kW1_Fg4Qf0mxNI",
+      "data" : {
+        "request" : {
+          "details" : {
+            "name" : "postgres",
+            "id" : "postgres",
+            "scope_name" : "databases"
+          }
+        },
+        "auth" : {
+          "user_info" : {
+            "auth_account_id" : "acctpw_7Lxbhaonkh",
+            "id" : "u_VOAom5EkmH"
+          },
+          "grants_info" : {
+            "grants" : [ {
+              "scope_id" : "global",
+              "role_id" : "r_HEFEclAk6K",
+              "grant" : "id=*;type=scope;actions=list,no-op"
+            }, {
+              "scope_id" : "global",
+              "role_id" : "r_HEFEclAk6K",
+              "grant" : "id=*;type=auth-method;actions=authenticate,list"
+            }, {
+              "scope_id" : "global",
+              "role_id" : "r_HEFEclAk6K",
+              "grant" : "id={{account.id}};actions=change-password,read"
+            }, {
+              "scope_id" : "global",
+              "role_id" : "r_HEFEclAk6K",
+              "grant" : "id=*;type=auth-token;actions=delete:self,list,read:self"
+            }, {
+              "scope_id" : "o_7ysLSf6Ujf",
+              "role_id" : "r_Z9w5BjN6Ej",
+              "grant" : "id=*;type=scope;actions=list,no-op"
+            }, {
+              "scope_id" : "o_7ysLSf6Ujf",
+              "role_id" : "r_Z9w5BjN6Ej",
+              "grant" : "id=*;type=auth-method;actions=authenticate,list"
+            }, {
+              "scope_id" : "o_7ysLSf6Ujf",
+              "role_id" : "r_Z9w5BjN6Ej",
+              "grant" : "id={{account.id}};actions=change-password,read"
+            }, {
+              "scope_id" : "o_7ysLSf6Ujf",
+              "role_id" : "r_Z9w5BjN6Ej",
+              "grant" : "id=*;type=auth-token;actions=delete:self,list,read:self"
+            }, {
+              "scope_id" : "p_wD6GyDAHjA",
+              "role_id" : "r_ZE1mQvEoDl",
+              "grant" : "id=*;type=session;actions=cancel:self,list,read:self"
+            }, {
+              "scope_id" : "p_wD6GyDAHjA",
+              "role_id" : "r_ZE1mQvEoDl",
+              "grant" : "type=target;actions=list"
+            }, {
+              "scope_id" : "p_BwnxUNhdu0",
+              "role_id" : "r_4JUFIrVk7y",
+              "grant" : "id=*;type=session;actions=cancel:self,list,read:self"
+            }, {
+              "scope_id" : "p_BwnxUNhdu0",
+              "role_id" : "r_4JUFIrVk7y",
+              "grant" : "type=target;actions=list"
+            }, {
+              "scope_id" : "global",
+              "role_id" : "r_877JfAIKvi",
+              "grant" : "id=*;type=auth-method;actions=authenticate,list"
+            }, {
+              "scope_id" : "global",
+              "role_id" : "r_877JfAIKvi",
+              "grant" : "id={{account.id}};actions=change-password,read"
+            }, {
+              "scope_id" : "global",
+              "role_id" : "r_877JfAIKvi",
+              "grant" : "type=scope;actions=list"
+            }, {
+              "scope_id" : "o_6Ry9uTXbwM",
+              "role_id" : "r_IHgOGXdfR3",
+              "grant" : "id=*;type=auth-method;actions=authenticate,list"
+            }, {
+              "scope_id" : "o_6Ry9uTXbwM",
+              "role_id" : "r_IHgOGXdfR3",
+              "grant" : "id={{account.id}};actions=change-password,read"
+            }, {
+              "scope_id" : "o_6Ry9uTXbwM",
+              "role_id" : "r_IHgOGXdfR3",
+              "grant" : "type=scope;actions=list"
+            }, {
+              "scope_id" : "o_6Ry9uTXbwM",
+              "role_id" : "r_RoSMph23yU",
+              "grant" : "id=*;type=*;actions=*"
+            }, {
+              "scope_id" : "p_BwnxUNhdu0",
+              "role_id" : "r_X4ZLRfvk8W",
+              "grant" : "id=*;type=*;actions=*"
+            } ]
+          },
+          "auth_token_id" : ""
+        },
+        "response" : {
+          "status_code" : 200,
+          "details" : {
+            "item" : {
+              "created_time" : {
+                "seconds" : 1667963075,
+                "nanos" : 580890000
+              },
+              "endpoint" : "tcp://postgres:5432",
+              "user_id" : "u_VOAom5EkmH",
+              "authorization_token" : "[REDACTED]",
+              "host_set_id" : "hsst_WX5mfz2lzY",
+              "scope" : {
+                "parent_scope_id" : "o_6Ry9uTXbwM",
+                "name" : "databases",
+                "description" : "Databases project",
+                "id" : "p_BwnxUNhdu0",
+                "type" : "project"
+              },
+              "session_id" : "s_NT0xGnv7NV",
+              "target_id" : "ttcp_Jgts9BgRtN",
+              "type" : "tcp",
+              "host_id" : "hst_ZP5tcz3y7r"
+            }
+          }
+        },
+        "request_info" : {
+          "path" : "/v1/targets/postgres:authorize-session",
+          "method" : "POST",
+          "client_ip" : "172.18.0.1",
+          "id" : "gtraceid_1L2uAR94qFUGVDzQmGIJ",
+          "public_id" : "at_ItpAmT6pLV"
+        },
+        "id" : "e_2tr24ynpkD",
+        "type" : "APIRequest",
+        "version" : "v0.1",
+        "timestamp" : "2022-11-09T03:04:35.597245504Z"
+      },
+      "specversion" : "1.0",
+      "id" : "ACxDnMs3g6",
+      "source" : "https://hashicorp.com/boundary/boundary/controller",
+      "datacontentype" : "application/cloudevents",
+      "time" : "2022-11-09T03:04:35.597257588Z",
+      "type" : "audit",
+      "serialized" : "eyJpZCI6IkFDeERuTXMzZzYiLCJzb3VyY2UiOiJtruncated"
+    }
+  result:
+    custom:
+      _timestamp: "03:04:35"
+      data:
+        auth:
+          auth_token_id: ""
+          grants_info:
+            grants:
+             -
+              scope_id: "global"
+              role_id: "r_HEFEclAk6K"
+              grant: "id=*;type=scope;actions=list,no-op"
+             -
+              scope_id: "global"
+              role_id: "r_HEFEclAk6K"
+              grant: "id=*;type=auth-method;actions=authenticate,list"
+             -
+              scope_id: "global"
+              role_id: "r_HEFEclAk6K"
+              grant: "id={{account.id}};actions=change-password,read"
+             -
+              scope_id: "global"
+              role_id: "r_HEFEclAk6K"
+              grant: "id=*;type=auth-token;actions=delete:self,list,read:self"
+             -
+              scope_id: "o_7ysLSf6Ujf"
+              role_id: "r_Z9w5BjN6Ej"
+              grant: "id=*;type=scope;actions=list,no-op"
+             -
+              scope_id: "o_7ysLSf6Ujf"
+              role_id: "r_Z9w5BjN6Ej"
+              grant: "id=*;type=auth-method;actions=authenticate,list"
+             -
+              scope_id: "o_7ysLSf6Ujf"
+              role_id: "r_Z9w5BjN6Ej"
+              grant: "id={{account.id}};actions=change-password,read"
+             -
+              scope_id: "o_7ysLSf6Ujf"
+              role_id: "r_Z9w5BjN6Ej"
+              grant: "id=*;type=auth-token;actions=delete:self,list,read:self"
+             -
+              scope_id: "p_wD6GyDAHjA"
+              role_id: "r_ZE1mQvEoDl"
+              grant: "id=*;type=session;actions=cancel:self,list,read:self"
+             -
+              scope_id: "p_wD6GyDAHjA"
+              role_id: "r_ZE1mQvEoDl"
+              grant: "type=target;actions=list"
+             -
+              scope_id: "p_BwnxUNhdu0"
+              role_id: "r_4JUFIrVk7y"
+              grant: "id=*;type=session;actions=cancel:self,list,read:self"
+             -
+              scope_id: "p_BwnxUNhdu0"
+              role_id: "r_4JUFIrVk7y"
+              grant: "type=target;actions=list"
+             -
+              scope_id: "global"
+              role_id: "r_877JfAIKvi"
+              grant: "id=*;type=auth-method;actions=authenticate,list"
+             -
+              scope_id: "global"
+              role_id: "r_877JfAIKvi"
+              grant: "id={{account.id}};actions=change-password,read"
+             -
+              scope_id: "global"
+              role_id: "r_877JfAIKvi"
+              grant: "type=scope;actions=list"
+             -
+              scope_id: "o_6Ry9uTXbwM"
+              role_id: "r_IHgOGXdfR3"
+              grant: "id=*;type=auth-method;actions=authenticate,list"
+             -
+              scope_id: "o_6Ry9uTXbwM"
+              role_id: "r_IHgOGXdfR3"
+              grant: "id={{account.id}};actions=change-password,read"
+             -
+              scope_id: "o_6Ry9uTXbwM"
+              role_id: "r_IHgOGXdfR3"
+              grant: "type=scope;actions=list"
+             -
+              scope_id: "o_6Ry9uTXbwM"
+              role_id: "r_RoSMph23yU"
+              grant: "id=*;type=*;actions=*"
+             -
+              scope_id: "p_BwnxUNhdu0"
+              role_id: "r_X4ZLRfvk8W"
+              grant: "id=*;type=*;actions=*"
+          user_info:
+            auth_account_id: "acctpw_7Lxbhaonkh"
+        id: "e_2tr24ynpkD"
+        request:
+          details:
+            id: "postgres"
+            name: "postgres"
+            scope_name: "databases"
+        request_info:
+          public_id: "at_ItpAmT6pLV"
+        response:
+          details:
+            item:
+              authorization_token: "[REDACTED]"
+              created_time:
+                nanos: 580890000
+                seconds: 1667963075
+              endpoint: "tcp://postgres:5432"
+              host_id: "hst_ZP5tcz3y7r"
+              host_set_id: "hsst_WX5mfz2lzY"
+              scope:
+                description: "Databases project"
+                id: "p_BwnxUNhdu0"
+                name: "databases"
+                parent_scope_id: "o_6Ry9uTXbwM"
+                type: "project"
+              session_id: "s_NT0xGnv7NV"
+              target_id: "ttcp_Jgts9BgRtN"
+              type: "tcp"
+        timestamp: "2022-11-09T03:04:35.597245504Z"
+        type: "APIRequest"
+        version: "v0.1"
+      evt:
+        category: "audit"
+        content_type: "application/cloudevents"
+      http:
+        method: "POST"
+        referer: "https://hashicorp.com/boundary/boundary/controller"
+        request_id: "gtraceid_1L2uAR94qFUGVDzQmGIJ"
+        status_code: 200
+        url_details:
+          path: "/v1/targets/postgres:authorize-session"
+      id: "ACxDnMs3g6"
+      logger:
+        version: "1.0"
+      network:
+        client:
+          ip: "172.18.0.1"
+      serialized: "eyJpZCI6IkFDeERuTXMzZzYiLCJzb3VyY2UiOiJtruncated"
+      serialized_hmac: "hmac-sha256:Oer3w4wVvkIsziPxwc86YufxLAQy8kW1_Fg4Qf0mxNI"
+      time: "2022-11-09T03:04:35.597257588Z"
+      usr:
+        id: "u_VOAom5EkmH"
+    message: |-
+      {
+        "serialized_hmac" : "hmac-sha256:Oer3w4wVvkIsziPxwc86YufxLAQy8kW1_Fg4Qf0mxNI",
+        "data" : {
+          "request" : {
+            "details" : {
+              "name" : "postgres",
+              "id" : "postgres",
+              "scope_name" : "databases"
+            }
+          },
+          "auth" : {
+            "user_info" : {
+              "auth_account_id" : "acctpw_7Lxbhaonkh",
+              "id" : "u_VOAom5EkmH"
+            },
+            "grants_info" : {
+              "grants" : [ {
+                "scope_id" : "global",
+                "role_id" : "r_HEFEclAk6K",
+                "grant" : "id=*;type=scope;actions=list,no-op"
+              }, {
+                "scope_id" : "global",
+                "role_id" : "r_HEFEclAk6K",
+                "grant" : "id=*;type=auth-method;actions=authenticate,list"
+              }, {
+                "scope_id" : "global",
+                "role_id" : "r_HEFEclAk6K",
+                "grant" : "id={{account.id}};actions=change-password,read"
+              }, {
+                "scope_id" : "global",
+                "role_id" : "r_HEFEclAk6K",
+                "grant" : "id=*;type=auth-token;actions=delete:self,list,read:self"
+              }, {
+                "scope_id" : "o_7ysLSf6Ujf",
+                "role_id" : "r_Z9w5BjN6Ej",
+                "grant" : "id=*;type=scope;actions=list,no-op"
+              }, {
+                "scope_id" : "o_7ysLSf6Ujf",
+                "role_id" : "r_Z9w5BjN6Ej",
+                "grant" : "id=*;type=auth-method;actions=authenticate,list"
+              }, {
+                "scope_id" : "o_7ysLSf6Ujf",
+                "role_id" : "r_Z9w5BjN6Ej",
+                "grant" : "id={{account.id}};actions=change-password,read"
+              }, {
+                "scope_id" : "o_7ysLSf6Ujf",
+                "role_id" : "r_Z9w5BjN6Ej",
+                "grant" : "id=*;type=auth-token;actions=delete:self,list,read:self"
+              }, {
+                "scope_id" : "p_wD6GyDAHjA",
+                "role_id" : "r_ZE1mQvEoDl",
+                "grant" : "id=*;type=session;actions=cancel:self,list,read:self"
+              }, {
+                "scope_id" : "p_wD6GyDAHjA",
+                "role_id" : "r_ZE1mQvEoDl",
+                "grant" : "type=target;actions=list"
+              }, {
+                "scope_id" : "p_BwnxUNhdu0",
+                "role_id" : "r_4JUFIrVk7y",
+                "grant" : "id=*;type=session;actions=cancel:self,list,read:self"
+              }, {
+                "scope_id" : "p_BwnxUNhdu0",
+                "role_id" : "r_4JUFIrVk7y",
+                "grant" : "type=target;actions=list"
+              }, {
+                "scope_id" : "global",
+                "role_id" : "r_877JfAIKvi",
+                "grant" : "id=*;type=auth-method;actions=authenticate,list"
+              }, {
+                "scope_id" : "global",
+                "role_id" : "r_877JfAIKvi",
+                "grant" : "id={{account.id}};actions=change-password,read"
+              }, {
+                "scope_id" : "global",
+                "role_id" : "r_877JfAIKvi",
+                "grant" : "type=scope;actions=list"
+              }, {
+                "scope_id" : "o_6Ry9uTXbwM",
+                "role_id" : "r_IHgOGXdfR3",
+                "grant" : "id=*;type=auth-method;actions=authenticate,list"
+              }, {
+                "scope_id" : "o_6Ry9uTXbwM",
+                "role_id" : "r_IHgOGXdfR3",
+                "grant" : "id={{account.id}};actions=change-password,read"
+              }, {
+                "scope_id" : "o_6Ry9uTXbwM",
+                "role_id" : "r_IHgOGXdfR3",
+                "grant" : "type=scope;actions=list"
+              }, {
+                "scope_id" : "o_6Ry9uTXbwM",
+                "role_id" : "r_RoSMph23yU",
+                "grant" : "id=*;type=*;actions=*"
+              }, {
+                "scope_id" : "p_BwnxUNhdu0",
+                "role_id" : "r_X4ZLRfvk8W",
+                "grant" : "id=*;type=*;actions=*"
+              } ]
+            },
+            "auth_token_id" : ""
+          },
+          "response" : {
+            "status_code" : 200,
+            "details" : {
+              "item" : {
+                "created_time" : {
+                  "seconds" : 1667963075,
+                  "nanos" : 580890000
+                },
+                "endpoint" : "tcp://postgres:5432",
+                "user_id" : "u_VOAom5EkmH",
+                "authorization_token" : "[REDACTED]",
+                "host_set_id" : "hsst_WX5mfz2lzY",
+                "scope" : {
+                  "parent_scope_id" : "o_6Ry9uTXbwM",
+                  "name" : "databases",
+                  "description" : "Databases project",
+                  "id" : "p_BwnxUNhdu0",
+                  "type" : "project"
+                },
+                "session_id" : "s_NT0xGnv7NV",
+                "target_id" : "ttcp_Jgts9BgRtN",
+                "type" : "tcp",
+                "host_id" : "hst_ZP5tcz3y7r"
+              }
+            }
+          },
+          "request_info" : {
+            "path" : "/v1/targets/postgres:authorize-session",
+            "method" : "POST",
+            "client_ip" : "172.18.0.1",
+            "id" : "gtraceid_1L2uAR94qFUGVDzQmGIJ",
+            "public_id" : "at_ItpAmT6pLV"
+          },
+          "id" : "e_2tr24ynpkD",
+          "type" : "APIRequest",
+          "version" : "v0.1",
+          "timestamp" : "2022-11-09T03:04:35.597245504Z"
+        },
+        "specversion" : "1.0",
+        "id" : "ACxDnMs3g6",
+        "source" : "https://hashicorp.com/boundary/boundary/controller",
+        "datacontentype" : "application/cloudevents",
+        "time" : "2022-11-09T03:04:35.597257588Z",
+        "type" : "audit",
+        "serialized" : "eyJpZCI6IkFDeERuTXMzZzYiLCJzb3VyY2UiOiJtruncated"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1667963075597
+

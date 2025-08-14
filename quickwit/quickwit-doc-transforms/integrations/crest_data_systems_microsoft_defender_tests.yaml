@@ -1,0 +1,1504 @@
+id: "crest_data_systems_microsoft_defender"
+tests:
+ -
+  sample: |-
+    {
+      "hostname" : "0fe21912-cef3-4cfd-9167-be2fbb1eff0a",
+      "NetworkMessageId" : "47170ea0-852c-4714-1f41-08db732123f7",
+      "service" : "cds.ms.365.defender.email_url_info",
+      "UrlLocation" : "Body",
+      "ReportId" : "47170ea0-852c-4714-1f41-08db732123f7-7157461930602449026",
+      "UrlDomain" : "security.microsoft.com",
+      "Url" : "http://security.microsoft.com/"
+    }
+  result:
+    custom:
+      NetworkMessageId: "47170ea0-852c-4714-1f41-08db732123f7"
+      ReportId: "47170ea0-852c-4714-1f41-08db732123f7-7157461930602449026"
+      Url: "http://security.microsoft.com/"
+      UrlDomain: "security.microsoft.com"
+      UrlLocation: "Body"
+      hostname: "0fe21912-cef3-4cfd-9167-be2fbb1eff0a"
+      service: "cds.ms.365.defender.email_url_info"
+    message: |-
+      {
+        "hostname" : "0fe21912-cef3-4cfd-9167-be2fbb1eff0a",
+        "NetworkMessageId" : "47170ea0-852c-4714-1f41-08db732123f7",
+        "service" : "cds.ms.365.defender.email_url_info",
+        "UrlLocation" : "Body",
+        "ReportId" : "47170ea0-852c-4714-1f41-08db732123f7-7157461930602449026",
+        "UrlDomain" : "security.microsoft.com",
+        "Url" : "http://security.microsoft.com/"
+      }
+    service: "cds.ms.365.defender.email_url_info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "publicExploit" : true,
+      "software-id" : "microsoft-_-office",
+      "exploitVerified" : true,
+      "exploitInKit" : false,
+      "description" : "Microsoft Outlook Security Feature Bypass Vulnerability",
+      "publishedOn" : "2023-07-11T00:00:00Z",
+      "updatedOn" : "2023-07-14T14:26:12.127Z",
+      "vuln-severity" : "High",
+      "exposedMachines" : 4,
+      "exploitUris" : [ "https://www.cisa.gov/known-exploited-vulnerabilities-catalog" ],
+      "hostname" : "0fe21912-cef3-4cfd-9167-be2fbb1eff0a",
+      "cvssV3" : 8.8,
+      "vulnerability-id" : "CVE-2023-35311",
+      "service" : "cds.ms.365.defender.software.vulns",
+      "name" : "CVE-2023-35311"
+    }
+  result:
+    custom:
+      cvssV3: 8.8
+      exploitInKit: false
+      exploitUris:
+       - "https://www.cisa.gov/known-exploited-vulnerabilities-catalog"
+      exploitVerified: true
+      exposedMachines: 4
+      hostname: "0fe21912-cef3-4cfd-9167-be2fbb1eff0a"
+      name: "CVE-2023-35311"
+      publicExploit: true
+      publishedOn: "2023-07-11T00:00:00Z"
+      service: "cds.ms.365.defender.software.vulns"
+      software-id: "microsoft-_-office"
+      updatedOn: "2023-07-14T14:26:12.127Z"
+      vuln-severity: "High"
+      vulnerability-id: "CVE-2023-35311"
+    message: "Microsoft Outlook Security Feature Bypass Vulnerability"
+    service: "cds.ms.365.defender.software.vulns"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "FileSize@odata" : {
+        "type" : "-"
+      },
+      "NetworkMessageId" : "04f55ca7-afd7-467e-1d9c-08db6dae6278",
+      "DetectionMethods" : "-",
+      "SenderFromAddress" : "MicrosoftExchange329e71ec88ae4615bbc36ab6ce41109e@TestN896.onmicrosoft.com",
+      "FileName" : "ATT00003",
+      "ThreatTypes" : "-",
+      "ReportId" : "04f55ca7-afd7-467e-1d9c-08db6dae6278-10340117635716488991-20412c087b668d2bc127225ba5c0c456526b0f24678af3c0b29584f22918ef8b-1",
+      "Timestamp" : "2023-06-15T14:39:56Z",
+      "SHA256" : "20412c087b668d2bc127225ba5c0c456526b0f24678af3c0b29584f22918ef8b",
+      "RecipientObjectId" : "315d7d21-dc39-4c47-90e7-9a0d0e7ed99a",
+      "SenderDisplayName" : "Microsoft Outlook",
+      "FileType" : "txt;text",
+      "ThreatNames" : "-",
+      "SenderObjectId" : "-",
+      "RecipientEmailAddress" : "test1@testn896.onmicrosoft.com",
+      "FileSize" : 404
+    }
+  result:
+    custom:
+      DetectionMethods: "-"
+      FileName: "ATT00003"
+      FileSize: 404
+      FileSize@odata:
+        type: "-"
+      FileType: "txt;text"
+      NetworkMessageId: "04f55ca7-afd7-467e-1d9c-08db6dae6278"
+      RecipientEmailAddress: "test1@testn896.onmicrosoft.com"
+      RecipientObjectId: "315d7d21-dc39-4c47-90e7-9a0d0e7ed99a"
+      ReportId: "04f55ca7-afd7-467e-1d9c-08db6dae6278-10340117635716488991-20412c087b668d2bc127225ba5c0c456526b0f24678af3c0b29584f22918ef8b-1"
+      SHA256: "20412c087b668d2bc127225ba5c0c456526b0f24678af3c0b29584f22918ef8b"
+      SenderDisplayName: "Microsoft Outlook"
+      SenderFromAddress: "MicrosoftExchange329e71ec88ae4615bbc36ab6ce41109e@TestN896.onmicrosoft.com"
+      SenderObjectId: "-"
+      ThreatNames: "-"
+      ThreatTypes: "-"
+      Timestamp: "2023-06-15T14:39:56Z"
+    message: |-
+      {
+        "FileSize@odata" : {
+          "type" : "-"
+        },
+        "NetworkMessageId" : "04f55ca7-afd7-467e-1d9c-08db6dae6278",
+        "DetectionMethods" : "-",
+        "SenderFromAddress" : "MicrosoftExchange329e71ec88ae4615bbc36ab6ce41109e@TestN896.onmicrosoft.com",
+        "FileName" : "ATT00003",
+        "ThreatTypes" : "-",
+        "ReportId" : "04f55ca7-afd7-467e-1d9c-08db6dae6278-10340117635716488991-20412c087b668d2bc127225ba5c0c456526b0f24678af3c0b29584f22918ef8b-1",
+        "Timestamp" : "2023-06-15T14:39:56Z",
+        "SHA256" : "20412c087b668d2bc127225ba5c0c456526b0f24678af3c0b29584f22918ef8b",
+        "RecipientObjectId" : "315d7d21-dc39-4c47-90e7-9a0d0e7ed99a",
+        "SenderDisplayName" : "Microsoft Outlook",
+        "FileType" : "txt;text",
+        "ThreatNames" : "-",
+        "SenderObjectId" : "-",
+        "RecipientEmailAddress" : "test1@testn896.onmicrosoft.com",
+        "FileSize" : 404
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "investigation-status" : "Benign",
+      "hostname" : "0fe21912-cef3-4cfd-9167-be2fbb1eff0a",
+      "machineId" : "d4333732a10ef7edd51ea656510cb770da4d6c7c",
+      "service" : "cds.ms.365.defender.investigations",
+      "computerDnsName" : "testmachine6",
+      "investigation-id" : "14",
+      "startTime" : "2023-07-10T11: 54: 13Z",
+      "id" : "14",
+      "endTime" : "2023-07-10T12: 15: 20.66Z",
+      "state" : "Benign",
+      "triggeringAlertId" : "da12970c1f-e2d9-4f68-ab5d-4c8b2e29bc05_1"
+    }
+  result:
+    custom:
+      computerDnsName: "testmachine6"
+      endTime: "2023-07-10T12: 15: 20.66Z"
+      hostname: "0fe21912-cef3-4cfd-9167-be2fbb1eff0a"
+      id: "14"
+      investigation-id: "14"
+      investigation-status: "Benign"
+      machineId: "d4333732a10ef7edd51ea656510cb770da4d6c7c"
+      service: "cds.ms.365.defender.investigations"
+      startTime: "2023-07-10T11: 54: 13Z"
+      state: "Benign"
+      triggeringAlertId: "da12970c1f-e2d9-4f68-ab5d-4c8b2e29bc05_1"
+    message: |-
+      {
+        "investigation-status" : "Benign",
+        "hostname" : "0fe21912-cef3-4cfd-9167-be2fbb1eff0a",
+        "machineId" : "d4333732a10ef7edd51ea656510cb770da4d6c7c",
+        "service" : "cds.ms.365.defender.investigations",
+        "computerDnsName" : "testmachine6",
+        "investigation-id" : "14",
+        "startTime" : "2023-07-10T11: 54: 13Z",
+        "id" : "14",
+        "endTime" : "2023-07-10T12: 15: 20.66Z",
+        "state" : "Benign",
+        "triggeringAlertId" : "da12970c1f-e2d9-4f68-ab5d-4c8b2e29bc05_1"
+      }
+    service: "cds.ms.365.defender.investigations"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "osBuild" : 19043,
+      "productsNames" : [ "windows_10" ],
+      "cveAddressed" : 1,
+      "url" : "https://catalog.update.microsoft.com/v7/site/Search.aspx?q=KB5023696",
+      "endpoint-name" : "testmachine6",
+      "hostname" : "0fe21912-cef3-4cfd-9167-be2fbb1eff0a",
+      "machineMissedOn" : 1,
+      "service" : "cds.ms.365.defender.endpoints.missing_kbs",
+      "name" : "July 2022 Security Updates",
+      "missing-kb-id" : "5023696",
+      "id" : "5023696",
+      "endpoint-id" : "d4333732a10ef7edd51ea656510cb770da4d6c7c",
+      "products-names" : "windows_10"
+    }
+  result:
+    custom:
+      cveAddressed: 1
+      endpoint-id: "d4333732a10ef7edd51ea656510cb770da4d6c7c"
+      endpoint-name: "testmachine6"
+      hostname: "0fe21912-cef3-4cfd-9167-be2fbb1eff0a"
+      id: "5023696"
+      machineMissedOn: 1
+      missing-kb-id: "5023696"
+      name: "July 2022 Security Updates"
+      osBuild: 19043
+      products-names: "windows_10"
+      productsNames:
+       - "windows_10"
+      service: "cds.ms.365.defender.endpoints.missing_kbs"
+      url: "https://catalog.update.microsoft.com/v7/site/Search.aspx?q=KB5023696"
+    message: |-
+      {
+        "osBuild" : 19043,
+        "productsNames" : [ "windows_10" ],
+        "cveAddressed" : 1,
+        "url" : "https://catalog.update.microsoft.com/v7/site/Search.aspx?q=KB5023696",
+        "endpoint-name" : "testmachine6",
+        "hostname" : "0fe21912-cef3-4cfd-9167-be2fbb1eff0a",
+        "machineMissedOn" : 1,
+        "service" : "cds.ms.365.defender.endpoints.missing_kbs",
+        "name" : "July 2022 Security Updates",
+        "missing-kb-id" : "5023696",
+        "id" : "5023696",
+        "endpoint-id" : "d4333732a10ef7edd51ea656510cb770da4d6c7c",
+        "products-names" : "windows_10"
+      }
+    service: "cds.ms.365.defender.endpoints.missing_kbs"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "hostname" : "0fe21912-cef3-4cfd-9167-be2fbb1eff0a",
+      "currentScore" : 0,
+      "service" : "cds.ms.365.defender.securescore",
+      "active_user_count" : 4,
+      "vendor" : "Microsoft",
+      "tenantId" : "0fe21912-cef3-4cfd-9167-be2fbb1eff0a",
+      "id" : "0fe21912-cef3-4cfd-9167-be2fbb1eff0a_2023-06-08"
+    }
+  result:
+    custom:
+      active_user_count: 4
+      currentScore: 0
+      hostname: "0fe21912-cef3-4cfd-9167-be2fbb1eff0a"
+      id: "0fe21912-cef3-4cfd-9167-be2fbb1eff0a_2023-06-08"
+      service: "cds.ms.365.defender.securescore"
+      tenantId: "0fe21912-cef3-4cfd-9167-be2fbb1eff0a"
+      vendor: "Microsoft"
+    message: |-
+      {
+        "hostname" : "0fe21912-cef3-4cfd-9167-be2fbb1eff0a",
+        "currentScore" : 0,
+        "service" : "cds.ms.365.defender.securescore",
+        "active_user_count" : 4,
+        "vendor" : "Microsoft",
+        "tenantId" : "0fe21912-cef3-4cfd-9167-be2fbb1eff0a",
+        "id" : "0fe21912-cef3-4cfd-9167-be2fbb1eff0a_2023-06-08"
+      }
+    service: "cds.ms.365.defender.securescore"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "publicExploit" : true,
+      "software-id" : "microsoft-_-office",
+      "exploitVerified" : true,
+      "exploitInKit" : false,
+      "description" : "Microsoft Outlook Security Feature Bypass Vulnerability",
+      "publishedOn" : "2023-07-11T00:00:00Z",
+      "updatedOn" : "2023-07-14T14:26:12.127Z",
+      "vuln-severity" : "High",
+      "exposedMachines" : 4,
+      "exploitUris" : [ "https://www.cisa.gov/known-exploited-vulnerabilities-catalog" ],
+      "hostname" : "0fe21912-cef3-4cfd-9167-be2fbb1eff0a",
+      "cvssV3" : 8.8,
+      "vulnerability-id" : "CVE-2023-35311",
+      "service" : "cds.ms.365.defender.software.vulns",
+      "name" : "CVE-2023-35311"
+    }
+  result:
+    custom:
+      cvssV3: 8.8
+      exploitInKit: false
+      exploitUris:
+       - "https://www.cisa.gov/known-exploited-vulnerabilities-catalog"
+      exploitVerified: true
+      exposedMachines: 4
+      hostname: "0fe21912-cef3-4cfd-9167-be2fbb1eff0a"
+      name: "CVE-2023-35311"
+      publicExploit: true
+      publishedOn: "2023-07-11T00:00:00Z"
+      service: "cds.ms.365.defender.software.vulns"
+      software-id: "microsoft-_-office"
+      updatedOn: "2023-07-14T14:26:12.127Z"
+      vuln-severity: "High"
+      vulnerability-id: "CVE-2023-35311"
+    message: "Microsoft Outlook Security Feature Bypass Vulnerability"
+    service: "cds.ms.365.defender.software.vulns"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "RawEventData" : {
+        "AzureActiveDirectoryEventType" : 1,
+        "ObjectId" : "nikunjbhatt@testintpoc.onmicrosoft.com",
+        "Organizat ionId" : "e17d1638-185c-4d48-a53a-fa47e0a9eb57",
+        "ResultStatus" : "Success",
+        "UserKey" : "10032002552D88B3@testintpoc.onmicrosoft.com",
+        "Operation" : "Add member to role.",
+        "ExtendedProperties" : [ {
+          "Value" : "{}",
+          "Name" : "additionalDetails"
+        }, {
+          "Value" : "Role",
+          "Name" : "extendedAuditEventCategory"
+        } ],
+        "CreationTi me" : "2023-01-23T07:25:25Z",
+        "Workload" : "AzureActiveDirectory",
+        "IntraSystemId" : "91213b30-d455-4c39-9a61-83d524cefad6",
+        "Target" : [ {
+          "Type" : 2,
+          "ID" : "User_b768231f-0b8e-4a36-8928-a57fd7a4b1f4"
+        }, {
+          "Type" : 2,
+          "ID" : "b768231f -0b8e-4a36-8928-a57fd7a4b1f4"
+        }, {
+          "Type" : 2,
+          "ID" : "User"
+        }, {
+          "Type" : 5,
+          "ID" : "nikunjbhatt@testintpoc.onmicrosoft.com"
+        }, {
+          "Type" : 3,
+          "ID" : "100320026B4E546C"
+        } ],
+        "RecordType" : 8,
+        "In terSystemsId" : "1191e030-6f5e-46a7-b361-28ed3a514c5e",
+        "ModifiedProperties" : [ {
+          "OldValue" : "",
+          "NewValue" : "f023fd81-a637-4b56-95fd-79 1ac0226033",
+          "Name" : "Role.ObjectID"
+        }, {
+          "OldValue" : "",
+          "NewValue" : "Service Support Administrator",
+          "Name" : "Role.DisplayName"
+        }, {
+          "Old Value" : "",
+          "NewValue" : "f023fd81-a637-4b56-95fd-791ac0226033",
+          "Name" : "Role.TemplateId"
+        }, {
+          "OldValue" : "",
+          "NewValue" : "ServiceSupportAdmins",
+          "Name" : "Role.WellKnownObjectName"
+        } ],
+        "Version" : 1,
+        "SupportTicketId" : "",
+        "TargetContextId" : "e17d1638-185c-4d4 8-a53a-fa47e0a9eb57",
+        "UserId" : "cdspoc@testintpoc.onmicrosoft.com",
+        "Actor" : [ {
+          "Type" : 5,
+          "ID" : "cdspoc@testintpoc.onmicrosoft.com"
+        }, {
+          "Type" : 3,
+          "ID" : "10032002552D88B3"
+        }, {
+          "Type" : 2,
+          "ID" : "User_c9a44636-e855-498f-8df0-04778f94b067 "
+        }, {
+          "Type" : 2,
+          "ID" : "c9a44636-e855-498f-8df0-04778f94b067"
+        }, {
+          "Type" : 2,
+          "ID" : "User"
+        } ],
+        "Id" : "e9a8d7c3-6390-49ee-909e-1d17d5668821",
+        "UserType" : 0,
+        "ActorContextId" : "e17d1638-185c-4d48-a53a-fa47e0a9eb57"
+      },
+      "ActionType" : "Add a member to role.",
+      "AccountId" : "c9a44636-e855-498f-8df0-04778f94b 067",
+      "AccountObjectId" : "c9a44636-e855-498f-8df0-04778f94b067",
+      "AccountDisplayName" : "POC Test",
+      "ObjectId" : "f023fd81-a637-4b56-95fd-791ac0226033",
+      "ActivityType" : "Assignprivilege",
+      "IsImpersonated" : false,
+      "ReportId" : "67440842_11161_e9a8d7c3-6390-49ee-909e-1d17d5668821",
+      "IsExternalUser" : false,
+      "AccountType" : "Admin",
+      "Timestamp" : "2023-01-23T07:25:25Z",
+      "ObjectName" : "Service Support Administrator",
+      "ObjectType" : "Office 365 Admin Role",
+      "AppInstanceId" : 0,
+      "IsAdminOperation" : true,
+      "ActivityObjects" : [ {
+        "Role" : "Target object",
+        "Type" : "Privilege",
+        "Id" : "f023fd81-a637-4b56-95fd-791ac0226033",
+        "ServiceObjectType" : "Office 365 Admin Role",
+        "Name" : "Service Support Administrator"
+      }, {
+        "Role" : "Actor",
+        "Type" : "User",
+        "ApplicationInstance" : 0,
+        "Id" : "c9a44636-e855-498f-8df0-04778f94b067",
+        "ApplicationId" : 11161,
+        "Name" : "POC Test"
+      }, {
+        "Role" : "To",
+        "Type" : "Account",
+        "ApplicationInstance" : 0,
+        "Id" : "nikunjbhatt@testintpoc.onmicrosoft.com",
+        "ApplicationId" : 11161,
+        "Name" : "nikunjbhatt@testintpoc.onmicrosoft.com"
+      } ],
+      "ApplicationId" : 11161,
+      "Application" : "Office 365"
+    }
+  result:
+    custom:
+      AccountDisplayName: "POC Test"
+      AccountId: "c9a44636-e855-498f-8df0-04778f94b 067"
+      AccountObjectId: "c9a44636-e855-498f-8df0-04778f94b067"
+      AccountType: "Admin"
+      ActionType: "Add a member to role."
+      ActivityObjects:
+       -
+        Role: "Target object"
+        Type: "Privilege"
+        Id: "f023fd81-a637-4b56-95fd-791ac0226033"
+        ServiceObjectType: "Office 365 Admin Role"
+        Name: "Service Support Administrator"
+       -
+        Role: "Actor"
+        Type: "User"
+        ApplicationInstance: 0
+        Id: "c9a44636-e855-498f-8df0-04778f94b067"
+        ApplicationId: 11161
+        Name: "POC Test"
+       -
+        Role: "To"
+        Type: "Account"
+        ApplicationInstance: 0
+        Id: "nikunjbhatt@testintpoc.onmicrosoft.com"
+        ApplicationId: 11161
+        Name: "nikunjbhatt@testintpoc.onmicrosoft.com"
+      ActivityType: "Assignprivilege"
+      AppInstanceId: 0
+      Application: "Office 365"
+      ApplicationId: 11161
+      IsAdminOperation: true
+      IsExternalUser: false
+      IsImpersonated: false
+      ObjectId: "f023fd81-a637-4b56-95fd-791ac0226033"
+      ObjectName: "Service Support Administrator"
+      ObjectType: "Office 365 Admin Role"
+      RawEventData:
+        Actor:
+         -
+          Type: 5
+          ID: "cdspoc@testintpoc.onmicrosoft.com"
+         -
+          Type: 3
+          ID: "10032002552D88B3"
+         -
+          Type: 2
+          ID: "User_c9a44636-e855-498f-8df0-04778f94b067 "
+         -
+          Type: 2
+          ID: "c9a44636-e855-498f-8df0-04778f94b067"
+         -
+          Type: 2
+          ID: "User"
+        ActorContextId: "e17d1638-185c-4d48-a53a-fa47e0a9eb57"
+        AzureActiveDirectoryEventType: 1
+        CreationTi me: "2023-01-23T07:25:25Z"
+        ExtendedProperties:
+         -
+          Value: "{}"
+          Name: "additionalDetails"
+         -
+          Value: "Role"
+          Name: "extendedAuditEventCategory"
+        Id: "e9a8d7c3-6390-49ee-909e-1d17d5668821"
+        In terSystemsId: "1191e030-6f5e-46a7-b361-28ed3a514c5e"
+        IntraSystemId: "91213b30-d455-4c39-9a61-83d524cefad6"
+        ModifiedProperties:
+         -
+          OldValue: ""
+          NewValue: "f023fd81-a637-4b56-95fd-79 1ac0226033"
+          Name: "Role.ObjectID"
+         -
+          OldValue: ""
+          NewValue: "Service Support Administrator"
+          Name: "Role.DisplayName"
+         -
+          Old Value: ""
+          NewValue: "f023fd81-a637-4b56-95fd-791ac0226033"
+          Name: "Role.TemplateId"
+         -
+          OldValue: ""
+          NewValue: "ServiceSupportAdmins"
+          Name: "Role.WellKnownObjectName"
+        ObjectId: "nikunjbhatt@testintpoc.onmicrosoft.com"
+        Operation: "Add member to role."
+        Organizat ionId: "e17d1638-185c-4d48-a53a-fa47e0a9eb57"
+        RecordType: 8
+        ResultStatus: "Success"
+        SupportTicketId: ""
+        Target:
+         -
+          Type: 2
+          ID: "User_b768231f-0b8e-4a36-8928-a57fd7a4b1f4"
+         -
+          Type: 2
+          ID: "b768231f -0b8e-4a36-8928-a57fd7a4b1f4"
+         -
+          Type: 2
+          ID: "User"
+         -
+          Type: 5
+          ID: "nikunjbhatt@testintpoc.onmicrosoft.com"
+         -
+          Type: 3
+          ID: "100320026B4E546C"
+        TargetContextId: "e17d1638-185c-4d4 8-a53a-fa47e0a9eb57"
+        UserId: "cdspoc@testintpoc.onmicrosoft.com"
+        UserKey: "10032002552D88B3@testintpoc.onmicrosoft.com"
+        UserType: 0
+        Version: 1
+        Workload: "AzureActiveDirectory"
+      ReportId: "67440842_11161_e9a8d7c3-6390-49ee-909e-1d17d5668821"
+      Timestamp: "2023-01-23T07:25:25Z"
+      cds:
+        defender:
+          actiontype: "Add a member to role."
+      usr:
+        id: "c9a44636-e855-498f-8df0-04778f94b067"
+    message: |-
+      {
+        "RawEventData" : {
+          "AzureActiveDirectoryEventType" : 1,
+          "ObjectId" : "nikunjbhatt@testintpoc.onmicrosoft.com",
+          "Organizat ionId" : "e17d1638-185c-4d48-a53a-fa47e0a9eb57",
+          "ResultStatus" : "Success",
+          "UserKey" : "10032002552D88B3@testintpoc.onmicrosoft.com",
+          "Operation" : "Add member to role.",
+          "ExtendedProperties" : [ {
+            "Value" : "{}",
+            "Name" : "additionalDetails"
+          }, {
+            "Value" : "Role",
+            "Name" : "extendedAuditEventCategory"
+          } ],
+          "CreationTi me" : "2023-01-23T07:25:25Z",
+          "Workload" : "AzureActiveDirectory",
+          "IntraSystemId" : "91213b30-d455-4c39-9a61-83d524cefad6",
+          "Target" : [ {
+            "Type" : 2,
+            "ID" : "User_b768231f-0b8e-4a36-8928-a57fd7a4b1f4"
+          }, {
+            "Type" : 2,
+            "ID" : "b768231f -0b8e-4a36-8928-a57fd7a4b1f4"
+          }, {
+            "Type" : 2,
+            "ID" : "User"
+          }, {
+            "Type" : 5,
+            "ID" : "nikunjbhatt@testintpoc.onmicrosoft.com"
+          }, {
+            "Type" : 3,
+            "ID" : "100320026B4E546C"
+          } ],
+          "RecordType" : 8,
+          "In terSystemsId" : "1191e030-6f5e-46a7-b361-28ed3a514c5e",
+          "ModifiedProperties" : [ {
+            "OldValue" : "",
+            "NewValue" : "f023fd81-a637-4b56-95fd-79 1ac0226033",
+            "Name" : "Role.ObjectID"
+          }, {
+            "OldValue" : "",
+            "NewValue" : "Service Support Administrator",
+            "Name" : "Role.DisplayName"
+          }, {
+            "Old Value" : "",
+            "NewValue" : "f023fd81-a637-4b56-95fd-791ac0226033",
+            "Name" : "Role.TemplateId"
+          }, {
+            "OldValue" : "",
+            "NewValue" : "ServiceSupportAdmins",
+            "Name" : "Role.WellKnownObjectName"
+          } ],
+          "Version" : 1,
+          "SupportTicketId" : "",
+          "TargetContextId" : "e17d1638-185c-4d4 8-a53a-fa47e0a9eb57",
+          "UserId" : "cdspoc@testintpoc.onmicrosoft.com",
+          "Actor" : [ {
+            "Type" : 5,
+            "ID" : "cdspoc@testintpoc.onmicrosoft.com"
+          }, {
+            "Type" : 3,
+            "ID" : "10032002552D88B3"
+          }, {
+            "Type" : 2,
+            "ID" : "User_c9a44636-e855-498f-8df0-04778f94b067 "
+          }, {
+            "Type" : 2,
+            "ID" : "c9a44636-e855-498f-8df0-04778f94b067"
+          }, {
+            "Type" : 2,
+            "ID" : "User"
+          } ],
+          "Id" : "e9a8d7c3-6390-49ee-909e-1d17d5668821",
+          "UserType" : 0,
+          "ActorContextId" : "e17d1638-185c-4d48-a53a-fa47e0a9eb57"
+        },
+        "ActionType" : "Add a member to role.",
+        "AccountId" : "c9a44636-e855-498f-8df0-04778f94b 067",
+        "AccountObjectId" : "c9a44636-e855-498f-8df0-04778f94b067",
+        "AccountDisplayName" : "POC Test",
+        "ObjectId" : "f023fd81-a637-4b56-95fd-791ac0226033",
+        "ActivityType" : "Assignprivilege",
+        "IsImpersonated" : false,
+        "ReportId" : "67440842_11161_e9a8d7c3-6390-49ee-909e-1d17d5668821",
+        "IsExternalUser" : false,
+        "AccountType" : "Admin",
+        "Timestamp" : "2023-01-23T07:25:25Z",
+        "ObjectName" : "Service Support Administrator",
+        "ObjectType" : "Office 365 Admin Role",
+        "AppInstanceId" : 0,
+        "IsAdminOperation" : true,
+        "ActivityObjects" : [ {
+          "Role" : "Target object",
+          "Type" : "Privilege",
+          "Id" : "f023fd81-a637-4b56-95fd-791ac0226033",
+          "ServiceObjectType" : "Office 365 Admin Role",
+          "Name" : "Service Support Administrator"
+        }, {
+          "Role" : "Actor",
+          "Type" : "User",
+          "ApplicationInstance" : 0,
+          "Id" : "c9a44636-e855-498f-8df0-04778f94b067",
+          "ApplicationId" : 11161,
+          "Name" : "POC Test"
+        }, {
+          "Role" : "To",
+          "Type" : "Account",
+          "ApplicationInstance" : 0,
+          "Id" : "nikunjbhatt@testintpoc.onmicrosoft.com",
+          "ApplicationId" : 11161,
+          "Name" : "nikunjbhatt@testintpoc.onmicrosoft.com"
+        } ],
+        "ApplicationId" : 11161,
+        "Application" : "Office 365"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "redirectIncidentId" : "10",
+      "last-Update-Time" : "2023-07-10T11:55:24.0366667Z",
+      "createdDateTime" : "2023-07-10T11:54:11.8033333Z",
+      "determination" : "unknown",
+      "classification" : "unknown",
+      "hostname" : "0fe21912-cef3-4cfd-9167-be2fbb1eff0a",
+      "incident-status" : "redirected",
+      "service" : "cds.ms.365.defender.incidents",
+      "incidentWebUrl" : "https://security.microsoft.com/incidents/11?tid=0fe21912-cef3-4cfd-9167-be2fbb1eff0a",
+      "tenantId" : "0fe21912-cef3-4cfd-9167-be2fbb1eff0a",
+      "incident-severity" : "medium",
+      "incidentId" : "11",
+      "incidentName" : "Multi-stage incident on one endpoint"
+    }
+  result:
+    custom:
+      classification: "unknown"
+      createdDateTime: "2023-07-10T11:54:11.8033333Z"
+      determination: "unknown"
+      hostname: "0fe21912-cef3-4cfd-9167-be2fbb1eff0a"
+      incident-severity: "medium"
+      incident-status: "redirected"
+      incidentId: "11"
+      incidentName: "Multi-stage incident on one endpoint"
+      incidentWebUrl: "https://security.microsoft.com/incidents/11?tid=0fe21912-cef3-4cfd-9167-be2fbb1eff0a"
+      last-Update-Time: "2023-07-10T11:55:24.0366667Z"
+      redirectIncidentId: "10"
+      service: "cds.ms.365.defender.incidents"
+      tenantId: "0fe21912-cef3-4cfd-9167-be2fbb1eff0a"
+    message: |-
+      {
+        "redirectIncidentId" : "10",
+        "last-Update-Time" : "2023-07-10T11:55:24.0366667Z",
+        "createdDateTime" : "2023-07-10T11:54:11.8033333Z",
+        "determination" : "unknown",
+        "classification" : "unknown",
+        "hostname" : "0fe21912-cef3-4cfd-9167-be2fbb1eff0a",
+        "incident-status" : "redirected",
+        "service" : "cds.ms.365.defender.incidents",
+        "incidentWebUrl" : "https://security.microsoft.com/incidents/11?tid=0fe21912-cef3-4cfd-9167-be2fbb1eff0a",
+        "tenantId" : "0fe21912-cef3-4cfd-9167-be2fbb1eff0a",
+        "incident-severity" : "medium",
+        "incidentId" : "11",
+        "incidentName" : "Multi-stage incident on one endpoint"
+      }
+    service: "cds.ms.365.defender.incidents"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "controlCategory" : "Identity",
+      "userImpact" : "Moderate",
+      "compliance_certification_name" : "-",
+      "deprecated" : false,
+      "remediationImpact" : "When the policy triggers, access to the account will either be blocked or the user would be required to use multifactor authentication and change their password. Users who haven't registered MFA on their account will be blocked from accessing it. If account access is blocked, an admin would need to recover the account. Thus, it is important to configure the MFA registration policy for all users who are a part of the user risk policy to ensure that they have registered MFA.",
+      "title" : "Protect all users with a user risk policy",
+      "secureScoreControlProfiles_service" : "AzureAD",
+      "actionType" : "Config",
+      "remediation" : "<ol><li>To implement this recommendation, you need Azure Active Directory Premium P2 licenses. Check what Azure Active Directory license you have under &ldquo;Prerequisites&rdquo; in Microsoft Secure Score or <a href=\"https://portal.azure.com/#blade/Microsoft_AAD_IAM/ActiveDirectoryMenuBlade/Overview\">See your license type under \"Basic information\" in the Azure Active Directory Overview</a>&nbsp;</li><li>If you&rsquo;ve invested in Azure Active Directory Premium P2 licenses, you can create a Conditional Access policy from scratch or by using a template. Note: Classic Conditional Access policies aren&rsquo;t scored. Use the recommended steps to receive credit. <a href=\"https://docs.microsoft.com/azure/active-directory/conditional-access/howto-conditional-access-policy-risk-user\">Follow these steps to create a Conditional Access policy from scratch or by using a template</a>&nbsp;</li><li>If you&rsquo;re not using Azure Active Directory Premium P2 licenses, we recommend you set the status for this action to &ldquo;Risk accepted&rdquo;.&nbsp;</li></ol>",
+      "hostname" : "0fe21912-cef3-4cfd-9167-be2fbb1eff0a",
+      "tier" : "Advanced",
+      "service" : "cds.ms.365.defender.securescore_controlprofiles",
+      "vendor" : "Microsoft",
+      "tenantId" : "0fe21912-cef3-4cfd-9167-be2fbb1eff0a",
+      "threats" : [ "Password Cracking", "Account Breach" ],
+      "rank" : 59,
+      "id" : "UserRiskPolicy",
+      "implementation_cost" : "Moderate"
+    }
+  result:
+    custom:
+      actionType: "Config"
+      compliance_certification_name: "-"
+      controlCategory: "Identity"
+      deprecated: false
+      hostname: "0fe21912-cef3-4cfd-9167-be2fbb1eff0a"
+      id: "UserRiskPolicy"
+      implementation_cost: "Moderate"
+      rank: 59
+      remediation: "<ol><li>To implement this recommendation, you need Azure Active Directory Premium P2 licenses. Check what Azure Active Directory license you have under &ldquo;Prerequisites&rdquo; in Microsoft Secure Score or <a href=\"https://portal.azure.com/#blade/Microsoft_AAD_IAM/ActiveDirectoryMenuBlade/Overview\">See your license type under \"Basic information\" in the Azure Active Directory Overview</a>&nbsp;</li><li>If you&rsquo;ve invested in Azure Active Directory Premium P2 licenses, you can create a Conditional Access policy from scratch or by using a template. Note: Classic Conditional Access policies aren&rsquo;t scored. Use the recommended steps to receive credit. <a href=\"https://docs.microsoft.com/azure/active-directory/conditional-access/howto-conditional-access-policy-risk-user\">Follow these steps to create a Conditional Access policy from scratch or by using a template</a>&nbsp;</li><li>If you&rsquo;re not using Azure Active Directory Premium P2 licenses, we recommend you set the status for this action to &ldquo;Risk accepted&rdquo;.&nbsp;</li></ol>"
+      remediationImpact: "When the policy triggers, access to the account will either be blocked or the user would be required to use multifactor authentication and change their password. Users who haven't registered MFA on their account will be blocked from accessing it. If account access is blocked, an admin would need to recover the account. Thus, it is important to configure the MFA registration policy for all users who are a part of the user risk policy to ensure that they have registered MFA."
+      secureScoreControlProfiles_service: "AzureAD"
+      service: "cds.ms.365.defender.securescore_controlprofiles"
+      tenantId: "0fe21912-cef3-4cfd-9167-be2fbb1eff0a"
+      threats:
+       - "Password Cracking"
+       - "Account Breach"
+      tier: "Advanced"
+      title: "Protect all users with a user risk policy"
+      userImpact: "Moderate"
+      vendor: "Microsoft"
+    message: |-
+      {
+        "controlCategory" : "Identity",
+        "userImpact" : "Moderate",
+        "compliance_certification_name" : "-",
+        "deprecated" : false,
+        "remediationImpact" : "When the policy triggers, access to the account will either be blocked or the user would be required to use multifactor authentication and change their password. Users who haven't registered MFA on their account will be blocked from accessing it. If account access is blocked, an admin would need to recover the account. Thus, it is important to configure the MFA registration policy for all users who are a part of the user risk policy to ensure that they have registered MFA.",
+        "title" : "Protect all users with a user risk policy",
+        "secureScoreControlProfiles_service" : "AzureAD",
+        "actionType" : "Config",
+        "remediation" : "<ol><li>To implement this recommendation, you need Azure Active Directory Premium P2 licenses. Check what Azure Active Directory license you have under &ldquo;Prerequisites&rdquo; in Microsoft Secure Score or <a href=\"https://portal.azure.com/#blade/Microsoft_AAD_IAM/ActiveDirectoryMenuBlade/Overview\">See your license type under \"Basic information\" in the Azure Active Directory Overview</a>&nbsp;</li><li>If you&rsquo;ve invested in Azure Active Directory Premium P2 licenses, you can create a Conditional Access policy from scratch or by using a template. Note: Classic Conditional Access policies aren&rsquo;t scored. Use the recommended steps to receive credit. <a href=\"https://docs.microsoft.com/azure/active-directory/conditional-access/howto-conditional-access-policy-risk-user\">Follow these steps to create a Conditional Access policy from scratch or by using a template</a>&nbsp;</li><li>If you&rsquo;re not using Azure Active Directory Premium P2 licenses, we recommend you set the status for this action to &ldquo;Risk accepted&rdquo;.&nbsp;</li></ol>",
+        "hostname" : "0fe21912-cef3-4cfd-9167-be2fbb1eff0a",
+        "tier" : "Advanced",
+        "service" : "cds.ms.365.defender.securescore_controlprofiles",
+        "vendor" : "Microsoft",
+        "tenantId" : "0fe21912-cef3-4cfd-9167-be2fbb1eff0a",
+        "threats" : [ "Password Cracking", "Account Breach" ],
+        "rank" : 59,
+        "id" : "UserRiskPolicy",
+        "implementation_cost" : "Moderate"
+      }
+    service: "cds.ms.365.defender.securescore_controlprofiles"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "Defender-DeviceType" : "-",
+      "ActionType" : "LogonSuccess",
+      "TargetDeviceName" : "-",
+      "AccountDomain" : "testn896.onmicrosoft.com",
+      "OSPlatform" : "OS X",
+      "Port" : "-",
+      "AccountUpn" : "cdsanimesh@testn896.onmicrosoft.com",
+      "DestinationDeviceName" : "-",
+      "Timestamp" : "2023-07-19T03: 41: 45.103Z",
+      "DestinationPort" : "-",
+      "usr" : {
+        "name" : "-"
+      },
+      "Defender-FailureReason" : "-",
+      "Protocol" : "-",
+      "DestinationIPAddress" : "-",
+      "AccountObjectId" : "-",
+      "AccountDisplayName" : "CDS Animesh",
+      "ISP" : "beam telecom pvt ltd",
+      "LogonType" : "OAuth2:Authorize",
+      "TargetAccountDisplayName" : "-",
+      "AdditionalFields" : {
+        "@odata" : {
+          "type" : "#microsoft.graph.security.dynamicColumnValue"
+        },
+        "Pass-through authentication" : "false"
+      },
+      "ReportId" : "ff568e6dd0ef7d02fee8d4420df775c44d2a19cb9a578ba6aedd43a48ab61dae",
+      "AccountSid" : "-",
+      "IPAddress" : "2406:b400:d5:221e:a5b2: 2a71: 9536:a414",
+      "Application" : "Microsoft Teams",
+      "DeviceName" : "-",
+      "Location" : "IN"
+    }
+  result:
+    custom:
+      AccountDisplayName: "CDS Animesh"
+      AccountDomain: "testn896.onmicrosoft.com"
+      AccountObjectId: "-"
+      AccountSid: "-"
+      AccountUpn: "cdsanimesh@testn896.onmicrosoft.com"
+      ActionType: "LogonSuccess"
+      AdditionalFields:
+        '@odata':
+          type: "#microsoft.graph.security.dynamicColumnValue"
+        Pass-through authentication: "false"
+      Application: "Microsoft Teams"
+      Defender-DeviceType: "-"
+      Defender-FailureReason: "-"
+      DestinationDeviceName: "-"
+      DestinationIPAddress: "-"
+      DestinationPort: "-"
+      DeviceName: "-"
+      IPAddress: "2406:b400:d5:221e:a5b2: 2a71: 9536:a414"
+      ISP: "beam telecom pvt ltd"
+      Location: "IN"
+      LogonType: "OAuth2:Authorize"
+      OSPlatform: "OS X"
+      Port: "-"
+      Protocol: "-"
+      ReportId: "ff568e6dd0ef7d02fee8d4420df775c44d2a19cb9a578ba6aedd43a48ab61dae"
+      TargetAccountDisplayName: "-"
+      TargetDeviceName: "-"
+      Timestamp: "2023-07-19T03: 41: 45.103Z"
+      cds:
+        defender:
+          actiontype: "LogonSuccess"
+          location: "IN"
+      usr:
+        id: "-"
+        name: "-"
+    message: |-
+      {
+        "Defender-DeviceType" : "-",
+        "ActionType" : "LogonSuccess",
+        "TargetDeviceName" : "-",
+        "AccountDomain" : "testn896.onmicrosoft.com",
+        "OSPlatform" : "OS X",
+        "Port" : "-",
+        "AccountUpn" : "cdsanimesh@testn896.onmicrosoft.com",
+        "DestinationDeviceName" : "-",
+        "Timestamp" : "2023-07-19T03: 41: 45.103Z",
+        "DestinationPort" : "-",
+        "usr" : {
+          "name" : "-"
+        },
+        "Defender-FailureReason" : "-",
+        "Protocol" : "-",
+        "DestinationIPAddress" : "-",
+        "AccountObjectId" : "-",
+        "AccountDisplayName" : "CDS Animesh",
+        "ISP" : "beam telecom pvt ltd",
+        "LogonType" : "OAuth2:Authorize",
+        "TargetAccountDisplayName" : "-",
+        "AdditionalFields" : {
+          "@odata" : {
+            "type" : "#microsoft.graph.security.dynamicColumnValue"
+          },
+          "Pass-through authentication" : "false"
+        },
+        "ReportId" : "ff568e6dd0ef7d02fee8d4420df775c44d2a19cb9a578ba6aedd43a48ab61dae",
+        "AccountSid" : "-",
+        "IPAddress" : "2406:b400:d5:221e:a5b2: 2a71: 9536:a414",
+        "Application" : "Microsoft Teams",
+        "DeviceName" : "-",
+        "Location" : "IN"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "ActionType" : "action",
+      "TargetDeviceName" : "tname",
+      "AccountObjectId" : "12345",
+      "AccountDisplayName" : "dname",
+      "AccountDomain" : "domain",
+      "Port" : "514",
+      "TargetAccountDisplayName" : "taname",
+      "AccountUpn" : "12345",
+      "ReportId" : "id_2933",
+      "DestinationDeviceName" : "sdname",
+      "DestinationPort" : "514",
+      "AccountSid" : "12345",
+      "hostname" : "demo",
+      "TargetAccountUpn" : "upn",
+      "service" : "cds.ms.365.defender.identity_directory_events",
+      "Protocol" : "tcp",
+      "IPAddress" : "10.0.0.0",
+      "Application" : "gmail",
+      "DestinationIPAddress" : "1.1.1.1",
+      "AccountName" : "name",
+      "DeviceName" : "myvm",
+      "Location" : "india"
+    }
+  result:
+    custom:
+      AccountDisplayName: "dname"
+      AccountDomain: "domain"
+      AccountName: "name"
+      AccountObjectId: "12345"
+      AccountSid: "12345"
+      AccountUpn: "12345"
+      ActionType: "action"
+      Application: "gmail"
+      DestinationDeviceName: "sdname"
+      DestinationIPAddress: "1.1.1.1"
+      DestinationPort: "514"
+      DeviceName: "myvm"
+      IPAddress: "10.0.0.0"
+      Location: "india"
+      Port: "514"
+      Protocol: "tcp"
+      ReportId: "id_2933"
+      TargetAccountDisplayName: "taname"
+      TargetAccountUpn: "upn"
+      TargetDeviceName: "tname"
+      cds:
+        defender:
+          actiontype: "action"
+          location: "india"
+      hostname: "demo"
+      service: "cds.ms.365.defender.identity_directory_events"
+      usr:
+        id: "12345"
+        name: "name"
+    message: |-
+      {
+        "ActionType" : "action",
+        "TargetDeviceName" : "tname",
+        "AccountObjectId" : "12345",
+        "AccountDisplayName" : "dname",
+        "AccountDomain" : "domain",
+        "Port" : "514",
+        "TargetAccountDisplayName" : "taname",
+        "AccountUpn" : "12345",
+        "ReportId" : "id_2933",
+        "DestinationDeviceName" : "sdname",
+        "DestinationPort" : "514",
+        "AccountSid" : "12345",
+        "hostname" : "demo",
+        "TargetAccountUpn" : "upn",
+        "service" : "cds.ms.365.defender.identity_directory_events",
+        "Protocol" : "tcp",
+        "IPAddress" : "10.0.0.0",
+        "Application" : "gmail",
+        "DestinationIPAddress" : "1.1.1.1",
+        "AccountName" : "name",
+        "DeviceName" : "myvm",
+        "Location" : "india"
+      }
+    service: "cds.ms.365.defender.identity_directory_events"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "osBuild" : 19043,
+      "vmMetadata" : {
+        "resourceId" : "/subscriptions/1b922e46-8595-4749-997a-1205e714cd91/resourceGroups/evaluation_edb043363a1243649b4ce3eb7ea67829_6/providers/Microsoft.Compute/virtualMachines/TestMachine6",
+        "vmId" : "c496cf12-967a-4df3-b66a-d6aa4041dbbf",
+        "cloudProvider" : "Azure",
+        "subscriptionId" : "1b922e46-8595-4749-997a-1205e714cd91"
+      },
+      "isExcluded" : false,
+      "osArchitecture" : "64-bit",
+      "isPotentialDuplication" : false,
+      "onboardingStatus" : "Onboarded",
+      "endpoint-name" : "testmachine6",
+      "hostname" : "0fe21912-cef3-4cfd-9167-be2fbb1eff0a",
+      "endpoint-risk" : "High",
+      "managedBy" : "Unknown",
+      "computerDnsName" : "testmachine6",
+      "osProcessor" : "x64",
+      "osPlatform" : "Windows10",
+      "id" : "d4333732a10ef7edd51ea656510cb770da4d6c7c",
+      "riskScore" : "High",
+      "endpoint-id" : "d4333732a10ef7edd51ea656510cb770da4d6c7c",
+      "isAadJoined" : false,
+      "rbacGroupId" : 0,
+      "firstSeen" : "2023-07-10T11:41:49.8945238Z",
+      "lastIpAddress" : "10.1.1.132",
+      "version" : "21H1",
+      "lastExternalIpAddress" : "172.177.93.93",
+      "lastSeen" : "2023-07-10T23:27:04.3658407Z",
+      "endpoint-health-status" : "Inactive",
+      "healthStatus" : "Inactive",
+      "managedByStatus" : "Unknown",
+      "service" : "cds.ms.365.defender.endpoints",
+      "agentVersion" : "10.8295.19041.2311",
+      "deviceValue" : "Normal",
+      "ipAddresses" : [ {
+        "operationalStatus" : "Up",
+        "macAddress" : "000D3AE295EB",
+        "ipAddress" : "10.1.1.132",
+        "type" : "Ethernet"
+      }, {
+        "operationalStatus" : "Up",
+        "macAddress" : "000D3AE295EB",
+        "ipAddress" : "fe80::2922:2b54:25e1:8c90",
+        "type" : "Ethernet"
+      }, {
+        "operationalStatus" : "Up",
+        "ipAddress" : "127.0.0.1",
+        "type" : "SoftwareLoopback"
+      }, {
+        "operationalStatus" : "Up",
+        "ipAddress" : "::1",
+        "type" : "SoftwareLoopback"
+      } ],
+      "endpoint-seen-time" : 1.6890316243E9,
+      "defenderAvStatus" : "Unknown",
+      "exposureLevel" : "None",
+      "machineTags" : [ "evaluation" ]
+    }
+  result:
+    custom:
+      agentVersion: "10.8295.19041.2311"
+      computerDnsName: "testmachine6"
+      defenderAvStatus: "Unknown"
+      deviceValue: "Normal"
+      endpoint-health-status: "Inactive"
+      endpoint-id: "d4333732a10ef7edd51ea656510cb770da4d6c7c"
+      endpoint-name: "testmachine6"
+      endpoint-risk: "High"
+      endpoint-seen-time: 1.6890316243E9
+      exposureLevel: "None"
+      firstSeen: "2023-07-10T11:41:49.8945238Z"
+      healthStatus: "Inactive"
+      hostname: "0fe21912-cef3-4cfd-9167-be2fbb1eff0a"
+      id: "d4333732a10ef7edd51ea656510cb770da4d6c7c"
+      ipAddresses:
+       -
+        operationalStatus: "Up"
+        macAddress: "000D3AE295EB"
+        ipAddress: "10.1.1.132"
+        type: "Ethernet"
+       -
+        operationalStatus: "Up"
+        macAddress: "000D3AE295EB"
+        ipAddress: "fe80::2922:2b54:25e1:8c90"
+        type: "Ethernet"
+       -
+        operationalStatus: "Up"
+        ipAddress: "127.0.0.1"
+        type: "SoftwareLoopback"
+       -
+        operationalStatus: "Up"
+        ipAddress: "::1"
+        type: "SoftwareLoopback"
+      isAadJoined: false
+      isExcluded: false
+      isPotentialDuplication: false
+      lastExternalIpAddress: "172.177.93.93"
+      lastIpAddress: "10.1.1.132"
+      lastSeen: "2023-07-10T23:27:04.3658407Z"
+      machineTags:
+       - "evaluation"
+      managedBy: "Unknown"
+      managedByStatus: "Unknown"
+      onboardingStatus: "Onboarded"
+      osArchitecture: "64-bit"
+      osBuild: 19043
+      osPlatform: "Windows10"
+      osProcessor: "x64"
+      rbacGroupId: 0
+      riskScore: "High"
+      service: "cds.ms.365.defender.endpoints"
+      version: "21H1"
+      vmMetadata:
+        cloudProvider: "Azure"
+        resourceId: "/subscriptions/1b922e46-8595-4749-997a-1205e714cd91/resourceGroups/evaluation_edb043363a1243649b4ce3eb7ea67829_6/providers/Microsoft.Compute/virtualMachines/TestMachine6"
+        subscriptionId: "1b922e46-8595-4749-997a-1205e714cd91"
+        vmId: "c496cf12-967a-4df3-b66a-d6aa4041dbbf"
+    message: |-
+      {
+        "osBuild" : 19043,
+        "vmMetadata" : {
+          "resourceId" : "/subscriptions/1b922e46-8595-4749-997a-1205e714cd91/resourceGroups/evaluation_edb043363a1243649b4ce3eb7ea67829_6/providers/Microsoft.Compute/virtualMachines/TestMachine6",
+          "vmId" : "c496cf12-967a-4df3-b66a-d6aa4041dbbf",
+          "cloudProvider" : "Azure",
+          "subscriptionId" : "1b922e46-8595-4749-997a-1205e714cd91"
+        },
+        "isExcluded" : false,
+        "osArchitecture" : "64-bit",
+        "isPotentialDuplication" : false,
+        "onboardingStatus" : "Onboarded",
+        "endpoint-name" : "testmachine6",
+        "hostname" : "0fe21912-cef3-4cfd-9167-be2fbb1eff0a",
+        "endpoint-risk" : "High",
+        "managedBy" : "Unknown",
+        "computerDnsName" : "testmachine6",
+        "osProcessor" : "x64",
+        "osPlatform" : "Windows10",
+        "id" : "d4333732a10ef7edd51ea656510cb770da4d6c7c",
+        "riskScore" : "High",
+        "endpoint-id" : "d4333732a10ef7edd51ea656510cb770da4d6c7c",
+        "isAadJoined" : false,
+        "rbacGroupId" : 0,
+        "firstSeen" : "2023-07-10T11:41:49.8945238Z",
+        "lastIpAddress" : "10.1.1.132",
+        "version" : "21H1",
+        "lastExternalIpAddress" : "172.177.93.93",
+        "lastSeen" : "2023-07-10T23:27:04.3658407Z",
+        "endpoint-health-status" : "Inactive",
+        "healthStatus" : "Inactive",
+        "managedByStatus" : "Unknown",
+        "service" : "cds.ms.365.defender.endpoints",
+        "agentVersion" : "10.8295.19041.2311",
+        "deviceValue" : "Normal",
+        "ipAddresses" : [ {
+          "operationalStatus" : "Up",
+          "macAddress" : "000D3AE295EB",
+          "ipAddress" : "10.1.1.132",
+          "type" : "Ethernet"
+        }, {
+          "operationalStatus" : "Up",
+          "macAddress" : "000D3AE295EB",
+          "ipAddress" : "fe80::2922:2b54:25e1:8c90",
+          "type" : "Ethernet"
+        }, {
+          "operationalStatus" : "Up",
+          "ipAddress" : "127.0.0.1",
+          "type" : "SoftwareLoopback"
+        }, {
+          "operationalStatus" : "Up",
+          "ipAddress" : "::1",
+          "type" : "SoftwareLoopback"
+        } ],
+        "endpoint-seen-time" : 1.6890316243E9,
+        "defenderAvStatus" : "Unknown",
+        "exposureLevel" : "None",
+        "machineTags" : [ "evaluation" ]
+      }
+    service: "cds.ms.365.defender.endpoints"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "software-id" : "ubuntu-_-libheimbase1-heimdal_for_linux",
+      "hostname" : "0fe21912-cef3-4cfd-9167-be2fbb1eff0a",
+      "service" : "cds.ms.365.defender.software.distributions",
+      "installations" : 1,
+      "vulnerabilities" : 0,
+      "version" : "7.5.0+dfsg-1ubuntu0.4"
+    }
+  result:
+    custom:
+      hostname: "0fe21912-cef3-4cfd-9167-be2fbb1eff0a"
+      installations: 1
+      service: "cds.ms.365.defender.software.distributions"
+      software-id: "ubuntu-_-libheimbase1-heimdal_for_linux"
+      version: "7.5.0+dfsg-1ubuntu0.4"
+      vulnerabilities: 0
+    message: |-
+      {
+        "software-id" : "ubuntu-_-libheimbase1-heimdal_for_linux",
+        "hostname" : "0fe21912-cef3-4cfd-9167-be2fbb1eff0a",
+        "service" : "cds.ms.365.defender.software.distributions",
+        "installations" : 1,
+        "vulnerabilities" : 0,
+        "version" : "7.5.0+dfsg-1ubuntu0.4"
+      }
+    service: "cds.ms.365.defender.software.distributions"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "NetworkMessageId" : "47170ea0-852c-4714-1f41-08db732123f7",
+      "EmailClusterId" : 1347058839,
+      "DetectionMethods" : "-",
+      "OrgLevelPolicy" : "-",
+      "DeliveryAction" : "Delivered",
+      "OrgLevelAction" : "-",
+      "UserLevelAction" : "-",
+      "ConfidenceLevel" : "-",
+      "hostname" : "0fe21912-cef3-4cfd-9167-be2fbb1eff0a",
+      "RecipientObjectId" : "-",
+      "SenderFromDomain" : "TestN896.onmicrosoft.com",
+      "UserLevelPolicy" : "-",
+      "SenderObjectId" : "6bfe8dc4-8ffd-4e4d-8d42-d00668a348ed",
+      "EmailDirection" : "Outbound",
+      "SenderMailFromDomain" : "TestN896.onmicrosoft.com",
+      "DeliveryLocation" : "On-premises/external",
+      "AuthenticationDetails" : "{\"DKIM\":\"none\",\"DMARC\":\"none\"}",
+      "AttachmentCount" : 0,
+      "SenderFromAddress" : "CDSNisarg@TestN896.onmicrosoft.com",
+      "BulkComplaintLevel" : "-",
+      "ThreatTypes" : "-",
+      "AdditionalFields" : "-",
+      "EmailActionPolicy" : "-",
+      "EmailActionPolicyGuid" : "-",
+      "ReportId" : "47170ea0-852c-4714-1f41-08db732123f7-7187132317167869765-1",
+      "Subject" : "malware",
+      "SenderMailFromAddress" : "CDSNisarg@TestN896.onmicrosoft.com",
+      "Connectors" : "-",
+      "EmailLanguage" : "en",
+      "SenderDisplayName" : "CDS Nisarg",
+      "service" : "cds.ms.365.defender.email_events",
+      "InternetMessageId" : "<PH7P222MB0642D521C9F753D71A3FCCCCD522A@PH7P222MB0642.NAMP222.PROD.OUTLOOK.COM>",
+      "ThreatNames" : "-",
+      "SenderIPv4" : "103.108.207.58",
+      "RecipientEmailAddress" : "nisargshah_008@yahoo.com",
+      "EmailAction" : "-",
+      "UrlCount" : 1,
+      "EmailClusterId@odata" : {
+        "type" : "-"
+      },
+      "SenderIPv6" : "-"
+    }
+  result:
+    custom:
+      AdditionalFields: "-"
+      AttachmentCount: 0
+      AuthenticationDetails: "{\"DKIM\":\"none\",\"DMARC\":\"none\"}"
+      BulkComplaintLevel: "-"
+      ConfidenceLevel: "-"
+      Connectors: "-"
+      DeliveryAction: "Delivered"
+      DeliveryLocation: "On-premises/external"
+      DetectionMethods: "-"
+      EmailAction: "-"
+      EmailActionPolicy: "-"
+      EmailActionPolicyGuid: "-"
+      EmailClusterId: 1347058839
+      EmailClusterId@odata:
+        type: "-"
+      EmailDirection: "Outbound"
+      EmailLanguage: "en"
+      InternetMessageId: "<PH7P222MB0642D521C9F753D71A3FCCCCD522A@PH7P222MB0642.NAMP222.PROD.OUTLOOK.COM>"
+      NetworkMessageId: "47170ea0-852c-4714-1f41-08db732123f7"
+      OrgLevelAction: "-"
+      OrgLevelPolicy: "-"
+      RecipientEmailAddress: "nisargshah_008@yahoo.com"
+      RecipientObjectId: "-"
+      ReportId: "47170ea0-852c-4714-1f41-08db732123f7-7187132317167869765-1"
+      SenderDisplayName: "CDS Nisarg"
+      SenderFromAddress: "CDSNisarg@TestN896.onmicrosoft.com"
+      SenderFromDomain: "TestN896.onmicrosoft.com"
+      SenderIPv4: "103.108.207.58"
+      SenderIPv6: "-"
+      SenderMailFromAddress: "CDSNisarg@TestN896.onmicrosoft.com"
+      SenderMailFromDomain: "TestN896.onmicrosoft.com"
+      SenderObjectId: "6bfe8dc4-8ffd-4e4d-8d42-d00668a348ed"
+      Subject: "malware"
+      ThreatNames: "-"
+      ThreatTypes: "-"
+      UrlCount: 1
+      UserLevelAction: "-"
+      UserLevelPolicy: "-"
+      hostname: "0fe21912-cef3-4cfd-9167-be2fbb1eff0a"
+      service: "cds.ms.365.defender.email_events"
+    message: |-
+      {
+        "NetworkMessageId" : "47170ea0-852c-4714-1f41-08db732123f7",
+        "EmailClusterId" : 1347058839,
+        "DetectionMethods" : "-",
+        "OrgLevelPolicy" : "-",
+        "DeliveryAction" : "Delivered",
+        "OrgLevelAction" : "-",
+        "UserLevelAction" : "-",
+        "ConfidenceLevel" : "-",
+        "hostname" : "0fe21912-cef3-4cfd-9167-be2fbb1eff0a",
+        "RecipientObjectId" : "-",
+        "SenderFromDomain" : "TestN896.onmicrosoft.com",
+        "UserLevelPolicy" : "-",
+        "SenderObjectId" : "6bfe8dc4-8ffd-4e4d-8d42-d00668a348ed",
+        "EmailDirection" : "Outbound",
+        "SenderMailFromDomain" : "TestN896.onmicrosoft.com",
+        "DeliveryLocation" : "On-premises/external",
+        "AuthenticationDetails" : "{\"DKIM\":\"none\",\"DMARC\":\"none\"}",
+        "AttachmentCount" : 0,
+        "SenderFromAddress" : "CDSNisarg@TestN896.onmicrosoft.com",
+        "BulkComplaintLevel" : "-",
+        "ThreatTypes" : "-",
+        "AdditionalFields" : "-",
+        "EmailActionPolicy" : "-",
+        "EmailActionPolicyGuid" : "-",
+        "ReportId" : "47170ea0-852c-4714-1f41-08db732123f7-7187132317167869765-1",
+        "Subject" : "malware",
+        "SenderMailFromAddress" : "CDSNisarg@TestN896.onmicrosoft.com",
+        "Connectors" : "-",
+        "EmailLanguage" : "en",
+        "SenderDisplayName" : "CDS Nisarg",
+        "service" : "cds.ms.365.defender.email_events",
+        "InternetMessageId" : "<PH7P222MB0642D521C9F753D71A3FCCCCD522A@PH7P222MB0642.NAMP222.PROD.OUTLOOK.COM>",
+        "ThreatNames" : "-",
+        "SenderIPv4" : "103.108.207.58",
+        "RecipientEmailAddress" : "nisargshah_008@yahoo.com",
+        "EmailAction" : "-",
+        "UrlCount" : 1,
+        "EmailClusterId@odata" : {
+          "type" : "-"
+        },
+        "SenderIPv6" : "-"
+      }
+    service: "cds.ms.365.defender.email_events"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "alert-category" : "Malware",
+      "firstActivityDateTime" : "2023-07-11T05:29:25.9416138Z",
+      "threatFamilyName" : "-",
+      "createdDateTime" : "2023-07-11T05:39:46.7653573Z",
+      "last-Update-Time" : "2023-07-11T05:41:27.4266667Z",
+      "determination" : "-",
+      "title" : "A suspicious file was observed",
+      "assignedTo" : "-",
+      "resolvedDateTime" : "-",
+      "alert-status" : "new",
+      "endpoint-name" : "testmachine7",
+      "hostname" : "0fe21912-cef3-4cfd-9167-be2fbb1eff0a",
+      "detectorId" : "b27a3aa5-ad74-4543-a7db-f65490d9ff30",
+      "endpoint-id" : "cbc080e2add2e66745ff580b8c63cb4255a720db",
+      "alert-id" : "da13e3c102-5a67-4f3d-8a6e-ccbcaec453f3_1",
+      "serviceSource" : "microsoftDefenderForEndpoint",
+      "alert-severity" : "medium",
+      "mitre_techniques" : [ "T1027", "T1204.002" ],
+      "service" : "cds.ms.365.defender.alerts",
+      "tenantId" : "0fe21912-cef3-4cfd-9167-be2fbb1eff0a",
+      "threatName" : "-",
+      "detectionSource" : "microsoftDefenderForEndpoint",
+      "lastActivityDateTime" : "2023-07-11T05:36:58.632169Z",
+      "incidentId" : "10",
+      "loggedOnUsers" : [ [ {
+        "accountName" : "administrator1",
+        "domainName" : "TestMachine7"
+      } ] ]
+    }
+  result:
+    custom:
+      alert-category: "Malware"
+      alert-id: "da13e3c102-5a67-4f3d-8a6e-ccbcaec453f3_1"
+      alert-severity: "medium"
+      alert-status: "new"
+      assignedTo: "-"
+      createdDateTime: "2023-07-11T05:39:46.7653573Z"
+      detectionSource: "microsoftDefenderForEndpoint"
+      detectorId: "b27a3aa5-ad74-4543-a7db-f65490d9ff30"
+      determination: "-"
+      endpoint-id: "cbc080e2add2e66745ff580b8c63cb4255a720db"
+      endpoint-name: "testmachine7"
+      firstActivityDateTime: "2023-07-11T05:29:25.9416138Z"
+      hostname: "0fe21912-cef3-4cfd-9167-be2fbb1eff0a"
+      incidentId: "10"
+      last-Update-Time: "2023-07-11T05:41:27.4266667Z"
+      lastActivityDateTime: "2023-07-11T05:36:58.632169Z"
+      loggedOnUsers:
+       -
+         -
+          accountName: "administrator1"
+          domainName: "TestMachine7"
+      mitre_techniques:
+       - "T1027"
+       - "T1204.002"
+      resolvedDateTime: "-"
+      service: "cds.ms.365.defender.alerts"
+      serviceSource: "microsoftDefenderForEndpoint"
+      tenantId: "0fe21912-cef3-4cfd-9167-be2fbb1eff0a"
+      threatFamilyName: "-"
+      threatName: "-"
+      title: "A suspicious file was observed"
+    message: |-
+      {
+        "alert-category" : "Malware",
+        "firstActivityDateTime" : "2023-07-11T05:29:25.9416138Z",
+        "threatFamilyName" : "-",
+        "createdDateTime" : "2023-07-11T05:39:46.7653573Z",
+        "last-Update-Time" : "2023-07-11T05:41:27.4266667Z",
+        "determination" : "-",
+        "title" : "A suspicious file was observed",
+        "assignedTo" : "-",
+        "resolvedDateTime" : "-",
+        "alert-status" : "new",
+        "endpoint-name" : "testmachine7",
+        "hostname" : "0fe21912-cef3-4cfd-9167-be2fbb1eff0a",
+        "detectorId" : "b27a3aa5-ad74-4543-a7db-f65490d9ff30",
+        "endpoint-id" : "cbc080e2add2e66745ff580b8c63cb4255a720db",
+        "alert-id" : "da13e3c102-5a67-4f3d-8a6e-ccbcaec453f3_1",
+        "serviceSource" : "microsoftDefenderForEndpoint",
+        "alert-severity" : "medium",
+        "mitre_techniques" : [ "T1027", "T1204.002" ],
+        "service" : "cds.ms.365.defender.alerts",
+        "tenantId" : "0fe21912-cef3-4cfd-9167-be2fbb1eff0a",
+        "threatName" : "-",
+        "detectionSource" : "microsoftDefenderForEndpoint",
+        "lastActivityDateTime" : "2023-07-11T05:36:58.632169Z",
+        "incidentId" : "10",
+        "loggedOnUsers" : [ [ {
+          "accountName" : "administrator1",
+          "domainName" : "TestMachine7"
+        } ] ]
+      }
+    service: "cds.ms.365.defender.alerts"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "severity" : "High",
+      "software-id" : "microsoft-_-office",
+      "cveId" : "CVE-2023-35311",
+      "vuln-severity" : "High",
+      "productName" : "office",
+      "productVendor" : "microsoft",
+      "endpoint-name" : "3fd004bf11eeb525b50119241e3e7569ad6ba490",
+      "hostname" : "0fe21912-cef3-4cfd-9167-be2fbb1eff0a",
+      "productVersion" : "16.0.10399.20000",
+      "software-version" : "16.0.10399.20000",
+      "machineId" : "3fd004bf11eeb525b50119241e3e7569ad6ba490",
+      "vulnerability-id" : "CVE-2023-35311",
+      "service" : "cds.ms.365.defender.endpoint-software.vulns",
+      "id" : "3fd004bf11eeb525b50119241e3e7569ad6ba490-_-CVE-2023-35311-_-microsoft-_-office-_-16.0.10399.20000-_-",
+      "endpoint-id" : "3fd004bf11eeb525b50119241e3e7569ad6ba490"
+    }
+  result:
+    custom:
+      cveId: "CVE-2023-35311"
+      endpoint-id: "3fd004bf11eeb525b50119241e3e7569ad6ba490"
+      endpoint-name: "3fd004bf11eeb525b50119241e3e7569ad6ba490"
+      hostname: "0fe21912-cef3-4cfd-9167-be2fbb1eff0a"
+      id: "3fd004bf11eeb525b50119241e3e7569ad6ba490-_-CVE-2023-35311-_-microsoft-_-office-_-16.0.10399.20000-_-"
+      machineId: "3fd004bf11eeb525b50119241e3e7569ad6ba490"
+      productName: "office"
+      productVendor: "microsoft"
+      productVersion: "16.0.10399.20000"
+      service: "cds.ms.365.defender.endpoint-software.vulns"
+      severity: "High"
+      software-id: "microsoft-_-office"
+      software-version: "16.0.10399.20000"
+      vuln-severity: "High"
+      vulnerability-id: "CVE-2023-35311"
+    message: |-
+      {
+        "severity" : "High",
+        "software-id" : "microsoft-_-office",
+        "cveId" : "CVE-2023-35311",
+        "vuln-severity" : "High",
+        "productName" : "office",
+        "productVendor" : "microsoft",
+        "endpoint-name" : "3fd004bf11eeb525b50119241e3e7569ad6ba490",
+        "hostname" : "0fe21912-cef3-4cfd-9167-be2fbb1eff0a",
+        "productVersion" : "16.0.10399.20000",
+        "software-version" : "16.0.10399.20000",
+        "machineId" : "3fd004bf11eeb525b50119241e3e7569ad6ba490",
+        "vulnerability-id" : "CVE-2023-35311",
+        "service" : "cds.ms.365.defender.endpoint-software.vulns",
+        "id" : "3fd004bf11eeb525b50119241e3e7569ad6ba490-_-CVE-2023-35311-_-microsoft-_-office-_-16.0.10399.20000-_-",
+        "endpoint-id" : "3fd004bf11eeb525b50119241e3e7569ad6ba490"
+      }
+    service: "cds.ms.365.defender.endpoint-software.vulns"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+

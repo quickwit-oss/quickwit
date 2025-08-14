@@ -1,0 +1,124 @@
+id: crest-data-systems-cloudflare-ai-gateway
+tests:
+ -
+  sample: |-
+    {
+      "service" : "cds.cloudflare.ai.gateway.aiGatewayRequestsAdaptiveGroups",
+      "count" : 1,
+      "sum" : {
+        "uncachedTokensIn" : 2,
+        "uncachedTokensOut" : 89
+      },
+      "dimensions" : {
+        "provider" : "huggingface",
+        "model" : "bigcode/starcoder",
+        "gateway" : "test",
+        "ts" : "2024-03-04T06:49:00Z"
+      }
+    }
+  result:
+    custom:
+      cds:
+        cloudflare_ai_gateway:
+          count: 1
+          sum:
+            uncachedTokensIn: 2
+            uncachedTokensOut: 89
+      dimensions:
+        gateway: "test"
+        model: "bigcode/starcoder"
+        provider: "huggingface"
+        ts: "2024-03-04T06:49:00Z"
+      service: "cds.cloudflare.ai.gateway.aiGatewayRequestsAdaptiveGroups"
+    message: |-
+      {
+        "service" : "cds.cloudflare.ai.gateway.aiGatewayRequestsAdaptiveGroups",
+        "count" : 1,
+        "sum" : {
+          "uncachedTokensIn" : 2,
+          "uncachedTokensOut" : 89
+        },
+        "dimensions" : {
+          "provider" : "huggingface",
+          "model" : "bigcode/starcoder",
+          "gateway" : "test",
+          "ts" : "2024-03-04T06:49:00Z"
+        }
+      }
+    service: "cds.cloudflare.ai.gateway.aiGatewayRequestsAdaptiveGroups"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1709534940000
+ -
+  sample: |-
+    {
+      "service" : "cds.cloudflare.ai.gateway.aiGatewayCacheAdaptiveGroups",
+      "count" : 1,
+      "cache-type" : "Miss",
+      "dimensions" : {
+        "cacheOp" : 0,
+        "provider" : "huggingface",
+        "ts" : "2024-03-04T06:49:00Z"
+      }
+    }
+  result:
+    custom:
+      cache-type: "Miss"
+      cds:
+        cloudflare_ai_gateway:
+          count: 1
+      dimensions:
+        cacheOp: 0
+        provider: "huggingface"
+        ts: "2024-03-04T06:49:00Z"
+      service: "cds.cloudflare.ai.gateway.aiGatewayCacheAdaptiveGroups"
+    message: |-
+      {
+        "service" : "cds.cloudflare.ai.gateway.aiGatewayCacheAdaptiveGroups",
+        "count" : 1,
+        "cache-type" : "Miss",
+        "dimensions" : {
+          "cacheOp" : 0,
+          "provider" : "huggingface",
+          "ts" : "2024-03-04T06:49:00Z"
+        }
+      }
+    service: "cds.cloudflare.ai.gateway.aiGatewayCacheAdaptiveGroups"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1709534940000
+ -
+  sample: |-
+    {
+      "service" : "cds.cloudflare.ai.gateway.aiGatewayErrorsAdaptiveGroups",
+      "count" : 1,
+      "dimensions" : {
+        "provider" : "huggingface",
+        "model" : "bigcode/starcoder",
+        "ts" : "2024-03-04T05:00:00Z"
+      }
+    }
+  result:
+    custom:
+      cds:
+        cloudflare_ai_gateway:
+          count: 1
+      dimensions:
+        model: "bigcode/starcoder"
+        provider: "huggingface"
+        ts: "2024-03-04T05:00:00Z"
+      service: "cds.cloudflare.ai.gateway.aiGatewayErrorsAdaptiveGroups"
+    message: |-
+      {
+        "service" : "cds.cloudflare.ai.gateway.aiGatewayErrorsAdaptiveGroups",
+        "count" : 1,
+        "dimensions" : {
+          "provider" : "huggingface",
+          "model" : "bigcode/starcoder",
+          "ts" : "2024-03-04T05:00:00Z"
+        }
+      }
+    service: "cds.cloudflare.ai.gateway.aiGatewayErrorsAdaptiveGroups"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1709528400000

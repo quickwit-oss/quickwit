@@ -1,0 +1,52 @@
+id: "hivemq"
+tests:
+ -
+  sample: "2020-04-25 02:30:38,955 INFO  - Starting HiveMQ extension system."
+  result:
+    custom:
+      level: "INFO"
+      timestamp: 1587781838955
+    message: "Starting HiveMQ extension system."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1587781838955
+ -
+  sample: "2020-04-25 02:30:41,148 INFO  - fwWng: no members discovered after 2001 ms: creating cluster as first member"
+  result:
+    custom:
+      hivemq:
+        node: "fwWng"
+      level: "INFO"
+      timestamp: 1587781841148
+    message: "no members discovered after 2001 ms: creating cluster as first member"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1587781841148
+ -
+  sample: |-
+    2020-04-25 02:30:39,006 WARN  -
+    ################################################################################################################
+    # This HiveMQ deployment is not secure! You are lacking Authentication and Authorization.                      #
+    # Right now any MQTT client can connect to the broker with a full set of permissions.                          #
+    # For production usage, add an appropriate security extension and remove the hivemq-allow-all extension.       #
+    # You can download security extensions from the HiveMQ Marketplace (https://www.hivemq.com/extensions/).       #
+    ################################################################################################################
+  result:
+    custom:
+      level: "WARN"
+      timestamp: 1587781839006
+    message: |2-
+
+      ################################################################################################################
+      # This HiveMQ deployment is not secure! You are lacking Authentication and Authorization.                      #
+      # Right now any MQTT client can connect to the broker with a full set of permissions.                          #
+      # For production usage, add an appropriate security extension and remove the hivemq-allow-all extension.       #
+      # You can download security extensions from the HiveMQ Marketplace (https://www.hivemq.com/extensions/).       #
+      ################################################################################################################
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1587781839006
+

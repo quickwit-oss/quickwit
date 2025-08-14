@@ -1,0 +1,45 @@
+id: fail2ban
+backend_only: true
+facets:
+  - groups:
+      - System
+    name: User
+    path: system.user
+    source: log
+  - groups:
+      - System
+    name: Action
+    path: system.action
+    source: log
+pipeline:
+  type: pipeline
+  name: Fail2ban
+  enabled: true
+  filter:
+    query: source:fail2ban
+  processors:
+    - type: grok-parser
+      name: Parsing fail2ban logs
+      enabled: true
+      source: message
+      samples:
+        - '2006-02-13 15:52:30,388 fail2ban.actions: WARNING [sendmail] Ban 10.66.82.116'
+      grok:
+        supportRules: |
+          _action %{word:system.action}
+          _client_ip %{ipOrHost:network.client_ip}
+          _date_fail2ban %{date("yyyy-MM-dd HH:mm:ss,SSS"):timestamp}
+          _jail %{notSpace:system.jail}
+          _severity %{notSpace:level}
+        matchRules: |
+          fail2ban.action %{_date_fail2ban} fail2ban.actions: %{_severity} \[%{_jail}\] %{_action} %{_client_ip}
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level

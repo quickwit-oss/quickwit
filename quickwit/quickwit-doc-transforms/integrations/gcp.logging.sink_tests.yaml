@@ -1,0 +1,475 @@
+id: "gcp.logging.sink"
+tests:
+ -
+  sample: |-
+    {
+      "publishTime" : "2020-04-02T23:40:30.708Z",
+      "data" : {
+        "severity" : "INFO",
+        "logName" : "projects/test-271317/logs/cloudaudit.googleapis.com%2Fdata_access",
+        "resource" : {
+          "type" : "logging_sink",
+          "labels" : {
+            "project_id" : "test-271317",
+            "destination" : "",
+            "name" : ""
+          }
+        },
+        "protoPayload" : {
+          "requestMetadata" : {
+            "requestAttributes" : {
+              "time" : "2020-04-02T23:40:29.752292908Z"
+            },
+            "callerSuppliedUserAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)",
+            "callerIp" : "67.243.209.244"
+          },
+          "request" : {
+            "parent" : "projects/test-271317",
+            "@type" : "type.googleapis.com/google.logging.v2.ListSinksRequest",
+            "pageSize" : 100
+          },
+          "authenticationInfo" : {
+            "principalSubject" : "test@testmail.com",
+            "principalEmail" : "test@testmail.com"
+          },
+          "authorizationInfo" : [ {
+            "resource" : "projects/test-271317",
+            "permission" : "logging.sinks.list",
+            "resourceAttributes" : {
+              "service" : "logging.googleapis.com",
+              "name" : "projects/test-271317"
+            },
+            "granted" : true
+          } ],
+          "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+          "methodName" : "google.logging.v2.ConfigServiceV2.ListSinks",
+          "resourceName" : "projects/test-271317",
+          "serviceName" : "logging.googleapis.com"
+        },
+        "receiveTimestamp" : "2020-04-02T23:40:30.477126886Z",
+        "insertId" : "1a2eu6xdjc8r",
+        "timestamp" : "2020-04-02T23:40:29.747175116Z"
+      },
+      "publish_time" : "2020-04-02T23:40:30.708Z",
+      "messageId" : "1112051797459269",
+      "attributes" : {
+        "logging" : {
+          "googleapis" : {
+            "com/timestamp" : "2020-04-02T23:40:29.747175116Z"
+          }
+        }
+      },
+      "message_id" : "1112051797459269",
+      "subscription" : "projects/test-271317/subscriptions/datadog"
+    }
+  result:
+    custom:
+      attributes:
+        logging:
+          googleapis:
+            com/timestamp: "2020-04-02T23:40:29.747175116Z"
+      data:
+        insertId: "1a2eu6xdjc8r"
+        logName: "projects/test-271317/logs/cloudaudit.googleapis.com%2Fdata_access"
+        protoPayload:
+          '@type': "type.googleapis.com/google.cloud.audit.AuditLog"
+          authenticationInfo:
+            principalEmail: "test@testmail.com"
+            principalSubject: "test@testmail.com"
+          authorizationInfo:
+           -
+            resource: "projects/test-271317"
+            permission: "logging.sinks.list"
+            resourceAttributes:
+              service: "logging.googleapis.com"
+              name: "projects/test-271317"
+            granted: true
+          methodName: "google.logging.v2.ConfigServiceV2.ListSinks"
+          request:
+            '@type': "type.googleapis.com/google.logging.v2.ListSinksRequest"
+            pageSize: 100
+            parent: "projects/test-271317"
+          requestMetadata:
+            callerIp: "67.243.209.244"
+            callerSuppliedUserAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)"
+            requestAttributes:
+              time: "2020-04-02T23:40:29.752292908Z"
+          resourceName: "projects/test-271317"
+          serviceName: "logging.googleapis.com"
+        receiveTimestamp: "2020-04-02T23:40:30.477126886Z"
+        resource:
+          labels:
+            destination: ""
+            name: ""
+            project_id: "test-271317"
+          type: "logging_sink"
+        severity: "INFO"
+        timestamp: "2020-04-02T23:40:29.747175116Z"
+      evt:
+        name: "google.logging.v2.ConfigServiceV2.ListSinks"
+      http:
+        useragent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "80"
+            minor: "0"
+            patch: "3987"
+            patch_minor: "149"
+          device:
+            brand: "Apple"
+            category: "Desktop"
+            family: "Mac"
+            model: "Mac"
+          os:
+            family: "Mac OS X"
+            major: "10"
+            minor: "14"
+            patch: "1"
+      messageId: "1112051797459269"
+      message_id: "1112051797459269"
+      network:
+        client:
+          geoip: {}
+          ip: "67.243.209.244"
+      ocsf:
+        activity_id: 2
+        activity_name: "Read"
+        actor:
+          user:
+            account:
+              uid: "test-271317"
+            email_addr: "test@testmail.com"
+            name: "test"
+            type: "User"
+            type_id: 1
+        api:
+          operation: "google.logging.v2.configservicev2.listsinks"
+          request:
+            data:
+              '@type': "type.googleapis.com/google.logging.v2.ListSinksRequest"
+              pageSize: 100
+              parent: "projects/test-271317"
+            uid: "Unknown"
+          service:
+            name: "logging.googleapis.com"
+        category_name: "Application Activity"
+        category_uid: 6
+        class_name: "API Activity"
+        class_uid: 6003
+        cloud:
+          account:
+            uid: "test-271317"
+          provider: "Google Cloud"
+        http_request:
+          user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)"
+        metadata:
+          event_code: "google.logging.v2.configservicev2.listsinks"
+          log_name: "projects/test-271317/logs/cloudaudit.googleapis.com%2Fdata_access"
+          product:
+            name: "Google Cloud Audit logs"
+            vendor_name: "Google Cloud"
+          profiles:
+           - "cloud"
+           - "datetime"
+          uid: "1a2eu6xdjc8r"
+          version: "1.3.0"
+        severity: "Informational"
+        severity_id: 1
+        src_endpoint:
+          ip: "67.243.209.244"
+        status: "Success"
+        status_id: 1
+        time: 1585870829747
+        time_dt: "2020-04-02T23:40:29.747175116Z"
+        type_uid: 600302
+      publishTime: "2020-04-02T23:40:30.708Z"
+      publish_time: "2020-04-02T23:40:30.708Z"
+      subscription: "projects/test-271317/subscriptions/datadog"
+      usr:
+        email: "test@testmail.com"
+        id: "test@testmail.com"
+    message: |-
+      {
+        "publishTime" : "2020-04-02T23:40:30.708Z",
+        "data" : {
+          "severity" : "INFO",
+          "logName" : "projects/test-271317/logs/cloudaudit.googleapis.com%2Fdata_access",
+          "resource" : {
+            "type" : "logging_sink",
+            "labels" : {
+              "project_id" : "test-271317",
+              "destination" : "",
+              "name" : ""
+            }
+          },
+          "protoPayload" : {
+            "requestMetadata" : {
+              "requestAttributes" : {
+                "time" : "2020-04-02T23:40:29.752292908Z"
+              },
+              "callerSuppliedUserAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)",
+              "callerIp" : "67.243.209.244"
+            },
+            "request" : {
+              "parent" : "projects/test-271317",
+              "@type" : "type.googleapis.com/google.logging.v2.ListSinksRequest",
+              "pageSize" : 100
+            },
+            "authenticationInfo" : {
+              "principalSubject" : "test@testmail.com",
+              "principalEmail" : "test@testmail.com"
+            },
+            "authorizationInfo" : [ {
+              "resource" : "projects/test-271317",
+              "permission" : "logging.sinks.list",
+              "resourceAttributes" : {
+                "service" : "logging.googleapis.com",
+                "name" : "projects/test-271317"
+              },
+              "granted" : true
+            } ],
+            "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+            "methodName" : "google.logging.v2.ConfigServiceV2.ListSinks",
+            "resourceName" : "projects/test-271317",
+            "serviceName" : "logging.googleapis.com"
+          },
+          "receiveTimestamp" : "2020-04-02T23:40:30.477126886Z",
+          "insertId" : "1a2eu6xdjc8r",
+          "timestamp" : "2020-04-02T23:40:29.747175116Z"
+        },
+        "publish_time" : "2020-04-02T23:40:30.708Z",
+        "messageId" : "1112051797459269",
+        "attributes" : {
+          "logging" : {
+            "googleapis" : {
+              "com/timestamp" : "2020-04-02T23:40:29.747175116Z"
+            }
+          }
+        },
+        "message_id" : "1112051797459269",
+        "subscription" : "projects/test-271317/subscriptions/datadog"
+      }
+    service: "logging.googleapis.com"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1585870829747
+ -
+  sample: |-
+    {
+      "severity" : "INFO",
+      "logName" : "projects/test-271317/logs/cloudaudit.googleapis.com%2Fdata_access",
+      "resource" : {
+        "type" : "logging_sink",
+        "labels" : {
+          "project_id" : "test-271317",
+          "destination" : "",
+          "name" : ""
+        }
+      },
+      "protoPayload" : {
+        "requestMetadata" : {
+          "requestAttributes" : {
+            "time" : "2020-04-02T23:40:29.752292908Z"
+          },
+          "callerSuppliedUserAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)",
+          "callerIp" : "67.243.209.244"
+        },
+        "request" : {
+          "parent" : "projects/test-271317",
+          "@type" : "type.googleapis.com/google.logging.v2.ListSinksRequest",
+          "pageSize" : 100
+        },
+        "authenticationInfo" : {
+          "principalSubject" : "test@testmail.com",
+          "principalEmail" : "test@testmail.com"
+        },
+        "authorizationInfo" : [ {
+          "resource" : "projects/test-271317",
+          "permission" : "logging.sinks.list",
+          "resourceAttributes" : {
+            "service" : "logging.googleapis.com",
+            "name" : "projects/test-271317"
+          },
+          "granted" : true
+        } ],
+        "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+        "methodName" : "google.logging.v2.ConfigServiceV2.ListSinks",
+        "resourceName" : "projects/test-271317",
+        "serviceName" : "logging.googleapis.com"
+      },
+      "receiveTimestamp" : "2020-04-02T23:40:30.477126886Z",
+      "insertId" : "1a2eu6xdjc8r",
+      "timestamp" : "2020-04-02T23:40:29.747175116Z"
+    }
+  result:
+    custom:
+      evt:
+        name: "google.logging.v2.ConfigServiceV2.ListSinks"
+      http:
+        useragent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "80"
+            minor: "0"
+            patch: "3987"
+            patch_minor: "149"
+          device:
+            brand: "Apple"
+            category: "Desktop"
+            family: "Mac"
+            model: "Mac"
+          os:
+            family: "Mac OS X"
+            major: "10"
+            minor: "14"
+            patch: "1"
+      insertId: "1a2eu6xdjc8r"
+      logName: "projects/test-271317/logs/cloudaudit.googleapis.com%2Fdata_access"
+      network:
+        client:
+          geoip: {}
+          ip: "67.243.209.244"
+      ocsf:
+        activity_id: 2
+        activity_name: "Read"
+        actor:
+          user:
+            account:
+              uid: "test-271317"
+            email_addr: "test@testmail.com"
+            name: "test"
+            type: "User"
+            type_id: 1
+        api:
+          operation: "google.logging.v2.configservicev2.listsinks"
+          request:
+            data:
+              '@type': "type.googleapis.com/google.logging.v2.ListSinksRequest"
+              pageSize: 100
+              parent: "projects/test-271317"
+            uid: "Unknown"
+          service:
+            name: "logging.googleapis.com"
+        category_name: "Application Activity"
+        category_uid: 6
+        class_name: "API Activity"
+        class_uid: 6003
+        cloud:
+          account:
+            uid: "test-271317"
+          provider: "Google Cloud"
+        http_request:
+          user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)"
+        metadata:
+          event_code: "google.logging.v2.configservicev2.listsinks"
+          log_name: "projects/test-271317/logs/cloudaudit.googleapis.com%2Fdata_access"
+          product:
+            name: "Google Cloud Audit logs"
+            vendor_name: "Google Cloud"
+          profiles:
+           - "cloud"
+           - "datetime"
+          uid: "1a2eu6xdjc8r"
+          version: "1.3.0"
+        severity: "Informational"
+        severity_id: 1
+        src_endpoint:
+          ip: "67.243.209.244"
+        status: "Success"
+        status_id: 1
+        time: 1585870829747
+        time_dt: "2020-04-02T23:40:29.747175116Z"
+        type_uid: 600302
+      protoPayload:
+        '@type': "type.googleapis.com/google.cloud.audit.AuditLog"
+        authenticationInfo:
+          principalEmail: "test@testmail.com"
+          principalSubject: "test@testmail.com"
+        authorizationInfo:
+         -
+          resource: "projects/test-271317"
+          permission: "logging.sinks.list"
+          resourceAttributes:
+            service: "logging.googleapis.com"
+            name: "projects/test-271317"
+          granted: true
+        methodName: "google.logging.v2.ConfigServiceV2.ListSinks"
+        request:
+          '@type': "type.googleapis.com/google.logging.v2.ListSinksRequest"
+          pageSize: 100
+          parent: "projects/test-271317"
+        requestMetadata:
+          callerIp: "67.243.209.244"
+          callerSuppliedUserAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)"
+          requestAttributes:
+            time: "2020-04-02T23:40:29.752292908Z"
+        resourceName: "projects/test-271317"
+        serviceName: "logging.googleapis.com"
+      receiveTimestamp: "2020-04-02T23:40:30.477126886Z"
+      resource:
+        labels:
+          destination: ""
+          name: ""
+          project_id: "test-271317"
+        type: "logging_sink"
+      severity: "INFO"
+      timestamp: "2020-04-02T23:40:29.747175116Z"
+      usr:
+        email: "test@testmail.com"
+        id: "test@testmail.com"
+    message: |-
+      {
+        "severity" : "INFO",
+        "logName" : "projects/test-271317/logs/cloudaudit.googleapis.com%2Fdata_access",
+        "resource" : {
+          "type" : "logging_sink",
+          "labels" : {
+            "project_id" : "test-271317",
+            "destination" : "",
+            "name" : ""
+          }
+        },
+        "protoPayload" : {
+          "requestMetadata" : {
+            "requestAttributes" : {
+              "time" : "2020-04-02T23:40:29.752292908Z"
+            },
+            "callerSuppliedUserAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)",
+            "callerIp" : "67.243.209.244"
+          },
+          "request" : {
+            "parent" : "projects/test-271317",
+            "@type" : "type.googleapis.com/google.logging.v2.ListSinksRequest",
+            "pageSize" : 100
+          },
+          "authenticationInfo" : {
+            "principalSubject" : "test@testmail.com",
+            "principalEmail" : "test@testmail.com"
+          },
+          "authorizationInfo" : [ {
+            "resource" : "projects/test-271317",
+            "permission" : "logging.sinks.list",
+            "resourceAttributes" : {
+              "service" : "logging.googleapis.com",
+              "name" : "projects/test-271317"
+            },
+            "granted" : true
+          } ],
+          "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+          "methodName" : "google.logging.v2.ConfigServiceV2.ListSinks",
+          "resourceName" : "projects/test-271317",
+          "serviceName" : "logging.googleapis.com"
+        },
+        "receiveTimestamp" : "2020-04-02T23:40:30.477126886Z",
+        "insertId" : "1a2eu6xdjc8r",
+        "timestamp" : "2020-04-02T23:40:29.747175116Z"
+      }
+    service: "logging.googleapis.com"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1585870829747
+

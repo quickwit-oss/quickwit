@@ -7118,6 +7118,7 @@ dependencies = [
 name = "quickwit-doc-transforms"
 version = "0.1.9"
 dependencies = [
+ "env_logger",
  "fnv",
  "quickwit-common",
  "quickwit-datetime",

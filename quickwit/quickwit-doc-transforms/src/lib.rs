@@ -28,6 +28,7 @@ mod transformers;
 pub use error::PipelineError;
 pub use flatten_tags::convert_tags;
 pub use pipeline::{Pipeline, PipelineConfig, PipelineStep, PipelineStepConfig, build_step};
-pub use processed_log::{DatadogLogMsg, ProcessedLog};
+pub use processed_log::{DatadogLogMsg, ProcessedLog, get_preprocessing_pipeline};
+pub use transformers::get_integrations_processor;
 
 pub type Result<T> = std::result::Result<T, error::PipelineError>;

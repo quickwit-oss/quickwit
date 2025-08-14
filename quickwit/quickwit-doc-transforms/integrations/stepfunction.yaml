@@ -1,0 +1,231 @@
+id: stepfunction
+metric_id: amazon-step-functions
+backend_only: false
+facets:
+  - groups:
+      - Source Code
+    name: Error Type
+    path: error.kind
+    source: log
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+  - groups:
+      - Step Functions
+    name: Execution ID
+    path: execution_id
+    source: log
+  - groups:
+      - Step Functions
+    name: Error Type
+    path: details.error
+    source: log
+  - groups:
+      - Step Functions
+    name: Task Resource
+    path: details.resource
+    source: log
+  - groups:
+      - Step Functions
+    name: Task Resource Type
+    path: details.resourceType
+    source: log
+  - groups:
+      - Step Functions
+    name: State Machine ARN
+    path: statemachinearn
+    source: tag
+  - groups:
+      - AWS
+    name: Log Group
+    path: aws.awslogs.logGroup
+    source: log
+pipeline:
+  type: pipeline
+  name: AWS Step Functions
+  enabled: true
+  filter:
+    query: source:stepfunction
+  processors:
+    - type: lookup-processor
+      name: Remap state machine errors to log errors
+      enabled: true
+      source: type
+      target: status
+      lookupTable: "TaskSubmitFailed,error\nExecutionFailed,error\nFailStateEntered,error\nTaskFailed,error"
+      defaultLookup: info
+    - type: status-remapper
+      name: Define `status` as the official status of the log
+      enabled: true
+      sources:
+        - status
+    - type: date-remapper
+      name: Define `event_timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - event_timestamp
+
+    - type: string-builder-processor
+      name: Construct the step function state machine URL as step_function_url
+      enabled: true
+      template: https://console.aws.amazon.com/states/home#/statemachines/view/%{host}
+      target: step_function_url
+      replaceMissing: false
+
+    - type: grok-parser
+      name: Parse input to the step function as JSON
+      enabled: true
+      source: details.input
+      grok:
+        matchRules: |
+          input_json %{data:details.input:json}
+        supportRules: ''
+      samples:
+        - '{\n    \"Comment\": \"Insert your JSON here\"\n}'
+    - type: grok-parser
+      name: Parse the output of the step function as JSON
+      enabled: true
+      source: details.output
+      grok:
+        matchRules: |
+          output_json %{data:details.output:json}
+        supportRules: ''
+      samples:
+        - '{\"name\":\"John\", \"age\":30}'
+    - type: grok-parser
+      name: Parse the parameters of the step function as JSON
+      enabled: true
+      source: details.parameters
+      grok:
+        matchRules: |
+          cause_json %{data:details.parameters:json}
+        supportRules: ''
+      samples:
+        - '{\"query\":\"user=Jon\"}'
+    - type: grok-parser
+      name: Parse the cause (if error) of the step function as JSON
+      enabled: true
+      source: details.cause
+      grok:
+        matchRules: |
+          cause_json %{data:details.cause:json}
+        supportRules: ''
+      samples:
+        - '{\"kind\":\"UserNotFound\"}'
+
+      sourceType: attribute
+    - type: grok-parser
+      name: Extract name, state machine type, execution id, and aws_account from execution_arn
+      enabled: true
+      source: execution_arn
+      samples:
+        - arn:aws:states:us-east-1:123412341234:execution:StateMachineName:5224d60a-e4ca-e82b-0a1c-07c4b9d26e53
+        - arn:aws:states:us-east-1:123412341234:express:StateMachineName:0320d06d-2abb-11f4-59b4-59049a95b8cb:3f66a266-0415-4729-b508-4f89b4d5cb9d
+        - arn:aws:states:us-east-1:123412341234:express:StateMachineName/0320d06d-2abb-11f4-59b4-59049a95b8cb:3f66a266-0415-4729-b508-4f89b4d5cb9d
+        - arn:aws:states:us-east-1:123412341234:express:StateMachineName\0320d06d-2abb-11f4-59b4-59049a95b8cb:3f66a266-0415-4729-b508-4f89b4d5cb9d
+        - arn:aws:states:us-east-1:123412341234:express:StateMachineName:1f1aa77c-241b-16ad-26c9-0b4a8410cb44_6564dc35-39a2-2882-2058-effbfa0d26b9:5aa7405d-c5db-4a7b-ae06-c948ceacb5f0
+      grok:
+        matchRules: |
+          rule arn:aws:states:%{regex("[^:]+"):aws_region}:%{regex("[^:]+"):aws_account}:%{regex("[^:]+"):state_machine_type}:%{regex("[^:/\\\\]+"):name}[:/\\\\]+%{notSpace:execution_id}
+        supportRules: ''
+
+    - type: string-builder-processor
+      name: Construct `host` from parsed grok-parser attributes
+      enabled: true
+      template: arn:aws:states:%{aws_region}:%{aws_account}:stateMachine:%{name}
+      target: host
+      replaceMissing: false
+
+    - type: attribute-remapper
+      name: Map attribute `host` to tag `statemachinearn`
+      enabled: true
+      sourceType: attribute
+      sources:
+        - host
+      target: statemachinearn
+      targetType: tag
+      preserveSource: true
+      overrideOnConflict: true
+    - type: category-processor
+      name: Remap 'execution' to 'standard'
+      enabled: true
+      categories:
+        - filter:
+            query: '@state_machine_type:execution'
+          name: standard
+      target: state_machine_type
+
+    - type: attribute-remapper
+      name: Map attribute `state_machine_type` to a tag
+      enabled: true
+      sources:
+        - state_machine_type
+      target: state_machine_type
+      targetType: tag
+      preserveSource: false
+      sourceType: attribute
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map attribute `aws_account` to a tag
+      enabled: true
+      sources:
+        - aws_account
+      target: aws_account
+      targetType: tag
+      preserveSource: false
+      sourceType: attribute
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `type` to `evt.name`
+      enabled: true
+      sources:
+        - type
+      target: evt.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+
+    - type: attribute-remapper
+      name: Map `details.cause.errorType` to `error.kind`
+      enabled: true
+      sources:
+        - details.cause.errorType
+      target: error.kind
+      preserveSource: true
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+
+    - type: attribute-remapper
+      name: Map `details.cause.errorMessage` to `error.message`
+      enabled: true
+      sources:
+        - details.cause.errorMessage
+      target: error.message
+      preserveSource: true
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+
+    - type: attribute-remapper
+      name: Map `details.cause.trace` to `error.stack`
+      enabled: true
+      sources:
+        - details.cause.trace
+      target: error.stack
+      preserveSource: true
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+
+    - type: category-processor
+      name: Identify Logs in Distributed Map Child Executions
+      enabled: true
+      categories:
+        - filter:
+            query: "@execution_arn:*/*"
+          name: "true"
+      target: is_distributed_map_child

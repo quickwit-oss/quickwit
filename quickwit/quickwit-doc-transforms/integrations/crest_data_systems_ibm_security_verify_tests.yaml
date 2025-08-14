@@ -1,0 +1,485 @@
+id: crest_data_systems_ibm_security_verify
+tests:
+  - sample: |-
+      {
+        "geoip" : {
+          "continent_name" : "North America",
+          "city_name" : "Austin",
+          "country_iso_code" : "USA",
+          "ip" : "11.11.111.111",
+          "country_name" : "United States",
+          "region_name" : "Texas",
+          "location" : {
+            "lon" : "-97.7431",
+            "lat" : "30.2672"
+          }
+        },
+        "event_type" : "adaptive_risk",
+        "data" : {
+          "new_device" : "false",
+          "country" : "USA",
+          "risky_connection" : "false",
+          "policy_id" : "policy-100",
+          "city" : "Austin",
+          "origin" : "11.11.111.111",
+          "isp" : "SampleISP",
+          "remote_access_tool_indication" : "false",
+          "userid" : "user-123",
+          "devicetype" : "Chrome on MacOS",
+          "new_location" : "false",
+          "browser" : "Chrome",
+          "policy_action" : "ACTION_ALLOW",
+          "applicationid" : "riskappid-1000",
+          "behavioral_anomaly" : "false",
+          "risky_device" : "false",
+          "os" : "Mac OS X",
+          "rule_name" : "Low-Risk Rule",
+          "risk_score" : "20",
+          "csid" : "CSID-abc123",
+          "gd_id" : "GDID-xyz-9876543210",
+          "policy_name" : "Adaptive Access - Basic",
+          "behavioral_score" : "0",
+          "applicationname" : "AdaptiveRiskApp",
+          "rule_id" : "rule-LOWRISK",
+          "risk_level" : "LOW",
+          "realm" : "www.ibm.com",
+          "decision_reason" : "Known and trusted device, low behavioral anomaly",
+          "region" : "south",
+          "username" : "alice@example.com"
+        },
+        "month" : 3,
+        "indexed_at" : 1677747929170,
+        "year" : 2023,
+        "tenantid" : "22222222-2222-2222-2222-222222222222",
+        "tenantname" : "tenant-name.verify.ibmcloudsecurity.com",
+        "correlationid" : "CORR_ID-3333333333-3333-3333-3333-333333333333",
+        "id" : "44444444-4444-4444-4444-444444444444",
+        "time" : 1677747929164,
+        "day" : 1
+      }
+    service: "cds.ibm_security_verify.events"
+    result:
+      custom:
+        cds:
+          ibm_security_verify:
+            event_type: "adaptive_risk"
+            risk_score: 20
+        correlationid: "CORR_ID-3333333333-3333-3333-3333-333333333333"
+        data:
+          applicationid: "riskappid-1000"
+          applicationname: "AdaptiveRiskApp"
+          behavioral_anomaly: "false"
+          behavioral_score: "0"
+          browser: "Chrome"
+          city: "Austin"
+          country: "USA"
+          csid: "CSID-abc123"
+          decision_reason: "Known and trusted device, low behavioral anomaly"
+          gd_id: "GDID-xyz-9876543210"
+          isp: "SampleISP"
+          new_device: "false"
+          new_location: "false"
+          os: "Mac OS X"
+          policy_action: "ACTION_ALLOW"
+          policy_id: "policy-100"
+          policy_name: "Adaptive Access - Basic"
+          realm: "www.ibm.com"
+          region: "south"
+          remote_access_tool_indication: "false"
+          risk_level: "LOW"
+          risky_connection: "false"
+          risky_device: "false"
+          rule_id: "rule-LOWRISK"
+          rule_name: "Low-Risk Rule"
+        day: 1
+        geoip:
+          city_name: "Austin"
+          continent_name: "North America"
+          country_iso_code: "USA"
+          country_name: "United States"
+          ip: "11.11.111.111"
+          location:
+            lat: "30.2672"
+            lon: "-97.7431"
+          region_name: "Texas"
+        http:
+          useragent: "Chrome on MacOS"
+          useragent_details:
+            browser:
+              family: "Other"
+            device:
+              category: "Other"
+              family: "Other"
+            os:
+              family: "Other"
+        id: "44444444-4444-4444-4444-444444444444"
+        indexed_at: 1677747929170
+        month: 3
+        network:
+          client:
+            geoip: {}
+            ip: "11.11.111.111"
+        service: "cds.ibm_security_verify.adaptive_risk"
+        tenantid: "22222222-2222-2222-2222-222222222222"
+        tenantname: "tenant-name.verify.ibmcloudsecurity.com"
+        time: 1677747929164
+        usr:
+          id: "user-123"
+          name: "alice@example.com"
+        year: 2023
+      message: |-
+        {
+          "geoip" : {
+            "continent_name" : "North America",
+            "city_name" : "Austin",
+            "country_iso_code" : "USA",
+            "ip" : "11.11.111.111",
+            "country_name" : "United States",
+            "region_name" : "Texas",
+            "location" : {
+              "lon" : "-97.7431",
+              "lat" : "30.2672"
+            }
+          },
+          "event_type" : "adaptive_risk",
+          "data" : {
+            "new_device" : "false",
+            "country" : "USA",
+            "risky_connection" : "false",
+            "policy_id" : "policy-100",
+            "city" : "Austin",
+            "origin" : "11.11.111.111",
+            "isp" : "SampleISP",
+            "remote_access_tool_indication" : "false",
+            "userid" : "user-123",
+            "devicetype" : "Chrome on MacOS",
+            "new_location" : "false",
+            "browser" : "Chrome",
+            "policy_action" : "ACTION_ALLOW",
+            "applicationid" : "riskappid-1000",
+            "behavioral_anomaly" : "false",
+            "risky_device" : "false",
+            "os" : "Mac OS X",
+            "rule_name" : "Low-Risk Rule",
+            "risk_score" : "20",
+            "csid" : "CSID-abc123",
+            "gd_id" : "GDID-xyz-9876543210",
+            "policy_name" : "Adaptive Access - Basic",
+            "behavioral_score" : "0",
+            "applicationname" : "AdaptiveRiskApp",
+            "rule_id" : "rule-LOWRISK",
+            "risk_level" : "LOW",
+            "realm" : "www.ibm.com",
+            "decision_reason" : "Known and trusted device, low behavioral anomaly",
+            "region" : "south",
+            "username" : "alice@example.com"
+          },
+          "month" : 3,
+          "indexed_at" : 1677747929170,
+          "year" : 2023,
+          "tenantid" : "22222222-2222-2222-2222-222222222222",
+          "tenantname" : "tenant-name.verify.ibmcloudsecurity.com",
+          "correlationid" : "CORR_ID-3333333333-3333-3333-3333-333333333333",
+          "id" : "44444444-4444-4444-4444-444444444444",
+          "time" : 1677747929164,
+          "day" : 1
+        }
+      service: "cds.ibm_security_verify.adaptive_risk"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1677747929164
+  - sample: |-
+      {
+        "geoip" : {
+          "continent_name" : "North America",
+          "as_org" : "Verizon",
+          "city_name" : "New York",
+          "country_iso_code" : "US",
+          "ip" : "98.111.45.201",
+          "country_name" : "United States",
+          "region_name" : "New York",
+          "location" : {
+            "lon" : "-74.0060",
+            "lat" : "40.7128"
+          },
+          "asn" : 701
+        },
+        "data" : {
+          "dict_type" : "LOCAL",
+          "dict_enabled" : "LOCAL",
+          "subject" : "d321e432a1",
+          "origin" : "98.111.45.201",
+          "cause" : "Authentication Successful",
+          "devicetype" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/89.0",
+          "target" : "https://mytenant.verify.ibm.com/landing",
+          "dict_op" : "AUTH",
+          "result" : "success",
+          "dict_result" : "SUCCESS",
+          "subtype" : "user_password",
+          "action" : "login",
+          "sourcetype" : "clouddirectory",
+          "realm" : "CloudIdentityRealm",
+          "username" : "jane.smith@example.com"
+        },
+        "year" : 2023,
+        "event_type" : "authentication",
+        "month" : 3,
+        "indexed_at" : 1678912387427,
+        "tenantid" : "TNT12345",
+        "tenantname" : "mytenant.ibmcloudsecurity.com",
+        "correlationid" : "CORR_ID-bca831b1-813d-40b6-93e7-66970dfd43aa",
+        "servicename" : "authsvc",
+        "id" : "evt-90000001",
+        "time" : 1678912387418,
+        "day" : 15
+      }
+    service: "cds.ibm_security_verify.events"
+    result:
+      custom:
+        cds:
+          ibm_security_verify:
+            event_type: "authentication"
+        correlationid: "CORR_ID-bca831b1-813d-40b6-93e7-66970dfd43aa"
+        data:
+          action: "login"
+          cause: "Authentication Successful"
+          dict_enabled: "LOCAL"
+          dict_op: "AUTH"
+          dict_result: "SUCCESS"
+          dict_type: "LOCAL"
+          realm: "CloudIdentityRealm"
+          result: "success"
+          sourcetype: "clouddirectory"
+          subject: "d321e432a1"
+          subtype: "user_password"
+          target: "https://mytenant.verify.ibm.com/landing"
+        day: 15
+        geoip:
+          as_org: "Verizon"
+          asn: 701
+          city_name: "New York"
+          continent_name: "North America"
+          country_iso_code: "US"
+          country_name: "United States"
+          ip: "98.111.45.201"
+          location:
+            lat: "40.7128"
+            lon: "-74.0060"
+          region_name: "New York"
+        http:
+          useragent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/89.0"
+          useragent_details:
+            browser:
+              family: "Chrome"
+              major: "89"
+              minor: "0"
+              version: "89.0"
+            device:
+              category: "Desktop"
+              family: "Other"
+            os:
+              family: "Windows"
+              major: "10"
+              version: "10"
+        id: "evt-90000001"
+        indexed_at: 1678912387427
+        month: 3
+        network:
+          client:
+            geoip: {}
+            ip: "98.111.45.201"
+        service: "cds.ibm_security_verify.authentication"
+        servicename: "authsvc"
+        tenantid: "TNT12345"
+        tenantname: "mytenant.ibmcloudsecurity.com"
+        time: 1678912387418
+        usr:
+          name: "jane.smith@example.com"
+        year: 2023
+      message: |-
+        {
+          "geoip" : {
+            "continent_name" : "North America",
+            "as_org" : "Verizon",
+            "city_name" : "New York",
+            "country_iso_code" : "US",
+            "ip" : "98.111.45.201",
+            "country_name" : "United States",
+            "region_name" : "New York",
+            "location" : {
+              "lon" : "-74.0060",
+              "lat" : "40.7128"
+            },
+            "asn" : 701
+          },
+          "data" : {
+            "dict_type" : "LOCAL",
+            "dict_enabled" : "LOCAL",
+            "subject" : "d321e432a1",
+            "origin" : "98.111.45.201",
+            "cause" : "Authentication Successful",
+            "devicetype" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/89.0",
+            "target" : "https://mytenant.verify.ibm.com/landing",
+            "dict_op" : "AUTH",
+            "result" : "success",
+            "dict_result" : "SUCCESS",
+            "subtype" : "user_password",
+            "action" : "login",
+            "sourcetype" : "clouddirectory",
+            "realm" : "CloudIdentityRealm",
+            "username" : "jane.smith@example.com"
+          },
+          "year" : 2023,
+          "event_type" : "authentication",
+          "month" : 3,
+          "indexed_at" : 1678912387427,
+          "tenantid" : "TNT12345",
+          "tenantname" : "mytenant.ibmcloudsecurity.com",
+          "correlationid" : "CORR_ID-bca831b1-813d-40b6-93e7-66970dfd43aa",
+          "servicename" : "authsvc",
+          "id" : "evt-90000001",
+          "time" : 1678912387418,
+          "day" : 15
+        }
+      service: "cds.ibm_security_verify.authentication"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1678912387418
+
+  - sample: |-
+      {
+        "event_type" : "threat",
+        "data" : {
+          "date" : "2023-07-10",
+          "rule_attribute" : "ibm:threat_abnormal_user_activities",
+          "most_significant_data_origin" : [ "198.51.100.23" ],
+          "top5_affected_data_username" : "{'alice': 12, 'bob': 8}",
+          "source" : "[('data.mfamethod', 'TOTP'), ('data.username', 'alice')]",
+          "suspicious_ips_count" : 1,
+          "most_significant_data_mfamethod" : [ "TOTP" ],
+          "most_significant_geoip_country_name" : [ "United States" ],
+          "top5_affected_tenantname" : "{'tenant_us_west': 20}",
+          "anomalous_event_count" : 20,
+          "most_significant_tenantname" : [ "tenant_us_west" ],
+          "summary" : "Abnormal number of device enrollments: 20 anomalous events observed, beyond normal traffic volume, from 2023-07-10 19:00:00 UTC to 2023-07-10 20:00:00 UTC.",
+          "severity" : "critical",
+          "top5_affected_data_origin" : "{'198.51.100.23': 20}",
+          "rule_name" : "Abnormal number of device enrollments",
+          "impacted_user_count" : 2,
+          "end_time" : "2023-07-10 20:00:00",
+          "anomalous_suspicious_ips" : [ "198.51.100.23" ],
+          "rule_id" : "ABNORMAL_DEVICE_ENROLLMENT",
+          "top5_affected_geoip_country_name" : "{'United States': 20}",
+          "start_time" : "2023-07-10 19:00:00",
+          "component" : "Login activity",
+          "normal_traffic_volume" : 0,
+          "top5_affected_data_grant_type" : "{}",
+          "top5_affected_data_mfamethod" : "{'TOTP': 20}",
+          "most_significant_data_username" : [ "alice", "bob" ]
+        },
+        "month" : 7,
+        "indexed_at" : 1689019317074,
+        "year" : 2023,
+        "tenantid" : "tenant_us_west_id",
+        "tenantname" : "tenant_us_west",
+        "servicename" : "Anomaly-Detector",
+        "id" : "evt-123456789",
+        "time" : 1689019315275,
+        "day" : 10
+      }
+    service: "cds.ibm_security_verify.events"
+    result:
+      custom:
+        cds:
+          ibm_security_verify:
+            event_type: "threat"
+        data:
+          anomalous_event_count: 20
+          anomalous_suspicious_ips:
+            - "198.51.100.23"
+          component: "Login activity"
+          date: "2023-07-10"
+          end_time: "2023-07-10 20:00:00"
+          impacted_user_count: 2
+          most_significant_data_mfamethod:
+            - "TOTP"
+          most_significant_data_origin:
+            - "198.51.100.23"
+          most_significant_data_username:
+            - "alice"
+            - "bob"
+          most_significant_geoip_country_name:
+            - "United States"
+          most_significant_tenantname:
+            - "tenant_us_west"
+          normal_traffic_volume: 0
+          rule_attribute: "ibm:threat_abnormal_user_activities"
+          rule_id: "ABNORMAL_DEVICE_ENROLLMENT"
+          rule_name: "Abnormal number of device enrollments"
+          severity: "critical"
+          source: "[('data.mfamethod', 'TOTP'), ('data.username', 'alice')]"
+          start_time: "2023-07-10 19:00:00"
+          summary: "Abnormal number of device enrollments: 20 anomalous events observed, beyond normal traffic volume, from 2023-07-10 19:00:00 UTC to 2023-07-10 20:00:00 UTC."
+          suspicious_ips_count: 1
+          top5_affected_data_grant_type: "{}"
+          top5_affected_data_mfamethod: "{'TOTP': 20}"
+          top5_affected_data_origin: "{'198.51.100.23': 20}"
+          top5_affected_data_username: "{'alice': 12, 'bob': 8}"
+          top5_affected_geoip_country_name: "{'United States': 20}"
+          top5_affected_tenantname: "{'tenant_us_west': 20}"
+        day: 10
+        id: "evt-123456789"
+        indexed_at: 1689019317074
+        month: 7
+        service: "cds.ibm_security_verify.threat"
+        servicename: "Anomaly-Detector"
+        tenantid: "tenant_us_west_id"
+        tenantname: "tenant_us_west"
+        time: 1689019315275
+        year: 2023
+      message: |-
+        {
+          "event_type" : "threat",
+          "data" : {
+            "date" : "2023-07-10",
+            "rule_attribute" : "ibm:threat_abnormal_user_activities",
+            "most_significant_data_origin" : [ "198.51.100.23" ],
+            "top5_affected_data_username" : "{'alice': 12, 'bob': 8}",
+            "source" : "[('data.mfamethod', 'TOTP'), ('data.username', 'alice')]",
+            "suspicious_ips_count" : 1,
+            "most_significant_data_mfamethod" : [ "TOTP" ],
+            "most_significant_geoip_country_name" : [ "United States" ],
+            "top5_affected_tenantname" : "{'tenant_us_west': 20}",
+            "anomalous_event_count" : 20,
+            "most_significant_tenantname" : [ "tenant_us_west" ],
+            "summary" : "Abnormal number of device enrollments: 20 anomalous events observed, beyond normal traffic volume, from 2023-07-10 19:00:00 UTC to 2023-07-10 20:00:00 UTC.",
+            "severity" : "critical",
+            "top5_affected_data_origin" : "{'198.51.100.23': 20}",
+            "rule_name" : "Abnormal number of device enrollments",
+            "impacted_user_count" : 2,
+            "end_time" : "2023-07-10 20:00:00",
+            "anomalous_suspicious_ips" : [ "198.51.100.23" ],
+            "rule_id" : "ABNORMAL_DEVICE_ENROLLMENT",
+            "top5_affected_geoip_country_name" : "{'United States': 20}",
+            "start_time" : "2023-07-10 19:00:00",
+            "component" : "Login activity",
+            "normal_traffic_volume" : 0,
+            "top5_affected_data_grant_type" : "{}",
+            "top5_affected_data_mfamethod" : "{'TOTP': 20}",
+            "most_significant_data_username" : [ "alice", "bob" ]
+          },
+          "month" : 7,
+          "indexed_at" : 1689019317074,
+          "year" : 2023,
+          "tenantid" : "tenant_us_west_id",
+          "tenantname" : "tenant_us_west",
+          "servicename" : "Anomaly-Detector",
+          "id" : "evt-123456789",
+          "time" : 1689019315275,
+          "day" : 10
+        }
+      service: "cds.ibm_security_verify.threat"
+      status: "critical"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1689019315275

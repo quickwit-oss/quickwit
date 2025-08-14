@@ -1,0 +1,40 @@
+id: akamai-eaa
+tests:
+  - sample: |-
+      {
+        "uid" : "user7@example.com",
+        "tnid" : "xzai569",
+        "res_id" : "wsJ7xkh2QGOoIHF8q7wfMg",
+        "event_ty" : "login",
+        "res_ty" : "users",
+        "event" : "login",
+        "res_name" : "user7@example.com",
+        "ts" : 1606705348966
+      }
+    result:
+      custom:
+        evt:
+          category: "login"
+          name: "login"
+        resource:
+          id: "wsJ7xkh2QGOoIHF8q7wfMg"
+          name: "user7@example.com"
+          type: "users"
+        tnid: "xzai569"
+        ts: 1606705348966
+        usr:
+          email: "user7@example.com"
+      message: |-
+        {
+          "uid" : "user7@example.com",
+          "tnid" : "xzai569",
+          "res_id" : "wsJ7xkh2QGOoIHF8q7wfMg",
+          "event_ty" : "login",
+          "res_ty" : "users",
+          "event" : "login",
+          "res_name" : "user7@example.com",
+          "ts" : 1606705348966
+        }
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1606705348966

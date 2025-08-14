@@ -1,0 +1,215 @@
+id: box
+metric_id: box
+backend_only: false
+facets:
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - User
+    name: User Email
+    path: usr.email
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+pipeline:
+  type: pipeline
+  name: Box
+  enabled: true
+  filter:
+    query: source:box
+  processors:
+    - type: date-remapper
+      name: Define `created_at` as the official date of the log
+      enabled: true
+      sources:
+        - created_at
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: category-processor
+      name: Category processor for defining `box_event_category` from log
+      enabled: true
+      categories:
+        - filter:
+            query: "@event_type:SHIELD*"
+          name: shield
+        - filter:
+            query: "@source.type:user"
+          name: user
+        - filter:
+            query: "@source.type:application"
+          name: application
+        - filter:
+            query: "@source.item_type:file"
+          name: file
+        - filter:
+            query: "@source.item_type:folder"
+          name: folder
+        - filter:
+            query: -(@source.item_type:(file OR folder) OR @source.type:(user OR
+              application) OR @event_type:SHIELD*)
+          name: other
+      target: box_event_category
+    - type: attribute-remapper
+      name:
+        Map `additional_details.shield_alert.user.name`, `created_by.name` to
+        `usr.name`
+      enabled: true
+      sources:
+        - additional_details.shield_alert.user.name
+        - created_by.name
+      sourceType: attribute
+      target: usr.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `additional_details.shield_alert.user.id`, `created_by.id` to `usr.id`
+      enabled: true
+      sources:
+        - additional_details.shield_alert.user.id
+        - created_by.id
+      sourceType: attribute
+      target: usr.id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name:
+        Map `additional_details.shield_alert.user.email`, `created_by.login` to
+        `usr.email`
+      enabled: true
+      sources:
+        - additional_details.shield_alert.user.email
+        - created_by.login
+      sourceType: attribute
+      target: usr.email
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `event_type` to `evt.name`
+      enabled: true
+      sources:
+        - event_type
+      sourceType: attribute
+      target: evt.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `ip_address` to `network.client.ip`
+      enabled: true
+      sources:
+        - ip_address
+      sourceType: attribute
+      target: network.client.ip
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: category-processor
+      name: Category processor for empty user email
+      enabled: true
+      categories:
+        - filter:
+            query: '@usr.email:""'
+          name: Unknown User
+      target: usr.email
+    - type: pipeline
+      name: Box Files
+      enabled: true
+      filter:
+        query: "@box_event_category:file"
+      processors:
+        - type: grok-parser
+          name: Extracting `file_type` from `source.item_name`
+          enabled: true
+          source: source.item_name
+          samples:
+            - milkyway.jpg
+            - test.py
+          grok:
+            supportRules: ""
+            matchRules: file_ext_rule %{regex(".*(?=\\.)"):}.%{data:file_type}
+    - type: pipeline
+      name: Shield Alerts
+      enabled: true
+      filter:
+        query: "@evt.name:SHIELD_ALERT"
+      processors:
+        - name: Lookup on `additional_details.shield_alert.priority` to `status`
+          enabled: true
+          source: additional_details.shield_alert.priority
+          target: status
+          lookupTable: |-
+            informational, info
+            low, notice
+            medium, warning
+            high, critical
+            critical, alert
+          type: lookup-processor
+        - type: status-remapper
+          name: Define `status` as the official status of the log
+          enabled: true
+          sources:
+            - status
+    - type: geo-ip-parser
+      name: Extracting geolocation information from `network.client.ip`
+      enabled: true
+      sources:
+        - network.client.ip
+      target: network.client.geoip
+      ip_processing_behavior: do-nothing

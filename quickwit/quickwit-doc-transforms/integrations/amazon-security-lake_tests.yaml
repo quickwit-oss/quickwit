@@ -1,0 +1,205 @@
+id: "amazon-security-lake"
+tests:
+ -
+  sample: |-
+    {
+      "activity_name" : "Operational",
+      "metadata" : {
+        "product" : {
+          "feature" : {
+            "name" : "Management, Data, and Insights"
+          },
+          "name" : "CloudTrail",
+          "vendor_name" : "AWS",
+          "version" : "1.08"
+        },
+        "profiles" : [ "cloud" ],
+        "version" : "0.26.1"
+      },
+      "type_name" : "Cloud API: Operational",
+      "category_name" : "Cloud Activity",
+      "ddtags" : "aws_account:601427279990,region:us-east-1",
+      "aws_account" : "172597598159",
+      "source" : "amazon-security-lake",
+      "ref_event_uid" : "1879291c-5359-41cb-bd0b-4a6a8b94fb3a",
+      "cloud" : {
+        "provider" : "AWS",
+        "region" : "us-east-1"
+      },
+      "identity" : {
+        "session" : {
+          "created_time" : 1667229897000,
+          "mfa" : false,
+          "issuer" : "arn:aws:iam::172597598159:role/DatadogIntegrationRoleProdOrg11287"
+        },
+        "user" : {
+          "uid" : "AROASQL46K7H4OAQVD34X:DatadogAWSIntegration",
+          "account_uid" : "172597598159",
+          "type" : "AssumedRole",
+          "uuid" : "arn:aws:sts::172597598159:assumed-role/DatadogIntegrationRoleProdOrg11287/DatadogAWSIntegration",
+          "credential_uid" : "ASIASQL46K7HTURXPEAB"
+        }
+      },
+      "activity_id" : 3,
+      "api" : {
+        "request" : {
+          "uid" : "278564b3-8630-4df3-a4ee-cab5bffaf5de"
+        },
+        "service" : {
+          "name" : "ecs.amazonaws.com"
+        },
+        "operation" : "ListContainerInstances"
+      },
+      "class_name" : "Cloud API",
+      "severity" : "Unknown",
+      "category_uid" : 5,
+      "src_endpoint" : {
+        "ip" : "44.192.28.0"
+      },
+      "unmapped" : [ [ "eventCategory", "Management" ], [ "userIdentity_sessionContext_sessionIssuer_type", "Role" ] ],
+      "service" : "amazon-security-lake",
+      "class_uid" : 5001,
+      "http_request" : {
+        "user_agent" : "Datadog"
+      },
+      "sourcecategory" : "aws",
+      "time" : 1667233026000,
+      "severity_id" : 0,
+      "region" : "us-east-1",
+      "type_uid" : 500103
+    }
+  result:
+    custom:
+      account: "172597598159"
+      activity_id: 3
+      activity_name: "Operational"
+      api:
+        request:
+          uid: "278564b3-8630-4df3-a4ee-cab5bffaf5de"
+      category_uid: 5
+      class_name: "Cloud API"
+      class_uid: 5001
+      cloud:
+        provider: "AWS"
+        region: "us-east-1"
+      ddtags: "aws_account:601427279990,region:us-east-1"
+      eventSource: "ecs.amazonaws.com"
+      evt:
+        category: "Cloud Activity"
+        name: "ListContainerInstances"
+      http_request:
+        user_agent: "Datadog"
+      identity:
+        session:
+          created_time: 1667229897000
+          issuer: "arn:aws:iam::172597598159:role/DatadogIntegrationRoleProdOrg11287"
+          mfa: false
+        user:
+          account_uid: "172597598159"
+          credential_uid: "ASIASQL46K7HTURXPEAB"
+          uid: "AROASQL46K7H4OAQVD34X:DatadogAWSIntegration"
+      message: "Cloud API: Operational"
+      metadata:
+        product:
+          feature:
+            name: "Management, Data, and Insights"
+          name: "CloudTrail"
+          vendor_name: "AWS"
+          version: "1.08"
+        profiles:
+         - "cloud"
+        version: "0.26.1"
+      network:
+        client:
+          geoip: {}
+          ip: "44.192.28.0"
+      ref_event_uid: "1879291c-5359-41cb-bd0b-4a6a8b94fb3a"
+      region: "us-east-1"
+      service: "amazon-security-lake"
+      severity: "Unknown"
+      severity_id: 0
+      source: "amazon-security-lake"
+      sourcecategory: "aws"
+      time: 1667233026000
+      type_uid: 500103
+      unmapped:
+       -
+         - "eventCategory"
+         - "Management"
+       -
+         - "userIdentity_sessionContext_sessionIssuer_type"
+         - "Role"
+      userIdentity:
+        arn: "arn:aws:sts::172597598159:assumed-role/DatadogIntegrationRoleProdOrg11287/DatadogAWSIntegration"
+        type: "AssumedRole"
+    message: |-
+      {
+        "activity_name" : "Operational",
+        "metadata" : {
+          "product" : {
+            "feature" : {
+              "name" : "Management, Data, and Insights"
+            },
+            "name" : "CloudTrail",
+            "vendor_name" : "AWS",
+            "version" : "1.08"
+          },
+          "profiles" : [ "cloud" ],
+          "version" : "0.26.1"
+        },
+        "type_name" : "Cloud API: Operational",
+        "category_name" : "Cloud Activity",
+        "ddtags" : "aws_account:601427279990,region:us-east-1",
+        "aws_account" : "172597598159",
+        "source" : "amazon-security-lake",
+        "ref_event_uid" : "1879291c-5359-41cb-bd0b-4a6a8b94fb3a",
+        "cloud" : {
+          "provider" : "AWS",
+          "region" : "us-east-1"
+        },
+        "identity" : {
+          "session" : {
+            "created_time" : 1667229897000,
+            "mfa" : false,
+            "issuer" : "arn:aws:iam::172597598159:role/DatadogIntegrationRoleProdOrg11287"
+          },
+          "user" : {
+            "uid" : "AROASQL46K7H4OAQVD34X:DatadogAWSIntegration",
+            "account_uid" : "172597598159",
+            "type" : "AssumedRole",
+            "uuid" : "arn:aws:sts::172597598159:assumed-role/DatadogIntegrationRoleProdOrg11287/DatadogAWSIntegration",
+            "credential_uid" : "ASIASQL46K7HTURXPEAB"
+          }
+        },
+        "activity_id" : 3,
+        "api" : {
+          "request" : {
+            "uid" : "278564b3-8630-4df3-a4ee-cab5bffaf5de"
+          },
+          "service" : {
+            "name" : "ecs.amazonaws.com"
+          },
+          "operation" : "ListContainerInstances"
+        },
+        "class_name" : "Cloud API",
+        "severity" : "Unknown",
+        "category_uid" : 5,
+        "src_endpoint" : {
+          "ip" : "44.192.28.0"
+        },
+        "unmapped" : [ [ "eventCategory", "Management" ], [ "userIdentity_sessionContext_sessionIssuer_type", "Role" ] ],
+        "service" : "amazon-security-lake",
+        "class_uid" : 5001,
+        "http_request" : {
+          "user_agent" : "Datadog"
+        },
+        "sourcecategory" : "aws",
+        "time" : 1667233026000,
+        "severity_id" : 0,
+        "region" : "us-east-1",
+        "type_uid" : 500103
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1667233026000
+

@@ -1,0 +1,43 @@
+id: ibm_was
+metric_id: ibm-was
+backend_only: false
+facets:
+  - groups:
+      - Source Code
+    name: Thread Name
+    path: logger.thread_name
+    source: log
+  - groups:
+      - IBM
+    name: IBM provider
+    path: provider
+    source: log
+pipeline:
+  type: pipeline
+  name: IBM Websphere
+  enabled: true
+  filter:
+    query: source:ibm_was
+  processors:
+    - type: grok-parser
+      name: Parsing IBM websphere logs
+      enabled: true
+      source: message
+      samples:
+        - '[10/30/18 19:40:59:031 GMT] 0000004c ApplicationMg A   WSVR0221I: Application started: ivtApp'
+        - '[6/14/19 14:20:31:561 UTC] 00000001 AdminTool     A   ADMU3000I: Server AppServer open for e-business; process id is 16575'
+      grok:
+        supportRules: |
+        matchRules: |
+          ibm_was_default \[(%{date("MM/dd/yy HH:mm:ss:SSS z"):timestamp}|%{date("M/d/yy HH:mm:ss:SSS z"):timestamp})\] %{notSpace:logger.thread_name} %{notSpace:provider}\s+%{notSpace:level}\s+(%{notSpace:component}:)?.*
+
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp

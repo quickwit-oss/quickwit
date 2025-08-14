@@ -1,0 +1,95 @@
+id: "pan.firewall"
+tests:
+ -
+  sample: "<14>May  4 04:24:38 PPCMOCK-PA820-A.corp.nuskin.net timestamp=2021/05/04 04:24:37, serial=012001018742, type=TRAFFIC, subtype=end, time_generated=2021/05/04 04:24:37, network.client.ip=10.70.255.70, network.destination.ip=35.184.126.116, natsrc=67.214.229.252, natdst=35.184.126.116, rule=Permit all outbound, usr.id=, dstuser=, app=paloalto-shared-services, vsys=vsys1, from=Management, to=Outside, inbound_if=ethernet1/1.16, outbound_if=ethernet1/1.1101, logset=Panorama, sessionid=92244, repeatcnt=1, network.client.port=42799, network.destination.port=443, natsport=24855 natdport=443, flags=0x40447a, proto=tcp, evt.name=allow, bytes=16680918, network.bytes_read=16415457, network.bytes_written=265461, start=2021/05/04 04:20:10, elapsed=250, category=low-risk, seqno=977161987, actionflags=0x8000000000000000, network.client.geoip.country.name=10.0.0.0-10.255.255.255, dstloc=United States, pkts_sent=11911, pkts_received=3644, session_end_reason=tcp-rst-from-client, device_name=PPCMOCK-PA820-A, action_source=from-policy, src_uuid=, dst_uuid=, tunnelid=0, imsi= 0, monitortag=, imei=0, parent_session_id=0, parent_start_time=, tunnel=N/A, assoc_id=0, chunks=0 chunks_sent=0 chunks_received=0"
+  result:
+    custom:
+      action_source: "from-policy"
+      actionflags: "0x8000000000000000"
+      app: "paloalto-shared-services"
+      assoc_id: 0
+      bytes: 16680918
+      category: "low-risk"
+      chunks: 0
+      chunks_received: 0
+      chunks_sent: 0
+      device_name: "PPCMOCK-PA820-A"
+      dstloc: "United States"
+      elapsed: 250
+      evt:
+        name: "allow"
+      flags: "0x40447a"
+      from: "Management"
+      imei: 0
+      imsi: 0
+      logset: "Panorama"
+      natdport: 443
+      natdst: "35.184.126.116"
+      natsport: 24855
+      natsrc: "67.214.229.252"
+      network:
+        bytes_read: 16415457
+        bytes_written: 265461
+        client:
+          geoip: {}
+          ip: "10.70.255.70"
+          port: 42799
+        destination:
+          ip: "35.184.126.116"
+          port: 443
+      parent_session_id: 0
+      pkts_received: 3644
+      pkts_sent: 11911
+      proto: "tcp"
+      repeatcnt: 1
+      rule: "Permit all outbound"
+      seqno: 977161987
+      serial: "012001018742"
+      session_end_reason: "tcp-rst-from-client"
+      sessionid: 92244
+      subtype: "end"
+      to: "Outside"
+      tunnelid: 0
+      type: "TRAFFIC"
+      vsys: "vsys1"
+    message: "<14>May  4 04:24:38 PPCMOCK-PA820-A.corp.nuskin.net timestamp=2021/05/04 04:24:37, serial=012001018742, type=TRAFFIC, subtype=end, time_generated=2021/05/04 04:24:37, network.client.ip=10.70.255.70, network.destination.ip=35.184.126.116, natsrc=67.214.229.252, natdst=35.184.126.116, rule=Permit all outbound, usr.id=, dstuser=, app=paloalto-shared-services, vsys=vsys1, from=Management, to=Outside, inbound_if=ethernet1/1.16, outbound_if=ethernet1/1.1101, logset=Panorama, sessionid=92244, repeatcnt=1, network.client.port=42799, network.destination.port=443, natsport=24855 natdport=443, flags=0x40447a, proto=tcp, evt.name=allow, bytes=16680918, network.bytes_read=16415457, network.bytes_written=265461, start=2021/05/04 04:20:10, elapsed=250, category=low-risk, seqno=977161987, actionflags=0x8000000000000000, network.client.geoip.country.name=10.0.0.0-10.255.255.255, dstloc=United States, pkts_sent=11911, pkts_received=3644, session_end_reason=tcp-rst-from-client, device_name=PPCMOCK-PA820-A, action_source=from-policy, src_uuid=, dst_uuid=, tunnelid=0, imsi= 0, monitortag=, imei=0, parent_session_id=0, parent_start_time=, tunnel=N/A, assoc_id=0, chunks=0 chunks_sent=0 chunks_received=0"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: "timestamp=2019/05/06 16:43:53, serial=001801010877, type=AUTHENTICATION, subtype=virus, vsys=testVM,  network.client.ip=10.2.75.414, usr.id=Jaydeep,  normalize_user=,  object=,  authpolicy=authpolicy, repeatcnt=1, authid=68376, vendor=Symentic, logset=testForwarder, serverprofile=serverprofile, message=thisIsSampleMessage, \tclienttype=securityApp, evt.name=alert, factorno=687383, seqno=486021038, actionflags=0xa0000 00000000000, vsys_name=JVM, device_name=tab,  vsys_id=786,\tauthproto=authproto"
+  result:
+    custom:
+      actionflags: "0xa0000 00000000000"
+      authid: 68376
+      authpolicy: "authpolicy"
+      authproto: "authproto"
+      clienttype: "securityApp"
+      device_name: "tab"
+      evt:
+        name: "alert"
+      factorno: 687383
+      logset: "testForwarder"
+      message: "thisIsSampleMessage"
+      network:
+        client:
+          geoip:
+            invalidAddress: "10.2.75.414"
+          ip: "10.2.75.414"
+      repeatcnt: 1
+      seqno: 486021038
+      serial: "001801010877"
+      serverprofile: "serverprofile"
+      subtype: "virus"
+      type: "AUTHENTICATION"
+      usr:
+        id: "Jaydeep"
+      vendor: "Symentic"
+      vsys: "testVM"
+      vsys_id: 786
+      vsys_name: "JVM"
+    message: "timestamp=2019/05/06 16:43:53, serial=001801010877, type=AUTHENTICATION, subtype=virus, vsys=testVM,  network.client.ip=10.2.75.414, usr.id=Jaydeep,  normalize_user=,  object=,  authpolicy=authpolicy, repeatcnt=1, authid=68376, vendor=Symentic, logset=testForwarder, serverprofile=serverprofile, message=thisIsSampleMessage, \tclienttype=securityApp, evt.name=alert, factorno=687383, seqno=486021038, actionflags=0xa0000 00000000000, vsys_name=JVM, device_name=tab,  vsys_id=786,\tauthproto=authproto"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+

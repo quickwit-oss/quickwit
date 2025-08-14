@@ -1,0 +1,196 @@
+id: nodejs
+metric_id: node
+backend_only: false
+facets:
+  - facetType: range
+    groups:
+      - Measure
+    name: Duration
+    path: duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: nanosecond
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: Referer
+    path: http.referer
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: URL Host
+    path: http.url_details.host
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Web Access
+    name: URL Port
+    path: http.url_details.port
+    source: log
+  - groups:
+      - Web Access
+    name: URL scheme
+    path: http.url_details.scheme
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+pipeline:
+  type: pipeline
+  name: NodeJS
+  enabled: true
+  filter:
+    query: source:nodejs
+  processors:
+    - type: message-remapper
+      name: Define `msg` as the official message of the log
+      enabled: true
+      sources:
+        - msg
+    - type: grok-parser
+      name: Parsing NodeJs logs
+      enabled: true
+      source: message
+      grok:
+        matchRules: |
+          log4js_format (?>\[%{data::keyvalue}dd.trace_id=%{word:dd.trace_id} dd.span_id=%{word:dd.span_id}\]\s*)?\[%{date("yyyy-MM-dd'T'HH:mm:ss.SSS"):time}\]\s+\[%{word:level}\] %{data::keyvalue}
+
+          web_access_morgan %{word:http.method} %{notSpace:http.url} %{number:http.status_code} (-|%{number:network.bytes_written}) - (%{number:duration:scale(1000000)} ms|%{number:duration:scale(1000000000)} s)
+
+          morgan_combined %{ipOrHost:network.client.ip} %{notSpace:http.ident:nullIf("-")} %{notSpace:http.auth:nullIf("-")} \[%{date("dd/MMM/yyyy:HH:mm:ss Z"):date_access}\] "(?>%{word:http.method} |)%{notSpace:http.url}(?> HTTP\/%{regex("\\d+\\.\\d+"):http.version}|)" %{number:http.status_code} (?>%{number:network.bytes_written}|-) "%{notSpace:http.referer}" "%{regex("[^\\\"]*"):http.useragent}".*
+
+          fallback (?>\[%{data::keyvalue}dd.trace_id=%{word:dd.trace_id} dd.span_id=%{word:dd.span_id}\]\s*)?%{data::json}
+        supportRules: ''
+      samples:
+        - '[2019-10-21T15:13:23.419] [INFO] default - An info message'
+        - '[dd.trace_id=123abc dd.span_id=1234abc] [2019-10-21T15:13:23.419] [INFO] default - An info message'
+        - '[2019-10-21T15:13:23.419] [INFO] default - [dd.trace_id=123abc dd.span_id=1234abc] An info message'
+        - GET www.google.com 304 5000 - 2.306 ms
+        - ::1 - - [21/Oct/2019:19:16:34 +0000] "GET / HTTP/1.1" 504 - "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/77.0.3865.90 Safari/537.36"
+    - type: date-remapper
+      name: Define `time` as the official date of the log
+      enabled: true
+      sources:
+        - time
+    - type: category-processor
+      name: Categorise status code
+      enabled: true
+      categories:
+        - filter:
+            query: '@http.status_code:[200 TO 299]'
+          name: OK
+        - filter:
+            query: '@http.status_code:[300 TO 399]'
+          name: notice
+        - filter:
+            query: '@http.status_code:[400 TO 499]'
+          name: warning
+        - filter:
+            query: '@http.status_code:[500 TO 599]'
+          name: error
+      target: http.status_category
+    - type: category-processor
+      name: Transform bunyan level in regular level
+      enabled: true
+      categories:
+        - filter:
+            query: '@level:10'
+          name: trace
+        - filter:
+            query: '@level:20'
+          name: debug
+        - filter:
+            query: '@level:30'
+          name: info
+        - filter:
+            query: '@level:40'
+          name: warning
+        - filter:
+            query: '@level:50'
+          name: error
+        - filter:
+            query: '@level:60'
+          name: fatal
+      target: bunyan_level
+    - type: status-remapper
+      name: Define `http.status_category`, `bunyan_level`, `level` as the official status of the log
+      enabled: true
+      sources:
+        - http.status_category
+        - bunyan_level
+        - level
+    - type: trace-id-remapper
+      name: Define `dd.trace_id` as the official trace ID of the log
+      enabled: true
+      sources:
+        - dd.trace_id
+    - type: url-parser
+      name: ''
+      enabled: true
+      sources:
+        - http.url
+      target: http.url_details
+    - type: user-agent-parser
+      name: ''
+      enabled: true
+      sources:
+        - http.useragent
+      target: http.useragent_details
+      encoded: false
+    - type: attribute-remapper
+      name: Map attribute `dd.env` to tag `env`
+      enabled: true
+      sources:
+        - dd.env
+      target: env
+      targetType: tag
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+    - type: attribute-remapper
+      name: Map attribute `dd.version` to tag `version`
+      enabled: true
+      sources:
+        - dd.version
+      target: version
+      targetType: tag
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+    - type: service-remapper
+      name: Define `dd.service` as the official service of the log
+      enabled: true
+      sources:
+        - dd.service

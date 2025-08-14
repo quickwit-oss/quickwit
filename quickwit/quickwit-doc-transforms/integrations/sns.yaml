@@ -1,0 +1,138 @@
+id: sns
+metric_id: amazon-sns
+backend_only: false
+facets:
+  - groups:
+      - Source Code
+    name: Error Type
+    path: error.kind
+    source: log
+  - groups:
+      - Web Access
+    name: Request ID
+    path: http.request_id
+    source: log
+  - groups:
+      - Web Access
+    name: User-Agent
+    path: http.useragent
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - Event
+    name: Event Type
+    path: eventType
+    source: log
+  - groups:
+      - AWS
+    name: Event Name
+    path: eventName
+    source: log
+  - groups:
+      - AWS
+    name: S3 Bucket
+    path: aws.s3.bucket
+    source: log
+    type: string
+pipeline:
+  type: pipeline
+  name: AWS SNS
+  enabled: true
+  filter:
+    query: source:sns
+  processors:
+    - type: attribute-remapper
+      name: Map `requestID` to `http.request_id`
+      enabled: true
+      sources:
+        - requestID
+      target: http.request_id
+      preserveSource: true
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `sourceIPAddress` to `network.client.ip`
+      enabled: true
+      sources:
+        - sourceIPAddress
+      target: network.client.ip
+      preserveSource: true
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `errorCode` to `error.kind`
+      enabled: true
+      sources:
+        - errorCode
+      target: error.kind
+      preserveSource: true
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `errorMessage` to `error.message`
+      enabled: true
+      sources:
+        - errorMessage
+      target: error.message
+      preserveSource: true
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `userAgent` to `http.useragent`
+      enabled: true
+      sources:
+        - userAgent
+      target: http.useragent
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: user-agent-parser
+      name: ''
+      enabled: true
+      sources:
+        - http.useragent
+      target: http.useragent_details
+      encoded: false
+    - type: message-remapper
+      name: Define `Sns.Message` as the official message of the log
+      enabled: true
+      sources:
+        - Sns.Message
+    - type: grok-parser
+      name: Parsing sns message
+      enabled: true
+      source: message
+      grok:
+        supportRules: |
+        matchRules: |
+          sns_json %{data::json}
+      samples:
+        - |
+          {"eventVersion":"1.02","userIdentity":{"type":"IAMUser","userName":"Bob","principalId":"EX_PRINCIPAL_ID","arn":"arn:aws:iam::123456789012:user/Bob","accountId":"123456789012","accessKeyId":"AKIAIOSFODNN7EXAMPLE"},"eventTime":"2017-30-30T00:00:00Z","eventSource":"sns.amazonaws.com","eventName":"ListTopics","awsRegion":"us-west-2","sourceIPAddress":"127.0.0.1","userAgent":"aws-sdk-java/unknown-version","requestParameters":{"nextToken":"ABCDEF1234567890EXAMPLE=="},"responseElements":null,"requestID":"example1-b9bb-50fa-abdb-80f274981d60","eventID":"example0-09a3-47d6-a810-c5f9fd2534fe","eventType":"AwsApiCall","recipientAccountId":"123456789012"}
+        - |
+          {"eventType":"Open","mail":{"timestamp":"2018-05-30T13:47:23.041Z","source":"aa.bb@datadoghq.com","sendingAccountId":"123456712","messageId":"123456712-a6c4e5d5-14cf-4631-9359-123456712-000000","destination":["aa.bb@datadoghq.com"],"headersTruncated":false,"open":{"timestamp":"2018-05-30T13:52:22.817Z","userAgent":"Mozilla/5.0 (Windows NT 5.1; rv:11.0) Gecko Firefox/11.0 (via ggpht.com GoogleImageProxy)","ipAddress":"66.102.8.139"}}}
+

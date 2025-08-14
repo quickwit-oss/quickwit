@@ -1,0 +1,137 @@
+id: "mailgun"
+tests:
+ -
+  sample: |-
+    {
+      "signature" : {
+        "signature" : "e0bbd927be07339cbcd9c1fd42b27dd686bf57c8e4ab2614e6ee11eb6e9547c2",
+        "token" : "bf642a918030e08b62e6b201e2f589d1d5ecd133b2808d1323",
+        "timestamp" : "1663343369"
+      },
+      "event-data" : {
+        "client-info" : {
+          "client-os" : "Linux",
+          "device-type" : "desktop",
+          "client-type" : "browser",
+          "client-name" : "Chrome",
+          "user-agent" : "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.31 (KHTML, like Gecko) Chrome/26.0.1410.43 Safari/537.31"
+        },
+        "user-variables" : {
+          "my-var-2" : "awesome",
+          "my_var_1" : "Mailgun Variable #1"
+        },
+        "log-level" : "info",
+        "ip" : "50.56.129.169",
+        "recipient" : "alice@example.com",
+        "id" : "Ase7i2zsRYeDXztHGENqRA",
+        "recipient-domain" : "example.com",
+        "event" : "clicked",
+        "message" : {
+          "headers" : {
+            "message-id" : "20130503182626.18666.16540@sandboxf73d694b97ac487181855241e228d579.mailgun.org"
+          }
+        },
+        "timestamp" : 1.521243339873676E9,
+        "geolocation" : {
+          "country" : "US",
+          "city" : "San Francisco",
+          "region" : "CA"
+        },
+        "tags" : [ "my_tag_1", "my_tag_2" ]
+      }
+    }
+  result:
+    custom:
+      event-data:
+        client-info:
+          client-name: "Chrome"
+          client-os: "Linux"
+          client-type: "browser"
+          device-type: "desktop"
+          user-agent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.31 (KHTML, like Gecko) Chrome/26.0.1410.43 Safari/537.31"
+        geolocation:
+          city: "San Francisco"
+          country: "US"
+          region: "CA"
+        log-level: "info"
+        message:
+          headers:
+            message-id: "20130503182626.18666.16540@sandboxf73d694b97ac487181855241e228d579.mailgun.org"
+        recipient-domain: "example.com"
+        tags:
+         - "my_tag_1"
+         - "my_tag_2"
+        timestamp: 1.521243339873676E12
+        user-variables:
+          my-var-2: "awesome"
+          my_var_1: "Mailgun Variable #1"
+      evt:
+        name: "clicked"
+      http:
+        request_id: "Ase7i2zsRYeDXztHGENqRA"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "26"
+            minor: "0"
+            patch: "1410"
+            patch_minor: "43"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Linux"
+      network:
+        client:
+          geoip: {}
+          ip: "50.56.129.169"
+      signature:
+        signature: "e0bbd927be07339cbcd9c1fd42b27dd686bf57c8e4ab2614e6ee11eb6e9547c2"
+        timestamp: "1663343369"
+        token: "bf642a918030e08b62e6b201e2f589d1d5ecd133b2808d1323"
+      usr:
+        email: "alice@example.com"
+    message: |-
+      {
+        "signature" : {
+          "signature" : "e0bbd927be07339cbcd9c1fd42b27dd686bf57c8e4ab2614e6ee11eb6e9547c2",
+          "token" : "bf642a918030e08b62e6b201e2f589d1d5ecd133b2808d1323",
+          "timestamp" : "1663343369"
+        },
+        "event-data" : {
+          "client-info" : {
+            "client-os" : "Linux",
+            "device-type" : "desktop",
+            "client-type" : "browser",
+            "client-name" : "Chrome",
+            "user-agent" : "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.31 (KHTML, like Gecko) Chrome/26.0.1410.43 Safari/537.31"
+          },
+          "user-variables" : {
+            "my-var-2" : "awesome",
+            "my_var_1" : "Mailgun Variable #1"
+          },
+          "log-level" : "info",
+          "ip" : "50.56.129.169",
+          "recipient" : "alice@example.com",
+          "id" : "Ase7i2zsRYeDXztHGENqRA",
+          "recipient-domain" : "example.com",
+          "event" : "clicked",
+          "message" : {
+            "headers" : {
+              "message-id" : "20130503182626.18666.16540@sandboxf73d694b97ac487181855241e228d579.mailgun.org"
+            }
+          },
+          "timestamp" : 1.521243339873676E9,
+          "geolocation" : {
+            "country" : "US",
+            "city" : "San Francisco",
+            "region" : "CA"
+          },
+          "tags" : [ "my_tag_1", "my_tag_2" ]
+        }
+      }
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1521243339873
+

@@ -1,0 +1,399 @@
+id: ivanti-nzta
+tests:
+ -
+  sample: |-
+    {
+      "severity" : "INFO",
+      "controller" : false,
+      "device_id" : "",
+      "raw_message" : "Number of concurrent users logged in to the device: 1",
+      "user_name" : "System",
+      "session_id" : "",
+      "message_id" : "STS20641",
+      "gateway_id" : "",
+      "gateway_name" : "",
+      "source_ip" : "127.0.0.1",
+      "timestamp" : 1738821618
+    }
+  service: "event-logs"
+  result:
+    custom:
+      controller: false
+      device_id: ""
+      gateway_id: ""
+      gateway_name: ""
+      ivanti_nzta:
+        concurrent_users: 1
+      message_id: "STS20641"
+      network:
+        client:
+          ip:
+           - "127.0.0.1"
+      session_id: ""
+      severity: "INFO"
+      status: "Info"
+      timestamp: 1.738821618E12
+      usr:
+        name: "System"
+    message: "Number of concurrent users logged in to the device: 1"
+    service: "event-logs"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1738821618000
+ -
+  sample: |-
+    {
+      "severity" : "INFO",
+      "controller" : false,
+      "device_id" : "",
+      "raw_message" : "Number of NCP connections: 1",
+      "user_name" : "System",
+      "session_id" : "",
+      "message_id" : "STS30667",
+      "gateway_id" : "",
+      "gateway_name" : "",
+      "source_ip" : "127.0.0.1",
+      "timestamp" : 1738821618
+    }
+  service: "event-logs"
+  result:
+    custom:
+      controller: false
+      device_id: ""
+      gateway_id: ""
+      gateway_name: ""
+      ivanti_nzta:
+        connections: 1
+      message_id: "STS30667"
+      network:
+        client:
+          ip:
+           - "127.0.0.1"
+      session_id: ""
+      severity: "INFO"
+      status: "Info"
+      timestamp: 1.738821618E12
+      usr:
+        name: "System"
+    message: "Number of NCP connections: 1"
+    service: "event-logs"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1738821618000
+ -
+  sample: |-
+    {
+      "severity" : "CRITICAL",
+      "controller" : false,
+      "device_id" : "",
+      "raw_message" : "API GET call failed for resource [http://example.com?include_secret=true] with response code [404].",
+      "user_name" : "test_user",
+      "session_id" : "",
+      "message_id" : "SYS32021",
+      "gateway_id" : "",
+      "gateway_name" : "",
+      "source_ip" : "10.10.10.10, 20.20.20.20",
+      "timestamp" : 1738659494
+    }
+  service: "event-logs"
+  result:
+    custom:
+      controller: false
+      device_id: ""
+      gateway_id: ""
+      gateway_name: ""
+      http:
+        method: "GET"
+        status_code: 404
+        url: "http://example.com?include_secret=true"
+      message_id: "SYS32021"
+      network:
+        client:
+          ip:
+           - "10.10.10.10"
+           - "20.20.20.20"
+      session_id: ""
+      severity: "CRITICAL"
+      status: "Critical"
+      timestamp: 1.738659494E12
+      usr:
+        name: "test_user"
+    message: "API GET call failed for resource [http://example.com?include_secret=true] with response code [404]."
+    service: "event-logs"
+    status: "critical"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1738659494000
+ -
+  sample: |-
+    {
+      "severity" : "CRITICAL",
+      "controller" : false,
+      "device_id" : "",
+      "raw_message" : "Readiness failed. Details: Notification Channel Connectivity NOT Healthy.",
+      "user_name" : "system",
+      "session_id" : "",
+      "message_id" : "SYS31982",
+      "gateway_id" : "test_gateway_id",
+      "gateway_name" : "test_gateway",
+      "source_ip" : "127.0.0.1",
+      "timestamp" : 1738659494
+    }
+  service: "event-logs"
+  result:
+    custom:
+      controller: false
+      details: "Notification Channel Connectivity NOT Healthy."
+      device_id: ""
+      gateway_id: "test_gateway_id"
+      gateway_name: "test_gateway"
+      message_id: "SYS31982"
+      network:
+        client:
+          ip:
+           - "127.0.0.1"
+      session_id: ""
+      severity: "CRITICAL"
+      status: "Critical"
+      timestamp: 1.738659494E12
+      usr:
+        name: "system"
+    message: "Readiness failed. Details: Notification Channel Connectivity NOT Healthy."
+    service: "event-logs"
+    status: "critical"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1738659494000
+ -
+  sample: |-
+    {
+      "severity" : "INFO",
+      "controller" : false,
+      "device_id" : "",
+      "raw_message" : "Primary authentication failed for test_user/User Auth from 10.10.10.10",
+      "user_name" : "test_user",
+      "session_id" : "",
+      "message_id" : "AUT24327",
+      "gateway_id" : "",
+      "gateway_name" : "",
+      "source_ip" : "10.10.10.10",
+      "timestamp" : 1738659494
+    }
+  service: "access-logs"
+  result:
+    custom:
+      controller: false
+      device_id: ""
+      gateway_id: ""
+      gateway_name: ""
+      message_id: "AUT24327"
+      network:
+        client:
+          ip: "10.10.10.10"
+      realm_name: "User Auth"
+      session_id: ""
+      severity: "INFO"
+      status: "Info"
+      timestamp: 1.738659494E12
+      usr:
+        name: "test_user"
+    message: "Primary authentication failed for test_user/User Auth from 10.10.10.10"
+    service: "access-logs"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1738659494000
+ -
+  sample: |-
+    {
+      "severity" : "INFO",
+      "controller" : true,
+      "device_id" : "",
+      "raw_message" : "Login failed using auth server Admin Auth (Local Authentication). Reason: Invalid Credentials",
+      "user_name" : "test_user",
+      "session_id" : "",
+      "message_id" : "AUT23458",
+      "gateway_id" : "",
+      "gateway_name" : "",
+      "source_ip" : "10.10.10.10",
+      "timestamp" : 1738659494
+    }
+  service: "admin-logs"
+  result:
+    custom:
+      auth_method: "Local Authentication"
+      auth_server: "Admin Auth"
+      controller: true
+      device_id: ""
+      gateway_id: ""
+      gateway_name: ""
+      message_id: "AUT23458"
+      network:
+        client:
+          ip:
+           - "10.10.10.10"
+      reason: "Invalid Credentials"
+      session_id: ""
+      severity: "INFO"
+      status: "Info"
+      timestamp: 1.738659494E12
+      usr:
+        name: "test_user"
+    message: "Login failed using auth server Admin Auth (Local Authentication). Reason: Invalid Credentials"
+    service: "admin-logs"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1738659494000
+ -
+  sample: |-
+    {
+      "severity" : "INFO",
+      "controller" : false,
+      "device_id" : "",
+      "raw_message" : "Created (Authentication > Auth Servers > Auth Server[Admin Auth] > Local Authentication > Users > User[test_user]) with the following attributes: [Username=test_user] [Full name=Test user] [Email address=test_user@example.com] [Password=*****] [Password=*****] [Password Salt=*****] [Password Salt=*****] [Password Hash Format=strong-hash] [One-time user=false] [console-access=false] [Enabled=true] [Require user to change password at next sign in=false]",
+      "user_name" : "System",
+      "session_id" : "",
+      "message_id" : "ADM24595",
+      "gateway_id" : "",
+      "gateway_name" : "",
+      "source_ip" : "127.0.0.1",
+      "timestamp" : 1738319025
+    }
+  service: "admin-logs"
+  result:
+    custom:
+      console_access: false
+      controller: false
+      device_id: ""
+      full_name: "Test user"
+      gateway_id: ""
+      gateway_name: ""
+      is_enabled: true
+      message_id: "ADM24595"
+      network:
+        client:
+          ip:
+           - "127.0.0.1"
+      one_time_user: false
+      password_hash_format: "strong-hash"
+      session_id: ""
+      severity: "INFO"
+      status: "Info"
+      timestamp: 1.738319025E12
+      user_name: "test_user"
+      usr:
+        email: "test_user@example.com"
+        name: "System"
+    message: "Created (Authentication > Auth Servers > Auth Server[Admin Auth] > Local Authentication > Users > User[test_user]) with the following attributes: [Username=test_user] [Full name=Test user] [Email address=test_user@example.com] [Password=*****] [Password=*****] [Password Salt=*****] [Password Salt=*****] [Password Hash Format=strong-hash] [One-time user=false] [console-access=false] [Enabled=true] [Require user to change password at next sign in=false]"
+    service: "admin-logs"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1738319025000
+ -
+  sample: |-
+    {
+      "severity" : "information",
+      "message_type" : "AAA journal update successful, changes for update default session timeouts applied.",
+      "type" : "journal.success",
+      "source_name" : "",
+      "target" : "",
+      "timestamp" : 1738738965
+    }
+  service: "alerts"
+  result:
+    custom:
+      severity: "information"
+      source_name: ""
+      target: ""
+      timestamp: 1.738738965E12
+      type: "journal.success"
+    message: "AAA journal update successful, changes for update default session timeouts applied."
+    service: "alerts"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1738738965000
+ -
+  sample: |-
+    {
+      "severity" : "INFO",
+      "controller" : false,
+      "device_id" : "",
+      "raw_message" : "Closed connection to 10.10.10.10 after 360 seconds, with 7200 bytes read and 98885 bytes written",
+      "user_name" : "test_user",
+      "session_id" : "",
+      "message_id" : "NWC30993",
+      "gateway_id" : "",
+      "gateway_name" : "",
+      "source_ip" : "10.10.10.10",
+      "timestamp" : 1738659494
+    }
+  service: "access-logs"
+  result:
+    custom:
+      controller: false
+      device_id: ""
+      gateway_id: ""
+      gateway_name: ""
+      ivanti_nzta:
+        duration: 360.0
+      message_id: "NWC30993"
+      network:
+        bytes_read: 7200
+        bytes_written: 98885
+        client:
+          ip: "10.10.10.10"
+      session_id: ""
+      severity: "INFO"
+      status: "Info"
+      timestamp: 1.738659494E12
+      usr:
+        name: "test_user"
+    message: "Closed connection to 10.10.10.10 after 360 seconds, with 7200 bytes read and 98885 bytes written"
+    service: "access-logs"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1738659494000
+ -
+  sample: |-
+    {
+      "severity" : "INFO",
+      "controller" : false,
+      "device_id" : "",
+      "raw_message" : "VPN Tunneling: Session started for user  (session: sid34be074433c8d03d41ed12109d98bb4a4e16b02a4dca7dcd) with IPv4 address 10.10.10.10, hostname localhost",
+      "user_name" : "test_user",
+      "session_id" : "",
+      "message_id" : "NWC23464",
+      "gateway_id" : "",
+      "gateway_name" : "",
+      "source_ip" : "10.10.10.10",
+      "timestamp" : 1738659494
+    }
+  service: "access-logs"
+  result:
+    custom:
+      controller: false
+      device_id: ""
+      gateway_id: ""
+      gateway_name: ""
+      hostname: "localhost"
+      message_id: "NWC23464"
+      network:
+        client:
+          ip: "10.10.10.10"
+      session_id: "sid34be074433c8d03d41ed12109d98bb4a4e16b02a4dca7dcd"
+      severity: "INFO"
+      status: "Info"
+      timestamp: 1.738659494E12
+      usr:
+        name: "test_user"
+    message: "VPN Tunneling: Session started for user  (session: sid34be074433c8d03d41ed12109d98bb4a4e16b02a4dca7dcd) with IPv4 address 10.10.10.10, hostname localhost"
+    service: "access-logs"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1738659494000

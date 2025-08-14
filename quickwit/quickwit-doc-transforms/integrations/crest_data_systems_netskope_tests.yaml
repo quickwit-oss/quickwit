@@ -1,0 +1,1419 @@
+id: "crest_data_systems_netskope"
+tests:
+ -
+  sample: |-
+    {
+      "cds-netskope-category" : "Generative AI",
+      "cds-netskope-application-id" : "b65d067d36ed9d2c6cab0c59",
+      "cds-netskope-device-classification" : "not configured",
+      "cds-netskope-browser" : "Chrome",
+      "cds-netskope-user" : "abc.xyz@demoorg.com",
+      "cds-netskope-activity" : "Browse",
+      "cds-netskope-device" : "Mac Device",
+      "cds-netskope-ccl" : "medium",
+      "cds-netskope-app" : "Grammarly",
+      "cds-netskope-access-method" : "Client",
+      "cds-netskope-os" : "Sonoma",
+      "timestamp" : "2024-02-28T21:57:28Z"
+    }
+  result:
+    custom:
+      cds-netskope-access-method: "Client"
+      cds-netskope-app: "Grammarly"
+      cds-netskope-application-id: "b65d067d36ed9d2c6cab0c59"
+      cds-netskope-category: "Generative AI"
+      cds-netskope-ccl: "medium"
+      cds-netskope-device-classification: "not configured"
+      evt:
+        name: "Browse"
+      http:
+        useragent_details:
+          browser:
+            family: "Chrome"
+          device:
+            family: "Mac Device"
+          os:
+            family: "Sonoma"
+      timestamp: "2024-02-28T21:57:28Z"
+      usr:
+        email: "abc.xyz@demoorg.com"
+    message: |-
+      {
+        "cds-netskope-category" : "Generative AI",
+        "cds-netskope-application-id" : "b65d067d36ed9d2c6cab0c59",
+        "cds-netskope-device-classification" : "not configured",
+        "cds-netskope-browser" : "Chrome",
+        "cds-netskope-user" : "abc.xyz@demoorg.com",
+        "cds-netskope-activity" : "Browse",
+        "cds-netskope-device" : "Mac Device",
+        "cds-netskope-ccl" : "medium",
+        "cds-netskope-app" : "Grammarly",
+        "cds-netskope-access-method" : "Client",
+        "cds-netskope-os" : "Sonoma",
+        "timestamp" : "2024-02-28T21:57:28Z"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1709157448000
+ -
+  sample: |-
+    {
+      "cds-netskope-client-id" : "fqi696bF4kAd24u9yAtt_7BC79615-6BA3-008B-82A4-94430A0E9C28",
+      "cds-netskope-os-version" : "11.0.22631",
+      "cds-netskope-host-info" : {
+        "device-make" : "LENOVO",
+        "device-model" : "20VE",
+        "last-hostinfo-update-timestamp" : "1709186302",
+        "migrated-revision" : "v1",
+        "hostname" : "ABC922-2157",
+        "serialNumber" : "MP2352G0",
+        "nsdeviceuid" : "7BC79615-6BA3-008B-82A4-94430A0E9C28",
+        "managementID" : "-",
+        "old-nsdeviceuid" : "-"
+      },
+      "cds-netskope-last-event-service-name" : "Internet Security",
+      "usr" : {
+        "name" : [ "pqr.dfg@demoorg.com" ]
+      },
+      "cds-netskope-device-id" : "fqi696bF4kAd24u9yAtt_7BC79615-6BA3-008B-82A4-94430A0E9C28",
+      "cds-netskope-client-install-time" : 1700575299,
+      "cds-netskope-client-version" : "111.1.0.1994",
+      "cds-netskope-last-event" : {
+        "actor" : "System",
+        "service-name" : "Internet Security",
+        "npa-status" : "Disabled",
+        "event" : "Tunnel Up",
+        "status-v2" : "Enabled",
+        "status" : "Enabled",
+        "timestamp" : 1709206063
+      },
+      "cds-netskope-os" : "Windows"
+    }
+  result:
+    custom:
+      cds-netskope-client-id: "fqi696bF4kAd24u9yAtt_7BC79615-6BA3-008B-82A4-94430A0E9C28"
+      cds-netskope-client-install-time: 1700575299
+      cds-netskope-client-version: "111.1.0.1994"
+      cds-netskope-device-id: "fqi696bF4kAd24u9yAtt_7BC79615-6BA3-008B-82A4-94430A0E9C28"
+      cds-netskope-host-info:
+        device-make: "LENOVO"
+        device-model: "20VE"
+        hostname: "ABC922-2157"
+        last-hostinfo-update-timestamp: "1709186302"
+        managementID: "-"
+        migrated-revision: "v1"
+        nsdeviceuid: "7BC79615-6BA3-008B-82A4-94430A0E9C28"
+        old-nsdeviceuid: "-"
+        serialNumber: "MP2352G0"
+      cds-netskope-last-event:
+        actor: "System"
+        event: "Tunnel Up"
+        npa-status: "Disabled"
+        service-name: "Internet Security"
+        status: "Enabled"
+        status-v2: "Enabled"
+        timestamp: 1709206063
+      cds-netskope-last-event-service-name: "Internet Security"
+      cds-netskope-os-version: "11.0.22631"
+      http:
+        useragent_details:
+          os:
+            family: "Windows"
+      usr:
+        name:
+         - "pqr.dfg@demoorg.com"
+    message: |-
+      {
+        "cds-netskope-client-id" : "fqi696bF4kAd24u9yAtt_7BC79615-6BA3-008B-82A4-94430A0E9C28",
+        "cds-netskope-os-version" : "11.0.22631",
+        "cds-netskope-host-info" : {
+          "device-make" : "LENOVO",
+          "device-model" : "20VE",
+          "last-hostinfo-update-timestamp" : "1709186302",
+          "migrated-revision" : "v1",
+          "hostname" : "ABC922-2157",
+          "serialNumber" : "MP2352G0",
+          "nsdeviceuid" : "7BC79615-6BA3-008B-82A4-94430A0E9C28",
+          "managementID" : "-",
+          "old-nsdeviceuid" : "-"
+        },
+        "cds-netskope-last-event-service-name" : "Internet Security",
+        "usr" : {
+          "name" : [ "pqr.dfg@demoorg.com" ]
+        },
+        "cds-netskope-device-id" : "fqi696bF4kAd24u9yAtt_7BC79615-6BA3-008B-82A4-94430A0E9C28",
+        "cds-netskope-client-install-time" : 1700575299,
+        "cds-netskope-client-version" : "111.1.0.1994",
+        "cds-netskope-last-event" : {
+          "actor" : "System",
+          "service-name" : "Internet Security",
+          "npa-status" : "Disabled",
+          "event" : "Tunnel Up",
+          "status-v2" : "Enabled",
+          "status" : "Enabled",
+          "timestamp" : 1709206063
+        },
+        "cds-netskope-os" : "Windows"
+      }
+    tags:
+      - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "cds-netskope-source-location" : "Vadodara",
+      "cds-netskope-destination-location" : "Mountain View",
+      "cds-netskope-source-ip" : "21.33.111.10",
+      "cds-netskope-page" : "chat.google.com",
+      "cds-netskope-connection-starttime" : 1709152991,
+      "cds-netskope-app" : "Google Chat",
+      "cds-netskope-connection-id" : "dad581de470d275100c0b9e9",
+      "cds-netskope-domain" : "chat.google.com",
+      "cds-netskope-access-method" : "Client",
+      "cds-netskope-source-region" : "Gujarat",
+      "cds-netskope-site" : "Google Chat",
+      "cds-netskope-connection-endtime" : 1709153900,
+      "cds-netskope-cci" : 93,
+      "cds-netskope-user" : "ers.sjd@demoorgcom",
+      "cds-netskope-host-name" : "ABC34-1301",
+      "cds-netskope-device" : "Mac Device",
+      "cds-netskope-destination-country" : "US",
+      "cds-netskope-destination-timezone" : "America/Los_Angeles",
+      "cds-netskope-source-zipcode" : "390001",
+      "cds-netskope-user-ip" : "10.10.11.11",
+      "cds-netskope-ccl" : "excellent",
+      "cds-netskope-bytes" : 444933,
+      "cds-netskope-destination-region" : "California",
+      "timestamp" : "2024-02-28T20:43:11Z",
+      "cds-netskope-bypass-traffic" : "no",
+      "cds-netskope-os-version" : "Mac OSX 14.0.0",
+      "cds-netskope-source-time" : "Thu Feb 29 02:12:08 2024",
+      "cds-netskope-browser" : "Chrome",
+      "cds-netskope-connection-duration" : 909,
+      "cds-netskope-type" : "connection",
+      "cds-netskope-organization-unit" : "DEMOORG.LOCAL/DEMO/AllUsers",
+      "cds-netskope-user-generated" : "no",
+      "cds-netskope-server-bytes" : 89122,
+      "cds-netskope-protocol" : "HTTP/1.1",
+      "cds-netskope-count" : 1,
+      "cds-netskope-traffic-type" : "CloudApp",
+      "cds-netskope-user-normalized" : "ers.sjd@demoorgcom",
+      "cds-netskope-destination-ip" : "111.22.33.44",
+      "cds-netskope-http-transactions" : 83,
+      "cds-netskope-destination-zipcode" : "N/A",
+      "cds-netskope-destination-port" : 443,
+      "cds-netskope-source-country" : "IN",
+      "cds-netskope-browser-version" : "122.0.0.0",
+      "cds-netskope-source-timezone" : "Asia/Kolkata",
+      "cds-netskope-client-bytes" : 355811,
+      "cds-netskope-url" : "chat.google.com",
+      "cds-netskope-app-category" : "Collaboration",
+      "cds-netskope-os" : "Sonoma"
+    }
+  result:
+    custom:
+      cds-netskope-access-method: "Client"
+      cds-netskope-app: "Google Chat"
+      cds-netskope-app-category: "Collaboration"
+      cds-netskope-browser-version: "122.0.0.0"
+      cds-netskope-bypass-traffic: "no"
+      cds-netskope-bytes: 444933
+      cds-netskope-cci: 93
+      cds-netskope-ccl: "excellent"
+      cds-netskope-client-bytes: 355811
+      cds-netskope-connection-duration: 909
+      cds-netskope-connection-endtime: 1709153900
+      cds-netskope-connection-id: "dad581de470d275100c0b9e9"
+      cds-netskope-connection-starttime: 1709152991
+      cds-netskope-count: 1
+      cds-netskope-destination-region: "California"
+      cds-netskope-destination-timezone: "America/Los_Angeles"
+      cds-netskope-destination-zipcode: "N/A"
+      cds-netskope-host-name: "ABC34-1301"
+      cds-netskope-http-transactions: 83
+      cds-netskope-organization-unit: "DEMOORG.LOCAL/DEMO/AllUsers"
+      cds-netskope-os-version: "Mac OSX 14.0.0"
+      cds-netskope-page: "chat.google.com"
+      cds-netskope-protocol: "HTTP/1.1"
+      cds-netskope-server-bytes: 89122
+      cds-netskope-site: "Google Chat"
+      cds-netskope-source-region: "Gujarat"
+      cds-netskope-source-time: "Thu Feb 29 02:12:08 2024"
+      cds-netskope-source-timezone: "Asia/Kolkata"
+      cds-netskope-source-zipcode: "390001"
+      cds-netskope-traffic-type: "CloudApp"
+      cds-netskope-type: "connection"
+      cds-netskope-url: "chat.google.com"
+      cds-netskope-user-generated: "no"
+      cds-netskope-user-ip: "10.10.11.11"
+      cds-netskope-user-normalized: "ers.sjd@demoorgcom"
+      http:
+        url_details:
+          host: "chat.google.com"
+        useragent_details:
+          browser:
+            family: "Chrome"
+          device:
+            family: "Mac Device"
+          os:
+            family: "Sonoma"
+      network:
+        client:
+          geoip:
+            city:
+              name: "Vadodara"
+            country:
+              iso_code: "IN"
+          ip: "21.33.111.10"
+        destination:
+          geoip:
+            city:
+              name: "Mountain View"
+            country:
+              iso_code: "US"
+          ip: "111.22.33.44"
+          port: 443
+      timestamp: "2024-02-28T20:43:11Z"
+      usr:
+        email: "ers.sjd@demoorgcom"
+    message: |-
+      {
+        "cds-netskope-source-location" : "Vadodara",
+        "cds-netskope-destination-location" : "Mountain View",
+        "cds-netskope-source-ip" : "21.33.111.10",
+        "cds-netskope-page" : "chat.google.com",
+        "cds-netskope-connection-starttime" : 1709152991,
+        "cds-netskope-app" : "Google Chat",
+        "cds-netskope-connection-id" : "dad581de470d275100c0b9e9",
+        "cds-netskope-domain" : "chat.google.com",
+        "cds-netskope-access-method" : "Client",
+        "cds-netskope-source-region" : "Gujarat",
+        "cds-netskope-site" : "Google Chat",
+        "cds-netskope-connection-endtime" : 1709153900,
+        "cds-netskope-cci" : 93,
+        "cds-netskope-user" : "ers.sjd@demoorgcom",
+        "cds-netskope-host-name" : "ABC34-1301",
+        "cds-netskope-device" : "Mac Device",
+        "cds-netskope-destination-country" : "US",
+        "cds-netskope-destination-timezone" : "America/Los_Angeles",
+        "cds-netskope-source-zipcode" : "390001",
+        "cds-netskope-user-ip" : "10.10.11.11",
+        "cds-netskope-ccl" : "excellent",
+        "cds-netskope-bytes" : 444933,
+        "cds-netskope-destination-region" : "California",
+        "timestamp" : "2024-02-28T20:43:11Z",
+        "cds-netskope-bypass-traffic" : "no",
+        "cds-netskope-os-version" : "Mac OSX 14.0.0",
+        "cds-netskope-source-time" : "Thu Feb 29 02:12:08 2024",
+        "cds-netskope-browser" : "Chrome",
+        "cds-netskope-connection-duration" : 909,
+        "cds-netskope-type" : "connection",
+        "cds-netskope-organization-unit" : "DEMOORG.LOCAL/DEMO/AllUsers",
+        "cds-netskope-user-generated" : "no",
+        "cds-netskope-server-bytes" : 89122,
+        "cds-netskope-protocol" : "HTTP/1.1",
+        "cds-netskope-count" : 1,
+        "cds-netskope-traffic-type" : "CloudApp",
+        "cds-netskope-user-normalized" : "ers.sjd@demoorgcom",
+        "cds-netskope-destination-ip" : "111.22.33.44",
+        "cds-netskope-http-transactions" : 83,
+        "cds-netskope-destination-zipcode" : "N/A",
+        "cds-netskope-destination-port" : 443,
+        "cds-netskope-source-country" : "IN",
+        "cds-netskope-browser-version" : "122.0.0.0",
+        "cds-netskope-source-timezone" : "Asia/Kolkata",
+        "cds-netskope-client-bytes" : 355811,
+        "cds-netskope-url" : "chat.google.com",
+        "cds-netskope-app-category" : "Collaboration",
+        "cds-netskope-os" : "Sonoma"
+      }
+    tags:
+      - "source:LOGS_SOURCE"
+    timestamp: 1709152991000
+ -
+  sample: |-
+    {
+      "cds-netskope-src-longitude" : 73.2043,
+      "cds-netskope-src-region" : "region1",
+      "cds-netskope-tss-mode" : "-",
+      "cds-netskope-page-site" : "ChatGPT",
+      "cds-netskope-dlp-fingerprint-match" : "-",
+      "cds-netskope-browser-session-id" : 3733509541305938604,
+      "cds-netskope-data-type" : "-",
+      "cds-netskope-file-size" : 1470,
+      "cds-netskope-channel" : "-",
+      "cds-netskope-access-method" : "Client",
+      "cds-netskope-file-password-protected" : "-",
+      "cds-netskope-owner-pdl" : "-",
+      "cds-netskope-dst-zipcode" : "N/A",
+      "cds-netskope-site" : "ChatGPT",
+      "cds-netskope-dlp-profile" : "Source Code All",
+      "cds-netskope-object" : "-",
+      "cds-netskope-dst-region" : "California",
+      "cds-netskope-web-universal-connector" : "-",
+      "cds-netskope-managed-app" : "no",
+      "cds-netskope-sanctioned-instance" : "-",
+      "cds-netskope-browser" : "Chrome",
+      "cds-netskope-parent-id" : "-",
+      "cds-netskope-violating-user-type" : "-",
+      "cds-netskope-type" : "nsplapolicy",
+      "cds-netskope-md5" : "***************************4fa0b",
+      "cds-netskope-message-size" : 0,
+      "cds-netskope-organization-unit" : "DEMOORG.LOCAL/DEMO/AllUsers",
+      "cds-netskope-from-storage" : "-",
+      "cds-netskope-request-id" : 2786441827694311168,
+      "cds-netskope-src-time" : "Thu Feb 29 10:18:08 2024",
+      "cds-netskope-activity" : "Post",
+      "cds-netskope-dst-timezone" : "America/Los_Angeles",
+      "cds-netskope-file-lang" : "ENGLISH",
+      "cds-netskope-url" : "chat.openai.com/backend-api/conversation",
+      "cds-netskope-file-category" : "-",
+      "cds-netskope-sub-type" : "-",
+      "cds-netskope-to-storage" : "-",
+      "cds-netskope-dst-location" : "San Francisco",
+      "cds-netskope-userPrincipalName" : "-",
+      "cds-netskope-page" : "chat.openai.com",
+      "cds-netskope-userCountry" : "-",
+      "cds-netskope-file-type" : "text/plain",
+      "cds-netskope-src-geoip-src" : 0,
+      "cds-netskope-incident-id" : 135697760126135706,
+      "cds-netskope-exposure" : "-",
+      "cds-netskope-mime-type" : "-",
+      "timestamp" : "2024-02-29T04:48:16Z",
+      "cds-netskope-category" : "AM-42231",
+      "cds-netskope-modified" : 0,
+      "cds-netskope-dst-geoip-src" : 0,
+      "cds-netskope-dstip" : "11.10.12.14",
+      "cds-netskope-dst-country" : "US",
+      "cds-netskope-object-id" : "-",
+      "cds-netskope-appsuite" : "-",
+      "cds-netskope-dlp-rule-count" : 0,
+      "cds-netskope-orignal-file-path" : "-",
+      "cds-netskope-src-latitude" : 22.3008,
+      "cds-netskope-file-path" : "-",
+      "cds-netskope-act-user" : "-",
+      "cds-netskope-dlp-incident-id" : 5185271854109405334,
+      "cds-netskope-true-obj-type" : "Plain Text file",
+      "cds-netskope-acked" : "false",
+      "cds-netskope-browser-version" : "122.0.0.0",
+      "cds-netskope-dlp-file" : "-",
+      "cds-netskope-severity" : "unknown",
+      "cds-netskope-displayName" : "-",
+      "cds-netskope-universal-connector" : "-",
+      "cds-netskope-os" : "Windows 11",
+      "cds-netskope-dlp-unique-count" : 0,
+      "cds-netskope-referer" : "https://chat.openai.com/c/74ece635-6968-4d6b-asf5-a71111177d45",
+      "cds-netskope-group" : "-",
+      "cds-netskope-src-zipcode" : "391101",
+      "cds-netskope-dlp-fingerprint-score" : 0,
+      "cds-netskope-dlp-parent-id" : 5185271854109405334,
+      "cds-netskope-app-session-id" : 7319719337635468173,
+      "cds-netskope-object-type" : "Message",
+      "cds-netskope-userkey" : "aa.crs@demoorg.com",
+      "cds-netskope-connection-id" : 3333773726302191075,
+      "cds-netskope-dlp-rule-score" : 0,
+      "cds-netskope-dst-latitude" : 37.775699615478516,
+      "cds-netskope-dst-longitude" : -122.39520263671875,
+      "cds-netskope-sAMAccountName" : "-",
+      "cds-netskope-user" : "aa.crs@demoorg.com",
+      "cds-netskope-collaborated" : "-",
+      "cds-netskope-local-sha256" : "-",
+      "cds-netskope-device" : "Windows Device",
+      "cds-netskope-device-classification" : "not configured",
+      "cds-netskope-managementID" : "-",
+      "cds-netskope-total-collaborator-count" : 0,
+      "cds-netskope-alert-type" : "DLP",
+      "cds-netskope-classification-name" : "-",
+      "cds-netskope-true-filetype" : "-",
+      "cds-netskope-srcip" : "111.11.22.33",
+      "cds-netskope-mail" : "-",
+      "cds-netskope-traffic-type" : "CloudApp",
+      "cds-netskope-to-user" : "-",
+      "cds-netskope-hostname" : "ABC845-1506",
+      "cds-netskope-policy" : "DEMOORG DLP Policy For ChatGPT",
+      "cds-netskope-violating-user" : "-",
+      "cds-netskope-app-category" : "AM-42231",
+      "cds-netskope-external-collaborator-count" : 0,
+      "cds-netskope-ur-normalized" : "aa.crs@demoorg.com",
+      "cds-netskope-true-obj-category" : "Text",
+      "cds-netskope-dlp-mail-parent-id" : "-",
+      "cds-netskope-dlp-rule" : "Source Code (All)",
+      "cds-netskope-alert-id" : "66a7a693fbe21b81eb5be342",
+      "cds-netskope-message-id" : "-",
+      "cds-netskope-scan-type" : "-",
+      "cds-netskope-smtp-to" : "-",
+      "cds-netskope-app" : "ChatGPT",
+      "cds-netskope-instance-id" : "demoorgcom",
+      "cds-netskope-sha256" : "7031cc76e4838d4a9db5210a43234b6ee9bd5xxxxxxx43ec8d584a30da0652f",
+      "cds-netskope-src-country" : "IN",
+      "cds-netskope-suppression-key" : "-",
+      "cds-netskope-user-ip" : "11.222.33.44",
+      "cds-netskope-ccl" : "low",
+      "cds-netskope-owner" : "-",
+      "cds-netskope-src-timezone" : "Asia/Kolkata",
+      "cds-netskope-os-version" : "Windows NT 11.0",
+      "cds-netskope-manager" : "-",
+      "cds-netskope-app-activity" : "-",
+      "cds-netskope-from-user" : "aa.crs@demoorg.com",
+      "cds-netskope-transaction-id" : 135697760126135706,
+      "cds-netskope-user-id" : "-",
+      "cds-netskope-src-location" : "loc1",
+      "cds-netskope-shared-domains" : "-",
+      "cds-netskope-instance" : "-",
+      "cds-netskope-bcc" : "-",
+      "cds-netskope-protocol" : "HTTPS/1.1",
+      "cds-netskope-dynamic-classification" : "-",
+      "cds-netskope-dlp-rule-severity" : "Medium",
+      "cds-netskope-policy-id" : "***************************624C6 2024-02-28 10:06:43.452592",
+      "cds-netskope-retro-scan-name" : "-",
+      "cds-netskope-shared-with" : "-",
+      "cds-netskope-alert" : "yes",
+      "cds-netskope-title" : "-",
+      "cds-netskope-true-type-id" : 2,
+      "cds-netskope-outer-doc-type" : 2,
+      "cds-netskope-dlp-fingerprint-classification" : "-",
+      "cds-netskope-file-cls-encrypted" : false,
+      "cds-netskope-action" : "alert",
+      "cds-netskope-alert-name" : "DEMOORG DLP Policy For ChatGPT",
+      "cds-netskope-dlp-is-unique-count" : "false"
+    }
+  result:
+    custom:
+      cds-netskope-access-method: "Client"
+      cds-netskope-acked: "false"
+      cds-netskope-act-user: "-"
+      cds-netskope-action: "alert"
+      cds-netskope-alert: "yes"
+      cds-netskope-alert-id: "66a7a693fbe21b81eb5be342"
+      cds-netskope-alert-name: "DEMOORG DLP Policy For ChatGPT"
+      cds-netskope-alert-type: "DLP"
+      cds-netskope-app: "ChatGPT"
+      cds-netskope-app-activity: "-"
+      cds-netskope-app-category: "AM-42231"
+      cds-netskope-app-session-id: 7319719337635468173
+      cds-netskope-appsuite: "-"
+      cds-netskope-bcc: "-"
+      cds-netskope-browser-session-id: 3733509541305938604
+      cds-netskope-browser-version: "122.0.0.0"
+      cds-netskope-category: "AM-42231"
+      cds-netskope-ccl: "low"
+      cds-netskope-channel: "-"
+      cds-netskope-classification-name: "-"
+      cds-netskope-collaborated: "-"
+      cds-netskope-connection-id: 3333773726302191075
+      cds-netskope-data-type: "-"
+      cds-netskope-device-classification: "not configured"
+      cds-netskope-displayName: "-"
+      cds-netskope-dlp-file: "-"
+      cds-netskope-dlp-fingerprint-classification: "-"
+      cds-netskope-dlp-fingerprint-match: "-"
+      cds-netskope-dlp-fingerprint-score: 0
+      cds-netskope-dlp-incident-id: 5185271854109405334
+      cds-netskope-dlp-is-unique-count: "false"
+      cds-netskope-dlp-mail-parent-id: "-"
+      cds-netskope-dlp-parent-id: 5185271854109405334
+      cds-netskope-dlp-profile: "Source Code All"
+      cds-netskope-dlp-rule: "Source Code (All)"
+      cds-netskope-dlp-rule-count: 0
+      cds-netskope-dlp-rule-score: 0
+      cds-netskope-dlp-rule-severity: "Medium"
+      cds-netskope-dlp-unique-count: 0
+      cds-netskope-dst-country: "US"
+      cds-netskope-dst-geoip-src: 0
+      cds-netskope-dst-latitude: 37.775699615478516
+      cds-netskope-dst-location: "San Francisco"
+      cds-netskope-dst-longitude: -122.39520263671875
+      cds-netskope-dst-region: "California"
+      cds-netskope-dst-timezone: "America/Los_Angeles"
+      cds-netskope-dst-zipcode: "N/A"
+      cds-netskope-dstip: "11.10.12.14"
+      cds-netskope-dynamic-classification: "-"
+      cds-netskope-exposure: "-"
+      cds-netskope-external-collaborator-count: 0
+      cds-netskope-file-category: "-"
+      cds-netskope-file-cls-encrypted: false
+      cds-netskope-file-lang: "ENGLISH"
+      cds-netskope-file-password-protected: "-"
+      cds-netskope-file-path: "-"
+      cds-netskope-file-size: 1470
+      cds-netskope-file-type: "text/plain"
+      cds-netskope-from-storage: "-"
+      cds-netskope-from-user: "aa.crs@demoorg.com"
+      cds-netskope-group: "-"
+      cds-netskope-hostname: "ABC845-1506"
+      cds-netskope-incident-id: 135697760126135706
+      cds-netskope-instance: "-"
+      cds-netskope-instance-id: "demoorgcom"
+      cds-netskope-local-sha256: "-"
+      cds-netskope-mail: "-"
+      cds-netskope-managed-app: "no"
+      cds-netskope-managementID: "-"
+      cds-netskope-manager: "-"
+      cds-netskope-md5: "***************************4fa0b"
+      cds-netskope-message-id: "-"
+      cds-netskope-message-size: 0
+      cds-netskope-mime-type: "-"
+      cds-netskope-modified: 0
+      cds-netskope-object: "-"
+      cds-netskope-object-id: "-"
+      cds-netskope-object-type: "Message"
+      cds-netskope-organization-unit: "DEMOORG.LOCAL/DEMO/AllUsers"
+      cds-netskope-orignal-file-path: "-"
+      cds-netskope-os-version: "Windows NT 11.0"
+      cds-netskope-outer-doc-type: 2
+      cds-netskope-owner: "-"
+      cds-netskope-owner-pdl: "-"
+      cds-netskope-page: "chat.openai.com"
+      cds-netskope-page-site: "ChatGPT"
+      cds-netskope-parent-id: "-"
+      cds-netskope-policy: "DEMOORG DLP Policy For ChatGPT"
+      cds-netskope-policy-id: "***************************624C6 2024-02-28 10:06:43.452592"
+      cds-netskope-protocol: "HTTPS/1.1"
+      cds-netskope-referer: "https://chat.openai.com/c/74ece635-6968-4d6b-asf5-a71111177d45"
+      cds-netskope-request-id: 2786441827694311168
+      cds-netskope-retro-scan-name: "-"
+      cds-netskope-sAMAccountName: "-"
+      cds-netskope-sanctioned-instance: "-"
+      cds-netskope-scan-type: "-"
+      cds-netskope-severity: "unknown"
+      cds-netskope-sha256: "7031cc76e4838d4a9db5210a43234b6ee9bd5xxxxxxx43ec8d584a30da0652f"
+      cds-netskope-shared-domains: "-"
+      cds-netskope-shared-with: "-"
+      cds-netskope-site: "ChatGPT"
+      cds-netskope-smtp-to: "-"
+      cds-netskope-src-country: "IN"
+      cds-netskope-src-geoip-src: 0
+      cds-netskope-src-latitude: 22.3008
+      cds-netskope-src-location: "loc1"
+      cds-netskope-src-longitude: 73.2043
+      cds-netskope-src-region: "region1"
+      cds-netskope-src-time: "Thu Feb 29 10:18:08 2024"
+      cds-netskope-src-timezone: "Asia/Kolkata"
+      cds-netskope-src-zipcode: "391101"
+      cds-netskope-srcip: "111.11.22.33"
+      cds-netskope-sub-type: "-"
+      cds-netskope-suppression-key: "-"
+      cds-netskope-title: "-"
+      cds-netskope-to-storage: "-"
+      cds-netskope-to-user: "-"
+      cds-netskope-total-collaborator-count: 0
+      cds-netskope-traffic-type: "CloudApp"
+      cds-netskope-transaction-id: 135697760126135706
+      cds-netskope-true-filetype: "-"
+      cds-netskope-true-obj-category: "Text"
+      cds-netskope-true-obj-type: "Plain Text file"
+      cds-netskope-true-type-id: 2
+      cds-netskope-tss-mode: "-"
+      cds-netskope-type: "nsplapolicy"
+      cds-netskope-universal-connector: "-"
+      cds-netskope-ur-normalized: "aa.crs@demoorg.com"
+      cds-netskope-url: "chat.openai.com/backend-api/conversation"
+      cds-netskope-user-id: "-"
+      cds-netskope-user-ip: "11.222.33.44"
+      cds-netskope-userCountry: "-"
+      cds-netskope-userPrincipalName: "-"
+      cds-netskope-userkey: "aa.crs@demoorg.com"
+      cds-netskope-violating-user: "-"
+      cds-netskope-violating-user-type: "-"
+      cds-netskope-web-universal-connector: "-"
+      evt:
+        name: "Post"
+      http:
+        useragent_details:
+          browser:
+            family: "Chrome"
+          device:
+            family: "Windows Device"
+          os:
+            family: "Windows 11"
+      timestamp: "2024-02-29T04:48:16Z"
+      usr:
+        email: "aa.crs@demoorg.com"
+    message: |-
+      {
+        "cds-netskope-src-longitude" : 73.2043,
+        "cds-netskope-src-region" : "region1",
+        "cds-netskope-tss-mode" : "-",
+        "cds-netskope-page-site" : "ChatGPT",
+        "cds-netskope-dlp-fingerprint-match" : "-",
+        "cds-netskope-browser-session-id" : 3733509541305938604,
+        "cds-netskope-data-type" : "-",
+        "cds-netskope-file-size" : 1470,
+        "cds-netskope-channel" : "-",
+        "cds-netskope-access-method" : "Client",
+        "cds-netskope-file-password-protected" : "-",
+        "cds-netskope-owner-pdl" : "-",
+        "cds-netskope-dst-zipcode" : "N/A",
+        "cds-netskope-site" : "ChatGPT",
+        "cds-netskope-dlp-profile" : "Source Code All",
+        "cds-netskope-object" : "-",
+        "cds-netskope-dst-region" : "California",
+        "cds-netskope-web-universal-connector" : "-",
+        "cds-netskope-managed-app" : "no",
+        "cds-netskope-sanctioned-instance" : "-",
+        "cds-netskope-browser" : "Chrome",
+        "cds-netskope-parent-id" : "-",
+        "cds-netskope-violating-user-type" : "-",
+        "cds-netskope-type" : "nsplapolicy",
+        "cds-netskope-md5" : "***************************4fa0b",
+        "cds-netskope-message-size" : 0,
+        "cds-netskope-organization-unit" : "DEMOORG.LOCAL/DEMO/AllUsers",
+        "cds-netskope-from-storage" : "-",
+        "cds-netskope-request-id" : 2786441827694311168,
+        "cds-netskope-src-time" : "Thu Feb 29 10:18:08 2024",
+        "cds-netskope-activity" : "Post",
+        "cds-netskope-dst-timezone" : "America/Los_Angeles",
+        "cds-netskope-file-lang" : "ENGLISH",
+        "cds-netskope-url" : "chat.openai.com/backend-api/conversation",
+        "cds-netskope-file-category" : "-",
+        "cds-netskope-sub-type" : "-",
+        "cds-netskope-to-storage" : "-",
+        "cds-netskope-dst-location" : "San Francisco",
+        "cds-netskope-userPrincipalName" : "-",
+        "cds-netskope-page" : "chat.openai.com",
+        "cds-netskope-userCountry" : "-",
+        "cds-netskope-file-type" : "text/plain",
+        "cds-netskope-src-geoip-src" : 0,
+        "cds-netskope-incident-id" : 135697760126135706,
+        "cds-netskope-exposure" : "-",
+        "cds-netskope-mime-type" : "-",
+        "timestamp" : "2024-02-29T04:48:16Z",
+        "cds-netskope-category" : "AM-42231",
+        "cds-netskope-modified" : 0,
+        "cds-netskope-dst-geoip-src" : 0,
+        "cds-netskope-dstip" : "11.10.12.14",
+        "cds-netskope-dst-country" : "US",
+        "cds-netskope-object-id" : "-",
+        "cds-netskope-appsuite" : "-",
+        "cds-netskope-dlp-rule-count" : 0,
+        "cds-netskope-orignal-file-path" : "-",
+        "cds-netskope-src-latitude" : 22.3008,
+        "cds-netskope-file-path" : "-",
+        "cds-netskope-act-user" : "-",
+        "cds-netskope-dlp-incident-id" : 5185271854109405334,
+        "cds-netskope-true-obj-type" : "Plain Text file",
+        "cds-netskope-acked" : "false",
+        "cds-netskope-browser-version" : "122.0.0.0",
+        "cds-netskope-dlp-file" : "-",
+        "cds-netskope-severity" : "unknown",
+        "cds-netskope-displayName" : "-",
+        "cds-netskope-universal-connector" : "-",
+        "cds-netskope-os" : "Windows 11",
+        "cds-netskope-dlp-unique-count" : 0,
+        "cds-netskope-referer" : "https://chat.openai.com/c/74ece635-6968-4d6b-asf5-a71111177d45",
+        "cds-netskope-group" : "-",
+        "cds-netskope-src-zipcode" : "391101",
+        "cds-netskope-dlp-fingerprint-score" : 0,
+        "cds-netskope-dlp-parent-id" : 5185271854109405334,
+        "cds-netskope-app-session-id" : 7319719337635468173,
+        "cds-netskope-object-type" : "Message",
+        "cds-netskope-userkey" : "aa.crs@demoorg.com",
+        "cds-netskope-connection-id" : 3333773726302191075,
+        "cds-netskope-dlp-rule-score" : 0,
+        "cds-netskope-dst-latitude" : 37.775699615478516,
+        "cds-netskope-dst-longitude" : -122.39520263671875,
+        "cds-netskope-sAMAccountName" : "-",
+        "cds-netskope-user" : "aa.crs@demoorg.com",
+        "cds-netskope-collaborated" : "-",
+        "cds-netskope-local-sha256" : "-",
+        "cds-netskope-device" : "Windows Device",
+        "cds-netskope-device-classification" : "not configured",
+        "cds-netskope-managementID" : "-",
+        "cds-netskope-total-collaborator-count" : 0,
+        "cds-netskope-alert-type" : "DLP",
+        "cds-netskope-classification-name" : "-",
+        "cds-netskope-true-filetype" : "-",
+        "cds-netskope-srcip" : "111.11.22.33",
+        "cds-netskope-mail" : "-",
+        "cds-netskope-traffic-type" : "CloudApp",
+        "cds-netskope-to-user" : "-",
+        "cds-netskope-hostname" : "ABC845-1506",
+        "cds-netskope-policy" : "DEMOORG DLP Policy For ChatGPT",
+        "cds-netskope-violating-user" : "-",
+        "cds-netskope-app-category" : "AM-42231",
+        "cds-netskope-external-collaborator-count" : 0,
+        "cds-netskope-ur-normalized" : "aa.crs@demoorg.com",
+        "cds-netskope-true-obj-category" : "Text",
+        "cds-netskope-dlp-mail-parent-id" : "-",
+        "cds-netskope-dlp-rule" : "Source Code (All)",
+        "cds-netskope-alert-id" : "66a7a693fbe21b81eb5be342",
+        "cds-netskope-message-id" : "-",
+        "cds-netskope-scan-type" : "-",
+        "cds-netskope-smtp-to" : "-",
+        "cds-netskope-app" : "ChatGPT",
+        "cds-netskope-instance-id" : "demoorgcom",
+        "cds-netskope-sha256" : "7031cc76e4838d4a9db5210a43234b6ee9bd5xxxxxxx43ec8d584a30da0652f",
+        "cds-netskope-src-country" : "IN",
+        "cds-netskope-suppression-key" : "-",
+        "cds-netskope-user-ip" : "11.222.33.44",
+        "cds-netskope-ccl" : "low",
+        "cds-netskope-owner" : "-",
+        "cds-netskope-src-timezone" : "Asia/Kolkata",
+        "cds-netskope-os-version" : "Windows NT 11.0",
+        "cds-netskope-manager" : "-",
+        "cds-netskope-app-activity" : "-",
+        "cds-netskope-from-user" : "aa.crs@demoorg.com",
+        "cds-netskope-transaction-id" : 135697760126135706,
+        "cds-netskope-user-id" : "-",
+        "cds-netskope-src-location" : "loc1",
+        "cds-netskope-shared-domains" : "-",
+        "cds-netskope-instance" : "-",
+        "cds-netskope-bcc" : "-",
+        "cds-netskope-protocol" : "HTTPS/1.1",
+        "cds-netskope-dynamic-classification" : "-",
+        "cds-netskope-dlp-rule-severity" : "Medium",
+        "cds-netskope-policy-id" : "***************************624C6 2024-02-28 10:06:43.452592",
+        "cds-netskope-retro-scan-name" : "-",
+        "cds-netskope-shared-with" : "-",
+        "cds-netskope-alert" : "yes",
+        "cds-netskope-title" : "-",
+        "cds-netskope-true-type-id" : 2,
+        "cds-netskope-outer-doc-type" : 2,
+        "cds-netskope-dlp-fingerprint-classification" : "-",
+        "cds-netskope-file-cls-encrypted" : false,
+        "cds-netskope-action" : "alert",
+        "cds-netskope-alert-name" : "DEMOORG DLP Policy For ChatGPT",
+        "cds-netskope-dlp-is-unique-count" : "false"
+      }
+    tags:
+      - "source:LOGS_SOURCE"
+    timestamp: 1709182096000
+ -
+  sample: |-
+    {
+      "cds-netskope-src-longitude" : 73.4033,
+      "cds-netskope-threat-match-field" : "-",
+      "cds-netskope-tss-mode" : "-",
+      "cds-netskope-q-admin" : "-",
+      "cds-netskope-page-site" : "SnapChat",
+      "cds-netskope-telemetry-app" : "-",
+      "cds-netskope-data-type" : "-",
+      "cds-netskope-access-method" : "Client",
+      "cds-netskope-threat-source-id" : 0,
+      "cds-netskope-dlp-fail-reason" : "-",
+      "cds-netskope-dst-region" : "Missouri",
+      "cds-netskope-object-count" : 0,
+      "cds-netskope-all-policy-matches" : "-",
+      "cds-netskope-activity-status" : "-",
+      "cds-netskope-parent-id" : "-",
+      "cds-netskope-redirect-url" : "-",
+      "cds-netskope-message-size" : 0,
+      "cds-netskope-organization-unit" : "DEMOORG.LOCAL/DEMO/AllUsers",
+      "cds-netskope-from-storage" : "-",
+      "cds-netskope-start-time" : "-",
+      "cds-netskope-activity" : "Browse",
+      "cds-netskope-to-object" : "-",
+      "cds-netskope-useragent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+      "cds-netskope-dst-timezone" : "America/Chicago",
+      "cds-netskope-sessionid" : "-",
+      "cds-netskope-file-category" : "-",
+      "cds-netskope-client-bytes" : 0,
+      "cds-netskope-to-storage" : "-",
+      "cds-netskope-conn-duration" : 0,
+      "cds-netskope-last-name" : "-",
+      "cds-netskope-notify-template" : "block_page.html",
+      "cds-netskope-page" : "tr.snapchat.com",
+      "cds-netskope-userCountry" : "-",
+      "cds-netskope-file-type" : "-",
+      "cds-netskope-remediation-profile" : "-",
+      "cds-netskope-incident-id" : 8731095855409577949,
+      "cds-netskope-exposure" : "-",
+      "cds-netskope-mime-type" : "-",
+      "timestamp" : "2024-02-29T06:02:11Z",
+      "cds-netskope-category" : "Social",
+      "cds-netskope-modified" : 0,
+      "cds-netskope-dst-geoip-src" : 0,
+      "cds-netskope-dstip" : "111.22.33.44",
+      "cds-netskope-dst-country" : "US",
+      "cds-netskope-tunnel-type" : "-",
+      "cds-netskope-other-categories" : [ "Content Server", "Social" ],
+      "cds-netskope-src-latitude" : 22.3008,
+      "cds-netskope-server-bytes" : 0,
+      "cds-netskope-log-file-name" : "-",
+      "cds-netskope-user-tmp" : "-",
+      "cds-netskope-malware-severity" : "-",
+      "cds-netskope-malware-name" : "-",
+      "cds-netskope-distinguishedName" : "-",
+      "cds-netskope-displayName" : "-",
+      "cds-netskope-from-object" : "-",
+      "cds-netskope-srcport" : 0,
+      "cds-netskope-protocol-port" : "-",
+      "cds-netskope-universal-connector" : "-",
+      "cds-netskope-os" : "Windows 11",
+      "cds-netskope-encrypt-failure" : "-",
+      "cds-netskope-referer" : "-",
+      "cds-netskope-group" : "-",
+      "cds-netskope-src-zipcode" : "390991",
+      "cds-netskope-profile-emails" : "-",
+      "cds-netskope-dst-longitude" : -94.5778,
+      "cds-netskope-quarantine-file-id" : "-",
+      "cds-netskope-app-scopes" : "-",
+      "cds-netskope-tss-fail-reason" : "-",
+      "cds-netskope-malsite-category" : "-",
+      "cds-netskope-numbytes" : 0,
+      "cds-netskope-device-classification" : "not configured",
+      "cds-netskope-managementID" : "-",
+      "cds-netskope-division" : "-",
+      "cds-netskope-traffic-type" : "CloudApp",
+      "cds-netskope-org" : "-",
+      "cds-netskope-hostname" : "ABC471-2216",
+      "cds-netskope-sfwder" : "-",
+      "cds-netskope-ur-normalized" : "ry.ssdd@demoorg.com",
+      "cds-netskope-q-instance" : "-",
+      "cds-netskope-message-id" : "-",
+      "cds-netskope-smtp-to" : "-",
+      "cds-netskope-scan-type" : "-",
+      "cds-netskope-custom-connector" : "-",
+      "cds-netskope-activity-type" : "-",
+      "cds-netskope-suppression-key" : "-",
+      "cds-netskope-user-ip" : "44.22.33.13",
+      "cds-netskope-os-version" : "Windows NT 11.0",
+      "cds-netskope-manager" : "-",
+      "cds-netskope-user-id" : "-",
+      "cds-netskope-trust-computer-checked" : "-",
+      "cds-netskope-src-location" : "loca3",
+      "cds-netskope-dst-host" : "-",
+      "cds-netskope-quarantine-profile-id" : "-",
+      "cds-netskope-malicious" : "-",
+      "cds-netskope-end-time" : "-",
+      "cds-netskope-action" : "block",
+      "cds-netskope-alert-name" : "DEMOORG Web Access Block Policy",
+      "cds-netskope-src-region" : "region1",
+      "cds-netskope-file-id" : "-",
+      "cds-netskope-browser-session-id" : 740361222407801911,
+      "cds-netskope-file-size" : 0,
+      "cds-netskope-event-type" : "-",
+      "cds-netskope-dst-zipcode" : "64184",
+      "cds-netskope-site" : "SnapChat",
+      "cds-netskope-ip-protocol" : "-",
+      "cds-netskope-dlp-profile" : "-",
+      "cds-netskope-object" : "-",
+      "cds-netskope-aggregated-user" : "-",
+      "cds-netskope-managed-app" : "no",
+      "cds-netskope-sanctioned-instance" : "-",
+      "cds-netskope-publisher-name" : "-",
+      "cds-netskope-browser" : "Chrome",
+      "cds-netskope-type" : "nspolicy",
+      "cds-netskope-md5" : "-",
+      "cds-netskope-sender" : "-",
+      "cds-netskope-malware-id" : "-",
+      "cds-netskope-request-id" : 2786479222276948224,
+      "cds-netskope-src-time" : "Thu Feb 29 11:32:00 2024",
+      "cds-netskope-malware-type" : "-",
+      "cds-netskope-q-original-filepath" : "-",
+      "cds-netskope-nsdeviceuid" : "-",
+      "cds-netskope-memberOf" : "-",
+      "cds-netskope-url" : "tr.snapchat.com/cm/i",
+      "cds-netskope-suppression-end-time" : 0,
+      "cds-netskope-dst-location" : "Kansas City",
+      "cds-netskope-network" : "-",
+      "cds-netskope-justification-type" : "-",
+      "cds-netskope-src-geoip-src" : 0,
+      "cds-netskope-sAMAccountType" : "-",
+      "cds-netskope-serial" : "-",
+      "cds-netskope-object-id" : "-",
+      "cds-netskope-client-packets" : 0,
+      "cds-netskope-appsuite" : "-",
+      "cds-netskope-orignal-file-path" : "-",
+      "cds-netskope-justification-reason" : "-",
+      "cds-netskope-file-path" : "-",
+      "cds-netskope-act-user" : "-",
+      "cds-netskope-acked" : "false",
+      "cds-netskope-browser-version" : "122.0.0.0",
+      "cds-netskope-forward-to-proxy-xau" : "-",
+      "cds-netskope-severity" : "unknown",
+      "cds-netskope-server-packets" : 0,
+      "cds-netskope-gateway" : "-",
+      "cds-netskope-tss-scan-failed" : "-",
+      "cds-netskope-TSS-scan" : "-",
+      "cds-netskope-req-cnt" : 0,
+      "cds-netskope-app-session-id" : 6523852111193938948,
+      "cds-netskope-object-type" : "-",
+      "cds-netskope-connection-id" : 7606549225224297305,
+      "cds-netskope-two-factor-auth" : "-",
+      "cds-netskope-dst-latitude" : 39.1027,
+      "cds-netskope-sAMAccountName" : "-",
+      "cds-netskope-quarantine-file-name" : "-",
+      "cds-netskope-user" : "ry.ssdd@demoorg.com",
+      "cds-netskope-q-original-shared" : "-",
+      "cds-netskope-device" : "Windows Device",
+      "cds-netskope-threat-match-value" : "-",
+      "cds-netskope-q-original-filename" : "-",
+      "cds-netskope-total-collaborator-count" : 0,
+      "cds-netskope-q-app" : "-",
+      "cds-netskope-quarantine-profile" : "-",
+      "cds-netskope-alert-type" : "policy",
+      "cds-netskope-srcip" : "111.22.33.45",
+      "cds-netskope-internal-collaborator-count" : 0,
+      "cds-netskope-mail" : "-",
+      "cds-netskope-q-original-version" : "-",
+      "cds-netskope-http-status" : "-",
+      "cds-netskope-count" : 1,
+      "cds-netskope-to-user" : "-",
+      "cds-netskope-tunnel-id" : "-",
+      "cds-netskope-policy" : "DEMOORG Web Access Block Policy",
+      "cds-netskope-dlp-scan-failed" : "-",
+      "cds-netskope-app-category" : "Social",
+      "cds-netskope-external-collaborator-count" : 0,
+      "cds-netskope-alert-id" : "ed443a7912660e42cd27c28a",
+      "cds-netskope-app" : "SnapChat",
+      "cds-netskope-risk-level" : "-",
+      "cds-netskope-instance-id" : "-",
+      "cds-netskope-cci" : 59,
+      "cds-netskope-src-country" : "IN",
+      "cds-netskope-session-duration" : 0,
+      "cds-netskope-network-session-id" : "-",
+      "cds-netskope-resp-cnt" : 0,
+      "cds-netskope-publisher-cn" : "-",
+      "cds-netskope-ccl" : "low",
+      "cds-netskope-owner" : "-",
+      "cds-netskope-Title" : "-",
+      "cds-netskope-src-timezone" : "Asia/Kolkata",
+      "cds-netskope-tunnel-up-time" : 0,
+      "cds-netskope-app-activity" : "-",
+      "cds-netskope-transaction-id" : 8731095855409577949,
+      "cds-netskope-from-user" : "-",
+      "cds-netskope-total-packets" : 0,
+      "cds-netskope-shared-domains" : "-",
+      "cds-netskope-bcc" : "-",
+      "cds-netskope-dst-port" : 443,
+      "cds-netskope-instance" : "-",
+      "cds-netskope-suppression-start-time" : 0,
+      "cds-netskope-protocol" : "HTTPS/1.1",
+      "cds-netskope-dynamic-classification" : "-",
+      "cds-netskope-policy-id" : "D3A344F450152222221D9CFD857624C6 2024-02-28 10:06:43.452592",
+      "cds-netskope-shared-with" : "-",
+      "cds-netskope-num-sessions" : 0,
+      "cds-netskope-alert" : "yes",
+      "cds-netskope-cc" : "-",
+      "cds-netskope-smtp-status" : "-"
+    }
+  result:
+    custom:
+      cds-netskope-TSS-scan: "-"
+      cds-netskope-Title: "-"
+      cds-netskope-access-method: "Client"
+      cds-netskope-acked: "false"
+      cds-netskope-act-user: "-"
+      cds-netskope-action: "block"
+      cds-netskope-activity-status: "-"
+      cds-netskope-activity-type: "-"
+      cds-netskope-aggregated-user: "-"
+      cds-netskope-alert: "yes"
+      cds-netskope-alert-id: "ed443a7912660e42cd27c28a"
+      cds-netskope-alert-name: "DEMOORG Web Access Block Policy"
+      cds-netskope-alert-type: "policy"
+      cds-netskope-all-policy-matches: "-"
+      cds-netskope-app: "SnapChat"
+      cds-netskope-app-activity: "-"
+      cds-netskope-app-category: "Social"
+      cds-netskope-app-scopes: "-"
+      cds-netskope-app-session-id: 6523852111193938948
+      cds-netskope-appsuite: "-"
+      cds-netskope-bcc: "-"
+      cds-netskope-browser-session-id: 740361222407801911
+      cds-netskope-browser-version: "122.0.0.0"
+      cds-netskope-category: "Social"
+      cds-netskope-cc: "-"
+      cds-netskope-cci: 59
+      cds-netskope-ccl: "low"
+      cds-netskope-client-bytes: 0
+      cds-netskope-client-packets: 0
+      cds-netskope-conn-duration: 0
+      cds-netskope-connection-id: 7606549225224297305
+      cds-netskope-count: 1
+      cds-netskope-custom-connector: "-"
+      cds-netskope-data-type: "-"
+      cds-netskope-device-classification: "not configured"
+      cds-netskope-displayName: "-"
+      cds-netskope-distinguishedName: "-"
+      cds-netskope-division: "-"
+      cds-netskope-dlp-fail-reason: "-"
+      cds-netskope-dlp-profile: "-"
+      cds-netskope-dlp-scan-failed: "-"
+      cds-netskope-dst-country: "US"
+      cds-netskope-dst-geoip-src: 0
+      cds-netskope-dst-host: "-"
+      cds-netskope-dst-latitude: 39.1027
+      cds-netskope-dst-location: "Kansas City"
+      cds-netskope-dst-longitude: -94.5778
+      cds-netskope-dst-port: 443
+      cds-netskope-dst-region: "Missouri"
+      cds-netskope-dst-timezone: "America/Chicago"
+      cds-netskope-dst-zipcode: "64184"
+      cds-netskope-dstip: "111.22.33.44"
+      cds-netskope-dynamic-classification: "-"
+      cds-netskope-encrypt-failure: "-"
+      cds-netskope-end-time: "-"
+      cds-netskope-event-type: "-"
+      cds-netskope-exposure: "-"
+      cds-netskope-external-collaborator-count: 0
+      cds-netskope-file-category: "-"
+      cds-netskope-file-id: "-"
+      cds-netskope-file-path: "-"
+      cds-netskope-file-size: 0
+      cds-netskope-file-type: "-"
+      cds-netskope-forward-to-proxy-xau: "-"
+      cds-netskope-from-object: "-"
+      cds-netskope-from-storage: "-"
+      cds-netskope-from-user: "-"
+      cds-netskope-gateway: "-"
+      cds-netskope-group: "-"
+      cds-netskope-hostname: "ABC471-2216"
+      cds-netskope-http-status: "-"
+      cds-netskope-incident-id: 8731095855409577949
+      cds-netskope-instance: "-"
+      cds-netskope-instance-id: "-"
+      cds-netskope-internal-collaborator-count: 0
+      cds-netskope-ip-protocol: "-"
+      cds-netskope-justification-reason: "-"
+      cds-netskope-justification-type: "-"
+      cds-netskope-last-name: "-"
+      cds-netskope-log-file-name: "-"
+      cds-netskope-mail: "-"
+      cds-netskope-malicious: "-"
+      cds-netskope-malsite-category: "-"
+      cds-netskope-malware-id: "-"
+      cds-netskope-malware-name: "-"
+      cds-netskope-malware-severity: "-"
+      cds-netskope-malware-type: "-"
+      cds-netskope-managed-app: "no"
+      cds-netskope-managementID: "-"
+      cds-netskope-manager: "-"
+      cds-netskope-md5: "-"
+      cds-netskope-memberOf: "-"
+      cds-netskope-message-id: "-"
+      cds-netskope-message-size: 0
+      cds-netskope-mime-type: "-"
+      cds-netskope-modified: 0
+      cds-netskope-network: "-"
+      cds-netskope-network-session-id: "-"
+      cds-netskope-notify-template: "block_page.html"
+      cds-netskope-nsdeviceuid: "-"
+      cds-netskope-num-sessions: 0
+      cds-netskope-numbytes: 0
+      cds-netskope-object: "-"
+      cds-netskope-object-count: 0
+      cds-netskope-object-id: "-"
+      cds-netskope-object-type: "-"
+      cds-netskope-org: "-"
+      cds-netskope-organization-unit: "DEMOORG.LOCAL/DEMO/AllUsers"
+      cds-netskope-orignal-file-path: "-"
+      cds-netskope-os-version: "Windows NT 11.0"
+      cds-netskope-other-categories:
+       - "Content Server"
+       - "Social"
+      cds-netskope-owner: "-"
+      cds-netskope-page: "tr.snapchat.com"
+      cds-netskope-page-site: "SnapChat"
+      cds-netskope-parent-id: "-"
+      cds-netskope-policy: "DEMOORG Web Access Block Policy"
+      cds-netskope-policy-id: "D3A344F450152222221D9CFD857624C6 2024-02-28 10:06:43.452592"
+      cds-netskope-profile-emails: "-"
+      cds-netskope-protocol: "HTTPS/1.1"
+      cds-netskope-protocol-port: "-"
+      cds-netskope-publisher-cn: "-"
+      cds-netskope-publisher-name: "-"
+      cds-netskope-q-admin: "-"
+      cds-netskope-q-app: "-"
+      cds-netskope-q-instance: "-"
+      cds-netskope-q-original-filename: "-"
+      cds-netskope-q-original-filepath: "-"
+      cds-netskope-q-original-shared: "-"
+      cds-netskope-q-original-version: "-"
+      cds-netskope-quarantine-file-id: "-"
+      cds-netskope-quarantine-file-name: "-"
+      cds-netskope-quarantine-profile: "-"
+      cds-netskope-quarantine-profile-id: "-"
+      cds-netskope-redirect-url: "-"
+      cds-netskope-referer: "-"
+      cds-netskope-remediation-profile: "-"
+      cds-netskope-req-cnt: 0
+      cds-netskope-request-id: 2786479222276948224
+      cds-netskope-resp-cnt: 0
+      cds-netskope-risk-level: "-"
+      cds-netskope-sAMAccountName: "-"
+      cds-netskope-sAMAccountType: "-"
+      cds-netskope-sanctioned-instance: "-"
+      cds-netskope-scan-type: "-"
+      cds-netskope-sender: "-"
+      cds-netskope-serial: "-"
+      cds-netskope-server-bytes: 0
+      cds-netskope-server-packets: 0
+      cds-netskope-session-duration: 0
+      cds-netskope-sessionid: "-"
+      cds-netskope-severity: "unknown"
+      cds-netskope-sfwder: "-"
+      cds-netskope-shared-domains: "-"
+      cds-netskope-shared-with: "-"
+      cds-netskope-site: "SnapChat"
+      cds-netskope-smtp-status: "-"
+      cds-netskope-smtp-to: "-"
+      cds-netskope-src-country: "IN"
+      cds-netskope-src-geoip-src: 0
+      cds-netskope-src-latitude: 22.3008
+      cds-netskope-src-location: "loca3"
+      cds-netskope-src-longitude: 73.4033
+      cds-netskope-src-region: "region1"
+      cds-netskope-src-time: "Thu Feb 29 11:32:00 2024"
+      cds-netskope-src-timezone: "Asia/Kolkata"
+      cds-netskope-src-zipcode: "390991"
+      cds-netskope-srcip: "111.22.33.45"
+      cds-netskope-srcport: 0
+      cds-netskope-start-time: "-"
+      cds-netskope-suppression-end-time: 0
+      cds-netskope-suppression-key: "-"
+      cds-netskope-suppression-start-time: 0
+      cds-netskope-telemetry-app: "-"
+      cds-netskope-threat-match-field: "-"
+      cds-netskope-threat-match-value: "-"
+      cds-netskope-threat-source-id: 0
+      cds-netskope-to-object: "-"
+      cds-netskope-to-storage: "-"
+      cds-netskope-to-user: "-"
+      cds-netskope-total-collaborator-count: 0
+      cds-netskope-total-packets: 0
+      cds-netskope-traffic-type: "CloudApp"
+      cds-netskope-transaction-id: 8731095855409577949
+      cds-netskope-trust-computer-checked: "-"
+      cds-netskope-tss-fail-reason: "-"
+      cds-netskope-tss-mode: "-"
+      cds-netskope-tss-scan-failed: "-"
+      cds-netskope-tunnel-id: "-"
+      cds-netskope-tunnel-type: "-"
+      cds-netskope-tunnel-up-time: 0
+      cds-netskope-two-factor-auth: "-"
+      cds-netskope-type: "nspolicy"
+      cds-netskope-universal-connector: "-"
+      cds-netskope-ur-normalized: "ry.ssdd@demoorg.com"
+      cds-netskope-url: "tr.snapchat.com/cm/i"
+      cds-netskope-user-id: "-"
+      cds-netskope-user-ip: "44.22.33.13"
+      cds-netskope-user-tmp: "-"
+      cds-netskope-userCountry: "-"
+      cds-netskope-useragent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+      evt:
+        name: "Browse"
+      http:
+        useragent_details:
+          browser:
+            family: "Chrome"
+          device:
+            family: "Windows Device"
+          os:
+            family: "Windows 11"
+      timestamp: "2024-02-29T06:02:11Z"
+      usr:
+        email: "ry.ssdd@demoorg.com"
+    message: |-
+      {
+        "cds-netskope-src-longitude" : 73.4033,
+        "cds-netskope-threat-match-field" : "-",
+        "cds-netskope-tss-mode" : "-",
+        "cds-netskope-q-admin" : "-",
+        "cds-netskope-page-site" : "SnapChat",
+        "cds-netskope-telemetry-app" : "-",
+        "cds-netskope-data-type" : "-",
+        "cds-netskope-access-method" : "Client",
+        "cds-netskope-threat-source-id" : 0,
+        "cds-netskope-dlp-fail-reason" : "-",
+        "cds-netskope-dst-region" : "Missouri",
+        "cds-netskope-object-count" : 0,
+        "cds-netskope-all-policy-matches" : "-",
+        "cds-netskope-activity-status" : "-",
+        "cds-netskope-parent-id" : "-",
+        "cds-netskope-redirect-url" : "-",
+        "cds-netskope-message-size" : 0,
+        "cds-netskope-organization-unit" : "DEMOORG.LOCAL/DEMO/AllUsers",
+        "cds-netskope-from-storage" : "-",
+        "cds-netskope-start-time" : "-",
+        "cds-netskope-activity" : "Browse",
+        "cds-netskope-to-object" : "-",
+        "cds-netskope-useragent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "cds-netskope-dst-timezone" : "America/Chicago",
+        "cds-netskope-sessionid" : "-",
+        "cds-netskope-file-category" : "-",
+        "cds-netskope-client-bytes" : 0,
+        "cds-netskope-to-storage" : "-",
+        "cds-netskope-conn-duration" : 0,
+        "cds-netskope-last-name" : "-",
+        "cds-netskope-notify-template" : "block_page.html",
+        "cds-netskope-page" : "tr.snapchat.com",
+        "cds-netskope-userCountry" : "-",
+        "cds-netskope-file-type" : "-",
+        "cds-netskope-remediation-profile" : "-",
+        "cds-netskope-incident-id" : 8731095855409577949,
+        "cds-netskope-exposure" : "-",
+        "cds-netskope-mime-type" : "-",
+        "timestamp" : "2024-02-29T06:02:11Z",
+        "cds-netskope-category" : "Social",
+        "cds-netskope-modified" : 0,
+        "cds-netskope-dst-geoip-src" : 0,
+        "cds-netskope-dstip" : "111.22.33.44",
+        "cds-netskope-dst-country" : "US",
+        "cds-netskope-tunnel-type" : "-",
+        "cds-netskope-other-categories" : [ "Content Server", "Social" ],
+        "cds-netskope-src-latitude" : 22.3008,
+        "cds-netskope-server-bytes" : 0,
+        "cds-netskope-log-file-name" : "-",
+        "cds-netskope-user-tmp" : "-",
+        "cds-netskope-malware-severity" : "-",
+        "cds-netskope-malware-name" : "-",
+        "cds-netskope-distinguishedName" : "-",
+        "cds-netskope-displayName" : "-",
+        "cds-netskope-from-object" : "-",
+        "cds-netskope-srcport" : 0,
+        "cds-netskope-protocol-port" : "-",
+        "cds-netskope-universal-connector" : "-",
+        "cds-netskope-os" : "Windows 11",
+        "cds-netskope-encrypt-failure" : "-",
+        "cds-netskope-referer" : "-",
+        "cds-netskope-group" : "-",
+        "cds-netskope-src-zipcode" : "390991",
+        "cds-netskope-profile-emails" : "-",
+        "cds-netskope-dst-longitude" : -94.5778,
+        "cds-netskope-quarantine-file-id" : "-",
+        "cds-netskope-app-scopes" : "-",
+        "cds-netskope-tss-fail-reason" : "-",
+        "cds-netskope-malsite-category" : "-",
+        "cds-netskope-numbytes" : 0,
+        "cds-netskope-device-classification" : "not configured",
+        "cds-netskope-managementID" : "-",
+        "cds-netskope-division" : "-",
+        "cds-netskope-traffic-type" : "CloudApp",
+        "cds-netskope-org" : "-",
+        "cds-netskope-hostname" : "ABC471-2216",
+        "cds-netskope-sfwder" : "-",
+        "cds-netskope-ur-normalized" : "ry.ssdd@demoorg.com",
+        "cds-netskope-q-instance" : "-",
+        "cds-netskope-message-id" : "-",
+        "cds-netskope-smtp-to" : "-",
+        "cds-netskope-scan-type" : "-",
+        "cds-netskope-custom-connector" : "-",
+        "cds-netskope-activity-type" : "-",
+        "cds-netskope-suppression-key" : "-",
+        "cds-netskope-user-ip" : "44.22.33.13",
+        "cds-netskope-os-version" : "Windows NT 11.0",
+        "cds-netskope-manager" : "-",
+        "cds-netskope-user-id" : "-",
+        "cds-netskope-trust-computer-checked" : "-",
+        "cds-netskope-src-location" : "loca3",
+        "cds-netskope-dst-host" : "-",
+        "cds-netskope-quarantine-profile-id" : "-",
+        "cds-netskope-malicious" : "-",
+        "cds-netskope-end-time" : "-",
+        "cds-netskope-action" : "block",
+        "cds-netskope-alert-name" : "DEMOORG Web Access Block Policy",
+        "cds-netskope-src-region" : "region1",
+        "cds-netskope-file-id" : "-",
+        "cds-netskope-browser-session-id" : 740361222407801911,
+        "cds-netskope-file-size" : 0,
+        "cds-netskope-event-type" : "-",
+        "cds-netskope-dst-zipcode" : "64184",
+        "cds-netskope-site" : "SnapChat",
+        "cds-netskope-ip-protocol" : "-",
+        "cds-netskope-dlp-profile" : "-",
+        "cds-netskope-object" : "-",
+        "cds-netskope-aggregated-user" : "-",
+        "cds-netskope-managed-app" : "no",
+        "cds-netskope-sanctioned-instance" : "-",
+        "cds-netskope-publisher-name" : "-",
+        "cds-netskope-browser" : "Chrome",
+        "cds-netskope-type" : "nspolicy",
+        "cds-netskope-md5" : "-",
+        "cds-netskope-sender" : "-",
+        "cds-netskope-malware-id" : "-",
+        "cds-netskope-request-id" : 2786479222276948224,
+        "cds-netskope-src-time" : "Thu Feb 29 11:32:00 2024",
+        "cds-netskope-malware-type" : "-",
+        "cds-netskope-q-original-filepath" : "-",
+        "cds-netskope-nsdeviceuid" : "-",
+        "cds-netskope-memberOf" : "-",
+        "cds-netskope-url" : "tr.snapchat.com/cm/i",
+        "cds-netskope-suppression-end-time" : 0,
+        "cds-netskope-dst-location" : "Kansas City",
+        "cds-netskope-network" : "-",
+        "cds-netskope-justification-type" : "-",
+        "cds-netskope-src-geoip-src" : 0,
+        "cds-netskope-sAMAccountType" : "-",
+        "cds-netskope-serial" : "-",
+        "cds-netskope-object-id" : "-",
+        "cds-netskope-client-packets" : 0,
+        "cds-netskope-appsuite" : "-",
+        "cds-netskope-orignal-file-path" : "-",
+        "cds-netskope-justification-reason" : "-",
+        "cds-netskope-file-path" : "-",
+        "cds-netskope-act-user" : "-",
+        "cds-netskope-acked" : "false",
+        "cds-netskope-browser-version" : "122.0.0.0",
+        "cds-netskope-forward-to-proxy-xau" : "-",
+        "cds-netskope-severity" : "unknown",
+        "cds-netskope-server-packets" : 0,
+        "cds-netskope-gateway" : "-",
+        "cds-netskope-tss-scan-failed" : "-",
+        "cds-netskope-TSS-scan" : "-",
+        "cds-netskope-req-cnt" : 0,
+        "cds-netskope-app-session-id" : 6523852111193938948,
+        "cds-netskope-object-type" : "-",
+        "cds-netskope-connection-id" : 7606549225224297305,
+        "cds-netskope-two-factor-auth" : "-",
+        "cds-netskope-dst-latitude" : 39.1027,
+        "cds-netskope-sAMAccountName" : "-",
+        "cds-netskope-quarantine-file-name" : "-",
+        "cds-netskope-user" : "ry.ssdd@demoorg.com",
+        "cds-netskope-q-original-shared" : "-",
+        "cds-netskope-device" : "Windows Device",
+        "cds-netskope-threat-match-value" : "-",
+        "cds-netskope-q-original-filename" : "-",
+        "cds-netskope-total-collaborator-count" : 0,
+        "cds-netskope-q-app" : "-",
+        "cds-netskope-quarantine-profile" : "-",
+        "cds-netskope-alert-type" : "policy",
+        "cds-netskope-srcip" : "111.22.33.45",
+        "cds-netskope-internal-collaborator-count" : 0,
+        "cds-netskope-mail" : "-",
+        "cds-netskope-q-original-version" : "-",
+        "cds-netskope-http-status" : "-",
+        "cds-netskope-count" : 1,
+        "cds-netskope-to-user" : "-",
+        "cds-netskope-tunnel-id" : "-",
+        "cds-netskope-policy" : "DEMOORG Web Access Block Policy",
+        "cds-netskope-dlp-scan-failed" : "-",
+        "cds-netskope-app-category" : "Social",
+        "cds-netskope-external-collaborator-count" : 0,
+        "cds-netskope-alert-id" : "ed443a7912660e42cd27c28a",
+        "cds-netskope-app" : "SnapChat",
+        "cds-netskope-risk-level" : "-",
+        "cds-netskope-instance-id" : "-",
+        "cds-netskope-cci" : 59,
+        "cds-netskope-src-country" : "IN",
+        "cds-netskope-session-duration" : 0,
+        "cds-netskope-network-session-id" : "-",
+        "cds-netskope-resp-cnt" : 0,
+        "cds-netskope-publisher-cn" : "-",
+        "cds-netskope-ccl" : "low",
+        "cds-netskope-owner" : "-",
+        "cds-netskope-Title" : "-",
+        "cds-netskope-src-timezone" : "Asia/Kolkata",
+        "cds-netskope-tunnel-up-time" : 0,
+        "cds-netskope-app-activity" : "-",
+        "cds-netskope-transaction-id" : 8731095855409577949,
+        "cds-netskope-from-user" : "-",
+        "cds-netskope-total-packets" : 0,
+        "cds-netskope-shared-domains" : "-",
+        "cds-netskope-bcc" : "-",
+        "cds-netskope-dst-port" : 443,
+        "cds-netskope-instance" : "-",
+        "cds-netskope-suppression-start-time" : 0,
+        "cds-netskope-protocol" : "HTTPS/1.1",
+        "cds-netskope-dynamic-classification" : "-",
+        "cds-netskope-policy-id" : "D3A344F450152222221D9CFD857624C6 2024-02-28 10:06:43.452592",
+        "cds-netskope-shared-with" : "-",
+        "cds-netskope-num-sessions" : 0,
+        "cds-netskope-alert" : "yes",
+        "cds-netskope-cc" : "-",
+        "cds-netskope-smtp-status" : "-"
+      }
+    tags:
+      - "source:LOGS_SOURCE"
+    timestamp: 1709186531000

@@ -1,0 +1,62 @@
+id: "jboss_wildfly"
+tests:
+ -
+  sample: "2019-04-24 07:04:23,431 ERROR [org.jboss.as.quickstarts.logging.LoggingExample] (default task-1) THIS IS AN ERROR MESSAGE"
+  result:
+    custom:
+      date: 1556089463431
+      level: "ERROR"
+      logger:
+        name: "org.jboss.as.quickstarts.logging.LoggingExample"
+        thread_name: "default task-1"
+    message: "2019-04-24 07:04:23,431 ERROR [org.jboss.as.quickstarts.logging.LoggingExample] (default task-1) THIS IS AN ERROR MESSAGE"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1556089463431
+ -
+  sample: "127.0.0.1 - - [24/Apr/2019:07:13:05 +0000] \"GET /jboss-logging/home.jsp HTTP/1.1\" 200 369"
+  result:
+    custom:
+      date: 1556089985000
+      http:
+        method: "GET"
+        status_category: "OK"
+        status_code: 200
+        url: "/jboss-logging/home.jsp"
+        url_details:
+          path: "/jboss-logging/home.jsp"
+        version: "1.1"
+      network:
+        bytes_written: 369
+        client:
+          ip: "127.0.0.1"
+    message: "127.0.0.1 - - [24/Apr/2019:07:13:05 +0000] \"GET /jboss-logging/home.jsp HTTP/1.1\" 200 369"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1556089985000
+ -
+  sample: "127.0.0.1 - john [24/Apr/2019:07:13:08 +0000] \"PUT /jboss-logging/ HTTP/1.1\" 403 169"
+  result:
+    custom:
+      date: 1556089988000
+      http:
+        auth: "john"
+        method: "PUT"
+        status_category: "warning"
+        status_code: 403
+        url: "/jboss-logging/"
+        url_details:
+          path: "/jboss-logging/"
+        version: "1.1"
+      network:
+        bytes_written: 169
+        client:
+          ip: "127.0.0.1"
+    message: "127.0.0.1 - john [24/Apr/2019:07:13:08 +0000] \"PUT /jboss-logging/ HTTP/1.1\" 403 169"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1556089988000
+

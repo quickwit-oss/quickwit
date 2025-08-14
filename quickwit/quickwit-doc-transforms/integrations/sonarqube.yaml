@@ -1,0 +1,156 @@
+id: sonarqube
+metric_id: sonarqube
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: Referer
+    path: http.referer
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: URL Host
+    path: http.url_details.host
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Web Access
+    name: URL Port
+    path: http.url_details.port
+    source: log
+  - groups:
+      - Web Access
+    name: URL scheme
+    path: http.url_details.scheme
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - Source Code
+    name: Component Name
+    path: application.id
+    source: log
+pipeline:
+  type: pipeline
+  name: SonarQube
+  enabled: true
+  filter:
+    query: source:sonarqube
+  processors:
+    - type: grok-parser
+      name: Parsing SonarQube logs
+      enabled: true
+      source: message
+      samples:
+        - 172.31.0.1 - Ayn [19/Oct/2020:15:04:57 +0000] "GET /api/components/search_projects?ps=1 HTTP/1.1" 200 96
+        - 192.168.0.1 - Karl [19/Oct/2020:15:10:53 +0000] "GET /api/rules/app HTTP/1.1" 200 - "http://localhost:9000/about" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.75 Safari/537.36" "AXVBaccM7n9dqy9dAAAF"
+        - 2020.10.13 22:05:25 INFO  ce[][o.s.ce.app.CeServer] Compute Engine is operational
+      grok:
+        supportRules: |
+          _auth %{notSpace:http.auth:nullIf("-")}
+          _bytes_written %{integer:network.bytes_written}
+          _client_ip %{ipOrHost:network.client.ip}
+          _version %{word}\/%{regex("\\d+\\.\\d+"):http.version}
+          _url %{notSpace:http.url}
+          _ident %{notSpace:http.ident:nullIf("-")}
+          _user_agent %{regex("[^\\\"]*"):http.useragent}
+          _referer %{notSpace:http.referer}
+          _status_code %{integer:http.status_code}
+          _method %{word:http.method}
+          _date_access %{date("dd/MMM/yyyy:HH:mm:ss Z"):date_access}
+
+          _date %{date("yyyy.MM.dd HH:mm:ss"):timestamp}
+          _level %{word:level}
+          _process %{word:application.id}
+          _thread_id %{regex("[^]]*"):logger.thread_id}
+          _logger_name %{regex("[^]]+"):logger.name}
+          _message %{regex("[\\S\\s]*"):message}
+        matchRules: |
+          access.common %{_client_ip} %{_ident} %{_auth} \[%{_date_access}\] "(?>%{_method} |)%{_url}(?> %{_version}|)" %{_status_code} (?>%{_bytes_written}|-)
+          access.combined %{access.common} "%{_referer}" "%{_user_agent}".*
+
+          sonarqube %{_date} %{_level} +%{_process}\[%{_thread_id}\]\[%{_logger_name}\] %{data:message}
+    - type: user-agent-parser
+      name: ''
+      enabled: true
+      sources:
+        - http.useragent
+      target: http.useragent_details
+      encoded: false
+    - type: url-parser
+      name: ''
+      enabled: true
+      sources:
+        - http.url
+      target: http.url_details
+    - type: date-remapper
+      name: Define `date_access`, `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - date_access
+        - timestamp
+    - type: category-processor
+      name: Categorise status code
+      enabled: true
+      categories:
+        - filter:
+            query: '@http.status_code:[200 TO 299]'
+          name: OK
+        - filter:
+            query: '@http.status_code:[300 TO 399]'
+          name: notice
+        - filter:
+            query: '@http.status_code:[400 TO 499]'
+          name: warning
+        - filter:
+            query: '@http.status_code:[500 TO 599]'
+          name: error
+      target: http.status_category
+    - type: status-remapper
+      name: Define `http.status_category`, `level` as the official status of the log
+      enabled: true
+      sources:
+        - http.status_category
+        - level
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message

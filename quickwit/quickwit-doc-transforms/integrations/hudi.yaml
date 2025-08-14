@@ -1,0 +1,65 @@
+id: hudi
+metric_id: hudi
+backend_only: false
+facets:
+  - groups:
+      - Source Code
+    name: Error Type
+    path: error.kind
+    source: log
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+pipeline:
+  type: pipeline
+  name: Hudi
+  enabled: true
+  filter:
+    query: source:hudi
+  processors:
+    - type: grok-parser
+      name: Parsing Hudi logs
+      enabled: true
+      source: message
+      samples:
+        - 2021-09-21 20:50:46,169 INFO  org.apache.hudi.timeline.service.TimelineService              - Starting Timeline server on port :41517
+        - 2021-08-31 17:11:14,001 ERROR HoodieDeltaStreamer - Got error running delta sync once. Shutting down
+        - 2021-09-21 20:50:45,546 INFO  org.apache.hudi.common.table.HoodieTableConfig                - Loading table properties from file:/tmp/hudi_table/.hoodie/hoodie.properties
+        - '2021-09-21 20:50:46,202 ERROR org.apache.hudi.metrics.JmxMetricsReporter                    - Jmx initialize failed:'
+      grok:
+        matchRules: |
+          hudi %{date("yyyy-MM-dd HH:mm:ss,SSS"):timestamp}\s%{word:level}\s+%{notSpace:logger.name}\s+-\s+%{data:message}((\n|\t)%{data:error.stack})?
+        supportRules: ''
+    - type: grok-parser
+      name: Parsing Stack traces
+      enabled: true
+      source: error.stack
+      grok:
+        supportRules: |
+        matchRules: |
+          error_rule %{notSpace:error.kind}: %{data:error.message}(\n|\t).*
+      samples:
+        - |
+          py4j.protocol.Py4JJavaError: An error occurred while calling save.
+          : java.lang.IllegalArgumentException
+          	at org.apache.hudi.common.util.ValidationUtils.checkArgument(ValidationUtils.java:31)
+          	at org.apache.hudi.common.table.timeline.HoodieActiveTimeline.transitionState(HoodieActiveTimeline.java:396)
+          	at org.apache.hudi.common.table.timeline.HoodieActiveTimeline.transitionState(HoodieActiveTimeline.java:377)
+          	at org.apache.hudi.common.table.timeline.HoodieActiveTimeline.saveAsComplete(HoodieActiveTimeline.java:154)
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message

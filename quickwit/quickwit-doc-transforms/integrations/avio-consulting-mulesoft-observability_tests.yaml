@@ -1,0 +1,1461 @@
+id: "avio-consulting-mulesoft-observability"
+tests:
+ -
+  sample: |-
+    {
+      "appVersion" : "1.0",
+      "process" : {
+        "command_args" : "",
+        "runtime" : {
+          "name" : "OpenJDK Runtime Environment",
+          "description" : "Eclipse Adoptium OpenJDK 64-Bit Server VM 11.0.16.1+1",
+          "version" : "11.0.16.1+1"
+        },
+        "pid" : "77224",
+        "executable" : {
+          "path" : "/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java"
+        }
+      },
+      "os" : {
+        "description" : "Mac OS X 14.3.1",
+        "type" : "darwin"
+      },
+      "ddtags" : "env:dev,service:simple-otel,version:1.0.0,process.executable.path:/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java,os.type:darwin,otel_source:datadog_exporter",
+      "appName" : "simple-otel",
+      "team" : "avio-otel",
+      "env" : "dev",
+      "message" : "Scheduled custom log",
+      "datadog": {
+        "log": {
+          "source": "mulesoft"
+        }
+      },
+      "hostname" : "ac0107",
+      "mule" : {
+        "home" : "/Applications/AnypointStudio copy.app/Contents/Eclipse/plugins/org.mule.tooling.server.4.4.0.ee_7.11.0.202406181841/mule"
+      },
+      "@timestamp" : "2024-08-07T05:56:44.873Z",
+      "messageAttributes" : {
+        "traceId" : "3571d132438f3dcc5da4a85fbedf4382",
+        "spanId" : "ffa00825bf9d7af2",
+        "spanIdLong" : "18419731434166909682",
+        "traceIdLongLowPart" : "6747703270885507970"
+      },
+      "service" : {
+        "name" : "simple-otel",
+        "namespace" : "demo",
+        "type" : "mulesoft",
+        "version" : "1.0.0"
+      },
+      "host" : {
+        "name" : "ac0107",
+        "arch" : "aarch64"
+      },
+      "otel" : {
+        "severity_text" : "INFO",
+        "severity_number" : "9",
+        "timestamp" : "1723010204873218000"
+      },
+      "correlationId" : "63c0e260-548a-11ef-a964-ca89f39a1b65",
+      "telemetry" : {
+        "sdk" : {
+          "name" : "opentelemetry",
+          "language" : "java",
+          "version" : "1.45.0"
+        }
+      },
+      "deployment" : {
+        "environment" : {
+          "name":"dev"
+        }
+      },
+      "spanId" : "273487d8c437628f",
+      "traceId" : "9fedabd3bc42f5f4569283e836c92935",
+      "spanIdLong" : "2825032231342793359",
+      "traceIdLong" : "6238193467236362549",
+      "processorPath" : "simple-logging-flow/processors/0",
+      "timestamp" : "2024-08-07T06:58:02.789Z",
+      "status" : "INFO"
+    }
+  result:
+    custom:
+      '@timestamp': "2024-08-07T05:56:44.873Z"
+      appName: "simple-otel"
+      appVersion: "1.0"
+      correlationId: "63c0e260-548a-11ef-a964-ca89f39a1b65"
+      datadog:
+        log:
+          source: "mulesoft"
+      dd:
+        span_id: "18419731434166909682"
+      ddtags: "env:dev,service:simple-otel,version:1.0.0,process.executable.path:/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java,os.type:darwin,otel_source:datadog_exporter"
+      deployment:
+        environment:
+          name: "dev"
+      env: "dev"
+      host:
+        arch: "aarch64"
+        name: "ac0107"
+      hostname: "ac0107"
+      messageAttributes:
+        spanId: "ffa00825bf9d7af2"
+        traceId: "3571d132438f3dcc5da4a85fbedf4382"
+      mule:
+        home: "/Applications/AnypointStudio copy.app/Contents/Eclipse/plugins/org.mule.tooling.server.4.4.0.ee_7.11.0.202406181841/mule"
+      os:
+        description: "Mac OS X 14.3.1"
+        type: "darwin"
+      otel:
+        severity_number: "9"
+        severity_text: "INFO"
+        timestamp: "1723010204873218000"
+      process:
+        command_args: ""
+        executable:
+          path: "/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java"
+        pid: "77224"
+        runtime:
+          description: "Eclipse Adoptium OpenJDK 64-Bit Server VM 11.0.16.1+1"
+          name: "OpenJDK Runtime Environment"
+          version: "11.0.16.1+1"
+      processorPath: "simple-logging-flow/processors/0"
+      service:
+        name: "simple-otel"
+        namespace: "demo"
+        type: "mulesoft"
+        version: "1.0.0"
+      spanId: "273487d8c437628f"
+      status: "INFO"
+      team: "avio-otel"
+      telemetry:
+        sdk:
+          language: "java"
+          name: "opentelemetry"
+          version: "1.45.0"
+      timestamp: "2024-08-07T06:58:02.789Z"
+      traceId: "9fedabd3bc42f5f4569283e836c92935"
+      traceIdLong: "6238193467236362549"
+    message: "Scheduled custom log"
+    service: "simple-otel"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "team:avio-otel"
+    trace_id: "6747703270885507970"
+ -
+  sample: |-
+    {
+      "appVersion" : "1.0",
+      "process" : {
+        "command_args" : "",
+        "runtime" : {
+          "name" : "OpenJDK Runtime Environment",
+          "description" : "Eclipse Adoptium OpenJDK 64-Bit Server VM 11.0.16.1+1",
+          "version" : "11.0.16.1+1"
+        },
+        "pid" : "77224",
+        "executable" : {
+          "path" : "/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java"
+        }
+      },
+      "os" : {
+        "description" : "Mac OS X 14.3.1",
+        "type" : "darwin"
+      },
+      "ddtags" : "env:dev,service:simple-otel,version:1.0.0,process.executable.path:/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java,os.type:darwin,otel_source:datadog_exporter",
+      "appName" : "simple-otel",
+      "team" : "avio-otel",
+      "env" : "dev",
+      "message" : "Log Message with messageAttributes.traceIdLongLowPart",
+      "datadog": {
+        "log": {
+          "source": "mulesoft"
+        }
+      },
+      "hostname" : "ac0107",
+      "mule" : {
+        "home" : "/Applications/AnypointStudio copy.app/Contents/Eclipse/plugins/org.mule.tooling.server.4.4.0.ee_7.11.0.202406181841/mule"
+      },
+      "@timestamp" : "2024-08-07T05:56:44.873Z",
+      "messageAttributes" : {
+        "traceId" : "3571d132438f3dcc5da4a85fbedf4382",
+        "spanId" : "ffa00825bf9d7af2",
+        "spanIdLong" : "18419731434166909682",
+        "traceIdLongLowPart" : "6747703270885507970"
+      },
+      "service" : {
+        "name" : "simple-otel",
+        "namespace" : "demo",
+        "type" : "mulesoft",
+        "version" : "1.0.0"
+      },
+      "host" : {
+        "name" : "ac0107",
+        "arch" : "aarch64"
+      },
+      "otel" : {
+        "severity_text" : "INFO",
+        "severity_number" : "9",
+        "timestamp" : "1723010204873218000"
+      },
+      "correlationId" : "63c0e260-548a-11ef-a964-ca89f39a1b65",
+      "telemetry" : {
+        "sdk" : {
+          "name" : "opentelemetry",
+          "language" : "java",
+          "version" : "1.45.0"
+        }
+      },
+      "deployment" : {
+        "environment" : {
+          "name":"dev"
+        }
+      },
+      "spanId" : "273487d8c437628f",
+      "traceId" : "9fedabd3bc42f5f4569283e836c92935",
+      "spanIdLong" : "2825032231342793359",
+      "traceIdLong" : "6238193467236362549",
+      "processorPath" : "simple-logging-flow/processors/0",
+      "timestamp" : "2024-08-07T06:58:02.789Z",
+      "status" : "INFO"
+    }
+  result:
+    custom:
+      '@timestamp': "2024-08-07T05:56:44.873Z"
+      appName: "simple-otel"
+      appVersion: "1.0"
+      correlationId: "63c0e260-548a-11ef-a964-ca89f39a1b65"
+      datadog:
+        log:
+          source: "mulesoft"
+      dd:
+        span_id: "18419731434166909682"
+      ddtags: "env:dev,service:simple-otel,version:1.0.0,process.executable.path:/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java,os.type:darwin,otel_source:datadog_exporter"
+      deployment:
+        environment:
+          name: "dev"
+      env: "dev"
+      host:
+        arch: "aarch64"
+        name: "ac0107"
+      hostname: "ac0107"
+      messageAttributes:
+        spanId: "ffa00825bf9d7af2"
+        traceId: "3571d132438f3dcc5da4a85fbedf4382"
+      mule:
+        home: "/Applications/AnypointStudio copy.app/Contents/Eclipse/plugins/org.mule.tooling.server.4.4.0.ee_7.11.0.202406181841/mule"
+      os:
+        description: "Mac OS X 14.3.1"
+        type: "darwin"
+      otel:
+        severity_number: "9"
+        severity_text: "INFO"
+        timestamp: "1723010204873218000"
+      process:
+        command_args: ""
+        executable:
+          path: "/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java"
+        pid: "77224"
+        runtime:
+          description: "Eclipse Adoptium OpenJDK 64-Bit Server VM 11.0.16.1+1"
+          name: "OpenJDK Runtime Environment"
+          version: "11.0.16.1+1"
+      processorPath: "simple-logging-flow/processors/0"
+      service:
+        name: "simple-otel"
+        namespace: "demo"
+        type: "mulesoft"
+        version: "1.0.0"
+      spanId: "273487d8c437628f"
+      status: "INFO"
+      team: "avio-otel"
+      telemetry:
+        sdk:
+          language: "java"
+          name: "opentelemetry"
+          version: "1.45.0"
+      timestamp: "2024-08-07T06:58:02.789Z"
+      traceId: "9fedabd3bc42f5f4569283e836c92935"
+      traceIdLong: "6238193467236362549"
+    message: "Log Message with messageAttributes.traceIdLongLowPart"
+    service: "simple-otel"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "team:avio-otel"
+    trace_id: "6747703270885507970"
+ -
+  sample: |-
+    {
+      "process" : {
+        "command_args" : "",
+        "runtime" : {
+          "name" : "OpenJDK Runtime Environment",
+          "description" : "Eclipse Adoptium OpenJDK 64-Bit Server VM 11.0.16.1+1",
+          "version" : "11.0.16.1+1"
+        },
+        "pid" : "77224",
+        "executable" : {
+          "path" : "/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java"
+        }
+      },
+      "os" : {
+        "description" : "Mac OS X 14.3.1",
+        "type" : "darwin"
+      },
+      "ddtags" : "env:dev,service:simple-otel,version:1.0.0,process.executable.path:/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java,os.type:darwin,otel_source:datadog_exporter",
+      "team" : "avio-otel",
+      "message" : "Standard Mule Logger - Log Message with traceIdLong in the root",
+      "datadog": {
+        "log": {
+          "source": "mulesoft"
+        }
+      },
+      "hostname" : "ac0107",
+      "mule" : {
+        "home" : "/Applications/AnypointStudio copy.app/Contents/Eclipse/plugins/org.mule.tooling.server.4.4.0.ee_7.11.0.202406181841/mule"
+      },
+      "@timestamp" : "2024-08-07T05:56:44.874Z",
+      "service" : {
+        "name" : "simple-otel",
+        "namespace" : "demo",
+        "type" : "mulesoft",
+        "version" : "1.0.0"
+      },
+      "host" : {
+        "name" : "ac0107",
+        "arch" : "aarch64"
+      },
+      "otel" : {
+        "severity_text" : "INFO",
+        "severity_number" : "9",
+        "timestamp" : "1723010204874456000"
+      },
+      "telemetry" : {
+        "sdk" : {
+          "name" : "opentelemetry",
+          "language" : "java",
+          "version" : "1.45.0"
+        }
+      },
+      "deployment" : {
+        "environment" : {
+          "name":"dev"
+        }
+      },
+      "spanId" : "273487d8c437628f",
+      "traceId" : "9fedabd3bc42f5f4569283e836c92935",
+      "spanIdLong" : "2825032231342793359",
+      "traceIdLong" : "6238193467236362549",
+      "processorPath" : "simple-otelFlow/processors/5/route/1/processors/0",
+      "status" : "INFO"
+    }
+  result:
+    custom:
+      '@timestamp': "2024-08-07T05:56:44.874Z"
+      datadog:
+        log:
+          source: "mulesoft"
+      dd:
+        span_id: "2825032231342793359"
+      ddtags: "env:dev,service:simple-otel,version:1.0.0,process.executable.path:/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java,os.type:darwin,otel_source:datadog_exporter"
+      deployment:
+        environment:
+          name: "dev"
+      host:
+        arch: "aarch64"
+        name: "ac0107"
+      hostname: "ac0107"
+      mule:
+        home: "/Applications/AnypointStudio copy.app/Contents/Eclipse/plugins/org.mule.tooling.server.4.4.0.ee_7.11.0.202406181841/mule"
+      os:
+        description: "Mac OS X 14.3.1"
+        type: "darwin"
+      otel:
+        severity_number: "9"
+        severity_text: "INFO"
+        timestamp: "1723010204874456000"
+      process:
+        command_args: ""
+        executable:
+          path: "/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java"
+        pid: "77224"
+        runtime:
+          description: "Eclipse Adoptium OpenJDK 64-Bit Server VM 11.0.16.1+1"
+          name: "OpenJDK Runtime Environment"
+          version: "11.0.16.1+1"
+      processorPath: "simple-otelFlow/processors/5/route/1/processors/0"
+      service:
+        name: "simple-otel"
+        namespace: "demo"
+        type: "mulesoft"
+        version: "1.0.0"
+      spanId: "273487d8c437628f"
+      status: "INFO"
+      team: "avio-otel"
+      telemetry:
+        sdk:
+          language: "java"
+          name: "opentelemetry"
+          version: "1.45.0"
+      traceId: "9fedabd3bc42f5f4569283e836c92935"
+    message: "Standard Mule Logger - Log Message with traceIdLong in the root"
+    service: "simple-otel"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "team:avio-otel"
+    trace_id: "6238193467236362549"        
+ -
+  sample: |-
+    {
+      "process" : {
+        "command_args" : "",
+        "runtime" : {
+          "name" : "OpenJDK Runtime Environment",
+          "description" : "Eclipse Adoptium OpenJDK 64-Bit Server VM 11.0.16.1+1",
+          "version" : "11.0.16.1+1"
+        },
+        "pid" : "77224",
+        "executable" : {
+          "path" : "/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java"
+        }
+      },
+      "os" : {
+        "description" : "Mac OS X 14.3.1",
+        "type" : "darwin"
+      },
+      "ddtags" : "env:dev,service:simple-otel,version:1.0.0,process.executable.path:/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java,os.type:darwin,otel_source:datadog_exporter",
+      "team" : "avio-otel",
+      "message" : "Standard Mule Logger - Log Message with log4j.context_data.traceIdLong",
+      "datadog": {
+        "log": {
+          "source": "mulesoft"
+        }
+      },
+      "hostname" : "ac0107",
+      "mule" : {
+        "home" : "/Applications/AnypointStudio copy.app/Contents/Eclipse/plugins/org.mule.tooling.server.4.4.0.ee_7.11.0.202406181841/mule"
+      },
+      "@timestamp" : "2024-08-07T05:56:44.874Z",
+      "service" : {
+        "name" : "simple-otel",
+        "namespace" : "demo",
+        "type" : "mulesoft",
+        "version" : "1.0.0"
+      },
+      "host" : {
+        "name" : "ac0107",
+        "arch" : "aarch64"
+      },
+      "otel" : {
+        "severity_text" : "INFO",
+        "severity_number" : "9",
+        "timestamp" : "1723010204874456000"
+      },
+      "telemetry" : {
+        "sdk" : {
+          "name" : "opentelemetry",
+          "language" : "java",
+          "version" : "1.45.0"
+        }
+      },
+      "deployment" : {
+        "environment" : {
+          "name":"dev"
+        }
+      },
+      "log4j" : {
+        "context_data" : {
+          "spanId" : "273487d8c437628f",
+          "traceId" : "9fedabd3bc42f5f4569283e836c92935",
+          "spanIdLong" : "2825032231342793359",
+          "traceIdLong" : "6238193467236362549",
+          "correlationId" : "d38cf740-5481-11ef-8304-ca89f39a1b65",
+          "processorPath" : "simple-otelFlow/processors/5/route/1/processors/0"
+        }
+      },
+      "status" : "INFO"
+    }
+  result:
+    custom:
+      '@timestamp': "2024-08-07T05:56:44.874Z"
+      correlationId: "d38cf740-5481-11ef-8304-ca89f39a1b65"
+      datadog:
+        log:
+          source: "mulesoft"
+      dd:
+        span_id: "2825032231342793359"
+      ddtags: "env:dev,service:simple-otel,version:1.0.0,process.executable.path:/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java,os.type:darwin,otel_source:datadog_exporter"
+      deployment:
+        environment:
+          name: "dev"
+      host:
+        arch: "aarch64"
+        name: "ac0107"
+      hostname: "ac0107"
+      log4j:
+        context_data:
+          processorPath: "simple-otelFlow/processors/5/route/1/processors/0"
+          spanId: "273487d8c437628f"
+          traceId: "9fedabd3bc42f5f4569283e836c92935"
+      mule:
+        home: "/Applications/AnypointStudio copy.app/Contents/Eclipse/plugins/org.mule.tooling.server.4.4.0.ee_7.11.0.202406181841/mule"
+      os:
+        description: "Mac OS X 14.3.1"
+        type: "darwin"
+      otel:
+        severity_number: "9"
+        severity_text: "INFO"
+        timestamp: "1723010204874456000"
+      process:
+        command_args: ""
+        executable:
+          path: "/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java"
+        pid: "77224"
+        runtime:
+          description: "Eclipse Adoptium OpenJDK 64-Bit Server VM 11.0.16.1+1"
+          name: "OpenJDK Runtime Environment"
+          version: "11.0.16.1+1"
+      service:
+        name: "simple-otel"
+        namespace: "demo"
+        type: "mulesoft"
+        version: "1.0.0"
+      status: "INFO"
+      team: "avio-otel"
+      telemetry:
+        sdk:
+          language: "java"
+          name: "opentelemetry"
+          version: "1.45.0"
+    message: "Standard Mule Logger - Log Message with log4j.context_data.traceIdLong"
+    service: "simple-otel"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "team:avio-otel"
+    trace_id: "6238193467236362549"
+ -
+  sample: |-
+    {
+      "appVersion" : "1.0",
+      "process" : {
+        "command_args" : "",
+        "runtime" : {
+          "name" : "OpenJDK Runtime Environment",
+          "description" : "Eclipse Adoptium OpenJDK 64-Bit Server VM 11.0.16.1+1",
+          "version" : "11.0.16.1+1"
+        },
+        "pid" : "77224",
+        "executable" : {
+          "path" : "/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java"
+        }
+      },
+      "os" : {
+        "description" : "Mac OS X 14.3.1",
+        "type" : "darwin"
+      },
+      "ddtags" : "env:dev,service:simple-otel,version:1.0.0,process.executable.path:/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java,os.type:darwin,otel_source:datadog_exporter",
+      "appName" : "simple-otel",
+      "team" : "avio-otel",
+      "env" : "dev",
+      "message" : "Log Message with messageAttributes.spanIdLong",
+      "datadog": {
+        "log": {
+          "source": "mulesoft"
+        }
+      },
+      "hostname" : "ac0107",
+      "mule" : {
+        "home" : "/Applications/AnypointStudio copy.app/Contents/Eclipse/plugins/org.mule.tooling.server.4.4.0.ee_7.11.0.202406181841/mule"
+      },
+      "@timestamp" : "2024-08-07T05:56:44.873Z",
+      "messageAttributes" : {
+        "traceId" : "3571d132438f3dcc5da4a85fbedf4382",
+        "spanId" : "ffa00825bf9d7af2",
+        "spanIdLong" : "18419731434166909682",
+        "traceIdLongLowPart" : "6747703270885507970"
+      },
+      "service" : {
+        "name" : "simple-otel",
+        "namespace" : "demo",
+        "type" : "mulesoft",
+        "version" : "1.0.0"
+      },
+      "host" : {
+        "name" : "ac0107",
+        "arch" : "aarch64"
+      },
+      "otel" : {
+        "severity_text" : "INFO",
+        "severity_number" : "9",
+        "timestamp" : "1723010204873218000"
+      },
+      "correlationId" : "63c0e260-548a-11ef-a964-ca89f39a1b65",
+      "telemetry" : {
+        "sdk" : {
+          "name" : "opentelemetry",
+          "language" : "java",
+          "version" : "1.45.0"
+        }
+      },
+      "deployment" : {
+        "environment" : {
+          "name":"dev"
+        }
+      },
+      "spanId" : "273487d8c437628f",
+      "traceId" : "9fedabd3bc42f5f4569283e836c92935",
+      "spanIdLong" : "2825032231342793359",
+      "traceIdLong" : "6238193467236362549",
+      "processorPath" : "simple-logging-flow/processors/0",
+      "timestamp" : "2024-08-07T06:58:02.789Z",
+      "status" : "INFO"
+    }
+  result:
+    custom:
+      '@timestamp': "2024-08-07T05:56:44.873Z"
+      appName: "simple-otel"
+      appVersion: "1.0"
+      correlationId: "63c0e260-548a-11ef-a964-ca89f39a1b65"
+      datadog:
+        log:
+          source: "mulesoft"
+      dd:
+        span_id: "18419731434166909682"
+      ddtags: "env:dev,service:simple-otel,version:1.0.0,process.executable.path:/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java,os.type:darwin,otel_source:datadog_exporter"
+      deployment:
+        environment:
+          name: "dev"
+      env: "dev"
+      host:
+        arch: "aarch64"
+        name: "ac0107"
+      hostname: "ac0107"
+      messageAttributes:
+        spanId: "ffa00825bf9d7af2"
+        traceId: "3571d132438f3dcc5da4a85fbedf4382"
+      mule:
+        home: "/Applications/AnypointStudio copy.app/Contents/Eclipse/plugins/org.mule.tooling.server.4.4.0.ee_7.11.0.202406181841/mule"
+      os:
+        description: "Mac OS X 14.3.1"
+        type: "darwin"
+      otel:
+        severity_number: "9"
+        severity_text: "INFO"
+        timestamp: "1723010204873218000"
+      process:
+        command_args: ""
+        executable:
+          path: "/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java"
+        pid: "77224"
+        runtime:
+          description: "Eclipse Adoptium OpenJDK 64-Bit Server VM 11.0.16.1+1"
+          name: "OpenJDK Runtime Environment"
+          version: "11.0.16.1+1"
+      processorPath: "simple-logging-flow/processors/0"
+      service:
+        name: "simple-otel"
+        namespace: "demo"
+        type: "mulesoft"
+        version: "1.0.0"
+      spanId: "273487d8c437628f"
+      status: "INFO"
+      team: "avio-otel"
+      telemetry:
+        sdk:
+          language: "java"
+          name: "opentelemetry"
+          version: "1.45.0"
+      timestamp: "2024-08-07T06:58:02.789Z"
+      traceId: "9fedabd3bc42f5f4569283e836c92935"
+      traceIdLong: "6238193467236362549"
+    message: "Log Message with messageAttributes.spanIdLong"
+    service: "simple-otel"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "team:avio-otel"
+    trace_id: "6747703270885507970"
+ -
+  sample: |-
+    {
+      "process" : {
+        "command_args" : "",
+        "runtime" : {
+          "name" : "OpenJDK Runtime Environment",
+          "description" : "Eclipse Adoptium OpenJDK 64-Bit Server VM 11.0.16.1+1",
+          "version" : "11.0.16.1+1"
+        },
+        "pid" : "77224",
+        "executable" : {
+          "path" : "/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java"
+        }
+      },
+      "os" : {
+        "description" : "Mac OS X 14.3.1",
+        "type" : "darwin"
+      },
+      "ddtags" : "env:dev,service:simple-otel,version:1.0.0,process.executable.path:/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java,os.type:darwin,otel_source:datadog_exporter",
+      "team" : "avio-otel",
+      "message" : "Standard Mule Logger - Log Message with spanIdLong in the root",
+      "datadog": {
+        "log": {
+          "source": "mulesoft"
+        }
+      },
+      "hostname" : "ac0107",
+      "mule" : {
+        "home" : "/Applications/AnypointStudio copy.app/Contents/Eclipse/plugins/org.mule.tooling.server.4.4.0.ee_7.11.0.202406181841/mule"
+      },
+      "@timestamp" : "2024-08-07T05:56:44.874Z",
+      "service" : {
+        "name" : "simple-otel",
+        "namespace" : "demo",
+        "type" : "mulesoft",
+        "version" : "1.0.0"
+      },
+      "host" : {
+        "name" : "ac0107",
+        "arch" : "aarch64"
+      },
+      "otel" : {
+        "severity_text" : "INFO",
+        "severity_number" : "9",
+        "timestamp" : "1723010204874456000"
+      },
+      "telemetry" : {
+        "sdk" : {
+          "name" : "opentelemetry",
+          "language" : "java",
+          "version" : "1.45.0"
+        }
+      },
+      "deployment" : {
+        "environment" : {
+          "name":"dev"
+        }
+      },
+      "spanId" : "273487d8c437628f",
+      "traceId" : "9fedabd3bc42f5f4569283e836c92935",
+      "spanIdLong" : "2825032231342793359",
+      "traceIdLong" : "6238193467236362549",
+      "processorPath" : "simple-otelFlow/processors/5/route/1/processors/0",
+      "status" : "INFO"
+    }
+  result:
+    custom:
+      '@timestamp': "2024-08-07T05:56:44.874Z"
+      datadog:
+        log:
+          source: "mulesoft"
+      dd:
+        span_id: "2825032231342793359"
+      ddtags: "env:dev,service:simple-otel,version:1.0.0,process.executable.path:/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java,os.type:darwin,otel_source:datadog_exporter"
+      deployment:
+        environment:
+          name: "dev"
+      host:
+        arch: "aarch64"
+        name: "ac0107"
+      hostname: "ac0107"
+      mule:
+        home: "/Applications/AnypointStudio copy.app/Contents/Eclipse/plugins/org.mule.tooling.server.4.4.0.ee_7.11.0.202406181841/mule"
+      os:
+        description: "Mac OS X 14.3.1"
+        type: "darwin"
+      otel:
+        severity_number: "9"
+        severity_text: "INFO"
+        timestamp: "1723010204874456000"
+      process:
+        command_args: ""
+        executable:
+          path: "/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java"
+        pid: "77224"
+        runtime:
+          description: "Eclipse Adoptium OpenJDK 64-Bit Server VM 11.0.16.1+1"
+          name: "OpenJDK Runtime Environment"
+          version: "11.0.16.1+1"
+      processorPath: "simple-otelFlow/processors/5/route/1/processors/0"
+      service:
+        name: "simple-otel"
+        namespace: "demo"
+        type: "mulesoft"
+        version: "1.0.0"
+      spanId: "273487d8c437628f"
+      status: "INFO"
+      team: "avio-otel"
+      telemetry:
+        sdk:
+          language: "java"
+          name: "opentelemetry"
+          version: "1.45.0"
+      traceId: "9fedabd3bc42f5f4569283e836c92935"
+    message: "Standard Mule Logger - Log Message with spanIdLong in the root"
+    service: "simple-otel"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "team:avio-otel"
+    trace_id: "6238193467236362549"
+ -
+  sample: |-
+    {
+      "process" : {
+        "command_args" : "",
+        "runtime" : {
+          "name" : "OpenJDK Runtime Environment",
+          "description" : "Eclipse Adoptium OpenJDK 64-Bit Server VM 11.0.16.1+1",
+          "version" : "11.0.16.1+1"
+        },
+        "pid" : "77224",
+        "executable" : {
+          "path" : "/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java"
+        }
+      },
+      "os" : {
+        "description" : "Mac OS X 14.3.1",
+        "type" : "darwin"
+      },
+      "ddtags" : "env:dev,service:simple-otel,version:1.0.0,process.executable.path:/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java,os.type:darwin,otel_source:datadog_exporter",
+      "team" : "avio-otel",
+      "message" : "Standard Mule Logger - Log Message with log4j.context_data.spanIdLong",
+      "datadog": {
+        "log": {
+          "source": "mulesoft"
+        }
+      },
+      "hostname" : "ac0107",
+      "mule" : {
+        "home" : "/Applications/AnypointStudio copy.app/Contents/Eclipse/plugins/org.mule.tooling.server.4.4.0.ee_7.11.0.202406181841/mule"
+      },
+      "@timestamp" : "2024-08-07T05:56:44.874Z",
+      "service" : {
+        "name" : "simple-otel",
+        "namespace" : "demo",
+        "type" : "mulesoft",
+        "version" : "1.0.0"
+      },
+      "host" : {
+        "name" : "ac0107",
+        "arch" : "aarch64"
+      },
+      "otel" : {
+        "severity_text" : "INFO",
+        "severity_number" : "9",
+        "timestamp" : "1723010204874456000"
+      },
+      "telemetry" : {
+        "sdk" : {
+          "name" : "opentelemetry",
+          "language" : "java",
+          "version" : "1.45.0"
+        }
+      },
+      "deployment" : {
+        "environment" : {
+          "name":"dev"
+        }
+      },
+      "log4j" : {
+        "context_data" : {
+          "spanId" : "273487d8c437628f",
+          "traceId" : "9fedabd3bc42f5f4569283e836c92935",
+          "spanIdLong" : "2825032231342793359",
+          "traceIdLong" : "6238193467236362549",
+          "correlationId" : "d38cf740-5481-11ef-8304-ca89f39a1b65",
+          "processorPath" : "simple-otelFlow/processors/5/route/1/processors/0"
+        }
+      },
+      "status" : "INFO"
+    }
+  result:
+    custom:
+      '@timestamp': "2024-08-07T05:56:44.874Z"
+      correlationId: "d38cf740-5481-11ef-8304-ca89f39a1b65"
+      datadog:
+        log:
+          source: "mulesoft"
+      dd:
+        span_id: "2825032231342793359"
+      ddtags: "env:dev,service:simple-otel,version:1.0.0,process.executable.path:/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java,os.type:darwin,otel_source:datadog_exporter"
+      deployment:
+        environment:
+          name: "dev"
+      host:
+        arch: "aarch64"
+        name: "ac0107"
+      hostname: "ac0107"
+      log4j:
+        context_data:
+          processorPath: "simple-otelFlow/processors/5/route/1/processors/0"
+          spanId: "273487d8c437628f"
+          traceId: "9fedabd3bc42f5f4569283e836c92935"
+      mule:
+        home: "/Applications/AnypointStudio copy.app/Contents/Eclipse/plugins/org.mule.tooling.server.4.4.0.ee_7.11.0.202406181841/mule"
+      os:
+        description: "Mac OS X 14.3.1"
+        type: "darwin"
+      otel:
+        severity_number: "9"
+        severity_text: "INFO"
+        timestamp: "1723010204874456000"
+      process:
+        command_args: ""
+        executable:
+          path: "/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java"
+        pid: "77224"
+        runtime:
+          description: "Eclipse Adoptium OpenJDK 64-Bit Server VM 11.0.16.1+1"
+          name: "OpenJDK Runtime Environment"
+          version: "11.0.16.1+1"
+      service:
+        name: "simple-otel"
+        namespace: "demo"
+        type: "mulesoft"
+        version: "1.0.0"
+      status: "INFO"
+      team: "avio-otel"
+      telemetry:
+        sdk:
+          language: "java"
+          name: "opentelemetry"
+          version: "1.45.0"
+    message: "Standard Mule Logger - Log Message with log4j.context_data.spanIdLong"
+    service: "simple-otel"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "team:avio-otel"
+    trace_id: "6238193467236362549"
+ -
+  sample: |-
+    {
+      "exception" : {
+        "detail" : "An exception occurred"
+      },
+      "appVersion" : "1.0",
+      "process" : {
+        "command_args" : "",
+        "runtime" : {
+          "name" : "OpenJDK Runtime Environment",
+          "description" : "Eclipse Adoptium OpenJDK 64-Bit Server VM 11.0.16.1+1",
+          "version" : "11.0.16.1+1"
+        },
+        "pid" : "77224",
+        "executable" : {
+          "path" : "/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java"
+        }
+      },
+      "os" : {
+        "description" : "Mac OS X 14.3.1",
+        "type" : "darwin"
+      },
+      "ddtags" : "env:dev,service:simple-otel,version:1.0.0,process.executable.path:/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java,os.type:darwin,otel_source:datadog_exporter",
+      "appName" : "simple-otel",
+      "team" : "avio-otel",
+      "env" : "dev",
+      "message" : "Log Message with exception.detail",
+      "datadog": {
+        "log": {
+          "source": "mulesoft"
+        }
+      },
+      "hostname" : "ac0107",
+      "mule" : {
+        "home" : "/Applications/AnypointStudio copy.app/Contents/Eclipse/plugins/org.mule.tooling.server.4.4.0.ee_7.11.0.202406181841/mule"
+      },
+      "@timestamp" : "2024-08-07T05:56:44.873Z",
+      "messageAttributes" : {
+        "traceId" : "3571d132438f3dcc5da4a85fbedf4382",
+        "spanId" : "ffa00825bf9d7af2",
+        "spanIdLong" : "18419731434166909682",
+        "traceIdLongLowPart" : "6747703270885507970"
+      },
+      "service" : {
+        "name" : "simple-otel",
+        "namespace" : "demo",
+        "type" : "mulesoft",
+        "version" : "1.0.0"
+      },
+      "host" : {
+        "name" : "ac0107",
+        "arch" : "aarch64"
+      },
+      "otel" : {
+        "severity_text" : "ERROR",
+        "severity_number" : "17",
+        "timestamp" : "1723010204873218000"
+      },
+      "correlationId" : "63c0e260-548a-11ef-a964-ca89f39a1b65",
+      "telemetry" : {
+        "sdk" : {
+          "name" : "opentelemetry",
+          "language" : "java",
+          "version" : "1.45.0"
+        }
+      },
+      "deployment" : {
+        "environment" : {
+          "name":"dev"
+        }
+      },
+      "spanId" : "273487d8c437628f",
+      "traceId" : "9fedabd3bc42f5f4569283e836c92935",
+      "spanIdLong" : "2825032231342793359",
+      "traceIdLong" : "6238193467236362549",
+      "processorPath" : "simple-logging-flow/processors/0",
+      "timestamp" : "2024-08-07T06:58:02.789Z",
+      "status" : "ERROR"
+    }
+  result:
+    custom:
+      '@timestamp': "2024-08-07T05:56:44.873Z"
+      appName: "simple-otel"
+      appVersion: "1.0"
+      correlationId: "63c0e260-548a-11ef-a964-ca89f39a1b65"
+      datadog:
+        log:
+          source: "mulesoft"
+      dd:
+        span_id: "18419731434166909682"
+      ddtags: "env:dev,service:simple-otel,version:1.0.0,process.executable.path:/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java,os.type:darwin,otel_source:datadog_exporter"
+      deployment:
+        environment:
+          name: "dev"
+      env: "dev"
+      error:
+        message: "An exception occurred"
+      host:
+        arch: "aarch64"
+        name: "ac0107"
+      hostname: "ac0107"
+      messageAttributes:
+        spanId: "ffa00825bf9d7af2"
+        traceId: "3571d132438f3dcc5da4a85fbedf4382"
+      mule:
+        home: "/Applications/AnypointStudio copy.app/Contents/Eclipse/plugins/org.mule.tooling.server.4.4.0.ee_7.11.0.202406181841/mule"
+      os:
+        description: "Mac OS X 14.3.1"
+        type: "darwin"
+      otel:
+        severity_number: "17"
+        severity_text: "ERROR"
+        timestamp: "1723010204873218000"
+      process:
+        command_args: ""
+        executable:
+          path: "/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java"
+        pid: "77224"
+        runtime:
+          description: "Eclipse Adoptium OpenJDK 64-Bit Server VM 11.0.16.1+1"
+          name: "OpenJDK Runtime Environment"
+          version: "11.0.16.1+1"
+      processorPath: "simple-logging-flow/processors/0"
+      service:
+        name: "simple-otel"
+        namespace: "demo"
+        type: "mulesoft"
+        version: "1.0.0"
+      spanId: "273487d8c437628f"
+      status: "ERROR"
+      team: "avio-otel"
+      telemetry:
+        sdk:
+          language: "java"
+          name: "opentelemetry"
+          version: "1.45.0"
+      timestamp: "2024-08-07T06:58:02.789Z"
+      traceId: "9fedabd3bc42f5f4569283e836c92935"
+      traceIdLong: "6238193467236362549"
+    message: "Log Message with exception.detail"
+    service: "simple-otel"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "team:avio-otel"
+    trace_id: "6747703270885507970"
+ -
+  sample: |-
+    {
+      "exception" : {
+        "detail" : "An exception occurred",
+        "type" : "UnknownType"
+      },
+      "appVersion" : "1.0",
+      "process" : {
+        "command_args" : "",
+        "runtime" : {
+          "name" : "OpenJDK Runtime Environment",
+          "description" : "Eclipse Adoptium OpenJDK 64-Bit Server VM 11.0.16.1+1",
+          "version" : "11.0.16.1+1"
+        },
+        "pid" : "77224",
+        "executable" : {
+          "path" : "/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java"
+        }
+      },
+      "os" : {
+        "description" : "Mac OS X 14.3.1",
+        "type" : "darwin"
+      },
+      "ddtags" : "env:dev,service:simple-otel,version:1.0.0,process.executable.path:/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java,os.type:darwin,otel_source:datadog_exporter",
+      "appName" : "simple-otel",
+      "team" : "avio-otel",
+      "env" : "dev",
+      "message" : "Log Message with exception.type",
+      "datadog": {
+        "log": {
+          "source": "mulesoft"
+        }
+      },
+      "hostname" : "ac0107",
+      "mule" : {
+        "home" : "/Applications/AnypointStudio copy.app/Contents/Eclipse/plugins/org.mule.tooling.server.4.4.0.ee_7.11.0.202406181841/mule"
+      },
+      "@timestamp" : "2024-08-07T05:56:44.873Z",
+      "messageAttributes" : {
+        "traceId" : "3571d132438f3dcc5da4a85fbedf4382",
+        "spanId" : "ffa00825bf9d7af2",
+        "spanIdLong" : "18419731434166909682",
+        "traceIdLongLowPart" : "6747703270885507970"
+      },
+      "service" : {
+        "name" : "simple-otel",
+        "namespace" : "demo",
+        "type" : "mulesoft",
+        "version" : "1.0.0"
+      },
+      "host" : {
+        "name" : "ac0107",
+        "arch" : "aarch64"
+      },
+      "otel" : {
+        "severity_text" : "ERROR",
+        "severity_number" : "17",
+        "timestamp" : "1723010204873218000"
+      },
+      "correlationId" : "63c0e260-548a-11ef-a964-ca89f39a1b65",
+      "telemetry" : {
+        "sdk" : {
+          "name" : "opentelemetry",
+          "language" : "java",
+          "version" : "1.45.0"
+        }
+      },
+      "deployment" : {
+        "environment" : {
+          "name":"dev"
+        }
+      },
+      "spanId" : "273487d8c437628f",
+      "traceId" : "9fedabd3bc42f5f4569283e836c92935",
+      "spanIdLong" : "2825032231342793359",
+      "traceIdLong" : "6238193467236362549",
+      "processorPath" : "simple-logging-flow/processors/0",
+      "timestamp" : "2024-08-07T06:58:02.789Z",
+      "status" : "ERROR"
+    }
+  result:
+    custom:
+      '@timestamp': "2024-08-07T05:56:44.873Z"
+      appName: "simple-otel"
+      appVersion: "1.0"
+      correlationId: "63c0e260-548a-11ef-a964-ca89f39a1b65"
+      datadog:
+        log:
+          source: "mulesoft"
+      dd:
+        span_id: "18419731434166909682"
+      ddtags: "env:dev,service:simple-otel,version:1.0.0,process.executable.path:/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java,os.type:darwin,otel_source:datadog_exporter"
+      deployment:
+        environment:
+          name: "dev"
+      env: "dev"
+      error:
+        message: "An exception occurred"
+        type: "UnknownType"
+      host:
+        arch: "aarch64"
+        name: "ac0107"
+      hostname: "ac0107"
+      messageAttributes:
+        spanId: "ffa00825bf9d7af2"
+        traceId: "3571d132438f3dcc5da4a85fbedf4382"
+      mule:
+        home: "/Applications/AnypointStudio copy.app/Contents/Eclipse/plugins/org.mule.tooling.server.4.4.0.ee_7.11.0.202406181841/mule"
+      os:
+        description: "Mac OS X 14.3.1"
+        type: "darwin"
+      otel:
+        severity_number: "17"
+        severity_text: "ERROR"
+        timestamp: "1723010204873218000"
+      process:
+        command_args: ""
+        executable:
+          path: "/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java"
+        pid: "77224"
+        runtime:
+          description: "Eclipse Adoptium OpenJDK 64-Bit Server VM 11.0.16.1+1"
+          name: "OpenJDK Runtime Environment"
+          version: "11.0.16.1+1"
+      processorPath: "simple-logging-flow/processors/0"
+      service:
+        name: "simple-otel"
+        namespace: "demo"
+        type: "mulesoft"
+        version: "1.0.0"
+      spanId: "273487d8c437628f"
+      status: "ERROR"
+      team: "avio-otel"
+      telemetry:
+        sdk:
+          language: "java"
+          name: "opentelemetry"
+          version: "1.45.0"
+      timestamp: "2024-08-07T06:58:02.789Z"
+      traceId: "9fedabd3bc42f5f4569283e836c92935"
+      traceIdLong: "6238193467236362549"
+    message: "Log Message with exception.type"
+    service: "simple-otel"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "team:avio-otel"
+    trace_id: "6747703270885507970"
+ -
+  sample: |-
+    {
+      "process" : {
+        "command_args" : "",
+        "runtime" : {
+          "name" : "OpenJDK Runtime Environment",
+          "description" : "Eclipse Adoptium OpenJDK 64-Bit Server VM 11.0.16.1+1",
+          "version" : "11.0.16.1+1"
+        },
+        "pid" : "77224",
+        "executable" : {
+          "path" : "/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java"
+        }
+      },
+      "os" : {
+        "description" : "Mac OS X 14.3.1",
+        "type" : "darwin"
+      },
+      "ddtags" : "env:dev,service:simple-otel,version:1.0.0,process.executable.path:/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java,os.type:darwin,otel_source:datadog_exporter",
+      "team" : "avio-otel",
+      "message" : "Standard Mule Logger - Log message with context correlation id",
+      "datadog": {
+        "log": {
+          "source": "mulesoft"
+        }
+      },
+      "hostname" : "ac0107",
+      "mule" : {
+        "home" : "/Applications/AnypointStudio copy.app/Contents/Eclipse/plugins/org.mule.tooling.server.4.4.0.ee_7.11.0.202406181841/mule"
+      },
+      "@timestamp" : "2024-08-07T05:56:44.874Z",
+      "service" : {
+        "name" : "simple-otel",
+        "namespace" : "demo",
+        "type" : "mulesoft",
+        "version" : "1.0.0"
+      },
+      "host" : {
+        "name" : "ac0107",
+        "arch" : "aarch64"
+      },
+      "otel" : {
+        "severity_text" : "INFO",
+        "severity_number" : "9",
+        "timestamp" : "1723010204874456000"
+      },
+      "telemetry" : {
+        "sdk" : {
+          "name" : "opentelemetry",
+          "language" : "java",
+          "version" : "1.45.0"
+        }
+      },
+      "deployment" : {
+        "environment" : {
+          "name":"dev"
+        }
+      },
+      "spanId" : "273487d8c437628f",
+      "traceId" : "9fedabd3bc42f5f4569283e836c92935",
+      "spanIdLong" : "2825032231342793359",
+      "traceIdLong" : "6238193467236362549",
+      "processorPath" : "simple-otelFlow/processors/5/route/1/processors/0",
+      "status" : "INFO"
+    }
+  result:
+    custom:
+      '@timestamp': "2024-08-07T05:56:44.874Z"
+      datadog:
+        log:
+          source: "mulesoft"
+      dd:
+        span_id: "2825032231342793359"
+      ddtags: "env:dev,service:simple-otel,version:1.0.0,process.executable.path:/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java,os.type:darwin,otel_source:datadog_exporter"
+      deployment:
+        environment:
+          name: "dev"
+      host:
+        arch: "aarch64"
+        name: "ac0107"
+      hostname: "ac0107"
+      mule:
+        home: "/Applications/AnypointStudio copy.app/Contents/Eclipse/plugins/org.mule.tooling.server.4.4.0.ee_7.11.0.202406181841/mule"
+      os:
+        description: "Mac OS X 14.3.1"
+        type: "darwin"
+      otel:
+        severity_number: "9"
+        severity_text: "INFO"
+        timestamp: "1723010204874456000"
+      process:
+        command_args: ""
+        executable:
+          path: "/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java"
+        pid: "77224"
+        runtime:
+          description: "Eclipse Adoptium OpenJDK 64-Bit Server VM 11.0.16.1+1"
+          name: "OpenJDK Runtime Environment"
+          version: "11.0.16.1+1"
+      processorPath: "simple-otelFlow/processors/5/route/1/processors/0"
+      service:
+        name: "simple-otel"
+        namespace: "demo"
+        type: "mulesoft"
+        version: "1.0.0"
+      spanId: "273487d8c437628f"
+      status: "INFO"
+      team: "avio-otel"
+      telemetry:
+        sdk:
+          language: "java"
+          name: "opentelemetry"
+          version: "1.45.0"
+      traceId: "9fedabd3bc42f5f4569283e836c92935"
+    message: "Standard Mule Logger - Log message with context correlation id"
+    service: "simple-otel"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "team:avio-otel"
+    trace_id: "6238193467236362549"
+ -
+  sample: |-
+    {
+      "process" : {
+        "command_args" : "",
+        "runtime" : {
+          "name" : "OpenJDK Runtime Environment",
+          "description" : "Eclipse Adoptium OpenJDK 64-Bit Server VM 11.0.16.1+1",
+          "version" : "11.0.16.1+1"
+        },
+        "pid" : "77224",
+        "executable" : {
+          "path" : "/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java"
+        }
+      },
+      "os" : {
+        "description" : "Mac OS X 14.3.1",
+        "type" : "darwin"
+      },
+      "ddtags" : "env:dev,service:simple-otel,version:1.0.0,process.executable.path:/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java,os.type:darwin,otel_source:datadog_exporter",
+      "team" : "avio-otel",
+      "message" : "Standard Mule Logger - Map attribute team to tag",
+      "datadog": {
+        "log": {
+          "source": "mulesoft"
+        }
+      },
+      "hostname" : "ac0107",
+      "mule" : {
+        "home" : "/Applications/AnypointStudio copy.app/Contents/Eclipse/plugins/org.mule.tooling.server.4.4.0.ee_7.11.0.202406181841/mule"
+      },
+      "@timestamp" : "2024-08-07T05:56:44.874Z",
+      "service" : {
+        "name" : "simple-otel",
+        "namespace" : "demo",
+        "type" : "mulesoft",
+        "version" : "1.0.0"
+      },
+      "host" : {
+        "name" : "ac0107",
+        "arch" : "aarch64"
+      },
+      "otel" : {
+        "severity_text" : "INFO",
+        "severity_number" : "9",
+        "timestamp" : "1723010204874456000"
+      },
+      "telemetry" : {
+        "sdk" : {
+          "name" : "opentelemetry",
+          "language" : "java",
+          "version" : "1.45.0"
+        }
+      },
+      "deployment" : {
+        "environment" : {
+          "name":"dev"
+        }
+      },
+      "spanId" : "273487d8c437628f",
+      "traceId" : "9fedabd3bc42f5f4569283e836c92935",
+      "spanIdLong" : "2825032231342793359",
+      "traceIdLong" : "6238193467236362549",
+      "processorPath" : "simple-otelFlow/processors/5/route/1/processors/0",
+      "status" : "INFO"
+    }
+  result:
+    custom:
+      '@timestamp': "2024-08-07T05:56:44.874Z"
+      datadog:
+        log:
+          source: "mulesoft"
+      dd:
+        span_id: "2825032231342793359"
+      ddtags: "env:dev,service:simple-otel,version:1.0.0,process.executable.path:/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java,os.type:darwin,otel_source:datadog_exporter"
+      deployment:
+        environment:
+          name: "dev"
+      host:
+        arch: "aarch64"
+        name: "ac0107"
+      hostname: "ac0107"
+      mule:
+        home: "/Applications/AnypointStudio copy.app/Contents/Eclipse/plugins/org.mule.tooling.server.4.4.0.ee_7.11.0.202406181841/mule"
+      os:
+        description: "Mac OS X 14.3.1"
+        type: "darwin"
+      otel:
+        severity_number: "9"
+        severity_text: "INFO"
+        timestamp: "1723010204874456000"
+      process:
+        command_args: ""
+        executable:
+          path: "/Users/demo/Library/Java/JavaVirtualMachines/temurin-11.0.16.1/Contents/Home/bin/java"
+        pid: "77224"
+        runtime:
+          description: "Eclipse Adoptium OpenJDK 64-Bit Server VM 11.0.16.1+1"
+          name: "OpenJDK Runtime Environment"
+          version: "11.0.16.1+1"
+      processorPath: "simple-otelFlow/processors/5/route/1/processors/0"
+      service:
+        name: "simple-otel"
+        namespace: "demo"
+        type: "mulesoft"
+        version: "1.0.0"
+      spanId: "273487d8c437628f"
+      status: "INFO"
+      team: "avio-otel"
+      telemetry:
+        sdk:
+          language: "java"
+          name: "opentelemetry"
+          version: "1.45.0"
+      traceId: "9fedabd3bc42f5f4569283e836c92935"
+    message: "Standard Mule Logger - Map attribute team to tag"
+    service: "simple-otel"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "team:avio-otel"
+    trace_id: "6238193467236362549"

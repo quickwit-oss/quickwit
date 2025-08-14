@@ -1,0 +1,61 @@
+id: "clickhouse"
+tests:
+ -
+  sample: "2019.11.06 05:19:07.473780 [ 7 ] {} <Trace> default.tableau (ReplicatedMergeTreeQueue): Loaded queue"
+  result:
+    custom:
+      clickhouse:
+        application:
+          id: "ReplicatedMergeTreeQueue"
+        service: "default.tableau"
+      level: "Trace"
+      pid: 7
+      timestamp: 1573017547473
+    message: "Loaded queue"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1573017547473
+ -
+  sample: "2019.11.06 05:19:07.489819 [ 32 ] {a05c4495-ebdb-4f1d-894a-523a8d3a1d5f} <Debug> executeQuery: (from 127.0.0.1:43218) INSERT INTO tableau VALUES"
+  result:
+    custom:
+      clickhouse:
+        service: "executeQuery"
+      level: "Debug"
+      pid: 32
+      timestamp: 1573017547489
+    message: "(from 127.0.0.1:43218) INSERT INTO tableau VALUES"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1573017547489
+ -
+  sample: "2019.11.06 05:19:08.484087 [ 11 ] {} <Information> default.tableau: Became leader"
+  result:
+    custom:
+      clickhouse:
+        service: "default.tableau"
+      level: "Information"
+      pid: 11
+      timestamp: 1573017548484
+    message: "Became leader"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1573017548484
+ -
+  sample: "2019.11.21 06:03:36.595698 [ 48 ] {e1e58966-f8e3-4bc3-ae94-d0e0e3b13179} <Trace> virtual DB::MergingAndConvertingBlockInputStream::~MergingAndConvertingBlockInputStream(): Waiting for threads to finish"
+  result:
+    custom:
+      clickhouse:
+        service: "virtual DB::MergingAndConvertingBlockInputStream::~MergingAndConvertingBlockInputStream()"
+      level: "Trace"
+      pid: 48
+      timestamp: 1574316216595
+    message: "Waiting for threads to finish"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1574316216595
+

@@ -1,0 +1,56 @@
+id: contentful
+metric_id: contentful
+backend_only: false
+facets:
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - groups:
+      - Web Access
+    name: User-Agent
+    path: http.useragent
+    source: log
+pipeline:
+  type: pipeline
+  name: Contentful
+  enabled: true
+  filter:
+    query: "source:contentful"
+  processors:
+    - type: attribute-remapper
+      name: Map `event` to `evt.name`
+      enabled: true
+      sources:
+        - event
+      sourceType: attribute
+      target: evt.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `user` to `usr.id`
+      enabled: true
+      sources:
+        - user
+      sourceType: attribute
+      target: usr.id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `details.userAgent` to `http.useragent`
+      enabled: true
+      sources:
+        - details.userAgent
+      sourceType: attribute
+      target: http.useragent
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false

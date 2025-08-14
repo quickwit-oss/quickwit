@@ -1,0 +1,320 @@
+id: datazoom
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - groups:
+      - Geoip
+    name: Longitude
+    path: network.client.geoip.location.longitude
+    source: log
+  - groups:
+      - Geoip
+    name: Latitude
+    path: network.client.geoip.location.latitude
+    source: log
+  - groups:
+      - Geoip
+    name: Postal Code
+    path: network.client.geoip.postal_code
+    source: log
+  - groups:
+      - Datazoom
+    name: user_details.content_session_id
+    path: user_details.content_session_id
+    source: log
+  - groups:
+      - Datazoom
+    name: player.player_name
+    path: player.player_name
+    source: log
+  - groups:
+      - Datazoom
+    name: player.streaming_protocol
+    path: player.streaming_protocol
+    source: log
+  - groups:
+      - Datazoom
+    name: player.player_version
+    path: player.player_version
+    source: log
+  - facetType: range
+    groups:
+      - Event
+    name: Buffer duration content
+    path: event.metrics.buffer_duration_content_ms
+    source: log
+    type: double
+    unit:
+      family: time
+      name: millisecond
+  - facetType: range
+    groups:
+      - Event
+    name: Stall duration content
+    path: event.metrics.stall_duration_content_ms
+    source: log
+    type: double
+    unit:
+      family: time
+      name: millisecond
+  - groups:
+      - Event
+    name: event.metrics.num_errors
+    path: event.metrics.num_errors
+    source: log
+  - facetType: range
+    groups:
+      - Event
+    name: Buffer duration ads
+    path: event.metrics.buffer_duration_ads_ms
+    source: log
+    type: double
+    unit:
+      family: time
+      name: millisecond
+  - groups:
+      - Event
+    name: event.metrics.stall_count_content
+    path: event.metrics.stall_count_content
+    source: log
+  - facetType: range
+    groups:
+      - Event
+    name: Engagement duration
+    path: event.metrics.engagement_duration_ms
+    source: log
+    type: double
+    unit:
+      family: time
+      name: millisecond
+  - facetType: range
+    groups:
+      - Event
+    name: Playback duration
+    path: event.metrics.playback_duration_ads_ms
+    source: log
+    type: double
+    unit:
+      family: time
+      name: millisecond
+  - groups:
+      - Event
+    name: event.metrics.num_errors_ads
+    path: event.metrics.num_errors_ads
+    source: log
+  - groups:
+      - Event
+    name: event.metrics.bandwidth_kbps
+    path: event.metrics.bandwidth_kbps
+    source: log
+  - facetType: range
+    groups:
+      - Event
+    name: Time since last heartbeat
+    path: event.metrics.time_since_last_heartbeat_ms
+    source: log
+    type: double
+    unit:
+      family: time
+      name: millisecond
+  - groups:
+      - Event
+    name: event.metrics.num_content_plays
+    path: event.metrics.num_content_plays
+    source: log
+  - groups:
+      - Event
+    name: event.metrics.num_errors_content
+    path: event.metrics.num_errors_content
+    source: log
+  - facetType: range
+    groups:
+      - Event
+    name: Buffer length
+    path: event.metrics.buffer_length_ms
+    source: log
+    type: double
+    unit:
+      family: time
+      name: millisecond
+  - groups:
+      - Event
+    name: event.metrics.rendition_video_bitrate_kbps
+    path: event.metrics.rendition_video_bitrate_kbps
+    source: log
+  - facetType: range
+    groups:
+      - Event
+    name: Playback duration content
+    path: event.metrics.playback_duration_content_ms
+    source: log
+    type: double
+    unit:
+      family: time
+      name: millisecond
+  - groups:
+      - Event
+    name: event.metrics.num_ad_plays
+    path: event.metrics.num_ad_plays
+    source: log
+  - groups:
+      - Event
+    name: event.metrics.playhead_position_sec
+    path: event.metrics.playhead_position_sec
+    source: log
+  - groups:
+      - Datazoom
+    name: Video Media Type
+    path: video.media_type
+    source: log
+  - groups:
+      - Datazoom
+    name: Device Type
+    path: device.device_type
+    source: log
+  - groups:
+      - Datazoom
+    name: OS Version
+    path: device.os_version
+    source: log
+  - groups:
+      - Web Access
+    name: Browser Version
+    path: device.browser_version
+    source: log
+  - groups:
+      - Event
+    name: event.attributes.error_code
+    path: event.attributes.error_code
+    source: log
+  - facetType: range
+    groups:
+      - Event
+    name: Startup duration content
+    path: event.attributes.startup_duration_content_ms
+    source: log
+    type: double
+    unit:
+      family: time
+      name: millisecond
+  - groups:
+      - Web Access
+    name: Network ISP
+    path: network.isp
+    source: log
+  - groups:
+      - Network
+    name: Client ASN
+    path: network.asn
+    source: log
+  - groups:
+      - Network
+    name: ASN Org
+    path: network.asn_org
+    source: log
+pipeline:
+  type: pipeline
+  name: Datazoom Time Pipeline
+  enabled: true
+  filter:
+    query: source:datazoom
+  processors:
+    - type: date-remapper
+      name: Define `ops_metadata.client_ts_ms` as the official date of the log
+      enabled: true
+      sources:
+        - ops_metadata.client_ts_ms
+    - type: status-remapper
+      name: Define `event.type` as the official status of the log
+      enabled: true
+      sources:
+        - event.type
+    - type: attribute-remapper
+      name: Map `geo_location.region_code` to `network.client.geoip.subdivision.iso_code`
+      enabled: true
+      sources:
+        - geo_location.region_code
+      sourceType: attribute
+      target: network.client.geoip.subdivision.iso_code
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `geo_location.region` to `network.client.geoip.subdivision.name`
+      enabled: true
+      sources:
+        - geo_location.region
+      sourceType: attribute
+      target: network.client.geoip.subdivision.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `geo_location.longitude` to `network.client.geoip.location.longitude`
+      enabled: true
+      sources:
+        - geo_location.longitude
+      sourceType: attribute
+      target: network.client.geoip.location.longitude
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `geo_location.latitude` to `network.client.geoip.location.latitude`
+      enabled: true
+      sources:
+        - geo_location.latitude
+      sourceType: attribute
+      target: network.client.geoip.location.latitude
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `geo_location.postal_code` to `network.client.geoip.postal_code`
+      enabled: true
+      sources:
+        - geo_location.postal_code
+      sourceType: attribute
+      target: network.client.geoip.postal_code
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `event.attributes.error_msg` to `error.message`
+      enabled: true
+      sources:
+        - event.attributes.error_msg
+      sourceType: attribute
+      target: error.message
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false

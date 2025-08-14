@@ -1,0 +1,113 @@
+id: weave-kube
+metric_id: nginx-ingress-controller
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Client Port
+    path: network.client.port
+    source: log
+  - groups:
+      - Web Access
+    name: Destination IP
+    path: network.destination.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Destination Port
+    path: network.destination.port
+    source: log
+  - groups:
+      - Network
+    name: Client MAC
+    path: network.client.mac
+    source: log
+  - groups:
+      - Network
+    name: Client Name
+    path: network.client.name
+    source: log
+  - groups:
+      - Network
+    name: Destination MAC
+    path: network.destination.mac
+    source: log
+  - groups:
+      - Web Access
+    name: Destination Name
+    path: network.destination.name
+    source: log
+pipeline:
+  type: pipeline
+  name: Weave Kube
+  enabled: true
+  filter:
+    query: source:weave-kube
+  processors:
+    - type: grok-parser
+      name: Parsing Weave Kube logs
+      enabled: true
+      source: message
+      samples:
+        - 'INFO: 2018/09/05 03:42:57.265098 ipsec: InitSALocal: 127.0.0.1 -> 127.0.0.2 :6784 0x5fc70829'
+        - 'INFO: 2017/06/18 13:45:59.388897 sleeve ->[127.0.0.1:6783|aa:aa:aa:aa:aa:aa(ip-127.0.0.1.ec2.internal)]: Effective MTU verified at 8939'
+        - 'INFO: 2018/09/05 04:36:09.634899 Removed unreachable peer aa:aa:aa:aa:aa:aa(ip-127.0.0.1.ec2.internal)'
+        - 'ERRO: 2018/12/07 18:30:13.232527 Captured frame from MAC (aa:aa:aa:aa:aa:aa) to (bb:bb:bb:bb:bb:bb) associated with another peer cc:cc:cc:cc:cc:cc(k8s-slave-1)'
+        - 'INFO: 2018/09/05 03:42:57.057642 [allocator aa:aa:aa:aa:aa:aa] No valid persisted data'
+      grok:
+        supportRules: |
+          _prefix %{word:status}: %{date("yyyy/MM/dd HH:mm:ss.SSSSSS"):timestamp}
+          _ip_port_source %{ip:network.client.ip}:%{number:network.client.port}
+          _mac_name_source %{mac:network.client.mac}\(%{notSpace:network.client.name}\)
+          _ip_mac_name_source %{_ip_port_source}\|%{_mac_name_source}
+          _ip_port_dest %{ip:network.destination.ip}:%{number:network.destination.port}
+          _mac_name_dest %{mac:network.destination.mac}\(%{notSpace:network.destination.name}\)
+          _ip_mac_name_dest %{_ip_port_dest}\|%{_mac_name_dest}
+          _mac_name_peer %{mac:network.peer.mac}\(%{notSpace:network.peer.name}\)
+        matchRules: |
+          ipsec_setup %{_prefix} Setting up IPsec between %{_mac_name_source} and %{_mac_name_dest}
+          ipsec_destroy %{_prefix} Destroying IPsec between %{_mac_name_source} and %{_mac_name_dest}
+          ipsec_op %{_prefix} ipsec: %{notSpace:ipsec_op}: .*%{ip:network.client.ip} -> %{ip:network.destination.ip}( :%{number:network.destination.port})?%{data}
+
+          operation %{_prefix}( %{notSpace:mode})? ->\[(%{_ip_mac_name_dest})?(%{_ip_port_dest})?(%{_mac_name_dest})?\]:? %{data}
+
+          unreachable_peer %{_prefix} Removed unreachable peer %{_mac_name_dest}
+
+          captured_frame %{_prefix} Captured frame from MAC \(%{mac:network.client.mac}\) to \(%{mac:network.destination.mac}\) associated with another peer %{_mac_name_peer}
+
+          discovered_mac %{_prefix} Discovered remote MAC %{mac:destination.mac} at %{_mac_name_dest}
+
+          allocator %{_prefix} \[allocator( %{mac:source.mac})?\] %{data}
+
+          fallback %{_prefix} %{data}
+
+          # Extra samples:
+          # Ipsec
+          # INFO: 2018/09/05 03:42:57.264469 Setting up IPsec between aa:aa:aa:aa:aa:aa(ip-127.0.0.1.ec2.internal) and bb:bb:bb:bb:bb:bb(ip-127.0.0.2.ec2.internal)
+          # INFO: 2018/09/05 03:42:57.583259 ipsec: destroy: in 127.0.0.1 -> 127.0.0.2 0x5038c53c
+          # Operation
+          # INFO: 2019/01/22 12:52:31.767170 ->[127.0.0.1:6783] error during connection attempt: dial tcp4 :0->127.0.0.1:6783: connect: no route to host
+          # INFO: 2017/06/18 13:45:59.383012 overlay_switch ->[aa:aa:aa:aa:aa:aa(ip-127.0.0.1.ec2.internal)] using fastdp
+          # Discovered MAC
+          # INFO: 2019/01/22 12:51:56.307609 Discovered remote MAC aa:aa:aa:aa:aa:aa at bb:bb:bb:bb:bb:bb(ip-127.0.0.1.eu-west-3.compute.internal)
+          # Allocator
+          # WARN: 2018/12/07 18:30:17.107279 [allocator]: Delete: no addresses for e11f2de4d4017cd1947fd80c02306ff39e433d25d6b0846caf957405682ea287
+          # Fallback
+          # INFO: 2017/06/18 13:45:59.387055 EMSGSIZE on send, expecting PMTU update (IP packet was 60028 bytes, payload was 60020 bytes)
+
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+
+    - type: status-remapper
+      name: Define `status` as the official status of the log
+      enabled: true
+      sources:
+        - status

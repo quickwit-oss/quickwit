@@ -1,0 +1,623 @@
+id: "sonicwall-firewall"
+tests:
+  - 
+    sample: "<134>  id=firewall sn=0040103060B5 time=\"2024-09-02 13:11:35 UTC\"
+      fw=10.10.10.10 pri=6 c=16 gcat=2 m=1382 src=10.10.10.10:51692
+      dst=10.10.10.10:443:X1 usr=\"admin\" sess=\"API\" msg=\"Configuration
+      succeeded:  'peActObjLogCustomRPObj' , User_Test, changed to [Global]\"
+      n=207 fw_action=\"NA\" uuid=\"00000000-0000-0002-3200-0040103d66b5\"
+      auditId=185 tranxId=29 userMode=\"Full\" auditTime=\"06:11:35 Sep 02
+      2024\" grpName=\"groupPeActionObject\" grpIndex=\"User_Test\"
+      oldValue=\"\" newValue=\"Global\""
+    result:
+      custom:
+        auditId: 185
+        auditTime: "06:11:35 Sep 02 2024"
+        destination:
+          network_interface: "X1"
+        device_serial_number: "0040103060B5"
+        dst: "10.10.10.10:443:X1"
+        event:
+          count: 207
+        firewall:
+          WAN: "10.10.10.10"
+          action: "NA"
+        gcat: 2
+        group_category: "Log"
+        grpIndex: "User_Test"
+        grpName: "groupPeActionObject"
+        id: "firewall"
+        message_category: 16
+        message_id: 1382
+        message_priority: 134.0
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+            port: 51692.0
+          destination:
+            geoip: {}
+            ip: "10.10.10.10"
+            port: 443.0
+        newValue: "Global"
+        priority: "Info"
+        priority_level: 6
+        session_type: "API"
+        src: "10.10.10.10:51692"
+        time: "2024-09-02 13:11:35 UTC"
+        timestamp: 1725282695000
+        tranxId: 29
+        userMode: "Full"
+        usr:
+          name: "admin"
+        uuid: "00000000-0000-0002-3200-0040103d66b5"
+      message: "Configuration succeeded:  'peActObjLogCustomRPObj' , User_Test, changed to [Global]"
+      status: "info"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1725282695000
+  - 
+    sample: '<133>  id=firewall sn=0019206645 time="2024-09-03 10:42:36 UTC"
+      fw=10.10.10.10 pri=5 c=4 gcat=3 m=16 srcMac=00:50:56:81:3c:9e
+      src=10.40.1.245:65025:X0 natSrc=10.10.10.10:62448 dstMac=a8:46:9d:23:d2:7a
+      dst=10.10.10.10:443:X1 natDst=10.10.10.10:443 proto=tcp/https sent=354
+      rcvd=52 rule="User_Securtiy_Profile" app=11
+      dstname=settings-win.data.microsoft.com arg=/ code=15 Category="Business
+      and Economy" msg="Web site access allowed" note="Host:
+      settings-win.data.microsoft.com, Command: Other HTTP Command Policy: N/A,
+      Info: 6404 " n=40199 fw_action="forward" dpi=0'
+    result:
+      custom:
+        Category: "Business and Economy"
+        bytes:
+          received: 52
+          sent: 354
+        code: 15
+        destination:
+          hostname: "settings-win.data.microsoft.com"
+          mac: "a8:46:9d:23:d2:7a"
+          nat:
+            ip: "10.10.10.10"
+            port: 443.0
+          network_interface: "X1"
+        device_serial_number: "0019206645"
+        dpi: 0
+        dst: "10.10.10.10:443:X1"
+        event:
+          count: 40199
+        firewall:
+          WAN: "10.10.10.10"
+          action: "forward"
+        gcat: 3
+        group_category: "Security Services"
+        http:
+          url_details:
+            path: "/"
+        id: "firewall"
+        message_category: 4
+        message_id: 16
+        message_priority: 133.0
+        natDst: "10.10.10.10:443"
+        natSrc: "10.10.10.10:62448"
+        network:
+          client:
+            geoip: {}
+            ip: "10.40.1.245"
+            port: 65025.0
+          destination:
+            geoip: {}
+            ip: "10.10.10.10"
+            port: 443.0
+        note: "Host: settings-win.data.microsoft.com, Command: Other HTTP Command Policy: N/A, Info: 6404"
+        priority: "Notice"
+        priority_level: 5
+        proto: "tcp/https"
+        protocol: "tcp"
+        rule: "User_Securtiy_Profile"
+        service: "https"
+        source:
+          mac: "00:50:56:81:3c:9e"
+          nat:
+            ip: "10.10.10.10"
+            port: 62448.0
+          network_interface: "X0"
+        src: "10.40.1.245:65025:X0"
+        syslog_appid: 11
+        time: "2024-09-03 10:42:36 UTC"
+        timestamp: 1725360156000
+      message: "Web site access allowed"
+      status: "notice"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1725360156000
+  - 
+   sample: "10.10.10.10 id=firewall sn=12345678 time=\"2022-03-11 14:17:52 UTC\" fw=10.10.10.10 pri=6 c=1024 gcat=2 m=97 srcMac=12:34:56:78:90:ab src=10.10.10.10:41856:X0 srcZone=Trusted natSrc=10.10.10.10:8689 dstMac=ab:09:87:65:43:21 dst=10.10.10.10:443:X1 dstZone=Untrusted natDst=10.10.10.10:443 usr=\"Unknown (SSO failed)\" proto=tcp/https sent=104 rcvd=230 rule=\"15 (LAN->WAN)\" app=5 af_polid=4 ipscat=N/A appcat=\"PROXY-ACCESS\" appid=2900 dstname=10.10.10.10 arg=/ code=64 Category=\"Not Rated\" note=\"Policy: cfsZonePolicy0, Info: 6148 \" n=2520325 fw_action=\"NA\" dpi=1 op=0 msg=\"Web site hit\""
+   result:
+    custom:
+      Category: "Not Rated"
+      app:
+        category: "PROXY-ACCESS"
+        policy:
+          id: 4
+      appid: 2900
+      bytes:
+        received: 230
+        sent: 104
+      code: 64
+      destination:
+        hostname: "10.10.10.10"
+        mac: "ab:09:87:65:43:21"
+        nat:
+          ip: "10.10.10.10"
+          port: 443.0
+        network_interface: "X1"
+        zone: "Untrusted"
+      device_serial_number: 12345678
+      dpi: 1
+      dst: "10.10.10.10:443:X1"
+      event:
+        count: 2520325
+      firewall:
+        WAN: "10.10.10.10"
+        action: "NA"
+      gcat: 2
+      group_category: "Log"
+      http:
+        url_details:
+          path: "/"
+      http_operation_code: 0
+      id: "firewall"
+      ip: "10.10.10.10"
+      ips:
+        category: "N/A"
+      message_category: 1024
+      message_id: 97
+      natDst: "10.10.10.10:443"
+      natSrc: "10.10.10.10:8689"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+          port: 41856.0
+        destination:
+          geoip: {}
+          ip: "10.10.10.10"
+          port: 443.0
+      note: "Policy: cfsZonePolicy0, Info: 6148"
+      priority: "Info"
+      priority_level: 6
+      proto: "tcp/https"
+      protocol: "tcp"
+      rule: "15 (LAN->WAN)"
+      service: "https"
+      source:
+        mac: "12:34:56:78:90:ab"
+        nat:
+          ip: "10.10.10.10"
+          port: 8689.0
+        network_interface: "X0"
+        zone: "Trusted"
+      src: "10.10.10.10:41856:X0"
+      syslog_appid: 5
+      time: "2022-03-11 14:17:52 UTC"
+      timestamp: 1647008272000
+      usr:
+        name: "Unknown (SSO failed)"
+    message: "Web site hit"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1647008272000
+  - 
+    sample: <134>  id=firewall sn=004018281E114 time="2022-05-16 15:22:26 UTC"
+      fw=10.10.10.10 pri=6 c=1024 m=537 msg="Connection Closed" app=12
+      sess="Web" n=795 usr="admin" src=10.10.10.10:65055:X1
+      dst=10.10.10.10:443:X1 srcMac=16:20:55:81:11:30 proto=tcp/https sent=1930
+      rcvd=1545 spkt=11 rpkt=7 dpi=0 cdur=2133 rule="Default Access Rule"
+      fw_action="NA"
+    result:
+      custom:
+        bytes:
+          received: 1545
+          sent: 1930
+        connection_duration: 2133
+        destination:
+          network_interface: "X1"
+        device_serial_number: "004018281E114"
+        dpi: 0
+        dst: "10.10.10.10:443:X1"
+        event:
+          count: 795
+        firewall:
+          WAN: "10.10.10.10"
+          action: "NA"
+        id: "firewall"
+        message_category: 1024
+        message_id: 537
+        message_priority: 134.0
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+            port: 65055.0
+          destination:
+            geoip: {}
+            ip: "10.10.10.10"
+            port: 443.0
+        packets:
+          received: 7
+          sent: 11
+        priority: "Info"
+        priority_level: 6
+        proto: "tcp/https"
+        protocol: "tcp"
+        rule: "Default Access Rule"
+        service: "https"
+        session_type: "Web"
+        source:
+          mac: "16:20:55:81:11:30"
+          network_interface: "X1"
+        src: "10.10.10.10:65055:X1"
+        syslog_appid: 12
+        time: "2022-05-16 15:22:26 UTC"
+        timestamp: 1652714546000
+        usr:
+          name: "admin"
+      message: "Connection Closed"
+      status: "info"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1652714546000
+  - 
+    sample: "Jan  3 13:45:51 10.10.10.10 id=firewall sn=000SERIAL time=\"2007-01-03 14:48:22\" fw=10.10.10.10 pri=6 c=262144 m=98 msg=\"Connection Opened\" n=23427 src=:28503:WAN:SOURCEHOST srcV6=2a52:cf50:add:4002:91f2:a9b2:e09a:6fc6 dst=::LAN:DSTHOST proto=tcp/dns dstV6=::1"
+    result:
+      custom:
+        date: 31758351000
+        destination:
+          ipv6: "::1"
+          network_interface: "LAN"
+          resolved_name: "DSTHOST"
+        device_serial_number: "000SERIAL"
+        dst: "::LAN:DSTHOST"
+        event:
+          count: 23427
+        firewall:
+          WAN: "10.10.10.10"
+        id: "firewall"
+        ip: "10.10.10.10"
+        message_category: 262144
+        message_id: 98
+        network:
+          client:
+            port: 28503.0
+        priority: "Info"
+        priority_level: 6
+        proto: "tcp/dns"
+        protocol: "tcp"
+        service: "dns"
+        source:
+          network_interface: "WAN"
+          resolved_name: "SOURCEHOST"
+        src: ":28503:WAN:SOURCEHOST"
+        srcV6: "2a52:cf50:add:4002:91f2:a9b2:e09a:6fc6"
+        time: "2007-01-03 14:48:22"
+      message: "Connection Opened"
+      status: "info"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1
+  - 
+    sample: Apr 27 10:32:18 10.10.10.10 id=firewall sn=0000TSAA00 time="2022-04-27
+      10:32:51" fw=10.10.10.10 pri=6 c=16 m=998 msg="GUI administration session
+      ended" sess="Web" dur=510 n=11 usr="admin" src=10.10.10.10::X0
+      dst=10.10.10.10:4444:X0 proto=tcp/4444 note="admin"
+    result:
+      custom:
+        date: 41596338000
+        destination:
+          network_interface: "X0"
+        device_serial_number: "0000TSAA00"
+        dst: "10.10.10.10:4444:X0"
+        event:
+          count: 11
+        firewall:
+          WAN: "10.10.10.10"
+        id: "firewall"
+        ip: "10.10.10.10"
+        message_category: 16
+        message_id: 998
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+          destination:
+            geoip: {}
+            ip: "10.10.10.10"
+            port: 4444.0
+        note: "admin"
+        priority: "Info"
+        priority_level: 6
+        proto: "tcp/4444"
+        protocol: "tcp"
+        service: "4444"
+        session_duration: 510
+        session_type: "Web"
+        source:
+          network_interface: "X0"
+        src: "10.10.10.10::X0"
+        time: "2022-04-27 10:32:51"
+        usr:
+          name: "admin"
+      message: "GUI administration session ended"
+      status: "info"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1
+  - 
+    sample: <134>  id=firewall sn=02003DE21 time="2022-05-16 08:19:21"
+      fw=10.10.10.10 pri=6 c=0 gcat=6 m=1235 srcMac=00:09:c1:dd:4f:d4
+      src=10.10.10.10:54606:X1 srcZone=Untrusted natSrcV6=not_an_IP
+      dstMac=00:20:d5:30:f9:d9 dst=10.10.10.10:80:X1 dstZone=Untrusted
+      natDstV6=not_an_IP proto=tcp/http sent=52 app=9 msg="Web site hit" note="stack traffic
+      always trusted" n=153 fw_action="forward"
+    result:
+      custom:
+        bytes:
+          sent: 52
+        destination:
+          mac: "00:20:d5:30:f9:d9"
+          nat:
+            ipv6: "not_an_IP"
+          network_interface: "X1"
+          zone: "Untrusted"
+        device_serial_number: "02003DE21"
+        dst: "10.10.10.10:80:X1"
+        event:
+          count: 153
+        firewall:
+          WAN: "10.10.10.10"
+          action: "forward"
+        gcat: 6
+        group_category: "Network"
+        id: "firewall"
+        message_category: 0
+        message_id: 1235
+        message_priority: 134.0
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+            port: 54606.0
+          destination:
+            geoip: {}
+            ip: "10.10.10.10"
+            port: 80.0
+        note: "stack traffic always trusted"
+        priority: "Info"
+        priority_level: 6
+        proto: "tcp/http"
+        protocol: "tcp"
+        service: "http"
+        source:
+          mac: "00:09:c1:dd:4f:d4"
+          nat:
+            ipv6: "not_an_IP"
+          network_interface: "X1"
+          zone: "Untrusted"
+        src: "10.10.10.10:54606:X1"
+        syslog_appid: 9
+        time: "2022-05-16 08:19:21"
+      message: "Web site hit"
+      status: "info"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1
+  - 
+    sample: '<129> id=firewall sn=ZZZZZZZZZ time="2022-02-24 03:29:07"
+      fw=10.10.10.10 pri=1 c=32 m=609 msg="IPS Prevention Alert: WEB-ATTACKS
+      Apache Log4j2 JNDI Log Messages Remote Code Execution" sid=2307
+      ipscat="WEB-ATTACKS Apache Log4j2 JNDI Log Messages Remote Code Execution"
+      ipspri=2 n=8158 src=10.10.10.10:54192:X20-V60 dst=:8080:X20-V68
+      dstV6=2a02:cf40:add:4002:91f2:a9b2:e09a:6fc6 fw_action="drop"'
+    result:
+      custom:
+        destination:
+          ipv6: "2a02:cf40:add:4002:91f2:a9b2:e09a:6fc6"
+          resolved_name: "X20-V68"
+        device_serial_number: "ZZZZZZZZZ"
+        dst: ":8080:X20-V68"
+        event:
+          count: 8158
+        firewall:
+          WAN: "10.10.10.10"
+          action: "drop"
+        id: "firewall"
+        ips:
+          category: "WEB-ATTACKS Apache Log4j2 JNDI Log Messages Remote Code Execution"
+          priority: 2
+        message_category: 32
+        message_id: 609
+        message_priority: 129.0
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+            port: 54192.0
+          destination:
+            port: 8080.0
+        priority: "Alert"
+        priority_level: 1
+        signature_id: 2307
+        source:
+          resolved_name: "X20-V60"
+        src: "10.10.10.10:54192:X20-V60"
+        time: "2022-02-24 03:29:07"
+      message: "IPS Prevention Alert: WEB-ATTACKS Apache Log4j2 JNDI Log Messages Remote Code Execution"
+      status: "alert"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1
+  - 
+    sample: "Jan  3 13:45:43 10.10.10.10 id=firewall sn=000SERIAL time=\"2007-01-03 14:48:14\" fw=10.10.10.10 pri=5 c=256 m=38 msg=\"ICMP packet dropped\" n=22070 src=10.10.10.10:1026:WAN dst=10.10.10.10:6822:WAN  type=3 code=3"
+    result:
+      custom:
+        code: 3
+        date: 31758343000
+        destination:
+          network_interface: "WAN"
+        device_serial_number: "000SERIAL"
+        dst: "10.10.10.10:6822:WAN"
+        event:
+          count: 22070
+        firewall:
+          WAN: "10.10.10.10"
+        icmp_type: 3
+        id: "firewall"
+        ip: "10.10.10.10"
+        message_category: 256
+        message_id: 38
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+            port: 1026.0
+          destination:
+            geoip: {}
+            ip: "10.10.10.10"
+            port: 6822.0
+        priority: "Notice"
+        priority_level: 5
+        source:
+          network_interface: "WAN"
+        src: "10.10.10.10:1026:WAN"
+        time: "2007-01-03 14:48:14"
+      message: "ICMP packet dropped"
+      status: "notice"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1
+  - 
+    sample: "Jan  3 13:45:39 10.10.10.10 id=firewall sn=000SERIAL time=\"2007-01-03 14:48:10\" fw=10.10.10.10 pri=6 c=1024 m=537 msg=\"Connection Closed\"n=567999 src=10.10.10.10:4280:LAN dst=10.10.10.10:41850:WAN proto=tcp/41850 sent=386026 rcvd=454118 vpnpolicy=\"name\""
+    result:
+      custom:
+        Closed"n: 567999
+        bytes:
+          received: 454118
+          sent: 386026
+        date: 31758339000
+        destination:
+          network_interface: "WAN"
+        device_serial_number: "000SERIAL"
+        dst: "10.10.10.10:41850:WAN"
+        firewall:
+          WAN: "10.10.10.10"
+        id: "firewall"
+        ip: "10.10.10.10"
+        message_category: 1024
+        message_id: 537
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+            port: 4280.0
+          destination:
+            geoip: {}
+            ip: "10.10.10.10"
+            port: 41850.0
+        priority: "Info"
+        priority_level: 6
+        proto: "tcp/41850"
+        protocol: "tcp"
+        service: "41850"
+        source:
+          network_interface: "LAN"
+          vpn_policy: "name"
+        src: "10.10.10.10:4280:LAN"
+        time: "2007-01-03 14:48:10"
+      message: "\"Connection"
+      status: "info"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1
+  - 
+    sample: "Jan  3 13:45:39 10.10.10.10 id=firewall sn=000SERIAL time=\"2007-01-03 14:48:10\" fw=10.10.10.10 pri=6 c=1024 m=537 msg=\"Connection Closed\" n=567999 src=10.10.10.10:4280:LAN dst=10.10.10.10:41850:WAN proto=tcp/41850 sent=386026 rcvd=454118 vpnpolicy=\"name\" af_policy=0 af_type=0 af_service=0 af_action=\"NA\" af_object=0 ai=0 bcastRx=0 bcastTx=0 bid=0 bytesRx=0 bytesTx=0 catid=0 change=0 conns=0 contentObject=0 dyn=0 f=0 filetxstatus=0 fwlan=0 goodRxBytes=0 goodTxBytes=0 i=0 if=0 lic=0 pt=0 rcptTo=\"NA\" spycat=0 spypri=0 ucastRx=0 ucastTx=0 vpnpolicyDst=0"
+    result:
+      custom:
+        active_interface: 0
+        antispyware:
+          category: 0
+          priority: 0
+        app:
+          policy:
+            action: "NA"
+            name: 0
+            object_name: 0
+            service_name: 0
+            type: 0
+          rule: 0
+        blade_id: 0
+        broadcast:
+          packet_recieved: 0
+          packet_transmitted: 0
+        bytes:
+          received: 454118
+          sent: 386026
+        connections: 0
+        date: 31758339000
+        destination:
+          network_interface: "WAN"
+          vpn_policy: 0
+        device_serial_number: "000SERIAL"
+        dst: "10.10.10.10:41850:WAN"
+        dynamic: 0
+        event:
+          count: 567999
+        file_transmission_status: 0
+        firewall:
+          LAN: 0
+          WAN: "10.10.10.10"
+          gms_message_interval: 0
+          last_config_change: 0
+          license_count: 0
+          port: 0
+        flow_type: 0
+        id: "firewall"
+        interface: 0
+        interface_bytes:
+          received: 0
+          transmitted: 0
+        ip: "10.10.10.10"
+        mailTo: "NA"
+        message_category: 1024
+        message_id: 537
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+            port: 4280.0
+          destination:
+            geoip: {}
+            ip: "10.10.10.10"
+            port: 41850.0
+        priority: "Info"
+        priority_level: 6
+        proto: "tcp/41850"
+        protocol: "tcp"
+        rule_category_id: 0
+        service: "41850"
+        sonicpoint:
+          bytes_received: 0
+          bytes_transmitted: 0
+        source:
+          network_interface: "LAN"
+          vpn_policy: "name"
+        src: "10.10.10.10:4280:LAN"
+        time: "2007-01-03 14:48:10"
+        unicast:
+          packets_received: 0
+          packets_transmitted: 0
+      message: "Connection Closed"
+      status: "info"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1

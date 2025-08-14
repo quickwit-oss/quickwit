@@ -1,0 +1,461 @@
+id: "twilio"
+tests:
+ -
+  sample: |-
+    {
+      "actor_type" : "account",
+      "resource_sid" : "ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      "resource_type" : "account",
+      "description" : "description",
+      "event_data" : {
+        "friendly_name" : {
+          "previous" : "SubAccount Created at 2014-10-03 09:48 am",
+          "updated" : "Mr. Friendly"
+        }
+      },
+      "source" : "api",
+      "url" : "https://monitor.twilio.com/v1/Events/AEXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      "sid" : "AEXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      "source_ip_address" : "185.64.148.140",
+      "event_type" : "account.updated",
+      "actor_sid" : "USXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      "event_date" : "2014-10-03T16:48:25Z",
+      "account_sid" : "ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      "links" : {
+        "actor" : "https://api.twilio.com/2010-04-01/Accounts/USXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+        "resource" : "https://api.twilio.com/2010-04-01/Accounts/ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      }
+    }
+  result:
+    custom:
+      account_sid: "ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      actor_type: "account"
+      description: "description"
+      event_data:
+        friendly_name:
+          previous: "SubAccount Created at 2014-10-03 09:48 am"
+          updated: "Mr. Friendly"
+      event_date: "2014-10-03T16:48:25Z"
+      evt:
+        name: "account.updated"
+      http:
+        url: "https://monitor.twilio.com/v1/Events/AEXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      links:
+        actor: "https://api.twilio.com/2010-04-01/Accounts/USXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+        resource: "https://api.twilio.com/2010-04-01/Accounts/ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      network:
+        client:
+          geoip:
+            city:
+              name: "Paris"
+            continent:
+              code: "EU"
+              name: "Europe"
+            country:
+              iso_code: "FR"
+              name: "France"
+            ipAddress: "185.64.148.140"
+            location:
+              latitude: 48.90654
+              longitude: 2.33339
+            subdivision:
+              iso_code: "FR-IDF"
+              name: "Île-de-France"
+            timezone: "Europe/Paris"
+          ip: "185.64.148.140"
+      resource_sid: "ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      resource_type: "account"
+      sid: "AEXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      source: "api"
+      usr:
+        id: "USXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+    message: |-
+      {
+        "actor_type" : "account",
+        "resource_sid" : "ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+        "resource_type" : "account",
+        "description" : "description",
+        "event_data" : {
+          "friendly_name" : {
+            "previous" : "SubAccount Created at 2014-10-03 09:48 am",
+            "updated" : "Mr. Friendly"
+          }
+        },
+        "source" : "api",
+        "url" : "https://monitor.twilio.com/v1/Events/AEXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+        "sid" : "AEXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+        "source_ip_address" : "185.64.148.140",
+        "event_type" : "account.updated",
+        "actor_sid" : "USXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+        "event_date" : "2014-10-03T16:48:25Z",
+        "account_sid" : "ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+        "links" : {
+          "actor" : "https://api.twilio.com/2010-04-01/Accounts/USXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+          "resource" : "https://api.twilio.com/2010-04-01/Accounts/ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+        }
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1412354905000
+ -
+  sample: |-
+    {
+      "alert_text" : "alert_text",
+      "date_generated" : "2015-07-30T20:00:00Z",
+      "date_updated" : "2015-07-30T20:00:00Z",
+      "date_created" : "2015-07-30T20:00:00Z",
+      "resource_sid" : "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "log_level" : "error",
+      "more_info" : "more_info",
+      "response_body" : "response_body",
+      "request_method" : "GET",
+      "api_version" : "2010-04-01",
+      "request_url" : "http://www.example.com",
+      "url" : "https://monitor.twilio.com/v1/Alerts/NOXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      "sid" : "NOXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      "service_sid" : "PNe2cd757cd5257b0217a447933a0290d2",
+      "response_headers" : "response_headers",
+      "request_headers" : "request_headers",
+      "account_sid" : "ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      "request_variables" : "request_variables",
+      "error_code" : "error_code"
+    }
+  result:
+    custom:
+      _timestamp: 1438286400000
+      account_sid: "ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      api_version: "2010-04-01"
+      date_created: "2015-07-30T20:00:00Z"
+      date_generated: "2015-07-30T20:00:00Z"
+      date_updated: "2015-07-30T20:00:00Z"
+      error:
+        kind: "error_code"
+        message: "alert_text"
+      http:
+        method: "GET"
+        url: "https://monitor.twilio.com/v1/Alerts/NOXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      log_level: "error"
+      more_info: "more_info"
+      request_headers: "request_headers"
+      request_url: "http://www.example.com"
+      request_variables: "request_variables"
+      resource_sid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      response_body: "response_body"
+      response_headers: "response_headers"
+      service_sid: "PNe2cd757cd5257b0217a447933a0290d2"
+      sid: "NOXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+    message: |-
+      {
+        "alert_text" : "alert_text",
+        "date_generated" : "2015-07-30T20:00:00Z",
+        "date_updated" : "2015-07-30T20:00:00Z",
+        "date_created" : "2015-07-30T20:00:00Z",
+        "resource_sid" : "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "log_level" : "error",
+        "more_info" : "more_info",
+        "response_body" : "response_body",
+        "request_method" : "GET",
+        "api_version" : "2010-04-01",
+        "request_url" : "http://www.example.com",
+        "url" : "https://monitor.twilio.com/v1/Alerts/NOXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+        "sid" : "NOXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+        "service_sid" : "PNe2cd757cd5257b0217a447933a0290d2",
+        "response_headers" : "response_headers",
+        "request_headers" : "request_headers",
+        "account_sid" : "ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+        "request_variables" : "request_variables",
+        "error_code" : "error_code"
+      }
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1438286400000
+ -
+  sample: |-
+    {
+      "error_message" : "error_message",
+      "subresource_uris" : {
+        "media" : "/2010-04-01/Accounts/ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX/Messages/SMXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX/Media.json"
+      },
+      "date_sent" : "Thu, 24 Aug 2023 05:01:45 +0000",
+      "date_updated" : "Thu, 24 Aug 2023 05:01:45 +0000",
+      "date_created" : "Thu, 24 Aug 2023 05:01:45 +0000",
+      "api_version" : "2010-04-01",
+      "body" : "Hi there",
+      "num_segments" : "1",
+      "uri" : "/2010-04-01/Accounts/ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX/Messages/SMXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX.json",
+      "num_media" : "0",
+      "sid" : "SMXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      "price_unit" : "1",
+      "messaging_service_sid" : "MGXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      "price" : "1",
+      "account_sid" : "ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      "error_code" : "notfound",
+      "from" : "+15557122661",
+      "to" : "+15558675310",
+      "direction" : "outbound-api",
+      "status" : "queued"
+    }
+  result:
+    custom:
+      _timestamp: 1692853305000
+      account_sid: "ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      api_version: "2010-04-01"
+      body: "Hi there"
+      date_created: "Thu, 24 Aug 2023 05:01:45 +0000"
+      date_sent: "Thu, 24 Aug 2023 05:01:45 +0000"
+      date_updated: "Thu, 24 Aug 2023 05:01:45 +0000"
+      direction: "outbound-api"
+      error:
+        kind: "notfound"
+        message: "error_message"
+      from: "+15557122661"
+      messaging_service_sid: "MGXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      num_media: "0"
+      num_segments: "1"
+      price: "1"
+      price_unit: "1"
+      sid: "SMXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      status: "OK"
+      subresource_uris:
+        media: "/2010-04-01/Accounts/ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX/Messages/SMXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX/Media.json"
+      to: "+15558675310"
+      twilio:
+        status: "queued"
+      uri: "/2010-04-01/Accounts/ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX/Messages/SMXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX.json"
+    message: |-
+      {
+        "error_message" : "error_message",
+        "subresource_uris" : {
+          "media" : "/2010-04-01/Accounts/ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX/Messages/SMXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX/Media.json"
+        },
+        "date_sent" : "Thu, 24 Aug 2023 05:01:45 +0000",
+        "date_updated" : "Thu, 24 Aug 2023 05:01:45 +0000",
+        "date_created" : "Thu, 24 Aug 2023 05:01:45 +0000",
+        "api_version" : "2010-04-01",
+        "body" : "Hi there",
+        "num_segments" : "1",
+        "uri" : "/2010-04-01/Accounts/ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX/Messages/SMXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX.json",
+        "num_media" : "0",
+        "sid" : "SMXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+        "price_unit" : "1",
+        "messaging_service_sid" : "MGXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+        "price" : "1",
+        "account_sid" : "ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+        "error_code" : "notfound",
+        "from" : "+15557122661",
+        "to" : "+15558675310",
+        "direction" : "outbound-api",
+        "status" : "queued"
+      }
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1692853305000
+ -
+  sample: |-
+    {
+      "subresource_uris" : {
+        "feedback" : "/2010-04-01/Accounts/AC6e78773045f4a06b6e29001f97554171/Messages/SM3b68c5f7a9ca3dfd31f678658aed7875/Feedback.json",
+        "media" : "/2010-04-01/Accounts/AC6e78773045f4a06b6e29001f97554171/Messages/SM3b68c5f7a9ca3dfd31f678658aed7875/Media.json"
+      },
+      "date_updated" : "Tue, 30 Jan 2024 18:30:25 +0000",
+      "date_sent" : "Tue, 30 Jan 2024 18:30:25 +0000",
+      "date_created" : "Tue, 30 Jan 2024 18:30:25 +0000",
+      "api_version" : "2010-04-01",
+      "num_segments" : "1",
+      "uri" : "/2010-04-01/Accounts/AC6e78773045f4a06b6e29001f97554171/Messages/SM3b68c5f7a9ca3dfd31f678658aed7875.json",
+      "num_media" : "0",
+      "sid" : "SM3b68c5f7a9ca3dfd31f678658aed7875",
+      "price_unit" : "USD",
+      "messaging_service_sid" : "MGace35c0d2c698888bc4314e908c23c3e",
+      "service" : "twilio",
+      "account_sid" : "AC6e78773045f4a06b6e29001f97554171",
+      "from" : "",
+      "error_code" : 21704,
+      "to" : "+18777804236",
+      "direction" : "outbound-api",
+      "status" : "failed"
+    }
+  result:
+    custom:
+      _timestamp: 1706639425000
+      account_sid: "AC6e78773045f4a06b6e29001f97554171"
+      api_version: "2010-04-01"
+      date_created: "Tue, 30 Jan 2024 18:30:25 +0000"
+      date_sent: "Tue, 30 Jan 2024 18:30:25 +0000"
+      date_updated: "Tue, 30 Jan 2024 18:30:25 +0000"
+      direction: "outbound-api"
+      error:
+        kind: 21704
+      from: ""
+      messaging_service_sid: "MGace35c0d2c698888bc4314e908c23c3e"
+      num_media: "0"
+      num_segments: "1"
+      price_unit: "USD"
+      service: "twilio"
+      sid: "SM3b68c5f7a9ca3dfd31f678658aed7875"
+      status: "error"
+      subresource_uris:
+        feedback: "/2010-04-01/Accounts/AC6e78773045f4a06b6e29001f97554171/Messages/SM3b68c5f7a9ca3dfd31f678658aed7875/Feedback.json"
+        media: "/2010-04-01/Accounts/AC6e78773045f4a06b6e29001f97554171/Messages/SM3b68c5f7a9ca3dfd31f678658aed7875/Media.json"
+      to: "+18777804236"
+      twilio:
+        status: "failed"
+      uri: "/2010-04-01/Accounts/AC6e78773045f4a06b6e29001f97554171/Messages/SM3b68c5f7a9ca3dfd31f678658aed7875.json"
+    message: |-
+      {
+        "subresource_uris" : {
+          "feedback" : "/2010-04-01/Accounts/AC6e78773045f4a06b6e29001f97554171/Messages/SM3b68c5f7a9ca3dfd31f678658aed7875/Feedback.json",
+          "media" : "/2010-04-01/Accounts/AC6e78773045f4a06b6e29001f97554171/Messages/SM3b68c5f7a9ca3dfd31f678658aed7875/Media.json"
+        },
+        "date_updated" : "Tue, 30 Jan 2024 18:30:25 +0000",
+        "date_sent" : "Tue, 30 Jan 2024 18:30:25 +0000",
+        "date_created" : "Tue, 30 Jan 2024 18:30:25 +0000",
+        "api_version" : "2010-04-01",
+        "num_segments" : "1",
+        "uri" : "/2010-04-01/Accounts/AC6e78773045f4a06b6e29001f97554171/Messages/SM3b68c5f7a9ca3dfd31f678658aed7875.json",
+        "num_media" : "0",
+        "sid" : "SM3b68c5f7a9ca3dfd31f678658aed7875",
+        "price_unit" : "USD",
+        "messaging_service_sid" : "MGace35c0d2c698888bc4314e908c23c3e",
+        "service" : "twilio",
+        "account_sid" : "AC6e78773045f4a06b6e29001f97554171",
+        "from" : "",
+        "error_code" : 21704,
+        "to" : "+18777804236",
+        "direction" : "outbound-api",
+        "status" : "failed"
+      }
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1706639425000
+ -
+  sample: |-
+    {
+      "actor_type" : "account",
+      "resource_sid" : "US5689f021765b1b8f5cc7b45352c17cad",
+      "resource_type" : "user-session",
+      "source" : "web",
+      "url" : "https://monitor.twilio.com/v1/Events/AEecca79110ab6c5229a3869509ba3d461",
+      "sid" : "AEecca79110ab6c5229a3869509ba3d461",
+      "source_ip_address" : "185.64.148.140",
+      "event_type" : "user-session.created",
+      "service" : "twilio",
+      "actor_sid" : "AC6e78773045f4a06b6e29001f97554171",
+      "event_date" : "2024-01-29T19:52:16Z",
+      "account_sid" : "AC6e78773045f4a06b6e29001f97554171",
+      "links" : {
+        "actor" : "https://api.twilio.com/2010-04-01/Accounts/AC6e78773045f4a06b6e29001f97554171"
+      }
+    }
+  result:
+    custom:
+      account_sid: "AC6e78773045f4a06b6e29001f97554171"
+      actor_type: "account"
+      event_date: "2024-01-29T19:52:16Z"
+      evt:
+        name: "user-session.created"
+      http:
+        url: "https://monitor.twilio.com/v1/Events/AEecca79110ab6c5229a3869509ba3d461"
+      links:
+        actor: "https://api.twilio.com/2010-04-01/Accounts/AC6e78773045f4a06b6e29001f97554171"
+      network:
+        client:
+          geoip:
+            city:
+              name: "Paris"
+            continent:
+              code: "EU"
+              name: "Europe"
+            country:
+              iso_code: "FR"
+              name: "France"
+            ipAddress: "185.64.148.140"
+            location:
+              latitude: 48.90654
+              longitude: 2.33339
+            subdivision:
+              iso_code: "FR-IDF"
+              name: "Île-de-France"
+            timezone: "Europe/Paris"
+          ip: "185.64.148.140"
+      resource_sid: "US5689f021765b1b8f5cc7b45352c17cad"
+      resource_type: "user-session"
+      service: "twilio"
+      sid: "AEecca79110ab6c5229a3869509ba3d461"
+      source: "web"
+      usr:
+        id: "AC6e78773045f4a06b6e29001f97554171"
+    message: |-
+      {
+        "actor_type" : "account",
+        "resource_sid" : "US5689f021765b1b8f5cc7b45352c17cad",
+        "resource_type" : "user-session",
+        "source" : "web",
+        "url" : "https://monitor.twilio.com/v1/Events/AEecca79110ab6c5229a3869509ba3d461",
+        "sid" : "AEecca79110ab6c5229a3869509ba3d461",
+        "source_ip_address" : "185.64.148.140",
+        "event_type" : "user-session.created",
+        "service" : "twilio",
+        "actor_sid" : "AC6e78773045f4a06b6e29001f97554171",
+        "event_date" : "2024-01-29T19:52:16Z",
+        "account_sid" : "AC6e78773045f4a06b6e29001f97554171",
+        "links" : {
+          "actor" : "https://api.twilio.com/2010-04-01/Accounts/AC6e78773045f4a06b6e29001f97554171"
+        }
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1706557936000
+ -
+  sample: |-
+    {
+      "date_generated" : "2024-02-15T15:45:25Z",
+      "date_updated" : "2024-02-15T15:45:25Z",
+      "date_created" : "2024-02-15T15:45:25Z",
+      "resource_sid" : "SMc8168a443ddad4b0c4afa17bd2c2335c",
+      "service" : "twilio",
+      "log_level" : "warning",
+      "account_sid" : "AC6e78773045f4a06b6e29001f97554171",
+      "more_info" : "https://www.twilio.com/docs/errors/30039",
+      "error_code" : "30039",
+      "url" : "https://monitor.twilio.com/v1/Alerts/NOcc4568a6ca621e5c89c59bd702a335ba",
+      "sid" : "NOcc4568a6ca621e5c89c59bd702a335ba"
+    }
+  result:
+    custom:
+      _timestamp: 1708011925000
+      account_sid: "AC6e78773045f4a06b6e29001f97554171"
+      date_created: "2024-02-15T15:45:25Z"
+      date_generated: "2024-02-15T15:45:25Z"
+      date_updated: "2024-02-15T15:45:25Z"
+      error:
+        kind: "30039"
+      http:
+        url: "https://monitor.twilio.com/v1/Alerts/NOcc4568a6ca621e5c89c59bd702a335ba"
+      log_level: "warning"
+      more_info: "https://www.twilio.com/docs/errors/30039"
+      resource_sid: "SMc8168a443ddad4b0c4afa17bd2c2335c"
+      service: "twilio"
+      sid: "NOcc4568a6ca621e5c89c59bd702a335ba"
+    message: |-
+      {
+        "date_generated" : "2024-02-15T15:45:25Z",
+        "date_updated" : "2024-02-15T15:45:25Z",
+        "date_created" : "2024-02-15T15:45:25Z",
+        "resource_sid" : "SMc8168a443ddad4b0c4afa17bd2c2335c",
+        "service" : "twilio",
+        "log_level" : "warning",
+        "account_sid" : "AC6e78773045f4a06b6e29001f97554171",
+        "more_info" : "https://www.twilio.com/docs/errors/30039",
+        "error_code" : "30039",
+        "url" : "https://monitor.twilio.com/v1/Alerts/NOcc4568a6ca621e5c89c59bd702a335ba",
+        "sid" : "NOcc4568a6ca621e5c89c59bd702a335ba"
+      }
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1708011925000
+

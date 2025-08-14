@@ -1,0 +1,15 @@
+id: microsoft-graph
+metric_id: microsoft-graph
+backend_only: false
+pipeline:
+  type: pipeline
+  name: Microsoft Graph
+  enabled: true
+  filter:
+    query: source:microsoft-graph
+  processors:
+    - type: date-remapper
+      name: Define `lastUpdateDateTime` as the official date of the log
+      enabled: true
+      sources:
+        - lastUpdateDateTime

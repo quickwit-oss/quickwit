@@ -1,0 +1,151 @@
+id: mailgun
+backend_only: false
+facets:
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+  - groups:
+      - Web Access
+    name: Request ID
+    path: http.request_id
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - User
+    name: User Email
+    path: usr.email
+    source: log
+pipeline:
+  type: pipeline
+  name: Mailgun
+  enabled: true
+  filter:
+    query: source:mailgun
+  processors:
+    - type: arithmetic-processor
+      name: Convert `timestamp` from second to millisecond EPOCH format
+      enabled: true
+      expression: event-data.timestamp * 1000
+      target: event-data.timestamp
+      replaceMissing: false
+    - type: date-remapper
+      name: Define `event-data.timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - event-data.timestamp
+    - type: status-remapper
+      name: Define `event-data.log-level` as the official status of the log
+      enabled: true
+      sources:
+        - event-data.log-level
+    - type: geo-ip-parser
+      name: Map `event-data.ip` to `network.client.geoip`
+      enabled: true
+      sources:
+        - event-data.ip
+      target: network.client.geoip
+      ip_processing_behavior: do-nothing
+    - type: attribute-remapper
+      name: Map `event-data.id` to `http.request_id`
+      enabled: true
+      sources:
+        - event-data.id
+      sourceType: attribute
+      target: http.request_id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `event-data.event` to `evt.name`
+      enabled: true
+      sources:
+        - event-data.event
+      sourceType: attribute
+      target: evt.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: user-agent-parser
+      name: Map `user-agent` to `http.useragent_details`
+      enabled: true
+      sources:
+        - event-data.client-info.user-agent
+      target: http.useragent_details
+      encoded: false
+      combineVersionDetails: false
+    - type: attribute-remapper
+      name: Map `event-data.recipient` to `usr.email`
+      enabled: true
+      sources:
+        - event-data.recipient
+      sourceType: attribute
+      target: usr.email
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `event-data.ip` to `network.client.ip`
+      enabled: true
+      sources:
+        - event-data.ip
+      sourceType: attribute
+      target: network.client.ip
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false

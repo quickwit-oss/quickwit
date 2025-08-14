@@ -1,0 +1,499 @@
+id: jfrog_platform
+metric_id: jfrog-platform
+backend_only: false
+facets:
+  - facetType: range
+    groups:
+      - Measure
+    name: Duration
+    path: duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: nanosecond
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Web Access
+    name: User-Agent
+    path: http.useragent
+    source: log
+  - groups:
+      - Source Code
+    name: Thread Name
+    path: logger.thread_name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - groups:
+      - jfrog
+    name: Response Content Length
+    path: response_content_length
+    source: log
+  - groups:
+      - jfrog
+    name: Repo Path URL
+    path: repo_path_url
+    source: log
+  - groups:
+      - jfrog
+    name: Properties
+    path: properties
+    source: log
+  - groups:
+      - jfrog
+    name: CVSS Score
+    path: cvss_score
+    source: log
+  - groups:
+      - jfrog
+    name: Remote Repo Name
+    path: remote_repo_name
+    source: log
+  - groups:
+      - jfrog
+    name: Message
+    path: jfrog.msg
+    source: log
+  - groups:
+      - jfrog
+    name: Violation Details URL
+    path: violation_details_url
+    source: log
+  - groups:
+      - jfrog
+    name: Log Source
+    path: log_source
+    source: log
+  - groups:
+      - jfrog
+    name: Entity Name
+    path: jfrog.entity_name
+    source: log
+  - groups:
+      - jfrog
+    name: Infected Components
+    path: infected_components
+    source: log
+  - groups:
+      - jfrog
+    name: Tag
+    path: tag
+    source: log
+  - groups:
+      - jfrog
+    name: Signature
+    path: signature
+    source: log
+  - groups:
+      - jfrog
+    name: DownstreamContentSize
+    path: DownstreamContentSize
+    source: log
+  - groups:
+      - jfrog
+    name: Violation ID
+    path: violation_id
+    source: log
+  - groups:
+      - jfrog
+    name: Impacted Artifacts URL
+    path: impacted_artifacts_url
+    source: log
+  - groups:
+      - jfrog
+    name: Service Address
+    path: ServiceAddr
+    source: log
+  - groups:
+      - jfrog
+    name: Watch Name
+    path: watch_name
+    source: log
+  - groups:
+      - jfrog
+    name: Service Type
+    path: service_type
+    source: log
+  - groups:
+      - jfrog
+    name: CVSS Version
+    path: cvss_version
+    source: log
+  - groups:
+      - jfrog
+    name: StartUTC
+    path: StartUTC
+    source: log
+  - groups:
+      - jfrog
+    name: Token ID
+    path: token_id
+    source: log
+  - groups:
+      - jfrog
+    name: App Disk Free Bytes
+    path: app_disk_free_bytes
+    source: log
+  - groups:
+      - jfrog
+    name: Data Changed
+    path: data_changed
+    source: log
+  - groups:
+      - jfrog
+    name: Class Line Number
+    path: class_line_number
+    source: log
+  - groups:
+      - jfrog
+    name: Category
+    path: jfrog.category
+    source: log
+  - groups:
+      - jfrog
+    name: Repo
+    path: repo
+    source: log
+  - groups:
+      - jfrog
+    name: Remote URL
+    path: remote_url
+    source: log
+  - groups:
+      - jfrog
+    name: Logged Principal
+    path: logged_principal
+    source: log
+  - groups:
+      - jfrog
+    name: Impacted Artifacts
+    path: impacted_artifacts
+    source: log
+  - groups:
+      - jfrog
+    name: Matched Policies
+    path: matched_policies
+    source: log
+  - groups:
+      - jfrog
+    name: Severity
+    path: jfrog.severity
+    source: log
+  - groups:
+      - jfrog
+    name: Repo Path
+    path: repo_path
+    source: log
+  - groups:
+      - jfrog
+    name: Created
+    path: created
+    source: log
+  - groups:
+      - jfrog
+    name: Provider
+    path: jfrog.provider
+    source: log
+  - groups:
+      - jfrog
+    name: Image
+    path: image
+    source: log
+  - groups:
+      - jfrog
+    name: Fix Versions
+    path: fix_versions
+    source: log
+  - groups:
+      - jfrog
+    name: Policies
+    path: policies
+    source: log
+  - groups:
+      - jfrog
+    name: Infected Versions
+    path: infected_versions
+    source: log
+  - groups:
+      - Event
+    name: Type
+    path: type
+    source: log
+  - groups:
+      - jfrog
+    name: Backend Address
+    path: BackendAddr
+    source: log
+  - groups:
+      - jfrog
+    name: Action Response
+    path: action_response
+    source: log
+  - groups:
+      - jfrog
+    name: Summary
+    path: summary
+    source: log
+  - groups:
+      - jfrog
+    name: Rules
+    path: rules
+    source: log
+  - groups:
+      - jfrog
+    name: Request Content Length
+    path: request_content_length
+    source: log
+  - groups:
+      - jfrog
+    name: Description
+    path: description
+    source: log
+  - groups:
+      - jfrog
+    name: Issue ID
+    path: issue_id
+    source: log
+  - groups:
+      - jfrog
+    name: CVE
+    path: cve
+    source: log
+  - groups:
+      - jfrog
+    name: Event Type
+    path: event_type
+    source: log
+pipeline:
+  type: pipeline
+  name: JFrog Platform
+  enabled: true
+  filter:
+    query: source:jfrog_platform
+  processors:
+    - type: attribute-remapper
+      name: Map `RequestPath` to `http.url_details.path`
+      enabled: true
+      sources:
+        - RequestPath
+      sourceType: attribute
+      target: http.url_details.path
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `ClientAddr`, `ip`, `ip_address`, `remote_address` to `network.client.ip`
+      enabled: true
+      sources:
+        - ClientAddr
+        - ip
+        - ip_address
+        - remote_address
+      sourceType: attribute
+      target: network.client.ip
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `RequestMethod`, `request_method` to `http.method`
+      enabled: true
+      sources:
+        - RequestMethod
+        - request_method
+      sourceType: attribute
+      target: http.method
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `DownstreamStatus`, `return_status` to `http.status_code`
+      enabled: true
+      sources:
+        - DownstreamStatus
+        - return_status
+      sourceType: attribute
+      target: http.status_code
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `request_User-Agent`, `request_user_agent` to `http.useragent`
+      enabled: true
+      sources:
+        - request_User-Agent
+        - request_user_agent
+      sourceType: attribute
+      target: http.useragent
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `user_name`, `user`, `username` to `usr.id`
+      enabled: true
+      sources:
+        - user_name
+        - user
+        - username
+      sourceType: attribute
+      target: usr.id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `hostname` to `host`
+      enabled: true
+      sources:
+        - hostname
+      sourceType: attribute
+      target: host
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `thread` to `logger.thread_name`
+      enabled: true
+      sources:
+        - thread
+      sourceType: attribute
+      target: logger.thread_name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `request_duration`, `Duration` to `duration`
+      enabled: true
+      sources:
+        - request_duration
+        - Duration
+      sourceType: attribute
+      target: duration
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `request_url` to `http.url`
+      enabled: true
+      sources:
+        - request_url
+      sourceType: attribute
+      target: http.url
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `event` to `evt.name`
+      enabled: true
+      sources:
+        - event
+      sourceType: attribute
+      target: evt.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: trace-id-remapper
+      name: Define `trace_id`, `request_Uber-Trace-Id` as the official trace ID of the log
+      enabled: true
+      sources:
+        - trace_id
+        - request_Uber-Trace-Id
+    - type: date-remapper
+      name: Define `time`, `log_timestamp`, `@timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - time
+        - log_timestamp
+        - '@timestamp'
+    - type: status-remapper
+      name: Define `log_level`, `level` as the official status of the log
+      enabled: true
+      sources:
+        - log_level
+        - level
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: attribute-remapper
+      name: Map `msg` to `jfrog.msg`
+      enabled: true
+      sources:
+        - msg
+      sourceType: attribute
+      target: jfrog.msg
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `entity_name` to `jfrog.entity_name`
+      enabled: true
+      sources:
+        - entity_name
+      sourceType: attribute
+      target: jfrog.entity_name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `category` to `jfrog.category`
+      enabled: true
+      sources:
+        - category
+      sourceType: attribute
+      target: jfrog.category
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `severity` to `jfrog.severity`
+      enabled: true
+      sources:
+        - severity
+      sourceType: attribute
+      target: jfrog.severity
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `provider` to `jfrog.provider`
+      enabled: true
+      sources:
+        - provider
+      sourceType: attribute
+      target: jfrog.provider
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false

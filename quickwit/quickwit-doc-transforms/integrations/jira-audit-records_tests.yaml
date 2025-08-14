@@ -1,0 +1,96 @@
+id: "jira-audit-records"
+tests:
+ -
+  sample: |-
+    {
+      "summary" : "Workflow scheme created",
+      "changedValues" : [ {
+        "changedTo" : "TEST: Software Simplified Workflow Scheme",
+        "fieldName" : "Name"
+      }, {
+        "changedTo" : "",
+        "fieldName" : "Description"
+      } ],
+      "objectItem" : {
+        "name" : "TEST: Software Simplified Workflow Scheme",
+        "typeName" : "SCHEME",
+        "id" : "12077"
+      },
+      "created" : "2024-02-06T09:59:08.817+0000",
+      "authorKey" : "12345",
+      "eventSource" : "",
+      "authorAccountId" : "1234",
+      "id" : "157621",
+      "category" : "workflows",
+      "remoteAddress" : "185.64.148.140"
+    }
+  result:
+    custom:
+      authorAccountId: "1234"
+      authorKey: "12345"
+      changedValues:
+       -
+        changedTo: "TEST: Software Simplified Workflow Scheme"
+        fieldName: "Name"
+       -
+        changedTo: ""
+        fieldName: "Description"
+      created: "2024-02-06T09:59:08.817+0000"
+      evt:
+        category: "workflows"
+        name: "Workflow scheme created"
+        source: ""
+      id: "157621"
+      network:
+        client:
+          geoip:
+            city:
+              name: "Paris"
+            continent:
+              code: "EU"
+              name: "Europe"
+            country:
+              iso_code: "FR"
+              name: "France"
+            ipAddress: "185.64.148.140"
+            location:
+              latitude: 48.90654
+              longitude: 2.33339
+            subdivision:
+              iso_code: "FR-IDF"
+              name: "Île-de-France"
+            timezone: "Europe/Paris"
+          ip: "185.64.148.140"
+      objectItem:
+        id: "12077"
+        name: "TEST: Software Simplified Workflow Scheme"
+        typeName: "SCHEME"
+      usr:
+        id: "1234"
+        name: "12345"
+    message: |-
+      {
+        "summary" : "Workflow scheme created",
+        "changedValues" : [ {
+          "changedTo" : "TEST: Software Simplified Workflow Scheme",
+          "fieldName" : "Name"
+        }, {
+          "changedTo" : "",
+          "fieldName" : "Description"
+        } ],
+        "objectItem" : {
+          "name" : "TEST: Software Simplified Workflow Scheme",
+          "typeName" : "SCHEME",
+          "id" : "12077"
+        },
+        "created" : "2024-02-06T09:59:08.817+0000",
+        "authorKey" : "12345",
+        "eventSource" : "",
+        "authorAccountId" : "1234",
+        "id" : "157621",
+        "category" : "workflows",
+        "remoteAddress" : "185.64.148.140"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1707213548817

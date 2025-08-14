@@ -1,0 +1,540 @@
+id: "lambda"
+tests:
+ -
+  sample: "START RequestId: f5da75ef-848d-11e8-bc17-71bdcedc1695 Version: $LATEST"
+  result:
+    custom:
+      lambda:
+        request_id: "f5da75ef-848d-11e8-bc17-71bdcedc1695"
+        step: "START"
+        version: "$LATEST"
+    message: "START RequestId: f5da75ef-848d-11e8-bc17-71bdcedc1695 Version: $LATEST"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: "END RequestId: ece907e2-848d-11e8-b0d2-01bad55f3174"
+  result:
+    custom:
+      lambda:
+        request_id: "ece907e2-848d-11e8-b0d2-01bad55f3174"
+        step: "END"
+    message: "END RequestId: ece907e2-848d-11e8-b0d2-01bad55f3174"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: "START RequestId: c9a3b892-c2ca-4391-82fe-a47570039262                  Version: $LATEST"
+  result:
+    custom:
+      lambda:
+        request_id: "c9a3b892-c2ca-4391-82fe-a47570039262"
+        step: "START"
+        version: "$LATEST"
+    message: "START RequestId: c9a3b892-c2ca-4391-82fe-a47570039262                  Version: $LATEST"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: "2018-08-22T11:05:02.637Z\t4d8b3785-079a-5f47-9b09-647242079aed INFO: that's an interesting message"
+  result:
+    custom:
+      lambda:
+        request_id: "4d8b3785-079a-5f47-9b09-647242079aed"
+      level: "INFO"
+      timestamp: 1534935902637
+    message: "2018-08-22T11:05:02.637Z\t4d8b3785-079a-5f47-9b09-647242079aed INFO: that's an interesting message"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1534935902637
+ -
+  sample: "2019-07-18T18:58:22.286Z b5264ab7-2056-4f5b-bb0f-a06a70f6205d Task timed out after 30.03 seconds"
+  result:
+    custom:
+      duration: 3.003E10
+      error:
+        kind: "TimeOut"
+        message: "Task timed out"
+      lambda:
+        request_id: "b5264ab7-2056-4f5b-bb0f-a06a70f6205d"
+      level: "error"
+      timestamp: 1563476302286
+    message: "2019-07-18T18:58:22.286Z b5264ab7-2056-4f5b-bb0f-a06a70f6205d Task timed out after 30.03 seconds"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1563476302286
+ -
+  sample: "REPORT RequestId: ece907e2-848d-11e8-b0d2-01bad55f3174 Duration: 3056.26 ms Billed Duration: 3100 ms Memory Size: 128 MB Max Memory Used: 85 MB"
+  result:
+    custom:
+      duration: 3.05626E9
+      lambda:
+        billed_duration: 3100.0
+        max_memory_used: 85.0
+        memory_left: 43.0
+        memory_pct: 66.40625
+        memorysize: 128.0
+        request_id: "ece907e2-848d-11e8-b0d2-01bad55f3174"
+    message: "REPORT RequestId: ece907e2-848d-11e8-b0d2-01bad55f3174 Duration: 3056.26 ms Billed Duration: 3100 ms Memory Size: 128 MB Max Memory Used: 85 MB"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: "REPORT RequestId: ece907e2-848d-11e8-b0d2-01bad55f3174    Duration: 3056.26 ms      Billed Duration: 3100 ms      Memory Size: 128 MB       Max Memory Used: 85 MB"
+  result:
+    custom:
+      duration: 3.05626E9
+      lambda:
+        billed_duration: 3100.0
+        max_memory_used: 85.0
+        memory_left: 43.0
+        memory_pct: 66.40625
+        memorysize: 128.0
+        request_id: "ece907e2-848d-11e8-b0d2-01bad55f3174"
+    message: "REPORT RequestId: ece907e2-848d-11e8-b0d2-01bad55f3174    Duration: 3056.26 ms      Billed Duration: 3100 ms      Memory Size: 128 MB       Max Memory Used: 85 MB"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: "REPORT RequestId: 468ce385-f22f-432b-b498-d7238631e510\tDuration: 0.35 ms\tBilled Duration: 100 ms \tMemory Size: 128 MB\tMax Memory Used: 46 MB"
+  result:
+    custom:
+      duration: 350000.0
+      lambda:
+        billed_duration: 100.0
+        max_memory_used: 46.0
+        memory_left: 82.0
+        memory_pct: 35.9375
+        memorysize: 128.0
+        request_id: "468ce385-f22f-432b-b498-d7238631e510"
+    message: "REPORT RequestId: 468ce385-f22f-432b-b498-d7238631e510\tDuration: 0.35 ms\tBilled Duration: 100 ms \tMemory Size: 128 MB\tMax Memory Used: 46 MB"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: "REPORT RequestId: 468ce385-f22f-432b-b498-d7238631e510\tDuration: 0.35 ms\tBilled Duration: 100 ms \tMemory Size: 128 MB\tMax Memory Used: 46 MB XRAY TraceId: 1-5d0bb4c6-ef674c302b55a2b86bb4bde8\tSegmentId: 4352c75a516ded4f"
+  result:
+    custom:
+      duration: 350000.0
+      lambda:
+        billed_duration: 100.0
+        max_memory_used: 46.0
+        memory_left: 82.0
+        memory_pct: 35.9375
+        memorysize: 128.0
+        request_id: "468ce385-f22f-432b-b498-d7238631e510"
+      xray:
+        SegmentId: "4352c75a516ded4f"
+        TraceId: "1-5d0bb4c6-ef674c302b55a2b86bb4bde8"
+    message: "REPORT RequestId: 468ce385-f22f-432b-b498-d7238631e510\tDuration: 0.35 ms\tBilled Duration: 100 ms \tMemory Size: 128 MB\tMax Memory Used: 46 MB XRAY TraceId: 1-5d0bb4c6-ef674c302b55a2b86bb4bde8\tSegmentId: 4352c75a516ded4f"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: "REPORT RequestId: d51421ca-4282-43f3-b0ef-bfada0769247\tDuration: 22.65 ms\tBilled Duration: 23 ms\tMemory Size: 512 MB\tMax Memory Used: 57 MB\tInit Duration: 176.68 ms XRAY TraceId: 1-62f423c4-1e23abc216408cf408f9a1b6\tSegmentId: 6da0e1a75394ca0e\tSampled: true"
+  result:
+    custom:
+      duration: 2.265E7
+      lambda:
+        billed_duration: 23.0
+        init_duration: 176.68
+        max_memory_used: 57.0
+        memory_left: 455.0
+        memory_pct: 11.1328125
+        memorysize: 512.0
+        request_id: "d51421ca-4282-43f3-b0ef-bfada0769247"
+      xray:
+        Sampled: true
+        SegmentId: "6da0e1a75394ca0e"
+        TraceId: "1-62f423c4-1e23abc216408cf408f9a1b6"
+    message: "REPORT RequestId: d51421ca-4282-43f3-b0ef-bfada0769247\tDuration: 22.65 ms\tBilled Duration: 23 ms\tMemory Size: 512 MB\tMax Memory Used: 57 MB\tInit Duration: 176.68 ms XRAY TraceId: 1-62f423c4-1e23abc216408cf408f9a1b6\tSegmentId: 6da0e1a75394ca0e\tSampled: true"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: "REPORT RequestId: 468ce385-f22f-432b-b498-d7238631e510\tDuration: 0.35 ms\tBilled Duration: 100 ms\tMemory Size: 128 MB\tMax Memory Used: 46 MB\tRuntime Duration: 0.05 ms\tPost Runtime Duration: 0.3 ms"
+  result:
+    custom:
+      duration: 350000.0
+      lambda:
+        billed_duration: 100.0
+        max_memory_used: 46.0
+        memory_left: 82.0
+        memory_pct: 35.9375
+        memorysize: 128.0
+        post_runtime_duration: 0.3
+        request_id: "468ce385-f22f-432b-b498-d7238631e510"
+        runtime_duration: 0.05
+    message: "REPORT RequestId: 468ce385-f22f-432b-b498-d7238631e510\tDuration: 0.35 ms\tBilled Duration: 100 ms\tMemory Size: 128 MB\tMax Memory Used: 46 MB\tRuntime Duration: 0.05 ms\tPost Runtime Duration: 0.3 ms"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: "REPORT RequestId: a69b402a-83a7-4eff-b9e8-c2cffc8d7dc1 Duration: 1223.02 ms Billed Duration: 1224 ms Memory Size: 256 MB Max Memory Used: 138 MB Init Duration: 837.42 ms Runtime Duration: 453.00 ms Post Runtime Duration: 770.02 ms"
+  result:
+    custom:
+      duration: 1.22302E9
+      lambda:
+        billed_duration: 1224.0
+        init_duration: 837.42
+        max_memory_used: 138.0
+        memory_left: 118.0
+        memory_pct: 53.90625
+        memorysize: 256.0
+        post_runtime_duration: 770.02
+        request_id: "a69b402a-83a7-4eff-b9e8-c2cffc8d7dc1"
+        runtime_duration: 453.0
+    message: "REPORT RequestId: a69b402a-83a7-4eff-b9e8-c2cffc8d7dc1 Duration: 1223.02 ms Billed Duration: 1224 ms Memory Size: 256 MB Max Memory Used: 138 MB Init Duration: 837.42 ms Runtime Duration: 453.00 ms Post Runtime Duration: 770.02 ms"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: "REPORT RequestId: a69b402a-83a7-4eff-b9e8-c2cffc8d7dc1 Duration: 1223.02 ms Runtime Duration: 453.00 ms Post Runtime Duration: 770.02 ms Billed Duration: 1224 ms Memory Size: 256 MB Max Memory Used: 138 MB Init Duration: 837.42 ms"
+  result:
+    custom:
+      duration: 1.22302E9
+      lambda:
+        billed_duration: 1224.0
+        init_duration: 837.42
+        max_memory_used: 138.0
+        memory_left: 118.0
+        memory_pct: 53.90625
+        memorysize: 256.0
+        post_runtime_duration: 770.02
+        request_id: "a69b402a-83a7-4eff-b9e8-c2cffc8d7dc1"
+        runtime_duration: 453.0
+    message: "REPORT RequestId: a69b402a-83a7-4eff-b9e8-c2cffc8d7dc1 Duration: 1223.02 ms Runtime Duration: 453.00 ms Post Runtime Duration: 770.02 ms Billed Duration: 1224 ms Memory Size: 256 MB Max Memory Used: 138 MB Init Duration: 837.42 ms"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: "E, [2019-06-19T14:52:18.496079 #8] ERROR -- : This is a error log"
+  result:
+    custom:
+      level: "ERROR"
+      timestamp: 1560955938496
+    message: "E, [2019-06-19T14:52:18.496079 #8] ERROR -- : This is a error log"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1560955938496
+ -
+  sample: "2019-07-19T21:12:17.980Z\t787b87c2-0838-451e-bc16-38273fef14d4\tWARN\tThis is a regular warn"
+  result:
+    custom:
+      lambda:
+        request_id: "787b87c2-0838-451e-bc16-38273fef14d4"
+      level: "WARN"
+      timestamp: 1563570737980
+    message: "2019-07-19T21:12:17.980Z\t787b87c2-0838-451e-bc16-38273fef14d4\tWARN\tThis is a regular warn"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1563570737980
+ -
+  sample: "2019-07-19T21:17:18.496Z\t1d229cd9-324d-4df2-b3d2-059d18a872d5\tINFO\tThis is a regular log"
+  result:
+    custom:
+      lambda:
+        request_id: "1d229cd9-324d-4df2-b3d2-059d18a872d5"
+      level: "INFO"
+      timestamp: 1563571038496
+    message: "2019-07-19T21:17:18.496Z\t1d229cd9-324d-4df2-b3d2-059d18a872d5\tINFO\tThis is a regular log"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1563571038496
+ -
+  sample: "2019-07-19T21:17:18.496Z\t1d229cd9-324d-4df2-b3d2-059d18a872d5\tINFO [dd.trace_id=4453450510933724352 dd.span_id=4858038288696215729]\tThis is a log with trace context"
+  result:
+    custom:
+      dd:
+        span_id: "4858038288696215729"
+      lambda:
+        request_id: "1d229cd9-324d-4df2-b3d2-059d18a872d5"
+      level: "INFO"
+      timestamp: 1563571038496
+    message: "2019-07-19T21:17:18.496Z\t1d229cd9-324d-4df2-b3d2-059d18a872d5\tINFO [dd.trace_id=4453450510933724352 dd.span_id=4858038288696215729]\tThis is a log with trace context"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1563571038496
+    trace_id: "4453450510933724352"
+ -
+  sample: "2019-07-19T21:17:18.496Z\t1d229cd9-324d-4df2-b3d2-059d18a872d5\tINFO [dd.trace_id=4453450510933724352 dd.span_id=4858038288696215729]\t{ \"data\": \"some-data\" }"
+  result:
+    custom:
+      data: "some-data"
+      dd:
+        span_id: "4858038288696215729"
+      lambda:
+        request_id: "1d229cd9-324d-4df2-b3d2-059d18a872d5"
+      level: "INFO"
+      timestamp: 1563571038496
+    message: "2019-07-19T21:17:18.496Z\t1d229cd9-324d-4df2-b3d2-059d18a872d5\tINFO [dd.trace_id=4453450510933724352 dd.span_id=4858038288696215729]\t{ \"data\": \"some-data\" }"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1563571038496
+    trace_id: "4453450510933724352"
+ -
+  sample: "2019-07-18T19:47:18.146Z\t95ce2ab7-cf99-4030-bede-2055a69cedec\tERROR\tThis is a regular node error"
+  result:
+    custom:
+      lambda:
+        request_id: "95ce2ab7-cf99-4030-bede-2055a69cedec"
+      level: "ERROR"
+      timestamp: 1563479238146
+    message: "2019-07-18T19:47:18.146Z\t95ce2ab7-cf99-4030-bede-2055a69cedec\tERROR\tThis is a regular node error"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1563479238146
+ -
+  sample: "2019-07-18T19:47:18.146Z\tundefined\tERROR\tInvoke Error\t{\"errorType\":\"Error\",\"errorMessage\":\"A test error for request id is undefined\"}"
+  result:
+    custom:
+      error:
+        kind: "Error"
+        message: "A test error for request id is undefined"
+      errorMessage: "A test error for request id is undefined"
+      errorType: "Error"
+      level: "error"
+      timestamp: 1563479238146
+    message: "2019-07-18T19:47:18.146Z\tundefined\tERROR\tInvoke Error\t{\"errorType\":\"Error\",\"errorMessage\":\"A test error for request id is undefined\"}"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1563479238146
+ -
+  sample: "[ERROR]\t2019-07-18T21:30:46.599Z\tffbce4c2-d80e-4ffa-a0bc-505361e28b8a\tThis is a regular python error"
+  result:
+    custom:
+      lambda:
+        request_id: "ffbce4c2-d80e-4ffa-a0bc-505361e28b8a"
+      level: "ERROR"
+      timestamp: 1563485446599
+    message: "[ERROR]\t2019-07-18T21:30:46.599Z\tffbce4c2-d80e-4ffa-a0bc-505361e28b8a\tThis is a regular python error"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1563485446599
+ -
+  sample: "[ERROR]\t2019-07-18T21:30:46.59Z\tffbce4c2-d80e-4ffa-a0bc-505361e28b8a\tThis is a regular error"
+  result:
+    custom:
+      lambda:
+        request_id: "ffbce4c2-d80e-4ffa-a0bc-505361e28b8a"
+      level: "ERROR"
+      timestamp: 1563485446590
+    message: "[ERROR]\t2019-07-18T21:30:46.59Z\tffbce4c2-d80e-4ffa-a0bc-505361e28b8a\tThis is a regular error"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1563485446590
+ -
+  sample: "[INFO]\t2019-07-18T21:30:46.59Z\tffbce4c2-d80e-4ffa-a0bc-505361e28b8a  [dd.trace_id=4453450510933724352 dd.span_id=4858038288696215729]\tThis log line is correlated with a trace"
+  result:
+    custom:
+      dd:
+        span_id: "4858038288696215729"
+      lambda:
+        request_id: "ffbce4c2-d80e-4ffa-a0bc-505361e28b8a"
+      level: "INFO"
+      timestamp: 1563485446590
+    message: "[INFO]\t2019-07-18T21:30:46.59Z\tffbce4c2-d80e-4ffa-a0bc-505361e28b8a  [dd.trace_id=4453450510933724352 dd.span_id=4858038288696215729]\tThis log line is correlated with a trace"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1563485446590
+    trace_id: "4453450510933724352"
+ -
+  sample: "[INFO] 2019-07-18T21:30:46.5Z ffbce4c2-d80e-4ffa-a0bc-505361e28b8a  [dd.trace_id=4453450510933724352 dd.span_id=4858038288696215729]  This log line is correlated with a trace"
+  result:
+    custom:
+      dd:
+        span_id: "4858038288696215729"
+      lambda:
+        request_id: "ffbce4c2-d80e-4ffa-a0bc-505361e28b8a"
+      level: "INFO"
+      timestamp: 1563485446500
+    message: "[INFO] 2019-07-18T21:30:46.5Z ffbce4c2-d80e-4ffa-a0bc-505361e28b8a  [dd.trace_id=4453450510933724352 dd.span_id=4858038288696215729]  This log line is correlated with a trace"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1563485446500
+    trace_id: "4453450510933724352"
+ -
+  sample: "[INFO]\t2019-07-18T21:30:46.599Z\tffbce4c2-d80e-4ffa-a0bc-505361e28b8a [dd.trace_id=7063307899004166955 dd.span_id=1811285018776771759] This is a regular python info"
+  result:
+    custom:
+      dd:
+        span_id: "1811285018776771759"
+      lambda:
+        request_id: "ffbce4c2-d80e-4ffa-a0bc-505361e28b8a"
+      level: "INFO"
+      timestamp: 1563485446599
+    message: "[INFO]\t2019-07-18T21:30:46.599Z\tffbce4c2-d80e-4ffa-a0bc-505361e28b8a [dd.trace_id=7063307899004166955 dd.span_id=1811285018776771759] This is a regular python info"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1563485446599
+    trace_id: "7063307899004166955"
+ -
+  sample: "2019-07-18T18:58:55.265Z\t189a9433-fb77-4659-90d4-bc06edb890e0\tERROR\tInvoke Error\t{\"errorType\":\"Error\",\"errorMessage\":\"A test error\"}"
+  result:
+    custom:
+      error:
+        kind: "Error"
+        message: "A test error"
+      errorMessage: "A test error"
+      errorType: "Error"
+      lambda:
+        request_id: "189a9433-fb77-4659-90d4-bc06edb890e0"
+      level: "error"
+      timestamp: 1563476335265
+    message: "2019-07-18T18:58:55.265Z\t189a9433-fb77-4659-90d4-bc06edb890e0\tERROR\tInvoke Error\t{\"errorType\":\"Error\",\"errorMessage\":\"A test error\"}"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1563476335265
+ -
+  sample: "2019-07-18T18:58:55.26Z\t189a9433-fb77-4659-90d4-bc06edb890e0\tERROR\tInvoke Error\t{\"errorType\":\"Error\",\"errorMessage\":\"A test error\"}"
+  result:
+    custom:
+      error:
+        kind: "Error"
+        message: "A test error"
+      errorMessage: "A test error"
+      errorType: "Error"
+      lambda:
+        request_id: "189a9433-fb77-4659-90d4-bc06edb890e0"
+      level: "error"
+      timestamp: 1563476335260
+    message: "2019-07-18T18:58:55.26Z\t189a9433-fb77-4659-90d4-bc06edb890e0\tERROR\tInvoke Error\t{\"errorType\":\"Error\",\"errorMessage\":\"A test error\"}"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1563476335260
+ -
+  sample: "RequestId: 0cbee0fc-f32c-487b-99c9-40eaaa8a4154 Process exited before completing request"
+  result:
+    custom:
+      error:
+        message: "Process exited before completing request"
+      lambda:
+        request_id: "0cbee0fc-f32c-487b-99c9-40eaaa8a4154"
+      level: "error"
+    message: "RequestId: 0cbee0fc-f32c-487b-99c9-40eaaa8a4154 Process exited before completing request"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: ": MemoryError Traceback (most recent call last):   File \"/var/task/handler.py\", line 16, in out_of_mem     a = bytearray(1000000000) MemoryError"
+  result:
+    custom:
+      error:
+        kind: "MemoryError"
+        stack: "File \"/var/task/handler.py\", line 16, in out_of_mem     a = bytearray(1000000000) MemoryError"
+      level: "error"
+    message: ": MemoryError Traceback (most recent call last):   File \"/var/task/handler.py\", line 16, in out_of_mem     a = bytearray(1000000000) MemoryError"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: "[ERROR] MemoryError Traceback (most recent call last):   File \"/var/task/handler.py\", line 16, in out_of_mem     a = bytearray(1000000000) MemoryError"
+  result:
+    custom:
+      error:
+        kind: "MemoryError"
+        stack: "File \"/var/task/handler.py\", line 16, in out_of_mem     a = bytearray(1000000000) MemoryError"
+      level: "error"
+    message: "[ERROR] MemoryError Traceback (most recent call last):   File \"/var/task/handler.py\", line 16, in out_of_mem     a = bytearray(1000000000) MemoryError"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: "A regular error: RegularError Traceback (most recent call last):   File \"/var/task/handler.py\", line 16, in out_of_mem     a = bytearray(1000000000) MemoryError"
+  result:
+    custom:
+      error:
+        kind: "RegularError"
+        message: "A regular error"
+        stack: "File \"/var/task/handler.py\", line 16, in out_of_mem     a = bytearray(1000000000) MemoryError"
+      level: "error"
+    message: "A regular error: RegularError Traceback (most recent call last):   File \"/var/task/handler.py\", line 16, in out_of_mem     a = bytearray(1000000000) MemoryError"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: "[ERROR] DummyError: This is a dummy error Traceback (most recent call last):   File \"/var/task/handler.py\", line 16, in raises_error     raise DummyError(\"This is a dummy error\")"
+  result:
+    custom:
+      error:
+        kind: "DummyError"
+        message: "This is a dummy error"
+        stack: "File \"/var/task/handler.py\", line 16, in raises_error     raise DummyError(\"This is a dummy error\")"
+      level: "error"
+    message: "[ERROR] DummyError: This is a dummy error Traceback (most recent call last):   File \"/var/task/handler.py\", line 16, in raises_error     raise DummyError(\"This is a dummy error\")"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: "2018-08-22T11:05:02.637Z\t4d8b3785-079a-5f47-9b09-647242079aed {\"level\": \"INFO\", \"message\": \"that is an interesting message\", \"user\": \"john\"}"
+  result:
+    custom:
+      lambda:
+        request_id: "4d8b3785-079a-5f47-9b09-647242079aed"
+      level: "INFO"
+      message: "that is an interesting message"
+      timestamp: 1534935902637
+      user: "john"
+    message: "2018-08-22T11:05:02.637Z\t4d8b3785-079a-5f47-9b09-647242079aed {\"level\": \"INFO\", \"message\": \"that is an interesting message\", \"user\": \"john\"}"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1534935902637
+ -
+  sample: "runtime error: integer divide by zero errorString"
+  result:
+    custom:
+      error:
+        kind: "Panic"
+      level: "error"
+    message: "runtime error: integer divide by zero errorString"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: "[DEBUG]\t2023-10-31T16:14:08.661Z\t\tdatadog_lambda_wrapper datadog_lambda_wrapper_should_not_match"
+  result:
+    custom:
+      level: "DEBUG"
+      timestamp: 1698768848661
+    message: "[DEBUG]\t2023-10-31T16:14:08.661Z\t\tdatadog_lambda_wrapper datadog_lambda_wrapper_should_not_match"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1698768848661
+ -
+  sample: "[DEBUG]\t2023-10-31T16:14:08.661Z\t\t1datadog_lambda_wrapper anything_other_than_datadog_lambda_wrapper_should_match"
+  result:
+    custom:
+      lambda:
+        request_id: "1datadog_lambda_wrapper"
+      level: "DEBUG"
+      timestamp: 1698768848661
+    message: "[DEBUG]\t2023-10-31T16:14:08.661Z\t\t1datadog_lambda_wrapper anything_other_than_datadog_lambda_wrapper_should_match"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1698768848661
+

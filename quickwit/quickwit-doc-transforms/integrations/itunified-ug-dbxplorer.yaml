@@ -1,0 +1,254 @@
+id: itunified-ug-dbxplorer
+metric_id: itunified-ug-dbxplorer
+backend_only: false
+facets:
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+  - groups:
+      - Database
+    name: Database
+    path: db.instance
+    source: log
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+  - groups:
+      - Source Code
+    name: Thread Name
+    path: logger.thread_name
+    source: log
+  - groups:
+      - Source Code
+    name: Logger Version
+    path: logger.version
+    source: log
+  - facetType: list
+    groups:
+      - dbXplorer
+    name: Database Cluster Name
+    path: dbx.oracledb.cluster_name
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - dbXplorer
+    name: Database Name
+    path: dbx.oracledb.name
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - dbXplorer
+    name: Plan Hash Value
+    path: dbx.oracledb.sql.plan_hash_value
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - dbXplorer
+    name: SQL ID
+    path: dbx.oracledb.sql.sql_id
+    source: log
+    type: string
+pipeline:
+  type: pipeline
+  name: itunified-ug-dbxplorer
+  enabled: true
+  filter:
+    query: "source:itunified-ug-dbxplorer"
+  processors:
+    - type: attribute-remapper
+      name: Map `host_name` to `host`
+      enabled: true
+      sources:
+        - host_name
+      sourceType: attribute
+      target: host
+      targetType: attribute
+      targetFormat: string
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `username` to `usr.name`
+      enabled: true
+      sources:
+        - username
+      sourceType: attribute
+      target: usr.name
+      targetType: attribute
+      targetFormat: string
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `event` to `evt.name`
+      enabled: true
+      sources:
+        - event
+      sourceType: attribute
+      target: evt.name
+      targetType: attribute
+      targetFormat: string
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `instance_name` to `db.instance`
+      enabled: true
+      sources:
+        - instance_name
+      sourceType: attribute
+      target: db.instance
+      targetType: attribute
+      targetFormat: string
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `stack_trace` to `error.stack`
+      enabled: true
+      sources:
+        - stack_trace
+      sourceType: attribute
+      target: error.stack
+      targetType: attribute
+      targetFormat: string
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `db_name` to `dbx.oracledb.name`
+      enabled: true
+      sources:
+        - db_name
+      sourceType: attribute
+      target: dbx.oracledb.name
+      targetType: attribute
+      targetFormat: string
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `db_unique_name` to `dbx.oracledb.db_unique_name`
+      enabled: true
+      sources:
+        - db_unique_name
+      sourceType: attribute
+      target: dbx.oracledb.db_unique_name
+      targetType: attribute
+      targetFormat: string
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `dbid` to `dbx.oracledb.dbid`
+      enabled: true
+      sources:
+        - dbid
+      sourceType: attribute
+      target: dbx.oracledb.dbid
+      targetType: attribute
+      targetFormat: integer
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `instance_number` to `dbx.oracledb.instance_id`
+      enabled: true
+      sources:
+        - instance_number
+      sourceType: attribute
+      target: dbx.oracledb.instance_id
+      targetType: attribute
+      targetFormat: string
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `sql_id` to `dbx.oracledb.sql.sql_id`
+      enabled: true
+      sources:
+        - sql_id
+      sourceType: attribute
+      target: dbx.oracledb.sql.sql_id
+      targetType: attribute
+      targetFormat: string
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `plan_hash_value` to `dbx.oracledb.sql.plan_hash_value`
+      enabled: true
+      sources:
+        - plan_hash_value
+      sourceType: attribute
+      target: dbx.oracledb.sql.plan_hash_value
+      targetType: attribute
+      targetFormat: string
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `cluster_name` to `dbx.oracledb.cluster_name`
+      enabled: true
+      sources:
+        - cluster_name
+      sourceType: attribute
+      target: dbx.oracledb.cluster_name
+      targetType: attribute
+      targetFormat: string
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `logger_name` to `logger.name`
+      enabled: true
+      sources:
+        - logger_name
+      sourceType: attribute
+      target: logger.name
+      targetType: attribute
+      targetFormat: string
+      preserveSource: false
+      overrideOnConflict: false
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: attribute-remapper
+      name: Map `thread_name` to `logger.thread_name`
+      enabled: true
+      sources:
+        - thread_name
+      sourceType: attribute
+      target: logger.thread_name
+      targetType: attribute
+      targetFormat: string
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `@timestamp` to `timestamp`
+      enabled: true
+      sources:
+        - "@timestamp"
+      sourceType: attribute
+      target: timestamp
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - "timestamp"
+    - type: attribute-remapper
+      name: Map `@version` to `logger.version`
+      enabled: true
+      sources:
+        - "@version"
+      sourceType: attribute
+      target: logger.version
+      targetType: attribute
+      targetFormat: string
+      preserveSource: false
+      overrideOnConflict: false

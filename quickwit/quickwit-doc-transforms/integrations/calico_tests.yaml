@@ -1,0 +1,250 @@
+id: "calico"
+tests:
+ -
+  sample: "2022-03-08 13:20:34.092 [INFO][760] felix/int_dataplane.go 1484: Received *proto.ActiveProfileUpdate update from calculation graph msg=id:<name:\"ksa.default.datadog-agent-kube-state-metrics\" > profile:<> "
+  result:
+    custom:
+      calico:
+        id:
+          name: "ksa.default.datadog-agent-kube-state-metrics"
+      logger:
+        line_number: 1484
+        name: "felix/int_dataplane.go"
+      pid: "760"
+      status: "INFO"
+      timestamp: 1646745634092
+      updated: "ActiveProfileUpdate"
+    message: "update from calculation graph"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1646745634092
+ -
+  sample: "2022-03-08 13:20:34.092 [INFO][760] felix/int_dataplane.go 1484: Received *proto.ActiveProfileUpdate update from calculation graph msg=id:<name:\"ksa.default.datadog-agent-kube-state-metrics\" > endpoint:<hello> profile:<world> "
+  result:
+    custom:
+      calico:
+        endpoint: "hello"
+        id:
+          name: "ksa.default.datadog-agent-kube-state-metrics"
+        profile: "world"
+      logger:
+        line_number: 1484
+        name: "felix/int_dataplane.go"
+      pid: "760"
+      status: "INFO"
+      timestamp: 1646745634092
+      updated: "ActiveProfileUpdate"
+    message: "update from calculation graph"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1646745634092
+ -
+  sample: "2022-02-25 15:28:43.671 [INFO][282] felix/table.go 506: Queueing update of chain. chainName=\"cali-tw-calib74ad9ce491\" ipVersion=0x4 table=\"filter\""
+  result:
+    custom:
+      calico:
+        chainName: "cali-tw-calib74ad9ce491"
+        ipVersion: "0x4"
+        table: "filter"
+      logger:
+        line_number: 506
+        name: "felix/table.go"
+      pid: "282"
+      status: "INFO"
+      timestamp: 1645802923671
+    message: "Queueing update of chain"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1645802923671
+ -
+  sample: "2022-03-08 14:50:42.293 [INFO][642] felix/config_params.go 502: Parsing value for LogSeverityFile:  (from config file)"
+  result:
+    custom:
+      action: "Parsing"
+      calico:
+        config:
+          key: "LogSeverityFile"
+          value: "(from config file)"
+      logger:
+        line_number: 502
+        name: "felix/config_params.go"
+      pid: "642"
+      status: "INFO"
+      timestamp: 1646751042293
+    message: "2022-03-08 14:50:42.293 [INFO][642] felix/config_params.go 502: Parsing value for LogSeverityFile:  (from config file)"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1646751042293
+ -
+  sample: "2022-03-08 14:50:43.239 [INFO][642] felix/int_dataplane.go 1609: Dataplane updates no longer throttled"
+  result:
+    custom:
+      logger:
+        line_number: 1609
+        name: "felix/int_dataplane.go"
+      pid: "642"
+      status: "INFO"
+      timestamp: 1646751043239
+    message: "Dataplane updates no longer throttled"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1646751043239
+ -
+  sample: "2022-03-07 15:42:52.608 [INFO][310249] felix/int_dataplane.go 1484: Received *proto.WorkloadEndpointUpdate update from calculation graph msg=id:<orchestrator_id:\"k8s\" workload_id:\"calico-monitoring/prometheus-pod\" endpoint_id:\"eth0\" > endpoint:< > "
+  result:
+    custom:
+      calico:
+        endpoint: " "
+        id:
+          endpoint_id: "eth0"
+          orchestrator_id: "k8s"
+          workload_id: "calico-monitoring/prometheus-pod"
+      logger:
+        line_number: 1484
+        name: "felix/int_dataplane.go"
+      pid: "310249"
+      status: "INFO"
+      timestamp: 1646667772608
+      updated: "WorkloadEndpointUpdate"
+    message: "update from calculation graph"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1646667772608
+ -
+  sample: "2022-03-15 14:07:17.510 [INFO][469495] felix/summary.go 100: Summarising 7 dataplane reconciliation loops over 1m3.3s: avg=263ms longest=773ms (resync-ipsets-v4)"
+  result:
+    custom:
+      calico:
+        dataplane_reconciliation:
+          avg: 263
+          count: 7
+          duration: "1m3.3s"
+          longest: 773
+      logger:
+        line_number: 100
+        name: "felix/summary.go"
+      pid: "469495"
+      status: "INFO"
+      timestamp: 1647353237510
+    message: "2022-03-15 14:07:17.510 [INFO][469495] felix/summary.go 100: Summarising 7 dataplane reconciliation loops over 1m3.3s: avg=263ms longest=773ms (resync-ipsets-v4)"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1647353237510
+ -
+  sample: "2022-03-15 13:41:57.352 [INFO][469495] felix/int_dataplane.go 1484: Received *proto.WorkloadEndpointUpdate update from calculation graph msg=id:<orchestrator_id:k8s workload_id:kube-system/calico-kube-controllers-8594699699-f9dqz endpoint_id:eth0 > endpoint:<state:active name:cali32a8897ee19 profile_ids:kns.kube-system profile_ids:ksa.kube-system.calico-kube-controllers ipv4_nets:10.244.120.66/32 > "
+  result:
+    custom:
+      calico:
+        endpoint: "state:active name:cali32a8897ee19 profile_ids:kns.kube-system profile_ids:ksa.kube-system.calico-kube-controllers ipv4_nets:10.244.120.66/32 "
+        id:
+          endpoint_id: "eth0"
+          orchestrator_id: "k8s"
+      logger:
+        line_number: 1484
+        name: "felix/int_dataplane.go"
+      pid: "469495"
+      status: "INFO"
+      timestamp: 1647351717352
+      updated: "WorkloadEndpointUpdate"
+    message: "update from calculation graph"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1647351717352
+ -
+  sample: "2022-10-31 14:35:19.482 [INFO][262] felix/status_combiner.go 58: Storing endpoint status update ipVersion=0x4 status=\"up\" workload=proto.WorkloadEndpointID{OrchestratorId:\"k8s\", WorkloadId:\"kube-system/coredns-6d4b75cb6d-62scn\", EndpointId:\"eth0\"} "
+  result:
+    custom:
+      ipVersion: "0x4"
+      logger:
+        line_number: 58
+        name: "felix/status_combiner.go"
+      pid: "262"
+      status: "up"
+      timestamp: 1667226919482
+      workload:
+        EndpointId: "eth0"
+        OrchestratorId: "k8s"
+        WorkloadId: "kube-system/coredns-6d4b75cb6d-62scn"
+    message: "Storing endpoint status update "
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1667226919482
+ -
+  sample: "2022-10-31 14:35:18.602 [INFO][262] felix/int_dataplane.go 1695: Received interface update msg=&intdataplane.ifaceUpdate{Name:\"calif1127a92742\", State:\"up\", Index:11}"
+  result:
+    custom:
+      calico:
+        interface:
+          Index: 11
+          Name: "calif1127a92742"
+          State: "up"
+      logger:
+        line_number: 1695
+        name: "felix/int_dataplane.go"
+      pid: "262"
+      status: "INFO"
+      timestamp: 1667226918602
+    message: "2022-10-31 14:35:18.602 [INFO][262] felix/int_dataplane.go 1695: Received interface update msg=&intdataplane.ifaceUpdate{Name:\"calif1127a92742\", State:\"up\", Index:11}"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1667226918602
+ -
+  sample: "2022-11-03 03:54:27.610 [INFO][262] felix/hostip_mgr.go 84: Interface addrs changed. update=&intdataplane.ifaceAddrsUpdate{Name:\"calif1127a92742\", Addrs:set.Typed[string]{}}"
+  result:
+    custom:
+      Addrs: "set.Typed[string]{}"
+      Name: "calif1127a92742"
+      logger:
+        line_number: 84
+        name: "felix/hostip_mgr.go"
+      pid: "262"
+      status: "INFO"
+      timestamp: 1667447667610
+    message: "Interface addrs changed"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1667447667610
+ -
+  sample: "2022-11-03 03:54:27.610 [INFO][262] felix/endpoint_mgr.go 1212: Applying /proc/sys configuration to interface. ifaceName=\"calif1127a92742\""
+  result:
+    custom:
+      calico:
+        ifaceName: "calif1127a92742"
+      logger:
+        line_number: 1212
+        name: "felix/endpoint_mgr.go"
+      pid: "262"
+      status: "INFO"
+      timestamp: 1667447667610
+    message: "Applying /proc/sys configuration to interface"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1667447667610
+ -
+  sample: "2022-12-12 20:43:44.884 [INFO][93] felix/config_batcher.go 74: Global config update: {{GlobalFelixConfig(name=ClusterType) k8s,bgp,kubeadm,kdd 594 <nil> 0s} 1}"
+  result:
+    custom:
+      logger:
+        line_number: 74
+        name: "felix/config_batcher.go"
+      pid: "93"
+      status: "INFO"
+      timestamp: 1670877824884
+    message: "Global config update: {{GlobalFelixConfig(name=ClusterType) k8s,bgp,kubeadm,kdd 594 <nil> 0s} 1}"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1670877824884
+

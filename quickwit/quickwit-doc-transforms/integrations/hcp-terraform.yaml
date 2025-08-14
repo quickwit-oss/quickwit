@@ -1,0 +1,76 @@
+id: hcp-terraform
+metric_id: hcp-terraform
+backend_only: false
+facets:
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+  - groups:
+      - Event
+    name: Event Category
+    path: evt.category
+    source: log
+pipeline:
+  type: pipeline
+  name: HCP Terraform Audit Trails
+  enabled: true
+  filter:
+    query: source:hcp-terraform
+  processors:
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: attribute-remapper
+      name: Map `auth.description` to `usr.name`
+      enabled: true
+      sources:
+        - auth.description
+      sourceType: attribute
+      target: usr.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `auth.accessor_id` to `usr.id`
+      enabled: true
+      sources:
+        - auth.accessor_id
+      sourceType: attribute
+      target: usr.id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `resource.type` to `evt.category`
+      enabled: true
+      sources:
+        - resource.type
+      sourceType: attribute
+      target: evt.category
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `resource.action` to `evt.name`
+      enabled: true
+      sources:
+        - resource.action
+      sourceType: attribute
+      target: evt.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false

@@ -1,0 +1,216 @@
+id: twilio
+metric_id: twilio
+backend_only: false
+facets:
+  - groups:
+      - Source Code
+    name: Error Type
+    path: error.kind
+    source: log
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - groups:
+      - Twilio
+    name: Account Sid
+    path: account_sid
+    source: log
+  - groups:
+      - Twilio
+    name: Service Sid
+    path: service_sid
+    source: log
+  - groups:
+      - Twilio
+    name: Actor Type
+    path: actor_type
+    source: log
+pipeline:
+  type: pipeline
+  name: twilio
+  enabled: true
+  filter:
+    query: source:twilio
+  processors:
+    - type: grok-parser
+      name: Date
+      enabled: true
+      source: date_updated
+      samples:
+        - Thu, 24 Aug 2023 05:01:45 +0000
+        - '2015-07-30T20:00:00Z'
+      grok:
+        supportRules: ''
+        matchRules: |-
+          _date %{date("EEE, dd MMM yyyy HH:mm:ss Z"):_timestamp}
+          _date2 %{date("yyyy-MM-dd'T'HH:mm:ss'Z'"):_timestamp}
+    - type: date-remapper
+      name: Define `event_date`, `_timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - event_date
+        - _timestamp
+    - type: attribute-remapper
+      name: Map `actor_sid` to `usr.id`
+      enabled: true
+      sources:
+        - actor_sid
+      target: usr.id
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `event_type` to `evt.name`
+      enabled: true
+      sources:
+        - event_type
+      target: evt.name
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `error_code` to `error.kind`
+      enabled: true
+      sources:
+        - error_code
+      target: error.kind
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `alert_text`, `error_message` to `error.message`
+      enabled: true
+      sources:
+        - alert_text
+        - error_message
+      target: error.message
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `url` to `http.url`
+      enabled: true
+      sources:
+        - url
+      target: http.url
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `request_method` to `http.method`
+      enabled: true
+      sources:
+        - request_method
+      target: http.method
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `source_ip_address` to `network.client.ip`
+      enabled: true
+      sources:
+        - source_ip_address
+      target: network.client.ip
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: geo-ip-parser
+      name: Fetching GeoIp data for client ip
+      enabled: true
+      sources:
+        - network.client.ip
+      target: network.client.geoip
+    - type: attribute-remapper
+      name: Map `status` to `twilio.status`
+      enabled: true
+      sources:
+        - status
+      target: twilio.status
+      preserveSource: true
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: category-processor
+      name: Categorise status code
+      enabled: true
+      categories:
+        - filter:
+            query: '@status:(accepted OR scheduled OR queued OR sending OR sent OR delivered OR receiving OR received OR read)'
+          name: OK
+        - filter:
+            query: '@status:(canceled OR undelivered OR partially_delivered)'
+          name: warning
+        - filter:
+            query: '@status:failed'
+          name: error
+      target: status
+    - type: status-remapper
+      name: Define `log_level`, `status` as the official status of the log
+      enabled: true
+      sources:
+        - log_level
+        - status

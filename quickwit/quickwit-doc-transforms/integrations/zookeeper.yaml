@@ -1,0 +1,80 @@
+id: zookeeper
+metric_id: zookeeper
+backend_only: false
+facets:
+  - groups:
+      - Source Code
+    name: Error Type
+    path: error.kind
+    source: log
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+  - groups:
+      - Source Code
+    name: Thread Name
+    path: logger.thread_name
+    source: log
+pipeline:
+  type: pipeline
+  name: Zookeeper
+  enabled: true
+  filter:
+    query: source:zookeeper
+  processors:
+    - type: grok-parser
+      name: Parsing ZK logs
+      enabled: true
+      source: message
+      samples:
+        - 2000-09-07 14:07:41,508 [main] INFO  MyApp - Entering application.
+        - 54 [main] INFO MyApp.foo.bar - Entering application.
+        - 2000-09-07 14:07:44 INFO org.foo.bar:32 - Entering application.
+      grok:
+        supportRules: |
+          _date %{date("yyyy-MM-dd HH:mm:ss"):timestamp}
+          _date_ms %{date("yyyy-MM-dd HH:mm:ss,SSS"):timestamp}
+          _duration %{integer:duration}
+          _thread_name %{notSpace:logger.thread_name}
+          _status %{word:status}
+          _logger_name %{notSpace:logger.name}
+          _context %{notSpace:logger.context}
+          _line %{integer:line}
+        matchRules: |
+          Zookeeper_default (%{_date_ms}|%{_duration})\s+\[%{_thread_name}\]\s+%{_status}\s+%{_logger_name}\s*(%{_context}\s*)?- %{data:msg}((\n|\t)%{data:error.stack})?
+
+          Zookeeper_recommended %{_date} %{_status}\s+%{_logger_name}:%{_line}\s+- %{data:msg}((\n|\t)%{data:error.stack})?
+
+    - type: grok-parser
+      name: Parsing Stack traces
+      enabled: true
+      source: error.stack
+      grok:
+        supportRules: |
+        matchRules: |
+          error_rule %{notSpace:error.kind}: %{data:error.message}(\n|\t).*
+      samples:
+        - |
+          java.net.SocketException: Connection reset
+          	at java.base/java.net.SocketInputStream.read(SocketInputStream.java:186)
+          	at java.base/java.net.SocketInputStream.read(SocketInputStream.java:140)
+          	at java.base/java.io.BufferedInputStream.fill(BufferedInputStream.java:252)
+          	at java.base/java.io.BufferedInputStream.read(BufferedInputStream.java:271)
+          	at java.base/java.io.DataInputStream.readInt(DataInputStream.java:392)
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `status` as the official status of the log
+      enabled: true
+      sources:
+        - status
+    - type: message-remapper
+      name: Define `msg` as the official message of the log
+      enabled: true
+      sources:
+        - msg

@@ -1,0 +1,38 @@
+id: aws-alb-ingress-controller
+metric_id: amazon-elb # There is no specific integration for aws-alb-ingress-controller, both amazon-elb and aws-alb-ingress-controller are in the generic amazon-elb integration.
+backend_only: false
+facets:
+pipeline:
+  type: pipeline
+  name: AWS ALB Ingress Controller
+  enabled: true
+  filter:
+    query: source:aws-alb-ingress-controller
+  processors:
+    - type: grok-parser
+      name: Parsing AWS ALB Ingress Controller logs
+      enabled: true
+      source: message
+      samples:
+        - I0408 21:09:06.840010       1 store.go:226] updating annotations information for ingress ref-prod/dre-proxy
+        - 'I0408 21:09:06.840010       1 rules.go:98] ref-prod/ref-prod-ingress: rule 2 modified with conditions [{    Field: "host-header",    Values: ["oauth2-int.us-east-1.ref-prod.wds.io"]  },{    Field: "path-pattern",    Values: ["/*"]  }]'
+        - 'W0408 21:09:06.840010       1 reflector.go:270] pkg/mod/k8s.io/client-go@v2.0.0-alpha.0.0.20191112141123-5c4ab214ef58+incompatible/utils/cache/reflector.go:95: watch of *v1.Endpoints ended with: too old resource version: 98851296 (98851900)'
+      grok:
+        supportRules: |
+        matchRules: |
+          aws_alb_ingress_controller %{regex("\\w"):level}%{date("MMdd HH:mm:ss.SSSSSS"):timestamp}\s+%{number:logger.thread_id} %{notSpace:logger.name}:%{number:lineno}\] %{data:msg}
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: message-remapper
+      name: Define `msg` as the official message of the log
+      enabled: true
+      sources:
+        - msg

@@ -1,0 +1,419 @@
+id: "meraki"
+tests:
+ -
+  sample: |-
+    {
+      "deviceSerial" : "Q2FD-2DFW-GMLU",
+      "occurredAt" : "2019-11-13T03:49:57.559838Z",
+      "eventData" : {
+        "dst" : "FF:FF:FF:FF:FF:FF",
+        "inter_arrival" : "10",
+        "bssid" : "E6:55:3D:C0:0C:48",
+        "source_client_ip" : "185.64.148.0",
+        "channel" : "1",
+        "source_client_mac" : "FF:FF:FF:FF:FF:FF",
+        "packet" : "beacon",
+        "radio" : "0",
+        "duration" : "60.06",
+        "dos_count" : "1000",
+        "identity" : "test@somemail.com",
+        "alarm_id" : "6481",
+        "state" : "start",
+        "device" : "E6:55:3D:C0:0C:48"
+      },
+      "service" : "meraki",
+      "description" : "Single device packet flood",
+      "networkId" : "L_609111849601865465",
+      "type" : "device_packet_flood",
+      "deviceName" : "NYC-SANDBOX-AP01"
+    }
+  result:
+    custom:
+      description: "Single device packet flood"
+      deviceName: "NYC-SANDBOX-AP01"
+      deviceSerial: "Q2FD-2DFW-GMLU"
+      duration: 6.006E10
+      eventData:
+        alarm_id: "6481"
+        bssid: "E6:55:3D:C0:0C:48"
+        channel: "1"
+        device: "E6:55:3D:C0:0C:48"
+        dos_count: "1000"
+        duration: "60.06"
+        identity: "test@somemail.com"
+        inter_arrival: "10"
+        packet: "beacon"
+        radio: "0"
+        state: "start"
+      evt:
+        name: "device_packet_flood"
+      network:
+        client:
+          geoip:
+            city:
+              name: "Paris"
+            continent:
+              code: "EU"
+              name: "Europe"
+            country:
+              iso_code: "FR"
+              name: "France"
+            ipAddress: "185.64.148.0"
+            location:
+              latitude: 48.90654
+              longitude: 2.33339
+            subdivision:
+              iso_code: "FR-IDF"
+              name: "Île-de-France"
+            timezone: "Europe/Paris"
+          ip: "185.64.148.0"
+          mac: "FF:FF:FF:FF:FF:FF"
+        destination:
+          mac: "FF:FF:FF:FF:FF:FF"
+      networkId: "L_609111849601865465"
+      occurredAt: "2019-11-13T03:49:57.559838Z"
+      ocsf:
+        activity_id: 99
+        activity_name: "device_packet_flood"
+        category_name: "Uncategorized"
+        category_uid: 0
+        class_name: "Base Event"
+        class_uid: 0
+        metadata:
+          event_code: "device_packet_flood"
+          product:
+            name: "Cisco Meraki"
+            vendor_name: "Cisco"
+          version: "1.3.0"
+        severity: "Informational"
+        severity_id: 1
+        time: 1573616997559
+        type_uid: 99
+      service: "meraki"
+      title: "Single device packet flood on Device NYC-SANDBOX-AP01 on Network L_609111849601865465"
+      usr:
+        email: "test@somemail.com"
+    message: |-
+      {
+        "deviceSerial" : "Q2FD-2DFW-GMLU",
+        "occurredAt" : "2019-11-13T03:49:57.559838Z",
+        "eventData" : {
+          "dst" : "FF:FF:FF:FF:FF:FF",
+          "inter_arrival" : "10",
+          "bssid" : "E6:55:3D:C0:0C:48",
+          "source_client_ip" : "185.64.148.0",
+          "channel" : "1",
+          "source_client_mac" : "FF:FF:FF:FF:FF:FF",
+          "packet" : "beacon",
+          "radio" : "0",
+          "duration" : "60.06",
+          "dos_count" : "1000",
+          "identity" : "test@somemail.com",
+          "alarm_id" : "6481",
+          "state" : "start",
+          "device" : "E6:55:3D:C0:0C:48"
+        },
+        "service" : "meraki",
+        "description" : "Single device packet flood",
+        "networkId" : "L_609111849601865465",
+        "type" : "device_packet_flood",
+        "deviceName" : "NYC-SANDBOX-AP01"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1573616997559
+ -
+  sample: |-
+    {
+      "destIp" : "119.192.233.48",
+      "destinationPort" : 80,
+      "srcIp" : "185.64.148.0",
+      "clientName" : "COMPUTER-M-V78J",
+      "clientMac" : "10:dd:b1:eb:88:f8",
+      "fileHash" : "3ec1b9a95fe62aa25fc959643a0f227b76d253094681934daaf628d3574b3463",
+      "eventType" : "File Scanned",
+      "uri" : "http://www.favorite-icons.com/program/FavoriteIconsUninstall.exe",
+      "fileSizeBytes" : 193688,
+      "protocol" : "http",
+      "disposition" : "Malicious",
+      "clientIp" : "192.168.128.2",
+      "action" : "Blocked",
+      "fileType" : "MS_EXE",
+      "ts" : "2020-03-20T16:00:10.144989Z",
+      "canonicalName" : "PUA.Win.Dropper.Kraddare::1201"
+    }
+  result:
+    custom:
+      action: "Blocked"
+      canonicalName: "PUA.Win.Dropper.Kraddare::1201"
+      clientIp: "192.168.128.2"
+      clientName: "COMPUTER-M-V78J"
+      destIp: "119.192.233.48"
+      disposition: "Malicious"
+      evt:
+        category: "File Scanned"
+      file:
+        hash:
+          sha256: "3ec1b9a95fe62aa25fc959643a0f227b76d253094681934daaf628d3574b3463"
+        size: 193688
+      fileType: "MS_EXE"
+      http:
+        url: "http://www.favorite-icons.com/program/FavoriteIconsUninstall.exe"
+        url_details:
+          host: "www.favorite-icons.com"
+          path: "/program/FavoriteIconsUninstall.exe"
+          scheme: "http"
+      network:
+        client:
+          geoip:
+            city:
+              name: "Paris"
+            continent:
+              code: "EU"
+              name: "Europe"
+            country:
+              iso_code: "FR"
+              name: "France"
+            ipAddress: "185.64.148.0"
+            location:
+              latitude: 48.90654
+              longitude: 2.33339
+            subdivision:
+              iso_code: "FR-IDF"
+              name: "Île-de-France"
+            timezone: "Europe/Paris"
+          ip: "185.64.148.0"
+          mac: "10:dd:b1:eb:88:f8"
+        destination:
+          ip: "119.192.233.48"
+          port: 80
+        protocol: "http"
+      ocsf:
+        action: "Denied"
+        action_id: 2
+        activity_id: 99
+        activity_name: "File Scanned"
+        category_name: "Network Activity"
+        category_uid: 4
+        class_name: "Network Activity"
+        class_uid: 4001
+        device:
+          name: "COMPUTER-M-V78J"
+          type: "Unknown"
+          type_id: 0
+        disposition: "Blocked"
+        disposition_id: 2
+        dst_endpoint:
+          ip: "119.192.233.48"
+          port: 80
+        metadata:
+          product:
+            name: "Cisco Meraki"
+            vendor_name: "Cisco"
+          profiles:
+           - "security_control"
+           - "host"
+          version: "1.3.0"
+        severity: "Informational"
+        severity_id: 1
+        src_endpoint:
+          ip: "185.64.148.0"
+          mac: "10:dd:b1:eb:88:f8"
+        time: 1584720010144
+        type_uid: 400199
+        url:
+          url_string: "http://www.favorite-icons.com/program/FavoriteIconsUninstall.exe"
+      srcIp: "185.64.148.0"
+      ts: "2020-03-20T16:00:10.144989Z"
+    message: |-
+      {
+        "destIp" : "119.192.233.48",
+        "destinationPort" : 80,
+        "srcIp" : "185.64.148.0",
+        "clientName" : "COMPUTER-M-V78J",
+        "clientMac" : "10:dd:b1:eb:88:f8",
+        "fileHash" : "3ec1b9a95fe62aa25fc959643a0f227b76d253094681934daaf628d3574b3463",
+        "eventType" : "File Scanned",
+        "uri" : "http://www.favorite-icons.com/program/FavoriteIconsUninstall.exe",
+        "fileSizeBytes" : 193688,
+        "protocol" : "http",
+        "disposition" : "Malicious",
+        "clientIp" : "192.168.128.2",
+        "action" : "Blocked",
+        "fileType" : "MS_EXE",
+        "ts" : "2020-03-20T16:00:10.144989Z",
+        "canonicalName" : "PUA.Win.Dropper.Kraddare::1201"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1584720010144
+ -
+  sample: |-
+    {
+      "destIp" : "2001:db8:3333:4444:5555:6666:7777:8888:80",
+      "srcIp" : "185.64.148.0:34195",
+      "clientMac" : "A1:B2:C3:D4:E5:F6",
+      "signature" : "1:21516:9",
+      "eventType" : "IDS Alert",
+      "priority" : "2",
+      "classification" : "4",
+      "message" : "SERVER-WEBAPP JBoss JMX console access attempt",
+      "protocol" : "tcp/ip",
+      "blocked" : true,
+      "deviceMac" : "00:18:0a:01:02:03",
+      "sigSource" : "",
+      "ruleId" : "meraki:intrusion/snort/GID/1/SID/26267",
+      "ts" : "2018-02-11T00:00:00.090210Z"
+    }
+  result:
+    custom:
+      blocked: true
+      classification: "4"
+      destIp: "2001:db8:3333:4444:5555:6666:7777:8888:80"
+      deviceMac: "00:18:0a:01:02:03"
+      evt:
+        category: "IDS Alert"
+      network:
+        client:
+          geoip:
+            city:
+              name: "Paris"
+            continent:
+              code: "EU"
+              name: "Europe"
+            country:
+              iso_code: "FR"
+              name: "France"
+            ipAddress: "185.64.148.0"
+            location:
+              latitude: 48.90654
+              longitude: 2.33339
+            subdivision:
+              iso_code: "FR-IDF"
+              name: "Île-de-France"
+            timezone: "Europe/Paris"
+          ip: "185.64.148.0"
+          mac: "A1:B2:C3:D4:E5:F6"
+          port: "34195"
+        destination:
+          ip: "2001:db8:3333:4444:5555:6666:7777:8888"
+          port: "80"
+        protocol: "tcp/ip"
+      ocsf:
+        action: "Denied"
+        action_id: 2
+        activity_id: 99
+        activity_name: "IDS Alert"
+        category_name: "Network Activity"
+        category_uid: 4
+        class_name: "Network Activity"
+        class_uid: 4001
+        disposition: "Blocked"
+        disposition_id: 2
+        dst_endpoint:
+          ip: "2001:db8:3333:4444:5555:6666:7777:8888"
+          port: 80
+        firewall_rule:
+          uid: "meraki:intrusion/snort/GID/1/SID/26267"
+        metadata:
+          product:
+            name: "Cisco Meraki"
+            vendor_name: "Cisco"
+          profiles:
+           - "security_control"
+          version: "1.3.0"
+        severity: "Medium"
+        severity_id: 3
+        src_endpoint:
+          ip: "185.64.148.0"
+          mac: "A1:B2:C3:D4:E5:F6"
+          port: 34195
+        time: 1518307200090
+        type_uid: 400199
+      priority: "2"
+      ruleId: "meraki:intrusion/snort/GID/1/SID/26267"
+      sigSource: ""
+      signature: "1:21516:9"
+      srcIp: "185.64.148.0:34195"
+      ts: "2018-02-11T00:00:00.090210Z"
+    message: "SERVER-WEBAPP JBoss JMX console access attempt"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1518307200090
+ -
+  sample: |-
+    {
+      "deviceSerial" : "1111111-1111",
+      "occurredAt" : "2025-06-06T10:32:57.980957Z",
+      "eventData" : {
+        "connectivity" : "false",
+        "vpn_type" : "teleworker",
+        "peer_contact" : "1.1.1.1:41831"
+      },
+      "description" : "VPN tunnel connectivity change",
+      "networkId" : "L_111",
+      "type" : "vpn_connectivity_change",
+      "category" : "shared_vpn",
+      "title" : "VPN tunnel connectivity change on Device TEST-DEVICE on Network L_111",
+      "deviceName" : "TEST-DEVICE",
+      "ddsource" : "meraki"
+    }
+  result:
+    custom:
+      category: "shared_vpn"
+      ddsource: "meraki"
+      description: "VPN tunnel connectivity change"
+      deviceName: "TEST-DEVICE"
+      deviceSerial: "1111111-1111"
+      eventData:
+        connectivity: "false"
+        peer_contact: "1.1.1.1:41831"
+        vpn_type: "teleworker"
+      evt:
+        name: "vpn_connectivity_change"
+      networkId: "L_111"
+      occurredAt: "2025-06-06T10:32:57.980957Z"
+      ocsf:
+        activity_id: 1
+        activity_name: "Log"
+        category_name: "Discovery"
+        category_uid: 5
+        class_name: "Device Config State Change"
+        class_uid: 5019
+        device:
+          name: "TEST-DEVICE"
+          type: "Unknown"
+          type_id: 0
+        message: "VPN tunnel connectivity change"
+        metadata:
+          event_code: "vpn_connectivity_change"
+          product:
+            name: "Cisco Meraki"
+            vendor_name: "Cisco"
+          version: "1.3.0"
+        severity: "Informational"
+        severity_id: 1
+        time: 1749205977980
+        type_uid: 501901
+      title: "VPN tunnel connectivity change on Device TEST-DEVICE on Network L_111"
+    message: |-
+      {
+        "deviceSerial" : "1111111-1111",
+        "occurredAt" : "2025-06-06T10:32:57.980957Z",
+        "eventData" : {
+          "connectivity" : "false",
+          "vpn_type" : "teleworker",
+          "peer_contact" : "1.1.1.1:41831"
+        },
+        "description" : "VPN tunnel connectivity change",
+        "networkId" : "L_111",
+        "type" : "vpn_connectivity_change",
+        "category" : "shared_vpn",
+        "title" : "VPN tunnel connectivity change on Device TEST-DEVICE on Network L_111",
+        "deviceName" : "TEST-DEVICE",
+        "ddsource" : "meraki"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1749205977980
+

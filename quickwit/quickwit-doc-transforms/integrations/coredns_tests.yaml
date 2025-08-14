@@ -1,0 +1,72 @@
+id: "coredns"
+tests:
+ -
+  sample: "2019-11-28T14:47:20.55Z [INFO] 10.145.105.176:36008 - 21628 \"AAAA IN trace-k8s.agent.datadoghq.com.apm1.cluster.local. udp 66 false 512\" NXDOMAIN qr,aa,rd,ra 174 0.000078493s"
+  result:
+    custom:
+      dns:
+        answer:
+          size: 174.0
+        buffer: 512.0
+        dnssec: "false"
+        flags:
+          list:
+           - "qr"
+           - "aa"
+           - "rd"
+           - "ra"
+          rcode: "NXDOMAIN"
+        id: 21628.0
+        protocol: "udp"
+        question:
+          class: "IN"
+          name: "trace-k8s.agent.datadoghq.com.apm1.cluster.local."
+          size: 66.0
+          type: "AAAA"
+      duration: 78493.0
+      level: "INFO"
+      network:
+        client:
+          ip: "10.145.105.176"
+          port: "36008"
+      timestamp: 1574952440550
+    message: "2019-11-28T14:47:20.55Z [INFO] 10.145.105.176:36008 - 21628 \"AAAA IN trace-k8s.agent.datadoghq.com.apm1.cluster.local. udp 66 false 512\" NXDOMAIN qr,aa,rd,ra 174 0.000078493s"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1574952440550
+ -
+  sample: "[INFO] 127.0.0.1:50759 - 29008 \"A IN example.org. udp 41 false 4096\" NOERROR qr,rd,ra,ad 68 0.037990251s"
+  result:
+    custom:
+      dns:
+        answer:
+          size: 68.0
+        buffer: 4096.0
+        dnssec: "false"
+        flags:
+          list:
+           - "qr"
+           - "rd"
+           - "ra"
+           - "ad"
+          rcode: "NOERROR"
+        id: 29008.0
+        protocol: "udp"
+        question:
+          class: "IN"
+          name: "example.org."
+          size: 41.0
+          type: "A"
+      duration: 3.7990251E7
+      level: "INFO"
+      network:
+        client:
+          ip: "127.0.0.1"
+          port: "50759"
+    message: "[INFO] 127.0.0.1:50759 - 29008 \"A IN example.org. udp 41 false 4096\" NOERROR qr,rd,ra,ad 68 0.037990251s"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+

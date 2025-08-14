@@ -1,0 +1,39 @@
+id: powerdns
+metric_id: powerdns
+backend_only: false
+pipeline:
+  type: pipeline
+  name: Powerdns Recursor
+  enabled: true
+  filter:
+    query: source:powerdns
+  processors:
+    - type: grok-parser
+      name: Parsing Powerdns Recursor logs
+      enabled: true
+      source: message
+      samples:
+        - 'Oct 08 15:08:53 cc-test-powerdns pdns_recursor[16261]: If using IPv6, please raise sysctl net.ipv6.route.max_size, currently set to 4096 which is < 16384'
+        - 'Oct 08 14:59:58 cc-test-powerdns pdns_recursor[15564]: Set effective user id to 111'
+      grok:
+        supportRules: |
+          _date %{date("MMM dd HH:mm:ss"):timestamp}
+          _pid %{integer:pid}
+          _hostname %{notSpace:hostname}
+        matchRules: |
+          pdns_recursor (%{_date} %{_hostname} %{word:syslog.appname}\[%{_pid}\]:\s)?%{data:message}
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message
+    - type: service-remapper
+      name: Define `syslog.appname` as the official service of the log
+      enabled: true
+      sources:
+        - syslog.appname

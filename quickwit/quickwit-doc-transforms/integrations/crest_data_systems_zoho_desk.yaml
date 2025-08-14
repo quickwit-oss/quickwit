@@ -1,0 +1,999 @@
+id: crest_data_systems_zoho_desk
+metric_id: crest-data-systems-zoho-desk
+backend_only: false
+facets:
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - groups:
+      - User
+    name: User Email
+    path: usr.email
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho desk
+    name: Account_Name
+    path: cds.zoho-desk.accountName
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho desk
+    name: Bad_Percentage
+    path: cds.zoho-desk.customerHappiness.badPercentage
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho desk
+    name: Channel
+    path: cds.zoho-desk.channel
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho desk
+    name: Completed_Time
+    path: cds.zoho-desk.completedTime
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho desk
+    name: Contact_Email
+    path: cds.zoho-desk.contact.email
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho desk
+    name: Contact_Name
+    path: cds.zoho-desk.contact.name
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho desk
+    name: Contact_Type
+    path: cds.zoho-desk.type
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho desk
+    name: Department
+    path: cds.zoho-desk.department.name
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho desk
+    name: Direction
+    path: cds.zoho-desk.direction
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho desk
+    name: Email
+    path: cds.zoho-desk.email
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho desk
+    name: Good_Percentage
+    path: cds.zoho-desk.customerHappiness.goodPercentage
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho desk
+    name: Mobile
+    path: cds.zoho-desk.mobile
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho desk
+    name: Ok_Percentage
+    path: cds.zoho-desk.customerHappiness.okPercentage
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho desk
+    name: OnHoldTime
+    path: cds.zoho-desk.onholdTime
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho desk
+    name: Phone
+    path: cds.zoho-desk.phone
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho desk
+    name: Priority
+    path: cds.zoho-desk.priority
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho desk
+    name: Product_Code
+    path: cds.zoho-desk.productCode
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho desk
+    name: Product_Name
+    path: cds.zoho-desk.productName
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho desk
+    name: Product_Name
+    path: cds.zoho-desk.product.productName
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho desk
+    name: Status
+    path: cds.zoho-desk.status
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho desk
+    name: Status_Type
+    path: cds.zoho-desk.statusType
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho desk
+    name: Subject
+    path: cds.zoho-desk.subject
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho desk
+    name: Ticket_Channel
+    path: cds.zoho-desk.ticketChannel
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho desk
+    name: Ticket_Number
+    path: cds.zoho-desk.ticketNumber
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho desk
+    name: Ticket_Status
+    path: cds.zoho-desk.ticketStatus
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho desk
+    name: Ticket_Subject
+    path: cds.zoho-desk.ticketSubject
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho desk
+    name: Unitprice
+    path: cds.zoho-desk.unitPrice
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho desk
+    name: Website
+    path: cds.zoho-desk.website
+    source: log
+    type: string
+pipeline:
+  type: pipeline
+  name: Zoho Desk
+  enabled: true
+  filter:
+    query: source:crest_data_systems_zoho_desk
+  processors:
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: date-remapper
+      name: Define `modifiedTime` as the official date of the log
+      enabled: true
+      sources:
+        - modifiedTime
+    - type: attribute-remapper
+      name: Map `id` to `cds.zoho-desk.id`
+      enabled: true
+      sources:
+        - id
+      sourceType: attribute
+      target: cds.zoho-desk.id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `statusType` to `cds.zoho-desk.statusType`
+      enabled: true
+      sources:
+        - statusType
+      sourceType: attribute
+      target: cds.zoho-desk.statusType
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `category` to `cds.zoho-desk.category`
+      enabled: true
+      sources:
+        - category
+      sourceType: attribute
+      target: cds.zoho-desk.category
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `priority` to `cds.zoho-desk.priority`
+      enabled: true
+      sources:
+        - priority
+      sourceType: attribute
+      target: cds.zoho-desk.priority
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `departmentId` to `cds.zoho-desk.departmentId`
+      enabled: true
+      sources:
+        - departmentId
+      sourceType: attribute
+      target: cds.zoho-desk.departmentId
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `contactId` to `cds.zoho-desk.contactId`
+      enabled: true
+      sources:
+        - contactId
+      sourceType: attribute
+      target: cds.zoho-desk.contactId
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `ticket` to `cds.zoho-desk.ticket`
+      enabled: true
+      sources:
+        - ticket
+      sourceType: attribute
+      target: cds.zoho-desk.ticket
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `contact` to `cds.zoho-desk.contact`
+      enabled: true
+      sources:
+        - contact
+      sourceType: attribute
+      target: cds.zoho-desk.contact
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: string-builder-processor
+      name: Retrieve `contact.name` from `firstName` and `lastName`
+      enabled: true
+      template: "%{cds.zoho-desk.contact.firstName} %{cds.zoho-desk.contact.lastName}"
+      target: cds.zoho-desk.contact.name
+      replaceMissing: true
+    - type: attribute-remapper
+      name: Map `assignee` to `cds.zoho-desk.assignee`
+      enabled: true
+      sources:
+        - assignee
+      sourceType: attribute
+      target: cds.zoho-desk.assignee
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `ticketId` to `cds.zoho-desk.ticketId`
+      enabled: true
+      sources:
+        - ticketId
+      sourceType: attribute
+      target: cds.zoho-desk.ticketId
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: pipeline
+      name: Zoho Desk Tickets
+      enabled: true
+      filter:
+        query: "service:cds.zoho.desk.tickets"
+      processors:
+        - type: attribute-remapper
+          name: Map `product` to `cds.zoho-desk.product`
+          enabled: true
+          sources:
+            - product
+          sourceType: attribute
+          target: cds.zoho-desk.product
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `department` to `cds.zoho-desk.department`
+          enabled: true
+          sources:
+            - department
+          sourceType: attribute
+          target: cds.zoho-desk.department
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `ticketNumber` to `cds.zoho-desk.ticketNumber`
+          enabled: true
+          sources:
+            - ticketNumber
+          sourceType: attribute
+          target: cds.zoho-desk.ticketNumber
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `channel` to `cds.zoho-desk.ticketChannel`
+          enabled: true
+          sources:
+            - channel
+          sourceType: attribute
+          target: cds.zoho-desk.ticketChannel
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `onholdTime` to `cds.zoho-desk.onholdTime`
+          enabled: true
+          sources:
+            - onholdTime
+          sourceType: attribute
+          target: cds.zoho-desk.onholdTime
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `subCategory` to `cds.zoho-desk.subCategory`
+          enabled: true
+          sources:
+            - subCategory
+          sourceType: attribute
+          target: cds.zoho-desk.subCategory
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `dueDate` to `cds.zoho-desk.dueDate`
+          enabled: true
+          sources:
+            - dueDate
+          sourceType: attribute
+          target: cds.zoho-desk.dueDate
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cds.zoho-desk.assignee.id` to `usr.id`
+          enabled: true
+          sources:
+            - cds.zoho-desk.assignee.id
+          sourceType: attribute
+          target: usr.id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cds.zoho-desk.assignee.email` to `usr.email`
+          enabled: true
+          sources:
+            - cds.zoho-desk.assignee.email
+          sourceType: attribute
+          target: usr.email
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: string-builder-processor
+          name: Retrieve `usr.name` from `firstName` and `lastName`
+          enabled: true
+          template: "%{cds.zoho-desk.assignee.firstName}
+            %{cds.zoho-desk.assignee.lastName}"
+          target: usr.name
+          replaceMissing: true
+        - type: string-builder-processor
+          name: "%{cds.zoho-desk.priority} - in attribute log_status"
+          enabled: true
+          template: "%{cds.zoho-desk.priority}"
+          target: log_status
+          replaceMissing: true
+        - name: Lookup for `log_status` to `log_status`
+          enabled: true
+          source: log_status
+          target: log_status
+          lookupTable: |-
+            Low,notice
+            Medium,warning
+            High,alert
+          defaultLookup: info
+          type: lookup-processor
+        - type: attribute-remapper
+          name: Map `status` to `cds.zoho-desk.ticketStatus`
+          enabled: true
+          sources:
+            - status
+          sourceType: attribute
+          target: cds.zoho-desk.ticketStatus
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `subject` to `cds.zoho-desk.ticketSubject`
+          enabled: true
+          sources:
+            - subject
+          sourceType: attribute
+          target: cds.zoho-desk.ticketSubject
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Zoho Desk Products
+      enabled: true
+      filter:
+        query: service:cds.zoho.desk.products
+      processors:
+        - type: attribute-remapper
+          name: Map `productName` to `cds.zoho-desk.productName`
+          enabled: true
+          sources:
+            - productName
+          sourceType: attribute
+          target: cds.zoho-desk.productName
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `productCode` to `cds.zoho-desk.productCode`
+          enabled: true
+          sources:
+            - productCode
+          sourceType: attribute
+          target: cds.zoho-desk.productCode
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `unitPrice` to `cds.zoho-desk.unitPrice`
+          enabled: true
+          sources:
+            - unitPrice
+          sourceType: attribute
+          target: cds.zoho-desk.unitPrice
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `owner` to `cds.zoho-desk.owner`
+          enabled: true
+          sources:
+            - owner
+          sourceType: attribute
+          target: cds.zoho-desk.owner
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cds.zoho-desk.owner.id` to `usr.id`
+          enabled: true
+          sources:
+            - cds.zoho-desk.owner.id
+          sourceType: attribute
+          target: usr.id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cds.zoho-desk.owner.name` to `usr.name`
+          enabled: true
+          sources:
+            - cds.zoho-desk.owner.name
+          sourceType: attribute
+          target: usr.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Zoho Desk Accounts
+      enabled: true
+      filter:
+        query: service:cds.zoho.desk.accounts
+      processors:
+        - type: attribute-remapper
+          name: Map `accountName` to `cds.zoho-desk.accountName`
+          enabled: true
+          sources:
+            - accountName
+          sourceType: attribute
+          target: cds.zoho-desk.accountName
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `email` to `cds.zoho-desk.email`
+          enabled: true
+          sources:
+            - email
+          sourceType: attribute
+          target: cds.zoho-desk.email
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `website` to `cds.zoho-desk.website`
+          enabled: true
+          sources:
+            - website
+          sourceType: attribute
+          target: cds.zoho-desk.website
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `phone` to `cds.zoho-desk.phone`
+          enabled: true
+          sources:
+            - phone
+          sourceType: attribute
+          target: cds.zoho-desk.phone
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `zohoCRMAccount` to `cds.zoho-desk.zohoCRMAccount`
+          enabled: true
+          sources:
+            - zohoCRMAccount
+          sourceType: attribute
+          target: cds.zoho-desk.zohoCRMAccount
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Zoho Desk Contacts
+      enabled: true
+      filter:
+        query: service:cds.zoho.desk.contacts
+      processors:
+        - type: string-builder-processor
+          name: Retrieve `usr.name` from `firstName` and `lastName`
+          enabled: true
+          template: "%{firstName} %{lastName}"
+          target: usr.name
+          replaceMissing: true
+        - type: attribute-remapper
+          name: Map `cds.zoho-desk.id` to `usr.id`
+          enabled: true
+          sources:
+            - cds.zoho-desk.id
+          sourceType: attribute
+          target: usr.id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `email` to `usr.email`
+          enabled: true
+          sources:
+            - email
+          sourceType: attribute
+          target: usr.email
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `firstName` to `cds.zoho-desk.firstName`
+          enabled: true
+          sources:
+            - firstName
+          sourceType: attribute
+          target: cds.zoho-desk.firstName
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `lastName` to `cds.zoho-desk.lastName`
+          enabled: true
+          sources:
+            - lastName
+          sourceType: attribute
+          target: cds.zoho-desk.lastName
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `mobile` to `cds.zoho-desk.mobile`
+          enabled: true
+          sources:
+            - mobile
+          sourceType: attribute
+          target: cds.zoho-desk.mobile
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `phone` to `cds.zoho-desk.phone`
+          enabled: true
+          sources:
+            - phone
+          sourceType: attribute
+          target: cds.zoho-desk.phone
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `type` to `cds.zoho-desk.type`
+          enabled: true
+          sources:
+            - type
+          sourceType: attribute
+          target: cds.zoho-desk.type
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `account` to `cds.zoho-desk.account`
+          enabled: true
+          sources:
+            - account
+          sourceType: attribute
+          target: cds.zoho-desk.account
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `customerHappiness` to `cds.zoho-desk.customerHappiness`
+          enabled: true
+          sources:
+            - customerHappiness
+          sourceType: attribute
+          target: cds.zoho-desk.customerHappiness
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `isAnonymous` to `cds.zoho-desk.isAnonymous`
+          enabled: true
+          sources:
+            - isAnonymous
+          sourceType: attribute
+          target: cds.zoho-desk.isAnonymous
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `subject` to `cds.zoho-desk.subject`
+      enabled: true
+      sources:
+        - subject
+      sourceType: attribute
+      target: cds.zoho-desk.subject
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `channel` to `cds.zoho-desk.channel`
+      enabled: true
+      sources:
+        - channel
+      sourceType: attribute
+      target: cds.zoho-desk.channel
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `status` to `cds.zoho-desk.status`
+      enabled: true
+      sources:
+        - status
+      sourceType: attribute
+      target: cds.zoho-desk.status
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `cds.zoho-desk.ticket.ticketNumber` to `cds.zoho-desk.ticketNumber`
+      enabled: true
+      sources:
+        - cds.zoho-desk.ticket.ticketNumber
+      sourceType: attribute
+      target: cds.zoho-desk.ticketNumber
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `cds.zoho-desk.ticket.subject` to `cds.zoho-desk.ticketSubject`
+      enabled: true
+      sources:
+        - cds.zoho-desk.ticket.subject
+      sourceType: attribute
+      target: cds.zoho-desk.ticketSubject
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `cds.zoho-desk.ticket.status` to `cds.zoho-desk.ticketStatus`
+      enabled: true
+      sources:
+        - cds.zoho-desk.ticket.status
+      sourceType: attribute
+      target: cds.zoho-desk.ticketStatus
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `cds.zoho-desk.ticket.channel` to `cds.zoho-desk.ticketChannel`
+      enabled: true
+      sources:
+        - cds.zoho-desk.ticket.channel
+      sourceType: attribute
+      target: cds.zoho-desk.ticketChannel
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: pipeline
+      name: Zoho Desk Tasks
+      enabled: true
+      filter:
+        query: service:cds.zoho.desk.tasks
+      processors:
+        - type: attribute-remapper
+          name: Map `dueDate` to `cds.zoho-desk.dueDate`
+          enabled: true
+          sources:
+            - dueDate
+          sourceType: attribute
+          target: cds.zoho-desk.dueDate
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: string-builder-processor
+          name: Retrieve `usr.name` from `firstName` and `lastName`
+          enabled: true
+          template: "%{cds.zoho-desk.assignee.firstName}
+            %{cds.zoho-desk.assignee.lastName}"
+          target: usr.name
+          replaceMissing: true
+        - type: attribute-remapper
+          name: Map `cds.zoho-desk.assignee.id` to `usr.id`
+          enabled: true
+          sources:
+            - cds.zoho-desk.assignee.id
+          sourceType: attribute
+          target: usr.id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cds.zoho-desk.assignee.emailId` to `usr.email`
+          enabled: true
+          sources:
+            - cds.zoho-desk.assignee.emailId
+          sourceType: attribute
+          target: usr.email
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `channel` to `cds.zoho-desk.ticketChannel`
+          enabled: true
+          sources:
+            - channel
+          sourceType: attribute
+          target: cds.zoho-desk.ticketChannel
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - name: Lookup for `cds.zoho-desk.priority` to `log_status`
+          enabled: true
+          source: cds.zoho-desk.priority
+          target: log_status
+          lookupTable: |-
+            Lowest,info
+            Low,notice
+            Normal,warning
+            High,alert
+            Highest,critical
+          defaultLookup: info
+          type: lookup-processor
+    - type: pipeline
+      name: Zoho Desk Calls
+      enabled: true
+      filter:
+        query: service:cds.zoho.desk.calls
+      processors:
+        - type: attribute-remapper
+          name: Map `startTime` to `cds.zoho-desk.startTime`
+          enabled: true
+          sources:
+            - startTime
+          sourceType: attribute
+          target: cds.zoho-desk.startTime
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `direction` to `cds.zoho-desk.direction`
+          enabled: true
+          sources:
+            - direction
+          sourceType: attribute
+          target: cds.zoho-desk.direction
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `callId` to `cds.zoho-desk.callId`
+          enabled: true
+          sources:
+            - callId
+          sourceType: attribute
+          target: cds.zoho-desk.callId
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: string-builder-processor
+          name: Retrieve `usr.name` from `firstName` and `lastName`
+          enabled: true
+          template: "%{cds.zoho-desk.assignee.firstName}
+            %{cds.zoho-desk.assignee.lastName}"
+          target: usr.name
+          replaceMissing: true
+        - type: attribute-remapper
+          name: Map `cds.zoho-desk.assignee.id` to `usr.id`
+          enabled: true
+          sources:
+            - cds.zoho-desk.assignee.id
+          sourceType: attribute
+          target: usr.id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cds.zoho-desk.assignee.emailId` to `usr.email`
+          enabled: true
+          sources:
+            - cds.zoho-desk.assignee.emailId
+          sourceType: attribute
+          target: usr.email
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - name: Lookup for `cds.zoho-desk.priority` to `log_status`
+          enabled: true
+          source: cds.zoho-desk.priority
+          target: log_status
+          lookupTable: |-
+            Lowest,info
+            Low,notice
+            Normal,warning
+            High,alert
+            Highest,critical
+          defaultLookup: info
+          type: lookup-processor
+    - type: pipeline
+      name: Zoho Desk Events
+      enabled: true
+      filter:
+        query: service:cds.zoho.desk.events
+      processors:
+        - type: string-builder-processor
+          name: Retrieve `usr.name` from `firstName` and `lastName`
+          enabled: true
+          template: "%{cds.zoho-desk.assignee.firstName}
+            %{cds.zoho-desk.assignee.lastName}"
+          target: usr.name
+          replaceMissing: true
+        - type: attribute-remapper
+          name: Map `cds.zoho-desk.assignee.id` to `usr.id`
+          enabled: true
+          sources:
+            - cds.zoho-desk.assignee.id
+          sourceType: attribute
+          target: usr.id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cds.zoho-desk.assignee.emailId` to `usr.email`
+          enabled: true
+          sources:
+            - cds.zoho-desk.assignee.emailId
+          sourceType: attribute
+          target: usr.email
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - name: Lookup for `cds.zoho-desk.priority` to `log_status`
+          enabled: true
+          source: cds.zoho-desk.priority
+          target: log_status
+          lookupTable: |-
+            Lowest,info
+            Low,notice
+            Normal,warning
+            High,alert
+            Highest,critical
+          defaultLookup: info
+          type: lookup-processor
+    - type: status-remapper
+      name: Define `log_status` as the official status of the log
+      enabled: true
+      sources:
+        - log_status

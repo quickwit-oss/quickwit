@@ -1,0 +1,75 @@
+id: "glusterfs"
+tests:
+ -
+  sample: "[2021-01-06 20:23:30.817353] I [MSGID: 106499] [glusterd-handler.c:4264:__glusterd_handle_status_volume] 0-management: Received status volume req for volume gv0"
+  result:
+    custom:
+      filename: "glusterd-handler.c"
+      function: "__glusterd_handle_status_volume"
+      glusterfs:
+        domain: "0-management"
+      id: 106499.0
+      level: "I"
+      lineno: 4264.0
+      timestamp: 1609964610817
+    message: "Received status volume req for volume gv0"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1609964610817
+ -
+  sample: "[2021-01-05 22:40:59.503496] W [socket.c:775:__socket_rwv] 0-tcp.gv0-server: ready on 172.29.187.90:49131 failed (No data available)"
+  result:
+    custom:
+      filename: "socket.c"
+      function: "__socket_rwv"
+      glusterfs:
+        domain: "0-tcp.gv0-server"
+      level: "W"
+      lineno: 775.0
+      timestamp: 1609886459503
+    message: "ready on 172.29.187.90:49131 failed (No data available)"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1609886459503
+ -
+  sample: "[2021-01-04 07:03:53.445451] E [MSGID: 106118] [glusterd-syncop.c:1883:gd_sync_task_begin] 0-management: Unable to acquire lock for gv0"
+  result:
+    custom:
+      filename: "glusterd-syncop.c"
+      function: "gd_sync_task_begin"
+      glusterfs:
+        domain: "0-management"
+      id: 106118.0
+      level: "E"
+      lineno: 1883.0
+      timestamp: 1609743833445
+    message: "Unable to acquire lock for gv0"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1609743833445
+ -
+  sample: "The message \"I [MSGID: 106499] [glusterd-handler.c:4264:__glusterd_handle_status_volume] 0-management: Received status volume req for volume gv0\" repeated 25 times between [2021-01-06 20:21:27.000073] and [2021-01-06 20:23:19.843225]"
+  result:
+    custom:
+      filename: "glusterd-handler.c"
+      function: "__glusterd_handle_status_volume"
+      glusterfs:
+        domain: "0-management"
+      id: 106499.0
+      level: "I"
+      lineno: 4264.0
+      repeated:
+        count: 25.0
+        timestamp:
+          end: 1609964599843
+          start: 1609964487000
+      timestamp: 1609964599843
+    message: "Received status volume req for volume gv0"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1609964599843
+

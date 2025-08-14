@@ -1,0 +1,30 @@
+id: 'rapdev_msteams'
+tests:
+  - sample: |-
+      {
+        "caller_ip" : "99.102.244.180",
+        "hostname" : "someones-MacBook-Pro.local",
+        "service" : "msteams_segment_data",
+        "segment_duration" : 1399.634,
+        "segment_id" : "923db3d5-f826-4bbe-9g5e-012aa6e7012b"
+      }
+    service: "msteams_segment_data"
+    result:
+      custom:
+        caller_geoip: {}
+        caller_ip: "99.102.244.180"
+        hostname: "someones-MacBook-Pro.local"
+        segment_duration: 1399.634
+        segment_id: "923db3d5-f826-4bbe-9g5e-012aa6e7012b"
+        service: "msteams_segment_data"
+      message: |-
+        {
+          "caller_ip" : "99.102.244.180",
+          "hostname" : "someones-MacBook-Pro.local",
+          "service" : "msteams_segment_data",
+          "segment_duration" : 1399.634,
+          "segment_id" : "923db3d5-f826-4bbe-9g5e-012aa6e7012b"
+        }
+      service: "msteams_segment_data"
+      tags:
+       - "source:LOGS_SOURCE"

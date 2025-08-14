@@ -1,0 +1,185 @@
+id: rapdev_sap_cloud_alm
+metric_id: rapdev-sap-cloud-alm
+backend_only: false
+facets:
+  - groups:
+      - RapDev SAP Cloud ALM - Global
+    name: System Name
+    path: sap.service.name
+    source: log
+  - groups:
+      - RapDev SAP Cloud ALM - Global
+    name: System Object Type
+    path: sap.service.object_type
+    source: log
+  - groups:
+      - RapDev SAP Cloud ALM - Global
+    name: Log Provider
+    path: sap.log.sourcecategory
+    source: log
+  - groups:
+      - RapDev SAP Cloud ALM - Integration Monitoring
+    name: Integration Direction
+    path: sap.im.direction
+    source: log
+  - groups:
+      - RapDev SAP Cloud ALM - Exception Monitoring
+    name: Exception Category
+    path: sap.exm.category
+    source: log
+  - groups:
+      - RapDev SAP Cloud ALM - Exception Monitoring
+    name: Exception Subcategory
+    path: sap.exm.subcategory
+    source: log
+pipeline:
+  type: pipeline
+  name: SAP Cloud ALM by RapDev
+  enabled: true
+  filter:
+    query: source:rapdev_sap_cloud_alm
+  processors:
+    - type: grok-parser
+      name: Parse `JOBLOG` XML
+      enabled: true
+      source: JOBLOG
+      samples:
+        - <?xml version="1.0" encoding="utf-16"?><asx:abap
+          xmlns:asx="http://www.sap.com/abapxml"
+          version="1.0"><asx:values><CONTENT><TBTC5><ENTERTIME>13:30:44</ENTERTIME><ENTERDATE>2025-01-23</ENTERDATE><MSGID>00</MSGID><MSGNO>516</MSGNO><MSGTYPE>S</MSGTYPE><TEXT>Job
+          Z2_LAO_REPROC_SHPCON 13154400
+          started</TEXT><RABAXKEY/><RABAXKEYLN>0</RABAXKEYLN><MSGV1>Z2_LAO_REPROC_SHPCON</MSGV1><MSGV2>13154400</MSGV2><MSGV3/><MSGV4/><PROGRAM/><PFKEY/><DYNPRO/></TBTC5><TBTC5><ENTERTIME>13:30:44</ENTERTIME><ENTERDATE>2025-01-23</ENTERDATE><MSGID>00</MSGID><MSGNO>550</MSGNO><MSGTYPE>S</MSGTYPE><TEXT>Step
+          001 started (program RBDMANI2, variant SHPCON, user ID
+          BTC-BUS)</TEXT><RABAXKEY/><RABAXKEYLN>0</RABAXKEYLN><MSGV1>001</MSGV1><MSGV2>RBDMANI2</MSGV2><MSGV3>SHPCON</MSGV3><MSGV4>BTC-BUS</MSGV4><PROGRAM/><PFKEY/><DYNPRO/></TBTC5><TBTC5><ENTERTIME>13:30:44</ENTERTIME><ENTERDATE>2025-01-23</ENTERDATE><MSGID>VL</MSGID><MSGNO>636</MSGNO><MSGTYPE>E</MSGTYPE><TEXT>Goods
+          receipt for this inbound delivery is already
+          posted</TEXT><RABAXKEY/><RABAXKEYLN>0</RABAXKEYLN><MSGV1/><MSGV2/><MSGV3/><MSGV4/><PROGRAM/><PFKEY/><DYNPRO/></TBTC5><TBTC5><ENTERTIME>13:30:44</ENTERTIME><ENTERDATE>2025-01-23</ENTERDATE><MSGID>00</MSGID><MSGNO>517</MSGNO><MSGTYPE>S</MSGTYPE><TEXT>Job
+          finished</TEXT><RABAXKEY/><RABAXKEYLN>0</RABAXKEYLN><MSGV1/><MSGV2/><MSGV3/><MSGV4/><PROGRAM/><PFKEY/><DYNPRO/></TBTC5></CONTENT></asx:values></asx:abap>
+      grok:
+        supportRules: ""
+        matchRules: main %{data:job:xml}
+    - type: grok-parser
+      name: Parse `ERROR_CONTEXT` XML
+      enabled: true
+      source: message
+      samples:
+        - <ERROR_CONTEXT><ERROR_INFO>No service found for namespace '', name
+          'MD_C_PRODUCT_ARTICLE_HIER_SRV', version
+          '0001'</ERROR_INFO><ERROR_RESOLUTION><SAP_NOTE>See SAP Note 1797736
+          for error
+          analysis</SAP_NOTE><LINK_TO_SAP_NOTE>https://service.sap.com/sap/support/notes/1797736</LINK_TO_SAP_NOTE></ERROR_RESOLUTION><Exceptions><_-IWFND_-CX_MED_MDL_ACCESS><Text>No
+          service found for namespace '', name 'MD_C_PRODUCT_ARTICLE_HIER_SRV',
+          version
+          '0001'</Text><Attributes><ANNO_VERSION>0000</ANNO_VERSION><NAME_LENGTH>0</NAME_LENGTH><SERVICE_GROUP>MD_C_PRODUCT_ARTICLE_HIER_SRV</SERVICE_GROUP><SERVICE_GROUP_VERSION>0001</SERVICE_GROUP_VERSION><VERSION>0000</VERSION><VOCAB_VERSION>0000</VOCAB_VERSION></Attributes><Source><Program>SAPMHTTP</Program></Source></_-IWFND_-CX_MED_MDL_ACCESS></Exceptions><SYSTEM_INFO><REQUEST_URI>/sap/opu/odata/SAP/MD_C_PRODUCT_ARTICLE_HIER_SRV/***Hide_due_to_secure_log_level***</REQUEST_URI><REMOTE_ADDRESS>10.224.252.25</REMOTE_ADDRESS><APPLICATION_SERVER>vhmrumrpai01_MRP_00</APPLICATION_SERVER><HUB_VERSION_INFO>MRP/300,
+          Rel. 7.57, SAP_GWFND SP03, GWHUB Version
+          028</HUB_VERSION_INFO><BEP_VERSION_INFO>not yet
+          available</BEP_VERSION_INFO></SYSTEM_INFO></ERROR_CONTEXT>
+      grok:
+        supportRules: ""
+        matchRules: main %{data::xml}
+    - type: grok-parser
+      name: Parse `MESSAGES` XML
+      enabled: true
+      source: MESSAGES
+      samples:
+        - <?xml version="1.0" encoding="utf-8"?><asx:abap version="1.0"
+          xmlns:asx="http://www.sap.com/abapxml"><asx:values><CONTENT><_-SDF_-CALM_APPLOG_MSG><LOG_HANDLE/><MSGNUMBER>000001</MSGNUMBER><E_S_MSG><MSGTY>W</MSGTY><MSGID>VL</MSGID><MSGNO>248</MSGNO><MSGV1/><MSGV2/><MSGV3/><MSGV4/><MSGV1_SRC/><MSGV2_SRC/><MSGV3_SRC/><MSGV4_SRC/><DETLEVEL/><PROBCLASS/><ALSORT/><TIME_STMP>20250123133044.55214</TIME_STMP><MSG_COUNT>1</MSG_COUNT><CONTEXT><TABNAME/><VALUE/></CONTEXT><PARAMS><T_PAR/><CALLBACK><USEREXITP/><USEREXITF/><USEREXITT/></CALLBACK><ALTEXT/></PARAMS></E_S_MSG><E_EXISTS_ON_DB>X</E_EXISTS_ON_DB><E_TXT_MSGTY>W</E_TXT_MSGTY><E_TXT_MSGID/><E_TXT_DETLEVEL/><E_TXT_PROBCLASS/><E_TXT_MSG>No
+          schedule lines due for delivery up to the selected
+          date</E_TXT_MSG><E_WARNING_TEXT_NOT_FOUND>X</E_WARNING_TEXT_NOT_FOUND></_-SDF_-CALM_APPLOG_MSG></CONTENT></asx:values></asx:abap>
+      grok:
+        supportRules: ""
+        matchRules: main %{data::xml}
+    - type: grok-parser
+      name: Parse `service.name` to create lowercase attribute `datadog.log.service`
+      enabled: true
+      source: service.name
+      samples:
+        - ABC100
+        - XYZ.100
+      grok:
+        supportRules: ""
+        matchRules: main %{data:datadog.log.service:lowercase}
+    - type: pipeline
+      name: Integration Monitoring Pipeline
+      enabled: true
+      filter:
+        query: "@datadog.log.sourcecategory:im"
+      processors:
+        - type: grok-parser
+          name: Parse `NormalizedEvents.StatusGroup` to create lowercase attribute
+            `status`
+          enabled: true
+          source: NormalizedEvents.StatusGroup
+          samples:
+            - SUCCESS
+            - ERROR
+          grok:
+            supportRules: ""
+            matchRules: main %{word:status:lowercase}
+        - type: grok-parser
+          name: Parse `NormalizedEvents.Direction` to create lowercase attribute
+            `direction`
+          enabled: true
+          source: NormalizedEvents.Direction
+          samples:
+            - OUTBOUND
+            - INBOUND
+          grok:
+            supportRules: ""
+            matchRules: main %{word:sap.im.direction:lowercase}
+    - type: pipeline
+      name: Exception Monitoring Pipeline
+      enabled: true
+      filter:
+        query: "@datadog.log.sourcecategory:(exm.im OR exm.jam)"
+      processors:
+        - type: attribute-remapper
+          name: Map attribute `exception.type` to tag `categoryname`
+          enabled: true
+          sources:
+            - exception.type
+          sourceType: attribute
+          target: categoryname
+          targetType: tag
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `Subcategory` to `sap.exm.subcategory`
+          enabled: true
+          sources:
+            - Subcategory
+          sourceType: attribute
+          target: sap.exm.subcategory
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `CallStack` to `error.stack`
+          enabled: true
+          sources:
+            - CallStack
+          sourceType: attribute
+          target: error.stack
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `datadog.log.sourcecategory` to `sap.log.sourcecategory`
+      enabled: true
+      sources:
+        - datadog.log.sourcecategory
+      sourceType: attribute
+      target: sap.log.sourcecategory
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: date-remapper
+      name: Define `@timestamp`, `NormalizedEvents.EventEndTimestamp` as the official date of the log
+      enabled: true
+      sources:
+        - "@timestamp"
+        - "NormalizedEvents.EventEndTimestamp"
+    - type: status-remapper
+      name: Define `status` as the official status of the log
+      enabled: true
+      sources:
+        - status

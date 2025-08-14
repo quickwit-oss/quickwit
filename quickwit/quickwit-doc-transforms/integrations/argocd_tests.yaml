@@ -1,0 +1,102 @@
+id: "argocd"
+tests:
+ -
+  sample: "E1219 01:18:53.299220       1 reflector.go:138] pkg/mod/k8s.io/client-go@v0.24.2/tools/cache/reflector.go:167: Failed to watch *v1.ConfigMap: failed to list *v1.ConfigMap: Get \"https://10.12.32.1:443/api/v1/namespaces/default/configmaps?labelSelector=app.kubernetes.io%2Fpart-of%3Dargocd&resourceVersion=26616193\": dial tcp 10.12.32.1:443: i/o timeout"
+  result:
+    custom:
+      level: "E"
+      logger:
+        lineno: 138.0
+        name: "reflector.go"
+        thread_id: 1.0
+      timestamp: 30417533299
+    message: "pkg/mod/k8s.io/client-go@v0.24.2/tools/cache/reflector.go:167: Failed to watch *v1.ConfigMap: failed to list *v1.ConfigMap: Get \"https://10.12.32.1:443/api/v1/namespaces/default/configmaps?labelSelector=app.kubernetes.io%2Fpart-of%3Dargocd&resourceVersion=26616193\": dial tcp 10.12.32.1:443: i/o timeout"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 30417533299
+ -
+  sample: "Trace[79767753]: ---\"Objects listed\" error:Get \"https://10.12.32.1:443/apis/argoproj.io/v1alpha1/namespaces/default/applications?resourceVersion=26616507\": dial tcp 10.12.32.1:443: i/o timeout 30001ms (01:19:41.462)"
+  result:
+    custom:
+      action: "Objects listed"
+      argocd_trace_id: "79767753"
+      level: "error"
+    message: "Get \"https://10.12.32.1:443/apis/argoproj.io/v1alpha1/namespaces/default/applications?resourceVersion=26616507\": dial tcp 10.12.32.1:443: i/o timeout 30001ms (01:19:41.462)"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: "redis: 2022/12/10 21:54:44 pubsub.go:159: redis: discarding bad PubSub connection: write tcp 10.20.1.6:38344->10.12.46.46:6379: write: broken pipe"
+  result:
+    custom:
+      logger:
+        lineno: 159.0
+        name: "pubsub.go"
+      timestamp: 1670709284000
+    message: "redis: discarding bad PubSub connection: write tcp 10.20.1.6:38344->10.12.46.46:6379: write: broken pipe"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1670709284000
+ -
+  sample: "time=\"2022-12-16T22:27:42Z\" level=info msg=\"Alloc=10469 TotalAlloc=9306163 Sys=29009 NumGC=4180 Goroutines=18\""
+  result:
+    custom:
+      Alloc: 10469
+      Goroutines: 18
+      NumGC: 4180
+      Sys: 29009
+      TotalAlloc: 9306163
+      level: "info"
+      timestamp: 1671229662000
+    message: "Alloc=10469 TotalAlloc=9306163 Sys=29009 NumGC=4180 Goroutines=18"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1671229662000
+ -
+  sample: "time=\"2022-12-16T19:14:50Z\" level=info msg=\"finished unary call with code OK\" grpc.code=OK grpc.method=Check grpc.service=grpc.health.v1.Health grpc.start_time=\"2022-12-16T19:14:50Z\" grpc.time_ms=0.03 span.kind=server system=grpc"
+  result:
+    custom:
+      grpc:
+        code: "OK"
+        method: "Check"
+        service: "grpc.health.v1.Health"
+        start_time: "2022-12-16T19:14:50Z"
+        time_ms: 0.03
+      level: "info"
+      span:
+        kind: "server"
+      system: "grpc"
+      timestamp: 1671218090000
+    message: "finished unary call with code OK"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1671218090000
+ -
+  sample: "time=\"2023-01-11T00:08:24Z\" level=info msg=\"appResyncPeriod=3m0s, appHardResyncPeriod=0s\""
+  result:
+    custom:
+      appHardResyncPeriod: 0
+      appResyncPeriod: "3m0s"
+      level: "info"
+      timestamp: 1673395704000
+    message: "appResyncPeriod=3m0s, appHardResyncPeriod=0s"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1673395704000
+ -
+  sample: "time=\"2023-01-11T15:08:28Z\" level=info msg=\"Enabled application namespace patterns: default\""
+  result:
+    custom:
+      level: "info"
+      timestamp: 1673449708000
+    message: "Enabled application namespace patterns: default"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1673449708000
+

@@ -1,0 +1,94 @@
+id: oke
+backend_only: false
+installation_sources:
+  - oci.kubernetes
+facets:
+  - facetType: list
+    groups:
+      - OCI
+    name: Compartment OCID
+    path: oci.compartment_ocid
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - OCI
+    name: Log Group Id
+    path: oci.log_group_id
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - OCI
+    name: Tenancy OCID
+    path: oci.tenancy_ocid
+    source: log
+    type: string
+pipeline:
+  type: pipeline
+  name: OCI OKE (kubernetes) Log Pipeline
+  enabled: true
+  filter:
+    query: source:oci.kubernetes
+  processors:
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: attribute-remapper
+      name: Map `oracle.tenantid`, `data.identity.tenantId` to `oci.tenancy_ocid`
+      enabled: true
+      sources:
+        - oracle.tenantid
+        - data.identity.tenantId
+      sourceType: attribute
+      target: oci.tenancy_ocid
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `oracle.compartmentid` to `oci.compartment_ocid`
+      enabled: true
+      sources:
+        - oracle.compartmentid
+      sourceType: attribute
+      target: oci.compartment_ocid
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `oracle.loggroupid` to `oci.log_group_id`
+      enabled: true
+      sources:
+        - oracle.loggroupid
+      sourceType: attribute
+      target: oci.log_group_id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: message-remapper
+      name: Define `data.msg` as the official message of the log
+      enabled: true
+      sources:
+        - data.msg
+    - type: status-remapper
+      name: Define `data.level` as the official status of the log
+      enabled: true
+      sources:
+        - data.level
+    - type: attribute-remapper
+      name: Map `oracle.logid` to `oci.log_id`
+      enabled: true
+      sources:
+        - oracle.logid
+      sourceType: attribute
+      target: oci.log_id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service

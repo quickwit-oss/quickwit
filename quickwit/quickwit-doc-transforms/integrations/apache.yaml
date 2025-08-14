@@ -1,0 +1,131 @@
+id: apache
+metric_id: apache
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: Referer
+    path: http.referer
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: URL Host
+    path: http.url_details.host
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Web Access
+    name: URL Port
+    path: http.url_details.port
+    source: log
+  - groups:
+      - Web Access
+    name: URL scheme
+    path: http.url_details.scheme
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+pipeline:
+  type: pipeline
+  name: Apache
+  enabled: true
+  filter:
+    query: source:apache
+  processors:
+    - type: grok-parser
+      name: Parsing Apache logs
+      enabled: true
+      source: message
+      samples:
+        - 127.0.0.1 - frank [13/Jul/2016:10:55:36 +0000] "GET /apache_pb.gif HTTP/1.0" 200 2326
+        - 192.0.2.1 - Ultan [07/Mar/2004:16:43:54 -0800] "GET /unencrypted_password_list?foo=bar HTTP/1.1" 404 9001 "http://passwords.hackz0r" "Mozilla/4.08 [en] (Win95)"
+      grok:
+        supportRules: |
+          _auth %{notSpace:http.auth:nullIf("-")}
+          _bytes_written %{integer:network.bytes_written}
+          _client_ip %{ipOrHost:network.client.ip}
+          _version HTTP\/%{regex("\\d+\\.\\d+"):http.version}
+          _url %{notSpace:http.url}
+          _ident %{notSpace:http.ident:nullIf("-")}
+          _user_agent %{regex("[^\\\"]*"):http.useragent}
+          _referer %{notSpace:http.referer}
+          _status_code %{integer:http.status_code}
+          _method %{word:http.method}
+          _date_access %{date("dd/MMM/yyyy:HH:mm:ss Z"):date_access}
+        matchRules: |
+          access.common %{_client_ip} %{_ident} %{_auth} \[%{_date_access}\] "(?>%{_method} |)%{_url}(?> %{_version}|)" %{_status_code} (?>%{_bytes_written}|-)
+
+          access.combined %{access.common} "%{_referer}" "%{_user_agent}"
+    - type: user-agent-parser
+      name: ''
+      enabled: true
+      sources:
+        - http.useragent
+      target: http.useragent_details
+      encoded: false
+    - type: url-parser
+      name: ''
+      enabled: true
+      sources:
+        - http.url
+      target: http.url_details
+    - type: date-remapper
+      name: Define `date_access` as the official date of the log
+      enabled: true
+      sources:
+        - date_access
+    - type: category-processor
+      name: Categorise status code
+      enabled: true
+      categories:
+        - filter:
+            query: '@http.status_code:[200 TO 299]'
+          name: OK
+        - filter:
+            query: '@http.status_code:[300 TO 399]'
+          name: notice
+        - filter:
+            query: '@http.status_code:[400 TO 499]'
+          name: warning
+        - filter:
+            query: '@http.status_code:[500 TO 599]'
+          name: error
+      target: http.status_category
+    - type: status-remapper
+      name: Define `http.status_category` as the official status of the log
+      enabled: true
+      sources:
+        - http.status_category
+

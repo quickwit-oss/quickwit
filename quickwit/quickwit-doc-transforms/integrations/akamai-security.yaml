@@ -1,0 +1,284 @@
+id: akamai-security
+metric_id: akamai
+backend_only: false
+installation_sources:
+  - akamai-security-events
+  - akamai-application-security
+facets:
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: Request ID
+    path: http.request_id
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: URL Host
+    path: http.url_details.host
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Web Access
+    name: URL Port
+    path: http.url_details.port
+    source: log
+  - groups:
+      - Web Access
+    name: URL scheme
+    path: http.url_details.scheme
+    source: log
+  - groups:
+      - Web Access
+    name: User-Agent
+    path: http.useragent
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - Akamai Application Security
+    name: Policy ID
+    path: attackData.policyId
+    source: log
+  - groups:
+      - Akamai Application Security
+    name: Rule Actions
+    path: attackData.ruleActions
+    source: log
+  - groups:
+      - Akamai Application Security
+    name: Rule Data
+    path: attackData.ruleData
+    source: log
+  - groups:
+      - Akamai Application Security
+    name: Rule Message
+    path: attackData.ruleMessages
+    source: log
+  - groups:
+      - Geoip
+    name: ASN
+    path: network.client.geoip.as.number
+    source: log
+  - facetType: range
+    groups:
+      - Web Access
+    name: Network Bytes Read
+    path: network.bytes_read
+    source: log
+    type: double
+    unit:
+      family: bytes
+      name: byte
+pipeline:
+  type: pipeline
+  name: Akamai Application Security
+  enabled: true
+  filter:
+    query: source:(akamai-security-events OR akamai-application-security)
+  processors:
+    - type: grok-parser
+      name: Parsing `httpMessage.requestHeaders`
+      enabled: true
+      source: httpMessage.requestHeaders
+      grok:
+        matchRules: |
+          parse_httpMessage.requestHeaders %{data::keyvalue(": ")}
+        supportRules: ''
+      samples:
+        - "Host: akamai.datadog.green.akamaized.net\r\nUser-Agent: java\r\nAccept-Encoding: gzip, deflate\r\nAccept: */*\r\nConnection: keep-alive\r\n"
+    - type: attribute-remapper
+      name: Map `attackData.clientIP` to `network.client.ip`
+      enabled: true
+      sources:
+        - attackData.clientIP
+      target: network.client.ip
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `geo.asn` to `network.client.geoip.as.number`
+      enabled: true
+      sources:
+        - geo.asn
+      target: network.client.geoip.as.number
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `geo.city` to `network.client.geoip.city.name`
+      enabled: true
+      sources:
+        - geo.city
+      target: network.client.geoip.city.name
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `geo.continent` to `network.client.geoip.continent.name`
+      enabled: true
+      sources:
+        - geo.continent
+      target: network.client.geoip.continent.name
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `geo.country` to `network.client.geoip.country.name`
+      enabled: true
+      sources:
+        - geo.country
+      target: network.client.geoip.country.name
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `geo.regionCode` to `network.client.geoip.country.iso_code`
+      enabled: true
+      sources:
+        - geo.regionCode
+      target: network.client.geoip.country.iso_code
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `httpMessage.bytes` to `network.bytes_read`
+      enabled: true
+      sources:
+        - httpMessage.bytes
+      target: network.bytes_read
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `httpMessage.host` to `http.url_details.host`
+      enabled: true
+      sources:
+        - httpMessage.host
+      target: http.url_details.host
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `httpMessage.method` to `http.method`
+      enabled: true
+      sources:
+        - httpMessage.method
+      target: http.method
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `httpMessage.path` to `http.url_details.path`
+      enabled: true
+      sources:
+        - httpMessage.path
+      target: http.url_details.path
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `httpMessage.port` to `http.url_details.port`
+      enabled: true
+      sources:
+        - httpMessage.port
+      target: http.url_details.port
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `httpMessage.protocol` to `http.url_details.scheme`
+      enabled: true
+      sources:
+        - httpMessage.protocol
+      target: http.url_details.scheme
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `httpMessage.requestId` to `http.request_id`
+      enabled: true
+      sources:
+        - httpMessage.requestId
+      target: http.request_id
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `httpMessage.status` to `http.status_code`
+      enabled: true
+      sources:
+        - httpMessage.status
+      target: http.status_code
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `User-Agent` to `http.useragent`
+      enabled: true
+      sources:
+        - User-Agent
+      target: http.useragent
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service

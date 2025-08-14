@@ -1,0 +1,985 @@
+id: "crest_data_systems_zoho_desk"
+tests:
+ -
+  sample: |-
+    {
+      "ticketNumber" : "100",
+      "modifiedTime" : "2025-05-08T14:35:08.000Z",
+      "customerResponseTime" : "2025-05-08T09:39:09.000Z",
+      "statusType" : "Open",
+      "subject" : "Here's your first ticket.",
+      "dueDate" : "2025-05-10T09:39:09.000Z",
+      "departmentId" : "199490000000010772",
+      "channel" : "Email",
+      "threadCount" : "1",
+      "language" : "Breton",
+      "source" : {
+        "type" : "SYSTEM"
+      },
+      "priority" : "High",
+      "commentCount" : "0",
+      "contact" : {
+        "lastName" : "Lawrence",
+        "phone" : "1 888 900 9646",
+        "webUrl" : "https://desk.zoho.in/support/datacrest/ShowHomePage.do#Contacts/dv/199490000000262308",
+        "id" : "199490000000262308",
+        "email" : "support@zohosupport.com"
+      },
+      "createdTime" : "2025-05-08T09:39:09.000Z",
+      "id" : "199490000000262426",
+      "assignee" : {
+        "photoURL" : "https://desk.zoho.in/api/v1/agents/199490000000064001",
+        "firstName" : "test",
+        "lastName" : "123",
+        "id" : "199490000000064001",
+        "email" : "test123@example.com"
+      },
+      "isSpam" : false,
+      "department" : {
+        "name" : "test",
+        "id" : "199490000000010772"
+      },
+      "status" : "Open"
+    }
+  service: "cds.zoho.desk.tickets"
+  result:
+    custom:
+      cds:
+        zoho-desk:
+          assignee:
+            firstName: "test"
+            lastName: "123"
+            photoURL: "https://desk.zoho.in/api/v1/agents/199490000000064001"
+          contact:
+            email: "support@zohosupport.com"
+            id: "199490000000262308"
+            lastName: "Lawrence"
+            name: " Lawrence"
+            phone: "1 888 900 9646"
+            webUrl: "https://desk.zoho.in/support/datacrest/ShowHomePage.do#Contacts/dv/199490000000262308"
+          department:
+            id: "199490000000010772"
+            name: "test"
+          departmentId: "199490000000010772"
+          dueDate: "2025-05-10T09:39:09.000Z"
+          id: "199490000000262426"
+          priority: "High"
+          statusType: "Open"
+          ticketChannel: "Email"
+          ticketNumber: "100"
+          ticketStatus: "Open"
+          ticketSubject: "Here's your first ticket."
+      commentCount: "0"
+      createdTime: "2025-05-08T09:39:09.000Z"
+      customerResponseTime: "2025-05-08T09:39:09.000Z"
+      isSpam: false
+      language: "Breton"
+      log_status: "alert"
+      modifiedTime: "2025-05-08T14:35:08.000Z"
+      source:
+        type: "SYSTEM"
+      threadCount: "1"
+      usr:
+        email: "test123@example.com"
+        id: "199490000000064001"
+        name: "test 123"
+    message: |-
+      {
+        "ticketNumber" : "100",
+        "modifiedTime" : "2025-05-08T14:35:08.000Z",
+        "customerResponseTime" : "2025-05-08T09:39:09.000Z",
+        "statusType" : "Open",
+        "subject" : "Here's your first ticket.",
+        "dueDate" : "2025-05-10T09:39:09.000Z",
+        "departmentId" : "199490000000010772",
+        "channel" : "Email",
+        "threadCount" : "1",
+        "language" : "Breton",
+        "source" : {
+          "type" : "SYSTEM"
+        },
+        "priority" : "High",
+        "commentCount" : "0",
+        "contact" : {
+          "lastName" : "Lawrence",
+          "phone" : "1 888 900 9646",
+          "webUrl" : "https://desk.zoho.in/support/datacrest/ShowHomePage.do#Contacts/dv/199490000000262308",
+          "id" : "199490000000262308",
+          "email" : "support@zohosupport.com"
+        },
+        "createdTime" : "2025-05-08T09:39:09.000Z",
+        "id" : "199490000000262426",
+        "assignee" : {
+          "photoURL" : "https://desk.zoho.in/api/v1/agents/199490000000064001",
+          "firstName" : "test",
+          "lastName" : "123",
+          "id" : "199490000000064001",
+          "email" : "test123@example.com"
+        },
+        "isSpam" : false,
+        "department" : {
+          "name" : "test",
+          "id" : "199490000000010772"
+        },
+        "status" : "Open"
+      }
+    service: "cds.zoho.desk.tickets"
+    status: "alert"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1746714908000
+ -
+  sample: |-
+    {
+      "modifiedTime" : "2025-05-08T14:40:47.000Z",
+      "statusType" : "Open",
+      "ticket" : {
+        "ticketNumber" : "101",
+        "phone" : "787878585858",
+        "subject" : "Setup of Agent",
+        "isArchived" : false,
+        "dueDate" : "2025-05-15T06:30:00.000Z",
+        "contact" : {
+          "firstName" : "selena",
+          "lastName" : "williams",
+          "accountId" : "199490000000277001",
+          "phone" : "787878585858",
+          "id" : "199490000000278001",
+          "isSpam" : false,
+          "email" : "swill@example.com"
+        },
+        "channel" : "Phone",
+        "createdTime" : "2025-05-08T10:22:31.000Z",
+        "id" : "199490000000280001",
+        "assignee" : {
+          "photoURL" : "https://desk.zoho.in/api/v1/agents/199490000000064001",
+          "firstName" : "test",
+          "lastName" : "123",
+          "id" : "199490000000064001"
+        },
+        "isSpam" : false,
+        "status" : "Escalated"
+      },
+      "contactId" : "199490000000278001",
+      "subject" : "Setup config",
+      "departmentId" : "199490000000010772",
+      "dueDate" : "2025-05-15T06:30:00.000Z",
+      "creatorId" : "199490000000064001",
+      "activityTime" : "1747290600000",
+      "ownerId" : "199490000000064001",
+      "priority" : "High",
+      "layoutId" : "199490000000011352",
+      "isTrashed" : false,
+      "isCommented" : false,
+      "webUrl" : "https://desk.zoho.in/support/datacrest/ShowHomePage.do#Tasks/dv/199490000000292001",
+      "contact" : {
+        "firstName" : "selena",
+        "lastName" : "williams",
+        "accountId" : "199490000000277001",
+        "phone" : "787878585858",
+        "id" : "199490000000278001",
+        "isSpam" : false,
+        "email" : "swill@example.com"
+      },
+      "createdTime" : "2025-05-08T14:40:47.000Z",
+      "modifiedBy" : {
+        "firstName" : "test",
+        "lastName" : "123",
+        "photoURL" : "https://deskstatic.zoho.in/api/v1/agents/199490000000064001",
+        "emailId" : "test123@example.com",
+        "id" : "199490000000064001"
+      },
+      "id" : "199490000000292001",
+      "isSpam" : false,
+      "assignee" : {
+        "firstName" : "test",
+        "lastName" : "123",
+        "photoURL" : "https://deskstatic.zoho.in/api/v1/agents/199490000000064001",
+        "emailId" : "test123@example.com",
+        "id" : "199490000000064001"
+      },
+      "ticketId" : "199490000000280001",
+      "status" : "In Progress"
+    }
+  service: "cds.zoho.desk.tasks"
+  result:
+    custom:
+      activityTime: "1747290600000"
+      cds:
+        zoho-desk:
+          assignee:
+            firstName: "test"
+            lastName: "123"
+            photoURL: "https://deskstatic.zoho.in/api/v1/agents/199490000000064001"
+          contact:
+            accountId: "199490000000277001"
+            email: "swill@example.com"
+            firstName: "selena"
+            id: "199490000000278001"
+            isSpam: false
+            lastName: "williams"
+            name: "selena williams"
+            phone: "787878585858"
+          contactId: "199490000000278001"
+          departmentId: "199490000000010772"
+          dueDate: "2025-05-15T06:30:00.000Z"
+          id: "199490000000292001"
+          priority: "High"
+          status: "In Progress"
+          statusType: "Open"
+          subject: "Setup config"
+          ticket:
+            assignee:
+              firstName: "test"
+              id: "199490000000064001"
+              lastName: "123"
+              photoURL: "https://desk.zoho.in/api/v1/agents/199490000000064001"
+            contact:
+              accountId: "199490000000277001"
+              email: "swill@example.com"
+              firstName: "selena"
+              id: "199490000000278001"
+              isSpam: false
+              lastName: "williams"
+              phone: "787878585858"
+            createdTime: "2025-05-08T10:22:31.000Z"
+            dueDate: "2025-05-15T06:30:00.000Z"
+            id: "199490000000280001"
+            isArchived: false
+            isSpam: false
+            phone: "787878585858"
+          ticketChannel: "Phone"
+          ticketId: "199490000000280001"
+          ticketNumber: "101"
+          ticketStatus: "Escalated"
+          ticketSubject: "Setup of Agent"
+      createdTime: "2025-05-08T14:40:47.000Z"
+      creatorId: "199490000000064001"
+      isCommented: false
+      isSpam: false
+      isTrashed: false
+      layoutId: "199490000000011352"
+      log_status: "alert"
+      modifiedBy:
+        emailId: "test123@example.com"
+        firstName: "test"
+        id: "199490000000064001"
+        lastName: "123"
+        photoURL: "https://deskstatic.zoho.in/api/v1/agents/199490000000064001"
+      modifiedTime: "2025-05-08T14:40:47.000Z"
+      ownerId: "199490000000064001"
+      usr:
+        email: "test123@example.com"
+        id: "199490000000064001"
+        name: "test 123"
+      webUrl: "https://desk.zoho.in/support/datacrest/ShowHomePage.do#Tasks/dv/199490000000292001"
+    message: |-
+      {
+        "modifiedTime" : "2025-05-08T14:40:47.000Z",
+        "statusType" : "Open",
+        "ticket" : {
+          "ticketNumber" : "101",
+          "phone" : "787878585858",
+          "subject" : "Setup of Agent",
+          "isArchived" : false,
+          "dueDate" : "2025-05-15T06:30:00.000Z",
+          "contact" : {
+            "firstName" : "selena",
+            "lastName" : "williams",
+            "accountId" : "199490000000277001",
+            "phone" : "787878585858",
+            "id" : "199490000000278001",
+            "isSpam" : false,
+            "email" : "swill@example.com"
+          },
+          "channel" : "Phone",
+          "createdTime" : "2025-05-08T10:22:31.000Z",
+          "id" : "199490000000280001",
+          "assignee" : {
+            "photoURL" : "https://desk.zoho.in/api/v1/agents/199490000000064001",
+            "firstName" : "test",
+            "lastName" : "123",
+            "id" : "199490000000064001"
+          },
+          "isSpam" : false,
+          "status" : "Escalated"
+        },
+        "contactId" : "199490000000278001",
+        "subject" : "Setup config",
+        "departmentId" : "199490000000010772",
+        "dueDate" : "2025-05-15T06:30:00.000Z",
+        "creatorId" : "199490000000064001",
+        "activityTime" : "1747290600000",
+        "ownerId" : "199490000000064001",
+        "priority" : "High",
+        "layoutId" : "199490000000011352",
+        "isTrashed" : false,
+        "isCommented" : false,
+        "webUrl" : "https://desk.zoho.in/support/datacrest/ShowHomePage.do#Tasks/dv/199490000000292001",
+        "contact" : {
+          "firstName" : "selena",
+          "lastName" : "williams",
+          "accountId" : "199490000000277001",
+          "phone" : "787878585858",
+          "id" : "199490000000278001",
+          "isSpam" : false,
+          "email" : "swill@example.com"
+        },
+        "createdTime" : "2025-05-08T14:40:47.000Z",
+        "modifiedBy" : {
+          "firstName" : "test",
+          "lastName" : "123",
+          "photoURL" : "https://deskstatic.zoho.in/api/v1/agents/199490000000064001",
+          "emailId" : "test123@example.com",
+          "id" : "199490000000064001"
+        },
+        "id" : "199490000000292001",
+        "isSpam" : false,
+        "assignee" : {
+          "firstName" : "test",
+          "lastName" : "123",
+          "photoURL" : "https://deskstatic.zoho.in/api/v1/agents/199490000000064001",
+          "emailId" : "test123@example.com",
+          "id" : "199490000000064001"
+        },
+        "ticketId" : "199490000000280001",
+        "status" : "In Progress"
+      }
+    service: "cds.zoho.desk.tasks"
+    status: "alert"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1746715247000
+ -
+  sample: |-
+    {
+      "modifiedTime" : "2025-05-08T14:40:24.000Z",
+      "statusType" : "Open",
+      "ticket" : {
+        "ticketNumber" : "101",
+        "phone" : "787878585858",
+        "subject" : "Setup of Agent",
+        "isArchived" : false,
+        "dueDate" : "2025-05-15T06:30:00.000Z",
+        "contact" : {
+          "firstName" : "selena",
+          "lastName" : "williams",
+          "accountId" : "199490000000277001",
+          "phone" : "787878585858",
+          "id" : "199490000000278001",
+          "isSpam" : false,
+          "email" : "swill@example.com"
+        },
+        "channel" : "Phone",
+        "createdTime" : "2025-05-08T10:22:31.000Z",
+        "id" : "199490000000280001",
+        "assignee" : {
+          "photoURL" : "https://desk.zoho.in/api/v1/agents/199490000000064001/photo?orgId=60040875763",
+          "firstName" : "test",
+          "lastName" : "123",
+          "id" : "199490000000064001"
+        },
+        "isSpam" : false,
+        "status" : "Escalated"
+      },
+      "contactId" : "199490000000278001",
+      "subject" : "Sample call",
+      "departmentId" : "199490000000010772",
+      "creatorId" : "199490000000064001",
+      "activityTime" : "1746772200000",
+      "ownerId" : "199490000000064001",
+      "priority" : "High",
+      "layoutId" : "199490000000034528",
+      "isTrashed" : false,
+      "isCommented" : false,
+      "webUrl" : "https://desk.zoho.in/support/datacrest/ShowHomePage.do#Calls/dv/199490000000291001",
+      "contact" : {
+        "firstName" : "selena",
+        "lastName" : "williams",
+        "accountId" : "199490000000277001",
+        "phone" : "787878585858",
+        "id" : "199490000000278001",
+        "isSpam" : false,
+        "email" : "swill@example.com"
+      },
+      "createdTime" : "2025-05-08T14:40:24.000Z",
+      "startTime" : "2025-05-09T06:30:00.000Z",
+      "modifiedBy" : {
+        "firstName" : "test",
+        "lastName" : "123",
+        "photoURL" : "https://deskstatic.zoho.in/api/v1/agents/199490000000064001/photo?orgId=60040875763",
+        "emailId" : "test.123@example.com",
+        "id" : "199490000000064001"
+      },
+      "id" : "199490000000291001",
+      "isSpam" : false,
+      "assignee" : {
+        "firstName" : "test",
+        "lastName" : "123",
+        "photoURL" : "https://deskstatic.zoho.in/api/v1/agents/199490000000064001/photo?orgId=60040875763",
+        "emailId" : "test.123@example.com",
+        "id" : "199490000000064001"
+      },
+      "ticketId" : "199490000000280001",
+      "direction" : "outbound",
+      "status" : "Scheduled"
+    }
+  service: "cds.zoho.desk.calls"
+  result:
+    custom:
+      activityTime: "1746772200000"
+      cds:
+        zoho-desk:
+          assignee:
+            firstName: "test"
+            lastName: "123"
+            photoURL: "https://deskstatic.zoho.in/api/v1/agents/199490000000064001/photo?orgId=60040875763"
+          contact:
+            accountId: "199490000000277001"
+            email: "swill@example.com"
+            firstName: "selena"
+            id: "199490000000278001"
+            isSpam: false
+            lastName: "williams"
+            name: "selena williams"
+            phone: "787878585858"
+          contactId: "199490000000278001"
+          departmentId: "199490000000010772"
+          direction: "outbound"
+          id: "199490000000291001"
+          priority: "High"
+          startTime: "2025-05-09T06:30:00.000Z"
+          status: "Scheduled"
+          statusType: "Open"
+          subject: "Sample call"
+          ticket:
+            assignee:
+              firstName: "test"
+              id: "199490000000064001"
+              lastName: "123"
+              photoURL: "https://desk.zoho.in/api/v1/agents/199490000000064001/photo?orgId=60040875763"
+            contact:
+              accountId: "199490000000277001"
+              email: "swill@example.com"
+              firstName: "selena"
+              id: "199490000000278001"
+              isSpam: false
+              lastName: "williams"
+              phone: "787878585858"
+            createdTime: "2025-05-08T10:22:31.000Z"
+            dueDate: "2025-05-15T06:30:00.000Z"
+            id: "199490000000280001"
+            isArchived: false
+            isSpam: false
+            phone: "787878585858"
+          ticketChannel: "Phone"
+          ticketId: "199490000000280001"
+          ticketNumber: "101"
+          ticketStatus: "Escalated"
+          ticketSubject: "Setup of Agent"
+      createdTime: "2025-05-08T14:40:24.000Z"
+      creatorId: "199490000000064001"
+      isCommented: false
+      isSpam: false
+      isTrashed: false
+      layoutId: "199490000000034528"
+      log_status: "alert"
+      modifiedBy:
+        emailId: "test.123@example.com"
+        firstName: "test"
+        id: "199490000000064001"
+        lastName: "123"
+        photoURL: "https://deskstatic.zoho.in/api/v1/agents/199490000000064001/photo?orgId=60040875763"
+      modifiedTime: "2025-05-08T14:40:24.000Z"
+      ownerId: "199490000000064001"
+      usr:
+        email: "test.123@example.com"
+        id: "199490000000064001"
+        name: "test 123"
+      webUrl: "https://desk.zoho.in/support/datacrest/ShowHomePage.do#Calls/dv/199490000000291001"
+    message: |-
+      {
+        "modifiedTime" : "2025-05-08T14:40:24.000Z",
+        "statusType" : "Open",
+        "ticket" : {
+          "ticketNumber" : "101",
+          "phone" : "787878585858",
+          "subject" : "Setup of Agent",
+          "isArchived" : false,
+          "dueDate" : "2025-05-15T06:30:00.000Z",
+          "contact" : {
+            "firstName" : "selena",
+            "lastName" : "williams",
+            "accountId" : "199490000000277001",
+            "phone" : "787878585858",
+            "id" : "199490000000278001",
+            "isSpam" : false,
+            "email" : "swill@example.com"
+          },
+          "channel" : "Phone",
+          "createdTime" : "2025-05-08T10:22:31.000Z",
+          "id" : "199490000000280001",
+          "assignee" : {
+            "photoURL" : "https://desk.zoho.in/api/v1/agents/199490000000064001/photo?orgId=60040875763",
+            "firstName" : "test",
+            "lastName" : "123",
+            "id" : "199490000000064001"
+          },
+          "isSpam" : false,
+          "status" : "Escalated"
+        },
+        "contactId" : "199490000000278001",
+        "subject" : "Sample call",
+        "departmentId" : "199490000000010772",
+        "creatorId" : "199490000000064001",
+        "activityTime" : "1746772200000",
+        "ownerId" : "199490000000064001",
+        "priority" : "High",
+        "layoutId" : "199490000000034528",
+        "isTrashed" : false,
+        "isCommented" : false,
+        "webUrl" : "https://desk.zoho.in/support/datacrest/ShowHomePage.do#Calls/dv/199490000000291001",
+        "contact" : {
+          "firstName" : "selena",
+          "lastName" : "williams",
+          "accountId" : "199490000000277001",
+          "phone" : "787878585858",
+          "id" : "199490000000278001",
+          "isSpam" : false,
+          "email" : "swill@example.com"
+        },
+        "createdTime" : "2025-05-08T14:40:24.000Z",
+        "startTime" : "2025-05-09T06:30:00.000Z",
+        "modifiedBy" : {
+          "firstName" : "test",
+          "lastName" : "123",
+          "photoURL" : "https://deskstatic.zoho.in/api/v1/agents/199490000000064001/photo?orgId=60040875763",
+          "emailId" : "test.123@example.com",
+          "id" : "199490000000064001"
+        },
+        "id" : "199490000000291001",
+        "isSpam" : false,
+        "assignee" : {
+          "firstName" : "test",
+          "lastName" : "123",
+          "photoURL" : "https://deskstatic.zoho.in/api/v1/agents/199490000000064001/photo?orgId=60040875763",
+          "emailId" : "test.123@example.com",
+          "id" : "199490000000064001"
+        },
+        "ticketId" : "199490000000280001",
+        "direction" : "outbound",
+        "status" : "Scheduled"
+      }
+    service: "cds.zoho.desk.calls"
+    status: "alert"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1746715224000
+ -
+  sample: |-
+    {
+      "modifiedTime" : "2025-05-08T14:39:20.000Z",
+      "statusType" : "Open",
+      "ticket" : {
+        "ticketNumber" : "101",
+        "phone" : "787878585858",
+        "subject" : "Setup of Agent",
+        "isArchived" : false,
+        "dueDate" : "2025-05-15T06:30:00.000Z",
+        "contact" : {
+          "firstName" : "selena",
+          "lastName" : "williams",
+          "accountId" : "199490000000277001",
+          "phone" : "787878585858",
+          "id" : "199490000000278001",
+          "isSpam" : false,
+          "email" : "swill@example.com"
+        },
+        "channel" : "Phone",
+        "createdTime" : "2025-05-08T10:22:31.000Z",
+        "id" : "199490000000280001",
+        "assignee" : {
+          "photoURL" : "https://desk.zoho.in/api/v1/agents/199490000000064001/photo?orgId=60040875763",
+          "firstName" : "test",
+          "lastName" : "123",
+          "id" : "199490000000064001"
+        },
+        "isSpam" : false,
+        "status" : "Escalated"
+      },
+      "contactId" : "199490000000278001",
+      "subject" : "Sample event",
+      "departmentId" : "199490000000010772",
+      "creatorId" : "199490000000064001",
+      "activityTime" : "1747117800000",
+      "ownerId" : "199490000000064001",
+      "priority" : "High",
+      "layoutId" : "199490000000034526",
+      "isTrashed" : false,
+      "isCommented" : false,
+      "webUrl" : "https://desk.zoho.in/support/datacrest/ShowHomePage.do#Events/dv/199490000000290001",
+      "contact" : {
+        "firstName" : "selena",
+        "lastName" : "williams",
+        "accountId" : "199490000000277001",
+        "phone" : "787878585858",
+        "id" : "199490000000278001",
+        "isSpam" : false,
+        "email" : "swill@example.com"
+      },
+      "createdTime" : "2025-05-08T14:39:20.000Z",
+      "startTime" : "2025-05-13T06:30:00.000Z",
+      "modifiedBy" : {
+        "firstName" : "test",
+        "lastName" : "123",
+        "photoURL" : "https://deskstatic.zoho.in/api/v1/agents/199490000000064001/photo?orgId=60040875763",
+        "emailId" : "test.123@example.com",
+        "id" : "199490000000064001"
+      },
+      "id" : "199490000000290001",
+      "isSpam" : false,
+      "assignee" : {
+        "firstName" : "test",
+        "lastName" : "123",
+        "photoURL" : "https://deskstatic.zoho.in/api/v1/agents/199490000000064001/photo?orgId=60040875763",
+        "emailId" : "test.123@example.com",
+        "id" : "199490000000064001"
+      },
+      "category" : "Meeting",
+      "ticketId" : "199490000000280001",
+      "status" : "Deferred"
+    }
+  service: "cds.zoho.desk.events"
+  result:
+    custom:
+      activityTime: "1747117800000"
+      cds:
+        zoho-desk:
+          assignee:
+            firstName: "test"
+            lastName: "123"
+            photoURL: "https://deskstatic.zoho.in/api/v1/agents/199490000000064001/photo?orgId=60040875763"
+          category: "Meeting"
+          contact:
+            accountId: "199490000000277001"
+            email: "swill@example.com"
+            firstName: "selena"
+            id: "199490000000278001"
+            isSpam: false
+            lastName: "williams"
+            name: "selena williams"
+            phone: "787878585858"
+          contactId: "199490000000278001"
+          departmentId: "199490000000010772"
+          id: "199490000000290001"
+          priority: "High"
+          status: "Deferred"
+          statusType: "Open"
+          subject: "Sample event"
+          ticket:
+            assignee:
+              firstName: "test"
+              id: "199490000000064001"
+              lastName: "123"
+              photoURL: "https://desk.zoho.in/api/v1/agents/199490000000064001/photo?orgId=60040875763"
+            contact:
+              accountId: "199490000000277001"
+              email: "swill@example.com"
+              firstName: "selena"
+              id: "199490000000278001"
+              isSpam: false
+              lastName: "williams"
+              phone: "787878585858"
+            createdTime: "2025-05-08T10:22:31.000Z"
+            dueDate: "2025-05-15T06:30:00.000Z"
+            id: "199490000000280001"
+            isArchived: false
+            isSpam: false
+            phone: "787878585858"
+          ticketChannel: "Phone"
+          ticketId: "199490000000280001"
+          ticketNumber: "101"
+          ticketStatus: "Escalated"
+          ticketSubject: "Setup of Agent"
+      createdTime: "2025-05-08T14:39:20.000Z"
+      creatorId: "199490000000064001"
+      isCommented: false
+      isSpam: false
+      isTrashed: false
+      layoutId: "199490000000034526"
+      log_status: "alert"
+      modifiedBy:
+        emailId: "test.123@example.com"
+        firstName: "test"
+        id: "199490000000064001"
+        lastName: "123"
+        photoURL: "https://deskstatic.zoho.in/api/v1/agents/199490000000064001/photo?orgId=60040875763"
+      modifiedTime: "2025-05-08T14:39:20.000Z"
+      ownerId: "199490000000064001"
+      startTime: "2025-05-13T06:30:00.000Z"
+      usr:
+        email: "test.123@example.com"
+        id: "199490000000064001"
+        name: "test 123"
+      webUrl: "https://desk.zoho.in/support/datacrest/ShowHomePage.do#Events/dv/199490000000290001"
+    message: |-
+      {
+        "modifiedTime" : "2025-05-08T14:39:20.000Z",
+        "statusType" : "Open",
+        "ticket" : {
+          "ticketNumber" : "101",
+          "phone" : "787878585858",
+          "subject" : "Setup of Agent",
+          "isArchived" : false,
+          "dueDate" : "2025-05-15T06:30:00.000Z",
+          "contact" : {
+            "firstName" : "selena",
+            "lastName" : "williams",
+            "accountId" : "199490000000277001",
+            "phone" : "787878585858",
+            "id" : "199490000000278001",
+            "isSpam" : false,
+            "email" : "swill@example.com"
+          },
+          "channel" : "Phone",
+          "createdTime" : "2025-05-08T10:22:31.000Z",
+          "id" : "199490000000280001",
+          "assignee" : {
+            "photoURL" : "https://desk.zoho.in/api/v1/agents/199490000000064001/photo?orgId=60040875763",
+            "firstName" : "test",
+            "lastName" : "123",
+            "id" : "199490000000064001"
+          },
+          "isSpam" : false,
+          "status" : "Escalated"
+        },
+        "contactId" : "199490000000278001",
+        "subject" : "Sample event",
+        "departmentId" : "199490000000010772",
+        "creatorId" : "199490000000064001",
+        "activityTime" : "1747117800000",
+        "ownerId" : "199490000000064001",
+        "priority" : "High",
+        "layoutId" : "199490000000034526",
+        "isTrashed" : false,
+        "isCommented" : false,
+        "webUrl" : "https://desk.zoho.in/support/datacrest/ShowHomePage.do#Events/dv/199490000000290001",
+        "contact" : {
+          "firstName" : "selena",
+          "lastName" : "williams",
+          "accountId" : "199490000000277001",
+          "phone" : "787878585858",
+          "id" : "199490000000278001",
+          "isSpam" : false,
+          "email" : "swill@example.com"
+        },
+        "createdTime" : "2025-05-08T14:39:20.000Z",
+        "startTime" : "2025-05-13T06:30:00.000Z",
+        "modifiedBy" : {
+          "firstName" : "test",
+          "lastName" : "123",
+          "photoURL" : "https://deskstatic.zoho.in/api/v1/agents/199490000000064001/photo?orgId=60040875763",
+          "emailId" : "test.123@example.com",
+          "id" : "199490000000064001"
+        },
+        "id" : "199490000000290001",
+        "isSpam" : false,
+        "assignee" : {
+          "firstName" : "test",
+          "lastName" : "123",
+          "photoURL" : "https://deskstatic.zoho.in/api/v1/agents/199490000000064001/photo?orgId=60040875763",
+          "emailId" : "test.123@example.com",
+          "id" : "199490000000064001"
+        },
+        "category" : "Meeting",
+        "ticketId" : "199490000000280001",
+        "status" : "Deferred"
+      }
+    service: "cds.zoho.desk.events"
+    status: "alert"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1746715160000
+ -
+  sample: |-
+    {
+      "modifiedTime" : "2025-05-08T14:35:42.000Z",
+      "website" : "https://www.zoho.com/",
+      "accountName" : "Zoho",
+      "phone" : "8565425352",
+      "webUrl" : "https://desk.zoho.in/support/datacrest/ShowHomePage.do#Accounts/dv/199490000000262232",
+      "createdTime" : "2025-05-08T09:39:08.000Z",
+      "id" : "199490000000262232",
+      "email" : "support@zohosupport.com"
+    }
+  service: "cds.zoho.desk.accounts"
+  result:
+    custom:
+      cds:
+        zoho-desk:
+          accountName: "Zoho"
+          contact:
+            name: " "
+          email: "support@zohosupport.com"
+          id: "199490000000262232"
+          phone: "8565425352"
+          website: "https://www.zoho.com/"
+      createdTime: "2025-05-08T09:39:08.000Z"
+      modifiedTime: "2025-05-08T14:35:42.000Z"
+      webUrl: "https://desk.zoho.in/support/datacrest/ShowHomePage.do#Accounts/dv/199490000000262232"
+    message: |-
+      {
+        "modifiedTime" : "2025-05-08T14:35:42.000Z",
+        "website" : "https://www.zoho.com/",
+        "accountName" : "Zoho",
+        "phone" : "8565425352",
+        "webUrl" : "https://desk.zoho.in/support/datacrest/ShowHomePage.do#Accounts/dv/199490000000262232",
+        "createdTime" : "2025-05-08T09:39:08.000Z",
+        "id" : "199490000000262232",
+        "email" : "support@zohosupport.com"
+      }
+    service: "cds.zoho.desk.accounts"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1746714942000
+ -
+  sample: |-
+    {
+      "lastName" : "Lawrence",
+      "modifiedTime" : "2025-05-08T14:35:29.000Z",
+      "accountCount" : "1",
+      "ownerId" : "199490000000064001",
+      "accountId" : "199490000000262232",
+      "isAnonymous" : false,
+      "phone" : "1 888 900 9646",
+      "webUrl" : "https://desk.zoho.in/support/datacrest/ShowHomePage.do#Contacts/dv/199490000000262308",
+      "createdTime" : "2025-05-08T09:39:08.000Z",
+      "isEndUser" : false,
+      "id" : "199490000000262308",
+      "isSpam" : false,
+      "customerHappiness" : {
+        "badPercentage" : "0",
+        "okPercentage" : "0",
+        "goodPercentage" : "0"
+      },
+      "email" : "support@zohosupport.com",
+      "account" : {
+        "accountName" : "Zoho",
+        "webUrl" : "https://desk.zoho.in/support/datacrest/ShowHomePage.do#Accounts/dv/199490000000262232",
+        "id" : "199490000000262232"
+      }
+    }
+  service: "cds.zoho.desk.contacts"
+  result:
+    custom:
+      accountCount: "1"
+      accountId: "199490000000262232"
+      cds:
+        zoho-desk:
+          account:
+            accountName: "Zoho"
+            id: "199490000000262232"
+            webUrl: "https://desk.zoho.in/support/datacrest/ShowHomePage.do#Accounts/dv/199490000000262232"
+          contact:
+            name: " "
+          customerHappiness:
+            badPercentage: "0"
+            goodPercentage: "0"
+            okPercentage: "0"
+          isAnonymous: false
+          lastName: "Lawrence"
+          phone: "1 888 900 9646"
+      createdTime: "2025-05-08T09:39:08.000Z"
+      isEndUser: false
+      isSpam: false
+      modifiedTime: "2025-05-08T14:35:29.000Z"
+      ownerId: "199490000000064001"
+      usr:
+        email: "support@zohosupport.com"
+        id: "199490000000262308"
+        name: " Lawrence"
+      webUrl: "https://desk.zoho.in/support/datacrest/ShowHomePage.do#Contacts/dv/199490000000262308"
+    message: |-
+      {
+        "lastName" : "Lawrence",
+        "modifiedTime" : "2025-05-08T14:35:29.000Z",
+        "accountCount" : "1",
+        "ownerId" : "199490000000064001",
+        "accountId" : "199490000000262232",
+        "isAnonymous" : false,
+        "phone" : "1 888 900 9646",
+        "webUrl" : "https://desk.zoho.in/support/datacrest/ShowHomePage.do#Contacts/dv/199490000000262308",
+        "createdTime" : "2025-05-08T09:39:08.000Z",
+        "isEndUser" : false,
+        "id" : "199490000000262308",
+        "isSpam" : false,
+        "customerHappiness" : {
+          "badPercentage" : "0",
+          "okPercentage" : "0",
+          "goodPercentage" : "0"
+        },
+        "email" : "support@zohosupport.com",
+        "account" : {
+          "accountName" : "Zoho",
+          "webUrl" : "https://desk.zoho.in/support/datacrest/ShowHomePage.do#Accounts/dv/199490000000262232",
+          "id" : "199490000000262232"
+        }
+      }
+    service: "cds.zoho.desk.contacts"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1746714929000
+ -
+  sample: |-
+    {
+      "owner" : {
+        "photoURL" : "https://desk.zoho.in/api/v1/agents/199490000000064001/photo?orgId=60040875763",
+        "firstName" : "test",
+        "lastName" : "123",
+        "name" : "test 123",
+        "id" : "199490000000064001"
+      },
+      "unitPrice" : "1200.0",
+      "modifiedTime" : "2025-05-08T10:22:17.000Z",
+      "productCode" : "001",
+      "id" : "199490000000277061",
+      "productName" : "Product1"
+    }
+  service: "cds.zoho.desk.products"
+  result:
+    custom:
+      cds:
+        zoho-desk:
+          contact:
+            name: " "
+          id: "199490000000277061"
+          owner:
+            firstName: "test"
+            lastName: "123"
+            photoURL: "https://desk.zoho.in/api/v1/agents/199490000000064001/photo?orgId=60040875763"
+          productCode: "001"
+          productName: "Product1"
+          unitPrice: "1200.0"
+      modifiedTime: "2025-05-08T10:22:17.000Z"
+      usr:
+        id: "199490000000064001"
+        name: "test 123"
+    message: |-
+      {
+        "owner" : {
+          "photoURL" : "https://desk.zoho.in/api/v1/agents/199490000000064001/photo?orgId=60040875763",
+          "firstName" : "test",
+          "lastName" : "123",
+          "name" : "test 123",
+          "id" : "199490000000064001"
+        },
+        "unitPrice" : "1200.0",
+        "modifiedTime" : "2025-05-08T10:22:17.000Z",
+        "productCode" : "001",
+        "id" : "199490000000277061",
+        "productName" : "Product1"
+      }
+    service: "cds.zoho.desk.products"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1746699737000

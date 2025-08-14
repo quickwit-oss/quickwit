@@ -1,0 +1,126 @@
+id: imperva
+metric_id: imperva
+backend_only: false
+facets:
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+  - groups:
+      - User
+    name: User Email
+    path: usr.email
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+pipeline:
+  type: pipeline
+  name: Imperva Logs
+  enabled: true
+  filter:
+    query: source:imperva
+  processors:
+    - type: pipeline
+      name: Imperva Audit Trail
+      enabled: true
+      filter:
+        query: service:imperva-audit-trail
+      processors:
+        - type: date-remapper
+          name: Define `time` as the official date of the log
+          enabled: true
+          sources:
+            - time
+        - type: attribute-remapper
+          name: Map `type_description` to `evt.name`
+          enabled: true
+          sources:
+            - type_description
+          sourceType: attribute
+          target: evt.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `user_details` to `usr.email`
+          enabled: true
+          sources:
+            - user_details
+          sourceType: attribute
+          target: usr.email
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Imperva Attack Analysis Logs
+      enabled: true
+      filter:
+        query: service:imperva-attack-analysis
+      processors:
+        - type: date-remapper
+          name: Define `last_event_time` as the official date of the log
+          enabled: true
+          sources:
+            - last_event_time
+        - type: attribute-remapper
+          name: "Map `dominant_attack_ip.ip` to `network.client.ip`"
+          enabled: true
+          sources:
+            - dominant_attack_ip.ip
+          sourceType: attribute
+          target: network.client.ip
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `dominant_attack_violation` to `evt.category`
+          enabled: true
+          sources:
+            - dominant_attack_violation
+          sourceType: attribute
+          target: evt.category
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `dominant_attack_country.country` to
+            `network.client.geoip.country.name`
+          enabled: true
+          sources:
+            - dominant_attack_country.country
+          sourceType: attribute
+          target: network.client.geoip.country.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: string-builder-processor
+          name: Map `main_sentence` and `secondary_sentence` to `message`
+          enabled: true
+          template: "%{main_sentence} %{secondary_sentence}"
+          target: message
+          replaceMissing: true
+        - type: attribute-remapper
+          name: Map `dominant_attack_country.country_code` to
+            `network.client.geoip.country.iso_code`
+          enabled: true
+          sources:
+            - dominant_attack_country.country_code
+          sourceType: attribute
+          target: network.client.geoip.country.iso_code
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false

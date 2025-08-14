@@ -1,0 +1,748 @@
+id: trend-micro-vision-one-endpoint-security
+tests:
+  - sample: '"Jul 01 2024 20:20:20 aaaaaa.manage.trendmicro.com CEF:0|Trend Micro|Apex Central|2019|700211|Attack Discovery Detections|3|deviceExternalId=1 rt=Jul 01 2024 10:10:10 GMT+00:00 dhost=VCAC-Window-331 dst=10.10.10.10 customerExternalID=8c1e2d8f-a03b-47ea-aef8-5aeab99ea697 cn1Label=SLF_RiskLevel cn1=0 cn2Label=SLF_PatternNumber cn2=30.1012.00 cs1Label=SLF_RuleID cs1=powershell invoke expression cat=point of entry cs2Label=SLF_ADEObjectGroup_Info_1 cs2=process - code9.exe - {USER: administrator09} deviceNtDomain=APEXTMCM dntdom=OSCEDomain1 TMCMLogDetectedHost=VCAC-Window-331 TMCMLogDetectedIP=10.10.10.10 ApexCentralHost=TW-CHRIS-W2019 devicePayloadId=1C00290C0360-9CDE11EB-D4B8-F51F-C697 TMCMdevicePlatform=Windows 7 6.1 (Build 7601) Service Pack 1"'
+    service: "attack-discovery-detections"
+    result:
+      custom:
+        ApexCentralHost: "TW-CHRIS-W2019"
+        TMCMdevicePlatform: "Windows 7 6.1 (Build 7601) Service Pack 1"
+        application_name: "Apex Central"
+        application_version: "2019"
+        attack_discovery_object_information_1: "process - code9.exe - {USER: administrator09}"
+        attributeLabels:
+          cn1Label: "SLF_RiskLevel"
+          cn2Label: "SLF_PatternNumber"
+          cs1Label: "SLF_RuleID"
+          cs2Label: "SLF_ADEObjectGroup_Info_1"
+        category: "point of entry"
+        cn1: 0
+        customerExternalID: "8c1e2d8f-a03b-47ea-aef8-5aeab99ea697"
+        deviceExternalId: 1
+        deviceNtDomain: "APEXTMCM"
+        devicePayloadId: "1C00290C0360-9CDE11EB-D4B8-F51F-C697"
+        dhost: "VCAC-Window-331"
+        domain_hierarchy: "OSCEDomain1"
+        dst: "10.10.10.10"
+        endpoint_ip: "10.10.10.10"
+        event_id: "700211"
+        event_name: "Attack Discovery Detections"
+        pattern_number: "30.1012.00"
+        risk_level: "Unknown"
+        rt: 1719828610000
+        rule: "powershell invoke expression"
+        severity: "info"
+        source_host_name: "VCAC-Window-331"
+        syslog:
+          severity: 3
+      message: '"Jul 01 2024 20:20:20 aaaaaa.manage.trendmicro.com CEF:0|Trend Micro|Apex Central|2019|700211|Attack Discovery Detections|3|deviceExternalId=1 rt=Jul 01 2024 10:10:10 GMT+00:00 dhost=VCAC-Window-331 dst=10.10.10.10 customerExternalID=8c1e2d8f-a03b-47ea-aef8-5aeab99ea697 cn1Label=SLF_RiskLevel cn1=0 cn2Label=SLF_PatternNumber cn2=30.1012.00 cs1Label=SLF_RuleID cs1=powershell invoke expression cat=point of entry cs2Label=SLF_ADEObjectGroup_Info_1 cs2=process - code9.exe - {USER: administrator09} deviceNtDomain=APEXTMCM dntdom=OSCEDomain1 TMCMLogDetectedHost=VCAC-Window-331 TMCMLogDetectedIP=10.10.10.10 ApexCentralHost=TW-CHRIS-W2019 devicePayloadId=1C00290C0360-9CDE11EB-D4B8-F51F-C697 TMCMdevicePlatform=Windows 7 6.1 (Build 7601) Service Pack 1"'
+      service: "attack-discovery-detections"
+      status: "info"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1719828610000
+  - sample: "\"Jul 01 2024 20:20:20 aaaaaa.manage.trendmicro.com CEF:0|Trend Micro|Apex Central|2019|BM:1000|Behavior Monitoring|3|rt=Jul 01 2024 10:10:10 GMT+00:00 dvchost=localhost cs5Label=Risk_Level cs5=1 cs2Label=Policy cs2=Threat Behavior Analysis sproc=subject cs3Label=Event_Type cs3=File system TMCMLogTarget=HKCU\\\\Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run\\\\COM+ act=Ask cs4Label=Operation cs4=Create Process shost=shost1 src=10.10.10.10 deviceFacility=Apex One reason=G deviceNtDomain=APEXTMCM dntdom=OSCEDomain1 TMCMLogDetectedHost=shost1 TMCMLogDetectedIP=10.10.10.10 ApexCentralHost=TW-CHRIS-W2019 devicePayloadId=1C00290C0360-9CDE11EB-D4B8-F51F-C697 TMCMdevicePlatform=Windows 7 6.1 (Build 7601) Service Pack 1\""
+    service: "behavior-monitoring"
+    result:
+      custom:
+        ApexCentralHost: "TW-CHRIS-W2019"
+        TMCMLogTarget: "HKCU\\\\Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run\\\\COM+"
+        TMCMdevicePlatform: "Windows 7 6.1 (Build 7601) Service Pack 1"
+        action: "Ask"
+        application_name: "Apex Central"
+        application_version: "2019"
+        attributeLabels:
+          cs2Label: "Policy"
+          cs3Label: "Event_Type"
+          cs4Label: "Operation"
+          cs5Label: "Risk_Level"
+        critical_threat_type: "Ransomware"
+        deviceFacility: "Apex One"
+        deviceNtDomain: "APEXTMCM"
+        devicePayloadId: "1C00290C0360-9CDE11EB-D4B8-F51F-C697"
+        domain_hierarchy: "OSCEDomain1"
+        dvchost: "localhost"
+        endpoint_ip: "10.10.10.10"
+        event_id: "BM:1000"
+        event_name: "Behavior Monitoring"
+        event_type: "File system"
+        operation: "Create Process"
+        policy_type: "Threat Behavior Analysis"
+        reason: "G"
+        risk_level: "High"
+        rt: 1719828610000
+        severity: "error"
+        shost: "shost1"
+        source_host_name: "shost1"
+        src: "10.10.10.10"
+        syslog:
+          severity: 3
+        target_of_event: "subject"
+      message: "\"Jul 01 2024 20:20:20 aaaaaa.manage.trendmicro.com CEF:0|Trend Micro|Apex Central|2019|BM:1000|Behavior Monitoring|3|rt=Jul 01 2024 10:10:10 GMT+00:00 dvchost=localhost cs5Label=Risk_Level cs5=1 cs2Label=Policy cs2=Threat Behavior Analysis sproc=subject cs3Label=Event_Type cs3=File system TMCMLogTarget=HKCU\\\\Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run\\\\COM+ act=Ask cs4Label=Operation cs4=Create Process shost=shost1 src=10.10.10.10 deviceFacility=Apex One reason=G deviceNtDomain=APEXTMCM dntdom=OSCEDomain1 TMCMLogDetectedHost=shost1 TMCMLogDetectedIP=10.10.10.10 ApexCentralHost=TW-CHRIS-W2019 devicePayloadId=1C00290C0360-9CDE11EB-D4B8-F51F-C697 TMCMdevicePlatform=Windows 7 6.1 (Build 7601) Service Pack 1\""
+      service: "behavior-monitoring"
+      status: "error"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1719828610000
+  - sample: "\"Jul 01 2024 20:20:20 aaaaaa.manage.trendmicro.com CEF:0|Trend Micro|Apex Central|2019|CnC:Block|CnC Callback|3|deviceExternalId=1 rt=Jul 01 2024 10:10:10 GMT+00:00 cat=1756 deviceFacility=Apex One cs2Label=EI_ProductVersion cs2=11.0 shost=ApexOneClient01 src=20.20.20.20 cs3Label=SLF_DomainName cs3=DOMAIN act=Block cn1Label=SLF_CCCA_RiskLevel cn1=1 cn2Label=SLF_CCCA_DetectionSource cn2=1 cn3Label=SLF_CCCA_DestinationFormat cn3=1 dst=30.30.30.30 deviceProcessName=C:\\\\Program Files (x86)\\\\Internet Explorer\\\\iexplore.exe deviceNtDomain=APEXTMCM dntdom=OSCEDomain1 dvchost=localhost TMCMLogDetectedHost=ApexOneClient01 TMCMLogDetectedIP=10.10.10.10 ApexCentralHost=TW-CHRIS-W2019 devicePayloadId=1C00290C0360-9CDE11EB-D4B8-F51F-C697 deviceDirection=0 TMCMdevicePlatform=Windows 7 6.1 (Build 7601) Service Pack 1\""
+    service: "cnc-callback"
+    result:
+      custom:
+        ApexCentralHost: "TW-CHRIS-W2019"
+        TMCMdevicePlatform: "Windows 7 6.1 (Build 7601) Service Pack 1"
+        action: "Block"
+        application_name: "Apex Central"
+        application_version: "2019"
+        attributeLabels:
+          cn1Label: "SLF_CCCA_RiskLevel"
+          cn2Label: "SLF_CCCA_DetectionSource"
+          cn3Label: "SLF_CCCA_DestinationFormat"
+          cs2Label: "EI_ProductVersion"
+          cs3Label: "SLF_DomainName"
+        callback_address_format: "IP"
+        cn1: 1
+        cn2: 1
+        cn3: 1
+        cnc_list_source: "Custom List"
+        deviceDirection: "None"
+        deviceExternalId: 1
+        deviceFacility: "Apex One"
+        deviceNtDomain: "APEXTMCM"
+        devicePayloadId: "1C00290C0360-9CDE11EB-D4B8-F51F-C697"
+        deviceProcessName: "C:\\\\Program Files (x86)\\\\Internet Explorer\\\\iexplore.exe"
+        domain_hierarchy: "OSCEDomain1"
+        domain_name: "DOMAIN"
+        dvchost: "localhost"
+        endpoint_ip: "10.10.10.10"
+        event_id: "CnC:Block"
+        event_name: "CnC Callback"
+        log_type: 1756
+        network:
+          client:
+            geoip: {}
+            ip: "20.20.20.20"
+          destination:
+            geoip: {}
+            ip: "30.30.30.30"
+        product_version: 11.0
+        risk_level: "Low"
+        rt: 1719828610000
+        severity: "info"
+        shost: "ApexOneClient01"
+        source_host_name: "ApexOneClient01"
+        syslog:
+          severity: 3
+      message: "\"Jul 01 2024 20:20:20 aaaaaa.manage.trendmicro.com CEF:0|Trend Micro|Apex Central|2019|CnC:Block|CnC Callback|3|deviceExternalId=1 rt=Jul 01 2024 10:10:10 GMT+00:00 cat=1756 deviceFacility=Apex One cs2Label=EI_ProductVersion cs2=11.0 shost=ApexOneClient01 src=20.20.20.20 cs3Label=SLF_DomainName cs3=DOMAIN act=Block cn1Label=SLF_CCCA_RiskLevel cn1=1 cn2Label=SLF_CCCA_DetectionSource cn2=1 cn3Label=SLF_CCCA_DestinationFormat cn3=1 dst=30.30.30.30 deviceProcessName=C:\\\\Program Files (x86)\\\\Internet Explorer\\\\iexplore.exe deviceNtDomain=APEXTMCM dntdom=OSCEDomain1 dvchost=localhost TMCMLogDetectedHost=ApexOneClient01 TMCMLogDetectedIP=10.10.10.10 ApexCentralHost=TW-CHRIS-W2019 devicePayloadId=1C00290C0360-9CDE11EB-D4B8-F51F-C697 deviceDirection=0 TMCMdevicePlatform=Windows 7 6.1 (Build 7601) Service Pack 1\""
+      service: "cnc-callback"
+      status: "info"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1719828610000
+  - sample: '"Jul 01 2024 20:20:20 aaaaaa.manage.trendmicro.com CEF:0|Trend Micro|Apex Central|2019|MS:Clean|This is a policyname|3|deviceExternalId=1 rt=Jul 01 2024 10:10:10 GMT+00:00 dhost=user@test.com duser=user@test.com act=Clean cs1Label=Policy_Settings cs1=This is policy content cs2Label=CLF_ProductVersion cs2=3.2 cs3Label=Filter_Type cs3=URL reputation filter cs5Label=CLF_ReasonCodeSource cs5=20 cs6Label=Action_on_Message cs6=0 cat=1705 dvchost=ApexOneClient01 cn1Label=Severity cn1=2 TMCMLogSeverity=Second scan engine fname=NE_AEP.1550 msg=plain_qp_no8_av1u_NE_AEP.1550 shost=user2@test.com suser=user2@test.com cn2Label=Filter_Action_Result cn2=21 deviceFacility=Deep Discovery Email Inspector src=20.20.20.20 reason=B ApexCentralHost=TW-CHRIS-W2019 devicePayloadId=1C00290C0360-9CDE11EB-D4B8-F51F-C697 TMCMdevicePlatform=Windows 7 6.1 (Build 7601) Service Pack 1"'
+    service: "content-violation"
+    result:
+      custom:
+        ApexCentralHost: "TW-CHRIS-W2019"
+        TMCMLogSeverity: "Second scan engine"
+        TMCMdevicePlatform: "Windows 7 6.1 (Build 7601) Service Pack 1"
+        action: "Unknown"
+        application_name: "Apex Central"
+        application_version: "2019"
+        attributeLabels:
+          cn1Label: "Severity"
+          cn2Label: "Filter_Action_Result"
+          cs1Label: "Policy_Settings"
+          cs2Label: "CLF_ProductVersion"
+          cs3Label: "Filter_Type"
+          cs5Label: "CLF_ReasonCodeSource"
+          cs6Label: "Action_on_Message"
+        cn1: 2
+        cn2: 21
+        critical_threat_type: "Social engineering attack"
+        deviceExternalId: 1
+        deviceFacility: "Deep Discovery Email Inspector"
+        devicePayloadId: "1C00290C0360-9CDE11EB-D4B8-F51F-C697"
+        endpoint_ip: "20.20.20.20"
+        event_id: "MS:Clean"
+        event_name: "This is a policyname"
+        file_name: "NE_AEP.1550"
+        filter_action: "Clean"
+        filter_action_result: "File cleaned"
+        filter_type: "URL reputation filter"
+        log_type: 1705
+        policy_settings: "This is policy content"
+        product_version: 3.2
+        reason: "B"
+        reason_code_source: 20
+        recipient: "user@test.com"
+        recipients:
+          - "user@test.com"
+        rt: 1719828610000
+        sender: "user2@test.com"
+        senders:
+          - "user2@test.com"
+        severity: "warning"
+        severity_code: "Warning"
+        source_host_name: "ApexOneClient01"
+        subject: "plain_qp_no8_av1u_NE_AEP.1550"
+        syslog:
+          severity: 3
+      message: '"Jul 01 2024 20:20:20 aaaaaa.manage.trendmicro.com CEF:0|Trend Micro|Apex Central|2019|MS:Clean|This is a policyname|3|deviceExternalId=1 rt=Jul 01 2024 10:10:10 GMT+00:00 dhost=user@test.com duser=user@test.com act=Clean cs1Label=Policy_Settings cs1=This is policy content cs2Label=CLF_ProductVersion cs2=3.2 cs3Label=Filter_Type cs3=URL reputation filter cs5Label=CLF_ReasonCodeSource cs5=20 cs6Label=Action_on_Message cs6=0 cat=1705 dvchost=ApexOneClient01 cn1Label=Severity cn1=2 TMCMLogSeverity=Second scan engine fname=NE_AEP.1550 msg=plain_qp_no8_av1u_NE_AEP.1550 shost=user2@test.com suser=user2@test.com cn2Label=Filter_Action_Result cn2=21 deviceFacility=Deep Discovery Email Inspector src=20.20.20.20 reason=B ApexCentralHost=TW-CHRIS-W2019 devicePayloadId=1C00290C0360-9CDE11EB-D4B8-F51F-C697 TMCMdevicePlatform=Windows 7 6.1 (Build 7601) Service Pack 1"'
+      service: "content-violation"
+      status: "warn"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1719828610000
+  - sample: "\"Jul 01 2024 20:20:20 aaaaaa.manage.trendmicro.com CEF:0|Trend Micro|Apex Central|2019|700106|Data Loss Prevention|3|cs3Label=Product_Entity/Endpoint cs3=Sample_Host cs2Label=Policy cs2=N/A cn1Label=Product cn1=15 rt=Jul 01 2024 10:10:10 GMT+00:00 src=20.20.20.20 smac=34-E6-D7-84-BC-7F shost=shost1 cs4Label=Incident_Source_(AD_Account) cs4=12467 filePath=D:\\\\2. DRIVER\\\\drivers WIN7\\\\Drivers\\\\DP_CardReader_14032.7z\\\\O2Micro\\\\FORCED\\\\6x86\\\\ fname=O2MDFvst.INF cs5Label=Rule cs5=SAMPLE RULE SET cs6Label=Template cs6=Apex One policy cn3Label=Channel cn3=0 cn2Label=Action cn2=4 deviceFacility=Apex One deviceNtDomain=APEXTMCM dntdom=OSCEDomain1 externalId=101 cfp1Label=ForensicFileAvailable cfp1=0 dvchost=localhost TMCMLogDetectedHost=ApexOneClient01 TMCMLogDetectedIP=10.10.10.10 ApexCentralHost=TW-CHRIS-W2019 devicePayloadId=1C00290C0360-9CDE11EB-D4B8-F51F-C697 TMCMdevicePlatform=Windows 7 6.1 (Build 7601) Service Pack 1\""
+    service: "data-loss-prevention"
+    result:
+      custom:
+        ApexCentralHost: "TW-CHRIS-W2019"
+        TMCMdevicePlatform: "Windows 7 6.1 (Build 7601) Service Pack 1"
+        action: "Passed"
+        application_name: "Apex Central"
+        application_version: "2019"
+        attributeLabels:
+          cfp1Label: "ForensicFileAvailable"
+          cn1Label: "Product"
+          cn2Label: "Action"
+          cn3Label: "Channel"
+          cs2Label: "Policy"
+          cs3Label: "Product_Entity/Endpoint"
+          cs4Label: "Incident_Source_(AD_Account)"
+          cs5Label: "Rule"
+          cs6Label: "Template"
+        cfp1: 0
+        channel_type: "Removable storage"
+        cn2: 4
+        cn3: 0
+        deviceFacility: "Apex One"
+        deviceNtDomain: "APEXTMCM"
+        devicePayloadId: "1C00290C0360-9CDE11EB-D4B8-F51F-C697"
+        domain_hierarchy: "OSCEDomain1"
+        dvchost: "localhost"
+        endpoint_host_name: "Sample_Host"
+        endpoint_ip: "10.10.10.10"
+        event_id: "700106"
+        event_name: "Data Loss Prevention"
+        externalId: 101
+        filePath: "D:\\\\2. DRIVER\\\\drivers WIN7\\\\Drivers\\\\DP_CardReader_14032.7z\\\\O2Micro\\\\FORCED\\\\6x86\\\\"
+        file_name: "O2MDFvst.INF"
+        forensic_file_can_be_downloaded: "No"
+        incident_source: 12467
+        network:
+          client:
+            geoip: {}
+            ip: "20.20.20.20"
+        policy_name: "N/A"
+        product_type: 15
+        rt: 1719828610000
+        rule_name: "SAMPLE RULE SET"
+        severity: "info"
+        shost: "shost1"
+        source_host_name: "ApexOneClient01"
+        source_mac: "34-E6-D7-84-BC-7F"
+        syslog:
+          severity: 3
+        template_name: "Apex One policy"
+      message: "\"Jul 01 2024 20:20:20 aaaaaa.manage.trendmicro.com CEF:0|Trend Micro|Apex Central|2019|700106|Data Loss Prevention|3|cs3Label=Product_Entity/Endpoint cs3=Sample_Host cs2Label=Policy cs2=N/A cn1Label=Product cn1=15 rt=Jul 01 2024 10:10:10 GMT+00:00 src=20.20.20.20 smac=34-E6-D7-84-BC-7F shost=shost1 cs4Label=Incident_Source_(AD_Account) cs4=12467 filePath=D:\\\\2. DRIVER\\\\drivers WIN7\\\\Drivers\\\\DP_CardReader_14032.7z\\\\O2Micro\\\\FORCED\\\\6x86\\\\ fname=O2MDFvst.INF cs5Label=Rule cs5=SAMPLE RULE SET cs6Label=Template cs6=Apex One policy cn3Label=Channel cn3=0 cn2Label=Action cn2=4 deviceFacility=Apex One deviceNtDomain=APEXTMCM dntdom=OSCEDomain1 externalId=101 cfp1Label=ForensicFileAvailable cfp1=0 dvchost=localhost TMCMLogDetectedHost=ApexOneClient01 TMCMLogDetectedIP=10.10.10.10 ApexCentralHost=TW-CHRIS-W2019 devicePayloadId=1C00290C0360-9CDE11EB-D4B8-F51F-C697 TMCMdevicePlatform=Windows 7 6.1 (Build 7601) Service Pack 1\""
+      service: "data-loss-prevention"
+      status: "info"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1719828610000
+  - sample: "\"Jul 01 2024 20:20:20 aaaaaa.manage.trendmicro.com CEF:0|Trend Micro|Apex Central|2019|700107|Device Access Control|3|rt=Jul 01 2024 10:10:10 GMT+00:00 cs1Label=Product_Entity/Endpoint cs1=Sample_Host shost=shost1 dvchost=localhost cn1Label=Product cn1=15 sproc=C:\\\\Windows\\\\explorer.exe fname=F:\\\\Autorun.inf cn2Label=Device_Type cn2=0 cn3Label=Permission cn3=3 deviceFacility=Apex One deviceNtDomain=APEXTMCM dntdom=OSCEDomain1 TMCMLogDetectedHost=shost1 TMCMLogDetectedIP=10.10.10.10 ApexCentralHost=TW-CHRIS-W2019 devicePayloadId=1C00290C0360-9CDE11EB-D4B8-F51F-C697 TMCMdevicePlatform=Windows 7 6.1 (Build 7601) Service Pack 1\""
+    service: "device-access-control"
+    result:
+      custom:
+        ApexCentralHost: "TW-CHRIS-W2019"
+        TMCMdevicePlatform: "Windows 7 6.1 (Build 7601) Service Pack 1"
+        application_name: "Apex Central"
+        application_version: "2019"
+        attributeLabels:
+          cn1Label: "Product"
+          cn2Label: "Device_Type"
+          cn3Label: "Permission"
+          cs1Label: "Product_Entity/Endpoint"
+        cn2: 0
+        cn3: 3
+        deviceFacility: "Apex One"
+        deviceNtDomain: "APEXTMCM"
+        devicePayloadId: "1C00290C0360-9CDE11EB-D4B8-F51F-C697"
+        device_type: "USB storage device"
+        domain_hierarchy: "OSCEDomain1"
+        dvchost: "localhost"
+        endpoint_ip: "10.10.10.10"
+        event_id: "700107"
+        event_name: "Device Access Control"
+        file_name: "F:\\\\Autorun.inf"
+        host_name: "Sample_Host"
+        permission: "Floppy disks"
+        product_id: 15
+        rt: 1719828610000
+        severity: "info"
+        shost: "shost1"
+        source_host_name: "shost1"
+        syslog:
+          severity: 3
+        target_process: "C:\\\\Windows\\\\explorer.exe"
+      message: "\"Jul 01 2024 20:20:20 aaaaaa.manage.trendmicro.com CEF:0|Trend Micro|Apex Central|2019|700107|Device Access Control|3|rt=Jul 01 2024 10:10:10 GMT+00:00 cs1Label=Product_Entity/Endpoint cs1=Sample_Host shost=shost1 dvchost=localhost cn1Label=Product cn1=15 sproc=C:\\\\Windows\\\\explorer.exe fname=F:\\\\Autorun.inf cn2Label=Device_Type cn2=0 cn3Label=Permission cn3=3 deviceFacility=Apex One deviceNtDomain=APEXTMCM dntdom=OSCEDomain1 TMCMLogDetectedHost=shost1 TMCMLogDetectedIP=10.10.10.10 ApexCentralHost=TW-CHRIS-W2019 devicePayloadId=1C00290C0360-9CDE11EB-D4B8-F51F-C697 TMCMdevicePlatform=Windows 7 6.1 (Build 7601) Service Pack 1\""
+      service: "device-access-control"
+      status: "info"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1719828610000
+  - sample: "\"Jul 01 2024 20:20:20 aaaaaa.manage.trendmicro.com CEF:0|Trend Micro|Apex Central|2019|EAC:1|Endpoint Application Control Violation Information|3|deviceExternalId=1 rt=Jul 01 2024 10:10:10 GMT+00:00 cs1Label=Version cs1=1.299.00 suser=TMCM\\\\QA cs2Label=ApplicationControlEvent_ClientIPAddress_V4 cs2=20.20.20.20 cn1Label=Connection_Status cn1=0 fileHash=c0869b72C5606D22D92A6AC986686BB87485A25b fname=P2P_TEST.exe cs3Label=Command cs3=C:\\\\P2P_TEST.exe duser=QA cs4Label=Rule cs4=Test cs5Label=Policy cs5=TestPolicy act=Blocked deviceFacility=Trend Micro Endpoint Application Control deviceNtDomain=APEXTMCM dntdom=OSCEDomain1 ApexCentralHost=TW-CHRIS-W2019 devicePayloadId=1C00290C0360-9CDE11EB-D4B8-F51F-C697 TMCMdevicePlatform=Windows 7 6.1 (Build 7601) Service Pack 1\""
+    service: "application-control"
+    result:
+      custom:
+        ApexCentralHost: "TW-CHRIS-W2019"
+        TMCMdevicePlatform: "Windows 7 6.1 (Build 7601) Service Pack 1"
+        action: "Blocked"
+        application_name: "Apex Central"
+        application_version: "2019"
+        attributeLabels:
+          cn1Label: "Connection_Status"
+          cs1Label: "Version"
+          cs2Label: "ApplicationControlEvent_ClientIPAddress_V4"
+          cs3Label: "Command"
+          cs4Label: "Rule"
+          cs5Label: "Policy"
+        client_user_name: "TMCM\\\\QA"
+        cn1: 0
+        deviceExternalId: 1
+        deviceFacility: "Trend Micro Endpoint Application Control"
+        deviceNtDomain: "APEXTMCM"
+        devicePayloadId: "1C00290C0360-9CDE11EB-D4B8-F51F-C697"
+        domain_hierarchy: "OSCEDomain1"
+        endpoint_ip: "20.20.20.20"
+        event_id: "EAC:1"
+        event_name: "Endpoint Application Control Violation Information"
+        fileHash: "c0869b72C5606D22D92A6AC986686BB87485A25b"
+        file_name: "P2P_TEST.exe"
+        pattern_version: "1.299.00"
+        policy_name: "TestPolicy"
+        process_command_line: "C:\\\\P2P_TEST.exe"
+        rt: 1719828610000
+        rule_name: "Test"
+        severity: "info"
+        syslog:
+          severity: 3
+        usr:
+          name: "QA"
+      message: "\"Jul 01 2024 20:20:20 aaaaaa.manage.trendmicro.com CEF:0|Trend Micro|Apex Central|2019|EAC:1|Endpoint Application Control Violation Information|3|deviceExternalId=1 rt=Jul 01 2024 10:10:10 GMT+00:00 cs1Label=Version cs1=1.299.00 suser=TMCM\\\\QA cs2Label=ApplicationControlEvent_ClientIPAddress_V4 cs2=20.20.20.20 cn1Label=Connection_Status cn1=0 fileHash=c0869b72C5606D22D92A6AC986686BB87485A25b fname=P2P_TEST.exe cs3Label=Command cs3=C:\\\\P2P_TEST.exe duser=QA cs4Label=Rule cs4=Test cs5Label=Policy cs5=TestPolicy act=Blocked deviceFacility=Trend Micro Endpoint Application Control deviceNtDomain=APEXTMCM dntdom=OSCEDomain1 ApexCentralHost=TW-CHRIS-W2019 devicePayloadId=1C00290C0360-9CDE11EB-D4B8-F51F-C697 TMCMdevicePlatform=Windows 7 6.1 (Build 7601) Service Pack 1\""
+      service: "application-control"
+      status: "info"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1719828610000
+  - sample: '"Jul 01 2024 20:20:20 aaaaaa.manage.trendmicro.com CEF:0|Trend Micro|Apex Central|2019|Log|Intrusion Prevention|3|rt=Jul 01 2024 10:10:10 GMT+00:00 dvchost=OSCEClient23 deviceFacility=Apex One act=Log src=20.20.20.20 dst=30.30.30.30 smac=54-BF-64-84-7F-09 spt=89 dmac=54-BF-64-84-7F-19 dpt=449 cn2Label=Mode cn2=0 deviceDirection=Inbound cn3Label=Priority cn3=1 cn4Label=Severity cn4=1 proto=10009 cs2Label=Application_Type cs2=N/A cn1Label=Rule cn1=1009549 cs1Label=Reason/Rule cs1=1009549 - Detected Terminal Services (RDP) Server Traffic - 1 (ATT&CK T1015,T1043,T1076,T1048,T1032,T1071) cnt=1 deviceNtDomain=APEXTMCM dntdom=OSCEDomain1 TMCMLogDetectedHost=shost1 TMCMLogDetectedIP=10.10.10.10 devicePayloadId=1C00290C0360-9CDE11EB-D4B8-F51F-C697 TMCMdevicePlatform=Windows 7 6.1 (Build 7601) Service Pack 1"'
+    service: "intrusion-prevention"
+    result:
+      custom:
+        TMCMdevicePlatform: "Windows 7 6.1 (Build 7601) Service Pack 1"
+        action: "Log"
+        application_name: "Apex Central"
+        application_version: "2019"
+        attributeLabels:
+          cn1Label: "Rule"
+          cn2Label: "Mode"
+          cn3Label: "Priority"
+          cn4Label: "Severity"
+          cs1Label: "Reason/Rule"
+          cs2Label: "Application_Type"
+        cn2: 0
+        cn4: 1
+        destination_mac: "54-BF-64-84-7F-19"
+        detection_mode: "No"
+        deviceDirection: "Inbound"
+        deviceFacility: "Apex One"
+        deviceNtDomain: "APEXTMCM"
+        devicePayloadId: "1C00290C0360-9CDE11EB-D4B8-F51F-C697"
+        domain_hierarchy: "OSCEDomain1"
+        dvchost: "OSCEClient23"
+        endpoint_ip: "10.10.10.10"
+        event_id: "Log"
+        event_name: "Intrusion Prevention"
+        network:
+          client:
+            geoip: {}
+            ip: "20.20.20.20"
+            port: 89
+          destination:
+            geoip: {}
+            ip: "30.30.30.30"
+            port: 449
+        no_of_detection: 1
+        proto: "ND"
+        reason: "1009549 - Detected Terminal Services (RDP) Server Traffic - 1 (ATT&CK T1015,T1043,T1076,T1048,T1032,T1071)"
+        risk_level: "Low"
+        rt: 1719828610000
+        rule_id: 1009549
+        severity: "info"
+        source_host_name: "shost1"
+        source_mac: "54-BF-64-84-7F-09"
+        syslog:
+          severity: 3
+        trend_micro_vision_one_endpoint_security:
+          priority: 1
+      message: "\"Jul 01 2024 20:20:20 aaaaaa.manage.trendmicro.com CEF:0|Trend Micro|Apex Central|2019|Log|Intrusion Prevention|3|rt=Jul 01 2024 10:10:10 GMT+00:00 dvchost=OSCEClient23 deviceFacility=Apex One act=Log src=20.20.20.20 dst=30.30.30.30 smac=54-BF-64-84-7F-09 spt=89 dmac=54-BF-64-84-7F-19 dpt=449 cn2Label=Mode cn2=0 deviceDirection=Inbound cn3Label=Priority cn3=1 cn4Label=Severity cn4=1 proto=10009 cs2Label=Application_Type cs2=N/A cn1Label=Rule cn1=1009549 cs1Label=Reason/Rule cs1=1009549 - Detected Terminal Services (RDP) Server Traffic - 1 (ATT&CK T1015,T1043,T1076,T1048,T1032,T1071) cnt=1 deviceNtDomain=APEXTMCM dntdom=OSCEDomain1 TMCMLogDetectedHost=shost1 TMCMLogDetectedIP=10.10.10.10 devicePayloadId=1C00290C0360-9CDE11EB-D4B8-F51F-C697 TMCMdevicePlatform=Windows 7 6.1 (Build 7601) Service Pack 1\""
+      service: "intrusion-prevention"
+      status: "info"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1719828610000
+  - sample: "\"Jul 01 2024 20:20:20 aaaaaa.manage.trendmicro.com CEF:0|Trend Micro|Apex Central|2019|PML:File cleaned|Detection01|3|deviceExternalId=1 rt=Jul 01 2024 10:10:10 GMT+00:00 deviceFacility=15 dvchost=OSCE01 cn1Label=ThreatType cn1=1 cs2Label=DetectionName cs2=Detection01 shost=10.0.0.1 suser=Sample_Domain\\\\Sample_User cn2Label=DetectionType cn2=0 filePath=C:\\\\test01\\\\aaa.exe fname=aaa.exe deviceCustomDate1Label=FileCreationDate deviceCustomDate1=Jul 01 2024 00:01:00 GMT+00:00 sproc=notepad.exe cs4Label=ProcessCommandLine cs4=notepad.exe -test duser=admin01 app=1 cs3Label=InfectionLocation cs3=https://10.1.1.1 dst=10.10.10.10 cn3Label=Confidence cn3=81 act=21 fileHash=177750B65A21A9043105FD0820B85B58CF148A01 dhost=OSCEClient11 reason=E deviceNtDomain=APEXTMCM dntdom=OSCEDomain1 TMCMLogDetectedHost=OSCEClient11 TMCMLogDetectedIP=10.10.10.10 ApexCentralHost=TW-CHRIS-W2019 devicePayloadId=1C00290C0360-9CDE11EB-D4B8-F51F-C697 TMCMdevicePlatform=Windows 7 6.1 (Build 7601) Service Pack 1\""
+    service: "predictive-machine-learning"
+    result:
+      custom:
+        ApexCentralHost: "TW-CHRIS-W2019"
+        TMCMdevicePlatform: "Windows 7 6.1 (Build 7601) Service Pack 1"
+        action: "File cleaned"
+        application_name: "Apex Central"
+        application_version: "2019"
+        attributeLabels:
+          cn1Label: "ThreatType"
+          cn2Label: "DetectionType"
+          cn3Label: "Confidence"
+          cs2Label: "DetectionName"
+          cs3Label: "InfectionLocation"
+          cs4Label: "ProcessCommandLine"
+        client_user_name: "Sample_Domain\\\\Sample_User"
+        cn1: 1
+        cn2: 0
+        critical_threat_type: "Unknown threats"
+        detection_name: "Detection01"
+        detection_type: "File"
+        deviceCustomDate1: "Jul 01 2024 00:01:00 GMT+00:00"
+        deviceCustomDate1Label: "FileCreationDate"
+        deviceExternalId: 1
+        deviceFacility: 15
+        deviceNtDomain: "APEXTMCM"
+        devicePayloadId: "1C00290C0360-9CDE11EB-D4B8-F51F-C697"
+        dhost: "OSCEClient11"
+        domain_hierarchy: "OSCEDomain1"
+        dst: "10.10.10.10"
+        endpoint_ip: "10.10.10.10"
+        event_id: "PML:File cleaned"
+        event_name: "Detection01"
+        fileHash: "177750B65A21A9043105FD0820B85B58CF148A01"
+        filePath: "C:\\\\test01\\\\aaa.exe"
+        file_name: "aaa.exe"
+        infected_endpoint: "10.0.0.1"
+        infection_channel: "Local drive"
+        infection_source: "https://10.1.1.1"
+        process_command: "notepad.exe -test"
+        product_server: "OSCE01"
+        reason: "E"
+        rt: 1719828610000
+        severity: "info"
+        source_host_name: "OSCEClient11"
+        syslog:
+          severity: 3
+        system_process: "notepad.exe"
+        trend_micro_vision_one_endpoint_security:
+          threat_probability: 81
+        usr:
+          name: "admin01"
+      message: "\"Jul 01 2024 20:20:20 aaaaaa.manage.trendmicro.com CEF:0|Trend Micro|Apex Central|2019|PML:File cleaned|Detection01|3|deviceExternalId=1 rt=Jul 01 2024 10:10:10 GMT+00:00 deviceFacility=15 dvchost=OSCE01 cn1Label=ThreatType cn1=1 cs2Label=DetectionName cs2=Detection01 shost=10.0.0.1 suser=Sample_Domain\\\\Sample_User cn2Label=DetectionType cn2=0 filePath=C:\\\\test01\\\\aaa.exe fname=aaa.exe deviceCustomDate1Label=FileCreationDate deviceCustomDate1=Jul 01 2024 00:01:00 GMT+00:00 sproc=notepad.exe cs4Label=ProcessCommandLine cs4=notepad.exe -test duser=admin01 app=1 cs3Label=InfectionLocation cs3=https://10.1.1.1 dst=10.10.10.10 cn3Label=Confidence cn3=81 act=21 fileHash=177750B65A21A9043105FD0820B85B58CF148A01 dhost=OSCEClient11 reason=E deviceNtDomain=APEXTMCM dntdom=OSCEDomain1 TMCMLogDetectedHost=OSCEClient11 TMCMLogDetectedIP=10.10.10.10 ApexCentralHost=TW-CHRIS-W2019 devicePayloadId=1C00290C0360-9CDE11EB-D4B8-F51F-C697 TMCMdevicePlatform=Windows 7 6.1 (Build 7601) Service Pack 1\""
+      service: "predictive-machine-learning"
+      status: "info"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1719828610000
+  - sample: "\"Jul 01 2024 20:20:20 aaaaaa.manage.trendmicro.com CEF:0|Trend Micro|Apex Central|2019|NCIE:Pass|Suspicious Connection|3|deviceExternalId=1 rt=Jul 01 2024 10:10:10 GMT+00:00 cat=1756 deviceFacility=Apex One deviceProcessName=C:\\\\Windows\\\\system32\\\\svchost-1.exe act=Pass src=20.20.20.20 dst=30.30.30.30 spt=54594 dpt=80 deviceDirection=None cn1Label=SLF_PatternType cn1=2 cs2Label=NCIE_ThreatName cs2=Malicious_identified_CnC_querying_on_UDP_detected reason=F deviceNtDomain=APEXTMCM dntdom=OSCEDomain1 dvchost=shost1 TMCMLogDetectedHost=shost1 TMCMLogDetectedIP=10.10.10.10 ApexCentralHost=TW-CHRIS-W2019 devicePayloadId=1C00290C0360-9CDE11EB-D4B8-F51F-C697 TMCMdevicePlatform=Windows 7 6.1 (Build 7601) Service Pack 1\""
+    service: "network-content-inspection"
+    result:
+      custom:
+        ApexCentralHost: "TW-CHRIS-W2019"
+        TMCMdevicePlatform: "Windows 7 6.1 (Build 7601) Service Pack 1"
+        action: "Pass"
+        application_name: "Apex Central"
+        application_version: "2019"
+        attributeLabels:
+          cn1Label: "SLF_PatternType"
+          cs2Label: "NCIE_ThreatName"
+        cn1: 2
+        critical_threat_type: "C&C callback"
+        deviceDirection: "None"
+        deviceExternalId: 1
+        deviceFacility: "Apex One"
+        deviceNtDomain: "APEXTMCM"
+        devicePayloadId: "1C00290C0360-9CDE11EB-D4B8-F51F-C697"
+        deviceProcessName: "C:\\\\Windows\\\\system32\\\\svchost-1.exe"
+        domain_hierarchy: "OSCEDomain1"
+        dvchost: "shost1"
+        endpoint_ip: "10.10.10.10"
+        event_id: "NCIE:Pass"
+        event_name: "Suspicious Connection"
+        log_type: 1756
+        network:
+          client:
+            geoip: {}
+            ip: "20.20.20.20"
+            port: 54594
+          destination:
+            geoip: {}
+            ip: "30.30.30.30"
+            port: 80
+        pattern_type: "User-defined block list"
+        reason: "F"
+        rt: 1719828610000
+        severity: "info"
+        source_host_name: "shost1"
+        syslog:
+          severity: 3
+        threat_name: "Malicious_identified_CnC_querying_on_UDP_detected"
+      message: "\"Jul 01 2024 20:20:20 aaaaaa.manage.trendmicro.com CEF:0|Trend Micro|Apex Central|2019|NCIE:Pass|Suspicious Connection|3|deviceExternalId=1 rt=Jul 01 2024 10:10:10 GMT+00:00 cat=1756 deviceFacility=Apex One deviceProcessName=C:\\\\Windows\\\\system32\\\\svchost-1.exe act=Pass src=20.20.20.20 dst=30.30.30.30 spt=54594 dpt=80 deviceDirection=None cn1Label=SLF_PatternType cn1=2 cs2Label=NCIE_ThreatName cs2=Malicious_identified_CnC_querying_on_UDP_detected reason=F deviceNtDomain=APEXTMCM dntdom=OSCEDomain1 dvchost=shost1 TMCMLogDetectedHost=shost1 TMCMLogDetectedIP=10.10.10.10 ApexCentralHost=TW-CHRIS-W2019 devicePayloadId=1C00290C0360-9CDE11EB-D4B8-F51F-C697 TMCMdevicePlatform=Windows 7 6.1 (Build 7601) Service Pack 1\""
+      service: "network-content-inspection"
+      status: "info"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1719828610000
+  - sample: "\"Jul 01 2024 20:20:20 aaaaaa.manage.trendmicro.com CEF:0|Trend Micro|Apex Central|2019|VAD|VAN_RANSOMWARE.umxxhelloransom_abc|3|deviceExternalId=1 rt=Jul 01 2024 10:10:10 GMT+00:00 deviceFacility=Apex One dvchost=OSCE01 dhost=Isolate-ClientA dst=10.10.101.0 app=1 sourceServiceName=Test1@trend.com.tw destinationServiceName=Test2@tmcm.extbeta.com;Test3@tmcm.extbeta.com sproc=VA fileHash=3395856CE81F2B7382DEE72602F798B642F14140 fname=C:\\\\\\\\QA_Log.zip request=http://127.1.1.1 cs1Label=Security_Threat cs1=VAN_RANSOMWARE.umxxhelloransom_abc cn1Label=Risk_Level cn1=0 cs2Label=Threat_Categories cs2=Anti-security, self-preservation cs3Label=Cloud_Service_Vendor cs3=Google Drive reason=E deviceNtDomain=APEXTMCM dntdom=OSCEDomain1 TMCMLogDetectedHost=OSCEClient TMCMLogDetectedIP=10.10.10.10 ApexCentralHost=TW-CHRIS-W2019 devicePayloadId=1C00290C0360-9CDE11EB-D4B8-F51F-C697 TMCMdevicePlatform=Windows 7 6.1 (Build 7601) Service Pack 1\""
+    service: "virtual-analyzer-detections"
+    result:
+      custom:
+        ApexCentralHost: "TW-CHRIS-W2019"
+        TMCMdevicePlatform: "Windows 7 6.1 (Build 7601) Service Pack 1"
+        application_name: "Apex Central"
+        application_version: "2019"
+        attributeLabels:
+          cn1Label: "Risk_Level"
+          cs1Label: "Security_Threat"
+          cs2Label: "Threat_Categories"
+          cs3Label: "Cloud_Service_Vendor"
+        cloud_storage_vendor: "Google Drive"
+        cn1: 0
+        critical_threat_type: "Unknown threats"
+        destinationServiceName: "Test2@tmcm.extbeta.com;Test3@tmcm.extbeta.com"
+        deviceExternalId: 1
+        deviceFacility: "Apex One"
+        deviceNtDomain: "APEXTMCM"
+        devicePayloadId: "1C00290C0360-9CDE11EB-D4B8-F51F-C697"
+        dhost: "Isolate-ClientA"
+        domain_hierarchy: "OSCEDomain1"
+        dst: "10.10.101.0"
+        endpoint_ip: "10.10.10.10"
+        event_id: "VAD"
+        event_name: "VAN_RANSOMWARE.umxxhelloransom_abc"
+        fileHash: "3395856CE81F2B7382DEE72602F798B642F14140"
+        file_name: "C:\\\\\\\\QA_Log.zip"
+        process_name: "VA"
+        product_server: "OSCE01"
+        protocol: "SMTP"
+        reason: "E"
+        risk_level: "No Risk"
+        rt: 1719828610000
+        security_threat_name: "VAN_RANSOMWARE.umxxhelloransom_abc"
+        security_threat_type: "Anti-security, self-preservation"
+        severity: "info"
+        sourceServiceName: "Test1@trend.com.tw"
+        source_host_name: "OSCEClient"
+        syslog:
+          severity: 3
+        url: "http://127.1.1.1"
+      message: "\"Jul 01 2024 20:20:20 aaaaaa.manage.trendmicro.com CEF:0|Trend Micro|Apex Central|2019|VAD|VAN_RANSOMWARE.umxxhelloransom_abc|3|deviceExternalId=1 rt=Jul 01 2024 10:10:10 GMT+00:00 deviceFacility=Apex One dvchost=OSCE01 dhost=Isolate-ClientA dst=10.10.101.0 app=1 sourceServiceName=Test1@trend.com.tw destinationServiceName=Test2@tmcm.extbeta.com;Test3@tmcm.extbeta.com sproc=VA fileHash=3395856CE81F2B7382DEE72602F798B642F14140 fname=C:\\\\\\\\QA_Log.zip request=http://127.1.1.1 cs1Label=Security_Threat cs1=VAN_RANSOMWARE.umxxhelloransom_abc cn1Label=Risk_Level cn1=0 cs2Label=Threat_Categories cs2=Anti-security, self-preservation cs3Label=Cloud_Service_Vendor cs3=Google Drive reason=E deviceNtDomain=APEXTMCM dntdom=OSCEDomain1 TMCMLogDetectedHost=OSCEClient TMCMLogDetectedIP=10.10.10.10 ApexCentralHost=TW-CHRIS-W2019 devicePayloadId=1C00290C0360-9CDE11EB-D4B8-F51F-C697 TMCMdevicePlatform=Windows 7 6.1 (Build 7601) Service Pack 1\""
+      service: "virtual-analyzer-detections"
+      status: "info"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1719828610000
+  - sample: "\"Jul 01 2024 20:20:20 aaaaaa.manage.trendmicro.com CEF:0|Trend Micro|Apex Central|2019|Spyware Detected|Spyware Detected|3|deviceExternalId=1 rt=Jul 01 2024 10:10:10 GMT+00:00 cnt=1 dhost=ApexOneClient01 cn1Label=PatternType cn1=1073741840 cs1Label=VirusName cs1=ADW_OPENCANDY cs2Label=EngineVersion cs2=6.2.3027 cs5Label=ActionResult cs5=Reboot system successfully cs6Label=PatternVersion cs6=1297 cat=1727 dvchost=ApexOneClient01 fname=F:\\\\Malware\\\\psas\\\\rsrc2.bin filePath=F:\\\\Malware\\\\psas\\\\rsrc2.bin dst=10.10.10.10 deviceFacility=Apex One deviceNtDomain=APEXTMCM dntdom=OSCEDomain1 TMCMLogDetectedHost=ApexOneClient01 TMCMLogDetectedIP=10.10.10.10 ApexCentralHost=TW-CHRIS-W2019 devicePayloadId=1C00290C0360-9CDE11EB-D4B8-F51F-C697 TMCMdevicePlatform=Windows 7 6.1 (Build 7601) Service Pack 1\""
+    service: "spyware-grayware"
+    result:
+      custom:
+        ApexCentralHost: "TW-CHRIS-W2019"
+        TMCMdevicePlatform: "Windows 7 6.1 (Build 7601) Service Pack 1"
+        action: "Reboot system successfully"
+        application_name: "Apex Central"
+        application_version: "2019"
+        attributeLabels:
+          cn1Label: "PatternType"
+          cs1Label: "VirusName"
+          cs2Label: "EngineVersion"
+          cs5Label: "ActionResult"
+          cs6Label: "PatternVersion"
+        deviceExternalId: 1
+        deviceFacility: "Apex One"
+        deviceNtDomain: "APEXTMCM"
+        devicePayloadId: "1C00290C0360-9CDE11EB-D4B8-F51F-C697"
+        dhost: "ApexOneClient01"
+        domain_hierarchy: "OSCEDomain1"
+        dst: "10.10.10.10"
+        dvchost: "ApexOneClient01"
+        endpoint_ip: "10.10.10.10"
+        engine_version: "6.2.3027"
+        event_id: "Spyware Detected"
+        event_name: "Spyware Detected"
+        filePath: "F:\\\\Malware\\\\psas\\\\rsrc2.bin"
+        file_name: "F:\\\\Malware\\\\psas\\\\rsrc2.bin"
+        log_type: 1727
+        no_of_detection: 1
+        pattern_type: 1073741840
+        pattern_version: 1297
+        rt: 1719828610000
+        severity: "info"
+        source_host_name: "ApexOneClient01"
+        syslog:
+          severity: 3
+        virus_name: "ADW_OPENCANDY"
+      message: "\"Jul 01 2024 20:20:20 aaaaaa.manage.trendmicro.com CEF:0|Trend Micro|Apex Central|2019|Spyware Detected|Spyware Detected|3|deviceExternalId=1 rt=Jul 01 2024 10:10:10 GMT+00:00 cnt=1 dhost=ApexOneClient01 cn1Label=PatternType cn1=1073741840 cs1Label=VirusName cs1=ADW_OPENCANDY cs2Label=EngineVersion cs2=6.2.3027 cs5Label=ActionResult cs5=Reboot system successfully cs6Label=PatternVersion cs6=1297 cat=1727 dvchost=ApexOneClient01 fname=F:\\\\Malware\\\\psas\\\\rsrc2.bin filePath=F:\\\\Malware\\\\psas\\\\rsrc2.bin dst=10.10.10.10 deviceFacility=Apex One deviceNtDomain=APEXTMCM dntdom=OSCEDomain1 TMCMLogDetectedHost=ApexOneClient01 TMCMLogDetectedIP=10.10.10.10 ApexCentralHost=TW-CHRIS-W2019 devicePayloadId=1C00290C0360-9CDE11EB-D4B8-F51F-C697 TMCMdevicePlatform=Windows 7 6.1 (Build 7601) Service Pack 1\""
+      service: "spyware-grayware"
+      status: "info"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1719828610000
+  - sample: "\"Jul 01 2024 20:20:20 aaaaaa.manage.trendmicro.com CEF:0|Trend Micro|Apex Central|2019|FH:Log|Suspicious Files|3|deviceExternalId=1 rt=Jul 01 2024 10:10:10 GMT+00:00 cat=1766 deviceFacility=Apex One cn1Label=SLF_ProductVersion cn1=11 dst=10.10.10.10 dhost=APEX-ONE-CLIENT-1 cs2Label=SLF_TrueFileType cs2=SLF_TrueFileType fileHash=D6712CAE5EC821F910E14945153AE7871AA536CA cs3Label=SLF_FileSource cs3=C:\\\\Users\\\\Administrator\\\\Desktop\\\\BT-SHA1-SAMPLE\\\\ cn2Label=SLF_SourceType cn2=0 act=Log cn3Label=SLF_ScanType cn3=1 reason=E deviceNtDomain=APEXTMCM dntdom=OSCEDomain1 TMCMLogDetectedHost=APEX-ONE-CLIENT-1 TMCMLogDetectedIP=10.10.10.10 ApexCentralHost=TW-CHRIS-W2019 devicePayloadId=1C00290C0360-9CDE11EB-D4B8-F51F-C697 TMCMdevicePlatform=Windows 7 6.1 (Build 7601) Service Pack 1\""
+    service: "suspicious-file-information"
+    result:
+      custom:
+        ApexCentralHost: "TW-CHRIS-W2019"
+        TMCMdevicePlatform: "Windows 7 6.1 (Build 7601) Service Pack 1"
+        action: "Log"
+        application_name: "Apex Central"
+        application_version: "2019"
+        attributeLabels:
+          cn1Label: "SLF_ProductVersion"
+          cn2Label: "SLF_SourceType"
+          cn3Label: "SLF_ScanType"
+          cs2Label: "SLF_TrueFileType"
+          cs3Label: "SLF_FileSource"
+        cn2: 0
+        cn3: 1
+        cnc_list_source: "Sandbox"
+        critical_threat_type: "Unknown threats"
+        deviceExternalId: 1
+        deviceFacility: "Apex One"
+        deviceNtDomain: "APEXTMCM"
+        devicePayloadId: "1C00290C0360-9CDE11EB-D4B8-F51F-C697"
+        dhost: "APEX-ONE-CLIENT-1"
+        domain_hierarchy: "OSCEDomain1"
+        dst: "10.10.10.10"
+        endpoint_ip: "10.10.10.10"
+        event_id: "FH:Log"
+        event_name: "Suspicious Files"
+        fileHash: "D6712CAE5EC821F910E14945153AE7871AA536CA"
+        file_path: "C:\\\\Users\\\\Administrator\\\\Desktop\\\\BT-SHA1-SAMPLE\\\\"
+        file_type: "SLF_TrueFileType"
+        log_type: 1766
+        product_version: 11
+        reason: "E"
+        rt: 1719828610000
+        scan_type: "Scheduled scan"
+        severity: "info"
+        source_host_name: "APEX-ONE-CLIENT-1"
+        syslog:
+          severity: 3
+      message: "\"Jul 01 2024 20:20:20 aaaaaa.manage.trendmicro.com CEF:0|Trend Micro|Apex Central|2019|FH:Log|Suspicious Files|3|deviceExternalId=1 rt=Jul 01 2024 10:10:10 GMT+00:00 cat=1766 deviceFacility=Apex One cn1Label=SLF_ProductVersion cn1=11 dst=10.10.10.10 dhost=APEX-ONE-CLIENT-1 cs2Label=SLF_TrueFileType cs2=SLF_TrueFileType fileHash=D6712CAE5EC821F910E14945153AE7871AA536CA cs3Label=SLF_FileSource cs3=C:\\\\Users\\\\Administrator\\\\Desktop\\\\BT-SHA1-SAMPLE\\\\ cn2Label=SLF_SourceType cn2=0 act=Log cn3Label=SLF_ScanType cn3=1 reason=E deviceNtDomain=APEXTMCM dntdom=OSCEDomain1 TMCMLogDetectedHost=APEX-ONE-CLIENT-1 TMCMLogDetectedIP=10.10.10.10 ApexCentralHost=TW-CHRIS-W2019 devicePayloadId=1C00290C0360-9CDE11EB-D4B8-F51F-C697 TMCMdevicePlatform=Windows 7 6.1 (Build 7601) Service Pack 1\""
+      service: "suspicious-file-information"
+      status: "info"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1719828610000
+  - sample: "\"Jul 01 2024 20:20:20 aaaaaa.manage.trendmicro.com CEF:0|Trend Micro|Apex Central|2019|AV:File quarantined|Eicar_test_file|3|deviceExternalId=1 rt=Jul 01 2024 10:10:10 GMT+00:00 cnt=1 dhost=ASSETTAG-EID TMCMLogDetectedHost=ASSETTAG-EID duser=ASSETTAG-EID\\\\\\\\TEST act=File quarantined cn1Label=Pattern cn1=1947100 cn2Label=Second_Action cn2=4 cs1Label=VLF_FunctionCode cs1=Real-time Scan cs2Label=Engine cs2=23.620.1013 cs3Label=Product_Version cs3=14.0 cs4Label=CLF_ReasonCode cs4=virus log cs5Label=First_Action_Result cs5=Unable to clean file cs6Label=Second_Action_Result cs6=File quarantined cat=1703 dvchost=bbbbbb.manage.trendmicro.com cn3Label=Overall_Risk_Rating cn3=1 fname=eicar_com (88).zip filePath=C:\\\\\\\\Users\\\\\\\\Test\\\\\\\\Downloads\\\\\\\\ msg=eicar.com dst=20.20.20.20 TMCMLogDetectedIP=10.10.10.10 fileHash=D27265074C9EAC2E2122ED69294DBC4D7CCE9141 deviceFacility=Apex One ApexCentralHost=Standard Endpoint Protection Manager devicePayloadId=101A111A0A0A-AA1A11AA-11A1-AAA1-1A11 TMCMdevicePlatform=Windows 11 10.0 (Build 22631) deviceNtDomain=N/A dntdom=Workgroup\\\\\\\\ \""
+    service: "virus-malware"
+    result:
+      custom:
+        ApexCentralHost: "Standard Endpoint Protection Manager"
+        TMCMdevicePlatform: "Windows 11 10.0 (Build 22631)"
+        action: "File quarantined"
+        application_name: "Apex Central"
+        application_version: "2019"
+        attributeLabels:
+          cn1Label: "Pattern"
+          cn2Label: "Second_Action"
+          cn3Label: "Overall_Risk_Rating"
+          cs1Label: "VLF_FunctionCode"
+          cs2Label: "Engine"
+          cs3Label: "Product_Version"
+          cs4Label: "CLF_ReasonCode"
+          cs5Label: "First_Action_Result"
+          cs6Label: "Second_Action_Result"
+        cn2: 4
+        cn3: 1
+        deviceExternalId: 1
+        deviceFacility: "Apex One"
+        deviceNtDomain: "N/A"
+        devicePayloadId: "101A111A0A0A-AA1A11AA-11A1-AAA1-1A11"
+        dhost: "ASSETTAG-EID"
+        domain_hierarchy: "Workgroup\\\\\\\\"
+        dst: "20.20.20.20"
+        endpoint_ip: "10.10.10.10"
+        engine_version: "23.620.1013"
+        event_id: "AV:File quarantined"
+        fileHash: "D27265074C9EAC2E2122ED69294DBC4D7CCE9141"
+        filePath: "C:\\\\\\\\Users\\\\\\\\Test\\\\\\\\Downloads\\\\\\\\"
+        file_name: "eicar_com (88).zip"
+        first_action_result: "Unable to clean file"
+        log_type: 1703
+        malware_name: "Eicar_test_file"
+        no_of_detection: 1
+        pattern_version: 1947100
+        product_server: "bbbbbb.manage.trendmicro.com"
+        product_version: 14.0
+        reason_code: "virus log"
+        risk_level: "Low"
+        rt: 1719828610000
+        scan_type: "Real-time Scan"
+        second_action: "Move"
+        second_action_result: "File quarantined"
+        severity: "info"
+        source_host_name: "ASSETTAG-EID"
+        subject: "eicar.com"
+        syslog:
+          severity: 3
+        usr:
+          name: "ASSETTAG-EID\\\\\\\\TEST"
+      message: "\"Jul 01 2024 20:20:20 aaaaaa.manage.trendmicro.com CEF:0|Trend Micro|Apex Central|2019|AV:File quarantined|Eicar_test_file|3|deviceExternalId=1 rt=Jul 01 2024 10:10:10 GMT+00:00 cnt=1 dhost=ASSETTAG-EID TMCMLogDetectedHost=ASSETTAG-EID duser=ASSETTAG-EID\\\\\\\\TEST act=File quarantined cn1Label=Pattern cn1=1947100 cn2Label=Second_Action cn2=4 cs1Label=VLF_FunctionCode cs1=Real-time Scan cs2Label=Engine cs2=23.620.1013 cs3Label=Product_Version cs3=14.0 cs4Label=CLF_ReasonCode cs4=virus log cs5Label=First_Action_Result cs5=Unable to clean file cs6Label=Second_Action_Result cs6=File quarantined cat=1703 dvchost=bbbbbb.manage.trendmicro.com cn3Label=Overall_Risk_Rating cn3=1 fname=eicar_com (88).zip filePath=C:\\\\\\\\Users\\\\\\\\Test\\\\\\\\Downloads\\\\\\\\ msg=eicar.com dst=20.20.20.20 TMCMLogDetectedIP=10.10.10.10 fileHash=D27265074C9EAC2E2122ED69294DBC4D7CCE9141 deviceFacility=Apex One ApexCentralHost=Standard Endpoint Protection Manager devicePayloadId=101A111A0A0A-AA1A11AA-11A1-AAA1-1A11 TMCMdevicePlatform=Windows 11 10.0 (Build 22631) deviceNtDomain=N/A dntdom=Workgroup\\\\\\\\ \""
+      service: "virus-malware"
+      status: "info"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1719828610000
+  - sample: '"Jul 01 2024 20:20:20 aaaaaa.manage.trendmicro.com CEF:0|Trend Micro|Apex Central|2019|WB:7|7|3|deviceExternalId=1 rt=Jul 01 2024 10:10:10 GMT+00:00 app=17 cntLabel=AggregatedCount cnt=1 dpt=80 act=1 src=10.10.10.10 cs1Label=SLF_PolicyName cs1=External User Policy deviceDirection=2 cat=7 dvchost=ApexOneClient08 fname=test.txt request=http://example.com deviceFacility=Apex One shost=ABC-HOST-WKS12 reason=G deviceNtDomain=APEXTMCM dntdom=OSCEDomain1 TMCMLogDetectedHost=ABC-HOST-WKS12 TMCMLogDetectedIP=10.10.10.10 ApexCentralHost=TW-CHRIS-W2019 devicePayloadId=1C00290C0360-9CDE11EB-D4B8-F51F-C697 TMCMdevicePlatform=Windows 7 6.1 (Build 7601) Service Pack 1"'
+    service: "web-violation"
+    result:
+      custom:
+        ApexCentralHost: "TW-CHRIS-W2019"
+        TMCMdevicePlatform: "Windows 7 6.1 (Build 7601) Service Pack 1"
+        action: "Pass"
+        application_name: "Apex Central"
+        application_version: "2019"
+        attributeLabels:
+          cs1Label: "SLF_PolicyName"
+        cntLabel: "AggregatedCount"
+        critical_threat_type: "Ransomware"
+        deviceDirection: "Outbound"
+        deviceExternalId: 1
+        deviceFacility: "Apex One"
+        deviceNtDomain: "APEXTMCM"
+        devicePayloadId: "1C00290C0360-9CDE11EB-D4B8-F51F-C697"
+        domain_hierarchy: "OSCEDomain1"
+        dvchost: "ApexOneClient08"
+        endpoint_ip: "10.10.10.10"
+        event_id: "WB:7"
+        event_name: "7"
+        file_name: "test.txt"
+        filter_blocking_type: "User-defined"
+        network:
+          destination:
+            port: 80
+        no_of_detection: 1
+        policy_name: "External User Policy"
+        protocol: "Telnet"
+        reason: "G"
+        rt: 1719828610000
+        severity: "info"
+        shost: "ABC-HOST-WKS12"
+        source_host_name: "ABC-HOST-WKS12"
+        src: "10.10.10.10"
+        syslog:
+          severity: 3
+        url: "http://example.com"
+      message: "\"Jul 01 2024 20:20:20 aaaaaa.manage.trendmicro.com CEF:0|Trend Micro|Apex Central|2019|WB:7|7|3|deviceExternalId=1 rt=Jul 01 2024 10:10:10 GMT+00:00 app=17 cntLabel=AggregatedCount cnt=1 dpt=80 act=1 src=10.10.10.10 cs1Label=SLF_PolicyName cs1=External User Policy deviceDirection=2 cat=7 dvchost=ApexOneClient08 fname=test.txt request=http://example.com deviceFacility=Apex One shost=ABC-HOST-WKS12 reason=G deviceNtDomain=APEXTMCM dntdom=OSCEDomain1 TMCMLogDetectedHost=ABC-HOST-WKS12 TMCMLogDetectedIP=10.10.10.10 ApexCentralHost=TW-CHRIS-W2019 devicePayloadId=1C00290C0360-9CDE11EB-D4B8-F51F-C697 TMCMdevicePlatform=Windows 7 6.1 (Build 7601) Service Pack 1\""
+      service: "web-violation"
+      status: "info"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1719828610000

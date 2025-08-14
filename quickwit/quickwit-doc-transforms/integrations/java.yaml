@@ -1,0 +1,271 @@
+id: java
+metric_id: java
+backend_only: false
+facets:
+  - facetType: range
+    groups:
+      - Measure
+    name: Duration
+    path: duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: nanosecond
+  - groups:
+      - Source Code
+    name: Error Type
+    path: error.kind
+    source: log
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+  - groups:
+      - Source Code
+    name: Thread Name
+    path: logger.thread_name
+    source: log
+  - groups:
+      - Garbage Collector
+    name: GC iteration
+    path: gc.iteration
+    source: log
+  - groups:
+      - Garbage Collector
+    name: GC Action
+    path: gc.action
+    source: log
+  - groups:
+      - Garbage Collector
+    name: GC Phase
+    path: gc.phase
+    source: log
+  - facetType: range
+    groups:
+      - Garbage Collector
+    name: Memory Freed
+    path: gc.memory_freed
+    source: log
+    type: double
+    unit:
+      family: bytes
+      name: mebibyte
+pipeline:
+  type: pipeline
+  name: Java
+  enabled: true
+  filter:
+    query: source:java
+  processors:
+    - type: grok-parser
+      name: Parsing Java Default formats
+      enabled: true
+      source: message
+      samples:
+        - 2000-09-07 14:07:41,508 [main] INFO  MyApp - Entering application.
+        - 54 [main] INFO MyApp.foo.bar - Entering application.
+        - 2000-09-07 14:07:44 INFO org.foo.bar:32 - Entering application.
+        - 2000-09-07 14:07:44.452 [main] INFO org.foo.bar - Entering application.
+        - '2022-10-31 17:22:39.331  INFO 82578 --- [  restartedMain] a.s.o.SpringBootElasticSearchApplication : Starting SpringBootElasticSearchApplication using Java 17.0.4.1 on xxx'
+      grok:
+        supportRules: |
+          _date %{date("yyyy-MM-dd HH:mm:ss"):timestamp}
+          _date_ms %{date("yyyy-MM-dd HH:mm:ss,SSS"):timestamp}
+          _date_slf4j %{date("yyyy-MM-dd HH:mm:ss.SSS"):timestamp}
+          _duration %{integer:duration}
+          _thread_name %{notSpace:logger.thread_name}
+          _status %{word:level}
+          _logger_name %{notSpace:logger.name}
+          _context %{notSpace:logger.context}
+          _line %{integer:line}
+
+        matchRules: |
+          java_default (%{_date_ms}|%{_duration})\s+\[%{_thread_name}\]\s+%{_status}\s+%{_logger_name}\s*(%{_context}\s*)?- (?>%{word:dd.trace_id} %{word:dd.span_id} - )?%{data:message}((\n|\t)%{data:error.stack})?
+
+          java_slf4j %{_date_slf4j}\s+\[%{_thread_name}\]\s+%{_status}\s+%{_logger_name}\s*(%{_context}\s*)?- (?>%{word:dd.trace_id} %{word:dd.span_id} - )?%{data:message}((\n|\t)%{data:error.stack})?
+
+          java_log4j %{_date} %{_status}\s+%{_logger_name}:%{_line}\s+- (?>%{word:dd.trace_id} %{word:dd.span_id} - )?%{data:message}((\n|\t)%{data:error.stack})?
+
+          java_fallback (%{_date}|%{_date_ms}) %{_status}\s+(?>%{word:dd.trace_id} %{word:dd.span_id} )?%{data:message}((\n|\t)%{data:error.stack})?
+
+          java_spring_boot %{_date_slf4j}\s+%{_status} %{integer:pid} --- \[\s*%{_thread_name}\] %{_logger_name}\s+: %{data:message}((\n|\t)+%{data:error.stack})?
+
+    - type: grok-parser
+      name: Parsing GC logs
+      enabled: true
+      source: message
+      samples:
+        - '[9237.485s][info   ][gc] GC(835) Pause Young (G1 Evacuation Pause) 4937M->645M(7168M) 17.476ms'
+        - '2019-03-20T14:36:30.111+0000: 41.098: [GC concurrent-mark-end, 0.0272767 secs]'
+        - '2019-03-20T14:36:30.111+0000: 41.071: [GC concurrent-mark-start]'
+        - '2019-03-20T14:36:30.111+0000: 41.099: [Finalize Marking, 0.0011661 secs]'
+        - '[2022-11-18T16:01:51.599+0000][4267.762s][info][gc] GC(2917) Concurrent Mark Cycle'
+      grok:
+        supportRules: |
+          _gc_event_phase_duration %{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):timestamp}: %{notSpace}\s\[GC\s%{notSpace:gc.action}(\s%{regex("([^,]*)"):gc.phase},)?(\s%{number:duration:scale(1000000000)}\ssecs)?]
+
+          _parallel \[Parallel\sTime:\s%{number:parallel_time}\sms,\sGC\sWorkers:\s%{number:gc_worker.count}]
+
+          _gc_worker_start \[GC\sWorker\sStart\s\(ms\):\sMin:\s%{number:gc_worker.start.min},\sAvg:\s%{number:gc_worker.start.avg},\sMax:\s%{number:gc_worker.start.max},\sDiff:\s%{number:gc_worker.start.diff}]
+
+          _ext_root_scanning \[Ext\sRoot\sScanning\s\(ms\):\sMin:\s%{number:exit_root_scanning.min},\sAvg:\s%{number:exit_root_scanning.avg},\sMax:\s%{number:exit_root_scanning.max},\sDiff:\s%{number:exit_root_scanning.diff},\sSum:\s%{number:exit_root_scanning.sum}]
+
+          _update_rs \[Update\sRS\s\(ms\):\sMin:\s%{number:update_rs.min},\sAvg:\s%{number:update_rs.avg},\sMax:\s%{number:update_rs.max},\sDiff:\s%{number:update_rs.diff},\sSum:\s%{number:update_rs.sum}]
+
+          _gcc_event %{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):timestamp}:%{notSpace}\s\[%{regex("([^\\]]*)"):event.type}]
+
+          _processed_buffer \[Processed\sBuffers:\sMin:\s%{number:processed_buffer.min},\sAvg:\s%{number:processed_buffer.avg},\sMax:\s%{number:processed_buffer.max},\sDiff:\s%{number:processed_buffer.diff},\sSum:\s%{number:processed_buffer.sum}]
+
+          _scan_rs \[Scan\sRS\s\(ms\):\sMin:\s%{number:scan_rs.min},\sAvg:\s%{number:scan_rs.avg},\sMax:\s%{number:scan_rs.max},\sDiff:\s%{number:scan_rs.diff},\sSum:\s%{number:scan_rs.sum}]
+
+          _code_root_scan \[Code\sRoot\sScanning\s\(ms\):\sMin:\s%{number:code_root.scan.min},\sAvg:\s%{number:code_root.scan.avg},\sMax:\s%{number:code_root.scan.max},\sDiff:\s%{number:code_root.scan.diff},\sSum:\s%{number:code_root.scan.sum}]
+
+          _object_copy \[Object\sCopy\s\(ms\):\sMin:\s%{number:object_copy.min},\sAvg:\s%{number:object_copy.avg},\sMax:\s%{number:object_copy.max},\sDiff:\s%{number:object_copy.diff},\sSum:\s%{number:object_copy.sum}]
+
+          _termination \[Termination\s\(ms\):\sMin:\s%{number:termination.min},\sAvg:\s%{number:termination.avg},\sMax:\s%{number:termination.max},\sDiff:\s%{number:termination.diff},\sSum:\s%{number:termination.sum}]
+
+          _termination_attempts \[Termination\sAttempts:\sMin:\s%{number:termination.attempts.min},\sAvg:\s%{number:termination.attempts.avg},\sMax:\s%{number:termination.attempts.max},\sDiff:\s%{number:termination.attempts.diff},\sSum:\s%{number:termination.attempts.sum}]
+
+          _gc_worker_other \[GC\sWorker\sOther\s\(ms\):\sMin:\s%{number:gc_worker.other.min},\sAvg:\s%{number:gc_worker.other.avg},\sMax:\s%{number:gc_worker.other.max},\sDiff:\s%{number:gc_worker.other.diff},\sSum:\s%{number:gc_worker.other.sum}]
+
+          _gc_worker_total \[GC\sWorker\sTotal\s\(ms\):\sMin:\s%{number:gc_worker.total.min},\sAvg:\s%{number:gc_worker.total.avg},\sMax:\s%{number:gc_worker.total.max},\sDiff:\s%{number:gc_worker.total.diff},\sSum:\s%{number:gc_worker.total.sum}]
+
+          _gc_worker_end \[GC\sWorker\sEnd\s\(ms\):\sMin:\s%{number:gc_worker.end.min},\sAvg:\s%{number:gc_worker.end.avg},\sMax:\s%{number:gc_worker.end.max},\sDiff:\s%{number:gc_worker.end.diff}]
+
+          _code_root_fixup \[Code\sRoot\sFixup:\s%{number:code_root.fixup}\sms]
+
+          _code_root_purge \[Code\sRoot\sPurge:\s%{number:code_root.purge}\sms]
+
+          _clear_ct \[Clear\sCT:\s%{number:clear_ct}\sms]
+
+          _other \[Other:\s%{number:other}\sms]
+
+          _choose_cset \[Choose\sCSet:\s%{number:choose_cset}\sms]
+
+          _ref_proc \[Ref\sProc:\s%{number:ref.proc}\sms]
+
+          _ref_enq \[Ref\sEnq:\s%{number:ref.enq}\sms]
+
+          _redirty_cards \[Redirty\sCards:\s%{number:redirty_cards}\sms]
+
+          _humongous_register \[Humongous\sRegister:\s%{number:humongous_register}\sms]
+
+          _humongous_reclaim \[Humongous\sReclaim:\s%{number:humongous_reclaim}\sms]
+
+          _free \[Free\sCSet:\s%{number:free}\sms]
+
+          _memory_usage \[Eden: (%{number:eden.memory_before}M|%{number:eden.memory_before:scale(1000)}G)\((%{number:eden.memory_allocated_before}M|%{number:eden.memory_allocated_before:scale(1000)}G)\)->%{number:eden.memory_after}B\((%{number:eden.memory_allocated_after}M|%{number:eden.memory_allocated_after:scale(1000)}G)\)\sSurvivors:\s%{number:survivor.memory_before}M->%{number:survivor.memory_after}M\sHeap:\s(%{number:heap.memory_before}M|%{number:heap.memory_before:scale(1000)}G)\((%{number:heap.memory_allocated_before}M|%{number:heap.memory_allocated_before:scale(1000)}G)\)->%{number:heap.memory_after}M\((%{number:heap.memory_allocated_after}M|%{number:heap.memory_allocated_after:scale(1000)}G)\)]
+
+          _times \[Times:\suser=%{number:times.user}\ssys=%{number:times.system},\sreal=%{number:times.real}\ssecs]
+
+        matchRules: |
+          gc_nonverbose_basic \[%{notSpace}\]\[%{word:level}\s*\]\[%{word:gc.type}\] GC\(%{number:gc.iteration}\) %{data:gc.action} \(%{data:gc.phase}\) %{number:heap.memory_before}M\-\>%{number:heap.memory_after}M\(%{number:heap.memory_total}M\) %{number:duration:scale(1000000)}ms
+
+          gc_action_phase_duration %{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):timestamp}: %{notSpace}\s\[GC\s%{notSpace:gc.action}(\s%{regex("([^,]*)"):gc.phase},)?(\s%{number:duration:scale(1000000000)}\ssecs)?]
+
+          non_gc_action_duration %{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):timestamp}: %{notSpace}\s\[%{regex("([^,]*)"):gc.action}(,\s%{number:duration:scale(1000000000)}\ssecs)?]
+
+          gc_verbose %{_gc_event_phase_duration}(\r|\n|\s)*%{_parallel}(\r|\n|\s)*%{_gc_worker_start}(\r|\n|\s)*%{_ext_root_scanning}(\r|\n|\s)*%{_update_rs}(\r|\n|\s)*%{_processed_buffer}(\r|\n|\s)*%{_scan_rs}(\r|\n|\s)*%{_code_root_scan}(\r|\n|\s)*%{_object_copy}(\r|\n|\s)*%{_termination}(\r|\n|\s)*%{_termination_attempts}(\r|\n|\s)*%{_gc_worker_other}(\r|\n|\s)*%{_gc_worker_total}(\r|\n|\s)*%{_gc_worker_end}(\r|\n|\s)*%{_code_root_fixup}(\r|\n|\s)*%{_code_root_purge}(\r|\n|\s)*%{_clear_ct}(\r|\n|\s)*%{_other}(\r|\n|\s)*%{_choose_cset}(\r|\n|\s)*%{_ref_proc}(\r|\n|\s)*%{_ref_enq}(\r|\n|\s)*%{_redirty_cards}(\r|\n|\s)*%{_humongous_register}(\r|\n|\s)*%{_humongous_reclaim}(\r|\n|\s)*%{_free}(\r|\n|\s)*%{_memory_usage}(\r|\n|\s)*%{_times}
+
+          gc_new_format \[%{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):timestamp}\](\[%{number:duration:scale(1000000000)}s\])?\[%{notSpace:status}\]\[%{notSpace:gc.type}(\s)?\]\sGC\(%{number:gc.iteration}\)\s%{data:gc.action}(\s%{number:duration:scale(1000000)}ms)?
+
+
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: trace-id-remapper
+      name: Define `dd.trace_id` as the official trace ID of the log
+      enabled: true
+      sources:
+        - dd.trace_id
+    - type: attribute-remapper
+      name: Map `stack_trace` to `error.stack`
+      enabled: true
+      sources:
+        - stack_trace
+      target: error.stack
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `logger_name`, `loggerName` to `logger.name`
+      enabled: true
+      sources:
+        - logger_name
+        - loggerName
+      target: logger.name
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `thread_name` to `logger.thread_name`
+      enabled: true
+      sources:
+        - thread_name
+      target: logger.thread_name
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: grok-parser
+      name: Parsing Java Stack traces
+      enabled: true
+      source: error.stack
+      grok:
+        supportRules: |
+        matchRules: |
+          error_rule %{notSpace:error.kind}: %{data:error.message}(\n|\t).*
+      samples:
+        - |
+          java.lang.NullPointerException: this is my error message
+           at com.hello.world.flow.Checker.checkCacheEntryyy(Checker.java: 154)
+    - type: arithmetic-processor
+      name: Calculate GC memory freed
+      enabled: true
+      expression: (heap.memory_before - heap.memory_after)
+      target: gc.memory_freed
+      replaceMissing: false
+    - type: attribute-remapper
+      name: Map attribute `dd.env`, `contextMap.dd.env` to tag `env`
+      enabled: true
+      sources:
+        - dd.env
+        - contextMap.dd.env
+      target: env
+      targetType: tag
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+    - type: attribute-remapper
+      name: Map attribute `dd.version`, `contextMap.dd.version` to tag `version`
+      enabled: true
+      sources:
+        - dd.version
+        - contextMap.dd.version
+      target: version
+      targetType: tag
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+    - type: service-remapper
+      name: Define `dd.service`, `contextMap.dd.service` as the official service of the log
+      enabled: true
+      sources:
+        - dd.service
+        - contextMap.dd.service
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message

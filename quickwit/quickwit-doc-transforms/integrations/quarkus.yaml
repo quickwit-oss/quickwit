@@ -1,0 +1,39 @@
+id: quarkus
+metric_id: quarkus
+backend_only: false
+facets:
+pipeline:
+  type: pipeline
+  name: 'Quarkus'
+  enabled: true
+  filter:
+    query: source:quarkus
+  processors:
+    - type: grok-parser
+      name: Parse fields such as timestamp and level
+      enabled: true
+      source: message
+      samples:
+        - "2024-12-12 12:57:36,184 INFO  [io.quarkus] (Quarkus Main Thread) code-with-quarkus 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.17.4) started in 0.378s. Listening on: http://localhost:8080"
+        - "2024-12-12 12:57:36,186 INFO  [io.quarkus] (Quarkus Main Thread) Installed features: [cdi, rest, smallrye-context-propagation, vertx]"
+        - "2024-12-12 12:57:36,186 INFO  [io.qua.dep.dev.RuntimeUpdatesProcessor] (vert.x-worker-thread-1) Live reload total time: 0.397s"
+        - "2024-12-13 11:05:38,618 INFO  [org.acm.GreetingResource] (executor-thread-1) Custom log message"
+      grok:
+        matchRules: |
+          quarkus %{date("yyyy-MM-dd HH:mm:ss,SSS"):timestamp}\s+%{word:level}\s+\[%{notSpace:logger}\]\s+\(%{regex("[^)]*"):thread}\)\s+%{data:message}
+        supportRules: ''
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level

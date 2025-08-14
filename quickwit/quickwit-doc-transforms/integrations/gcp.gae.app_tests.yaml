@@ -1,0 +1,206 @@
+id: "gcp.gae.app"
+tests:
+ -
+  sample: |-
+    {
+      "data" : {
+        "severity" : "INFO",
+        "protoPayload" : {
+          "traceId" : "ccf884a4cace61494f33e59333d19b55",
+          "cost" : 5.1297E-8,
+          "method" : "GET",
+          "resource" : "/app/api/reviewable-products",
+          "@type" : "type.googleapis.com/google.appengine.logging.v1.RequestLog",
+          "ip" : "162.158.63.64",
+          "userAgent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/84.0.4147.89 Safari/537.36",
+          "referrer" : "https://www.daily-harvest.com/app/home",
+          "httpVersion" : "HTTP/1.1",
+          "instanceId" : "00c61b117c046c8dc2f597395fc296a86d1f0f50ae75162247065f40ef0ec6c664a9c95330",
+          "host" : "www.daily-harvest.com",
+          "startTime" : "2020-07-27T15:15:52.700099Z",
+          "endTime" : "2020-07-27T15:15:52.744213Z",
+          "instanceIndex" : -1,
+          "first" : true,
+          "status" : 200
+        },
+        "httpRequest" : {
+          "status" : 200
+        },
+        "timestamp" : "2020-07-27T15:15:52.700099Z"
+      }
+    }
+  result:
+    custom:
+      data:
+        protoPayload:
+          '@type': "type.googleapis.com/google.appengine.logging.v1.RequestLog"
+          cost: 5.1297E-8
+          endTime: "2020-07-27T15:15:52.744213Z"
+          first: true
+          host: "www.daily-harvest.com"
+          httpVersion: "HTTP/1.1"
+          instanceId: "00c61b117c046c8dc2f597395fc296a86d1f0f50ae75162247065f40ef0ec6c664a9c95330"
+          instanceIndex: -1
+          referrer: "https://www.daily-harvest.com/app/home"
+          resource: "/app/api/reviewable-products"
+          startTime: "2020-07-27T15:15:52.700099Z"
+          status: 200
+          traceId: "ccf884a4cace61494f33e59333d19b55"
+          userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/84.0.4147.89 Safari/537.36"
+        severity: "INFO"
+        timestamp: "2020-07-27T15:15:52.700099Z"
+      http:
+        method: "GET"
+        status_code: 200
+        url_details:
+          host: "www.daily-harvest.com"
+          path: "/app/home"
+          scheme: "https"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "84"
+            minor: "0"
+            patch: "4147"
+            patch_minor: "89"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Windows"
+            major: "10"
+      network:
+        client:
+          ip: "162.158.63.64"
+    message: |-
+      {
+        "data" : {
+          "severity" : "INFO",
+          "protoPayload" : {
+            "traceId" : "ccf884a4cace61494f33e59333d19b55",
+            "cost" : 5.1297E-8,
+            "method" : "GET",
+            "resource" : "/app/api/reviewable-products",
+            "@type" : "type.googleapis.com/google.appengine.logging.v1.RequestLog",
+            "ip" : "162.158.63.64",
+            "userAgent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/84.0.4147.89 Safari/537.36",
+            "referrer" : "https://www.daily-harvest.com/app/home",
+            "httpVersion" : "HTTP/1.1",
+            "instanceId" : "00c61b117c046c8dc2f597395fc296a86d1f0f50ae75162247065f40ef0ec6c664a9c95330",
+            "host" : "www.daily-harvest.com",
+            "startTime" : "2020-07-27T15:15:52.700099Z",
+            "endTime" : "2020-07-27T15:15:52.744213Z",
+            "instanceIndex" : -1,
+            "first" : true,
+            "status" : 200
+          },
+          "httpRequest" : {
+            "status" : 200
+          },
+          "timestamp" : "2020-07-27T15:15:52.700099Z"
+        }
+      }
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1595862952700
+ -
+  sample: |-
+    {
+      "severity" : "INFO",
+      "protoPayload" : {
+        "traceId" : "ccf884a4cace61494f33e59333d19b55",
+        "cost" : 5.1297E-8,
+        "method" : "GET",
+        "resource" : "/app/api/reviewable-products",
+        "@type" : "type.googleapis.com/google.appengine.logging.v1.RequestLog",
+        "ip" : "162.158.63.64",
+        "userAgent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/84.0.4147.89 Safari/537.36",
+        "referrer" : "https://www.daily-harvest.com/app/home",
+        "httpVersion" : "HTTP/1.1",
+        "instanceId" : "00c61b117c046c8dc2f597395fc296a86d1f0f50ae75162247065f40ef0ec6c664a9c95330",
+        "host" : "www.daily-harvest.com",
+        "startTime" : "2020-07-27T15:15:52.700099Z",
+        "endTime" : "2020-07-27T15:15:52.744213Z",
+        "instanceIndex" : -1,
+        "first" : true,
+        "status" : 200
+      },
+      "httpRequest" : {
+        "status" : 200
+      },
+      "timestamp" : "2020-07-27T15:15:52.700099Z"
+    }
+  result:
+    custom:
+      http:
+        method: "GET"
+        status_code: 200
+        url_details:
+          host: "www.daily-harvest.com"
+          path: "/app/home"
+          scheme: "https"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "84"
+            minor: "0"
+            patch: "4147"
+            patch_minor: "89"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Windows"
+            major: "10"
+      network:
+        client:
+          ip: "162.158.63.64"
+      protoPayload:
+        '@type': "type.googleapis.com/google.appengine.logging.v1.RequestLog"
+        cost: 5.1297E-8
+        endTime: "2020-07-27T15:15:52.744213Z"
+        first: true
+        host: "www.daily-harvest.com"
+        httpVersion: "HTTP/1.1"
+        instanceId: "00c61b117c046c8dc2f597395fc296a86d1f0f50ae75162247065f40ef0ec6c664a9c95330"
+        instanceIndex: -1
+        referrer: "https://www.daily-harvest.com/app/home"
+        resource: "/app/api/reviewable-products"
+        startTime: "2020-07-27T15:15:52.700099Z"
+        status: 200
+        traceId: "ccf884a4cace61494f33e59333d19b55"
+        userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/84.0.4147.89 Safari/537.36"
+      severity: "INFO"
+      timestamp: "2020-07-27T15:15:52.700099Z"
+    message: |-
+      {
+        "severity" : "INFO",
+        "protoPayload" : {
+          "traceId" : "ccf884a4cace61494f33e59333d19b55",
+          "cost" : 5.1297E-8,
+          "method" : "GET",
+          "resource" : "/app/api/reviewable-products",
+          "@type" : "type.googleapis.com/google.appengine.logging.v1.RequestLog",
+          "ip" : "162.158.63.64",
+          "userAgent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/84.0.4147.89 Safari/537.36",
+          "referrer" : "https://www.daily-harvest.com/app/home",
+          "httpVersion" : "HTTP/1.1",
+          "instanceId" : "00c61b117c046c8dc2f597395fc296a86d1f0f50ae75162247065f40ef0ec6c664a9c95330",
+          "host" : "www.daily-harvest.com",
+          "startTime" : "2020-07-27T15:15:52.700099Z",
+          "endTime" : "2020-07-27T15:15:52.744213Z",
+          "instanceIndex" : -1,
+          "first" : true,
+          "status" : 200
+        },
+        "httpRequest" : {
+          "status" : 200
+        },
+        "timestamp" : "2020-07-27T15:15:52.700099Z"
+      }
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1595862952700
+

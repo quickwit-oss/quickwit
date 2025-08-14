@@ -1,0 +1,62 @@
+id: sshd
+metric_id: ssh
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - System
+    name: User
+    path: system.user
+    source: log
+  - groups:
+      - System
+    name: Action
+    path: system.action
+    source: log
+pipeline:
+  type: pipeline
+  name: Sshd
+  enabled: true
+  filter:
+    query: source:sshd
+  processors:
+    - type: grok-parser
+      name: Parsing sshd logs
+      enabled: true
+      source: message
+      grok:
+        supportRules: |
+          _client_ip %{ipOrHost:network.client.ip}
+          _client_port %{port:network.client.port}
+          _auth %{notSpace:system.user:nullIf("-")}
+          _sshd_details logname=(?>%{notSpace:system.logname}|) uid=%{integer:system.uid} euid=%{integer:system.euid} tty=%{notSpace:system.tty} ruser=(?>%{notSpace:system.ruser}|) rhost=%{_client_ip}  user=%{_auth}
+        matchRules: |
+          sshd.logins.pwd %{regex("Accepted|Failed"):system.action} %{regex("password"):system.type} for %{_auth} from %{_client_ip} port %{_client_port} ssh2
+
+          sshd.logins.key.success %{regex("Accepted"):system.action} %{regex("publickey"):system.type} for %{_auth} from %{_client_ip} port %{_client_port} ssh2(: %{notSpace:system.algorithm} %{notSpace:system.key})?
+
+          sshd.disconnect (error: )?Received %{regex("disconnect"):system.action} from %{_client_ip}: %{greedyData:system.type}
+
+          sshd.hostkey (error: )?%{regex("Could not load host key"):system.action}: %{notSpace:system.key}
+
+          sshd.cnx.closed.preauth %{regex("Connection closed"):system.action} by %{_client_ip}%{greedyData}
+
+          sshd.session pam_unix\(sshd\:session\)\: %{regex("(session opened)|(session closed)"):system.action} for user %{_auth}.*
+
+          sshd.auth pam_unix\(sshd\:auth\)\: %{regex("authentication failure"):system.action}; %{_sshd_details}
+
+          sshd.auth_2 PAM %{integer} more %{regex("(authentication failure|authentication failures)"):system.action}; %{_sshd_details}
+
+          sshd.invalid.user %{regex("Invalid user"):system.action} %{_auth}%{greedyData} from %{_client_ip}
+
+          sshd.identification %{regex("Did not receive identification string"):system.action} from %{_client_ip}
+
+          sshd.reversemappingchecking.failed %{regex("reverse mapping checking"):system.action} getaddrinfo for %{notSpace} \[%{_client_ip}\] failed%{greedyData}
+      samples:
+        - 'pam_unix(sshd:session): session closed for user marc.szalkiewicz'
+        - 'Accepted publickey for toptop from 172.22.179.72 port 58599 ssh2: RSA 01:fa:c1:75:ee:fbxxxx:xxxxx'
+        - 'Received disconnect from 172.22.179.72: 11: disconnected by user'

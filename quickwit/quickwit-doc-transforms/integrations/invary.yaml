@@ -1,0 +1,99 @@
+id: invary
+backend_only: false
+facets:
+  - groups:
+      - Invary
+    name: distribution codename
+    path: distribution.codename
+    source: log
+  - groups:
+      - Invary
+    name: kernel
+    path: kernel.name
+    source: log
+  - groups:
+      - Invary
+    name: measurement modules
+    path: measurement.modules
+    source: log
+  - groups:
+      - Invary
+    name: uptime
+    path: node.uptime
+    source: log
+  - groups:
+      - Invary
+    name: distribution release
+    path: distribution.release
+    source: log
+  - groups:
+      - Invary
+    name: measurement nodes
+    path: measurement.nodes
+    source: log
+  - groups:
+      - Invary
+    name: processor
+    path: node.processor
+    source: log
+  - groups:
+      - Invary
+    name: measurement edges
+    path: measurement.edges
+    source: log
+  - groups:
+      - Invary
+    name: kernel release
+    path: kernel.release
+    source: log
+pipeline:
+  type: pipeline
+  name: Invary
+  enabled: true
+  filter:
+    query: source:invary
+  processors:
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message
+    - type: date-remapper
+      name: Define `created` as the official date of the log
+      enabled: true
+      sources:
+        - created
+    - type: attribute-remapper
+      name: Map `@node.name` to `hostname`
+      enabled: true
+      sources:
+        - '@node.name'
+      sourceType: attribute
+      target: hostname
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: true
+    - type: category-processor
+      name: status_category
+      enabled: true
+      categories:
+        - filter:
+            query: '@status:SUCCESSFUL'
+          name: OK
+        - filter:
+            query: '@status:ERRORED'
+          name: Error
+        - filter:
+            query: '@status:FAILED'
+          name: Emergency
+      target: status_category
+    - type: status-remapper
+      name: Define `status_category` as the official status of the log
+      enabled: true
+      sources:
+        - status_category

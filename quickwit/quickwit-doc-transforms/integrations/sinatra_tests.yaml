@@ -1,0 +1,71 @@
+id: "sinatra"
+tests:
+ -
+  sample: "127.0.0.1 - - [15/Jul/2018:17:41:40 +0000] \"GET /uptime_status HTTP/1.1\" 200 34 0.0004"
+  result:
+    custom:
+      date_access: 1531676500000
+      duration: 400000.0
+      http:
+        method: "GET"
+        status_category: "OK"
+        status_code: 200
+        url: "/uptime_status"
+        url_details:
+          path: "/uptime_status"
+        version: "1.1"
+      network:
+        bytes_written: 34
+        client:
+          ip: "127.0.0.1"
+    message: "127.0.0.1 - - [15/Jul/2018:17:41:40 +0000] \"GET /uptime_status HTTP/1.1\" 200 34 0.0004"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1531676500000
+ -
+  sample: "127.0.0.1 - - [15/Jul/2018 23:40:31] \"GET /this/is/a/v2/test HTTP/1.1\" 500 6997 1.8096"
+  result:
+    custom:
+      date_access: 1531698031000
+      duration: 1.8096E9
+      http:
+        method: "GET"
+        status_category: "error"
+        status_code: 500
+        url: "/this/is/a/v2/test"
+        url_details:
+          path: "/this/is/a/v2/test"
+        version: "1.1"
+      network:
+        bytes_written: 6997
+        client:
+          ip: "127.0.0.1"
+    message: "127.0.0.1 - - [15/Jul/2018 23:40:31] \"GET /this/is/a/v2/test HTTP/1.1\" 500 6997 1.8096"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1531698031000
+ -
+  sample: "127.0.0.1 - frank [10/Oct/2000:13:55:36 -0700] \"GET /apache_pb.gif HTTP/1.0\" 200 -"
+  result:
+    custom:
+      date_access: 971211336000
+      http:
+        auth: "frank"
+        method: "GET"
+        status_category: "OK"
+        status_code: 200
+        url: "/apache_pb.gif"
+        url_details:
+          path: "/apache_pb.gif"
+        version: "1.0"
+      network:
+        client:
+          ip: "127.0.0.1"
+    message: "127.0.0.1 - frank [10/Oct/2000:13:55:36 -0700] \"GET /apache_pb.gif HTTP/1.0\" 200 -"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 971211336000
+

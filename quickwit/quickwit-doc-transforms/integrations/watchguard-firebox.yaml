@@ -1,0 +1,739 @@
+id: watchguard-firebox
+metric_id: watchguard-firebox
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Geoip
+    name: Destination City Name
+    path: network.destination.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Continent Code
+    path: network.destination.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Continent Name
+    path: network.destination.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Country ISO Code
+    path: network.destination.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Country Name
+    path: network.destination.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Subdivision ISO Code
+    path: network.destination.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Subdivision Name
+    path: network.destination.geoip.subdivision.name
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+pipeline:
+  type: pipeline
+  name: WatchGuard Firebox
+  enabled: true
+  filter:
+    query: source:watchguard-firebox
+  processors:
+    - type: grok-parser
+      name: Processing of syslog header
+      enabled: true
+      source: message
+      samples:
+        - '<142>Mar 28 11:21:56 WatchGuard-Firebox FVM (2025-03-28T05:51:56)
+          firewall: msg_id="3000-0148" Allow Trusted Firebox 60 icmp 20 128
+          10.10.10.10 10.10.10.10 8 0 id=1 seq=59033  (Ping-00)'
+        - '<142>Apr  4 10:35:35 WatchGuard-Firebox (2025-04-04T05:05:35)
+          firewall: msg_id="3000-0151" Allow Firebox Firebox tcp 10.10.10.10
+          127.0.0.1 57576 705 flags="SR" duration="0" sent_pkts="1"
+          rcvd_pkts="1" sent_bytes="52" rcvd_bytes="40"  (Any From Firebox-00)'
+        - '<142>Apr  1 10:57:19 WatchGuard-Firebox FVM (2025-04-01T05:27:19)
+          firewall: msg_id="3000-0151" Allow Trusted Firebox icmp 10.10.10.10
+          10.10.10.10 echo-request duration="32" sent_pkts="1" rcvd_pkts="1"
+          sent_bytes="60" rcvd_bytes="60"  (Ping-00)'
+        - '<142>Apr  1 10:57:19 WatchGuard-Firebox FVM (2025-04-04T05:47:53)
+          firewall: msg_id="3000-0151" Allow Trusted Firebox icmp 10.10.10.10
+          10.10.10.10 echo-request duration="32" sent_pkts="1" rcvd_pkts="1"
+          sent_bytes="60" rcvd_bytes="60"  (Ping-00)'
+        - "<158>Apr  4 11:17:53 WatchGuard-Firebox FVM (2025-04-04T05:47:53)
+          wrapper[2514]: <infinityd_idle> called, current state=2"
+      grok:
+        supportRules: ""
+        matchRules: parse_syslog_header_rule (<%{integer:syslog.prival}>)?(%{date("MMM d
+          hh:mm:ss")}|%{date("MMM  d HH:mm:ss")}) %{notSpace:syslog.hostname}(
+          %{notSpace:device_serial_number})?
+          \(%{date("yyyy-MM-dd'T'HH:mm:ss"):timestamp}\) %{regex("[^:]*")}:(
+          (msg_id|id)="%{notSpace:msg_id}")? %{data:message}
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: category-processor
+      name: "Define `event_type` based on `msg_id` "
+      enabled: true
+      categories:
+        - filter:
+            query: "@msg_id:(3000-0152 OR 3000-0153 OR 3000-0154 OR 3000-0155 OR 3000-0156
+              OR 3000-0157 OR 3000-0158 OR 3000-0159 OR 3000-0160 OR 3000-0161
+              OR 3000-0162 OR 3000-0163 OR 3000-0164 OR 3000-0165 OR 3000-0166
+              OR 3000-0167 OR 3000-0168 OR 3000-0169 OR 3000-0170 OR 3000-0171
+              OR 3000-0172 OR 3000-0006 OR 3000-0007 OR 3000-0027 OR 3000-0028
+              OR 3000-0029 OR 3000-002A OR 3000-003A OR 3000-003C OR 3000-0040
+              OR 3000-0065 OR 3000-012D OR 3000-012E OR 3000-0004 OR 3000-0005
+              OR 3000-002F OR 3000-00C9 OR 3000-00CB OR 3000-012C OR 3000-0174
+              OR 3001-1001 OR 3001-1002 OR 3000-0148 OR 3000-0149 OR 3000-0150
+              OR 3000-0151 OR 3000-0173 OR 3000-0175 OR 3000-0176)"
+          name: firewall
+        - filter:
+            query: "@msg_id:(0900-0001 OR 0900-0002 OR 0900-0006 OR 0900-0007 OR 1600-0005
+              OR 3100-0003 OR 3100-0004 OR 3100-000F OR 3100-0030 OR 3100-0031
+              OR 3100-0034 OR 3100-0035 OR 3100-0036 OR 3100-0037 OR 3100-0038
+              OR 3100-003D OR 3100-004F OR 3100-0050 OR 3100-0051 OR 3100-0057
+              OR 3100-0058 OR 3100-0059 OR 3100-005A OR 3100-005B OR 3100-005C
+              OR 3100-005D OR 3100-005E OR 3100-0070 OR 3100-0075 OR 3113-0001
+              OR 4500-0001 OR 5A00-0001 OR 5A00-0002 OR 5A00-0003 OR 5A00-0004
+              OR 5A00-0005 OR 5A00-0006 OR 5A00-0007 OR 5A00-0008 OR 5A00-0009
+              OR 5A00-000A OR 5A00-000B OR 5A00-000C OR 5A00-000D OR 0900-0004
+              OR 0900-0005 OR 0900-0008 OR 0900-0009 OR 0900-000A OR 1600-0001
+              OR 1600-0002 OR 1600-0003 OR 1600-0004 OR 3100-0009 OR 3100-000A
+              OR 3100-000B OR 3100-000D OR 3100-0010 OR 3100-0029 OR 3100-002B
+              OR 3100-002C OR 3100-0039 OR 3100-003A OR 3100-003B OR 3100-003E
+              OR 3100-003F OR 3100-0046 OR 3100-0047 OR 3100-0052 OR 3100-0054
+              OR 3100-0055 OR 3100-0056 OR 3100-0069 OR 3100-006A OR 3100-006C
+              OR 3100-006D OR 3100-0071 OR 3100-0072 OR 3100-0073 OR 3100-0074
+              OR 4500-0003 OR 4500-0004 OR 4900-0001 OR 4900-0002 OR 4900-0003
+              OR 4900-0004 OR 6800-0001 OR 6800-0002 OR 6800-0003)"
+          name: networking
+        - filter:
+            query: "@msg_id:(5501-000C OR 5501-000D OR 5501-0010 OR 5501-0014 OR 5501-0015
+              OR 5501-0017 OR 5501-0018 OR 5501-001B OR 5501-001C OR 0101-0001
+              OR 0101-0002 OR 0102-0001 OR 0102-0002 OR 0102-0003 OR 0102-0005
+              OR 0104-0001 OR 0105-0001 OR 1100-0003 OR 1100-0004 OR 1100-0005
+              OR 1100-0006 OR 1100-0007 OR 1100-0008 OR 1100-000C OR 1100-000D
+              OR 1100-000E OR 1100-000F OR 1100-0010 OR 1100-0011 OR 1100-0012
+              OR 1100-0013 OR 1100-0014 OR 1100-0015 OR 1500-0000 OR 1500-0001
+              OR 1501-0000 OR 1501-0001 OR 3D04-0001 OR 3D04-0002 OR 3D04-0003
+              OR 3E00-0002 OR 3E00-0003 OR 3E00-0004 OR 3E00-0005 OR 4001-0001
+              OR 4001-0002 OR 4001-0003 OR 4001-0004 OR 4001-0005 OR 4001-0006
+              OR 4100-0001 OR 4100-0002 OR 4100-0003 OR 4100-0004 OR 4100-0005
+              OR 4100-0006 OR 4100-0007 OR 4100-0008 OR 4101-0001 OR 4101-0002
+              OR 5000-0001 OR 5501-0000 OR 5501-0002 OR 5501-0003 OR 5501-0004
+              OR 5501-0005 OR 5501-0006 OR 5501-0007 OR 5501-0008 OR 5501-000B
+              OR 5501-0013 OR 5501-0016 OR 5501-0019 OR 5501-001A OR 5501-001D
+              OR 5501-0020 OR 5501-0021 OR 5501-0022 OR 5501-0023 OR 5501-0024
+              OR 5501-0025 OR 5501-0026)"
+          name: management
+        - filter:
+            query: "@msg_id:(020B-0001 OR 0200-0001 OR 0200-0002 OR 0202-0001 OR 0203-0002
+              OR 0203-0003 OR 0203-0004 OR 0203-0005 OR 0203-0006 OR 0203-0007
+              OR 0203-0008 OR 0203-0009 OR 0203-000A OR 0203-000B OR 0203-000C
+              OR 0203-000D OR 0203-000E OR 0203-000F OR 0203-0010 OR 0203-0011
+              OR 0203-0012 OR 0203-0013 OR 0203-0014 OR 0203-0015 OR 0203-0016
+              OR 0203-0017 OR 0203-0018 OR 0203-0019 OR 0203-0020 OR 0203-0021
+              OR 0203-0022 OR 0203-0023 OR 0203-0024 OR 0203-0025 OR 0203-0026
+              OR 0203-0027 OR 0203-0028 OR 0203-0029 OR 0203-002A OR 0203-002B
+              OR 0205-0002 OR 0205-0003 OR 0205-0004 OR 0205-0005 OR 0205-0006
+              OR 0205-0007 OR 0205-0008 OR 0205-000A OR 0205-000B OR 0205-000C
+              OR 0205-000D OR 0205-000E OR 0205-000F OR 0205-0010 OR 0205-0011
+              OR 0206-0001 OR 0206-0002 OR 0206-0003 OR 0206-0004 OR 0206-0005
+              OR 0206-0006 OR 0206-0007 OR 0208-0001 OR 021A-0001 OR 021A-0002
+              OR 021A-0003 OR 021A-0004 OR 021A-0005 OR 021A-0006 OR 021A-0007
+              OR 021A-0008 OR 021A-0009 OR 021A-000A OR 021A-000B OR 021A-000C
+              OR 021A-000D OR 021A-000E OR 021A-000F OR 021A-0010 OR 021A-0011
+              OR 021A-0012 OR 021A-0013 OR 021A-0014 OR 021A-0015 OR 021A-0016
+              OR 021A-0017 OR 021A-0018 OR 021A-0019 OR 021A-001A OR 021A-001B
+              OR 021A-001C OR 021A-001D OR 021A-001E OR 021A-001F OR 021A-0020
+              OR 2500-0000 OR 2500-0001 OR 5B01-0004 OR 5B01-0005 OR 0201-0001
+              OR 0201-0002 OR 0201-0003 OR 0201-0004 OR 0207-0001 OR 0209-0001
+              OR 0209-0002 OR 5B01-0001 OR 5B01-0002 OR 5B01-0003 OR 7800-0000
+              OR 7800-0001)"
+          name: vpn
+        - filter:
+            query: "@msg_id:(0F00-0001 OR 0F01-0015 OR 0F01-0016 OR 1B04-00CE OR 1C02-00CD
+              OR 1F00-0001 OR 1F01-0015 OR 2300-0001 OR 2300-0002 OR 2E00-0005
+              OR 2E00-0006 OR 2E01-0017 OR 2E01-0018 OR 2E01-0019 OR 2E01-001A
+              OR 2E01-001B OR 2E02-0065 OR 2E02-0066 OR 2E02-0067 OR 2E02-0069
+              OR 1AFF-0001 OR 1AFF-0002 OR 1AFF-0003 OR 1AFF-0004 OR 1AFF-0005
+              OR 1AFF-0006 OR 1AFF-0007 OR 1AFF-0008 OR 1AFF-0009 OR 1AFF-000A
+              OR 1AFF-000B OR 1AFF-000C OR 1AFF-000D OR 1AFF-000E OR 1AFF-000F
+              OR 1AFF-0010 OR 1AFF-0011 OR 1AFF-0012 OR 1AFF-0013 OR 1AFF-0016
+              OR 1AFF-0018 OR 1AFF-0019 OR 1AFF-001A OR 1AFF-001B OR 1AFF-001C
+              OR 1AFF-001D OR 1AFF-001E OR 1AFF-001F OR 1AFF-0020 OR 1AFF-0021
+              OR 1AFF-0022 OR 1AFF-0023 OR 1AFF-0024 OR 1AFF-0025 OR 1AFF-0026
+              OR 1AFF-0028 OR 1AFF-0029 OR 1AFF-002B OR 1AFF-002C OR 1AFF-002D
+              OR 1AFF-002E OR 1AFF-002F OR 1AFF-0030 OR 1AFF-0031 OR 1AFF-0032
+              OR 1AFF-0033 OR 1AFF-0034 OR 1AFF-0036 OR 1AFF-0037 OR 1AFF-0038
+              OR 1AFF-0039 OR 1AFF-003A OR 1AFF-003B OR 1AFF-0040 OR 1AFF-0041
+              OR 1BFF-0000 OR 1BFF-0001 OR 1BFF-0002 OR 1BFF-0003 OR 1BFF-0004
+              OR 1BFF-0005 OR 1BFF-0006 OR 1BFF-0007 OR 1BFF-000A OR 1BFF-000C
+              OR 1BFF-000E OR 1BFF-000F OR 1BFF-0010 OR 1BFF-0011 OR 1BFF-0013
+              OR 1BFF-0014 OR 1BFF-0015 OR 1BFF-0016 OR 1BFF-0017 OR 1BFF-0018
+              OR 1BFF-0019 OR 1BFF-001A OR 1BFF-001B OR 1BFF-001C OR 1BFF-001D
+              OR 1BFF-001E OR 1BFF-001F OR 1BFF-0021 OR 1BFF-0022 OR 1BFF-0023
+              OR 1BFF-0024 OR 1BFF-0025 OR 1BFF-0026 OR 1BFF-0027 OR 1BFF-0028
+              OR 1BFF-002A OR 1BFF-002B OR 1BFF-002C OR 1BFF-002D OR 1BFF-0032
+              OR 1CFF-0000 OR 1CFF-0001 OR 1CFF-0002 OR 1CFF-0003 OR 1CFF-0004
+              OR 1CFF-0005 OR 1CFF-0006 OR 1CFF-0007 OR 1CFF-0008 OR 1CFF-0009
+              OR 1CFF-000C OR 1CFF-000D OR 1CFF-000E OR 1CFF-000F OR 1CFF-0010
+              OR 1CFF-0011 OR 1CFF-0012 OR 1CFF-0013 OR 1CFF-0014 OR 1CFF-0015
+              OR 1CFF-0017 OR 1CFF-0018 OR 1CFF-0019 OR 1DFF-0000 OR 1DFF-0001
+              OR 1DFF-0002 OR 1DFF-0003 OR 1DFF-0004 OR 1DFF-0005 OR 1DFF-0006
+              OR 1DFF-0007 OR 1DFF-0008 OR 1DFF-0009 OR 1DFF-000A OR 1DFF-000C
+              OR 1DFF-000E OR 1DFF-000F OR 1DFF-0010 OR 1DFF-0012 OR 21FF-0000
+              OR 21FF-0001 OR 21FF-0002 OR 21FF-0005 OR 21FF-0006 OR 21FF-0007
+              OR 21FF-0009 OR 21FF-000A OR 21FF-000C OR 21FF-000F OR 21FF-0010
+              OR 21FF-0012 OR 21FF-0014 OR 21FF-0015 OR 21FF-0016 OR 21FF-0017
+              OR 21FF-0018 OR 21FF-001A OR 21FF-001B OR 21FF-001C OR 21FF-001D
+              OR 21FF-001E OR 21FF-001F OR 21FF-0021 OR 21FF-0022 OR 22FF-0000
+              OR 22FF-0001 OR 22FF-0005 OR 22FF-0006 OR 22FF-0008 OR 22FF-0009
+              OR 22FF-000A OR 22FF-000C OR 22FF-000D OR 22FF-000E OR 22FF-000F
+              OR 22FF-0010 OR 22FF-0012 OR 22FF-0013 OR 22FF-0014 OR 22FF-0015
+              OR 22FF-0016 OR 22FF-1017 OR 22FF-1018 OR 22FF-001B OR 28FF-0000
+              OR 28FF-0004 OR 28FF-0005 OR 28FF-0006 OR 28FF-0008 OR 28FF-0009
+              OR 2AFF-0000 OR 2AFF-0001 OR 2AFF-0002 OR 2AFF-0003 OR 2AFF-0006
+              OR 2AFF-0007 OR 2CFF-0000 OR 2CFF-0001 OR 2CFF-0002 OR 2CFF-0003
+              OR 2CFF-0005 OR 2CFF-0006 OR 2CFF-0007 OR 2CFF-0008 OR 2CFF-0009
+              OR 2CFF-000A OR 2DFF-0000 OR 2DFF-0001 OR 2DFF-0004 OR 2DFF-0005
+              OR 2DFF-0006 OR 2DFF-0007)"
+          name: proxy-policy
+      target: event_type
+    - type: category-processor
+      name: Define `event_type` to `other`
+      enabled: true
+      categories:
+        - filter:
+            query: -@event_type:*
+          name: other
+      target: event_type
+    - type: category-processor
+      name: Define `traffic_type` based on `event_id`
+      enabled: true
+      categories:
+        - filter:
+            query: "@msg_id:3000-0148"
+          name: normal_traffic
+        - filter:
+            query: "@msg_id:3000-0149"
+          name: application_control_traffic
+        - filter:
+            query: "@msg_id:3000-0150"
+          name: ips_traffic
+        - filter:
+            query: "@msg_id:3000-0173"
+          name: hostile_traffic
+      target: traffic_type
+    - type: pipeline
+      name: Processing of firewall attack events
+      enabled: true
+      filter:
+        query: "@msg_id:(3000-0152 OR 3000-0153 OR 3000-0154 OR 3000-0155 OR 3000-0156
+          OR 3000-0157 OR 3000-0158 OR 3000-0159 OR 3000-0160 OR 3000-0161 OR
+          3000-0162 OR 3000-0163 OR 3000-0164 OR 3000-0165 OR 3000-0166)"
+      processors:
+        - type: grok-parser
+          name: Parsing of firewall attack events
+          enabled: true
+          source: message
+          samples:
+            - SYN flood attack against 10.10.10.10 from 10.10.10.10 detected.
+              500 SYN packets dropped since last alarm.
+            - IPv4 source route attack from 10.10.10.10 detected.
+            - IP scan attack against 10.10.10.10 from 10.10.10.10 detected.
+            - "DDOS against server 10.10.10.10 detected. "
+            - DDOS from client 10.10.10.10 detected.
+          grok:
+            supportRules: ""
+            matchRules: >
+              parse_rule_30000152_to_30000159_30000162_to_30000166
+              %{regex(".*(?= attack)"):attack_type} attack (against
+              %{ip:network.destination.ip} )?from %{ip:network.client.ip}
+              detected.( %{integer:drop_packet_count} %{regex(".*(?=
+              packets)"):drop_packet_type} packets dropped since last alarm.)?
+
+
+              parse_rule_30000161 %{regex(".*(?= from)"):attack_type} from client %{ip:network.client.ip} detected.
+
+
+              parse_rule_30000160 %{regex(".*(?= against)"):attack_type} against server %{ip:network.destination.ip} detected.
+    - type: pipeline
+      name: Processing of firewall alarm events
+      enabled: true
+      filter:
+        query: "@msg_id:(3000-0168 OR 3000-0169 OR 3000-0172 OR 3000-0167)"
+      processors:
+        - type: grok-parser
+          name: Parsing of firewall alarm events
+          enabled: true
+          source: message
+          samples:
+            - "Policy Name: HTTP-00 Source IP Address: 10.10.10.10 Source Port:
+              8000 Destination IP Address: 10.10.10.10 Destination Port: 8000"
+            - "Blocked site: Traffic detected from 10.10.10.10 to 10.10.10.10."
+            - |
+              IP spoofing: Traffic detected from 10.10.10.10 to 10.10.10.10.
+            - "Blocked port: Traffic detected from 10.10.10.10 to 10.10.10.10 on
+              port 513."
+          grok:
+            supportRules: ""
+            matchRules: >-
+              parse_rule_30000167 Policy Name: %{regex(".*(?= Source IP
+              Address)"):policy_name} Source IP Address: %{ip:network.client.ip}
+              Source Port: %{port:network.client.port} Destination IP Address:
+              %{ip:network.destination.ip} Destination Port:
+              %{port:network.destination.port}
+
+
+              parse_rule_30000168_30000169_30000172 %{regex("[^:]+")}: Traffic detected from %{ip:network.client.ip} to %{ip:network.destination.ip}( on port %{port:network.destination.port})?.
+    - type: pipeline
+      name: Processing of firewall traffic events
+      enabled: true
+      filter:
+        query: "@msg_id:(3000-0148 OR 3000-0149 OR 3000-0150 OR 3000-0151 OR 3000-0173
+          OR 3000-0175 OR 3000-0176)"
+      processors:
+        - type: grok-parser
+          name: Parsing of firewall traffic events
+          enabled: true
+          source: message
+          samples:
+            - Allow Firebox Test 52 tcp 20 127 10.10.10.10 10.10.10.10 62443 80
+              offset 8 S 832026162 win 8192 (HTTP-00)
+            - Allow Trusted External 40 tcp 20 127 10.10.10.10 10.10.10.10 53008
+              80 offset 5 AF 3212213617 win 257 app_name="World Wide Web HTTP"
+              cat_ name="Network Protocols" app_beh_name="connect" app_id="63"
+              app_cat_id="18" app_ctl_disp="2" sig_vers="18.123"
+              msg="Application identified" (HTTP-00)
+            - Deny Trusted External 1440 tcp 20 61 10.10.10.10 10.10.10.10 55810
+              80 offset 5 A 447868619 win 54 signature_name="EXPLOIT Apple
+              QuickTime FLIC Animation file buffer overflow-1-2"
+              signature_cat="Misc" signature_id="1112464" severity="4"
+              sig_vers="18.124" msg="IPS detected" (HTTP-00)
+            - 'Deny Trusted External tcp 10.10.10.10 10.10.10.10 37930 80
+              msg="ProxyDrop: HTTP Virus found"
+              proxy_act="HTTP-Client.Standard.1"
+              md5="69630e4574ec6798239b091cda43dca0" virus="EICAR-Test-File (not
+              a virus)" host="100.100.100.11" path="/eicar.com.txt"
+              (HTTP-proxy-00)'
+            - Deny External Firebox 777 tcp 20 127 10.10.10.10 10.10.10.10 55098
+              8080 offset 5 A 4181940528 win 64256 msg="tcp syn checking failed
+              (expecting SYN packet for new TCP connection, but received ACK,
+              FIN, or RST instead)." flags="SR" duration="0" sent_pkts="1"
+              rcvd_pkts="0" sent_bytes="777" rcvd_bytes="0"  (Internal Policy)
+          grok:
+            supportRules: _space %{regex("[ \\t]+")}
+            matchRules: >-
+              parse_rule_30000148_30000149_30000150_30000173
+              %{regex("(Allow|Deny)"):disposition}%{_space}%{regex("[\\w\\+\\-\\.\\*
+              \\t]+")}%{_space}%{regex("\\d{1,5}"):ip_pkt_len}%{_space}%{regex("[a-zA-Z]+"):protocol}%{_space}%{regex("(\\d{1,5})"):ip_header_len}%{_space}%{regex("\\d{1,3}"):ttl}%{_space}%{ip:network.client.ip}%{_space}%{ip:network.destination.ip}
+              ((%{regex("\\d{1,3}"):icmp_type}%{_space}%{regex("\\d{1,3}"):icmp_code}%{_space}id=%{regex("\\d{1,5}"):icmp_id}%{_space}seq=%{regex("\\d{1,5}"):icmp_seq})|(%{regex("\\d{1,5}"):network.client.port}%{_space}%{regex("\\d{1,5}"):network.destination.port}%{_space}(offset%{_space}%{regex("\\d{1,10}"):tcp_offset}%{_space}%{regex("[A-Za-z]+"):flags}%{_space}%{regex("\\d{1,10}"):tcp_seq}%{_space}win%{_space}%{regex("\\d{1,5}"):tcp_win})?))%{data::keyvalue}
+              \(%{regex("[^\\)]+"):policy}\)
+
+
+              parse_rule_30000151_30000175_30000176 %{regex("(Allow|Deny)"):disposition}%{_space}%{regex("[\\w\\+\\-\\.\\* \\t]+")}%{_space}%{regex("[a-zA-Z]+"):protocol}%{_space}%{ip:network.client.ip}%{_space}%{ip:network.destination.ip}%{_space}(%{regex("\\d{1,5}"):network.client.port}%{_space}%{regex("\\d{1,5}"):network.destination.port}%{_space})?%{data::keyvalue} \(%{regex("[^\\)]+"):policy}\)
+    - type: pipeline
+      name: Processing of firewall audit events
+      enabled: true
+      filter:
+        query: "@msg_id:(3000-0065 OR 3001-1001 OR 3001-1002 OR 3000-00C9 OR 3000-00CB
+          OR 3000-012E)"
+      processors:
+        - type: grok-parser
+          name: Parsing of firewall audit events
+          enabled: true
+          source: message
+          samples:
+            - TCP probe packets timeout, Load Balance Server 10.10.10.10 port
+              3030 is offline.
+            - User James@Firebox-DB used 21 MB of the bandwidth quota (100 MB)
+              and used 1 minute of the time quota (3 minutes).
+            - Temporarily blocking host 10.10.10.10 (reason = autoblock by
+              policy)
+            - >
+              The Temporary Blocked Sites list is full (capacity=1000). The
+              oldest entry 10.10.10.10 was removed.
+            - Cannot relearn system MAC address, possible loop or MAC spoofing,
+              ip=10.10.10.10, mac=00:50:da:c7:10:5d, interface=5
+          grok:
+            supportRules: _space \s*
+            matchRules: >-
+              parse_rule_30000065 User %{notSpace:usr.name} used
+              %{data:quota_info}
+
+
+              parse_rule_30011001 Temporarily blocking host %{regex(".*(?= \\(reason)"):blocked_host} \(reason%{_space}=%{_space}%{regex(".*(?=\\))"):reason}\)
+
+
+              parse_rule_30011002 The Temporary Blocked Sites list is full \(capacity=%{integer:capacity}\). The oldest entry %{regex(".*(?= was removed.)"):blocked_host} was removed.
+
+
+              parse_rule_300000C9 %{regex("[^,]+")}, Load Balance Server %{ip:network.client.ip}( port %{port:network.client.port})? is %{regex("[^.]+"):server_status}.
+
+
+              parse_rule_3000012E Cannot relearn system MAC address, possible loop or MAC spoofing, ip=%{ip:network.client.ip}, mac=%{mac:device_mac}, interface=%{data:interface}
+    - type: pipeline
+      name: Processing of networking events
+      enabled: true
+      filter:
+        query: "@msg_id:(3100-0009 OR 3100-000A OR 3100-0046 OR 3100-0047 OR 1600-0004
+          OR 5A00-0002 OR 5A00-0007 OR 5A00-0008 OR 5A00-0009 OR 5A00-000A)"
+      processors:
+        - type: grok-parser
+          name: Parsing of networking events
+          enabled: true
+          source: message
+          samples:
+            - "[eth0 (External)] Activating external interface"
+            - Subnet 10.10.10.10/24 for address pool on interface vlan10
+              overlaps subnet 10.10.10.10/16 on interface eth1. Edit the
+              configuration so that DHCP server functions properly
+            - Resolved domain members.dyndns.org to 10.10.10.10
+            - "Could not resolve server: members.dyndns.org"
+            - Could not connect to members.dyndns.org / 10.10.10.10, connection
+              refused
+          grok:
+            supportRules: ""
+            matchRules: >-
+              parse_rule_31000009_3100000A_31000046_31000047
+              \[%{notSpace:network_interface} \(%{notSpace:if_name}\)\]
+              %{data:status}
+
+
+              parse_rule_16000004 Subnet %{notSpace:network_subnet_1} for address pool on interface %{notSpace:network_interface_1} overlaps subnet %{notSpace:network_subnet_2} on interface %{notSpace:network_interface_2}.%{data}
+
+
+              parse_rule_5A000002 Resolved domain %{ipOrHost:domain} to %{ip:network.client.ip}
+
+
+              parse_rule_5A000007 Could not resolve server: %{ipOrHost:domain}
+
+
+              parse_rule_5A000008_5A000009_5A00000A (Unable to connect to server:|No response from server|Could not connect to) %{ipOrHost:domain} / %{ip:server_ip}(, )?%{data:reason}
+    - type: pipeline
+      name: Processing of firebox management events
+      enabled: true
+      filter:
+        query: "@msg_id:(5501-0014 OR 5501-001B OR 5501-001C OR 0101-0001 OR 1100-0003
+          OR 1100-0004 OR 1100-0005 OR 1100-0007 OR 1100-0006 OR 1100-0008 OR
+          1100-0014 OR 3E00-0003 OR 5501-001A OR 3E00-0002)"
+      processors:
+        - type: grok-parser
+          name: Processing of firebox management events
+          enabled: true
+          source: message
+          samples:
+            - Creation of USB auto restore image failed due to no USB drive
+            - "System upgrade failed: 'LIVESECURITY' feature expired"
+            - Management user datadog@Firebox-DB from 10.10.10.10 added
+              management user test at Firebox-DB
+            - Management user admin from 10.10.10.10 logged in
+            - System backup to USB drive failed due to write file to USB drive
+              error
+          grok:
+            supportRules: _space \s*
+            matchRules: >-
+              parse_rule_55010014 Generate system diagnostic file to
+              %{regex(".*(?= failed)"):device} failed
+
+
+              parse_rule_5501001A_5501000D_5501001C (Creation of USB auto restore image failed due to|System upgrade failed:|USB auto restore failed due to)%{_space}%{data:reason}
+
+
+              parse_rule_5501001B System backup to %{regex(".*(?= failed)"):device} failed due to %{data:reason}
+
+
+              parse_rule_01010001 Management user %{regex(".*(?=@)"):usr.name}@%{notSpace:domain} from %{ip:network.client.ip} %{notSpace:operation}%{_space}%{data}
+
+
+              parse_rule_11000003 Authentication server %{ip:auth_server_ip}:%{port:auth_server_port} is not responding
+
+
+              parse_rule_11000004_11000005 Authentication of %{notSpace:user_type} user \[%{regex(".*(?=@)"):usr.name}@%{regex("[^]]+"):auth_server}\] from %{ip:network.client.ip} was (accepted|rejected, )%{data:reason}
+
+
+              parse_rule_11000007 User %{regex(".*(?= is)"):usr.name} is locked out %{regex(".*(?= after)"):lockout_type} after %{integer:failure_count} login failures
+
+
+              parse_rule_11000006 User %{regex(".*(?= is)"):usr.name} is unlocked %{data:reason}
+
+
+              parse_rule_11000008 Authentication of BOVPN TLS client \[%{regex("[^]]+"):client_name}\] from %{ip:network.client.ip} was rejected, %{data:reason}
+
+
+              parse_rule_11000014 SSO agent failover from %{ip:network.client.ip} to %{ip:network.destination.ip} failed. Reason: %{regex(".*(?=.)"):reason}.
+
+
+              parse_rule_3E000002_3E000003 %{notSpace:user_type} %{notSpace:usr.name} %{regex(".*(?= from)"):auth_server} from %{ip:network.client.ip} (log in attempt was rejected|logged in)(.)?%{data}
+    - type: pipeline
+      name: Processing of VPN events
+      enabled: true
+      filter:
+        query: "@msg_id:(020B-0001 OR 2500-0000 OR 0200-0002 OR 0202-0001 OR 0203-0002
+          OR 0203-0003 OR 0203-0004 OR 0203-0005 OR 0203-0006 OR 0203-0007 OR
+          0203-0008 OR 0203-0009 OR 0203-000A OR 0203-000B OR 0203-000C OR
+          0203-000D OR 0203-000E OR 0203-000F OR 0203-0010 OR 0203-0011 OR
+          0203-0012 OR 0203-0013 OR 0203-0015 OR 0203-0016 OR 0203-0017 OR
+          0203-0018 OR 0203-0019 OR 0203-0020 OR 0203-0026 OR 0203-0027 OR
+          0203-0028 OR 0203-0029 OR 0203-002A OR 0203-002B OR 0205-000A OR
+          0205-000B OR 0205-000C OR 0205-000D OR 0205-000E OR 0205-0002 OR
+          0205-0003 OR 0205-0004 OR 0205-0005 OR 0205-0006 OR 0205-0007 OR
+          0205-0008 OR 0205-0011 OR 0208-0001 OR 0206-0001 OR 0206-0002 OR
+          0206-0003 OR 0206-0004 OR 021A-0001 OR 021A-0002 OR 021A-0003 OR
+          021A-0004 OR 021A-0005 OR 021A-0006 OR 021A-0007 OR 021A-0008 OR
+          021A-0009 OR 021A-000A OR 021A-000B OR 021A-000C OR 021A-000D OR
+          021A-000E OR 021A-000F OR 021A-0010 OR 021A-0011 OR 021A-0012 OR
+          021A-0013 OR 021A-0014 OR 021A-0015 OR 021A-0016 OR 021A-0018 OR
+          021A-0019 OR 021A-001A OR 021A-001B OR 021A-001C OR 021A-001D OR
+          021A-001E OR 021A-001F OR 021A-0020)"
+      processors:
+        - type: grok-parser
+          name: Parsing of VPN events
+          enabled: true
+          source: message
+          samples:
+            - BOVPN tunnel 'tunnel.2' local 10.10.10.10/255.255.255.255 remote
+              10.10.10.10/255.255.255.255 under gateway 'gateway.1' is down
+            - Mobile VPN with SSL user tsmith logged in. Virtual IP address is
+              10.10.10.10. Real IP address is 192.51.100.2.
+            - Could not read DSA certificate with [n] ID
+            - Virtual IP address from 'abcd' address pool is not available for
+              Mobile VPN with IPSec user 'Bob'
+            - IKEv2 IKE_SA_INIT exchange from 10.10.10.10:500 to 10.10.10.10:500
+              failed. Reason=Matching gateway endpoint not found.
+          grok:
+            supportRules: ""
+            matchRules: >
+              parse_rule_020B0001 %{regex(".*(?= tunnel)"):tunnel_type} tunnel
+              '%{regex("[^\\']+"):tunnel}' local %{regex(".*(?= remote)"):local}
+              remote %{regex(".*(?= under)"):remote} under gateway
+              '%{regex("[^\\']+"):gateway}' is %{data:status}
+
+
+              parse_rule_25000000 %{data:vpn_user_type} %{notSpace:usr.name} logged in. Virtual IP address is %{ip:virtual_ip}. Real IP address is %{ip:network.client.ip}.
+
+
+              parse_rule_02000002 Could not read %{notSpace:certificate_type} certificate with %{notSpace:id} ID
+
+
+              parse_rule_02020001 Virtual IP address from \'%{regex("[^\\']+"):pool_name}\' address pool is not available for Mobile VPN with IPSec user \'%{regex("[^\\']+"):usr.name}\'
+
+
+              parse_rule_IKE_phase_1_logs_02030002_to_02030013_02030018_to_02030020_02030028_to_0203002B (\(%{regex("[^\\)]+")}\)\s*)?IKE phase-1 negotiation from %{ip:local_ip}(:%{port:local_port})? to %{ip:peer_ip}(:%{port:peer_port})? failed.( Gateway(-)?Endpoint='%{regex("[^\\']+"):gateway_endpoint}')? Reason=%{data:reason}
+
+
+              parse_rule_IKE_phase_2_logs_02050002_to_0205000E (\(%{regex("[^\\)]+")}\)\s*)?IKE phase-2 negotiation from %{ip:local_ip}(:%{port:local_port})? to %{ip:peer_ip}(:%{port:peer_port})? failed.( Gateway='%{regex("[^\\']+"):gateway}'| Tunnel=\'%{regex("[^\\']+"):tunnel}\')? Reason=%{data:reason}
+
+
+              parse_rule_02030016 Rejected MUVPN IPSec user from %{ip:peer_ip}(:%{port:peer_port})? because maximum allowed user connections has been reached. Maximum:%{integer:max_value}
+
+
+              parse_rule_02050011 Dropped a simultaneous phase-2 negotiation from the peer %{ip:peer_ip}(:%{port:peer_por})?
+
+
+              parse_rule_02080001 %{notSpace:tunnel_type} phase-1 %{notSpace:negotiation_mode} completed successfully as %{notSpace:negotiation_role} for '%{regex("[^\\']+"):gateway}' gateway endpoint. localgw:%{ip:network.client.ip}:%{port:network.client.port} remotegw:%{ip:network.destination.ip}:%{port:network.destination.port} SA ID:%{data:sa_id}
+
+
+              parse_rule_02060001 Received XAuth failed notification from %{ip:peer_ip}(:%{port:peer_port})?. Group:\'%{regex("[^\\']+"):gateway}\'
+
+
+              parse_rule_02060002 Rejected phase-1 authentication method %{notSpace:auth_method} from %{ip:peer_ip}:%{port:peer_port}, %{data:reason}
+
+
+              parse_rule_02060004 XAuth negotiation from %{ip:peer_ip}(:%{port:peer_port})? failed due to a mismatched XAuthMode.
+
+
+              parse_rule_IKEv2_parse_logs_021A0001_to_021A0005 (\(%{regex("[^\\)]+")}\)\s*)?Dropped IKEv2 %{notSpace:exchange_type} message from %{ip:peer_ip}(:%{port:peer_port})?.( Gateway(-)?Endpoint='%{regex("[^\\']+"):gateway_endpoint}'.)? Reason=%{data:reason}
+
+
+              parse_rule_IKEv2_parse_logs_021A0006_to_021A001D (\(%{regex("[^\\)]+")}\)\s*)?IKEv2 %{notSpace:exchange_type} (EAP )?exchange from %{ip:local_ip}(:%{port:local_port})? to %{ip:peer_ip}(:%{port:peer_port})? failed.( Gateway(-)?Endpoint='%{regex("[^\\']+"):gateway_endpoint}'.| Tunnel='%{regex("[^\\']+"):tunnel}'.)? Reason=%{data:reason}
+    - type: pipeline
+      name: Processing of Proxy Policy events
+      enabled: true
+      filter:
+        query: "@event_type:proxy-policy"
+      processors:
+        - type: grok-parser
+          name: Processing of Proxy Policy Events
+          enabled: true
+          source: message
+          samples:
+            - >-
+              Allow Trusted 0-External tcp 10.10.10.10 10.10.10.10 60275 143
+
+              msg="ProxyStrip: IMAP APT detected" proxy_act="IMAPClient.Standard.1" filename="lastline-demo-sample.exe"
+
+              md5="7abebcf53e97b586c92a9ce5b9985cd4" task_
+
+              uuid="e8a3730d1f88491c8821712e85d94929" threat_level="high"
+
+              mbx="INBOX" user="wg" (IMAP-proxy-00)
+            - |-
+              Allow 1-Trusted 0-External tcp 10.10.10.10 10.10.10.10 43909 110
+              msg="POP3 request" proxy_act="POP3-Client.1" rcvd_bytes="625052"
+              sent_bytes="1433" user="wg" (POP3-proxy-00)
+            - >-
+              Deny 1-Trusted 0-External tcp 10.10.10.10 10.10.10.10 59545 443
+
+              msg="ProxyDrop: HTTPS App Match" proxy_act="HTTPSClient.Standard.3" app_cat_name="Network Protocols(3)" app_cat_
+
+              id="19" app_name="HTTP Protocol over TLS SSL" app_id="94" app_
+
+              beh_name="access" app_beh_id="6" sig_vers="18.001" (HTTPS-proxy00)
+            - >-
+              Deny 1-Trusted 0-External tcp 10.10.10.10 10.10.10.10 3234 3230
+
+              msg="ProxyDrop: H323 App match" proxy_act="H.323-Client.1" app_cat_
+
+              name="Voice over IP" app_cat_id="6" app_name="H.323" app_id="2"
+
+              app_beh_name="access" app_beh_id="6" sig_vers="18.001" (H323-
+
+              ALG-00)
+            - 'Deny Trusted External tcp 10.10.10.10 10.10.10.10 37930 80
+              msg="ProxyDrop: HTTP Virus found"
+              proxy_act="HTTP-Client.Standard.1"
+              md5="69630e4574ec6798239b091cda43dca0" virus="EICAR-Test-File (not
+              a virus)" host="100.100.100.11" path="/eicar.com.txt"
+              (HTTP-proxy-00)'
+          grok:
+            supportRules: _space %{regex("[ \\t]+")}
+            matchRules: proxy_policy_rule
+              %{regex("(Allow|Deny)"):disposition}%{_space}%{regex("[\\w\\+\\-\\.\\*
+              \\t]+")}%{_space}%{regex("[a-zA-Z]+"):protocol}%{_space}%{ip:network.client.ip}%{_space}%{ip:network.destination.ip}%{_space}(%{regex("\\d{1,5}"):network.client.port}%{_space}%{regex("\\d{1,5}"):network.destination.port}%{_space})?%{data::keyvalue}
+              \(%{regex("[^\\)]+"):policy}\)
+        - type: attribute-remapper
+          name: Map `user`, `authenticated_user`, `src_user` to `usr.name`
+          enabled: true
+          sources:
+            - user
+            - authenticated_user
+            - src_user
+          sourceType: attribute
+          target: usr.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `op` to `http.method`
+          enabled: true
+          sources:
+            - op
+          sourceType: attribute
+          target: http.method
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `filename`, `file` to `file_name`
+          enabled: true
+          sources:
+            - filename
+            - file
+          sourceType: attribute
+          target: file_name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: geo-ip-parser
+      name: Extracting geolocation information from the Client IP
+      enabled: true
+      sources:
+        - network.client.ip
+      target: network.client.geoip
+      ip_processing_behavior: do-nothing
+    - type: geo-ip-parser
+      name: Extracting geolocation information from the Destination IP
+      enabled: true
+      sources:
+        - network.destination.ip
+      target: network.destination.geoip
+      ip_processing_behavior: do-nothing
+    - type: category-processor
+      name: Define severity from `threat_level`, `severity`
+      enabled: true
+      categories:
+        - filter:
+            query: "@threat_level:informational OR @severity:1"
+          name: info
+        - filter:
+            query: "@threat_level:low OR @severity:2"
+          name: notice
+        - filter:
+            query: "@threat_level:medium OR @severity:3"
+          name: warning
+        - filter:
+            query: "@threat_level:high OR @severity:4"
+          name: error
+        - filter:
+            query: "@threat_level:critical OR @severity:5"
+          name: critical
+      target: severity
+    - type: status-remapper
+      name: Define `severity` as the official status of the log
+      enabled: true
+      sources:
+        - severity
+    - type: service-remapper
+      name: Define `event_type` as the official service of the log
+      enabled: true
+      sources:
+        - event_type

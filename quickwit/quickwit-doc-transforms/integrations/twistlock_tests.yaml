@@ -1,0 +1,55 @@
+id: "twistlock"
+tests:
+ -
+  sample: "time=\"2018-12-17T23:04:53.405061747Z\" type=\"registry_scan\" log_type=\"vulnerability\" vulnerability_id=\"46\" description=\"Image contains vulnerable OS packages\" cve=\"CVE-2017-13727\" severity=\"low\" package=\"tiff (used in libtiff5)\" package_version=\"4.0.3-7ubuntu0.4\" vendor_status=\"fixed in 4.0.3-7ubuntu0.8\" rule=\"Default - alert all components\" host=\"demo-jeremy-p-twistlock-com\" image_id=\"sha256:779975a3607d703c6cce88f2bb6076ef2f8e0b20d971d474cb1b81dee5d5acca\" image_name=\"registry.infra.svc.cluster.local:5000/infoslack/dvwa:latest\""
+  result:
+    custom:
+      level: "info"
+      vulnerability:
+        cve: "CVE-2017-13727"
+        description: "Image contains vulnerable OS packages"
+        host: "demo-jeremy-p-twistlock-com"
+        id: "46"
+        image_id: "sha256:779975a3607d703c6cce88f2bb6076ef2f8e0b20d971d474cb1b81dee5d5acca"
+        image_name: "registry.infra.svc.cluster.local:5000/infoslack/dvwa:latest"
+        log_type: "vulnerability"
+        package:
+          name: "tiff (used in libtiff5)"
+          version: "4.0.3-7ubuntu0.4"
+        rule: "Default - alert all components"
+        severity: "low"
+        status: "fixed in 4.0.3-7ubuntu0.8"
+        time: "2018-12-17T23:04:53.405061747Z"
+        type: "registry_scan"
+    message: "time=\"2018-12-17T23:04:53.405061747Z\" type=\"registry_scan\" log_type=\"vulnerability\" vulnerability_id=\"46\" description=\"Image contains vulnerable OS packages\" cve=\"CVE-2017-13727\" severity=\"low\" package=\"tiff (used in libtiff5)\" package_version=\"4.0.3-7ubuntu0.4\" vendor_status=\"fixed in 4.0.3-7ubuntu0.8\" rule=\"Default - alert all components\" host=\"demo-jeremy-p-twistlock-com\" image_id=\"sha256:779975a3607d703c6cce88f2bb6076ef2f8e0b20d971d474cb1b81dee5d5acca\" image_name=\"registry.infra.svc.cluster.local:5000/infoslack/dvwa:latest\""
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1545087893405
+ -
+  sample: "time=\"2018-12-17T23:04:53.405061747Z\" type=\"registry_scan\" log_type=\"vulnerability\" vulnerability_id=\"46\" description=\"Image contains vulnerable OS packages\" cve=\"CVE-2017-13727\" severity=\"low\" package=\"tiff (used in libtiff5)\" package_version=\"4.0.3-7ubuntu0.4\" vendor_status=\"fixed in 4.0.3-7ubuntu0.8\" rule=\"Default - alert all components\" host=\"demo-jeremy-p-twistlock-com\" image_id=\"sha256:779975a3607d703c6cce88f2bb6076ef2f8e0b20d971d474cb1b81dee5d5acca\" image_name=\"registry.infra.svc.cluster.local:5000/infoslack/dvwa:latest\""
+  result:
+    custom:
+      level: "info"
+      vulnerability:
+        cve: "CVE-2017-13727"
+        description: "Image contains vulnerable OS packages"
+        host: "demo-jeremy-p-twistlock-com"
+        id: "46"
+        image_id: "sha256:779975a3607d703c6cce88f2bb6076ef2f8e0b20d971d474cb1b81dee5d5acca"
+        image_name: "registry.infra.svc.cluster.local:5000/infoslack/dvwa:latest"
+        log_type: "vulnerability"
+        package:
+          name: "tiff (used in libtiff5)"
+          version: "4.0.3-7ubuntu0.4"
+        rule: "Default - alert all components"
+        severity: "low"
+        status: "fixed in 4.0.3-7ubuntu0.8"
+        time: "2018-12-17T23:04:53.405061747Z"
+        type: "registry_scan"
+    message: "time=\"2018-12-17T23:04:53.405061747Z\" type=\"registry_scan\" log_type=\"vulnerability\" vulnerability_id=\"46\" description=\"Image contains vulnerable OS packages\" cve=\"CVE-2017-13727\" severity=\"low\" package=\"tiff (used in libtiff5)\" package_version=\"4.0.3-7ubuntu0.4\" vendor_status=\"fixed in 4.0.3-7ubuntu0.8\" rule=\"Default - alert all components\" host=\"demo-jeremy-p-twistlock-com\" image_id=\"sha256:779975a3607d703c6cce88f2bb6076ef2f8e0b20d971d474cb1b81dee5d5acca\" image_name=\"registry.infra.svc.cluster.local:5000/infoslack/dvwa:latest\""
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1545087893405
+

@@ -1,0 +1,160 @@
+id: alcide
+backend_only: true
+facets:
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - groups:
+      - Network
+    name: Client ASN
+    path: network.client.ASN
+    source: log
+  - groups:
+      - Kubernetes
+    name: Resource Type
+    path: resource-type
+    source: log
+  - groups:
+      - Kubernetes
+    name: Resource Name
+    path: resource-name
+    source: log
+  - groups:
+      - Kubernetes
+    name: Project
+    path: project
+    source: log
+  - groups:
+      - Audit
+    name: Access Type
+    path: access-type
+    source: log
+  - groups:
+      - Event
+    name: Action
+    path: evt.action
+    source: log
+pipeline:
+  type: pipeline
+  name: Alcide
+  enabled: true
+  filter:
+    query: source:alcide
+  processors:
+    - type: date-remapper
+      name: Define `time` as the official date of the log
+      enabled: true
+      sources:
+        - time
+    - type: attribute-remapper
+      name: Map attribute `cluster` to a tag
+      enabled: true
+      sources:
+        - cluster
+      target: cluster
+      targetType: tag
+      preserveSource: true
+      overrideOnConflict: false
+
+      sourceType: attribute
+    - type: attribute-remapper
+      name: Map attribute `project` to a tag
+      enabled: true
+      sources:
+        - project
+      target: project
+      targetType: tag
+      preserveSource: true
+      overrideOnConflict: false
+
+      sourceType: attribute
+    - type: service-remapper
+      name: Define `project` as the official service of the log
+      enabled: true
+      sources:
+        - project
+
+    - type: message-remapper
+      name: Define `doc` as the official message of the log
+      enabled: true
+      sources:
+        - doc
+
+    - type: attribute-remapper
+      name: Map `short-doc` to `title`
+      enabled: true
+      sources:
+        - short-doc
+      target: title
+      preserveSource: false
+      overrideOnConflict: false
+
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `caller-ip` to `network.client.ip`
+      enabled: true
+      sources:
+        - caller-ip
+      target: network.client.ip
+      preserveSource: false
+      overrideOnConflict: false
+
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `caller-ip-asn` to `network.client.asn`
+      enabled: true
+      sources:
+        - caller-ip-asn
+      target: network.client.asn
+      preserveSource: false
+      overrideOnConflict: false
+
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `caller-ip-country` to `network.client.geoip.country.iso_code`
+      enabled: true
+      sources:
+        - caller-ip-country
+      target: network.client.geoip.country.iso_code
+      preserveSource: false
+      overrideOnConflict: false
+
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `principal` to `usr.id`
+      enabled: true
+      sources:
+        - principal
+      target: usr.id
+      preserveSource: false
+      overrideOnConflict: false
+
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `verb` to `evt.action`
+      enabled: true
+      sources:
+        - verb
+      target: evt.action
+      preserveSource: false
+      overrideOnConflict: false
+
+      sourceType: attribute
+      targetType: attribute

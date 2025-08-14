@@ -1,0 +1,46 @@
+id: scylla
+metric_id: scylla
+backend_only: false
+facets:
+  - groups:
+      - Database
+    name: Database
+    path: db.instance
+    source: log
+pipeline:
+  type: pipeline
+  name: Scylla
+  enabled: true
+  filter:
+    query: source:scylla
+  processors:
+    - type: grok-parser
+      name: Parsing Scylla logs
+      enabled: true
+      source: message
+      samples:
+        - 'INFO  2020-02-19 18:43:13,083 [shard 1] stream_session - [Stream #aeeb6fb0-5347-11ea-bb85-000000000001] Start sending ks=system_traces, cf=node_slow_log, estimated_partitions=0, with new rpc streaming'
+        - 'INFO  2020-02-19 18:41:19,819 [shard 0] migration_manager - Create new ColumnFamily: org.apache.cassandra.config.CFMetaData@0x600000bf0a80[cfId=f9706768-aa1e-3d87-9e5c-51a3927c2870,ksName=system_traces,cfName=node_slow_log_time_idx,cfType=Standard,comparator=org.apache.cassandra.db.marshal.CompositeType(org.apache.cassandra.db.marshal.TimestampType,org.apache.cassandra.db.marshal.UUIDType,org.apache.cassandra.db.marshal.UTF8Type),comment=,readRepairChance=0,dcLocalReadRepairChance=0.1,gcGraceSeconds=864000,keyValidator=org.apache.cassandra.db.marshal.TimestampType,minCompactionThreshold=4,maxCompactionThreshold=32,columnMetadata=[ColumnDefinition{name=minute, type=org.apache.cassandra.db.marshal.TimestampType, kind=PARTITION_KEY, componentIndex=0, droppedAt=-9223372036854775808}, ColumnDefinition{name=started_at, type=org.apache.cassandra.db.marshal.TimestampType, kind=CLUSTERING_COLUMN, componentIndex=0, droppedAt=-9223372036854775808}, ColumnDefinition{name=session_id, type=org.apache.cassandra.db.marshal.UUIDType, kind=CLUSTERING_COLUMN, componentIndex=1, droppedAt=-9223372036854775808}, ColumnDefinition{name=node_ip, type=org.apache.cassandra.db.marshal.InetAddressType, kind=REGULAR, componentIndex=null, droppedAt=-9223372036854775808}, ColumnDefinition{name=shard, type=org.apache.cassandra.db.marshal.Int32Type, kind=REGULAR, componentIndex=null, droppedAt=-9223372036854775808}, ColumnDefinition{name=start_time, type=org.apache.cassandra.db.marshal.TimeUUIDType, kind=REGULAR, componentIndex=null, droppedAt=-9223372036854775808}],compactionStrategyClass=class org.apache.cassandra.db.compaction.SizeTieredCompactionStrategy,compactionStrategyOptions={enabled=true},compressionParameters={sstable_compression=org.apache.cassandra.io.compress.LZ4Compressor},bloomFilterFpChance=0.01,memtableFlushPeriod=0,caching={"keys":"ALL","rows_per_partition":"ALL"},defaultTimeToLive=86400,minIndexInterval=128,maxIndexInterval=2048,speculativeRetry=99.0PERCENTILE,triggers=[],isDense=false,version=6b6b29b2-5347-11ea-bf0e-000000000002,droppedColumns={},collections={},indices={}]'
+        - INFO  2020-02-19 18:41:19,700 [shard 2] compaction - Compacting [/var/lib/scylla/data/system_schema/keyspaces-abac5682dea631c5b535b3d6cffd0fb6/mc-42-big-Data.db:level=0, /var/lib/scylla/data/system_schema/keyspaces-abac5682dea631c5b535b3d6cffd0fb6/mc-38-big-Data.db:level=0, ]
+        - WARN  2020-02-19 18:41:03,855 [shard 0] init - Using default cluster name is not recommended. Using a unique cluster name will reduce the chance of adding nodes to the wrong cluster by mistake
+      grok:
+        supportRules: |
+          _timestampms %{date("yyyy-MM-dd HH:mm:ss,SSS"):db.date}
+        matchRules: |
+          default_scylla_stream %{notSpace:db.severity}  %{_timestampms} \[shard %{integer:scylla.shard}\] %{notSpace:db.operation} - \[Stream %{notSpace:scylla.stream}\] %{data:msg}
+          default_scylla_format %{notSpace:db.severity}  %{_timestampms} \[shard %{integer:scylla.shard}\] %{notSpace:db.operation} - %{data:msg}
+    - type: date-remapper
+      name: Define `db.date` as the official date of the log
+      enabled: true
+      sources:
+        - db.date
+    - type: status-remapper
+      name: Define `db.severity` as the official status of the log
+      enabled: true
+      sources:
+        - db.severity
+    - type: message-remapper
+      name: Define `msg` as the official message of the log
+      enabled: true
+      sources:
+        - msg

@@ -1,0 +1,1496 @@
+id: okta
+metric_id: okta
+backend_only: false
+facets:
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+  - groups:
+      - Event
+    name: Event Outcome
+    path: evt.outcome
+    source: log
+  - groups:
+      - Web Access
+    name: Request ID
+    path: http.request_id
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url
+    source: log
+  - groups:
+      - Web Access
+    name: URL Host
+    path: http.url_details.host
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Web Access
+    name: URL Port
+    path: http.url_details.port
+    source: log
+  - groups:
+      - Web Access
+    name: URL scheme
+    path: http.url_details.scheme
+    source: log
+  - groups:
+      - Web Access
+    name: User-Agent
+    path: http.useragent
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - User
+    name: User Email
+    path: usr.email
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - groups:
+      - Event
+    name: Event Category
+    path: evt.category
+    source: log
+  - groups:
+      - Okta
+    name: Target App
+    path: target_app
+    source: log
+pipeline:
+  type: pipeline
+  name: Okta
+  enabled: true
+  filter:
+    query: source:okta
+  processors:
+    - type: date-remapper
+      name: Define `published` as the official date of the log
+      enabled: true
+      sources:
+        - published
+    - type: attribute-remapper
+      name: Map `displayMessage` to `title`
+      enabled: true
+      sources:
+        - displayMessage
+      sourceType: attribute
+      target: title
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: message-remapper
+      name: Define `displayMessage` as the official message of the log
+      enabled: true
+      sources:
+        - displayMessage
+    - type: attribute-remapper
+      name: Map `eventType` to `evt.name`
+      enabled: true
+      sources:
+        - eventType
+      sourceType: attribute
+      target: evt.name
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `outcome.result` to `evt.outcome`
+      enabled: true
+      sources:
+        - outcome.result
+      sourceType: attribute
+      target: evt.outcome
+      targetType: attribute
+      targetFormat: string
+      preserveSource: true
+      overrideOnConflict: false
+    - type: category-processor
+      name: remap @evt.name:user.session.start to evt.category:authentication
+      enabled: true
+      categories:
+        - filter:
+            query: '@evt.name:user.session.start'
+          name: authentication
+      target: evt.category
+    - type: attribute-remapper
+      name: Map `debugContext.debugData.requestId` to `http.request_id`
+      enabled: true
+      sources:
+        - debugContext.debugData.requestId
+      sourceType: attribute
+      target: http.request_id
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `debugContext.debugData.url` to `http.url`
+      enabled: true
+      sources:
+        - debugContext.debugData.url
+      sourceType: attribute
+      target: http.url
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: url-parser
+      name: ''
+      enabled: true
+      sources:
+        - http.url
+      target: http.url_details
+    - type: attribute-remapper
+      name: Map `client.userAgent.rawUserAgent` to `http.useragent`
+      enabled: true
+      sources:
+        - client.userAgent.rawUserAgent
+      sourceType: attribute
+      target: http.useragent
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: user-agent-parser
+      name: ''
+      enabled: true
+      sources:
+        - http.useragent
+      target: http.useragent_details
+      encoded: false
+      combineVersionDetails: false
+    - type: attribute-remapper
+      name: Map `actor.id` to `usr.id`
+      enabled: true
+      sources:
+        - actor.id
+      sourceType: attribute
+      target: usr.id
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `actor.alternateId` to `usr.email`
+      enabled: true
+      sources:
+        - actor.alternateId
+      sourceType: attribute
+      target: usr.email
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `actor.displayName` to `usr.name`
+      enabled: true
+      sources:
+        - actor.displayName
+      sourceType: attribute
+      target: usr.name
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `actor.type` to `usr.type`
+      enabled: true
+      sources:
+        - actor.type
+      sourceType: attribute
+      target: usr.type
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `actor.detailEntry` to `usr.details`
+      enabled: true
+      sources:
+        - actor.detailEntry
+      sourceType: attribute
+      target: usr.details
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `client.ipAddress` to `network.client.ip`
+      enabled: true
+      sources:
+        - client.ipAddress
+      sourceType: attribute
+      target: network.client.ip
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: geo-ip-parser
+      name: GeoIP Parser
+      enabled: true
+      sources:
+        - network.client.ip
+      target: network.client.geoip
+      ip_processing_behavior: do-nothing
+    - type: attribute-remapper
+      name: Map `client.geographicalContext.city` to `network.client.geoip.city.name`
+      enabled: true
+      sources:
+        - client.geographicalContext.city
+      sourceType: attribute
+      target: network.client.geoip.city.name
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `client.geographicalContext.country` to `network.client.geoip.country.name`
+      enabled: true
+      sources:
+        - client.geographicalContext.country
+      sourceType: attribute
+      target: network.client.geoip.country.name
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `client.geographicalContext.state` to `network.client.geoip.subdivision.name`
+      enabled: true
+      sources:
+        - client.geographicalContext.state
+      sourceType: attribute
+      target: network.client.geoip.subdivision.name
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: grok-parser
+      name: Extracting Login app from requestUri
+      enabled: true
+      source: http.url_details.path
+      samples:
+        - /app/snowflake/exk51zugrjS17P5nv356/sso/saml
+      grok:
+        supportRules: ""
+        matchRules: target_app /app/%{word:target_app}.*
+    # OCSF transformations
+    - type: pipeline
+      name: OCSF pre transformations
+      enabled: true
+      ocsf:
+        isOcsf: true
+      filter:
+        query: "*"
+      processors:
+        - type: string-builder-processor
+          name: Add product name
+          enabled: true
+          template: Okta System Log
+          target: ocsf.metadata.product.name
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add product vendor
+          enabled: true
+          template: Okta
+          target: ocsf.metadata.product.vendor_name
+          replaceMissing: false
+        - type: grok-parser
+          name: Parsing published
+          enabled: true
+          source: published
+          samples:
+            - "2024-08-13T15:58:20.353Z"
+          grok:
+            supportRules: ""
+            matchRules: parsing_time %{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):ocsf.time}
+        - type: attribute-remapper
+          name: Map `displayMessage` to `ocsf.message`
+          enabled: true
+          sources:
+            - displayMessage
+          sourceType: attribute
+          target: ocsf.message
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `eventType` to `ocsf.metadata.event_code`
+          enabled: true
+          sources:
+            - eventType
+          sourceType: attribute
+          target: ocsf.metadata.event_code
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `version` to `ocsf.metadata.product.version`
+          enabled: true
+          sources:
+            - version
+          sourceType: attribute
+          target: ocsf.metadata.product.version
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `uuid` to `ocsf.metadata.uid`
+          enabled: true
+          sources:
+            - uuid
+          sourceType: attribute
+          target: ocsf.metadata.uid
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `outcome.result` to `ocsf.status`
+          enabled: true
+          sources:
+            - outcome.result
+          sourceType: attribute
+          target: ocsf.status
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: category-processor
+          name: OCSF - status_id mapping
+          enabled: true
+          categories:
+            - filter:
+                query: "@outcome.result:SUCCESS"
+              name: "1"
+            - filter:
+                query: "@outcome.result:FAILURE"
+              name: "2"
+            - filter:
+                query: "@outcome.result:*"
+              name: "99"
+          target: ocsf.status_id
+          replaceMissing: false
+        - type: category-processor
+          name: OCSF - status mapping
+          enabled: true
+          categories:
+            - filter:
+                query: "@outcome.result:SUCCESS"
+              name: "Success"
+            - filter:
+                query: "@outcome.result:FAILURE"
+              name: "Failure"
+          target: ocsf.status
+        - type: attribute-remapper
+          name: Map `ocsf.status_id` to `ocsf.status_id`
+          enabled: true
+          sources:
+            - ocsf.status_id
+          sourceType: attribute
+          target: ocsf.status_id
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Okta OCSF sub pipeline for class Detection Finding [2004]
+      enabled: true
+      ocsf:
+        isOcsf: true
+      filter:
+        query: "@eventType:(security.threat.detected OR user.risk.*)"
+      processors:
+        - type: string-builder-processor
+          name: Add version
+          enabled: true
+          template: 1.3.0
+          target: ocsf.metadata.version
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add category uid
+          enabled: true
+          template: "2"
+          target: ocsf.category_uid
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add category name
+          enabled: true
+          template: Finding
+          target: ocsf.category_name
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add class uid
+          enabled: true
+          template: "2004"
+          target: ocsf.class_uid
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add OCSF profiles
+          enabled: true
+          template: "[security_control,datetime]"
+          target: ocsf.metadata.profiles
+          replaceMissing: false
+        - type: grok-parser
+          name: Profiles string to array
+          enabled: true
+          source: ocsf.metadata.profiles
+          samples:
+            - "[date,time]"
+          grok:
+            supportRules: ""
+            matchRules: ProfileStrToArray %{data:ocsf.metadata.profiles:array("[]",",")}
+        - type: string-builder-processor
+          name: Add class name
+          enabled: true
+          template: Detection Finding
+          target: ocsf.class_name
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add severity
+          enabled: true
+          template: Informational
+          target: ocsf.severity
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add severity id
+          enabled: true
+          template: "1"
+          target: ocsf.severity_id
+          replaceMissing: false
+        - type: attribute-remapper
+          name: Map `outcome.result` to `ocsf.action`
+          enabled: true
+          sources:
+            - outcome.result
+          sourceType: attribute
+          target: ocsf.action
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `outcome.result` to `ocsf.disposition`
+          enabled: true
+          sources:
+            - outcome.result
+          sourceType: attribute
+          target: ocsf.disposition
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `outcome.reason` to `ocsf.finding_info.title`
+          enabled: true
+          sources:
+            - outcome.reason
+          sourceType: attribute
+          target: ocsf.finding_info.title
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `uuid` to `ocsf.finding_info.uid`
+          enabled: true
+          sources:
+            - uuid
+          sourceType: attribute
+          target: ocsf.finding_info.uid
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: category-processor
+          name: OCSF - activity_id mapping
+          enabled: true
+          categories:
+            - filter:
+                query: "@eventType:(security.threat.detected OR user.risk.detect)"
+              name: Create[1]
+            - filter:
+                query: "@eventType:(user.risk.change)"
+              name: Update[2]
+            - filter:
+                query: "@eventType:(*)"
+              name: Other[99]
+          target: activity_id_name
+    - type: pipeline
+      name: Okta OCSF sub pipeline for class Authentication [3002]
+      enabled: true
+      ocsf:
+        isOcsf: true
+      filter:
+        query: "@eventType:(app.generic.unauth_app_access_attempt OR
+          app.inbound_del_auth.login_success OR app.kerberos_rich_client.* OR
+          app.oauth2.authorize OR app.oauth2.authorize.code OR
+          application.policy.sign_on.deny_access OR
+          system.push.send_factor_verify_push OR user.authentication.* OR
+          user.mfa.attempt_bypass OR user.mfa.okta_verify.* OR
+          user.session.access_admin_app OR user.session.end OR
+          user.session.expire OR user.session.start)"
+      processors:
+        - type: string-builder-processor
+          name: Add version
+          enabled: true
+          template: 1.3.0
+          target: ocsf.metadata.version
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add category uid
+          enabled: true
+          template: "3"
+          target: ocsf.category_uid
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add category name
+          enabled: true
+          template: Identity & Access Management
+          target: ocsf.category_name
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add class uid
+          enabled: true
+          template: "3002"
+          target: ocsf.class_uid
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add class name
+          enabled: true
+          template: Authentication
+          target: ocsf.class_name
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add severity
+          enabled: true
+          template: Informational
+          target: ocsf.severity
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add severity id
+          enabled: true
+          template: "1"
+          target: ocsf.severity_id
+          replaceMissing: false
+        - type: attribute-remapper
+          name: Map `actor.displayName` to `ocsf.user.name`
+          enabled: true
+          sources:
+            - actor.displayName
+          sourceType: attribute
+          target: ocsf.user.name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `actor.id` to `ocsf.user.uid`
+          enabled: true
+          sources:
+            - actor.id
+          sourceType: attribute
+          target: ocsf.user.uid
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `authenticationContext.issuer.id` to `ocsf.actor.session.issuer`
+          enabled: true
+          sources:
+            - authenticationContext.issuer.id
+          sourceType: attribute
+          target: ocsf.actor.session.issuer
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `debugContext.debugData.url` to `ocsf.dst_endpoint.svc_name`
+          enabled: true
+          sources:
+            - debugContext.debugData.url
+          sourceType: attribute
+          target: ocsf.dst_endpoint.svc_name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `debugContext.debugData.url` to `ocsf.dst_endpoint.svc_name`
+          enabled: true
+          sources:
+            - debugContext.debugData.url
+          sourceType: attribute
+          target: ocsf.dst_endpoint.svc_name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `actor.type` to `ocsf.user.type`
+          enabled: true
+          sources:
+            - actor.type
+          sourceType: attribute
+          target: ocsf.user.type
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `actor.displayName` to `ocsf.user.name`
+          enabled: true
+          sources:
+            - actor.displayName
+          sourceType: attribute
+          target: ocsf.user.name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `actor.alternateId` to `ocsf.user.email_addr`
+          enabled: true
+          sources:
+            - actor.alternateId
+          sourceType: attribute
+          target: ocsf.user.email_addr
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `actor.id` to `ocsf.user.uid`
+          enabled: true
+          sources:
+            - actor.id
+          sourceType: attribute
+          target: ocsf.user.uid
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `client.ipAddress` to `ocsf.src_endpoint.ip`
+          enabled: true
+          sources:
+            - client.ipAddress
+          sourceType: attribute
+          target: ocsf.src_endpoint.ip
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `securityContext.domain` to `ocsf.src_endpoint.domain`
+          enabled: true
+          sources:
+            - securityContext.domain
+          sourceType: attribute
+          target: ocsf.src_endpoint.domain
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `client.geographicalContext.city` to `ocsf.src_endpoint.location.city`
+          enabled: true
+          sources:
+            - client.geographicalContext.city
+          sourceType: attribute
+          target: ocsf.src_endpoint.location.city
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `client.geographicalContext.geolocation.lat` to
+            `ocsf.src_endpoint.location.lat`
+          enabled: true
+          sources:
+            - client.geographicalContext.geolocation.lat
+          sourceType: attribute
+          target: ocsf.src_endpoint.location.lat
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `client.geographicalContext.geolocation.long` to `ocsf.src_endpoint.location.lon`
+          enabled: true
+          sources:
+            - client.geographicalContext.geolocation.long
+          sourceType: attribute
+          target: ocsf.src_endpoint.location.lon
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `client.geographicalContext.geolocation.country` to
+            `ocsf.src_endpoint.location.country`
+          enabled: true
+          sources:
+            - client.geographicalContext.geolocation.country
+          sourceType: attribute
+          target: ocsf.src_endpoint.location.country
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `securityContext.isp` to `ocsf.src_endpoint.location.isp`
+          enabled: true
+          sources:
+            - securityContext.isp
+          sourceType: attribute
+          target: ocsf.src_endpoint.location.isp
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `client.geographicalContext.postalCode` to `ocsf.src_endpoint.location.postal_code`
+          enabled: true
+          sources:
+            - client.geographicalContext.postalCode
+          sourceType: attribute
+          target: ocsf.src_endpoint.location.postal_code
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `securityContext.asOrg` to `ocsf.src_endpoint.autonomous_system.name`
+          enabled: true
+          sources:
+            - securityContext.asOrg
+          sourceType: attribute
+          target: ocsf.src_endpoint.autonomous_system.name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `securityContext.asNumber` to
+            `ocsf.src_endpoint.autonomous_system.number`
+          enabled: true
+          sources:
+            - securityContext.asNumber
+          sourceType: attribute
+          target: ocsf.src_endpoint.autonomous_system.number
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `actor.displayName` to `ocsf.actor.user.name`
+          enabled: true
+          sources:
+            - actor.displayName
+          sourceType: attribute
+          target: ocsf.actor.user.name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `actor.alternateId` to `ocsf.actor.user.email_addr`
+          enabled: true
+          sources:
+            - actor.alternateId
+          sourceType: attribute
+          target: ocsf.actor.user.email_addr
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `actor.id` to `ocsf.actor.user.uid`
+          enabled: true
+          sources:
+            - actor.id
+          sourceType: attribute
+          target: ocsf.actor.user.uid
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `debugContext.debugData.requestId` to `ocsf.http_request.uid`
+          enabled: true
+          sources:
+            - debugContext.debugData.requestId
+          sourceType: attribute
+          target: ocsf.http_request.uid
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `debugContext.debugData.url` to `ocsf.http_request.url.path`
+          enabled: true
+          sources:
+            - debugContext.debugData.url
+          sourceType: attribute
+          target: ocsf.http_request.url.path
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `client.userAgent.rawUserAgent` to `ocsf.http_request.user_agent`
+          enabled: true
+          sources:
+            - client.userAgent.rawUserAgent
+          sourceType: attribute
+          target: ocsf.http_request.user_agent
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: category-processor
+          name: OCSF - activity_id mapping
+          enabled: true
+          categories:
+            - filter:
+                query: "@eventType:(app.inbound_del_auth.login_success OR
+                  user.authentication.auth OR
+                  user.authentication.auth_unconfigured_identifier OR
+                  user.authentication.auth_via_AD_agent OR
+                  user.authentication.auth_via_IDP OR
+                  user.authentication.auth_via_inbound_delauth OR
+                  user.authentication.auth_via_inbound_SAML OR
+                  user.authentication.auth_via_iwa OR
+                  user.authentication.auth_via_LDAP_agent OR
+                  user.authentication.auth_via_mfa OR
+                  user.authentication.auth_via_radius OR
+                  user.authentication.auth_via_richclient OR
+                  user.authentication.auth_via_social OR
+                  user.authentication.authenticate OR
+                  user.session.access_admin_app OR user.session.start)"
+              name: Logon[1]
+            - filter:
+                query: "@eventType:(user.authentication.universal_logout OR
+                  user.authentication.universal_logout.scheduled OR
+                  user.session.end)"
+              name: Logoff[2]
+            - filter:
+                query:
+                  "@eventType:(app.kerberos_rich_client.account_not_found OR
+                  app.kerberos_rich_client.instance_not_found OR
+                  app.kerberos_rich_client.multiple_accounts_found OR
+                  app.kerberos_rich_client.user_authentication_successful)"
+              name: Authentication Ticket[3]
+            - filter:
+                query: "@eventType:(*)"
+              name: Other[99]
+          target: activity_id_name
+    - type: pipeline
+      name: Okta OCSF sub pipeline for class API Activity [6003]
+      enabled: true
+      ocsf:
+        isOcsf: true
+      filter:
+        query: -@ocsf.category_uid:*
+      processors:
+        - type: string-builder-processor
+          name: Add version
+          enabled: true
+          template: 1.3.0
+          target: ocsf.metadata.version
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add category uid
+          enabled: true
+          template: "6"
+          target: ocsf.category_uid
+          replaceMissing: false
+        - type: attribute-remapper
+          name: Map `eventType` to `ocsf.api.operation`
+          enabled: true
+          sources:
+            - eventType
+          sourceType: attribute
+          target: ocsf.api.operation
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: string-builder-processor
+          name: Add category name
+          enabled: true
+          template: Application Activity
+          target: ocsf.category_name
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add class uid
+          enabled: true
+          template: "6003"
+          target: ocsf.class_uid
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add class name
+          enabled: true
+          template: API Activity
+          target: ocsf.class_name
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add severity
+          enabled: true
+          template: Informational
+          target: ocsf.severity
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add severity id
+          enabled: true
+          template: "1"
+          target: ocsf.severity_id
+          replaceMissing: false
+        - type: attribute-remapper
+          name: Map `client.ipAddress` to `ocsf.src_endpoint.ip`
+          enabled: true
+          sources:
+            - client.ipAddress
+          sourceType: attribute
+          target: ocsf.src_endpoint.ip
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `securityContext.domain` to `ocsf.src_endpoint.domain`
+          enabled: true
+          sources:
+            - securityContext.domain
+          sourceType: attribute
+          target: ocsf.src_endpoint.domain
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `client.geographicalContext.city` to `ocsf.src_endpoint.location.city`
+          enabled: true
+          sources:
+            - client.geographicalContext.city
+          sourceType: attribute
+          target: ocsf.src_endpoint.location.city
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `client.geographicalContext.geolocation.lat` to
+            `ocsf.src_endpoint.location.lat`
+          enabled: true
+          sources:
+            - client.geographicalContext.geolocation.lat
+          sourceType: attribute
+          target: ocsf.src_endpoint.location.lat
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `client.geographicalContext.geolocation.long` to `ocsf.src_endpoint.location.lon`
+          enabled: true
+          sources:
+            - client.geographicalContext.geolocation.long
+          sourceType: attribute
+          target: ocsf.src_endpoint.location.lon
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `client.geographicalContext.geolocation.country` to
+            `ocsf.src_endpoint.location.country`
+          enabled: true
+          sources:
+            - client.geographicalContext.geolocation.country
+          sourceType: attribute
+          target: ocsf.src_endpoint.location.country
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `securityContext.isp` to `ocsf.src_endpoint.location.isp`
+          enabled: true
+          sources:
+            - securityContext.isp
+          sourceType: attribute
+          target: ocsf.src_endpoint.location.isp
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `client.geographicalContext.postalCode` to `ocsf.src_endpoint.location.postal_code`
+          enabled: true
+          sources:
+            - client.geographicalContext.postalCode
+          sourceType: attribute
+          target: ocsf.src_endpoint.location.postal_code
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `securityContext.asOrg` to `ocsf.src_endpoint.autonomous_system.name`
+          enabled: true
+          sources:
+            - securityContext.asOrg
+          sourceType: attribute
+          target: ocsf.src_endpoint.autonomous_system.name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `securityContext.asNumber` to
+            `ocsf.src_endpoint.autonomous_system.number`
+          enabled: true
+          sources:
+            - securityContext.asNumber
+          sourceType: attribute
+          target: ocsf.src_endpoint.autonomous_system.number
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `actor.displayName` to `ocsf.actor.user.name`
+          enabled: true
+          sources:
+            - actor.displayName
+          sourceType: attribute
+          target: ocsf.actor.user.name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `actor.alternateId` to `ocsf.actor.user.email_addr`
+          enabled: true
+          sources:
+            - actor.alternateId
+          sourceType: attribute
+          target: ocsf.actor.user.email_addr
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `actor.id` to `ocsf.actor.user.uid`
+          enabled: true
+          sources:
+            - actor.id
+          sourceType: attribute
+          target: ocsf.actor.user.uid
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `authenticationContext.issuer.id` to `ocsf.actor.session.issuer`
+          enabled: true
+          sources:
+            - authenticationContext.issuer.id
+          sourceType: attribute
+          target: ocsf.actor.session.issuer
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `debugContext.debugData.requestId` to `ocsf.http_request.uid`
+          enabled: true
+          sources:
+            - debugContext.debugData.requestId
+          sourceType: attribute
+          target: ocsf.http_request.uid
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `debugContext.debugData.url` to `ocsf.http_request.url.path`
+          enabled: true
+          sources:
+            - debugContext.debugData.url
+          sourceType: attribute
+          target: ocsf.http_request.url.path
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `client.userAgent.rawUserAgent` to `ocsf.http_request.user_agent`
+          enabled: true
+          sources:
+            - client.userAgent.rawUserAgent
+          sourceType: attribute
+          target: ocsf.http_request.user_agent
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: category-processor
+          name: OCSF - activity_id mapping
+          enabled: true
+          categories:
+            - filter:
+                query:
+                  source:okta @eventType:(access.request.condition.create OR
+                  access.request.create OR app.oauth2.api_resource.create OR
+                  app.oauth2.client.lifecycle.create OR
+                  app.oauth2.credentials.lifecycle.create OR
+                  app.office365.api.error.group.create.failure OR
+                  app.office365.api.error.group.create.failure.name.in.use OR
+                  app.office365.api.error.unable.to.create.graph.client OR
+                  app.user_management.grouppush.mapping.created.from.rule OR
+                  app.user_management.grouppush.mapping.created.from.rule.error.duplicate
+                  OR
+                  app.user_management.grouppush.mapping.created.from.rule.error.validation
+                  OR
+                  app.user_management.grouppush.mapping.created.from.rule.errors
+                  OR app.user_management.user_group_import.create_failure OR
+                  application.lifecycle.create OR
+                  application.provision.group_push.mapping.created OR
+                  application.provision.group_push.mapping.created.from.rule.warning.duplicate.name
+                  OR
+                  application.provision.group_push.mapping.created.from.rule.warning.duplicate.name.tobecreated
+                  OR
+                  application.provision.group_push.mapping.created.from.rule.warning.upsertGroup.duplicate.name
+                  OR certification.campaign.create OR
+                  device.desktop_mfa.enrollment.create OR
+                  device.password_sync.enrollment.create OR
+                  device.push.provider.create OR directory.linked_object.create
+                  OR directory.non_default_user_profile.create OR
+                  event_hook.created OR iam.resourceset.create OR
+                  inline_hook.created OR mim.createEnrollment.ANDROID OR
+                  mim.createEnrollment.IOS OR mim.createEnrollment.OSX OR
+                  mim.createEnrollment.UNKNOWN OR mim.createEnrollment.WINDOWS
+                  OR oauth2.as.created OR oauth2.claim.created OR
+                  oauth2.scope.created OR omm.cma.created OR
+                  pam.ad_connection.create OR pam.ad_task_settings.create OR
+                  pam.ad_user_sync_task_settings.create OR
+                  pam.billing_contact.create OR
+                  pam.client_enrollment_policies.create OR
+                  pam.cloud_account.create OR pam.entitlement_sudo.create OR
+                  pam.gateway.create OR pam.gateway.setup_token.create OR
+                  pam.group.create OR pam.preauthorization.create OR
+                  pam.project.create OR pam.resource_group.create OR
+                  pam.secret.create OR pam.secret_folder.create OR
+                  pam.service.create OR pam.sudo_command_bundle.create OR
+                  pam.team.create OR pam.team_group_attribute.create OR
+                  pam.team_invitation.create OR
+                  pam.team_project_group_attribute.create OR
+                  pam.team_project_user_attribute.create OR
+                  pam.team_user_attribute.create OR pam.unmanaged_server.create
+                  OR security.authenticator.lifecycle.create OR
+                  security.behavior.settings.create OR
+                  security.events.provider.create OR
+                  security.events.transmitter.create OR
+                  security.trusted_origin.create OR system.agent.ad.create OR
+                  system.agent.ldap.create_user_JIT OR system.api_token.create
+                  OR system.brand.create OR system.captcha.create OR
+                  system.email.template.create OR system.email_domain.create OR
+                  system.hook.key.created OR system.idp.key.create OR
+                  system.idp.lifecycle.create OR
+                  system.import.custom_object.create OR
+                  system.import.object_creation.complete OR
+                  system.import.object_creation.start OR
+                  system.import.session.created OR system.iwa.create OR
+                  system.log_stream.lifecycle.create OR task.lifecycle.create OR
+                  user.identity_snapshot.attestation.create OR
+                  workflows.user.connection.create OR workflows.user.flow.create
+                  OR workflows.user.folder.create OR workflows.user.table.create
+                  OR zone.create)
+              name: Create[1]
+            - filter:
+                query:
+                  source:okta @eventType:(access.request.reject OR access.request.resolve
+                  OR app.access_request.approver.approve OR
+                  app.access_request.approver.deny OR
+                  app.oauth2.client.read_client_secret OR
+                  app.oauth2.token.grant.access_token OR
+                  app.office365.api.error.set.domain.federation.failure.access.denied
+                  OR app.radius.agent.port_inaccessible OR
+                  app.radius.agent.port_reaccessible OR
+                  app.radius.info_access.no_permission OR
+                  app.radius.info_access.partial_permission OR
+                  application.configuration.read_client_secret OR
+                  policy.continuous_access.action OR
+                  policy.continuous_access.evaluate OR support.org.view OR
+                  system.agent.ad.read_config OR system.agent.ad.read_dirsync OR
+                  system.agent.ad.read_ldap OR system.agent.ad.read_schema OR
+                  system.agent.ad.read_topology OR
+                  system.idp.lifecycle.read_client_secret OR
+                  workflows.user.table.view)
+              name: Read[2]
+            - filter:
+                query: source:okta @eventType:(account.org.product.update OR
+                  account.org.status.update OR app.oauth2.api_resource.update OR
+                  app.oauth2.client.lifecycle.update OR
+                  app.office365.api.change.domain.federation.success OR
+                  app.office365.api.error.group.membership.update.assignment.failure
+                  OR app.office365.api.error.group.membership.update.failure OR
+                  app.office365.api.error.group.membership.update.group.not.found.failure
+                  OR
+                  app.office365.api.error.group.membership.update.removal.failure
+                  OR app.office365.api.error.group.update.failure OR
+                  app.office365.api.error.group.update.failure.not.found OR
+                  app.policy.sign_on.update OR
+                  app.realtimesync.import.details.update_user OR
+                  app.saml.sensitive.attribute.update OR
+                  app.user_management.update_from_master_failed OR
+                  app.user_management.user_group_import.update_failure OR
+                  application.configuration.update OR
+                  application.configuration.update_api_credentials_for_pass_change
+                  OR application.configuration.update_logo OR
+                  application.configuration.update_rate_limits OR
+                  application.lifecycle.update OR
+                  application.provision.group.update OR
+                  application.provision.group_membership.update OR
+                  application.provision.group_push.mapping.update.or.delete.failed
+                  OR
+                  application.provision.group_push.mapping.update.or.delete.failed.with.error
+                  OR application.provision.group_push.updated OR
+                  application.user_membership.update OR
+                  certification.campaign.context.update OR
+                  certification.campaign.update OR device.check.update OR
+                  device.desktop_mfa.configuration.update OR
+                  device.platform.update OR device.push.provider.update OR
+                  directory.app_user_profile.update OR directory.mapping.update
+                  OR directory.user_profile.update OR event_hook.updated OR
+                  group.application_assignment.update OR group.profile.update OR
+                  inline_hook.updated OR oauth2.as.updated OR
+                  oauth2.claim.updated OR oauth2.scope.updated OR
+                  omm.app.VPN.settings.changed OR omm.app.WIFI.settings.changed
+                  OR omm.app.eas.cert_based.settings.changed OR
+                  omm.app.eas.settings.changed OR omm.cma.updated OR
+                  omm.enrollment.changed OR pam.ad_connection.update OR
+                  pam.ad_task_settings.update OR
+                  pam.ad_task_settings.update_schedule OR
+                  pam.ad_user_sync_task_settings.update OR
+                  pam.ad_user_sync_task_settings.update_schedule OR
+                  pam.client.state.update OR
+                  pam.client_enrollment_policies.update OR
+                  pam.cloud_account.update OR pam.entitlement_sudo.update OR
+                  pam.gateway.setup_token.update OR pam.gateway.update OR
+                  pam.group.bulk_membership_change OR pam.password.change OR
+                  pam.permission.change OR pam.preauthorization.update OR
+                  pam.project.update OR pam.project_group_selector.update OR
+                  pam.resource_group.update OR pam.secret.update OR
+                  pam.secret_folder.update OR
+                  pam.server_account.password_change.initiated OR
+                  pam.server_account.password_change.out_of_band OR
+                  pam.server_account.password_change.update OR
+                  pam.server_account.update OR pam.server_labels.update OR
+                  pam.sudo_command_bundle.update OR
+                  pam.team_group_attribute.update OR
+                  pam.team_project_group_attribute.update OR
+                  pam.team_project_user_attribute.update OR
+                  pam.team_settings.update OR pam.team_user_attribute.update OR
+                  personal.admin.configuration.update OR
+                  scheduled_action.user_suspension.updated OR
+                  security.attack_protection.settings.update OR
+                  security.authenticator.lifecycle.update OR
+                  security.behavior.settings.update OR
+                  security.events.provider.update OR
+                  security.events.transmitter.update OR
+                  security.threat.configuration.update OR
+                  security.trusted_origin.update OR support.org.update OR
+                  system.agent.ad.config_change_detected OR
+                  system.agent.ad.update OR system.agent.ad.update_user OR
+                  system.agent.auto_update OR
+                  system.agent.ldap.change_user_password OR
+                  system.agent.ldap.update_user OR
+                  system.agent.ldap.update_user_password OR
+                  system.agent_pools.auto_update OR system.api_token.update OR
+                  system.brand.update OR system.captcha.update OR
+                  system.custom_error.update OR system.custom_signin.update OR
+                  system.custom_signout.update OR
+                  system.custom_url_domain.update OR
+                  system.email.template.settings_changed OR
+                  system.email.template.update OR system.email_domain.update OR
+                  system.hook.key.updated OR system.idp.key.update OR
+                  system.idp.lifecycle.update OR
+                  system.import.custom_object.update OR
+                  system.import.roadblock.updated OR
+                  system.import.user_match.update OR system.iwa.update OR
+                  system.iwa_agentless.update OR
+                  system.iwa_agentless_kerberos.update OR
+                  system.log_stream.lifecycle.update OR
+                  system.self_service.configuration.update OR
+                  system.theme.update OR task.lifecycle.update OR
+                  user.session.context.change OR
+                  workflows.user.execution_log_stream_connection.update OR
+                  workflows.user.table.update OR zone.update)
+              name: Update[3]
+            - filter:
+                query: source:okta @eventType:(pam.service.remove OR
+                  pam.sudo_command_bundle.delete OR
+                  pam.team_group_attribute.delete OR
+                  pam.team_project_group_attribute.delete OR
+                  pam.team_project_user_attribute.delete OR
+                  pam.team_user_attribute.delete OR pki.ca.delete OR
+                  pki.cert.lifecycle.delete OR security.behavior.settings.delete
+                  OR security.events.provider.delete OR
+                  security.events.transmitter.delete OR
+                  security.trusted_origin.delete OR
+                  security.voice.remove_country_blacklist OR
+                  security.zone.remove_blacklist OR system.agent.ad.delete OR
+                  system.agent.connector.delete OR system.brand.delete OR
+                  system.captcha.delete OR system.custom_error.delete OR
+                  system.custom_signin.delete OR system.custom_url_domain.delete
+                  OR system.email.template.delete OR system.email_domain.delete
+                  OR system.hook.key.deleted OR
+                  system.identity_sources.bulk_delete OR system.idp.key.delete
+                  OR system.idp.lifecycle.delete OR
+                  system.import.custom_object.delete OR
+                  system.import.implicit_deletion.complete OR
+                  system.import.implicit_deletion.start OR system.iwa.remove OR
+                  system.log_stream.lifecycle.delete OR system.org.task.remove
+                  OR task.lifecycle.delete OR workflows.user.connection.delete
+                  OR workflows.user.flow.delete OR
+                  workflows.user.flow.execution_history.delete OR
+                  workflows.user.folder.delete OR
+                  workflows.user.role.group.remove OR
+                  workflows.user.role.user.remove OR workflows.user.table.delete
+                  OR zone.delete OR zone.remove_blacklist)
+              name: Delete[4]
+            - filter:
+                query: "@eventType:(*)"
+              name: Other[99]
+          target: activity_id_name
+    - type: pipeline
+      name: Okta OCSF activity parser
+      enabled: true
+      ocsf:
+        isOcsf: true
+      filter:
+        query: "*"
+      processors:
+        - type: grok-parser
+          name: Parse activity_id
+          enabled: true
+          source: activity_id_name
+          samples:
+            - Create[6]
+          grok:
+            supportRules: ""
+            matchRules: MyRule %{data:ocsf.activity_name}\[%{number:ocsf.activity_id}\]
+    - type: pipeline
+      name: Okta OCSF sub pipeline for activity_name mapping
+      enabled: true
+      ocsf:
+        isOcsf: true
+      filter:
+        query: "@ocsf.activity_id:99"
+      processors:
+        - type: attribute-remapper
+          name: Map `eventType` to `ocsf.activity_name`
+          enabled: true
+          sources:
+            - eventType
+          sourceType: attribute
+          target: ocsf.activity_name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: true
+    - type: pipeline
+      name: OCSF post transformations
+      enabled: true
+      ocsf:
+        isOcsf: true
+      filter:
+        query: "*"
+      processors:
+        - type: attribute-remapper
+          name: Map `ocsf.class_uid` to `ocsf.class_uid`
+          enabled: true
+          sources:
+            - ocsf.class_uid
+          sourceType: attribute
+          target: ocsf.class_uid
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `ocsf.activity_id` to `ocsf.activity_id`
+          enabled: true
+          sources:
+            - ocsf.activity_id
+          sourceType: attribute
+          target: ocsf.activity_id
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `ocsf.category_uid` to `ocsf.category_uid`
+          enabled: true
+          sources:
+            - ocsf.category_uid
+          sourceType: attribute
+          target: ocsf.category_uid
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `ocsf.metadata.product.version` to `ocsf.metadata.product.version`
+          enabled: true
+          sources:
+            - ocsf.metadata.product.version
+          sourceType: attribute
+          target: ocsf.metadata.product.version
+          targetType: attribute
+          targetFormat: string
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `ocsf.severity_id` to `ocsf.severity_id`
+          enabled: true
+          sources:
+            - ocsf.severity_id
+          sourceType: attribute
+          target: ocsf.severity_id
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+        - type: arithmetic-processor
+          name: Type ID calculator
+          enabled: true
+          expression: (ocsf.class_uid * 100) + ocsf.activity_id
+          target: ocsf.type_uid
+          replaceMissing: false
+        - type: attribute-remapper
+          name: Map `ocsf.type_uid` to `ocsf.type_uid`
+          enabled: true
+          sources:
+            - ocsf.type_uid
+          sourceType: attribute
+          target: ocsf.type_uid
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false

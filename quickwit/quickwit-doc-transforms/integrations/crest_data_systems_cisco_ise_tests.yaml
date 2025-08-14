@@ -1,0 +1,206 @@
+id: "crest_data_systems_cisco_ise"
+tests:
+ -
+  sample: "<184>Apr 27 11:16:44 172.0.0.10 Apr 27 11:16:44 xyz12 CISE_Passed_Authentications 0000000487 1 0 2020-04-27 11:16:44.113920 +00:00 0000009686 5231 NOTICE Guest: Guest Authentication Passed, ConfigVersionId=18, UserName=test2020, RequestLatency=30, IdentityGroup=User Identity Groups:Guest, NAS-IP-Address=10.13.3.13, Framed-IP-Address=10.13.3.13, Calling-Station-ID=88-cb-87-ed-45-da, NAS-Identifier=Acme_b5:c1:90, acme-av-pair=audit-session-id=0a222bc0000000d123e111f1, UserType=GuestUser, EndPointMACAddress=XX:XX:e5:XX:XX:XX, PortalName=DefaultGuestPortal, AuthenticationIdentityStore=Internal Users, Step=5231, CPMSessionID=0a222bc0000000d123e111f1,"
+  result:
+    custom:
+      AuthenticationIdentityStore: "Internal Users"
+      CPMSessionID: "0a222bc0000000d123e111f1"
+      Calling-Station-ID: "88-cb-87-ed-45-da"
+      ConfigVersionId: 18
+      EndPointMACAddress: "XX:XX:e5:XX:XX:XX"
+      Framed-IP-Address: "10.13.3.13"
+      IdentityGroup: "User Identity Groups:Guest"
+      LogLevel: "NOTICE"
+      LogType: "Passed_Authentications"
+      MessageClass: "Guest"
+      MessageCode: 5231
+      MessageText: "Guest Authentication Passed"
+      MessageType: "guest-authentication"
+      NAS-IP-Address: "10.13.3.13"
+      NAS-Identifier: "Acme_b5:c1:90"
+      PortalName: "DefaultGuestPortal"
+      RequestLatency: 30
+      Step: 5231
+      Timestamp: 1587986204113
+      UserType: "GuestUser"
+      host: "xyz12"
+      usr:
+        name: "test2020"
+    message: "<184>Apr 27 11:16:44 172.0.0.10 Apr 27 11:16:44 xyz12 CISE_Passed_Authentications 0000000487 1 0 2020-04-27 11:16:44.113920 +00:00 0000009686 5231 NOTICE Guest: Guest Authentication Passed, ConfigVersionId=18, UserName=test2020, RequestLatency=30, IdentityGroup=User Identity Groups:Guest, NAS-IP-Address=10.13.3.13, Framed-IP-Address=10.13.3.13, Calling-Station-ID=88-cb-87-ed-45-da, NAS-Identifier=Acme_b5:c1:90, acme-av-pair=audit-session-id=0a222bc0000000d123e111f1, UserType=GuestUser, EndPointMACAddress=XX:XX:e5:XX:XX:XX, PortalName=DefaultGuestPortal, AuthenticationIdentityStore=Internal Users, Step=5231, CPMSessionID=0a222bc0000000d123e111f1,"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "cisco_ise_host:xyz12"
+    timestamp: 1587986204113
+ -
+  sample: "<184>Apr 27 11:20:52 mno.pqs.com CISE_Failed_Attempts 0000136778 1 0 2020-04-27 11:20:52.000176 +00:00 0095835154 5405 NOTICE Failed-Attempt: RADIUS Request dropped, ConfigVersionId=33, AcsSessionID=23232, DetailedInfo=Cannot acquire session. Dropping. NAS IP=10.1.2.3; NAS Port=32770; RADIUS packet ID=141; SessionID=1212, NAS-IP-Address=10.1.2.3, Calling-Station-ID=22-72-20-3e-0c-9c, FailureReason=5441 Endpoint started new EAP session while the packet of previous EAP session is being processed. Dropping new session., Step=5441, Step=5405"
+  result:
+    custom:
+      AcsSessionID: 23232
+      Calling-Station-ID: "22-72-20-3e-0c-9c"
+      ConfigVersionId: 33
+      DetailedInfo: "Cannot acquire session. Dropping. NAS"
+      FailureReason: "5441 Endpoint started new EAP session while the packet of previous EAP session is being processed. Dropping new session."
+      ID: "141;"
+      IP: "10.1.2.3; NAS"
+      LogLevel: "NOTICE"
+      LogType: "Failed_Attempts"
+      MessageClass: "Failed-Attempt"
+      MessageCode: 5405
+      MessageText: "RADIUS Request dropped"
+      NAS-IP-Address: "10.1.2.3"
+      Port: "32770; RADIUS packet"
+      SessionID: 1212
+      Step:
+       - 5441
+       - 5405
+      Timestamp: 1587986452000
+      host: "mno.pqs.com"
+    message: "<184>Apr 27 11:20:52 mno.pqs.com CISE_Failed_Attempts 0000136778 1 0 2020-04-27 11:20:52.000176 +00:00 0095835154 5405 NOTICE Failed-Attempt: RADIUS Request dropped, ConfigVersionId=33, AcsSessionID=23232, DetailedInfo=Cannot acquire session. Dropping. NAS IP=10.1.2.3; NAS Port=32770; RADIUS packet ID=141; SessionID=1212, NAS-IP-Address=10.1.2.3, Calling-Station-ID=22-72-20-3e-0c-9c, FailureReason=5441 Endpoint started new EAP session while the packet of previous EAP session is being processed. Dropping new session., Step=5441, Step=5405"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "cisco_ise_host:mno.pqs.com"
+    timestamp: 1587986452000
+ -
+  sample: "<184>Feb 5 19:13:08 ise CISE_Dummy 0000000001 4 0 2020-02-21 19:13:08.328 +00:00 0018371284 5406 NOTICE Failed-Attempt: TACACS+ Request dropped, ConfigVersionId=1828, Device IP Address=10.1.2.1, Device Port=411, DestinationIPAddress=10.1.2.3, DestinationPort=49, Protocol=Tacacs, FailureReason=13017 Received TACACS+ packet from unknown Network Device or AAA Client, Step=13017"
+  result:
+    custom:
+      ConfigVersionId: 1828
+      FailureReason: "13017 Received"
+      LogLevel: "NOTICE"
+      LogType: "Dummy"
+      MessageClass: "Failed-Attempt"
+      MessageCode: 5406
+      MessageText: "TACACS+ Request dropped"
+      Protocol: "Tacacs"
+      Step: 13017
+      Timestamp: 1582312388328
+      host: "ise"
+      network:
+        client:
+          ip: "10.1.2.1"
+          port: 411
+        destination:
+          ip: "10.1.2.3"
+          port: 49
+    message: "<184>Feb 5 19:13:08 ise CISE_Dummy 0000000001 4 0 2020-02-21 19:13:08.328 +00:00 0018371284 5406 NOTICE Failed-Attempt: TACACS+ Request dropped, ConfigVersionId=1828, Device IP Address=10.1.2.1, Device Port=411, DestinationIPAddress=10.1.2.3, DestinationPort=49, Protocol=Tacacs, FailureReason=13017 Received TACACS+ packet from unknown Network Device or AAA Client, Step=13017"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "cisco_ise_host:ise"
+    timestamp: 1582312388328
+ -
+  sample: "<184>Feb 21 19:32:41 ise CISE_Administrative_and_Operational_Audit 0000000648 1 0 2020-02-21 19:32:41.361 +00:00 0000356614 51002 NOTICE Administrator-Login: Administrator logged off, ConfigVersionId=88, AdminInterface=GUI, AdminIPAddress=10.1.2.3, AdminSession=AdminGUI_Session, AdminName=admin, OperationMessageText=User logged out"
+  result:
+    custom:
+      AdminIPAddress: "10.1.2.3"
+      AdminInterface: "GUI"
+      AdminSession: "AdminGUI_Session"
+      ConfigVersionId: 88
+      LogLevel: "NOTICE"
+      LogType: "Administrative_and_Operational_Audit"
+      MessageClass: "Administrator-Login"
+      MessageCode: 51002
+      MessageText: "Administrator logged off"
+      MessageType: "passed-authentication"
+      OperationMessageText: "User logged out"
+      Timestamp: 1582313561361
+      host: "ise"
+      usr:
+        name: "admin"
+    message: "<184>Feb 21 19:32:41 ise CISE_Administrative_and_Operational_Audit 0000000648 1 0 2020-02-21 19:32:41.361 +00:00 0000356614 51002 NOTICE Administrator-Login: Administrator logged off, ConfigVersionId=88, AdminInterface=GUI, AdminIPAddress=10.1.2.3, AdminSession=AdminGUI_Session, AdminName=admin, OperationMessageText=User logged out"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "cisco_ise_host:ise"
+    timestamp: 1582313561361
+ -
+  sample: "<181>Mar 11 00:01:04 cisco-ise-host CISE_Administrative_and_Operational_Audit 0000008578 1 0 2021-03-09 10:45:27.070 +00:00 0000000411 58001 NOTICE Process-Management: ISE process started, ConfigVersionId=72, FailureFlag=false, RequestResponseType=final, AdminInterface=CLI, AdminIPAddress=10.160.0.2, AdminName=system, OperationMessageText=ISE EST Service started, AcsInstance=cisco-ise-host,"
+  result:
+    custom:
+      AcsInstance: "cisco-ise-host"
+      AdminIPAddress: "10.160.0.2"
+      AdminInterface: "CLI"
+      ConfigVersionId: 72
+      FailureFlag: false
+      LogLevel: "NOTICE"
+      LogType: "Administrative_and_Operational_Audit"
+      MessageClass: "Process-Management"
+      MessageCode: 58001
+      MessageText: "ISE process started"
+      MessageType: "service"
+      OperationMessageText: "ISE EST Service started"
+      RequestResponseType: "final"
+      Timestamp: 1615286727070
+      host: "cisco-ise-host"
+      usr:
+        name: "system"
+    message: "<181>Mar 11 00:01:04 cisco-ise-host CISE_Administrative_and_Operational_Audit 0000008578 1 0 2021-03-09 10:45:27.070 +00:00 0000000411 58001 NOTICE Process-Management: ISE process started, ConfigVersionId=72, FailureFlag=false, RequestResponseType=final, AdminInterface=CLI, AdminIPAddress=10.160.0.2, AdminName=system, OperationMessageText=ISE EST Service started, AcsInstance=cisco-ise-host,"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "cisco_ise_host:cisco-ise-host"
+    timestamp: 1615286727070
+ -
+  sample: "<181>Mar 11 00:01:04 cisco-ise-host CISE_Administrative_and_Operational_Audit 0000008599 1 0 2021-03-10 18:39:25.624 +00:00 0000009810 60132 NOTICE System-Management: ISE Support bundle has been deleted from web UI, ConfigVersionId=132, AdminInterface=GUI, AdminIPAddress=10.10.17.27, AdminName=admin, OperationMessageText=Last generated support bundle ise-support-bundle-cisco-ise-host-admin-03-10-2021-09-18.tar.gpg deleted successfully, AcsInstance=cisco-ise-host,"
+  result:
+    custom:
+      AcsInstance: "cisco-ise-host"
+      AdminIPAddress: "10.10.17.27"
+      AdminInterface: "GUI"
+      ConfigVersionId: 132
+      LogLevel: "NOTICE"
+      LogType: "Administrative_and_Operational_Audit"
+      MessageClass: "System-Management"
+      MessageCode: 60132
+      MessageText: "ISE Support bundle has been deleted from web UI"
+      MessageType: "change"
+      OperationMessageText: "Last generated support bundle ise-support-bundle-cisco-ise-host-admin-03-10-2021-09-18.tar.gpg deleted successfully"
+      Timestamp: 1615401565624
+      host: "cisco-ise-host"
+      usr:
+        name: "admin"
+    message: "<181>Mar 11 00:01:04 cisco-ise-host CISE_Administrative_and_Operational_Audit 0000008599 1 0 2021-03-10 18:39:25.624 +00:00 0000009810 60132 NOTICE System-Management: ISE Support bundle has been deleted from web UI, ConfigVersionId=132, AdminInterface=GUI, AdminIPAddress=10.10.17.27, AdminName=admin, OperationMessageText=Last generated support bundle ise-support-bundle-cisco-ise-host-admin-03-10-2021-09-18.tar.gpg deleted successfully, AcsInstance=cisco-ise-host,"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "cisco_ise_host:cisco-ise-host"
+    timestamp: 1615401565624
+ -
+  sample: "<184>Apr 27 11:23:06 172.0.0.10 Apr 27 11:23:06 mno.pqs.com CISE_RADIUS_Diagnostics 0000142711 1 0 2020-04-27 11:23:06.099526 +00:00 0096217011 12930 WARN  Failed-Attempt: Supplicant stopped responding to ISE after sending it the first PEAP message, ConfigVersionId=33, RadiusPacketType=Drop, Device IP Address=13.10.16.6, DestinationIPAddress=10.0.0.1, AcsSessionID=mno.pqs.com1769563681154324, SelectedAccessService=Default Network Access, EapTunnel=PEAP, User-Name=watansport, NAS-IP-Address=13.10.16.6, NAS-Port=13, Calling-Station-ID=78-a3-e4-d8-3e-2d, NAS-Identifier=Cisco_d5:02:4f, NAS-Port-Type=Wireless - IEEE 802.11, CPMSessionID=0a222bc0000000d123e111f7"
+  result:
+    custom:
+      AcsSessionID: "mno.pqs.com1769563681154324"
+      CPMSessionID: "0a222bc0000000d123e111f7"
+      Calling-Station-ID: "78-a3-e4-d8-3e-2d"
+      ConfigVersionId: 33
+      EapTunnel: "PEAP"
+      LogLevel: "WARN"
+      LogType: "RADIUS_Diagnostics"
+      MessageClass: " Failed-Attempt"
+      MessageCode: 12930
+      MessageText: "Supplicant stopped responding to ISE after sending it the first PEAP message"
+      NAS-IP-Address: "13.10.16.6"
+      NAS-Identifier: "Cisco_d5:02:4f"
+      NAS-Port: 13
+      NAS-Port-Type: "Wireless - IEEE 802.11"
+      RadiusPacketType: "Drop"
+      SelectedAccessService: "Default Network Access"
+      Timestamp: 1587986586099
+      host: "mno.pqs.com"
+      network:
+        client:
+          ip: "13.10.16.6"
+        destination:
+          ip: "10.0.0.1"
+      usr:
+        name: "watansport"
+    message: "<184>Apr 27 11:23:06 172.0.0.10 Apr 27 11:23:06 mno.pqs.com CISE_RADIUS_Diagnostics 0000142711 1 0 2020-04-27 11:23:06.099526 +00:00 0096217011 12930 WARN  Failed-Attempt: Supplicant stopped responding to ISE after sending it the first PEAP message, ConfigVersionId=33, RadiusPacketType=Drop, Device IP Address=13.10.16.6, DestinationIPAddress=10.0.0.1, AcsSessionID=mno.pqs.com1769563681154324, SelectedAccessService=Default Network Access, EapTunnel=PEAP, User-Name=watansport, NAS-IP-Address=13.10.16.6, NAS-Port=13, Calling-Station-ID=78-a3-e4-d8-3e-2d, NAS-Identifier=Cisco_d5:02:4f, NAS-Port-Type=Wireless - IEEE 802.11, CPMSessionID=0a222bc0000000d123e111f7"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "cisco_ise_host:mno.pqs.com"
+    timestamp: 1587986586099
+

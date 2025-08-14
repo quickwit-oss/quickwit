@@ -1,0 +1,445 @@
+id: "crest_data_systems_dataminr"
+tests:
+ -
+  sample: |-
+    {
+      "metadata" : {
+        "cyber" : {
+          "asOrgs" : [ {
+            "asn" : "Organisation_id",
+            "asOrg" : "Organisation Name"
+          } ],
+          "addresses" : [ {
+            "port" : 123,
+            "ip" : "00.000.000.000",
+            "version" : ""
+          } ],
+          "URLs" : [ "template.website" ],
+          "vulnerabilities" : [ {
+            "id" : "XYZ-8632-00000"
+          }, {
+            "id" : "XYZ-0000-00000"
+          } ],
+          "asns" : [ "Random Value" ],
+          "orgs" : [ "Organisation" ],
+          "products" : [ "Product" ]
+        }
+      },
+      "watchlistsMatchedByType" : [ {
+        "name" : "l",
+        "userProperties" : {
+          "watchlistColor" : "Sample watchlist Color"
+        },
+        "id" : "0000000",
+        "type" : "n",
+        "locationGroups" : [ {
+          "name" : "Sample locationGroups Name",
+          "locations" : [ {
+            "lng" : 0.0,
+            "name" : "Sample Location Name_1",
+            "id" : "000000",
+            "lat" : 0.0
+          }, {
+            "lng" : 0.0,
+            "name" : "Sample Location Name_2",
+            "id" : "000000",
+            "lat" : 0.0
+          } ],
+          "id" : "0000"
+        } ]
+      } ],
+      "caption" : "Sample Caption.",
+      "source" : {
+        "channels" : [ "sensor" ],
+        "verified" : true
+      },
+      "relatedTerms" : [ {
+        "text" : "Sample Text 80",
+        "url" : "https://app.template.com/app/core/30"
+      }, {
+        "text" : "Sample Text 71",
+        "url" : "https://app.template.com/app/core/10"
+      }, {
+        "text" : "Sample Text 33",
+        "url" : "https://app.template.com/app/core/38"
+      }, {
+        "text" : "Sample Text 21",
+        "url" : "https://app.template.com/app/core/5"
+      } ],
+      "headerColor" : "4EDF3D",
+      "companies" : [ {
+        "idStr" : "000000000000000000000000000000",
+        "name" : "Sample Company Name 14",
+        "retired" : false,
+        "id" : "000000000000000000000000000000",
+        "topicType" : "company"
+      } ],
+      "post" : {
+        "link" : "https://www.sample.io/host",
+        "timestamp" : 1729857433133
+      },
+      "publisherCategory" : {
+        "color" : "A24512",
+        "name" : "Chatter",
+        "id" : "chatter",
+        "shortName" : "CTR"
+      },
+      "expandAlertURL" : "https://app.template.com/",
+      "userTopHashtags" : [ "Hashtag_36", "Hashtag_39" ],
+      "eventMapSmallURL" : "https://api.template.com/images",
+      "expandMapURL" : "https://app.template.com/",
+      "eventTime" : 1734067321990,
+      "subCaption" : {
+        "bullets" : {
+          "source" : "Template source.",
+          "content" : "Template content."
+        }
+      },
+      "alertId" : "922576AED65C24180898CE87",
+      "categories" : [ {
+        "idStr" : "000000",
+        "path" : "/TOPIC/EXT/CS/000000",
+        "name" : "Sample Category Name_45",
+        "retired" : false,
+        "id" : "000000",
+        "topicType" : "category"
+      }, {
+        "idStr" : "000000",
+        "path" : "/TOPIC/EXT/CS/000000",
+        "name" : "Sample Category Name_2",
+        "retired" : false,
+        "id" : "000000",
+        "topicType" : "category"
+      }, {
+        "idStr" : "000000",
+        "path" : "/TOPIC/EXT/CS/000000",
+        "name" : "Sample Category Name_3",
+        "retired" : false,
+        "id" : "000000",
+        "topicType" : "category"
+      } ],
+      "sectors" : [ {
+        "idStr" : "000000000000000000000000000000",
+        "name" : "Sample Sector Name",
+        "retired" : false,
+        "id" : "000000000000000000000000000000",
+        "topicType" : "dm_sector"
+      } ],
+      "alertType" : {
+        "color" : "FFBB05",
+        "name" : "Sample Alert Type",
+        "id" : "Sample AlertId"
+      },
+      "eventLocation" : {
+        "places" : [ "1e2f07afee82485a8049e736f4e3744e", "9c5384ffde5db14cac18d3a1e476c14b", "aedf62a2dd8b48f3b9e3a3b8172695b0", "0a8bda0265b84fd5aadb1b334ada521a" ],
+        "probability" : 0.0,
+        "coordinates" : [ 41.7401, -132.7279 ],
+        "name" : "Sample eventLocation Name_46",
+        "radius" : 0.1
+      },
+      "headerLabel" : "Sample Alert Label 74",
+      "eventVolume" : 0,
+      "eventMapLargeURL" : "https://api.template.com/images",
+      "availableRelatedAlerts" : 0,
+      "relatedTermsQueryURL" : "https://app.template.com/"
+    }
+  service: "cd.dataminr.alerts"
+  tags:
+   - "source:LOGS_SOURCE"
+  result:
+    custom:
+      Coordinates: "41.7401,-132.7279"
+      alertId: "922576AED65C24180898CE87"
+      alertType:
+        color: "FFBB05"
+        id: "Sample AlertId"
+        name: "Sample Alert Type"
+      availableRelatedAlerts: 0
+      caption: "Sample Caption."
+      categories:
+       -
+        idStr: "000000"
+        path: "/TOPIC/EXT/CS/000000"
+        name: "Sample Category Name_45"
+        retired: false
+        id: "000000"
+        topicType: "category"
+       -
+        idStr: "000000"
+        path: "/TOPIC/EXT/CS/000000"
+        name: "Sample Category Name_2"
+        retired: false
+        id: "000000"
+        topicType: "category"
+       -
+        idStr: "000000"
+        path: "/TOPIC/EXT/CS/000000"
+        name: "Sample Category Name_3"
+        retired: false
+        id: "000000"
+        topicType: "category"
+      cd_dataminr_status: "info"
+      cds:
+        dataminr:
+          latitude: 41.7401
+          longitude: -132.7279
+      companies:
+       -
+        idStr: "000000000000000000000000000000"
+        name: "Sample Company Name 14"
+        retired: false
+        id: "000000000000000000000000000000"
+        topicType: "company"
+      eventLocation:
+        coordinates:
+         - 41.7401
+         - -132.7279
+        name: "Sample eventLocation Name_46"
+        places:
+         - "1e2f07afee82485a8049e736f4e3744e"
+         - "9c5384ffde5db14cac18d3a1e476c14b"
+         - "aedf62a2dd8b48f3b9e3a3b8172695b0"
+         - "0a8bda0265b84fd5aadb1b334ada521a"
+        probability: 0.0
+        radius: 0.1
+      eventMapLargeURL: "https://api.template.com/images"
+      eventMapSmallURL: "https://api.template.com/images"
+      eventTime: 1734067321990
+      eventVolume: 0
+      expandAlertURL: "https://app.template.com/"
+      expandMapURL: "https://app.template.com/"
+      headerColor: "4EDF3D"
+      headerLabel: "Sample Alert Label 74"
+      metadata:
+        cyber:
+          URLs:
+           - "template.website"
+          addresses:
+           -
+            port: 123
+            ip: "00.000.000.000"
+            version: ""
+          asOrgs:
+           -
+            asn: "Organisation_id"
+            asOrg: "Organisation Name"
+          asns:
+           - "Random Value"
+          orgs:
+           - "Organisation"
+          products:
+           - "Product"
+          vulnerabilities:
+           -
+            id: "XYZ-8632-00000"
+           -
+            id: "XYZ-0000-00000"
+      post:
+        link: "https://www.sample.io/host"
+        timestamp: 1729857433133
+      publisherCategory:
+        color: "A24512"
+        id: "chatter"
+        name: "Chatter"
+        shortName: "CTR"
+      relatedTerms:
+       -
+        text: "Sample Text 80"
+        url: "https://app.template.com/app/core/30"
+       -
+        text: "Sample Text 71"
+        url: "https://app.template.com/app/core/10"
+       -
+        text: "Sample Text 33"
+        url: "https://app.template.com/app/core/38"
+       -
+        text: "Sample Text 21"
+        url: "https://app.template.com/app/core/5"
+      relatedTermsQueryURL: "https://app.template.com/"
+      sectors:
+       -
+        idStr: "000000000000000000000000000000"
+        name: "Sample Sector Name"
+        retired: false
+        id: "000000000000000000000000000000"
+        topicType: "dm_sector"
+      source:
+        channels:
+         - "sensor"
+        verified: true
+      subCaption:
+        bullets:
+          content: "Template content."
+          source: "Template source."
+      userTopHashtags:
+       - "Hashtag_36"
+       - "Hashtag_39"
+      watchlistsMatchedByType:
+       -
+        name: "l"
+        userProperties:
+          watchlistColor: "Sample watchlist Color"
+        id: "0000000"
+        type: "n"
+        locationGroups:
+         -
+          name: "Sample locationGroups Name"
+          locations:
+           -
+            lng: 0.0
+            name: "Sample Location Name_1"
+            id: "000000"
+            lat: 0.0
+           -
+            lng: 0.0
+            name: "Sample Location Name_2"
+            id: "000000"
+            lat: 0.0
+          id: "0000"
+    message: |-
+      {
+        "metadata" : {
+          "cyber" : {
+            "asOrgs" : [ {
+              "asn" : "Organisation_id",
+              "asOrg" : "Organisation Name"
+            } ],
+            "addresses" : [ {
+              "port" : 123,
+              "ip" : "00.000.000.000",
+              "version" : ""
+            } ],
+            "URLs" : [ "template.website" ],
+            "vulnerabilities" : [ {
+              "id" : "XYZ-8632-00000"
+            }, {
+              "id" : "XYZ-0000-00000"
+            } ],
+            "asns" : [ "Random Value" ],
+            "orgs" : [ "Organisation" ],
+            "products" : [ "Product" ]
+          }
+        },
+        "watchlistsMatchedByType" : [ {
+          "name" : "l",
+          "userProperties" : {
+            "watchlistColor" : "Sample watchlist Color"
+          },
+          "id" : "0000000",
+          "type" : "n",
+          "locationGroups" : [ {
+            "name" : "Sample locationGroups Name",
+            "locations" : [ {
+              "lng" : 0.0,
+              "name" : "Sample Location Name_1",
+              "id" : "000000",
+              "lat" : 0.0
+            }, {
+              "lng" : 0.0,
+              "name" : "Sample Location Name_2",
+              "id" : "000000",
+              "lat" : 0.0
+            } ],
+            "id" : "0000"
+          } ]
+        } ],
+        "caption" : "Sample Caption.",
+        "source" : {
+          "channels" : [ "sensor" ],
+          "verified" : true
+        },
+        "relatedTerms" : [ {
+          "text" : "Sample Text 80",
+          "url" : "https://app.template.com/app/core/30"
+        }, {
+          "text" : "Sample Text 71",
+          "url" : "https://app.template.com/app/core/10"
+        }, {
+          "text" : "Sample Text 33",
+          "url" : "https://app.template.com/app/core/38"
+        }, {
+          "text" : "Sample Text 21",
+          "url" : "https://app.template.com/app/core/5"
+        } ],
+        "headerColor" : "4EDF3D",
+        "companies" : [ {
+          "idStr" : "000000000000000000000000000000",
+          "name" : "Sample Company Name 14",
+          "retired" : false,
+          "id" : "000000000000000000000000000000",
+          "topicType" : "company"
+        } ],
+        "post" : {
+          "link" : "https://www.sample.io/host",
+          "timestamp" : 1729857433133
+        },
+        "publisherCategory" : {
+          "color" : "A24512",
+          "name" : "Chatter",
+          "id" : "chatter",
+          "shortName" : "CTR"
+        },
+        "expandAlertURL" : "https://app.template.com/",
+        "userTopHashtags" : [ "Hashtag_36", "Hashtag_39" ],
+        "eventMapSmallURL" : "https://api.template.com/images",
+        "expandMapURL" : "https://app.template.com/",
+        "eventTime" : 1734067321990,
+        "subCaption" : {
+          "bullets" : {
+            "source" : "Template source.",
+            "content" : "Template content."
+          }
+        },
+        "alertId" : "922576AED65C24180898CE87",
+        "categories" : [ {
+          "idStr" : "000000",
+          "path" : "/TOPIC/EXT/CS/000000",
+          "name" : "Sample Category Name_45",
+          "retired" : false,
+          "id" : "000000",
+          "topicType" : "category"
+        }, {
+          "idStr" : "000000",
+          "path" : "/TOPIC/EXT/CS/000000",
+          "name" : "Sample Category Name_2",
+          "retired" : false,
+          "id" : "000000",
+          "topicType" : "category"
+        }, {
+          "idStr" : "000000",
+          "path" : "/TOPIC/EXT/CS/000000",
+          "name" : "Sample Category Name_3",
+          "retired" : false,
+          "id" : "000000",
+          "topicType" : "category"
+        } ],
+        "sectors" : [ {
+          "idStr" : "000000000000000000000000000000",
+          "name" : "Sample Sector Name",
+          "retired" : false,
+          "id" : "000000000000000000000000000000",
+          "topicType" : "dm_sector"
+        } ],
+        "alertType" : {
+          "color" : "FFBB05",
+          "name" : "Sample Alert Type",
+          "id" : "Sample AlertId"
+        },
+        "eventLocation" : {
+          "places" : [ "1e2f07afee82485a8049e736f4e3744e", "9c5384ffde5db14cac18d3a1e476c14b", "aedf62a2dd8b48f3b9e3a3b8172695b0", "0a8bda0265b84fd5aadb1b334ada521a" ],
+          "probability" : 0.0,
+          "coordinates" : [ 41.7401, -132.7279 ],
+          "name" : "Sample eventLocation Name_46",
+          "radius" : 0.1
+        },
+        "headerLabel" : "Sample Alert Label 74",
+        "eventVolume" : 0,
+        "eventMapLargeURL" : "https://api.template.com/images",
+        "availableRelatedAlerts" : 0,
+        "relatedTermsQueryURL" : "https://app.template.com/"
+      }
+    service: "cd.dataminr.alerts"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "source:LOGS_SOURCE"

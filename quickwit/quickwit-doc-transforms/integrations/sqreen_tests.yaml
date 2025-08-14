@@ -1,0 +1,238 @@
+id: "sqreen"
+tests:
+ -
+  sample: |-
+    {
+      "sqreen" : {
+        "event_version" : "1.0.0",
+        "detected_at" : "2021-05-03T18:31:26.143450Z",
+        "payload" : {
+          "sdk_event_name" : "security.invalid_app_token"
+        },
+        "context" : {
+          "actor" : {
+            "ip" : {
+              "geo" : {
+                "country_code" : "IRL",
+                "city" : "Dublin",
+                "latitude" : 53.3382,
+                "longitude" : -6.2591
+              },
+              "metadata" : {
+                "proxy" : false,
+                "private" : false,
+                "unspecified" : false,
+                "reserved" : false,
+                "vpn" : false,
+                "tor" : false,
+                "global" : true,
+                "datacenter" : {
+                  "name" : "Amazon AWS",
+                  "url" : "https://aws.amazon.com/"
+                },
+                "network_type" : "public",
+                "version" : 4,
+                "multicast" : false,
+                "loopback" : false
+              },
+              "address" : "108.128.146.105"
+            }
+          },
+          "service" : {
+            "sqreen_id" : "574571ad63b3d20014eddbfe",
+            "name" : "BackEnd for agents",
+            "env" : "production"
+          },
+          "http" : {
+            "request" : {
+              "path" : "/sqreen/v1/app-login",
+              "remote_ip" : "127.0.0.1",
+              "scheme" : "https",
+              "port" : 5000,
+              "host" : "back.sqreen.com",
+              "verb" : "POST",
+              "remote_port" : 43572,
+              "user_agent" : "sqreen-ruby/1.20.3"
+            },
+            "response" : {
+              "blocked" : false,
+              "status" : 401
+            }
+          }
+        },
+        "event_name" : "sq.dd0.custom_event",
+        "signal_id" : "sig_bbd37971192d532714542452f30d9438"
+      },
+      "evt" : {
+        "name" : "sq.dd0.custom_event"
+      },
+      "hostname" : "back.sqreen.com",
+      "service" : "BackEnd for agents",
+      "http" : {
+        "status_code" : 401,
+        "method" : "POST",
+        "useragent" : "sqreen-ruby/1.20.3",
+        "url" : "https://back.sqreen.com:5000/sqreen/v1/app-login"
+      },
+      "env" : "production",
+      "network" : {
+        "client" : {
+          "port" : "5000",
+          "ip" : "108.128.146.105"
+        }
+      }
+    }
+  result:
+    custom:
+      env: "production"
+      evt:
+        name: "sq.dd0.custom_event"
+      hostname: "back.sqreen.com"
+      http:
+        method: "POST"
+        status_code: 401
+        url: "https://back.sqreen.com:5000/sqreen/v1/app-login"
+        url_details:
+          host: "back.sqreen.com"
+          path: "/sqreen/v1/app-login"
+          port: 5000
+          scheme: "https"
+        useragent: "sqreen-ruby/1.20.3"
+      network:
+        client:
+          geoip: {}
+          ip: "108.128.146.105"
+          port: "5000"
+      service: "BackEnd for agents"
+      sqreen:
+        context:
+          actor:
+            ip:
+              address: "108.128.146.105"
+              geo:
+                city: "Dublin"
+                country_code: "IRL"
+                latitude: 53.3382
+                longitude: -6.2591
+              metadata:
+                datacenter:
+                  name: "Amazon AWS"
+                  url: "https://aws.amazon.com/"
+                global: true
+                loopback: false
+                multicast: false
+                network_type: "public"
+                private: false
+                proxy: false
+                reserved: false
+                tor: false
+                unspecified: false
+                version: 4
+                vpn: false
+          http:
+            request:
+              host: "back.sqreen.com"
+              path: "/sqreen/v1/app-login"
+              port: 5000
+              remote_ip: "127.0.0.1"
+              remote_port: 43572
+              scheme: "https"
+              user_agent: "sqreen-ruby/1.20.3"
+              verb: "POST"
+            response:
+              blocked: false
+              status: 401
+          service:
+            env: "production"
+            name: "BackEnd for agents"
+            sqreen_id: "574571ad63b3d20014eddbfe"
+        detected_at: "2021-05-03T18:31:26.143450Z"
+        event_name: "sq.dd0.custom_event"
+        event_version: "1.0.0"
+        payload:
+          sdk_event_name: "security.invalid_app_token"
+        signal_id: "sig_bbd37971192d532714542452f30d9438"
+    message: |-
+      {
+        "sqreen" : {
+          "event_version" : "1.0.0",
+          "detected_at" : "2021-05-03T18:31:26.143450Z",
+          "payload" : {
+            "sdk_event_name" : "security.invalid_app_token"
+          },
+          "context" : {
+            "actor" : {
+              "ip" : {
+                "geo" : {
+                  "country_code" : "IRL",
+                  "city" : "Dublin",
+                  "latitude" : 53.3382,
+                  "longitude" : -6.2591
+                },
+                "metadata" : {
+                  "proxy" : false,
+                  "private" : false,
+                  "unspecified" : false,
+                  "reserved" : false,
+                  "vpn" : false,
+                  "tor" : false,
+                  "global" : true,
+                  "datacenter" : {
+                    "name" : "Amazon AWS",
+                    "url" : "https://aws.amazon.com/"
+                  },
+                  "network_type" : "public",
+                  "version" : 4,
+                  "multicast" : false,
+                  "loopback" : false
+                },
+                "address" : "108.128.146.105"
+              }
+            },
+            "service" : {
+              "sqreen_id" : "574571ad63b3d20014eddbfe",
+              "name" : "BackEnd for agents",
+              "env" : "production"
+            },
+            "http" : {
+              "request" : {
+                "path" : "/sqreen/v1/app-login",
+                "remote_ip" : "127.0.0.1",
+                "scheme" : "https",
+                "port" : 5000,
+                "host" : "back.sqreen.com",
+                "verb" : "POST",
+                "remote_port" : 43572,
+                "user_agent" : "sqreen-ruby/1.20.3"
+              },
+              "response" : {
+                "blocked" : false,
+                "status" : 401
+              }
+            }
+          },
+          "event_name" : "sq.dd0.custom_event",
+          "signal_id" : "sig_bbd37971192d532714542452f30d9438"
+        },
+        "evt" : {
+          "name" : "sq.dd0.custom_event"
+        },
+        "hostname" : "back.sqreen.com",
+        "service" : "BackEnd for agents",
+        "http" : {
+          "status_code" : 401,
+          "method" : "POST",
+          "useragent" : "sqreen-ruby/1.20.3",
+          "url" : "https://back.sqreen.com:5000/sqreen/v1/app-login"
+        },
+        "env" : "production",
+        "network" : {
+          "client" : {
+            "port" : "5000",
+            "ip" : "108.128.146.105"
+          }
+        }
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+

@@ -1,0 +1,471 @@
+id: "gcp.gce.network"
+tests:
+ -
+  sample: |-
+    {
+      "publishTime" : "2020-04-03T00:37:07.689Z",
+      "data" : {
+        "severity" : "INFO",
+        "logName" : "projects/test-271317/logs/cloudaudit.googleapis.com%2Fdata_access",
+        "resource" : {
+          "type" : "gce_network",
+          "labels" : {
+            "network_id" : "",
+            "project_id" : "test-271317"
+          }
+        },
+        "protoPayload" : {
+          "requestMetadata" : {
+            "requestAttributes" : {
+              "time" : "2020-04-03T00:37:06.061Z"
+            },
+            "callerSuppliedUserAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)",
+            "callerIp" : "67.243.209.244"
+          },
+          "request" : {
+            "@type" : "type.googleapis.com/compute.networks.list"
+          },
+          "authenticationInfo" : {
+            "principalEmail" : "test@testemail.com"
+          },
+          "authorizationInfo" : [ {
+            "permission" : "compute.networks.list",
+            "resourceAttributes" : {
+              "service" : "resourcemanager",
+              "name" : "projects/test-271317",
+              "type" : "resourcemanager.projects"
+            },
+            "granted" : true
+          } ],
+          "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+          "numResponseItems" : "2",
+          "methodName" : "v1.compute.networks.list",
+          "resourceName" : "projects/test-271317/global/networks",
+          "serviceName" : "compute.googleapis.com",
+          "resourceLocation" : {
+            "currentLocations" : [ "global" ]
+          }
+        },
+        "receiveTimestamp" : "2020-04-03T00:37:06.713394664Z",
+        "insertId" : "-9p14v0dvrgi",
+        "timestamp" : "2020-04-03T00:37:05.976Z"
+      },
+      "publish_time" : "2020-04-03T00:37:07.689Z",
+      "messageId" : "1082869679309453",
+      "attributes" : {
+        "logging" : {
+          "googleapis" : {
+            "com/timestamp" : "2020-04-03T00:37:05.976Z"
+          }
+        }
+      },
+      "message_id" : "1082869679309453",
+      "subscription" : "projects/test-271317/subscriptions/datadog"
+    }
+  result:
+    custom:
+      attributes:
+        logging:
+          googleapis:
+            com/timestamp: "2020-04-03T00:37:05.976Z"
+      data:
+        insertId: "-9p14v0dvrgi"
+        logName: "projects/test-271317/logs/cloudaudit.googleapis.com%2Fdata_access"
+        protoPayload:
+          '@type': "type.googleapis.com/google.cloud.audit.AuditLog"
+          authenticationInfo:
+            principalEmail: "test@testemail.com"
+          authorizationInfo:
+           -
+            permission: "compute.networks.list"
+            resourceAttributes:
+              service: "resourcemanager"
+              name: "projects/test-271317"
+              type: "resourcemanager.projects"
+            granted: true
+          methodName: "v1.compute.networks.list"
+          numResponseItems: "2"
+          request:
+            '@type': "type.googleapis.com/compute.networks.list"
+          requestMetadata:
+            callerIp: "67.243.209.244"
+            callerSuppliedUserAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)"
+            requestAttributes:
+              time: "2020-04-03T00:37:06.061Z"
+          resourceLocation:
+            currentLocations:
+             - "global"
+          resourceName: "projects/test-271317/global/networks"
+          serviceName: "compute.googleapis.com"
+        receiveTimestamp: "2020-04-03T00:37:06.713394664Z"
+        resource:
+          labels:
+            network_id: ""
+            project_id: "test-271317"
+          type: "gce_network"
+        severity: "INFO"
+        timestamp: "2020-04-03T00:37:05.976Z"
+      evt:
+        name: "v1.compute.networks.list"
+      http:
+        useragent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "80"
+            minor: "0"
+            patch: "3987"
+            patch_minor: "149"
+          device:
+            brand: "Apple"
+            category: "Desktop"
+            family: "Mac"
+            model: "Mac"
+          os:
+            family: "Mac OS X"
+            major: "10"
+            minor: "14"
+            patch: "1"
+      messageId: "1082869679309453"
+      message_id: "1082869679309453"
+      network:
+        client:
+          geoip: {}
+          ip: "67.243.209.244"
+      ocsf:
+        activity_id: 2
+        activity_name: "Read"
+        actor:
+          user:
+            account:
+              uid: "test-271317"
+            email_addr: "test@testemail.com"
+            name: "test"
+            type: "User"
+            type_id: 1
+        api:
+          operation: "v1.compute.networks.list"
+          request:
+            data:
+              '@type': "type.googleapis.com/compute.networks.list"
+            uid: "Unknown"
+          service:
+            name: "compute.googleapis.com"
+        category_name: "Application Activity"
+        category_uid: 6
+        class_name: "API Activity"
+        class_uid: 6003
+        cloud:
+          account:
+            uid: "test-271317"
+          provider: "Google Cloud"
+        http_request:
+          user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)"
+        metadata:
+          event_code: "v1.compute.networks.list"
+          log_name: "projects/test-271317/logs/cloudaudit.googleapis.com%2Fdata_access"
+          product:
+            name: "Google Cloud Audit logs"
+            vendor_name: "Google Cloud"
+          profiles:
+           - "cloud"
+           - "datetime"
+          uid: "-9p14v0dvrgi"
+          version: "1.3.0"
+        severity: "Informational"
+        severity_id: 1
+        src_endpoint:
+          ip: "67.243.209.244"
+        status: "Success"
+        status_id: 1
+        time: 1585874225976
+        time_dt: "2020-04-03T00:37:05.976Z"
+        type_uid: 600302
+      publishTime: "2020-04-03T00:37:07.689Z"
+      publish_time: "2020-04-03T00:37:07.689Z"
+      subscription: "projects/test-271317/subscriptions/datadog"
+      usr:
+        email: "test@testemail.com"
+        id: "test@testemail.com"
+    message: |-
+      {
+        "publishTime" : "2020-04-03T00:37:07.689Z",
+        "data" : {
+          "severity" : "INFO",
+          "logName" : "projects/test-271317/logs/cloudaudit.googleapis.com%2Fdata_access",
+          "resource" : {
+            "type" : "gce_network",
+            "labels" : {
+              "network_id" : "",
+              "project_id" : "test-271317"
+            }
+          },
+          "protoPayload" : {
+            "requestMetadata" : {
+              "requestAttributes" : {
+                "time" : "2020-04-03T00:37:06.061Z"
+              },
+              "callerSuppliedUserAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)",
+              "callerIp" : "67.243.209.244"
+            },
+            "request" : {
+              "@type" : "type.googleapis.com/compute.networks.list"
+            },
+            "authenticationInfo" : {
+              "principalEmail" : "test@testemail.com"
+            },
+            "authorizationInfo" : [ {
+              "permission" : "compute.networks.list",
+              "resourceAttributes" : {
+                "service" : "resourcemanager",
+                "name" : "projects/test-271317",
+                "type" : "resourcemanager.projects"
+              },
+              "granted" : true
+            } ],
+            "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+            "numResponseItems" : "2",
+            "methodName" : "v1.compute.networks.list",
+            "resourceName" : "projects/test-271317/global/networks",
+            "serviceName" : "compute.googleapis.com",
+            "resourceLocation" : {
+              "currentLocations" : [ "global" ]
+            }
+          },
+          "receiveTimestamp" : "2020-04-03T00:37:06.713394664Z",
+          "insertId" : "-9p14v0dvrgi",
+          "timestamp" : "2020-04-03T00:37:05.976Z"
+        },
+        "publish_time" : "2020-04-03T00:37:07.689Z",
+        "messageId" : "1082869679309453",
+        "attributes" : {
+          "logging" : {
+            "googleapis" : {
+              "com/timestamp" : "2020-04-03T00:37:05.976Z"
+            }
+          }
+        },
+        "message_id" : "1082869679309453",
+        "subscription" : "projects/test-271317/subscriptions/datadog"
+      }
+    service: "compute.googleapis.com"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1585874225976
+ -
+  sample: |-
+    {
+      "severity" : "INFO",
+      "logName" : "projects/test-271317/logs/cloudaudit.googleapis.com%2Fdata_access",
+      "resource" : {
+        "type" : "gce_network",
+        "labels" : {
+          "network_id" : "",
+          "project_id" : "test-271317"
+        }
+      },
+      "protoPayload" : {
+        "requestMetadata" : {
+          "requestAttributes" : {
+            "time" : "2020-04-03T00:37:06.061Z"
+          },
+          "callerSuppliedUserAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)",
+          "callerIp" : "67.243.209.244"
+        },
+        "request" : {
+          "@type" : "type.googleapis.com/compute.networks.list"
+        },
+        "authenticationInfo" : {
+          "principalEmail" : "test@testemail.com"
+        },
+        "authorizationInfo" : [ {
+          "permission" : "compute.networks.list",
+          "resourceAttributes" : {
+            "service" : "resourcemanager",
+            "name" : "projects/test-271317",
+            "type" : "resourcemanager.projects"
+          },
+          "granted" : true
+        } ],
+        "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+        "numResponseItems" : "2",
+        "methodName" : "v1.compute.networks.list",
+        "resourceName" : "projects/test-271317/global/networks",
+        "serviceName" : "compute.googleapis.com",
+        "resourceLocation" : {
+          "currentLocations" : [ "global" ]
+        }
+      },
+      "receiveTimestamp" : "2020-04-03T00:37:06.713394664Z",
+      "insertId" : "-9p14v0dvrgi",
+      "timestamp" : "2020-04-03T00:37:05.976Z"
+    }
+  result:
+    custom:
+      evt:
+        name: "v1.compute.networks.list"
+      http:
+        useragent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "80"
+            minor: "0"
+            patch: "3987"
+            patch_minor: "149"
+          device:
+            brand: "Apple"
+            category: "Desktop"
+            family: "Mac"
+            model: "Mac"
+          os:
+            family: "Mac OS X"
+            major: "10"
+            minor: "14"
+            patch: "1"
+      insertId: "-9p14v0dvrgi"
+      logName: "projects/test-271317/logs/cloudaudit.googleapis.com%2Fdata_access"
+      network:
+        client:
+          geoip: {}
+          ip: "67.243.209.244"
+      ocsf:
+        activity_id: 2
+        activity_name: "Read"
+        actor:
+          user:
+            account:
+              uid: "test-271317"
+            email_addr: "test@testemail.com"
+            name: "test"
+            type: "User"
+            type_id: 1
+        api:
+          operation: "v1.compute.networks.list"
+          request:
+            data:
+              '@type': "type.googleapis.com/compute.networks.list"
+            uid: "Unknown"
+          service:
+            name: "compute.googleapis.com"
+        category_name: "Application Activity"
+        category_uid: 6
+        class_name: "API Activity"
+        class_uid: 6003
+        cloud:
+          account:
+            uid: "test-271317"
+          provider: "Google Cloud"
+        http_request:
+          user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)"
+        metadata:
+          event_code: "v1.compute.networks.list"
+          log_name: "projects/test-271317/logs/cloudaudit.googleapis.com%2Fdata_access"
+          product:
+            name: "Google Cloud Audit logs"
+            vendor_name: "Google Cloud"
+          profiles:
+           - "cloud"
+           - "datetime"
+          uid: "-9p14v0dvrgi"
+          version: "1.3.0"
+        severity: "Informational"
+        severity_id: 1
+        src_endpoint:
+          ip: "67.243.209.244"
+        status: "Success"
+        status_id: 1
+        time: 1585874225976
+        time_dt: "2020-04-03T00:37:05.976Z"
+        type_uid: 600302
+      protoPayload:
+        '@type': "type.googleapis.com/google.cloud.audit.AuditLog"
+        authenticationInfo:
+          principalEmail: "test@testemail.com"
+        authorizationInfo:
+         -
+          permission: "compute.networks.list"
+          resourceAttributes:
+            service: "resourcemanager"
+            name: "projects/test-271317"
+            type: "resourcemanager.projects"
+          granted: true
+        methodName: "v1.compute.networks.list"
+        numResponseItems: "2"
+        request:
+          '@type': "type.googleapis.com/compute.networks.list"
+        requestMetadata:
+          callerIp: "67.243.209.244"
+          callerSuppliedUserAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)"
+          requestAttributes:
+            time: "2020-04-03T00:37:06.061Z"
+        resourceLocation:
+          currentLocations:
+           - "global"
+        resourceName: "projects/test-271317/global/networks"
+        serviceName: "compute.googleapis.com"
+      receiveTimestamp: "2020-04-03T00:37:06.713394664Z"
+      resource:
+        labels:
+          network_id: ""
+          project_id: "test-271317"
+        type: "gce_network"
+      severity: "INFO"
+      timestamp: "2020-04-03T00:37:05.976Z"
+      usr:
+        email: "test@testemail.com"
+        id: "test@testemail.com"
+    message: |-
+      {
+        "severity" : "INFO",
+        "logName" : "projects/test-271317/logs/cloudaudit.googleapis.com%2Fdata_access",
+        "resource" : {
+          "type" : "gce_network",
+          "labels" : {
+            "network_id" : "",
+            "project_id" : "test-271317"
+          }
+        },
+        "protoPayload" : {
+          "requestMetadata" : {
+            "requestAttributes" : {
+              "time" : "2020-04-03T00:37:06.061Z"
+            },
+            "callerSuppliedUserAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)",
+            "callerIp" : "67.243.209.244"
+          },
+          "request" : {
+            "@type" : "type.googleapis.com/compute.networks.list"
+          },
+          "authenticationInfo" : {
+            "principalEmail" : "test@testemail.com"
+          },
+          "authorizationInfo" : [ {
+            "permission" : "compute.networks.list",
+            "resourceAttributes" : {
+              "service" : "resourcemanager",
+              "name" : "projects/test-271317",
+              "type" : "resourcemanager.projects"
+            },
+            "granted" : true
+          } ],
+          "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+          "numResponseItems" : "2",
+          "methodName" : "v1.compute.networks.list",
+          "resourceName" : "projects/test-271317/global/networks",
+          "serviceName" : "compute.googleapis.com",
+          "resourceLocation" : {
+            "currentLocations" : [ "global" ]
+          }
+        },
+        "receiveTimestamp" : "2020-04-03T00:37:06.713394664Z",
+        "insertId" : "-9p14v0dvrgi",
+        "timestamp" : "2020-04-03T00:37:05.976Z"
+      }
+    service: "compute.googleapis.com"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1585874225976
+

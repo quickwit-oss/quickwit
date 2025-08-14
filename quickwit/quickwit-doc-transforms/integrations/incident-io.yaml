@@ -1,0 +1,184 @@
+id: incident-io
+metric_id: incident-io
+backend_only: false
+facets:
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+pipeline:
+  type: pipeline
+  name: incident.io
+  enabled: true
+  filter:
+    query: "source:incident-io"
+  processors:
+    - type: attribute-remapper
+      name: Map `event_type` to `evt.name`
+      enabled: true
+      sources:
+        - event_type
+      sourceType: attribute
+      target: evt.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `private_incident.action_created_v1`, `private_incident.action_updated_v1`, `private_incident.follow_up_created_v1`, `private_incident.follow_up_updated_v1`, `private_incident.incident_created_v2`, `private_incident.incident_updated_v2`, `private_incident.membership_granted_v1`, `private_incident.membership_revoked_v1`, `public_incident.action_created_v1`, `public_incident.action_updated_v1`, `public_incident.follow_up_created_v1`, `public_incident.follow_up_updated_v1`, `public_incident.incident_created_v2`, `public_incident.incident_status_updated_v2`, `public_incident.incident_updated_v2` to `data`
+      enabled: true
+      sources:
+        - private_incident.action_created_v1
+        - private_incident.action_updated_v1
+        - private_incident.follow_up_created_v1
+        - private_incident.follow_up_updated_v1
+        - private_incident.incident_created_v2
+        - private_incident.incident_updated_v2
+        - private_incident.membership_granted_v1
+        - private_incident.membership_revoked_v1
+        - public_incident.action_created_v1
+        - public_incident.action_updated_v1
+        - public_incident.follow_up_created_v1
+        - public_incident.follow_up_updated_v1
+        - public_incident.incident_created_v2
+        - public_incident.incident_status_updated_v2
+        - public_incident.incident_updated_v2
+      sourceType: attribute
+      target: data
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: pipeline
+      name: Creation Events
+      enabled: true
+      filter:
+        query: "@evt.name:(public_incident.action_created_v1 OR
+          public_incident.follow_up_created_v1)"
+      processors:
+        - type: date-remapper
+          name: Define `data.created_at` as the official date of the log
+          enabled: true
+          sources:
+            - data.created_at
+    - type: pipeline
+      name: Update Events
+      enabled: true
+      filter:
+        query: "@evt.name:(public_incident.action_updated_v1 OR
+          public_incident.follow_up_updated_v1)"
+      processors:
+        - type: date-remapper
+          name: Define `data.updated_at` as the official date of the log
+          enabled: true
+          sources:
+            - data.updated_at
+    - type: pipeline
+      name: Incident Created Event
+      enabled: true
+      filter:
+        query: "@evt.name:public_incident.incident_created_v2"
+      processors:
+        - type: date-remapper
+          name: Define `data.created_at` as the official date of the log
+          enabled: true
+          sources:
+            - data.created_at
+        - type: attribute-remapper
+          name: Map `data.id` to `data.incident_id`
+          enabled: true
+          sources:
+            - data.id
+          sourceType: attribute
+          target: data.incident_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Incident Updated Event
+      enabled: true
+      filter:
+        query: "@evt.name:public_incident.incident_updated_v2"
+      processors:
+        - type: date-remapper
+          name: Define `data.updated_at` as the official date of the log
+          enabled: true
+          sources:
+            - data.updated_at
+        - type: attribute-remapper
+          name: Map `data.id` to `data.incident_id`
+          enabled: true
+          sources:
+            - data.id
+          sourceType: attribute
+          target: data.incident_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Incident Status Update Event
+      enabled: true
+      filter:
+        query: "@evt.name:public_incident.incident_status_updated_v2"
+      processors:
+        - type: date-remapper
+          name: Define `data.incident.updated_at` as the official date of the log
+          enabled: true
+          sources:
+            - data.incident.updated_at
+        - type: attribute-remapper
+          name: Map `data.incident.name` to `data.name`
+          enabled: true
+          sources:
+            - data.incident.name
+          sourceType: attribute
+          target: data.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `data.incident.reference` to `data.reference`
+          enabled: true
+          sources:
+            - data.incident.reference
+          sourceType: attribute
+          target: data.reference
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `data.incident.id` to `data.incident_id`
+          enabled: true
+          sources:
+            - data.incident.id
+          sourceType: attribute
+          target: data.incident_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `data.incident.incident_type.name` to `data.incident_type.name`
+          enabled: true
+          sources:
+            - data.incident.incident_type.name
+          sourceType: attribute
+          target: data.incident_type.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Private Incident Events
+      enabled: true
+      filter:
+        query: "@evt.name:(private_incident.incident_created_v2 OR
+          private_incident.incident_updated_v2)"
+      processors:
+        - type: attribute-remapper
+          name: Map `data.id` to `data.incident_id`
+          enabled: true
+          sources:
+            - data.id
+          sourceType: attribute
+          target: data.incident_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false

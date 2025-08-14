@@ -1,0 +1,48 @@
+id: "cluster-autoscaler"
+tests:
+ -
+  sample: "I0402 08:06:51.571361       1 static_autoscaler.go:366] Calculating unneeded nodes"
+  result:
+    custom:
+      level: "I"
+      lineno: 366.0
+      logger:
+        name: "static_autoscaler.go"
+        thread_id: 1.0
+      timestamp: 39427611571
+    message: "Calculating unneeded nodes"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 39427611571
+ -
+  sample: "I0402 08:06:51.571361       1 scale_down.go:414] Node ip-10-61-112-221.eu-west-2.compute.internal is not suitable for removal - utilization too big (0.908163)"
+  result:
+    custom:
+      level: "I"
+      lineno: 414.0
+      logger:
+        name: "scale_down.go"
+        thread_id: 1.0
+      timestamp: 39427611571
+    message: "Node ip-10-61-112-221.eu-west-2.compute.internal is not suitable for removal - utilization too big (0.908163)"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 39427611571
+ -
+  sample: "E0402 08:06:51.571361       1 utils.go:60] pod.Status.StartTime is nil for pod friz-ws-8929cabd74a-stfz4. Should not reach here."
+  result:
+    custom:
+      level: "E"
+      lineno: 60.0
+      logger:
+        name: "utils.go"
+        thread_id: 1.0
+      timestamp: 39427611571
+    message: "pod.Status.StartTime is nil for pod friz-ws-8929cabd74a-stfz4. Should not reach here."
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 39427611571
+

@@ -1,0 +1,363 @@
+id: akamai.datastream
+metric_id: akamai-datastream-2
+backend_only: false
+facets:
+  - facetType: range
+    groups:
+      - Measure
+    name: Duration
+    path: duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: nanosecond
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: Referer
+    path: http.referer
+    source: log
+  - groups:
+      - Web Access
+    name: Request ID
+    path: http.request_id
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: URL Host
+    path: http.url_details.host
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Web Access
+    name: URL Port
+    path: http.url_details.port
+    source: log
+  - groups:
+      - Web Access
+    name: User-Agent
+    path: http.useragent
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Destination Port
+    path: network.destination.port
+    source: log
+  - facetType: range
+    groups:
+      - Web Access
+    name: Bytes Written
+    path: network.bytes_written
+    source: log
+    type: double
+    unit:
+      family: bytes
+      name: byte
+  - groups:
+      - Akamai DataStream 2
+    name: Cache Status
+    path: cacheStatus
+    source: log
+  - groups:
+      - Akamai DataStream 2
+    name: TLS Version
+    path: tlsVersion
+    source: log
+  - facetType: range
+    groups:
+      - Akamai DataStream 2
+    name: Object Size
+    path: objectSizeBytes
+    source: log
+    type: double
+    unit:
+      family: bytes
+      name: byte
+  - groups:
+      - Akamai DataStream 2
+    name: Content Provider Code
+    path: cp
+    source: log
+  - groups:
+      - Akamai DataStream 2
+    name: Protocol
+    path: proto
+    source: log
+  - groups:
+      - Akamai DataStream 2
+    name: Status Code
+    path: akamai.datastream.statusCode
+    source: log
+    type: integer
+  - groups:
+      - Akamai DataStream 2
+    name: URL Port
+    path: akamai.datastream.reqPort
+    source: log
+    type: integer
+pipeline:
+  type: pipeline
+  name: Akamai DataStream
+  enabled: true
+  filter:
+    query: source:akamai.datastream
+  processors:
+    - type: arithmetic-processor
+      name: Convert `reqTimeSec` from second to millisecond EPOCH format
+      enabled: true
+      expression: reqTimeSec * 1000
+      target: reqTimeMillis
+    - type: date-remapper
+      name: Define `reqTimeMillis` as the official date of the log
+      enabled: true
+      sources:
+        - reqTimeMillis
+    - type: arithmetic-processor
+      name: Calculate duration
+      enabled: true
+      expression: (reqEndTimeMSec + turnAroundTimeMSec + transferTimeMSec) * 1000000
+      target: duration
+      replaceMissing: true
+    - type: attribute-remapper
+      name: Map `cliIP` to `network.client.ip`
+      enabled: true
+      sources:
+        - cliIP
+      target: network.client.ip
+      sourceType: attribute
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper  # needed because http.url_details.port has an ambiguous type
+      name: Map `reqPort` to `akamai.datastream.reqPort`
+      enabled: true
+      sources:
+        - reqPort
+      preserveSource: true
+      targetFormat: integer
+      target: akamai.datastream.reqPort
+      sourceType: attribute
+      targetType: attribute
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `reqPort` to `network.destination.port`
+      enabled: true
+      sources:
+        - reqPort
+      targetFormat: integer
+      target: network.destination.port
+      sourceType: attribute
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `totalBytes` to `network.bytes_written`
+      enabled: true
+      sources:
+        - totalBytes
+      targetFormat: integer
+      target: network.bytes_written
+      sourceType: attribute
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `objSize` to `objSizeBytes`
+      enabled: true
+      sources:
+        - objSize
+      targetFormat: integer
+      target: objSizeBytes
+      sourceType: attribute
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `country` to `network.client.geoip.country.iso_code`
+      enabled: true
+      sources:
+        - country
+      target: network.client.geoip.country.iso_code
+      sourceType: attribute
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `state` to `network.client.geoip.subdivision.name`
+      enabled: true
+      sources:
+        - state
+      target: network.client.geoip.subdivision.name
+      sourceType: attribute
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `city` to `network.client.geoip.city.name`
+      enabled: true
+      sources:
+        - city
+      target: network.client.geoip.city.name
+      sourceType: attribute
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper  # needed because http.status_code has an ambiguous type
+      name: Map `statusCode` to `akamai.datastream.statusCode`
+      enabled: true
+      sources:
+        - statusCode
+      preserveSource: true
+      targetFormat: integer
+      target: akamai.datastream.statusCode
+      sourceType: attribute
+      targetType: attribute
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `statusCode` to `http.status_code`
+      enabled: true
+      sources:
+        - statusCode
+      targetFormat: integer
+      target: http.status_code
+      sourceType: attribute
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `reqMethod` to `http.method`
+      enabled: true
+      sources:
+        - reqMethod
+      target: http.method
+      sourceType: attribute
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `referer` to `http.referer`
+      enabled: true
+      sources:
+        - referer
+      target: http.referer
+      sourceType: attribute
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `reqId` to `http.request_id`
+      enabled: true
+      sources:
+        - reqId
+      target: http.request_id
+      sourceType: attribute
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `UA` to `http.useragent`
+      enabled: true
+      sources:
+        - UA
+      target: http.useragent
+      sourceType: attribute
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `reqHost` to `http.url_details.host`
+      enabled: true
+      sources:
+        - reqHost
+      target: http.url_details.host
+      sourceType: attribute
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `network.destination.port` to `http.url_details.port`
+      enabled: true
+      sources:
+        - network.destination.port
+      target: http.url_details.port
+      preserveSource: true
+      sourceType: attribute
+      targetType: attribute
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `reqPath` to `http.url_details.path`
+      enabled: true
+      sources:
+        - reqPath
+      target: http.url_details.path
+      sourceType: attribute
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `queryStr` to `http.url_details.queryString`
+      enabled: true
+      sources:
+        - queryStr
+      target: http.url_details.queryString
+      sourceType: attribute
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: user-agent-parser
+      name: Parse http.useragent
+      enabled: true
+      sources:
+        - http.useragent
+      target: http.useragent_details
+      encoded: false
+

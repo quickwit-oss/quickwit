@@ -1,0 +1,440 @@
+id: "python"
+tests:
+ -
+  sample: |-
+    {
+      "process" : 41937,
+      "created" : 1.336281068506248E9,
+      "module" : "tests",
+      "relativeCreated" : 9.100914001464844,
+      "run" : 12,
+      "thread" : 140735202359648,
+      "message" : "testing logging format",
+      "levelno" : 20,
+      "threadName" : "MainThread",
+      "pathname" : "tests/tests.py",
+      "special" : "value",
+      "funcName" : "testFormatKeys",
+      "lineno" : 60,
+      "filename" : "tests.py",
+      "processName" : "MainProcess",
+      "name" : "root",
+      "msecs" : 506.24799728393555,
+      "levelname" : "INFO",
+      "asctime" : [ "12-05-05 22:11:08,506248" ]
+    }
+  result:
+    custom:
+      asctime:
+       - "12-05-05 22:11:08,506248"
+      created: 1.336281068506248E9
+      filename: "tests.py"
+      funcName: "testFormatKeys"
+      levelname: "INFO"
+      levelno: 20
+      lineno: 60
+      logger:
+        name: "root"
+        thread_name: "MainThread"
+      module: "tests"
+      msecs: 506.24799728393555
+      pathname: "tests/tests.py"
+      process: 41937
+      processName: "MainProcess"
+      relativeCreated: 9.100914001464844
+      run: 12
+      special: "value"
+      thread: 140735202359648
+    message: "testing logging format"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: "2017-12-26T10:44:59,311 ERROR [dd.dogweb.lib.static_asset] [20081] rid=b0RV4J Error reading statics_file.Traceback (most recent call last): File \"/home/vagrant/dogweb/dogweb/lib/static_asset.py\", line 16, in version    with open(\"/etc/datadog/statics_version.txt\", \"r\") as statics_version_file: IOError: [Errno 2] No such file or directory: /etc/datadog/statics_version.txt"
+  result:
+    custom:
+      error:
+        kind: "IOError"
+        message: "[Errno 2] No such file or directory: /etc/datadog/statics_version.txt"
+        stack: "File \"/home/vagrant/dogweb/dogweb/lib/static_asset.py\", line 16, in version    with open(\"/etc/datadog/statics_version.txt\", \"r\") as statics_version_file: IOError: [Errno 2] No such file or directory: /etc/datadog/statics_version.txt"
+      filename: "/home/vagrant/dogweb/dogweb/lib/static_asset.py"
+      levelname: "ERROR"
+      lineno: 16
+      process:
+        id: 20081
+        name: "dd.dogweb.lib.static_asset"
+      rid: "b0RV4J"
+      timestamp: 1514285099311
+    message: "rid=b0RV4J Error reading statics_file."
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1514285099311
+ -
+  sample: "2017-12-26T10:44:59,311 ERROR Error reading statics_version file."
+  result:
+    custom:
+      levelname: "ERROR"
+      timestamp: 1514285099311
+    message: "Error reading statics_version file."
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1514285099311
+ -
+  sample: "2019-01-07 15:20:15,972 DEBUG [flask.app] [app.py:100] [dd.trace_id=5688176451479556031 dd.span_id=4663104081780224235] - Hook: teardown_appcontext"
+  result:
+    custom:
+      dd:
+        span_id: "4663104081780224235"
+      filename: "app.py"
+      levelname: "DEBUG"
+      lineno: 100.0
+      process:
+        name: "flask.app"
+      timestamp: 1546874415972
+    message: "Hook: teardown_appcontext"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1546874415972
+    trace_id: "5688176451479556031"
+ -
+  sample: "2019-01-07 15:20:15,972 DEBUG [flask.app] [app.py:100] [dd.trace_id=5688176451479556031 dd.span_id=4663104081780224235] - rid=b0RV4J Error reading statics_version file.Traceback (most recent call last): File \"/home/vagrant/dogweb/dogweb/lib/static_asset.py\", line 16, in version    with open(\"/etc/datadog/statics_version.txt\", \"r\") as statics_version_file: IOError: [Errno 2] No such file or directory: /etc/datadog/statics_version.txt"
+  result:
+    custom:
+      dd:
+        span_id: "4663104081780224235"
+      error:
+        kind: "IOError"
+        message: "[Errno 2] No such file or directory: /etc/datadog/statics_version.txt"
+        stack: "File \"/home/vagrant/dogweb/dogweb/lib/static_asset.py\", line 16, in version    with open(\"/etc/datadog/statics_version.txt\", \"r\") as statics_version_file: IOError: [Errno 2] No such file or directory: /etc/datadog/statics_version.txt"
+      filename: "/home/vagrant/dogweb/dogweb/lib/static_asset.py"
+      levelname: "DEBUG"
+      lineno: 16
+      process:
+        name: "flask.app"
+      rid: "b0RV4J"
+      timestamp: 1546874415972
+    message: "rid=b0RV4J Error reading statics_version file."
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1546874415972
+    trace_id: "5688176451479556031"
+ -
+  sample: "2020-03-20 14:15:07,124 INFO [root] [app.py:78] [dd.service=excelsior dd.env=jesse-dev dd.version=abc123 dd.trace_id=9659687005038611690 dd.span_id=6632586210846541907] - This is a test of info logs"
+  result:
+    custom:
+      dd:
+        service: "excelsior"
+        span_id: "6632586210846541907"
+      filename: "app.py"
+      levelname: "INFO"
+      lineno: 78.0
+      process:
+        name: "root"
+      timestamp: 1584713707124
+    message: "This is a test of info logs"
+    service: "excelsior"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "env:jesse-dev"
+     - "version:abc123"
+    timestamp: 1584713707124
+    trace_id: "9659687005038611690"
+ -
+  sample: "2021-07-09 8:58:31,137 WARNING [root] [views.py:42] [dd.service=datadoggo dd.env=prod dd.version=abc546 dd.trace_id=2296056412404370861 dd.span_id=16818077145337196836] - New post view."
+  result:
+    custom:
+      dd:
+        service: "datadoggo"
+        span_id: "16818077145337196836"
+      filename: "views.py"
+      levelname: "WARNING"
+      lineno: 42.0
+      process:
+        name: "root"
+      timestamp: 1625821111137
+    message: "New post view."
+    service: "datadoggo"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "env:prod"
+     - "version:abc546"
+    timestamp: 1625821111137
+    trace_id: "2296056412404370861"
+ -
+  sample: |-
+    {
+      "process" : 96567,
+      "exc_info" : "Traceback (most recent call last):\n  File \"/usr/local/lib/python3.11/site-packages/flask/app.py\", line 2190, in wsgi_app\n    response = self.full_dispatch_request()\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.11/site-packages/flask/app.py\", line 1487, in full_dispatch_request\n    return self.finalize_request(rv)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.11/site-packages/flask/app.py\", line 1506, in finalize_request\n    response = self.make_response(rv)\n               ^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.11/site-packages/flask/app.py\", line 1801, in make_response\n    raise TypeError(\nTypeError: The view function for 'catch' did not return a valid response. The function either returned None or ended without a return statement.",
+      "module" : "app",
+      "thread" : 281473107591200,
+      "message" : "Exception on /catch [GET]",
+      "threadName" : "MainThread",
+      "pathname" : "/usr/local/lib/python3.11/site-packages/flask/app.py",
+      "funcName" : "log_exception",
+      "filename" : "app.py",
+      "lineno" : 1414,
+      "processName" : "MainProcess",
+      "name" : "app",
+      "time" : "2023-10-18T15:59:14.017457",
+      "levelname" : "ERROR"
+    }
+  result:
+    custom:
+      error:
+        stack: |-
+          Traceback (most recent call last):
+            File "/usr/local/lib/python3.11/site-packages/flask/app.py", line 2190, in wsgi_app
+              response = self.full_dispatch_request()
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            File "/usr/local/lib/python3.11/site-packages/flask/app.py", line 1487, in full_dispatch_request
+              return self.finalize_request(rv)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^
+            File "/usr/local/lib/python3.11/site-packages/flask/app.py", line 1506, in finalize_request
+              response = self.make_response(rv)
+                         ^^^^^^^^^^^^^^^^^^^^^^
+            File "/usr/local/lib/python3.11/site-packages/flask/app.py", line 1801, in make_response
+              raise TypeError(
+          TypeError: The view function for 'catch' did not return a valid response. The function either returned None or ended without a return statement.
+      exc_info: |-
+        Traceback (most recent call last):
+          File "/usr/local/lib/python3.11/site-packages/flask/app.py", line 2190, in wsgi_app
+            response = self.full_dispatch_request()
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+          File "/usr/local/lib/python3.11/site-packages/flask/app.py", line 1487, in full_dispatch_request
+            return self.finalize_request(rv)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+          File "/usr/local/lib/python3.11/site-packages/flask/app.py", line 1506, in finalize_request
+            response = self.make_response(rv)
+                       ^^^^^^^^^^^^^^^^^^^^^^
+          File "/usr/local/lib/python3.11/site-packages/flask/app.py", line 1801, in make_response
+            raise TypeError(
+        TypeError: The view function for 'catch' did not return a valid response. The function either returned None or ended without a return statement.
+      filename: "app.py"
+      funcName: "log_exception"
+      levelname: "ERROR"
+      lineno: 1414
+      logger:
+        name: "app"
+        thread_name: "MainThread"
+      module: "app"
+      pathname: "/usr/local/lib/python3.11/site-packages/flask/app.py"
+      process: 96567
+      processName: "MainProcess"
+      thread: 281473107591200
+      time: "2023-10-18T15:59:14.017457"
+    message: "Exception on /catch [GET]"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "dd" : {
+        "trace_id" : "5688176451479556031",
+        "span_id" : "16818077145337196836",
+        "service" : "test",
+        "env" : "prod",
+        "version" : "abc546"
+      },
+      "process" : 41937,
+      "created" : 1.336281068506248E9,
+      "module" : "tests",
+      "relativeCreated" : 9.100914001464844,
+      "run" : 12,
+      "thread" : 140735202359648,
+      "message" : "testing logging format",
+      "levelno" : 20,
+      "threadName" : "MainThread",
+      "pathname" : "tests/tests.py",
+      "special" : "value",
+      "funcName" : "testFormatKeys",
+      "lineno" : 60,
+      "filename" : "tests.py",
+      "processName" : "MainProcess",
+      "name" : "root",
+      "msecs" : 506.24799728393555,
+      "levelname" : "INFO",
+      "asctime" : [ "12-05-05 22:11:08,506248" ]
+    }
+  result:
+    custom:
+      asctime:
+       - "12-05-05 22:11:08,506248"
+      created: 1.336281068506248E9
+      dd:
+        service: "test"
+        span_id: "16818077145337196836"
+      filename: "tests.py"
+      funcName: "testFormatKeys"
+      levelname: "INFO"
+      levelno: 20
+      lineno: 60
+      logger:
+        name: "root"
+        thread_name: "MainThread"
+      module: "tests"
+      msecs: 506.24799728393555
+      pathname: "tests/tests.py"
+      process: 41937
+      processName: "MainProcess"
+      relativeCreated: 9.100914001464844
+      run: 12
+      special: "value"
+      thread: 140735202359648
+    message: "testing logging format"
+    service: "test"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "env:prod"
+     - "version:abc546"
+    timestamp: 1
+    trace_id: "5688176451479556031"
+ -
+  sample: |-
+    {
+      "process" : 41937,
+      "created" : 1.336281068506248E9,
+      "module" : "tests",
+      "relativeCreated" : 9.100914001464844,
+      "run" : 12,
+      "thread" : 140735202359648,
+      "message" : "testing logging format",
+      "levelno" : 20,
+      "threadName" : "MainThread",
+      "pathname" : "tests/tests.py",
+      "special" : "value",
+      "funcName" : "testFormatKeys",
+      "lineno" : 60,
+      "filename" : "tests.py",
+      "processName" : "MainProcess",
+      "extra" : {
+        "dd" : {
+          "trace_id" : "5688176451479556031",
+          "span_id" : "16818077145337196836",
+          "service" : "test",
+          "env" : "prod",
+          "version" : "abc456"
+        }
+      },
+      "name" : "root",
+      "msecs" : 506.24799728393555,
+      "levelname" : "INFO",
+      "asctime" : [ "12-05-05 22:11:08,506248" ]
+    }
+  result:
+    custom:
+      asctime:
+       - "12-05-05 22:11:08,506248"
+      created: 1.336281068506248E9
+      dd:
+        span_id: "16818077145337196836"
+      extra:
+        dd:
+          service: "test"
+      filename: "tests.py"
+      funcName: "testFormatKeys"
+      levelname: "INFO"
+      levelno: 20
+      lineno: 60
+      logger:
+        name: "root"
+        thread_name: "MainThread"
+      module: "tests"
+      msecs: 506.24799728393555
+      pathname: "tests/tests.py"
+      process: 41937
+      processName: "MainProcess"
+      relativeCreated: 9.100914001464844
+      run: 12
+      special: "value"
+      thread: 140735202359648
+    message: "testing logging format"
+    service: "test"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "env:prod"
+     - "version:abc456"
+    timestamp: 1
+    trace_id: "5688176451479556031"
+ -
+  sample: |-
+    {
+      "process" : 41937,
+      "created" : 1.336281068506248E9,
+      "module" : "tests",
+      "relativeCreated" : 9.100914001464844,
+      "run" : 12,
+      "thread" : 140735202359648,
+      "message" : "testing logging format",
+      "levelno" : 20,
+      "threadName" : "MainThread",
+      "pathname" : "tests/tests.py",
+      "special" : "value",
+      "funcName" : "testFormatKeys",
+      "lineno" : 60,
+      "filename" : "tests.py",
+      "processName" : "MainProcess",
+      "record" : {
+        "extra" : {
+          "dd" : {
+            "trace_id" : "5688176451479556031",
+            "span_id" : "16818077145337196836",
+            "service" : "test",
+            "env" : "prod",
+            "version" : "abc456"
+          }
+        }
+      },
+      "name" : "root",
+      "msecs" : 506.24799728393555,
+      "levelname" : "INFO",
+      "asctime" : [ "12-05-05 22:11:08,506248" ]
+    }
+  result:
+    custom:
+      asctime:
+       - "12-05-05 22:11:08,506248"
+      created: 1.336281068506248E9
+      dd:
+        span_id: "16818077145337196836"
+      filename: "tests.py"
+      funcName: "testFormatKeys"
+      levelname: "INFO"
+      levelno: 20
+      lineno: 60
+      logger:
+        name: "root"
+        thread_name: "MainThread"
+      module: "tests"
+      msecs: 506.24799728393555
+      pathname: "tests/tests.py"
+      process: 41937
+      processName: "MainProcess"
+      record:
+        extra:
+          dd:
+            service: "test"
+      relativeCreated: 9.100914001464844
+      run: 12
+      special: "value"
+      thread: 140735202359648
+    message: "testing logging format"
+    service: "test"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "env:prod"
+     - "version:abc456"
+    timestamp: 1
+    trace_id: "5688176451479556031"
+

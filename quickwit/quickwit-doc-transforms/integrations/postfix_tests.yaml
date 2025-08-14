@@ -1,0 +1,111 @@
+id: "postfix"
+tests:
+ -
+  sample: "Jul  2 12:24:48 username postfix/qmgr[12345]: 1234567890A: removed"
+  result:
+    custom:
+      date: 47305488000
+      pid: 12345
+      postfix:
+        client_id: "1234567890A"
+      system:
+        process: "postfix/qmgr"
+        user: "username"
+    message: "Jul  2 12:24:48 username postfix/qmgr[12345]: 1234567890A: removed"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 47305488000
+ -
+  sample: "Jul 12 12:24:48 username postfix/qmgr[12345]: 1234567890A: from=user@example.com, size=1234, nrcpt=1 (queue active)"
+  result:
+    custom:
+      date: 16633488000
+      network:
+        bytes_written: 1234
+      pid: 12345
+      postfix:
+        client_id: "1234567890A"
+        queue:
+          state: "active"
+      properties:
+        from: "user@example.com"
+        nrcpt: 1
+      system:
+        process: "postfix/qmgr"
+        user: "username"
+    message: "Jul 12 12:24:48 username postfix/qmgr[12345]: 1234567890A: from=user@example.com, size=1234, nrcpt=1 (queue active)"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 16633488000
+ -
+  sample: "Jul 2 12:24:48 username postfix/smtp[12345]: 1234567890A: to=user@example.com, relay=198.51.100.0[198.51.100.0]:25, delay=5.3, delays=5.1/0.02/0.02/0.2, dsn=1.2.3, status=sent (250 1.2.3 <20140702012658.1234567890A@hostname.example.com> Queued mail for delivery)"
+  result:
+    custom:
+      date: 47305488000
+      pid: 12345
+      postfix:
+        client_id: "1234567890A"
+        queue:
+          state: "mail for delivery"
+      properties:
+        delay: 5.3
+        dsn: "1.2.3"
+        status: "sent"
+        to: "user@example.com"
+      system:
+        process: "postfix/smtp"
+        user: "username"
+    message: "Jul 2 12:24:48 username postfix/smtp[12345]: 1234567890A: to=user@example.com, relay=198.51.100.0[198.51.100.0]:25, delay=5.3, delays=5.1/0.02/0.02/0.2, dsn=1.2.3, status=sent (250 1.2.3 <20140702012658.1234567890A@hostname.example.com> Queued mail for delivery)"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 47305488000
+ -
+  sample: "Jul 2 12:24:48 username postfix/smtpd[12345]: connect from unknown[127.0.0.1] "
+  result:
+    custom:
+      date: 47305488000
+      network:
+        client:
+          ip: "127.0.0.1"
+      pid: 12345
+      postfix:
+        hostname: "unknown"
+      system:
+        process: "postfix/smtpd"
+        user: "username"
+    message: "Jul 2 12:24:48 username postfix/smtpd[12345]: connect from unknown[127.0.0.1] "
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 47305488000
+ -
+  sample: "Jul 2 12:24:48 username postfix/smtpd[12345]: 1234567890A: client=unknown[198.51.100.0]"
+  result:
+    custom:
+      date: 47305488000
+      pid: 12345
+      postfix:
+        client_id: "1234567890A"
+      system:
+        process: "postfix/smtpd"
+        user: "username"
+    message: "Jul 2 12:24:48 username postfix/smtpd[12345]: 1234567890A: client=unknown[198.51.100.0]"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 47305488000
+ -
+  sample: "Jul 2 12:24:48 username postfix/cleanup[12345]: 1234567890A: message-id=<20140702012658.1234567890A@hostname.example.com/>"
+  result:
+    custom:
+      date: 47305488000
+      message-id: "20140702012658.1234567890A@hostname.example.com/"
+      pid: 12345
+      postfix:
+        client_id: "1234567890A"
+      system:
+        process: "postfix/cleanup"
+        user: "username"
+    message: "Jul 2 12:24:48 username postfix/cleanup[12345]: 1234567890A: message-id=<20140702012658.1234567890A@hostname.example.com/>"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 47305488000
+

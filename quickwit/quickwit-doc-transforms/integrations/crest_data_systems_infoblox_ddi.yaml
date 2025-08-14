@@ -1,0 +1,208 @@
+id: crest_data_systems_infoblox_ddi
+metric_id: crest-data-systems-infoblox-ddi
+backend_only: false
+facets:
+  - groups:
+      - DNS
+    name: Answer Class
+    path: dns.answer.class
+    source: log
+  - groups:
+      - DNS
+    name: Answer Name
+    path: dns.answer.name
+    source: log
+  - groups:
+      - DNS
+    name: Answer Type
+    path: dns.answer.type
+    source: log
+  - groups:
+      - DNS
+    name: Question Class
+    path: dns.question.class
+    source: log
+  - groups:
+      - DNS
+    name: Question Name
+    path: dns.question.name
+    source: log
+  - groups:
+      - DNS
+    name: Question Type
+    path: dns.question.type
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Destination IP
+    path: network.destination.ip
+    source: log
+  - groups:
+      - Crest Data Systems Infoblox DDI
+    name: DNS Status
+    path: dns_status
+    source: log
+  - groups:
+      - Crest Data Systems Infoblox DDI
+    name: Decline Reason
+    path: decline_reason
+    source: log
+  - groups:
+      - Crest Data Systems Infoblox DDI
+    name: Source Type
+    path: infoblox_type
+    source: log
+  - groups:
+      - Crest Data Systems Infoblox DDI
+    name: Client IP
+    path: infoblox_dns_client_ip
+    source: log
+  - groups:
+      - Crest Data Systems Infoblox DDI
+    name: Message Type
+    path: message_type
+    source: log
+  - groups:
+      - Crest Data Systems Infoblox DDI
+    name: Host
+    path: infoblox_host
+    source: log
+  - groups:
+      - Crest Data Systems Infoblox DDI
+    name: Service
+    path: infoblox_service
+    source: log
+  - groups:
+      - Crest Data Systems Infoblox DDI
+    name: Lease Duration
+    path: lease_duration
+    source: log
+  - groups:
+      - Crest Data Systems Infoblox DDI
+    name: Device Mac
+    path: infoblox_client_mac
+    source: log
+  - groups:
+      - Crest Data Systems Infoblox DDI
+    name: DHCP Message
+    path: infoblox_dhcp_message
+    source: log
+  - groups:
+      - Crest Data Systems Infoblox DDI
+    name: Interface
+    path: infoblox_interface
+    source: log
+  - groups:
+      - Crest Data Systems Infoblox DDI
+    name: Client Port
+    path: infoblox_dns_client_port
+    source: log
+pipeline:
+  type: pipeline
+  name: Infoblox DDI by Crest Data Systems
+  enabled: true
+  filter:
+    query: source:crest_data_systems_infoblox_ddi
+  processors:
+    - type: grok-parser
+      name: Parsing the infoblox_type, infoblox_host, pid and log_message attributes
+      enabled: true
+      source: message
+      samples:
+        - '<30>Sep 29 06:55:08  infoblox-1.1.1.1 dhcpd[22933]: Lease publishing disabled'
+        - '<30>Sep 25 12:33:50 infoblox-1.1.1.1 named[31220]: 25-Sep-2020 12:33:50.418 client 1.1.1.1#60420: UDP: query: pqr.com IN A response: NOERROR + pqr.com. 3600 IN A 37.97.245.151;'
+        - "2014-10-10T06:44:09+00:00 daemon infoblox.localdomain named[17630]: info xfer-out:\nclient 1.1.1.1#58275 (zone.com): transfer of 'zone.com/IN': AXFR started"
+        - '<30>Jul 12 15:55:55 67.43.156.0 dhcpdv6[12271]: Encapsulated Solicit message from 2a02:cf40:: port 547 from client DUID 01:9a:df:6e:f6:1f:23:01:9a:df:6e:f6:1f:23, transaction ID 0x698AD400'
+      grok:
+        supportRules: "_timeFormat (<%{integer:}>)?(%{date(\"MMM d HH:mm:ss\"):}|%{date(\"yyyy-MM-dd'T'HH:mm:ssZ\"):})\n_host %{regex(\"[\\\\w ]*?\"):}%{regex(\"(?:(?:[^\\\\s]+))\"):infoblox_host}%{_space}\n_infobloxFormat %{_space}%{regex(\"(?:dhcpd|omshell|dhcrelay|dhclient|dhcpdv6|named|bind)\"):infoblox_type}(\\[%{_space}%{integer:pid}%{_space}])?\n_space %{regex(\"(\\\\s)*\"):}"
+        matchRules: globalRule %{_timeFormat}(%{_host})?%{_infobloxFormat}:%{_space}%{data:log_message}
+    - type: pipeline
+      name: DHCP Logs
+      enabled: true
+      filter:
+        query: '@infoblox_type:(dhcpd OR omshell OR dhcrelay OR dhclient OR dhcpdv6)'
+      processors:
+        - type: grok-parser
+          name: Parsing the DHCP log Attributes
+          enabled: true
+          source: log_message
+          samples:
+            - DHCPDISCOVER from 00:50:56:13:60:56 (host) via eth1 TransID 55675084 uid 01:00:50:56:13:60:56
+            - DHCPOFFER on 192.168.1.12 to 00:50:56:13:60:56 (C8703420628) via eth1 relay eth1 lease-duration 543 uid 01:00:50:56:13:60:56
+            - DHCPREQUEST for 192.168.1.12 from 00:50:56:13:60:56 (C8703420628) via eth1 TransID ad17b7a9 uid 01:00:50:56:13:60:56 (RENEW)
+            - DHCPACK on 192.168.1.12 to 00:50:56:13:60:56 (C8703420628) via eth1 relay eth1 lease-duration 600 (RENEW) uid 01:00:50:56:13:60:56
+            - DHCPRELEASE of 192.168.1.12 from 00:50:56:13:60:56 (C8703420628) via eth1 (found) TransID 43e49f96 uid 01:00:50:56:13:60:56
+          grok:
+            supportRules: "_dhcpMessage %{regex(\"DHCP[A-Z]*\"):infoblox_dhcp_message}\n_space %{regex(\"(\\\\s)*\"):}\n_uid %{regex(\"(?:uid\\\\s+(?<uid>[A-Za-z0-9:]+))?\"):}\n_macAddress %{mac:infoblox_client_mac}\n_ipAddress %{ip:}\n_hostName (%{_space}\\(%{regex(\"[^)]*\"):client_hostname}\\))?\n_interface %{notSpace:infoblox_interface}\n_transID %{regex(\"(?:[^\\\\s:]+)\"):trans_id}"
+            matchRules: "dhcpDiscover %{_dhcpMessage} from %{_macAddress}%{_hostName}%{_space}via %{_interface} TransID %{_transID}%{_space}%{_uid}%{data:}\ndhcpOfferAck %{_dhcpMessage} on %{_ipAddress:network.destination.ip} to %{_macAddress}%{_hostName}%{_space}via %{_interface} relay %{notSpace:relay} lease-duration %{integer:lease_duration}( offered-duration %{integer:offered_duration})?%{_space}%{_uid}%{data:}\ndhcpNakExpire %{_dhcpMessage} on %{_ipAddress:network.destination.ip} to %{_macAddress}%{_hostName}%{_space}(via %{_interface}%{data:})?\ndhcpDecline %{regex(\"DHCPDECLINE\"):infoblox_dhcp_message} of %{_ipAddress:network.destination.ip} from %{_macAddress}%{_hostName}%{_space}via %{_interface}%{_space}(TransID %{_transID})?(%{_space}:%{_space}%{data:decline_reason})?\ndhcpRequestRelease %{_dhcpMessage} (for|of) %{_ipAddress:network.destination.ip}( \\(%{regex(\"[^)]*\"):}\\) )?%{_space}from %{_macAddress}%{_hostName}%{_space}via %{_interface}( \\(%{regex(\"[^)]*\"):lease_status}\\) )?%{_space}(TransID %{_transID})?%{_space}%{_uid}%{data:}\ndhcpInform %{_dhcpMessage} from %{_ipAddress:network.client.ip} via %{_interface}( TransID %{_transID})?%{data:}"
+    - type: pipeline
+      name: DNS Logs
+      enabled: true
+      filter:
+        query: '@infoblox_type:(named OR bind)'
+      processors:
+        - type: grok-parser
+          name: Parsing the DNS log Attributes
+          enabled: true
+          source: log_message
+          samples:
+            - 'client @0x7f13200cc860 192.168.1.30#60420 : query: pqr.com IN A + (192.168.1.20)'
+            - '25-Sep-2020 12:33:50.418 client 192.168.1.30#60420: UDP: query: pqr.com IN A response: NOERROR + pqr.com. 3600 IN A 37.97.245.151;'
+            - 'DNS format error from 192.168.1.30#53 resolving www.newgoogle.com/AAAA for client 10.170.93.216#54313: non-improving referral'
+            - "client @0x7fde980bdb00 192.168.1.30#49397 (www.google.com): query 'www.google.com/AAAA/IN' denied"
+            - 'client @0x7efaa80ae780 192.168.1.30#33929 (50.1.168.192.in-addr.arpa): query failed (SERVFAIL) for 50.1.168.192.in-addr.arpa/IN/SOA at query.c:12447'
+          grok:
+            supportRules: "_space %{regex(\"(\\\\s)*\"):}\n_prefix (%{regex(\"[^:]*\"):}: )?\n_dnsIP (%{ip:}|%{regex(\"(?:::)?(?:[a-zA-Z\\\\d]{1,4}::?){1,7}[a-zA-Z\\\\d]{0,4}\"):})\n_dnsPort %{port:}\n_dnsSetDC %{regex(\"(?:\\\\+|\\\\-)\\\\S*\"):}\n_dnsView %{regex(\"((?:[^:]+))\"):}"
+            matchRules: "dnsRequest %{_prefix}client (@%{notSpace:})?%{_space}%{_dnsIP:infoblox_dns_client_ip}\\#%{_dnsPort:infoblox_dns_client_port}%{_space}(\\(%{regex(\"[^)]*\"):}\\))?:%{_space}%{regex(\"query\"):message_type}: %{notSpace:dns.question.name} %{word:dns.question.class} %{word:dns.question.type} %{_dnsSetDC:dns_request_setDC}%{_space}(\\(%{_dnsIP:dns_request_name_serverIP}\\))\ndnsResponse %{_prefix}%{notSpace:log_date} %{notSpace:log_time} client %{_dnsIP:infoblox_dns_client_ip}\\#(%{_dnsPort:infoblox_dns_client_port})?(:)? (%{_dnsView:dns_view}: )?%{word:dns_response_protocol}: query: %{notSpace:dns.answer.name} %{word:dns.answer.class} %{word:dns.answer.type} %{regex(\"response\"):message_type}: %{word:dns.flags.rcode} %{notSpace:dns_response_flags}%{_space}%{data:additional_message}\ndnsError %{_prefix}DNS format error from %{_dnsIP:network.destination.ip}\\#%{_dnsPort:network.destination.port} resolving %{notSpace:dns.answer.name}\\/%{notSpace:dns.answer.type} for client %{_dnsIP:infoblox_dns_client_ip}\\#%{_dnsPort:infoblox_dns_client_port}: %{data:additional_message}\ndnsDenied %{_prefix}client (@%{notSpace:})?%{_space}%{_dnsIP:infoblox_dns_client_ip}\\#%{_dnsPort:infoblox_dns_client_port}%{_space}(\\(%{regex(\"[^)]*\"):}\\))?:%{_space}%{regex(\"query\"):message_type} '%{regex(\"[^/]*\"):dns.answer.name}(\\/%{notSpace:dns.answer.type})?\\/%{regex(\"[^’]*\"):dns.answer.class}'%{_space}%{regex(\"denied\"):dns_status}\ndnsFailed %{_prefix}client (@%{notSpace:})?%{_space}%{_dnsIP:infoblox_dns_client_ip}\\#%{_dnsPort:infoblox_dns_client_port}%{_space}(\\(%{regex(\"[^)]*\"):}\\))?:%{_space}%{regex(\"query\"):message_type} %{regex(\"failed\"):dns_status} \\(%{regex(\"[^)]*\"):dns.flags.rcode}\\) for %{regex(\"[^/]*\"):dns.answer.name}\\/%{regex(\"[^/]*\"):dns.answer.class}\\/%{notSpace:dns.answer.type}%{data:}"
+        - type: geo-ip-parser
+          name: Map the IP Address to geolocation
+          enabled: true
+          sources:
+            - infoblox_dns_client_ip
+          target: network.client.geoip
+          ip_processing_behavior: do-nothing
+    - type: attribute-remapper
+      name: Map tag `service` to attribute `infoblox_service`
+      enabled: true
+      sources:
+        - service
+      sourceType: tag
+      target: infoblox_service
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false

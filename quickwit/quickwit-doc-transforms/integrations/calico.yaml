@@ -1,0 +1,104 @@
+id: calico
+metric_id: calico
+backend_only: false
+facets:
+  - groups:
+      - Calico
+    name: Dataplane ID
+    path: calico.id.name
+    source: log
+  - groups:
+      - Calico
+    name: Dataplane Endpoint
+    path: calico.endpoint.name
+    source: log
+  - groups:
+      - Calico
+    name: Dataplane Interface
+    path: calico.interface.name
+    source: log
+  - facetType: range
+    groups:
+      - Calico
+    name: Dataplane Reconciliation Average
+    path: calico.dataplane_reconciliation.avg
+    source: log
+    type: double
+    unit:
+      family: time
+      name: millisecond
+  - facetType: range
+    groups:
+      - Calico
+    name: Dataplane Reconciliation Count
+    path: calico.dataplane_reconciliation.count
+    source: log
+    type: integer
+  - facetType: range
+    groups:
+      - Calico
+    name: Dataplane Reconciliation Longest
+    path: calico.dataplane_reconciliation.longest
+    source: log
+    type: double
+    unit:
+      family: time
+      name: millisecond
+  - groups:
+      - Calico
+    name: Config Key
+    path: calico.config.key
+    source: log
+  - groups:
+      - Calico
+    name: Table
+    path: calico.table
+    source: log
+pipeline:
+  type: pipeline
+  name: Calico
+  enabled: true
+  filter:
+    query: source:calico
+  processors:
+    - type: grok-parser
+      name: Parsing Calico logs
+      enabled: true
+      source: message
+      samples:
+        - '2022-10-31 15:40:18.037 [INFO][262] felix/summary.go 100: Summarising 11 dataplane reconciliation loops over 1m3.9s: avg=4ms longest=11ms ()'
+        - '2022-02-25 15:28:43.671 [INFO][282] felix/table.go 506: Queueing update of chain. chainName="cali-tw-calib74ad9ce491" ipVersion=0x4 table="filter"'
+        - '2022-03-08 14:50:42.293 [INFO][642] felix/config_params.go 502: Parsing value for LogSeverityFile:  (from config file)'
+        - '2022-10-31 14:35:18.602 [INFO][262] felix/int_dataplane.go 1695: Received interface update msg=&intdataplane.ifaceUpdate{Name:\"calif1127a92742\", State:\"up\", Index:11}'
+        - '2022-03-08 13:20:34.092 [INFO][760] felix/int_dataplane.go 1484: Received *proto.ActiveProfileUpdate update from calculation graph msg=id:<name:\"ksa.default.datadog-agent-kube-state-metrics\" > profile:<>'
+      grok:
+        supportRules: |
+          _timestamp %{date("yyyy-MM-dd HH:mm:ss.SSS","UTC"):timestamp}
+          _status \[%{word:status}\]
+          _pid \[%{integerStr:pid}\]
+          _loggername %{regex("[a-z_-]+/[a-z_-]+.go"):logger.name}
+          _loggerline %{integer:logger.line_number}
+        matchRules: |
+          summary %{_timestamp}\s+%{_status}%{_pid}\s+%{_loggername}\s+%{_loggerline}\:\s+Summarising+\s+%{integer:calico.dataplane_reconciliation.count}+\s+dataplane reconciliation loops over+\s+%{regex("([0-9.]+m)?([0-9.]+s)"):calico.dataplane_reconciliation.duration}+\:\s+%{regex("[^>]*"):calico.dataplane_reconciliation:keyvalue("=")}
+          dataPlane %{_timestamp}\s+%{_status}%{_pid}\s+%{_loggername}\s+%{_loggerline}\:\s+Received \*proto\.%{word:updated} %{data:message} msg\=id\:\<+%{regex("[^>]*"):calico.id:keyvalue(":","\"*")} \>( endpoint\:\<%{regex("[^>]*"):calico.endpoint}>)?( profile\:\<%{regex("[^>]*"):calico.profile}>)?
+          statusCombiner %{_timestamp}\s+%{_status}%{_pid}\s+%{_loggername}\s+%{_loggerline}\:\s+%{regex("[^=]+[a-zA-Z_.] +"):message}(%{regex("[^>]*")::keyvalue("=")})? %{word}\=proto\.WorkloadEndpointID\{%{regex("[^>]*"):workload:keyvalue(":")}\}(%{regex("[^>]*"):workload:keyvalue("=")})?
+          hostIpMgr %{_timestamp}\s+%{_status}%{_pid}\s+%{_loggername}\s+%{_loggerline}\:\s+%{regex("[a-zA-Z_. ]+"):message}\.%{regex("[^>]*")::keyvalue("=")}\{%{regex("[^>]*")::keyvalue(":")}, Addrs\:%{regex("[^>]*"):Addrs}\}
+          configParams %{_timestamp}\s+%{_status}%{_pid}\s+%{_loggername}\s+%{_loggerline}\:\s+%{word:action}+\s+value for+\s+%{word:calico.config.key}+\:\s+%{regex("([a-zA-Z0-9., ()]+| )"):calico.config.value}
+          interfaceUpdate %{_timestamp}\s+%{_status}%{_pid}\s+%{_loggername}\s+%{_loggerline}\:\s+%{regex("[^=]+[a-zA-Z_.] +")}msg=&intdataplane.ifaceUpdate\{%{regex("[^>]*"):calico.interface:keyvalue(":")}\}
+          calicoDefault %{_timestamp}\s+%{_status}%{_pid}\s+%{_loggername}\s+%{_loggerline}\:\s+%{regex("[a-zA-Z_./ ]+"):message}\. %{regex("[^>]*"):calico:keyvalue("=")}
+          calicoCatchAll %{_timestamp}\s+%{_status}%{_pid}\s+%{_loggername}\s+%{_loggerline}\:\s+%{regex(".*"):message}
+    - type: status-remapper
+      name: Define `status` as the official status of the log
+      enabled: true
+      sources:
+        - status
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message

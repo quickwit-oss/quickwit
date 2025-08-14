@@ -1,0 +1,45 @@
+id: arangodb
+metric_id: arangodb
+backend_only: false
+facets:
+pipeline:
+  type: pipeline
+  name: ArangoDB
+  enabled: true
+  filter:
+    query: source:arangodb
+  processors:
+    - type: grok-parser
+      name: Parsing ArangoDB logs
+      enabled: true
+      source: message
+      samples:
+        - 2022-04-25T21:58:51Z [476] WARNING [118b0] {memory} maximum number of memory mappings per process is 262144, which seems too low. it is recommended to set it to at least 320000
+        - 2021-06-08T16:09:31Z [1] INFO [prepare@EngineSelectorFeature.cpp:187] [144fe] using storage engine 'rocksdb'
+        - 2021-06-08T16:09:31Z [1] INFO [prepare@AuthenticationFeature.cpp:190] [43396] {authentication} Jwt secret not specified, generating...
+      grok:
+        supportRules: |
+          _timestamp %{date("yyyy-MM-dd'T'HH:mm:ssZ"):timestamp}
+          _process_id %{integer:process.id}
+          _level %{word:level}
+          _log_id %{notSpace:log_id}
+          _topic %{word:topic}
+          _line %{notSpace:logger.method_name}@%{notSpace:logger.file_name}:%{number:logger.line_number}
+        matchRules: |
+          default_format %{_timestamp} \[%{_process_id}\] %{_level} (\[%{_line}\] )?\[%{_log_id}\] (\{%{_topic}\} )?%{data:message}
+
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message

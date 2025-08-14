@@ -1,0 +1,65 @@
+id: ibm_mq
+metric_id: ibm-mq
+backend_only: false
+facets:
+  - groups:
+      - System
+    name: User
+    path: system.user
+    source: log
+  - groups:
+      - System
+    name: Action
+    path: system.action
+    source: log
+pipeline:
+  type: pipeline
+  name: IBM MQ
+  enabled: true
+  filter:
+    query: source:ibm_mq
+  processors:
+    - type: grok-parser
+      name: Parsing IBM MQ logs
+      enabled: true
+      source: message
+      grok:
+        supportRules: |
+          _date (%{date("MM/dd/yy HH:mm:ss"):timestamp}|%{date("dd/MM/yyyy  HH:mm:ss"):timestamp})
+        matchRules: |
+          ibm_mq_rule %{_date}\s+- Process\(%{number:process}\) User\(%{notSpace:system.user}\)\s+Program\(%{notSpace:system.app}\)\s+Host\(%{notSpace:system.host}\)\s+Installation\(%{notSpace:system.installation}\)\s+VRMF\(%{notSpace:vrmf}\)%{data::keyvalue}(\n|\t|\s)+EXPLANATION:(\n|\s|\t)+%{data:error.message}(\n|\t|\s)+ACTION:(\n|\s|\t)+%{data:system.action}(\n|\t|\s)+-.*
+
+      samples:
+        - |
+          11/05/18 19:21:00 - Process(26971.1) User(root) Program(setmqinst)
+                              Host(ip-172-31-40-45) Installation(Installation1)
+                              VRMF(9.0.0.0)
+          AMQ6287: IBM MQ V9.0.0.0 (p900-L160520.DE).
+
+          EXPLANATION:
+          IBM MQ system information:
+          Host Info         :- Linux 4.15.0-1021-aws (MQ Linux (x86-64 platform) 64-bit)
+          Installation      :- /opt/mqm (Installation1)
+          Version           :- 9.0.0.0 (p900-L160520.DE)
+          ACTION:
+          None.
+          -------------------------------------------------------------------------------
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: category-processor
+      name: Set the severity level
+      enabled: true
+      categories:
+        - filter:
+            query: '@error.message:*'
+          name: Error
+      target: level
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+

@@ -1,0 +1,1114 @@
+id: crest_data_systems_datarobot
+metric_id: crest-data-systems-datarobot
+backend_only: false
+facets:
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Accuracy Health Status
+    path: cds.datarobot.accuracyHealth.status
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Accuracy Holdout
+    path: cds.datarobot.metrics.Accuracy.holdout
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Accuracy Validation
+    path: cds.datarobot.metrics.Accuracy.validation
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: AUC Holdout
+    path: cds.datarobot.metrics.AUC.holdout
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: AUC Validation
+    path: cds.datarobot.metrics.AUC.validation
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Column Count
+    path: cds.datarobot.columnCount
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Context Size
+    path: cds.datarobot.contextSize
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Custom Applications Count
+    path: customApplicationsCount
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Custom Jobs Count
+    path: cds.datarobot.customJobsCount
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Custom Metrics Health Status
+    path: cds.datarobot.customMetricsHealth.status
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Custom Model Versions Count
+    path: cds.datarobot.customModelVersionsCount
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Data Num Iterations
+    path: cds.datarobot.data.numIterations
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Data Source Type
+    path: cds.datarobot.dataSourceType
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Data Type
+    path: cds.datarobot.dataType
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Dataset Size
+    path: cds.datarobot.datasetSize
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Deployment ID
+    path: cds.datarobot.deploymentId
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Driver Class Type
+    path: cds.datarobot.driverClassType
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Entity Id
+    path: cds.datarobot.entityId
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Entity Type
+    path: cds.datarobot.entityType
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Failed Rows
+    path: cds.datarobot.failedRows
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Feature List Name
+    path: cds.datarobot.featureListName
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Id
+    path: cds.datarobot.id
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Importance
+    path: cds.datarobot.importance
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Intake Dataset Display Name
+    path: cds.datarobot.intakeDatasetDisplayName
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Job Intake Size
+    path: cds.datarobot.jobIntakeSize
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Job Output Size
+    path: cds.datarobot.jobOutputSize
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Job Spec Deployment Id
+    path: cds.datarobot.jobSpec.deploymentId
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Job Spec Max Explanations
+    path: cds.datarobot.jobSpec.maxExplainations
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Job Spec Model Id
+    path: cds.datarobot.jobSpec.modelId
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Job Spec Num Concurrent
+    path: cds.datarobot.jobSpec.numConcurrent
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Job Spec Output Settings Type
+    path: cds.datarobot.jobSpec.outputSettings.type
+    source: tag
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Job Spec Prediction Environment Name
+    path: cds.datarobot.jobSpec.predictionEnvironment.name
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Label
+    path: cds.datarobot.label
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Llm Blueprints Count
+    path: cds.datarobot.llmBlueprintsCount
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Llm Name
+    path: cds.datarobot.llmName
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Log Loss Holdout
+    path: cds.datarobot.metrics.LogLoss.holdout
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Log Loss Validation
+    path: cds.datarobot.metrics.LogLoss.validation
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Missing Count
+    path: cds.datarobot.missingValuesReport.missingCount
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Model Family
+    path: cds.datarobot.model.family
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Model Family Full Name
+    path: cds.datarobot.modelFamilyFullName
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Model Health Status
+    path: cds.datarobot.modelHealth.status
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Model ID
+    path: cds.datarobot.modelId
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Model Target Type
+    path: cds.datarobot.model.targetType
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Model Type
+    path: cds.datarobot.model.type
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Name
+    path: cds.datarobot.name
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Number Of Back Tests
+    path: cds.datarobot.numberOfBacktests
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Percentage Completed
+    path: cds.datarobot.percentageCompleted
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Prediction Threshold
+    path: cds.datarobot.preditcionThreshold
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Project Id
+    path: cds.datarobot.projectId
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Registered Model Versions Count
+    path: cds.datarobot.registeredModelVersionsCount
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Row Count
+    path: cds.datarobot.rowCount
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Sample Pct
+    path: cds.datarobot.samplePct
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Scored Rows
+    path: cds.datarobot.scoredRows
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Service Health Status
+    path: cds.datarobot.serviceHealth.status
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Skipped Rows
+    path: cds.datarobot.skippedRows
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Status
+    path: cds.datarobot.status
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Suggested Replacement
+    path: cds.datarobot.suggestedReplacement
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Target Type
+    path: cds.datarobot.targetType
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Training Row Count
+    path: cds.datarobot.trainingRowCount
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Use Case Id
+    path: cds.datarobot.useCaseId
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Datarobot
+    name: Vendor
+    path: cds.datarobot.vendor
+    source: tag
+    type: string
+pipeline:
+  type: pipeline
+  name: DataRobot
+  enabled: true
+  filter:
+    query: source:crest_data_systems_datarobot
+  processors:
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: attribute-remapper
+      name: Map `deploymentId` to `cds.datarobot.deploymentId`
+      enabled: true
+      sources:
+        - deploymentId
+      sourceType: attribute
+      target: cds.datarobot.deploymentId
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `modelId` to `cds.datarobot.modelId`
+      enabled: true
+      sources:
+        - modelId
+      sourceType: attribute
+      target: cds.datarobot.modelId
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `projectId` to `cds.datarobot.projectId`
+      enabled: true
+      sources:
+        - projectId
+      sourceType: attribute
+      target: cds.datarobot.projectId
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `predictionThreshold` to `cds.datarobot.predictionThreshold`
+      enabled: true
+      sources:
+        - predictionThreshold
+      sourceType: attribute
+      target: cds.datarobot.predictionThreshold
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `samplePct` to `cds.datarobot.samplePct`
+      enabled: true
+      sources:
+        - samplePct
+      sourceType: attribute
+      target: cds.datarobot.samplePct
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `id` to `cds.datarobot.id`
+      enabled: true
+      sources:
+        - id
+      sourceType: attribute
+      target: cds.datarobot.id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `useCaseId` to `cds.datarobot.useCaseId`
+      enabled: true
+      sources:
+        - useCaseId
+      sourceType: attribute
+      target: cds.datarobot.useCaseId
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `suggestedReplacement` to `cds.datarobot.suggestedReplacement`
+      enabled: true
+      sources:
+        - suggestedReplacement
+      sourceType: attribute
+      target: cds.datarobot.suggestedReplacement
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `contextSize` to `cds.datarobot.contextSize`
+      enabled: true
+      sources:
+        - contextSize
+      sourceType: attribute
+      target: cds.datarobot.contextSize
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `serviceHealth.status` to `cds.datarobot.serviceHealth.status`
+      enabled: true
+      sources:
+        - serviceHealth.status
+      sourceType: attribute
+      target: cds.datarobot.serviceHealth.status
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `model.targetType` to `cds.datarobot.model.targetType`
+      enabled: true
+      sources:
+        - model.targetType
+      sourceType: attribute
+      target: cds.datarobot.model.targetType
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `model.family` to `cds.datarobot.model.family`
+      enabled: true
+      sources:
+        - model.family
+      sourceType: attribute
+      target: cds.datarobot.model.family
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `model.type` to `cds.datarobot.model.type`
+      enabled: true
+      sources:
+        - model.type
+      sourceType: attribute
+      target: cds.datarobot.model.type
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `importance` to `cds.datarobot.importance`
+      enabled: true
+      sources:
+        - importance
+      sourceType: attribute
+      target: cds.datarobot.importance
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `customMetricsHealth.status` to
+        `cds.datarobot.customMetricsHealth.status`
+      enabled: true
+      sources:
+        - customMetricsHealth.status
+      sourceType: attribute
+      target: cds.datarobot.customMetricsHealth.status
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `name` to `cds.datarobot.name`
+      enabled: true
+      sources:
+        - name
+      sourceType: attribute
+      target: cds.datarobot.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `modelHealth.status` to `cds.datarobot.modelHealth.status`
+      enabled: true
+      sources:
+        - modelHealth.status
+      sourceType: attribute
+      target: cds.datarobot.modelHealth.status
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `accuracyHealth.status` to `cds.datarobot.accuracyHealth.status`
+      enabled: true
+      sources:
+        - accuracyHealth.status
+      sourceType: attribute
+      target: cds.datarobot.accuracyHealth.status
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `entityId` to `cds.datarobot.entityId`
+      enabled: true
+      sources:
+        - entityId
+      sourceType: attribute
+      target: cds.datarobot.entityId
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `percentageCompleted` to `cds.datarobot.percentageCompleted`
+      enabled: true
+      sources:
+        - percentageCompleted
+      sourceType: attribute
+      target: cds.datarobot.percentageCompleted
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `failedRows` to `cds.datarobot.failedRows`
+      enabled: true
+      sources:
+        - failedRows
+      sourceType: attribute
+      target: cds.datarobot.failedRows
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `scoredRows` to `cds.datarobot.scoredRows`
+      enabled: true
+      sources:
+        - scoredRows
+      sourceType: attribute
+      target: cds.datarobot.scoredRows
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `skippedRows` to `cds.datarobot.skippedRows`
+      enabled: true
+      sources:
+        - skippedRows
+      sourceType: attribute
+      target: cds.datarobot.skippedRows
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `jobIntakeSize` to `cds.datarobot.jobIntakeSize`
+      enabled: true
+      sources:
+        - jobIntakeSize
+      sourceType: attribute
+      target: cds.datarobot.jobIntakeSize
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `intakeDatasetDisplayName` to `cds.datarobot.intakeDatasetDisplayName`
+      enabled: true
+      sources:
+        - intakeDatasetDisplayName
+      sourceType: attribute
+      target: cds.datarobot.intakeDatasetDisplayName
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `modelFamilyFullName` to `cds.datarobot.modelFamilyFullName`
+      enabled: true
+      sources:
+        - modelFamilyFullName
+      sourceType: attribute
+      target: cds.datarobot.modelFamilyFullName
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `featurelistName` to `cds.datarobot.featureListName`
+      enabled: true
+      sources:
+        - featurelistName
+      sourceType: attribute
+      target: cds.datarobot.featureListName
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `llmBlueprintsCount` to `cds.datarobot.llmBlueprintsCount`
+      enabled: true
+      sources:
+        - llmBlueprintsCount
+      sourceType: attribute
+      target: cds.datarobot.llmBlueprintsCount
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `vendor` to `cds.datarobot.vendor`
+      enabled: true
+      sources:
+        - vendor
+      sourceType: attribute
+      target: cds.datarobot.vendor
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `jobSpec.deploymentId` to `cds.datarobot.jobSpec.deploymentId`
+      enabled: true
+      sources:
+        - jobSpec.deploymentId
+      sourceType: attribute
+      target: cds.datarobot.jobSpec.deploymentId
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `jobSpec.modelId` to `cds.datarobot.jobSpec.modelId`
+      enabled: true
+      sources:
+        - jobSpec.modelId
+      sourceType: attribute
+      target: cds.datarobot.jobSpec.modelId
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `jobSpec.numConcurrent` to `cds.datarobot.jobSpec.numConcurrent`
+      enabled: true
+      sources:
+        - jobSpec.numConcurrent
+      sourceType: attribute
+      target: cds.datarobot.jobSpec.numConcurrent
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `jobOutputSize` to `cds.datarobot.jobOutputSize`
+      enabled: true
+      sources:
+        - jobOutputSize
+      sourceType: attribute
+      target: cds.datarobot.jobOutputSize
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: pipeline
+      name: Deployment Logs Pipeline
+      enabled: true
+      filter:
+        query: service:cds.datarobot.deployments
+      processors:
+        - type: attribute-remapper
+          name: Map `status` to `deployment_status`
+          enabled: true
+          sources:
+            - status
+          sourceType: attribute
+          target: deployment_status
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - name: Lookup `status` from `deployment_status`
+          enabled: true
+          source: deployment_status
+          target: status
+          lookupTable: errored, Error
+          defaultLookup: Info
+          type: lookup-processor
+        - type: status-remapper
+          name: Define `status` as the official status of the log
+          enabled: true
+          sources:
+            - status
+    - type: pipeline
+      name: Batch Predictions Status
+      enabled: true
+      filter:
+        query: service:cds.datarobot.batchPredictions
+      processors:
+        - type: attribute-remapper
+          name: Map `status` to `prediction_status`
+          enabled: true
+          sources:
+            - status
+          sourceType: attribute
+          target: prediction_status
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - name: Lookup `status` from `prediction_status`
+          enabled: true
+          source: prediction_status
+          target: status
+          lookupTable: ABORTED, Error
+          defaultLookup: Info
+          type: lookup-processor
+        - type: status-remapper
+          name: Define `status` as the official status of the log
+          enabled: true
+          sources:
+            - status
+    - type: attribute-remapper
+      name: Map `label` to `cds.datarobot.label`
+      enabled: true
+      sources:
+        - label
+      sourceType: attribute
+      target: cds.datarobot.label
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `status` to `cds.datarobot.status`
+      enabled: true
+      sources:
+        - status
+      sourceType: attribute
+      target: cds.datarobot.status
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `driverClassType` to `cds.datarobot.driverClassType`
+      enabled: true
+      sources:
+        - driverClassType
+      sourceType: attribute
+      target: cds.datarobot.driverClassType
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `customModelVersionsCount` to `cds.datarobot.customModelVersionsCount`
+      enabled: true
+      sources:
+        - customModelVersionsCount
+      sourceType: attribute
+      target: cds.datarobot.customModelVersionsCount
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `registeredModelVersionsCount` to
+        `cds.datarobot.registeredModelVersionsCount`
+      enabled: true
+      sources:
+        - registeredModelVersionsCount
+      sourceType: attribute
+      target: cds.datarobot.registeredModelVersionsCount
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `customApplicationsCount` to `cds.datarobot.customApplicationsCount`
+      enabled: true
+      sources:
+        - customApplicationsCount
+      sourceType: attribute
+      target: cds.datarobot.customApplicationsCount
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `jobSpec.outputSettings.type` to
+        `cds.datarobot.jobSpec.outputSettings.type`
+      enabled: true
+      sources:
+        - jobSpec.outputSettings.type
+      sourceType: attribute
+      target: cds.datarobot.jobSpec.outputSettings.type
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `jobSpec.predictionEnvironment.name` to
+        `cds.datarobot.jobSpec.predictionEnvironment.name`
+      enabled: true
+      sources:
+        - jobSpec.predictionEnvironment.name
+      sourceType: attribute
+      target: cds.datarobot.jobSpec.predictionEnvironment.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `targetType` to `cds.datarobot.targetType`
+      enabled: true
+      sources:
+        - targetType
+      sourceType: attribute
+      target: cds.datarobot.targetType
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `entityType` to `cds.datarobot.entityType`
+      enabled: true
+      sources:
+        - entityType
+      sourceType: attribute
+      target: cds.datarobot.entityType
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `dataSourceType` to `cds.datarobot.dataSourceType`
+      enabled: true
+      sources:
+        - dataSourceType
+      sourceType: attribute
+      target: cds.datarobot.dataSourceType
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `datasetSize` to `cds.datarobot.datasetSize`
+      enabled: true
+      sources:
+        - datasetSize
+      sourceType: attribute
+      target: cds.datarobot.datasetSize
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `numberOfBacktests` to `cds.datarobot.numberOfBacktests`
+      enabled: true
+      sources:
+        - numberOfBacktests
+      sourceType: attribute
+      target: cds.datarobot.numberOfBacktests
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `dataType` to `cds.datarobot.dataType`
+      enabled: true
+      sources:
+        - dataType
+      sourceType: attribute
+      target: cds.datarobot.dataType
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `customJobsCount` to `cds.datarobot.customJobsCount`
+      enabled: true
+      sources:
+        - customJobsCount
+      sourceType: attribute
+      target: cds.datarobot.customJobsCount
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `trainingRowCount` to `cds.datarobot.trainingRowCount`
+      enabled: true
+      sources:
+        - trainingRowCount
+      sourceType: attribute
+      target: cds.datarobot.trainingRowCount
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `rowCount` to `cds.datarobot.rowCount`
+      enabled: true
+      sources:
+        - rowCount
+      sourceType: attribute
+      target: cds.datarobot.rowCount
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `columnCount` to `cds.datarobot.columnCount`
+      enabled: true
+      sources:
+        - columnCount
+      sourceType: attribute
+      target: cds.datarobot.columnCount
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `metrics.AUC.validation` to `cds.datarobot.metrics.AUC.validation`
+      enabled: true
+      sources:
+        - metrics.AUC.validation
+      sourceType: attribute
+      target: cds.datarobot.metrics.AUC.validation
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `metrics.Accuracy.validation` to
+        `cds.datarobot.metrics.Accuracy.validation`
+      enabled: true
+      sources:
+        - metrics.Accuracy.validation
+      sourceType: attribute
+      target: cds.datarobot.metrics.Accuracy.validation
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `metrics.LogLoss.validation` to
+        `cds.datarobot.metrics.LogLoss.validation`
+      enabled: true
+      sources:
+        - metrics.LogLoss.validation
+      sourceType: attribute
+      target: cds.datarobot.metrics.LogLoss.validation
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `metrics.LogLoss.holdout` to `cds.datarobot.metrics.LogLoss.holdout`
+      enabled: true
+      sources:
+        - metrics.LogLoss.holdout
+      sourceType: attribute
+      target: cds.datarobot.metrics.LogLoss.holdout
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `metrics.AUC.holdout` to `cds.datarobot.metrics.AUC.holdout`
+      enabled: true
+      sources:
+        - metrics.AUC.holdout
+      sourceType: attribute
+      target: cds.datarobot.metrics.AUC.holdout
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `metrics.Accuracy.holdout` to `cds.datarobot.metrics.Accuracy.holdout`
+      enabled: true
+      sources:
+        - metrics.Accuracy.holdout
+      sourceType: attribute
+      target: cds.datarobot.metrics.Accuracy.holdout
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `data.numIterations` to `cds.datarobot.data.numIterations`
+      enabled: true
+      sources:
+        - data.numIterations
+      sourceType: attribute
+      target: cds.datarobot.data.numIterations
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `missingValuesReport.missingCount` to
+        `cds.datarobot.missingValuesReport.missingCount`
+      enabled: true
+      sources:
+        - missingValuesReport.missingCount
+      sourceType: attribute
+      target: cds.datarobot.missingValuesReport.missingCount
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `jobSpec.maxExplanations` to `cds.datarobot.jobSpec.maxExplanations`
+      enabled: true
+      sources:
+        - jobSpec.maxExplanations
+      sourceType: attribute
+      target: cds.datarobot.jobSpec.maxExplanations
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: date-remapper
+      name: Define `updatedAt`, `modifiedAt`, `lastUpdateDate` as the official date of
+        the log
+      enabled: true
+      sources:
+        - updatedAt
+        - modifiedAt
+        - lastUpdateDate

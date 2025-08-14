@@ -1,0 +1,241 @@
+id: continuous_ai_netsuite
+tests:
+ -
+  sample: >-
+    {
+      "date":"2024-09-13T18:13:53.728000",
+      "searches":"4",
+      "role":"1171",
+      "records":"0",
+      "entityname":"29",
+      "entityid":"6207",
+      "usagecount":"14",
+      "recordid":"None",
+      "hostname":"123123-sb1.app.netsuite.com",
+      "totaltime":"0.044",
+      "frhtId":"a04e7123-e964-4065-bcce-7ff8f671c15c",
+      "service":"netsuite-suitescript-analytics",
+      "context":"restwebservices",
+      "operationId":"9a1b5023-2d9a-43b7-b785-8acf010fa02f",
+      "urlrequests":"0",
+      "email":"netsuiteapi@continuousai.com",
+      "errorcode":""
+    }
+  result:
+    custom:
+      context: "restwebservices"
+      date: "2024-09-13T18:13:53.728000"
+      email: "netsuiteapi@continuousai.com"
+      entityid: "6207"
+      entityname: "29"
+      errorcode: ""
+      frhtId: "a04e7123-e964-4065-bcce-7ff8f671c15c"
+      hostname: "123123-sb1.app.netsuite.com"
+      log_level: "notice"
+      operationId: "9a1b5023-2d9a-43b7-b785-8acf010fa02f"
+      recordid: "None"
+      records: "0"
+      role: "1171"
+      searches: "4"
+      service: "netsuite-suitescript-analytics"
+      totaltime: "0.044"
+      urlrequests: "0"
+      usagecount: "14"
+    message: |-
+      {
+        "date" : "2024-09-13T18:13:53.728000",
+        "searches" : "4",
+        "role" : "1171",
+        "records" : "0",
+        "entityname" : "29",
+        "entityid" : "6207",
+        "usagecount" : "14",
+        "recordid" : "None",
+        "hostname" : "123123-sb1.app.netsuite.com",
+        "totaltime" : "0.044",
+        "frhtId" : "a04e7123-e964-4065-bcce-7ff8f671c15c",
+        "service" : "netsuite-suitescript-analytics",
+        "context" : "restwebservices",
+        "operationId" : "9a1b5023-2d9a-43b7-b785-8acf010fa02f",
+        "urlrequests" : "0",
+        "email" : "netsuiteapi@continuousai.com",
+        "errorcode" : ""
+      }
+    service: "netsuite-suitescript-analytics"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1726251233728
+ -
+  sample: >-
+    {
+      "date":"2024-09-14T18:13:53.728000",
+      "searches":"4",
+      "role":"1171",
+      "records":"1",
+      "entityname":"29",
+      "entityid":"6207",
+      "usagecount":"14",
+      "recordid":"None",
+      "hostname":"123123-sb1.app.netsuite.com",
+      "totaltime":"0.044",
+      "frhtId":"a04e7123-e964-4065-bcce-7ff8f671c15c",
+      "service":"netsuite-suitescript-analytics",
+      "context":"restwebservices",
+      "operationId":"9a1b5023-2d9a-43b7-b785-8acf010fa02f",
+      "urlrequests":"0",
+      "email":"netsuiteapi@continuousai.com",
+      "errorcode":"123"
+    }
+  result:
+    custom:
+      context: "restwebservices"
+      date: "2024-09-14T18:13:53.728000"
+      email: "netsuiteapi@continuousai.com"
+      entityid: "6207"
+      entityname: "29"
+      errorcode: "123"
+      frhtId: "a04e7123-e964-4065-bcce-7ff8f671c15c"
+      hostname: "123123-sb1.app.netsuite.com"
+      log_level: "alert"
+      operationId: "9a1b5023-2d9a-43b7-b785-8acf010fa02f"
+      recordid: "None"
+      records: "1"
+      role: "1171"
+      searches: "4"
+      service: "netsuite-suitescript-analytics"
+      totaltime: "0.044"
+      urlrequests: "0"
+      usagecount: "14"
+    message: |-
+      {
+        "date" : "2024-09-14T18:13:53.728000",
+        "searches" : "4",
+        "role" : "1171",
+        "records" : "1",
+        "entityname" : "29",
+        "entityid" : "6207",
+        "usagecount" : "14",
+        "recordid" : "None",
+        "hostname" : "123123-sb1.app.netsuite.com",
+        "totaltime" : "0.044",
+        "frhtId" : "a04e7123-e964-4065-bcce-7ff8f671c15c",
+        "service" : "netsuite-suitescript-analytics",
+        "context" : "restwebservices",
+        "operationId" : "9a1b5023-2d9a-43b7-b785-8acf010fa02f",
+        "urlrequests" : "0",
+        "email" : "netsuiteapi@continuousai.com",
+        "errorcode" : "123"
+      }
+    service: "netsuite-suitescript-analytics"
+    status: "alert"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1726337633728
+ - 
+  sample: >-
+      {
+        "date" : "2024-09-14T18:13:53.728000",
+        "newvalue" : "2",
+        "role" : "3",
+        "log_level" : "notice",
+        "label" : "Version",
+        "recordtypeid" : "-118",
+        "source" : "continuous_ai_netsuite",
+        "type" : "4",
+        "recordid" : "11591234",
+        "datetime" : "12/13/2024 6:39:51 AM",
+        "hostname" : "1231231-sb1.app.netsuite.com",
+        "field" : "TESTRECORD_PRI_VERSION",
+        "record" : "11591234",
+        "context" : "SCH",
+        "name" : "1231",
+        "id" : "12341234",
+        "oldvalue" : "1"
+      }
+  result: 
+    custom:
+      context: "SCH"
+      date: "2024-09-14T18:13:53.728000"
+      datetime: "12/13/2024 6:39:51 AM"
+      field: "TESTRECORD_PRI_VERSION"
+      hostname: "1231231-sb1.app.netsuite.com"
+      id: "12341234"
+      label: "Version"
+      log_level: "notice"
+      name: "1231"
+      newvalue: "2"
+      oldvalue: "1"
+      record: "11591234"
+      recordid: "11591234"
+      recordtypeid: "-118"
+      record_type_name: "role"
+      role: "3"
+      source: "continuous_ai_netsuite"
+      type: "4"
+    message: |-
+      {
+        "date" : "2024-09-14T18:13:53.728000",
+        "newvalue" : "2",
+        "role" : "3",
+        "log_level" : "notice",
+        "label" : "Version",
+        "recordtypeid" : "-118",
+        "source" : "continuous_ai_netsuite",
+        "type" : "4",
+        "recordid" : "11591234",
+        "datetime" : "12/13/2024 6:39:51 AM",
+        "hostname" : "1231231-sb1.app.netsuite.com",
+        "field" : "TESTRECORD_PRI_VERSION",
+        "record" : "11591234",
+        "context" : "SCH",
+        "name" : "1231",
+        "id" : "12341234",
+        "oldvalue" : "1"
+      }
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1726337633728
+ -
+  sample: >-
+      {
+        "date": "12/13/2024",
+        "title": "filters",
+        "type": "Emergency",
+        "user": "user1234",
+        "ipaddress": "10.1.1.1",
+        "scripttype": "1",
+        "internalid": "278",
+        "source": "continuous_ai_netsuite",
+        "detail": "hello world"
+      }
+  result:
+    custom:
+      date: "12/13/2024"
+      detail: "hello world"
+      internalid: "278"
+      ip_address_geo: {}
+      ipaddress: "10.1.1.1"
+      log_level: "notice"
+      scripttype: "1"
+      source: "continuous_ai_netsuite"
+      title: "filters"
+      type: "Emergency"
+      user: "user1234"
+    message: |-
+      {
+        "date" : "12/13/2024",
+        "ipaddress" : "10.1.1.1",
+        "internalid" : "278",
+        "scripttype" : "1",
+        "source" : "continuous_ai_netsuite",
+        "detail" : "hello world",
+        "title" : "filters",
+        "type" : "Emergency",
+        "user" : "user1234"
+      }
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1

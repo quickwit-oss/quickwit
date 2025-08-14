@@ -1,0 +1,154 @@
+id: "agent"
+tests:
+ -
+  sample: "2019-04-08 13:53:48 UTC | CORE | INFO | (pkg/collector/python/datadog_agent.go:120 in LogMessage) | kafka_cluster_status:8ca7b736f0aa43e5 | (kafka_cluster_status.py:213) | Checking for out of sync partition replicas"
+  result:
+    custom:
+      agent: "CORE"
+      filename: "pkg/collector/python/datadog_agent.go"
+      kafka_cluster_status: "8ca7b736f0aa43e5"
+      level: "INFO"
+      lineno: 120.0
+      process: "LogMessage"
+      pyFilename: "kafka_cluster_status.py"
+      pyLineno: 213.0
+      timestamp: 1554731628000
+    message: "2019-04-08 13:53:48 UTC | CORE | INFO | (pkg/collector/python/datadog_agent.go:120 in LogMessage) | kafka_cluster_status:8ca7b736f0aa43e5 | (kafka_cluster_status.py:213) | Checking for out of sync partition replicas"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1554731628000
+ -
+  sample: "2019-04-08 13:53:48 UTC | CORE | INFO | (pkg/collector/python/datadog_agent.go:121 in LogMessage) | - | (client.py:479) | Zookeeper connection established, state: CONNECTED"
+  result:
+    custom:
+      agent: "CORE"
+      filename: "pkg/collector/python/datadog_agent.go"
+      level: "INFO"
+      lineno: 121.0
+      process: "LogMessage"
+      pyFilename: "client.py"
+      pyLineno: 479.0
+      timestamp: 1554731628000
+    message: "2019-04-08 13:53:48 UTC | CORE | INFO | (pkg/collector/python/datadog_agent.go:121 in LogMessage) | - | (client.py:479) | Zookeeper connection established, state: CONNECTED"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1554731628000
+ -
+  sample: "2019-04-08 13:53:48 UTC | CORE | INFO | (pkg/collector/runner/runner.go:327 in work) | check:network,type:core | Done running check"
+  result:
+    custom:
+      agent: "CORE"
+      check: "network"
+      filename: "pkg/collector/runner/runner.go"
+      level: "INFO"
+      lineno: 327.0
+      process: "work"
+      timestamp: 1554731628000
+      type: "core"
+    message: "2019-04-08 13:53:48 UTC | CORE | INFO | (pkg/collector/runner/runner.go:327 in work) | check:network,type:core | Done running check"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1554731628000
+ -
+  sample: "2019-04-08 13:53:48 UTC | CORE | INFO | (pkg/collector/runner/runner.go:264 in work) | Running check load"
+  result:
+    custom:
+      agent: "CORE"
+      filename: "pkg/collector/runner/runner.go"
+      level: "INFO"
+      lineno: 264.0
+      process: "work"
+      timestamp: 1554731628000
+    message: "2019-04-08 13:53:48 UTC | CORE | INFO | (pkg/collector/runner/runner.go:264 in work) | Running check load"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1554731628000
+ -
+  sample: "2019-04-08 13:53:48 UTC | TRACE | INFO | (pkg/trace/agent/agent.go:145 in loop) | exiting"
+  result:
+    custom:
+      agent: "TRACE"
+      filename: "pkg/trace/agent/agent.go"
+      level: "INFO"
+      lineno: 145.0
+      process: "loop"
+      timestamp: 1554731628000
+    message: "2019-04-08 13:53:48 UTC | TRACE | INFO | (pkg/trace/agent/agent.go:145 in loop) | exiting"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1554731628000
+ -
+  sample: "2019-02-01 16:59:41 UTC | INFO | (connection_manager.go:124 in CloseConnection) | Connection closed"
+  result:
+    custom:
+      filename: "connection_manager.go"
+      level: "INFO"
+      lineno: 124.0
+      process: "CloseConnection"
+      timestamp: 1549040381000
+    message: "2019-02-01 16:59:41 UTC | INFO | (connection_manager.go:124 in CloseConnection) | Connection closed"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1549040381000
+ -
+  sample: "2019-02-01 16:58:54 UTC | INFO | (serializer.go:263 in SendJSONToV1Intake) | Sent processes metadata payload, size: 1422 bytes."
+  result:
+    custom:
+      filename: "serializer.go"
+      level: "INFO"
+      lineno: 263.0
+      process: "SendJSONToV1Intake"
+      timestamp: 1549040334000
+    message: "2019-02-01 16:58:54 UTC | INFO | (serializer.go:263 in SendJSONToV1Intake) | Sent processes metadata payload, size: 1422 bytes."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1549040334000
+ -
+  sample: "2020-01-03 15:37:00 UTC | SYS-PROBE | WARN | (pkg/ebpf/netlink/conntracker.go:301 in unregister) | exceeded maximum tracked short lived connections"
+  result:
+    custom:
+      agent: "SYS-PROBE"
+      filename: "pkg/ebpf/netlink/conntracker.go"
+      level: "WARN"
+      lineno: 301.0
+      process: "unregister"
+      timestamp: 1578065820000
+    message: "2020-01-03 15:37:00 UTC | SYS-PROBE | WARN | (pkg/ebpf/netlink/conntracker.go:301 in unregister) | exceeded maximum tracked short lived connections"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1578065820000
+ -
+  sample: "2020-11-18 10:31:13 UTC | JMX | INFO  | Instance | Done initializing JMX Server at localhost:7199"
+  result:
+    custom:
+      agent: "JMX"
+      class: "Instance"
+      level: "INFO"
+      timestamp: 1605695473000
+    message: "2020-11-18 10:31:13 UTC | JMX | INFO  | Instance | Done initializing JMX Server at localhost:7199"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1605695473000
+ -
+  sample: "2020-11-17 17:00:01 UTC | JMX | DEBUG | HttpClient | attempting to connect to: https://localhost:5001/agent/jmx/status"
+  result:
+    custom:
+      agent: "JMX"
+      class: "HttpClient"
+      level: "DEBUG"
+      timestamp: 1605632401000
+    message: "2020-11-17 17:00:01 UTC | JMX | DEBUG | HttpClient | attempting to connect to: https://localhost:5001/agent/jmx/status"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1605632401000
+

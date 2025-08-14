@@ -1,0 +1,67 @@
+id: "apigee"
+tests:
+ -
+  sample: |-
+    {
+      "date" : 1483719397000,
+      "service" : "myproxy",
+      "host" : "virtualhost",
+      "http" : {
+        "proxy" : {
+          "url" : "/test.apigee.proxy.com/test"
+        },
+        "status_code" : 200,
+        "method" : "GET",
+        "client" : {
+          "end_time_ms" : "1377112607414",
+          "start_time_ms" : "1377112607413"
+        },
+        "url" : "/datadoghq/company?test=var1%20Pl",
+        "x_forwarded_for" : "186.13.0.1"
+      },
+      "message" : "GET /datadoghq/company?test=var1%20Pl 200 OK",
+      "error" : {
+        "message" : "there was an error"
+      },
+      "network" : {
+        "client" : {
+          "port" : 8080,
+          "ip" : "172.17.0.1"
+        }
+      }
+    }
+  result:
+    custom:
+      date: 1483719397000
+      duration: 1000000.0
+      error:
+        message: "there was an error"
+      host: "virtualhost"
+      http:
+        client:
+          end_time_ms: "1377112607414"
+          start_time_ms: "1377112607413"
+        method: "GET"
+        proxy:
+          url: "/test.apigee.proxy.com/test"
+          url_details:
+            path: "/test.apigee.proxy.com/test"
+        status_category: "OK"
+        status_code: 200
+        url: "/datadoghq/company?test=var1%20Pl"
+        url_details:
+          path: "/datadoghq/company"
+          queryString:
+            test: "var1%20Pl"
+        x_forwarded_for: "186.13.0.1"
+      network:
+        client:
+          geoip: {}
+          ip: "172.17.0.1"
+          port: 8080
+      service: "myproxy"
+    message: "GET /datadoghq/company?test=var1%20Pl 200 OK"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+

@@ -1,0 +1,88 @@
+id: impala
+metric_id: impala
+backend_only: false
+facets:
+  - groups:
+      - Source Code
+    name: Thread Name
+    path: logger.thread_name
+    source: log
+  - groups:
+      - Web Access
+    name: Destination IP
+    path: network.destination.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Destination Port
+    path: network.destination.port
+    source: log
+  - groups:
+      - Web Access
+    name: Destination Name
+    path: network.destination.name
+    source: log
+  - groups:
+      - Impala
+    name: Topic Name
+    path: topic.name
+    source: log
+  - groups:
+      - Impala
+    name: Backend Group Name
+    path: backend.group_name
+    source: log
+  - groups:
+      - Impala
+    name: Query Id
+    path: query.id
+    source: log
+pipeline:
+  type: pipeline
+  name: Impala
+  enabled: true
+  filter:
+    query: source:impala
+  processors:
+    - type: grok-parser
+      name: Parsing Impala logs
+      enabled: true
+      source: message
+      samples:
+        - I0909 12:54:20.375062     1 HiveMetaStoreClient.java:251] HMS client filtering is enabled.
+        - "I0722 08:49:07.843855     1 thrift-server.cc:456] ThriftServer 'hiveserver2-http-frontend' started on port: 28000"
+        - 'I0722 08:49:04.990258    64 TAcceptQueueServer.cpp:340] New connection to server CatalogService from client <Host: 172.26.0.5 Port: 58642>'
+        - I0722 08:49:08.039357    34 statestore.cc:278] Preparing initial impala-membership topic update for impalad@172.26.0.5:27000. Size = 148.00 B
+        - 'I0906 08:11:07.063410   591 cluster-membership-mgr.cc:287] Adding backend 5f45a790bd0dc864:ea6f64dd0bdfaab7 to group name: \"default\"\nmin_size: 1'
+      grok:
+        supportRules: |
+          _level %{regex("[IWEF]"):level}
+          _date %{date("MMdd HH:mm:ss.SSSSSS", "UTC"):timestamp}
+          _thread_name %{notSpace:logger.thread_name}
+          _file_name %{notSpace:file.name}
+          _file_line %{integer:file.line}
+          _query_id %{notSpace:query.id}
+
+          _log_message (%{_thrift_server_started_message}|%{_new_connection_message}|%{_new_membership_message}|%{_preparing_topic}|%{_message})
+          _thrift_server_started_message ThriftServer '%{notSpace:network.destination.name}' started on port: %{port:network.destination.port}
+          _new_connection_message New connection to server %{notSpace:network.destination.name} from client <Host: %{ip:network.destination.ip} Port: %{port:network.destination.port}>
+          _new_membership_message Adding backend %{notSpace:backend.name} to group name: "%{data:backend.group_name}".*
+          _preparing_topic Preparing initial %{notSpace:topic.name} topic update for %{hostname:network.destination.name}@%{ip:network.destination.ip}:%{port:network.destination.port}. Size = %{hostname:topic.size} B
+          _message %{data}
+        matchRules: |
+          default_log %{_level}%{_date}\s+%{_thread_name} %{_file_name}:%{_file_line}]( %{_query_id}])? %{_log_message:message}
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level

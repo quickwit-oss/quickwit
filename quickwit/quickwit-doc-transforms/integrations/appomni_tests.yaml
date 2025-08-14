@@ -1,0 +1,120 @@
+id: "appomni"
+tests:
+ -
+  sample: |-
+    {
+      "@timestamp" : "2025-01-23T21:05:49.315Z",
+      "appomni" : {
+        "alert" : {
+          "channel" : "prod"
+        },
+        "organization" : {
+          "id" : 25
+        },
+        "event" : {
+          "sortable_event_id" : "01JJAFRJ8345TFD7RSYPFG6HK4",
+          "sortable_ingest_id" : "01JJAG2QHJHEGBR2JJ5HPG46F4",
+          "id" : "5e2c0a65-5e08-56a3-8ff6-dd7614c4ea11",
+          "dataset" : "appomni_alert"
+        }
+      },
+      "related" : {
+        "identity" : [ "bb266b26-76a7-49b7-9c31-df989427453e" ],
+        "ip" : [ "174.85.87.80" ],
+        "services" : {
+          "id" : [ 11169 ],
+          "type" : [ "okta" ]
+        },
+        "event" : [ "6f63ac57-e033-50b3-979d-fd3d4d81f110" ],
+        "user" : [ "jtesarz@appomni.com" ]
+      },
+      "rule" : {
+        "name" : "MFA Modified for Admin User",
+        "ruleset" : "1423ff39-3250-4d53-aafb-142e740668bd",
+        "threat" : {
+          "framework" : "MITRE ATT&CK",
+          "technique" : {
+            "name" : [ "Account Manipulation" ],
+            "id" : [ "T1098" ]
+          },
+          "tactic" : {
+            "name" : [ "Persistence" ],
+            "id" : [ "TA0003" ]
+          }
+        },
+        "uuid" : "93075872-2e3f-401a-846c-7ad54dd30d07",
+        "version" : "1"
+      },
+      "event" : {
+        "severity" : 3,
+        "created" : "2025-01-23T21:11:22.418Z",
+        "kind" : "alert"
+      },
+      "message" : "MFA was modified for an admin user in 'Okta'",
+      "version" : "2.0.0"
+    }
+  result:
+    custom:
+      '@timestamp': "2025-01-23T21:05:49.315Z"
+      appomni:
+        alert:
+          channel: "prod"
+        event:
+          id: "5e2c0a65-5e08-56a3-8ff6-dd7614c4ea11"
+          kind: "alert"
+          sortable_event_id: "01JJAFRJ8345TFD7RSYPFG6HK4"
+          sortable_ingest_id: "01JJAG2QHJHEGBR2JJ5HPG46F4"
+        evt:
+          severity: "Low"
+        mitre:
+          attack:
+            framework: "MITRE ATT&CK"
+            tactic:
+              id:
+               - "TA0003"
+              name:
+               - "Persistence"
+            technique:
+              id:
+               - "T1098"
+              name:
+               - "Account Manipulation"
+        organization:
+          id: 25
+        related:
+          event:
+           - "6f63ac57-e033-50b3-979d-fd3d4d81f110"
+        rule:
+          name: "MFA Modified for Admin User"
+      event:
+        created: "2025-01-23T21:11:22.418Z"
+      logger:
+        name: "appomni_alert"
+      network:
+        client:
+          ip:
+            ipAddress:
+              invalidAddress: "[174.85.87.80]"
+      related:
+        identity:
+         - "bb266b26-76a7-49b7-9c31-df989427453e"
+        ip:
+         - "174.85.87.80"
+        services:
+          id:
+           - 11169
+          type:
+           - "okta"
+      rule:
+        ruleset: "1423ff39-3250-4d53-aafb-142e740668bd"
+        uuid: "93075872-2e3f-401a-846c-7ad54dd30d07"
+        version: "1"
+      usr:
+        name:
+         - "jtesarz@appomni.com"
+      version: "2.0.0"
+    message: "MFA was modified for an admin user in 'Okta'"
+    service: "okta"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1737666349315

@@ -1,0 +1,1492 @@
+id: "jamfprotect"
+tests:
+ -
+  sample: |-
+    {
+      "service" : "telemetry",
+      "identity" : {
+        "signer_id" : "com.logi.ghub.agent",
+        "cd_hash" : "13bf8bbe9e56bc3a1c81d6cc715777f7b4719283",
+        "signer_id_truncated" : 0,
+        "signer_type" : 0,
+        "team_id" : "QED4VVPZWA",
+        "team_id_truncated" : 0
+      },
+      "subject" : {
+        "process_id" : 11800,
+        "effective_user_name" : "john_appleseed",
+        "group_name" : "staff",
+        "user_name" : "john_appleseed",
+        "session_id" : 100007,
+        "audit_id" : 502,
+        "group_id" : 20,
+        "process_hash" : "",
+        "user_id" : 502,
+        "effective_group_name" : "staff",
+        "process_name" : "",
+        "effective_group_id" : 20,
+        "effective_user_id" : 502,
+        "audit_user_name" : "john_appleseed",
+        "terminal_id" : {
+          "port" : 50331650,
+          "ip_address" : "0.0.0.0",
+          "addr" : [ 0 ],
+          "type" : 0
+        }
+      },
+      "header" : {
+        "event_modifier" : 0,
+        "time_milliseconds_offset" : 174,
+        "time_seconds_epoch" : 1571164481,
+        "event_id" : 32,
+        "event_name" : "AUE_CONNECT",
+        "version" : 11
+      },
+      "_event_score" : 0,
+      "arguments" : {
+        "fd" : 43
+      },
+      "source" : "jamfprotect",
+      "socket_inet" : {
+        "port" : 6468,
+        "id" : 128,
+        "ip_address" : "127.0.0.1",
+        "addr" : [ 16777343 ],
+        "family" : 2
+      },
+      "return" : {
+        "return_value" : 4294967295,
+        "description" : "failure : Operation now in progress",
+        "error" : 150
+      },
+      "host_info" : {
+        "serial_number" : "Z2C23RW4DY",
+        "primary_mac_address" : "38:f9:e8:15:5a:82",
+        "osversion" : "Version 10.15 (Build 19A582a)",
+        "host_uuid" : "3F6E4B3A-9285-4E7E-9A0C-C3B62DC379DF",
+        "host_name" : "VMAC-2C23RW4DY"
+      }
+    }
+  result:
+    custom:
+      _event_score: 0
+      arguments:
+        fd: 43
+      evt:
+        name: "AUE_CONNECT"
+        outcome: "failure : Operation now in progress"
+      header:
+        event_id: 32
+        event_modifier: 0
+        time_milliseconds_offset: 174
+        time_seconds_epoch: 1571164481
+        version: 11
+      host_info:
+        host_name: "VMAC-2C23RW4DY"
+        host_uuid: "3F6E4B3A-9285-4E7E-9A0C-C3B62DC379DF"
+        osversion: "Version 10.15 (Build 19A582a)"
+        primary_mac_address: "38:f9:e8:15:5a:82"
+        serial_number: "Z2C23RW4DY"
+      identity:
+        cd_hash: "13bf8bbe9e56bc3a1c81d6cc715777f7b4719283"
+        signer_id: "com.logi.ghub.agent"
+        signer_id_truncated: 0
+        signer_type: 0
+        team_id: "QED4VVPZWA"
+        team_id_truncated: 0
+      network:
+        client:
+          ip: "0.0.0.0"
+          port: 50331650
+        destination:
+          ip: "127.0.0.1"
+          port: 6468
+      return:
+        error: 150
+        return_value: 4294967295
+      service: "telemetry"
+      socket_inet:
+        addr:
+         - 16777343
+        family: 2
+        id: 128
+      source: "jamfprotect"
+      subject:
+        audit_id: 502
+        audit_user_name: "john_appleseed"
+        effective_group_id: 20
+        effective_group_name: "staff"
+        effective_user_id: 502
+        effective_user_name: "john_appleseed"
+        group_id: 20
+        group_name: "staff"
+        process_hash: ""
+        process_id: 11800
+        process_name: ""
+        session_id: 100007
+        terminal_id:
+          addr:
+           - 0
+          type: 0
+      usr:
+        id: 502
+        name: "john_appleseed"
+    message: |-
+      {
+        "service" : "telemetry",
+        "identity" : {
+          "signer_id" : "com.logi.ghub.agent",
+          "cd_hash" : "13bf8bbe9e56bc3a1c81d6cc715777f7b4719283",
+          "signer_id_truncated" : 0,
+          "signer_type" : 0,
+          "team_id" : "QED4VVPZWA",
+          "team_id_truncated" : 0
+        },
+        "subject" : {
+          "process_id" : 11800,
+          "effective_user_name" : "john_appleseed",
+          "group_name" : "staff",
+          "user_name" : "john_appleseed",
+          "session_id" : 100007,
+          "audit_id" : 502,
+          "group_id" : 20,
+          "process_hash" : "",
+          "user_id" : 502,
+          "effective_group_name" : "staff",
+          "process_name" : "",
+          "effective_group_id" : 20,
+          "effective_user_id" : 502,
+          "audit_user_name" : "john_appleseed",
+          "terminal_id" : {
+            "port" : 50331650,
+            "ip_address" : "0.0.0.0",
+            "addr" : [ 0 ],
+            "type" : 0
+          }
+        },
+        "header" : {
+          "event_modifier" : 0,
+          "time_milliseconds_offset" : 174,
+          "time_seconds_epoch" : 1571164481,
+          "event_id" : 32,
+          "event_name" : "AUE_CONNECT",
+          "version" : 11
+        },
+        "_event_score" : 0,
+        "arguments" : {
+          "fd" : 43
+        },
+        "source" : "jamfprotect",
+        "socket_inet" : {
+          "port" : 6468,
+          "id" : 128,
+          "ip_address" : "127.0.0.1",
+          "addr" : [ 16777343 ],
+          "family" : 2
+        },
+        "return" : {
+          "return_value" : 4294967295,
+          "description" : "failure : Operation now in progress",
+          "error" : 150
+        },
+        "host_info" : {
+          "serial_number" : "Z2C23RW4DY",
+          "primary_mac_address" : "38:f9:e8:15:5a:82",
+          "osversion" : "Version 10.15 (Build 19A582a)",
+          "host_uuid" : "3F6E4B3A-9285-4E7E-9A0C-C3B62DC379DF",
+          "host_name" : "VMAC-2C23RW4DY"
+        }
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "input" : {
+        "host" : {
+          "hostname" : "Mac mini von Norbert",
+          "os" : "Version 13.2.1 (Build 22D68)",
+          "provisioningUDID" : "00008103-000A45E400C0291E",
+          "serial" : "C07DTJEBQ6NV",
+          "protectVersion" : "5.0.2.4",
+          "ips" : [ "192.168.178.22" ]
+        },
+        "match" : {
+          "severity" : 0,
+          "custom" : false,
+          "event" : {
+            "senderImagePath" : "/System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow",
+            "process" : "loginwindow",
+            "composedMessage" : "-[SessionAgentNotificationCenter sendSystemBSDNotification:forUserID:] | sendSystemBSDNotification: com.apple.system.loginwindow.logoutNoReturn, with userID:501",
+            "processImagePath" : "/System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow",
+            "sender" : "loginwindow",
+            "name" : "LoginWindow Activity",
+            "subsystem" : "com.apple.loginwindow.logging",
+            "processIdentifier" : 176,
+            "category" : "Standard",
+            "uuid" : "5351804D-6C9C-4AFC-91C2-D20DFB71520F",
+            "tags" : [ "LoginWindow" ],
+            "timestamp" : 1.698684053912449E9
+          },
+          "actions" : [ {
+            "name" : "Report"
+          } ],
+          "facts" : [ {
+            "severity" : 0,
+            "name" : "LoginWindow Activity",
+            "actions" : [ {
+              "name" : "Report"
+            } ],
+            "human" : "LoginWindow Activity",
+            "uuid" : "1302521B-F290-4226-994B-1E7B703818B2",
+            "tags" : [ "LoginWindow" ]
+          } ],
+          "uuid" : "E04435EA-0FEC-46A3-B445-5C831996C0C7",
+          "tags" : [ "LoginWindow" ]
+        },
+        "eventType" : "GPUnifiedLogEvent"
+      },
+      "service" : "unifiedlogs",
+      "caid" : "dc11c939c7975cb65287d7bb2ae22d34d48bbecf874ecfc5ff233e40ae5403cb",
+      "host" : "Mac mini von Norbert",
+      "source" : "jamfprotect",
+      "certid" : "effa872d350becfb2c7cbcb1bdacc30c8c3fb9db4ee244a11a9cf10b025b9860"
+    }
+  result:
+    custom:
+      caid: "dc11c939c7975cb65287d7bb2ae22d34d48bbecf874ecfc5ff233e40ae5403cb"
+      certid: "effa872d350becfb2c7cbcb1bdacc30c8c3fb9db4ee244a11a9cf10b025b9860"
+      evt:
+        category: "Standard"
+        name: "LoginWindow Activity"
+        type: "GPUnifiedLogEvent"
+      host: "Mac mini von Norbert"
+      input:
+        host:
+          hostname: "Mac mini von Norbert"
+          os: "Version 13.2.1 (Build 22D68)"
+          protectVersion: "5.0.2.4"
+          provisioningUDID: "00008103-000A45E400C0291E"
+          serial: "C07DTJEBQ6NV"
+        match:
+          actions:
+           -
+            name: "Report"
+          custom: false
+          event:
+            composedMessage: "-[SessionAgentNotificationCenter sendSystemBSDNotification:forUserID:] | sendSystemBSDNotification: com.apple.system.loginwindow.logoutNoReturn, with userID:501"
+            process: "loginwindow"
+            processIdentifier: 176
+            processImagePath: "/System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow"
+            sender: "loginwindow"
+            senderImagePath: "/System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow"
+            subsystem: "com.apple.loginwindow.logging"
+            tags:
+             - "LoginWindow"
+            timestamp: 1.698684053912449E9
+            uuid: "5351804D-6C9C-4AFC-91C2-D20DFB71520F"
+          facts:
+           -
+            severity: 0
+            name: "LoginWindow Activity"
+            actions:
+             -
+              name: "Report"
+            human: "LoginWindow Activity"
+            uuid: "1302521B-F290-4226-994B-1E7B703818B2"
+            tags:
+             - "LoginWindow"
+          severity: 0
+          tags:
+           - "LoginWindow"
+          uuid: "E04435EA-0FEC-46A3-B445-5C831996C0C7"
+      network:
+        client:
+          ip:
+           - "192.168.178.22"
+      service: "unifiedlogs"
+      source: "jamfprotect"
+    message: |-
+      {
+        "input" : {
+          "host" : {
+            "hostname" : "Mac mini von Norbert",
+            "os" : "Version 13.2.1 (Build 22D68)",
+            "provisioningUDID" : "00008103-000A45E400C0291E",
+            "serial" : "C07DTJEBQ6NV",
+            "protectVersion" : "5.0.2.4",
+            "ips" : [ "192.168.178.22" ]
+          },
+          "match" : {
+            "severity" : 0,
+            "custom" : false,
+            "event" : {
+              "senderImagePath" : "/System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow",
+              "process" : "loginwindow",
+              "composedMessage" : "-[SessionAgentNotificationCenter sendSystemBSDNotification:forUserID:] | sendSystemBSDNotification: com.apple.system.loginwindow.logoutNoReturn, with userID:501",
+              "processImagePath" : "/System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow",
+              "sender" : "loginwindow",
+              "name" : "LoginWindow Activity",
+              "subsystem" : "com.apple.loginwindow.logging",
+              "processIdentifier" : 176,
+              "category" : "Standard",
+              "uuid" : "5351804D-6C9C-4AFC-91C2-D20DFB71520F",
+              "tags" : [ "LoginWindow" ],
+              "timestamp" : 1.698684053912449E9
+            },
+            "actions" : [ {
+              "name" : "Report"
+            } ],
+            "facts" : [ {
+              "severity" : 0,
+              "name" : "LoginWindow Activity",
+              "actions" : [ {
+                "name" : "Report"
+              } ],
+              "human" : "LoginWindow Activity",
+              "uuid" : "1302521B-F290-4226-994B-1E7B703818B2",
+              "tags" : [ "LoginWindow" ]
+            } ],
+            "uuid" : "E04435EA-0FEC-46A3-B445-5C831996C0C7",
+            "tags" : [ "LoginWindow" ]
+          },
+          "eventType" : "GPUnifiedLogEvent"
+        },
+        "service" : "unifiedlogs",
+        "caid" : "dc11c939c7975cb65287d7bb2ae22d34d48bbecf874ecfc5ff233e40ae5403cb",
+        "host" : "Mac mini von Norbert",
+        "source" : "jamfprotect",
+        "certid" : "effa872d350becfb2c7cbcb1bdacc30c8c3fb9db4ee244a11a9cf10b025b9860"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "input" : {
+        "related" : {
+          "processes" : [ {
+            "gid" : 0,
+            "signingInfo" : {
+              "informationStage" : "extended",
+              "appid" : "com.apple.shove",
+              "teamid" : "",
+              "signerType" : 0,
+              "authorities" : [ "Software Signing", "Apple Code Signing Certification Authority", "Apple Root CA" ],
+              "cdhash" : "qFnUqCDcaIaYPLT6sq5arHVRTGU=",
+              "statusMessage" : "No error.",
+              "status" : 0
+            },
+            "rgid" : 0,
+            "pgid" : 29993,
+            "pid" : 29993,
+            "ruid" : 0,
+            "uuid" : "BE40DCBE-069A-4F69-93B1-0AB046717713",
+            "ppid" : 831,
+            "args" : [ "/System/Library/PrivateFrameworks/PackageKit.framework/Resources/shove", "-f", "-s", "-R", "Applications/Notability.app", "/Library/InstallerSandboxes/.PKInstallSandboxManager/B94EACDA-EF4E-4D0D-89F4-1D69A7E47CCF.activeSandbox/Root", "/" ],
+            "path" : "/System/Library/PrivateFrameworks/PackageKit.framework/Versions/A/Resources/shove",
+            "uid" : 0,
+            "originalParentPID" : 831,
+            "responsiblePID" : 835,
+            "name" : "shove",
+            "exitCode" : 0,
+            "processIdentifier" : 13372855,
+            "processType" : "GPSystemObject",
+            "startTimestamp" : 1698777694
+          }, {
+            "gid" : 0,
+            "signingInfo" : {
+              "informationStage" : "extended",
+              "appid" : "com.apple.installd",
+              "teamid" : "",
+              "signerType" : 0,
+              "authorities" : [ "Software Signing", "Apple Code Signing Certification Authority", "Apple Root CA" ],
+              "cdhash" : "IxnuXBpC3LbYIa7aEyeVEbwA4EA=",
+              "statusMessage" : "No error.",
+              "status" : 0
+            },
+            "rgid" : 0,
+            "pgid" : 831,
+            "pid" : 831,
+            "ruid" : 0,
+            "uuid" : "6B7192A1-976A-4BF1-AC03-046908543C67",
+            "ppid" : 1,
+            "args" : [ "/System/Library/PrivateFrameworks/PackageKit.framework/Resources/installd" ],
+            "path" : "/System/Library/PrivateFrameworks/PackageKit.framework/Versions/A/Resources/installd",
+            "uid" : 0,
+            "originalParentPID" : 1,
+            "responsiblePID" : 835,
+            "name" : "installd",
+            "processIdentifier" : 1982,
+            "processType" : "GPSystemObject",
+            "startTimestamp" : 1697719388
+          }, {
+            "gid" : 20,
+            "signingInfo" : {
+              "informationStage" : "extended",
+              "appid" : "com.apple.appstoreagent",
+              "teamid" : "",
+              "signerType" : 0,
+              "authorities" : [ "Software Signing", "Apple Code Signing Certification Authority", "Apple Root CA" ],
+              "cdhash" : "TTJop1RfQMDz/9Qea+ZkMnglX2k=",
+              "statusMessage" : "No error.",
+              "status" : 0
+            },
+            "rgid" : 20,
+            "pgid" : 835,
+            "pid" : 835,
+            "ruid" : 502,
+            "uuid" : "80837E49-FF73-4DF2-BF45-BC792A0089F8",
+            "args" : [ "/System/Library/PrivateFrameworks/AppStoreDaemon.framework/Support/appstoreagent" ],
+            "path" : "/System/Library/PrivateFrameworks/AppStoreDaemon.framework/Support/appstoreagent",
+            "uid" : 502,
+            "responsiblePID" : 835,
+            "name" : "appstoreagent",
+            "processIdentifier" : 2001,
+            "processType" : "GPSystemObject",
+            "startTimestamp" : 1697719388
+          } ],
+          "files" : [ {
+            "isDownload" : false,
+            "gid" : 0,
+            "signingInfo" : {
+              "informationStage" : "extended",
+              "appid" : "com.gingerlabs.Notability",
+              "teamid" : "ZP9ZJ4EF3S",
+              "signerType" : 1,
+              "authorities" : [ "Apple Mac OS Application Signing", "Apple Worldwide Developer Relations Certification Authority", "Apple Root CA" ],
+              "cdhash" : "Wav623Wy9m3YgLPqnNSDUvdbl4E=",
+              "statusMessage" : "No error.",
+              "status" : 0
+            },
+            "sha1hex" : "",
+            "created" : 1698111995,
+            "accessed" : 1698111995,
+            "objectType" : "GPSystemObject",
+            "inode" : 1042830981,
+            "mode" : 16877,
+            "path" : "/Applications/Notability.app",
+            "uid" : 0,
+            "size" : 96,
+            "isAppBundle" : true,
+            "fsid" : 16777220,
+            "xattrs" : [ "com.apple.appstore.metadata" ],
+            "isScreenShot" : false,
+            "modified" : 1698111995,
+            "isDirectory" : true,
+            "changed" : 1698777693,
+            "sha256hex" : ""
+          } ],
+          "groups" : [ {
+            "gid" : 0,
+            "name" : "wheel",
+            "uuid" : "C02FL155MD6M0"
+          }, {
+            "gid" : 20,
+            "name" : "staff",
+            "uuid" : "C02FL155MD6M14"
+          } ],
+          "binaries" : [ {
+            "isDownload" : false,
+            "gid" : 0,
+            "signingInfo" : {
+              "informationStage" : "extended",
+              "appid" : "com.apple.shove",
+              "teamid" : "",
+              "signerType" : 0,
+              "authorities" : [ "Software Signing", "Apple Code Signing Certification Authority", "Apple Root CA" ],
+              "cdhash" : "qFnUqCDcaIaYPLT6sq5arHVRTGU=",
+              "statusMessage" : "No error.",
+              "status" : 0
+            },
+            "sha1hex" : "926f85c4638a65e96660306a5c2969bee093b0d7",
+            "created" : 1694870910,
+            "accessed" : 1694870910,
+            "objectType" : "GPSystemObject",
+            "inode" : 1152921500312338600,
+            "mode" : 33261,
+            "path" : "/System/Library/PrivateFrameworks/PackageKit.framework/Versions/A/Resources/shove",
+            "uid" : 0,
+            "size" : 169872,
+            "isAppBundle" : false,
+            "fsid" : 16777220,
+            "isScreenShot" : false,
+            "modified" : 1694870910,
+            "isDirectory" : false,
+            "changed" : 1694870910,
+            "sha256hex" : "cef7dbe4c7016a90b0234310751e5bf90362fdb490b3072bf31c319a21362091"
+          }, {
+            "isDownload" : false,
+            "gid" : 0,
+            "signingInfo" : {
+              "informationStage" : "extended",
+              "appid" : "com.apple.installd",
+              "teamid" : "",
+              "signerType" : 0,
+              "authorities" : [ "Software Signing", "Apple Code Signing Certification Authority", "Apple Root CA" ],
+              "cdhash" : "IxnuXBpC3LbYIa7aEyeVEbwA4EA=",
+              "statusMessage" : "No error.",
+              "status" : 0
+            },
+            "sha1hex" : "77ed2e5cd9ddbf875b34f66b1f557c87c4cba019",
+            "created" : 1694870910,
+            "accessed" : 1694870910,
+            "objectType" : "GPSystemObject",
+            "inode" : 1152921500312338600,
+            "mode" : 33261,
+            "path" : "/System/Library/PrivateFrameworks/PackageKit.framework/Versions/A/Resources/installd",
+            "uid" : 0,
+            "size" : 170768,
+            "isAppBundle" : false,
+            "fsid" : 16777220,
+            "isScreenShot" : false,
+            "modified" : 1694870910,
+            "isDirectory" : false,
+            "changed" : 1694870910,
+            "sha256hex" : "6fd7889dd1f7b8d23575d38e42f1471885c0eaabd3b861ba9cd39cc915bc7fab"
+          }, {
+            "isDownload" : false,
+            "gid" : 0,
+            "signingInfo" : {
+              "informationStage" : "extended",
+              "appid" : "com.apple.appstoreagent",
+              "teamid" : "",
+              "signerType" : 0,
+              "authorities" : [ "Software Signing", "Apple Code Signing Certification Authority", "Apple Root CA" ],
+              "cdhash" : "TTJop1RfQMDz/9Qea+ZkMnglX2k=",
+              "statusMessage" : "No error.",
+              "status" : 0
+            },
+            "sha1hex" : "8bbb0d63013ef49a91ba21f4b444500b50eacbb4",
+            "created" : 1694870910,
+            "accessed" : 1694870910,
+            "objectType" : "GPSystemObject",
+            "inode" : 1152921500312272500,
+            "mode" : 33261,
+            "path" : "/System/Library/PrivateFrameworks/AppStoreDaemon.framework/Support/appstoreagent",
+            "uid" : 0,
+            "size" : 10927456,
+            "isAppBundle" : false,
+            "fsid" : 16777220,
+            "isScreenShot" : false,
+            "modified" : 1694870910,
+            "isDirectory" : false,
+            "changed" : 1694870910,
+            "sha256hex" : "b889e42e0ce42e95f562734747c29daa025cc68aa90b437c3776911a035c5cda"
+          } ],
+          "users" : [ {
+            "uid" : 0,
+            "name" : "root",
+            "uuid" : "C02FL155MD6M0"
+          }, {
+            "uid" : 502,
+            "name" : "matthew.ward",
+            "uuid" : "C02FL155MD6M1f6"
+          } ]
+        },
+        "host" : {
+          "hostname" : "MBP16-MWARD-ALPHA",
+          "os" : "Version 14.0 (Build 23A344)",
+          "provisioningUDID" : "081DE2CA-9228-56D0-AD00-BF11AFA67710",
+          "serial" : "C02FL155MD6M",
+          "protectVersion" : "5.1.0.4",
+          "ips" : [ "192.168.7.169" ]
+        },
+        "match" : {
+          "severity" : 0,
+          "custom" : false,
+          "context" : [ {
+            "valueType" : "String",
+            "name" : "Signer",
+            "value" : "1"
+          }, {
+            "valueType" : "String",
+            "name" : "BundleURLTypes",
+            "value" : "{\n    CFBundleTypeRole = Editor;\n    CFBundleURLIconFile = \"notability-icon\";\n    CFBundleURLSchemes =     (\n        \"db-kji10kmnkgg7euj\"\n    );\n},{\n    CFBundleTypeRole = Editor;\n    CFBundleURLIconFile = \"\";\n    CFBundleURLName = \"\";\n    CFBundleURLSchemes =     (\n        \"boxsdk-8790h2ak9573rr0645c2d4l2360ejgpi\"\n    );\n},{\n    CFBundleTypeRole = Editor;\n    CFBundleURLIconFile = \"notability-icon@2x\";\n    CFBundleURLName = \"com.gingerlabs.notability\";\n    CFBundleURLSchemes =     (\n        notability\n    );\n},{\n    CFBundleTypeRole = Editor;\n    CFBundleURLSchemes =     (\n        \"com.googleusercontent.apps.890829178503-bhvhaott0mhq5hvue5phvrmh8mne5fq2\"\n    );\n},{\n    CFBundleTypeRole = Editor;\n    CFBundleURLSchemes =     (\n        \"msal535d1baf-a26f-4c40-82af-ddf3e1aaebe2\"\n    );\n}"
+          } ],
+          "event" : {
+            "eventID" : 175490,
+            "path" : "/Applications/Notability.app",
+            "uid" : 0,
+            "gid" : 0,
+            "dev" : 16777220,
+            "iNode" : 1042830981,
+            "pid" : 29993,
+            "prevFile" : "/Library/InstallerSandboxes/.PKInstallSandboxManager/B94EACDA-EF4E-4D0D-89F4-1D69A7E47CCF.activeSandbox/Root/Applications/Notability.app",
+            "type" : 3,
+            "uuid" : "5E8CD58C-3E93-493C-8AE5-7F0825320D3C",
+            "timestamp" : 1.6987776941667209E9
+          },
+          "actions" : [ {
+            "name" : "Report"
+          }, {
+            "name" : "CacheFile"
+          } ],
+          "facts" : [ {
+            "severity" : 0,
+            "context" : [ {
+              "valueType" : "String",
+              "name" : "BundleURLTypes",
+              "value" : "{\n    CFBundleTypeRole = Editor;\n    CFBundleURLIconFile = \"notability-icon\";\n    CFBundleURLSchemes =     (\n        \"db-kji10kmnkgg7euj\"\n    );\n},{\n    CFBundleTypeRole = Editor;\n    CFBundleURLIconFile = \"\";\n    CFBundleURLName = \"\";\n    CFBundleURLSchemes =     (\n        \"boxsdk-8790h2ak9573rr0645c2d4l2360ejgpi\"\n    );\n},{\n    CFBundleTypeRole = Editor;\n    CFBundleURLIconFile = \"notability-icon@2x\";\n    CFBundleURLName = \"com.gingerlabs.notability\";\n    CFBundleURLSchemes =     (\n        notability\n    );\n},{\n    CFBundleTypeRole = Editor;\n    CFBundleURLSchemes =     (\n        \"com.googleusercontent.apps.890829178503-bhvhaott0mhq5hvue5phvrmh8mne5fq2\"\n    );\n},{\n    CFBundleTypeRole = Editor;\n    CFBundleURLSchemes =     (\n        \"msal535d1baf-a26f-4c40-82af-ddf3e1aaebe2\"\n    );\n}"
+            }, {
+              "valueType" : "String",
+              "name" : "Signer",
+              "value" : "1"
+            } ],
+            "name" : "CustomURLHandlerCreation",
+            "actions" : [ {
+              "name" : "Report"
+            }, {
+              "name" : "CacheFile"
+            } ],
+            "human" : "Application that uses custom url handler created",
+            "uuid" : "25A295CA-F4B3-4F78-8FAA-80E9182645F1",
+            "version" : 1,
+            "tags" : [ "Visibility" ]
+          } ],
+          "uuid" : "DC6C03A3-6B30-45D6-A7C1-DFB13341A8D2",
+          "tags" : [ "Visibility" ]
+        },
+        "eventType" : "GPFSEvent"
+      },
+      "service" : "alerts",
+      "caid" : "095d122988c4e487ef0c538709ce033e2620f9d30751567d24bbf78b085b699c",
+      "source" : "jamfprotect",
+      "certid" : "b4afc5f7ecdb933098ef76a9c4db26cf8c2daebfe563089d36aa4a40d657595e"
+    }
+  result:
+    custom:
+      caid: "095d122988c4e487ef0c538709ce033e2620f9d30751567d24bbf78b085b699c"
+      certid: "b4afc5f7ecdb933098ef76a9c4db26cf8c2daebfe563089d36aa4a40d657595e"
+      evt:
+        type: "GPFSEvent"
+      input:
+        host:
+          hostname: "MBP16-MWARD-ALPHA"
+          os: "Version 14.0 (Build 23A344)"
+          protectVersion: "5.1.0.4"
+          provisioningUDID: "081DE2CA-9228-56D0-AD00-BF11AFA67710"
+          serial: "C02FL155MD6M"
+        match:
+          actions:
+           -
+            name: "Report"
+           -
+            name: "CacheFile"
+          context:
+           -
+            valueType: "String"
+            name: "Signer"
+            value: "1"
+           -
+            valueType: "String"
+            name: "BundleURLTypes"
+            value: |-
+              {
+                  CFBundleTypeRole = Editor;
+                  CFBundleURLIconFile = "notability-icon";
+                  CFBundleURLSchemes =     (
+                      "db-kji10kmnkgg7euj"
+                  );
+              },{
+                  CFBundleTypeRole = Editor;
+                  CFBundleURLIconFile = "";
+                  CFBundleURLName = "";
+                  CFBundleURLSchemes =     (
+                      "boxsdk-8790h2ak9573rr0645c2d4l2360ejgpi"
+                  );
+              },{
+                  CFBundleTypeRole = Editor;
+                  CFBundleURLIconFile = "notability-icon@2x";
+                  CFBundleURLName = "com.gingerlabs.notability";
+                  CFBundleURLSchemes =     (
+                      notability
+                  );
+              },{
+                  CFBundleTypeRole = Editor;
+                  CFBundleURLSchemes =     (
+                      "com.googleusercontent.apps.890829178503-bhvhaott0mhq5hvue5phvrmh8mne5fq2"
+                  );
+              },{
+                  CFBundleTypeRole = Editor;
+                  CFBundleURLSchemes =     (
+                      "msal535d1baf-a26f-4c40-82af-ddf3e1aaebe2"
+                  );
+              }
+          custom: false
+          event:
+            dev: 16777220
+            eventID: 175490
+            gid: 0
+            iNode: 1042830981
+            path: "/Applications/Notability.app"
+            pid: 29993
+            prevFile: "/Library/InstallerSandboxes/.PKInstallSandboxManager/B94EACDA-EF4E-4D0D-89F4-1D69A7E47CCF.activeSandbox/Root/Applications/Notability.app"
+            timestamp: 1.6987776941667209E9
+            type: 3
+            uid: 0
+            uuid: "5E8CD58C-3E93-493C-8AE5-7F0825320D3C"
+          facts:
+           -
+            severity: 0
+            context:
+             -
+              valueType: "String"
+              name: "BundleURLTypes"
+              value: |-
+                {
+                    CFBundleTypeRole = Editor;
+                    CFBundleURLIconFile = "notability-icon";
+                    CFBundleURLSchemes =     (
+                        "db-kji10kmnkgg7euj"
+                    );
+                },{
+                    CFBundleTypeRole = Editor;
+                    CFBundleURLIconFile = "";
+                    CFBundleURLName = "";
+                    CFBundleURLSchemes =     (
+                        "boxsdk-8790h2ak9573rr0645c2d4l2360ejgpi"
+                    );
+                },{
+                    CFBundleTypeRole = Editor;
+                    CFBundleURLIconFile = "notability-icon@2x";
+                    CFBundleURLName = "com.gingerlabs.notability";
+                    CFBundleURLSchemes =     (
+                        notability
+                    );
+                },{
+                    CFBundleTypeRole = Editor;
+                    CFBundleURLSchemes =     (
+                        "com.googleusercontent.apps.890829178503-bhvhaott0mhq5hvue5phvrmh8mne5fq2"
+                    );
+                },{
+                    CFBundleTypeRole = Editor;
+                    CFBundleURLSchemes =     (
+                        "msal535d1baf-a26f-4c40-82af-ddf3e1aaebe2"
+                    );
+                }
+             -
+              valueType: "String"
+              name: "Signer"
+              value: "1"
+            name: "CustomURLHandlerCreation"
+            actions:
+             -
+              name: "Report"
+             -
+              name: "CacheFile"
+            human: "Application that uses custom url handler created"
+            uuid: "25A295CA-F4B3-4F78-8FAA-80E9182645F1"
+            version: 1
+            tags:
+             - "Visibility"
+          severity: 0
+          tags:
+           - "Visibility"
+          uuid: "DC6C03A3-6B30-45D6-A7C1-DFB13341A8D2"
+        related:
+          binaries:
+           -
+            isDownload: false
+            gid: 0
+            signingInfo:
+              informationStage: "extended"
+              appid: "com.apple.shove"
+              teamid: ""
+              signerType: 0
+              authorities:
+               - "Software Signing"
+               - "Apple Code Signing Certification Authority"
+               - "Apple Root CA"
+              cdhash: "qFnUqCDcaIaYPLT6sq5arHVRTGU="
+              statusMessage: "No error."
+              status: 0
+            sha1hex: "926f85c4638a65e96660306a5c2969bee093b0d7"
+            created: 1694870910
+            accessed: 1694870910
+            objectType: "GPSystemObject"
+            inode: 1152921500312338600
+            mode: 33261
+            path: "/System/Library/PrivateFrameworks/PackageKit.framework/Versions/A/Resources/shove"
+            uid: 0
+            size: 169872
+            isAppBundle: false
+            fsid: 16777220
+            isScreenShot: false
+            modified: 1694870910
+            isDirectory: false
+            changed: 1694870910
+            sha256hex: "cef7dbe4c7016a90b0234310751e5bf90362fdb490b3072bf31c319a21362091"
+           -
+            isDownload: false
+            gid: 0
+            signingInfo:
+              informationStage: "extended"
+              appid: "com.apple.installd"
+              teamid: ""
+              signerType: 0
+              authorities:
+               - "Software Signing"
+               - "Apple Code Signing Certification Authority"
+               - "Apple Root CA"
+              cdhash: "IxnuXBpC3LbYIa7aEyeVEbwA4EA="
+              statusMessage: "No error."
+              status: 0
+            sha1hex: "77ed2e5cd9ddbf875b34f66b1f557c87c4cba019"
+            created: 1694870910
+            accessed: 1694870910
+            objectType: "GPSystemObject"
+            inode: 1152921500312338600
+            mode: 33261
+            path: "/System/Library/PrivateFrameworks/PackageKit.framework/Versions/A/Resources/installd"
+            uid: 0
+            size: 170768
+            isAppBundle: false
+            fsid: 16777220
+            isScreenShot: false
+            modified: 1694870910
+            isDirectory: false
+            changed: 1694870910
+            sha256hex: "6fd7889dd1f7b8d23575d38e42f1471885c0eaabd3b861ba9cd39cc915bc7fab"
+           -
+            isDownload: false
+            gid: 0
+            signingInfo:
+              informationStage: "extended"
+              appid: "com.apple.appstoreagent"
+              teamid: ""
+              signerType: 0
+              authorities:
+               - "Software Signing"
+               - "Apple Code Signing Certification Authority"
+               - "Apple Root CA"
+              cdhash: "TTJop1RfQMDz/9Qea+ZkMnglX2k="
+              statusMessage: "No error."
+              status: 0
+            sha1hex: "8bbb0d63013ef49a91ba21f4b444500b50eacbb4"
+            created: 1694870910
+            accessed: 1694870910
+            objectType: "GPSystemObject"
+            inode: 1152921500312272500
+            mode: 33261
+            path: "/System/Library/PrivateFrameworks/AppStoreDaemon.framework/Support/appstoreagent"
+            uid: 0
+            size: 10927456
+            isAppBundle: false
+            fsid: 16777220
+            isScreenShot: false
+            modified: 1694870910
+            isDirectory: false
+            changed: 1694870910
+            sha256hex: "b889e42e0ce42e95f562734747c29daa025cc68aa90b437c3776911a035c5cda"
+          files:
+           -
+            isDownload: false
+            gid: 0
+            signingInfo:
+              informationStage: "extended"
+              appid: "com.gingerlabs.Notability"
+              teamid: "ZP9ZJ4EF3S"
+              signerType: 1
+              authorities:
+               - "Apple Mac OS Application Signing"
+               - "Apple Worldwide Developer Relations Certification Authority"
+               - "Apple Root CA"
+              cdhash: "Wav623Wy9m3YgLPqnNSDUvdbl4E="
+              statusMessage: "No error."
+              status: 0
+            sha1hex: ""
+            created: 1698111995
+            accessed: 1698111995
+            objectType: "GPSystemObject"
+            inode: 1042830981
+            mode: 16877
+            path: "/Applications/Notability.app"
+            uid: 0
+            size: 96
+            isAppBundle: true
+            fsid: 16777220
+            xattrs:
+             - "com.apple.appstore.metadata"
+            isScreenShot: false
+            modified: 1698111995
+            isDirectory: true
+            changed: 1698777693
+            sha256hex: ""
+          groups:
+           -
+            gid: 0
+            name: "wheel"
+            uuid: "C02FL155MD6M0"
+           -
+            gid: 20
+            name: "staff"
+            uuid: "C02FL155MD6M14"
+          processes:
+           -
+            gid: 0
+            signingInfo:
+              informationStage: "extended"
+              appid: "com.apple.shove"
+              teamid: ""
+              signerType: 0
+              authorities:
+               - "Software Signing"
+               - "Apple Code Signing Certification Authority"
+               - "Apple Root CA"
+              cdhash: "qFnUqCDcaIaYPLT6sq5arHVRTGU="
+              statusMessage: "No error."
+              status: 0
+            rgid: 0
+            pgid: 29993
+            pid: 29993
+            ruid: 0
+            uuid: "BE40DCBE-069A-4F69-93B1-0AB046717713"
+            ppid: 831
+            args:
+             - "/System/Library/PrivateFrameworks/PackageKit.framework/Resources/shove"
+             - "-f"
+             - "-s"
+             - "-R"
+             - "Applications/Notability.app"
+             - "/Library/InstallerSandboxes/.PKInstallSandboxManager/B94EACDA-EF4E-4D0D-89F4-1D69A7E47CCF.activeSandbox/Root"
+             - "/"
+            path: "/System/Library/PrivateFrameworks/PackageKit.framework/Versions/A/Resources/shove"
+            uid: 0
+            originalParentPID: 831
+            responsiblePID: 835
+            name: "shove"
+            exitCode: 0
+            processIdentifier: 13372855
+            processType: "GPSystemObject"
+            startTimestamp: 1698777694
+           -
+            gid: 0
+            signingInfo:
+              informationStage: "extended"
+              appid: "com.apple.installd"
+              teamid: ""
+              signerType: 0
+              authorities:
+               - "Software Signing"
+               - "Apple Code Signing Certification Authority"
+               - "Apple Root CA"
+              cdhash: "IxnuXBpC3LbYIa7aEyeVEbwA4EA="
+              statusMessage: "No error."
+              status: 0
+            rgid: 0
+            pgid: 831
+            pid: 831
+            ruid: 0
+            uuid: "6B7192A1-976A-4BF1-AC03-046908543C67"
+            ppid: 1
+            args:
+             - "/System/Library/PrivateFrameworks/PackageKit.framework/Resources/installd"
+            path: "/System/Library/PrivateFrameworks/PackageKit.framework/Versions/A/Resources/installd"
+            uid: 0
+            originalParentPID: 1
+            responsiblePID: 835
+            name: "installd"
+            processIdentifier: 1982
+            processType: "GPSystemObject"
+            startTimestamp: 1697719388
+           -
+            gid: 20
+            signingInfo:
+              informationStage: "extended"
+              appid: "com.apple.appstoreagent"
+              teamid: ""
+              signerType: 0
+              authorities:
+               - "Software Signing"
+               - "Apple Code Signing Certification Authority"
+               - "Apple Root CA"
+              cdhash: "TTJop1RfQMDz/9Qea+ZkMnglX2k="
+              statusMessage: "No error."
+              status: 0
+            rgid: 20
+            pgid: 835
+            pid: 835
+            ruid: 502
+            uuid: "80837E49-FF73-4DF2-BF45-BC792A0089F8"
+            args:
+             - "/System/Library/PrivateFrameworks/AppStoreDaemon.framework/Support/appstoreagent"
+            path: "/System/Library/PrivateFrameworks/AppStoreDaemon.framework/Support/appstoreagent"
+            uid: 502
+            responsiblePID: 835
+            name: "appstoreagent"
+            processIdentifier: 2001
+            processType: "GPSystemObject"
+            startTimestamp: 1697719388
+          users:
+           -
+            uid: 0
+            name: "root"
+            uuid: "C02FL155MD6M0"
+           -
+            uid: 502
+            name: "matthew.ward"
+            uuid: "C02FL155MD6M1f6"
+      network:
+        client:
+          ip:
+           - "192.168.7.169"
+      service: "alerts"
+      source: "jamfprotect"
+    message: |-
+      {
+        "input" : {
+          "related" : {
+            "processes" : [ {
+              "gid" : 0,
+              "signingInfo" : {
+                "informationStage" : "extended",
+                "appid" : "com.apple.shove",
+                "teamid" : "",
+                "signerType" : 0,
+                "authorities" : [ "Software Signing", "Apple Code Signing Certification Authority", "Apple Root CA" ],
+                "cdhash" : "qFnUqCDcaIaYPLT6sq5arHVRTGU=",
+                "statusMessage" : "No error.",
+                "status" : 0
+              },
+              "rgid" : 0,
+              "pgid" : 29993,
+              "pid" : 29993,
+              "ruid" : 0,
+              "uuid" : "BE40DCBE-069A-4F69-93B1-0AB046717713",
+              "ppid" : 831,
+              "args" : [ "/System/Library/PrivateFrameworks/PackageKit.framework/Resources/shove", "-f", "-s", "-R", "Applications/Notability.app", "/Library/InstallerSandboxes/.PKInstallSandboxManager/B94EACDA-EF4E-4D0D-89F4-1D69A7E47CCF.activeSandbox/Root", "/" ],
+              "path" : "/System/Library/PrivateFrameworks/PackageKit.framework/Versions/A/Resources/shove",
+              "uid" : 0,
+              "originalParentPID" : 831,
+              "responsiblePID" : 835,
+              "name" : "shove",
+              "exitCode" : 0,
+              "processIdentifier" : 13372855,
+              "processType" : "GPSystemObject",
+              "startTimestamp" : 1698777694
+            }, {
+              "gid" : 0,
+              "signingInfo" : {
+                "informationStage" : "extended",
+                "appid" : "com.apple.installd",
+                "teamid" : "",
+                "signerType" : 0,
+                "authorities" : [ "Software Signing", "Apple Code Signing Certification Authority", "Apple Root CA" ],
+                "cdhash" : "IxnuXBpC3LbYIa7aEyeVEbwA4EA=",
+                "statusMessage" : "No error.",
+                "status" : 0
+              },
+              "rgid" : 0,
+              "pgid" : 831,
+              "pid" : 831,
+              "ruid" : 0,
+              "uuid" : "6B7192A1-976A-4BF1-AC03-046908543C67",
+              "ppid" : 1,
+              "args" : [ "/System/Library/PrivateFrameworks/PackageKit.framework/Resources/installd" ],
+              "path" : "/System/Library/PrivateFrameworks/PackageKit.framework/Versions/A/Resources/installd",
+              "uid" : 0,
+              "originalParentPID" : 1,
+              "responsiblePID" : 835,
+              "name" : "installd",
+              "processIdentifier" : 1982,
+              "processType" : "GPSystemObject",
+              "startTimestamp" : 1697719388
+            }, {
+              "gid" : 20,
+              "signingInfo" : {
+                "informationStage" : "extended",
+                "appid" : "com.apple.appstoreagent",
+                "teamid" : "",
+                "signerType" : 0,
+                "authorities" : [ "Software Signing", "Apple Code Signing Certification Authority", "Apple Root CA" ],
+                "cdhash" : "TTJop1RfQMDz/9Qea+ZkMnglX2k=",
+                "statusMessage" : "No error.",
+                "status" : 0
+              },
+              "rgid" : 20,
+              "pgid" : 835,
+              "pid" : 835,
+              "ruid" : 502,
+              "uuid" : "80837E49-FF73-4DF2-BF45-BC792A0089F8",
+              "args" : [ "/System/Library/PrivateFrameworks/AppStoreDaemon.framework/Support/appstoreagent" ],
+              "path" : "/System/Library/PrivateFrameworks/AppStoreDaemon.framework/Support/appstoreagent",
+              "uid" : 502,
+              "responsiblePID" : 835,
+              "name" : "appstoreagent",
+              "processIdentifier" : 2001,
+              "processType" : "GPSystemObject",
+              "startTimestamp" : 1697719388
+            } ],
+            "files" : [ {
+              "isDownload" : false,
+              "gid" : 0,
+              "signingInfo" : {
+                "informationStage" : "extended",
+                "appid" : "com.gingerlabs.Notability",
+                "teamid" : "ZP9ZJ4EF3S",
+                "signerType" : 1,
+                "authorities" : [ "Apple Mac OS Application Signing", "Apple Worldwide Developer Relations Certification Authority", "Apple Root CA" ],
+                "cdhash" : "Wav623Wy9m3YgLPqnNSDUvdbl4E=",
+                "statusMessage" : "No error.",
+                "status" : 0
+              },
+              "sha1hex" : "",
+              "created" : 1698111995,
+              "accessed" : 1698111995,
+              "objectType" : "GPSystemObject",
+              "inode" : 1042830981,
+              "mode" : 16877,
+              "path" : "/Applications/Notability.app",
+              "uid" : 0,
+              "size" : 96,
+              "isAppBundle" : true,
+              "fsid" : 16777220,
+              "xattrs" : [ "com.apple.appstore.metadata" ],
+              "isScreenShot" : false,
+              "modified" : 1698111995,
+              "isDirectory" : true,
+              "changed" : 1698777693,
+              "sha256hex" : ""
+            } ],
+            "groups" : [ {
+              "gid" : 0,
+              "name" : "wheel",
+              "uuid" : "C02FL155MD6M0"
+            }, {
+              "gid" : 20,
+              "name" : "staff",
+              "uuid" : "C02FL155MD6M14"
+            } ],
+            "binaries" : [ {
+              "isDownload" : false,
+              "gid" : 0,
+              "signingInfo" : {
+                "informationStage" : "extended",
+                "appid" : "com.apple.shove",
+                "teamid" : "",
+                "signerType" : 0,
+                "authorities" : [ "Software Signing", "Apple Code Signing Certification Authority", "Apple Root CA" ],
+                "cdhash" : "qFnUqCDcaIaYPLT6sq5arHVRTGU=",
+                "statusMessage" : "No error.",
+                "status" : 0
+              },
+              "sha1hex" : "926f85c4638a65e96660306a5c2969bee093b0d7",
+              "created" : 1694870910,
+              "accessed" : 1694870910,
+              "objectType" : "GPSystemObject",
+              "inode" : 1152921500312338600,
+              "mode" : 33261,
+              "path" : "/System/Library/PrivateFrameworks/PackageKit.framework/Versions/A/Resources/shove",
+              "uid" : 0,
+              "size" : 169872,
+              "isAppBundle" : false,
+              "fsid" : 16777220,
+              "isScreenShot" : false,
+              "modified" : 1694870910,
+              "isDirectory" : false,
+              "changed" : 1694870910,
+              "sha256hex" : "cef7dbe4c7016a90b0234310751e5bf90362fdb490b3072bf31c319a21362091"
+            }, {
+              "isDownload" : false,
+              "gid" : 0,
+              "signingInfo" : {
+                "informationStage" : "extended",
+                "appid" : "com.apple.installd",
+                "teamid" : "",
+                "signerType" : 0,
+                "authorities" : [ "Software Signing", "Apple Code Signing Certification Authority", "Apple Root CA" ],
+                "cdhash" : "IxnuXBpC3LbYIa7aEyeVEbwA4EA=",
+                "statusMessage" : "No error.",
+                "status" : 0
+              },
+              "sha1hex" : "77ed2e5cd9ddbf875b34f66b1f557c87c4cba019",
+              "created" : 1694870910,
+              "accessed" : 1694870910,
+              "objectType" : "GPSystemObject",
+              "inode" : 1152921500312338600,
+              "mode" : 33261,
+              "path" : "/System/Library/PrivateFrameworks/PackageKit.framework/Versions/A/Resources/installd",
+              "uid" : 0,
+              "size" : 170768,
+              "isAppBundle" : false,
+              "fsid" : 16777220,
+              "isScreenShot" : false,
+              "modified" : 1694870910,
+              "isDirectory" : false,
+              "changed" : 1694870910,
+              "sha256hex" : "6fd7889dd1f7b8d23575d38e42f1471885c0eaabd3b861ba9cd39cc915bc7fab"
+            }, {
+              "isDownload" : false,
+              "gid" : 0,
+              "signingInfo" : {
+                "informationStage" : "extended",
+                "appid" : "com.apple.appstoreagent",
+                "teamid" : "",
+                "signerType" : 0,
+                "authorities" : [ "Software Signing", "Apple Code Signing Certification Authority", "Apple Root CA" ],
+                "cdhash" : "TTJop1RfQMDz/9Qea+ZkMnglX2k=",
+                "statusMessage" : "No error.",
+                "status" : 0
+              },
+              "sha1hex" : "8bbb0d63013ef49a91ba21f4b444500b50eacbb4",
+              "created" : 1694870910,
+              "accessed" : 1694870910,
+              "objectType" : "GPSystemObject",
+              "inode" : 1152921500312272500,
+              "mode" : 33261,
+              "path" : "/System/Library/PrivateFrameworks/AppStoreDaemon.framework/Support/appstoreagent",
+              "uid" : 0,
+              "size" : 10927456,
+              "isAppBundle" : false,
+              "fsid" : 16777220,
+              "isScreenShot" : false,
+              "modified" : 1694870910,
+              "isDirectory" : false,
+              "changed" : 1694870910,
+              "sha256hex" : "b889e42e0ce42e95f562734747c29daa025cc68aa90b437c3776911a035c5cda"
+            } ],
+            "users" : [ {
+              "uid" : 0,
+              "name" : "root",
+              "uuid" : "C02FL155MD6M0"
+            }, {
+              "uid" : 502,
+              "name" : "matthew.ward",
+              "uuid" : "C02FL155MD6M1f6"
+            } ]
+          },
+          "host" : {
+            "hostname" : "MBP16-MWARD-ALPHA",
+            "os" : "Version 14.0 (Build 23A344)",
+            "provisioningUDID" : "081DE2CA-9228-56D0-AD00-BF11AFA67710",
+            "serial" : "C02FL155MD6M",
+            "protectVersion" : "5.1.0.4",
+            "ips" : [ "192.168.7.169" ]
+          },
+          "match" : {
+            "severity" : 0,
+            "custom" : false,
+            "context" : [ {
+              "valueType" : "String",
+              "name" : "Signer",
+              "value" : "1"
+            }, {
+              "valueType" : "String",
+              "name" : "BundleURLTypes",
+              "value" : "{\n    CFBundleTypeRole = Editor;\n    CFBundleURLIconFile = \"notability-icon\";\n    CFBundleURLSchemes =     (\n        \"db-kji10kmnkgg7euj\"\n    );\n},{\n    CFBundleTypeRole = Editor;\n    CFBundleURLIconFile = \"\";\n    CFBundleURLName = \"\";\n    CFBundleURLSchemes =     (\n        \"boxsdk-8790h2ak9573rr0645c2d4l2360ejgpi\"\n    );\n},{\n    CFBundleTypeRole = Editor;\n    CFBundleURLIconFile = \"notability-icon@2x\";\n    CFBundleURLName = \"com.gingerlabs.notability\";\n    CFBundleURLSchemes =     (\n        notability\n    );\n},{\n    CFBundleTypeRole = Editor;\n    CFBundleURLSchemes =     (\n        \"com.googleusercontent.apps.890829178503-bhvhaott0mhq5hvue5phvrmh8mne5fq2\"\n    );\n},{\n    CFBundleTypeRole = Editor;\n    CFBundleURLSchemes =     (\n        \"msal535d1baf-a26f-4c40-82af-ddf3e1aaebe2\"\n    );\n}"
+            } ],
+            "event" : {
+              "eventID" : 175490,
+              "path" : "/Applications/Notability.app",
+              "uid" : 0,
+              "gid" : 0,
+              "dev" : 16777220,
+              "iNode" : 1042830981,
+              "pid" : 29993,
+              "prevFile" : "/Library/InstallerSandboxes/.PKInstallSandboxManager/B94EACDA-EF4E-4D0D-89F4-1D69A7E47CCF.activeSandbox/Root/Applications/Notability.app",
+              "type" : 3,
+              "uuid" : "5E8CD58C-3E93-493C-8AE5-7F0825320D3C",
+              "timestamp" : 1.6987776941667209E9
+            },
+            "actions" : [ {
+              "name" : "Report"
+            }, {
+              "name" : "CacheFile"
+            } ],
+            "facts" : [ {
+              "severity" : 0,
+              "context" : [ {
+                "valueType" : "String",
+                "name" : "BundleURLTypes",
+                "value" : "{\n    CFBundleTypeRole = Editor;\n    CFBundleURLIconFile = \"notability-icon\";\n    CFBundleURLSchemes =     (\n        \"db-kji10kmnkgg7euj\"\n    );\n},{\n    CFBundleTypeRole = Editor;\n    CFBundleURLIconFile = \"\";\n    CFBundleURLName = \"\";\n    CFBundleURLSchemes =     (\n        \"boxsdk-8790h2ak9573rr0645c2d4l2360ejgpi\"\n    );\n},{\n    CFBundleTypeRole = Editor;\n    CFBundleURLIconFile = \"notability-icon@2x\";\n    CFBundleURLName = \"com.gingerlabs.notability\";\n    CFBundleURLSchemes =     (\n        notability\n    );\n},{\n    CFBundleTypeRole = Editor;\n    CFBundleURLSchemes =     (\n        \"com.googleusercontent.apps.890829178503-bhvhaott0mhq5hvue5phvrmh8mne5fq2\"\n    );\n},{\n    CFBundleTypeRole = Editor;\n    CFBundleURLSchemes =     (\n        \"msal535d1baf-a26f-4c40-82af-ddf3e1aaebe2\"\n    );\n}"
+              }, {
+                "valueType" : "String",
+                "name" : "Signer",
+                "value" : "1"
+              } ],
+              "name" : "CustomURLHandlerCreation",
+              "actions" : [ {
+                "name" : "Report"
+              }, {
+                "name" : "CacheFile"
+              } ],
+              "human" : "Application that uses custom url handler created",
+              "uuid" : "25A295CA-F4B3-4F78-8FAA-80E9182645F1",
+              "version" : 1,
+              "tags" : [ "Visibility" ]
+            } ],
+            "uuid" : "DC6C03A3-6B30-45D6-A7C1-DFB13341A8D2",
+            "tags" : [ "Visibility" ]
+          },
+          "eventType" : "GPFSEvent"
+        },
+        "service" : "alerts",
+        "caid" : "095d122988c4e487ef0c538709ce033e2620f9d30751567d24bbf78b085b699c",
+        "source" : "jamfprotect",
+        "certid" : "b4afc5f7ecdb933098ef76a9c4db26cf8c2daebfe563089d36aa4a40d657595e"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "event" : {
+        "app" : {
+          "sha1" : "16336078972773bc6c8cef69d722c8c093ba727ddc5bb31eb2",
+          "sha256" : "16336078978a306dc23b67dae9df18bc2a0205e3ff0cbf97c46e76fd670f93fd142d7042",
+          "name" : "Books",
+          "id" : "com.apple.iBooks",
+          "version" : "1.1"
+        },
+        "accessPointBssid" : "c6:9f:db:b1:73:5a",
+        "severity" : 6,
+        "metadata" : {
+          "product" : "Threat Events Stream",
+          "schemaVersion" : "1.0",
+          "vendor" : "Jamf"
+        },
+        "eventUrl" : "https://radar.wandera.com/security/events/detail/013b15c9-8f62-4bf1-948a-d82367af2a10.SIDE_LOADED_APP_IN_INVENTORY?createdUtcMs=1580406461767",
+        "destination" : {
+          "port" : 80,
+          "ip" : "192.168.37.3",
+          "name" : "host"
+        },
+        "eventType" : {
+          "name" : "SIDE_LOADED_APP_IN_INVENTORY",
+          "description" : "Sideloaded App",
+          "id" : 213
+        },
+        "source" : {
+          "port" : 3025,
+          "ip" : "1.2.3.4"
+        },
+        "accessPoint" : "AccessPoint",
+        "action" : "Detected",
+        "location" : "gb",
+        "alertId" : "013b15c9-8f62-4bf1-948a-d82367af2a10",
+        "device" : {
+          "os" : "IOS 11.2.5",
+          "userDeviceName" : "Apple iPhone 11",
+          "externalId" : "5087dc0e-876c-4b0e-95ea-5b543476e0c4",
+          "deviceId" : "09f81436-de17-441e-a631-0461252c629b",
+          "deviceName" : "Apple iPhone 11 (11.2.5)"
+        },
+        "user" : {
+          "name" : "John Doe",
+          "email" : "user@mail.com"
+        },
+        "account" : {
+          "customerId" : "fb4567b6-4ee2-3c4c-abb9-4c78ec463b25",
+          "name" : "Customer",
+          "parentId" : "7c302632-7ac4-4234-8ada-11d76feb3730"
+        },
+        "timestamp" : "2020-01-30T17:47:41.767Z"
+      }
+    }
+  result:
+    custom:
+      event:
+        accessPoint: "AccessPoint"
+        accessPointBssid: "c6:9f:db:b1:73:5a"
+        account:
+          customerId: "fb4567b6-4ee2-3c4c-abb9-4c78ec463b25"
+          name: "Customer"
+          parentId: "7c302632-7ac4-4234-8ada-11d76feb3730"
+        action: "Detected"
+        alertId: "013b15c9-8f62-4bf1-948a-d82367af2a10"
+        app:
+          id: "com.apple.iBooks"
+          name: "Books"
+          sha1: "16336078972773bc6c8cef69d722c8c093ba727ddc5bb31eb2"
+          sha256: "16336078978a306dc23b67dae9df18bc2a0205e3ff0cbf97c46e76fd670f93fd142d7042"
+          version: "1.1"
+        destination:
+          name: "host"
+        device:
+          deviceId: "09f81436-de17-441e-a631-0461252c629b"
+          deviceName: "Apple iPhone 11 (11.2.5)"
+          externalId: "5087dc0e-876c-4b0e-95ea-5b543476e0c4"
+          os: "IOS 11.2.5"
+        eventType:
+          id: 213
+        eventUrl: "https://radar.wandera.com/security/events/detail/013b15c9-8f62-4bf1-948a-d82367af2a10.SIDE_LOADED_APP_IN_INVENTORY?createdUtcMs=1580406461767"
+        location: "gb"
+        metadata:
+          product: "Threat Events Stream"
+          schemaVersion: "1.0"
+          vendor: "Jamf"
+        severity: 6
+        timestamp: "2020-01-30T17:47:41.767Z"
+      evt:
+        category: "Sideloaded App"
+        name: "SIDE_LOADED_APP_IN_INVENTORY"
+      host: "Apple iPhone 11"
+      network:
+        client:
+          ip: "1.2.3.4"
+          port: 3025
+        destination:
+          ip: "192.168.37.3"
+          port: 80
+      usr:
+        email: "user@mail.com"
+        name: "John Doe"
+    message: |-
+      {
+        "event" : {
+          "app" : {
+            "sha1" : "16336078972773bc6c8cef69d722c8c093ba727ddc5bb31eb2",
+            "sha256" : "16336078978a306dc23b67dae9df18bc2a0205e3ff0cbf97c46e76fd670f93fd142d7042",
+            "name" : "Books",
+            "id" : "com.apple.iBooks",
+            "version" : "1.1"
+          },
+          "accessPointBssid" : "c6:9f:db:b1:73:5a",
+          "severity" : 6,
+          "metadata" : {
+            "product" : "Threat Events Stream",
+            "schemaVersion" : "1.0",
+            "vendor" : "Jamf"
+          },
+          "eventUrl" : "https://radar.wandera.com/security/events/detail/013b15c9-8f62-4bf1-948a-d82367af2a10.SIDE_LOADED_APP_IN_INVENTORY?createdUtcMs=1580406461767",
+          "destination" : {
+            "port" : 80,
+            "ip" : "192.168.37.3",
+            "name" : "host"
+          },
+          "eventType" : {
+            "name" : "SIDE_LOADED_APP_IN_INVENTORY",
+            "description" : "Sideloaded App",
+            "id" : 213
+          },
+          "source" : {
+            "port" : 3025,
+            "ip" : "1.2.3.4"
+          },
+          "accessPoint" : "AccessPoint",
+          "action" : "Detected",
+          "location" : "gb",
+          "alertId" : "013b15c9-8f62-4bf1-948a-d82367af2a10",
+          "device" : {
+            "os" : "IOS 11.2.5",
+            "userDeviceName" : "Apple iPhone 11",
+            "externalId" : "5087dc0e-876c-4b0e-95ea-5b543476e0c4",
+            "deviceId" : "09f81436-de17-441e-a631-0461252c629b",
+            "deviceName" : "Apple iPhone 11 (11.2.5)"
+          },
+          "user" : {
+            "name" : "John Doe",
+            "email" : "user@mail.com"
+          },
+          "account" : {
+            "customerId" : "fb4567b6-4ee2-3c4c-abb9-4c78ec463b25",
+            "name" : "Customer",
+            "parentId" : "7c302632-7ac4-4234-8ada-11d76feb3730"
+          },
+          "timestamp" : "2020-01-30T17:47:41.767Z"
+        }
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+

@@ -1,0 +1,28 @@
+id: CRON
+metric_id: CRON
+backend_only: true
+facets:
+  - groups:
+      - System
+    name: User
+    path: system.user
+    source: log
+pipeline:
+  type: pipeline
+  name: CRON
+  enabled: true
+  filter:
+    query: source:CRON
+  processors:
+    - type: grok-parser
+      name: Parsing CRON logs
+      enabled: true
+      source: message
+      samples:
+        - (root) CMD (test -x /usr/sbin/anacron || ( cd / && run-parts --report /etc/cron.weekly ))
+      grok:
+        supportRules: |
+          _cron_cmd %{data:system.cmd}
+          _cron_user %{notSpace:system.user}
+        matchRules: |
+          crond.default \(%{_cron_user}\) CMD \(\s*%{_cron_cmd}\)

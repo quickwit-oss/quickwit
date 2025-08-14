@@ -1,0 +1,61 @@
+id: dagster-plus
+metric_id: dagster-plus
+backend_only: false
+facets:
+  - description: ""
+    facetType: list
+    groups:
+      - others
+    name: dagster-plus.event_type
+    path: dagster-plus.event_type
+    source: log
+    type: string
+pipeline:
+  type: pipeline
+  name: Dagster+
+  enabled: true
+  filter:
+    query: source:dagster-plus
+  processors:
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - name: Event type to status
+      enabled: true
+      source: event_type
+      target: status
+      lookupTable: |-
+        STEP_FAILURE, error
+        RESOURCE_INIT_FAILURE, error
+        STEP_RESTARTED, warn
+        ASSET_FAILED_TO_MATERIALIZE, error
+        RUN_FAILURE, error
+        RUN_CANCELED, warn
+        PIPELINE_FAILURE, error
+        PIPELINE_CANCELED, warn
+        HOOK_ERRORED, warn
+        ALERT_FAILURE, error
+      defaultLookup: info
+      type: lookup-processor
+    - type: status-remapper
+      name: Define `status` as the official status of the log
+      enabled: true
+      sources:
+        - status
+    - type: attribute-remapper
+      name: Map `event_type` to `dagster-plus.event_type`
+      enabled: true
+      sources:
+        - event_type
+      sourceType: attribute
+      target: dagster-plus.event_type
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service

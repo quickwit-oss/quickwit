@@ -1,0 +1,65 @@
+id: velocloud-sd-wan
+tests:
+  - sample: >-
+      {
+                  "eventTime": "2024-08-19T17:44:44.000Z",
+                  "event": "CREATE_USER",
+                  "category": "USER",
+                  "severity": "INFO",
+                  "message": "user name: partner.webints@datadoghq.com",
+                  "detail": "{\"remoteIp\":\"76.8.74.138\",\"method\":\"enterprise/insertEnterpriseUser\",\"principle\":\"chris.hauck@datadoghq.com\",\"principleType\":\"USER\",\"requestId\":41,\"pid\":4168347,\"jobId\":\"chris.hauck@data~.com.172406098.7838\",\"roleId\":914,\"roleName\":\"Enterprise Superuser\",\"userId\":348,\"authType\":\"ENTERPRISE_USER\",\"sessionId\":\"ENTERPRISE:103:914:chris.hauck@datadoghq.com:1724089112298\",\"enterpriseId\":103,\"enterpriseName\":\"Datadoghq\"}"
+              }
+    result:
+        custom:
+            authType: "ENTERPRISE_USER"
+            category: "USER"
+            detail: "{\"remoteIp\":\"76.8.74.138\",\"method\":\"enterprise/insertEnterpriseUser\",\"principle\":\"chris.hauck@datadoghq.com\",\"principleType\":\"USER\",\"requestId\":41,\"pid\":4168347,\"jobId\":\"chris.hauck@data~.com.172406098.7838\",\"roleId\":914,\"roleName\":\"Enterprise Superuser\",\"userId\":348,\"authType\":\"ENTERPRISE_USER\",\"sessionId\":\"ENTERPRISE:103:914:chris.hauck@datadoghq.com:1724089112298\",\"enterpriseId\":103,\"enterpriseName\":\"Datadoghq\"}"
+            enterpriseId: 103
+            enterpriseName: "Datadoghq"
+            eventTime: "2024-08-19T17:44:44.000Z"
+            evt:
+                name: "CREATE_USER"
+            jobId: "chris.hauck@data~.com.172406098.7838"
+            method: "enterprise/insertEnterpriseUser"
+            pid: 4168347
+            principle: "chris.hauck@datadoghq.com"
+            principleType: "USER"
+            remoteIp: "76.8.74.138"
+            requestId: 41
+            roleId: 914
+            roleName: "Enterprise Superuser"
+            sessionId: "ENTERPRISE:103:914:chris.hauck@datadoghq.com:1724089112298"
+            severity: "INFO"
+            usr:
+                id: 348
+        message: "user name: partner.webints@datadoghq.com"
+        status: "info"
+        tags:
+        - "source:LOGS_SOURCE"
+        timestamp: 1724089484000
+  - sample: >-
+      {
+        "eventTime": "2024-08-19T21:15:28.000Z",
+        "event": "BROWSER_ENTERPRISE_LOGIN",
+        "category": "USER",
+        "severity": "INFO",
+        "message": "partner.webints@datadoghq.com from [64.124.12.20]",
+        "detail": "{\"userType\":\"ENTERPRISE\",\"remoteIp\":\"64.124.12.20\",\"username\":\"partner.webints@datadoghq.com\"}"
+      }
+    result:
+        custom:
+            category: "USER"
+            detail: "{\"userType\":\"ENTERPRISE\",\"remoteIp\":\"64.124.12.20\",\"username\":\"partner.webints@datadoghq.com\"}"
+            eventTime: "2024-08-19T21:15:28.000Z"
+            evt:
+                name: "BROWSER_ENTERPRISE_LOGIN"
+            remoteIp: "64.124.12.20"
+            severity: "INFO"
+            userType: "ENTERPRISE"
+            usr:
+                name: "partner.webints@datadoghq.com"
+        message: "partner.webints@datadoghq.com from [64.124.12.20]"
+        status: "info"
+        tags:
+        - "source:LOGS_SOURCE"
+        timestamp: 1724102128000

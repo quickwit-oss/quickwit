@@ -132,7 +132,7 @@ impl Deref for TagField {
 }
 
 static PREPROCESSING_PIPELINE: OnceLock<Pipeline> = OnceLock::new();
-fn get_preprocessing_pipeline() -> &'static Pipeline {
+pub fn get_preprocessing_pipeline() -> &'static Pipeline {
     PREPROCESSING_PIPELINE.get_or_init(create_preprocessing_pipeline)
 }
 

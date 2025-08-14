@@ -1,0 +1,167 @@
+id: "stripe"
+tests:
+ -
+  sample: |-
+    {
+      "request" : {
+        "idempotency_key" : "ed0baa9e-57d0-45dc-8afe-082d299a5637",
+        "id" : "req_zKE7K8cmWg7DmT"
+      },
+      "data" : {
+        "object" : {
+          "balance" : 0,
+          "livemode" : false,
+          "invoice_prefix" : "C0DF2186",
+          "tax_exempt" : "none",
+          "created" : 1666714352,
+          "delinquent" : false,
+          "next_invoice_sequence" : 1,
+          "id" : "cus_MgC84rk3PD7Hyh",
+          "email" : "datadog141test@gmail.com",
+          "object" : "customer"
+        }
+      },
+      "livemode" : false,
+      "created" : 1666714352,
+      "id" : "evt_1LwpjwLVDa095jIl20HWMA8k",
+      "api_version" : "2022-08-01",
+      "type" : "customer.created",
+      "pending_webhooks" : 1,
+      "object" : "event"
+    }
+  result:
+    custom:
+      api_version: "2022-08-01"
+      data:
+        object:
+          balance: 0
+          created: 1666714352
+          delinquent: false
+          id: "cus_MgC84rk3PD7Hyh"
+          invoice_prefix: "C0DF2186"
+          livemode: false
+          next_invoice_sequence: 1
+          tax_exempt: "none"
+      evt:
+        id: "evt_1LwpjwLVDa095jIl20HWMA8k"
+        object: "customer"
+      livemode: false
+      object: "event"
+      pending_webhooks: 1
+      request:
+        id: "req_zKE7K8cmWg7DmT"
+        idempotency_key: "ed0baa9e-57d0-45dc-8afe-082d299a5637"
+      timestamp: 1666714352000
+      type: "customer.created"
+      usr:
+        email: "datadog141test@gmail.com"
+    message: |-
+      {
+        "request" : {
+          "idempotency_key" : "ed0baa9e-57d0-45dc-8afe-082d299a5637",
+          "id" : "req_zKE7K8cmWg7DmT"
+        },
+        "data" : {
+          "object" : {
+            "balance" : 0,
+            "livemode" : false,
+            "invoice_prefix" : "C0DF2186",
+            "tax_exempt" : "none",
+            "created" : 1666714352,
+            "delinquent" : false,
+            "next_invoice_sequence" : 1,
+            "id" : "cus_MgC84rk3PD7Hyh",
+            "email" : "datadog141test@gmail.com",
+            "object" : "customer"
+          }
+        },
+        "livemode" : false,
+        "created" : 1666714352,
+        "id" : "evt_1LwpjwLVDa095jIl20HWMA8k",
+        "api_version" : "2022-08-01",
+        "type" : "customer.created",
+        "pending_webhooks" : 1,
+        "object" : "event"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1666714352000
+ -
+  sample: |-
+    {
+      "request" : {
+        "idempotency_key" : "f725007c-04d2-4ddc-9d96-fff03634e8df",
+        "id" : "req_YSB91IvfFii1ho"
+      },
+      "data" : {
+        "object" : {
+          "duration" : "once",
+          "valid" : true,
+          "livemode" : false,
+          "created" : 1667833906,
+          "times_redeemed" : 0,
+          "percent_off" : 10,
+          "id" : "zqHfemsl",
+          "object" : "coupon"
+        }
+      },
+      "livemode" : false,
+      "created" : 1667833906,
+      "id" : "evt_1LwpjwLVDa095jIl20HWMA8k",
+      "api_version" : "2022-08-01",
+      "type" : "coupon.created",
+      "pending_webhooks" : 1,
+      "object" : "event"
+    }
+  result:
+    custom:
+      api_version: "2022-08-01"
+      data:
+        object:
+          created: 1667833906
+          duration: "once"
+          id: "zqHfemsl"
+          livemode: false
+          percent_off: 10
+          times_redeemed: 0
+          valid: true
+      evt:
+        id: "evt_1LwpjwLVDa095jIl20HWMA8k"
+        object: "coupon"
+      livemode: false
+      object: "event"
+      pending_webhooks: 1
+      request:
+        id: "req_YSB91IvfFii1ho"
+        idempotency_key: "f725007c-04d2-4ddc-9d96-fff03634e8df"
+      timestamp: 1667833906000
+      type: "coupon.created"
+    message: |-
+      {
+        "request" : {
+          "idempotency_key" : "f725007c-04d2-4ddc-9d96-fff03634e8df",
+          "id" : "req_YSB91IvfFii1ho"
+        },
+        "data" : {
+          "object" : {
+            "duration" : "once",
+            "valid" : true,
+            "livemode" : false,
+            "created" : 1667833906,
+            "times_redeemed" : 0,
+            "percent_off" : 10,
+            "id" : "zqHfemsl",
+            "object" : "coupon"
+          }
+        },
+        "livemode" : false,
+        "created" : 1667833906,
+        "id" : "evt_1LwpjwLVDa095jIl20HWMA8k",
+        "api_version" : "2022-08-01",
+        "type" : "coupon.created",
+        "pending_webhooks" : 1,
+        "object" : "event"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1667833906000

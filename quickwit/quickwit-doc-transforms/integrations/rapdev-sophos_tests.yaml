@@ -1,0 +1,982 @@
+id: "rapdev-sophos"
+tests:
+ -
+  sample: |-
+    {
+      "pages" : {
+        "current" : 1,
+        "total" : 1,
+        "size" : 100,
+        "maxSize" : 1000,
+        "items" : 1
+      },
+      "items" : [ {
+        "createdAt" : "2023-09-19T18:16:45.465Z",
+        "hostname" : "C01001VJPR4BB6B",
+        "serialNumber" : "C01001VJPR4BB6B",
+        "updatedBy" : {
+          "accountId" : "62015b11-efd9-4bd9-8659-9f7e6297b7b6",
+          "accountType" : "tenant"
+        },
+        "createdBy" : {
+          "accountId" : "62015b11-efd9-4bd9-8659-9f7e6297b7b6",
+          "accountType" : "tenant"
+        },
+        "name" : "C01001VJPR4BB6B",
+        "externalIpv4Addresses" : [ "" ],
+        "id" : "629e4157-4b6b-4c37-b78b-5cfefc67171d",
+        "tenant" : {
+          "id" : "62015b11-efd9-4bd9-8659-9f7e6297b7b6"
+        },
+        "status" : {
+          "managingStatus" : "requestNotSent",
+          "connected" : true,
+          "reportingStatus" : "requestNotSent",
+          "suspended" : false
+        },
+        "updatedAt" : "2023-09-19T18:16:45.572Z"
+      } ]
+    }
+  result:
+    custom:
+      items:
+       -
+        createdAt: "2023-09-19T18:16:45.465Z"
+        hostname: "C01001VJPR4BB6B"
+        serialNumber: "C01001VJPR4BB6B"
+        updatedBy:
+          accountId: "62015b11-efd9-4bd9-8659-9f7e6297b7b6"
+          accountType: "tenant"
+        createdBy:
+          accountId: "62015b11-efd9-4bd9-8659-9f7e6297b7b6"
+          accountType: "tenant"
+        name: "C01001VJPR4BB6B"
+        externalIpv4Addresses:
+         - ""
+        id: "629e4157-4b6b-4c37-b78b-5cfefc67171d"
+        tenant:
+          id: "62015b11-efd9-4bd9-8659-9f7e6297b7b6"
+        status:
+          managingStatus: "requestNotSent"
+          connected: true
+          reportingStatus: "requestNotSent"
+          suspended: false
+        updatedAt: "2023-09-19T18:16:45.572Z"
+      pages:
+        current: 1
+        items: 1
+        maxSize: 1000
+        size: 100
+        total: 1
+    message: |-
+      {
+        "pages" : {
+          "current" : 1,
+          "total" : 1,
+          "size" : 100,
+          "maxSize" : 1000,
+          "items" : 1
+        },
+        "items" : [ {
+          "createdAt" : "2023-09-19T18:16:45.465Z",
+          "hostname" : "C01001VJPR4BB6B",
+          "serialNumber" : "C01001VJPR4BB6B",
+          "updatedBy" : {
+            "accountId" : "62015b11-efd9-4bd9-8659-9f7e6297b7b6",
+            "accountType" : "tenant"
+          },
+          "createdBy" : {
+            "accountId" : "62015b11-efd9-4bd9-8659-9f7e6297b7b6",
+            "accountType" : "tenant"
+          },
+          "name" : "C01001VJPR4BB6B",
+          "externalIpv4Addresses" : [ "" ],
+          "id" : "629e4157-4b6b-4c37-b78b-5cfefc67171d",
+          "tenant" : {
+            "id" : "62015b11-efd9-4bd9-8659-9f7e6297b7b6"
+          },
+          "status" : {
+            "managingStatus" : "requestNotSent",
+            "connected" : true,
+            "reportingStatus" : "requestNotSent",
+            "suspended" : false
+          },
+          "updatedAt" : "2023-09-19T18:16:45.572Z"
+        } ]
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "endpoint" : {
+        "tamperProtection" : {
+          "server" : {
+            "score" : 0,
+            "total" : 2,
+            "disabled" : 2,
+            "snoozed" : false
+          },
+          "computer" : {
+            "score" : 100,
+            "total" : 0,
+            "disabled" : 0,
+            "snoozed" : false
+          },
+          "globalDetail" : {
+            "score" : 0,
+            "snoozed" : false,
+            "enabled" : false
+          },
+          "global" : false
+        },
+        "protection" : {
+          "server" : {
+            "score" : 0,
+            "total" : 2,
+            "notFullyProtected" : 2,
+            "snoozed" : false
+          },
+          "computer" : {
+            "score" : 100,
+            "total" : 0,
+            "notFullyProtected" : 0,
+            "snoozed" : false
+          }
+        },
+        "exclusions" : {
+          "global" : {
+            "score" : 100,
+            "lockedByManagingAccount" : false,
+            "numberOfSecurityRisks" : 0,
+            "snoozed" : false
+          },
+          "policy" : {
+            "server" : {
+              "score" : 100,
+              "total" : 1,
+              "numberOfSecurityRisks" : 0,
+              "snoozed" : false
+            },
+            "computer" : {
+              "score" : 100,
+              "total" : 1,
+              "numberOfSecurityRisks" : 0,
+              "snoozed" : false
+            }
+          }
+        },
+        "policy" : {
+          "server" : {
+            "server-threat-protection" : {
+              "score" : 100,
+              "total" : 1,
+              "notOnRecommended" : 0,
+              "snoozed" : false
+            }
+          },
+          "computer" : {
+            "threat-protection" : {
+              "score" : 100,
+              "total" : 1,
+              "notOnRecommended" : 0,
+              "snoozed" : false
+            }
+          }
+        }
+      },
+      "tenant" : {
+        "id" : "62015b11-efd9-4bd9-8659-9f7e6297b7b6"
+      }
+    }
+  result:
+    custom:
+      endpoint:
+        exclusions:
+          global:
+            lockedByManagingAccount: false
+            numberOfSecurityRisks: 0
+            score: 100
+            snoozed: false
+          policy:
+            computer:
+              numberOfSecurityRisks: 0
+              score: 100
+              snoozed: false
+              total: 1
+            server:
+              numberOfSecurityRisks: 0
+              score: 100
+              snoozed: false
+              total: 1
+        policy:
+          computer:
+            threat-protection:
+              notOnRecommended: 0
+              score: 100
+              snoozed: false
+              total: 1
+          server:
+            server-threat-protection:
+              notOnRecommended: 0
+              score: 100
+              snoozed: false
+              total: 1
+        protection:
+          computer:
+            notFullyProtected: 0
+            score: 100
+            snoozed: false
+            total: 0
+          server:
+            notFullyProtected: 2
+            score: 0
+            snoozed: false
+            total: 2
+        tamperProtection:
+          computer:
+            disabled: 0
+            score: 100
+            snoozed: false
+            total: 0
+          global: false
+          globalDetail:
+            enabled: false
+            score: 0
+            snoozed: false
+          server:
+            disabled: 2
+            score: 0
+            snoozed: false
+            total: 2
+      tenant:
+        id: "62015b11-efd9-4bd9-8659-9f7e6297b7b6"
+    message: |-
+      {
+        "endpoint" : {
+          "tamperProtection" : {
+            "server" : {
+              "score" : 0,
+              "total" : 2,
+              "disabled" : 2,
+              "snoozed" : false
+            },
+            "computer" : {
+              "score" : 100,
+              "total" : 0,
+              "disabled" : 0,
+              "snoozed" : false
+            },
+            "globalDetail" : {
+              "score" : 0,
+              "snoozed" : false,
+              "enabled" : false
+            },
+            "global" : false
+          },
+          "protection" : {
+            "server" : {
+              "score" : 0,
+              "total" : 2,
+              "notFullyProtected" : 2,
+              "snoozed" : false
+            },
+            "computer" : {
+              "score" : 100,
+              "total" : 0,
+              "notFullyProtected" : 0,
+              "snoozed" : false
+            }
+          },
+          "exclusions" : {
+            "global" : {
+              "score" : 100,
+              "lockedByManagingAccount" : false,
+              "numberOfSecurityRisks" : 0,
+              "snoozed" : false
+            },
+            "policy" : {
+              "server" : {
+                "score" : 100,
+                "total" : 1,
+                "numberOfSecurityRisks" : 0,
+                "snoozed" : false
+              },
+              "computer" : {
+                "score" : 100,
+                "total" : 1,
+                "numberOfSecurityRisks" : 0,
+                "snoozed" : false
+              }
+            }
+          },
+          "policy" : {
+            "server" : {
+              "server-threat-protection" : {
+                "score" : 100,
+                "total" : 1,
+                "notOnRecommended" : 0,
+                "snoozed" : false
+              }
+            },
+            "computer" : {
+              "threat-protection" : {
+                "score" : 100,
+                "total" : 1,
+                "notOnRecommended" : 0,
+                "snoozed" : false
+              }
+            }
+          }
+        },
+        "tenant" : {
+          "id" : "62015b11-efd9-4bd9-8659-9f7e6297b7b6"
+        }
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "pages" : {
+        "size" : 500,
+        "maxSize" : 1000
+      },
+      "items" : [ {
+        "severity" : "high",
+        "product" : "server",
+        "allowedActions" : [ "acknowledge" ],
+        "raisedAt" : "2023-10-07T00:19:21.214Z",
+        "description" : "Real time protection disabled",
+        "managedAgent" : {
+          "name" : "EC2AMAZ-PF9UDFO",
+          "id" : "2af86ad6-cf66-46d2-8334-b4bdce831a8e",
+          "type" : "server"
+        },
+        "id" : "5b49116b-9382-466f-9af8-814c5b3396fe",
+        "category" : "policy",
+        "type" : "Event::Endpoint::SavDisabled",
+        "groupKey" : "MixFdmVudDo6RW5kcG9pbnQ6OlNhdkRpc2FibGVkLDUxMyw",
+        "tenant" : {
+          "name" : "Rapdev",
+          "id" : "62015b11-efd9-4bd9-8659-9f7e6297b7b6"
+        }
+      } ]
+    }
+  result:
+    custom:
+      items:
+       -
+        severity: "high"
+        product: "server"
+        allowedActions:
+         - "acknowledge"
+        raisedAt: "2023-10-07T00:19:21.214Z"
+        description: "Real time protection disabled"
+        managedAgent:
+          name: "EC2AMAZ-PF9UDFO"
+          id: "2af86ad6-cf66-46d2-8334-b4bdce831a8e"
+          type: "server"
+        id: "5b49116b-9382-466f-9af8-814c5b3396fe"
+        category: "policy"
+        type: "Event::Endpoint::SavDisabled"
+        groupKey: "MixFdmVudDo6RW5kcG9pbnQ6OlNhdkRpc2FibGVkLDUxMyw"
+        tenant:
+          name: "Rapdev"
+          id: "62015b11-efd9-4bd9-8659-9f7e6297b7b6"
+      pages:
+        maxSize: 1000
+        size: 500
+    message: |-
+      {
+        "pages" : {
+          "size" : 500,
+          "maxSize" : 1000
+        },
+        "items" : [ {
+          "severity" : "high",
+          "product" : "server",
+          "allowedActions" : [ "acknowledge" ],
+          "raisedAt" : "2023-10-07T00:19:21.214Z",
+          "description" : "Real time protection disabled",
+          "managedAgent" : {
+            "name" : "EC2AMAZ-PF9UDFO",
+            "id" : "2af86ad6-cf66-46d2-8334-b4bdce831a8e",
+            "type" : "server"
+          },
+          "id" : "5b49116b-9382-466f-9af8-814c5b3396fe",
+          "category" : "policy",
+          "type" : "Event::Endpoint::SavDisabled",
+          "groupKey" : "MixFdmVudDo6RW5kcG9pbnQ6OlNhdkRpc2FibGVkLDUxMyw",
+          "tenant" : {
+            "name" : "Rapdev",
+            "id" : "62015b11-efd9-4bd9-8659-9f7e6297b7b6"
+          }
+        } ]
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "pages" : {
+        "size" : 500,
+        "maxSize" : 500
+      },
+      "items" : [ {
+        "ipv4Addresses" : [ "172.31.93.56" ],
+        "lastSeenAt" : "2023-10-06T21:44:21.085Z",
+        "tamperProtectionEnabled" : false,
+        "os" : {
+          "isServer" : true,
+          "build" : 20348,
+          "name" : "Windows Server 2022 Datacenter",
+          "majorVersion" : 10,
+          "minorVersion" : 0,
+          "platform" : "windows"
+        },
+        "health" : {
+          "overall" : "suspicious",
+          "threats" : {
+            "status" : "good"
+          },
+          "services" : {
+            "serviceDetails" : [ {
+              "name" : "HitmanPro.Alert service",
+              "status" : "running"
+            }, {
+              "name" : "Sophos Endpoint Defense",
+              "status" : "running"
+            }, {
+              "name" : "Sophos Endpoint Defense Service",
+              "status" : "running"
+            }, {
+              "name" : "Sophos File Scanner",
+              "status" : "running"
+            }, {
+              "name" : "Sophos File Scanner Service",
+              "status" : "running"
+            }, {
+              "name" : "Sophos MCS Agent",
+              "status" : "running"
+            }, {
+              "name" : "Sophos MCS Client",
+              "status" : "running"
+            }, {
+              "name" : "Sophos NetFilter",
+              "status" : "running"
+            }, {
+              "name" : "Sophos Network Threat Protection",
+              "status" : "running"
+            }, {
+              "name" : "Sophos System Protection Service",
+              "status" : "running"
+            } ],
+            "status" : "good"
+          }
+        },
+        "isolation" : {
+          "adminIsolated" : false,
+          "selfIsolated" : false,
+          "status" : "notIsolated"
+        },
+        "type" : "server",
+        "associatedPerson" : {
+          "viaLogin" : "EC2AMAZ-PF9UDFO\\Administrator"
+        },
+        "cloud" : {
+          "instanceId" : "i-05d6c13bea454e5af",
+          "provider" : "aws"
+        },
+        "hostname" : "EC2AMAZ-PF9UDFO",
+        "macAddresses" : [ "12:32:DB:F9:70:5F" ],
+        "lockdown" : {
+          "updateStatus" : "notInstalled",
+          "status" : "notInstalled"
+        },
+        "id" : "2af86ad6-cf66-46d2-8334-b4bdce831a8e",
+        "assignedProducts" : [ {
+          "code" : "coreAgent",
+          "version" : "2023.1.3.5",
+          "status" : "installed"
+        }, {
+          "code" : "xdr",
+          "version" : "2023.1.3.5",
+          "status" : "notInstalled"
+        }, {
+          "code" : "endpointProtection",
+          "version" : "10.8.11.4",
+          "status" : "notInstalled"
+        }, {
+          "code" : "interceptX",
+          "version" : "2023.1.1.6",
+          "status" : "notInstalled"
+        } ],
+        "tenant" : {
+          "id" : "62015b11-efd9-4bd9-8659-9f7e6297b7b6"
+        }
+      }, {
+        "ipv4Addresses" : [ "172.31.40.42" ],
+        "lastSeenAt" : "2023-10-06T20:52:47.394Z",
+        "tamperProtectionEnabled" : false,
+        "os" : {
+          "isServer" : true,
+          "build" : 20348,
+          "name" : "Windows Server 2022 Datacenter",
+          "majorVersion" : 10,
+          "minorVersion" : 0,
+          "platform" : "windows"
+        },
+        "health" : {
+          "overall" : "suspicious",
+          "threats" : {
+            "status" : "good"
+          },
+          "services" : {
+            "serviceDetails" : [ {
+              "name" : "HitmanPro.Alert service",
+              "status" : "running"
+            }, {
+              "name" : "Sophos Endpoint Defense",
+              "status" : "running"
+            }, {
+              "name" : "Sophos Endpoint Defense Service",
+              "status" : "running"
+            }, {
+              "name" : "Sophos File Scanner",
+              "status" : "running"
+            }, {
+              "name" : "Sophos File Scanner Service",
+              "status" : "running"
+            }, {
+              "name" : "Sophos MCS Agent",
+              "status" : "running"
+            }, {
+              "name" : "Sophos MCS Client",
+              "status" : "running"
+            }, {
+              "name" : "Sophos NetFilter",
+              "status" : "running"
+            }, {
+              "name" : "Sophos Network Threat Protection",
+              "status" : "running"
+            }, {
+              "name" : "Sophos System Protection Service",
+              "status" : "running"
+            } ],
+            "status" : "good"
+          }
+        },
+        "isolation" : {
+          "adminIsolated" : false,
+          "selfIsolated" : false,
+          "status" : "notIsolated"
+        },
+        "type" : "server",
+        "associatedPerson" : {
+          "viaLogin" : "EC2AMAZ-4AQ5VDM\\Administrator"
+        },
+        "cloud" : {
+          "instanceId" : "i-0a5647ab013537c30",
+          "provider" : "aws"
+        },
+        "hostname" : "EC2AMAZ-4AQ5VDM",
+        "macAddresses" : [ "0E:53:BE:C8:0B:FF" ],
+        "lockdown" : {
+          "updateStatus" : "notInstalled",
+          "status" : "notInstalled"
+        },
+        "id" : "97d8a914-5164-462d-83a9-83051b806fe0",
+        "assignedProducts" : [ {
+          "code" : "coreAgent",
+          "version" : "2023.1.3.5",
+          "status" : "installed"
+        }, {
+          "code" : "xdr",
+          "version" : "2023.1.3.5",
+          "status" : "notInstalled"
+        }, {
+          "code" : "endpointProtection",
+          "version" : "10.8.11.4",
+          "status" : "notInstalled"
+        }, {
+          "code" : "interceptX",
+          "version" : "2023.1.1.6",
+          "status" : "notInstalled"
+        } ],
+        "tenant" : {
+          "id" : "62015b11-efd9-4bd9-8659-9f7e6297b7b6"
+        }
+      } ]
+    }
+  result:
+    custom:
+      items:
+       -
+        ipv4Addresses:
+         - "172.31.93.56"
+        lastSeenAt: "2023-10-06T21:44:21.085Z"
+        tamperProtectionEnabled: false
+        os:
+          isServer: true
+          build: 20348
+          name: "Windows Server 2022 Datacenter"
+          majorVersion: 10
+          minorVersion: 0
+          platform: "windows"
+        health:
+          overall: "suspicious"
+          threats:
+            status: "good"
+          services:
+            serviceDetails:
+             -
+              name: "HitmanPro.Alert service"
+              status: "running"
+             -
+              name: "Sophos Endpoint Defense"
+              status: "running"
+             -
+              name: "Sophos Endpoint Defense Service"
+              status: "running"
+             -
+              name: "Sophos File Scanner"
+              status: "running"
+             -
+              name: "Sophos File Scanner Service"
+              status: "running"
+             -
+              name: "Sophos MCS Agent"
+              status: "running"
+             -
+              name: "Sophos MCS Client"
+              status: "running"
+             -
+              name: "Sophos NetFilter"
+              status: "running"
+             -
+              name: "Sophos Network Threat Protection"
+              status: "running"
+             -
+              name: "Sophos System Protection Service"
+              status: "running"
+            status: "good"
+        isolation:
+          adminIsolated: false
+          selfIsolated: false
+          status: "notIsolated"
+        type: "server"
+        associatedPerson:
+          viaLogin: "EC2AMAZ-PF9UDFO\\Administrator"
+        cloud:
+          instanceId: "i-05d6c13bea454e5af"
+          provider: "aws"
+        hostname: "EC2AMAZ-PF9UDFO"
+        macAddresses:
+         - "12:32:DB:F9:70:5F"
+        lockdown:
+          updateStatus: "notInstalled"
+          status: "notInstalled"
+        id: "2af86ad6-cf66-46d2-8334-b4bdce831a8e"
+        assignedProducts:
+         -
+          code: "coreAgent"
+          version: "2023.1.3.5"
+          status: "installed"
+         -
+          code: "xdr"
+          version: "2023.1.3.5"
+          status: "notInstalled"
+         -
+          code: "endpointProtection"
+          version: "10.8.11.4"
+          status: "notInstalled"
+         -
+          code: "interceptX"
+          version: "2023.1.1.6"
+          status: "notInstalled"
+        tenant:
+          id: "62015b11-efd9-4bd9-8659-9f7e6297b7b6"
+       -
+        ipv4Addresses:
+         - "172.31.40.42"
+        lastSeenAt: "2023-10-06T20:52:47.394Z"
+        tamperProtectionEnabled: false
+        os:
+          isServer: true
+          build: 20348
+          name: "Windows Server 2022 Datacenter"
+          majorVersion: 10
+          minorVersion: 0
+          platform: "windows"
+        health:
+          overall: "suspicious"
+          threats:
+            status: "good"
+          services:
+            serviceDetails:
+             -
+              name: "HitmanPro.Alert service"
+              status: "running"
+             -
+              name: "Sophos Endpoint Defense"
+              status: "running"
+             -
+              name: "Sophos Endpoint Defense Service"
+              status: "running"
+             -
+              name: "Sophos File Scanner"
+              status: "running"
+             -
+              name: "Sophos File Scanner Service"
+              status: "running"
+             -
+              name: "Sophos MCS Agent"
+              status: "running"
+             -
+              name: "Sophos MCS Client"
+              status: "running"
+             -
+              name: "Sophos NetFilter"
+              status: "running"
+             -
+              name: "Sophos Network Threat Protection"
+              status: "running"
+             -
+              name: "Sophos System Protection Service"
+              status: "running"
+            status: "good"
+        isolation:
+          adminIsolated: false
+          selfIsolated: false
+          status: "notIsolated"
+        type: "server"
+        associatedPerson:
+          viaLogin: "EC2AMAZ-4AQ5VDM\\Administrator"
+        cloud:
+          instanceId: "i-0a5647ab013537c30"
+          provider: "aws"
+        hostname: "EC2AMAZ-4AQ5VDM"
+        macAddresses:
+         - "0E:53:BE:C8:0B:FF"
+        lockdown:
+          updateStatus: "notInstalled"
+          status: "notInstalled"
+        id: "97d8a914-5164-462d-83a9-83051b806fe0"
+        assignedProducts:
+         -
+          code: "coreAgent"
+          version: "2023.1.3.5"
+          status: "installed"
+         -
+          code: "xdr"
+          version: "2023.1.3.5"
+          status: "notInstalled"
+         -
+          code: "endpointProtection"
+          version: "10.8.11.4"
+          status: "notInstalled"
+         -
+          code: "interceptX"
+          version: "2023.1.1.6"
+          status: "notInstalled"
+        tenant:
+          id: "62015b11-efd9-4bd9-8659-9f7e6297b7b6"
+      pages:
+        maxSize: 500
+        size: 500
+    message: |-
+      {
+        "pages" : {
+          "size" : 500,
+          "maxSize" : 500
+        },
+        "items" : [ {
+          "ipv4Addresses" : [ "172.31.93.56" ],
+          "lastSeenAt" : "2023-10-06T21:44:21.085Z",
+          "tamperProtectionEnabled" : false,
+          "os" : {
+            "isServer" : true,
+            "build" : 20348,
+            "name" : "Windows Server 2022 Datacenter",
+            "majorVersion" : 10,
+            "minorVersion" : 0,
+            "platform" : "windows"
+          },
+          "health" : {
+            "overall" : "suspicious",
+            "threats" : {
+              "status" : "good"
+            },
+            "services" : {
+              "serviceDetails" : [ {
+                "name" : "HitmanPro.Alert service",
+                "status" : "running"
+              }, {
+                "name" : "Sophos Endpoint Defense",
+                "status" : "running"
+              }, {
+                "name" : "Sophos Endpoint Defense Service",
+                "status" : "running"
+              }, {
+                "name" : "Sophos File Scanner",
+                "status" : "running"
+              }, {
+                "name" : "Sophos File Scanner Service",
+                "status" : "running"
+              }, {
+                "name" : "Sophos MCS Agent",
+                "status" : "running"
+              }, {
+                "name" : "Sophos MCS Client",
+                "status" : "running"
+              }, {
+                "name" : "Sophos NetFilter",
+                "status" : "running"
+              }, {
+                "name" : "Sophos Network Threat Protection",
+                "status" : "running"
+              }, {
+                "name" : "Sophos System Protection Service",
+                "status" : "running"
+              } ],
+              "status" : "good"
+            }
+          },
+          "isolation" : {
+            "adminIsolated" : false,
+            "selfIsolated" : false,
+            "status" : "notIsolated"
+          },
+          "type" : "server",
+          "associatedPerson" : {
+            "viaLogin" : "EC2AMAZ-PF9UDFO\\Administrator"
+          },
+          "cloud" : {
+            "instanceId" : "i-05d6c13bea454e5af",
+            "provider" : "aws"
+          },
+          "hostname" : "EC2AMAZ-PF9UDFO",
+          "macAddresses" : [ "12:32:DB:F9:70:5F" ],
+          "lockdown" : {
+            "updateStatus" : "notInstalled",
+            "status" : "notInstalled"
+          },
+          "id" : "2af86ad6-cf66-46d2-8334-b4bdce831a8e",
+          "assignedProducts" : [ {
+            "code" : "coreAgent",
+            "version" : "2023.1.3.5",
+            "status" : "installed"
+          }, {
+            "code" : "xdr",
+            "version" : "2023.1.3.5",
+            "status" : "notInstalled"
+          }, {
+            "code" : "endpointProtection",
+            "version" : "10.8.11.4",
+            "status" : "notInstalled"
+          }, {
+            "code" : "interceptX",
+            "version" : "2023.1.1.6",
+            "status" : "notInstalled"
+          } ],
+          "tenant" : {
+            "id" : "62015b11-efd9-4bd9-8659-9f7e6297b7b6"
+          }
+        }, {
+          "ipv4Addresses" : [ "172.31.40.42" ],
+          "lastSeenAt" : "2023-10-06T20:52:47.394Z",
+          "tamperProtectionEnabled" : false,
+          "os" : {
+            "isServer" : true,
+            "build" : 20348,
+            "name" : "Windows Server 2022 Datacenter",
+            "majorVersion" : 10,
+            "minorVersion" : 0,
+            "platform" : "windows"
+          },
+          "health" : {
+            "overall" : "suspicious",
+            "threats" : {
+              "status" : "good"
+            },
+            "services" : {
+              "serviceDetails" : [ {
+                "name" : "HitmanPro.Alert service",
+                "status" : "running"
+              }, {
+                "name" : "Sophos Endpoint Defense",
+                "status" : "running"
+              }, {
+                "name" : "Sophos Endpoint Defense Service",
+                "status" : "running"
+              }, {
+                "name" : "Sophos File Scanner",
+                "status" : "running"
+              }, {
+                "name" : "Sophos File Scanner Service",
+                "status" : "running"
+              }, {
+                "name" : "Sophos MCS Agent",
+                "status" : "running"
+              }, {
+                "name" : "Sophos MCS Client",
+                "status" : "running"
+              }, {
+                "name" : "Sophos NetFilter",
+                "status" : "running"
+              }, {
+                "name" : "Sophos Network Threat Protection",
+                "status" : "running"
+              }, {
+                "name" : "Sophos System Protection Service",
+                "status" : "running"
+              } ],
+              "status" : "good"
+            }
+          },
+          "isolation" : {
+            "adminIsolated" : false,
+            "selfIsolated" : false,
+            "status" : "notIsolated"
+          },
+          "type" : "server",
+          "associatedPerson" : {
+            "viaLogin" : "EC2AMAZ-4AQ5VDM\\Administrator"
+          },
+          "cloud" : {
+            "instanceId" : "i-0a5647ab013537c30",
+            "provider" : "aws"
+          },
+          "hostname" : "EC2AMAZ-4AQ5VDM",
+          "macAddresses" : [ "0E:53:BE:C8:0B:FF" ],
+          "lockdown" : {
+            "updateStatus" : "notInstalled",
+            "status" : "notInstalled"
+          },
+          "id" : "97d8a914-5164-462d-83a9-83051b806fe0",
+          "assignedProducts" : [ {
+            "code" : "coreAgent",
+            "version" : "2023.1.3.5",
+            "status" : "installed"
+          }, {
+            "code" : "xdr",
+            "version" : "2023.1.3.5",
+            "status" : "notInstalled"
+          }, {
+            "code" : "endpointProtection",
+            "version" : "10.8.11.4",
+            "status" : "notInstalled"
+          }, {
+            "code" : "interceptX",
+            "version" : "2023.1.1.6",
+            "status" : "notInstalled"
+          } ],
+          "tenant" : {
+            "id" : "62015b11-efd9-4bd9-8659-9f7e6297b7b6"
+          }
+        } ]
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+

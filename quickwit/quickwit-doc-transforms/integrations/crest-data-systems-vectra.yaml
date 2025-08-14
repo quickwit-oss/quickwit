@@ -1,0 +1,318 @@
+id: "crest-data-systems-vectra"
+metric_id: "crest-data-systems-vectra"
+backend_only: false
+facets:
+  - facetType: list
+    groups:
+      - Crest Data Systems Vectra Cloud
+    name: Attack Profile
+    path: cd_vectra.attack_profile
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Vectra Cloud
+    name: Data Source Type
+    path: cd_vectra.data_source.type
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Vectra Cloud
+    name: Detection Category
+    path: cd_vectra.detection_category
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Vectra Cloud
+    name: Detection ID
+    path: cd_vectra.detections.id
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Vectra Cloud
+    name: Entity ID
+    path: cd_vectra.entities.id
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Vectra Cloud
+    name: Privilege Category
+    path: cd_vectra.privilege_category
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Vectra Cloud
+    name: Severity
+    path: cd_vectra.severity
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Vectra Cloud
+    name: Source Account Name
+    path: cd_vectra.src_account.name
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Vectra Cloud
+    name: Source Host Name
+    path: cd_vectra.src_host.name
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Vectra Cloud
+    name: Source IP
+    path: cd_vectra.src_ip
+    source: log
+    type: string
+pipeline:
+  type: pipeline
+  name: Vectra
+  enabled: true
+  filter:
+    query: source:crest-data-systems-vectra
+  processors:
+    - type: pipeline
+      name: Entities
+      enabled: true
+      filter:
+        query: service:cd.vectra.entities
+      processors:
+        - type: grok-parser
+          name: Parsing `last_modified_timestamp` to `timestamp` (epoch)
+          enabled: true
+          source: last_modified_timestamp
+          samples:
+            - 2024-06-17T12:09:18Z
+          grok:
+            supportRules: ""
+            matchRules: date_rule %{date("yyyy-MM-dd'T'HH:mm:ssZ"):timestamp}
+        - type: attribute-remapper
+          name: Map `attack_profile` to `cd_vectra.attack_profile`
+          enabled: true
+          sources:
+            - attack_profile
+          sourceType: attribute
+          target: cd_vectra.attack_profile
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `id` to `cd_vectra.entities.id`
+          enabled: true
+          sources:
+            - id
+          sourceType: attribute
+          target: cd_vectra.entities.id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `privilege_category` to `cd_vectra.privilege_category`
+          enabled: true
+          sources:
+            - privilege_category
+          sourceType: attribute
+          target: cd_vectra.privilege_category
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Detections
+      enabled: true
+      filter:
+        query: service:cd.vectra.detections
+      processors:
+        - type: grok-parser
+          name: Parsing `created_timestamp` to `timestamp` (epoch)
+          enabled: true
+          source: created_timestamp
+          samples:
+            - 2024-06-17T12:09:18Z
+          grok:
+            supportRules: ""
+            matchRules: date_rule %{date("yyyy-MM-dd'T'HH:mm:ssZ"):timestamp}
+        - type: attribute-remapper
+          name: Map `data_source.type` to `cd_vectra.data_source.type`
+          enabled: true
+          sources:
+            - data_source.type
+          sourceType: attribute
+          target: cd_vectra.data_source.type
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `detection_category` to `cd_vectra.detection_category`
+          enabled: true
+          sources:
+            - detection_category
+          sourceType: attribute
+          target: cd_vectra.detection_category
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `id` to `cd_vectra.detections.id`
+          enabled: true
+          sources:
+            - id
+          sourceType: attribute
+          target: cd_vectra.detections.id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `src_account.name` to `cd_vectra.src_account.name`
+          enabled: true
+          sources:
+            - src_account.name
+          sourceType: attribute
+          target: cd_vectra.src_account.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `src_host.name` to `cd_vectra.src_host.name`
+          enabled: true
+          sources:
+            - src_host.name
+          sourceType: attribute
+          target: cd_vectra.src_host.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `src_ip` to `cd_vectra.src_ip`
+          enabled: true
+          sources:
+            - src_ip
+          sourceType: attribute
+          target: cd_vectra.src_ip
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Account entity events
+      enabled: true
+      filter:
+        query: service:cd.vectra.account_entity_events
+      processors:
+        - type: grok-parser
+          name: Parsing `event_timestamp` to `timestamp` (epoch)
+          enabled: true
+          source: event_timestamp
+          samples:
+            - 2024-06-17T12:09:18Z
+          grok:
+            supportRules: ""
+            matchRules: date_rule %{date("yyyy-MM-dd'T'HH:mm:ssZ"):timestamp}
+    - type: pipeline
+      name: Host entity events
+      enabled: true
+      filter:
+        query: service:cd.vectra.host_entity_events
+      processors:
+        - type: grok-parser
+          name: Parsing `event_timestamp` to `timestamp` (epoch)
+          enabled: true
+          source: event_timestamp
+          samples:
+            - 2024-06-17T12:09:18Z
+          grok:
+            supportRules: ""
+            matchRules: date_rule %{date("yyyy-MM-dd'T'HH:mm:ssZ"):timestamp}
+    - type: pipeline
+      name: Account detection events
+      enabled: true
+      filter:
+        query: service:cd.vectra.account_detection_events
+      processors:
+        - type: grok-parser
+          name: Parsing `event_timestamp` to `timestamp` (epoch)
+          enabled: true
+          source: event_timestamp
+          samples:
+            - 2024-06-17T12:09:18Z
+          grok:
+            supportRules: ""
+            matchRules: date_rule %{date("yyyy-MM-dd'T'HH:mm:ssZ"):timestamp}
+        - type: attribute-remapper
+          name: Map `severity` to `cd_vectra.severity`
+          enabled: true
+          sources:
+            - severity
+          sourceType: attribute
+          target: cd_vectra.severity
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: category-processor
+          name: Category  for `cd_vectra.severity` to `status`
+          enabled: true
+          categories:
+            - filter:
+                query: "@cd_vectra.severity:[0 TO 10]"
+              name: Info
+          target: status
+        - type: status-remapper
+          name: Define `status` as the official status of the log
+          enabled: true
+          sources:
+            - status
+    - type: pipeline
+      name: Host detection events
+      enabled: true
+      filter:
+        query: service:cd.vectra.host_detection_events
+      processors:
+        - type: grok-parser
+          name: Parsing `event_timestamp` to `timestamp` (epoch)
+          enabled: true
+          source: event_timestamp
+          samples:
+            - 2024-06-17T12:09:18Z
+          grok:
+            supportRules: ""
+            matchRules: date_rule %{date("yyyy-MM-dd'T'HH:mm:ssZ"):timestamp}
+        - type: string-builder-processor
+          name: Define `detail.dst_ip` equal to `detail.dst_dns`
+          enabled: true
+          template: "%{detail.dst_ip}(%{detail.dst_dns})"
+          target: command_and_control_server
+          replaceMissing: true
+        - type: attribute-remapper
+          name: Map `severity` to `cd_vectra.severity`
+          enabled: true
+          sources:
+            - severity
+          sourceType: attribute
+          target: cd_vectra.severity
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: category-processor
+          name: Category  for `cd_vectra.severity` to `status`
+          enabled: true
+          categories:
+            - filter:
+                query: "@cd_vectra.severity:[0 TO 10]"
+              name: Info
+          target: status
+        - type: status-remapper
+          name: Define `status` as the official status of the log
+          enabled: true
+          sources:
+            - status
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp

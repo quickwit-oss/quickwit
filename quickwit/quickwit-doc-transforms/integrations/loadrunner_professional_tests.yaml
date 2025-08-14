@@ -1,0 +1,98 @@
+id: "loadrunner_professional"
+tests:
+  - sample: |-
+        {"scenario_started":{"general":{"product": "LoadRunner Controller","version": "2024.1.0.0","path": "Scenario1","resultname": "","result_file": "C:\\Users\\user1\\AppData\\Local\\Temp\\2\\res\\res.lrr","start_time": 1707817084.000000,"daylight_bias": "0 minutes","time_zone": "0 seconds"},"scripts":[{"name": "webhttphtml1","type": "Multi+QTWeb","path": "C:\\Users\\user1\\Desktop\\WebHttpHtml1"}],"summary":{"scenario_type": "Manual Scenario","goal_profile_name": "Schedule 1","mode": "Scenario Scheduling","scenario_duration": "Start 25 Vusers: 5 every 00:00:05 (HH:MM:SS); Run for 00:01:00 (HH:MM:SS); Stop all Vusers: 5 every 00:00:05 (HH:MM:SS)","load_behavior": "Initialize each Vuser just before it runs"}}}
+    result: 
+      custom:
+        scenario_started:
+          general:
+            daylight_bias: "0 minutes"
+            path: "Scenario1"
+            product: "LoadRunner Controller"
+            result_file: "C:\\Users\\user1\\AppData\\Local\\Temp\\2\\res\\res.lrr"
+            resultname: ""
+            start_time: 1.707817084E9
+            time_zone: "0 seconds"
+            version: "2024.1.0.0"
+          scripts:
+          -
+            path: "C:\\Users\\user1\\Desktop\\WebHttpHtml1"
+            name: "webhttphtml1"
+            type: "Multi+QTWeb"
+          summary:
+            goal_profile_name: "Schedule 1"
+            load_behavior: "Initialize each Vuser just before it runs"
+            mode: "Scenario Scheduling"
+            scenario_duration: "Start 25 Vusers: 5 every 00:00:05 (HH:MM:SS); Run for 00:01:00 (HH:MM:SS); Stop all Vusers: 5 every 00:00:05 (HH:MM:SS)"
+            scenario_type: "Manual Scenario"
+      message: |-
+        {
+          "scenario_started" : {
+            "summary" : {
+              "mode" : "Scenario Scheduling",
+              "load_behavior" : "Initialize each Vuser just before it runs",
+              "goal_profile_name" : "Schedule 1",
+              "scenario_duration" : "Start 25 Vusers: 5 every 00:00:05 (HH:MM:SS); Run for 00:01:00 (HH:MM:SS); Stop all Vusers: 5 every 00:00:05 (HH:MM:SS)",
+              "scenario_type" : "Manual Scenario"
+            },
+            "general" : {
+              "path" : "Scenario1",
+              "start_time" : 1.707817084E9,
+              "product" : "LoadRunner Controller",
+              "result_file" : "C:\\Users\\user1\\AppData\\Local\\Temp\\2\\res\\res.lrr",
+              "time_zone" : "0 seconds",
+              "version" : "2024.1.0.0",
+              "resultname" : "",
+              "daylight_bias" : "0 minutes"
+            },
+            "scripts" : [ {
+              "path" : "C:\\Users\\user1\\Desktop\\WebHttpHtml1",
+              "name" : "webhttphtml1",
+              "type" : "Multi+QTWeb"
+            } ]
+          }
+        }
+      tags:
+      - "source:LOGS_SOURCE"
+      - "version:2024.1.0.0"
+  - sample: |-
+        {"scenario_ended":{"execution":{"start_time": 1707817084.000000,"stop_time": 1707817214.000000,"total_duration": "130 seconds"},"general":{"product": "LoadRunner Controller","version": "2024.1.0.0","path": "Scenario1","resultname": "","result_file": "C:\\Users\\user1\\AppData\\Local\\Temp\\2\\res\\res.lrr","start_time": 1707817084.000000,"daylight_bias": "0 minutes","time_zone": "0 seconds"}}}
+    result: 
+      custom:
+        scenario_ended:
+          execution:
+            start_time: 1.707817084E9
+            stop_time: 1.707817214E9
+            total_duration: "130 seconds"
+          general:
+            daylight_bias: "0 minutes"
+            path: "Scenario1"
+            product: "LoadRunner Controller"
+            result_file: "C:\\Users\\user1\\AppData\\Local\\Temp\\2\\res\\res.lrr"
+            resultname: ""
+            start_time: 1.707817084E9
+            time_zone: "0 seconds"
+            version: "2024.1.0.0"
+      message: |-
+        {
+          "scenario_ended" : {
+            "execution" : {
+              "start_time" : 1.707817084E9,
+              "stop_time" : 1.707817214E9,
+              "total_duration" : "130 seconds"
+            },
+            "general" : {
+              "path" : "Scenario1",
+              "start_time" : 1.707817084E9,
+              "product" : "LoadRunner Controller",
+              "result_file" : "C:\\Users\\user1\\AppData\\Local\\Temp\\2\\res\\res.lrr",
+              "time_zone" : "0 seconds",
+              "version" : "2024.1.0.0",
+              "resultname" : "",
+              "daylight_bias" : "0 minutes"
+            }
+          }
+        }
+      tags:
+      - "source:LOGS_SOURCE"
+      - "version:2024.1.0.0"

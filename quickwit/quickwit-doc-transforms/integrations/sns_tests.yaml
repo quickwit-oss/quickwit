@@ -1,0 +1,150 @@
+id: "sns"
+tests:
+ -
+  sample: |-
+    {
+      "eventID" : "example0-09a3-47d6-a810-c5f9fd2534fe",
+      "awsRegion" : "us-west-2",
+      "eventVersion" : "1.02",
+      "sourceIPAddress" : "127.0.0.1",
+      "eventSource" : "sns.amazonaws.com",
+      "requestParameters" : {
+        "nextToken" : "ABCDEF1234567890EXAMPLE=="
+      },
+      "userAgent" : "aws-sdk-java/unknown-version",
+      "userIdentity" : {
+        "accessKeyId" : "AKIAIOSFODNN7EXAMPLE",
+        "accountId" : "123456789012",
+        "principalId" : "EX_PRINCIPAL_ID",
+        "type" : "IAMUser",
+        "userName" : "Bob",
+        "arn" : "arn:aws:iam::123456789012:user/Bob"
+      },
+      "eventType" : "AwsApiCall",
+      "requestID" : "example1-b9bb-50fa-abdb-80f274981d60",
+      "eventTime" : "2017-30-30T00:00:00Z",
+      "eventName" : "ListTopics",
+      "recipientAccountId" : "123456789012"
+    }
+  result:
+    custom:
+      awsRegion: "us-west-2"
+      eventID: "example0-09a3-47d6-a810-c5f9fd2534fe"
+      eventName: "ListTopics"
+      eventSource: "sns.amazonaws.com"
+      eventTime: "2017-30-30T00:00:00Z"
+      eventType: "AwsApiCall"
+      eventVersion: "1.02"
+      http:
+        request_id: "example1-b9bb-50fa-abdb-80f274981d60"
+        useragent: "aws-sdk-java/unknown-version"
+        useragent_details:
+          browser:
+            family: "Other"
+          device:
+            category: "Other"
+            family: "Other"
+          os:
+            family: "Other"
+      network:
+        client:
+          ip: "127.0.0.1"
+      recipientAccountId: "123456789012"
+      requestID: "example1-b9bb-50fa-abdb-80f274981d60"
+      requestParameters:
+        nextToken: "ABCDEF1234567890EXAMPLE=="
+      sourceIPAddress: "127.0.0.1"
+      userAgent: "aws-sdk-java/unknown-version"
+      userIdentity:
+        accessKeyId: "AKIAIOSFODNN7EXAMPLE"
+        accountId: "123456789012"
+        arn: "arn:aws:iam::123456789012:user/Bob"
+        principalId: "EX_PRINCIPAL_ID"
+        type: "IAMUser"
+        userName: "Bob"
+    message: |-
+      {
+        "eventID" : "example0-09a3-47d6-a810-c5f9fd2534fe",
+        "awsRegion" : "us-west-2",
+        "eventVersion" : "1.02",
+        "sourceIPAddress" : "127.0.0.1",
+        "eventSource" : "sns.amazonaws.com",
+        "requestParameters" : {
+          "nextToken" : "ABCDEF1234567890EXAMPLE=="
+        },
+        "userAgent" : "aws-sdk-java/unknown-version",
+        "userIdentity" : {
+          "accessKeyId" : "AKIAIOSFODNN7EXAMPLE",
+          "accountId" : "123456789012",
+          "principalId" : "EX_PRINCIPAL_ID",
+          "type" : "IAMUser",
+          "userName" : "Bob",
+          "arn" : "arn:aws:iam::123456789012:user/Bob"
+        },
+        "eventType" : "AwsApiCall",
+        "requestID" : "example1-b9bb-50fa-abdb-80f274981d60",
+        "eventTime" : "2017-30-30T00:00:00Z",
+        "eventName" : "ListTopics",
+        "recipientAccountId" : "123456789012"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "EventSource" : "aws:sns",
+      "Sns" : {
+        "SignatureVersion" : "1",
+        "Type" : "Notification",
+        "Message" : "{\"eventType\":\"Open\",\"mail\":{\"timestamp\":\"2018-05-30T13:47:23.041Z\",\"source\":\"jules.denardou+sessender@datadoghq.com\",\"sendingAccountId\":\"727006795293\",\"messageId\":\"01000163b14d9a21-a6c4e5d5-14cf-4631-9359-d65877b0fd72-000000\",\"destination\":[\"jules.denardou+sesrecipent@datadoghq.com\"],\"headersTruncated\":false,\"open\":{\"timestamp\":\"2018-05-30T13:52:22.817Z\",\"userAgent\":\"Mozilla/5.0 (Windows NT 5.1; rv:11.0) Gecko Firefox/11.0 (via ggpht.com GoogleImageProxy)\",\"ipAddress\":\"66.102.8.139\"}}}\n",
+        "UnsubscribeUrl" : "https://sns.us-east-1.amazonaws.com/?Action=Unsubscribe&SubscriptionArn=arn:aws:sns:us-east-1:727006795293:Jules-SES-PoC:31c8dc13-00ae-491c-afde-e8ce985c312c",
+        "TopicArn" : "arn:aws:sns:us-east-1:727006795293:Jules-SES-PoC",
+        "Signature" : "gaExa2aKriMCdZUChlNhVxy/qu2TUT9cx/Z2AIBLskP3Kcq553+HMg6lcYCt4a+osJX0lmlDHo7zSdKA++/jw1cFFV5f0y9jYX5c9tvmJjQz1RdcMXodQCsh+6UIX27JluEyLLrSyHI4eEJb0c9yy6gc5Y8h16YaTYhoj+gPHNckUfLGB9PE/enq4TkGhha7mq2OY/DaT9P8+BUVmim70Zo/Nni92ycM31RHhUJeAt4jiN/HKYl6ucpvZK9LYNA3LDv0RZTEfyCTeHHkX3/D29Eo+7KmMhKZDhsyfjZLQ6qosTGr6xnqDOoFCAi8jKLjqznKaCsmQrUXM6qklqzYNQ==",
+        "SigningCertUrl" : "https://sns.us-east-1.amazonaws.com/SimpleNotificationService-eaea6120e66ea12e88dcd8bcbddca752.pem",
+        "Timestamp" : "2018-05-30T13:52:22.952Z",
+        "Subject" : "Amazon SES Email Event Notification",
+        "MessageId" : "e5378501-d506-5311-b229-d6897bd0ff26"
+      },
+      "aws" : {
+        "invoked_function_arn" : "arn:aws:lambda:us-east-1:727006795293:function:SES-to-datadog-logs",
+        "function_version" : "$LATEST"
+      },
+      "EventVersion" : "1.0",
+      "EventSubscriptionArn" : "arn:aws:sns:us-east-1:727006795293:Jules-SES-PoC:31c8dc13-00ae-491c-afde-e8ce985c312c"
+    }
+  result:
+    custom:
+      EventSource: "aws:sns"
+      EventSubscriptionArn: "arn:aws:sns:us-east-1:727006795293:Jules-SES-PoC:31c8dc13-00ae-491c-afde-e8ce985c312c"
+      EventVersion: "1.0"
+      Sns:
+        MessageId: "e5378501-d506-5311-b229-d6897bd0ff26"
+        Signature: "gaExa2aKriMCdZUChlNhVxy/qu2TUT9cx/Z2AIBLskP3Kcq553+HMg6lcYCt4a+osJX0lmlDHo7zSdKA++/jw1cFFV5f0y9jYX5c9tvmJjQz1RdcMXodQCsh+6UIX27JluEyLLrSyHI4eEJb0c9yy6gc5Y8h16YaTYhoj+gPHNckUfLGB9PE/enq4TkGhha7mq2OY/DaT9P8+BUVmim70Zo/Nni92ycM31RHhUJeAt4jiN/HKYl6ucpvZK9LYNA3LDv0RZTEfyCTeHHkX3/D29Eo+7KmMhKZDhsyfjZLQ6qosTGr6xnqDOoFCAi8jKLjqznKaCsmQrUXM6qklqzYNQ=="
+        SignatureVersion: "1"
+        SigningCertUrl: "https://sns.us-east-1.amazonaws.com/SimpleNotificationService-eaea6120e66ea12e88dcd8bcbddca752.pem"
+        Subject: "Amazon SES Email Event Notification"
+        Timestamp: "2018-05-30T13:52:22.952Z"
+        TopicArn: "arn:aws:sns:us-east-1:727006795293:Jules-SES-PoC"
+        Type: "Notification"
+        UnsubscribeUrl: "https://sns.us-east-1.amazonaws.com/?Action=Unsubscribe&SubscriptionArn=arn:aws:sns:us-east-1:727006795293:Jules-SES-PoC:31c8dc13-00ae-491c-afde-e8ce985c312c"
+      aws:
+        function_version: "$LATEST"
+        invoked_function_arn: "arn:aws:lambda:us-east-1:727006795293:function:SES-to-datadog-logs"
+      eventType: "Open"
+      mail:
+        destination:
+         - "jules.denardou+sesrecipent@datadoghq.com"
+        headersTruncated: false
+        messageId: "01000163b14d9a21-a6c4e5d5-14cf-4631-9359-d65877b0fd72-000000"
+        open:
+          ipAddress: "66.102.8.139"
+          timestamp: "2018-05-30T13:52:22.817Z"
+          userAgent: "Mozilla/5.0 (Windows NT 5.1; rv:11.0) Gecko Firefox/11.0 (via ggpht.com GoogleImageProxy)"
+        sendingAccountId: "727006795293"
+        source: "jules.denardou+sessender@datadoghq.com"
+        timestamp: "2018-05-30T13:47:23.041Z"
+    message: |
+      {"eventType":"Open","mail":{"timestamp":"2018-05-30T13:47:23.041Z","source":"jules.denardou+sessender@datadoghq.com","sendingAccountId":"727006795293","messageId":"01000163b14d9a21-a6c4e5d5-14cf-4631-9359-d65877b0fd72-000000","destination":["jules.denardou+sesrecipent@datadoghq.com"],"headersTruncated":false,"open":{"timestamp":"2018-05-30T13:52:22.817Z","userAgent":"Mozilla/5.0 (Windows NT 5.1; rv:11.0) Gecko Firefox/11.0 (via ggpht.com GoogleImageProxy)","ipAddress":"66.102.8.139"}}}
+    tags:
+     - "source:LOGS_SOURCE"
+

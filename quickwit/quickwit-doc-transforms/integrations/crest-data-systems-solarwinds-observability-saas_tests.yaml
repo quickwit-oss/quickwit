@@ -1,0 +1,243 @@
+id: crest-data-systems-solarwinds-observability-saas
+tests:
+ -
+  sample: |-
+    {
+      "severity" : "INFO",
+      "hostname" : "ub22-50-9-251",
+      "id" : "1841875115468440153",
+      "time" : "2025-03-27T11:21:10Z",
+      "program" : "",
+      "message" : "Mar 27 16:18:18 ub22-50-9-251 kernel: [600630.210798] [UFW BLOCK] IN=ens160 OUT= MAC=00:50:56:81:05:3c:00:50:56:83:35:d6:08:00 SRC=10.50.1.88 DST=10.50.9.251 LEN=52 TOS=0x00 PREC=0x00 TTL=128 ID=6324 DF PROTO=TCP SPT=56952 DPT=1514 WINDOW=64240 RES=0x00 SYN URGP=0"
+    }
+  service: "cd.solarwinds.observability.saas.activity_logs"
+  result:
+    custom:
+      cds:
+        solarwinds_observability_saas:
+          activity_log:
+            id: "1841875115468440153"
+            process_name: "kernel"
+      hostname: "ub22-50-9-251"
+      message: "kernel: [600630.210798] [UFW BLOCK] IN=ens160 OUT= MAC=00:50:56:81:05:3c:00:50:56:83:35:d6:08:00 SRC=10.50.1.88 DST=10.50.9.251 LEN=52 TOS=0x00 PREC=0x00 TTL=128 ID=6324 DF PROTO=TCP SPT=56952 DPT=1514 WINDOW=64240 RES=0x00 SYN URGP=0"
+      pid: 600630.210798
+      program: ""
+      severity: "INFO"
+      timestamp: "2025-03-27T11:21:10Z"
+    message: "Mar 27 16:18:18 ub22-50-9-251 kernel: [600630.210798] [UFW BLOCK] IN=ens160 OUT= MAC=00:50:56:81:05:3c:00:50:56:83:35:d6:08:00 SRC=10.50.1.88 DST=10.50.9.251 LEN=52 TOS=0x00 PREC=0x00 TTL=128 ID=6324 DF PROTO=TCP SPT=56952 DPT=1514 WINDOW=64240 RES=0x00 SYN URGP=0"
+    service: "cd.solarwinds.observability.saas.activity_logs"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1743074470000
+ -
+  sample: |-
+    {
+        "id": "1841875115468422323",
+        "time": "2025-02-28T14:55:29Z",
+        "message": "Feb 18 14:55:29 ub22-50-2-88 kernel: [346.135888] audit: type=1400 audit(1739870729.233:82): apparmor='STATUS' operation='profile_replace' profile='unconfined' name='snap.lxd.buginfo' pid=2784 comm='apparmor_parser'",
+        "hostname": "ub22-50-2-88",
+        "severity": "INFO",
+        "program": ""
+    }
+  service: "cd.solarwinds.observability.saas.activity_logs"
+  result:
+    custom:
+      cds:
+        solarwinds_observability_saas:
+          activity_log:
+            id: "1841875115468422323"
+            process_name: "kernel"
+      hostname: "ub22-50-2-88"
+      message: "kernel: [346.135888] audit: type=1400 audit(1739870729.233:82): apparmor='STATUS' operation='profile_replace' profile='unconfined' name='snap.lxd.buginfo' pid=2784 comm='apparmor_parser'"
+      pid: 346.135888
+      program: ""
+      severity: "INFO"
+      timestamp: "2025-02-28T14:55:29Z"
+    message: "Feb 18 14:55:29 ub22-50-2-88 kernel: [346.135888] audit: type=1400 audit(1739870729.233:82): apparmor='STATUS' operation='profile_replace' profile='unconfined' name='snap.lxd.buginfo' pid=2784 comm='apparmor_parser'"
+    service: "cd.solarwinds.observability.saas.activity_logs"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1740754529000
+ -
+  sample: |-
+    {
+      "severity" : "INFO",
+      "hostname" : "ub22-50-9-251",
+      "id" : "1841875115468440154",
+      "time" : "2025-02-17T06:31:39Z",
+      "program" : "",
+      "message" : "Feb 17 06:31:39 ub22-50-9-251 dbus-daemon[994]: [system] Failed to activate service 'org.freedesktop.timedate1': timed out (service_start_timeout=25000ms)"
+    }
+  service: "cd.solarwinds.observability.saas.activity_logs"
+  result:
+    custom:
+      cds:
+        solarwinds_observability_saas:
+          activity_log:
+            id: "1841875115468440154"
+            process_name: "dbus-daemon"
+      date: 35596800000
+      hostname: "ub22-50-9-251"
+      message: "dbus-daemon[994]: [system] Failed to activate service 'org.freedesktop.timedate1': timed out (service_start_timeout=25000ms)"
+      pid: 994.0
+      program: ""
+      severity: "INFO"
+      timestamp: "2025-02-17T06:31:39Z"
+    message: "Feb 17 06:31:39 ub22-50-9-251 dbus-daemon[994]: [system] Failed to activate service 'org.freedesktop.timedate1': timed out (service_start_timeout=25000ms)"
+    service: "cd.solarwinds.observability.saas.activity_logs"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1739773899000
+ -
+  sample: |-
+    {
+      "severity" : "INFO",
+      "hostname" : "ub22-50-2-88",
+      "id" : "1841875115468440156",
+      "time" : "2025-02-18T14:52:01Z",
+      "program" : "",
+      "message" : "Feb 18 14:52:01 ub22-50-2-88 sudo:     root : unable to resolve host ub22-50-9-251: Temporary failure in name resolution"
+    }
+  service: "cd.solarwinds.observability.saas.activity_logs"
+  result:
+    custom:
+      cds:
+        solarwinds_observability_saas:
+          activity_log:
+            id: "1841875115468440156"
+      hostname: "ub22-50-2-88"
+      message: "sudo:     root : unable to resolve host ub22-50-9-251: Temporary failure in name resolution"
+      program: ""
+      severity: "INFO"
+      timestamp: "2025-02-18T14:52:01Z"
+    message: "Feb 18 14:52:01 ub22-50-2-88 sudo:     root : unable to resolve host ub22-50-9-251: Temporary failure in name resolution"
+    service: "cd.solarwinds.observability.saas.activity_logs"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1739890321000
+ -
+  sample: |-
+    {
+      "severity" : "INFO",
+      "hostname" : "ub22-50-12-87",
+      "id" : "1841875115468440158",
+      "time" : "2025-03-27T11:21:10Z",
+      "program" : "",
+      "message" : "Feb 17 09:17:01 ub22-50-12-87 CRON[3376972]: pam_unix(cron:session): session opened for user root(uid=0) by (uid=0)"
+    }
+  service: "cd.solarwinds.observability.saas.activity_logs"
+  result:
+    custom:
+      cds:
+        solarwinds_observability_saas:
+          activity_log:
+            id: "1841875115468440158"
+            process_name: "CRON"
+            session_type: "cron"
+      date: 35596800000
+      hostname: "ub22-50-12-87"
+      message: "session opened for user root(uid=0) by (uid=0)"
+      pid: 3376972.0
+      program: ""
+      severity: "INFO"
+      timestamp: "2025-03-27T11:21:10Z"
+    message: "Feb 17 09:17:01 ub22-50-12-87 CRON[3376972]: pam_unix(cron:session): session opened for user root(uid=0) by (uid=0)"
+    service: "cd.solarwinds.observability.saas.activity_logs"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1743074470000
+ -
+  sample: |-
+    {
+      "lastSeenTime" : "2025-02-05T16:05:33Z",
+      "updatedTime" : "2025-02-05T16:05:33Z",
+      "inMaintenance" : false,
+      "displayName" : "mysql on ub22-50-6-169 listening on localhost:3306",
+      "name" : "mysql on ub22-50-6-169 listening on localhost:3306",
+      "createdTime" : "2025-01-27T06:38:20Z",
+      "attributes" : {
+        "databaseType" : "mysql",
+        "hasLocalDB" : false,
+        "uamsClientID" : "08aecfdb-2e7e-48ba-a152-49d99ae57474",
+        "databaseBindings" : [ "0.0.0.0:3306,[::]:3306" ],
+        "credentialId" : "551014607196610678",
+        "databaseQueryCapture" : "sniff",
+        "databaseAddress" : "localhost:3306",
+        "state" : {
+          "nativeState" : "6"
+        },
+        "databaseVersion" : "10.6.18-MariaDB-0ubuntu0.22.04.1"
+      },
+      "id" : "e-1820423051741614080",
+      "healthscore" : {
+        "score" : 100,
+        "category" : "good"
+      },
+      "type" : "DatabaseInstance"
+    }
+  service: "cd.solarwinds.observability.saas.entities"
+  result:
+    custom:
+      attributes:
+        credentialId: "551014607196610678"
+        databaseAddress: "localhost:3306"
+        databaseBindings:
+         - "0.0.0.0:3306,[::]:3306"
+        databaseQueryCapture: "sniff"
+        databaseType: "mysql"
+        databaseVersion: "10.6.18-MariaDB-0ubuntu0.22.04.1"
+        hasLocalDB: false
+        state:
+          nativeState: "6"
+        uamsClientID: "08aecfdb-2e7e-48ba-a152-49d99ae57474"
+      cds:
+        solarwinds_observability_saas:
+          entity:
+            id: "e-1820423051741614080"
+            name: "mysql on ub22-50-6-169 listening on localhost:3306"
+            type: "DatabaseInstance"
+      createdTime: "2025-01-27T06:38:20Z"
+      displayName: "mysql on ub22-50-6-169 listening on localhost:3306"
+      healthscore:
+        category: "good"
+        score: 100
+      inMaintenance: false
+      lastSeenTime: "2025-02-05T16:05:33Z"
+      timestamp: "2025-02-05T16:05:33Z"
+    message: |-
+      {
+        "lastSeenTime" : "2025-02-05T16:05:33Z",
+        "updatedTime" : "2025-02-05T16:05:33Z",
+        "inMaintenance" : false,
+        "displayName" : "mysql on ub22-50-6-169 listening on localhost:3306",
+        "name" : "mysql on ub22-50-6-169 listening on localhost:3306",
+        "createdTime" : "2025-01-27T06:38:20Z",
+        "attributes" : {
+          "databaseType" : "mysql",
+          "hasLocalDB" : false,
+          "uamsClientID" : "08aecfdb-2e7e-48ba-a152-49d99ae57474",
+          "databaseBindings" : [ "0.0.0.0:3306,[::]:3306" ],
+          "credentialId" : "551014607196610678",
+          "databaseQueryCapture" : "sniff",
+          "databaseAddress" : "localhost:3306",
+          "state" : {
+            "nativeState" : "6"
+          },
+          "databaseVersion" : "10.6.18-MariaDB-0ubuntu0.22.04.1"
+        },
+        "id" : "e-1820423051741614080",
+        "healthscore" : {
+          "score" : 100,
+          "category" : "good"
+        },
+        "type" : "DatabaseInstance"
+      }
+    service: "cd.solarwinds.observability.saas.entities"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1738771533000

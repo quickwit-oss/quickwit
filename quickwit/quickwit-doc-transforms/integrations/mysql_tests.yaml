@@ -1,0 +1,319 @@
+id: "mysql"
+tests:
+ -
+  sample: "2017-12-29T12:33:33.095243Z         2 Query     SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE CREATE_OPTIONS LIKE partiion;"
+  result:
+    custom:
+      db:
+        date: 1514550813095
+        operation: "Query"
+        statement: "SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE CREATE_OPTIONS LIKE partiion;"
+      thread_id: 2
+    message: "2017-12-29T12:33:33.095243Z         2 Query     SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE CREATE_OPTIONS LIKE partiion;"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1514550813095
+ -
+  sample: "2017-12-29T12:04:09.954078Z 0 [Warning] System table \"plugin\" is expected to be transactional."
+  result:
+    custom:
+      db:
+        date: 1514549049954
+        severity: "Warning"
+      message: "System table \"plugin\" is expected to be transactional."
+      thread_id: 0
+    message: "2017-12-29T12:04:09.954078Z 0 [Warning] System table \"plugin\" is expected to be transactional."
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1514549049954
+ -
+  sample: "171113 14:14:20  InnoDB: Shutdown completed; log sequence number 1595675"
+  result:
+    custom:
+      db:
+        date: 1510582460000
+      message: "Shutdown completed; log sequence number 1595675"
+    message: "171113 14:14:20  InnoDB: Shutdown completed; log sequence number 1595675"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1510582460000
+ -
+  sample: "201210 20:58:16\t424242 Query\tSELECT option_value FROM galaxy_guide WHERE option_name = 'zaphod' LIMIT 1;\n"
+  result:
+    custom:
+      db:
+        date: 1607633896000
+        operation: "Query"
+        statement: "SELECT option_value FROM galaxy_guide WHERE option_name = 'zaphod' LIMIT 1;"
+      thread_id: 424242
+    message: "201210 20:58:16\t424242 Query\tSELECT option_value FROM galaxy_guide WHERE option_name = 'zaphod' LIMIT 1;\n"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1607633896000
+ -
+  sample: "424242 Query\tSELECT option_value FROM galaxy_guide WHERE option_name = 'trillian' LIMIT 1;\n"
+  result:
+    custom:
+      db:
+        operation: "Query"
+        statement: "SELECT option_value FROM galaxy_guide WHERE option_name = 'trillian' LIMIT 1;"
+      thread_id: 424242
+    message: "424242 Query\tSELECT option_value FROM galaxy_guide WHERE option_name = 'trillian' LIMIT 1;\n"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |
+    2021-07-06  7:29:32 0 [Warning] You need to use --log-bin to make --expire-logs-days or --binlog-expire-logs-seconds work.
+  result:
+    custom:
+      db:
+        date: 1625556572000
+        severity: "Warning"
+      message: "You need to use --log-bin to make --expire-logs-days or --binlog-expire-logs-seconds work."
+      thread_id: 0
+    message: |
+      2021-07-06  7:29:32 0 [Warning] You need to use --log-bin to make --expire-logs-days or --binlog-expire-logs-seconds work.
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1625556572000
+ -
+  sample: |
+    2016-06-15 16:53:33 139651251140544 [Note] InnoDB: The InnoDB memory heap is disabled
+  result:
+    custom:
+      db:
+        date: 1466009613000
+        severity: "Note"
+      message: "InnoDB: The InnoDB memory heap is disabled"
+      thread_id: 139651251140544
+    message: |
+      2016-06-15 16:53:33 139651251140544 [Note] InnoDB: The InnoDB memory heap is disabled
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1466009613000
+ -
+  sample: |
+    2016-06-15  7:53:33 139651251140544 [Note] InnoDB: The InnoDB memory heap is disabled
+  result:
+    custom:
+      db:
+        date: 1465977213000
+        severity: "Note"
+      message: "InnoDB: The InnoDB memory heap is disabled"
+      thread_id: 139651251140544
+    message: |
+      2016-06-15  7:53:33 139651251140544 [Note] InnoDB: The InnoDB memory heap is disabled
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1465977213000
+ -
+  sample: |
+    # Query_time: 0.214922  Lock_time: 0.000184 Rows_sent: 248832  Rows_examined: 72
+    SET timestamp=1574851393;
+    SELECT * FROM fruit f1, fruit f2, fruit f3, fruit f4, fruit f5;
+  result:
+    custom:
+      Lock_time: 1.84E-4
+      Query_time: 0.214922
+      Rows_examined: 72
+      Rows_sent: 248832
+      db:
+        date: 1.574851393E12
+        operation: "SELECT"
+        statement: "SELECT * FROM fruit f1, fruit f2, fruit f3, fruit f4, fruit f5;"
+      duration: 2.14922E8
+      mysql:
+        query:
+          timestamp: 1.574851393E9
+    message: |
+      # Query_time: 0.214922  Lock_time: 0.000184 Rows_sent: 248832  Rows_examined: 72
+      SET timestamp=1574851393;
+      SELECT * FROM fruit f1, fruit f2, fruit f3, fruit f4, fruit f5;
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1574851393000
+ -
+  sample: |
+    # Time: 2019-11-27T10:43:13.460744Z
+    # User@Host: root[root] @ localhost [1.2.3.4]  Id:    35
+    # Query_time: 0.214922  Lock_time: 0.000184 Rows_sent: 248832  Rows_examined: 72
+    SET timestamp=1574851393;
+    SELECT * FROM fruit f1, fruit f2, fruit f3, fruit f4, fruit f5;
+  result:
+    custom:
+      Lock_time: 1.84E-4
+      Query_time: 0.214922
+      Rows_examined: 72
+      Rows_sent: 248832
+      db:
+        date: 1.574851393E12
+        host: "localhost"
+        operation: "SELECT"
+        statement: "SELECT * FROM fruit f1, fruit f2, fruit f3, fruit f4, fruit f5;"
+        user: "root[root]"
+      duration: 2.14922E8
+      mysql:
+        query:
+          id: 35.0
+          timestamp: 1.574851393E9
+      network:
+        client:
+          ip: "1.2.3.4"
+    message: |
+      # Time: 2019-11-27T10:43:13.460744Z
+      # User@Host: root[root] @ localhost [1.2.3.4]  Id:    35
+      # Query_time: 0.214922  Lock_time: 0.000184 Rows_sent: 248832  Rows_examined: 72
+      SET timestamp=1574851393;
+      SELECT * FROM fruit f1, fruit f2, fruit f3, fruit f4, fruit f5;
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1574851393000
+ -
+  sample: |
+    # Time: 2019-11-27T10:43:13.460744Z
+    # User@Host: root[root] @ localhost []  Id:    35
+    # Query_time: 0.214922  Lock_time: 0.000184 Rows_sent: 248832  Rows_examined: 72
+    # Thread_id: 55   Killed: 0  Errno: 0
+    # Bytes_sent: 123456   Bytes_received: 0
+    SET timestamp=1574851393;
+    SELECT * FROM fruit f1, fruit f2, fruit f3, fruit f4, fruit f5
+  result:
+    custom:
+      Bytes_received: 0
+      Bytes_sent: 123456
+      Errno: 0
+      Killed: 0
+      Lock_time: 1.84E-4
+      Query_time: 0.214922
+      Rows_examined: 72
+      Rows_sent: 248832
+      Thread_id: 55
+      db:
+        date: 1.574851393E12
+        host: "localhost"
+        operation: "SELECT"
+        statement: "SELECT * FROM fruit f1, fruit f2, fruit f3, fruit f4, fruit f5"
+        user: "root[root]"
+      duration: 2.14922E8
+      mysql:
+        query:
+          id: 35.0
+          timestamp: 1.574851393E9
+      network:
+        bytes_read: 0
+        bytes_written: 123456
+    message: |
+      # Time: 2019-11-27T10:43:13.460744Z
+      # User@Host: root[root] @ localhost []  Id:    35
+      # Query_time: 0.214922  Lock_time: 0.000184 Rows_sent: 248832  Rows_examined: 72
+      # Thread_id: 55   Killed: 0  Errno: 0
+      # Bytes_sent: 123456   Bytes_received: 0
+      SET timestamp=1574851393;
+      SELECT * FROM fruit f1, fruit f2, fruit f3, fruit f4, fruit f5
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1574851393000
+ -
+  sample: |
+    # Time: 191127 15:45:44
+    # User@Host: root[root] @ localhost [1.2.3.4]
+    # Thread_id: 55  Schema: app  QC_hit: No
+    # Query_time: 0.214922  Lock_time: 0.000159 Rows_sent: 248832  Rows_examined: 12
+    # Rows_affected: 0
+    use app;
+    SET timestamp=1574869544;
+    SELECT * FROM fruit f1, fruit f2, fruit f3, fruit f4, fruit f5;
+  result:
+    custom:
+      Lock_time: 1.59E-4
+      QC_hit: "No"
+      Query_time: 0.214922
+      Rows_affected: 0
+      Rows_examined: 12
+      Rows_sent: 248832
+      Schema: "app"
+      Thread_id: 55
+      db:
+        date: 1.574869544E12
+        host: "localhost"
+        instance: "app"
+        operation: "SELECT"
+        statement: "SELECT * FROM fruit f1, fruit f2, fruit f3, fruit f4, fruit f5;"
+        user: "root[root]"
+      duration: 2.14922E8
+      mysql:
+        query:
+          timestamp: 1.574869544E9
+      network:
+        client:
+          ip: "1.2.3.4"
+    message: |
+      # Time: 191127 15:45:44
+      # User@Host: root[root] @ localhost [1.2.3.4]
+      # Thread_id: 55  Schema: app  QC_hit: No
+      # Query_time: 0.214922  Lock_time: 0.000159 Rows_sent: 248832  Rows_examined: 12
+      # Rows_affected: 0
+      use app;
+      SET timestamp=1574869544;
+      SELECT * FROM fruit f1, fruit f2, fruit f3, fruit f4, fruit f5;
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1574869544000
+ -
+  sample: |
+    # Time: 191127 15:45:44
+    # User@Host: root[root] @ localhost [1.2.3.4]
+    # Thread_id: 55  Schema: app  Last_errno: 0  Killed: 0
+    # Query_time: 0.214922  Lock_time: 0.000159 Rows_sent: 248832  Rows_examined: 12  Rows_affected: 0
+    # Bytes_sent: 123456
+    # Stored_routine: fruit.five_product
+    use app;
+    SET timestamp=1574869544;
+    SELECT * FROM fruit f1, fruit f2, fruit f3, fruit f4, fruit f5;
+  result:
+    custom:
+      Bytes_sent: 123456
+      Killed: 0
+      Last_errno: 0
+      Lock_time: 1.59E-4
+      Query_time: 0.214922
+      Rows_affected: 0
+      Rows_examined: 12
+      Rows_sent: 248832
+      Schema: "app"
+      Stored_routine: "fruit.five_product"
+      Thread_id: 55
+      db:
+        date: 1.574869544E12
+        host: "localhost"
+        instance: "app"
+        operation: "SELECT"
+        statement: "SELECT * FROM fruit f1, fruit f2, fruit f3, fruit f4, fruit f5;"
+        user: "root[root]"
+      duration: 2.14922E8
+      mysql:
+        query:
+          timestamp: 1.574869544E9
+      network:
+        bytes_written: 123456
+        client:
+          ip: "1.2.3.4"
+    message: |
+      # Time: 191127 15:45:44
+      # User@Host: root[root] @ localhost [1.2.3.4]
+      # Thread_id: 55  Schema: app  Last_errno: 0  Killed: 0
+      # Query_time: 0.214922  Lock_time: 0.000159 Rows_sent: 248832  Rows_examined: 12  Rows_affected: 0
+      # Bytes_sent: 123456
+      # Stored_routine: fruit.five_product
+      use app;
+      SET timestamp=1574869544;
+      SELECT * FROM fruit f1, fruit f2, fruit f3, fruit f4, fruit f5;
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1574869544000
+

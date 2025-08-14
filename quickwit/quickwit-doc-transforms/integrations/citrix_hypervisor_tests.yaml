@@ -1,0 +1,70 @@
+id: "citrix_hypervisor"
+tests:
+ -
+  sample: "Jul 26 08:48:09 xenserver-c xcp-rrdd-iostat: [debug||0 ||xcp-rrdd-iostat] Forking command /usr/sbin/tap-ctl list"
+  result:
+    custom:
+      date: 17830089000
+      level: "debug"
+      syslog:
+        appname: "xcp-rrdd-iostat"
+        env: "xcp-rrdd-iostat"
+        hostname: "xenserver-c"
+        pid: 0
+    message: "Forking command /usr/sbin/tap-ctl list"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 17830089000
+ -
+  sample: "Jul 26 08:48:06 xenserver-c xapi: [debug||119817 UNIX /var/lib/xcp/xapi||dummytaskhelper] task dispatch:event.from D:da0fb60666cd created by task D:da9ec36fd6f1"
+  result:
+    custom:
+      date: 17830086000
+      level: "debug"
+      path: "/var/lib/xcp/xapi"
+      syslog:
+        appname: "xapi"
+        env: "dummytaskhelper"
+        hostname: "xenserver-c"
+        pid: 119817
+    message: "task dispatch:event.from D:da0fb60666cd created by task D:da9ec36fd6f1"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 17830086000
+ -
+  sample: "Sep  9 09:12:06 xenserver-c xcp-rrdd: [ info||7 ||rrdd_main] GC heap_words = 566784"
+  result:
+    custom:
+      date: 21719526000
+      level: "info"
+      syslog:
+        appname: "xcp-rrdd"
+        env: "rrdd_main"
+        hostname: "xenserver-c"
+        pid: 7
+    message: "GC heap_words = 566784"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 21719526000
+ -
+  sample: "Sep 15 06:28:31 xenserver-c xapi: [ info||204169 UNIX /var/lib/xcp/xapi|session.slave_login D:c2acec0eba79|xapi_session] Session.create trackid=123abc pool=true uname= originator=xapi is_local_superuser=true auth_user_sid= parent=trackid=456def"
+  result:
+    custom:
+      date: 22228111000
+      level: "info"
+      origin: "session.slave_login D:c2acec0eba79"
+      path: "/var/lib/xcp/xapi"
+      syslog:
+        appname: "xapi"
+        env: "xapi_session"
+        hostname: "xenserver-c"
+        pid: 204169
+    message: "Session.create trackid=123abc pool=true uname= originator=xapi is_local_superuser=true auth_user_sid= parent=trackid=456def"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 22228111000
+

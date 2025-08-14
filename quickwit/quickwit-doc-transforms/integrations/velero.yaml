@@ -1,0 +1,88 @@
+id: velero
+metric_id: velero
+backend_only: false
+facets:
+  - description: Name of the backup
+    facetType: list
+    groups:
+      - Backup
+    name: Backup
+    path: backup
+    source: log
+    type: string
+  - description: Backup location
+    facetType: list
+    groups:
+      - Backup
+    name: Backup Location
+    path: backupLocation
+    source: log
+    type: string
+  - description: Name of the restore
+    facetType: list
+    groups:
+      - Backup
+    name: Restore
+    path: restore
+    source: log
+    type: string
+pipeline:
+  type: pipeline
+  name: Velero
+  enabled: true
+  filter:
+    query: source:velero
+  processors:
+    - type: grok-parser
+      name: Primary parser
+      enabled: true
+      source: message
+      samples:
+        - time="2025-03-14T16:28:19Z" level=info msg="Listing items"
+          backup=velero/nginx-backup group=velero.io/v2alpha1
+          logSource="pkg/backup/item_collector.go:524" namespace=
+          resource=datadownloads
+        - >
+          time="2025-03-01T18:41:30Z" level=error msg="error encountered while
+          scanning stdout" backupLocation=velero/default
+          cmd=/plugins/velero-plugin-for-gcp controller=backup-sync error="read
+          |0: file already closed"
+          logSource="pkg/plugin/clientmgmt/process/logrus_adapter.go:90"
+        - 'time="2025-03-03T10:46:27Z" level=warning msg="Namespace
+          nginx-example, resource restore warning: could not restore, ConfigMap
+          \"kube-root-ca.crt\" already exists. Warning: the in-cluster version
+          is different than the backed-up version"
+          logSource="pkg/controller/restore_controller.go:611"
+          restore=velero/nginx-backup-20250303114623'
+        - 'time="2025-03-01T17:53:30Z" level=info msg="Starting EventSource"
+          controller=backup controllerGroup=velero.io controllerKind=Backup
+          logSource="/go/pkg/mod/github.com/bombsimon/logrusr/v3@v3.0.0/logrusr.go:108"
+          source="kind source: *v1.Backup"'
+        - '2025-03-18T10:32:47Z	INFO	Starting workers	{"controller":
+          "podvolumerestore", "controllerGroup": "velero.io", "controllerKind":
+          "PodVolumeRestore", "worker count": 1}'
+      grok:
+        supportRules: |-
+          time %{date("yyyy-MM-dd'T'HH:mm:ss'Z'"):timestamp}
+          level level=%{word:level}
+          msg_string (?:\\.|[^\"\\])*
+        matchRules: >-
+          main_rule time="%{time}" %{level} msg="%{msg_string:msg}" %{data::keyvalue("="," \",:*/")}
+
+          node_agent_rule %{time}\s%{word:level}\s(controller-runtime.metrics\t)?%{regex("[^\\t]+"):operation}(\s%{data:json})?
+
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: message-remapper
+      name: Define `msg` as the official message of the log
+      enabled: true
+      sources:
+        - msg

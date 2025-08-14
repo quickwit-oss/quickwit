@@ -1,0 +1,46 @@
+id: tibco_ems
+metric_id: tibco-ems
+backend_only: false
+installation_sources:
+  - tibco_ems
+  - ems
+facets:
+pipeline:
+  type: pipeline
+  name: Tibco EMS
+  enabled: true
+  filter:
+    query: source:(tibco_ems OR ems)
+  processors:
+    - type: grok-parser
+      name:  Tibco EMS Parser
+      enabled: true
+      source: message
+      samples:
+        - "2024-07-31 18:32:12.436 Set server properties 'large_destination_memory' and 'large_destination_count' respectively to alter these thresholds."
+        - "2024-07-31 17:41:26.135 WARNING: Route Warning: host of this name does not exist: /test"
+        - "2024-07-31 18:02:35.249 [admin@d3ce69f9df4f]: connect failed: not authorized to connect"
+      grok:
+        matchRules: |
+          tibco_log_user %{_date} \[%{word:tibco.user}@%{word:tibco.server_name}\]: %{_msg}
+          tibco_log_level %{_date} %{_level}: %{_msg}
+          tibco_log %{_date} %{_msg}
+        supportRules: |
+          _date %{date("yyyy-MM-dd HH:mm:ss.SSS"):timestamp}
+          _level  %{notSpace:level}
+          _msg %{data:msg}
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: message-remapper
+      name: Define `msg` as the official message of the log
+      enabled: true
+      sources:
+        - msg

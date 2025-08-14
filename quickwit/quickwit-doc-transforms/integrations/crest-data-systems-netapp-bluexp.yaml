@@ -1,0 +1,30 @@
+id: crest-data-systems-netapp-bluexp
+metric_id: crest-data-systems-netapp-bluexp
+backend_only: false
+facets: null
+pipeline:
+  type: pipeline
+  name: NetApp BlueXP by Crest Data
+  enabled: true
+  filter:
+    query: "source:crest-data-systems-netapp-bluexp"
+  processors:
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - name: Map `status` to `logStatus`
+      enabled: true
+      source: status
+      target: logStatus
+      lookupTable: |-
+        failed, error
+        success, ok
+        pending, debug
+      type: lookup-processor
+    - type: status-remapper
+      name: Define `logStatus` as the official status of the log
+      enabled: true
+      sources:
+        - logStatus

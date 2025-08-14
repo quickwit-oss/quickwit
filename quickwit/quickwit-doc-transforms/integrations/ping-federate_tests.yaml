@@ -1,0 +1,214 @@
+id: ping-federate
+tests:
+  - sample: "2024-06-04 11:19:53,283 | Administrator | UserAdmin,Admin,CryptoAdmin,ExpressionAdmin | 185.64.148.0 | USER | LOGIN_ATTEMPT | testevdentdetailid | Login was successful"
+    service: admin
+    result:
+      custom:
+        component: "USER"
+        description: "Login was successful"
+        evt:
+          id: "testevdentdetailid"
+          name: "LOGIN_ATTEMPT"
+        network:
+          client:
+            geoip:
+              city:
+                name: "Paris"
+              continent:
+                code: "EU"
+                name: "Europe"
+              country:
+                iso_code: "FR"
+                name: "France"
+              ipAddress: "185.64.148.0"
+              location:
+                latitude: 48.90654
+                longitude: 2.33339
+              subdivision:
+                iso_code: "FR-IDF"
+                name: "Île-de-France"
+              timezone: "Europe/Paris"
+            ip: "185.64.148.0"
+        roles:
+        - "UserAdmin"
+        - "Admin"
+        - "CryptoAdmin"
+        - "ExpressionAdmin"
+        timestamp: 1717499993283
+        usr:
+          name: "Administrator"
+      message: "2024-06-04 11:19:53,283 | Administrator | UserAdmin,Admin,CryptoAdmin,ExpressionAdmin | 185.64.148.0 | USER | LOGIN_ATTEMPT | testevdentdetailid | Login was successful"
+      service: "admin"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1717499993283
+  - sample: "2024-06-04 11:19:53,284 | Administrator | UserAdmin,Admin,CryptoAdmin,ExpressionAdmin | 185.64.148.0 | USER | ROLE_CHANGE | 5af978f8-80a2-44d6-ad56-ehjje0ecbe392af | testuser | CryptoAdmin | UserAdmin,Admin,CryptoAdmin"
+    service: admin
+    result:
+      custom:
+        component: "USER"
+        description: "testuser | CryptoAdmin | UserAdmin,Admin,CryptoAdmin"
+        evt:
+          id: "5af978f8-80a2-44d6-ad56-ehjje0ecbe392af"
+          name: "ROLE_CHANGE"
+        network:
+          client:
+            geoip:
+              city:
+                name: "Paris"
+              continent:
+                code: "EU"
+                name: "Europe"
+              country:
+                iso_code: "FR"
+                name: "France"
+              ipAddress: "185.64.148.0"
+              location:
+                latitude: 48.90654
+                longitude: 2.33339
+              subdivision:
+                iso_code: "FR-IDF"
+                name: "Île-de-France"
+              timezone: "Europe/Paris"
+            ip: "185.64.148.0"
+        roles:
+        - "UserAdmin"
+        - "Admin"
+        - "CryptoAdmin"
+        - "ExpressionAdmin"
+        timestamp: 1717499993284
+        usr:
+          name: "Administrator"
+      message: "2024-06-04 11:19:53,284 | Administrator | UserAdmin,Admin,CryptoAdmin,ExpressionAdmin | 185.64.148.0 | USER | ROLE_CHANGE | 5af978f8-80a2-44d6-ad56-ehjje0ecbe392af | testuser | CryptoAdmin | UserAdmin,Admin,CryptoAdmin"
+      service: "admin"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1717499993284
+
+  - sample: "2024-06-17 11:04:19,342| tid:LFcUz_Kyuqp4RcRrdnB2YS72Z3g| AUTHN_ATTEMPT| analyst| 185.64.148.0 | PingApp| connection1| SAML20| crest-pingfederate.com| IdP| failure| OpenLDAP| Invalid Credentials| 200"
+    service: audit
+    result:
+      custom:
+        adapterid: "OpenLDAP"
+        app: "PingApp"
+        duration: 2.0E8
+        error:
+          message: "Invalid Credentials"
+        evt:
+          name: "AUTHN_ATTEMPT"
+          outcome: "failure"
+        http:
+          url_details:
+            host: "crest-pingfederate.com"
+        network:
+          client:
+            geoip:
+              city:
+                name: "Paris"
+              continent:
+                code: "EU"
+                name: "Europe"
+              country:
+                iso_code: "FR"
+                name: "France"
+              ipAddress: "185.64.148.0"
+              location:
+                latitude: 48.90654
+                longitude: 2.33339
+              subdivision:
+                iso_code: "FR-IDF"
+                name: "Île-de-France"
+              timezone: "Europe/Paris"
+            ip: "185.64.148.0"
+        ping_federate:
+          transaction:
+            connection:
+              id: "connection1"
+            role: "IdP"
+            subject: "analyst"
+        protocol: "SAML20"
+        timestamp: 1718622259342
+        trackingid: "LFcUz_Kyuqp4RcRrdnB2YS72Z3g"
+      message: "2024-06-17 11:04:19,342| tid:LFcUz_Kyuqp4RcRrdnB2YS72Z3g| AUTHN_ATTEMPT| analyst| 185.64.148.0 | PingApp| connection1| SAML20| crest-pingfederate.com| IdP| failure| OpenLDAP| Invalid Credentials| 200"
+      service: "audit"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1718622259342
+  - sample: "2024-06-17 11:04:19,341| tid:LFcUz_Kyuqp4RcRrdnB2YS72Z3g| AUTHN_ATTEMPT| analyst| 185.64.148.0 | PingApp| connection1| SAML20| crest-pingfederate.com| IdP| failure| OpenLDAP| Invalid Credentials| 200| qwerty-1234-asdfgh-5678| email=john.doe@example.com, name=John Doe, role=admin| authorization_code| SP| Request| response-123456| john.doe| req-abcdef123456| 1617692015000| resp-7890ghijkl| sts-processor-1234| [spAdapter.SAML2, spConnection.PartnerSP]| [adapter.HTMLFormSimplePCV, idpConnection.IdP, localIdentity.A8me9rySDn1aIM48]| pcv-ldap| virtualserver-01| MyOAuthClient| req-1234567890abcdef"
+    service: audit
+    result:
+      custom:
+        adapterid: "OpenLDAP"
+        app: "PingApp"
+        attributes:
+          email: "john.doe@example.com"
+          name: "John"
+          role: "admin"
+        authentication:
+          sourceid:
+          - "adapter.HTMLFormSimplePCV"
+          - " idpConnection.IdP"
+          - " localIdentity.A8me9rySDn1aIM48"
+          targetsessionid:
+          - "spAdapter.SAML2"
+          - " spConnection.PartnerSP"
+        error:
+          message: "Invalid Credentials"
+        duration: 2.0E8
+        evt:
+          name: "AUTHN_ATTEMPT"
+          outcome: "failure"
+        http:
+          request_id: "req-1234567890abcdef"
+          requeststarttime: "1617692015000"
+          url_details:
+            host: "crest-pingfederate.com"
+        inmessagetype: "Request"
+        inresponseto: "response-123456"
+        network:
+          client:
+            geoip:
+              city:
+                name: "Paris"
+              continent:
+                code: "EU"
+                name: "Europe"
+              country:
+                iso_code: "FR"
+                name: "France"
+              ipAddress: "185.64.148.0"
+              location:
+                latitude: 48.90654
+                longitude: 2.33339
+              subdivision:
+                iso_code: "FR-IDF"
+                name: "Île-de-France"
+              timezone: "Europe/Paris"
+            ip: "185.64.148.0"
+        oauth:
+          granttype: "authorization_code"
+          attrackingid: "qwerty-1234-asdfgh-5678"
+        ping_federate:
+          transaction:
+            connection:
+              id: "connection1"
+              name: "MyOAuthClient"
+            initiator: "SP"
+            role: "IdP"
+            stspluginid: "sts-processor-1234"
+            subject: "analyst"
+        protocol: "SAML20"
+        saml:
+          requestid: "req-abcdef123456"
+          responseid: "resp-7890ghijkl"
+        timestamp: 1718622259341
+        trackingid: "LFcUz_Kyuqp4RcRrdnB2YS72Z3g"
+        usr:
+          id: "john.doe"
+        validatorid: "pcv-ldap"
+        virtualserverid: "virtualserver-01"
+      message: "2024-06-17 11:04:19,341| tid:LFcUz_Kyuqp4RcRrdnB2YS72Z3g| AUTHN_ATTEMPT| analyst| 185.64.148.0 | PingApp| connection1| SAML20| crest-pingfederate.com| IdP| failure| OpenLDAP| Invalid Credentials| 200| qwerty-1234-asdfgh-5678| email=john.doe@example.com, name=John Doe, role=admin| authorization_code| SP| Request| response-123456| john.doe| req-abcdef123456| 1617692015000| resp-7890ghijkl| sts-processor-1234| [spAdapter.SAML2, spConnection.PartnerSP]| [adapter.HTMLFormSimplePCV, idpConnection.IdP, localIdentity.A8me9rySDn1aIM48]| pcv-ldap| virtualserver-01| MyOAuthClient| req-1234567890abcdef"
+      service: "audit"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1718622259341

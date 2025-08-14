@@ -1,0 +1,72 @@
+id: "docker"
+tests:
+ -
+  sample: "172.17.0.1 - - [06/Jan/2017:16:16:37 +0000] \"GET /datadoghq/company?test=var1%20Pl HTTP/1.1\" 404 612 \"http://www.perdu.com/\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36\" \"-\""
+  result:
+    custom:
+      http:
+        method: "GET"
+        referer: "http://www.perdu.com/"
+        status_code: 404
+        url: "/datadoghq/company?test=var1%20Pl"
+        useragent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36"
+        version: "1.1"
+      network:
+        bytes_written: 612
+        client:
+          ip: "172.17.0.1"
+      timestamp: 1483719397000
+    message: "172.17.0.1 - - [06/Jan/2017:16:16:37 +0000] \"GET /datadoghq/company?test=var1%20Pl HTTP/1.1\" 404 612 \"http://www.perdu.com/\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36\" \"-\""
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1483719397000
+ -
+  sample: "2018-07-05 10:08:08 GMT | INFO | (runner.go:309 in work) | Done running check network"
+  result:
+    custom:
+      datadog:
+        process: "work"
+      level: "INFO"
+      lineno: 309.0
+      logger:
+        name: "runner.go"
+      timestamp: 1530785288000
+    message: "2018-07-05 10:08:08 GMT | INFO | (runner.go:309 in work) | Done running check network"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1530785288000
+ -
+  sample: "W0601 14:20:25.000572       1 manager.go:147] Failed to get all responses in time (got 3/4)"
+  result:
+    custom:
+      level: "W"
+      lineno: 147.0
+      logger:
+        name: "manager.go"
+        thread_id: 1.0
+      timestamp: 44634025000
+    message: "W0601 14:20:25.000572       1 manager.go:147] Failed to get all responses in time (got 3/4)"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 44634025000
+ -
+  sample: "[ AGENT ] 2018-07-11 18:27:57 UTC | INFO | (transaction.go:121 in Process) | Successfully posted payload to \"https://6-3-0-app.agent.datadoghq.com/api/v1/series?api_key=*************************64a86\""
+  result:
+    custom:
+      datadog:
+        process: "Process"
+      level: "INFO"
+      lineno: 121.0
+      logger:
+        name: "transaction.go"
+      process:
+        name: "AGENT"
+      timestamp: 1531333677000
+    message: "[ AGENT ] 2018-07-11 18:27:57 UTC | INFO | (transaction.go:121 in Process) | Successfully posted payload to \"https://6-3-0-app.agent.datadoghq.com/api/v1/series?api_key=*************************64a86\""
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1531333677000
+

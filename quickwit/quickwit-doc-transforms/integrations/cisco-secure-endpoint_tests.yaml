@@ -1,0 +1,451 @@
+id: cisco-secure-endpoint
+tests:
+  -
+    sample: |-
+      {
+        "item" : "abc@xyz.com",
+        "audit_log_type" : "User",
+        "created_at" : "2024-06-19T10:16:22Z",
+        "audit_log_user" : "abc@xyz.com",
+        "event" : "sso_login",
+        "message" : "SCSO",
+        "audit_log_id" : "10bfd8f2-8569-4b78-8996-19acc900f4fc"
+      }
+    service: "audit"
+    result:
+      custom:
+        audit_log_type: "User"
+        created_at: "2024-06-19T10:16:22Z"
+        evt:
+          name: "sso_login"
+        item: "abc@xyz.com"
+        usr:
+          id: "10bfd8f2-8569-4b78-8996-19acc900f4fc"
+          name: "abc@xyz.com"
+      message: "SCSO"
+      service: "audit"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1718792182000
+  - 
+    sample: |-
+      {
+        "item" : "f_00020c",
+        "new_attributes" : {
+          "analysis_state" : "threat_analyses.threat_analysis.failed.description"
+        },
+        "audit_log_type" : "FetchedFile",
+        "created_at" : "2024-06-19T06:38:50Z",
+        "event" : "update"
+      }
+    service: "audit"
+    result:
+      custom:
+        audit_log_type: "FetchedFile"
+        created_at: "2024-06-19T06:38:50Z"
+        evt:
+          name: "update"
+        item: "f_00020c"
+        new_attributes:
+          analysis_state: "threat_analyses.threat_analysis.failed.description"
+      message: |-
+        {
+          "item" : "f_00020c",
+          "new_attributes" : {
+            "analysis_state" : "threat_analyses.threat_analysis.failed.description"
+          },
+          "audit_log_type" : "FetchedFile",
+          "created_at" : "2024-06-19T06:38:50Z",
+          "event" : "update"
+        }
+      service: "audit"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1718779130000
+  - 
+    sample: |-
+      {
+        "item" : "Unconfirmed 61021.crdownload",
+        "new_attributes" : {
+          "original_filename" : "f_000253",
+          "state" : "processing"
+        },
+        "audit_log_type" : "FetchedFile",
+        "created_at" : "2024-06-19T06:28:17Z",
+        "event" : "update",
+        "old_attributes" : {
+          "state" : "requested"
+        }
+      }
+    service: "audit"
+    result:
+      custom:
+        audit_log_type: "FetchedFile"
+        created_at: "2024-06-19T06:28:17Z"
+        evt:
+          name: "update"
+        item: "Unconfirmed 61021.crdownload"
+        new_attributes:
+          original_filename: "f_000253"
+          state: "processing"
+        old_attributes:
+          state: "requested"
+      message: |-
+        {
+          "item" : "Unconfirmed 61021.crdownload",
+          "new_attributes" : {
+            "original_filename" : "f_000253",
+            "state" : "processing"
+          },
+          "audit_log_type" : "FetchedFile",
+          "created_at" : "2024-06-19T06:28:17Z",
+          "event" : "update",
+          "old_attributes" : {
+            "state" : "requested"
+          }
+        }
+      service: "audit"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1718778497000
+  - 
+    sample: |-
+      {
+        "event" : {
+          "date" : "2024-06-17T13:17:50+00:00",
+          "severity" : "Medium",
+          "detection" : "a10.6C795DAE2F-100.SBX.TG",
+          "group_guids" : [ "187e0cf4-6a83-4ebf-a126-7bd16f6942d7" ],
+          "event_type_id" : 1090519054,
+          "timestamp_nanoseconds" : 659000000,
+          "computer" : {
+            "hostname" : "AssetTag-EID-New",
+            "network_addresses" : [ {
+              "ip" : "0.0.0.0",
+              "mac" : "a0:b0:10:10:ab:10"
+            } ],
+            "connector_guid" : "1e00608f-a921-485b-bbdf-32c59ae60e21",
+            "active" : true,
+            "links" : {
+              "computer" : "https://api.xyz.amp.cisco.com/v1/computers/1e62608f-a921-485b-bbdf-32c59ae60e21",
+              "trajectory" : "https://api.xyz.amp.cisco.com/v1/computers/1e62608f-a921-485b-bbdf-32c59ae60e21/trajectory",
+              "group" : "https://api.xyz.amp.cisco.com/v1/groups/187e0cf4-6a83-4ebf-a126-7bd16f6942d7"
+            },
+            "user" : "ABC@ASSETTAG-EID-NE",
+            "external_ip" : "10.10.10.10"
+          },
+          "event_type" : "Threat Detected",
+          "file" : {
+            "file_path" : "\\\\?\\C:\\Users\\Downloads\\Unconfirmed 245595.crdownload",
+            "parent" : {
+              "process_id" : 9584,
+              "disposition" : "Blocklisted",
+              "file_name" : "chrome.exe",
+              "identity" : {
+                "sha1" : "f1000100be1c100f97d9717f216b40d641c8add8",
+                "sha256" : "b100000dd4cc4bde76d3c9dd6ee14606fc72cbff57c757543d9ab511ac112c242",
+                "md5" : "bb0f1d1f1b0e100a1000000d1e100a1e"
+              }
+            },
+            "disposition" : "Malicious",
+            "file_name" : "Unconfirmed 245595.crdownload",
+            "identity" : {
+              "sha1" : "dd1006ac22294bf25e1eb89cf13d2a5edad36711",
+              "sha256" : "1c005dae2f80a493657ed336cad9745332258944331be5edaa7bb970070aee41",
+              "md5" : "2edc100998e26c12eb8922a37760110c"
+            }
+          },
+          "connector_guid" : "1e00608f-a921-485b-bbdf-32c59ae60e21",
+          "techniques" : [ "T1105", "T1204", "T1204.003", "T1569" ],
+          "tactics" : [ "TA0002", "TA0011", "TA0042" ],
+          "id" : 7381460803565650000,
+          "detection_id" : "1001460803565649962",
+          "timestamp" : 1718630270
+        },
+        "endpoint_details" : {
+          "is_compromised" : true,
+          "risk_score" : 100,
+          "operating_system" : "Windows 11, SP 0.0 (Build 22631.3593)",
+          "internal_ips" : [ "0.0.0.0" ],
+          "isolation" : {
+            "available" : true,
+            "status" : "not_isolated"
+          },
+          "policy" : {
+            "name" : "ABC Windows",
+            "guid" : "eb5fcfe1-11cd-4d0f-8c29-4c436d341000"
+          }
+        }
+      }
+    service: "event"
+    result:
+      custom:
+        endpoint_details:
+          internal_ips:
+          - "0.0.0.0"
+          is_compromised: true
+          isolation:
+            available: true
+            status: "not_isolated"
+          operating_system: "Windows 11, SP 0.0 (Build 22631.3593)"
+          policy:
+            guid: "eb5fcfe1-11cd-4d0f-8c29-4c436d341000"
+            name: "ABC Windows"
+          risk_score: 100
+        event:
+          computer:
+            active: true
+            connector_guid: "1e00608f-a921-485b-bbdf-32c59ae60e21"
+            hostname: "AssetTag-EID-New"
+            links:
+              computer: "https://api.xyz.amp.cisco.com/v1/computers/1e62608f-a921-485b-bbdf-32c59ae60e21"
+              group: "https://api.xyz.amp.cisco.com/v1/groups/187e0cf4-6a83-4ebf-a126-7bd16f6942d7"
+              trajectory: "https://api.xyz.amp.cisco.com/v1/computers/1e62608f-a921-485b-bbdf-32c59ae60e21/trajectory"
+            network_addresses:
+            -
+              ip: "0.0.0.0"
+              mac: "a0:b0:10:10:ab:10"
+          connector_guid: "1e00608f-a921-485b-bbdf-32c59ae60e21"
+          date: "2024-06-17T13:17:50+00:00"
+          detection: "a10.6C795DAE2F-100.SBX.TG"
+          detection_id: "1001460803565649962"
+          event_type_id: 1090519054
+          file:
+            disposition: "Malicious"
+            file_name: "Unconfirmed 245595.crdownload"
+            file_path: "\\\\?\\C:\\Users\\Downloads\\Unconfirmed 245595.crdownload"
+            identity:
+              md5: "2edc100998e26c12eb8922a37760110c"
+              sha1: "dd1006ac22294bf25e1eb89cf13d2a5edad36711"
+              sha256: "1c005dae2f80a493657ed336cad9745332258944331be5edaa7bb970070aee41"
+            parent:
+              disposition: "Blocklisted"
+              file_name: "chrome.exe"
+              identity:
+                md5: "bb0f1d1f1b0e100a1000000d1e100a1e"
+                sha1: "f1000100be1c100f97d9717f216b40d641c8add8"
+                sha256: "b100000dd4cc4bde76d3c9dd6ee14606fc72cbff57c757543d9ab511ac112c242"
+              process_id: 9584
+          group_guids:
+          - "187e0cf4-6a83-4ebf-a126-7bd16f6942d7"
+          id: 7381460803565650000
+          severity: "Medium"
+          status: "warning"
+          tactics:
+          - "TA0002"
+          - "TA0011"
+          - "TA0042"
+          techniques:
+          - "T1105"
+          - "T1204"
+          - "T1204.003"
+          - "T1569"
+          timestamp: 1718630270
+          timestamp_nanoseconds: 659000000
+        evt:
+          name: "Threat Detected"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+        usr:
+          name: "ABC@ASSETTAG-EID-NE"
+      message: |-
+        {
+          "event" : {
+            "date" : "2024-06-17T13:17:50+00:00",
+            "severity" : "Medium",
+            "detection" : "a10.6C795DAE2F-100.SBX.TG",
+            "group_guids" : [ "187e0cf4-6a83-4ebf-a126-7bd16f6942d7" ],
+            "event_type_id" : 1090519054,
+            "timestamp_nanoseconds" : 659000000,
+            "computer" : {
+              "hostname" : "AssetTag-EID-New",
+              "network_addresses" : [ {
+                "ip" : "0.0.0.0",
+                "mac" : "a0:b0:10:10:ab:10"
+              } ],
+              "connector_guid" : "1e00608f-a921-485b-bbdf-32c59ae60e21",
+              "active" : true,
+              "links" : {
+                "computer" : "https://api.xyz.amp.cisco.com/v1/computers/1e62608f-a921-485b-bbdf-32c59ae60e21",
+                "trajectory" : "https://api.xyz.amp.cisco.com/v1/computers/1e62608f-a921-485b-bbdf-32c59ae60e21/trajectory",
+                "group" : "https://api.xyz.amp.cisco.com/v1/groups/187e0cf4-6a83-4ebf-a126-7bd16f6942d7"
+              },
+              "user" : "ABC@ASSETTAG-EID-NE",
+              "external_ip" : "10.10.10.10"
+            },
+            "event_type" : "Threat Detected",
+            "file" : {
+              "file_path" : "\\\\?\\C:\\Users\\Downloads\\Unconfirmed 245595.crdownload",
+              "parent" : {
+                "process_id" : 9584,
+                "disposition" : "Blocklisted",
+                "file_name" : "chrome.exe",
+                "identity" : {
+                  "sha1" : "f1000100be1c100f97d9717f216b40d641c8add8",
+                  "sha256" : "b100000dd4cc4bde76d3c9dd6ee14606fc72cbff57c757543d9ab511ac112c242",
+                  "md5" : "bb0f1d1f1b0e100a1000000d1e100a1e"
+                }
+              },
+              "disposition" : "Malicious",
+              "file_name" : "Unconfirmed 245595.crdownload",
+              "identity" : {
+                "sha1" : "dd1006ac22294bf25e1eb89cf13d2a5edad36711",
+                "sha256" : "1c005dae2f80a493657ed336cad9745332258944331be5edaa7bb970070aee41",
+                "md5" : "2edc100998e26c12eb8922a37760110c"
+              }
+            },
+            "connector_guid" : "1e00608f-a921-485b-bbdf-32c59ae60e21",
+            "techniques" : [ "T1105", "T1204", "T1204.003", "T1569" ],
+            "tactics" : [ "TA0002", "TA0011", "TA0042" ],
+            "id" : 7381460803565650000,
+            "detection_id" : "1001460803565649962",
+            "timestamp" : 1718630270
+          },
+          "endpoint_details" : {
+            "is_compromised" : true,
+            "risk_score" : 100,
+            "operating_system" : "Windows 11, SP 0.0 (Build 22631.3593)",
+            "internal_ips" : [ "0.0.0.0" ],
+            "isolation" : {
+              "available" : true,
+              "status" : "not_isolated"
+            },
+            "policy" : {
+              "name" : "ABC Windows",
+              "guid" : "eb5fcfe1-11cd-4d0f-8c29-4c436d341000"
+            }
+          }
+        }
+      service: "event"
+      status: "warn"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1718630270000
+  - 
+    sample: |-
+      {
+        "event" : {
+          "date" : "2024-05-29T10:49:47+00:00",
+          "severity" : "High",
+          "group_guids" : [ "187e0cf4-6a83-4ebf-a126-7bd16f6942d7" ],
+          "error" : {
+            "description" : "Object name not found",
+            "error_code" : 3221225524
+          },
+          "event_type_id" : 2164260893,
+          "timestamp_nanoseconds" : 93000000,
+          "computer" : {
+            "hostname" : "AssetTag-EID-New",
+            "network_addresses" : [ {
+              "ip" : "10.10.10.10",
+              "mac" : "10:10:10:10:10:10"
+            } ],
+            "connector_guid" : "1e62608f-a921-485b-bbdf-32c59ae60e21",
+            "active" : true,
+            "links" : {
+              "computer" : "https://api.xyz.amp.cisco.com/v1/computers/1e62608f-a921-485b-bbdf-32c59ae60e21",
+              "trajectory" : "https://api.xyz.amp.cisco.com/v1/computers/1e62608f-a921-485b-bbdf-32c59ae60e21/trajectory",
+              "group" : "https://api.xyz.amp.cisco.com/v1/groups/187e0cf4-6a83-4ebf-a126-7bd16f6942d7"
+            },
+            "external_ip" : "10.10.10.10"
+          },
+          "event_type" : "Retrospective Quarantine Attempt Failed",
+          "file" : {
+            "disposition" : "Allowed",
+            "identity" : {
+              "sha256" : "1b07719b899418d446ec78c9a7d6970d3b61e4a0987838112fdc2460b6c134fb"
+            }
+          },
+          "connector_guid" : "1e62608f-a921-485b-bbdf-32c59ae60e21",
+          "id" : 7374372033058046000,
+          "detection_id" : "7374372028763078676",
+          "timestamp" : 1716979787
+        }
+      }
+    service: "event"
+    result:
+      custom:
+        error:
+          kind: 3221225524
+          message: "Object name not found"
+        event:
+          computer:
+            active: true
+            connector_guid: "1e62608f-a921-485b-bbdf-32c59ae60e21"
+            hostname: "AssetTag-EID-New"
+            links:
+              computer: "https://api.xyz.amp.cisco.com/v1/computers/1e62608f-a921-485b-bbdf-32c59ae60e21"
+              group: "https://api.xyz.amp.cisco.com/v1/groups/187e0cf4-6a83-4ebf-a126-7bd16f6942d7"
+              trajectory: "https://api.xyz.amp.cisco.com/v1/computers/1e62608f-a921-485b-bbdf-32c59ae60e21/trajectory"
+            network_addresses:
+            -
+              ip: "10.10.10.10"
+              mac: "10:10:10:10:10:10"
+          connector_guid: "1e62608f-a921-485b-bbdf-32c59ae60e21"
+          date: "2024-05-29T10:49:47+00:00"
+          detection_id: "7374372028763078676"
+          event_type_id: 2164260893
+          file:
+            disposition: "Allowed"
+            identity:
+              sha256: "1b07719b899418d446ec78c9a7d6970d3b61e4a0987838112fdc2460b6c134fb"
+          group_guids:
+          - "187e0cf4-6a83-4ebf-a126-7bd16f6942d7"
+          id: 7374372033058046000
+          severity: "High"
+          status: "error"
+          timestamp: 1716979787
+          timestamp_nanoseconds: 93000000
+        evt:
+          name: "Retrospective Quarantine Attempt Failed"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+      message: |-
+        {
+          "event" : {
+            "date" : "2024-05-29T10:49:47+00:00",
+            "severity" : "High",
+            "group_guids" : [ "187e0cf4-6a83-4ebf-a126-7bd16f6942d7" ],
+            "error" : {
+              "description" : "Object name not found",
+              "error_code" : 3221225524
+            },
+            "event_type_id" : 2164260893,
+            "timestamp_nanoseconds" : 93000000,
+            "computer" : {
+              "hostname" : "AssetTag-EID-New",
+              "network_addresses" : [ {
+                "ip" : "10.10.10.10",
+                "mac" : "10:10:10:10:10:10"
+              } ],
+              "connector_guid" : "1e62608f-a921-485b-bbdf-32c59ae60e21",
+              "active" : true,
+              "links" : {
+                "computer" : "https://api.xyz.amp.cisco.com/v1/computers/1e62608f-a921-485b-bbdf-32c59ae60e21",
+                "trajectory" : "https://api.xyz.amp.cisco.com/v1/computers/1e62608f-a921-485b-bbdf-32c59ae60e21/trajectory",
+                "group" : "https://api.xyz.amp.cisco.com/v1/groups/187e0cf4-6a83-4ebf-a126-7bd16f6942d7"
+              },
+              "external_ip" : "10.10.10.10"
+            },
+            "event_type" : "Retrospective Quarantine Attempt Failed",
+            "file" : {
+              "disposition" : "Allowed",
+              "identity" : {
+                "sha256" : "1b07719b899418d446ec78c9a7d6970d3b61e4a0987838112fdc2460b6c134fb"
+              }
+            },
+            "connector_guid" : "1e62608f-a921-485b-bbdf-32c59ae60e21",
+            "id" : 7374372033058046000,
+            "detection_id" : "7374372028763078676",
+            "timestamp" : 1716979787
+          }
+        }
+      service: "event"
+      status: "error"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1716979787000

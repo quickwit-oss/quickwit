@@ -1,0 +1,443 @@
+id: forcepoint-security-service-edge
+metric_id: forcepoint-security-service-edge
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url
+    source: log
+  - groups:
+      - Web Access
+    name: URL Host
+    path: http.url_details.host
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Web Access
+    name: URL Port
+    path: http.url_details.port
+    source: log
+  - groups:
+      - Web Access
+    name: URL scheme
+    path: http.url_details.scheme
+    source: log
+  - groups:
+      - Web Access
+    name: User-Agent
+    path: http.useragent
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - User
+    name: User Email
+    path: usr.email
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+pipeline:
+  type: pipeline
+  name: Forcepoint Security Service Edge
+  enabled: true
+  filter:
+    query: source:forcepoint-security-service-edge
+  processors:
+    - type: grok-parser
+      name: Parse syslog header
+      enabled: true
+      source: syslogheader
+      samples:
+        - <110>1 2024-12-26T06:12:35.817831Z api.hostserver.com NILVALUE
+          NILVALUE access
+        - <110>1 2024-12-26T06:12:35.817831Z api.hostserver.com NILVALUE
+          NILVALUE cloudaudit
+        - <110>1 2024-12-26T06:12:35.817831Z api.hostserver.com NILVALUE
+          NILVALUE cloudsummary
+      grok:
+        supportRules: ""
+        matchRules: syslog_header_rule <%{integer:syslog.priority}>%{integer}
+          %{notSpace} %{hostname:syslog.hostname} %{notSpace} %{notSpace}
+          %{notSpace:syslog.msgid}
+    - type: grok-parser
+      name: Parse `time` to epoch time
+      enabled: true
+      source: time
+      samples:
+        - 26 Dec 2024 06:10:22
+        - 15 Nov 2024 07:11:11
+      grok:
+        supportRules: ""
+        matchRules: time_format_parsing_rule %{date("d MMM y H:m:s"):time}
+    - type: date-remapper
+      name: Define `time` as the official date of the log
+      enabled: true
+      sources:
+        - time
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: pipeline
+      name: Processing of Access Logs and Admin Logs
+      enabled: true
+      filter:
+        query: service:(forcepoint-sse-access OR forcepoint-sse-admin)
+      processors:
+        - type: attribute-remapper
+          name: Map `user` to `usr.name`
+          enabled: true
+          sources:
+            - user
+          sourceType: attribute
+          target: usr.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `email` to `usr.email`
+          enabled: true
+          sources:
+            - email
+          sourceType: attribute
+          target: usr.email
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `ipaddress` to `network.client.ip`
+          enabled: true
+          sources:
+            - ipaddress
+          sourceType: attribute
+          target: network.client.ip
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `useragent` to `http.useragent`
+          enabled: true
+          sources:
+            - useragent
+          sourceType: attribute
+          target: http.useragent
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `url` to `http.url`
+          enabled: true
+          sources:
+            - url
+          sourceType: attribute
+          target: http.url
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: url-parser
+          name: Parse URL
+          enabled: true
+          sources:
+            - http.url
+          target: http.url_details
+          normalizeEndingSlashes: false
+        - type: user-agent-parser
+          name: Extracting user-agent information from the user-agent
+          enabled: true
+          sources:
+            - http.useragent
+          target: http.useragent_details
+          encoded: false
+          combineVersionDetails: false
+        - type: geo-ip-parser
+          name: Define `network.client.ip` as default geoip attribute for source
+          enabled: true
+          sources:
+            - network.client.ip
+          target: network.client.geoip
+          ip_processing_behavior: do-nothing
+    - type: pipeline
+      name: Processing of Cloud Audit Logs
+      enabled: true
+      filter:
+        query: service:forcepoint-sse-cloudaudit
+      processors:
+        - type: attribute-remapper
+          name: Map `actor` to `usr.name`
+          enabled: true
+          sources:
+            - actor
+          sourceType: attribute
+          target: usr.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `actoripaddress` to `network.client.ip`
+          enabled: true
+          sources:
+            - actoripaddress
+          sourceType: attribute
+          target: network.client.ip
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: geo-ip-parser
+          name: Define `network.client.ip` as default geoip attribute for source
+          enabled: true
+          sources:
+            - network.client.ip
+          target: network.client.geoip
+          ip_processing_behavior: do-nothing
+    - type: pipeline
+      name: Processing of Cloud Summary Logs
+      enabled: true
+      filter:
+        query: service:forcepoint-sse-cloudsummary
+      processors:
+        - type: attribute-remapper
+          name: Map `owner` to `usr.name`
+          enabled: true
+          sources:
+            - owner
+          sourceType: attribute
+          target: usr.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Processing of Health Logs
+      enabled: true
+      filter:
+        query: service:forcepoint-sse-health*
+      processors:
+        - type: attribute-remapper
+          name: Map `user` to `usr.name`
+          enabled: true
+          sources:
+            - user
+          sourceType: attribute
+          target: usr.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `email` to `usr.email`
+          enabled: true
+          sources:
+            - email
+          sourceType: attribute
+          target: usr.email
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `ipaddress` to `network.client.ip`
+          enabled: true
+          sources:
+            - ipaddress
+          sourceType: attribute
+          target: network.client.ip
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `useragent` to `http.useragent`
+          enabled: true
+          sources:
+            - useragent
+          sourceType: attribute
+          target: http.useragent
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `url` to `http.url`
+          enabled: true
+          sources:
+            - url
+          sourceType: attribute
+          target: http.url
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `responsecode` to `http.status_code`
+          enabled: true
+          sources:
+            - responsecode
+          sourceType: attribute
+          target: http.status_code
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `requestmethod` to `http.method`
+          enabled: true
+          sources:
+            - requestmethod
+          sourceType: attribute
+          target: http.method
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: url-parser
+          name: Parse URL
+          enabled: true
+          sources:
+            - http.url
+          target: http.url_details
+          normalizeEndingSlashes: false
+        - type: user-agent-parser
+          name: Map `useragent` to `http.useragent`
+          enabled: true
+          sources:
+            - http.useragent
+          target: http.useragent_details
+          encoded: false
+          combineVersionDetails: false
+        - type: category-processor
+          name: HTTP status category processor
+          enabled: true
+          categories:
+            - filter:
+                query: "@http.status_code:[100 TO 199]"
+              name: Informational
+            - filter:
+                query: "@http.status_code:[200 TO 299]"
+              name: Successful
+            - filter:
+                query: "@http.status_code:[300 TO 399]"
+              name: Redirection
+            - filter:
+                query: "@http.status_code:[400 TO 499]"
+              name: Client Error
+            - filter:
+                query: "@http.status_code:[500 TO 599]"
+              name: Server Error
+          target: http.status_category
+        - type: geo-ip-parser
+          name: Define `network.client.ip` as default geoip attribute for source
+          enabled: true
+          sources:
+            - network.client.ip
+          target: network.client.geoip
+          ip_processing_behavior: do-nothing
+    - type: grok-parser
+      name: Parse `action` field
+      enabled: true
+      source: action
+      samples:
+        - SmartEdge Proxy
+        - Alert, BlockLogin, Notify
+        - 2FA
+        - Alert, Allow, Suspicioususerlocations
+        - Alert, Allow, Suspicioususerlocations
+      grok:
+        supportRules: ""
+        matchRules: parse_action_field %{data:action:array("",", ")}
+    - type: grok-parser
+      name: Parse `usergroup` field
+      enabled: true
+      source: usergroup
+      samples:
+        - Bitglass Admins, System Administrator, crestdatasys
+        - Bitglass Admins, System Administrator
+        - Bitglass Admins
+      grok:
+        supportRules: ""
+        matchRules: parse_usergroup_field %{data:usergroup:array("",", ")}
+    - type: grok-parser
+      name: Parse `activity` field
+      enabled: true
+      source: activity
+      samples:
+        - Endpoint, System
+        - Add, System
+        - Search, System
+      grok:
+        supportRules: ""
+        matchRules: parse_activity_field %{data:activity:array("",", ")}
+    - type: grok-parser
+      name: Parse `status` field
+      enabled: true
+      source: status
+      samples:
+        - Internal, Shared
+        - Internal, Shared, DLP
+        - Private, DLP
+      grok:
+        supportRules: ""
+        matchRules: parse_status_field %{data:status:array("",", ")}

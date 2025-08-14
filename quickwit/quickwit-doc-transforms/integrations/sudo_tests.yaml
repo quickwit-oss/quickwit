@@ -1,0 +1,18 @@
+id: "sudo"
+tests:
+ -
+  sample: "loguser : TTY=pts/0 ; PWD=/home/loguser ; USER=root ; COMMAND=/bin/sh -c echo SUDO-SUCCESS-oxkqwtwexepwahfzlenkpqoibmkmagmy; LANG=en_US.UTF-8 LC_CTYPE=en_US.UTF-8 /usr/bin/python /home/loguser/.ansible/tmp/ansible-tmp-1421323266.3-107017371979285/command; rm -rf /home/loguser/.ansible/tmp/ansible-tmp-1421323266.3-107017371979285/ >/dev/null 2>&1"
+  result:
+    custom:
+      system:
+        cmd: "/bin/sh -c echo SUDO-SUCCESS-oxkqwtwexepwahfzlenkpqoibmkmagmy"
+        lang: "en_US.UTF-8"
+        lc_type: "en_US.UTF-8"
+        pwd: "/home/loguser"
+        run_as_user: "root"
+        tty: "pts/0"
+        user: "loguser"
+    message: "loguser : TTY=pts/0 ; PWD=/home/loguser ; USER=root ; COMMAND=/bin/sh -c echo SUDO-SUCCESS-oxkqwtwexepwahfzlenkpqoibmkmagmy; LANG=en_US.UTF-8 LC_CTYPE=en_US.UTF-8 /usr/bin/python /home/loguser/.ansible/tmp/ansible-tmp-1421323266.3-107017371979285/command; rm -rf /home/loguser/.ansible/tmp/ansible-tmp-1421323266.3-107017371979285/ >/dev/null 2>&1"
+    tags:
+     - "source:LOGS_SOURCE"
+

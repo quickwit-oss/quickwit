@@ -1,0 +1,87 @@
+id: "ntpd"
+tests:
+ -
+  sample: "Nov 9 01:10:09 <example> ntpd[27847]: Deleting interface #2617 vethee9dd864, fe80::8404:3ff:fef9:f8c9%2607#123, interface stats: received=0, sent=0, dropped=0, active_time=35 secs"
+  result:
+    custom:
+      connection_instance: "2617"
+      date: 26961009000
+      interface:
+        name: "vethee9dd864"
+        stats:
+          active_time: 35000.0
+          dropped: 0
+          received: 0
+          sent: 0
+      network:
+        client:
+          ip: "fe80::8404:3ff:fef9:f8c9%2607"
+          port: 123.0
+    message: "Nov 9 01:10:09 <example> ntpd[27847]: Deleting interface #2617 vethee9dd864, fe80::8404:3ff:fef9:f8c9%2607#123, interface stats: received=0, sent=0, dropped=0, active_time=35 secs"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 26961009000
+ -
+  sample: "Mar 26 11:43:17 <example> ntpd[2783]: Listen normally on 16008 veth918bcf18 [fe80::98ba:92ff:feaa:6f2f%13893]:123"
+  result:
+    custom:
+      connection_instance: "16008"
+      date: 38835797000
+      interface:
+        name: "veth918bcf18"
+      network:
+        client:
+          ip: "fe80::98ba:92ff:feaa:6f2f%13893"
+          port: 123.0
+    message: "Mar 26 11:43:17 <example> ntpd[2783]: Listen normally on 16008 veth918bcf18 [fe80::98ba:92ff:feaa:6f2f%13893]:123"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 38835797000
+ -
+  sample: "Mar 26 11:43:17  ntpd[2783]: unable to create socket on vethf539492f (21115) for fe80::e888:eeff:fe18:4d88%18389#123"
+  result:
+    custom:
+      connection_instance: "21115"
+      date: 38835797000
+      interface:
+        name: "vethf539492f"
+      network:
+        client:
+          ip: "fe80::e888:eeff:fe18:4d88%18389"
+          port: 123.0
+    message: "Mar 26 11:43:17  ntpd[2783]: unable to create socket on vethf539492f (21115) for fe80::e888:eeff:fe18:4d88%18389#123"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 38835797000
+ -
+  sample: "Mar 26 11:43:17  ntpd[2783]: bind(27) AF_INET6 fe80::ec19:18ff:fefc:810e%14124#123 flags 0x11 failed: Cannot assign requested address"
+  result:
+    custom:
+      connection_instance: "27"
+      date: 38835797000
+      network:
+        client:
+          ip: "fe80::ec19:18ff:fefc:810e%14124"
+          port: 123.0
+    message: "Mar 26 11:43:17  ntpd[2783]: bind(27) AF_INET6 fe80::ec19:18ff:fefc:810e%14124#123 flags 0x11 failed: Cannot assign requested address"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 38835797000
+ -
+  sample: "Mar 26 11:43:17  ntpd[2783]: bind() fd 23, family AF_INET6, port 123, scope 1, addr fe80::92e2:baff:fe2b:3a00, mcast=0 flags=0x11 fails: Can't assign requested address"
+  result:
+    custom:
+      date: 38835797000
+      family: "AF_INET6"
+      flags: "0x11"
+      mcast: 0.0
+      network:
+        client:
+          ip: "fe80::92e2:baff:fe2b:3a00"
+          port: 123.0
+      scope: 1.0
+    message: "Mar 26 11:43:17  ntpd[2783]: bind() fd 23, family AF_INET6, port 123, scope 1, addr fe80::92e2:baff:fe2b:3a00, mcast=0 flags=0x11 fails: Can't assign requested address"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 38835797000
+

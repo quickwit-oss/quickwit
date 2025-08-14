@@ -1,0 +1,125 @@
+id: "nagios"
+tests:
+ -
+  sample: "[1606472574] wproc: Registry request: name=Core Worker 39;pid=39"
+  result:
+    custom:
+      name: "Core Worker 39"
+      pid: 39
+      timestamp: 1.606472574E12
+      type: "wproc: Registry request"
+    message: "[1606472574] wproc: Registry request: name=Core Worker 39;pid=39"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1606472574000
+ -
+  sample: "[1297826474] Auto-save of retention data completed successfully."
+  result:
+    custom:
+      timestamp: 1.297826474E12
+    message: "Auto-save of retention data completed successfully."
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1297826474000
+ -
+  sample: "[1606472947] SERVICE NOTIFICATION: nagiosadmin;localhost;Root Partition;CRITICAL;notify-service-by-email;DISK CRITICAL - free space: / 2023 MB (3.56% inode=68%):"
+  result:
+    custom:
+      level: "CRITICAL"
+      notification: "notify-service-by-email"
+      syslog:
+        appname: "Root Partition"
+        hostname: "localhost"
+      timestamp: 1.606472947E12
+      type: "SERVICE NOTIFICATION"
+      usr:
+        name: "nagiosadmin"
+    message: "DISK CRITICAL - free space: / 2023 MB (3.56% inode=68%):"
+    status: "critical"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1606472947000
+ -
+  sample: "[1606472584] SERVICE ALERT: localhost;HTTP;WARNING;HARD;4;HTTP WARNING: HTTP/1.1 401 Unauthorized - 695 bytes in 0.001 second response time"
+  result:
+    custom:
+      attempt: 4.0
+      level: "WARNING"
+      state: "HARD"
+      syslog:
+        appname: "HTTP"
+        hostname: "localhost"
+      timestamp: 1.606472584E12
+      type: "SERVICE ALERT"
+    message: "HTTP WARNING: HTTP/1.1 401 Unauthorized - 695 bytes in 0.001 second response time"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1606472584000
+ -
+  sample: "[1606474830] SERVICE ALERT: localhost;Root Partition;CRITICAL;SOFT;2;DISK CRITICAL - free space: / 2020 MB (3.56% inode=68%):"
+  result:
+    custom:
+      attempt: 2.0
+      level: "CRITICAL"
+      state: "SOFT"
+      syslog:
+        appname: "Root Partition"
+        hostname: "localhost"
+      timestamp: 1.60647483E12
+      type: "SERVICE ALERT"
+    message: "DISK CRITICAL - free space: / 2020 MB (3.56% inode=68%):"
+    status: "critical"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1606474830000
+ -
+  sample: "[1606810725] HOST ALERT: localhost;UP;SOFT;1;PING OK - Packet loss = 0%, RTA = 0.06 ms"
+  result:
+    custom:
+      attempt: 1.0
+      level: "UP"
+      state: "SOFT"
+      syslog:
+        hostname: "localhost"
+      timestamp: 1.606810725E12
+      type: "HOST ALERT"
+    message: "PING OK - Packet loss = 0%, RTA = 0.06 ms"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1606810725000
+ -
+  sample: "[1297814400] CURRENT SERVICE STATE: ip-10-204-66-129;Disk Space;OK;HARD;1;DISK OK"
+  result:
+    custom:
+      attempt: 1.0
+      level: "OK"
+      state: "HARD"
+      syslog:
+        appname: "Disk Space"
+        hostname: "ip-10-204-66-129"
+      timestamp: 1.2978144E12
+      type: "CURRENT SERVICE STATE"
+    message: "DISK OK"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1297814400000
+ -
+  sample: "[1297814400] CURRENT HOST STATE: domU-12-31-39-02-ED-B2;UP;HARD;1;PING OK - Packet loss = 0%, RTA = 1.68 ms"
+  result:
+    custom:
+      attempt: 1.0
+      level: "UP"
+      state: "HARD"
+      syslog:
+        hostname: "domU-12-31-39-02-ED-B2"
+      timestamp: 1.2978144E12
+      type: "CURRENT HOST STATE"
+    message: "PING OK - Packet loss = 0%, RTA = 1.68 ms"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1297814400000
+

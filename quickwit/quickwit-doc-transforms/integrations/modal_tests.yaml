@@ -1,0 +1,41 @@
+id: "modal"
+tests:
+ -
+  sample: |-
+    {
+      "hostname" : "",
+      "rpc" : "TokenCreate",
+      "target_attr_name" : "token_type",
+      "level" : "success",
+      "service" : "modal.audit-logs",
+      "target_attr_value" : "0",
+      "client_type" : "CLIENT_TYPE_WEB_SERVER",
+      "timestamp" : "2023-11-24T21:39:37.805667+00:00"
+    }
+  result:
+    custom:
+      client_type: "CLIENT_TYPE_WEB_SERVER"
+      hostname: ""
+      level: "success"
+      rpc: "TokenCreate"
+      service: "modal.audit-logs"
+      target_attr_name: "token_type"
+      target_attr_value: "0"
+      timestamp: "2023-11-24T21:39:37.805667+00:00"
+    message: |-
+      {
+        "hostname" : "",
+        "rpc" : "TokenCreate",
+        "target_attr_name" : "token_type",
+        "level" : "success",
+        "service" : "modal.audit-logs",
+        "target_attr_value" : "0",
+        "client_type" : "CLIENT_TYPE_WEB_SERVER",
+        "timestamp" : "2023-11-24T21:39:37.805667+00:00"
+      }
+    service: "modal.audit-logs"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1700861977805
+

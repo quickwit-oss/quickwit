@@ -1,0 +1,126 @@
+id: gcp.http.load.balancer
+metric_id: google-cloud-loadbalancing
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: URL Host
+    path: http.url_details.host
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Web Access
+    name: URL Port
+    path: http.url_details.port
+    source: log
+  - groups:
+      - Web Access
+    name: URL scheme
+    path: http.url_details.scheme
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - GCP
+    name: Project ID
+    path: project_id
+    source: tag
+pipeline:
+  type: pipeline
+  name: Google Load Balancers
+  enabled: true
+  filter:
+    query: source:gcp.http.load.balancer
+  processors:
+    - type: user-agent-parser
+      name: ''
+      enabled: true
+      sources:
+        - data.httpRequest.userAgent
+        - httpRequest.userAgent
+      target: http.useragent_details
+      encoded: false
+    - type: url-parser
+      name: ''
+      enabled: true
+      sources:
+        - data.httpRequest.requestUrl
+        - httpRequest.requestUrl
+      target: http.url_details
+    - type: attribute-remapper
+      name: Map `data.httpRequest.remoteIp`, `httpRequest.remoteIp` to `network.client.ip`
+      enabled: true
+      sources:
+        - data.httpRequest.remoteIp
+        - httpRequest.remoteIp
+      target: network.client.ip
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `data.httpRequest.requestMethod`, `httpRequest.requestMethod` to `http.method`
+      enabled: true
+      sources:
+        - data.httpRequest.requestMethod
+        - httpRequest.requestMethod
+      target: http.method
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `data.httpRequest.status`, `httpRequest.status` to `http.status_code`
+      enabled: true
+      sources:
+        - data.httpRequest.status
+        - httpRequest.status
+      target: http.status_code
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: date-remapper
+      name: Define `data.timestamp`, `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - data.timestamp
+        - timestamp
+    - type: status-remapper
+      name: Define `data.severity`, `severity` as the official status of the log
+      enabled: true
+      sources:
+        - data.severity
+        - severity

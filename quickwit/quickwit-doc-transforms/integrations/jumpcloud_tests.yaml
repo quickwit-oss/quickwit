@@ -1,0 +1,1067 @@
+id: "jumpcloud"
+tests:
+ -
+  sample: |-
+    {
+      "initiated_by" : {
+        "id" : "6128eb4a391a3e36fb9fa765",
+        "type" : "admin",
+        "email" : "chris.laverdiere+jumpcloud@datadoghq.com",
+        "username" : "chrislav"
+      },
+      "geoip" : {
+        "country_code" : "US",
+        "timezone" : "America/New_York",
+        "latitude" : 40.7359,
+        "continent_code" : "NA",
+        "region_name" : "New York",
+        "region_code" : "NY",
+        "longitude" : -73.9904
+      },
+      "insights_service" : "directory",
+      "mfa" : false,
+      "event_type" : "admin_login_attempt",
+      "service" : "jumpcloud",
+      "success" : true,
+      "organization" : "6128eb4a391a3e36fb9fa766",
+      "@version" : "1",
+      "client_ip" : "72.226.78.76",
+      "id" : "6180755e03d33a6bc5b94919",
+      "user_agent" : {
+        "patch" : "4577",
+        "major" : "93",
+        "os" : "Mac OS X",
+        "minor" : "0",
+        "build" : "",
+        "os_minor" : "15",
+        "os_major" : "10",
+        "name" : "Chrome",
+        "os_name" : "Mac OS X",
+        "device" : "Other"
+      },
+      "timestamp" : "2021-11-01T23:16:46.752Z"
+    }
+  result:
+    custom:
+      '@version': "1"
+      evt:
+        name: "admin_login_attempt"
+        outcome: "true"
+      geoip:
+        latitude: 40.7359
+        longitude: -73.9904
+        timezone: "America/New_York"
+      http:
+        useragent_details:
+          device:
+            family: "Other"
+          os:
+            family: "Mac OS X"
+      id: "6180755e03d33a6bc5b94919"
+      insights_service: "directory"
+      mfa: false
+      network:
+        client:
+          geoip: {}
+          ip: "72.226.78.76"
+      ocsf:
+        activity_id: 1
+        activity_name: "Logon"
+        actor:
+          user:
+            email_addr: "chris.laverdiere+jumpcloud@datadoghq.com"
+            name: "chrislav"
+            type: "Admin"
+            type_id: 2
+            uid: "6128eb4a391a3e36fb9fa765"
+        category_name: "Identity & Access Management"
+        category_uid: 3
+        class_name: "Authentication"
+        class_uid: 3002
+        is_mfa: false
+        metadata:
+          event_code: "admin_login_attempt"
+          log_name: "directory"
+          product:
+            name: "JumpCloud Directory Insights API"
+            vendor_name: "JumpCloud"
+          uid: "6180755e03d33a6bc5b94919"
+          version: "1.3.0"
+        service:
+          name: "jumpcloud"
+        severity: "Informational"
+        severity_id: 1
+        src_endpoint:
+          ip: "72.226.78.76"
+        status: "Success"
+        status_id: 1
+        time: 1635808606752
+        type_uid: 300201
+        user:
+          name: "chrislav"
+      organization: "6128eb4a391a3e36fb9fa766"
+      service: "jumpcloud"
+      timestamp: "2021-11-01T23:16:46.752Z"
+      user_agent:
+        build: ""
+        major: "93"
+        minor: "0"
+        name: "Chrome"
+        os_major: "10"
+        os_minor: "15"
+        os_name: "Mac OS X"
+        patch: "4577"
+      usr:
+        email: "chris.laverdiere+jumpcloud@datadoghq.com"
+        id: "6128eb4a391a3e36fb9fa765"
+        name: "chrislav"
+        type: "admin"
+    message: |-
+      {
+        "initiated_by" : {
+          "id" : "6128eb4a391a3e36fb9fa765",
+          "type" : "admin",
+          "email" : "chris.laverdiere+jumpcloud@datadoghq.com",
+          "username" : "chrislav"
+        },
+        "geoip" : {
+          "country_code" : "US",
+          "timezone" : "America/New_York",
+          "latitude" : 40.7359,
+          "continent_code" : "NA",
+          "region_name" : "New York",
+          "region_code" : "NY",
+          "longitude" : -73.9904
+        },
+        "insights_service" : "directory",
+        "mfa" : false,
+        "event_type" : "admin_login_attempt",
+        "service" : "jumpcloud",
+        "success" : true,
+        "organization" : "6128eb4a391a3e36fb9fa766",
+        "@version" : "1",
+        "client_ip" : "72.226.78.76",
+        "id" : "6180755e03d33a6bc5b94919",
+        "user_agent" : {
+          "patch" : "4577",
+          "major" : "93",
+          "os" : "Mac OS X",
+          "minor" : "0",
+          "build" : "",
+          "os_minor" : "15",
+          "os_major" : "10",
+          "name" : "Chrome",
+          "os_name" : "Mac OS X",
+          "device" : "Other"
+        },
+        "timestamp" : "2021-11-01T23:16:46.752Z"
+      }
+    service: "directory"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1635808606752
+ -
+  sample: |-
+    {
+      "error_message" : "",
+      "initiated_by" : {
+        "id" : "111111111111111111111111",
+        "type" : "admin",
+        "email" : "test@test.com"
+      },
+      "access_type" : "temporary",
+      "geoip" : {
+        "country_code" : "GB",
+        "timezone" : "Europe/London",
+        "latitude" : 51.5081,
+        "continent_code" : "EU",
+        "region_name" : "England",
+        "region_code" : "GB-ENG",
+        "longitude" : -0.1278
+      },
+      "insights_service" : "directory",
+      "resource" : {
+        "id" : "111111111111111111111111",
+        "type" : "user",
+        "username" : "test1"
+      },
+      "changes" : [ {
+        "field" : "sudo enabled",
+        "from" : false,
+        "to" : true
+      }, {
+        "field" : "sudo withoutPassword",
+        "from" : false,
+        "to" : false
+      } ],
+      "event_type" : "association_change",
+      "system" : {
+        "hostname" : "test1",
+        "displayName" : "test1",
+        "id" : "111111111111111111111111",
+        "type" : "device"
+      },
+      "success" : true,
+      "service" : "directory",
+      "organization" : "111111111111111111111111",
+      "@version" : 0,
+      "location" : {
+        "Subdivisions" : [ {
+          "IsoCode" : "ENG",
+          "Name" : "England"
+        } ],
+        "Country" : {
+          "IsoCode" : "GB",
+          "Name" : "United Kingdom"
+        },
+        "City" : {
+          "Name" : "London"
+        }
+      },
+      "id" : "111111111111111111111111",
+      "expiry" : "2025-06-10T10:25:25Z",
+      "user_agent" : {
+        "os" : "Mac OS X",
+        "device" : "Mac"
+      },
+      "timestamp" : "2025-06-10T10:31:25.55112566Z",
+      "username" : "test1",
+      "status" : "info"
+    }
+  result:
+    custom:
+      '@version': 0
+      access_type: "temporary"
+      changes:
+       -
+        field: "sudo enabled"
+        from: false
+        to: true
+       -
+        field: "sudo withoutPassword"
+        from: false
+        to: false
+      error_message: ""
+      evt:
+        name: "association_change"
+        outcome: "true"
+      expiry: "2025-06-10T10:25:25Z"
+      geoip:
+        latitude: 51.5081
+        longitude: -0.1278
+        timezone: "Europe/London"
+      http:
+        useragent_details:
+          device:
+            family: "Mac"
+          os:
+            family: "Mac OS X"
+      id: "111111111111111111111111"
+      initiated_by:
+        email: "test@test.com"
+        id: "111111111111111111111111"
+        type: "admin"
+      insights_service: "directory"
+      location:
+        City:
+          Name: "London"
+        Country:
+          IsoCode: "GB"
+          Name: "United Kingdom"
+        Subdivisions:
+         -
+          IsoCode: "ENG"
+          Name: "England"
+      network:
+        client:
+          geoip:
+            continent:
+              code: "EU"
+            country:
+              iso_code: "GB"
+            subdivision:
+              iso_code: "GB-ENG"
+              name: "England"
+      ocsf:
+        activity_id: 99
+        activity_name: "association_change"
+        category_name: "Uncategorized"
+        category_uid: 0
+        class_name: "Base Event"
+        class_uid: 0
+        metadata:
+          event_code: "association_change"
+          log_name: "directory"
+          product:
+            name: "JumpCloud Directory Insights API"
+            vendor_name: "JumpCloud"
+          uid: "111111111111111111111111"
+          version: "1.3.0"
+        severity: "Informational"
+        severity_id: 1
+        status: "Success"
+        status_id: 1
+        time: 1749551485551
+        type_uid: 99
+      organization: "111111111111111111111111"
+      resource:
+        id: "111111111111111111111111"
+        type: "user"
+        username: "test1"
+      service: "directory"
+      status: "info"
+      system:
+        displayName: "test1"
+        hostname: "test1"
+        id: "111111111111111111111111"
+        type: "device"
+      timestamp: "2025-06-10T10:31:25.55112566Z"
+      username: "test1"
+      usr:
+        email: "test@test.com"
+        id: "111111111111111111111111"
+        type: "admin"
+    message: |-
+      {
+        "error_message" : "",
+        "initiated_by" : {
+          "id" : "111111111111111111111111",
+          "type" : "admin",
+          "email" : "test@test.com"
+        },
+        "access_type" : "temporary",
+        "geoip" : {
+          "country_code" : "GB",
+          "timezone" : "Europe/London",
+          "latitude" : 51.5081,
+          "continent_code" : "EU",
+          "region_name" : "England",
+          "region_code" : "GB-ENG",
+          "longitude" : -0.1278
+        },
+        "insights_service" : "directory",
+        "resource" : {
+          "id" : "111111111111111111111111",
+          "type" : "user",
+          "username" : "test1"
+        },
+        "changes" : [ {
+          "field" : "sudo enabled",
+          "from" : false,
+          "to" : true
+        }, {
+          "field" : "sudo withoutPassword",
+          "from" : false,
+          "to" : false
+        } ],
+        "event_type" : "association_change",
+        "system" : {
+          "hostname" : "test1",
+          "displayName" : "test1",
+          "id" : "111111111111111111111111",
+          "type" : "device"
+        },
+        "success" : true,
+        "service" : "directory",
+        "organization" : "111111111111111111111111",
+        "@version" : 0,
+        "location" : {
+          "Subdivisions" : [ {
+            "IsoCode" : "ENG",
+            "Name" : "England"
+          } ],
+          "Country" : {
+            "IsoCode" : "GB",
+            "Name" : "United Kingdom"
+          },
+          "City" : {
+            "Name" : "London"
+          }
+        },
+        "id" : "111111111111111111111111",
+        "expiry" : "2025-06-10T10:25:25Z",
+        "user_agent" : {
+          "os" : "Mac OS X",
+          "device" : "Mac"
+        },
+        "timestamp" : "2025-06-10T10:31:25.55112566Z",
+        "username" : "test1",
+        "status" : "info"
+      }
+    service: "directory"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1749551485551
+ -
+  sample: |-
+    {
+      "error_message" : "",
+      "initiated_by" : {
+        "id" : "111111111111111111111111",
+        "type" : "admin",
+        "email" : "test@test.com"
+      },
+      "access_type" : "temporary",
+      "geoip" : {
+        "country_code" : "GB",
+        "timezone" : "Europe/London",
+        "latitude" : 51.5081,
+        "continent_code" : "EU",
+        "region_name" : "England",
+        "region_code" : "GB-ENG",
+        "longitude" : -0.1278
+      },
+      "insights_service" : "directory",
+      "resource" : {
+        "id" : "111111111111111111111111",
+        "type" : "user",
+        "username" : "test1"
+      },
+      "changes" : [ {
+        "field" : "sudo enabled",
+        "from" : false,
+        "to" : true
+      }, {
+        "field" : "sudo withoutPassword",
+        "from" : false,
+        "to" : false
+      } ],
+      "src_ip" : "185.64.148.0",
+      "event_type" : "user_admin_granted",
+      "system" : {
+        "hostname" : "test1",
+        "displayName" : "test1",
+        "id" : "111111111111111111111111",
+        "type" : "device"
+      },
+      "success" : true,
+      "service" : "directory",
+      "organization" : "111111111111111111111111",
+      "@version" : 0,
+      "client_ip" : "185.64.148.0",
+      "location" : {
+        "Subdivisions" : [ {
+          "IsoCode" : "ENG",
+          "Name" : "England"
+        } ],
+        "Country" : {
+          "IsoCode" : "GB",
+          "Name" : "United Kingdom"
+        },
+        "City" : {
+          "Name" : "London"
+        }
+      },
+      "id" : "111111111111111111111111",
+      "expiry" : "2025-06-10T10:25:25Z",
+      "user_agent" : {
+        "os" : "Mac OS X",
+        "device" : "Mac"
+      },
+      "timestamp" : "2025-06-10T10:30:25.55112566Z",
+      "username" : "test1",
+      "status" : "info"
+    }
+  result:
+    custom:
+      '@version': 0
+      access_type: "temporary"
+      changes:
+       -
+        field: "sudo enabled"
+        from: false
+        to: true
+       -
+        field: "sudo withoutPassword"
+        from: false
+        to: false
+      error_message: ""
+      evt:
+        name: "user_admin_granted"
+        outcome: "true"
+      expiry: "2025-06-10T10:25:25Z"
+      geoip:
+        latitude: 51.5081
+        longitude: -0.1278
+        timezone: "Europe/London"
+      http:
+        useragent_details:
+          device:
+            family: "Mac"
+          os:
+            family: "Mac OS X"
+      id: "111111111111111111111111"
+      initiated_by:
+        id: "111111111111111111111111"
+      insights_service: "directory"
+      location:
+        City:
+          Name: "London"
+        Country:
+          IsoCode: "GB"
+          Name: "United Kingdom"
+        Subdivisions:
+         -
+          IsoCode: "ENG"
+          Name: "England"
+      network:
+        client:
+          geoip:
+            city:
+              name: "Paris"
+            continent:
+              code: "EU"
+              name: "Europe"
+            country:
+              iso_code: "FR"
+              name: "France"
+            ipAddress: "185.64.148.0"
+            location:
+              latitude: 48.90654
+              longitude: 2.33339
+            subdivision:
+              iso_code: "FR-IDF"
+              name: "Île-de-France"
+            timezone: "Europe/Paris"
+          ip: "185.64.148.0"
+      ocsf:
+        activity_id: 1
+        activity_name: "Assign Privileges"
+        actor:
+          user:
+            email_addr: "test@test.com"
+            type: "Admin"
+            type_id: 2
+            uid: "111111111111111111111111"
+        category_name: "Identity & Access Management"
+        category_uid: 3
+        class_name: "User Access Management"
+        class_uid: 3005
+        metadata:
+          event_code: "user_admin_granted"
+          log_name: "directory"
+          product:
+            name: "JumpCloud Directory Insights API"
+            vendor_name: "JumpCloud"
+          profiles:
+           - "host"
+          uid: "111111111111111111111111"
+          version: "1.3.0"
+        privileges:
+         - "ADMIN_PRIVILEGES_ASSIGNED"
+        severity: "Informational"
+        severity_id: 1
+        src_endpoint:
+          ip: "185.64.148.0"
+        status: "Success"
+        status_id: 1
+        time: 1749551425551
+        type_uid: 300501
+        user:
+          name: "test1"
+      organization: "111111111111111111111111"
+      resource:
+        id: "111111111111111111111111"
+        type: "user"
+        username: "test1"
+      service: "directory"
+      status: "info"
+      system:
+        displayName: "test1"
+        hostname: "test1"
+        id: "111111111111111111111111"
+        type: "device"
+      timestamp: "2025-06-10T10:30:25.55112566Z"
+      username: "test1"
+      usr:
+        email: "test@test.com"
+        id: "111111111111111111111111"
+        type: "admin"
+    message: |-
+      {
+        "error_message" : "",
+        "initiated_by" : {
+          "id" : "111111111111111111111111",
+          "type" : "admin",
+          "email" : "test@test.com"
+        },
+        "access_type" : "temporary",
+        "geoip" : {
+          "country_code" : "GB",
+          "timezone" : "Europe/London",
+          "latitude" : 51.5081,
+          "continent_code" : "EU",
+          "region_name" : "England",
+          "region_code" : "GB-ENG",
+          "longitude" : -0.1278
+        },
+        "insights_service" : "directory",
+        "resource" : {
+          "id" : "111111111111111111111111",
+          "type" : "user",
+          "username" : "test1"
+        },
+        "changes" : [ {
+          "field" : "sudo enabled",
+          "from" : false,
+          "to" : true
+        }, {
+          "field" : "sudo withoutPassword",
+          "from" : false,
+          "to" : false
+        } ],
+        "src_ip" : "185.64.148.0",
+        "event_type" : "user_admin_granted",
+        "system" : {
+          "hostname" : "test1",
+          "displayName" : "test1",
+          "id" : "111111111111111111111111",
+          "type" : "device"
+        },
+        "success" : true,
+        "service" : "directory",
+        "organization" : "111111111111111111111111",
+        "@version" : 0,
+        "client_ip" : "185.64.148.0",
+        "location" : {
+          "Subdivisions" : [ {
+            "IsoCode" : "ENG",
+            "Name" : "England"
+          } ],
+          "Country" : {
+            "IsoCode" : "GB",
+            "Name" : "United Kingdom"
+          },
+          "City" : {
+            "Name" : "London"
+          }
+        },
+        "id" : "111111111111111111111111",
+        "expiry" : "2025-06-10T10:25:25Z",
+        "user_agent" : {
+          "os" : "Mac OS X",
+          "device" : "Mac"
+        },
+        "timestamp" : "2025-06-10T10:30:25.55112566Z",
+        "username" : "test1",
+        "status" : "info"
+      }
+    service: "directory"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1749551425551
+ -
+  sample: |-
+    {
+      "initiated_by" : {
+        "id" : "111111111111111111111111",
+        "type" : "admin",
+        "email" : "test@test.com"
+      },
+      "geoip" : {
+        "country_code" : "US",
+        "timezone" : "America/New_York",
+        "latitude" : 39.0469,
+        "continent_code" : "NA",
+        "region_name" : "Virginia",
+        "region_code" : "US-VA",
+        "longitude" : -77.4903
+      },
+      "insights_service" : "directory",
+      "resource" : {
+        "id" : "111111111111111111111111",
+        "type" : "user",
+        "username" : "test1"
+      },
+      "auth_method" : "api key",
+      "event_type" : "user_create",
+      "success" : true,
+      "service" : "jumpcloud",
+      "organization" : "111111111111111111111111",
+      "@version" : "1",
+      "client_ip" : "185.64.148.0",
+      "id" : "111111111111111111111111",
+      "user_agent" : {
+        "os" : "Linux",
+        "device" : "Generic Feature Phone"
+      },
+      "timestamp" : "2025-06-10T10:15:49.075Z",
+      "username" : "test1"
+    }
+  result:
+    custom:
+      '@version': "1"
+      auth_method: "api key"
+      evt:
+        name: "user_create"
+        outcome: "true"
+      geoip:
+        latitude: 39.0469
+        longitude: -77.4903
+        timezone: "America/New_York"
+      http:
+        useragent_details:
+          device:
+            family: "Generic Feature Phone"
+          os:
+            family: "Linux"
+      id: "111111111111111111111111"
+      insights_service: "directory"
+      network:
+        client:
+          geoip:
+            city:
+              name: "Paris"
+            continent:
+              code: "EU"
+              name: "Europe"
+            country:
+              iso_code: "FR"
+              name: "France"
+            ipAddress: "185.64.148.0"
+            location:
+              latitude: 48.90654
+              longitude: 2.33339
+            subdivision:
+              iso_code: "FR-IDF"
+              name: "Île-de-France"
+            timezone: "Europe/Paris"
+          ip: "185.64.148.0"
+      ocsf:
+        activity_id: 1
+        activity_name: "Create"
+        actor:
+          user:
+            email_addr: "test@test.com"
+            name: "test"
+            type: "Admin"
+            type_id: 2
+            uid: "111111111111111111111111"
+        category_name: "Identity & Access Management"
+        category_uid: 3
+        class_name: "Account Change"
+        class_uid: 3001
+        metadata:
+          event_code: "user_create"
+          log_name: "directory"
+          product:
+            name: "JumpCloud Directory Insights API"
+            vendor_name: "JumpCloud"
+          uid: "111111111111111111111111"
+          version: "1.3.0"
+        severity: "Informational"
+        severity_id: 1
+        src_endpoint:
+          ip: "185.64.148.0"
+        status: "Success"
+        status_id: 1
+        time: 1749550549075
+        type_uid: 300101
+        user:
+          name: "test1"
+      organization: "111111111111111111111111"
+      resource:
+        id: "111111111111111111111111"
+        type: "user"
+        username: "test1"
+      service: "jumpcloud"
+      timestamp: "2025-06-10T10:15:49.075Z"
+      username: "test1"
+      usr:
+        email: "test@test.com"
+        id: "111111111111111111111111"
+        type: "admin"
+    message: |-
+      {
+        "initiated_by" : {
+          "id" : "111111111111111111111111",
+          "type" : "admin",
+          "email" : "test@test.com"
+        },
+        "geoip" : {
+          "country_code" : "US",
+          "timezone" : "America/New_York",
+          "latitude" : 39.0469,
+          "continent_code" : "NA",
+          "region_name" : "Virginia",
+          "region_code" : "US-VA",
+          "longitude" : -77.4903
+        },
+        "insights_service" : "directory",
+        "resource" : {
+          "id" : "111111111111111111111111",
+          "type" : "user",
+          "username" : "test1"
+        },
+        "auth_method" : "api key",
+        "event_type" : "user_create",
+        "success" : true,
+        "service" : "jumpcloud",
+        "organization" : "111111111111111111111111",
+        "@version" : "1",
+        "client_ip" : "185.64.148.0",
+        "id" : "111111111111111111111111",
+        "user_agent" : {
+          "os" : "Linux",
+          "device" : "Generic Feature Phone"
+        },
+        "timestamp" : "2025-06-10T10:15:49.075Z",
+        "username" : "test1"
+      }
+    service: "directory"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1749550549075
+ -
+  sample: |-
+    {
+      "error_message" : "",
+      "initiated_by" : {
+        "id" : "111111111111111111111111",
+        "type" : "admin",
+        "email" : "test@test.com"
+      },
+      "access_type" : "temporary",
+      "geoip" : {
+        "country_code" : "GB",
+        "timezone" : "Europe/London",
+        "latitude" : 51.5081,
+        "continent_code" : "EU",
+        "region_name" : "England",
+        "region_code" : "GB-ENG",
+        "longitude" : -0.1278
+      },
+      "insights_service" : "directory",
+      "resource" : {
+        "id" : "111111111111111111111111",
+        "type" : "user",
+        "username" : "test1"
+      },
+      "changes" : [ {
+        "field" : "sudo enabled",
+        "from" : false,
+        "to" : true
+      }, {
+        "field" : "sudo withoutPassword",
+        "from" : false,
+        "to" : false
+      } ],
+      "src_ip" : "185.64.148.0",
+      "event_type" : "association_change",
+      "system" : {
+        "hostname" : "test1",
+        "displayName" : "test1",
+        "id" : "111111111111111111111111",
+        "type" : "device"
+      },
+      "success" : true,
+      "service" : "directory",
+      "organization" : "111111111111111111111111",
+      "@version" : 0,
+      "client_ip" : "185.64.148.0",
+      "location" : {
+        "Subdivisions" : [ {
+          "IsoCode" : "ENG",
+          "Name" : "England"
+        } ],
+        "Country" : {
+          "IsoCode" : "GB",
+          "Name" : "United Kingdom"
+        },
+        "City" : {
+          "Name" : "London"
+        }
+      },
+      "id" : "111111111111111111111111",
+      "expiry" : "2025-06-10T10:25:25Z",
+      "user_agent" : {
+        "os" : "Mac OS X",
+        "device" : "Mac"
+      },
+      "timestamp" : "2025-06-10T10:31:25.55112566Z",
+      "username" : "test1",
+      "status" : "info"
+    }
+  result:
+    custom:
+      '@version': 0
+      access_type: "temporary"
+      changes:
+       -
+        field: "sudo enabled"
+        from: false
+        to: true
+       -
+        field: "sudo withoutPassword"
+        from: false
+        to: false
+      error_message: ""
+      evt:
+        name: "association_change"
+        outcome: "true"
+      expiry: "2025-06-10T10:25:25Z"
+      geoip:
+        latitude: 51.5081
+        longitude: -0.1278
+        timezone: "Europe/London"
+      http:
+        useragent_details:
+          device:
+            family: "Mac"
+          os:
+            family: "Mac OS X"
+      id: "111111111111111111111111"
+      insights_service: "directory"
+      location:
+        City:
+          Name: "London"
+        Country:
+          IsoCode: "GB"
+          Name: "United Kingdom"
+        Subdivisions:
+         -
+          IsoCode: "ENG"
+          Name: "England"
+      network:
+        client:
+          geoip:
+            city:
+              name: "Paris"
+            continent:
+              code: "EU"
+              name: "Europe"
+            country:
+              iso_code: "FR"
+              name: "France"
+            ipAddress: "185.64.148.0"
+            location:
+              latitude: 48.90654
+              longitude: 2.33339
+            subdivision:
+              iso_code: "FR-IDF"
+              name: "Île-de-France"
+            timezone: "Europe/Paris"
+          ip: "185.64.148.0"
+      ocsf:
+        activity_id: 3
+        activity_name: "Update"
+        actor:
+          user:
+            email_addr: "test@test.com"
+            type: "Admin"
+            type_id: 2
+            uid: "111111111111111111111111"
+        api:
+          operation: "association_change"
+        category_name: "Application Activity"
+        category_uid: 6
+        class_name: "API Activity"
+        class_uid: 6003
+        metadata:
+          event_code: "association_change"
+          log_name: "directory"
+          product:
+            name: "JumpCloud Directory Insights API"
+            vendor_name: "JumpCloud"
+          uid: "111111111111111111111111"
+          version: "1.3.0"
+        severity: "Informational"
+        severity_id: 1
+        src_endpoint:
+          ip: "185.64.148.0"
+        status: "Success"
+        status_id: 1
+        time: 1749551485551
+        type_uid: 600303
+      organization: "111111111111111111111111"
+      resource:
+        id: "111111111111111111111111"
+        type: "user"
+        username: "test1"
+      service: "directory"
+      status: "info"
+      system:
+        displayName: "test1"
+        hostname: "test1"
+        id: "111111111111111111111111"
+        type: "device"
+      timestamp: "2025-06-10T10:31:25.55112566Z"
+      username: "test1"
+      usr:
+        email: "test@test.com"
+        id: "111111111111111111111111"
+        type: "admin"
+    message: |-
+      {
+        "error_message" : "",
+        "initiated_by" : {
+          "id" : "111111111111111111111111",
+          "type" : "admin",
+          "email" : "test@test.com"
+        },
+        "access_type" : "temporary",
+        "geoip" : {
+          "country_code" : "GB",
+          "timezone" : "Europe/London",
+          "latitude" : 51.5081,
+          "continent_code" : "EU",
+          "region_name" : "England",
+          "region_code" : "GB-ENG",
+          "longitude" : -0.1278
+        },
+        "insights_service" : "directory",
+        "resource" : {
+          "id" : "111111111111111111111111",
+          "type" : "user",
+          "username" : "test1"
+        },
+        "changes" : [ {
+          "field" : "sudo enabled",
+          "from" : false,
+          "to" : true
+        }, {
+          "field" : "sudo withoutPassword",
+          "from" : false,
+          "to" : false
+        } ],
+        "src_ip" : "185.64.148.0",
+        "event_type" : "association_change",
+        "system" : {
+          "hostname" : "test1",
+          "displayName" : "test1",
+          "id" : "111111111111111111111111",
+          "type" : "device"
+        },
+        "success" : true,
+        "service" : "directory",
+        "organization" : "111111111111111111111111",
+        "@version" : 0,
+        "client_ip" : "185.64.148.0",
+        "location" : {
+          "Subdivisions" : [ {
+            "IsoCode" : "ENG",
+            "Name" : "England"
+          } ],
+          "Country" : {
+            "IsoCode" : "GB",
+            "Name" : "United Kingdom"
+          },
+          "City" : {
+            "Name" : "London"
+          }
+        },
+        "id" : "111111111111111111111111",
+        "expiry" : "2025-06-10T10:25:25Z",
+        "user_agent" : {
+          "os" : "Mac OS X",
+          "device" : "Mac"
+        },
+        "timestamp" : "2025-06-10T10:31:25.55112566Z",
+        "username" : "test1",
+        "status" : "info"
+      }
+    service: "directory"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1749551485551
+

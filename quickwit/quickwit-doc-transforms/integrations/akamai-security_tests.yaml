@@ -1,0 +1,135 @@
+id: "akamai-security"
+tests:
+ -
+  sample: |-
+    {
+      "geo" : {
+        "continent" : "NA",
+        "country" : "US",
+        "regionCode" : "NY",
+        "city" : "NEWYORK",
+        "asn" : "12271"
+      },
+      "service" : "akamai-application-security",
+      "httpMessage" : {
+        "path" : "/",
+        "protocol" : "HTTP/1.1",
+        "requestHeaders" : "Host: akamai.datadog.green.akamaized.net\r\nUser-Agent: java\r\nAccept-Encoding: gzip, deflate\r\nAccept: */*\r\nConnection: keep-alive\r\n",
+        "responseHeaders" : "Mime-Version: 1.0\r\nContent-Type: text/html\r\nContent-Length: 269\r\nExpires: Tue, 26 Sep 2023 16:32:58 GMT\r\nCache-Control: max-age=0, no-cache, no-store\r\nDate: Tue, 26 Sep 2023 16:32:58 GMT\r\nConnection: keep-alive\r\nServer-Timing: edge; dur=1\r\nServer-Timing: origin; dur=0\r\nServer-Timing: cdn-cache; desc=MISS\r\nAlt-Svc: h3=\":443\"; ma=93600\r\nServer-Timing: ak_p; desc=\"1695745978075_1611686174_670496257_40_5847_44_30_-\";dur=1\r\n",
+        "method" : "GET",
+        "port" : "443",
+        "requestId" : "97c699cf",
+        "bytes" : "287",
+        "start" : "1694101167",
+        "host" : "akamai.datadog.green.akamaized.net",
+        "tls" : "tls1.3",
+        "status" : "404"
+      },
+      "format" : "json",
+      "type" : "akamai_application_security",
+      "attackData" : {
+        "ruleSelectors" : "",
+        "ruleVersions" : "MQ%3d%3d%3b",
+        "policyId" : "SIEM_223627",
+        "ruleMessages" : "VW5rbm93biBCb3RzIChEZXZlbG9wbWVudCBGcmFtZXdvcmtzKQ%3d%3d%3b",
+        "ruleTags" : "QUtBTUFJL0JPVC9VTktOT1dOX0JPVA%3d%3d%3b",
+        "configId" : "94476",
+        "clientIP" : "2603:7000:3f00:6112:c0c:21d6:9935:eda7",
+        "ruleActions" : "bW9uaXRvcg%3d%3d%3b",
+        "rules" : "Mzk5MDAwMA%3d%3d%3b",
+        "ruleData" : "amF2YV9COEU0MjAxQ0EzQjhFREY1REVBRUU4RTI3N0JGQjNDRA%3d%3d%3b"
+      },
+      "version" : "1.0"
+    }
+  result:
+    custom:
+      Accept-Encoding: "gzip"
+      Connection: "keep-alive"
+      Host: "akamai.datadog.green.akamaized.net"
+      attackData:
+        configId: "94476"
+        policyId: "SIEM_223627"
+        ruleActions: "bW9uaXRvcg%3d%3d%3b"
+        ruleData: "amF2YV9COEU0MjAxQ0EzQjhFREY1REVBRUU4RTI3N0JGQjNDRA%3d%3d%3b"
+        ruleMessages: "VW5rbm93biBCb3RzIChEZXZlbG9wbWVudCBGcmFtZXdvcmtzKQ%3d%3d%3b"
+        ruleSelectors: ""
+        ruleTags: "QUtBTUFJL0JPVC9VTktOT1dOX0JPVA%3d%3d%3b"
+        ruleVersions: "MQ%3d%3d%3b"
+        rules: "Mzk5MDAwMA%3d%3d%3b"
+      format: "json"
+      http:
+        method: "GET"
+        request_id: "97c699cf"
+        status_code: "404"
+        url_details:
+          host: "akamai.datadog.green.akamaized.net"
+          path: "/"
+          port: "443"
+          scheme: "HTTP/1.1"
+        useragent: "java"
+      httpMessage:
+        requestHeaders: "Host: akamai.datadog.green.akamaized.net\r\nUser-Agent: java\r\nAccept-Encoding: gzip, deflate\r\nAccept: */*\r\nConnection: keep-alive\r\n"
+        responseHeaders: "Mime-Version: 1.0\r\nContent-Type: text/html\r\nContent-Length: 269\r\nExpires: Tue, 26 Sep 2023 16:32:58 GMT\r\nCache-Control: max-age=0, no-cache, no-store\r\nDate: Tue, 26 Sep 2023 16:32:58 GMT\r\nConnection: keep-alive\r\nServer-Timing: edge; dur=1\r\nServer-Timing: origin; dur=0\r\nServer-Timing: cdn-cache; desc=MISS\r\nAlt-Svc: h3=\":443\"; ma=93600\r\nServer-Timing: ak_p; desc=\"1695745978075_1611686174_670496257_40_5847_44_30_-\";dur=1\r\n"
+        start: "1694101167"
+        tls: "tls1.3"
+      network:
+        bytes_read: "287"
+        client:
+          geoip:
+            as:
+              number: "12271"
+            city:
+              name: "NEWYORK"
+            continent:
+              name: "NA"
+            country:
+              iso_code: "NY"
+              name: "US"
+          ip: "2603:7000:3f00:6112:c0c:21d6:9935:eda7"
+      service: "akamai-application-security"
+      type: "akamai_application_security"
+      version: "1.0"
+    message: |-
+      {
+        "geo" : {
+          "continent" : "NA",
+          "country" : "US",
+          "regionCode" : "NY",
+          "city" : "NEWYORK",
+          "asn" : "12271"
+        },
+        "service" : "akamai-application-security",
+        "httpMessage" : {
+          "path" : "/",
+          "protocol" : "HTTP/1.1",
+          "requestHeaders" : "Host: akamai.datadog.green.akamaized.net\r\nUser-Agent: java\r\nAccept-Encoding: gzip, deflate\r\nAccept: */*\r\nConnection: keep-alive\r\n",
+          "responseHeaders" : "Mime-Version: 1.0\r\nContent-Type: text/html\r\nContent-Length: 269\r\nExpires: Tue, 26 Sep 2023 16:32:58 GMT\r\nCache-Control: max-age=0, no-cache, no-store\r\nDate: Tue, 26 Sep 2023 16:32:58 GMT\r\nConnection: keep-alive\r\nServer-Timing: edge; dur=1\r\nServer-Timing: origin; dur=0\r\nServer-Timing: cdn-cache; desc=MISS\r\nAlt-Svc: h3=\":443\"; ma=93600\r\nServer-Timing: ak_p; desc=\"1695745978075_1611686174_670496257_40_5847_44_30_-\";dur=1\r\n",
+          "method" : "GET",
+          "port" : "443",
+          "requestId" : "97c699cf",
+          "bytes" : "287",
+          "start" : "1694101167",
+          "host" : "akamai.datadog.green.akamaized.net",
+          "tls" : "tls1.3",
+          "status" : "404"
+        },
+        "format" : "json",
+        "type" : "akamai_application_security",
+        "attackData" : {
+          "ruleSelectors" : "",
+          "ruleVersions" : "MQ%3d%3d%3b",
+          "policyId" : "SIEM_223627",
+          "ruleMessages" : "VW5rbm93biBCb3RzIChEZXZlbG9wbWVudCBGcmFtZXdvcmtzKQ%3d%3d%3b",
+          "ruleTags" : "QUtBTUFJL0JPVC9VTktOT1dOX0JPVA%3d%3d%3b",
+          "configId" : "94476",
+          "clientIP" : "2603:7000:3f00:6112:c0c:21d6:9935:eda7",
+          "ruleActions" : "bW9uaXRvcg%3d%3d%3b",
+          "rules" : "Mzk5MDAwMA%3d%3d%3b",
+          "ruleData" : "amF2YV9COEU0MjAxQ0EzQjhFREY1REVBRUU4RTI3N0JGQjNDRA%3d%3d%3b"
+        },
+        "version" : "1.0"
+      }
+    service: "akamai-application-security"
+    tags:
+     - "source:LOGS_SOURCE"
+

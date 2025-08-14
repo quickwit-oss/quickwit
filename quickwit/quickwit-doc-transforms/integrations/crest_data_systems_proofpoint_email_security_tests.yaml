@@ -1,0 +1,428 @@
+id: "crest_data_systems_proofpoint_email_security"
+tests:
+ -
+  sample: |-
+    {
+      "cluster" : "ppessentials_us_hosted",
+      "subject" : "[Review Your Email Account] - claire@abcd.com",
+      "threat-type" : [ "url" ],
+      "completelyRewritten" : false,
+      "hostname" : "abc-api-vX.proofpoint.com",
+      "threat-status" : [ "active" ],
+      "messages-delivered-guid" : "09aa2d4655ad3e45be503cf989cd71b7",
+      "threat-classification" : [ "phish" ],
+      "sender" : "temp6@iida-mm.com",
+      "service" : "cds.proofpoint.tap.messages_delivered_details",
+      "recipient" : [ "claire@abcd.com" ],
+      "messageSize" : 11001,
+      "senderIP" : "aaa.xx.25.32"
+    }
+  result:
+    custom:
+      cluster: "ppessentials_us_hosted"
+      completelyRewritten: false
+      geoSenderIP:
+        invalidAddress: "aaa.xx.25.32"
+      hostname: "abc-api-vX.proofpoint.com"
+      messageSize: 11001
+      messages-delivered-guid: "09aa2d4655ad3e45be503cf989cd71b7"
+      recipient:
+       - "claire@abcd.com"
+      sender: "temp6@iida-mm.com"
+      senderIP: "aaa.xx.25.32"
+      service: "cds.proofpoint.tap.messages_delivered_details"
+      subject: "[Review Your Email Account] - claire@abcd.com"
+      threat-classification:
+       - "phish"
+      threat-status:
+       - "active"
+      threat-type:
+       - "url"
+    message: |-
+      {
+        "cluster" : "ppessentials_us_hosted",
+        "subject" : "[Review Your Email Account] - claire@abcd.com",
+        "threat-type" : [ "url" ],
+        "completelyRewritten" : false,
+        "hostname" : "abc-api-vX.proofpoint.com",
+        "threat-status" : [ "active" ],
+        "messages-delivered-guid" : "09aa2d4655ad3e45be503cf989cd71b7",
+        "threat-classification" : [ "phish" ],
+        "sender" : "temp6@iida-mm.com",
+        "service" : "cds.proofpoint.tap.messages_delivered_details",
+        "recipient" : [ "claire@abcd.com" ],
+        "messageSize" : 11001,
+        "senderIP" : "aaa.xx.25.32"
+      }
+    service: "cds.proofpoint.tap.messages_delivered_details"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "cluster" : "ppessentials_us_hosted",
+      "subject" : "Re: Update Information to new Credit Card",
+      "messages-blocked-guid" : "25321310498e35558439c8ff7807690b",
+      "threat-type" : [ "url" ],
+      "completelyRewritten" : false,
+      "hostname" : "abc-api-vX.proofpoint.com",
+      "threat-status" : [ "active" ],
+      "threat-classification" : [ "malware" ],
+      "sender" : "t9nesj1u@santolex.com",
+      "service" : "cds.proofpoint.tap.messages_blocked_details",
+      "recipient" : [ "lorrie.wickus@abc.com" ],
+      "messageSize" : 211673,
+      "senderIP" : "aaa.vvv.66.67"
+    }
+  result:
+    custom:
+      cluster: "ppessentials_us_hosted"
+      completelyRewritten: false
+      geoSenderIP:
+        invalidAddress: "aaa.vvv.66.67"
+      hostname: "abc-api-vX.proofpoint.com"
+      messageSize: 211673
+      messages-blocked-guid: "25321310498e35558439c8ff7807690b"
+      recipient:
+       - "lorrie.wickus@abc.com"
+      sender: "t9nesj1u@santolex.com"
+      senderIP: "aaa.vvv.66.67"
+      service: "cds.proofpoint.tap.messages_blocked_details"
+      subject: "Re: Update Information to new Credit Card"
+      threat-classification:
+       - "malware"
+      threat-status:
+       - "active"
+      threat-type:
+       - "url"
+    message: |-
+      {
+        "cluster" : "ppessentials_us_hosted",
+        "subject" : "Re: Update Information to new Credit Card",
+        "messages-blocked-guid" : "25321310498e35558439c8ff7807690b",
+        "threat-type" : [ "url" ],
+        "completelyRewritten" : false,
+        "hostname" : "abc-api-vX.proofpoint.com",
+        "threat-status" : [ "active" ],
+        "threat-classification" : [ "malware" ],
+        "sender" : "t9nesj1u@santolex.com",
+        "service" : "cds.proofpoint.tap.messages_blocked_details",
+        "recipient" : [ "lorrie.wickus@abc.com" ],
+        "messageSize" : 211673,
+        "senderIP" : "aaa.vvv.66.67"
+      }
+    service: "cds.proofpoint.tap.messages_blocked_details"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "to_domain" : "m00.ppops.net",
+      "ppod_cluster_id" : "pphosted_prodmgt_hosted",
+      "metadata" : {
+        "origin" : {
+          "data" : {
+            "agent" : "m0072552.ppops.net",
+            "version" : "8.20.0.859",
+            "cid" : "pphosted_prodmgt_hosted"
+          }
+        }
+      },
+      "action_dmarc_rule" : "system",
+      "is_encrypted" : "Encrypted",
+      "subject" : "Cron <pps@m0072552> /opt/proofpoint/resttimer.pl",
+      "final_rule" : "system",
+      "final_action" : "accept",
+      "filter" : {
+        "routes" : [ "allow_relay", "firewallsafe", "testroute" ],
+        "disposition" : "discard",
+        "suborgs" : {
+          "sender" : "0",
+          "rcpts" : [ "0" ]
+        },
+        "durationSecs" : 0.101215,
+        "routeDirection" : "inbound",
+        "verified" : {
+          "rcpts" : [ "support@m0072552.ppops.net" ]
+        },
+        "quarantine" : {
+          "folder" : "folder1"
+        },
+        "delivered" : {
+          "rcpts" : [ "support@m0072552.ppops.net" ]
+        },
+        "qid" : "35D602wo023351",
+        "actions" : [ {
+          "module" : "access",
+          "action" : "accept",
+          "rule" : "system",
+          "isFinal" : "true"
+        } ],
+        "msgSizeBytes" : 1722
+      },
+      "envelope" : {
+        "from" : "pps@m0072552.ppops.net",
+        "rcpts" : [ "support@m0072552.ppops.net" ]
+      },
+      "guid" : "XzeQ15JPJhm3h3Rj9gY2Vam31ykMaQuL",
+      "final_module" : "regulation",
+      "message-id" : "<202306130600.35D6012h023112@m00.ppops.net>",
+      "connection" : {
+        "helo" : "m0072552.ppops.net",
+        "country" : "**",
+        "protocol" : "smtp:smtp",
+        "ip" : "127.0.0.1",
+        "host" : "localhost",
+        "tls" : {
+          "inbound" : {
+            "cipher" : "ECDHE-RSA-AES256-GCM-SHA384",
+            "cipherBits" : 256,
+            "version" : "TLSv1.2"
+          }
+        },
+        "resolveStatus" : "ok",
+        "sid" : "3r6jbtg0ab"
+      },
+      "from" : "(Cron Daemon) <pps@m00.ppops>.net",
+      "from_domain" : "m00.ppops.net",
+      "to" : "pps@m00.ppops.net",
+      "ts" : "2023-06-12T23:00:02.813342-0700",
+      "timestamp" : "2023-06-12T23:01:02.813342-0700"
+    }
+  result:
+    custom:
+      action_dmarc_rule: "system"
+      connection:
+        country: "**"
+        helo: "m0072552.ppops.net"
+        host: "localhost"
+        ip: "127.0.0.1"
+        protocol: "smtp:smtp"
+        resolveStatus: "ok"
+        sid: "3r6jbtg0ab"
+        tls:
+          inbound:
+            cipher: "ECDHE-RSA-AES256-GCM-SHA384"
+            cipherBits: 256
+            version: "TLSv1.2"
+      envelope:
+        from: "pps@m0072552.ppops.net"
+        rcpts:
+         - "support@m0072552.ppops.net"
+      filter:
+        actions:
+         -
+          module: "access"
+          action: "accept"
+          rule: "system"
+          isFinal: "true"
+        delivered:
+          rcpts:
+           - "support@m0072552.ppops.net"
+        disposition: "discard"
+        durationSecs: 0.101215
+        msgSizeBytes: 1722
+        qid: "35D602wo023351"
+        quarantine:
+          folder: "folder1"
+        routeDirection: "inbound"
+        routes:
+         - "allow_relay"
+         - "firewallsafe"
+         - "testroute"
+        suborgs:
+          rcpts:
+           - "0"
+          sender: "0"
+        verified:
+          rcpts:
+           - "support@m0072552.ppops.net"
+      final_action: "accept"
+      final_module: "regulation"
+      final_rule: "system"
+      from: "(Cron Daemon) <pps@m00.ppops>.net"
+      from_domain: "m00.ppops.net"
+      guid: "XzeQ15JPJhm3h3Rj9gY2Vam31ykMaQuL"
+      is_encrypted: "Encrypted"
+      message-id: "<202306130600.35D6012h023112@m00.ppops.net>"
+      metadata:
+        origin:
+          data:
+            agent: "m0072552.ppops.net"
+            cid: "pphosted_prodmgt_hosted"
+            version: "8.20.0.859"
+      ppod_cluster_id: "pphosted_prodmgt_hosted"
+      subject: "Cron <pps@m0072552> /opt/proofpoint/resttimer.pl"
+      timestamp: "2023-06-12T23:01:02.813342-0700"
+      to: "pps@m00.ppops.net"
+      to_domain: "m00.ppops.net"
+      ts: "2023-06-12T23:00:02.813342-0700"
+    message: |-
+      {
+        "to_domain" : "m00.ppops.net",
+        "ppod_cluster_id" : "pphosted_prodmgt_hosted",
+        "metadata" : {
+          "origin" : {
+            "data" : {
+              "agent" : "m0072552.ppops.net",
+              "version" : "8.20.0.859",
+              "cid" : "pphosted_prodmgt_hosted"
+            }
+          }
+        },
+        "action_dmarc_rule" : "system",
+        "is_encrypted" : "Encrypted",
+        "subject" : "Cron <pps@m0072552> /opt/proofpoint/resttimer.pl",
+        "final_rule" : "system",
+        "final_action" : "accept",
+        "filter" : {
+          "routes" : [ "allow_relay", "firewallsafe", "testroute" ],
+          "disposition" : "discard",
+          "suborgs" : {
+            "sender" : "0",
+            "rcpts" : [ "0" ]
+          },
+          "durationSecs" : 0.101215,
+          "routeDirection" : "inbound",
+          "verified" : {
+            "rcpts" : [ "support@m0072552.ppops.net" ]
+          },
+          "quarantine" : {
+            "folder" : "folder1"
+          },
+          "delivered" : {
+            "rcpts" : [ "support@m0072552.ppops.net" ]
+          },
+          "qid" : "35D602wo023351",
+          "actions" : [ {
+            "module" : "access",
+            "action" : "accept",
+            "rule" : "system",
+            "isFinal" : "true"
+          } ],
+          "msgSizeBytes" : 1722
+        },
+        "envelope" : {
+          "from" : "pps@m0072552.ppops.net",
+          "rcpts" : [ "support@m0072552.ppops.net" ]
+        },
+        "guid" : "XzeQ15JPJhm3h3Rj9gY2Vam31ykMaQuL",
+        "final_module" : "regulation",
+        "message-id" : "<202306130600.35D6012h023112@m00.ppops.net>",
+        "connection" : {
+          "helo" : "m0072552.ppops.net",
+          "country" : "**",
+          "protocol" : "smtp:smtp",
+          "ip" : "127.0.0.1",
+          "host" : "localhost",
+          "tls" : {
+            "inbound" : {
+              "cipher" : "ECDHE-RSA-AES256-GCM-SHA384",
+              "cipherBits" : 256,
+              "version" : "TLSv1.2"
+            }
+          },
+          "resolveStatus" : "ok",
+          "sid" : "3r6jbtg0ab"
+        },
+        "from" : "(Cron Daemon) <pps@m00.ppops>.net",
+        "from_domain" : "m00.ppops.net",
+        "to" : "pps@m00.ppops.net",
+        "ts" : "2023-06-12T23:00:02.813342-0700",
+        "timestamp" : "2023-06-12T23:01:02.813342-0700"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1686636062813
+ -
+  sample: |-
+    {
+      "hostname" : "abc-api-vX.proofpoint.com",
+      "clickIP" : "aaa.ppp.223.204",
+      "sender" : "N/A",
+      "service" : "cds.proofpoint.tap.clicks_permitted_details",
+      "clicks-permitted-guid" : "PE0US11685981076ICdoSf8R3UqxW010",
+      "recipient" : "hduncan@abc.org",
+      "clickTime" : "2023-06-16T13:55:19.000Z",
+      "classification" : "spam",
+      "url" : "https://girlscoutsconnect.sharepoint.com/:b:/s/EnterpriseDataTeam/EbC3tbr2iWZJkfjSqX2UJJYBX8pCf63yTZ5Up2DbxMiUBA?e=ZdfgtN",
+      "threatStatus" : "active"
+    }
+  result:
+    custom:
+      GeoClickIP:
+        invalidAddress: "aaa.ppp.223.204"
+      classification: "spam"
+      clickIP: "aaa.ppp.223.204"
+      clickTime: "2023-06-16T13:55:19.000Z"
+      clicks-permitted-guid: "PE0US11685981076ICdoSf8R3UqxW010"
+      hostname: "abc-api-vX.proofpoint.com"
+      recipient: "hduncan@abc.org"
+      sender: "N/A"
+      service: "cds.proofpoint.tap.clicks_permitted_details"
+      threatStatus: "active"
+      url: "https://girlscoutsconnect.sharepoint.com/:b:/s/EnterpriseDataTeam/EbC3tbr2iWZJkfjSqX2UJJYBX8pCf63yTZ5Up2DbxMiUBA?e=ZdfgtN"
+    message: |-
+      {
+        "hostname" : "abc-api-vX.proofpoint.com",
+        "clickIP" : "aaa.ppp.223.204",
+        "sender" : "N/A",
+        "service" : "cds.proofpoint.tap.clicks_permitted_details",
+        "clicks-permitted-guid" : "PE0US11685981076ICdoSf8R3UqxW010",
+        "recipient" : "hduncan@abc.org",
+        "clickTime" : "2023-06-16T13:55:19.000Z",
+        "classification" : "spam",
+        "url" : "https://girlscoutsconnect.sharepoint.com/:b:/s/EnterpriseDataTeam/EbC3tbr2iWZJkfjSqX2UJJYBX8pCf63yTZ5Up2DbxMiUBA?e=ZdfgtN",
+        "threatStatus" : "active"
+      }
+    service: "cds.proofpoint.tap.clicks_permitted_details"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "hostname" : "abc-api-vX.proofpoint.com",
+      "clickIP" : "11.22.167.229",
+      "sender" : "N/A",
+      "service" : "cds.proofpoint.tap.clicks_blocked_details",
+      "recipient" : "accounting@abc.com",
+      "clickTime" : "2023-06-16T14:44:53.000Z",
+      "classification" : "phish",
+      "clicks-blocked-guid" : "PE0US41686863027IRcBB9nk5Gax4010",
+      "url" : "https://sites.google.com/mlcrosoft-held-messages.com/j22kmll?usp=sharing",
+      "threatStatus" : "active"
+    }
+  result:
+    custom:
+      GeoClickIP: {}
+      classification: "phish"
+      clickIP: "11.22.167.229"
+      clickTime: "2023-06-16T14:44:53.000Z"
+      clicks-blocked-guid: "PE0US41686863027IRcBB9nk5Gax4010"
+      hostname: "abc-api-vX.proofpoint.com"
+      recipient: "accounting@abc.com"
+      sender: "N/A"
+      service: "cds.proofpoint.tap.clicks_blocked_details"
+      threatStatus: "active"
+      url: "https://sites.google.com/mlcrosoft-held-messages.com/j22kmll?usp=sharing"
+    message: |-
+      {
+        "hostname" : "abc-api-vX.proofpoint.com",
+        "clickIP" : "11.22.167.229",
+        "sender" : "N/A",
+        "service" : "cds.proofpoint.tap.clicks_blocked_details",
+        "recipient" : "accounting@abc.com",
+        "clickTime" : "2023-06-16T14:44:53.000Z",
+        "classification" : "phish",
+        "clicks-blocked-guid" : "PE0US41686863027IRcBB9nk5Gax4010",
+        "url" : "https://sites.google.com/mlcrosoft-held-messages.com/j22kmll?usp=sharing",
+        "threatStatus" : "active"
+      }
+    service: "cds.proofpoint.tap.clicks_blocked_details"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+

@@ -1,0 +1,46 @@
+id: supervisord
+metric_id: supervisord
+backend_only: false
+facets:
+pipeline:
+  type: pipeline
+  name: Supervisord
+  enabled: true
+  filter:
+    query: source:supervisord
+  processors:
+    - type: grok-parser
+      name: Parsing Supervisord logs
+      enabled: true
+      source: message
+      samples:
+        # More info on supervisord logs at http://www.supervisord.org/logging.html
+        # Default Logs
+        - 2020-09-18 10:10:32,584 BLAT Increased RLIMIT_NOFILE limit to 128000
+        - 2020-09-18 10:10:32,584 WARN Included extra file "/home/vagrant/etc/supervisor/conf.d/integrations.conf" during parsing
+        # Multi-line example
+        - |
+          2020-09-18 10:10:32,592 TRAC /var/run/supervisor.sock:Medusa (V1.12) started at Fri Sep 18 10:10:32 2020
+            Hostname: <unix domain socket>
+            Port:/var/run/supervisor.sock
+      grok:
+        supportRules: |
+          _date %{date("yyyy-MM-dd HH:mm:ss,SSS"):timestamp}
+          _status %{word:status}
+        matchRules: |
+          Supervisord_default %{_date}\s+%{_status}\s+%{data:message}
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `status` as the official status of the log
+      enabled: true
+      sources:
+        - status
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message

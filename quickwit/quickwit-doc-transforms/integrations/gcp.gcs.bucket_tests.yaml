@@ -1,0 +1,738 @@
+id: "gcp.gcs.bucket"
+tests:
+ -
+  sample: |-
+    {
+      "publishTime" : "2020-04-16T15:14:40.887Z",
+      "data" : {
+        "severity" : "INFO",
+        "logName" : "projects/test-271317/logs/cloudaudit.googleapis.com%2Fdata_access",
+        "resource" : {
+          "type" : "gcs_bucket",
+          "labels" : {
+            "project_id" : "test-271317",
+            "bucket_name" : "",
+            "location" : "global"
+          }
+        },
+        "protoPayload" : {
+          "requestMetadata" : {
+            "requestAttributes" : {
+              "time" : "2020-04-16T15:14:36.425424618Z"
+            },
+            "callerSuppliedUserAgent" : "Google-HTTP-Java-Client/1.26.0-SNAPSHOT (gzip),gzip(gfe)",
+            "callerIp" : "2002:abe:d00d::"
+          },
+          "authenticationInfo" : {
+            "principalEmail" : "service-org-798846641906@security-center-api.iam.gserviceaccount.com"
+          },
+          "authorizationInfo" : [ {
+            "permission" : "storage.buckets.getIamPolicy",
+            "granted" : true
+          } ],
+          "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+          "methodName" : "storage.buckets.list",
+          "serviceName" : "storage.googleapis.com",
+          "resourceLocation" : {
+            "currentLocations" : [ "global" ]
+          }
+        },
+        "receiveTimestamp" : "2020-04-16T15:14:37.428855543Z",
+        "insertId" : "ftsxhwe44t89",
+        "timestamp" : "2020-04-16T15:14:36.419070905Z"
+      },
+      "publish_time" : "2020-04-16T15:14:40.887Z",
+      "messageId" : "1128611373330515",
+      "attributes" : {
+        "logging" : {
+          "googleapis" : {
+            "com/timestamp" : "2020-04-16T15:14:36.419070905Z"
+          }
+        }
+      },
+      "message_id" : "1128611373330515",
+      "subscription" : "projects/test-271317/subscriptions/datadog"
+    }
+  result:
+    custom:
+      attributes:
+        logging:
+          googleapis:
+            com/timestamp: "2020-04-16T15:14:36.419070905Z"
+      data:
+        insertId: "ftsxhwe44t89"
+        logName: "projects/test-271317/logs/cloudaudit.googleapis.com%2Fdata_access"
+        protoPayload:
+          '@type': "type.googleapis.com/google.cloud.audit.AuditLog"
+          authenticationInfo:
+            principalEmail: "service-org-798846641906@security-center-api.iam.gserviceaccount.com"
+          authorizationInfo:
+           -
+            permission: "storage.buckets.getIamPolicy"
+            granted: true
+          methodName: "storage.buckets.list"
+          requestMetadata:
+            callerIp: "2002:abe:d00d::"
+            callerSuppliedUserAgent: "Google-HTTP-Java-Client/1.26.0-SNAPSHOT (gzip),gzip(gfe)"
+            requestAttributes:
+              time: "2020-04-16T15:14:36.425424618Z"
+          resourceLocation:
+            currentLocations:
+             - "global"
+          serviceName: "storage.googleapis.com"
+        receiveTimestamp: "2020-04-16T15:14:37.428855543Z"
+        resource:
+          labels:
+            bucket_name: ""
+            location: "global"
+            project_id: "test-271317"
+          type: "gcs_bucket"
+        severity: "INFO"
+        timestamp: "2020-04-16T15:14:36.419070905Z"
+      evt:
+        name: "storage.buckets.list"
+        outcome: "INFO"
+      http:
+        useragent: "Google-HTTP-Java-Client/1.26.0-SNAPSHOT (gzip),gzip(gfe)"
+        useragent_details:
+          browser:
+            family: "Google-HTTP-Java-Client"
+            major: "1"
+            minor: "26"
+            patch: "0"
+          device:
+            brand: "Spider"
+            category: "Bot"
+            family: "Spider"
+            model: "Desktop"
+          os:
+            family: "Other"
+      messageId: "1128611373330515"
+      message_id: "1128611373330515"
+      network:
+        client:
+          geoip: {}
+          ip: "2002:abe:d00d::"
+      ocsf:
+        activity_id: 2
+        activity_name: "Read"
+        actor:
+          user:
+            account:
+              uid: "test-271317"
+            email_addr: "service-org-798846641906@security-center-api.iam.gserviceaccount.com"
+            name: "service-org-798846641906"
+            type: "System"
+            type_id: 3
+        api:
+          operation: "storage.buckets.list"
+          request:
+            uid: "Unknown"
+          service:
+            name: "storage.googleapis.com"
+        category_name: "Application Activity"
+        category_uid: 6
+        class_name: "API Activity"
+        class_uid: 6003
+        cloud:
+          account:
+            uid: "test-271317"
+          provider: "Google Cloud"
+          region: "global"
+        http_request:
+          user_agent: "Google-HTTP-Java-Client/1.26.0-SNAPSHOT (gzip),gzip(gfe)"
+        metadata:
+          event_code: "storage.buckets.list"
+          log_name: "projects/test-271317/logs/cloudaudit.googleapis.com%2Fdata_access"
+          product:
+            name: "Google Cloud Audit logs"
+            vendor_name: "Google Cloud"
+          profiles:
+           - "cloud"
+           - "datetime"
+          uid: "ftsxhwe44t89"
+          version: "1.3.0"
+        severity: "Informational"
+        severity_id: 1
+        src_endpoint:
+          ip: "2002:abe:d00d::"
+        status: "Success"
+        status_id: 1
+        time: 1587050076419
+        time_dt: "2020-04-16T15:14:36.419070905Z"
+        type_uid: 600302
+      publishTime: "2020-04-16T15:14:40.887Z"
+      publish_time: "2020-04-16T15:14:40.887Z"
+      subscription: "projects/test-271317/subscriptions/datadog"
+      usr:
+        email: "service-org-798846641906@security-center-api.iam.gserviceaccount.com"
+        id: "service-org-798846641906@security-center-api.iam.gserviceaccount.com"
+    message: |-
+      {
+        "publishTime" : "2020-04-16T15:14:40.887Z",
+        "data" : {
+          "severity" : "INFO",
+          "logName" : "projects/test-271317/logs/cloudaudit.googleapis.com%2Fdata_access",
+          "resource" : {
+            "type" : "gcs_bucket",
+            "labels" : {
+              "project_id" : "test-271317",
+              "bucket_name" : "",
+              "location" : "global"
+            }
+          },
+          "protoPayload" : {
+            "requestMetadata" : {
+              "requestAttributes" : {
+                "time" : "2020-04-16T15:14:36.425424618Z"
+              },
+              "callerSuppliedUserAgent" : "Google-HTTP-Java-Client/1.26.0-SNAPSHOT (gzip),gzip(gfe)",
+              "callerIp" : "2002:abe:d00d::"
+            },
+            "authenticationInfo" : {
+              "principalEmail" : "service-org-798846641906@security-center-api.iam.gserviceaccount.com"
+            },
+            "authorizationInfo" : [ {
+              "permission" : "storage.buckets.getIamPolicy",
+              "granted" : true
+            } ],
+            "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+            "methodName" : "storage.buckets.list",
+            "serviceName" : "storage.googleapis.com",
+            "resourceLocation" : {
+              "currentLocations" : [ "global" ]
+            }
+          },
+          "receiveTimestamp" : "2020-04-16T15:14:37.428855543Z",
+          "insertId" : "ftsxhwe44t89",
+          "timestamp" : "2020-04-16T15:14:36.419070905Z"
+        },
+        "publish_time" : "2020-04-16T15:14:40.887Z",
+        "messageId" : "1128611373330515",
+        "attributes" : {
+          "logging" : {
+            "googleapis" : {
+              "com/timestamp" : "2020-04-16T15:14:36.419070905Z"
+            }
+          }
+        },
+        "message_id" : "1128611373330515",
+        "subscription" : "projects/test-271317/subscriptions/datadog"
+      }
+    service: "storage.googleapis.com"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1587050076419
+ -
+  sample: |-
+    {
+      "severity" : "INFO",
+      "logName" : "projects/test-271317/logs/cloudaudit.googleapis.com%2Fdata_access",
+      "resource" : {
+        "type" : "gcs_bucket",
+        "labels" : {
+          "project_id" : "test-271317",
+          "bucket_name" : "",
+          "location" : "global"
+        }
+      },
+      "protoPayload" : {
+        "requestMetadata" : {
+          "requestAttributes" : {
+            "time" : "2020-04-16T15:14:36.425424618Z"
+          },
+          "callerSuppliedUserAgent" : "Google-HTTP-Java-Client/1.26.0-SNAPSHOT (gzip),gzip(gfe)",
+          "callerIp" : "2002:abe:d00d::"
+        },
+        "authenticationInfo" : {
+          "principalEmail" : "service-org-798846641906@security-center-api.iam.gserviceaccount.com"
+        },
+        "authorizationInfo" : [ {
+          "permission" : "storage.buckets.getIamPolicy",
+          "granted" : true
+        } ],
+        "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+        "methodName" : "storage.buckets.list",
+        "serviceName" : "storage.googleapis.com",
+        "resourceLocation" : {
+          "currentLocations" : [ "global" ]
+        }
+      },
+      "receiveTimestamp" : "2020-04-16T15:14:37.428855543Z",
+      "insertId" : "ftsxhwe44t89",
+      "timestamp" : "2020-04-16T15:14:36.419070905Z"
+    }
+  result:
+    custom:
+      evt:
+        name: "storage.buckets.list"
+        outcome: "INFO"
+      http:
+        useragent: "Google-HTTP-Java-Client/1.26.0-SNAPSHOT (gzip),gzip(gfe)"
+        useragent_details:
+          browser:
+            family: "Google-HTTP-Java-Client"
+            major: "1"
+            minor: "26"
+            patch: "0"
+          device:
+            brand: "Spider"
+            category: "Bot"
+            family: "Spider"
+            model: "Desktop"
+          os:
+            family: "Other"
+      insertId: "ftsxhwe44t89"
+      logName: "projects/test-271317/logs/cloudaudit.googleapis.com%2Fdata_access"
+      network:
+        client:
+          geoip: {}
+          ip: "2002:abe:d00d::"
+      ocsf:
+        activity_id: 2
+        activity_name: "Read"
+        actor:
+          user:
+            account:
+              uid: "test-271317"
+            email_addr: "service-org-798846641906@security-center-api.iam.gserviceaccount.com"
+            name: "service-org-798846641906"
+            type: "System"
+            type_id: 3
+        api:
+          operation: "storage.buckets.list"
+          request:
+            uid: "Unknown"
+          service:
+            name: "storage.googleapis.com"
+        category_name: "Application Activity"
+        category_uid: 6
+        class_name: "API Activity"
+        class_uid: 6003
+        cloud:
+          account:
+            uid: "test-271317"
+          provider: "Google Cloud"
+          region: "global"
+        http_request:
+          user_agent: "Google-HTTP-Java-Client/1.26.0-SNAPSHOT (gzip),gzip(gfe)"
+        metadata:
+          event_code: "storage.buckets.list"
+          log_name: "projects/test-271317/logs/cloudaudit.googleapis.com%2Fdata_access"
+          product:
+            name: "Google Cloud Audit logs"
+            vendor_name: "Google Cloud"
+          profiles:
+           - "cloud"
+           - "datetime"
+          uid: "ftsxhwe44t89"
+          version: "1.3.0"
+        severity: "Informational"
+        severity_id: 1
+        src_endpoint:
+          ip: "2002:abe:d00d::"
+        status: "Success"
+        status_id: 1
+        time: 1587050076419
+        time_dt: "2020-04-16T15:14:36.419070905Z"
+        type_uid: 600302
+      protoPayload:
+        '@type': "type.googleapis.com/google.cloud.audit.AuditLog"
+        authenticationInfo:
+          principalEmail: "service-org-798846641906@security-center-api.iam.gserviceaccount.com"
+        authorizationInfo:
+         -
+          permission: "storage.buckets.getIamPolicy"
+          granted: true
+        methodName: "storage.buckets.list"
+        requestMetadata:
+          callerIp: "2002:abe:d00d::"
+          callerSuppliedUserAgent: "Google-HTTP-Java-Client/1.26.0-SNAPSHOT (gzip),gzip(gfe)"
+          requestAttributes:
+            time: "2020-04-16T15:14:36.425424618Z"
+        resourceLocation:
+          currentLocations:
+           - "global"
+        serviceName: "storage.googleapis.com"
+      receiveTimestamp: "2020-04-16T15:14:37.428855543Z"
+      resource:
+        labels:
+          bucket_name: ""
+          location: "global"
+          project_id: "test-271317"
+        type: "gcs_bucket"
+      severity: "INFO"
+      timestamp: "2020-04-16T15:14:36.419070905Z"
+      usr:
+        email: "service-org-798846641906@security-center-api.iam.gserviceaccount.com"
+        id: "service-org-798846641906@security-center-api.iam.gserviceaccount.com"
+    message: |-
+      {
+        "severity" : "INFO",
+        "logName" : "projects/test-271317/logs/cloudaudit.googleapis.com%2Fdata_access",
+        "resource" : {
+          "type" : "gcs_bucket",
+          "labels" : {
+            "project_id" : "test-271317",
+            "bucket_name" : "",
+            "location" : "global"
+          }
+        },
+        "protoPayload" : {
+          "requestMetadata" : {
+            "requestAttributes" : {
+              "time" : "2020-04-16T15:14:36.425424618Z"
+            },
+            "callerSuppliedUserAgent" : "Google-HTTP-Java-Client/1.26.0-SNAPSHOT (gzip),gzip(gfe)",
+            "callerIp" : "2002:abe:d00d::"
+          },
+          "authenticationInfo" : {
+            "principalEmail" : "service-org-798846641906@security-center-api.iam.gserviceaccount.com"
+          },
+          "authorizationInfo" : [ {
+            "permission" : "storage.buckets.getIamPolicy",
+            "granted" : true
+          } ],
+          "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+          "methodName" : "storage.buckets.list",
+          "serviceName" : "storage.googleapis.com",
+          "resourceLocation" : {
+            "currentLocations" : [ "global" ]
+          }
+        },
+        "receiveTimestamp" : "2020-04-16T15:14:37.428855543Z",
+        "insertId" : "ftsxhwe44t89",
+        "timestamp" : "2020-04-16T15:14:36.419070905Z"
+      }
+    service: "storage.googleapis.com"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1587050076419
+ -
+  sample: |-
+    {
+      "data" : {
+        "severity" : "NOTICE",
+        "logName" : "projects/test-project/logs/cloudaudit.googleapis.com%2Factivity",
+        "resource" : {
+          "labels" : {
+            "project_id" : "test-project",
+            "bucket_name" : "test-bucket",
+            "location" : "us-central1"
+          }
+        }
+      },
+      "protoPayload" : {
+        "requestMetadata" : {
+          "requestAttributes" : {
+            "time" : "2025-03-16T11:52:34.333972044Z"
+          },
+          "callerSuppliedUserAgent" : "Google-Deployment-Manager,gzip(gfe)",
+          "callerIp" : "2002:abe:d00d::"
+        },
+        "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+        "methodName" : "storage.objects.get"
+      },
+      "resourceName" : "projects/_/buckets/us-central1-test/objects/object.json",
+      "receiveTimestamp" : "2025-04-09T11:44:34.318116154Z",
+      "serviceName" : "storage.googleapis.com",
+      "insertId" : "bz12o2ey39ud",
+      "timestamp" : "2025-04-09T11:46:34.318116154Z"
+    }
+  result:
+    custom:
+      data:
+        logName: "projects/test-project/logs/cloudaudit.googleapis.com%2Factivity"
+        resource:
+          labels:
+            bucket_name: "test-bucket"
+            location: "us-central1"
+            project_id: "test-project"
+        severity: "NOTICE"
+      evt:
+        name: "storage.objects.get"
+        outcome: "NOTICE"
+      http:
+        useragent: "Google-Deployment-Manager,gzip(gfe)"
+        useragent_details:
+          browser:
+            family: "Other"
+          device:
+            category: "Other"
+            family: "Other"
+          os:
+            family: "Other"
+      insertId: "bz12o2ey39ud"
+      network:
+        client:
+          geoip: {}
+          ip: "2002:abe:d00d::"
+      ocsf:
+        activity_id: 1
+        activity_name: "Read"
+        actor:
+          user:
+            account:
+              uid: "test-project"
+        api:
+          operation: "storage.objects.get"
+          request:
+            uid: "Unknown"
+        category_name: "Application Activity"
+        category_uid: 6
+        class_name: "Datastore Activity"
+        class_uid: 6005
+        cloud:
+          account:
+            uid: "test-project"
+          provider: "Google Cloud"
+          region: "us-central1"
+        databucket:
+          file:
+            type_id: 1
+          name: "test-bucket"
+          region: "us-central1"
+          type: "GCP Bucket"
+          type_id: 3
+        http_request:
+          user_agent: "Google-Deployment-Manager,gzip(gfe)"
+        metadata:
+          event_code: "storage.objects.get"
+          log_name: "projects/test-project/logs/cloudaudit.googleapis.com%2Factivity"
+          product:
+            name: "Google Cloud Audit logs"
+            vendor_name: "Google Cloud"
+          profiles:
+           - "cloud"
+           - "datetime"
+          uid: "bz12o2ey39ud"
+          version: "1.3.0"
+        severity: "NOTICE"
+        severity_id: 99
+        src_endpoint:
+          ip: "2002:abe:d00d::"
+        status: "Success"
+        status_id: 1
+        time: 1744199194318
+        time_dt: "2025-04-09T11:46:34.318116154Z"
+        type: "Databucket"
+        type_id: 2
+        type_uid: 600501
+      protoPayload:
+        '@type': "type.googleapis.com/google.cloud.audit.AuditLog"
+        methodName: "storage.objects.get"
+        requestMetadata:
+          callerIp: "2002:abe:d00d::"
+          callerSuppliedUserAgent: "Google-Deployment-Manager,gzip(gfe)"
+          requestAttributes:
+            time: "2025-03-16T11:52:34.333972044Z"
+      receiveTimestamp: "2025-04-09T11:44:34.318116154Z"
+      resourceName: "projects/_/buckets/us-central1-test/objects/object.json"
+      serviceName: "storage.googleapis.com"
+      timestamp: "2025-04-09T11:46:34.318116154Z"
+    message: |-
+      {
+        "data" : {
+          "severity" : "NOTICE",
+          "logName" : "projects/test-project/logs/cloudaudit.googleapis.com%2Factivity",
+          "resource" : {
+            "labels" : {
+              "project_id" : "test-project",
+              "bucket_name" : "test-bucket",
+              "location" : "us-central1"
+            }
+          }
+        },
+        "protoPayload" : {
+          "requestMetadata" : {
+            "requestAttributes" : {
+              "time" : "2025-03-16T11:52:34.333972044Z"
+            },
+            "callerSuppliedUserAgent" : "Google-Deployment-Manager,gzip(gfe)",
+            "callerIp" : "2002:abe:d00d::"
+          },
+          "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+          "methodName" : "storage.objects.get"
+        },
+        "resourceName" : "projects/_/buckets/us-central1-test/objects/object.json",
+        "receiveTimestamp" : "2025-04-09T11:44:34.318116154Z",
+        "serviceName" : "storage.googleapis.com",
+        "insertId" : "bz12o2ey39ud",
+        "timestamp" : "2025-04-09T11:46:34.318116154Z"
+      }
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1744199194318
+ -
+  sample: |-
+    {
+      "data" : {
+        "severity" : "ERROR",
+        "logName" : "projects/test-project/logs/cloudaudit.googleapis.com%2Factivity",
+        "resource" : {
+          "labels" : {
+            "project_id" : "test-project",
+            "bucket_name" : "test-bucket",
+            "location" : "us-central1"
+          }
+        },
+        "protoPayload" : {
+          "requestMetadata" : {
+            "requestAttributes" : {
+              "time" : "2025-03-16T11:52:34.333972044Z"
+            },
+            "callerSuppliedUserAgent" : "Google-Deployment-Manager,gzip(gfe)",
+            "callerIp" : "2002:abe:d00d::"
+          },
+          "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+          "methodName" : "storage.objects.create",
+          "resourceName" : "projects/_/buckets/us-central1-test/objects/object.json",
+          "serviceName" : "storage.googleapis.com",
+          "status" : {
+            "code" : 7
+          }
+        },
+        "receiveTimestamp" : "2025-04-09T12:00:34.318116154Z",
+        "insertId" : "bz12o2ey39ud",
+        "timestamp" : "2025-04-09TT13:55:34.318116154Z"
+      }
+    }
+  result:
+    custom:
+      data:
+        insertId: "bz12o2ey39ud"
+        logName: "projects/test-project/logs/cloudaudit.googleapis.com%2Factivity"
+        protoPayload:
+          '@type': "type.googleapis.com/google.cloud.audit.AuditLog"
+          methodName: "storage.objects.create"
+          requestMetadata:
+            callerIp: "2002:abe:d00d::"
+            callerSuppliedUserAgent: "Google-Deployment-Manager,gzip(gfe)"
+            requestAttributes:
+              time: "2025-03-16T11:52:34.333972044Z"
+          resourceName: "projects/_/buckets/us-central1-test/objects/object.json"
+          serviceName: "storage.googleapis.com"
+          status:
+            code: 7
+        receiveTimestamp: "2025-04-09T12:00:34.318116154Z"
+        resource:
+          labels:
+            bucket_name: "test-bucket"
+            location: "us-central1"
+            project_id: "test-project"
+        severity: "ERROR"
+        timestamp: "2025-04-09TT13:55:34.318116154Z"
+      evt:
+        name: "storage.objects.create"
+        outcome: "ERROR"
+        status_code: "7"
+      http:
+        useragent: "Google-Deployment-Manager,gzip(gfe)"
+        useragent_details:
+          browser:
+            family: "Other"
+          device:
+            category: "Other"
+            family: "Other"
+          os:
+            family: "Other"
+      network:
+        client:
+          geoip: {}
+          ip: "2002:abe:d00d::"
+      ocsf:
+        activity_id: 6
+        activity_name: "Create"
+        actor:
+          user:
+            account:
+              uid: "test-project"
+        api:
+          operation: "storage.objects.create"
+          request:
+            uid: "Unknown"
+          service:
+            name: "storage.googleapis.com"
+        category_name: "Application Activity"
+        category_uid: 6
+        class_name: "Datastore Activity"
+        class_uid: 6005
+        cloud:
+          account:
+            uid: "test-project"
+          provider: "Google Cloud"
+          region: "us-central1"
+        databucket:
+          file:
+            name: "object.json"
+            path: "projects/_/buckets/us-central1-test/objects/object.json"
+            type_id: 1
+          name: "test-bucket"
+          region: "us-central1"
+          type: "GCP Bucket"
+          type_id: 3
+        http_request:
+          user_agent: "Google-Deployment-Manager,gzip(gfe)"
+        metadata:
+          event_code: "storage.objects.create"
+          log_name: "projects/test-project/logs/cloudaudit.googleapis.com%2Factivity"
+          product:
+            name: "Google Cloud Audit logs"
+            vendor_name: "Google Cloud"
+          profiles:
+           - "cloud"
+           - "datetime"
+          uid: "bz12o2ey39ud"
+          version: "1.3.0"
+        severity: "ERROR"
+        severity_id: 99
+        src_endpoint:
+          ip: "2002:abe:d00d::"
+        status: "Failure"
+        status_id: 2
+        time_dt: "2025-04-09TT13:55:34.318116154Z"
+        type: "Databucket"
+        type_id: 2
+        type_uid: 600506
+    message: |-
+      {
+        "data" : {
+          "severity" : "ERROR",
+          "logName" : "projects/test-project/logs/cloudaudit.googleapis.com%2Factivity",
+          "resource" : {
+            "labels" : {
+              "project_id" : "test-project",
+              "bucket_name" : "test-bucket",
+              "location" : "us-central1"
+            }
+          },
+          "protoPayload" : {
+            "requestMetadata" : {
+              "requestAttributes" : {
+                "time" : "2025-03-16T11:52:34.333972044Z"
+              },
+              "callerSuppliedUserAgent" : "Google-Deployment-Manager,gzip(gfe)",
+              "callerIp" : "2002:abe:d00d::"
+            },
+            "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+            "methodName" : "storage.objects.create",
+            "resourceName" : "projects/_/buckets/us-central1-test/objects/object.json",
+            "serviceName" : "storage.googleapis.com",
+            "status" : {
+              "code" : 7
+            }
+          },
+          "receiveTimestamp" : "2025-04-09T12:00:34.318116154Z",
+          "insertId" : "bz12o2ey39ud",
+          "timestamp" : "2025-04-09TT13:55:34.318116154Z"
+        }
+      }
+    service: "storage.googleapis.com"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+

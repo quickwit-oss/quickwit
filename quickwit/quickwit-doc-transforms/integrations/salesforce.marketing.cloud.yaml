@@ -1,0 +1,48 @@
+id: salesforce.marketing.cloud
+metric_id: salesforce-marketing-cloud
+backend_only: false
+facets:
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+pipeline:
+  type: pipeline
+  name: Salesforce Marketing Cloud
+  enabled: true
+  filter:
+    query: source:salesforce.marketing.cloud
+  processors:
+    - type: date-remapper
+      name: Define `timestampUTC` as the official date of the log
+      enabled: true
+      sources:
+        - timestampUTC
+    - type: attribute-remapper
+      name: Map `eventCategoryType` to `evt.name`
+      enabled: true
+      sources:
+        - eventCategoryType
+      sourceType: attribute
+      target: evt.name
+      targetType: attribute
+      targetFormat: string
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `composite.subscriberId` to `usr.id`
+      enabled: true
+      sources:
+        - composite.subscriberId
+      sourceType: attribute
+      target: usr.id
+      targetType: attribute
+      targetFormat: string
+      preserveSource: true
+      overrideOnConflict: false

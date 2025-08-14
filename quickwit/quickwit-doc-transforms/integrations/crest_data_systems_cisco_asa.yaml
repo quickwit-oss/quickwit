@@ -1,0 +1,371 @@
+id: crest_data_systems_cisco_asa
+metric_id: crest-data-systems-cisco-asa
+backend_only: false
+facets:
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ASA
+    name: Process Status
+    path: process_status
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ASA
+    name: Inbound Destination Port
+    path: inbound_dest_port
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ASA
+    name: Reason
+    path: reason
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ASA
+    name: Destination Port
+    path: cisco_asa_dest_port
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ASA
+    name: Outbound Source Port
+    path: outbound_src_port
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ASA
+    name: User Identity
+    path: user_identity
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ASA
+    name: Outside Mapped Address
+    path: outside_mapped_address
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ASA
+    name: Parent Outside Interface
+    path: parent_outside_ifc
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ASA
+    name: Service
+    path: cisco_asa_service
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ASA
+    name: Parent Inside Interface
+    path: parent_inside_ifc
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ASA
+    name: Old Active Interface
+    path: old_active_ifc
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ASA
+    name: Inside Mapped Address
+    path: inside_mapped_address
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ASA
+    name: Outside Mapped Port
+    path: outside_mapped_port
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ASA
+    name: Severity
+    path: cisco_asa_severity
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ASA
+    name: IP Address
+    path: ip_address
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ASA
+    name: Inbound Source IP
+    path: inbound_src_ip
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ASA
+    name: Outside Zone
+    path: outside_zone
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ASA
+    name: Download Status
+    path: download_status
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ASA
+    name: Outbound Destination IP
+    path: outbound_dest_ip
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ASA
+    name: Drop Reason
+    path: drop_reason
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ASA
+    name: Inbound Destination IP
+    path: inbound_dest_ip
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ASA
+    name: Outbound Destination Port
+    path: outbound_dest_port
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ASA
+    name: IP Protocol
+    path: ip_protocol
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ASA
+    name: Inbound Source Port
+    path: inbound_src_port
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ASA
+    name: Destination IP
+    path: cisco_asa_dest_ip
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ASA
+    name: Command
+    path: command
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ASA
+    name: Inside Zone
+    path: inside_zone
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ASA
+    name: Source Port
+    path: cisco_asa_src_port
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ASA
+    name: Source IP
+    path: cisco_asa_src_ip
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ASA
+    name: New Active Interface
+    path: new_active_ifc
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ASA
+    name: Outbound Source IP
+    path: outbound_src_ip
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ASA
+    name: Inside Mapped Port
+    path: inside_mapped_port
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ASA
+    name: Auth Failed IP Address
+    path: auth_failed_ip_address
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ASA
+    name: Message ID
+    path: message_id
+    source: log
+pipeline:
+  type: pipeline
+  name: Cisco ASA by Crest Data Systems
+  enabled: true
+  filter:
+    query: source:crest_data_systems_cisco_asa
+  processors:
+    - type: grok-parser
+      name: Parsing the message_id, severity and device_id attributes
+      enabled: true
+      source: message
+      samples:
+        - '<166>May 17 2023 03:04:28: %ASA-6-302013: Built outbound TCP connection 704117 for inside:30.0.1.4/10514 (30.0.1.4/10514) to identity:30.0.1.5/5095 (30.0.1.5/5095)'
+        - "<166>2018-06-27T12:17:46Z asa: %ASA-6-110002: Failed to locate egress interface for protocol from src interface :src IP/src port to dest IP/dest port\n"
+      grok:
+        supportRules: "_timeFormat1 (<%{integer:}>)?%{date(\"MMM dd yyyy HH:mm:ss\"):}\n_timeFormat2 (<%{integer:}>)?%{date(\"yyyy-MM-dd'T'HH:mm:ssZ\"):}\n_asaFormat %ASA-%{integer:severity}-%{integer:message_id}\n_deviceID %{_space}%{notSpace:device_id}%{_space}\n_space %{regex(\"(\\\\s)*\"):}"
+        matchRules: 'globalRule (%{_timeFormat1}|%{_timeFormat2})(%{_deviceID})?: %{_asaFormat}:%{data:}'
+    - type: pipeline
+      name: Application Firewall
+      enabled: true
+      filter:
+        query: '@message_id:(415001 OR 415002 OR 415003 OR 415005 OR 415013 OR 415016)'
+      processors:
+        - type: grok-parser
+          id: KIGg2BaoTUmWaj5AeZPcOQ
+          name: Parsing attributes for Application Firewall logs
+          enabled: true
+          meta:
+            last_update:
+              user_id: '4999476'
+              timestamp: 1690180940223
+            tags: []
+          source: message
+          samples:
+            - '<166>May 12 2023 13:47:33: %ASA-6-415001: HTTP - matched dropping in policy-map abc , header field count exceeded connection from Ifc:10.50.2.13/514 to Inside:10.60.52.12/512'
+            - '<166>May 12 2023 13:47:33: %ASA-6-415002: HTTP - matched matched_string in policy-map map_name , header field length exceeded connection_action from Ifc:10.50.2.13/514 to Inside:10.60.52.12/512'
+            - '<166>May 12 2023 13:47:33: %ASA-6-415003: HTTP - matched matched_string in policy-map map_name , body length exceeded connection_action from Ifc:10.50.2.13/514 to Inside:10.60.52.12/512'
+            - '<166>May 12 2023 13:47:33: %ASA-5-415005: HTTP - matched matched_string in policy-map map_name , URI length exceeded connection_action from Ifc:10.50.2.13/514 to Inside:10.60.52.12/512'
+            - '<166>May 12 2023 13:47:33: %ASA-4-415016: policy-map map_name :Maximum number of unanswered HTTP requests exceeded connection_action from Ifc:10.50.2.13/514 to Inside:10.60.52.12/512'
+          grok:
+            supportRules: "_timeFormat1 (<%{integer:}>)?%{date(\"MMM dd yyyy HH:mm:ss\"):}\n_timeFormat2 (<%{integer:}>)?%{date(\"yyyy-MM-dd'T'HH:mm:ssZ\"):}\n_asaFormat %ASA-%{integer:}-%{integer:}\n_data %{data:}%{ip:cisco_asa_src_ip}%{_space}/%{_space}%{integer:cisco_asa_src_port} to (%{regex(\"[^:]*\"):}:)?%{_space}%{ip:cisco_asa_dest_ip}%{_space}/%{_space}%{integer:cisco_asa_dest_port}\n_deviceID %{_space}%{notSpace:}%{_space}\n_space %{regex(\"(\\\\s)*\"):}"
+            matchRules: 'applicationFirewall (%{_timeFormat1}|%{_timeFormat2})(%{_deviceID})?: %{_asaFormat}: %{_data}'
+      editable: true
+    - type: pipeline
+      name: Transparent Firewall
+      enabled: true
+      filter:
+        query: '@message_id:(110002 OR 110003 OR 110004)'
+      processors:
+        - type: grok-parser
+          id: pCb8NpKiS9-4ONZkdHrOQQ
+          name: Parsing attributes for Transparent Firewall logs
+          enabled: true
+          meta:
+            last_update:
+              user_id: '4999476'
+              timestamp: 1690181035530
+            tags: []
+          source: message
+          samples:
+            - '<166>May 12 2023 15:23:08: %ASA-6-110002: Failed to locate egress interface for protocol from src_interface :10.50.5.12/514 to dest_interface :10.50.4.12/516'
+            - '<166>May 12 2023 15:23:08: %ASA-6-110003: Routing failed to locate next-hop for protocol from src_interface :10.50.5.12/514 to 10.50.4.12/516'
+            - '<166>May 12 2023 15:23:08: %ASA-6-110004: Egress interface changed from old_active_ifc to new_active_ifc on ip_protocol connection 123 for outside_zone /parent_outside_ifc :10.10.10.10 /514 (10.10.10.11 /519 ) to inside_zone /parent_inside_ifc :20.20.20.20 /914 (20.20.20.21 /825 )'
+          grok:
+            supportRules: "_timeFormat1 (<%{integer:}>)?%{date(\"MMM dd yyyy HH:mm:ss\"):}\n_timeFormat2 (<%{integer:}>)?%{date(\"yyyy-MM-dd'T'HH:mm:ssZ\"):}\n_asaFormat %ASA-%{integer:}-%{integer:}\n_ipAddress %{ip:cisco_asa_src_ip}%{_space}/%{_space}%{integer:cisco_asa_src_port} to (%{notSpace:dest_interface}%{_space}:%{_space})?%{ip:cisco_asa_dest_ip}%{_space}/%{_space}%{integer:cisco_asa_dest_port}\n_deviceID %{_space}%{notSpace:}%{_space}\n_space %{regex(\"(\\\\s)*\"):}"
+            matchRules: "TransparentFirewall1 (%{_timeFormat1}|%{_timeFormat2})(%{_deviceID})?: %{_asaFormat}: Failed to locate egress interface for %{word:protocol} from %{notSpace:src_interface}%{_space}:%{_space}%{_ipAddress}\nTransparentFirewall2 (%{_timeFormat1}|%{_timeFormat2})(%{_deviceID})?: %{_asaFormat}: Routing failed to locate next(-|%{_space})?hop for %{word:protocol} from %{notSpace:src_interface}%{_space}:%{_space}%{_ipAddress}\nTransparentFirewall3 (%{_timeFormat1}|%{_timeFormat2})(%{_deviceID})?: %{_asaFormat}: Egress interface changed from %{notSpace:old_active_ifc} to %{notSpace:new_active_ifc} on %{notSpace:ip_protocol} connection %{word:connection_id} for %{notSpace:outside_zone}%{_space}/%{_space}%{notSpace:parent_outside_ifc}%{_space}:%{_space}%{ip:cisco_asa_src_ip}%{_space}/%{_space}%{integer:cisco_asa_src_port}%{_space}\\(%{_space}%{ip:outside_mapped_address}%{_space}/%{integer:outside_mapped_port}%{_space}\\) to %{notSpace:inside_zone}%{_space}/%{word:parent_inside_ifc}%{_space}:%{_space}%{ip:cisco_asa_dest_ip}%{_space}/%{integer:cisco_asa_dest_port}%{_space}\\(%{_space}%{ip:inside_mapped_address}%{_space}/%{integer:inside_mapped_port}%{_space}\\)"
+      editable: true
+    - type: pipeline
+      name: Identity Firewall
+      enabled: true
+      filter:
+        query: '@message_id:(746001 OR 746002 OR 746003 OR 746004 OR 746005 OR 746007 OR 746008 OR 746009 OR 746010 OR 746016)'
+      processors:
+        - type: grok-parser
+          id: xUXcWx1yTj-QgpyM1q8ySw
+          name: Parsing attributes for Identity-based Firewall
+          enabled: true
+          meta:
+            last_update:
+              user_id: '4999476'
+              timestamp: 1690368571504
+            tags: []
+          source: message
+          samples:
+            - '<166>May 12 2023 15:05:43: %ASA-6-746001: user-identity: 10.50.5.205 download started'
+            - '<166>May 12 2023 15:05:43: %ASA-6-746002: user-identity: 10.50.5.205 download complete'
+            - '<166>May 12 2023 15:05:43: %ASA-6-746003: user-identity: 10.50.5.205 download failed - bad request'
+            - '<166>May 12 2023 15:05:43: %ASA-3-746005: user-identity: The AD Agent 192.168.10.201 cannot be reached - reason [action   ]'
+            - '<166>May 23 2023 13:55:00: %ASA-5-746007: user-identity: NetBIOS response failed from User Demo-User at 10.50.13.16'
+          grok:
+            supportRules: "_timeFormat1 (<%{integer:}>)?%{date(\"MMM dd yyyy HH:mm:ss\"):}\n_timeFormat2 (<%{integer:}>)?%{date(\"yyyy-MM-dd'T'HH:mm:ssZ\"):}\n_asaFormat %ASA-%{integer:}-%{integer:}\n_deviceID %{_space}%{notSpace:}%{_space}\n_space %{regex(\"(\\\\s)*\"):}"
+            matchRules: "identitybasedFirewallRule1 (%{_timeFormat1}|%{_timeFormat2})(%{_deviceID})?: %{_asaFormat}: user-identity: %{data:user_identity}%{_space}download %{word:download_status}%{_space}( -%{_space}%{data:reason})?\nidentitybasedFirewallRule2 (%{_timeFormat1}|%{_timeFormat2})(%{_deviceID})?: %{_asaFormat}: user-identity: Total number of activated user groups exceeds the %{integer:max_groups} groups for this platform%{data:}\nidentitybasedFirewallRule3 (%{_timeFormat1}|%{_timeFormat2})(%{_deviceID})?: %{_asaFormat}: user-identity: The AD Agent %{ip:ip_address} cannot be reached - %{data:reason}%{_space}\\[%{_space}%{regex(\"[^]]*?\"):action}%{_space}\\]%{data:}\nidentitybasedFirewallRule4 (%{_timeFormat1}|%{_timeFormat2})(%{_deviceID})?: %{_asaFormat}: user-identity: NetBIOS response failed from User %{notSpace:user} at %{ip:auth_failed_ip_address}%{data:}\nidentitybasedFirewallRule5 (%{_timeFormat1}|%{_timeFormat2})(%{_deviceID})?: %{_asaFormat}: user-identity: NetBIOS Probe Process %{word:process_status}%{data:}\nidentitybasedFirewallRule6 (%{_timeFormat1}|%{_timeFormat2})(%{_deviceID})?: %{_asaFormat}: user-identity: update import-user %{data:user_identity} - Import Failed \\[%{_space}%{regex(\"[^]]*?\"):reason}%{_space}\\]%{data:}\nidentitybasedFirewallRule7 (%{_timeFormat1}|%{_timeFormat2})(%{_deviceID})?: %{_asaFormat}: user-identity: DNS lookup failed, reason: %{data:reason}"
+      editable: true
+    - type: pipeline
+      name: Other Logs
+      enabled: true
+      filter:
+        query: '@message_id:(733100 OR 611102 OR 113015 OR 315011 OR 111008 OR 106100)'
+      processors:
+        - type: grok-parser
+          id: qLm68F8FTFCT8SCbBNgMhA
+          name: Parsing attributes for Firewall Overview logs
+          enabled: true
+          meta:
+            last_update:
+              user_id: '4999476'
+              timestamp: 1690371737476
+            tags: []
+          source: message
+          samples:
+            - '<166>May 12 2023 15:23:08: %ASA-4-733100: [ Interface] drop rate 1 exceeded. Current burst rate is 1 per second, max configured rate is 8000; Current average rate is 2030 per second, max configured rate is 2000; Cumulative total count is 3930654.'
+            - '<166>May 12 2023 15:23:08: %ASA-6-611102: User authentication failed: IP = 10.50.2.123, Uname: user'
+            - '<166>May 12 2023 15:23:08: %ASA-6-113015: AAA user authentication Rejected: reason = reason : local database: user = user: user IP = 103.122.56.32'
+            - '<166>May 12 2023 15:23:08: %ASA-6-315011: SSH session from 123.152.12.5 on interface interface_name for user user disconnected by SSH server, reason: reason'
+            - '<166>May 12 2023 15:23:08: %ASA-6-106100: access-list incoming permitted udp inside/127.2.3.4(56575) -> outside/127.3.4.5(53) hit-cnt 1 first hit [0x93d0e533, 0x578ef52f]'
+          grok:
+            supportRules: "_timeFormat1 (<%{integer:}>)?%{date(\"MMM dd yyyy HH:mm:ss\"):}\n_timeFormat2 (<%{integer:}>)?%{date(\"yyyy-MM-dd'T'HH:mm:ssZ\"):}\n_asaFormat %ASA-%{integer:}-%{integer:}\n_deviceID %{_space}%{notSpace:}%{_space}\n_space %{regex(\"(\\\\s)*\"):}"
+            matchRules: "firewallOverview1 (%{_timeFormat1}|%{_timeFormat2})(%{_deviceID})?: %{_asaFormat}: \\[%{_space}%{regex(\"[^]]*?\"):drop_reason}%{_space}]%{data:}\nfirewallOverview2 (%{_timeFormat1}|%{_timeFormat2})(%{_deviceID})?: %{_asaFormat}: %{_space}%{notSpace:}%{_space}(U|u)ser (A|a)uthentication (R|r)ejected%{_space}(:|=)%{_space}reason%{_space}(:|=)%{_space}%{regex(\"[^:=|]*?\"):reason}%{_space}(:|=)%{_space}local database%{_space}: (U|u)ser%{_space}(:|=)%{_space}%{notSpace:user}%{_space}(:|=)%{_space}user IP%{_space}= %{ip:auth_failed_ip_address}%{data:}\nfirewallOverview3 (%{_timeFormat1}|%{_timeFormat2})(%{_deviceID})?: %{_asaFormat}: access-list%{data:}%{regex(\"(?:permitted|denied|est-allowed)\"):action}%{_space}%{notSpace:protocol}%{_space}(O|o)utside%{_space}/%{ip:inbound_src_ip}%{_space}(\\(%{_space}%{integer:inbound_src_port}%{_space}\\))?%{data:}(->)?%{_space}(I|i)nside%{_space}/%{_space}%{ip:inbound_dest_ip}%{_space}(\\(%{_space}%{integer:inbound_dest_port}%{_space}\\))?%{data:}\nfirewallOverview4 (%{_timeFormat1}|%{_timeFormat2})(%{_deviceID})?: %{_asaFormat}: access-list%{data:}%{regex(\"(?:permitted|denied|est-allowed)\"):action}%{_space}%{notSpace:protocol}%{_space}(I|i)nside%{_space}/%{ip:outbound_src_ip}%{_space}(\\(%{_space}%{integer:outbound_src_port}%{_space}\\))?%{data:}(->)?%{_space}(O|o)utside%{_space}/%{_space}%{ip:outbound_dest_ip}%{_space}(\\(%{_space}%{integer:outbound_dest_port}%{_space}\\))?%{data:}\nfirewallOverview5 (%{_timeFormat1}|%{_timeFormat2})(%{_deviceID})?: %{_asaFormat}: (U|u)ser (A|a)uthentication (F|f)ailed(:|=)%{_space}IP%{_space}=%{_space}%{ip:ip_address},%{_space}Uname%{_space}(:|=)%{_space}%{data:user}\nfirewallOverview6 (%{_timeFormat1}|%{_timeFormat2})(%{_deviceID})?: %{_asaFormat}: SSH session from %{ip:ip_address} on interface %{notSpace:interface} for user %{notSpace:user} (D|d)isconnected by SSH server, (R|r)eason%{_space}(:|=)%{_space}%{data:reason}\nfirewallOverview7 (%{_timeFormat1}|%{_timeFormat2})(%{_deviceID})?: %{_asaFormat}: (U|u)ser%{_space}'%{notSpace:user}'%{_space}(E|e)xecuted the%{_space}command%{_space}'%{data:command}'%{greedyData:}\nfirewallOverview8 (%{_timeFormat1}|%{_timeFormat2})(%{_deviceID})?: %{_asaFormat}: (U|u)ser%{_space}'%{notSpace:user}'%{_space}(E|e)xecuted the '%{data:command}'%{_space}command%{_space}%{greedyData:}"
+      editable: true
+    - type: attribute-remapper
+      name: Map tag `service` to attribute `cisco_asa_service`
+      enabled: true
+      sources:
+        - service
+      sourceType: tag
+      target: cisco_asa_service
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: geo-ip-parser
+      name: Map the IP address to the geolocation
+      enabled: true
+      sources:
+        - auth_failed_ip_address
+      target: network.client.geoip
+      ip_processing_behavior: do-nothing
+    - name: Map severity to cisco_asa_severity
+      enabled: true
+      source: severity
+      target: cisco_asa_severity
+      lookupTable: "1,Alert\n2,Critical\n3,Error\n4,Warning\n5,Notification\n6,Informational\n7,Debugging"
+      type: lookup-processor
+    - type: attribute-remapper
+      name: Map `user` to `usr.name`
+      enabled: true
+      sources:
+        - user
+      sourceType: attribute
+      target: usr.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: status-remapper
+      name: Define `cisco_asa_severity` as the official status of the log
+      enabled: true
+      sources:
+        - cisco_asa_severity

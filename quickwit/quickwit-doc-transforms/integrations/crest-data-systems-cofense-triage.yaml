@@ -1,0 +1,863 @@
+id: crest-data-systems-cofense-triage
+metric_id: crest-data-systems-cofense-triage
+backend_only: false
+facets:
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Accepts Attachment File
+    path: cds.cofense_triage.attributes.accepts_attachment_file
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Accepts Attachment Hash
+    path: cds.cofense_triage.attributes.accepts_attachment_hash
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Accepts URL
+    path: cds.cofense_triage.attributes.accepts_url
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Accepts URL Host
+    path: cds.cofense_triage.attributes.accepts_url_host
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Active
+    path: cds.cofense_triage.attributes.active
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Activity Type
+    path: cds.cofense_triage.attributes.activity_type
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Archived
+    path: cds.cofense_triage.attributes.archived
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Attachment Id
+    path: cds.cofense_triage.attachment_id
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Attachment Payload Id
+    path: cds.cofense_triage.attachment_payload_id
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Attachment Payload Id
+    path: cds.cofense_triage.relationships.attachment_payload.data.id
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Attachments Count
+    path: cds.cofense_triage.attributes.attachments_count
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Author Name
+    path: cds.cofense_triage.attributes.author_name
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Average Reporter Reputation
+    path: cds.cofense_triage.attributes.average_reporter_reputation
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Body Format
+    path: cds.cofense_triage.attributes.body_format
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Category Id
+    path: cds.cofense_triage.category_id
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Category Id
+    path: cds.cofense_triage.relationships.category.data.id
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Cluster Id
+    path: cds.cofense_triage.relationships.cluster.data.id
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Cluster Id
+    path: cds.cofense_triage.cluster_id
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Cofense Triage Host
+    path: cds.cofense_triage.host
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Commentable Id
+    path: cds.cofense_triage.relationships.commentable.data.id
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Commentable Type
+    path: cds.cofense_triage.relationships.commentable.data.type
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Delete Report
+    path: cds.cofense_triage.attributes.delete_report
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Domain
+    path: cds.cofense_triage.attributes.domain
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Domain Id
+    path: cds.cofense_triage.domain_id
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Domain Id
+    path: cds.cofense_triage.relationships.domain.data.id
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Email
+    path: cds.cofense_triage.attributes.email
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Enabled
+    path: cds.cofense_triage.attributes.enabled
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Filename
+    path: cds.cofense_triage.attributes.filename
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: From Address
+    path: cds.cofense_triage.attributes.from_address
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Host Source
+    path: cds.cofense_triage.attributes.host_source
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Hostname
+    path: cds.cofense_triage.attributes.hostname
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Hostname Id
+    path: cds.cofense_triage.hostname_id
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Hostname Id
+    path: cds.cofense_triage.relationships.hostname.data.id
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Id
+    path: cds.cofense_triage.id
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Identity Provider Id
+    path: cds.cofense_triage.relationships.identity_provider.data.id
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Integrations
+    path: cds.cofense_triage.meta.risk_score_summary.integrations
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Key
+    path: cds.cofense_triage.attributes.key
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Last Reported At
+    path: cds.cofense_triage.attributes.last_reported_at
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Local
+    path: cds.cofense_triage.attributes.local
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Location
+    path: cds.cofense_triage.attributes.location
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Malicious
+    path: cds.cofense_triage.attributes.malicious
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Manage Operators
+    path: cds.cofense_triage.attributes.manage_operators
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Manage Permissions
+    path: cds.cofense_triage.attributes.manage_permissions
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Match Priority
+    path: cds.cofense_triage.attributes.match_priority
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Message Type
+    path: cds.cofense_triage.attributes.message_type
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Mime Type
+    path: cds.cofense_triage.attributes.mime_type
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Name
+    path: cds.cofense_triage.attributes.name
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Owner Id
+    path: cds.cofense_triage.relationships.owner.data.id
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Owner Type
+    path: cds.cofense_triage.relationships.owner.data.type
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Priority
+    path: cds.cofense_triage.attributes.priority
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Processed By Id
+    path: cds.cofense_triage.relationships.processed_by.id
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Processed By Id
+    path: cds.cofense_triage.relationships.processed_by.data.id
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Processed By Type
+    path: cds.cofense_triage.relationships.processed_by.data.type
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Processed Reports Count
+    path: cds.cofense_triage.attributes.processed_reports_count
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Report Id
+    path: cds.cofense_triage.relationships.report.data.id
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Report Id
+    path: cds.cofense_triage.report_id
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Reporter
+    path: cds.cofense_triage.meta.risk_score_summary.reporter
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Reporter Id
+    path: cds.cofense_triage.relationships.reporter.data.id
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Reporter Id
+    path: cds.cofense_triage.reporter_id
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Reports Count
+    path: cds.cofense_triage.attributes.reports_count
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Reputation Score
+    path: cds.cofense_triage.attributes.reputation_score
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Risk Score
+    path: cds.cofense_triage.attributes.risk_score
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Rule Context
+    path: cds.cofense_triage.attributes.rule_context
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Rules
+    path: cds.cofense_triage.meta.risk_score_summary.rules
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Rules Count
+    path: cds.cofense_triage.attributes.rules_count
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Scope
+    path: cds.cofense_triage.attributes.scope
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Score
+    path: cds.cofense_triage.attributes.score
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: "Size "
+    path: cds.cofense_triage.attributes.size
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Threat Level
+    path: cds.cofense_triage.attributes.threat_level
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Threat Source
+    path: cds.cofense_triage.attributes.threat_source
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Threat Type
+    path: cds.cofense_triage.attributes.threat_type
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Threat Value
+    path: cds.cofense_triage.attributes.threat_value
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Time To Live
+    path: cds.cofense_triage.attributes.time_to_live
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Total Reports Count
+    path: cds.cofense_triage.attributes.total_reports_count
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Trigger Only
+    path: cds.cofense_triage.attributes.trigger_only
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Unprocessed Reports Count
+    path: cds.cofense_triage.attributes.unprocessed_reports_count
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: URL
+    path: cds.cofense_triage.attributes.url
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: URL Id
+    path: cds.cofense_triage.url_id
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: URLs Count
+    path: cds.cofense_triage.attributes.urls_count
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: Value
+    path: cds.cofense_triage.attributes.value
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: VIP
+    path: cds.cofense_triage.meta.risk_score_summary.vip
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: VIP
+    path: cds.cofense_triage.attributes.vip
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems Cofense Triage
+    name: VIP Reporters Count
+    path: cds.cofense_triage.attributes.vip_reporters_count
+    source: log
+    type: string
+pipeline:
+  type: pipeline
+  name: crest_data_systems_cofense_triage
+  enabled: true
+  filter:
+    query: source:crest-data-systems-cofense-triage
+  processors:
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: date-remapper
+      name: Define `updated_at` as the official date of the log
+      enabled: true
+      sources:
+        - updated_at
+    - type: attribute-remapper
+      name: Map `attributes` to `cds.cofense_triage.attributes`
+      enabled: true
+      sources:
+        - attributes
+      sourceType: attribute
+      target: cds.cofense_triage.attributes
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `id` to `cds.cofense_triage.id`
+      enabled: true
+      sources:
+        - id
+      sourceType: attribute
+      target: cds.cofense_triage.id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `relationships` to `cds.cofense_triage.relationships`
+      enabled: true
+      sources:
+        - relationships
+      sourceType: attribute
+      target: cds.cofense_triage.relationships
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `meta` to `cds.cofense_triage.meta`
+      enabled: true
+      sources:
+        - meta
+      sourceType: attribute
+      target: cds.cofense_triage.meta
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: pipeline
+      name: Reports Pipeline
+      enabled: true
+      filter:
+        query: service:cds.cofense_triage.reports
+      processors:
+        - type: attribute-remapper
+          name: Map `cds.cofense_triage.relationships.reporter.data.id` to
+            `cds.cofense_triage.reporter_id`
+          enabled: true
+          sources:
+            - cds.cofense_triage.relationships.reporter.data.id
+          sourceType: attribute
+          target: cds.cofense_triage.reporter_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cds.cofense_triage.relationships.cluster.data.id` to
+            `cds.cofense_triage.cluster_id`
+          enabled: true
+          sources:
+            - cds.cofense_triage.relationships.cluster.data.id
+          sourceType: attribute
+          target: cds.cofense_triage.cluster_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cds.cofense_triage.relationships.category.data.id` to
+            `cds.cofense_triage.category_id`
+          enabled: true
+          sources:
+            - cds.cofense_triage.relationships.category.data.id
+          sourceType: attribute
+          target: cds.cofense_triage.category_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cds.cofense_triage.id` to `cds.cofense_triage.report_id`
+          enabled: true
+          sources:
+            - cds.cofense_triage.id
+          sourceType: attribute
+          target: cds.cofense_triage.report_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Categories Pipeline
+      enabled: true
+      filter:
+        query: service:cds.cofense_triage.categories
+      processors:
+        - type: attribute-remapper
+          name: Map `cds.cofense_triage.id` to `cds.cofense_triage.category_id`
+          enabled: true
+          sources:
+            - cds.cofense_triage.id
+          sourceType: attribute
+          target: cds.cofense_triage.category_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Clusters Pipeline
+      enabled: true
+      filter:
+        query: service:cds.cofense_triage.clusters
+      processors:
+        - type: attribute-remapper
+          name: Map `cds.cofense_triage.id` to `cds.cofense_triage.cluster_id`
+          enabled: true
+          sources:
+            - cds.cofense_triage.id
+          sourceType: attribute
+          target: cds.cofense_triage.cluster_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Reporters Pipeline
+      enabled: true
+      filter:
+        query: service:cds.cofense_triage.reporters
+      processors:
+        - type: attribute-remapper
+          name: Map `cds.cofense_triage.id` to `cds.cofense_triage.reporter_id`
+          enabled: true
+          sources:
+            - cds.cofense_triage.id
+          sourceType: attribute
+          target: cds.cofense_triage.reporter_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Domains Pipeline
+      enabled: true
+      filter:
+        query: service:cds.cofense_triage.domains
+      processors:
+        - type: attribute-remapper
+          name: Map `cds.cofense_triage.id` to `cds.cofense_triage.domain_id`
+          enabled: true
+          sources:
+            - cds.cofense_triage.id
+          sourceType: attribute
+          target: cds.cofense_triage.domain_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: URLs Pipeline
+      enabled: true
+      filter:
+        query: service:cds.cofense_triage.urls
+      processors:
+        - type: attribute-remapper
+          name: Map `cds.cofense_triage.id` to `cds.cofense_triage.url_id`
+          enabled: true
+          sources:
+            - cds.cofense_triage.id
+          sourceType: attribute
+          target: cds.cofense_triage.url_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cds.cofense_triage.relationships.hostname.data.id` to
+            `cds.cofense_triage.hostname_id`
+          enabled: true
+          sources:
+            - cds.cofense_triage.relationships.hostname.data.id
+          sourceType: attribute
+          target: cds.cofense_triage.hostname_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Hostnames Pipeline
+      enabled: true
+      filter:
+        query: service:cds.cofense_triage.hostnames
+      processors:
+        - type: attribute-remapper
+          name: Map `cds.cofense_triage.id` to `cds.cofense_triage.hostname_id`
+          enabled: true
+          sources:
+            - cds.cofense_triage.id
+          sourceType: attribute
+          target: cds.cofense_triage.hostname_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cds.cofense_triage.relationships.domain.data.id` to
+            `cds.cofense_triage.domain_id`
+          enabled: true
+          sources:
+            - cds.cofense_triage.relationships.domain.data.id
+          sourceType: attribute
+          target: cds.cofense_triage.domain_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Attachment Payloads Pipeline
+      enabled: true
+      filter:
+        query: service:cds.cofense_triage.attachment_payloads
+      processors:
+        - type: attribute-remapper
+          name: Map `cds.cofense_triage.id` to `cds.cofense_triage.attachment_payload_id`
+          enabled: true
+          sources:
+            - cds.cofense_triage.id
+          sourceType: attribute
+          target: cds.cofense_triage.attachment_payload_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Attachments Pipeline
+      enabled: true
+      filter:
+        query: service:cds.cofense_triage.attachments
+      processors:
+        - type: attribute-remapper
+          name: Map `cds.cofense_triage.id` to `cds.cofense_triage.attachment_id`
+          enabled: true
+          sources:
+            - cds.cofense_triage.id
+          sourceType: attribute
+          target: cds.cofense_triage.attachment_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cds.cofense_triage.relationships.attachment_payload.data.id` to
+            `cds.cofense_triage.attachment_payload_id`
+          enabled: true
+          sources:
+            - cds.cofense_triage.relationships.attachment_payload.data.id
+          sourceType: attribute
+          target: cds.cofense_triage.attachment_payload_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cds.cofense_triage.relationships.report.data.id` to
+            `cds.cofense_triage.report_id`
+          enabled: true
+          sources:
+            - cds.cofense_triage.relationships.report.data.id
+          sourceType: attribute
+          target: cds.cofense_triage.report_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false

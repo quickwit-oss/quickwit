@@ -1,0 +1,64 @@
+id: sendgrid
+backend_only: false
+facets:
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+  - groups:
+      - Geoip
+    name: AS Domain
+    path: network.client.geoip.as.domain
+    source: log
+pipeline:
+  type: pipeline
+  name: Sendgrid
+  enabled: true
+  filter:
+    query: source:sendgrid
+  processors:
+    - type: arithmetic-processor
+      name: Convert `timestamp` from second to millisecond EPOCH format
+      enabled: true
+      expression: timestamp * 1000
+      target: timestamp
+      replaceMissing: false
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: attribute-remapper
+      name: Map `event` to `evt.name`
+      enabled: true
+      sources:
+        - event
+      sourceType: attribute
+      target: evt.name
+      targetType: attribute
+      targetFormat: string
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `category` to `sendgrid_category`
+      enabled: true
+      sources:
+        - category
+      sourceType: attribute
+      target: sendgrid_category
+      targetType: attribute
+      targetFormat: string
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `sg_event_id` to `evt.id`
+      enabled: true
+      sources:
+        - sg_event_id
+      sourceType: attribute
+      target: evt.id
+      targetType: attribute
+      targetFormat: string
+      preserveSource: false
+      overrideOnConflict: false

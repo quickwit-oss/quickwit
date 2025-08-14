@@ -1,0 +1,1470 @@
+id: trend-micro-vision-one-xdr
+tests:
+ -
+  sample: |-
+    {
+      "investigationStatus" : "New",
+      "severity" : "low",
+      "schemaVersion" : "1.15",
+      "matchedRules" : [ {
+        "name" : "Predictive Machine Learning Detection - Blocked",
+        "id" : "b52ebb2a-b7b0-4521-b0c9-1a04715c9871",
+        "matchedFilters" : [ {
+          "matchedDateTime" : "2024-07-30T06:24:52.000Z",
+          "name" : "Predictive Machine Learning Detection - Blocked",
+          "id" : "15d9a461-14c4-444b-9d17-7b258894b816",
+          "matchedEvents" : [ {
+            "matchedDateTime" : "2024-07-30T06:24:52.000Z",
+            "type" : "PRODUCT_EVENT_LOG",
+            "uuid" : "966495ba-1cde-491b-a62c-fd62f4ebb80b"
+          } ]
+        } ]
+      } ],
+      "workbenchLink" : "https://portal.in.xdr.trendmicro.com/index.html#/workbench/alerts/WB-12773-20240730-00015",
+      "modelId" : "5727ebf9-9e6a-47f3-b27f-4129763f7688",
+      "createdDateTime" : "2024-07-30T07:18:33Z",
+      "description" : "An unknown threat was detected on an endpoint and blocked by Trend Micro Predictive Machine Learning.",
+      "investigationResult" : "No Findings",
+      "alertProvider" : "SAE",
+      "modelType" : "preset",
+      "indicators" : [ {
+        "provenance" : [ "Alert" ],
+        "field" : "detectionName",
+        "filterIds" : [ "15d9a461-14c4-444b-9d17-7b258894b816" ],
+        "id" : 1,
+        "type" : "detection_name",
+        "relatedEntities" : [ "B159820E-5BB3-49F2-AD98-75A4F2052282" ],
+        "value" : "TROJ.Win32.TRX.XXPE50FLM011"
+      }, {
+        "provenance" : [ "Alert" ],
+        "field" : "fileHash",
+        "filterIds" : [ "15d9a461-14c4-444b-9d17-7b258894b816" ],
+        "id" : 2,
+        "type" : "file_sha1",
+        "relatedEntities" : [ "B159820E-5BB3-49F2-AD98-75A4F2052282" ],
+        "value" : "609A2BB1984FF9DBBFDBC8A88E1A57FC7691E6E6"
+      }, {
+        "provenance" : [ "Alert" ],
+        "field" : "fileName",
+        "filterIds" : [ "15d9a461-14c4-444b-9d17-7b258894b816" ],
+        "id" : 3,
+        "type" : "filename",
+        "relatedEntities" : [ "B159820E-5BB3-49F2-AD98-75A4F2052282" ],
+        "value" : "inv.exe"
+      }, {
+        "provenance" : [ "Alert" ],
+        "field" : "fullPath",
+        "filterIds" : [ "15d9a461-14c4-444b-9d17-7b258894b816" ],
+        "id" : 4,
+        "type" : "fullpath",
+        "relatedEntities" : [ "B159820E-5BB3-49F2-AD98-75A4F2052282" ],
+        "value" : "full\\path"
+      }, {
+        "provenance" : [ "Alert" ],
+        "field" : "actResult",
+        "filterIds" : [ "15d9a461-14c4-444b-9d17-7b258894b816" ],
+        "id" : 5,
+        "type" : "text",
+        "relatedEntities" : [ "B159820E-5BB3-49F2-AD98-75A4F2052282" ],
+        "value" : "Quarantine successfully"
+      }, {
+        "provenance" : [ "Alert" ],
+        "field" : "processUser",
+        "filterIds" : [ "15d9a461-14c4-444b-9d17-7b258894b816" ],
+        "id" : 6,
+        "type" : "user_account",
+        "relatedEntities" : [ "B159820E-5BB3-49F2-AD98-75A4F2052282" ],
+        "value" : "Crest"
+      } ],
+      "updatedDateTime" : "2024-07-30T07:18:38Z",
+      "score" : 20,
+      "model" : "Unknown Threat Detection and Mitigation via Predictive Machine Learning",
+      "id" : "WB-12773-20240730-00015",
+      "incidentId" : "IC-12773-20240730-00000",
+      "impactScope" : {
+        "serverCount" : 0,
+        "accountCount" : 0,
+        "desktopCount" : 1,
+        "entities" : [ {
+          "entityValue" : {
+            "name" : "assettag-eid",
+            "guid" : "B159820E-5BB3-49F2-AD98-75A4F2046547",
+            "ips" : [ "10.10.10.10" ]
+          },
+          "provenance" : [ "Alert" ],
+          "managementScopeGroupId" : "de4f892d-d1ed-450f-a8c1-4d838768f054",
+          "entityType" : "host",
+          "entityId" : "B159820E-5BB3-49F2-AD98-75A4F2046547",
+          "relatedIndicatorIds" : [ 1, 2, 3, 4, 5, 6 ]
+        } ],
+        "emailAddressCount" : 0,
+        "cloudIdentityCount" : 0,
+        "containerCount" : 0
+      },
+      "status" : "Open"
+    }
+  service: "alerts"
+  result:
+    custom:
+      alertProvider: "SAE"
+      alert_severity: "Info"
+      createdDateTime: "2024-07-30T07:18:33Z"
+      id: "WB-12773-20240730-00015"
+      impactScope:
+        accountCount: 0
+        cloudIdentityCount: 0
+        containerCount: 0
+        desktopCount: 1
+        emailAddressCount: 0
+        entities:
+         -
+          entityValue:
+            name: "assettag-eid"
+            guid: "B159820E-5BB3-49F2-AD98-75A4F2046547"
+            ips:
+             - "10.10.10.10"
+          provenance:
+           - "Alert"
+          managementScopeGroupId: "de4f892d-d1ed-450f-a8c1-4d838768f054"
+          entityType: "host"
+          entityId: "B159820E-5BB3-49F2-AD98-75A4F2046547"
+          relatedIndicatorIds:
+           - 1
+           - 2
+           - 3
+           - 4
+           - 5
+           - 6
+        serverCount: 0
+      incidentId: "IC-12773-20240730-00000"
+      indicators:
+       -
+        provenance:
+         - "Alert"
+        field: "detectionName"
+        filterIds:
+         - "15d9a461-14c4-444b-9d17-7b258894b816"
+        id: 1
+        type: "detection_name"
+        relatedEntities:
+         - "B159820E-5BB3-49F2-AD98-75A4F2052282"
+        value: "TROJ.Win32.TRX.XXPE50FLM011"
+       -
+        provenance:
+         - "Alert"
+        field: "fileHash"
+        filterIds:
+         - "15d9a461-14c4-444b-9d17-7b258894b816"
+        id: 2
+        type: "file_sha1"
+        relatedEntities:
+         - "B159820E-5BB3-49F2-AD98-75A4F2052282"
+        value: "609A2BB1984FF9DBBFDBC8A88E1A57FC7691E6E6"
+       -
+        provenance:
+         - "Alert"
+        field: "fileName"
+        filterIds:
+         - "15d9a461-14c4-444b-9d17-7b258894b816"
+        id: 3
+        type: "filename"
+        relatedEntities:
+         - "B159820E-5BB3-49F2-AD98-75A4F2052282"
+        value: "inv.exe"
+       -
+        provenance:
+         - "Alert"
+        field: "fullPath"
+        filterIds:
+         - "15d9a461-14c4-444b-9d17-7b258894b816"
+        id: 4
+        type: "fullpath"
+        relatedEntities:
+         - "B159820E-5BB3-49F2-AD98-75A4F2052282"
+        value: "full\\path"
+       -
+        provenance:
+         - "Alert"
+        field: "actResult"
+        filterIds:
+         - "15d9a461-14c4-444b-9d17-7b258894b816"
+        id: 5
+        type: "text"
+        relatedEntities:
+         - "B159820E-5BB3-49F2-AD98-75A4F2052282"
+        value: "Quarantine successfully"
+       -
+        provenance:
+         - "Alert"
+        field: "processUser"
+        filterIds:
+         - "15d9a461-14c4-444b-9d17-7b258894b816"
+        id: 6
+        type: "user_account"
+        relatedEntities:
+         - "B159820E-5BB3-49F2-AD98-75A4F2052282"
+        value: "Crest"
+      investigationResult: "No Findings"
+      investigationStatus: "New"
+      matchedRules:
+       -
+        name: "Predictive Machine Learning Detection - Blocked"
+        id: "b52ebb2a-b7b0-4521-b0c9-1a04715c9871"
+        matchedFilters:
+         -
+          matchedDateTime: "2024-07-30T06:24:52.000Z"
+          name: "Predictive Machine Learning Detection - Blocked"
+          id: "15d9a461-14c4-444b-9d17-7b258894b816"
+          matchedEvents:
+           -
+            matchedDateTime: "2024-07-30T06:24:52.000Z"
+            type: "PRODUCT_EVENT_LOG"
+            uuid: "966495ba-1cde-491b-a62c-fd62f4ebb80b"
+      model: "Unknown Threat Detection and Mitigation via Predictive Machine Learning"
+      modelId: "5727ebf9-9e6a-47f3-b27f-4129763f7688"
+      modelType: "preset"
+      schemaVersion: "1.15"
+      severity: "low"
+      status: "Open"
+      trend_micro_vision_one_xdr:
+        score: 20
+      updatedDateTime: "2024-07-30T07:18:38Z"
+      workbenchLink: "https://portal.in.xdr.trendmicro.com/index.html#/workbench/alerts/WB-12773-20240730-00015"
+    message: "An unknown threat was detected on an endpoint and blocked by Trend Micro Predictive Machine Learning."
+    service: "alerts"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1722323918000
+ -
+  sample: |-
+    {
+      "endpoint" : {
+        "agentGuid" : "801b7e5f-902e-4ebd-ad6a-c8f431fe6053",
+        "endpointName" : "DESKTOP-N19I543",
+        "ips" : [ "ab80::42jk:a793:2667:b585", "10.10.10.10" ]
+      },
+      "detectedDateTime" : "2024-07-30T16:20:25Z",
+      "entityType" : "endpoint",
+      "entityName" : "DESKTOP-N19I543(ab80::42jk:a793:2667:b585,10.10.10.10)",
+      "source" : "endpointActivityData",
+      "filters" : [ {
+        "riskLevel" : "low",
+        "mitreTacticIds" : [ "TA0002", "TA0003", "TA0004" ],
+        "mitreTechniqueIds" : [ "T1053", "T1053.005" ],
+        "name" : "Creation of Scheduled Task",
+        "description" : "A scheduled task was created via command-line",
+        "id" : "F1507",
+        "highlightedObjects" : [ {
+          "field" : "objectCmd",
+          "type" : "command_line",
+          "value" : "SysWOW64\\schtasks.exe -create -tn Microsoft\\Windows\\WindowsUpdate\\RUXIM\\PLUGScheduler -xml plugscheduler.xml -F"
+        }, {
+          "field" : "processCmd",
+          "type" : "command_line",
+          "value" : "system32\\msiexec.exe /V"
+        } ],
+        "type" : "preset"
+      } ],
+      "detail" : {
+        "processFileHashSha256" : "d53e90af814f61e09bff87a883a3b0dcb7dcf883f17a2425a62a2d4b5a9407fb",
+        "processUserDomain" : "NT AUTHORITY",
+        "eventSubId" : 2,
+        "plang" : 1,
+        "pver" : "1.2.0.5259",
+        "objectSignerFlagsRuntime" : [ false ],
+        "processSignerFlagsLibValid" : [ false ],
+        "objectTrueType" : 7,
+        "processFileSize" : "69632",
+        "endpointHostName" : "DESKTOP-N19I543",
+        "objectSessionId" : "0",
+        "parentFilePath" : "System32\\services.exe",
+        "processLaunchTime" : "1722356422814",
+        "objectHashId" : "148323463451116793",
+        "eventSourceType" : 1,
+        "objectIntegrityLevel" : 16384,
+        "objectRunAsLocalAccount" : false,
+        "tags" : [ "MITRE.T1053.005", "XSAE.F1507", "MITRE.T1053" ],
+        "parentName" : "System32\\services.exe",
+        "lastSeen" : "1722356425050",
+        "parentSignerFlagsLibValid" : [ false ],
+        "objectUser" : "SYSTEM",
+        "objectFileCreation" : "1722282120740",
+        "osDescription" : "Windows 10 Pro (64 bit) build 19045",
+        "objectCmd" : "SysWOW64\\schtasks.exe -create -tn Microsoft\\Windows\\WindowsUpdate\\RUXIM\\PLUGScheduler -xml plugscheduler.xml -F",
+        "osVer" : "10.0.19045",
+        "processSigner" : [ "Microsoft Windows" ],
+        "parentCmd" : "system32\\services.exe",
+        "endpointMacAddress" : [ "00:0d:30:e4:8b:b6" ],
+        "parentFileCreation" : "1722281953380",
+        "processFileHashMd5" : "78912ea8790de51d2c7ceb9b8c572346",
+        "processCmd" : "system32\\msiexec.exe /V",
+        "processUserGroupSids" : [ "S-1-16-16384", "S-1-1-0", "S-1-5-32-545", "S-1-5-6", "S-1-2-1", "S-1-5-11", "S-1-5-15", "S-1-5-80-685333868-2237257676-1431965530-1907094206-2438021966", "S-1-5-5-0-36366980", "S-1-2-0", "S-1-5-32-544" ],
+        "parentSessionId" : 0,
+        "parentFileHashId" : "-4092577940452904134",
+        "sessionId" : 0,
+        "processFilePath" : "System32\\msiexec.exe",
+        "osName" : "Windows",
+        "productCode" : "xes",
+        "parentFileHashSha256" : "1efd9a81b2ddf21b3f327d67a6f8f88f814979e84085ec812af72450310d4281",
+        "processFileHashSha1" : "6a795b8a432514f20ff884f1a5286ea82e32e150",
+        "processTrueType" : 7,
+        "objectFileHashId" : "-370955917314104624",
+        "objectFileSize" : "187904",
+        "parentHashId" : "-5897584668177803063",
+        "parentSignerValid" : [ true ],
+        "uuid" : "65f9d8c7-33a9-41a3-a1a6-445376599211",
+        "parentUserDomain" : "NT AUTHORITY",
+        "eventHashId" : "-8250022594686035748",
+        "processSignerValid" : [ true ],
+        "parentFileModifiedTime" : "1722281953458",
+        "objectFileHashSha256" : "29f6fc1bb0e68cb4fc1ec597604ec5aca7fcef7d0d9241218596d941f04f16e7",
+        "processName" : "System32\\msiexec.exe",
+        "parentSignerFlagsAdhoc" : [ false ],
+        "parentAuthId" : "999",
+        "objectFileHashMd5" : "db6f48dc66879299b49ee3f1df0607f1",
+        "filterRiskLevel" : "low",
+        "eventId" : "1",
+        "firstSeen" : "1722356425050",
+        "objectFilePath" : "SysWOW64\\schtasks.exe",
+        "pname" : "751",
+        "parentLaunchTime" : "1722285790679",
+        "parentFileHashMd5" : "4eacbe64bb1e7d58e8a26340ed1c7cbd",
+        "processSignerFlagsAdhoc" : [ false ],
+        "objectSigner" : [ "Microsoft Windows" ],
+        "processPid" : 408,
+        "parentSigner" : [ "Microsoft Windows Publisher" ],
+        "objectSignerFlagsLibValid" : [ false ],
+        "integrityLevel" : 16384,
+        "processFileModifiedTime" : "1722282337774",
+        "objectFileHashSha1" : "5673be4c0b3d6c963651ec1e4adb7aaabadf5a19",
+        "pplat" : 5889,
+        "parentSignerFlagsRuntime" : [ false ],
+        "parentIntegrityLevel" : 16384,
+        "processSignerFlagsRuntime" : [ false ],
+        "objectLaunchTime" : "1722356425049",
+        "objectUserGroupSids" : [ "S-1-16-16384", "S-1-1-0", "S-1-5-32-545", "S-1-5-6", "S-1-2-1", "S-1-5-11", "S-1-5-15", "S-1-5-80-685333868-2237257676-1431965530-1907094206-2438021966", "S-1-5-5-0-36366980", "S-1-2-0", "S-1-5-32-544" ],
+        "timezone" : "UTC+05:30",
+        "processUser" : "SYSTEM",
+        "logReceivedTime" : "1722356504612",
+        "objectSignerFlagsAdhoc" : [ false ],
+        "authId" : "999",
+        "osType" : "0x00000030",
+        "processFileCreation" : "1722282337759",
+        "objectUserDomain" : "NT AUTHORITY",
+        "processHashId" : "7052107378290747991",
+        "parentPid" : 688,
+        "endpointIp" : [ "ab80::42jk:a793:2667:b585", "10.10.10.10" ],
+        "objectSignerValid" : [ true ],
+        "parentTrueType" : 7,
+        "parentFileSize" : "716544",
+        "parentFileHashSha1" : "6703d48349de8c836c0eaffac5cfac7679da7f60",
+        "objectAuthId" : "999",
+        "endpointGuid" : "801b7e5f-902e-4ebd-ad6a-c8f431fe6053",
+        "objectName" : "SysWOW64\\schtasks.exe",
+        "processFileHashId" : "-5659244633155638992",
+        "objectPid" : 6292,
+        "parentUser" : "SYSTEM",
+        "objectFileModifiedTime" : "1722282120756"
+      },
+      "ingestedDateTime" : "2024-07-30T16:22:16Z",
+      "uuid" : "65f9d8c7-33a9-41a3-a1a6-445376599211"
+    }
+  service: "observed-attack-techniques"
+  result:
+    custom:
+      detail:
+        authId: "999"
+        endpointGuid: "801b7e5f-902e-4ebd-ad6a-c8f431fe6053"
+        endpointHostName: "DESKTOP-N19I543"
+        endpointIp:
+         - "ab80::42jk:a793:2667:b585"
+         - "10.10.10.10"
+        endpointMacAddress:
+         - "00:0d:30:e4:8b:b6"
+        eventHashId: "-8250022594686035748"
+        eventId: "1"
+        eventSourceType: 1
+        eventSubId: 2
+        filterRiskLevel: "low"
+        firstSeen: "1722356425050"
+        integrityLevel: 16384
+        lastSeen: "1722356425050"
+        logReceivedTime: "1722356504612"
+        objectAuthId: "999"
+        objectCmd: "SysWOW64\\schtasks.exe -create -tn Microsoft\\Windows\\WindowsUpdate\\RUXIM\\PLUGScheduler -xml plugscheduler.xml -F"
+        objectFileCreation: "1722282120740"
+        objectFileHashId: "-370955917314104624"
+        objectFileHashMd5: "db6f48dc66879299b49ee3f1df0607f1"
+        objectFileHashSha1: "5673be4c0b3d6c963651ec1e4adb7aaabadf5a19"
+        objectFileHashSha256: "29f6fc1bb0e68cb4fc1ec597604ec5aca7fcef7d0d9241218596d941f04f16e7"
+        objectFileModifiedTime: "1722282120756"
+        objectFilePath: "SysWOW64\\schtasks.exe"
+        objectFileSize: "187904"
+        objectHashId: "148323463451116793"
+        objectIntegrityLevel: 16384
+        objectLaunchTime: "1722356425049"
+        objectName: "SysWOW64\\schtasks.exe"
+        objectPid: 6292
+        objectRunAsLocalAccount: false
+        objectSessionId: "0"
+        objectSigner:
+         - "Microsoft Windows"
+        objectSignerFlagsAdhoc:
+         - false
+        objectSignerFlagsLibValid:
+         - false
+        objectSignerFlagsRuntime:
+         - false
+        objectSignerValid:
+         - true
+        objectTrueType: 7
+        objectUser: "SYSTEM"
+        objectUserDomain: "NT AUTHORITY"
+        objectUserGroupSids:
+         - "S-1-16-16384"
+         - "S-1-1-0"
+         - "S-1-5-32-545"
+         - "S-1-5-6"
+         - "S-1-2-1"
+         - "S-1-5-11"
+         - "S-1-5-15"
+         - "S-1-5-80-685333868-2237257676-1431965530-1907094206-2438021966"
+         - "S-1-5-5-0-36366980"
+         - "S-1-2-0"
+         - "S-1-5-32-544"
+        osDescription: "Windows 10 Pro (64 bit) build 19045"
+        osName: "Windows"
+        osType: "0x00000030"
+        osVer: "10.0.19045"
+        parentAuthId: "999"
+        parentCmd: "system32\\services.exe"
+        parentFileCreation: "1722281953380"
+        parentFileHashId: "-4092577940452904134"
+        parentFileHashMd5: "4eacbe64bb1e7d58e8a26340ed1c7cbd"
+        parentFileHashSha1: "6703d48349de8c836c0eaffac5cfac7679da7f60"
+        parentFileHashSha256: "1efd9a81b2ddf21b3f327d67a6f8f88f814979e84085ec812af72450310d4281"
+        parentFileModifiedTime: "1722281953458"
+        parentFilePath: "System32\\services.exe"
+        parentFileSize: "716544"
+        parentHashId: "-5897584668177803063"
+        parentIntegrityLevel: 16384
+        parentLaunchTime: "1722285790679"
+        parentName: "System32\\services.exe"
+        parentPid: 688
+        parentSessionId: 0
+        parentSigner:
+         - "Microsoft Windows Publisher"
+        parentSignerFlagsAdhoc:
+         - false
+        parentSignerFlagsLibValid:
+         - false
+        parentSignerFlagsRuntime:
+         - false
+        parentSignerValid:
+         - true
+        parentTrueType: 7
+        parentUser: "SYSTEM"
+        parentUserDomain: "NT AUTHORITY"
+        plang: 1
+        pname: "751"
+        pplat: 5889
+        processCmd: "system32\\msiexec.exe /V"
+        processFileCreation: "1722282337759"
+        processFileHashId: "-5659244633155638992"
+        processFileHashMd5: "78912ea8790de51d2c7ceb9b8c572346"
+        processFileHashSha1: "6a795b8a432514f20ff884f1a5286ea82e32e150"
+        processFileHashSha256: "d53e90af814f61e09bff87a883a3b0dcb7dcf883f17a2425a62a2d4b5a9407fb"
+        processFileModifiedTime: "1722282337774"
+        processFilePath: "System32\\msiexec.exe"
+        processFileSize: "69632"
+        processHashId: "7052107378290747991"
+        processLaunchTime: "1722356422814"
+        processName: "System32\\msiexec.exe"
+        processPid: 408
+        processSigner:
+         - "Microsoft Windows"
+        processSignerFlagsAdhoc:
+         - false
+        processSignerFlagsLibValid:
+         - false
+        processSignerFlagsRuntime:
+         - false
+        processSignerValid:
+         - true
+        processTrueType: 7
+        processUser: "SYSTEM"
+        processUserDomain: "NT AUTHORITY"
+        processUserGroupSids:
+         - "S-1-16-16384"
+         - "S-1-1-0"
+         - "S-1-5-32-545"
+         - "S-1-5-6"
+         - "S-1-2-1"
+         - "S-1-5-11"
+         - "S-1-5-15"
+         - "S-1-5-80-685333868-2237257676-1431965530-1907094206-2438021966"
+         - "S-1-5-5-0-36366980"
+         - "S-1-2-0"
+         - "S-1-5-32-544"
+        productCode: "xes"
+        pver: "1.2.0.5259"
+        sessionId: 0
+        tags:
+         - "MITRE.T1053.005"
+         - "XSAE.F1507"
+         - "MITRE.T1053"
+        timezone: "UTC+05:30"
+        uuid: "65f9d8c7-33a9-41a3-a1a6-445376599211"
+      detectedDateTime: "2024-07-30T16:20:25Z"
+      endpoint:
+        agentGuid: "801b7e5f-902e-4ebd-ad6a-c8f431fe6053"
+        endpointName: "DESKTOP-N19I543"
+        ips:
+         - "ab80::42jk:a793:2667:b585"
+         - "10.10.10.10"
+      entityName: "DESKTOP-N19I543(ab80::42jk:a793:2667:b585,10.10.10.10)"
+      entityType: "endpoint"
+      event_type: "EVENT_PROCESS"
+      filters:
+       -
+        riskLevel: "low"
+        mitreTacticIds:
+         - "TA0002"
+         - "TA0003"
+         - "TA0004"
+        mitreTechniqueIds:
+         - "T1053"
+         - "T1053.005"
+        name: "Creation of Scheduled Task"
+        description: "A scheduled task was created via command-line"
+        id: "F1507"
+        highlightedObjects:
+         -
+          field: "objectCmd"
+          type: "command_line"
+          value: "SysWOW64\\schtasks.exe -create -tn Microsoft\\Windows\\WindowsUpdate\\RUXIM\\PLUGScheduler -xml plugscheduler.xml -F"
+         -
+          field: "processCmd"
+          type: "command_line"
+          value: "system32\\msiexec.exe /V"
+        type: "preset"
+      ingestedDateTime: "2024-07-30T16:22:16Z"
+      oat_event_severity: "Info"
+      source: "endpointActivityData"
+      uuid: "65f9d8c7-33a9-41a3-a1a6-445376599211"
+    message: |-
+      {
+        "endpoint" : {
+          "agentGuid" : "801b7e5f-902e-4ebd-ad6a-c8f431fe6053",
+          "endpointName" : "DESKTOP-N19I543",
+          "ips" : [ "ab80::42jk:a793:2667:b585", "10.10.10.10" ]
+        },
+        "detectedDateTime" : "2024-07-30T16:20:25Z",
+        "entityType" : "endpoint",
+        "entityName" : "DESKTOP-N19I543(ab80::42jk:a793:2667:b585,10.10.10.10)",
+        "source" : "endpointActivityData",
+        "filters" : [ {
+          "riskLevel" : "low",
+          "mitreTacticIds" : [ "TA0002", "TA0003", "TA0004" ],
+          "mitreTechniqueIds" : [ "T1053", "T1053.005" ],
+          "name" : "Creation of Scheduled Task",
+          "description" : "A scheduled task was created via command-line",
+          "id" : "F1507",
+          "highlightedObjects" : [ {
+            "field" : "objectCmd",
+            "type" : "command_line",
+            "value" : "SysWOW64\\schtasks.exe -create -tn Microsoft\\Windows\\WindowsUpdate\\RUXIM\\PLUGScheduler -xml plugscheduler.xml -F"
+          }, {
+            "field" : "processCmd",
+            "type" : "command_line",
+            "value" : "system32\\msiexec.exe /V"
+          } ],
+          "type" : "preset"
+        } ],
+        "detail" : {
+          "processFileHashSha256" : "d53e90af814f61e09bff87a883a3b0dcb7dcf883f17a2425a62a2d4b5a9407fb",
+          "processUserDomain" : "NT AUTHORITY",
+          "eventSubId" : 2,
+          "plang" : 1,
+          "pver" : "1.2.0.5259",
+          "objectSignerFlagsRuntime" : [ false ],
+          "processSignerFlagsLibValid" : [ false ],
+          "objectTrueType" : 7,
+          "processFileSize" : "69632",
+          "endpointHostName" : "DESKTOP-N19I543",
+          "objectSessionId" : "0",
+          "parentFilePath" : "System32\\services.exe",
+          "processLaunchTime" : "1722356422814",
+          "objectHashId" : "148323463451116793",
+          "eventSourceType" : 1,
+          "objectIntegrityLevel" : 16384,
+          "objectRunAsLocalAccount" : false,
+          "tags" : [ "MITRE.T1053.005", "XSAE.F1507", "MITRE.T1053" ],
+          "parentName" : "System32\\services.exe",
+          "lastSeen" : "1722356425050",
+          "parentSignerFlagsLibValid" : [ false ],
+          "objectUser" : "SYSTEM",
+          "objectFileCreation" : "1722282120740",
+          "osDescription" : "Windows 10 Pro (64 bit) build 19045",
+          "objectCmd" : "SysWOW64\\schtasks.exe -create -tn Microsoft\\Windows\\WindowsUpdate\\RUXIM\\PLUGScheduler -xml plugscheduler.xml -F",
+          "osVer" : "10.0.19045",
+          "processSigner" : [ "Microsoft Windows" ],
+          "parentCmd" : "system32\\services.exe",
+          "endpointMacAddress" : [ "00:0d:30:e4:8b:b6" ],
+          "parentFileCreation" : "1722281953380",
+          "processFileHashMd5" : "78912ea8790de51d2c7ceb9b8c572346",
+          "processCmd" : "system32\\msiexec.exe /V",
+          "processUserGroupSids" : [ "S-1-16-16384", "S-1-1-0", "S-1-5-32-545", "S-1-5-6", "S-1-2-1", "S-1-5-11", "S-1-5-15", "S-1-5-80-685333868-2237257676-1431965530-1907094206-2438021966", "S-1-5-5-0-36366980", "S-1-2-0", "S-1-5-32-544" ],
+          "parentSessionId" : 0,
+          "parentFileHashId" : "-4092577940452904134",
+          "sessionId" : 0,
+          "processFilePath" : "System32\\msiexec.exe",
+          "osName" : "Windows",
+          "productCode" : "xes",
+          "parentFileHashSha256" : "1efd9a81b2ddf21b3f327d67a6f8f88f814979e84085ec812af72450310d4281",
+          "processFileHashSha1" : "6a795b8a432514f20ff884f1a5286ea82e32e150",
+          "processTrueType" : 7,
+          "objectFileHashId" : "-370955917314104624",
+          "objectFileSize" : "187904",
+          "parentHashId" : "-5897584668177803063",
+          "parentSignerValid" : [ true ],
+          "uuid" : "65f9d8c7-33a9-41a3-a1a6-445376599211",
+          "parentUserDomain" : "NT AUTHORITY",
+          "eventHashId" : "-8250022594686035748",
+          "processSignerValid" : [ true ],
+          "parentFileModifiedTime" : "1722281953458",
+          "objectFileHashSha256" : "29f6fc1bb0e68cb4fc1ec597604ec5aca7fcef7d0d9241218596d941f04f16e7",
+          "processName" : "System32\\msiexec.exe",
+          "parentSignerFlagsAdhoc" : [ false ],
+          "parentAuthId" : "999",
+          "objectFileHashMd5" : "db6f48dc66879299b49ee3f1df0607f1",
+          "filterRiskLevel" : "low",
+          "eventId" : "1",
+          "firstSeen" : "1722356425050",
+          "objectFilePath" : "SysWOW64\\schtasks.exe",
+          "pname" : "751",
+          "parentLaunchTime" : "1722285790679",
+          "parentFileHashMd5" : "4eacbe64bb1e7d58e8a26340ed1c7cbd",
+          "processSignerFlagsAdhoc" : [ false ],
+          "objectSigner" : [ "Microsoft Windows" ],
+          "processPid" : 408,
+          "parentSigner" : [ "Microsoft Windows Publisher" ],
+          "objectSignerFlagsLibValid" : [ false ],
+          "integrityLevel" : 16384,
+          "processFileModifiedTime" : "1722282337774",
+          "objectFileHashSha1" : "5673be4c0b3d6c963651ec1e4adb7aaabadf5a19",
+          "pplat" : 5889,
+          "parentSignerFlagsRuntime" : [ false ],
+          "parentIntegrityLevel" : 16384,
+          "processSignerFlagsRuntime" : [ false ],
+          "objectLaunchTime" : "1722356425049",
+          "objectUserGroupSids" : [ "S-1-16-16384", "S-1-1-0", "S-1-5-32-545", "S-1-5-6", "S-1-2-1", "S-1-5-11", "S-1-5-15", "S-1-5-80-685333868-2237257676-1431965530-1907094206-2438021966", "S-1-5-5-0-36366980", "S-1-2-0", "S-1-5-32-544" ],
+          "timezone" : "UTC+05:30",
+          "processUser" : "SYSTEM",
+          "logReceivedTime" : "1722356504612",
+          "objectSignerFlagsAdhoc" : [ false ],
+          "authId" : "999",
+          "osType" : "0x00000030",
+          "processFileCreation" : "1722282337759",
+          "objectUserDomain" : "NT AUTHORITY",
+          "processHashId" : "7052107378290747991",
+          "parentPid" : 688,
+          "endpointIp" : [ "ab80::42jk:a793:2667:b585", "10.10.10.10" ],
+          "objectSignerValid" : [ true ],
+          "parentTrueType" : 7,
+          "parentFileSize" : "716544",
+          "parentFileHashSha1" : "6703d48349de8c836c0eaffac5cfac7679da7f60",
+          "objectAuthId" : "999",
+          "endpointGuid" : "801b7e5f-902e-4ebd-ad6a-c8f431fe6053",
+          "objectName" : "SysWOW64\\schtasks.exe",
+          "processFileHashId" : "-5659244633155638992",
+          "objectPid" : 6292,
+          "parentUser" : "SYSTEM",
+          "objectFileModifiedTime" : "1722282120756"
+        },
+        "ingestedDateTime" : "2024-07-30T16:22:16Z",
+        "uuid" : "65f9d8c7-33a9-41a3-a1a6-445376599211"
+      }
+    service: "observed-attack-techniques"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1722356425000
+ -
+  sample: |-
+    {
+      "endpoint" : {
+        "agentGuid" : "b159820e-5bb3-49f2-ad98-75a4f2052282",
+        "endpointName" : "ASSETTAG-EID",
+        "ips" : [ "10.10.10.10" ]
+      },
+      "detectedDateTime" : "2024-07-31T05:00:44Z",
+      "entityType" : "endpoint",
+      "entityName" : "ASSETTAG-EID(10.10.10.10)",
+      "source" : "identityActivityData",
+      "filters" : [ {
+        "riskLevel" : "medium",
+        "mitreTacticIds" : [ "TA0002" ],
+        "mitreTechniqueIds" : [ "T1204.002" ],
+        "name" : "Malicious Software",
+        "description" : "A malicious software was detected on an endpoint.",
+        "id" : "F2140",
+        "highlightedObjects" : [ {
+          "field" : "fileHash",
+          "type" : "file_sha1",
+          "value" : "527a3b861f37d16d356250f9e9bad4c43a850ebf"
+        }, {
+          "field" : "fileName",
+          "type" : "filename",
+          "value" : [ "Unconfirmed 667870.crdownload" ]
+        }, {
+          "field" : "fullPath",
+          "type" : "fullpath",
+          "value" : "\\Downloads\\Unconfirmed 667870.crdownload"
+        }, {
+          "field" : "malName",
+          "type" : "detection_name",
+          "value" : "TROJ_GEN.R03BC0PG624"
+        }, {
+          "field" : "actResult",
+          "type" : "text",
+          "value" : [ "Encrypted" ]
+        }, {
+          "field" : "scanType",
+          "type" : "text",
+          "value" : "Real-time Scan"
+        }, {
+          "field" : "endpointIp",
+          "type" : "ip",
+          "value" : [ "10.10.10.10" ]
+        } ],
+        "type" : "preset"
+      } ],
+      "detail" : {
+        "idpName" : "GTPL",
+        "eventCategory" : "Media and Entertainment",
+        "groupId" : "3g35av3545",
+        "eventAdditionalDetails" : "This is test sentence.",
+        "statusDetail" : "Log In",
+        "uuid" : "31f42842-e527-443a-bb9d-1918c0f65342",
+        "statusReason" : "Logged In",
+        "initiatedByServicePrincipalId" : "234eer345",
+        "locationCountry" : "Sweden",
+        "initiatedByAppDisplayName" : "Outlook",
+        "bitwiseFilterRiskLevel" : 2,
+        "locationLongitude" : "59.3293",
+        "eventName" : "The Detected Malware Scan",
+        "loggedByService" : "Microfost",
+        "filterRiskLevel" : "medium",
+        "locationState" : "Gotland",
+        "targetResources" : "Outlook Application.",
+        "eventId" : "214sf3445",
+        "initiatedByUserId" : "3424455d345",
+        "pname" : "2345wwy48",
+        "ipAddress" : "10.10.10.10",
+        "initiatedByUserPrincipalName" : "FIGI-ED",
+        "eventSourceType" : 3,
+        "version" : "2.1",
+        "tenantGuid" : "322434d344qd341",
+        "tags" : [ "1", "2" ],
+        "targetResourceDisplayName" : "Facetime",
+        "mgmtInstanceId" : "dsa92j2424e",
+        "targetResourceId" : "23e2t42w34",
+        "clientDisplayName" : "Microfost",
+        "operationType" : "Scanning",
+        "locationCity" : "Stockholm",
+        "status" : "Open",
+        "actionName" : "Sign Out",
+        "idpId" : "2",
+        "requestMethod" : "2 Way Authentication",
+        "clientOS" : "Windows 11",
+        "initiatedByAppId" : "33245",
+        "tmFilterRiskLevel" : "High",
+        "result" : "Fail",
+        "clientBrowser" : "Google Chrome",
+        "partitionKey" : "34787654324567890987",
+        "customFilterTags" : "scan",
+        "initiatedByUserDisplayName" : "John",
+        "clientApp" : "Outlook",
+        "initiatedByUserHomeTenantName" : "Hugh",
+        "resultReason" : "Malware Found.",
+        "customerId" : "191648c0f65342",
+        "packageTraceId" : "3e4rr245",
+        "correlationId" : "234r34r542w13",
+        "initiatedByUserIpAddress" : "10.10.10.10",
+        "clientId" : "de249o34",
+        "locationLatitude" : "18.0686",
+        "userDisplayName" : "Jordan",
+        "userAgent" : "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.106 Safari/537.36 OPR/38.0.2220.41",
+        "userId" : "23fd34w4",
+        "initiatedByUserHomeTenantId" : "3245de344",
+        "productCode" : "aad",
+        "customFilterRiskLevel" : "High",
+        "receivedTime" : "2024-07-31T07:01:44Z",
+        "initiatedByServicePrincipalName" : "ETTES-ER",
+        "policyTreePath" : "C:\\desktop\\malware.sys"
+      },
+      "ingestedDateTime" : "2024-07-31T05:00:49Z",
+      "uuid" : "31f42842-e527-443a-bb9d-1918c0f65342"
+    }
+  service: "observed-attack-techniques"
+  result:
+    custom:
+      detail:
+        actionName: "Sign Out"
+        bitwiseFilterRiskLevel: 2
+        clientApp: "Outlook"
+        clientBrowser: "Google Chrome"
+        clientDisplayName: "Microfost"
+        clientId: "de249o34"
+        clientOS: "Windows 11"
+        correlationId: "234r34r542w13"
+        customFilterRiskLevel: "High"
+        customFilterTags: "scan"
+        customerId: "191648c0f65342"
+        eventAdditionalDetails: "This is test sentence."
+        eventCategory: "Media and Entertainment"
+        eventId: "214sf3445"
+        eventName: "The Detected Malware Scan"
+        eventSourceType: 3
+        filterRiskLevel: "medium"
+        groupId: "3g35av3545"
+        idpId: "2"
+        idpName: "GTPL"
+        initiatedByAppDisplayName: "Outlook"
+        initiatedByAppId: "33245"
+        initiatedByServicePrincipalId: "234eer345"
+        initiatedByServicePrincipalName: "ETTES-ER"
+        initiatedByUserDisplayName: "John"
+        initiatedByUserHomeTenantId: "3245de344"
+        initiatedByUserHomeTenantName: "Hugh"
+        initiatedByUserId: "3424455d345"
+        initiatedByUserIpAddress: "10.10.10.10"
+        initiatedByUserPrincipalName: "FIGI-ED"
+        locationCity: "Stockholm"
+        locationCountry: "Sweden"
+        locationLatitude: "18.0686"
+        locationLongitude: "59.3293"
+        locationState: "Gotland"
+        loggedByService: "Microfost"
+        mgmtInstanceId: "dsa92j2424e"
+        operationType: "Scanning"
+        packageTraceId: "3e4rr245"
+        partitionKey: "34787654324567890987"
+        pname: "2345wwy48"
+        policyTreePath: "C:\\desktop\\malware.sys"
+        productCode: "aad"
+        receivedTime: "2024-07-31T07:01:44Z"
+        requestMethod: "2 Way Authentication"
+        result: "Fail"
+        resultReason: "Malware Found."
+        status: "Open"
+        statusDetail: "Log In"
+        statusReason: "Logged In"
+        tags:
+         - "1"
+         - "2"
+        targetResourceDisplayName: "Facetime"
+        targetResourceId: "23e2t42w34"
+        targetResources: "Outlook Application."
+        tenantGuid: "322434d344qd341"
+        tmFilterRiskLevel: "High"
+        userAgent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.106 Safari/537.36 OPR/38.0.2220.41"
+        uuid: "31f42842-e527-443a-bb9d-1918c0f65342"
+        version: "2.1"
+      detectedDateTime: "2024-07-31T05:00:44Z"
+      endpoint:
+        agentGuid: "b159820e-5bb3-49f2-ad98-75a4f2052282"
+        endpointName: "ASSETTAG-EID"
+        ips:
+         - "10.10.10.10"
+      entityName: "ASSETTAG-EID(10.10.10.10)"
+      entityType: "endpoint"
+      filters:
+       -
+        riskLevel: "medium"
+        mitreTacticIds:
+         - "TA0002"
+        mitreTechniqueIds:
+         - "T1204.002"
+        name: "Malicious Software"
+        description: "A malicious software was detected on an endpoint."
+        id: "F2140"
+        highlightedObjects:
+         -
+          field: "fileHash"
+          type: "file_sha1"
+          value: "527a3b861f37d16d356250f9e9bad4c43a850ebf"
+         -
+          field: "fileName"
+          type: "filename"
+          value:
+           - "Unconfirmed 667870.crdownload"
+         -
+          field: "fullPath"
+          type: "fullpath"
+          value: "\\Downloads\\Unconfirmed 667870.crdownload"
+         -
+          field: "malName"
+          type: "detection_name"
+          value: "TROJ_GEN.R03BC0PG624"
+         -
+          field: "actResult"
+          type: "text"
+          value:
+           - "Encrypted"
+         -
+          field: "scanType"
+          type: "text"
+          value: "Real-time Scan"
+         -
+          field: "endpointIp"
+          type: "ip"
+          value:
+           - "10.10.10.10"
+        type: "preset"
+      ingestedDateTime: "2024-07-31T05:00:49Z"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+      oat_event_severity: "Notice"
+      source: "identityActivityData"
+      usr:
+        id: "23fd34w4"
+        name: "Jordan"
+      uuid: "31f42842-e527-443a-bb9d-1918c0f65342"
+    message: |-
+      {
+        "endpoint" : {
+          "agentGuid" : "b159820e-5bb3-49f2-ad98-75a4f2052282",
+          "endpointName" : "ASSETTAG-EID",
+          "ips" : [ "10.10.10.10" ]
+        },
+        "detectedDateTime" : "2024-07-31T05:00:44Z",
+        "entityType" : "endpoint",
+        "entityName" : "ASSETTAG-EID(10.10.10.10)",
+        "source" : "identityActivityData",
+        "filters" : [ {
+          "riskLevel" : "medium",
+          "mitreTacticIds" : [ "TA0002" ],
+          "mitreTechniqueIds" : [ "T1204.002" ],
+          "name" : "Malicious Software",
+          "description" : "A malicious software was detected on an endpoint.",
+          "id" : "F2140",
+          "highlightedObjects" : [ {
+            "field" : "fileHash",
+            "type" : "file_sha1",
+            "value" : "527a3b861f37d16d356250f9e9bad4c43a850ebf"
+          }, {
+            "field" : "fileName",
+            "type" : "filename",
+            "value" : [ "Unconfirmed 667870.crdownload" ]
+          }, {
+            "field" : "fullPath",
+            "type" : "fullpath",
+            "value" : "\\Downloads\\Unconfirmed 667870.crdownload"
+          }, {
+            "field" : "malName",
+            "type" : "detection_name",
+            "value" : "TROJ_GEN.R03BC0PG624"
+          }, {
+            "field" : "actResult",
+            "type" : "text",
+            "value" : [ "Encrypted" ]
+          }, {
+            "field" : "scanType",
+            "type" : "text",
+            "value" : "Real-time Scan"
+          }, {
+            "field" : "endpointIp",
+            "type" : "ip",
+            "value" : [ "10.10.10.10" ]
+          } ],
+          "type" : "preset"
+        } ],
+        "detail" : {
+          "idpName" : "GTPL",
+          "eventCategory" : "Media and Entertainment",
+          "groupId" : "3g35av3545",
+          "eventAdditionalDetails" : "This is test sentence.",
+          "statusDetail" : "Log In",
+          "uuid" : "31f42842-e527-443a-bb9d-1918c0f65342",
+          "statusReason" : "Logged In",
+          "initiatedByServicePrincipalId" : "234eer345",
+          "locationCountry" : "Sweden",
+          "initiatedByAppDisplayName" : "Outlook",
+          "bitwiseFilterRiskLevel" : 2,
+          "locationLongitude" : "59.3293",
+          "eventName" : "The Detected Malware Scan",
+          "loggedByService" : "Microfost",
+          "filterRiskLevel" : "medium",
+          "locationState" : "Gotland",
+          "targetResources" : "Outlook Application.",
+          "eventId" : "214sf3445",
+          "initiatedByUserId" : "3424455d345",
+          "pname" : "2345wwy48",
+          "ipAddress" : "10.10.10.10",
+          "initiatedByUserPrincipalName" : "FIGI-ED",
+          "eventSourceType" : 3,
+          "version" : "2.1",
+          "tenantGuid" : "322434d344qd341",
+          "tags" : [ "1", "2" ],
+          "targetResourceDisplayName" : "Facetime",
+          "mgmtInstanceId" : "dsa92j2424e",
+          "targetResourceId" : "23e2t42w34",
+          "clientDisplayName" : "Microfost",
+          "operationType" : "Scanning",
+          "locationCity" : "Stockholm",
+          "status" : "Open",
+          "actionName" : "Sign Out",
+          "idpId" : "2",
+          "requestMethod" : "2 Way Authentication",
+          "clientOS" : "Windows 11",
+          "initiatedByAppId" : "33245",
+          "tmFilterRiskLevel" : "High",
+          "result" : "Fail",
+          "clientBrowser" : "Google Chrome",
+          "partitionKey" : "34787654324567890987",
+          "customFilterTags" : "scan",
+          "initiatedByUserDisplayName" : "John",
+          "clientApp" : "Outlook",
+          "initiatedByUserHomeTenantName" : "Hugh",
+          "resultReason" : "Malware Found.",
+          "customerId" : "191648c0f65342",
+          "packageTraceId" : "3e4rr245",
+          "correlationId" : "234r34r542w13",
+          "initiatedByUserIpAddress" : "10.10.10.10",
+          "clientId" : "de249o34",
+          "locationLatitude" : "18.0686",
+          "userDisplayName" : "Jordan",
+          "userAgent" : "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.106 Safari/537.36 OPR/38.0.2220.41",
+          "userId" : "23fd34w4",
+          "initiatedByUserHomeTenantId" : "3245de344",
+          "productCode" : "aad",
+          "customFilterRiskLevel" : "High",
+          "receivedTime" : "2024-07-31T07:01:44Z",
+          "initiatedByServicePrincipalName" : "ETTES-ER",
+          "policyTreePath" : "C:\\desktop\\malware.sys"
+        },
+        "ingestedDateTime" : "2024-07-31T05:00:49Z",
+        "uuid" : "31f42842-e527-443a-bb9d-1918c0f65342"
+      }
+    service: "observed-attack-techniques"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1722402044000
+ -
+  sample: |-
+    {
+      "endpoint" : {
+        "agentGuid" : "cedddc75-d673-4ba0-a1f6-cf6b05a84670",
+        "endpointName" : "LAB-Luwak-1048",
+        "ips" : [ "10.10.10.10", "fe70::9457:af15:b645:35os" ]
+      },
+      "entityType" : "endpoint",
+      "entityName" : "desktop-17",
+      "detectedDateTime" : "2020-06-01T02:12:56Z",
+      "source" : "cloudActivityData",
+      "filters" : [ {
+        "riskLevel" : "info",
+        "mitreTacticIds" : [ "TA0002" ],
+        "mitreTechniqueIds" : [ "T1560.002" ],
+        "name" : "Service Execution via Service Control Manager",
+        "description" : "Service Control Manager (services.exe) has executed a process",
+        "id" : "F4231",
+        "highlightedObjects" : [ {
+          "field" : "objectPort",
+          "type" : "port",
+          "value" : 443
+        } ],
+        "type" : "custom"
+      } ],
+      "detail" : {
+        "eventID" : "1234567890abcdef",
+        "awsRegion" : "us-east-1",
+        "eventSubId" : "1234567890abcdef",
+        "eventCategory" : "Management",
+        "eventVersion" : "1.08",
+        "responseElements" : "{\"User\":{\"UserName\":\"JohnDoe\"}}",
+        "sourceIPAddress" : "10.10.10.10",
+        "eventSource" : "iam.amazonaws.com",
+        "readOnly" : false,
+        "userAgent" : "aws-cli/2.7.24 Python/3.9.7 Linux/5.10.104-1-MANJARO",
+        "eventType" : "AwsApiCall",
+        "uuid" : "1234567890abcdef",
+        "productCode" : "",
+        "requestID" : "1234567890abcdef",
+        "customerId" : "1234567890",
+        "eventName" : "CreateUser",
+        "packageTraceId" : "1234567890abcdef",
+        "recipientAccountId" : "1234567890",
+        "managementEvent" : true,
+        "filterRiskLevel" : "info",
+        "eventCase" : "CreateUser-1234567890"
+      },
+      "ingestedDateTime" : "2020-06-01T02:12:56Z",
+      "uuid" : "fdd69d98-58de-4249-9871-2e1b233b72ff"
+    }
+  service: "observed-attack-techniques"
+  result:
+    custom:
+      detail:
+        awsRegion: "us-east-1"
+        customerId: "1234567890"
+        eventCase: "CreateUser-1234567890"
+        eventCategory: "Management"
+        eventID: "1234567890abcdef"
+        eventName: "CreateUser"
+        eventSource: "iam.amazonaws.com"
+        eventSubId: "1234567890abcdef"
+        eventType: "AwsApiCall"
+        eventVersion: "1.08"
+        filterRiskLevel: "info"
+        managementEvent: true
+        packageTraceId: "1234567890abcdef"
+        productCode: ""
+        readOnly: false
+        recipientAccountId: "1234567890"
+        requestID: "1234567890abcdef"
+        responseElements: "{\"User\":{\"UserName\":\"JohnDoe\"}}"
+        userAgent: "aws-cli/2.7.24 Python/3.9.7 Linux/5.10.104-1-MANJARO"
+        uuid: "1234567890abcdef"
+      detectedDateTime: "2020-06-01T02:12:56Z"
+      endpoint:
+        agentGuid: "cedddc75-d673-4ba0-a1f6-cf6b05a84670"
+        endpointName: "LAB-Luwak-1048"
+        ips:
+         - "10.10.10.10"
+         - "fe70::9457:af15:b645:35os"
+      entityName: "desktop-17"
+      entityType: "endpoint"
+      filters:
+       -
+        riskLevel: "info"
+        mitreTacticIds:
+         - "TA0002"
+        mitreTechniqueIds:
+         - "T1560.002"
+        name: "Service Execution via Service Control Manager"
+        description: "Service Control Manager (services.exe) has executed a process"
+        id: "F4231"
+        highlightedObjects:
+         -
+          field: "objectPort"
+          type: "port"
+          value: 443
+        type: "custom"
+      ingestedDateTime: "2020-06-01T02:12:56Z"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+      oat_event_severity: "Debug"
+      source: "cloudActivityData"
+      uuid: "fdd69d98-58de-4249-9871-2e1b233b72ff"
+    message: |-
+      {
+        "endpoint" : {
+          "agentGuid" : "cedddc75-d673-4ba0-a1f6-cf6b05a84670",
+          "endpointName" : "LAB-Luwak-1048",
+          "ips" : [ "10.10.10.10", "fe70::9457:af15:b645:35os" ]
+        },
+        "entityType" : "endpoint",
+        "entityName" : "desktop-17",
+        "detectedDateTime" : "2020-06-01T02:12:56Z",
+        "source" : "cloudActivityData",
+        "filters" : [ {
+          "riskLevel" : "info",
+          "mitreTacticIds" : [ "TA0002" ],
+          "mitreTechniqueIds" : [ "T1560.002" ],
+          "name" : "Service Execution via Service Control Manager",
+          "description" : "Service Control Manager (services.exe) has executed a process",
+          "id" : "F4231",
+          "highlightedObjects" : [ {
+            "field" : "objectPort",
+            "type" : "port",
+            "value" : 443
+          } ],
+          "type" : "custom"
+        } ],
+        "detail" : {
+          "eventID" : "1234567890abcdef",
+          "awsRegion" : "us-east-1",
+          "eventSubId" : "1234567890abcdef",
+          "eventCategory" : "Management",
+          "eventVersion" : "1.08",
+          "responseElements" : "{\"User\":{\"UserName\":\"JohnDoe\"}}",
+          "sourceIPAddress" : "10.10.10.10",
+          "eventSource" : "iam.amazonaws.com",
+          "readOnly" : false,
+          "userAgent" : "aws-cli/2.7.24 Python/3.9.7 Linux/5.10.104-1-MANJARO",
+          "eventType" : "AwsApiCall",
+          "uuid" : "1234567890abcdef",
+          "productCode" : "",
+          "requestID" : "1234567890abcdef",
+          "customerId" : "1234567890",
+          "eventName" : "CreateUser",
+          "packageTraceId" : "1234567890abcdef",
+          "recipientAccountId" : "1234567890",
+          "managementEvent" : true,
+          "filterRiskLevel" : "info",
+          "eventCase" : "CreateUser-1234567890"
+        },
+        "ingestedDateTime" : "2020-06-01T02:12:56Z",
+        "uuid" : "fdd69d98-58de-4249-9871-2e1b233b72ff"
+      }
+    service: "observed-attack-techniques"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1590977576000
+ -
+  sample: |-
+    {
+      "endpoint" : {
+        "agentGuid" : "ceddds65-d673-4ba0-a1f6-cf6b05a46152",
+        "endpointName" : "LAB-Luwak-1048",
+        "ips" : [ "10.10.10.10", "fe78::1542:af77:b312:35ea" ]
+      },
+      "entityType" : "endpoint",
+      "entityName" : "desktop-17",
+      "detectedDateTime" : "2020-06-01T02:12:56Z",
+      "source" : "networkActivityData",
+      "filters" : [ {
+        "riskLevel" : "info",
+        "mitreTacticIds" : [ "TA0002" ],
+        "mitreTechniqueIds" : [ "T1560.002" ],
+        "name" : "Service Execution via Service Control Manager",
+        "description" : "Service Control Manager (services.exe) has executed a process",
+        "id" : "F4231",
+        "highlightedObjects" : [ {
+          "field" : "objectPort",
+          "type" : "port",
+          "value" : 443
+        } ],
+        "type" : "custom"
+      } ],
+      "detail" : {
+        "request" : "https://www.example.com",
+        "rt" : 1643723400,
+        "fileName" : "dummy-file.exe",
+        "serverTls" : "TLSv1.2",
+        "dst" : "8.8.8.8",
+        "requestBase" : "example.com",
+        "requestMethod" : "GET",
+        "pver" : "1.0",
+        "companyName" : "Example Inc.",
+        "fileHash" : "sample-filehash",
+        "serverProtocol" : "HTTP/1.1",
+        "suid" : "admin",
+        "mimeType" : "application/x-msdownload",
+        "duration" : 100,
+        "score" : 50,
+        "endpointHostName" : "dummy-host",
+        "act" : "2",
+        "ruleUuid" : "sample-ruleuuid",
+        "deviceGUID" : "ceddds65-d673-4ba0-a1f6-cf6b05a46152",
+        "ruleType" : " dummy-rule-type",
+        "eventName" : " dummy-event",
+        "ruleName" : " dummy-rule",
+        "filterRiskLevel" : "info",
+        "objectId" : "sample-objectuuid",
+        "src" : "10.10.10.10",
+        "pname" : " dummy-product",
+        "fileHashSha256" : "sample-filehashsha256",
+        "malName" : " dummy-malware",
+        "profile" : " dummy-profile",
+        "start" : 1643723400,
+        "dpt" : 443,
+        "principalName" : "admin",
+        "userAgent" : "Mozilla/5.0",
+        "requestMimeType" : "text/html",
+        "userDomain" : "example.com",
+        "osName" : "Windows 10",
+        "tenantGuid" : "nisdds75-d673-4ba0-a1f6-cf6b05a46152",
+        "eventSubName" : " dummy-sub-event",
+        "policyUuid" : "sample-policyuuid",
+        "detectionType" : " dummy-detection",
+        "application" : "Example App",
+        "fileSize" : "1024",
+        "sender" : "gateway",
+        "spt" : 443,
+        "clientIp" : "10.10.10.10",
+        "endpointGuid" : "ceddds65-d673-4ba0-a1f6-cf6b05a46152",
+        "userDepartment" : "IT",
+        "fileType" : "application/x-msdownload"
+      },
+      "ingestedDateTime" : "2020-06-01T02:12:56Z",
+      "uuid" : "fdd69d98-58de-4249-9871-2e1b233b72ff"
+    }
+  service: "observed-attack-techniques"
+  result:
+    custom:
+      detail:
+        act: "2"
+        application: "Example App"
+        clientIp: "10.10.10.10"
+        companyName: "Example Inc."
+        detectionType: " dummy-detection"
+        deviceGUID: "ceddds65-d673-4ba0-a1f6-cf6b05a46152"
+        duration: 100
+        endpointGuid: "ceddds65-d673-4ba0-a1f6-cf6b05a46152"
+        endpointHostName: "dummy-host"
+        eventName: " dummy-event"
+        eventSubName: " dummy-sub-event"
+        fileHash: "sample-filehash"
+        fileHashSha256: "sample-filehashsha256"
+        fileName: "dummy-file.exe"
+        fileSize: "1024"
+        fileType: "application/x-msdownload"
+        filterRiskLevel: "info"
+        malName: " dummy-malware"
+        mimeType: "application/x-msdownload"
+        objectId: "sample-objectuuid"
+        osName: "Windows 10"
+        pname: " dummy-product"
+        policyUuid: "sample-policyuuid"
+        principalName: "admin"
+        profile: " dummy-profile"
+        pver: "1.0"
+        request: "https://www.example.com"
+        requestBase: "example.com"
+        requestMethod: "GET"
+        requestMimeType: "text/html"
+        rt: 1643723400
+        ruleName: " dummy-rule"
+        ruleType: " dummy-rule-type"
+        ruleUuid: "sample-ruleuuid"
+        score: 50
+        sender: "gateway"
+        serverProtocol: "HTTP/1.1"
+        serverTls: "TLSv1.2"
+        start: 1643723400
+        suid: "admin"
+        tenantGuid: "nisdds75-d673-4ba0-a1f6-cf6b05a46152"
+        userAgent: "Mozilla/5.0"
+        userDepartment: "IT"
+        userDomain: "example.com"
+      detectedDateTime: "2020-06-01T02:12:56Z"
+      endpoint:
+        agentGuid: "ceddds65-d673-4ba0-a1f6-cf6b05a46152"
+        endpointName: "LAB-Luwak-1048"
+        ips:
+         - "10.10.10.10"
+         - "fe78::1542:af77:b312:35ea"
+      entityName: "desktop-17"
+      entityType: "endpoint"
+      filters:
+       -
+        riskLevel: "info"
+        mitreTacticIds:
+         - "TA0002"
+        mitreTechniqueIds:
+         - "T1560.002"
+        name: "Service Execution via Service Control Manager"
+        description: "Service Control Manager (services.exe) has executed a process"
+        id: "F4231"
+        highlightedObjects:
+         -
+          field: "objectPort"
+          type: "port"
+          value: 443
+        type: "custom"
+      ingestedDateTime: "2020-06-01T02:12:56Z"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+          port: 443
+        destination:
+          ip: "8.8.8.8"
+          port: 443
+      oat_event_severity: "Debug"
+      source: "networkActivityData"
+      uuid: "fdd69d98-58de-4249-9871-2e1b233b72ff"
+    message: |-
+      {
+        "endpoint" : {
+          "agentGuid" : "ceddds65-d673-4ba0-a1f6-cf6b05a46152",
+          "endpointName" : "LAB-Luwak-1048",
+          "ips" : [ "10.10.10.10", "fe78::1542:af77:b312:35ea" ]
+        },
+        "entityType" : "endpoint",
+        "entityName" : "desktop-17",
+        "detectedDateTime" : "2020-06-01T02:12:56Z",
+        "source" : "networkActivityData",
+        "filters" : [ {
+          "riskLevel" : "info",
+          "mitreTacticIds" : [ "TA0002" ],
+          "mitreTechniqueIds" : [ "T1560.002" ],
+          "name" : "Service Execution via Service Control Manager",
+          "description" : "Service Control Manager (services.exe) has executed a process",
+          "id" : "F4231",
+          "highlightedObjects" : [ {
+            "field" : "objectPort",
+            "type" : "port",
+            "value" : 443
+          } ],
+          "type" : "custom"
+        } ],
+        "detail" : {
+          "request" : "https://www.example.com",
+          "rt" : 1643723400,
+          "fileName" : "dummy-file.exe",
+          "serverTls" : "TLSv1.2",
+          "dst" : "8.8.8.8",
+          "requestBase" : "example.com",
+          "requestMethod" : "GET",
+          "pver" : "1.0",
+          "companyName" : "Example Inc.",
+          "fileHash" : "sample-filehash",
+          "serverProtocol" : "HTTP/1.1",
+          "suid" : "admin",
+          "mimeType" : "application/x-msdownload",
+          "duration" : 100,
+          "score" : 50,
+          "endpointHostName" : "dummy-host",
+          "act" : "2",
+          "ruleUuid" : "sample-ruleuuid",
+          "deviceGUID" : "ceddds65-d673-4ba0-a1f6-cf6b05a46152",
+          "ruleType" : " dummy-rule-type",
+          "eventName" : " dummy-event",
+          "ruleName" : " dummy-rule",
+          "filterRiskLevel" : "info",
+          "objectId" : "sample-objectuuid",
+          "src" : "10.10.10.10",
+          "pname" : " dummy-product",
+          "fileHashSha256" : "sample-filehashsha256",
+          "malName" : " dummy-malware",
+          "profile" : " dummy-profile",
+          "start" : 1643723400,
+          "dpt" : 443,
+          "principalName" : "admin",
+          "userAgent" : "Mozilla/5.0",
+          "requestMimeType" : "text/html",
+          "userDomain" : "example.com",
+          "osName" : "Windows 10",
+          "tenantGuid" : "nisdds75-d673-4ba0-a1f6-cf6b05a46152",
+          "eventSubName" : " dummy-sub-event",
+          "policyUuid" : "sample-policyuuid",
+          "detectionType" : " dummy-detection",
+          "application" : "Example App",
+          "fileSize" : "1024",
+          "sender" : "gateway",
+          "spt" : 443,
+          "clientIp" : "10.10.10.10",
+          "endpointGuid" : "ceddds65-d673-4ba0-a1f6-cf6b05a46152",
+          "userDepartment" : "IT",
+          "fileType" : "application/x-msdownload"
+        },
+        "ingestedDateTime" : "2020-06-01T02:12:56Z",
+        "uuid" : "fdd69d98-58de-4249-9871-2e1b233b72ff"
+      }
+    service: "observed-attack-techniques"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1590977576000

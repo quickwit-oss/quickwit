@@ -1,0 +1,62 @@
+id: crest_data_systems_dataminr
+metric_id: crest-data-systems-dataminr
+backend_only: false
+facets:
+  - facetType: list
+    groups:
+      - Crest data systems dataminr
+    name: latitude
+    path: cds.dataminr.latitude
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest data systems dataminr
+    name: longitude
+    path: cds.dataminr.longitude
+    source: log
+    type: string
+pipeline:
+  type: pipeline
+  name: Dataminr Pipeline
+  enabled: true
+  filter:
+    query: source:crest_data_systems_dataminr
+  processors:
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - name: Lookup 'alertType.name' to 'cd_dataminr_status'
+      enabled: true
+      source: alertType.name
+      target: cd_dataminr_status
+      lookupTable: |-
+        Flash, emergency
+        Urgent, critical
+        Alert, warning
+      defaultLookup: info
+      type: lookup-processor
+    - type: status-remapper
+      name: Define `cd_dataminr_status` as the official status of the log
+      enabled: true
+      sources:
+        - cd_dataminr_status
+    - type: string-builder-processor
+      name: Extracting the Coordinates to string
+      enabled: true
+      template: "%{eventLocation.coordinates}"
+      target: Coordinates
+      replaceMissing: true
+    - type: grok-parser
+      name: Extracting the Coordinates to longitude and latitude
+      enabled: true
+      source: Coordinates
+      samples:
+        - 23.33,24.55
+      grok:
+        supportRules: ""
+        matchRules: >
+          rule
+          \s*%{number:cds.dataminr.latitude}\s*,\s*%{number:cds.dataminr.longitude}\s*

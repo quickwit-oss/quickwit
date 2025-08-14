@@ -1,0 +1,68 @@
+id: glusterfs
+metric_id: glusterfs
+backend_only: false
+facets:
+  - groups:
+      - GlusterFS
+    name: GlusterFS Domain
+    path: glusterfs.domain
+    source: log
+  - groups:
+      - Source Code
+    name: Filename
+    path: filename
+    source: log
+pipeline:
+  type: pipeline
+  name: GlusterFS
+  enabled: true
+  filter:
+    query: source:glusterfs
+  processors:
+    - type: grok-parser
+      name: Parsing GlusterFS logs
+      enabled: true
+      source: message
+      samples:
+        - '[2021-01-05 22:41:20.859398] I [MSGID: 106487] [glusterd-handler.c:1339:__glusterd_handle_cli_list_friends] 0-glusterd: Received cli list req'
+        - '[2021-01-05 22:40:59.489594] I [MSGID: 115029] [server-handshake.c:552:server_setvolume] 0-gv0-server: accepted client from CTX_ID:8bd896c1-8d25-4553-8806-674008419738-GRAPH_ID:0-PID:26805-HOST:ip-172-29-187-90-PC_NAME:gv0-client-0-RECON_NO:-0 (version: 7.8) with subvol /export/xvdf1/brick'
+        - '[2021-01-05 22:40:59.503496] W [socket.c:775:__socket_rwv] 0-tcp.gv0-server: readv on 172.29.187.90:49131 failed (No data available)'
+        - 'The message "I [MSGID: 106487] [glusterd-handler.c:1339:__glusterd_handle_cli_list_friends] 0-glusterd: Received cli list req" repeated 45 times between [2021-01-06 20:21:27.000073] and [2021-01-06 20:23:19.843225]'
+      grok:
+        supportRules: |
+          _no_id %{_level}\s+\[%{_file}\]\s+%{notSpace:glusterfs.domain}\:\s+%{data:message}
+          _with_id %{_level}\s+\[MSGID\:\s+%{number:id}\]\s+\[%{_file}\]\s+%{notSpace:glusterfs.domain}\:\s+%{data:message}
+          _general_date %{date("yyyy-MM-dd HH:mm:ss.SSSSSS"):timestamp}
+          _start_date %{date("yyyy-MM-dd HH:mm:ss.SSSSSS"):repeated.timestamp.start}
+          _end_date %{date("yyyy-MM-dd HH:mm:ss.SSSSSS"):repeated.timestamp.end}
+          _level %{word:level}
+          _file %{notSpace:filename}\:%{number:lineno}\:%{notSpace:function}
+        matchRules: |
+          summary_msg The message "(%{_with_id}|%{_no_id})" repeated %{number:repeated.count} times between \[%{_start_date}\] and \[%{_end_date}\].*
+          gluster_with_id \[%{_general_date}\]\s+%{_with_id}
+          gluster_no_id \[%{_general_date}\]\s+%{_no_id}
+    - type: attribute-remapper
+      name: Map `repeated.timestamp.end` to `timestamp`
+      enabled: true
+      preserveSource: true
+      target: timestamp
+      sources:
+        - repeated.timestamp.end
+      sourceType: attribute
+      targetType: attribute
+      overrideOnConflict: false
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message

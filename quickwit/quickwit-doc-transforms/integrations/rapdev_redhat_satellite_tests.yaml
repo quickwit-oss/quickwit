@@ -1,0 +1,401 @@
+id: rapdev_redhat_satellite
+tests:
+  - sample: "2024-05-10T19:31:50 [I|app|d7a18a1c]   Rendering /opt/theforeman/tfm/root/usr/share/gems/gems/katello-3.14.0.32/app/views/katello/api/v2/repository_sets/index.json.rabl within katello/api/v2/layouts/collection"
+    service: "foreman"
+    result: 
+      custom:
+        foreman:
+          layout: "katello/api/v2/layouts/collection"
+          process_status: "Rendering"
+          template_file: "/opt/theforeman/tfm/root/usr/share/gems/gems/katello-3.14.0.32/app/views/katello/api/v2/repository_sets/index.json.rabl"
+        log:
+          context: "app"
+          id: "d7a18a1c"
+          level: "I"
+        timestamp: 1715369510000
+      message: "2024-05-10T19:31:50 [I|app|d7a18a1c]   Rendering /opt/theforeman/tfm/root/usr/share/gems/gems/katello-3.14.0.32/app/views/katello/api/v2/repository_sets/index.json.rabl within katello/api/v2/layouts/collection"
+      service: "foreman"
+      status: "info"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1715369510000
+
+  - sample: "2024-05-10T19:32:47 [I|app|adce461d] Completed 200 OK in 1298ms (Views: 857.3ms | ActiveRecord: 313.1ms)"
+    service: "foreman"
+    result: 
+      custom:
+        duration: 1298
+        foreman:
+          activerecord: 313.1
+          process_status: "Completed"
+          views: 857.3
+        http:
+          status_code: 200
+        log:
+          context: "app"
+          id: "adce461d"
+          level: "I"
+        timestamp: 1715369567000
+      message: "2024-05-10T19:32:47 [I|app|adce461d] Completed 200 OK in 1298ms (Views: 857.3ms | ActiveRecord: 313.1ms)"
+      service: "foreman"
+      status: "info"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1715369567000
+
+  - sample: "2024-05-10T21:22:23 [I|app|cd1444bb]   Rendering api/v2/ping/ping.json.rabl"
+    service: "foreman"
+    result: 
+      custom:
+        foreman:
+          process_status: "Rendering"
+          template_file: "api/v2/ping/ping.json.rabl"
+        log:
+          context: "app"
+          id: "cd1444bb"
+          level: "I"
+        timestamp: 1715376143000
+      message: "2024-05-10T21:22:23 [I|app|cd1444bb]   Rendering api/v2/ping/ping.json.rabl"
+      service: "foreman"
+      status: "info"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1715376143000
+
+  - sample: "2024-05-10T19:46:34 [I|app|6cd48b5b]   Rendered /opt/theforeman/tfm/root/usr/share/gems/gems/katello-3.14.0.32/app/views/katello/api/v2/repository_sets/index.json.rabl within katello/api/v2/layouts/collection (1572.5ms)"
+    service: "foreman"
+    result: 
+      custom:
+        duration: 1572.5
+        foreman:
+          layout: "katello/api/v2/layouts/collection"
+          process_status: "Rendered"
+          template_file: "/opt/theforeman/tfm/root/usr/share/gems/gems/katello-3.14.0.32/app/views/katello/api/v2/repository_sets/index.json.rabl"
+        log:
+          context: "app"
+          id: "6cd48b5b"
+          level: "I"
+        timestamp: 1715370394000
+      message: "2024-05-10T19:46:34 [I|app|6cd48b5b]   Rendered /opt/theforeman/tfm/root/usr/share/gems/gems/katello-3.14.0.32/app/views/katello/api/v2/repository_sets/index.json.rabl within katello/api/v2/layouts/collection (1572.5ms)"
+      service: "foreman"
+      status: "info"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1715370394000
+
+  - sample: "2024-05-11T14:15:09 [I|app|9b9196e9] Completed 404 Not Found in 147ms (Views: 1.7ms | ActiveRecord: 19.6ms)"
+    service: "foreman"
+    result: 
+      custom:
+        duration: 147
+        foreman:
+          activerecord: 19.6
+          process_status: "Completed"
+          views: 1.7
+        http:
+          status_code: 404
+        log:
+          context: "app"
+          id: "9b9196e9"
+          level: "I"
+        timestamp: 1715436909000
+      message: "2024-05-11T14:15:09 [I|app|9b9196e9] Completed 404 Not Found in 147ms (Views: 1.7ms | ActiveRecord: 19.6ms)"
+      service: "foreman"
+      status: "info"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1715436909000
+
+  - sample: "2024-05-15 19:23:12,039 [thread=http-bio-8443-exec-10] [req=81733d7e-6872-4ec0-9428-cf343a0c8f79, org=Default_Organization, csid=] INFO  org.candlepin.common.filter.LoggingFilter - Response: status=200, content-type=\"application/json\", time=8"
+    service: "candlepin"
+    result:
+      custom:
+        candlepin:
+          request:
+            id: "81733d7e-6872-4ec0-9428-cf343a0c8f79"
+            org: "Default_Organization"
+        duration: 8
+        http:
+          content-type: "\"application/json\""
+          status_code: 200
+          type: "Response"
+        log:
+          level: "INFO"
+        logger:
+          name: "org.candlepin.common.filter.LoggingFilter"
+          thread_name: "thread=http-bio-8443-exec-10"
+        timestamp: 1715800992039
+      message: "2024-05-15 19:23:12,039 [thread=http-bio-8443-exec-10] [req=81733d7e-6872-4ec0-9428-cf343a0c8f79, org=Default_Organization, csid=] INFO  org.candlepin.common.filter.LoggingFilter - Response: status=200, content-type=\"application/json\", time=8"
+      service: "candlepin"
+      status: "info"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1715800992039
+
+  - sample: "2024-05-10 21:56:39,839 [thread=http-bio-8443-exec-4] [req=64157f39-1aee-47c7-8c1e-40c6deeba6e6, org=, csid=] INFO  org.candlepin.common.filter.LoggingFilter - Request: verb=GET, uri=/candlepin/status"
+    service: "candlepin"
+    result:
+      custom:
+        candlepin:
+          request:
+            id: "64157f39-1aee-47c7-8c1e-40c6deeba6e6"
+        http:
+          method: "GET"
+          type: "Request"
+          url_details:
+            path: "/candlepin/status"
+        log:
+          level: "INFO"
+        logger:
+          name: "org.candlepin.common.filter.LoggingFilter"
+          thread_name: "thread=http-bio-8443-exec-4"
+        timestamp: 1715378199839
+      message: "2024-05-10 21:56:39,839 [thread=http-bio-8443-exec-4] [req=64157f39-1aee-47c7-8c1e-40c6deeba6e6, org=, csid=] INFO  org.candlepin.common.filter.LoggingFilter - Request: verb=GET, uri=/candlepin/status"
+      service: "candlepin"
+      status: "info"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1715378199839
+      
+  - sample: "2024-05-10 22:05:00,039 [thread=QuartzScheduler_Worker-1] [job=SweepBarJob-cb28be9f-146e-4ede-ad0a-4844755bb050, org=, csid=] INFO  org.candlepin.pinsetter.tasks.KingpinJob - Job completed: time=5"
+    service: "candlepin"
+    result:
+      custom:
+        candlepin:
+          request:
+            job: "SweepBarJob-cb28be9f-146e-4ede-ad0a-4844755bb050"
+        duration: 5
+        log:
+          level: "INFO"
+        logger:
+          name: "org.candlepin.pinsetter.tasks.KingpinJob"
+          thread_name: "thread=QuartzScheduler_Worker-1"
+        timestamp: 1715378700039
+      message: "2024-05-10 22:05:00,039 [thread=QuartzScheduler_Worker-1] [job=SweepBarJob-cb28be9f-146e-4ede-ad0a-4844755bb050, org=, csid=] INFO  org.candlepin.pinsetter.tasks.KingpinJob - Job completed: time=5"
+      service: "candlepin"
+      status: "info"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1715378700039
+      
+  - sample: "2024-05-14 14:40:00,019 [thread=QuartzScheduler_Worker-10] [job=SweepBarJob-cb28be9f-146e-4ede-ad0a-4844755bb050, org=, csid=] INFO  org.candlepin.pinsetter.tasks.KingpinJob - Starting job: org.candlepin.pinsetter.tasks.SweepBarJob"
+    service: "candlepin"
+    result:
+      custom:
+        candlepin:
+          request:
+            job: "SweepBarJob-cb28be9f-146e-4ede-ad0a-4844755bb050"
+            job_name: "org.candlepin.pinsetter.tasks.SweepBarJob"
+        log:
+          level: "INFO"
+        logger:
+          name: "org.candlepin.pinsetter.tasks.KingpinJob"
+          thread_name: "thread=QuartzScheduler_Worker-10"
+        timestamp: 1715697600019
+      message: "2024-05-14 14:40:00,019 [thread=QuartzScheduler_Worker-10] [job=SweepBarJob-cb28be9f-146e-4ede-ad0a-4844755bb050, org=, csid=] INFO  org.candlepin.pinsetter.tasks.KingpinJob - Starting job: org.candlepin.pinsetter.tasks.SweepBarJob"
+      service: "candlepin"
+      status: "info"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1715697600019
+      
+  - sample: "May 11 17:47:43 ip-1-1-1-1 pulp: kombu.transport.qpid:INFO: Connected to qpid with SASL mechanism ANONYMOUS"
+    service: "pulp"
+    result:
+      custom:
+        log:
+          level: "INFO"
+        logger:
+          name: "kombu.transport.qpid"
+        pulp:
+          client:
+            host: "ip-1-1-1-1"
+        service: "pulp"
+        timestamp: 42832063000
+      message: "Connected to qpid with SASL mechanism ANONYMOUS"
+      service: "pulp"
+      status: "info"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 42832063000
+
+  - sample: "May 11 17:48:35 ip-1-1-1-1 pulp: celery.worker.strategy:INFO: Received task: pulp.server.controllers.repository.download_deferred[5b261258-f6a1-4548-a54d-ad41f5be7d3f]"
+    service: "pulp"
+    result:
+      custom:
+        log:
+          level: "INFO"
+        logger:
+          name: "celery.worker.strategy"
+        pulp:
+          client:
+            host: "ip-1-1-1-1"
+          task:
+            id: "5b261258-f6a1-4548-a54d-ad41f5be7d3f"
+            name: "pulp.server.controllers.repository.download_deferred"
+        service: "pulp"
+        timestamp: 42832115000
+      message: "May 11 17:48:35 ip-1-1-1-1 pulp: celery.worker.strategy:INFO: Received task: pulp.server.controllers.repository.download_deferred[5b261258-f6a1-4548-a54d-ad41f5be7d3f]"
+      service: "pulp"
+      status: "info"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 42832115000
+
+  - sample: "May 11 17:58:35 ip-1-1-1-1 pulp: celery.app.trace:INFO: [e3e200dc] Task pulp.server.controllers.repository.download_deferred[e3e200dc-51b9-42b4-b3a9-a2aabf13ccf5] succeeded in 0.0168318429496s: None"
+    service: "pulp"
+    result:
+      custom:
+        duration: 0.0168318429496
+        log:
+          level: "INFO"
+        logger:
+          name: "celery.app.trace"
+          thread_name: "e3e200dc"
+        pulp:
+          client:
+            host: "ip-1-1-1-1"
+          task:
+            id: "e3e200dc-51b9-42b4-b3a9-a2aabf13ccf5"
+            name: "pulp.server.controllers.repository.download_deferred"
+        service: "pulp"
+        timestamp: 42832715000
+      message: "May 11 17:58:35 ip-1-1-1-1 pulp: celery.app.trace:INFO: [e3e200dc] Task pulp.server.controllers.repository.download_deferred[e3e200dc-51b9-42b4-b3a9-a2aabf13ccf5] succeeded in 0.0168318429496s: None"
+      service: "pulp"
+      status: "info"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 42832715000
+      
+  - sample: "May 11 17:58:35 ip-1-1-1-1 pulp: celery.beat:INFO: Scheduler: Sending due task download_deferred_content (pulp.server.controllers.repository.queue_download_deferred)"
+    service: "pulp"
+    result:
+      custom:
+        log:
+          level: "INFO"
+        logger:
+          name: "celery.beat"
+        pulp:
+          client:
+            host: "ip-1-1-1-1"
+          component: "Scheduler"
+          task:
+            name: "pulp.server.controllers.repository.queue_download_deferred"
+            short_name: "download_deferred_content"
+        service: "pulp"
+        timestamp: 42832715000
+      message: "May 11 17:58:35 ip-1-1-1-1 pulp: celery.beat:INFO: Scheduler: Sending due task download_deferred_content (pulp.server.controllers.repository.queue_download_deferred)"
+      service: "pulp"
+      status: "info"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 42832715000
+  
+  - sample: "May 11 19:20:21 ip-1-1-1-1 goferd: [INFO][pulp.agent.548ed552-5831-470e-b87a-9778defdd4b5] gofer.messaging.adapter.connect:30 - connected: proton+amqps://ip-1-1-1-1.ec2.internal:5647"
+    service: "goferd"
+    result:
+      custom:
+        goferd:
+          client:
+            host: "ip-1-1-1-1"
+          connection:
+            host: "ip-1-1-1-1.ec2.internal"
+            port: "5647"
+            protocol: "proton+amqps"
+          connection_status: "connected"
+        log:
+          level: "INFO"
+        logger:
+          line: 30
+          name: "gofer.messaging.adapter.connect"
+          thread_name: "pulp.agent.548ed552-5831-470e-b87a-9778defdd4b5"
+        service: "goferd"
+        timestamp: 42837621000
+      message: "May 11 19:20:21 ip-1-1-1-1 goferd: [INFO][pulp.agent.548ed552-5831-470e-b87a-9778defdd4b5] gofer.messaging.adapter.connect:30 - connected: proton+amqps://ip-1-1-1-1.ec2.internal:5647"
+      service: "goferd"
+      status: "info"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 42837621000
+  
+  - sample: "May 11 19:21:07 ip-1-1-1-1 goferd: [WARNING][MainThread] gofer.agent.plugin:647 - plugin:demo, DISABLED"
+    service: "goferd"
+    result:
+      custom:
+        goferd:
+          client:
+            host: "ip-1-1-1-1"
+          connection_status: "DISABLED"
+          plugin: "demo"
+        log:
+          level: "WARNING"
+        logger:
+          line: 647
+          name: "gofer.agent.plugin"
+          thread_name: "MainThread"
+        service: "goferd"
+        timestamp: 42837667000
+      message: "May 11 19:21:07 ip-1-1-1-1 goferd: [WARNING][MainThread] gofer.agent.plugin:647 - plugin:demo, DISABLED"
+      service: "goferd"
+      status: "warn"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 42837667000
+  
+  - sample: "May 11 18:11:45 ip-1-1-1-1 goferd: [INFO][worker-0] gofer.messaging.adapter.proton.connection:87 - open: URL: amqps://ip-1-1-1-1.ec2.internal:5647|SSL: ca: /etc/rhsm/ca/katello-default-ca.pem|key: None|certificate: /etc/pki/consumer/bundle.pem|host-validation: None"
+    service: "goferd"
+    result:
+      custom:
+        goferd:
+          client:
+            host: "ip-1-1-1-1"
+          connection:
+            URL: "amqps://ip-1-1-1-1.ec2.internal:5647"
+            certificate: "/etc/pki/consumer/bundle.pem"
+            host-validation: "None"
+            key: "None"
+          connection_status: "open"
+        log:
+          level: "INFO"
+        logger:
+          line: 87
+          name: "gofer.messaging.adapter.proton.connection"
+          thread_name: "worker-0"
+        service: "goferd"
+        timestamp: 42833505000
+      message: "May 11 18:11:45 ip-1-1-1-1 goferd: [INFO][worker-0] gofer.messaging.adapter.proton.connection:87 - open: URL: amqps://ip-1-1-1-1.ec2.internal:5647|SSL: ca: /etc/rhsm/ca/katello-default-ca.pem|key: None|certificate: /etc/pki/consumer/bundle.pem|host-validation: None"
+      service: "goferd"
+      status: "info"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 42833505000
+  
+  - sample: "May 11 18:35:14 ip-1-1-1-1 goferd: [INFO][MainThread] rhsm.connection:924 - Connection built: host=ip-1-1-1-1.ec2.internal port=443 handler=/rhsm auth=identity_cert ca_dir=/etc/rhsm/ca/ insecure=False"
+    service: "goferd"
+    result:
+      custom:
+        goferd:
+          client:
+            host: "ip-1-1-1-1"
+          connection:
+            auth: "identity_cert"
+            ca_dir: "/etc/rhsm/ca/"
+            handler: "/rhsm"
+            host: "ip-1-1-1-1.ec2.internal"
+            insecure: false
+            port: 443
+          connection_status: "built"
+        log:
+          level: "INFO"
+        logger:
+          line: 924
+          name: "rhsm.connection"
+          thread_name: "MainThread"
+        service: "goferd"
+        timestamp: 42834914000
+      message: "May 11 18:35:14 ip-1-1-1-1 goferd: [INFO][MainThread] rhsm.connection:924 - Connection built: host=ip-1-1-1-1.ec2.internal port=443 handler=/rhsm auth=identity_cert ca_dir=/etc/rhsm/ca/ insecure=False"
+      service: "goferd"
+      status: "info"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 42834914000

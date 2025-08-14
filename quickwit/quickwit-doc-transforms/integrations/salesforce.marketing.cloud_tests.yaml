@@ -1,0 +1,82 @@
+id: "salesforce.marketing.cloud"
+tests:
+ -
+  sample: |-
+    {
+      "eid" : 1476266,
+      "eventCategoryType" : "TransactionalSendEvents.EmailNotSent",
+      "composite" : {
+        "listId" : "44609",
+        "jobId" : "2001070",
+        "subscriberId" : "1251508322",
+        "emailId" : "182583",
+        "batchId" : "4153"
+      },
+      "definitionKey" : "makana-appt",
+      "mid" : 1476456,
+      "timestampUTC" : 1664465088855,
+      "compositeId" : "3d9ee7e3-57f1-e911-a2d6-1402ec8faa09.1722202.69399.0.0",
+      "info" : {
+        "messageKey" : "c3896725-6847-40bd-9217-dda17ee6cba2",
+        "reason" : "The subscriber ExactTarget system status is unsubscribed",
+        "subscriberKey" : "101660749",
+        "to" : "mduarte.10166.0749@sf.exacttargettest.com",
+        "statusMessage" : "Unsubscribed",
+        "statusCode" : "1"
+      },
+      "definitionId" : "3d9ee7e3-57f1-e911-a2d6-1402ec8faa09"
+    }
+  result:
+    custom:
+      composite:
+        batchId: "4153"
+        emailId: "182583"
+        jobId: "2001070"
+        listId: "44609"
+        subscriberId: "1251508322"
+      compositeId: "3d9ee7e3-57f1-e911-a2d6-1402ec8faa09.1722202.69399.0.0"
+      definitionId: "3d9ee7e3-57f1-e911-a2d6-1402ec8faa09"
+      definitionKey: "makana-appt"
+      eid: 1476266
+      evt:
+        name: "TransactionalSendEvents.EmailNotSent"
+      info:
+        messageKey: "c3896725-6847-40bd-9217-dda17ee6cba2"
+        reason: "The subscriber ExactTarget system status is unsubscribed"
+        statusCode: "1"
+        statusMessage: "Unsubscribed"
+        subscriberKey: "101660749"
+        to: "mduarte.10166.0749@sf.exacttargettest.com"
+      mid: 1476456
+      timestampUTC: 1664465088855
+      usr:
+        id: "1251508322"
+    message: |-
+      {
+        "eid" : 1476266,
+        "eventCategoryType" : "TransactionalSendEvents.EmailNotSent",
+        "composite" : {
+          "listId" : "44609",
+          "jobId" : "2001070",
+          "subscriberId" : "1251508322",
+          "emailId" : "182583",
+          "batchId" : "4153"
+        },
+        "definitionKey" : "makana-appt",
+        "mid" : 1476456,
+        "timestampUTC" : 1664465088855,
+        "compositeId" : "3d9ee7e3-57f1-e911-a2d6-1402ec8faa09.1722202.69399.0.0",
+        "info" : {
+          "messageKey" : "c3896725-6847-40bd-9217-dda17ee6cba2",
+          "reason" : "The subscriber ExactTarget system status is unsubscribed",
+          "subscriberKey" : "101660749",
+          "to" : "mduarte.10166.0749@sf.exacttargettest.com",
+          "statusMessage" : "Unsubscribed",
+          "statusCode" : "1"
+        },
+        "definitionId" : "3d9ee7e3-57f1-e911-a2d6-1402ec8faa09"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1664465088855
+

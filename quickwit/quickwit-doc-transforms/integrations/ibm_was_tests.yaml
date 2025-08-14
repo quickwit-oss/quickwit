@@ -1,0 +1,48 @@
+id: "ibm_was"
+tests:
+ -
+  sample: "[10/30/18 19:40:59:031 GMT] 0000004c ApplicationMg A   WSVR0221I: Application started: ivtApp"
+  result:
+    custom:
+      component: "WSVR0221I"
+      level: "A"
+      logger:
+        thread_name: "0000004c"
+      provider: "ApplicationMg"
+      timestamp: 1540928459031
+    message: "[10/30/18 19:40:59:031 GMT] 0000004c ApplicationMg A   WSVR0221I: Application started: ivtApp"
+    status: "alert"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1540928459031
+ -
+  sample: "[10/30/18 23:06:53:062 GMT] 00000001 SystemErr     R java.lang.ClassNotFoundException: "
+  result:
+    custom:
+      component: "java.lang.ClassNotFoundException"
+      level: "R"
+      logger:
+        thread_name: "00000001"
+      provider: "SystemErr"
+      timestamp: 1540940813062
+    message: "[10/30/18 23:06:53:062 GMT] 00000001 SystemErr     R java.lang.ClassNotFoundException: "
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1540940813062
+ -
+  sample: "[6/14/19 14:20:31:561 UTC] 00000001 AdminTool     A   ADMU3000I: Server AppServer open for e-business; process id is 16575"
+  result:
+    custom:
+      component: "ADMU3000I"
+      level: "A"
+      logger:
+        thread_name: "00000001"
+      provider: "AdminTool"
+      timestamp: 1560522031561
+    message: "[6/14/19 14:20:31:561 UTC] 00000001 AdminTool     A   ADMU3000I: Server AppServer open for e-business; process id is 16575"
+    status: "alert"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1560522031561
+

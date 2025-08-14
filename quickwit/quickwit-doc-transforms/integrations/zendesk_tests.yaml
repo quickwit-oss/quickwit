@@ -1,0 +1,59 @@
+id: "zendesk"
+tests:
+ -
+  sample: |-
+    {
+      "change_description" : "Successful sign-in using Google from test",
+      "actor_name" : "test user",
+      "created_at" : "2023-09-09T20:54:33Z",
+      "source_type" : "user",
+      "ip_address" : "185.64.148.140",
+      "url" : "https://test.zendesk.com/api/v2/audit_logs/test.json",
+      "action_label" : "Signed in",
+      "service" : "zendesk",
+      "source_label" : "Team member: test",
+      "action" : "login",
+      "id" : 18650878041499,
+      "actor_id" : 11111111111,
+      "source_id" : 16593007559579
+    }
+  result:
+    custom:
+      action_label: "Signed in"
+      created_at: "2023-09-09T20:54:33Z"
+      evt:
+        category: "login"
+      id: 18650878041499
+      network:
+        client:
+          geoip:
+            city:
+              name: "Paris"
+            continent:
+              code: "EU"
+              name: "Europe"
+            country:
+              iso_code: "FR"
+              name: "France"
+            ipAddress: "185.64.148.140"
+            location:
+              latitude: 48.90654
+              longitude: 2.33339
+            subdivision:
+              iso_code: "FR-IDF"
+              name: "Île-de-France"
+            timezone: "Europe/Paris"
+          ip: "185.64.148.140"
+      service: "zendesk"
+      source_id: 16593007559579
+      source_label: "Team member: test"
+      source_type: "user"
+      url: "https://test.zendesk.com/api/v2/audit_logs/test.json"
+      usr:
+        id: 11111111111
+        name: "test user"
+    message: "Successful sign-in using Google from test"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1694292873000
+

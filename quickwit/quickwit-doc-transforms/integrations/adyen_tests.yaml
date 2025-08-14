@@ -1,0 +1,261 @@
+id: adyen
+tests:
+  - sample: |-
+      {
+      	"notificationItems": [
+      		{
+      			"NotificationRequestItem": {
+      				"eventCode": "AUTHORISATION",
+      				"merchantAccountCode": "ABCD123",
+      				"reason": "1234:7777:12/2012",
+      				"amount": {
+      					"currency": "EUR",
+      					"value": 101
+      				},
+      				"operations": [
+      					"CANCEL",
+      					"CAPTURE",
+      					"REFUND"
+      				],
+      				"success": "true",
+      				"paymentMethod": "visa",
+      				"additionalData": {
+      					"expiryDate": "12/2012",
+      					"authCode": "1234",
+      					"cardSummary": "7777",
+      					"totalFraudScore": "10",
+      					"hmacSignature": "snUIAaCX6vgmaF4vr65BYPyvl4D9QX1VICKbpBXD8=",
+      					"NAME2": "VALUE2",
+      					"NAME1": "VALUE1",
+      					"fraudCheck-6-ShopperIpUsage": "10"
+      				},
+      				"merchantReference": "8313840770001",
+      				"pspReference": "PB5FVSKW5N6DN65",
+      				"eventDate": "2024-09-24T14:47:01+02:00"
+      			}
+      		}
+      	],
+      	"live": "true"
+      }
+    service: "transaction"
+    result:
+      custom:
+        eventDate: "2024-09-24T14:47:01+02:00"
+        evt:
+          name: "AUTHORISATION"
+        live: "true"
+        notificationItems:
+         -
+          NotificationRequestItem:
+            eventCode: "AUTHORISATION"
+            merchantAccountCode: "ABCD123"
+            reason: "1234:7777:12/2012"
+            amount:
+              currency: "EUR"
+              value: 101
+            operations:
+             - "CANCEL"
+             - "CAPTURE"
+             - "REFUND"
+            success: "true"
+            paymentMethod: "visa"
+            additionalData:
+              expiryDate: "12/2012"
+              authCode: "1234"
+              cardSummary: "7777"
+              totalFraudScore: "10"
+              hmacSignature: "snUIAaCX6vgmaF4vr65BYPyvl4D9QX1VICKbpBXD8="
+              NAME2: "VALUE2"
+              NAME1: "VALUE1"
+              fraudCheck-6-ShopperIpUsage: "10"
+            merchantReference: "8313840770001"
+            pspReference: "PB5FVSKW5N6DN65"
+            eventDate: "2024-09-24T14:47:01+02:00"
+        pspReference: "PB5FVSKW5N6DN65"
+        service: "transaction"
+      message: |-
+        {
+          "notificationItems" : [ {
+            "NotificationRequestItem" : {
+              "eventCode" : "AUTHORISATION",
+              "merchantAccountCode" : "ABCD123",
+              "reason" : "1234:7777:12/2012",
+              "amount" : {
+                "currency" : "EUR",
+                "value" : 101
+              },
+              "operations" : [ "CANCEL", "CAPTURE", "REFUND" ],
+              "success" : "true",
+              "paymentMethod" : "visa",
+              "additionalData" : {
+                "expiryDate" : "12/2012",
+                "authCode" : "1234",
+                "cardSummary" : "7777",
+                "totalFraudScore" : "10",
+                "hmacSignature" : "snUIAaCX6vgmaF4vr65BYPyvl4D9QX1VICKbpBXD8=",
+                "NAME2" : "VALUE2",
+                "NAME1" : "VALUE1",
+                "fraudCheck-6-ShopperIpUsage" : "10"
+              },
+              "merchantReference" : "8313840770001",
+              "pspReference" : "PB5FVSKW5N6DN65",
+              "eventDate" : "2024-09-24T14:47:01+02:00"
+            }
+          } ],
+          "live" : "true"
+        }
+      service: "transaction"
+      tags:
+       - "source:LOGS_SOURCE"
+      timestamp: 1727182021000
+  - sample: |-
+      {
+      	"notificationItems": [
+      		{
+      			"NotificationRequestItem": {
+      				"eventCode": "PAYOUT_THIRDPARTY",
+      				"merchantAccountCode": "ABCD123",
+      				"originalReference": "pspReference of the PAYOUT_THIRDPARTY",
+      				"reason": "",
+      				"amount": {
+      					"currency": "EUR",
+      					"value": 0
+      				},
+      				"success": "true",
+      				"additionalData": {
+      					"hmacSignature": "moFrJq/s/SzE8devOIm2EYFaEQQsRWHp8e4OdwB5Y="
+      				},
+      				"merchantReference": "testMerchantRf1",
+      				"pspReference": "HVC6JNTJW3DV65",
+      				"eventDate": "2024-09-24T14:48:29+02:00"
+      			}
+      		}
+      	],
+      	"live": "true"
+      }
+    service: "payout"
+    result:
+      custom:
+        eventDate: "2024-09-24T14:48:29+02:00"
+        evt:
+          name: "PAYOUT_THIRDPARTY"
+        live: "true"
+        notificationItems:
+         -
+          NotificationRequestItem:
+            eventCode: "PAYOUT_THIRDPARTY"
+            merchantAccountCode: "ABCD123"
+            originalReference: "pspReference of the PAYOUT_THIRDPARTY"
+            reason: ""
+            amount:
+              currency: "EUR"
+              value: 0
+            success: "true"
+            additionalData:
+              hmacSignature: "moFrJq/s/SzE8devOIm2EYFaEQQsRWHp8e4OdwB5Y="
+            merchantReference: "testMerchantRf1"
+            pspReference: "HVC6JNTJW3DV65"
+            eventDate: "2024-09-24T14:48:29+02:00"
+        pspReference: "HVC6JNTJW3DV65"
+        service: "payout"
+      message: |-
+        {
+          "notificationItems" : [ {
+            "NotificationRequestItem" : {
+              "eventCode" : "PAYOUT_THIRDPARTY",
+              "merchantAccountCode" : "ABCD123",
+              "originalReference" : "pspReference of the PAYOUT_THIRDPARTY",
+              "reason" : "",
+              "amount" : {
+                "currency" : "EUR",
+                "value" : 0
+              },
+              "success" : "true",
+              "additionalData" : {
+                "hmacSignature" : "moFrJq/s/SzE8devOIm2EYFaEQQsRWHp8e4OdwB5Y="
+              },
+              "merchantReference" : "testMerchantRf1",
+              "pspReference" : "HVC6JNTJW3DV65",
+              "eventDate" : "2024-09-24T14:48:29+02:00"
+            }
+          } ],
+          "live" : "true"
+        }
+      service: "payout"
+      tags:
+       - "source:LOGS_SOURCE"
+      timestamp: 1727182109000
+  - sample: |-
+      {
+      	"notificationItems": [
+      		{
+      			"NotificationRequestItem": {
+      				"eventCode": "CHARGEBACK",
+      				"merchantAccountCode": "ABCD123",
+      				"reason": "",
+      				"amount": {
+      					"currency": "EUR",
+      					"value": 0
+      				},
+      				"success": "true",
+      				"additionalData": {
+      					"hmacSignature": "jJgfaV99ZVYh/AIigUxaNKIMwsK2cWzA+7qqUWaeA="
+      				},
+      				"merchantReference": "testMrchantRef1",
+      				"pspReference": "HHCPTJW39ZDV65",
+      				"eventDate": "2024-09-24T14:49:59+02:00"
+      			}
+      		}
+      	],
+      	"live": "true"
+      }
+    service: "dispute"
+    result:
+      custom:
+        eventDate: "2024-09-24T14:49:59+02:00"
+        evt:
+          name: "CHARGEBACK"
+        live: "true"
+        notificationItems:
+         -
+          NotificationRequestItem:
+            eventCode: "CHARGEBACK"
+            merchantAccountCode: "ABCD123"
+            reason: ""
+            amount:
+              currency: "EUR"
+              value: 0
+            success: "true"
+            additionalData:
+              hmacSignature: "jJgfaV99ZVYh/AIigUxaNKIMwsK2cWzA+7qqUWaeA="
+            merchantReference: "testMrchantRef1"
+            pspReference: "HHCPTJW39ZDV65"
+            eventDate: "2024-09-24T14:49:59+02:00"
+        pspReference: "HHCPTJW39ZDV65"
+        service: "dispute"
+      message: |-
+        {
+          "notificationItems" : [ {
+            "NotificationRequestItem" : {
+              "eventCode" : "CHARGEBACK",
+              "merchantAccountCode" : "ABCD123",
+              "reason" : "",
+              "amount" : {
+                "currency" : "EUR",
+                "value" : 0
+              },
+              "success" : "true",
+              "additionalData" : {
+                "hmacSignature" : "jJgfaV99ZVYh/AIigUxaNKIMwsK2cWzA+7qqUWaeA="
+              },
+              "merchantReference" : "testMrchantRef1",
+              "pspReference" : "HHCPTJW39ZDV65",
+              "eventDate" : "2024-09-24T14:49:59+02:00"
+            }
+          } ],
+          "live" : "true"
+        }
+      service: "dispute"
+      tags:
+       - "source:LOGS_SOURCE"
+      timestamp: 1727182199000

@@ -1,0 +1,40 @@
+id: fluxcd
+backend_only: false
+facets:
+  - groups:
+      - Fluxcd
+    name: controller
+    path: controller
+    source: log
+  - groups:
+      - Fluxcd
+    name: 'Controller Kind'
+    path: controllerKind
+    source: log
+  - groups:
+      - Fluxcd
+    name: 'Controller Group'
+    path: controllerGroup
+    source: log
+pipeline:
+  type: pipeline
+  name: Fluxcd
+  enabled: true
+  filter:
+    query: source:fluxcd
+  processors:
+    - type: date-remapper
+      name: Define `ts` as the official date of the log
+      enabled: true
+      sources:
+        - ts
+    - type: message-remapper
+      name: Define `msg` as the official message of the log
+      enabled: true
+      sources:
+        - msg
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level

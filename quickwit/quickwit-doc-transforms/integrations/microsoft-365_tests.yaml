@@ -1,0 +1,1236 @@
+id: "microsoft-365"
+tests:
+ -
+  sample: |-
+    {
+      "AzureActiveDirectoryEventType" : 1,
+      "UserKey" : "10033FFFA4CB5F0D@devdatadoghq.onmicrosoft.com",
+      "ActorIpAddress" : "185.64.148.140",
+      "OrganizationId" : "4d3bac44-0230-4732-9e70-cc00736f0a97",
+      "Operation" : "UserLoggedIn",
+      "ExtendedProperties" : {
+        "ResultStatusDetail" : "Redirect",
+        "UserAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.121 Safari/537.36",
+        "KeepMeSignedIn" : "True",
+        "UserAuthenticationMethod" : "9",
+        "RequestType" : "OAuth2:Authorize"
+      },
+      "IntraSystemId" : "2f599f88-8aa9-4249-85a1-a85fe9b36100",
+      "Target" : [ {
+        "Type" : 0,
+        "ID" : "b97b6bd4-a49f-4a0c-af18-af507d1da76c"
+      } ],
+      "RecordType" : 15,
+      "Version" : 1,
+      "SupportTicketId" : "",
+      "Actor" : [ {
+        "Type" : 0,
+        "ID" : "87f22997-a1f0-461d-9f98-69a17283c530"
+      }, {
+        "Type" : 5,
+        "ID" : "test.user@devdatadoghq.onmicrosoft.com"
+      }, {
+        "Type" : 3,
+        "ID" : "10033FFFA4CB5F0D"
+      } ],
+      "ActorContextId" : "4d3bac44-0230-4732-9e70-cc00736f0a97",
+      "ObjectId" : "b97b6bd4-a49f-4a0c-af18-af507d1da76c",
+      "ResultStatus" : "Succeeded",
+      "ClientIP" : "185.64.148.140",
+      "Workload" : "AzureActiveDirectory",
+      "service" : "microsoft-365",
+      "UserId" : "test.user@devdatadoghq.onmicrosoft.com",
+      "TargetContextId" : "4d3bac44-0230-4732-9e70-cc00736f0a97",
+      "CreationTime" : "2020-10-17T15:12:51",
+      "InterSystemsId" : "5a1b353a-78b8-479b-b202-921e9da0bb6c",
+      "Id" : "65353957-a6e3-4ae9-a471-5daedcfc5f0a",
+      "ApplicationId" : "4d5c2d63-cf83-4365-853c-925fd1a64357",
+      "UserType" : 0
+    }
+  result:
+    custom:
+      Actor:
+       -
+        Type: 0
+        ID: "87f22997-a1f0-461d-9f98-69a17283c530"
+       -
+        Type: 5
+        ID: "test.user@devdatadoghq.onmicrosoft.com"
+       -
+        Type: 3
+        ID: "10033FFFA4CB5F0D"
+      ActorContextId: "4d3bac44-0230-4732-9e70-cc00736f0a97"
+      ActorIpAddress: "185.64.148.140"
+      ApplicationId: "4d5c2d63-cf83-4365-853c-925fd1a64357"
+      AuthenticationMethod: "EID"
+      AzureActiveDirectoryEventType: 1
+      ClientIP: "185.64.148.140"
+      CreationTime: "2020-10-17T15:12:51"
+      ExtendedProperties:
+        KeepMeSignedIn: "True"
+        RequestType: "OAuth2:Authorize"
+        ResultStatusDetail: "Redirect"
+        UserAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.121 Safari/537.36"
+        UserAuthenticationMethod: "9"
+      Id: "65353957-a6e3-4ae9-a471-5daedcfc5f0a"
+      InterSystemsId: "5a1b353a-78b8-479b-b202-921e9da0bb6c"
+      IntraSystemId: "2f599f88-8aa9-4249-85a1-a85fe9b36100"
+      ObjectId: "b97b6bd4-a49f-4a0c-af18-af507d1da76c"
+      Operation: "UserLoggedIn"
+      OrganizationId: "4d3bac44-0230-4732-9e70-cc00736f0a97"
+      RecordType: 15
+      ResultStatus: "Succeeded"
+      SupportTicketId: ""
+      Target:
+       -
+        Type: 0
+        ID: "b97b6bd4-a49f-4a0c-af18-af507d1da76c"
+      TargetContextId: "4d3bac44-0230-4732-9e70-cc00736f0a97"
+      UserDescription: "A regular user"
+      UserId: "test.user@devdatadoghq.onmicrosoft.com"
+      UserKey: "10033FFFA4CB5F0D@devdatadoghq.onmicrosoft.com"
+      UserType: 0
+      Version: 1
+      Workload: "AzureActiveDirectory"
+      evt:
+        name: "UserLoggedIn"
+        outcome: "Succeeded"
+      http:
+        useragent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.121 Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "85"
+            minor: "0"
+            patch: "4183"
+            patch_minor: "121"
+          device:
+            brand: "Apple"
+            category: "Desktop"
+            family: "Mac"
+            model: "Mac"
+          os:
+            family: "Mac OS X"
+            major: "10"
+            minor: "15"
+            patch: "5"
+      network:
+        client:
+          geoip:
+            city:
+              name: "Paris"
+            continent:
+              code: "EU"
+              name: "Europe"
+            country:
+              iso_code: "FR"
+              name: "France"
+            ipAddress: "185.64.148.140"
+            location:
+              latitude: 48.90654
+              longitude: 2.33339
+            subdivision:
+              iso_code: "FR-IDF"
+              name: "Île-de-France"
+            timezone: "Europe/Paris"
+          ip: "185.64.148.140"
+      ocsf:
+        activity_id: 1
+        activity_name: "Logon"
+        actor:
+          user:
+            email_addr: "test.user@devdatadoghq.onmicrosoft.com"
+            name: "test.user"
+            type: "User"
+            type_id: 1
+            uid: "10033FFFA4CB5F0D@devdatadoghq.onmicrosoft.com"
+        category_name: "Identity & Access Management"
+        category_uid: 3
+        class_name: "Authentication"
+        class_uid: 3002
+        http_request:
+          user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.121 Safari/537.36"
+        metadata:
+          event_code: "UserLoggedIn"
+          log_name: "Office 365 Management Activity API"
+          product:
+            name: "Microsoft 365"
+            vendor_name: "Microsoft"
+          profiles:
+           - "datetime"
+          uid: "65353957-a6e3-4ae9-a471-5daedcfc5f0a"
+          version: "1.3.0"
+        service:
+          name: "Microsoft Entra ID"
+        severity: "Informational"
+        severity_id: 1
+        src_endpoint:
+          ip: "185.64.148.140"
+        status: "Success"
+        status_id: 1
+        time: 1602947571000
+        time_dt: "2020-10-17T15:12:51"
+        type_uid: 300201
+        user:
+          email_addr: "test.user@devdatadoghq.onmicrosoft.com"
+          name: "test.user"
+          type: "User"
+          type_id: 1
+          uid: "10033FFFA4CB5F0D@devdatadoghq.onmicrosoft.com"
+      service: "microsoft-365"
+      title: "test.user@devdatadoghq.onmicrosoft.com(A regular user) performed UserLoggedIn from France"
+      usr:
+        email: "test.user@devdatadoghq.onmicrosoft.com"
+        id: "test.user@devdatadoghq.onmicrosoft.com"
+    message: |-
+      {
+        "AzureActiveDirectoryEventType" : 1,
+        "UserKey" : "10033FFFA4CB5F0D@devdatadoghq.onmicrosoft.com",
+        "ActorIpAddress" : "185.64.148.140",
+        "OrganizationId" : "4d3bac44-0230-4732-9e70-cc00736f0a97",
+        "Operation" : "UserLoggedIn",
+        "ExtendedProperties" : {
+          "ResultStatusDetail" : "Redirect",
+          "UserAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.121 Safari/537.36",
+          "KeepMeSignedIn" : "True",
+          "UserAuthenticationMethod" : "9",
+          "RequestType" : "OAuth2:Authorize"
+        },
+        "IntraSystemId" : "2f599f88-8aa9-4249-85a1-a85fe9b36100",
+        "Target" : [ {
+          "Type" : 0,
+          "ID" : "b97b6bd4-a49f-4a0c-af18-af507d1da76c"
+        } ],
+        "RecordType" : 15,
+        "Version" : 1,
+        "SupportTicketId" : "",
+        "Actor" : [ {
+          "Type" : 0,
+          "ID" : "87f22997-a1f0-461d-9f98-69a17283c530"
+        }, {
+          "Type" : 5,
+          "ID" : "test.user@devdatadoghq.onmicrosoft.com"
+        }, {
+          "Type" : 3,
+          "ID" : "10033FFFA4CB5F0D"
+        } ],
+        "ActorContextId" : "4d3bac44-0230-4732-9e70-cc00736f0a97",
+        "ObjectId" : "b97b6bd4-a49f-4a0c-af18-af507d1da76c",
+        "ResultStatus" : "Succeeded",
+        "ClientIP" : "185.64.148.140",
+        "Workload" : "AzureActiveDirectory",
+        "service" : "microsoft-365",
+        "UserId" : "test.user@devdatadoghq.onmicrosoft.com",
+        "TargetContextId" : "4d3bac44-0230-4732-9e70-cc00736f0a97",
+        "CreationTime" : "2020-10-17T15:12:51",
+        "InterSystemsId" : "5a1b353a-78b8-479b-b202-921e9da0bb6c",
+        "Id" : "65353957-a6e3-4ae9-a471-5daedcfc5f0a",
+        "ApplicationId" : "4d5c2d63-cf83-4365-853c-925fd1a64357",
+        "UserType" : 0
+      }
+    service: "AzureActiveDirectory"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1602947571000
+ -
+  sample: |-
+    {
+      "AzureActiveDirectoryEventType" : 1,
+      "UserKey" : "10033FFFA4CB5F0D@devdatadoghq.onmicrosoft.com",
+      "ActorIpAddress" : "[2345:0425:2CA1:0000:0000:0567:5673:23b5]:1024",
+      "OrganizationId" : "4d3bac44-0230-4732-9e70-cc00736f0a97",
+      "Operation" : "UserLoggedIn",
+      "ExtendedProperties" : {
+        "ResultStatusDetail" : "Redirect",
+        "UserAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.121 Safari/537.36",
+        "KeepMeSignedIn" : "True",
+        "UserAuthenticationMethod" : "9",
+        "RequestType" : "OAuth2:Authorize"
+      },
+      "IntraSystemId" : "2f599f88-8aa9-4249-85a1-a85fe9b36100",
+      "Target" : [ {
+        "Type" : 0,
+        "ID" : "b97b6bd4-a49f-4a0c-af18-af507d1da76c"
+      } ],
+      "RecordType" : 15,
+      "Version" : 1,
+      "SupportTicketId" : "",
+      "Actor" : [ {
+        "Type" : 0,
+        "ID" : "87f22997-a1f0-461d-9f98-69a17283c530"
+      }, {
+        "Type" : 5,
+        "ID" : "test.user@devdatadoghq.onmicrosoft.com"
+      }, {
+        "Type" : 3,
+        "ID" : "10033FFFA4CB5F0D"
+      } ],
+      "ActorContextId" : "4d3bac44-0230-4732-9e70-cc00736f0a97",
+      "ObjectId" : "b97b6bd4-a49f-4a0c-af18-af507d1da76c",
+      "ResultStatus" : "Succeeded",
+      "ClientIP" : "2345:0425:2CA1:0000:0000:0567:5673:23b5:1024",
+      "Workload" : "AzureActiveDirectory",
+      "service" : "microsoft-365",
+      "UserId" : "test.user@devdatadoghq.onmicrosoft.com",
+      "TargetContextId" : "4d3bac44-0230-4732-9e70-cc00736f0a97",
+      "CreationTime" : "2020-10-17T15:12:51",
+      "InterSystemsId" : "5a1b353a-78b8-479b-b202-921e9da0bb6c",
+      "Id" : "65353957-a6e3-4ae9-a471-5daedcfc5f0a",
+      "ApplicationId" : "4d5c2d63-cf83-4365-853c-925fd1a64357",
+      "UserType" : 0
+    }
+  result:
+    custom:
+      Actor:
+       -
+        Type: 0
+        ID: "87f22997-a1f0-461d-9f98-69a17283c530"
+       -
+        Type: 5
+        ID: "test.user@devdatadoghq.onmicrosoft.com"
+       -
+        Type: 3
+        ID: "10033FFFA4CB5F0D"
+      ActorContextId: "4d3bac44-0230-4732-9e70-cc00736f0a97"
+      ActorIpAddress: "[2345:0425:2CA1:0000:0000:0567:5673:23b5]:1024"
+      ApplicationId: "4d5c2d63-cf83-4365-853c-925fd1a64357"
+      AuthenticationMethod: "EID"
+      AzureActiveDirectoryEventType: 1
+      ClientIP: "2345:0425:2CA1:0000:0000:0567:5673:23b5:1024"
+      CreationTime: "2020-10-17T15:12:51"
+      ExtendedProperties:
+        KeepMeSignedIn: "True"
+        RequestType: "OAuth2:Authorize"
+        ResultStatusDetail: "Redirect"
+        UserAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.121 Safari/537.36"
+        UserAuthenticationMethod: "9"
+      Id: "65353957-a6e3-4ae9-a471-5daedcfc5f0a"
+      InterSystemsId: "5a1b353a-78b8-479b-b202-921e9da0bb6c"
+      IntraSystemId: "2f599f88-8aa9-4249-85a1-a85fe9b36100"
+      ObjectId: "b97b6bd4-a49f-4a0c-af18-af507d1da76c"
+      Operation: "UserLoggedIn"
+      OrganizationId: "4d3bac44-0230-4732-9e70-cc00736f0a97"
+      RecordType: 15
+      ResultStatus: "Succeeded"
+      SupportTicketId: ""
+      Target:
+       -
+        Type: 0
+        ID: "b97b6bd4-a49f-4a0c-af18-af507d1da76c"
+      TargetContextId: "4d3bac44-0230-4732-9e70-cc00736f0a97"
+      UserDescription: "A regular user"
+      UserId: "test.user@devdatadoghq.onmicrosoft.com"
+      UserKey: "10033FFFA4CB5F0D@devdatadoghq.onmicrosoft.com"
+      UserType: 0
+      Version: 1
+      Workload: "AzureActiveDirectory"
+      evt:
+        name: "UserLoggedIn"
+        outcome: "Succeeded"
+      http:
+        useragent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.121 Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "85"
+            minor: "0"
+            patch: "4183"
+            patch_minor: "121"
+          device:
+            brand: "Apple"
+            category: "Desktop"
+            family: "Mac"
+            model: "Mac"
+          os:
+            family: "Mac OS X"
+            major: "10"
+            minor: "15"
+            patch: "5"
+      network:
+        client:
+          geoip: {}
+          ip: "2345:0425:2CA1:0000:0000:0567:5673:23b5"
+          port: "1024"
+      ocsf:
+        activity_id: 1
+        activity_name: "Logon"
+        actor:
+          user:
+            email_addr: "test.user@devdatadoghq.onmicrosoft.com"
+            name: "test.user"
+            type: "User"
+            type_id: 1
+            uid: "10033FFFA4CB5F0D@devdatadoghq.onmicrosoft.com"
+        category_name: "Identity & Access Management"
+        category_uid: 3
+        class_name: "Authentication"
+        class_uid: 3002
+        http_request:
+          user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.121 Safari/537.36"
+        metadata:
+          event_code: "UserLoggedIn"
+          log_name: "Office 365 Management Activity API"
+          product:
+            name: "Microsoft 365"
+            vendor_name: "Microsoft"
+          profiles:
+           - "datetime"
+          uid: "65353957-a6e3-4ae9-a471-5daedcfc5f0a"
+          version: "1.3.0"
+        service:
+          name: "Microsoft Entra ID"
+        severity: "Informational"
+        severity_id: 1
+        src_endpoint:
+          ip: "2345:0425:2CA1:0000:0000:0567:5673:23b5"
+          port: "1024"
+        status: "Success"
+        status_id: 1
+        time: 1602947571000
+        time_dt: "2020-10-17T15:12:51"
+        type_uid: 300201
+        user:
+          email_addr: "test.user@devdatadoghq.onmicrosoft.com"
+          name: "test.user"
+          type: "User"
+          type_id: 1
+          uid: "10033FFFA4CB5F0D@devdatadoghq.onmicrosoft.com"
+      service: "microsoft-365"
+      usr:
+        email: "test.user@devdatadoghq.onmicrosoft.com"
+        id: "test.user@devdatadoghq.onmicrosoft.com"
+    message: |-
+      {
+        "AzureActiveDirectoryEventType" : 1,
+        "UserKey" : "10033FFFA4CB5F0D@devdatadoghq.onmicrosoft.com",
+        "ActorIpAddress" : "[2345:0425:2CA1:0000:0000:0567:5673:23b5]:1024",
+        "OrganizationId" : "4d3bac44-0230-4732-9e70-cc00736f0a97",
+        "Operation" : "UserLoggedIn",
+        "ExtendedProperties" : {
+          "ResultStatusDetail" : "Redirect",
+          "UserAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.121 Safari/537.36",
+          "KeepMeSignedIn" : "True",
+          "UserAuthenticationMethod" : "9",
+          "RequestType" : "OAuth2:Authorize"
+        },
+        "IntraSystemId" : "2f599f88-8aa9-4249-85a1-a85fe9b36100",
+        "Target" : [ {
+          "Type" : 0,
+          "ID" : "b97b6bd4-a49f-4a0c-af18-af507d1da76c"
+        } ],
+        "RecordType" : 15,
+        "Version" : 1,
+        "SupportTicketId" : "",
+        "Actor" : [ {
+          "Type" : 0,
+          "ID" : "87f22997-a1f0-461d-9f98-69a17283c530"
+        }, {
+          "Type" : 5,
+          "ID" : "test.user@devdatadoghq.onmicrosoft.com"
+        }, {
+          "Type" : 3,
+          "ID" : "10033FFFA4CB5F0D"
+        } ],
+        "ActorContextId" : "4d3bac44-0230-4732-9e70-cc00736f0a97",
+        "ObjectId" : "b97b6bd4-a49f-4a0c-af18-af507d1da76c",
+        "ResultStatus" : "Succeeded",
+        "ClientIP" : "2345:0425:2CA1:0000:0000:0567:5673:23b5:1024",
+        "Workload" : "AzureActiveDirectory",
+        "service" : "microsoft-365",
+        "UserId" : "test.user@devdatadoghq.onmicrosoft.com",
+        "TargetContextId" : "4d3bac44-0230-4732-9e70-cc00736f0a97",
+        "CreationTime" : "2020-10-17T15:12:51",
+        "InterSystemsId" : "5a1b353a-78b8-479b-b202-921e9da0bb6c",
+        "Id" : "65353957-a6e3-4ae9-a471-5daedcfc5f0a",
+        "ApplicationId" : "4d5c2d63-cf83-4365-853c-925fd1a64357",
+        "UserType" : 0
+      }
+    service: "AzureActiveDirectory"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1602947571000
+ -
+  sample: |-
+    {
+      "Status" : "Active",
+      "Category" : "DataLossPrevention",
+      "ResultStatus" : "Succeeded",
+      "ObjectId" : "1111111-111111",
+      "Comments" : "New alert",
+      "UserKey" : "SecurityComplianceAlerts",
+      "AlertLinks" : [ {
+        "AlertLinkHref" : "link"
+      } ],
+      "Data" : "{\"f3u\":\"user@example.com\",\"ts\":\"2023-06-01T07:15:00.0000000Z\"}",
+      "Severity" : "Low",
+      "Operation" : "AlertTriggered",
+      "OrganizationId" : "111111-1111-111-11111",
+      "Source" : "Office 365 Security & Compliance",
+      "Name" : "DLP Alert",
+      "Workload" : "SecurityComplianceCenter",
+      "AlertType" : "Custom",
+      "AlertId" : "111111-1111-111-11111",
+      "RecordType" : 40,
+      "Version" : 1,
+      "UserId" : "SecurityComplianceAlerts",
+      "CreationTime" : "2023-05-01T07:19:22",
+      "UserDescription" : "A system account",
+      "Id" : "111111-1111-111-11111",
+      "UserType" : 4,
+      "PolicyId" : "111111-1111-111-11111"
+    }
+  result:
+    custom:
+      AlertId: "111111-1111-111-11111"
+      AlertLinks:
+       -
+        AlertLinkHref: "link"
+      AlertType: "Custom"
+      Category: "DataLossPrevention"
+      Comments: "New alert"
+      CreationTime: "2023-05-01T07:19:22"
+      Data:
+        f3u: "user@example.com"
+        ts: "2023-06-01T07:15:00.0000000Z"
+      Id: "111111-1111-111-11111"
+      Name: "DLP Alert"
+      ObjectId: "1111111-111111"
+      Operation: "AlertTriggered"
+      OrganizationId: "111111-1111-111-11111"
+      PolicyId: "111111-1111-111-11111"
+      RecordType: 40
+      ResultStatus: "Succeeded"
+      Severity: "Low"
+      Source: "Office 365 Security & Compliance"
+      Status: "Active"
+      UserDescription: "A system account"
+      UserId: "SecurityComplianceAlerts"
+      UserKey: "SecurityComplianceAlerts"
+      UserType: 4
+      Version: 1
+      Workload: "SecurityComplianceCenter"
+      evt:
+        category: "DataLossPrevention"
+        name: "AlertTriggered"
+        outcome: "Succeeded"
+      ocsf:
+        activity_id: 1
+        activity_name: "Create"
+        category_name: "Findings"
+        category_uid: 2
+        class_name: "Detection Finding"
+        class_uid: 2004
+        finding_info:
+          title: "DLP Alert"
+          uid: "111111-1111-111-11111"
+        metadata:
+          event_code: "AlertTriggered"
+          log_name: "Office 365 Management Activity API"
+          product:
+            name: "Microsoft 365"
+            vendor_name: "Microsoft"
+          profiles:
+           - "datetime"
+          uid: "111111-1111-111-11111"
+          version: "1.3.0"
+        severity: "Low"
+        severity_id: 2
+        status: "New"
+        status_id: 1
+        time: 1682925562000
+        time_dt: "2023-05-01T07:19:22"
+        type_uid: 200401
+      usr:
+        email: "user@example.com"
+        id: "user@example.com"
+    message: |-
+      {
+        "Status" : "Active",
+        "Category" : "DataLossPrevention",
+        "ResultStatus" : "Succeeded",
+        "ObjectId" : "1111111-111111",
+        "Comments" : "New alert",
+        "UserKey" : "SecurityComplianceAlerts",
+        "AlertLinks" : [ {
+          "AlertLinkHref" : "link"
+        } ],
+        "Data" : "{\"f3u\":\"user@example.com\",\"ts\":\"2023-06-01T07:15:00.0000000Z\"}",
+        "Severity" : "Low",
+        "Operation" : "AlertTriggered",
+        "OrganizationId" : "111111-1111-111-11111",
+        "Source" : "Office 365 Security & Compliance",
+        "Name" : "DLP Alert",
+        "Workload" : "SecurityComplianceCenter",
+        "AlertType" : "Custom",
+        "AlertId" : "111111-1111-111-11111",
+        "RecordType" : 40,
+        "Version" : 1,
+        "UserId" : "SecurityComplianceAlerts",
+        "CreationTime" : "2023-05-01T07:19:22",
+        "UserDescription" : "A system account",
+        "Id" : "111111-1111-111-11111",
+        "UserType" : 4,
+        "PolicyId" : "111111-1111-111-11111"
+      }
+    service: "SecurityComplianceCenter"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1682925562000
+ -
+  sample: |-
+    {
+      "AzureActiveDirectoryEventType" : 1,
+      "UserKey" : "10033FFFA4CB5F0D@devdatadoghq.onmicrosoft.com",
+      "ActorIpAddress" : "185.64.148.140",
+      "OrganizationId" : "4d3bac44-0230-4732-9e70-cc00736f0a97",
+      "Operation" : "UserLoginFailed",
+      "ExtendedProperties" : {
+        "ResultStatusDetail" : "Redirect",
+        "UserAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.121 Safari/537.36",
+        "KeepMeSignedIn" : "True",
+        "UserAuthenticationMethod" : "9",
+        "RequestType" : "OAuth2:Authorize"
+      },
+      "IntraSystemId" : "2f599f88-8aa9-4249-85a1-a85fe9b36100",
+      "Target" : [ {
+        "Type" : 0,
+        "ID" : "b97b6bd4-a49f-4a0c-af18-af507d1da76c"
+      } ],
+      "RecordType" : 15,
+      "Version" : 1,
+      "SupportTicketId" : "",
+      "Actor" : [ {
+        "Type" : 0,
+        "ID" : "87f22997-a1f0-461d-9f98-69a17283c530"
+      }, {
+        "Type" : 5,
+        "ID" : "test.user@devdatadoghq.onmicrosoft.com"
+      }, {
+        "Type" : 3,
+        "ID" : "10033FFFA4CB5F0D"
+      } ],
+      "LogonError" : "TEST",
+      "ActorContextId" : "4d3bac44-0230-4732-9e70-cc00736f0a97",
+      "ObjectId" : "b97b6bd4-a49f-4a0c-af18-af507d1da76c",
+      "ResultStatus" : "Succeeded",
+      "ClientIP" : "185.64.148.140",
+      "Workload" : "AzureActiveDirectory",
+      "service" : "microsoft-365",
+      "UserId" : "test.user@devdatadoghq.onmicrosoft.com",
+      "TargetContextId" : "4d3bac44-0230-4732-9e70-cc00736f0a97",
+      "CreationTime" : "2025-04-29T14:46:22",
+      "InterSystemsId" : "5a1b353a-78b8-479b-b202-921e9da0bb6c",
+      "Id" : "65353957-a6e3-4ae9-a471-5daedcfc5f0a",
+      "ApplicationId" : "4d5c2d63-cf83-4365-853c-925fd1a64357",
+      "UserType" : 0
+    }
+  result:
+    custom:
+      Actor:
+       -
+        Type: 0
+        ID: "87f22997-a1f0-461d-9f98-69a17283c530"
+       -
+        Type: 5
+        ID: "test.user@devdatadoghq.onmicrosoft.com"
+       -
+        Type: 3
+        ID: "10033FFFA4CB5F0D"
+      ActorContextId: "4d3bac44-0230-4732-9e70-cc00736f0a97"
+      ActorIpAddress: "185.64.148.140"
+      ApplicationId: "4d5c2d63-cf83-4365-853c-925fd1a64357"
+      AuthenticationMethod: "EID"
+      AzureActiveDirectoryEventType: 1
+      ClientIP: "185.64.148.140"
+      CreationTime: "2025-04-29T14:46:22"
+      ExtendedProperties:
+        KeepMeSignedIn: "True"
+        RequestType: "OAuth2:Authorize"
+        ResultStatusDetail: "Redirect"
+        UserAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.121 Safari/537.36"
+        UserAuthenticationMethod: "9"
+      Id: "65353957-a6e3-4ae9-a471-5daedcfc5f0a"
+      InterSystemsId: "5a1b353a-78b8-479b-b202-921e9da0bb6c"
+      IntraSystemId: "2f599f88-8aa9-4249-85a1-a85fe9b36100"
+      LogonError: "TEST"
+      ObjectId: "b97b6bd4-a49f-4a0c-af18-af507d1da76c"
+      Operation: "UserLoginFailed"
+      OrganizationId: "4d3bac44-0230-4732-9e70-cc00736f0a97"
+      RecordType: 15
+      ResultStatus: "Succeeded"
+      SupportTicketId: ""
+      Target:
+       -
+        Type: 0
+        ID: "b97b6bd4-a49f-4a0c-af18-af507d1da76c"
+      TargetContextId: "4d3bac44-0230-4732-9e70-cc00736f0a97"
+      UserDescription: "A regular user"
+      UserId: "test.user@devdatadoghq.onmicrosoft.com"
+      UserKey: "10033FFFA4CB5F0D@devdatadoghq.onmicrosoft.com"
+      UserType: 0
+      Version: 1
+      Workload: "AzureActiveDirectory"
+      evt:
+        name: "UserLoginFailed"
+        outcome: "Succeeded"
+      http:
+        useragent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.121 Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "85"
+            minor: "0"
+            patch: "4183"
+            patch_minor: "121"
+          device:
+            brand: "Apple"
+            category: "Desktop"
+            family: "Mac"
+            model: "Mac"
+          os:
+            family: "Mac OS X"
+            major: "10"
+            minor: "15"
+            patch: "5"
+      network:
+        client:
+          geoip:
+            city:
+              name: "Paris"
+            continent:
+              code: "EU"
+              name: "Europe"
+            country:
+              iso_code: "FR"
+              name: "France"
+            ipAddress: "185.64.148.140"
+            location:
+              latitude: 48.90654
+              longitude: 2.33339
+            subdivision:
+              iso_code: "FR-IDF"
+              name: "Île-de-France"
+            timezone: "Europe/Paris"
+          ip: "185.64.148.140"
+      ocsf:
+        activity_id: 1
+        activity_name: "Logon"
+        actor:
+          user:
+            email_addr: "test.user@devdatadoghq.onmicrosoft.com"
+            name: "test.user"
+            type: "User"
+            type_id: 1
+            uid: "10033FFFA4CB5F0D@devdatadoghq.onmicrosoft.com"
+        category_name: "Identity & Access Management"
+        category_uid: 3
+        class_name: "Authentication"
+        class_uid: 3002
+        http_request:
+          user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.121 Safari/537.36"
+        metadata:
+          event_code: "UserLoginFailed"
+          log_name: "Office 365 Management Activity API"
+          product:
+            name: "Microsoft 365"
+            vendor_name: "Microsoft"
+          profiles:
+           - "datetime"
+          uid: "65353957-a6e3-4ae9-a471-5daedcfc5f0a"
+          version: "1.3.0"
+        service:
+          name: "Microsoft Entra ID"
+        severity: "Informational"
+        severity_id: 1
+        src_endpoint:
+          ip: "185.64.148.140"
+        status: "Failure"
+        status_id: 2
+        time: 1745937982000
+        time_dt: "2025-04-29T14:46:22"
+        type_uid: 300201
+        user:
+          email_addr: "test.user@devdatadoghq.onmicrosoft.com"
+          name: "test.user"
+          type: "User"
+          type_id: 1
+          uid: "10033FFFA4CB5F0D@devdatadoghq.onmicrosoft.com"
+      service: "microsoft-365"
+      title: "test.user@devdatadoghq.onmicrosoft.com(A regular user) performed UserLoginFailed from France"
+      usr:
+        email: "test.user@devdatadoghq.onmicrosoft.com"
+        id: "test.user@devdatadoghq.onmicrosoft.com"
+    message: |-
+      {
+        "AzureActiveDirectoryEventType" : 1,
+        "UserKey" : "10033FFFA4CB5F0D@devdatadoghq.onmicrosoft.com",
+        "ActorIpAddress" : "185.64.148.140",
+        "OrganizationId" : "4d3bac44-0230-4732-9e70-cc00736f0a97",
+        "Operation" : "UserLoginFailed",
+        "ExtendedProperties" : {
+          "ResultStatusDetail" : "Redirect",
+          "UserAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.121 Safari/537.36",
+          "KeepMeSignedIn" : "True",
+          "UserAuthenticationMethod" : "9",
+          "RequestType" : "OAuth2:Authorize"
+        },
+        "IntraSystemId" : "2f599f88-8aa9-4249-85a1-a85fe9b36100",
+        "Target" : [ {
+          "Type" : 0,
+          "ID" : "b97b6bd4-a49f-4a0c-af18-af507d1da76c"
+        } ],
+        "RecordType" : 15,
+        "Version" : 1,
+        "SupportTicketId" : "",
+        "Actor" : [ {
+          "Type" : 0,
+          "ID" : "87f22997-a1f0-461d-9f98-69a17283c530"
+        }, {
+          "Type" : 5,
+          "ID" : "test.user@devdatadoghq.onmicrosoft.com"
+        }, {
+          "Type" : 3,
+          "ID" : "10033FFFA4CB5F0D"
+        } ],
+        "LogonError" : "TEST",
+        "ActorContextId" : "4d3bac44-0230-4732-9e70-cc00736f0a97",
+        "ObjectId" : "b97b6bd4-a49f-4a0c-af18-af507d1da76c",
+        "ResultStatus" : "Succeeded",
+        "ClientIP" : "185.64.148.140",
+        "Workload" : "AzureActiveDirectory",
+        "service" : "microsoft-365",
+        "UserId" : "test.user@devdatadoghq.onmicrosoft.com",
+        "TargetContextId" : "4d3bac44-0230-4732-9e70-cc00736f0a97",
+        "CreationTime" : "2025-04-29T14:46:22",
+        "InterSystemsId" : "5a1b353a-78b8-479b-b202-921e9da0bb6c",
+        "Id" : "65353957-a6e3-4ae9-a471-5daedcfc5f0a",
+        "ApplicationId" : "4d5c2d63-cf83-4365-853c-925fd1a64357",
+        "UserType" : 0
+      }
+    service: "AzureActiveDirectory"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1745937982000
+ -
+  sample: |-
+    {
+      "BrowserName" : "",
+      "Site" : "1-1-1-1-1-1-1-1-1",
+      "ListBaseType" : 1,
+      "DestinationFileName" : "test_1.docx",
+      "Platform" : "WinDesktop",
+      "ItemType" : "File",
+      "UserKey" : "11111-1111-1111-1111-111111111111",
+      "IsManagedDevice" : true,
+      "DeviceDisplayName" : "1.1.1.1",
+      "OrganizationId" : "11111-1111-1111-1111-111111111111",
+      "Operation" : "FolderCopied",
+      "RecordType" : 6,
+      "ListId" : "11e42f79-d3d5-4d55-88ea-45913c423e17",
+      "Version" : 1,
+      "WebId" : "1-1-1-1-1-1-1-1-1",
+      "UserAgent" : "Microsoft Office Word/16.0.18623.20208 (Windows/10.0; Desktop WOW64; en-US; Desktop app; Dell Inc./Latitude 7480)",
+      "DestinationFileExtension" : "docp",
+      "CorrelationId" : "6b3f99a1-50ae-8000-dab0-b34d858e9af9",
+      "ListItemUniqueId" : "021401a0-248c-45d1-b940-f5b09c4719b6",
+      "AuthenticationType" : "FormsCookieAuth",
+      "ResultStatus" : "Failed",
+      "SourceFileName" : "test.docx",
+      "ApplicationDisplayName" : "word",
+      "ClientIP" : "1.1.1.1",
+      "AppAccessContext" : {
+        "AADSessionId" : "11111111-1111-1111-1111-111111111111",
+        "ClientAppName" : "word",
+        "UniqueTokenId" : "11111-1111-1111-1111-111111111111",
+        "CorrelationId" : "11111111-1111-1111-111111111111"
+      },
+      "ListServerTemplate" : 101,
+      "SourceFileExtension" : "docx",
+      "Workload" : "SharePoint",
+      "SourceRelativeUrl" : "test/test/",
+      "EventSource" : "SharePoint",
+      "FileSizeBytes" : 3203364,
+      "DestinationRelativeUrl" : "test1/test1/",
+      "HighPriorityMediaProcessing" : false,
+      "UserId" : "testuser@example.com",
+      "service" : "microsoft-365",
+      "CreationTime" : "2025-04-29T14:32:34",
+      "UserDescription" : "A regular user",
+      "Id" : "111-111-111-1111-111111111111",
+      "GeoLocation" : "US",
+      "UserType" : 0,
+      "BrowserVersion" : ""
+    }
+  result:
+    custom:
+      AppAccessContext:
+        AADSessionId: "11111111-1111-1111-1111-111111111111"
+        ClientAppName: "word"
+        CorrelationId: "11111111-1111-1111-111111111111"
+        UniqueTokenId: "11111-1111-1111-1111-111111111111"
+      ApplicationDisplayName: "word"
+      AuthenticationType: "FormsCookieAuth"
+      BrowserName: ""
+      BrowserVersion: ""
+      ClientIP: "1.1.1.1"
+      CorrelationId: "6b3f99a1-50ae-8000-dab0-b34d858e9af9"
+      CreationTime: "2025-04-29T14:32:34"
+      DestinationFileExtension: "docp"
+      DestinationFileName: "test_1.docx"
+      DestinationRelativeUrl: "test1/test1/"
+      DeviceDisplayName: "1.1.1.1"
+      EventSource: "SharePoint"
+      FileSizeBytes: 3203364
+      GeoLocation: "US"
+      HighPriorityMediaProcessing: false
+      Id: "111-111-111-1111-111111111111"
+      IsManagedDevice: true
+      ItemType: "File"
+      ListBaseType: 1
+      ListId: "11e42f79-d3d5-4d55-88ea-45913c423e17"
+      ListItemUniqueId: "021401a0-248c-45d1-b940-f5b09c4719b6"
+      ListServerTemplate: 101
+      Operation: "FolderCopied"
+      OrganizationId: "11111-1111-1111-1111-111111111111"
+      Platform: "WinDesktop"
+      RecordType: 6
+      ResultStatus: "Failed"
+      Site: "1-1-1-1-1-1-1-1-1"
+      SourceFileExtension: "docx"
+      SourceFileName: "test.docx"
+      SourceRelativeUrl: "test/test/"
+      UserAgent: "Microsoft Office Word/16.0.18623.20208 (Windows/10.0; Desktop WOW64; en-US; Desktop app; Dell Inc./Latitude 7480)"
+      UserDescription: "A regular user"
+      UserId: "testuser@example.com"
+      UserKey: "11111-1111-1111-1111-111111111111"
+      UserType: 0
+      Version: 1
+      WebId: "1-1-1-1-1-1-1-1-1"
+      Workload: "SharePoint"
+      evt:
+        name: "FolderCopied"
+        outcome: "Failed"
+      http:
+        useragent: "Microsoft Office Word/16.0.18623.20208 (Windows/10.0; Desktop WOW64; en-US; Desktop app; Dell Inc./Latitude 7480)"
+        useragent_details:
+          browser:
+            family: "Other"
+          device:
+            brand: "Dell"
+            category: "Desktop"
+            family: "Dell Inc"
+            model: "Inc"
+          os:
+            family: "Windows"
+      network:
+        client:
+          geoip: {}
+          ip: "1.1.1.1"
+      ocsf:
+        activity_id: 99
+        activity_name: "FolderCopied"
+        actor:
+          app_name: "word"
+          user:
+            email_addr: "testuser@example.com"
+            name: "testuser"
+            type: "User"
+            type_id: 1
+            uid: "11111-1111-1111-1111-111111111111"
+        api:
+          operation: "FolderCopied"
+        category_name: "Application Activity"
+        category_uid: 6
+        class_name: "API Activity"
+        class_uid: 6003
+        http_request:
+          user_agent: "Microsoft Office Word/16.0.18623.20208 (Windows/10.0; Desktop WOW64; en-US; Desktop app; Dell Inc./Latitude 7480)"
+        metadata:
+          event_code: "FolderCopied"
+          log_name: "Office 365 Management Activity API"
+          product:
+            name: "Microsoft 365"
+            vendor_name: "Microsoft"
+          profiles:
+           - "datetime"
+          uid: "111-111-111-1111-111111111111"
+          version: "1.3.0"
+        severity: "Informational"
+        severity_id: 1
+        src_endpoint:
+          ip: "1.1.1.1"
+        status: "Failure"
+        status_id: 2
+        time: 1745937154000
+        time_dt: "2025-04-29T14:32:34"
+        type_uid: 600399
+      service: "microsoft-365"
+      usr:
+        email: "testuser@example.com"
+        id: "testuser@example.com"
+    message: |-
+      {
+        "BrowserName" : "",
+        "Site" : "1-1-1-1-1-1-1-1-1",
+        "ListBaseType" : 1,
+        "DestinationFileName" : "test_1.docx",
+        "Platform" : "WinDesktop",
+        "ItemType" : "File",
+        "UserKey" : "11111-1111-1111-1111-111111111111",
+        "IsManagedDevice" : true,
+        "DeviceDisplayName" : "1.1.1.1",
+        "OrganizationId" : "11111-1111-1111-1111-111111111111",
+        "Operation" : "FolderCopied",
+        "RecordType" : 6,
+        "ListId" : "11e42f79-d3d5-4d55-88ea-45913c423e17",
+        "Version" : 1,
+        "WebId" : "1-1-1-1-1-1-1-1-1",
+        "UserAgent" : "Microsoft Office Word/16.0.18623.20208 (Windows/10.0; Desktop WOW64; en-US; Desktop app; Dell Inc./Latitude 7480)",
+        "DestinationFileExtension" : "docp",
+        "CorrelationId" : "6b3f99a1-50ae-8000-dab0-b34d858e9af9",
+        "ListItemUniqueId" : "021401a0-248c-45d1-b940-f5b09c4719b6",
+        "AuthenticationType" : "FormsCookieAuth",
+        "ResultStatus" : "Failed",
+        "SourceFileName" : "test.docx",
+        "ApplicationDisplayName" : "word",
+        "ClientIP" : "1.1.1.1",
+        "AppAccessContext" : {
+          "AADSessionId" : "11111111-1111-1111-1111-111111111111",
+          "ClientAppName" : "word",
+          "UniqueTokenId" : "11111-1111-1111-1111-111111111111",
+          "CorrelationId" : "11111111-1111-1111-111111111111"
+        },
+        "ListServerTemplate" : 101,
+        "SourceFileExtension" : "docx",
+        "Workload" : "SharePoint",
+        "SourceRelativeUrl" : "test/test/",
+        "EventSource" : "SharePoint",
+        "FileSizeBytes" : 3203364,
+        "DestinationRelativeUrl" : "test1/test1/",
+        "HighPriorityMediaProcessing" : false,
+        "UserId" : "testuser@example.com",
+        "service" : "microsoft-365",
+        "CreationTime" : "2025-04-29T14:32:34",
+        "UserDescription" : "A regular user",
+        "Id" : "111-111-111-1111-111111111111",
+        "GeoLocation" : "US",
+        "UserType" : 0,
+        "BrowserVersion" : ""
+      }
+    service: "SharePoint"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1745937154000
+ -
+  sample: |-
+    {
+      "BrowserName" : "",
+      "Site" : "1-1-1-1-1-1-1-1-1",
+      "ListBaseType" : 1,
+      "DestinationFileName" : "test_1.docx",
+      "Platform" : "WinDesktop",
+      "ItemType" : "File",
+      "UserKey" : "11111-1111-1111-1111-111111111111",
+      "IsManagedDevice" : true,
+      "DeviceDisplayName" : "1.1.1.1",
+      "OrganizationId" : "11111-1111-1111-1111-111111111111",
+      "Operation" : "FileCopied",
+      "RecordType" : 6,
+      "ListId" : "11e42f79-d3d5-4d55-88ea-45913c423e17",
+      "Version" : 1,
+      "WebId" : "1-1-1-1-1-1-1-1-1",
+      "UserAgent" : "Microsoft Office Word/16.0.18623.20208 (Windows/10.0; Desktop WOW64; en-US; Desktop app; Dell Inc./Latitude 7480)",
+      "DestinationFileExtension" : "docp",
+      "CorrelationId" : "6b3f99a1-50ae-8000-dab0-b34d858e9af9",
+      "ListItemUniqueId" : "021401a0-248c-45d1-b940-f5b09c4719b6",
+      "AuthenticationType" : "FormsCookieAuth",
+      "ResultStatus" : "Failed",
+      "SourceFileName" : "test.docx",
+      "ApplicationDisplayName" : "word",
+      "ClientIP" : "1.1.1.1",
+      "AppAccessContext" : {
+        "AADSessionId" : "11111111-1111-1111-1111-111111111111",
+        "ClientAppName" : "word",
+        "UniqueTokenId" : "11111-1111-1111-1111-111111111111",
+        "CorrelationId" : "11111111-1111-1111-111111111111"
+      },
+      "ListServerTemplate" : 101,
+      "SourceFileExtension" : "docx",
+      "Workload" : "SharePoint",
+      "SourceRelativeUrl" : "test/test/",
+      "EventSource" : "SharePoint",
+      "FileSizeBytes" : 3203364,
+      "DestinationRelativeUrl" : "test1/test1/",
+      "HighPriorityMediaProcessing" : false,
+      "UserId" : "testuser@example.com",
+      "service" : "microsoft-365",
+      "CreationTime" : "2025-04-29T14:32:34",
+      "UserDescription" : "A regular user",
+      "Id" : "111-111-111-1111-111111111111",
+      "GeoLocation" : "US",
+      "UserType" : 0,
+      "BrowserVersion" : ""
+    }
+  result:
+    custom:
+      AppAccessContext:
+        AADSessionId: "11111111-1111-1111-1111-111111111111"
+        ClientAppName: "word"
+        CorrelationId: "11111111-1111-1111-111111111111"
+        UniqueTokenId: "11111-1111-1111-1111-111111111111"
+      ApplicationDisplayName: "word"
+      AuthenticationType: "FormsCookieAuth"
+      BrowserName: ""
+      BrowserVersion: ""
+      ClientIP: "1.1.1.1"
+      CorrelationId: "6b3f99a1-50ae-8000-dab0-b34d858e9af9"
+      CreationTime: "2025-04-29T14:32:34"
+      DestinationFileExtension: "docp"
+      DestinationFileName: "test_1.docx"
+      DestinationRelativeUrl: "test1/test1/"
+      DeviceDisplayName: "1.1.1.1"
+      EventSource: "SharePoint"
+      FileSizeBytes: 3203364
+      GeoLocation: "US"
+      HighPriorityMediaProcessing: false
+      Id: "111-111-111-1111-111111111111"
+      IsManagedDevice: true
+      ItemType: "File"
+      ListBaseType: 1
+      ListId: "11e42f79-d3d5-4d55-88ea-45913c423e17"
+      ListItemUniqueId: "021401a0-248c-45d1-b940-f5b09c4719b6"
+      ListServerTemplate: 101
+      Operation: "FileCopied"
+      OrganizationId: "11111-1111-1111-1111-111111111111"
+      Platform: "WinDesktop"
+      RecordType: 6
+      ResultStatus: "Failed"
+      Site: "1-1-1-1-1-1-1-1-1"
+      SourceFileExtension: "docx"
+      SourceFileName: "test.docx"
+      SourceRelativeUrl: "test/test/"
+      UserAgent: "Microsoft Office Word/16.0.18623.20208 (Windows/10.0; Desktop WOW64; en-US; Desktop app; Dell Inc./Latitude 7480)"
+      UserDescription: "A regular user"
+      UserId: "testuser@example.com"
+      UserKey: "11111-1111-1111-1111-111111111111"
+      UserType: 0
+      Version: 1
+      WebId: "1-1-1-1-1-1-1-1-1"
+      Workload: "SharePoint"
+      evt:
+        name: "FileCopied"
+        outcome: "Failed"
+      http:
+        useragent: "Microsoft Office Word/16.0.18623.20208 (Windows/10.0; Desktop WOW64; en-US; Desktop app; Dell Inc./Latitude 7480)"
+        useragent_details:
+          browser:
+            family: "Other"
+          device:
+            brand: "Dell"
+            category: "Desktop"
+            family: "Dell Inc"
+            model: "Inc"
+          os:
+            family: "Windows"
+      network:
+        client:
+          geoip: {}
+          ip: "1.1.1.1"
+      ocsf:
+        activity_id: 6
+        activity_name: "Copy"
+        actor:
+          app_name: "word"
+          user:
+            email_addr: "testuser@example.com"
+            name: "testuser"
+            type: "User"
+            type_id: 1
+            uid: "11111-1111-1111-1111-111111111111"
+        category_name: "Application Activity"
+        category_uid: 6
+        class_name: "File Hosting Activity"
+        class_uid: 6006
+        file:
+          ext: "docp"
+          name: "test_1.docx"
+          path: "test1/test1/"
+          type: "Regular File"
+          type_id: 1
+        metadata:
+          event_code: "FileCopied"
+          log_name: "Office 365 Management Activity API"
+          product:
+            name: "Microsoft 365"
+            vendor_name: "Microsoft"
+          profiles:
+           - "datetime"
+          uid: "111-111-111-1111-111111111111"
+          version: "1.3.0"
+        severity: "Informational"
+        severity_id: 1
+        src_endpoint:
+          ip: "1.1.1.1"
+        status: "Failure"
+        status_id: 2
+        time: 1745937154000
+        time_dt: "2025-04-29T14:32:34"
+        type_uid: 600606
+      service: "microsoft-365"
+      usr:
+        email: "testuser@example.com"
+        id: "testuser@example.com"
+    message: |-
+      {
+        "BrowserName" : "",
+        "Site" : "1-1-1-1-1-1-1-1-1",
+        "ListBaseType" : 1,
+        "DestinationFileName" : "test_1.docx",
+        "Platform" : "WinDesktop",
+        "ItemType" : "File",
+        "UserKey" : "11111-1111-1111-1111-111111111111",
+        "IsManagedDevice" : true,
+        "DeviceDisplayName" : "1.1.1.1",
+        "OrganizationId" : "11111-1111-1111-1111-111111111111",
+        "Operation" : "FileCopied",
+        "RecordType" : 6,
+        "ListId" : "11e42f79-d3d5-4d55-88ea-45913c423e17",
+        "Version" : 1,
+        "WebId" : "1-1-1-1-1-1-1-1-1",
+        "UserAgent" : "Microsoft Office Word/16.0.18623.20208 (Windows/10.0; Desktop WOW64; en-US; Desktop app; Dell Inc./Latitude 7480)",
+        "DestinationFileExtension" : "docp",
+        "CorrelationId" : "6b3f99a1-50ae-8000-dab0-b34d858e9af9",
+        "ListItemUniqueId" : "021401a0-248c-45d1-b940-f5b09c4719b6",
+        "AuthenticationType" : "FormsCookieAuth",
+        "ResultStatus" : "Failed",
+        "SourceFileName" : "test.docx",
+        "ApplicationDisplayName" : "word",
+        "ClientIP" : "1.1.1.1",
+        "AppAccessContext" : {
+          "AADSessionId" : "11111111-1111-1111-1111-111111111111",
+          "ClientAppName" : "word",
+          "UniqueTokenId" : "11111-1111-1111-1111-111111111111",
+          "CorrelationId" : "11111111-1111-1111-111111111111"
+        },
+        "ListServerTemplate" : 101,
+        "SourceFileExtension" : "docx",
+        "Workload" : "SharePoint",
+        "SourceRelativeUrl" : "test/test/",
+        "EventSource" : "SharePoint",
+        "FileSizeBytes" : 3203364,
+        "DestinationRelativeUrl" : "test1/test1/",
+        "HighPriorityMediaProcessing" : false,
+        "UserId" : "testuser@example.com",
+        "service" : "microsoft-365",
+        "CreationTime" : "2025-04-29T14:32:34",
+        "UserDescription" : "A regular user",
+        "Id" : "111-111-111-1111-111111111111",
+        "GeoLocation" : "US",
+        "UserType" : 0,
+        "BrowserVersion" : ""
+      }
+    service: "SharePoint"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1745937154000
+

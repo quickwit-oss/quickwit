@@ -1,0 +1,41 @@
+id: vllm
+metric_id: vllm
+backend_only: false
+facets:
+pipeline:
+  type: pipeline
+  name: 'vLLM'
+  enabled: true
+  filter:
+    query: source:vllm
+  processors:
+    - type: grok-parser
+      name: Parse timestamp, level, logger, and message
+      enabled: true
+      source: message
+      samples:
+        - "INFO 06-11 21:02:01 cpu_executor.py:72] # CPU blocks: 7281"
+        - "WARNING 06-11 21:01:59 llm_engine.py:161] Initializing an LLM engine (v0.4.3) with config: model='facebook/opt-125m', speculative_config=None, tokenizer='facebook/opt-125m', skip_tokenizer_init=False, tokenizer_mode=auto, revision=None, rope_scaling=None, tokenizer_revision=None, trust_remote_code=False, dtype=torch.float16, max_seq_len=2048, download_dir=None, load_format=LoadFormat.AUTO, tensor_parallel_size=1, disable_custom_all_reduce=False, quantization=None, enforce_eager=False, kv_cache_dtype=auto, quantization_param_path=None, device_config=cpu, decoding_config=DecodingConfig(guided_decoding_backend='outlines'), seed=0, served_model_name=facebook/opt-125m)"
+      grok:
+        # We support parsing dates with and without a year in the timestamp. In practice we don't see the year but for our tests
+        # to be deterministic we include the year in a consistent format.
+        matchRules: |
+          vllm %{word:level} (%{ts_no_year}|%{ts_year}) %{regex("[^\\:]+"):logger.name}:%{integer:logger.lineno}] %{data:message}
+        supportRules: |
+          ts_no_year %{date("MM-dd HH:mm:ss"):timestamp}
+          ts_year %{date("MM-dd-yyyy HH:mm:ss"):timestamp}
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
