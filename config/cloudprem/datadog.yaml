@@ -42,58 +42,39 @@ doc_mapping:
         - iso8601
         - unix_timestamp
       fast_precision: milliseconds
-  # TODO: Check if discovery_timestamp is used anywhere, or if we can drop it after ingestion
-    - name: discovery_timestamp
-      type: datetime
-      fast: false
       indexed: false
-      input_formats:
-        - unix_timestamp
-        - rfc3339
-        - iso8601
-
-  # TODO: This is a special measure for metrics on logs, but unclear if this is also used in search.
-    - name: ingest_size_in_bytes
-      type: u64
-      fast: true
-      indexed: false
-      stored: false
-    # TODO: Needs to be populated
-    - name: tiebreaker
-      type: i64
-      fast: true
-      indexed: false
-      stored: true
-
     - name: message
       type: text
       tokenizer: default # +lowercase case insensitive search on message
       record: position
       fast: true
-
+      fieldnorms: false
     # Seems to be used only internally, e.g. for paging and fetch_one
     - name: id
       type: text
       tokenizer: raw
-
+      record: basic
+      fieldnorms: false
     - name: custom
       type: json
-      tokenizer: default
-      record: position
+      tokenizer: raw_lowercase
+      record: basic
       fast: true
 
     - name: tag # contains normalized tags, e.g {"env": "prod"}
       type: json
-      tokenizer: default
+      tokenizer: raw_lowercase
       fast: true
-
+      # We do not need to store tags in json format,
+      # they are in the tags field
+      stored: false
     - name: tags # we can completely drop it and reconstruct it from tag
       type: 'array<text>'
       stored: true
       indexed: false
       fast: false
 
-    # The subfiels are `message` and `stack`. Are there others?
+    # The subfields are `message` and `stack`. Are there others?
     # If all fields are clear, we can convert to object.
     # TODO: This is unused currently in the Pomsky processing
     # We need to move errors from custom to its own field because the tokenization is different
@@ -108,65 +89,97 @@ doc_mapping:
     # other text like core attributes
     - name: service
       type: text
-      tokenizer: raw
+      indexed: true
+      tokenizer: raw_lowercase
+      record: basic
+      fieldnorms: false
       fast: true
     - name: source
       type: text
-      tokenizer: raw
+      tokenizer: raw_lowercase
       fast: true
+      fieldnorms: false
+      record: basic
     - name: service_type
       type: text
-      tokenizer: raw
+      tokenizer: raw_lowercase
       fast: true
+      fieldnorms: false
+      record: basic
     - name: status
       type: text
-      tokenizer: raw
+      tokenizer: raw_lowercase
       fast: true
+      record: basic
+      fieldnorms: false
     - name: host
       type: text
-      tokenizer: raw
+      tokenizer: raw_lowercase
       fast: true
+      record: basic
+      fieldnorms: false
     - name: trace_id
       type: text
       tokenizer: raw
       fast: true
+      fieldnorms: false
+      record: basic
     - name: span_id
       type: text
+      indexed: true
       tokenizer: raw
-
+      fieldnorms: false
+      record: basic
 
    # TODO: normally there is an `sds_info` object. Check OP SDS scanner:
    # https://docs.datadoghq.com/observability_pipelines/processors/sensitive_data_scanner
 
-    # default fields to search.
-    - name: default
+    - name: all # ALL fields for *:search
+      # we do not include message here, in order to avoid inflating
+      # the index size.
       type: concatenate
       concatenate_fields:
-      - message
-      - error
-      tokenizer: default
-      record: position # for phrase queries
-
-    - name: all # ALL fields for *:search
-      type: concatenate
-      concatenate_fields: # This should contain all fields above
-      # - timestamp # Not supported in concat fields
-      - message
-      # TODO: Check if we need to cover queries addressing tags, e.g. tags `*:"env:prod"` or tag `*:prod`
-      # Generally this could be extracted by a query processor
-      # - tag OR tags
-      - error
-      - source
-      - service
-      - service_type
-      - status
-      - host
-      - trace_id
-      - span_id
-      - custom
-      tokenizer: default # +lowercase insensitive
-      record: position # for phrase queries
-
+        # This should contain all fields above except message.
+        # - timestamp # Not supported in concat fields
+        # TODO: Check if we need to cover queries addressing tags, e.g. tags `*:"env:prod"` or tag `*:prod`
+        # Generally this could be extracted by a query processor
+        # - tag OR tags
+        - error
+        - source
+        - service
+        - service_type
+        - status
+        - host
+        - trace_id
+        - span_id
+        - custom
+      tokenizer: raw_lowercase
+      record: basic
+    # ----------------------------------
+    # Do we really need these?
+    #
+    # TODO: Check if discovery_timestamp is used anywhere, or if we can drop it after ingestion
+    - name: discovery_timestamp
+      type: datetime
+      fast: false
+      indexed: false
+      input_formats:
+        - unix_timestamp
+        - rfc3339
+        - iso8601
+    # TODO: This is a special measure for metrics on logs, but unclear if this is also used in search.
+    - name: ingest_size_in_bytes
+      type: u64
+      fast: true
+      indexed: false
+      stored: false
+    # TODO: Needs to be populated
+    - name: tiebreaker
+      type: i64
+      fast: true
+      indexed: false
+      stored: true
+    # ----------------------------------
   tag_fields: [] #  maybe add core attributes?
   timestamp_field: timestamp
   index_field_presence: true # For exists queries
