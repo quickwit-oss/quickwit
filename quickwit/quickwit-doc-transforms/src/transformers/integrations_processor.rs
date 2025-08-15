@@ -48,8 +48,11 @@ pub struct IntegrationProcessor {
 
 impl PipelineStep for IntegrationProcessor {
     fn apply(&self, processed_log: &mut ProcessedLog) -> crate::Result<()> {
-        let Some(integration_pipeline) = self.integration_by_source.get(&processed_log.source)
-        else {
+        let Some(source) = processed_log.source.as_ref() else {
+            // If the source is not set, we cannot apply any integration processing.
+            return Ok(());
+        };
+        let Some(integration_pipeline) = self.integration_by_source.get(source) else {
             return Ok(());
         };
         integration_pipeline.apply(processed_log)?;

@@ -316,10 +316,10 @@ mod vrl_matcher_tests {
         msg.message = "[2025-03-10T10:58:38.384+0000][31740.749s][511][info][gc,cpu   ] GC(18381) \
                        User=0.15s Sys=0.00s Real=0.02s hello"
             .to_string();
-        msg.timestamp = OffsetDateTime::now_utc();
-        msg.hostname = "myhost".to_string();
-        msg.service = "myservice".to_string();
-        msg.ddsource = "mysource".to_string();
+        msg.timestamp = Some(OffsetDateTime::now_utc());
+        msg.hostname = Some("myhost".to_string());
+        msg.service = Some("myservice".to_string());
+        msg.ddsource = Some("mysource".to_string());
 
         msg.ddtags.push("env:dev".to_string());
         msg.ddtags.push("region:us-east".to_string());

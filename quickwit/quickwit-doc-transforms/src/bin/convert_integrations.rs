@@ -79,7 +79,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 unsupported_processors.iter().map(|p| p.name()).collect();
                             println!(
                                 "{integration_name}: ⚠️ Unsupported processors: \
-                                 {unsupported_names:?}"
+                                 {unsupported_names:?}",
                             );
                         } else {
                             println!("{integration_name}: ✅ All processors are supported");
@@ -87,7 +87,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     _ => {
                         panic!(
-                            "Unexpected pipeline step type in integration: {integration_name:?}"
+                            "Unexpected pipeline step type in integration: {integration_name:?}",
                         );
                     }
                 }
@@ -101,7 +101,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     for (processor, count) in &unsupported_processor_count {
         if *count > 0 {
-            println!("⚠️ Unsupported processor '{processor}' found {count} times");
+            println!("⚠️ Unsupported processor '{processor}' found {count} times",);
         }
     }
 

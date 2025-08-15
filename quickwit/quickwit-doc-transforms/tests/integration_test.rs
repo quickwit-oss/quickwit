@@ -234,17 +234,17 @@ fn test_integrations_processor() {
         if num_test_cases_fully_succeeded == num_tests_integration {
             println!(
                 "✅ {file_name_without_extension}: \
-                 {num_test_cases_fully_succeeded}/{num_tests_integration} tests matched"
+                 {num_test_cases_fully_succeeded}/{num_tests_integration} tests matched",
             );
         } else if num_test_cases_fully_succeeded > 0 {
             println!(
                 "☑️ {file_name_without_extension}: \
-                 {num_test_cases_fully_succeeded}/{num_tests_integration} tests matched"
+                 {num_test_cases_fully_succeeded}/{num_tests_integration} tests matched",
             );
         } else {
             println!(
                 "⚠️ {file_name_without_extension}: \
-                 {num_test_cases_fully_succeeded}/{num_tests_integration} tests matched"
+                 {num_test_cases_fully_succeeded}/{num_tests_integration} tests matched",
             );
         }
     }
@@ -256,7 +256,7 @@ fn test_integrations_processor() {
     );
     println!(
         "num sources where each test has some failing checks \
-         {all_tests_failed_sources}/{num_sources}"
+         {all_tests_failed_sources}/{num_sources}",
     );
     check_counters.print();
 
@@ -318,7 +318,7 @@ fn run_test_case(
     let mut report = TestCaseReport::default();
     let mut msg = make_datadog_log_msg();
     msg.message = test_case.sample.to_string();
-    msg.ddsource = file_name_without_extension.to_string();
+    msg.ddsource = Some(file_name_without_extension.to_string());
     let mut processed_log = ProcessedLog::from_datadog_log_msg(msg);
     //println!("Processing log for source: {}", &processed_log.message);
     //println!(
@@ -341,8 +341,8 @@ fn run_test_case(
         //println!("Source {test_file_name}");
     }
 
-    if let Some(service) = &test_case.service {
-        report.service = Some(processed_log.service == *service);
+    if test_case.service.is_some() {
+        report.service = Some(processed_log.service == test_case.service);
     }
     if let Some(status) = &test_case.result.status {
         report.status = Some(processed_log.status == *status);
@@ -389,10 +389,10 @@ pub fn make_datadog_log_msg() -> DatadogLogMsg {
     DatadogLogMsg {
         message: "Test log message".to_string(),
         status: Some("INFO".to_string()),
-        timestamp: OffsetDateTime::now_utc(),
-        hostname: "test-host".to_string(),
-        service: "test-service".to_string(),
-        ddsource: "rust".to_string(),
+        timestamp: Some(OffsetDateTime::now_utc()),
+        hostname: Some("test-host".to_string()),
+        service: Some("test-service".to_string()),
+        ddsource: Some("rust".to_string()),
         ddtags: vec!["env:dev".into(), "region:us-east".into()],
     }
 }

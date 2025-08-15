@@ -40,13 +40,17 @@ use crate::{Pipeline, PipelineStep, convert_tags};
 pub struct DatadogLogMsg {
     pub message: String,
     pub status: Option<String>,
-    #[serde(with = "time::serde::timestamp::milliseconds")]
-    pub timestamp: OffsetDateTime,
+    #[serde(
+        default,
+        with = "time::serde::timestamp::milliseconds::option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub timestamp: Option<OffsetDateTime>,
     #[serde(alias = "host")]
-    pub hostname: String,
-    pub service: String,
+    pub hostname: Option<String>,
+    pub service: Option<String>,
     #[serde(alias = "source")]
-    pub ddsource: String,
+    pub ddsource: Option<String>,
     #[serde_as(as = "StringWithSeparator::<CommaSeparator, String>")]
     #[serde(default)]
     #[serde(alias = "tags")]
@@ -61,9 +65,9 @@ pub struct ProcessedLog {
     pub status: String,
     #[serde(with = "time::serde::rfc3339")]
     pub timestamp: OffsetDateTime,
-    pub host: String,
-    pub service: String,
-    pub source: String,
+    pub host: Option<String>,
+    pub service: Option<String>,
+    pub source: Option<String>,
 
     /// E.g.
     /// tags:["env:dev", "region:us-east", "region:east"] =>
@@ -210,9 +214,9 @@ impl ProcessedLog {
         match field {
             "message" => Some(&self.message),
             "status" => Some(&self.status),
-            "host" => Some(&self.host),
-            "service" => Some(&self.service),
-            "source" => Some(&self.source),
+            "host" => self.host.as_deref(),
+            "service" => self.service.as_deref(),
+            "source" => self.source.as_deref(),
             "trace_id" => self.trace_id.as_deref(),
             _ => None,
         }
@@ -223,13 +227,17 @@ impl ProcessedLog {
             .map(|s| s.len())
             .unwrap_or_default();
         let mut tags = msg.ddtags;
-        tags.push(format!("source:{}", msg.ddsource));
-        tags.push(format!("service:{}", msg.service));
+        if let Some(source) = &msg.ddsource {
+            tags.push(format!("source:{source}"));
+        }
+        if let Some(service) = &msg.service {
+            tags.push(format!("service:{service}"));
+        }
         let mut processed = ProcessedLog {
             message: msg.message,
             ingest_size_in_bytes,
             status: msg.status.unwrap_or("info".to_string()).to_lowercase(),
-            timestamp: msg.timestamp,
+            timestamp: msg.timestamp.unwrap_or_else(OffsetDateTime::now_utc),
             host: msg.hostname,
             service: msg.service,
             source: msg.ddsource,
@@ -308,16 +316,25 @@ pub(crate) mod tests {
         DatadogLogMsg {
             message: "Test log message".to_string(),
             status: Some("INFO".to_string()),
-            timestamp: OffsetDateTime::now_utc(),
-            hostname: "test-host".to_string(),
-            service: "test-service".to_string(),
-            ddsource: "rust".to_string(),
+            timestamp: Some(OffsetDateTime::now_utc()),
+            hostname: Some("test-host".to_string()),
+            service: Some("test-service".to_string()),
+            ddsource: Some("rust".to_string()),
             ddtags: vec!["env:dev".into(), "region:us-east".into()],
         }
     }
 
     pub fn make_processed_log() -> ProcessedLog {
         ProcessedLog::from_datadog_log_msg(make_datadog_log_msg())
+    }
+
+    #[test]
+    fn test_deserialize_datadog_log_msg_minimal() {
+        let json = r#"{
+                "message": "Overridden message"
+            }"#
+        .to_string();
+        let _msg: DatadogLogMsg = serde_json::from_str(&json).unwrap();
     }
 
     #[test]
@@ -335,9 +352,9 @@ pub(crate) mod tests {
         let msg: DatadogLogMsg = serde_json::from_str(&json).unwrap();
         assert_eq!(msg.message, "Overridden message");
         assert_eq!(msg.status.unwrap(), "info");
-        assert_eq!(msg.hostname, "test-host");
-        assert_eq!(msg.service, "test-service");
-        assert_eq!(msg.ddsource, "rust");
+        assert_eq!(msg.hostname.unwrap(), "test-host");
+        assert_eq!(msg.service.unwrap(), "test-service");
+        assert_eq!(msg.ddsource.unwrap(), "rust");
         assert_eq!(
             msg.ddtags,
             vec!["env:dev".to_string(), "region:us-east".to_string()]
@@ -360,9 +377,9 @@ pub(crate) mod tests {
         let msg: DatadogLogMsg = serde_json::from_str(&json).unwrap();
         assert_eq!(msg.message, "Overridden message");
         assert_eq!(msg.status.unwrap(), "info");
-        assert_eq!(msg.hostname, "test-host");
-        assert_eq!(msg.service, "test-service");
-        assert_eq!(msg.ddsource, "rust");
+        assert_eq!(msg.hostname.unwrap(), "test-host");
+        assert_eq!(msg.service.unwrap(), "test-service");
+        assert_eq!(msg.ddsource.unwrap(), "rust");
         assert_eq!(msg.ddtags, Vec::<String>::new());
     }
 
@@ -379,9 +396,9 @@ pub(crate) mod tests {
         // Verify core fields
         assert_eq!(processed.message, "Overridden message");
         assert_eq!(processed.status, "error"); // lowercased from "ERROR"
-        assert_eq!(processed.host, "test-host");
-        assert_eq!(processed.service, "test-service");
-        assert_eq!(processed.source, "rust");
+        assert_eq!(processed.host.unwrap(), "test-host");
+        assert_eq!(processed.service.unwrap(), "test-service");
+        assert_eq!(processed.source.unwrap(), "rust");
 
         // The ID, ingest_size_in_bytes, and discovery_timestamp won't be a fixed value,
         // so we just check they're non-empty or > 0.
@@ -460,8 +477,8 @@ pub(crate) mod tests {
         assert_eq!(msg.status, "error");
         assert_eq!(msg.trace_id, Some("12345".to_string()));
         assert_eq!(msg.span_id, Some("99999".to_string()));
-        assert_eq!(msg.service, "overwrite-service");
-        assert_eq!(msg.host, "overwrite-host");
+        assert_eq!(msg.service.unwrap(), "overwrite-service");
+        assert_eq!(msg.host.unwrap(), "overwrite-host");
         assert_eq!(
             msg.timestamp,
             OffsetDateTime::from_unix_timestamp(1609459200).unwrap()

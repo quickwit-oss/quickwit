@@ -49,7 +49,7 @@ impl PipelineStep for CoreStringAttrRemapStep {
                             value.message = from_val.to_string();
                         }
                         CoreStringAttr::Service => {
-                            value.service = from_val.to_string();
+                            value.service = from_val.to_string().into();
                         }
                         CoreStringAttr::TraceId => {
                             value.trace_id = Some(from_val.to_string());
@@ -58,7 +58,7 @@ impl PipelineStep for CoreStringAttrRemapStep {
                             value.span_id = Some(from_val.to_string());
                         }
                         CoreStringAttr::Host => {
-                            value.host = from_val.to_string();
+                            value.host = from_val.to_string().into();
                         }
                     }
                     // Message attributes delete the source key
@@ -116,7 +116,7 @@ mod tests {
         };
 
         step.apply(&mut log).unwrap();
-        assert_eq!(log.service, "baz_value");
+        assert_eq!(log.service.unwrap(), "baz_value");
     }
     #[test]
     fn test_core_string_attr_remap_step_no_match() {

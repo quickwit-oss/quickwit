@@ -62,7 +62,7 @@ fn test_grok_parser_compat_test() {
         for sample_result in test.sample_results {
             let mut agent_log = ProcessedLog::from_datadog_log_msg(make_datadog_log_msg());
             agent_log.message = sample_result.sample.to_string();
-            agent_log.source = test.source.clone();
+            agent_log.source = Some(test.source.clone());
 
             step.apply(&mut agent_log).unwrap();
 
@@ -136,10 +136,10 @@ pub fn make_datadog_log_msg() -> DatadogLogMsg {
     DatadogLogMsg {
         message: "Test log message".to_string(),
         status: Some("INFO".to_string()),
-        timestamp: OffsetDateTime::now_utc(),
-        hostname: "test-host".to_string(),
-        service: "test-service".to_string(),
-        ddsource: "rust".to_string(),
+        timestamp: Some(OffsetDateTime::now_utc()),
+        hostname: "test-host".to_string().into(),
+        service: "test-service".to_string().into(),
+        ddsource: "rust".to_string().into(),
         ddtags: vec!["env:dev".into(), "region:us-east".into()],
     }
 }
