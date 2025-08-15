@@ -92,7 +92,7 @@ pub fn setup_logging_and_tracing(
     #[cfg(not(any(test, feature = "testsuite")))]
     {
         metrics_exporter_dogstatsd::DogStatsDBuilder::default()
-            .set_global_prefix("cloudprem.")
+            .set_global_prefix("cloudprem")
             .with_global_labels(vec![::metrics::Label::new(
                 "version",
                 build_info.version.clone(),
