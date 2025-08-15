@@ -16,10 +16,14 @@ use std::time::Duration;
 
 use hyper::{Method, Request, StatusCode};
 use hyper_util::rt::TokioExecutor;
+use metrics_util::debugging::DebuggingRecorder;
 use quickwit_config::service::QuickwitService;
+use quickwit_rest_client::rest_client::CommitType;
 use quickwit_serve::SearchRequestQueryString;
+use serde_json::json;
 
-use crate::test_utils::ClusterSandboxBuilder;
+use crate::ingest_json;
+use crate::test_utils::{ClusterSandboxBuilder, ingest};
 
 #[tokio::test]
 async fn test_ui_redirect_on_get() {
@@ -159,6 +163,97 @@ async fn test_multi_nodes_cluster() {
         .await
         .unwrap();
     assert_eq!(search_response_empty.num_hits, 0);
+
+    sandbox.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn test_metrics() {
+    let recorder = DebuggingRecorder::new();
+    let snapshotter = recorder.snapshotter();
+
+    let _ = metrics::set_global_recorder(Box::leak(Box::new(recorder)));
+    let sandbox = ClusterSandboxBuilder::build_and_start_standalone().await;
+    let index_id = "test-metrics-index";
+
+    sandbox
+        .rest_client(QuickwitService::Indexer)
+        .indexes()
+        .create(
+            r#"
+            version: 0.8
+            index_id: test-metrics-index
+            doc_mapping:
+                field_mappings:
+                - name: body
+                  type: text
+            "#,
+            quickwit_config::ConfigFormat::Yaml,
+            false,
+        )
+        .await
+        .unwrap();
+
+    sandbox
+        .rest_client(QuickwitService::Indexer)
+        .search(
+            index_id,
+            SearchRequestQueryString {
+                query: "body:test".to_string(),
+                max_hits: 10,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+    ingest(
+        &sandbox.rest_client(QuickwitService::Indexer),
+        index_id,
+        ingest_json!({"body": "first record"}),
+        CommitType::Force,
+    )
+    .await
+    .unwrap();
+
+    sandbox
+        .rest_client(QuickwitService::Indexer)
+        .indexes()
+        .delete(index_id, false)
+        .await
+        .unwrap();
+
+    #[allow(clippy::mutable_key_type)]
+    let metrics = snapshotter.snapshot().into_hashmap();
+    let metric_composite_keys = metrics.keys().collect::<Vec<_>>();
+
+    let expected_metrics = [
+        "indexed_events_bytes.count",
+        "indexed_events.count",
+        "mem.allocated_bytes.gauge",
+        "metastore_requests.count",
+        "metastore_requests.duration_seconds",
+        "object_storage_delete_requests.count",
+        "object_storage_get_requests_bytes.count",
+        "object_storage_get_requests.count",
+        "object_storage_put_requests_bytes.count",
+        "object_storage_put_requests.count",
+        "pending_merge_ops.gauge",
+        "search_requests.count",
+        "search_requests.duration_seconds",
+    ];
+    let mut found_metrics = Vec::new();
+
+    for composite_key in metric_composite_keys {
+        found_metrics.push(composite_key.key().name());
+    }
+
+    for metric in expected_metrics {
+        assert!(
+            found_metrics.contains(&metric),
+            "metric `{metric}` not found"
+        );
+    }
 
     sandbox.shutdown().await.unwrap();
 }

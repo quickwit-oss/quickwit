@@ -187,21 +187,18 @@ fn test_integrations_processor() {
         //continue;
         //}
         let file_name_without_extension = file_name.trim_end_matches(".yaml");
-        let test_file_name = format!("{}_tests.yaml", file_name_without_extension);
-        let test_file_path = format!("./integrations/{}", test_file_name);
+        let test_file_name = format!("{file_name_without_extension}_tests.yaml");
+        let test_file_path = format!("./integrations/{test_file_name}");
         // Load the test file
         let test_file_content = std::fs::read_to_string(&test_file_path).unwrap_or_else(|_| {
-            panic!(
-                "Test file {} not found for integration {}",
-                test_file_name, file_name
-            )
+            panic!("Test file {test_file_name} not found for integration {file_name}")
         });
         // Deserialize the test file
         let test_suite = match serde_yaml::from_str::<TestSuite>(&test_file_content) {
             Ok(test_suite) => test_suite,
             Err(e) => {
                 // Some tests are messy and contain weird stuff
-                println!("Failed to parse test file {}: {}", test_file_name, e);
+                println!("Failed to parse test file {test_file_name}: {e}");
                 continue;
             }
         };
@@ -236,18 +233,18 @@ fn test_integrations_processor() {
 
         if num_test_cases_fully_succeeded == num_tests_integration {
             println!(
-                "✅ {}: {}/{} tests matched",
-                file_name_without_extension, num_test_cases_fully_succeeded, num_tests_integration
+                "✅ {file_name_without_extension}: \
+                 {num_test_cases_fully_succeeded}/{num_tests_integration} tests matched"
             );
         } else if num_test_cases_fully_succeeded > 0 {
             println!(
-                "☑️ {}: {}/{} tests matched",
-                file_name_without_extension, num_test_cases_fully_succeeded, num_tests_integration
+                "☑️ {file_name_without_extension}: \
+                 {num_test_cases_fully_succeeded}/{num_tests_integration} tests matched"
             );
         } else {
             println!(
-                "⚠️ {}: {}/{} tests matched",
-                file_name_without_extension, num_test_cases_fully_succeeded, num_tests_integration
+                "⚠️ {file_name_without_extension}: \
+                 {num_test_cases_fully_succeeded}/{num_tests_integration} tests matched"
             );
         }
     }
@@ -258,8 +255,8 @@ fn test_integrations_processor() {
         "num sources where all checks in some tests pass {partial_supported_sources}/{num_sources}"
     );
     println!(
-        "num sources where each test has some failing checks {}/{num_sources}",
-        all_tests_failed_sources
+        "num sources where each test has some failing checks \
+         {all_tests_failed_sources}/{num_sources}"
     );
     check_counters.print();
 

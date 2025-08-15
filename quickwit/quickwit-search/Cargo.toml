@@ -20,6 +20,7 @@ fnv = { workspace = true }
 futures = { workspace = true }
 http = { workspace = true }
 itertools = { workspace = true }
+metrics = { workspace = true }
 mockall = { workspace = true }
 once_cell = { workspace = true }
 pin-project = { workspace = true }

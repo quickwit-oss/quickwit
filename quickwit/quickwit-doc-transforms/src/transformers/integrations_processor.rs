@@ -87,7 +87,7 @@ mod test {
                     }
                 }
             } else {
-                panic!("Expected NestedPipeline for source '{}'", source);
+                panic!("Expected NestedPipeline for source '{source}'");
             }
         }
     }

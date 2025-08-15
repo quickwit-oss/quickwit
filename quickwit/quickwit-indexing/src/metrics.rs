@@ -12,16 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use metrics::{Counter, counter};
+use metrics::{Gauge, gauge};
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
-    IntCounter, IntCounterVec, IntGauge, IntGaugeVec, new_counter, new_counter_vec, new_gauge,
-    new_gauge_vec,
+    DDCounters, IntCounter, IntCounterVec, IntGauge, IntGaugeVec, new_counter, new_counter_vec,
+    new_gauge, new_gauge_vec,
 };
 
 pub struct IndexerMetrics {
     pub processed_docs_total: IntCounterVec<2>,
-    pub dd_processed_docs_count: Counter,
     pub processed_bytes: IntCounterVec<2>,
     pub backpressure_micros: IntCounterVec<1>,
     pub available_concurrent_upload_permits: IntGaugeVec<1>,
@@ -32,6 +31,10 @@ pub struct IndexerMetrics {
     // We use a lazy counter, as most users do not use Kafka.
     #[cfg_attr(not(feature = "kafka"), allow(dead_code))]
     pub kafka_rebalance_total: Lazy<IntCounter>,
+
+    pub dd_indexed_events: DDCounters,
+    pub dd_indexed_events_bytes: DDCounters,
+    pub dd_pending_merge_ops: Gauge,
 }
 
 impl Default for IndexerMetrics {
@@ -45,7 +48,6 @@ impl Default for IndexerMetrics {
                 &[],
                 ["index", "docs_processed_status"],
             ),
-            dd_processed_docs_count: counter!("processed_docs.count"),
             processed_bytes: new_counter_vec(
                 "processed_bytes",
                 "Number of bytes of processed documents by index, source and processed status in \
@@ -101,6 +103,31 @@ impl Default for IndexerMetrics {
                     &[],
                 )
             }),
+            dd_indexed_events: DDCounters::new(
+                "indexed_events.count",
+                "indexing_status",
+                &[
+                    "valid",
+                    "schema_error",
+                    "processing_pipeline_error",
+                    "transform_error",
+                    "json_parse_error",
+                    "otlp_parse_error",
+                ],
+            ),
+            dd_indexed_events_bytes: DDCounters::new(
+                "indexed_events_bytes.count",
+                "indexing_status",
+                &[
+                    "valid",
+                    "schema_error",
+                    "processing_pipeline_error",
+                    "transform_error",
+                    "json_parse_error",
+                    "otlp_parse_error",
+                ],
+            ),
+            dd_pending_merge_ops: gauge!("pending_merge_ops.gauge"),
         }
     }
 }

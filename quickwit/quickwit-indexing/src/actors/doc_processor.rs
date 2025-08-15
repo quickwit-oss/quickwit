@@ -96,7 +96,7 @@ pub enum DocProcessorError {
     OltpLogsParsing(OtlpLogsError),
     #[error("OLTP traces parse error: {0}")]
     OltpTracesParsing(OtlpTracesError),
-    #[error("Pipeline error: {0}")]
+    #[error("processing error: {0}")]
     Pipeline(PipelineError),
     #[cfg(feature = "vrl")]
     #[error("VRL transform error: {0}")]
@@ -225,13 +225,15 @@ fn parse_raw_doc(
         }
         let Ok(json_value) = serde_json::to_value(processed_log) else {
             return Err(DocProcessorError::JsonParsing(
-                "Failed to serialize processed_log into json value. This should never happen"
+                "failed to serialize processed log into JSON value. This should never happen, \
+                 please report"
                     .to_string(),
             ));
         };
         let JsonValue::Object(json_obj) = json_value else {
             return Err(DocProcessorError::JsonParsing(
-                "Serialized processed log was not a a json obj. This should never happen!"
+                "serialized processed log was not a a JSON object. This should never happen, \
+                 please report"
                     .to_string(),
             ));
         };
@@ -307,7 +309,8 @@ pub struct DocProcessorCounter {
     pub num_docs: AtomicU64,
     pub num_docs_metric: IntCounter,
     pub num_bytes_metric: IntCounter,
-    pub dd_num_docs_metric: Counter,
+    pub dd_indexed_events_metric: Counter,
+    pub dd_indexed_bytes_metric: Counter,
 }
 
 impl Serialize for DocProcessorCounter {
@@ -321,6 +324,7 @@ impl DocProcessorCounter {
     fn for_index_and_doc_processor_outcome(index: &str, outcome: &str) -> DocProcessorCounter {
         let index_label = quickwit_common::metrics::index_label(index);
         let labels = [index_label, outcome];
+
         DocProcessorCounter {
             num_docs: Default::default(),
             num_docs_metric: crate::metrics::INDEXER_METRICS
@@ -329,8 +333,13 @@ impl DocProcessorCounter {
             num_bytes_metric: crate::metrics::INDEXER_METRICS
                 .processed_bytes
                 .with_label_values(labels),
-            dd_num_docs_metric: crate::metrics::INDEXER_METRICS
-                .dd_processed_docs_count
+            dd_indexed_events_metric: crate::metrics::INDEXER_METRICS
+                .dd_indexed_events
+                .get(outcome)
+                .clone(),
+            dd_indexed_bytes_metric: crate::metrics::INDEXER_METRICS
+                .dd_indexed_events_bytes
+                .get(outcome)
                 .clone(),
         }
     }
@@ -344,7 +353,8 @@ impl DocProcessorCounter {
         self.num_docs.fetch_add(1, Ordering::Relaxed);
         self.num_docs_metric.inc();
         self.num_bytes_metric.inc_by(num_bytes);
-        self.dd_num_docs_metric.increment(1);
+        self.dd_indexed_events_metric.increment(1);
+        self.dd_indexed_bytes_metric.increment(num_bytes);
     }
 }
 
@@ -363,7 +373,7 @@ pub struct DocProcessorCounters {
     /// - number of valid docs.
     pub valid: DocProcessorCounter,
     pub doc_mapper_errors: DocProcessorCounter,
-    pub pipeline_errors: DocProcessorCounter,
+    pub processing_pipeline_errors: DocProcessorCounter,
     pub transform_errors: DocProcessorCounter,
     pub json_parse_errors: DocProcessorCounter,
     pub otlp_parse_errors: DocProcessorCounter,
@@ -381,8 +391,10 @@ impl DocProcessorCounters {
             DocProcessorCounter::for_index_and_doc_processor_outcome(&index_id, "valid");
         let doc_mapper_errors =
             DocProcessorCounter::for_index_and_doc_processor_outcome(&index_id, "doc_mapper_error");
-        let pipeline_errors =
-            DocProcessorCounter::for_index_and_doc_processor_outcome(&index_id, "pipeline_error");
+        let processing_pipeline_errors = DocProcessorCounter::for_index_and_doc_processor_outcome(
+            &index_id,
+            "processing_pipeline_error",
+        );
         let transform_errors =
             DocProcessorCounter::for_index_and_doc_processor_outcome(&index_id, "transform_error");
         let json_parse_errors =
@@ -395,7 +407,7 @@ impl DocProcessorCounters {
 
             valid: valid_docs,
             doc_mapper_errors,
-            pipeline_errors,
+            processing_pipeline_errors,
             transform_errors,
             json_parse_errors,
             otlp_parse_errors,
@@ -407,6 +419,7 @@ impl DocProcessorCounters {
     pub fn num_processed_docs(&self) -> u64 {
         self.valid.get_num_docs()
             + self.doc_mapper_errors.get_num_docs()
+            + self.processing_pipeline_errors.get_num_docs()
             + self.json_parse_errors.get_num_docs()
             + self.otlp_parse_errors.get_num_docs()
             + self.transform_errors.get_num_docs()
@@ -417,6 +430,7 @@ impl DocProcessorCounters {
     /// their format was invalid)
     pub fn num_invalid_docs(&self) -> u64 {
         self.doc_mapper_errors.get_num_docs()
+            + self.processing_pipeline_errors.get_num_docs()
             + self.json_parse_errors.get_num_docs()
             + self.otlp_parse_errors.get_num_docs()
             + self.transform_errors.get_num_docs()
@@ -440,7 +454,7 @@ impl DocProcessorCounters {
                 self.otlp_parse_errors.record_doc(num_bytes);
             }
             DocProcessorError::Pipeline(_) => {
-                self.pipeline_errors.record_doc(num_bytes);
+                self.processing_pipeline_errors.record_doc(num_bytes);
             }
             #[cfg(feature = "vrl")]
             DocProcessorError::Transform(_) => {

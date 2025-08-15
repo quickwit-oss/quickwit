@@ -17,9 +17,9 @@
 use bytesize::ByteSize;
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
-    Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, exponential_buckets,
-    linear_buckets, new_counter, new_counter_vec, new_gauge, new_gauge_vec, new_histogram,
-    new_histogram_vec,
+    DDCounters, DDHistograms, Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge,
+    exponential_buckets, linear_buckets, new_counter, new_counter_vec, new_gauge, new_gauge_vec,
+    new_histogram, new_histogram_vec,
 };
 
 pub struct SearchMetrics {
@@ -36,6 +36,9 @@ pub struct SearchMetrics {
     pub leaf_search_single_split_tasks_ongoing: IntGauge,
     pub leaf_search_single_split_warmup_num_bytes: Histogram,
     pub searcher_local_kv_store_size_bytes: IntGauge,
+
+    pub dd_root_search_requests_total: DDCounters,
+    pub dd_root_search_request_duration_seconds: DDHistograms,
 }
 
 /// From 0.008s to 131.072s
@@ -159,6 +162,28 @@ impl Default for SearchMetrics {
                  contexts.",
                 "search",
                 &[],
+            ),
+            dd_root_search_requests_total: DDCounters::new(
+                "search_requests.count",
+                "status",
+                &[
+                    "success",
+                    "error",
+                    "cancelled",
+                    "plan-error",
+                    "plan-cancelled",
+                ],
+            ),
+            dd_root_search_request_duration_seconds: DDHistograms::new(
+                "search_requests.duration_seconds",
+                "status",
+                &[
+                    "success",
+                    "error",
+                    "cancelled",
+                    "plan-error",
+                    "plan-cancelled",
+                ],
             ),
         }
     }

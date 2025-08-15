@@ -82,6 +82,14 @@ impl<F> PinnedDrop for RootSearchMetricsFuture<F> {
             .root_search_targeted_splits
             .with_label_values(label_values)
             .observe(num_targeted_splits as f64);
+        SEARCH_METRICS
+            .dd_root_search_requests_total
+            .get(status)
+            .increment(1);
+        SEARCH_METRICS
+            .dd_root_search_request_duration_seconds
+            .get(status)
+            .record(self.start.elapsed().as_secs_f64());
     }
 }
 

@@ -89,12 +89,12 @@ async fn main_impl() -> anyhow::Result<()> {
         }
     };
 
-    #[cfg(feature = "jemalloc")]
-    start_jemalloc_metrics_loop();
-
     let build_info = BuildInfo::get();
     let env_filter_reload_fn =
         setup_logging_and_tracing(command.default_log_level(), ansi_colors, build_info)?;
+
+    #[cfg(feature = "jemalloc")]
+    start_jemalloc_metrics_loop();
 
     let return_code: i32 = if let Err(command_error) = command.execute(env_filter_reload_fn).await {
         error!(error=%command_error, "command failed");

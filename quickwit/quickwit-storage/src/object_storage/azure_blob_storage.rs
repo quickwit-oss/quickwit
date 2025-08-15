@@ -246,6 +246,10 @@ impl AzureBlobStorage {
         crate::STORAGE_METRICS
             .object_storage_upload_num_bytes
             .inc_by(payload.len());
+        crate::STORAGE_METRICS
+            .dd_object_storage_put_bytes_total
+            .increment(payload.len());
+
         retry(&self.retry_params, || async {
             let data = Bytes::from(payload.read_all().await?.to_vec());
             let hash = azure_storage_blobs::prelude::Hash::from(md5::compute(&data[..]).0);
@@ -282,6 +286,10 @@ impl AzureBlobStorage {
                 crate::STORAGE_METRICS
                     .object_storage_upload_num_bytes
                     .inc_by(range.end - range.start);
+                crate::STORAGE_METRICS
+                    .dd_object_storage_put_bytes_total
+                    .increment(range.end - range.start);
+
                 async move {
                     retry(&self.retry_params, || async {
                         let block_id = format!("block:{num}");
@@ -345,6 +353,9 @@ impl Storage for AzureBlobStorage {
         payload: Box<dyn crate::PutPayload>,
     ) -> crate::StorageResult<()> {
         crate::STORAGE_METRICS.object_storage_put_total.inc();
+        crate::STORAGE_METRICS
+            .dd_object_storage_put_total
+            .increment(1);
         let name = self.blob_name(path);
         let total_len = payload.len();
         let part_num_bytes = self.multipart_policy.part_num_bytes(total_len);

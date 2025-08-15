@@ -52,6 +52,7 @@ pub async fn jemalloc_metrics_loop() -> tikv_jemalloc_ctl::Result<()> {
 
         let allocated = allocated_mib.read()?;
         memory_metrics.allocated_bytes.set(allocated as i64);
+        memory_metrics.dd_allocated_bytes.set(allocated as f64);
 
         let resident = resident_mib.read()?;
         memory_metrics.resident_bytes.set(resident as i64);

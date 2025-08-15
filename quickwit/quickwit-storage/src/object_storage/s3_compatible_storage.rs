@@ -291,6 +291,9 @@ impl S3CompatibleObjectStorage {
         crate::STORAGE_METRICS
             .object_storage_upload_num_bytes
             .inc_by(len);
+        crate::STORAGE_METRICS
+            .dd_object_storage_put_bytes_total
+            .increment(len);
 
         self.s3_client
             .put_object()
@@ -426,6 +429,9 @@ impl S3CompatibleObjectStorage {
         crate::STORAGE_METRICS
             .object_storage_upload_num_bytes
             .inc_by(part.len());
+        crate::STORAGE_METRICS
+            .dd_object_storage_put_bytes_total
+            .increment(part.len());
 
         let upload_part_output = self
             .s3_client
@@ -546,6 +552,9 @@ impl S3CompatibleObjectStorage {
         let range_str = range_opt.map(|range| format!("bytes={}-{}", range.start, range.end - 1));
 
         crate::STORAGE_METRICS.object_storage_get_total.inc();
+        crate::STORAGE_METRICS
+            .dd_object_storage_get_bytes_total
+            .increment(1);
 
         let get_object_output = self
             .s3_client
@@ -555,6 +564,12 @@ impl S3CompatibleObjectStorage {
             .set_range(range_str)
             .send()
             .await?;
+
+        let num_bytes = get_object_output.content_length.unwrap_or(0);
+        crate::STORAGE_METRICS
+            .dd_object_storage_get_bytes_total
+            .increment(num_bytes as u64);
+
         Ok(get_object_output)
     }
 
@@ -644,6 +659,9 @@ impl S3CompatibleObjectStorage {
                     crate::STORAGE_METRICS
                         .object_storage_bulk_delete_requests_total
                         .inc();
+                    crate::STORAGE_METRICS
+                        .dd_object_storage_delete_total
+                        .increment(path_chunk.len() as u64);
                     let _timer = crate::STORAGE_METRICS
                         .object_storage_bulk_delete_request_duration
                         .start_timer();
@@ -746,6 +764,9 @@ impl Storage for S3CompatibleObjectStorage {
         payload: Box<dyn crate::PutPayload>,
     ) -> crate::StorageResult<()> {
         crate::STORAGE_METRICS.object_storage_put_total.inc();
+        crate::STORAGE_METRICS
+            .dd_object_storage_put_total
+            .increment(1);
         let _permit = REQUEST_SEMAPHORE.acquire().await;
         let key = self.key(path);
         let total_len = payload.len();
@@ -780,6 +801,9 @@ impl Storage for S3CompatibleObjectStorage {
             crate::STORAGE_METRICS
                 .object_storage_delete_requests_total
                 .inc();
+            crate::STORAGE_METRICS
+                .dd_object_storage_delete_total
+                .increment(1);
             let _timer = crate::STORAGE_METRICS
                 .object_storage_delete_request_duration
                 .start_timer();

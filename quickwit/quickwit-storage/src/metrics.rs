@@ -14,6 +14,7 @@
 
 // See https://prometheus.io/docs/practices/naming/
 
+use metrics::{Counter, counter};
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
     GaugeGuard, Histogram, IntCounter, IntCounterVec, IntGauge, new_counter, new_counter_vec,
@@ -43,6 +44,12 @@ pub struct StorageMetrics {
     pub object_storage_bulk_delete_requests_total: IntCounter,
     pub object_storage_delete_request_duration: Histogram,
     pub object_storage_bulk_delete_request_duration: Histogram,
+
+    pub dd_object_storage_get_total: Counter,
+    pub dd_object_storage_get_bytes_total: Counter,
+    pub dd_object_storage_put_total: Counter,
+    pub dd_object_storage_put_bytes_total: Counter,
+    pub dd_object_storage_delete_total: Counter,
 }
 
 impl Default for StorageMetrics {
@@ -153,6 +160,12 @@ impl Default for StorageMetrics {
             object_storage_bulk_delete_requests_total,
             object_storage_delete_request_duration,
             object_storage_bulk_delete_request_duration,
+
+            dd_object_storage_get_total: counter!("object_storage_get_requests.count",),
+            dd_object_storage_get_bytes_total: counter!("object_storage_get_requests_bytes.count",),
+            dd_object_storage_put_total: counter!("object_storage_put_requests.count",),
+            dd_object_storage_put_bytes_total: counter!("object_storage_put_requests_bytes.count",),
+            dd_object_storage_delete_total: counter!("object_storage_delete_requests.count",),
         }
     }
 }

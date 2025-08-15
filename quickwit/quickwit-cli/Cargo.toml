@@ -33,6 +33,8 @@ futures = { workspace = true }
 humantime = { workspace = true }
 indicatif = { workspace = true }
 itertools = { workspace = true }
+metrics = { workspace = true }
+metrics-exporter-dogstatsd = { workspace = true }
 numfmt = { workspace = true }
 once_cell = { workspace = true }
 openssl-probe = { workspace = true, optional = true }
@@ -88,6 +90,7 @@ jemalloc-profiled = [
   "quickwit-serve/jemalloc-profiled"
 ]
 ci-test = []
+testsuite = []
 pprof = ["quickwit-serve/pprof"]
 openssl-support = ["openssl-probe"]
 # Requires to enable tokio unstable via RUSTFLAGS="--cfg tokio_unstable"

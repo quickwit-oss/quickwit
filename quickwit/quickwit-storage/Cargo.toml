@@ -22,6 +22,7 @@ http-body-util = { workspace = true}
 hyper = { workspace = true }
 lru = { workspace = true }
 md5 = { workspace = true }
+metrics = { workspace = true }
 mockall = { workspace = true, optional = true }
 once_cell = { workspace = true }
 pin-project = { workspace = true }

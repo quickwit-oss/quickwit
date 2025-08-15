@@ -69,8 +69,8 @@ use quickwit_common::retry::RetryParams;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::tower::{
     BalanceChannel, BoxFutureInfaillible, BufferLayer, Change, CircuitBreakerEvaluator,
-    ConstantRate, EstimateRateLayer, EventListenerLayer, GrpcMetricsLayer, LoadShedLayer,
-    RateLimitLayer, RetryLayer, RetryPolicy, SmaRateEstimator, TimeoutLayer,
+    ConstantRate, DDGrpcMetricsLayer, EstimateRateLayer, EventListenerLayer, GrpcMetricsLayer,
+    LoadShedLayer, RateLimitLayer, RetryLayer, RetryPolicy, SmaRateEstimator, TimeoutLayer,
 };
 use quickwit_common::uri::Uri;
 use quickwit_common::{get_bool_from_env, spawn_named_task};
@@ -172,6 +172,9 @@ static METASTORE_GRPC_CLIENT_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
     Lazy::new(|| GrpcMetricsLayer::new("metastore", "client"));
 static METASTORE_GRPC_SERVER_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
     Lazy::new(|| GrpcMetricsLayer::new("metastore", "server"));
+
+static METASTORE_DD_GRPC_SERVER_METRICS_LAYER: Lazy<DDGrpcMetricsLayer> =
+    Lazy::new(DDGrpcMetricsLayer::for_metastore);
 
 static GRPC_INGESTER_SERVICE_TIMEOUT: Duration = Duration::from_secs(30);
 static GRPC_INDEXING_SERVICE_TIMEOUT: Duration = Duration::from_secs(30);
@@ -481,6 +484,7 @@ pub async fn serve_quickwit(
             // These layers apply to all the RPCs of the metastore.
             let shared_layer = ServiceBuilder::new()
                 .layer(METASTORE_GRPC_SERVER_METRICS_LAYER.clone())
+                .layer(METASTORE_DD_GRPC_SERVER_METRICS_LAYER.clone())
                 .layer(LoadShedLayer::new(max_in_flight_requests))
                 .into_inner();
             let broker_layer = EventListenerLayer::new(event_broker.clone());
@@ -732,7 +736,7 @@ pub async fn serve_quickwit(
     let cloudprem_listen_addr = node_config.cloudprem_listen_addr;
     let rest_listen_addr = node_config.rest_config.listen_addr;
     let quickwit_services: Arc<QuickwitServices> = Arc::new(QuickwitServices {
-        node_config: Arc::new(node_config),
+        node_config: Arc::new(node_config.clone()),
         cluster: cluster.clone(),
         metastore_server_opt,
         metastore_client: metastore_through_control_plane.clone(),
@@ -815,14 +819,6 @@ pub async fn serve_quickwit(
         rest_readiness_trigger,
         rest_shutdown_signal,
     );
-
-    #[cfg(not(any(test, feature = "testsuite")))]
-    {
-        metrics_exporter_dogstatsd::DogStatsDBuilder::default()
-            .set_global_prefix("pomsky")
-            .install()
-            .expect("failed to install DogStatsD recorder");
-    }
 
     // Node readiness indicates that the server is ready to receive requests.
     // Thus readiness task is started once gRPC and REST servers are started.

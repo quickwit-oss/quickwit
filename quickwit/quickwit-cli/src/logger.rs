@@ -89,6 +89,18 @@ pub fn setup_logging_and_tracing(
     ]);
     global::set_text_map_propagator(composite_propagator);
 
+    #[cfg(not(any(test, feature = "testsuite")))]
+    {
+        metrics_exporter_dogstatsd::DogStatsDBuilder::default()
+            .set_global_prefix("cloudprem.")
+            .with_global_labels(vec![::metrics::Label::new(
+                "version",
+                build_info.version.clone(),
+            )])
+            .install()
+            .context("failed to register DogStatsD exporter")?;
+    }
+
     let event_format = EventFormat::get_from_env();
     let fmt_fields = event_format.format_fields();
     let registry = tracing_subscriber::registry();
@@ -112,6 +124,7 @@ pub fn setup_logging_and_tracing(
         level,
         reloadable_env_filter,
     )?;
+
     // Note on disabling ANSI characters: setting the ansi boolean on event format is insufficient.
     // It is thus set on layers, see https://github.com/tokio-rs/tracing/issues/1817
     if get_bool_from_env(QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY, false) {

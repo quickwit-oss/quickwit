@@ -169,6 +169,9 @@ impl MergeSchedulerService {
                 .pending_merge_operations
                 .set(self.pending_merge_queue.len() as i64);
             crate::metrics::INDEXER_METRICS
+                .dd_pending_merge_ops
+                .set(self.pending_merge_queue.len() as f64);
+            crate::metrics::INDEXER_METRICS
                 .pending_merge_bytes
                 .set(self.pending_merge_bytes as i64);
             match split_downloader_mailbox.try_send_message(merge_task) {
@@ -268,6 +271,9 @@ impl Handler<ScheduleMerge> for MergeSchedulerService {
         crate::metrics::INDEXER_METRICS
             .pending_merge_operations
             .set(self.pending_merge_queue.len() as i64);
+        crate::metrics::INDEXER_METRICS
+            .dd_pending_merge_ops
+            .set(self.pending_merge_queue.len() as f64);
         crate::metrics::INDEXER_METRICS
             .pending_merge_bytes
             .set(self.pending_merge_bytes as i64);

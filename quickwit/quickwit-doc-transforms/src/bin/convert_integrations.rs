@@ -53,7 +53,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Deserialize the YAML file to PipelineConfig
                 let content = fs::read_to_string(&path)?;
                 let integration: Integration = serde_yaml::from_str(&content)
-                    .map_err(|e| format!("Failed to parse YAML file {:?}: {}", path, e))?;
+                    .map_err(|e| format!("Failed to parse YAML file {path:?}: {e}"))?;
                 match integration.pipeline {
                     // All pipelines have simple filters on source
                     PipelineStepConfig::NestedPipeline {
@@ -78,41 +78,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             let unsupported_names: Vec<_> =
                                 unsupported_processors.iter().map(|p| p.name()).collect();
                             println!(
-                                "{}: ⚠️ Unsupported processors: {:?}",
-                                integration_name, unsupported_names
+                                "{integration_name}: ⚠️ Unsupported processors: \
+                                 {unsupported_names:?}"
                             );
                         } else {
-                            println!("{}: ✅ All processors are supported", integration_name);
+                            println!("{integration_name}: ✅ All processors are supported");
                         }
                     }
                     _ => {
                         panic!(
-                            "Unexpected pipeline step type in integration: {:?}",
-                            integration_name
+                            "Unexpected pipeline step type in integration: {integration_name:?}"
                         );
                     }
                 }
             } else {
-                println!("Skipping non-YAML file: {:?}", path);
+                println!("Skipping non-YAML file: {path:?}");
             }
         } else {
-            println!("Skipping directory entry: {:?}", path);
+            println!("Skipping directory entry: {path:?}");
         }
     }
 
     for (processor, count) in &unsupported_processor_count {
         if *count > 0 {
-            println!(
-                "⚠️ Unsupported processor '{}' found {} times",
-                processor, count
-            );
+            println!("⚠️ Unsupported processor '{processor}' found {count} times");
         }
     }
 
     // Write the map to a file
     let output_path = "integrations_map.json";
     let json_content = serde_json::to_string_pretty(&pipeline_per_source)
-        .map_err(|e| format!("Failed to serialize map to JSON: {}", e))?;
+        .map_err(|e| format!("Failed to serialize map to JSON: {e}"))?;
     fs::write(output_path, json_content)?;
 
     Ok(())
@@ -120,7 +116,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn extract_source_values(query: &str) -> Vec<String> {
     let query_node =
-        QueryNode::from_str(query).unwrap_or_else(|_| panic!("Failed to parse query: {}", query));
+        QueryNode::from_str(query).unwrap_or_else(|_| panic!("Failed to parse query: {query}"));
 
     let mut source_values = Vec::new();
     match query_node {
@@ -146,12 +142,12 @@ fn extract_source_values(query: &str) -> Vec<String> {
                     );
                     source_values.push(value);
                 } else {
-                    panic!("Unsupported node type in boolean operation: {:?}", node);
+                    panic!("Unsupported node type in boolean operation: {node:?}");
                 }
             }
         }
         _ => {
-            panic!("Unsupported query node type: {:?}", query_node);
+            panic!("Unsupported query node type: {query_node:?}");
         }
     }
 

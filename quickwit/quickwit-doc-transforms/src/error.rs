@@ -17,27 +17,27 @@ use vrl::datadog_grok::parse_grok_rules::Error as GrokError;
 
 #[derive(Error, Debug)]
 pub enum PipelineError {
-    #[error("Failed to compile Grok pattern: {source}")]
+    #[error("failed to compile Grok pattern: {source}")]
     GrokCompile {
         #[from]
         source: GrokError,
     },
 
-    #[error("Failed to run Grok pattern: {message}")]
+    #[error("failed to run Grok pattern: {message}")]
     GrokParse { message: String },
 
-    #[error("Could not parse path: {source}")]
+    #[error("failed to parse path: {source}")]
     PathParseError {
         #[from]
         source: vrl::path::PathParseError,
     },
 
-    #[error("Unsupported pipeline type: {typ}")]
+    #[error("unsupported pipeline type: {typ}")]
     UnsupportedType { typ: String },
 
-    #[error("Other pipeline error: {error}")]
+    #[error("other pipeline error: {error}")]
     Other { error: String },
 
-    #[error("Could not parse query: {message}")]
+    #[error("failed to parse query: {message}")]
     QueryParse { message: String },
 }
