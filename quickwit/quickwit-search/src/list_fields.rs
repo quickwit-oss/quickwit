@@ -21,6 +21,7 @@ use anyhow::Context;
 use futures::future;
 use futures::future::try_join_all;
 use itertools::Itertools;
+use once_cell::sync::OnceCell;
 use quickwit_common::shared_consts::SPLIT_FIELDS_FILE_NAME;
 use quickwit_common::uri::Uri;
 use quickwit_metastore::SplitMetadata;
@@ -36,6 +37,19 @@ use crate::leaf::open_split_bundle;
 use crate::search_job_placer::group_jobs_by_index_id;
 use crate::service::SearcherContext;
 use crate::{ClusterClient, SearchError, SearchJob, list_relevant_splits, resolve_index_patterns};
+
+/// QW_FIELD_LIST_SIZE_LIMIT defines a hard limit on the number of fields that
+/// can be returned (error otherwise).
+///
+/// Having many fields can happen when a user is creating fields dynamically in
+/// a JSON type with random field names. This leads to huge memory consumption
+/// when building the response. This is a workaround until a way is found to
+/// prune the long tail of rare fields.
+fn get_field_list_size_limit() -> usize {
+    static FIELD_LIST_SIZE_LIMIT: OnceCell<usize> = OnceCell::new();
+    *FIELD_LIST_SIZE_LIMIT
+        .get_or_init(|| quickwit_common::get_from_env("QW_FIELD_LIST_SIZE_LIMIT", 100_000))
+}
 
 /// Get the list of splits for the request which we need to scan.
 pub async fn get_fields_from_split(
@@ -183,6 +197,12 @@ fn merge_leaf_list_fields(
             if last.field_name != entry.field_name || last.field_type != entry.field_type {
                 flush_group(&mut responses, &mut current_group);
             }
+        }
+        if responses.len() >= get_field_list_size_limit() {
+            return Err(SearchError::Internal(format!(
+                "list fields response exceeded {} fields",
+                get_field_list_size_limit()
+            )));
         }
         current_group.push(entry);
     }
