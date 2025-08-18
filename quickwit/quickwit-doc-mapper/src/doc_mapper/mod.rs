@@ -13,6 +13,7 @@
 // limitations under the License.
 
 mod date_time_type;
+mod deser_num;
 mod doc_mapper_builder;
 mod doc_mapper_impl;
 mod field_mapping_entry;
