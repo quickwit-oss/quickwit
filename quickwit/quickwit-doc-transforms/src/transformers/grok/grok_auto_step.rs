@@ -34,7 +34,11 @@ pub struct GrokParserAutoStep {
 impl PipelineStep for GrokParserAutoStep {
     fn apply(&self, processed_log: &mut ProcessedLog) -> crate::Result<()> {
         let log_line = &processed_log.message;
-        let Some(grok_rules) = self.grok_rules_by_source.get(&processed_log.source) else {
+        let Some(source) = processed_log.source.as_ref() else {
+            // If the source is not set, we cannot apply grok parsing.
+            return Ok(());
+        };
+        let Some(grok_rules) = self.grok_rules_by_source.get(source) else {
             return Ok(());
         };
         let result = parse_grok(log_line, grok_rules);

@@ -603,7 +603,7 @@ mod tests {
     #[test]
     fn test_process_logs2() {
         let mut agent_log = ProcessedLog::from_datadog_log_msg(make_datadog_log_msg());
-        agent_log.service = "appgate_driver_logs".into();
+        agent_log.service = Some("appgate_driver_logs".to_string());
         agent_log.message = "[2025-02-10T19:26:46.419Z] Info : Resolved excluded host: \
                              ec2-54-87-69-251.compute-1.amazonaws.com / 54.87.69.25"
             .into();
@@ -618,7 +618,7 @@ mod tests {
 
         // Test with service appgate_app_logs
         let mut agent_log = ProcessedLog::from_datadog_log_msg(make_datadog_log_msg());
-        agent_log.service = "appgate_app_logs".into();
+        agent_log.service = Some("appgate_app_logs".to_string());
         agent_log.message = "[2025-02-10T19:26:46.419Z] Info : Resolved excluded host: \
                              ec2-54-87-69-251.compute-1.amazonaws.com / 54.87.69.25"
             .into();

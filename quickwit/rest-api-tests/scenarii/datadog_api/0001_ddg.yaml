@@ -16,7 +16,7 @@ params:
 expected:
   num_hits: 0
 ---
-# Missing "service" field returns BAD_REQUEST
+# Only message is required
 method: POST
 endpoint: /api/v2/logs
 headers:
@@ -24,13 +24,8 @@ headers:
 data: |
   [
     {
-      "message": "Test log message",
-      "status": "INFO",
-      "timestamp": 1740411608806,
-      "hostname": "test-host",
-      "ddsource": "rust",
-      "ddtags": "env:dev,region:us-east"
+      "message": "Test log message"
     }
   ]
-status_code: 400
+status_code: 200
 
