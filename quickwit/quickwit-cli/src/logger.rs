@@ -91,12 +91,21 @@ pub fn setup_logging_and_tracing(
 
     #[cfg(not(any(test, feature = "testsuite")))]
     {
+        let host = quickwit_common::get_from_env::<String>(
+            "CLOUDPREM_DOGSTATSD_SERVER_HOST",
+            "127.0.0.1".to_string(),
+        );
+        let port = quickwit_common::get_from_env::<u16>("CLOUDPREM_DOGSTATSD_SERVER_PORT", 8125);
+        let addr = format!("{}:{}", host, port);
+
         metrics_exporter_dogstatsd::DogStatsDBuilder::default()
             .set_global_prefix("cloudprem")
             .with_global_labels(vec![::metrics::Label::new(
                 "version",
                 build_info.version.clone(),
             )])
+            .with_remote_address(addr)
+            .context("failed to parse DogStatsD server address")?
             .install()
             .context("failed to register DogStatsD exporter")?;
     }
