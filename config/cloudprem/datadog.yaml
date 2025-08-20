@@ -57,13 +57,13 @@ doc_mapping:
       fieldnorms: false
     - name: custom
       type: json
-      tokenizer: raw_lowercase
+      tokenizer: raw
       record: basic
       fast: true
 
     - name: tag # contains normalized tags, e.g {"env": "prod"}
       type: json
-      tokenizer: raw_lowercase
+      tokenizer: raw
       fast: true
       # We do not need to store tags in json format,
       # they are in the tags field
@@ -90,31 +90,31 @@ doc_mapping:
     - name: service
       type: text
       indexed: true
-      tokenizer: raw_lowercase
+      tokenizer: raw
       record: basic
       fieldnorms: false
       fast: true
     - name: source
       type: text
-      tokenizer: raw_lowercase
+      tokenizer: raw
       fast: true
       fieldnorms: false
       record: basic
     - name: service_type
       type: text
-      tokenizer: raw_lowercase
+      tokenizer: raw
       fast: true
       fieldnorms: false
       record: basic
     - name: status
       type: text
-      tokenizer: raw_lowercase
+      tokenizer: raw
       fast: true
       record: basic
       fieldnorms: false
     - name: host
       type: text
-      tokenizer: raw_lowercase
+      tokenizer: raw
       fast: true
       record: basic
       fieldnorms: false
@@ -153,6 +153,7 @@ doc_mapping:
         - trace_id
         - span_id
         - custom
+      # this is not an error: the all field is case insensitive.
       tokenizer: raw_lowercase
       record: basic
     # ----------------------------------
