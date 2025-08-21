@@ -89,27 +89,6 @@ pub fn setup_logging_and_tracing(
     ]);
     global::set_text_map_propagator(composite_propagator);
 
-    #[cfg(not(any(test, feature = "testsuite")))]
-    {
-        let host = quickwit_common::get_from_env::<String>(
-            "CLOUDPREM_DOGSTATSD_SERVER_HOST",
-            "127.0.0.1".to_string(),
-        );
-        let port = quickwit_common::get_from_env::<u16>("CLOUDPREM_DOGSTATSD_SERVER_PORT", 8125);
-        let addr = format!("{}:{}", host, port);
-
-        metrics_exporter_dogstatsd::DogStatsDBuilder::default()
-            .set_global_prefix("cloudprem")
-            .with_global_labels(vec![::metrics::Label::new(
-                "version",
-                build_info.version.clone(),
-            )])
-            .with_remote_address(addr)
-            .context("failed to parse DogStatsD server address")?
-            .install()
-            .context("failed to register DogStatsD exporter")?;
-    }
-
     let event_format = EventFormat::get_from_env();
     let fmt_fields = event_format.format_fields();
     let registry = tracing_subscriber::registry();
@@ -174,6 +153,45 @@ pub fn setup_logging_and_tracing(
         reload_handle.reload(new_env_filter)?;
         Ok(())
     }))
+}
+
+#[cfg(not(any(test, feature = "testsuite")))]
+pub fn setup_dogstatsd_exporter(build_info: &BuildInfo) -> anyhow::Result<()> {
+    let host = quickwit_common::get_from_env::<String>(
+        "CLOUDPREM_DOGSTATSD_SERVER_HOST",
+        "127.0.0.1".to_string(),
+    );
+    let port = quickwit_common::get_from_env::<u16>("CLOUDPREM_DOGSTATSD_SERVER_PORT", 8125);
+    let addr = format!("{host}:{port}");
+
+    let mut global_labels = vec![::metrics::Label::new("version", build_info.version.clone())];
+    let keys = [
+        ("KUBERNETES_POD_NAME", "kube_pod_name"),
+        ("KUBERNETES_POD_INDEX", "kube_pod_index"),
+        ("KUBERNETES_COMPONENT", "kube_component"),
+        ("KUBERNETES_NAMESPACE", "kube_namespace"),
+        ("KUBERNETES_APP_NAME", "kube_app_name"),
+        ("KUBERNETES_APP_INSTANCE", "kube_app_instance"),
+        ("CLOUDPREM_NODE_ID", "cloudprem_node_id"),
+        ("CLOUDPREM_CLUSTER_ID", "cloudprem_cluster_id"),
+        ("IMAGE_NAME", "image_name"),
+        ("IMAGE_TAG", "image_tag"),
+    ];
+
+    for (env_var_key, label_key) in keys {
+        if let Some(label_val) = quickwit_common::get_from_env_opt::<String>(env_var_key) {
+            global_labels.push(::metrics::Label::new(label_key, label_val));
+        }
+    }
+
+    metrics_exporter_dogstatsd::DogStatsDBuilder::default()
+        .set_global_prefix("cloudprem")
+        .with_global_labels(global_labels)
+        .with_remote_address(addr)
+        .context("failed to parse DogStatsD server address")?
+        .install()
+        .context("failed to register DogStatsD exporter")?;
+    Ok(())
 }
 
 #[derive(Debug)]

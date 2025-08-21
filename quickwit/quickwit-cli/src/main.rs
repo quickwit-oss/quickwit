@@ -93,6 +93,9 @@ async fn main_impl() -> anyhow::Result<()> {
     let env_filter_reload_fn =
         setup_logging_and_tracing(command.default_log_level(), ansi_colors, build_info)?;
 
+    #[cfg(not(any(test, feature = "testsuite")))]
+    quickwit_cli::logger::setup_dogstatsd_exporter(build_info)?;
+
     #[cfg(feature = "jemalloc")]
     start_jemalloc_metrics_loop();
 
