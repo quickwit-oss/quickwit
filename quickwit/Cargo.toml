@@ -285,6 +285,7 @@ tracing-subscriber = { version = "0.3", features = [
 ttl_cache = "0.5"
 typetag = "0.2"
 ulid = "1.2"
+uaparser = "0.6.4"
 urlencoding = "2"
 username = "0.2"
 utoipa = { version = "4.2", features = ["time", "ulid"] }

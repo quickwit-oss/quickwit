@@ -20,6 +20,7 @@ pub mod grok;
 mod integrations_processor;
 mod status_remapper;
 mod string_builder;
+mod user_agent_parser;
 
 pub use attribute_remap::*;
 pub use category_processor::*;
@@ -29,6 +30,7 @@ pub use grok::*;
 pub use integrations_processor::*;
 pub use status_remapper::*;
 pub use string_builder::*;
+pub use user_agent_parser::*;
 use vrl::datadog_filter::Matcher;
 
 use crate::error::PipelineError;

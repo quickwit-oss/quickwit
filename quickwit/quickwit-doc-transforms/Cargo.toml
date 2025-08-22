@@ -20,7 +20,9 @@ serde_with = { workspace = true }
 time = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+uaparser = { workspace = true }
 uuid = { workspace = true }
+urlencoding = { workspace = true }
 vrl = { workspace = true }
 
 quickwit-common = { workspace = true }

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::str::FromStr;
 
@@ -28,7 +28,7 @@ struct Integration {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Store the config per source
-    let mut pipeline_per_source: HashMap<String, PipelineStepConfig> = HashMap::new();
+    let mut pipeline_per_source: BTreeMap<String, PipelineStepConfig> = Default::default();
     let mut files = fs::read_dir("integrations")
         .expect(
             "Failed to read integrations directory. Run the command in the root of \
