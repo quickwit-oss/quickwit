@@ -184,8 +184,13 @@ pub(crate) async fn maintain_websocket(
     loop {
         // TODO some errors should be fatal (invalid token)
         tracing::info!("new connection");
-        if let Err(e) =
-            single_websocket(&target, &dd_api_key, &dd_application_key, service.clone()).await
+        if let Err(e) = single_websocket(
+            &format!("wss://{target}/api/unstable/cloudprem-connection-gateway/connect"),
+            &dd_api_key,
+            &dd_application_key,
+            service.clone(),
+        )
+        .await
         {
             tracing::error!("error in reverse conn: {e:?}")
         }
