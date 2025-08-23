@@ -22,6 +22,7 @@ use anyhow::Context;
 use futures_util::future;
 use itertools::Itertools;
 use quickwit_actors::ActorExitStatus;
+use quickwit_cli::start_metrics_loops;
 use quickwit_cli::tool::{LocalIngestDocsArgs, local_ingest_docs_cli};
 use quickwit_common::new_coolid;
 use quickwit_common::runtimes::RuntimesConfig;
@@ -182,6 +183,8 @@ pub struct ResolvedClusterConfig {
 impl ResolvedClusterConfig {
     /// Start a cluster using this config and waits for the nodes to be ready
     pub async fn start(self) -> ClusterSandbox {
+        start_metrics_loops();
+
         let mut node_shutdown_handles = Vec::new();
         let runtimes_config = RuntimesConfig::light_for_tests();
         let storage_resolver = StorageResolver::unconfigured();

@@ -330,7 +330,35 @@ impl Default for MemoryMetrics {
                 &[],
             ),
             in_flight: InFlightDataGauges::default(),
-            dd_allocated_bytes: gauge!("mem.allocated_bytes.gauge"),
+            dd_allocated_bytes: gauge!("memory.allocated_bytes.gauge"),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct CpuMetrics {
+    pub dd_cpu_usage: MetricsGauge,
+    pub dd_uptime: MetricsGauge,
+}
+
+impl Default for CpuMetrics {
+    fn default() -> Self {
+        let mut uptime_labels = Vec::with_capacity(4);
+        let keys = [
+            ("KUBERNETES_LIMITS_CPU", "kube_limits_cpu"),
+            ("KUBERNETES_LIMITS_MEMORY", "kube_limits_memory"),
+            ("KUBERNETES_REQUESTS_CPU", "kube_requests_cpu"),
+            ("KUBERNETES_REQUESTS_MEMORY", "kube_requests_memory"),
+        ];
+
+        for (env_var_key, label_key) in keys {
+            if let Some(label_val) = crate::get_from_env_opt::<String>(env_var_key) {
+                uptime_labels.push(Label::new(label_key, label_val));
+            }
+        }
+        Self {
+            dd_cpu_usage: gauge!("cpu.usage.gauge"),
+            dd_uptime: gauge!("uptime.gauge", uptime_labels),
         }
     }
 }
@@ -529,3 +557,4 @@ pub fn index_label(index_name: &str) -> &str {
 }
 
 pub static MEMORY_METRICS: Lazy<MemoryMetrics> = Lazy::new(MemoryMetrics::default);
+pub static CPU_METRICS: Lazy<CpuMetrics> = Lazy::new(CpuMetrics::default);

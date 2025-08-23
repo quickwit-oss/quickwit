@@ -45,6 +45,7 @@ use crate::checklist::run_checklist;
 
 pub mod checklist;
 pub mod cli;
+pub mod cpu;
 pub mod index;
 #[cfg(feature = "jemalloc")]
 pub mod jemalloc;
@@ -333,6 +334,14 @@ fn prompt_confirmation(prompt: &str, default: bool) -> bool {
         println!("Aborting.");
         false
     }
+}
+
+/// Starts the CPU and jemalloc (if the feature is enabled) metrics loops.
+pub fn start_metrics_loops() {
+    cpu::start_cpu_metrics_loop();
+
+    #[cfg(feature = "jemalloc")]
+    jemalloc::start_jemalloc_metrics_loop();
 }
 
 pub mod busy_detector {

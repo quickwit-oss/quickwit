@@ -6881,6 +6881,7 @@ dependencies = [
  "quickwit-telemetry",
  "reqwest 0.12.23",
  "serde_json",
+ "sysinfo",
  "tabled",
  "tempfile",
  "thiserror 2.0.14",

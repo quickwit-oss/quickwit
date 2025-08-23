@@ -19,12 +19,10 @@ use std::collections::BTreeMap;
 use anyhow::Context;
 use colored::Colorize;
 use opentelemetry::global;
-use quickwit_cli::busy_detector;
 use quickwit_cli::checklist::RED_COLOR;
 use quickwit_cli::cli::{CliCommand, build_cli};
-#[cfg(feature = "jemalloc")]
-use quickwit_cli::jemalloc::start_jemalloc_metrics_loop;
 use quickwit_cli::logger::setup_logging_and_tracing;
+use quickwit_cli::{busy_detector, start_metrics_loops};
 use quickwit_common::runtimes::scrape_tokio_runtime_metrics;
 use quickwit_serve::BuildInfo;
 use tracing::error;
@@ -96,15 +94,13 @@ async fn main_impl() -> anyhow::Result<()> {
     #[cfg(not(any(test, feature = "testsuite")))]
     quickwit_cli::logger::setup_dogstatsd_exporter(build_info)?;
 
-    #[cfg(feature = "jemalloc")]
-    start_jemalloc_metrics_loop();
+    start_metrics_loops();
 
     let return_code: i32 = if let Err(command_error) = command.execute(env_filter_reload_fn).await {
         error!(error=%command_error, "command failed");
         eprintln!(
-            "{} command failed: {:?}\n",
-            "✘".color(RED_COLOR),
-            command_error
+            "{} command failed: {command_error:?}\n",
+            "✘".color(RED_COLOR)
         );
         1
     } else {

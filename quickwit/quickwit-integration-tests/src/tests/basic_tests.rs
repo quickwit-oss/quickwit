@@ -228,9 +228,10 @@ async fn test_metrics() {
     let metric_composite_keys = metrics.keys().collect::<Vec<_>>();
 
     let expected_metrics = [
+        "cpu.usage.gauge",
         "indexed_events_bytes.count",
         "indexed_events.count",
-        "mem.allocated_bytes.gauge",
+        "memory.allocated_bytes.gauge",
         "metastore_requests.count",
         "metastore_requests.duration_seconds",
         "object_storage_delete_requests.count",
@@ -241,6 +242,7 @@ async fn test_metrics() {
         "pending_merge_ops.gauge",
         "search_requests.count",
         "search_requests.duration_seconds",
+        "uptime.gauge",
     ];
     let mut found_metrics = Vec::new();
 

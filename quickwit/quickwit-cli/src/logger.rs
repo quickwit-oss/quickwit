@@ -166,24 +166,19 @@ pub fn setup_dogstatsd_exporter(build_info: &BuildInfo) -> anyhow::Result<()> {
 
     let mut global_labels = vec![::metrics::Label::new("version", build_info.version.clone())];
     let keys = [
-        ("KUBERNETES_POD_NAME", "kube_pod_name"),
-        ("KUBERNETES_POD_INDEX", "kube_pod_index"),
-        ("KUBERNETES_COMPONENT", "kube_component"),
-        ("KUBERNETES_NAMESPACE", "kube_namespace"),
-        ("KUBERNETES_APP_NAME", "kube_app_name"),
-        ("KUBERNETES_APP_INSTANCE", "kube_app_instance"),
-        ("CLOUDPREM_NODE_ID", "cloudprem_node_id"),
-        ("CLOUDPREM_CLUSTER_ID", "cloudprem_cluster_id"),
         ("IMAGE_NAME", "image_name"),
         ("IMAGE_TAG", "image_tag"),
+        ("KUBERNETES_COMPONENT", "kube_component"),
+        ("KUBERNETES_NAMESPACE", "kube_namespace"),
+        ("KUBERNETES_POD_NAME", "kube_pod_name"),
+        ("QW_CLUSTER_ID", "cloudprem_cluster_id"),
+        ("QW_NODE_ID", "cloudprem_node_id"),
     ];
-
     for (env_var_key, label_key) in keys {
         if let Some(label_val) = quickwit_common::get_from_env_opt::<String>(env_var_key) {
             global_labels.push(::metrics::Label::new(label_key, label_val));
         }
     }
-
     metrics_exporter_dogstatsd::DogStatsDBuilder::default()
         .set_global_prefix("cloudprem")
         .with_global_labels(global_labels)
