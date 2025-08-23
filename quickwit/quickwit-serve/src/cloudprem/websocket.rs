@@ -13,6 +13,9 @@ use tokio::sync::mpsc::{Sender, channel};
 use tokio::task::JoinSet;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+use tokio_tungstenite::tungstenite::error::{
+    Error as TungsteniteError, ProtocolError as TungsteniteProtocolError,
+};
 use tokio_tungstenite::tungstenite::protocol::Message;
 
 // TODO we need to add trace id propagation, maybe some form of cancelation too?
@@ -86,20 +89,32 @@ async fn handle_single_ws_message_and_reply(
     let _ = response_channel.send(message).await;
 }
 
+fn transform_err(e: TungsteniteError) -> anyhow::Result<()> {
+    match e {
+        TungsteniteError::ConnectionClosed => Ok(()),
+        TungsteniteError::AlreadyClosed => Ok(()),
+        TungsteniteError::Protocol(TungsteniteProtocolError::ResetWithoutClosingHandshake) => {
+            Ok(())
+        }
+        _ => Err(e.into()),
+    }
+}
+
 async fn single_websocket(
     target: &str,
-    dd_token: &str,
+    dd_api_key: &str,
+    dd_application_key: &str,
     service: CloudPremServiceClient,
 ) -> anyhow::Result<()> {
     let mut pending_requests = JoinSet::new();
     let (sender, mut receiver) = channel(5);
 
     let mut request = target.into_client_request()?;
-    request
-        .headers_mut()
-        .insert("DD-API-KEY", dd_token.parse()?);
+    let headers = request.headers_mut();
+    headers.insert("DD-API-KEY", dd_api_key.parse()?);
+    headers.insert("DD-APPLICATION-KEY", dd_application_key.parse()?);
 
-    let (mut ws, _) = connect_async(target).await?;
+    let (mut ws, _) = connect_async(request).await?;
 
     let cluster_identify = AnyResponse {
         req_id: 0,
@@ -111,47 +126,67 @@ async fn single_websocket(
     let cluster_identify_ws = Message::binary(cluster_identify.encode_to_vec());
     ws.send(cluster_identify_ws).await?;
 
+    let mut interval = tokio::time::interval(std::time::Duration::from_secs(10));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut unreplied_count = 0;
+
     loop {
         tokio::select! {
                 reply = receiver.recv() => {
                         if let Some(reply) = reply {
                             if let Err(e) = ws.send(reply).await {
-                                todo!("some errors should gracefull exit, other should return an err {e:?}")
+                                return transform_err(e);
                             }
                         }
                 },
                 message = ws.next() => {
                         let message = match message {
                             Some(Ok(message)) => message,
-                            Some(Err(e)) => todo!("some errors should gracefull exit, other should return an err {e:?}"),
+                            Some(Err(e)) => return transform_err(e),
                             None => return Ok(()),
                         };
                         match message {
                                 Message::Binary(buffer) => {
                                         pending_requests.spawn(handle_single_ws_message_and_reply(service.clone(), buffer, sender.clone()));
                                 },
-                                Message::Ping(ping) => {
-                                        sender.send(Message::Pong(ping)).await?;
+                                Message::Text(payload) => {
+                                        unreplied_count = 0;
+                                        if payload == "ping" {
+                                            sender.send(Message::Text("pong".into())).await?;
+                                        }
                                 },
-                                Message::Pong(_pong) => (),// TODO reset some clock that tells us if our peer is alive
                                 Message::Close(_close) => todo!(),
-                                _ => todo!(),
+                                Message::Ping(payload) => {
+                                    sender.send(Message::Pong(payload)).await?;
+                                },
+                                Message::Pong(_) => (),
+                                _ => tracing::warn!("received unsupported frame"),
                         }
+                },
+                _ = interval.tick() => {
+                        if unreplied_count > 2 {
+                                anyhow::bail!("other side unresponsive");
+                        }
+                        unreplied_count += 1;
+                        sender.send(Message::Text("ping".into())).await?;
                 }
-                // TODO send pings regularly
         }
     }
 }
 
 pub(crate) async fn maintain_websocket(
     target: String,
-    dd_token: String,
+    dd_api_key: String,
+    dd_application_key: String,
     service: CloudPremServiceClient,
 ) {
     // TODO maybe add endpoint as a suffix?
     loop {
         // TODO some errors should be fatal (invalid token)
-        if let Err(e) = single_websocket(&target, &dd_token, service.clone()).await {
+        tracing::info!("new connection");
+        if let Err(e) =
+            single_websocket(&target, &dd_api_key, &dd_application_key, service.clone()).await
+        {
             tracing::error!("error in reverse conn: {e:?}")
         }
     }

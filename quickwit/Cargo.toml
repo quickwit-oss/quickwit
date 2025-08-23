@@ -250,7 +250,7 @@ tokio = { version = "1.45", features = ["full"] }
 tokio-metrics = { version = "0.3", features = ["rt"] }
 tokio-rustls = { version = "0.24", default-features = false }
 tokio-stream = { version = "0.1", features = ["sync"] }
-tokio-tungstenite = "0.27.0"
+tokio-tungstenite = { version = "0.27.0", features = ["native-tls"] }
 tokio-util = { version = "0.7", features = ["full"] }
 toml = "0.7"
 tonic = { version = "0.13", features = [

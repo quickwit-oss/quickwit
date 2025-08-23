@@ -576,7 +576,9 @@ pub struct CloudPremConfig {
     #[serde(default)]
     pub connection_endpoint: Option<String>,
     #[serde(default)]
-    pub dd_token: Option<String>,
+    pub dd_api_key: Option<String>,
+    #[serde(default)]
+    pub dd_application_key: Option<String>,
 }
 
 impl CloudPremConfig {

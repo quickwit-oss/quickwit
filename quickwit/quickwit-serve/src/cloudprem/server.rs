@@ -82,13 +82,20 @@ pub(crate) async fn start_cloudprem_server(
         let cloudprem_service_client =
             CloudPremServiceClient::tower().build(cloudprem_service_impl);
         if let Some(connection_endpoint) = cloudprem_config.connection_endpoint {
-            let Some(dd_token) = cloudprem_config.dd_token else {
-                anyhow::bail!("`connection_endpoint` is set but `dd_token` is missing");
+            let Some((dd_api_key, dd_application_key)) = cloudprem_config
+                .dd_api_key
+                .zip(cloudprem_config.dd_application_key)
+            else {
+                anyhow::bail!(
+                    "`connection_endpoint` is set but `dd_apli_key` or `dd_application_key` are \
+                     missing"
+                );
             };
             // TODO this should be part of the join at the bottom, and listen to the shutdown signal
             tokio::spawn(maintain_websocket(
                 connection_endpoint,
-                dd_token,
+                dd_api_key,
+                dd_application_key,
                 cloudprem_service_client.clone(),
             ));
         }

@@ -1374,7 +1374,8 @@ mod tests {
                         keep_alive: None,
                     },
                     connection_endpoint: None,
-                    dd_token: None,
+                    dd_api_key: None,
+                    dd_application_key: None,
                 },
                 ..NodeConfigBuilder::default()
                     .build_and_validate(&HashMap::new())
