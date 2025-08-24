@@ -105,10 +105,15 @@ fn get_credentials_provider(
     match (
         &s3_storage_config.access_key_id,
         &s3_storage_config.secret_access_key,
+        &s3_storage_config.session_token,
     ) {
-        (Some(access_key_id), Some(secret_access_key)) => {
+        (Some(access_key_id), Some(secret_access_key), session_token) => {
             info!("using S3 credentials defined in storage config");
-            let credentials = Credentials::from_keys(access_key_id, secret_access_key, None);
+            let credentials = Credentials::from_keys(
+                access_key_id,
+                secret_access_key,
+                session_token.clone()
+            );
             let credentials_provider = SharedCredentialsProvider::new(credentials);
             Some(credentials_provider)
         }
@@ -124,9 +129,17 @@ fn get_region(s3_storage_config: &S3StorageConfig) -> Option<Region> {
 }
 
 pub async fn create_s3_client(s3_storage_config: &S3StorageConfig) -> S3Client {
+    create_s3_client_with_provider(s3_storage_config, None).await
+}
+
+pub async fn create_s3_client_with_provider(
+    s3_storage_config: &S3StorageConfig,
+    custom_credentials_provider: Option<SharedCredentialsProvider>,
+) -> S3Client {
     let aws_config = get_aws_config().await;
-    let credentials_provider =
-        get_credentials_provider(s3_storage_config).or(aws_config.credentials_provider());
+    let credentials_provider = custom_credentials_provider
+        .or_else(|| get_credentials_provider(s3_storage_config))
+        .or(aws_config.credentials_provider());
     let region = get_region(s3_storage_config).or(aws_config.region().cloned());
     let mut s3_config = aws_sdk_s3::Config::builder()
         .behavior_version(aws_behavior_version())
@@ -157,6 +170,16 @@ impl S3CompatibleObjectStorage {
         uri: &Uri,
     ) -> Result<Self, StorageResolverError> {
         let s3_client = create_s3_client(s3_storage_config).await;
+        Self::from_uri_and_client(s3_storage_config, uri, s3_client).await
+    }
+
+    /// Creates an object storage with a custom credential provider.
+    pub async fn from_uri_with_credentials_provider(
+        s3_storage_config: &S3StorageConfig,
+        uri: &Uri,
+        credentials_provider: SharedCredentialsProvider,
+    ) -> Result<Self, StorageResolverError> {
+        let s3_client = create_s3_client_with_provider(s3_storage_config, Some(credentials_provider)).await;
         Self::from_uri_and_client(s3_storage_config, uri, s3_client).await
     }
 
@@ -1229,5 +1252,125 @@ mod tests {
             .put(Path::new("my-path"), Box::new(vec![1, 2, 3]))
             .await
             .unwrap();
+    }
+
+    #[test]
+    fn test_get_credentials_provider_with_session_token() {
+        let s3_storage_config = S3StorageConfig {
+            access_key_id: Some("test_access_key_id".to_string()),
+            secret_access_key: Some("test_secret_access_key".to_string()),
+            session_token: Some("test_session_token".to_string()),
+            ..Default::default()
+        };
+
+        let credentials_provider = get_credentials_provider(&s3_storage_config);
+        assert!(credentials_provider.is_some());
+    }
+
+    #[test]
+    fn test_get_credentials_provider_without_session_token() {
+        let s3_storage_config = S3StorageConfig {
+            access_key_id: Some("test_access_key_id".to_string()),
+            secret_access_key: Some("test_secret_access_key".to_string()),
+            session_token: None,
+            ..Default::default()
+        };
+
+        let credentials_provider = get_credentials_provider(&s3_storage_config);
+        assert!(credentials_provider.is_some());
+    }
+
+    #[test]
+    fn test_get_credentials_provider_missing_secret() {
+        let s3_storage_config = S3StorageConfig {
+            access_key_id: Some("test_access_key_id".to_string()),
+            secret_access_key: None,
+            session_token: Some("test_session_token".to_string()),
+            ..Default::default()
+        };
+
+        let credentials_provider = get_credentials_provider(&s3_storage_config);
+        assert!(credentials_provider.is_none());
+    }
+
+    #[test]
+    fn test_get_credentials_provider_missing_access_key() {
+        let s3_storage_config = S3StorageConfig {
+            access_key_id: None,
+            secret_access_key: Some("test_secret_access_key".to_string()),
+            session_token: Some("test_session_token".to_string()),
+            ..Default::default()
+        };
+
+        let credentials_provider = get_credentials_provider(&s3_storage_config);
+        assert!(credentials_provider.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_create_s3_client_with_session_token() {
+        let s3_storage_config = S3StorageConfig {
+            access_key_id: Some("test_access_key_id".to_string()),
+            secret_access_key: Some("test_secret_access_key".to_string()),
+            session_token: Some("test_session_token".to_string()),
+            region: Some("us-west-2".to_string()),
+            ..Default::default()
+        };
+
+        let _s3_client = create_s3_client(&s3_storage_config).await;
+        // Just verify the client can be created without panicking
+    }
+
+    #[tokio::test]
+    async fn test_create_s3_client_with_custom_credentials_provider() {
+        let s3_storage_config = S3StorageConfig {
+            region: Some("us-west-2".to_string()),
+            ..Default::default()
+        };
+
+        let credentials = Credentials::new("custom_key", "custom_secret", Some("custom_token".to_string()), None, "test_provider");
+        let custom_provider = SharedCredentialsProvider::new(credentials);
+
+        let _s3_client = create_s3_client_with_provider(&s3_storage_config, Some(custom_provider)).await;
+        // Just verify the client can be created without panicking
+    }
+
+    #[tokio::test]
+    async fn test_from_uri_with_session_token() {
+        let s3_storage_config = S3StorageConfig {
+            access_key_id: Some("test_access_key_id".to_string()),
+            secret_access_key: Some("test_secret_access_key".to_string()),
+            session_token: Some("test_session_token".to_string()),
+            region: Some("us-west-2".to_string()),
+            ..Default::default()
+        };
+        let uri = Uri::for_test("s3://test-bucket/test-prefix");
+
+        let storage = S3CompatibleObjectStorage::from_uri(&s3_storage_config, &uri).await;
+        assert!(storage.is_ok());
+        let storage = storage.unwrap();
+        assert_eq!(storage.bucket, "test-bucket");
+        assert_eq!(storage.prefix, PathBuf::from("test-prefix"));
+    }
+
+    #[tokio::test]
+    async fn test_from_uri_with_credentials_provider() {
+        let s3_storage_config = S3StorageConfig {
+            region: Some("us-west-2".to_string()),
+            ..Default::default()
+        };
+        let uri = Uri::for_test("s3://test-bucket/test-prefix");
+        let credentials = Credentials::new("provider_key", "provider_secret", Some("provider_token".to_string()), None, "test_provider");
+        let custom_provider = SharedCredentialsProvider::new(credentials);
+
+        let storage = S3CompatibleObjectStorage::from_uri_with_credentials_provider(
+            &s3_storage_config,
+            &uri,
+            custom_provider
+        ).await;
+
+        assert!(storage.is_ok());
+        let storage = storage.unwrap();
+        assert_eq!(storage.bucket, "test-bucket");
+        assert_eq!(storage.prefix, PathBuf::from("test-prefix"));
     }
 }

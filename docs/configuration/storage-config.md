@@ -51,6 +51,7 @@ This section contains one configuration subsection per storage provider. If a st
 | `flavor` |  The optional storage flavor to use. Available flavors are `digital_ocean`, `garage`, `gcs`, and `minio`. | |
 | `access_key_id` | The AWS access key ID. | |
 | `secret_access_key` | The AWS secret access key. | |
+| `session_token` | The AWS session token (for temporary credentials). | |
 | `region` | The AWS region to send requests to. | `us-east-1` (SDK default) |
 | `endpoint` | Custom endpoint for use with S3-compatible providers. | SDK default |
 | `force_path_style_access` | Disables [virtual-hosted–style](https://docs.aws.amazon.com/AmazonS3/latest/userguide/VirtualHosting.html) requests. Required by some S3-compatible providers (Ceph, MinIO). | `false` |
@@ -60,6 +61,38 @@ This section contains one configuration subsection per storage provider. If a st
 :::warning
 Hardcoding credentials into configuration files is not secure and strongly discouraged. Prefer the alternative authentication methods that your storage backend may provide.
 :::
+
+#### Authentication methods
+
+Quickwit supports three authentication methods for S3:
+
+**1. Static credentials (least secure)**
+```yaml
+storage:
+  s3:
+    access_key_id: "AKIAIOSFODNN7EXAMPLE"
+    secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+```
+
+**2. Temporary credentials with session token**
+```yaml
+storage:
+  s3:
+    access_key_id: "AKIAIOSFODNN7EXAMPLE"
+    secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+    session_token: "AQoDYXdzEJr...<remainder of security token>"
+```
+
+**3. AWS credential providers (most secure)**
+
+When no static credentials are provided, Quickwit uses the AWS SDK's default credential provider chain, which supports:
+- Environment variables (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`)
+- IAM roles for EC2 instances
+- AWS credentials file (`~/.aws/credentials`)
+- IAM roles for EKS service accounts
+- And other AWS credential providers
+
+For programmatic use, you can also provide a custom `SharedCredentialsProvider` via the API.
 
 #### Environment variables
 

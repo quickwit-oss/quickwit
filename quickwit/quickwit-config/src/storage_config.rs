@@ -319,6 +319,8 @@ pub struct S3StorageConfig {
     #[serde(default)]
     pub secret_access_key: Option<String>,
     #[serde(default)]
+    pub session_token: Option<String>,
+    #[serde(default)]
     pub region: Option<String>,
     #[serde(default)]
     pub endpoint: Option<String>,
@@ -358,6 +360,9 @@ impl S3StorageConfig {
         if let Some(secret_access_key) = self.secret_access_key.as_mut() {
             *secret_access_key = "***redacted***".to_string();
         }
+        if let Some(session_token) = self.session_token.as_mut() {
+            *session_token = "***redacted***".to_string();
+        }
     }
 
     pub fn endpoint(&self) -> Option<String> {
@@ -385,6 +390,10 @@ impl fmt::Debug for S3StorageConfig {
             .field(
                 "secret_access_key",
                 &self.secret_access_key.as_ref().map(|_| "***redacted***"),
+            )
+            .field(
+                "session_token",
+                &self.session_token.as_ref().map(|_| "***redacted***"),
             )
             .field("region", &self.region)
             .field("endpoint", &self.endpoint)
@@ -529,6 +538,7 @@ mod tests {
             .into(),
             S3StorageConfig {
                 secret_access_key: Some("test-s3-secret-access-key".to_string()),
+                session_token: Some("test-s3-session-token".to_string()),
                 ..Default::default()
             }
             .into(),
@@ -549,6 +559,15 @@ mod tests {
                 .find_s3()
                 .unwrap()
                 .secret_access_key
+                .as_ref()
+                .unwrap(),
+            "***redacted***"
+        );
+        assert_eq!(
+            storage_configs
+                .find_s3()
+                .unwrap()
+                .session_token
                 .as_ref()
                 .unwrap(),
             "***redacted***"
@@ -637,6 +656,23 @@ mod tests {
                 force_path_style_access: true,
                 disable_multi_object_delete: true,
                 disable_multipart_upload: true,
+                ..Default::default()
+            };
+            assert_eq!(s3_storage_config, expected_s3_config);
+        }
+        {
+            let s3_storage_config_yaml = r#"
+                access_key_id: test-access-key
+                secret_access_key: test-secret-key
+                session_token: test-session-token
+            "#;
+            let s3_storage_config: S3StorageConfig =
+                serde_yaml::from_str(s3_storage_config_yaml).unwrap();
+
+            let expected_s3_config = S3StorageConfig {
+                access_key_id: Some("test-access-key".to_string()),
+                secret_access_key: Some("test-secret-key".to_string()),
+                session_token: Some("test-session-token".to_string()),
                 ..Default::default()
             };
             assert_eq!(s3_storage_config, expected_s3_config);
