@@ -19,7 +19,6 @@ use std::time::Duration;
 use once_cell::sync::OnceCell;
 use prometheus::{Gauge, IntCounter, IntGauge};
 use tokio::runtime::Runtime;
-use tokio_metrics::{RuntimeMetrics, RuntimeMonitor};
 
 use crate::metrics::{new_counter, new_float_gauge, new_gauge};
 
@@ -150,16 +149,54 @@ impl RuntimeType {
 
 /// Spawns a background task
 pub fn scrape_tokio_runtime_metrics(handle: &tokio::runtime::Handle, label: &'static str) {
-    let runtime_monitor = RuntimeMonitor::new(handle);
-    handle.spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(1));
-        let mut prometheus_runtime_metrics = PrometheusRuntimeMetrics::new(label);
+    #[cfg(tokio_unstable)]
+    {
+        let handle_clone = handle.clone();
+        handle.spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(1));
+            let mut prometheus_runtime_metrics = PrometheusRuntimeMetrics::new(label);
+            let mut last_total_busy_duration = Duration::ZERO;
 
-        for tokio_runtime_metrics in runtime_monitor.intervals() {
-            interval.tick().await;
-            prometheus_runtime_metrics.update(&tokio_runtime_metrics);
-        }
-    });
+            loop {
+                interval.tick().await;
+                let metrics = handle_clone.metrics();
+                
+                // Calculate cumulative busy duration across all workers
+                let mut total_busy_duration = Duration::ZERO;
+                let mut total_local_queue_depth = 0;
+                
+                for worker_id in 0..metrics.num_workers() {
+                    total_busy_duration += metrics.worker_total_busy_duration(worker_id);
+                    total_local_queue_depth += metrics.worker_local_queue_depth(worker_id);
+                }
+                
+                // Calculate busy ratio as the delta since last measurement
+                let busy_duration_delta = total_busy_duration.saturating_sub(last_total_busy_duration);
+                let busy_ratio = busy_duration_delta.as_secs_f64() / 1.0; // 1 second interval
+                last_total_busy_duration = total_busy_duration;
+                
+                prometheus_runtime_metrics.update_with_values(
+                    total_local_queue_depth,
+                    busy_duration_delta,
+                    busy_ratio,
+                    metrics.num_workers()
+                );
+            }
+        });
+    }
+    #[cfg(not(tokio_unstable))]
+    {
+        // Fallback: create basic metrics with minimal runtime information
+        let _handle_clone = handle.clone();
+        handle.spawn(async move {
+            let _interval = tokio::time::interval(Duration::from_secs(1));
+            let _prometheus_runtime_metrics = PrometheusRuntimeMetrics::new(label);
+            
+            // Without tokio_unstable, we can't access detailed runtime metrics
+            // This is a no-op implementation to maintain compatibility
+            tracing::warn!("Runtime metrics collection requires tokio_unstable feature");
+        });
+    }
 }
 
 struct PrometheusRuntimeMetrics {
@@ -200,14 +237,19 @@ impl PrometheusRuntimeMetrics {
         }
     }
 
-    pub fn update(&mut self, runtime_metrics: &RuntimeMetrics) {
+    pub fn update_with_values(&mut self, 
+        total_local_queue_depth: usize,
+        busy_duration_delta: Duration,
+        busy_ratio: f64,
+        num_workers: usize
+    ) {
         self.scheduled_tasks
-            .set(runtime_metrics.total_local_queue_depth as i64);
+            .set(total_local_queue_depth as i64);
         self.worker_busy_duration_milliseconds_total
-            .inc_by(runtime_metrics.total_busy_duration.as_millis() as u64);
-        self.worker_busy_ratio.set(runtime_metrics.busy_ratio());
+            .inc_by(busy_duration_delta.as_millis() as u64);
+        self.worker_busy_ratio.set(busy_ratio.min(1.0));
         self.worker_threads
-            .set(runtime_metrics.workers_count as i64);
+            .set(num_workers as i64);
     }
 }
 
