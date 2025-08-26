@@ -18,11 +18,11 @@ use quickwit_doc_transforms::DatadogLogMsg;
 use quickwit_ingest::DocBatchV2Builder;
 use quickwit_proto::ingest::CommitTypeV2;
 use quickwit_proto::ingest::router::{
-    IngestRequestV2, IngestRouterService, IngestRouterServiceClient, IngestSubrequest,
+    IngestFailureReason, IngestRequestV2, IngestRouterService, IngestRouterServiceClient,
+    IngestSubrequest,
 };
 use quickwit_proto::types::{DocUidGenerator, IndexId};
 use quickwit_proto::{ServiceError, ServiceErrorCode};
-use serde::{self, Serialize};
 use tracing::{debug, error};
 use warp::{Filter, Rejection};
 
@@ -98,38 +98,26 @@ pub(crate) fn datadog_logs(
         .boxed()
 }
 
-#[derive(Debug, Clone, thiserror::Error, Serialize)]
+#[derive(Debug, thiserror::Error)]
 pub enum DatadogApiError {
-    #[error("invalid datadog log request: {0}")]
-    InvalidPayload(String),
-    #[error("error when ingesting payload: {0}")]
-    Ingest(String),
-    #[error("Datadog Log Preprocessing Panicked: {0}")]
-    Panicked(String),
+    #[error("failed to ingest payload: {1}")]
+    Ingest(ServiceErrorCode, String),
+    #[error("internal error: {0}")]
+    Internal(String),
+    #[error("failed to parse payload: {0}")]
+    InvalidPayload(serde_json::Error),
 }
 
 impl ServiceError for DatadogApiError {
     fn error_code(&self) -> ServiceErrorCode {
+        rate_limited_error!(limit_per_min = 6, error = %self);
+
         match self {
-            DatadogApiError::Panicked(_) => ServiceErrorCode::Internal,
-            DatadogApiError::InvalidPayload(_) => ServiceErrorCode::BadRequest,
-            DatadogApiError::Ingest(err_msg) => {
-                rate_limited_error!(limit_per_min = 6, "datadog internal error: {err_msg}");
-                ServiceErrorCode::Internal
-            }
+            Self::InvalidPayload(_) => ServiceErrorCode::BadRequest,
+            Self::Internal(_) => ServiceErrorCode::Internal,
+            Self::Ingest(error_code, _) => *error_code,
         }
     }
-}
-
-fn deserialize_datadog_log(data: &[u8]) -> Result<Vec<DatadogLogMsg>, DatadogApiError> {
-    serde_json::from_slice(data).map_err(|error| {
-        error!(
-            message = "Failed to parse datadog logs.",
-            internal_log_rate_limit = true,
-            error = ?error
-        );
-        DatadogApiError::InvalidPayload(format!("Error parsing JSON: {error:?}"))
-    })
 }
 
 async fn datadog_ingest_logs(
@@ -141,32 +129,32 @@ async fn datadog_ingest_logs(
         // The datadog agent may send an empty payload as a keep alive
         // https://github.com/DataDog/datadog-agent/blob/5a6c5dd75a2233fbf954e38ddcc1484df4c21a35/pkg/logs/client/http/destination.go#L52
         debug!(
-            message = "Empty payload ignored.",
+            message = "received empty payload, ignoring",
             internal_log_rate_limit = true
         );
         return Ok(());
     }
-
-    let handle = quickwit_common::thread_pool::run_cpu_intensive(move || {
+    let doc_batch_fut = quickwit_common::thread_pool::run_cpu_intensive(move || {
         // TODO: We could just validate + get the byte bounds of each object instead of the more
         // expensive serde_json rountrip.
         // e.g. Vec<RawValue> + validation
-        let messages: Vec<DatadogLogMsg> = deserialize_datadog_log(&body.content)?;
+        let messages: Vec<DatadogLogMsg> =
+            serde_json::from_slice(&body.content).map_err(DatadogApiError::InvalidPayload)?;
 
         let mut doc_batch_builder = DocBatchV2Builder::default();
         let mut doc_uid_generator = DocUidGenerator::default();
 
-        for doc in messages {
-            doc_batch_builder.add_doc(
-                doc_uid_generator.next_doc_uid(),
-                serde_json::to_string(&doc).unwrap().as_bytes(),
-            );
+        for message in messages {
+            let doc_json =
+                serde_json::to_vec(&message).expect("JSON serialization should not fail");
+
+            doc_batch_builder.add_doc(doc_uid_generator.next_doc_uid(), &doc_json);
         }
         Ok(doc_batch_builder.build())
     });
-    let doc_batch = handle
-        .await
-        .map_err(|err| DatadogApiError::Panicked(err.to_string()))??;
+    let doc_batch = doc_batch_fut.await.map_err(|_panicked| {
+        DatadogApiError::Internal("task panicked while processing log events payload".to_string())
+    })??;
 
     let subrequest = IngestSubrequest {
         subrequest_id: 0,
@@ -181,19 +169,239 @@ async fn datadog_ingest_logs(
     let response = ingest_router
         .ingest(request)
         .await
-        .map_err(|err| DatadogApiError::Ingest(err.to_string()))?;
-    for failure in response.failures.iter() {
-        error!(
-            message = "Failed to ingest logs.",
-            internal_log_rate_limit = true,
-            error = ?failure
-        );
+        .map_err(|error| DatadogApiError::Ingest(error.error_code(), error.to_string()))?;
+
+    // Since we issued only one subrequest, there should be only one success or failure in the
+    // response.
+    let num_successes = response.successes.len();
+    let num_failures = response.failures.len();
+    assert!(
+        num_successes + num_failures == 1,
+        "expected only one success or failure, got {num_successes} successes and {num_failures} \
+         failures",
+    );
+
+    if num_failures == 0 {
+        return Ok(());
     }
-    if !response.failures.is_empty() {
-        return Err(DatadogApiError::Ingest(format!(
-            "Failed to ingest logs {:?}.",
-            response.failures
-        )));
+    let failure_reason = response.failures[0].reason();
+
+    // Same mapping as Elastic bulk v2:
+    let (error_code, error_message) = match failure_reason {
+        IngestFailureReason::Unspecified => (ServiceErrorCode::Internal, "unknown error"),
+        IngestFailureReason::IndexNotFound => (ServiceErrorCode::NotFound, "index not found"),
+        IngestFailureReason::SourceNotFound => (ServiceErrorCode::NotFound, "source not found"),
+        IngestFailureReason::Internal => (ServiceErrorCode::Internal, "internal error"),
+        IngestFailureReason::NoShardsAvailable => (
+            ServiceErrorCode::TooManyRequests,
+            "too many requests (no shards available)",
+        ),
+        IngestFailureReason::ShardRateLimited => (
+            ServiceErrorCode::TooManyRequests,
+            "too many requests (rate limiting)",
+        ),
+        IngestFailureReason::WalFull => (ServiceErrorCode::Internal, "WAL full"),
+        IngestFailureReason::Timeout => (ServiceErrorCode::Timeout, "request timed out"),
+        IngestFailureReason::RouterLoadShedding => {
+            (ServiceErrorCode::Internal, "router load shedding")
+        }
+        IngestFailureReason::LoadShedding => (ServiceErrorCode::Internal, "load shedding)"),
+        IngestFailureReason::CircuitBreaker => (ServiceErrorCode::Internal, "circuit breaker)"),
+    };
+    Err(DatadogApiError::Ingest(
+        error_code,
+        error_message.to_string(),
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use quickwit_proto::ingest::IngestV2Error;
+    use quickwit_proto::ingest::router::{
+        IngestFailure, IngestResponseV2, IngestRouterServiceClient, IngestSuccess,
+        MockIngestRouterService,
+    };
+    use quickwit_proto::types::{IndexUid, Position, ShardId};
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_datadog_ingest_logs() {
+        let mut mock_ingest_router = MockIngestRouterService::new();
+        mock_ingest_router
+            .expect_ingest()
+            .once()
+            .returning(|ingest_request| {
+                assert_eq!(ingest_request.subrequests.len(), 1);
+                assert_eq!(ingest_request.subrequests[0].index_id, DATADOG_INDEX_ID);
+                assert_eq!(ingest_request.subrequests[0].source_id, INGEST_V2_SOURCE_ID);
+                assert_eq!(
+                    ingest_request.subrequests[0]
+                        .doc_batch
+                        .as_ref()
+                        .unwrap()
+                        .num_docs(),
+                    1
+                );
+
+                Ok(IngestResponseV2 {
+                    successes: vec![IngestSuccess {
+                        subrequest_id: 0,
+                        index_uid: Some(IndexUid::for_test(DATADOG_INDEX_ID, 0)),
+                        source_id: INGEST_V2_SOURCE_ID.to_string(),
+                        shard_id: Some(ShardId::from(1)),
+                        replication_position_inclusive: Some(Position::offset(0u64)),
+                        num_ingested_docs: 1,
+                        parse_failures: Vec::new(),
+                    }],
+                    failures: Vec::new(),
+                })
+            });
+        let ingest_router = IngestRouterServiceClient::from_mock(mock_ingest_router);
+        let handler = datadog_logs(ingest_router);
+        let payload = r#"
+            [
+              {
+                "message": "Hello, world!"
+              }
+            ]
+        "#;
+        let response = warp::test::request()
+            .path("/api/v2/logs")
+            .method("POST")
+            .header("content-type", "application/json")
+            .body(payload)
+            .reply(&handler)
+            .await;
+        assert_eq!(response.status(), 200);
     }
-    Ok(())
+
+    #[tokio::test]
+    async fn test_datadog_ingest_logs_empty_payload() {
+        let ingest_router = IngestRouterServiceClient::mocked();
+        let handler = datadog_logs(ingest_router);
+
+        let response = warp::test::request()
+            .path("/api/v2/logs")
+            .method("POST")
+            .header("content-type", "application/json")
+            .body("")
+            .reply(&handler)
+            .await;
+        assert_eq!(response.status(), 200);
+
+        let response = warp::test::request()
+            .path("/api/v2/logs")
+            .method("POST")
+            .header("content-type", "application/json")
+            .body("{}")
+            .reply(&handler)
+            .await;
+        assert_eq!(response.status(), 200);
+    }
+
+    #[tokio::test]
+    async fn test_datadog_ingest_logs_invalid_payload() {
+        let ingest_router = IngestRouterServiceClient::mocked();
+        let handler = datadog_logs(ingest_router);
+
+        let response = warp::test::request()
+            .path("/api/v2/logs")
+            .method("POST")
+            .header("content-type", "application/json")
+            .body("invalid payload")
+            .reply(&handler)
+            .await;
+        assert_eq!(response.status(), 400);
+    }
+
+    #[tokio::test]
+    async fn test_datadog_ingest_logs_ingest_error() {
+        let mut mock_ingest_router = MockIngestRouterService::new();
+        mock_ingest_router
+            .expect_ingest()
+            .once()
+            .returning(|ingest_request| {
+                assert_eq!(ingest_request.subrequests.len(), 1);
+                assert_eq!(ingest_request.subrequests[0].index_id, DATADOG_INDEX_ID);
+                assert_eq!(ingest_request.subrequests[0].source_id, INGEST_V2_SOURCE_ID);
+                assert_eq!(
+                    ingest_request.subrequests[0]
+                        .doc_batch
+                        .as_ref()
+                        .unwrap()
+                        .num_docs(),
+                    1
+                );
+
+                Err(IngestV2Error::Timeout(
+                    "request timed out after 10 seconds".to_string(),
+                ))
+            });
+        let ingest_router = IngestRouterServiceClient::from_mock(mock_ingest_router);
+        let handler = datadog_logs(ingest_router);
+        let payload = r#"
+            [
+              {
+                "message": "Hello, world!"
+              }
+            ]
+        "#;
+        let response = warp::test::request()
+            .path("/api/v2/logs")
+            .method("POST")
+            .header("content-type", "application/json")
+            .body(payload)
+            .reply(&handler)
+            .await;
+        assert_eq!(response.status(), 408);
+    }
+
+    #[tokio::test]
+    async fn test_datadog_ingest_logs_ingest_failure() {
+        let mut mock_ingest_router = MockIngestRouterService::new();
+        mock_ingest_router
+            .expect_ingest()
+            .once()
+            .returning(|ingest_request| {
+                assert_eq!(ingest_request.subrequests.len(), 1);
+                assert_eq!(ingest_request.subrequests[0].index_id, DATADOG_INDEX_ID);
+                assert_eq!(ingest_request.subrequests[0].source_id, INGEST_V2_SOURCE_ID);
+                assert_eq!(
+                    ingest_request.subrequests[0]
+                        .doc_batch
+                        .as_ref()
+                        .unwrap()
+                        .num_docs(),
+                    1
+                );
+
+                Ok(IngestResponseV2 {
+                    successes: Vec::new(),
+                    failures: vec![IngestFailure {
+                        subrequest_id: 0,
+                        index_id: DATADOG_INDEX_ID.to_string(),
+                        source_id: INGEST_V2_SOURCE_ID.to_string(),
+                        reason: IngestFailureReason::ShardRateLimited as i32,
+                    }],
+                })
+            });
+        let ingest_router = IngestRouterServiceClient::from_mock(mock_ingest_router);
+        let handler = datadog_logs(ingest_router);
+        let payload = r#"
+            [
+              {
+                "message": "Hello, world!"
+              }
+            ]
+        "#;
+        let response = warp::test::request()
+            .path("/api/v2/logs")
+            .method("POST")
+            .header("content-type", "application/json")
+            .body(payload)
+            .reply(&handler)
+            .await;
+        assert_eq!(response.status(), 429);
+    }
 }

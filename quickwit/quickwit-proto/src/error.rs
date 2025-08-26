@@ -30,7 +30,7 @@ const QW_ERROR_HEADER_NAME: &str = "qw-error-bin";
 ///
 /// It is voluntarily a restricted subset of gRPC status codes. Please introduce new variants
 /// thoughtfully.
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum ServiceErrorCode {
     AlreadyExists,
     BadRequest,
