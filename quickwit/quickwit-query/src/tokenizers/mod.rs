@@ -14,6 +14,7 @@
 
 mod chinese_compatible;
 mod code_tokenizer;
+mod datadog_tokenizer;
 #[cfg(feature = "multilang")]
 mod multilang;
 mod tokenizer_manager;
@@ -29,6 +30,7 @@ pub use self::code_tokenizer::CodeTokenizer;
 #[cfg(feature = "multilang")]
 pub use self::multilang::MultiLangTokenizer;
 pub use self::tokenizer_manager::TokenizerManager;
+use crate::tokenizers::datadog_tokenizer::DatadogTokenizer;
 
 pub const DEFAULT_REMOVE_TOKEN_LENGTH: usize = 255;
 
@@ -100,6 +102,13 @@ pub fn create_default_quickwit_tokenizer_manager() -> TokenizerManager {
             .build(),
         true,
     );
+
+    let datadog_tokenizer = TextAnalyzer::builder(DatadogTokenizer)
+        .filter(LowerCaser)
+        .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
+        .build();
+    tokenizer_manager.register("datadog", datadog_tokenizer, true);
+
     tokenizer_manager
 }
 

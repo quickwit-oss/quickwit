@@ -7576,6 +7576,7 @@ dependencies = [
  "tantivy-fst",
  "thiserror 2.0.14",
  "time",
+ "unicode-segmentation",
  "whichlang",
 ]
 
