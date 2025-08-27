@@ -324,7 +324,7 @@ fn search_get_filter()
     warp::path!(String / "search")
         .and_then(extract_index_id_patterns)
         .and(warp::get())
-        .and(serde_qs::warp::query(serde_qs::Config::default()))
+        .and(warp::query())
 }
 
 fn search_post_filter()
@@ -341,7 +341,7 @@ fn search_plan_get_filter()
     warp::path!(String / "search-plan")
         .and_then(extract_index_id_patterns)
         .and(warp::get())
-        .and(serde_qs::warp::query(serde_qs::Config::default()))
+        .and(warp::query())
 }
 
 fn search_plan_post_filter()
@@ -532,7 +532,7 @@ async fn search_stream_endpoint(
     index_id: IndexId,
     search_request: SearchStreamRequestQueryString,
     search_service: &dyn SearchService,
-) -> Result<warp::hyper::Body, SearchError> {
+) -> Result<hyper::body::Bytes, SearchError> {
     let query_ast = query_ast_from_user_text(&search_request.query, search_request.search_fields);
     let query_ast_json = serde_json::to_string(&query_ast)?;
     let request = quickwit_proto::search::SearchStreamRequest {
@@ -546,7 +546,7 @@ async fn search_stream_endpoint(
         partition_by_field: search_request.partition_by_field,
     };
     let mut data = search_service.root_search_stream(request).await?;
-    let (mut sender, body) = warp::hyper::Body::channel();
+    let (mut sender, body) = warp::hyper::body::Body::channel();
     tokio::spawn(async move {
         while let Some(result) = data.next().await {
             match result {
@@ -580,17 +580,16 @@ async fn search_stream_endpoint(
     Ok(body)
 }
 
-fn make_streaming_reply(result: Result<warp::hyper::Body, SearchError>) -> impl Reply {
+fn make_streaming_reply(result: Result<hyper::body::Bytes, SearchError>) -> impl Reply {
     let status_code: StatusCode;
     let body = match result {
         Ok(body) => {
             status_code = StatusCode::OK;
-            warp::reply::Response::new(body)
+            warp::reply::Response::new(body.into())
         }
         Err(error) => {
-            status_code =
-                crate::convert_status_code_to_legacy_http(error.error_code().http_status_code());
-            warp::reply::Response::new(warp::hyper::Body::from(error.to_string()))
+            status_code = error.error_code().http_status_code();
+            warp::reply::Response::new(error.to_string().into())
         }
     };
     reply::with_status(body, status_code)
@@ -615,7 +614,7 @@ fn search_stream_filter()
 -> impl Filter<Extract = (String, SearchStreamRequestQueryString), Error = Rejection> + Clone {
     warp::path!(String / "search" / "stream")
         .and(warp::get())
-        .and(serde_qs::warp::query(serde_qs::Config::default()))
+        .and(warp::query())
 }
 
 #[cfg(test)]
