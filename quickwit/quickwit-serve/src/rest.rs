@@ -16,6 +16,7 @@ use std::fmt::Formatter;
 use std::pin::Pin;
 use std::sync::Arc;
 
+use hyper_util::rt::{TokioExecutor, TokioIo};
 use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_config::{disable_ingest_v1, enable_ingest_v2};
 use quickwit_search::SearchService;
@@ -30,6 +31,7 @@ use warp::filters::log::Info;
 use warp::hyper::http::HeaderValue;
 use warp::hyper::server::accept::Accept;
 use warp::hyper::server::conn::AddrIncoming;
+use hyper::{body, server::conn::auto, service};
 use warp::hyper::{Method, StatusCode, http};
 use warp::{Filter, Rejection, Reply, redirect};
 
@@ -219,15 +221,27 @@ pub(crate) async fn start_rest_server(
         "starting REST server listening on {rest_listen_addr}"
     );
 
-    let incoming = AddrIncoming::from_listener(tcp_listener)?;
+    let listener = TcpListener::bind(rest_listen_addr).await?;
 
-    let maybe_tls_incoming =
-        if let Some(tls_config) = &quickwit_services.node_config.rest_config.tls {
-            let rustls_config = tls::make_rustls_config(tls_config)?;
-            EitherIncoming::Left(tls::TlsAcceptor::new(rustls_config, incoming))
-        } else {
-            EitherIncoming::Right(incoming)
-        };
+    loop {
+        let (stream, _) = listener.accept().await?;
+        let io = TokioIo::new(stream);
+        tokio::task::spawn(async move {
+            if let Err(e) = auto::serve_connection(io, service).await {
+                error!("Error serving connection: {:?}", e);
+            }
+        });
+    }
+
+    // let incoming = AddrIncoming::from_listener(tcp_listener)?;
+
+    // let maybe_tls_incoming =
+    //     if let Some(tls_config) = &quickwit_services.node_config.rest_config.tls {
+    //         let rustls_config = tls::make_rustls_config(tls_config)?;
+    //         EitherIncoming::Left(tls::TlsAcceptor::new(rustls_config, incoming))
+    //     } else {
+    //         EitherIncoming::Right(incoming)
+    //     };
 
     // `graceful_shutdown()` seems to be blocking in presence of existing connections.
     // The following approach of dropping the serve supposedly is not bullet proof, but it seems to
@@ -236,16 +250,16 @@ pub(crate) async fn start_rest_server(
     // See more of the discussion here:
     // https://github.com/hyperium/hyper/issues/2386
 
-    let serve_fut = async move {
-        tokio::select! {
-             res = warp::hyper::Server::builder(maybe_tls_incoming).serve(Shared::new(service)) => { res }
-             _ = shutdown_signal => { Ok(()) }
-        }
-    };
+    // let serve_fut = async move {
+    //     tokio::select! {
+    //          res = warp::hyper::Server::builder(maybe_tls_incoming).serve(Shared::new(service)) => { res }
+    //          _ = shutdown_signal => { Ok(()) }
+    //     }
+    // };
 
-    let (serve_res, _trigger_res) = tokio::join!(serve_fut, readiness_trigger);
-    serve_res?;
-    Ok(())
+    // let (serve_res, _trigger_res) = tokio::join!(serve_fut, readiness_trigger);
+    // serve_res?;
+    // Ok(())
 }
 
 fn search_routes(

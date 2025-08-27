@@ -40,9 +40,7 @@ pub(crate) fn into_rest_api_response<T: serde::Serialize, E: ServiceError>(
     body_format: BodyFormat,
 ) -> RestApiResponse {
     let rest_api_result = result.map_err(|error| RestApiError {
-        status_code: crate::convert_status_code_to_legacy_http(
-            error.error_code().http_status_code(),
-        ),
+        status_code: error.error_code().http_status_code(),
         message: error.to_string(),
     });
     let status_code = match &rest_api_result {
