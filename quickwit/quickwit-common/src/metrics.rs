@@ -336,12 +336,18 @@ impl Default for MemoryMetrics {
 }
 
 #[derive(Clone)]
-pub struct CpuMetrics {
-    pub dd_cpu_usage: MetricsGauge,
+pub struct SystemMetrics {
     pub dd_uptime: MetricsGauge,
+    pub dd_cpu_usage: MetricsGauge,
+    pub dd_disk_bytes_read: Counter,
+    pub dd_disk_bytes_written: Counter,
+    pub dd_disk_size: MetricsGauge,
+    pub dd_disk_space_available: MetricsGauge,
+    pub dd_network_bytes_recv: Counter,
+    pub dd_network_bytes_sent: Counter,
 }
 
-impl Default for CpuMetrics {
+impl Default for SystemMetrics {
     fn default() -> Self {
         let mut uptime_labels = Vec::with_capacity(4);
         let keys = [
@@ -357,8 +363,14 @@ impl Default for CpuMetrics {
             }
         }
         Self {
-            dd_cpu_usage: gauge!("cpu.usage.gauge"),
             dd_uptime: gauge!("uptime.gauge", uptime_labels),
+            dd_cpu_usage: gauge!("cpu.usage.gauge"),
+            dd_disk_bytes_read: counter!("disk.bytes_read.counter"),
+            dd_disk_bytes_written: counter!("disk.bytes_written.counter"),
+            dd_disk_size: gauge!("disk.total_space.gauge"),
+            dd_disk_space_available: gauge!("disk.available_space.gauge"),
+            dd_network_bytes_recv: counter!("network.bytes_recv.counter"),
+            dd_network_bytes_sent: counter!("network.bytes_sent.counter"),
         }
     }
 }
@@ -557,4 +569,4 @@ pub fn index_label(index_name: &str) -> &str {
 }
 
 pub static MEMORY_METRICS: Lazy<MemoryMetrics> = Lazy::new(MemoryMetrics::default);
-pub static CPU_METRICS: Lazy<CpuMetrics> = Lazy::new(CpuMetrics::default);
+pub static SYSTEM_METRICS: Lazy<SystemMetrics> = Lazy::new(SystemMetrics::default);

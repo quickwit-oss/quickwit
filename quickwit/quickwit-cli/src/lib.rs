@@ -45,7 +45,6 @@ use crate::checklist::run_checklist;
 
 pub mod checklist;
 pub mod cli;
-pub mod cpu;
 pub mod index;
 #[cfg(feature = "jemalloc")]
 pub mod jemalloc;
@@ -55,6 +54,7 @@ pub mod service;
 pub mod source;
 pub mod split;
 pub mod stats;
+pub mod system;
 pub mod tool;
 
 /// Throughput calculation window size.
@@ -336,9 +336,9 @@ fn prompt_confirmation(prompt: &str, default: bool) -> bool {
     }
 }
 
-/// Starts the CPU and jemalloc (if the feature is enabled) metrics loops.
+/// Starts the system and jemalloc (if the feature is enabled) metrics loops.
 pub fn start_metrics_loops() {
-    cpu::start_cpu_metrics_loop();
+    system::start_sys_metrics_loop();
 
     #[cfg(feature = "jemalloc")]
     jemalloc::start_jemalloc_metrics_loop();

@@ -243,6 +243,12 @@ async fn test_metrics() {
         "search_requests.count",
         "search_requests.duration_seconds",
         "uptime.gauge",
+        "disk.bytes_read.counter",
+        "disk.bytes_written.counter",
+        "disk.total_space.gauge",
+        "disk.available_space.gauge",
+        "network.bytes_recv.counter",
+        "network.bytes_sent.counter",
     ];
     let mut found_metrics = Vec::new();
 
