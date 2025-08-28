@@ -23,6 +23,7 @@ futures-util = { workspace = true }
 glob = { workspace = true }
 hex = { workspace = true }
 http = { workspace = true }
+http-body-util = { workspace = true }
 http-serde = { workspace = true }
 humantime = { workspace = true }
 hyper = { workspace = true }
@@ -55,7 +56,7 @@ tower = { workspace = true, features = ["limit"] }
 tower-http = { workspace = true }
 tracing = { workspace = true }
 utoipa = { workspace = true }
-warp = { workspace = true }
+warp = { workspace = true, features = ["server"] }
 zstd = { workspace = true }
 
 quickwit-actors = { workspace = true }

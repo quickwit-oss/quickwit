@@ -16,6 +16,7 @@ use std::fmt::Formatter;
 use std::pin::Pin;
 use std::sync::Arc;
 
+use hyper_util::rt::{TokioExecutor, TokioIo};
 use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_config::{disable_ingest_v1, enable_ingest_v2};
 use quickwit_search::SearchService;
@@ -28,10 +29,11 @@ use tower_http::cors::CorsLayer;
 use tracing::{error, info};
 use warp::filters::log::Info;
 use warp::hyper::http::HeaderValue;
-use warp::hyper::server::accept::Accept;
-use warp::hyper::server::conn::AddrIncoming;
+use hyper::{body, service};
 use warp::hyper::{Method, StatusCode, http};
 use warp::{Filter, Rejection, Reply, redirect};
+use tokio_rustls::TlsAcceptor;
+use hyper_util::server::conn::auto;
 
 use crate::cluster_api::cluster_handler;
 use crate::decompression::{CorruptedData, UnsupportedEncoding};
@@ -220,15 +222,46 @@ pub(crate) async fn start_rest_server(
         "starting REST server listening on {rest_listen_addr}"
     );
 
-    let incoming = AddrIncoming::from_listener(tcp_listener)?;
+    let listener = TcpListener::bind(rest_listen_addr).await?;
 
-    let maybe_tls_incoming =
-        if let Some(tls_config) = &quickwit_services.node_config.rest_config.tls {
-            let rustls_config = tls::make_rustls_config(tls_config)?;
-            EitherIncoming::Left(tls::TlsAcceptor::new(rustls_config, incoming))
-        } else {
-            EitherIncoming::Right(incoming)
-        };
+    if let Some(tls_config) = &quickwit_services.node_config.rest_config.tls {
+        let rustls_config = tls::make_rustls_config(tls_config)?;
+        let acceptor = TlsAcceptor::from(rustls_config);
+
+        loop {
+            let stream = listener.accept().await?.0;
+            let stream = acceptor.accept(stream).await?;
+            let io = TokioIo::new(stream);
+            tokio::task::spawn(async move {
+                let connection = auto::Builder::new(TokioExecutor::new()).serve_connection(io, service);
+                if let Err(e) = connection.await {
+                    error!("Error serving connection: {:?}", e);
+                }
+            }); 
+        }
+    } else {
+        loop {
+            let (stream, _) = listener.accept().await?;
+            let io = TokioIo::new(stream);
+            tokio::task::spawn(async move {
+                if let Err(e) = auto::Builder::new(TokioExecutor::new()).serve_connection(io, service.clone()).await {
+                    error!("Error serving connection: {:?}", e);
+                }
+            });
+        }
+    };
+
+    
+
+    // let incoming = AddrIncoming::from_listener(tcp_listener)?;
+
+    // let maybe_tls_incoming =
+    //     if let Some(tls_config) = &quickwit_services.node_config.rest_config.tls {
+    //         let rustls_config = tls::make_rustls_config(tls_config)?;
+    //         EitherIncoming::Left(tls::TlsAcceptor::new(rustls_config, incoming))
+    //     } else {
+    //         EitherIncoming::Right(incoming)
+    //     };
 
     // `graceful_shutdown()` seems to be blocking in presence of existing connections.
     // The following approach of dropping the serve supposedly is not bullet proof, but it seems to
@@ -237,16 +270,16 @@ pub(crate) async fn start_rest_server(
     // See more of the discussion here:
     // https://github.com/hyperium/hyper/issues/2386
 
-    let serve_fut = async move {
-        tokio::select! {
-             res = warp::hyper::Server::builder(maybe_tls_incoming).serve(Shared::new(service)) => { res }
-             _ = shutdown_signal => { Ok(()) }
-        }
-    };
+    // let serve_fut = async move {
+    //     tokio::select! {
+    //          res = warp::hyper::Server::builder(maybe_tls_incoming).serve(Shared::new(service)) => { res }
+    //          _ = shutdown_signal => { Ok(()) }
+    //     }
+    // };
 
-    let (serve_res, _trigger_res) = tokio::join!(serve_fut, readiness_trigger);
-    serve_res?;
-    Ok(())
+    // let (serve_res, _trigger_res) = tokio::join!(serve_fut, readiness_trigger);
+    // serve_res?;
+    // Ok(())
 }
 
 fn search_routes(
@@ -492,72 +525,61 @@ mod tls {
     use quickwit_config::TlsConfig;
     use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
     use tokio_rustls::rustls::ServerConfig;
-    use warp::hyper::server::accept::Accept;
-    use warp::hyper::server::conn::{AddrIncoming, AddrStream};
+    use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 
     fn io_error(error: String) -> io::Error {
         io::Error::other(error)
     }
 
     // Load public certificate from file.
-    fn load_certs(filename: &str) -> io::Result<Vec<rustls::Certificate>> {
+    fn load_certs(filename: &str) -> io::Result<Vec<CertificateDer<'static>>> {
         // Open certificate file.
-        let certfile = fs::read(filename)
+        let certfile = fs::File::open(filename)
             .map_err(|error| io_error(format!("failed to open {filename}: {error}")))?;
-
+        let mut reader = io::BufReader::new(certfile);
+        
         // Load and return certificate.
-        let certs = rustls_pemfile::certs(&mut certfile.as_ref())
-            .map_err(|_| io_error("failed to load certificate".to_string()))?;
-        Ok(certs.into_iter().map(rustls::Certificate).collect())
+        rustls_pemfile::certs(&mut reader).collect()
     }
 
     // Load private key from file.
-    fn load_private_key(filename: &str) -> io::Result<rustls::PrivateKey> {
+    fn load_private_key(filename: &str) -> io::Result<PrivateKeyDer<'static>> {
         // Open keyfile.
-        let keyfile = fs::read(filename)
+        let keyfile = fs::File::open(filename)
             .map_err(|error| io_error(format!("failed to open {filename}: {error}")))?;
+        let mut reader = io::BufReader::new(keyfile);
 
         // Load and return a single private key.
-        let keys = rustls_pemfile::pkcs8_private_keys(&mut keyfile.as_ref())
-            .map_err(|_| io_error("failed to load private key".to_string()))?;
-
-        if keys.len() != 1 {
-            return Err(io_error(format!(
-                "expected a single private key, got {}",
-                keys.len()
-            )));
-        }
-
-        Ok(rustls::PrivateKey(keys[0].clone()))
+        rustls_pemfile::private_key(&mut reader).map(|key| key.unwrap)
     }
 
-    pub struct TlsAcceptor {
-        config: Arc<ServerConfig>,
-        incoming: AddrIncoming,
-    }
+    // pub struct TlsAcceptor {
+    //     config: Arc<ServerConfig>,
+    //     incoming: AddrIncoming,
+    // }
 
-    impl TlsAcceptor {
-        pub fn new(config: Arc<ServerConfig>, incoming: AddrIncoming) -> TlsAcceptor {
-            TlsAcceptor { config, incoming }
-        }
-    }
+    // impl TlsAcceptor {
+    //     pub fn new(config: Arc<ServerConfig>, incoming: AddrIncoming) -> TlsAcceptor {
+    //         TlsAcceptor { config, incoming }
+    //     }
+    // }
 
-    impl Accept for TlsAcceptor {
-        type Conn = TlsStream;
-        type Error = io::Error;
+    // impl Accept for TlsAcceptor {
+    //     type Conn = TlsStream;
+    //     type Error = io::Error;
 
-        fn poll_accept(
-            self: Pin<&mut Self>,
-            cx: &mut Context<'_>,
-        ) -> Poll<Option<Result<Self::Conn, Self::Error>>> {
-            let pin = self.get_mut();
-            match ready!(Pin::new(&mut pin.incoming).poll_accept(cx)) {
-                Some(Ok(sock)) => Poll::Ready(Some(Ok(TlsStream::new(sock, pin.config.clone())))),
-                Some(Err(e)) => Poll::Ready(Some(Err(e))),
-                None => Poll::Ready(None),
-            }
-        }
-    }
+    //     fn poll_accept(
+    //         self: Pin<&mut Self>,
+    //         cx: &mut Context<'_>,
+    //     ) -> Poll<Option<Result<Self::Conn, Self::Error>>> {
+    //         let pin = self.get_mut();
+    //         match ready!(Pin::new(&mut pin.incoming).poll_accept(cx)) {
+    //             Some(Ok(sock)) => Poll::Ready(Some(Ok(TlsStream::new(sock, pin.config.clone())))),
+    //             Some(Err(e)) => Poll::Ready(Some(Err(e))),
+    //             None => Poll::Ready(None),
+    //         }
+    //     }
+    // }
 
     enum State {
         Handshaking(tokio_rustls::Accept<AddrStream>),
