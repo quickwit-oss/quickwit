@@ -3,8 +3,8 @@
 pub struct AnyRequest {
     #[prost(uint64, tag = "1")]
     pub req_id: u64,
-    #[prost(string, tag = "2")]
-    pub trace_id: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "2")]
+    pub context: ::core::option::Option<Context>,
     #[prost(oneof = "any_request::Request", tags = "11, 12, 13, 14, 15, 16, 17, 18, 21")]
     pub request: ::core::option::Option<any_request::Request>,
 }
@@ -77,6 +77,14 @@ pub mod any_response {
         #[prost(message, tag = "21")]
         LocalPing(super::PingResponse),
     }
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Context {
+    #[prost(map = "string, string", tag = "1")]
+    pub values: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        ::prost::alloc::string::String,
+    >,
 }
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct ClusterIdentify {

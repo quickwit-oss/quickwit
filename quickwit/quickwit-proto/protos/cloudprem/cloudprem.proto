@@ -38,7 +38,7 @@ service CloudPremService {
 
 message AnyRequest {
     uint64 req_id = 1;
-    string trace_id = 2;
+    Context context = 2;
 
     oneof request {
         PingRequest ping = 11;
@@ -78,6 +78,10 @@ message AnyResponse {
         // Same as a ping, but not propagated further
         PingResponse local_ping = 21;
     }
+}
+
+message Context {
+        map<string, string> values = 1;
 }
 
 message ClusterIdentify {
