@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use futures::{SinkExt, StreamExt};
-use http::StatusCode;
+use http::{HeaderValue, StatusCode};
 use prost::Message as ProstMessage;
 use quickwit_common::retry::RetryParams;
 use quickwit_proto::GrpcServiceError;
@@ -113,7 +113,7 @@ async fn single_websocket(
 
     let mut request = target.into_client_request()?;
     let headers = request.headers_mut();
-    headers.insert("DD-API-KEY", dd_api_key.parse()?);
+    headers.insert("DD-API-KEY", HeaderValue::from_str(dd_api_key)?);
     headers.insert("DD-APPLICATION-KEY", dd_application_key.parse()?);
 
     let (mut ws, _) = connect_async(request).await?;
