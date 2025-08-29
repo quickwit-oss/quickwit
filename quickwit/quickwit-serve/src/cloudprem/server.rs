@@ -87,7 +87,7 @@ pub(crate) async fn start_cloudprem_server(
                 .zip(cloudprem_config.dd_application_key)
             else {
                 anyhow::bail!(
-                    "`connection_endpoint` is set but `dd_apli_key` or `dd_application_key` are \
+                    "`connection_endpoint` is set but `dd_api_key` or `dd_application_key` are \
                      missing"
                 );
             };
