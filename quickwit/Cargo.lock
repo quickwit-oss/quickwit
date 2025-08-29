@@ -7005,6 +7005,7 @@ dependencies = [
  "quickwit-common",
  "quickwit-doc-mapper",
  "quickwit-doc-transforms",
+ "quickwit-macros",
  "quickwit-proto",
  "regex",
  "serde",
