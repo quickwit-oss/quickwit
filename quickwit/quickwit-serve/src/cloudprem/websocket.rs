@@ -23,7 +23,9 @@ use tokio_tungstenite::tungstenite::error::{
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::{error, info, warn};
 
-const MIN_VALID_CONN: Duration = Duration::from_secs(60);
+// Duration below which we consider the connection closed in an unhealty manner independantly of how
+// it was closed, and for which we log an error no matter what.
+const MIN_HEALTHY_CONN_DURATION: Duration = Duration::from_secs(60);
 
 // TODO we need to add trace id propagation, maybe some form of cancelation too?
 
@@ -156,6 +158,7 @@ async fn single_websocket(
                                 },
                                 Message::Close(_) => return Err(TungsteniteError::ConnectionClosed),
                                 Message::Ping(payload) => {
+                                    // this is likely dead-code, we reply just in case the go library decides to emit websocket ping on its own
                                     ws.send(Message::Pong(payload)).await?;
                                 },
                                 Message::Pong(_) => (),
@@ -163,6 +166,8 @@ async fn single_websocket(
                         }
                 },
                 _ = interval.tick() => {
+                        // This is on main liveliness detection mechanism. We don't use standard websocket ping/pong because they get interpreted by the Go library
+                        // which makes it very hard to check for liveliness manually.
                         if unreplied_count > 2 {
                                 warn!("other side unresponsive, retrying connection");
                                 return Err(TungsteniteError::ConnectionClosed)
@@ -229,7 +234,7 @@ pub(crate) async fn maintain_websocket(
             single_websocket(&url, &dd_api_key, &dd_application_key, service.clone()).await;
 
         let msg = format_err(&err);
-        let too_short = before_conn.elapsed() < MIN_VALID_CONN;
+        let too_short = before_conn.elapsed() < MIN_HEALTHY_CONN_DURATION;
         if too_short {
             error!("{msg}")
         } else if report_err(&err) {
