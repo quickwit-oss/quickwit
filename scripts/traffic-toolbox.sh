@@ -34,7 +34,7 @@ echo "connecting to pod $POD_TARGET"
 
 # to update run `crane ls registry.ddbuild.io/traffic-toolbox | grep -E '^v\d+\.\d+\.\d+$' |sort -rV | head -n1`
 # this takes a good 20s to run, so running it interactively isn't really an option
-VERSION="v1.144.1"
+VERSION="v1.161.0"
 
 TARGET=${2:-}
 

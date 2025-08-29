@@ -5,7 +5,7 @@ pub struct AnyRequest {
     pub req_id: u64,
     #[prost(message, optional, tag = "2")]
     pub context: ::core::option::Option<Context>,
-    #[prost(oneof = "any_request::Request", tags = "11, 12, 13, 14, 15, 16, 17, 18, 21")]
+    #[prost(oneof = "any_request::Request", tags = "11, 12, 13, 14, 15, 17, 18, 21")]
     pub request: ::core::option::Option<any_request::Request>,
 }
 /// Nested message and enum types in `AnyRequest`.
@@ -22,8 +22,6 @@ pub mod any_request {
         Aggregation(super::AggregationRequest),
         #[prost(message, tag = "15")]
         PullClusterMetrics(super::PullClusterMetricsRequest),
-        #[prost(message, tag = "16")]
-        SetClusterAddress(super::SetClusterAddressRequest),
         #[prost(message, tag = "17")]
         RootSearch(super::super::quickwit::search::SearchRequest),
         #[prost(message, tag = "18")]
@@ -41,7 +39,7 @@ pub struct AnyResponse {
     pub grpc_code: u32,
     #[prost(
         oneof = "any_response::Response",
-        tags = "9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 21"
+        tags = "9, 10, 11, 12, 13, 14, 15, 17, 18, 21"
     )]
     pub response: ::core::option::Option<any_response::Response>,
 }
@@ -67,8 +65,6 @@ pub mod any_response {
         Aggregation(super::AggregationResponse),
         #[prost(message, tag = "15")]
         PullClusterMetrics(super::PullClusterMetricsResponse),
-        #[prost(message, tag = "16")]
-        SetClusterAddress(super::SetClusterAddressResponse),
         #[prost(message, tag = "17")]
         RootSearch(super::super::quickwit::search::SearchResponse),
         #[prost(message, tag = "18")]
@@ -125,17 +121,6 @@ pub struct PingRequest {
 }
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct PingResponse {}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct SetClusterAddressRequest {
-    #[prost(int64, tag = "1")]
-    pub org_id: i64,
-    #[prost(string, tag = "2")]
-    pub address: ::prost::alloc::string::String,
-    #[prost(bool, tag = "4")]
-    pub secure: bool,
-}
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
-pub struct SetClusterAddressResponse {}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListRequest {
     /// this is always a com.dd.queryparser.proto.QueryNode, but we can't import logs-backend protobuf from here
@@ -616,11 +601,6 @@ impl RpcName for PullClusterMetricsRequest {
         "pull_cluster_metrics"
     }
 }
-impl RpcName for SetClusterAddressRequest {
-    fn rpc_name() -> &'static str {
-        "set_cluster_address"
-    }
-}
 impl RpcName for super::quickwit::search::SearchRequest {
     fn rpc_name() -> &'static str {
         "root_search"
@@ -663,11 +643,6 @@ pub trait CloudPremService: std::fmt::Debug + Send + Sync + 'static {
         &self,
         request: PullClusterMetricsRequest,
     ) -> crate::cloudprem::CloudPremResult<PullClusterMetricsResponse>;
-    /// Add a temporary backdoor to add cluster addresses dynamically without having to push a PR on dd-source and redeploy the bridge.
-    async fn set_cluster_address(
-        &self,
-        request: SetClusterAddressRequest,
-    ) -> crate::cloudprem::CloudPremResult<SetClusterAddressResponse>;
     /// These are endpoints to use the capabilities of the underlying quickwit searcher
     async fn root_search(
         &self,
@@ -820,12 +795,6 @@ impl CloudPremService for CloudPremServiceClient {
     ) -> crate::cloudprem::CloudPremResult<PullClusterMetricsResponse> {
         self.inner.0.pull_cluster_metrics(request).await
     }
-    async fn set_cluster_address(
-        &self,
-        request: SetClusterAddressRequest,
-    ) -> crate::cloudprem::CloudPremResult<SetClusterAddressResponse> {
-        self.inner.0.set_cluster_address(request).await
-    }
     async fn root_search(
         &self,
         request: super::quickwit::search::SearchRequest,
@@ -883,12 +852,6 @@ pub mod mock_cloud_prem_service {
             request: super::PullClusterMetricsRequest,
         ) -> crate::cloudprem::CloudPremResult<super::PullClusterMetricsResponse> {
             self.inner.lock().await.pull_cluster_metrics(request).await
-        }
-        async fn set_cluster_address(
-            &self,
-            request: super::SetClusterAddressRequest,
-        ) -> crate::cloudprem::CloudPremResult<super::SetClusterAddressResponse> {
-            self.inner.lock().await.set_cluster_address(request).await
         }
         async fn root_search(
             &self,
@@ -999,22 +962,6 @@ impl tower::Service<PullClusterMetricsRequest> for InnerCloudPremServiceClient {
         Box::pin(fut)
     }
 }
-impl tower::Service<SetClusterAddressRequest> for InnerCloudPremServiceClient {
-    type Response = SetClusterAddressResponse;
-    type Error = crate::cloudprem::CloudPremError;
-    type Future = BoxFuture<Self::Response, Self::Error>;
-    fn poll_ready(
-        &mut self,
-        _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), Self::Error>> {
-        std::task::Poll::Ready(Ok(()))
-    }
-    fn call(&mut self, request: SetClusterAddressRequest) -> Self::Future {
-        let svc = self.clone();
-        let fut = async move { svc.0.set_cluster_address(request).await };
-        Box::pin(fut)
-    }
-}
 impl tower::Service<super::quickwit::search::SearchRequest>
 for InnerCloudPremServiceClient {
     type Response = super::quickwit::search::SearchResponse;
@@ -1102,11 +1049,6 @@ struct CloudPremServiceTowerServiceStack {
         PullClusterMetricsResponse,
         crate::cloudprem::CloudPremError,
     >,
-    set_cluster_address_svc: quickwit_common::tower::BoxService<
-        SetClusterAddressRequest,
-        SetClusterAddressResponse,
-        crate::cloudprem::CloudPremError,
-    >,
     root_search_svc: quickwit_common::tower::BoxService<
         super::quickwit::search::SearchRequest,
         super::quickwit::search::SearchResponse,
@@ -1154,12 +1096,6 @@ impl CloudPremService for CloudPremServiceTowerServiceStack {
         request: PullClusterMetricsRequest,
     ) -> crate::cloudprem::CloudPremResult<PullClusterMetricsResponse> {
         self.pull_cluster_metrics_svc.clone().ready().await?.call(request).await
-    }
-    async fn set_cluster_address(
-        &self,
-        request: SetClusterAddressRequest,
-    ) -> crate::cloudprem::CloudPremResult<SetClusterAddressResponse> {
-        self.set_cluster_address_svc.clone().ready().await?.call(request).await
     }
     async fn root_search(
         &self,
@@ -1230,16 +1166,6 @@ type PullClusterMetricsLayer = quickwit_common::tower::BoxLayer<
     PullClusterMetricsResponse,
     crate::cloudprem::CloudPremError,
 >;
-type SetClusterAddressLayer = quickwit_common::tower::BoxLayer<
-    quickwit_common::tower::BoxService<
-        SetClusterAddressRequest,
-        SetClusterAddressResponse,
-        crate::cloudprem::CloudPremError,
-    >,
-    SetClusterAddressRequest,
-    SetClusterAddressResponse,
-    crate::cloudprem::CloudPremError,
->;
 type RootSearchLayer = quickwit_common::tower::BoxLayer<
     quickwit_common::tower::BoxService<
         super::quickwit::search::SearchRequest,
@@ -1277,7 +1203,6 @@ pub struct CloudPremServiceTowerLayerStack {
     fetch_one_layers: Vec<FetchOneLayer>,
     aggregate_layers: Vec<AggregateLayer>,
     pull_cluster_metrics_layers: Vec<PullClusterMetricsLayer>,
-    set_cluster_address_layers: Vec<SetClusterAddressLayer>,
     root_search_layers: Vec<RootSearchLayer>,
     root_list_terms_layers: Vec<RootListTermsLayer>,
     inverted_request_stream_layers: Vec<InvertedRequestStreamLayer>,
@@ -1414,31 +1339,6 @@ impl CloudPremServiceTowerLayerStack {
         >>::Future: Send + 'static,
         L: tower::Layer<
                 quickwit_common::tower::BoxService<
-                    SetClusterAddressRequest,
-                    SetClusterAddressResponse,
-                    crate::cloudprem::CloudPremError,
-                >,
-            > + Clone + Send + Sync + 'static,
-        <L as tower::Layer<
-            quickwit_common::tower::BoxService<
-                SetClusterAddressRequest,
-                SetClusterAddressResponse,
-                crate::cloudprem::CloudPremError,
-            >,
-        >>::Service: tower::Service<
-                SetClusterAddressRequest,
-                Response = SetClusterAddressResponse,
-                Error = crate::cloudprem::CloudPremError,
-            > + Clone + Send + Sync + 'static,
-        <<L as tower::Layer<
-            quickwit_common::tower::BoxService<
-                SetClusterAddressRequest,
-                SetClusterAddressResponse,
-                crate::cloudprem::CloudPremError,
-            >,
-        >>::Service as tower::Service<SetClusterAddressRequest>>::Future: Send + 'static,
-        L: tower::Layer<
-                quickwit_common::tower::BoxService<
                     super::quickwit::search::SearchRequest,
                     super::quickwit::search::SearchResponse,
                     crate::cloudprem::CloudPremError,
@@ -1524,8 +1424,6 @@ impl CloudPremServiceTowerLayerStack {
         self.fetch_one_layers.push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.aggregate_layers.push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.pull_cluster_metrics_layers
-            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
-        self.set_cluster_address_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.root_search_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
@@ -1630,26 +1528,6 @@ impl CloudPremServiceTowerLayerStack {
         >>::Future: Send + 'static,
     {
         self.pull_cluster_metrics_layers
-            .push(quickwit_common::tower::BoxLayer::new(layer));
-        self
-    }
-    pub fn stack_set_cluster_address_layer<L>(mut self, layer: L) -> Self
-    where
-        L: tower::Layer<
-                quickwit_common::tower::BoxService<
-                    SetClusterAddressRequest,
-                    SetClusterAddressResponse,
-                    crate::cloudprem::CloudPremError,
-                >,
-            > + Send + Sync + 'static,
-        L::Service: tower::Service<
-                SetClusterAddressRequest,
-                Response = SetClusterAddressResponse,
-                Error = crate::cloudprem::CloudPremError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<SetClusterAddressRequest>>::Future: Send + 'static,
-    {
-        self.set_cluster_address_layers
             .push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
@@ -1817,14 +1695,6 @@ impl CloudPremServiceTowerLayerStack {
                 quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
-        let set_cluster_address_svc = self
-            .set_cluster_address_layers
-            .into_iter()
-            .rev()
-            .fold(
-                quickwit_common::tower::BoxService::new(inner_client.clone()),
-                |svc, layer| layer.layer(svc),
-            );
         let root_search_svc = self
             .root_search_layers
             .into_iter()
@@ -1856,7 +1726,6 @@ impl CloudPremServiceTowerLayerStack {
             fetch_one_svc,
             aggregate_svc,
             pull_cluster_metrics_svc,
-            set_cluster_address_svc,
             root_search_svc,
             root_list_terms_svc,
             inverted_request_stream_svc,
@@ -1970,15 +1839,6 @@ where
             >,
         >
         + tower::Service<
-            SetClusterAddressRequest,
-            Response = SetClusterAddressResponse,
-            Error = crate::cloudprem::CloudPremError,
-            Future = BoxFuture<
-                SetClusterAddressResponse,
-                crate::cloudprem::CloudPremError,
-            >,
-        >
-        + tower::Service<
             super::quickwit::search::SearchRequest,
             Response = super::quickwit::search::SearchResponse,
             Error = crate::cloudprem::CloudPremError,
@@ -2034,12 +1894,6 @@ where
         &self,
         request: PullClusterMetricsRequest,
     ) -> crate::cloudprem::CloudPremResult<PullClusterMetricsResponse> {
-        self.clone().call(request).await
-    }
-    async fn set_cluster_address(
-        &self,
-        request: SetClusterAddressRequest,
-    ) -> crate::cloudprem::CloudPremResult<SetClusterAddressResponse> {
         self.clone().call(request).await
     }
     async fn root_search(
@@ -2165,20 +2019,6 @@ where
                 PullClusterMetricsRequest::rpc_name(),
             ))
     }
-    async fn set_cluster_address(
-        &self,
-        request: SetClusterAddressRequest,
-    ) -> crate::cloudprem::CloudPremResult<SetClusterAddressResponse> {
-        self.inner
-            .clone()
-            .set_cluster_address(request)
-            .await
-            .map(|response| response.into_inner())
-            .map_err(|status| crate::error::grpc_status_to_service_error(
-                status,
-                SetClusterAddressRequest::rpc_name(),
-            ))
-    }
     async fn root_search(
         &self,
         request: super::quickwit::search::SearchRequest,
@@ -2298,17 +2138,6 @@ for CloudPremServiceGrpcServerAdapter {
         self.inner
             .0
             .pull_cluster_metrics(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
-    }
-    async fn set_cluster_address(
-        &self,
-        request: tonic::Request<SetClusterAddressRequest>,
-    ) -> Result<tonic::Response<SetClusterAddressResponse>, tonic::Status> {
-        self.inner
-            .0
-            .set_cluster_address(request.into_inner())
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -2569,33 +2398,6 @@ pub mod cloud_prem_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        /// Add a temporary backdoor to add cluster addresses dynamically without having to push a PR on dd-source and redeploy the bridge.
-        pub async fn set_cluster_address(
-            &mut self,
-            request: impl tonic::IntoRequest<super::SetClusterAddressRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::SetClusterAddressResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/cloudprem.CloudPremService/SetClusterAddress",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new("cloudprem.CloudPremService", "SetClusterAddress"),
-                );
-            self.inner.unary(req, path, codec).await
-        }
         /// These are endpoints to use the capabilities of the underlying quickwit searcher
         pub async fn root_search(
             &mut self,
@@ -2722,14 +2524,6 @@ pub mod cloud_prem_service_grpc_server {
             request: tonic::Request<super::PullClusterMetricsRequest>,
         ) -> std::result::Result<
             tonic::Response<super::PullClusterMetricsResponse>,
-            tonic::Status,
-        >;
-        /// Add a temporary backdoor to add cluster addresses dynamically without having to push a PR on dd-source and redeploy the bridge.
-        async fn set_cluster_address(
-            &self,
-            request: tonic::Request<super::SetClusterAddressRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::SetClusterAddressResponse>,
             tonic::Status,
         >;
         /// These are endpoints to use the capabilities of the underlying quickwit searcher
@@ -3053,55 +2847,6 @@ pub mod cloud_prem_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = PullClusterMetricsSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/cloudprem.CloudPremService/SetClusterAddress" => {
-                    #[allow(non_camel_case_types)]
-                    struct SetClusterAddressSvc<T: CloudPremServiceGrpc>(pub Arc<T>);
-                    impl<
-                        T: CloudPremServiceGrpc,
-                    > tonic::server::UnaryService<super::SetClusterAddressRequest>
-                    for SetClusterAddressSvc<T> {
-                        type Response = super::SetClusterAddressResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::SetClusterAddressRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as CloudPremServiceGrpc>::set_cluster_address(
-                                        &inner,
-                                        request,
-                                    )
-                                    .await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = SetClusterAddressSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

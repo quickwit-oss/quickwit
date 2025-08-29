@@ -24,9 +24,6 @@ service CloudPremService {
   // Gather metrics information from all nodes in the cluster, and returns a list of `NodeMetrics` objects.
   rpc PullClusterMetrics(PullClusterMetricsRequest) returns (PullClusterMetricsResponse);
 
-  // Add a temporary backdoor to add cluster addresses dynamically without having to push a PR on dd-source and redeploy the bridge.
-  rpc SetClusterAddress(SetClusterAddressRequest) returns (SetClusterAddressResponse);
-
   // These are endpoints to use the capabilities of the underlying quickwit searcher
   rpc RootSearch(quickwit.search.SearchRequest) returns (quickwit.search.SearchResponse);
   rpc RootListTerms(quickwit.search.ListTermsRequest) returns (quickwit.search.ListTermsResponse);
@@ -46,7 +43,6 @@ message AnyRequest {
         FetchOneRequest fetch_one = 13;
         AggregationRequest aggregation = 14;
         PullClusterMetricsRequest pull_cluster_metrics = 15;
-        SetClusterAddressRequest set_cluster_address = 16;
         quickwit.search.SearchRequest root_search = 17;
         quickwit.search.ListTermsRequest root_list_terms = 18;
 
@@ -71,7 +67,6 @@ message AnyResponse {
         FetchOneResponse fetch_one = 13;
         AggregationResponse aggregation = 14;
         PullClusterMetricsResponse pull_cluster_metrics = 15;
-        SetClusterAddressResponse set_cluster_address = 16;
         quickwit.search.SearchResponse root_search = 17;
         quickwit.search.ListTermsResponse root_list_terms = 18;
 
@@ -116,16 +111,6 @@ message PingRequest {
 }
 
 message PingResponse {}
-
-message SetClusterAddressRequest {
-  int64 org_id = 1;
-  string address = 2;
-  reserved 3;
-  bool secure = 4;
-}
-
-message SetClusterAddressResponse {
-}
 
 message ListRequest {
   // this is always a com.dd.queryparser.proto.QueryNode, but we can't import logs-backend protobuf from here
@@ -312,7 +297,6 @@ message AggregationResult {
   repeated string key = 1;
   repeated AggValue value = 2;
 }
-
 
 message SortByExprAndAgg {
   bool ascending = 1;

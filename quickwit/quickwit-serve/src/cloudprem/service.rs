@@ -13,8 +13,7 @@ use quickwit_proto::cloudprem::metrics::{Label, MetricFamily};
 use quickwit_proto::cloudprem::{
     AggregationRequest, AggregationResponse, CloudPremError, CloudPremResult, CloudPremService,
     Event, EventTracker, FetchOneRequest, FetchOneResponse, ListRequest, ListResponse, NodeMetrics,
-    PingRequest, PingResponse, PullClusterMetricsResponse, SetClusterAddressRequest,
-    SetClusterAddressResponse, Statistics,
+    PingRequest, PingResponse, PullClusterMetricsResponse, Statistics,
 };
 use quickwit_proto::developer::{
     DeveloperService as _, DeveloperServiceClient, PullMetricsRequest, PullMetricsResponse,
@@ -321,13 +320,6 @@ impl CloudPremService for CloudPremServiceImpl {
             result: aggregation_result,
             statistics: Some(statistics),
         })
-    }
-
-    async fn set_cluster_address(
-        &self,
-        _: SetClusterAddressRequest,
-    ) -> Result<SetClusterAddressResponse, CloudPremError> {
-        Err(CloudPremError::Unimplemented)
     }
 
     async fn root_search(
