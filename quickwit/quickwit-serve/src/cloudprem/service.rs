@@ -6,14 +6,14 @@ use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
 use itertools::Itertools;
 use quickwit_cluster::{Cluster, ClusterNode};
+use quickwit_common::ServiceStream;
 use quickwit_config::service::QuickwitService;
 use quickwit_proto::ServiceError as _;
 use quickwit_proto::cloudprem::metrics::{Label, MetricFamily};
 use quickwit_proto::cloudprem::{
     AggregationRequest, AggregationResponse, CloudPremError, CloudPremResult, CloudPremService,
     Event, EventTracker, FetchOneRequest, FetchOneResponse, ListRequest, ListResponse, NodeMetrics,
-    PingRequest, PingResponse, PullClusterMetricsResponse, SetClusterAddressRequest,
-    SetClusterAddressResponse, Statistics,
+    PingRequest, PingResponse, PullClusterMetricsResponse, Statistics,
 };
 use quickwit_proto::developer::{
     DeveloperService as _, DeveloperServiceClient, PullMetricsRequest, PullMetricsResponse,
@@ -322,13 +322,6 @@ impl CloudPremService for CloudPremServiceImpl {
         })
     }
 
-    async fn set_cluster_address(
-        &self,
-        _: SetClusterAddressRequest,
-    ) -> Result<SetClusterAddressResponse, CloudPremError> {
-        Err(CloudPremError::Unimplemented)
-    }
-
     async fn root_search(
         &self,
         mut search_request: SearchRequest,
@@ -374,6 +367,16 @@ impl CloudPremService for CloudPremServiceImpl {
             node_metrics.push(single_node_metrics);
         }
         Ok(PullClusterMetricsResponse { node_metrics })
+    }
+
+    async fn inverted_request_stream(
+        &self,
+        _: ServiceStream<quickwit_proto::cloudprem::AnyResponse>,
+    ) -> Result<
+        ServiceStream<Result<quickwit_proto::cloudprem::AnyRequest, CloudPremError>>,
+        CloudPremError,
+    > {
+        Err(CloudPremError::Unimplemented)
     }
 }
 

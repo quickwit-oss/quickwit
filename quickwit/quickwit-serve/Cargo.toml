@@ -55,6 +55,7 @@ time = { workspace = true }
 tokio = { workspace = true }
 tokio-rustls = { workspace = true }
 tokio-stream = { workspace = true }
+tokio-tungstenite = { workspace = true }
 tokio-util = { workspace = true }
 tonic-health = { workspace = true }
 tonic-reflection = { workspace = true }

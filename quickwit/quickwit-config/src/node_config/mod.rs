@@ -566,6 +566,60 @@ impl Default for JaegerConfig {
     }
 }
 
+#[derive(Clone, PartialEq, Debug)]
+pub struct WebsocketConfig {
+    // which datadog site to connect to
+    pub site: String,
+    pub dd_api_key: String,
+    pub dd_application_key: String,
+}
+
+impl WebsocketConfig {
+    fn from_parts(
+        site: Option<String>,
+        dd_api_key: Option<String>,
+        dd_application_key: Option<String>,
+    ) -> anyhow::Result<Option<Self>> {
+        match (site, dd_api_key, dd_application_key) {
+            (Some(site_raw), Some(dd_api_key), Some(dd_application_key)) => {
+                let site_no_proto = site_raw.strip_prefix("https://").unwrap_or(&site_raw);
+                let site_no_proto_no_slash =
+                    site_no_proto.strip_suffix("/").unwrap_or(site_no_proto);
+                // for some sites the agent support shortcut names, we try to reproduce that
+                // https://docs.datadoghq.com/agent/troubleshooting/site/?site=us
+                let site = match site_no_proto_no_slash {
+                    "datadoghq.com" => "app.datadoghq.com",
+                    "datadoghq.eu" => "app.datadoghq.eu",
+                    // we hardly care about fed, but let's have it for completness
+                    "ddog-gov.com" => "app.ddog-gov.com",
+                    site => site,
+                };
+                Ok(Some(WebsocketConfig {
+                    site: site.to_string(),
+                    dd_api_key,
+                    dd_application_key,
+                }))
+            }
+            (None, _, _) => Ok(None),
+            (Some(_), _, _) => {
+                bail!("`site` is set but `dd_api_key` or `dd_application_key` are missing")
+            }
+        }
+    }
+
+    fn to_parts(this: Option<Self>) -> (Option<String>, Option<String>, Option<String>) {
+        match this {
+            Some(this) => (
+                Some(this.site),
+                Some(this.dd_api_key),
+                Some(this.dd_application_key),
+            ),
+            None => (None, None, None),
+        }
+    }
+}
+
+#[quickwit_macros::serde_multikey]
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CloudPremConfig {
@@ -573,6 +627,19 @@ pub struct CloudPremConfig {
     pub mtls_header: Option<String>,
     #[serde(flatten, default)]
     pub grpc_config: GrpcConfig,
+    #[serde_multikey(
+        deserializer = WebsocketConfig::from_parts,
+        serializer = WebsocketConfig::to_parts,
+        fields = (
+            #[serde(default)]
+            pub connection_endpoint: Option<String>,
+            #[serde(default)]
+            pub dd_api_key: Option<String>,
+            #[serde(default)]
+            pub dd_application_key: Option<String>,
+        ),
+    )]
+    pub websocket_config: Option<WebsocketConfig>,
 }
 
 impl CloudPremConfig {
@@ -870,5 +937,26 @@ mod tests {
             keep_alive: None,
         };
         assert!(grpc_config.validate().is_err());
+    }
+
+    #[test]
+    fn test_cleanup_site_url() {
+        let config = WebsocketConfig::from_parts(
+            Some("https://datadoghq.com/".to_string()),
+            Some("".to_string()),
+            Some("".to_string()),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(config.site, "app.datadoghq.com");
+
+        let config = WebsocketConfig::from_parts(
+            Some("us5.datadoghq.com".to_string()),
+            Some("".to_string()),
+            Some("".to_string()),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(config.site, "us5.datadoghq.com");
     }
 }

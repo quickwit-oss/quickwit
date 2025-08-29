@@ -13,6 +13,7 @@ use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use super::auth::MtlsHeaderInterceptorLayer;
 use super::service::CloudPremServiceImpl;
+use super::websocket::maintain_websocket;
 use crate::QuickwitServices;
 use crate::grpc::HttpHeadersCarrier;
 
@@ -78,11 +79,17 @@ pub(crate) async fn start_cloudprem_server(
         let search_service = services.search_service.clone();
         let cloudprem_service_impl =
             CloudPremServiceImpl::new(search_service, services.cluster.clone());
-        Some(
-            CloudPremServiceClient::tower()
-                .build(cloudprem_service_impl)
-                .as_grpc_service(grpc_config.max_message_size),
-        )
+        let cloudprem_service_client =
+            CloudPremServiceClient::tower().build(cloudprem_service_impl);
+        if let Some(websocket_config) = cloudprem_config.websocket_config {
+            tokio::spawn(maintain_websocket(
+                websocket_config.site,
+                websocket_config.dd_api_key,
+                websocket_config.dd_application_key,
+                cloudprem_service_client.clone(),
+            ));
+        }
+        Some(cloudprem_service_client.as_grpc_service(grpc_config.max_message_size))
     } else {
         None
     };
