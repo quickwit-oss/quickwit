@@ -69,7 +69,7 @@ impl From<SearchError> for ElasticsearchError {
             additional_details: Default::default(),
         };
         ElasticsearchError {
-            status: status,
+            status,
             error: reason,
         }
     }
@@ -109,7 +109,7 @@ impl From<IngestV2Error> for ElasticsearchError {
             additional_details: Default::default(),
         };
         ElasticsearchError {
-            status: status,
+            status,
             error: reason,
         }
     }
@@ -129,7 +129,7 @@ impl From<IndexServiceError> for ElasticsearchError {
             additional_details: Default::default(),
         };
         ElasticsearchError {
-            status: status,
+            status,
             error: reason,
         }
     }

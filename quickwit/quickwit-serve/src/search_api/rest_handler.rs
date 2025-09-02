@@ -546,13 +546,13 @@ async fn search_stream_endpoint(
         partition_by_field: search_request.partition_by_field,
     };
     let mut data = search_service.root_search_stream(request).await?;
-    let (mut sender, body) = warp::hyper::body::Body::channel();
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<Result<hyper::body::Bytes, SearchError>>(100);
+
     tokio::spawn(async move {
         while let Some(result) = data.next().await {
             match result {
                 Ok(bytes) => {
-                    if sender.send_data(bytes).await.is_err() {
-                        sender.abort();
+                    if tx.send(Ok(bytes)).await.is_err() {
                         break;
                     }
                 }
@@ -570,14 +570,14 @@ async fn search_stream_endpoint(
                         .unwrap_or_else(|_| HeaderValue::from_static("Search stream error"));
                     let mut trailers = HeaderMap::new();
                     trailers.insert("X-Stream-Error", header_value);
-                    let _ = sender.send_trailers(trailers).await;
-                    sender.abort();
+                    // let _ = tx.send_trailers(trailers).await;
+
                     break;
                 }
             };
         }
     });
-    Ok(body)
+    rx.recv().await.unwrap()
 }
 
 fn make_streaming_reply(result: Result<hyper::body::Bytes, SearchError>) -> impl Reply {
