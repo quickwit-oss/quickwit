@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::io;
 use std::path::Path;
 use std::string::FromUtf8Error;
 use std::sync::Arc;
@@ -199,6 +200,32 @@ fn try_into_json_docs(
     }
 }
 
+/// Returns the size in bytes of the serialized JSON.
+/// This is done without actually serializing to a `Vec<u8>`, to avoid the allocation.
+///
+/// We could replace this with and approximation if needed.
+pub fn serialized_json_size<T: ?Sized + Serialize>(value: &T) -> serde_json::Result<usize> {
+    struct CountWrite {
+        bytes: usize,
+    }
+    impl io::Write for CountWrite {
+        #[inline]
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            self.bytes += buf.len();
+            Ok(buf.len())
+        }
+        #[inline]
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    let mut cw = CountWrite { bytes: 0 };
+    let mut ser = serde_json::Serializer::new(&mut cw);
+    value.serialize(&mut ser)?;
+    Ok(cw.bytes)
+}
+
 fn parse_raw_doc(
     input_format: SourceInputFormat,
     raw_doc: Bytes,
@@ -238,6 +265,8 @@ fn parse_raw_doc(
             ));
         };
         json_doc.json_obj = json_obj;
+        json_doc.num_bytes = serialized_json_size(&json_doc.json_obj).unwrap_or(json_doc.num_bytes);
+
         Ok(json_doc)
     });
     itertools::Either::Right(json_doc_iter)
