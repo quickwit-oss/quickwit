@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 
 use anyhow::Context;
 use prost::Message;
@@ -15,6 +16,7 @@ use tantivy::aggregation::agg_result::{
     AggregationResult as TantivyAggregationResult, AggregationResults as TantivyAggregationResults,
 };
 use tantivy::aggregation::{bucket, metric};
+use tracing::warn;
 
 use super::{missing_required, unsupported_query_error};
 use crate::InvalidQuery;
@@ -30,31 +32,17 @@ pub fn to_tantivy_aggregation(
         return Err(missing_required("aggregation"));
     };
 
-    let mut tantivy_aggregations = TantivyAggregations::new();
+    let mut tantivy_aggregations_per_key: Vec<(String, TantivyAggregation)> = Vec::new();
 
     match aggregation {
         AggregationNode::AttributeGroupBy(attribute_group_by) => {
-            let (output, tantivy_agg) =
-                handle_attribute_group_by(*attribute_group_by, start_ts_secs)?;
-            if tantivy_aggregations
-                .insert(output.clone(), tantivy_agg)
-                .is_some()
-            {
-                return Err(InvalidQuery::Other(anyhow::anyhow!(
-                    "multiple aggs are named {output}",
-                )));
-            }
+            tantivy_aggregations_per_key.push(handle_attribute_group_by(
+                *attribute_group_by,
+                start_ts_secs,
+            )?);
         }
         AggregationNode::TimeGroupBy(time_grouping) => {
-            let (output, tantivy_agg) = handle_time_group_by(*time_grouping, start_ts_secs)?;
-            if tantivy_aggregations
-                .insert(output.clone(), tantivy_agg)
-                .is_some()
-            {
-                return Err(InvalidQuery::Other(anyhow::anyhow!(
-                    "multiple aggs are named {output}",
-                )));
-            }
+            tantivy_aggregations_per_key.push(handle_time_group_by(*time_grouping, start_ts_secs)?);
         }
         AggregationNode::HistogramGroupBy(_) => {
             return Err(unsupported_query_error("histogram group by"));
@@ -64,41 +52,31 @@ pub fn to_tantivy_aggregation(
         }
         AggregationNode::Computes(computes) => {
             for agg in computes.aggregation {
-                let aggregations = to_tantivy_aggregation(agg, start_ts_secs)?;
-                for (output, aggregation) in aggregations {
-                    if tantivy_aggregations
-                        .insert(output.clone(), aggregation)
-                        .is_some()
-                    {
-                        return Err(InvalidQuery::Other(anyhow::anyhow!(
-                            "multiple aggs are named {output}"
-                        )));
-                    }
-                }
+                tantivy_aggregations_per_key.extend(to_tantivy_aggregation(agg, start_ts_secs)?);
             }
             for time_agg in computes.time_grouping {
-                let (output, tantivy_agg) = handle_time_group_by(time_agg, start_ts_secs)?;
-                if tantivy_aggregations
-                    .insert(output.clone(), tantivy_agg)
-                    .is_some()
-                {
-                    return Err(InvalidQuery::Other(anyhow::anyhow!(
-                        "multiple aggs are named {output}"
-                    )));
-                }
+                tantivy_aggregations_per_key.push(handle_time_group_by(time_agg, start_ts_secs)?);
             }
         }
         AggregationNode::ListCompute(_) => return Err(unsupported_query_error("list compute")),
         AggregationNode::AnyCompute(_) => return Err(unsupported_query_error("any compute")),
         AggregationNode::MetricCompute(metric_compute) => {
-            let (output, tantivy_agg) = handle_metric_compute(metric_compute)?;
-            if tantivy_aggregations
-                .insert(output.clone(), tantivy_agg)
-                .is_some()
-            {
+            tantivy_aggregations_per_key.push(handle_metric_compute(metric_compute)?);
+        }
+    }
+
+    let mut tantivy_aggregations = TantivyAggregations::new();
+
+    for (agg_key, aggregation) in tantivy_aggregations_per_key {
+        match tantivy_aggregations.entry(agg_key) {
+            Entry::Occupied(occupied_entry) => {
+                let redundant_agg_key = occupied_entry.key();
                 return Err(InvalidQuery::Other(anyhow::anyhow!(
-                    "multiple aggs are named {output}",
+                    "multiple aggs are named {redundant_agg_key}",
                 )));
+            }
+            Entry::Vacant(vacant_entry) => {
+                vacant_entry.insert(aggregation);
             }
         }
     }
@@ -339,17 +317,13 @@ fn timezone_and_ts_to_offset(timezone: &str, ts_secs: i64) -> Result<i32, Invali
 }
 
 pub fn aggregation_result_to_proto(
-    result_postcard: &[u8],
+    aggregation_results: QuickwitAggregationResults,
+    aggregations_def: &quickwit_proto::cloudprem::Aggregation,
 ) -> Result<Vec<EvpAggregationResult>, CloudPremError> {
-    let aggregations: QuickwitAggregationResults =
-        postcard::from_bytes(result_postcard).map_err(|err| {
-            CloudPremError::Internal(format!("failed to deserialize agg result: {err}"))
-        })?;
-
     let mut mapper = ResultMapper {
         results: Vec::new(),
     };
-    mapper.consume_agg(aggregations.into())?;
+    mapper.consume_agg(aggregation_results.into(), aggregations_def)?;
     Ok(mapper.results)
 }
 
@@ -357,28 +331,57 @@ struct ResultMapper {
     results: Vec<EvpAggregationResult>,
 }
 
+fn child_aggregation_def(
+    aggregation_def: &quickwit_proto::cloudprem::aggregation::Aggregation,
+) -> Option<&quickwit_proto::cloudprem::aggregation::Aggregation> {
+    let child_box: &Option<Box<quickwit_proto::cloudprem::Aggregation>> = match aggregation_def {
+        AggregationNode::AttributeGroupBy(attribute_group_by) => &attribute_group_by.child,
+        AggregationNode::TimeGroupBy(time_grouping) => &time_grouping.child,
+        AggregationNode::FlatFieldsGroupBy(flat_fields_group_by) => &flat_fields_group_by.child,
+        AggregationNode::HistogramGroupBy(_)
+        | AggregationNode::Computes(_)
+        | AggregationNode::ListCompute(_)
+        | AggregationNode::AnyCompute(_)
+        | AggregationNode::MetricCompute(_) => {
+            return None;
+        }
+    };
+    let child_agg: &quickwit_proto::cloudprem::Aggregation = child_box.as_ref()?;
+    child_agg.aggregation.as_ref()
+}
+
 impl ResultMapper {
-    fn consume_agg(&mut self, agg_result: TantivyAggregationResults) -> Result<(), CloudPremError> {
+    fn consume_agg(
+        &mut self,
+        agg_result: TantivyAggregationResults,
+        aggregations_def: &quickwit_proto::cloudprem::Aggregation,
+    ) -> Result<(), CloudPremError> {
         let state = EvpAggregationResult::default();
-        self.consume_agg_aux(agg_result, &state)
+        self.consume_agg_aux(agg_result, &state, aggregations_def.aggregation.as_ref())
     }
 
     fn consume_agg_aux(
         &mut self,
         agg_result: TantivyAggregationResults,
         state: &EvpAggregationResult,
+        aggregations_def_opt: Option<&quickwit_proto::cloudprem::aggregation::Aggregation>,
     ) -> Result<(), CloudPremError> {
         let mut to_emit = None;
-        for (_key, agg) in agg_result.0 {
+        for (_agg_key, agg) in agg_result.0 {
             match agg {
                 TantivyAggregationResult::BucketResult(bucket_result) => {
                     use tantivy::aggregation::agg_result::BucketResult;
+                    let child_agg_def_opt = aggregations_def_opt.and_then(child_aggregation_def);
                     match bucket_result {
                         BucketResult::Range { buckets } => {
                             let mut mut_state = state.clone();
                             for bucket in bucket_iter(buckets) {
                                 mut_state.key.push(bucket.key.to_string());
-                                self.consume_agg_aux(bucket.sub_aggregation, &mut_state)?;
+                                self.consume_agg_aux(
+                                    bucket.sub_aggregation,
+                                    &mut_state,
+                                    child_agg_def_opt,
+                                )?;
                                 mut_state.key.pop();
                             }
                         }
@@ -390,16 +393,44 @@ impl ResultMapper {
                                         .key_as_string
                                         .unwrap_or_else(|| bucket.key.to_string()),
                                 );
-                                self.consume_agg_aux(bucket.sub_aggregation, &mut_state)?;
+                                self.consume_agg_aux(
+                                    bucket.sub_aggregation,
+                                    &mut_state,
+                                    child_agg_def_opt,
+                                )?;
                                 mut_state.key.pop();
                             }
                         }
-                        BucketResult::Terms { buckets, .. } => {
+                        BucketResult::Terms {
+                            buckets,
+                            sum_other_doc_count,
+                            ..
+                        } => {
                             let mut mut_state = state.clone();
+                            let mut total_in_buckets = 0u64;
                             for bucket in buckets {
+                                total_in_buckets += bucket.doc_count;
                                 mut_state.key.push(bucket.key.to_string());
-                                self.consume_agg_aux(bucket.sub_aggregation, &mut_state)?;
+                                self.consume_agg_aux(
+                                    bucket.sub_aggregation,
+                                    &mut_state,
+                                    child_agg_def_opt,
+                                )?;
                                 mut_state.key.pop();
+                            }
+                            // Inject the total count if required.
+                            if let Some(quickwit_proto::cloudprem::aggregation::Aggregation::AttributeGroupBy(attribute_group_by))  = aggregations_def_opt {
+                                if let Some(total_field) = attribute_group_by.total.as_ref() {
+                                    let total: u64 = total_in_buckets + sum_other_doc_count;
+                                    self.results.push(
+                                        EvpAggregationResult {
+                                            key: vec![total_field.clone()],
+                                            value: vec![u64_to_agg_value(total)],
+                                        }
+                                    );
+                                }
+                            } else {
+                                warn!(aggregations_def_opt=?aggregations_def_opt, "term bucket result does not align with an attribute group in aggregation def");
                             }
                         }
                     }
@@ -546,9 +577,12 @@ mod tests {
     use quickwit_proto::cloudprem::aggregation::Aggregation as AggregationEnum;
     use quickwit_proto::cloudprem::sort_by_expr_and_agg::SortType;
     use quickwit_proto::cloudprem::*;
+    use tantivy::aggregation::AggregationCollector;
     use tantivy::aggregation::agg_req::{Aggregation as TantivyAgg, AggregationVariants};
     use tantivy::aggregation::bucket::*;
     use tantivy::aggregation::metric::*;
+    use tantivy::query::AllQuery;
+    use tantivy::schema::{FAST, Schema};
 
     use super::test_helpers::IntoValue;
     use super::{
@@ -836,20 +870,29 @@ mod tests {
 
     #[test]
     fn test_count_response() {
-        let qw_reply =
-            postcard::to_stdvec(&metric("count:count", MetricResult::Count, 2.0)).unwrap();
+        let aggregation_results = metric("count:count", MetricResult::Count, 2.0);
         let expected = vec![AggregationResult {
             key: vec![],
             value: vec![2u64.to_value()],
         }];
 
-        let res = aggregation_result_to_proto(&qw_reply).unwrap();
+        let agg_def_inner = quickwit_proto::cloudprem::aggregation::Aggregation::MetricCompute(
+            quickwit_proto::cloudprem::MetricCompute {
+                r#type: "COUNT".to_string(),
+                expression: None,
+                id: "".to_string(),
+            },
+        );
+        let agg_def = quickwit_proto::cloudprem::Aggregation {
+            aggregation: Some(agg_def_inner),
+        };
+        let res = aggregation_result_to_proto(aggregation_results, &agg_def).unwrap();
         assert_eq!(res, expected);
     }
 
     #[test]
     fn test_map_reply_admin_test() {
-        let qw_reply = postcard::to_stdvec(&terms(
+        let aggregation_results = terms(
             "status",
             vec![BucketEntry {
                 key_as_string: None,
@@ -869,14 +912,40 @@ mod tests {
                     }],
                 ),
             }],
-        ))
-        .unwrap();
+        );
+        let time_grouping = quickwit_proto::cloudprem::TimeGrouping {
+            output: "".to_string(),
+            path: "".to_string(),
+            time_zone: "".to_string(),
+            interval_ns: None,
+            rollup: None,
+            child: None,
+        };
+        let time_group_by_inner = quickwit_proto::cloudprem::aggregation::Aggregation::TimeGroupBy(
+            Box::new(time_grouping),
+        );
+        let attr_group_by = quickwit_proto::cloudprem::AttributeGroupBy {
+            expression: None, //< this is incorrect, but whatever
+            limit: 100,
+            sort: None,
+            missing: None,
+            total: None,
+            child: Some(Box::new(quickwit_proto::cloudprem::Aggregation {
+                aggregation: Some(time_group_by_inner),
+            })),
+        };
+        let agg_defs_inner = quickwit_proto::cloudprem::aggregation::Aggregation::AttributeGroupBy(
+            Box::new(attr_group_by),
+        );
+        let agg_defs = quickwit_proto::cloudprem::Aggregation {
+            aggregation: Some(agg_defs_inner),
+        };
         let expected = vec![AggregationResult {
             key: vec!["info".to_string(), "2025-01-30T08:00:00Z".to_string()],
             value: vec![2u64.to_value()],
         }];
 
-        let res = aggregation_result_to_proto(&qw_reply).unwrap();
+        let res = aggregation_result_to_proto(aggregation_results, &agg_defs).unwrap();
         assert_eq!(res, expected);
     }
 
@@ -1005,5 +1074,128 @@ mod tests {
         .unwrap();
         assert_eq!(interval, format!("{}s", 3 * 60));
         assert_eq!(offset.unwrap(), "0s");
+    }
+
+    #[test]
+    fn test_aggregation_with_total() {
+        // This aggregation has been extracted from the table widget request.
+        let child = quickwit_proto::cloudprem::aggregation::Aggregation::Computes(Computes {
+            aggregation: vec![Aggregation {
+                aggregation: Some(
+                    quickwit_proto::cloudprem::aggregation::Aggregation::MetricCompute(
+                        MetricCompute {
+                            expression: Some(ExpressionNode {
+                                calc_node: Some(Any {
+                                    type_url: "type.googleapis.com/calcfieldspb.CalcNode"
+                                        .to_string(),
+                                    value: vec![18u8, 7, 10, 5, 99, 111, 117, 110, 116],
+                                }),
+                            }),
+                            id: "count:count".to_string(),
+                            r#type: "COUNT".to_string(),
+                        },
+                    ),
+                ),
+            }],
+            time_grouping: vec![],
+        });
+
+        let attribute_group_by = AttributeGroupBy {
+            expression: Some(ExpressionNode {
+                calc_node: Some(Any {
+                    type_url: "type.googleapis.com/calcfieldspb.CalcNode".to_string(),
+                    value: vec![18, 6, 10, 4, 104, 111, 115, 116],
+                }),
+            }),
+            limit: 2,
+            sort: Some(SortByExprAndAgg {
+                ascending: false,
+                expr_and_agg: Some(ExprAndAgg {
+                    expr: Some(ExpressionNode {
+                        calc_node: Some(Any {
+                            type_url: "type.googleapis.com/calcfieldspb.CalcNode".to_string(),
+                            value: vec![18u8, 7, 10, 5, 99, 111, 117, 110, 116],
+                        }),
+                    }),
+                    agg_function: "count".to_string(),
+                }),
+                r#type: SortType::Metric as i32,
+            }),
+            missing: None,
+            total: Some("__TOTAL__".to_string()),
+            child: Some(Box::new(Aggregation {
+                aggregation: Some(child),
+            })),
+        };
+
+        let agg_inner = quickwit_proto::cloudprem::aggregation::Aggregation::AttributeGroupBy(
+            Box::new(attribute_group_by),
+        );
+        let agg = Aggregation {
+            aggregation: Some(agg_inner),
+        };
+
+        let tantivy_aggs_ast = to_tantivy_aggregation(agg.clone(), 0i64).unwrap();
+        let tantivy_aggs_ast_json = serde_json::to_value(&tantivy_aggs_ast).unwrap();
+
+        assert_eq!(
+            tantivy_aggs_ast_json,
+            serde_json::json!(
+                {
+                   "host":{
+                      "terms":{
+                         "field":"host",
+                         "size": 2
+                      },
+                      "aggs":{
+                         "count:count":{
+                            "value_count":{
+                               "field":"timestamp",
+                               "missing":1.0
+                            }
+                         }
+                      }
+                   }
+                }
+            )
+        );
+
+        let mut schema_builder = Schema::builder();
+        let host_field = schema_builder.add_text_field("host", FAST);
+        let schema = schema_builder.build();
+        let index = tantivy::IndexBuilder::new()
+            .schema(schema)
+            .create_in_ram()
+            .unwrap();
+
+        let mut index_writer = index.writer_with_num_threads(1, 20_000_000).unwrap();
+        for count in 1..13 {
+            let mut doc = tantivy::TantivyDocument::default();
+            doc.add_text(host_field, format!("host_{count}"));
+            for _ in 0..count {
+                index_writer.add_document(doc.clone()).unwrap();
+            }
+        }
+        index_writer.commit().unwrap();
+        let searcher = index.reader().unwrap().searcher();
+        let aggregation_collector =
+            AggregationCollector::from_aggs(tantivy_aggs_ast, Default::default());
+        let aggregation_results = searcher.search(&AllQuery, &aggregation_collector).unwrap();
+
+        let evp_agg_results =
+            super::aggregation_result_to_proto(aggregation_results.into(), &agg).unwrap();
+
+        assert_eq!(evp_agg_results[0].key, vec!["host_12".to_string()]);
+        let val = evp_agg_results[0].value[0].value.as_ref().unwrap();
+        assert_eq!(val, &agg_value::Value::Uint64Value(12));
+
+        let total_aggregation_result = evp_agg_results
+            .iter()
+            .find(|el| &el.key[0] == "__TOTAL__")
+            .unwrap();
+        let total_val = total_aggregation_result.value[0].value.as_ref().unwrap();
+        // We expect the total value to be the sum of all count from 1 to 12 included.
+        // That's n(n+1)/2 where n = 12.
+        assert_eq!(total_val, &agg_value::Value::Uint64Value(12 * 13 / 2));
     }
 }

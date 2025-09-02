@@ -7577,6 +7577,7 @@ dependencies = [
  "tantivy-fst",
  "thiserror 2.0.14",
  "time",
+ "tracing",
  "unicode-segmentation",
  "whichlang",
 ]
@@ -7717,6 +7718,7 @@ dependencies = [
  "opentelemetry",
  "pem 3.0.5",
  "percent-encoding",
+ "postcard",
  "pprof",
  "prometheus",
  "prost 0.13.5",

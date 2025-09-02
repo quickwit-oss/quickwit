@@ -32,6 +32,7 @@ tantivy = { workspace = true }
 tantivy-fst = { workspace = true }
 time = { workspace = true }
 thiserror = { workspace = true }
+tracing = { workspace = true }
 unicode-segmentation = { workspace = true }
 rustc-hash = { workspace = true }
 whichlang = { workspace = true, optional = true }

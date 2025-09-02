@@ -38,6 +38,7 @@ openssl = { workspace = true }
 opentelemetry = { workspace = true }
 pem = { workspace = true }
 percent-encoding = { workspace = true }
+postcard = { workspace = true }
 pprof = { workspace = true, optional = true }
 prometheus = { workspace = true }
 prost = { workspace = true }

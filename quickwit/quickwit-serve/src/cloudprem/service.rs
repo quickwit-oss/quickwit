@@ -271,9 +271,11 @@ impl CloudPremService for CloudPremServiceImpl {
         let start_ts_secs = 1735686000; // 2025-01-01
 
         debug!("received aggregation ast {evp_aggregation_ast:?}");
-        let aggregation_ast =
-            quickwit_query::cloudprem::to_tantivy_aggregation(evp_aggregation_ast, start_ts_secs)
-                .inspect_err(|e| warn!("failed to aggregation map ast: {e}"))?;
+        let aggregation_ast = quickwit_query::cloudprem::to_tantivy_aggregation(
+            evp_aggregation_ast.clone(),
+            start_ts_secs,
+        )
+        .inspect_err(|e| warn!("failed to aggregation map ast: {e}"))?;
         debug!("converted aggregation ast {aggregation_ast:?}");
 
         let search_request = SearchRequest {
@@ -302,12 +304,19 @@ impl CloudPremService for CloudPremServiceImpl {
             .inspect_err(|e| warn!("list root search failed: {e}"))?;
 
         tracing::trace!("request result: {response:?}");
-        let aggregation_result = quickwit_query::cloudprem::aggregation_result_to_proto(
-            &response.aggregation_postcard.ok_or_else(|| {
+        let aggregation_postcard_bytes: Vec<u8> =
+            response.aggregation_postcard.ok_or_else(|| {
                 CloudPremError::Internal("request generated no aggregation result".to_string())
-            })?,
+            })?;
+        let quickwit_aggregation_result = postcard::from_bytes(&aggregation_postcard_bytes)
+            .map_err(|err| {
+                CloudPremError::Internal(format!("failed to deserialize agg result: {err}"))
+            })?;
+        let cloudprem_aggregation_result = quickwit_query::cloudprem::aggregation_result_to_proto(
+            quickwit_aggregation_result,
+            &evp_aggregation_ast,
         )?;
-        tracing::trace!("aggregation result: {aggregation_result:?}");
+        tracing::trace!("aggregation result: {cloudprem_aggregation_result:?}");
 
         let statistics = Statistics {
             hit_count: response.num_hits,
@@ -317,7 +326,7 @@ impl CloudPremService for CloudPremServiceImpl {
         };
 
         Ok(AggregationResponse {
-            result: aggregation_result,
+            result: cloudprem_aggregation_result,
             statistics: Some(statistics),
         })
     }
