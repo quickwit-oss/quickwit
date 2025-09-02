@@ -56,8 +56,8 @@ async fn sys_metrics_loop() {
             .set(total_space_available as f64);
 
         for (_, network) in &networks {
-            let received = network.total_received();
-            let transmitted = network.total_transmitted();
+            let received = network.received();
+            let transmitted = network.transmitted();
             sys_metrics.dd_network_bytes_recv.increment(received);
             sys_metrics.dd_network_bytes_sent.increment(transmitted);
         }
