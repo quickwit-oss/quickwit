@@ -23,6 +23,7 @@ futures-util = { workspace = true }
 glob = { workspace = true }
 hex = { workspace = true }
 http = { workspace = true }
+http-body = { workspace = true }
 http-body-util = { workspace = true }
 http-serde = { workspace = true }
 humantime = { workspace = true }
