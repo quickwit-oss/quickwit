@@ -632,7 +632,7 @@ pub struct CloudPremConfig {
         serializer = WebsocketConfig::to_parts,
         fields = (
             #[serde(default)]
-            pub connection_endpoint: Option<String>,
+            pub site: Option<String>,
             #[serde(default)]
             pub dd_api_key: Option<String>,
             #[serde(default)]
