@@ -433,7 +433,7 @@ fn compute_index_size(hot_directory: &HotDirectory) -> ByteSize {
 
 /// Apply a leaf search on a single split.
 #[allow(clippy::too_many_arguments)]
-async fn leaf_search_single_split(
+pub async fn leaf_search_single_split(
     searcher_context: &SearcherContext,
     mut search_request: SearchRequest,
     storage: Arc<dyn Storage>,
