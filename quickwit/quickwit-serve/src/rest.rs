@@ -14,6 +14,7 @@
 
 use std::fmt::Formatter;
 use std::sync::Arc;
+use std::time::Duration;
 
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::server::conn::auto::Builder;
@@ -224,60 +225,86 @@ pub(crate) async fn start_rest_server(
     // Signal readiness after server setup is complete
     tokio::spawn(readiness_trigger);
 
+    let server = Builder::new(TokioExecutor::new());
+    let graceful = hyper_util::server::graceful::GracefulShutdown::new();
+    let mut shutdown_signal = std::pin::pin!(shutdown_signal);
+
     if let Some(tls_config) = &quickwit_services.node_config.rest_config.tls {
         let rustls_config = tls::make_rustls_config(tls_config)?;
         let acceptor = TlsAcceptor::from(rustls_config);
-        tokio::select! {
-            _ = async {
-                loop {
-                    let (tcp_stream, _remote_addr) = tcp_listener.accept().await?;
-                    let acceptor_clone = acceptor.clone();
+
+        loop {
+            tokio::select! {
+                conn = tcp_listener.accept() => {
+                    let (stream, _remote_addr) = match conn {
+                        Ok(conn) => conn,
+                        Err(err) => {
+                            error!("failed to accept connection: {err:#}");
+                            tokio::time::sleep(Duration::from_secs(1)).await;
+                            continue;
+                        }
+                    };
+
+                    let tls_stream = match acceptor.accept(stream).await {
+                        Ok(tls_stream) => tls_stream,
+                        Err(err) => {
+                            error!("failed to perform tls handshake: {err:#}");
+                            continue;
+                        }
+                    };
+
                     let service_clone = service.clone();
+                    let conn = server.serve_connection_with_upgrades(TokioIo::new(tls_stream), service_clone);
+                    let conn = graceful.watch(conn.into_owned());
+
                     tokio::spawn(async move {
-                        let tls_stream = match acceptor_clone.accept(tcp_stream).await {
-                            Ok(tls_stream) => tls_stream,
-                            Err(err) => {
-                                error!("failed to perform tls handshake: {err:#}");
-                                return;
-                            }
-                        };
-                        if let Err(err) = Builder::new(TokioExecutor::new())
-                            .serve_connection(TokioIo::new(tls_stream), service_clone)
-                            .await
-                        {
+                        if let Err(err) = conn.await {
                             error!("failed to serve connection: {err:#}");
                         }
                     });
+                },
+                _ = &mut shutdown_signal => {
+                    info!("REST server shutdown signal received");
+                    break;
                 }
-                #[allow(unreachable_code)]
-                Ok::<(), anyhow::Error>(())
-            } => {},
-            _ = shutdown_signal => {
-                info!("REST server shutdown signal received");
             }
         }
     } else {
-        tokio::select! {
-            _ = async {
-                loop {
-                    let (stream, _) = tcp_listener.accept().await?;
+        loop {
+            tokio::select! {
+                conn = tcp_listener.accept() => {
+                    let (stream, _remote_addr) = match conn {
+                        Ok(conn) => conn,
+                        Err(err) => {
+                            error!("failed to accept connection: {err:#}");
+                            tokio::time::sleep(Duration::from_secs(1)).await;
+                            continue;
+                        }
+                    };
                     let io = TokioIo::new(stream);
                     let service_clone = service.clone();
-                    tokio::task::spawn(async move {
-                        if let Err(e) = Builder::new(TokioExecutor::new())
-                            .serve_connection(io, service_clone)
-                            .await
-                        {
+                    let conn = server.serve_connection_with_upgrades(io, service_clone);
+                    let conn = graceful.watch(conn.into_owned());
+                    tokio::spawn(async move {
+                        if let Err(e) = conn.await {
                             error!(err=?e, "Error serving connection");
                         }
                     });
+                },
+                _ = &mut shutdown_signal => {
+                    info!("REST server shutdown signal received");
+                    break;
                 }
-                #[allow(unreachable_code)]
-                Ok::<(), anyhow::Error>(())
-            } => {},
-            _ = shutdown_signal => {
-                info!("REST server shutdown signal received");
             }
+        }
+    }
+
+    tokio::select! {
+        _ = graceful.shutdown() => {
+            eprintln!("Gracefully shutdown!");
+        },
+        _ = tokio::time::sleep(Duration::from_secs(10)) => {
+            eprintln!("Waited 10 seconds for graceful shutdown, aborting...");
         }
     }
 
