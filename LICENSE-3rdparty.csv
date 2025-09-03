@@ -105,7 +105,9 @@ constant_time_eq,https://github.com/cesarb/constant_time_eq,CC0-1.0,Cesar Eduard
 core-foundation,https://github.com/servo/core-foundation-rs,MIT OR Apache-2.0,The Servo Project Developers
 core-foundation-sys,https://github.com/servo/core-foundation-rs,MIT OR Apache-2.0,The Servo Project Developers
 cpufeatures,https://github.com/RustCrypto/utils,MIT OR Apache-2.0,RustCrypto Developers
-crc32c,https://github.com/zowens/crc32c,Apache-2.0 OR MIT,Zack Owens
+crc,https://github.com/mrhooray/crc-rs,MIT OR Apache-2.0,"Rui Hu <code@mrhooray.com>, Akhil Velagapudi <4@4khil.com>"
+crc-catalog,https://github.com/akhilles/crc-catalog,MIT OR Apache-2.0,Akhil Velagapudi <akhilvelagapudi@gmail.com>
+crc-fast,https://github.com/awesomized/crc-fast-rust,MIT OR Apache-2.0,Don MacAskill
 crc32fast,https://github.com/srijs/rust-crc32fast,MIT OR Apache-2.0,"Sam Rijs <srijs@airpost.net>, Alex Crichton <alex@alexcrichton.com>"
 criterion-plot,https://github.com/bheisler/criterion.rs,MIT OR Apache-2.0,"Jorge Aparicio <japaricious@gmail.com>, Brook Heisler <brookheisler@gmail.com>"
 cron,https://github.com/zslayton/cron,MIT OR Apache-2.0,Zack Slayton <zack.slayton@gmail.com>
@@ -203,7 +205,6 @@ htmlescape,https://github.com/veddan/rust-htmlescape,Apache-2.0  OR  MIT  OR  MP
 http,https://github.com/hyperium/http,MIT OR Apache-2.0,"Alex Crichton <alex@alexcrichton.com>, Carl Lerche <me@carllerche.com>, Sean McArthur <sean@seanmonstar.com>"
 http-body,https://github.com/hyperium/http-body,MIT,"Carl Lerche <me@carllerche.com>, Lucio Franco <luciofranco14@gmail.com>, Sean McArthur <sean@seanmonstar.com>"
 http-body-util,https://github.com/hyperium/http-body,MIT,"Carl Lerche <me@carllerche.com>, Lucio Franco <luciofranco14@gmail.com>, Sean McArthur <sean@seanmonstar.com>"
-http-range-header,https://github.com/MarcusGrass/parse-range-headers,MIT,The http-range-header Authors
 http-serde,https://gitlab.com/kornelski/http-serde,Apache-2.0 OR MIT,Kornel <kornel@geekhood.net>
 httparse,https://github.com/seanmonstar/httparse,MIT OR Apache-2.0,Sean McArthur <sean@seanmonstar.com>
 httpdate,https://github.com/pyfisch/httpdate,MIT OR Apache-2.0,Pyfisch <pyfisch@posteo.org>
@@ -287,7 +288,6 @@ mio,https://github.com/tokio-rs/mio,MIT,"Carl Lerche <me@carllerche.com>, Thomas
 mockall,https://github.com/asomers/mockall,MIT OR Apache-2.0,Alan Somers <asomers@gmail.com>
 mockall_derive,https://github.com/asomers/mockall,MIT OR Apache-2.0,Alan Somers <asomers@gmail.com>
 mrecordlog,https://github.com/quickwit-oss/mrecordlog,MIT,The mrecordlog Authors
-multer,https://github.com/rousan/multer-rs,MIT,Rousan Ali <hello@rousan.io>
 multimap,https://github.com/havarnov/multimap,MIT OR Apache-2.0,Håvar Nøvik <havar.novik@gmail.com>
 murmurhash32,https://github.com/quickwit-inc/murmurhash32,MIT,Paul Masurel <paul.masurel@gmail.com>
 nanorand,https://github.com/Absolucy/nanorand-rs,Zlib,Lucy <lucy@absolucy.moe>
@@ -494,7 +494,6 @@ tokio-macros,https://github.com/tokio-rs/tokio,MIT,Tokio Contributors <team@toki
 tokio-metrics,https://github.com/tokio-rs/tokio-metrics,MIT,Tokio Contributors <team@tokio.rs>
 tokio-rustls,https://github.com/rustls/tokio-rustls,MIT OR Apache-2.0,The tokio-rustls Authors
 tokio-stream,https://github.com/tokio-rs/tokio,MIT,Tokio Contributors <team@tokio.rs>
-tokio-tungstenite,https://github.com/snapview/tokio-tungstenite,MIT,"Daniel Abramov <dabramov@snapview.de>, Alexey Galakhov <agalakhov@snapview.de>"
 tokio-util,https://github.com/tokio-rs/tokio,MIT,Tokio Contributors <team@tokio.rs>
 toml,https://github.com/toml-rs/toml,MIT OR Apache-2.0,Alex Crichton <alex@alexcrichton.com>
 toml_datetime,https://github.com/toml-rs/toml,MIT OR Apache-2.0,The toml_datetime Authors
@@ -516,7 +515,6 @@ tracing-serde,https://github.com/tokio-rs/tracing,MIT,Tokio Contributors <team@t
 tracing-subscriber,https://github.com/tokio-rs/tracing,MIT,"Eliza Weisman <eliza@buoyant.io>, David Barsky <me@davidbarsky.com>, Tokio Contributors <team@tokio.rs>"
 try-lock,https://github.com/seanmonstar/try-lock,MIT,Sean McArthur <sean@seanmonstar.com>
 ttl_cache,https://github.com/stusmall/ttl_cache,MIT OR Apache-2.0,Stu Small <stuart.alan.small@gmail.com>
-tungstenite,https://github.com/snapview/tungstenite-rs,MIT OR Apache-2.0,"Alexey Galakhov, Daniel Abramov"
 typenum,https://github.com/paholg/typenum,MIT OR Apache-2.0,"Paho Lurie-Gregg <paho@paholg.com>, Andre Bogus <bogusandre@gmail.com>"
 ulid,https://github.com/dylanhart/ulid-rs,MIT,dylanhart <dylan96hart@gmail.com>
 unarray,https://github.com/cameron1024/unarray,MIT OR Apache-2.0,The unarray Authors
@@ -528,7 +526,6 @@ untrusted,https://github.com/briansmith/untrusted,ISC,Brian Smith <brian@briansm
 url,https://github.com/servo/rust-url,MIT OR Apache-2.0,The rust-url developers
 urlencoding,https://github.com/kornelski/rust_urlencoding,MIT,"Kornel <kornel@geekhood.net>, Bertram Truong <b@bertramtruong.com>"
 username,https://pijul.org/darcs/user,MIT OR Apache-2.0,Pierre-Étienne Meunier <pierre-etienne.meunier@aalto.fi>
-utf-8,https://github.com/SimonSapin/rust-utf8,MIT OR Apache-2.0,Simon Sapin <simon.sapin@exyr.org>
 utf8-ranges,https://github.com/BurntSushi/utf8-ranges,Unlicense OR MIT,Andrew Gallant <jamslam@gmail.com>
 utf8_iter,https://github.com/hsivonen/utf8_iter,Apache-2.0 OR MIT,Henri Sivonen <hsivonen@hsivonen.fi>
 utf8parse,https://github.com/alacritty/vte,Apache-2.0 OR MIT,"Joe Wilm <joe@jwilm.com>, Christian Duerr <contact@christianduerr.com>"

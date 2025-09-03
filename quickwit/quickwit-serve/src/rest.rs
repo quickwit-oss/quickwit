@@ -16,7 +16,7 @@ use std::fmt::Formatter;
 use std::sync::Arc;
 
 use hyper_util::rt::{TokioExecutor, TokioIo};
-use hyper_util::server::conn::auto;
+use hyper_util::server::conn::auto::Builder;
 use hyper_util::service::TowerToHyperService;
 use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_config::{disable_ingest_v1, enable_ingest_v2};
@@ -230,16 +230,22 @@ pub(crate) async fn start_rest_server(
         tokio::select! {
             _ = async {
                 loop {
-                    let stream = tcp_listener.accept().await?.0;
-                    let stream = acceptor.accept(stream).await?;
-                    let io = TokioIo::new(stream);
+                    let (tcp_stream, _remote_addr) = tcp_listener.accept().await?;
+                    let acceptor_clone = acceptor.clone();
                     let service_clone = service.clone();
-                    tokio::task::spawn(async move {
-                        if let Err(e) = auto::Builder::new(TokioExecutor::new())
-                            .serve_connection(io, service_clone)
+                    tokio::spawn(async move {
+                        let tls_stream = match acceptor_clone.accept(tcp_stream).await {
+                            Ok(tls_stream) => tls_stream,
+                            Err(err) => {
+                                error!("failed to perform tls handshake: {err:#}");
+                                return;
+                            }
+                        };
+                        if let Err(err) = Builder::new(TokioExecutor::new())
+                            .serve_connection(TokioIo::new(tls_stream), service_clone)
                             .await
                         {
-                            error!(err=?e, "Error serving connection");
+                            error!("failed to serve connection: {err:#}");
                         }
                     });
                 }
@@ -258,7 +264,7 @@ pub(crate) async fn start_rest_server(
                     let io = TokioIo::new(stream);
                     let service_clone = service.clone();
                     tokio::task::spawn(async move {
-                        if let Err(e) = auto::Builder::new(TokioExecutor::new())
+                        if let Err(e) = Builder::new(TokioExecutor::new())
                             .serve_connection(io, service_clone)
                             .await
                         {
