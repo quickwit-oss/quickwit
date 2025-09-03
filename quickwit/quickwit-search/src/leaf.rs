@@ -954,7 +954,7 @@ fn is_simple_all_query(search_request: &SearchRequest) -> bool {
 }
 
 #[derive(Debug, Clone)]
-enum CanSplitDoBetter {
+pub enum CanSplitDoBetter {
     Uninformative,
     SplitIdHigher(Option<String>),
     SplitTimestampHigher(Option<i64>),

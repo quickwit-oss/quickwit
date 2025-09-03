@@ -40,7 +40,7 @@ mod service;
 pub(crate) mod top_k_collector;
 
 mod metrics;
-mod search_permit_provider;
+pub mod search_permit_provider;
 
 #[cfg(test)]
 mod tests;
@@ -92,7 +92,7 @@ pub use crate::search_response_rest::{
 };
 pub use crate::search_stream::root_search_stream;
 pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
-pub use crate::leaf::{leaf_search_single_split, warmup};
+pub use crate::leaf::{leaf_search_single_split, warmup, CanSplitDoBetter};
 pub use quickwit_doc_mapper::WarmupInfo;
 
 /// A pool of searcher clients identified by their gRPC socket address.
