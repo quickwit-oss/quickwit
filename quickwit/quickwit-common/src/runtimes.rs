@@ -63,14 +63,26 @@ impl RuntimesConfig {
     }
 
     pub fn with_num_cpus(num_cpus: usize) -> Self {
-        // Non blocking task are supposed to be io intensive, and not require many threads...
-        let num_threads_non_blocking = if num_cpus > 6 { 2 } else { 1 };
+        // Non blocking task are supposed to be io intensive, and not require many threads.
         // On the other hand the blocking actors are cpu intensive. We allocate
         // almost all of the threads to them.
-        let num_threads_blocking = (num_cpus - num_threads_non_blocking).max(1);
-        RuntimesConfig {
-            num_threads_non_blocking,
-            num_threads_blocking,
+        match num_cpus {
+            0..=3 => {
+                // We do not have enough vCPUs to allocate a full thread to
+                // non-blocking.
+                RuntimesConfig {
+                    num_threads_non_blocking: 1,
+                    num_threads_blocking: num_cpus,
+                }
+            }
+            4..=6 => RuntimesConfig {
+                num_threads_non_blocking: 1,
+                num_threads_blocking: num_cpus - 1,
+            },
+            7.. => RuntimesConfig {
+                num_threads_non_blocking: 2,
+                num_threads_blocking: num_cpus - 2,
+            },
         }
     }
 }
@@ -232,7 +244,7 @@ mod tests {
     #[test]
     fn test_runtimes_with_given_num_cpus_3() {
         let runtime = RuntimesConfig::with_num_cpus(3);
-        assert_eq!(runtime.num_threads_blocking, 2);
+        assert_eq!(runtime.num_threads_blocking, 3);
         assert_eq!(runtime.num_threads_non_blocking, 1);
     }
 }
