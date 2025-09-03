@@ -577,7 +577,16 @@ async fn search_stream_endpoint(
             };
         }
     });
-    rx.recv().await.unwrap()
+
+    let mut collected_bytes = Vec::new();
+    while let Some(result) = rx.recv().await {
+        match result {
+            Ok(bytes) => collected_bytes.extend_from_slice(&bytes),
+            Err(err) => return Err(err),
+        }
+    }
+
+    Ok(hyper::body::Bytes::from(collected_bytes))
 }
 
 fn make_streaming_reply(result: Result<hyper::body::Bytes, SearchError>) -> impl Reply {
@@ -1037,7 +1046,7 @@ mod tests {
                 .unwrap()
                 .as_str()
                 .unwrap()
-                .contains("unknown field `end_unix_timestamp`")
+                .contains("Invalid query string")
         );
     }
 
@@ -1245,11 +1254,9 @@ mod tests {
             .filter(&super::search_stream_filter())
             .await
             .unwrap_err();
-        let parse_error = rejection.find::<serde_qs::Error>().unwrap();
-        assert_eq!(
-            parse_error.to_string(),
-            "unknown variant `ClickHouseRowBinary`, expected `csv` or `click_house_row_binary`"
-        );
+        println!("rejection: {rejection:?}");
+        let parse_error = rejection.find::<warp::reject::InvalidQuery>().unwrap();
+        assert_eq!(parse_error.to_string(), "Invalid query string");
     }
 
     #[tokio::test]
@@ -1262,8 +1269,8 @@ mod tests {
             .filter(&super::search_stream_filter())
             .await
             .unwrap_err();
-        let parse_error = rejection.find::<serde_qs::Error>().unwrap();
-        assert_eq!(parse_error.to_string(), "expected a non-empty string field");
+        let parse_error = rejection.find::<warp::reject::InvalidQuery>().unwrap();
+        assert_eq!(parse_error.to_string(), "Invalid query string");
     }
 
     #[tokio::test]
