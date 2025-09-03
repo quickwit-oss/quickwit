@@ -215,6 +215,7 @@ rust-embed = "6.8"
 rustc-hash = "2.1"
 rustls = "0.21"
 rustls-pemfile = "1.0"
+ryu = "1.0.20"
 sea-query = { version = "0.30" }
 sea-query-binder = { version = "0.5", features = [
   "runtime-tokio-rustls",
