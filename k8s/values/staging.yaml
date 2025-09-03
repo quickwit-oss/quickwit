@@ -160,4 +160,4 @@ extraConfigMaps:
 config:
   # username for database is $namespace_$serviceAccount with underscores as separators
   metastore_uri: postgres://logs_cloudprem_cloudprem@orgstore-logs-cloudprem-metastore-pg-proxy.orgstore-logs-cloudprem-metastore.all-clusters.local-dc.fabric.dog/logs_cloudprem_metastore
-  default_index_root_uri: s3://logs-cloudprem-staging/metastore
+  default_index_root_uri: s3://logs-cloudprem-staging/indexes
