@@ -1255,7 +1255,6 @@ mod tests {
             .filter(&super::search_stream_filter())
             .await
             .unwrap_err();
-        println!("rejection: {rejection:?}");
         let parse_error = rejection.find::<warp::reject::InvalidQuery>().unwrap();
         assert_eq!(parse_error.to_string(), "Invalid query string");
     }
