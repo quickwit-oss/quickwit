@@ -220,9 +220,7 @@ pub(crate) async fn start_rest_server(
     );
 
     let service = TowerToHyperService::new(service);
-
-    // Signal readiness after server setup is complete
-    tokio::spawn(readiness_trigger);
+    readiness_trigger.await;
 
     let server = Builder::new(TokioExecutor::new());
     let graceful = hyper_util::server::graceful::GracefulShutdown::new();
