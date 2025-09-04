@@ -25,6 +25,7 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, Qu
 use quickwit_common::metrics::IntCounter;
 use quickwit_common::rate_limited_tracing::rate_limited_warn;
 use quickwit_common::runtimes::RuntimeType;
+use quickwit_common::serialized_json_size::serialized_json_obj_approx;
 use quickwit_config::{SourceInputFormat, TransformConfig};
 use quickwit_doc_mapper::{DocMapper, DocParsingError, JsonObject};
 use quickwit_doc_transforms::{
@@ -238,6 +239,8 @@ fn parse_raw_doc(
             ));
         };
         json_doc.json_obj = json_obj;
+        json_doc.num_bytes = serialized_json_obj_approx(&json_doc.json_obj);
+
         Ok(json_doc)
     });
     itertools::Either::Right(json_doc_iter)
