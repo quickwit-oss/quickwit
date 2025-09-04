@@ -14,7 +14,6 @@
 
 use std::fmt::Formatter;
 use std::sync::Arc;
-use std::time::Duration;
 
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::server::conn::auto::Builder;
@@ -240,7 +239,6 @@ pub(crate) async fn start_rest_server(
                         Ok(conn) => conn,
                         Err(err) => {
                             error!("failed to accept connection: {err:#}");
-                            tokio::time::sleep(Duration::from_secs(1)).await;
                             continue;
                         }
                     };
@@ -277,7 +275,6 @@ pub(crate) async fn start_rest_server(
                         Ok(conn) => conn,
                         Err(err) => {
                             error!("failed to accept connection: {err:#}");
-                            tokio::time::sleep(Duration::from_secs(1)).await;
                             continue;
                         }
                     };
@@ -301,10 +298,7 @@ pub(crate) async fn start_rest_server(
 
     tokio::select! {
         _ = graceful.shutdown() => {
-            eprintln!("Gracefully shutdown!");
-        },
-        _ = tokio::time::sleep(Duration::from_secs(10)) => {
-            eprintln!("Waited 10 seconds for graceful shutdown, aborting...");
+            info!("gracefully shutdown");
         }
     }
 

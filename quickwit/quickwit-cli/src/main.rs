@@ -89,6 +89,10 @@ async fn main_impl() -> anyhow::Result<()> {
         }
     };
 
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("rustls crypto ring default provider installation should not fail");
+
     #[cfg(feature = "jemalloc")]
     start_jemalloc_metrics_loop();
 
