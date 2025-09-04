@@ -26,6 +26,7 @@ use quickwit_search::{SearchError, SearchPlanResponseRest, SearchResponseRest, S
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 use serde_json::Value as JsonValue;
 use tracing::info;
+use warp::hyper::body::Bytes;
 use warp::hyper::header::{CONTENT_TYPE, HeaderValue};
 use warp::hyper::{HeaderMap, StatusCode};
 use warp::{Filter, Rejection, Reply, reply};
@@ -532,7 +533,7 @@ async fn search_stream_endpoint(
     index_id: IndexId,
     search_request: SearchStreamRequestQueryString,
     search_service: &dyn SearchService,
-) -> Result<hyper::body::Bytes, SearchError> {
+) -> Result<Bytes, SearchError> {
     let query_ast = query_ast_from_user_text(&search_request.query, search_request.search_fields);
     let query_ast_json = serde_json::to_string(&query_ast)?;
     let request = quickwit_proto::search::SearchStreamRequest {
@@ -546,7 +547,7 @@ async fn search_stream_endpoint(
         partition_by_field: search_request.partition_by_field,
     };
     let mut data = search_service.root_search_stream(request).await?;
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<Result<hyper::body::Bytes, SearchError>>(100);
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<Result<Bytes, SearchError>>(100);
 
     tokio::spawn(async move {
         while let Some(result) = data.next().await {
@@ -586,10 +587,10 @@ async fn search_stream_endpoint(
         }
     }
 
-    Ok(hyper::body::Bytes::from(collected_bytes))
+    Ok(Bytes::from(collected_bytes))
 }
 
-fn make_streaming_reply(result: Result<hyper::body::Bytes, SearchError>) -> impl Reply {
+fn make_streaming_reply(result: Result<Bytes, SearchError>) -> impl Reply {
     let status_code: StatusCode;
     let body = match result {
         Ok(body) => {

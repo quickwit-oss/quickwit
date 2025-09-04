@@ -434,8 +434,6 @@ pub async fn serve_quickwit(
     shutdown_signal: BoxFutureInfaillible<()>,
     env_filter_reload_fn: EnvFilterReloadFn,
 ) -> anyhow::Result<HashMap<String, ActorExitStatus>> {
-    let _ = rustls::crypto::ring::default_provider().install_default();
-
     let cluster = start_cluster_service(&node_config)
         .await
         .context("failed to start cluster service")?;
