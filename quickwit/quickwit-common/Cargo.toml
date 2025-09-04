@@ -66,9 +66,16 @@ jemalloc-profiled = [
 ]
 
 [dev-dependencies]
+binggan = { workspace = true }
 hyper-util = { workspace = true }
 proptest = { workspace = true }
 serde_json = { workspace = true }
 serial_test = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
+
+
+[[bench]]
+name = "serialized_json_size_bench"
+harness = false
+
