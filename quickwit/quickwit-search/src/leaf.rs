@@ -89,7 +89,7 @@ async fn get_split_footer_from_cache_or_fetch(
 /// Returns hotcache_bytes and the split directory (`BundleStorage`) with cache layer:
 /// - A split footer cache given by `SearcherContext.split_footer_cache`.
 #[instrument(skip_all, fields(split_footer_start=split_and_footer_offsets.split_footer_start, split_footer_end=split_and_footer_offsets.split_footer_end))]
-pub(crate) async fn open_split_bundle(
+pub async fn open_split_bundle(
     searcher_context: &SearcherContext,
     index_storage: Arc<dyn Storage>,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
