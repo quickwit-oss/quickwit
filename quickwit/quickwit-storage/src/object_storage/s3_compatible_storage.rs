@@ -890,9 +890,26 @@ impl Storage for S3CompatibleObjectStorage {
         let _permit = REQUEST_SEMAPHORE.acquire().await;
         let bucket = self.bucket.clone();
         let key = self.key(path);
-        eprintln!("QUICKWIT DEBUG: file_num_bytes called with path: '{}', bucket: '{}', key: '{}'", path.display(), bucket, key);
+        eprintln!("QUICKWIT DEBUG: ===== S3 HEAD REQUEST DETAILS =====");
+        eprintln!("QUICKWIT DEBUG: file_num_bytes called with:");
+        eprintln!("QUICKWIT DEBUG:   input path: '{}'", path.display());
+        eprintln!("QUICKWIT DEBUG:   storage URI: '{}'", self.uri.as_str());
+        eprintln!("QUICKWIT DEBUG:   storage bucket: '{}'", bucket);
+        eprintln!("QUICKWIT DEBUG:   storage prefix: '{}'", self.prefix.display());
+        eprintln!("QUICKWIT DEBUG:   computed key: '{}'", key);
+        
+        // Try to get AWS config details for debugging
+        eprintln!("QUICKWIT DEBUG:   AWS credentials: [using environment/default provider]");
+        
+        if let Some(region) = self.s3_client.config().region() {
+            eprintln!("QUICKWIT DEBUG:   AWS region: '{}'", region.as_ref());
+        } else {
+            eprintln!("QUICKWIT DEBUG:   AWS region: not set");
+        }
+        
+        eprintln!("QUICKWIT DEBUG: =====================================");
         let head_object_output = aws_retry(&self.retry_params, || async {
-            eprintln!("QUICKWIT DEBUG: Sending HEAD object request to S3...");
+            eprintln!("QUICKWIT DEBUG: Sending HEAD object request to S3 with bucket='{}' key='{}'", bucket, key);
             self.s3_client
                 .head_object()
                 .bucket(&bucket)
@@ -902,12 +919,13 @@ impl Storage for S3CompatibleObjectStorage {
         })
         .await
         .map_err(|e| {
-            eprintln!("QUICKWIT DEBUG: HEAD object request failed: {:?}", e);
+            eprintln!("QUICKWIT DEBUG: HEAD object request FAILED: {:?}", e);
+            eprintln!("QUICKWIT DEBUG: Failed request was: bucket='{}' key='{}'", bucket, key);
             e
         })?;
 
         let size = head_object_output.content_length().unwrap_or(0) as u64;
-        eprintln!("QUICKWIT DEBUG: HEAD object request succeeded, content_length: {}", size);
+        eprintln!("QUICKWIT DEBUG: HEAD object request SUCCEEDED, content_length: {}", size);
         Ok(size)
     }
 
