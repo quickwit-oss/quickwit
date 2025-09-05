@@ -193,6 +193,8 @@ impl S3CompatibleObjectStorage {
             let message = format!("failed to extract bucket name from S3 URI: {uri}");
             StorageResolverError::InvalidUri(message)
         })?;
+        eprintln!("QUICKWIT DEBUG: S3 storage created from URI: '{}', bucket: '{}', prefix: '{}'", 
+                  uri.as_str(), bucket, prefix.display());
         let retry_params = RetryParams::aggressive();
         let disable_multi_object_delete = s3_storage_config.disable_multi_object_delete;
         let disable_multipart_upload = s3_storage_config.disable_multipart_upload;
@@ -287,7 +289,10 @@ impl S3CompatibleObjectStorage {
     fn key(&self, relative_path: &Path) -> String {
         // FIXME: This may not work on Windows.
         let key_path = self.prefix.join(relative_path);
-        key_path.to_string_lossy().to_string()
+        let key_str = key_path.to_string_lossy().to_string();
+        eprintln!("QUICKWIT DEBUG: key() called with relative_path: '{}', prefix: '{}', result: '{}'", 
+                  relative_path.display(), self.prefix.display(), key_str);
+        key_str
     }
 
     fn relative_path(&self, key: &str) -> PathBuf {
@@ -885,7 +890,9 @@ impl Storage for S3CompatibleObjectStorage {
         let _permit = REQUEST_SEMAPHORE.acquire().await;
         let bucket = self.bucket.clone();
         let key = self.key(path);
+        eprintln!("QUICKWIT DEBUG: file_num_bytes called with path: '{}', bucket: '{}', key: '{}'", path.display(), bucket, key);
         let head_object_output = aws_retry(&self.retry_params, || async {
+            eprintln!("QUICKWIT DEBUG: Sending HEAD object request to S3...");
             self.s3_client
                 .head_object()
                 .bucket(&bucket)
@@ -893,9 +900,15 @@ impl Storage for S3CompatibleObjectStorage {
                 .send()
                 .await
         })
-        .await?;
+        .await
+        .map_err(|e| {
+            eprintln!("QUICKWIT DEBUG: HEAD object request failed: {:?}", e);
+            e
+        })?;
 
-        Ok(head_object_output.content_length().unwrap_or(0) as u64)
+        let size = head_object_output.content_length().unwrap_or(0) as u64;
+        eprintln!("QUICKWIT DEBUG: HEAD object request succeeded, content_length: {}", size);
+        Ok(size)
     }
 
     fn uri(&self) -> &Uri {
