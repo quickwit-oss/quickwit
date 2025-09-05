@@ -35,7 +35,7 @@ use tracing::{Instrument, info_span};
 pub use {lambda_http, warp};
 use hyper::body::Bytes;
 use futures::stream::StreamExt;
-use http_body_util::{combinators::BoxBody, Full};
+use http_body_util::{combinators::BoxBody, Full, Empty};
 use warp::hyper::body::{Body, Frame};
 
 pub struct WarpBody();
@@ -49,8 +49,8 @@ impl Body for WarpBody {
 }
 
 
-pub type WarpRequest = http::Request<WarpBody>;
-pub type WarpResponse = http::Response<WarpBody>;
+pub type WarpRequest = http::Request<Full<Bytes>>;
+pub type WarpResponse = http::Response<Full<Bytes>>;
 
 
 static PLAINTEXT_MIMES: Lazy<HashSet<Mime>> = Lazy::new(|| {
@@ -113,9 +113,9 @@ where
         let (parts, body) = request.into_parts();
         let mut warp_parts = lambda_parts_to_warp_parts(&parts);
         let (content_len, warp_body) = match body {
-            LambdaBody::Empty => (0, BoxBody::new(Full::new(Bytes::new()))),
-            LambdaBody::Text(text) => (text.len(), BoxBody::new(Full::new(Bytes::from(text.into_bytes())))),
-            LambdaBody::Binary(bytes) => (bytes.len(), BoxBody::new(Full::new(Bytes::from(bytes)))),
+            LambdaBody::Empty => (0, Full::new(Bytes::new())),
+            LambdaBody::Text(text) => (text.len(), Full::new(Bytes::from(text.into_bytes()))),
+            LambdaBody::Binary(bytes) => (bytes.len(), Full::new(Bytes::from(bytes))),
         };
         let mut uri = format!("http://{}{}", "127.0.0.1", parts.uri.path());
         if !query_params.is_empty() {
@@ -185,13 +185,10 @@ fn warp_parts_to_lambda_parts(
 
 async fn warp_body_to_lambda_body(
     parts: &lambda_http::http::response::Parts,
-    warp_body: WarpBody,
+    warp_body: Full<Bytes>,
 ) -> Result<LambdaBody, LambdaError> {
     // Concatenate all bytes into a single buffer
-    let mut body_bytes = Vec::new();
-    while let Some(bytes) = warp_body.poll_frame().await {
-        body_bytes.extend_from_slice(&bytes);
-    }
+    let body_bytes = warp_body.collect().await?.to_bytes().to_vec();
 
     // Attempt to determine the Content-Type
     let content_type_opt: Option<&HeaderValue> = parts.headers.get("Content-Type");
