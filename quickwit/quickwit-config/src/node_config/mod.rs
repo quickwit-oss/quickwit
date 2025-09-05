@@ -618,15 +618,17 @@ impl NodeConfig {
         // validation purposes. Additionally, we need to append a default port if necessary and
         // finally return the addresses as strings, which is tricky for IPv6. We let the logic baked
         // in `HostAddr` handle this complexity.
+        let mut found_something = false;
         for peer_seed in &self.peer_seeds {
             let peer_seed_addr = HostAddr::parse_with_default_port(peer_seed, default_gossip_port)?;
             if let Err(error) = peer_seed_addr.resolve().await {
                 warn!(peer_seed = %peer_seed_addr, error = ?error, "failed to resolve peer seed address");
-                continue;
+            } else {
+                found_something = true;
             }
             peer_seed_addrs.push(peer_seed_addr.to_string())
         }
-        if !self.peer_seeds.is_empty() && peer_seed_addrs.is_empty() {
+        if !self.peer_seeds.is_empty() && !found_something {
             warn!("failed to resolve all the peer seed addresses")
         }
         Ok(peer_seed_addrs)
