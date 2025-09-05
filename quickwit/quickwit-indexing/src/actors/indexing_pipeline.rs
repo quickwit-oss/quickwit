@@ -23,6 +23,7 @@ use quickwit_actors::{
     QueueCapacity, Supervisable,
 };
 use quickwit_common::KillSwitch;
+use quickwit_common::metrics::OwnedGaugeGuard;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_config::{IndexingSettings, RetentionPolicy, SourceConfig};
@@ -120,6 +121,7 @@ pub struct IndexingPipeline {
     // requiring a respawn of the pipeline.
     // We keep the list of shards here however, to reassign them after a respawn.
     shard_ids: BTreeSet<ShardId>,
+    _indexing_pipelines_gauge_guard: OwnedGaugeGuard,
 }
 
 #[async_trait]
@@ -154,6 +156,10 @@ impl Actor for IndexingPipeline {
 
 impl IndexingPipeline {
     pub fn new(params: IndexingPipelineParams) -> Self {
+        let indexing_pipelines_gauge = crate::metrics::INDEXER_METRICS
+            .indexing_pipelines
+            .with_label_values([&params.pipeline_id.index_uid.index_id]);
+        let indexing_pipelines_gauge_guard = OwnedGaugeGuard::from_gauge(indexing_pipelines_gauge);
         let params_fingerprint = params.params_fingerprint;
         IndexingPipeline {
             params,
@@ -165,6 +171,7 @@ impl IndexingPipeline {
                 ..Default::default()
             },
             shard_ids: Default::default(),
+            _indexing_pipelines_gauge_guard: indexing_pipelines_gauge_guard,
         }
     }
 
