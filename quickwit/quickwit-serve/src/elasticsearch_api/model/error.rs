@@ -22,8 +22,6 @@ use quickwit_search::SearchError;
 use serde::{Deserialize, Serialize};
 use warp::hyper::StatusCode;
 
-use crate::convert_status_code_to_legacy_http;
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ElasticsearchError {
     #[serde(with = "http_serde::status_code")]
@@ -71,7 +69,7 @@ impl From<SearchError> for ElasticsearchError {
             additional_details: Default::default(),
         };
         ElasticsearchError {
-            status: crate::convert_status_code_to_legacy_http(status),
+            status,
             error: reason,
         }
     }
@@ -79,9 +77,7 @@ impl From<SearchError> for ElasticsearchError {
 
 impl From<IngestServiceError> for ElasticsearchError {
     fn from(ingest_service_error: IngestServiceError) -> Self {
-        let status = crate::convert_status_code_to_legacy_http(
-            ingest_service_error.error_code().http_status_code(),
-        );
+        let status = ingest_service_error.error_code().http_status_code();
 
         let reason = ErrorCause {
             reason: Some(ingest_service_error.to_string()),
@@ -113,7 +109,7 @@ impl From<IngestV2Error> for ElasticsearchError {
             additional_details: Default::default(),
         };
         ElasticsearchError {
-            status: crate::convert_status_code_to_legacy_http(status),
+            status,
             error: reason,
         }
     }
@@ -133,7 +129,7 @@ impl From<IndexServiceError> for ElasticsearchError {
             additional_details: Default::default(),
         };
         ElasticsearchError {
-            status: convert_status_code_to_legacy_http(status),
+            status,
             error: reason,
         }
     }

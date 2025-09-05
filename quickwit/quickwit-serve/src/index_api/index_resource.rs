@@ -81,7 +81,7 @@ pub fn list_indexes_metadata_handler(
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path!("indexes")
         .and(warp::get())
-        .and(serde_qs::warp::query(serde_qs::Config::default()))
+        .and(warp::query())
         .and(with_arg(metastore))
         .then(list_indexes_metadata)
         .and(extract_format_from_qs())
@@ -238,7 +238,7 @@ pub fn create_index_handler(
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path!("indexes")
         .and(warp::post())
-        .and(serde_qs::warp::query(serde_qs::Config::default()))
+        .and(warp::query())
         .and(extract_config_format())
         .and(warp::body::content_length_limit(1024 * 1024))
         .and(warp::filters::body::bytes())
@@ -294,7 +294,7 @@ pub struct UpdateQueryParams {
 }
 
 fn update_index_qp() -> impl Filter<Extract = (UpdateQueryParams,), Error = Rejection> + Clone {
-    serde_qs::warp::query::<UpdateQueryParams>(serde_qs::Config::default())
+    warp::query::<UpdateQueryParams>()
 }
 
 pub fn update_index_handler(
@@ -449,7 +449,7 @@ pub fn delete_index_handler(
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path!("indexes" / String)
         .and(warp::delete())
-        .and(serde_qs::warp::query(serde_qs::Config::default()))
+        .and(warp::query())
         .and(with_arg(index_service))
         .then(delete_index)
         .and(extract_format_from_qs())

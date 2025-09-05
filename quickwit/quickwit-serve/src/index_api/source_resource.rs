@@ -111,7 +111,7 @@ pub struct UpdateQueryParams {
 }
 
 fn update_source_qp() -> impl Filter<Extract = (UpdateQueryParams,), Error = Rejection> + Clone {
-    serde_qs::warp::query::<UpdateQueryParams>(serde_qs::Config::default())
+    warp::query::<UpdateQueryParams>()
 }
 
 pub fn update_source_handler(
