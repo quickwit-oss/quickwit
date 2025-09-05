@@ -23,6 +23,7 @@ use std::str::FromStr;
 use std::task::{Context, Poll};
 
 use anyhow::anyhow;
+use http_body_util::BodyExt;
 use lambda_http::http::HeaderValue;
 use lambda_http::{
     Adapter, Body as LambdaBody, Error as LambdaError, Request, RequestExt, Response, Service,
@@ -31,11 +32,26 @@ use lambda_http::{
 use mime_guess::{Mime, mime};
 use once_cell::sync::Lazy;
 use tracing::{Instrument, info_span};
-use warp::hyper::Body as WarpBody;
 pub use {lambda_http, warp};
+use hyper::body::Bytes;
+use futures::stream::StreamExt;
+use http_body_util::{combinators::BoxBody, Full};
+use warp::hyper::body::{Body, Frame};
 
-pub type WarpRequest = warp::http::Request<warp::hyper::Body>;
-pub type WarpResponse = warp::http::Response<warp::hyper::Body>;
+pub struct WarpBody();
+
+impl Body for WarpBody {
+    type Data = Bytes;
+    type Error = Infallible;
+    fn poll_frame(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
+        Pin::new(&mut self).poll_frame(cx)
+    }
+}
+
+
+pub type WarpRequest = http::Request<WarpBody>;
+pub type WarpResponse = http::Response<WarpBody>;
+
 
 static PLAINTEXT_MIMES: Lazy<HashSet<Mime>> = Lazy::new(|| {
     HashSet::from_iter([
@@ -97,9 +113,9 @@ where
         let (parts, body) = request.into_parts();
         let mut warp_parts = lambda_parts_to_warp_parts(&parts);
         let (content_len, warp_body) = match body {
-            LambdaBody::Empty => (0, WarpBody::empty()),
-            LambdaBody::Text(text) => (text.len(), WarpBody::from(text.into_bytes())),
-            LambdaBody::Binary(bytes) => (bytes.len(), WarpBody::from(bytes)),
+            LambdaBody::Empty => (0, BoxBody::new(Full::new(Bytes::new()))),
+            LambdaBody::Text(text) => (text.len(), BoxBody::new(Full::new(Bytes::from(text.into_bytes())))),
+            LambdaBody::Binary(bytes) => (bytes.len(), BoxBody::new(Full::new(Bytes::from(bytes)))),
         };
         let mut uri = format!("http://{}{}", "127.0.0.1", parts.uri.path());
         if !query_params.is_empty() {
@@ -172,7 +188,10 @@ async fn warp_body_to_lambda_body(
     warp_body: WarpBody,
 ) -> Result<LambdaBody, LambdaError> {
     // Concatenate all bytes into a single buffer
-    let body_bytes = warp::hyper::body::to_bytes(warp_body).await?.to_vec();
+    let mut body_bytes = Vec::new();
+    while let Some(bytes) = warp_body.poll_frame().await {
+        body_bytes.extend_from_slice(&bytes);
+    }
 
     // Attempt to determine the Content-Type
     let content_type_opt: Option<&HeaderValue> = parts.headers.get("Content-Type");
