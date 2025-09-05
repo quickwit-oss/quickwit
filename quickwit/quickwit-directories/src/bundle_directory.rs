@@ -73,7 +73,7 @@ pub async fn read_split_footer(
 }
 
 /// Return two slices for given split: `[body and bundle meta data] [hotcache]`
-fn split_footer(file_slice: FileSlice) -> io::Result<(FileSlice, FileSlice)> {
+pub fn split_footer(file_slice: FileSlice) -> io::Result<(FileSlice, FileSlice)> {
     let (body_and_footer_slice, footer_len_slice) = file_slice.split_from_end(4);
     let footer_len_bytes = footer_len_slice.read_bytes()?;
     let footer_len = u32::from_le_bytes(footer_len_bytes.as_slice().try_into().unwrap());
