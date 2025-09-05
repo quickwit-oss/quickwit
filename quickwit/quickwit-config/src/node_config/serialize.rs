@@ -1374,7 +1374,7 @@ mod tests {
                         keep_alive: None,
                     },
                     datadog_config: None,
-                    reverse_connection: false,
+                    enable_reverse_connection: false,
                 },
                 ..NodeConfigBuilder::default()
                     .build_and_validate(&HashMap::new())

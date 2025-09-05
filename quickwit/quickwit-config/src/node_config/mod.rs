@@ -641,7 +641,7 @@ pub struct CloudPremConfig {
     )]
     pub datadog_config: Option<WebsocketConfig>,
     #[serde(default)]
-    pub reverse_connection: bool,
+    pub enable_reverse_connection: bool,
 }
 
 impl CloudPremConfig {
