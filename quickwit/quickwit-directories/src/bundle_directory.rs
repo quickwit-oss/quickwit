@@ -111,14 +111,29 @@ impl BundleDirectory {
 
     /// Opens a split file.
     pub fn open_split(split_file: FileSlice) -> io::Result<BundleDirectory> {
+        eprintln!("QUICKWIT DEBUG: BundleDirectory::open_split - starting with file size: {}", split_file.len());
+        
         // First we remove the hotcache from our file slice.
+        eprintln!("QUICKWIT DEBUG: Calling split_footer to extract body and hotcache...");
         let (body_and_bundle_metadata, _hot_cache) = split_footer(split_file)?;
-        BundleDirectory::open_bundle(body_and_bundle_metadata).map_err(io::Error::other)
+        eprintln!("QUICKWIT DEBUG: split_footer succeeded, body size: {}", body_and_bundle_metadata.len());
+        
+        eprintln!("QUICKWIT DEBUG: Calling BundleDirectory::open_bundle...");
+        let result = BundleDirectory::open_bundle(body_and_bundle_metadata).map_err(io::Error::other);
+        
+        match &result {
+            Ok(_) => eprintln!("QUICKWIT DEBUG: BundleDirectory::open_bundle succeeded"),
+            Err(e) => eprintln!("QUICKWIT DEBUG: BundleDirectory::open_bundle failed: {}", e),
+        }
+        
+        result
     }
 
     /// Opens a BundleDirectory, given a file containing the bundle data.
     pub fn open_bundle(file: FileSlice) -> anyhow::Result<BundleDirectory> {
+        eprintln!("QUICKWIT DEBUG: BundleDirectory::open_bundle - opening file offsets with file size: {}", file.len());
         let file_offsets = BundleStorageFileOffsets::open(file.clone())?;
+        eprintln!("QUICKWIT DEBUG: BundleStorageFileOffsets::open succeeded");
         Ok(BundleDirectory { file, file_offsets })
     }
 }

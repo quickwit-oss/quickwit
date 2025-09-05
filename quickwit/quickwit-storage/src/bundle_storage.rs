@@ -166,8 +166,13 @@ impl BundleStorageFileOffsets {
     /// See docs/internals/split-format.md
     /// [Files, FileMetadata, FileMetadata Len]
     pub fn open(file: FileSlice) -> anyhow::Result<Self> {
+        eprintln!("QUICKWIT DEBUG: BundleStorageFileOffsets::open - file size: {}", file.len());
+        
+        eprintln!("QUICKWIT DEBUG: Splitting file from end for metadata length...");
         let (tantivy_files_data, num_bytes_file_metadata) =
             file.split_from_end(BUNDLE_METADATA_LENGTH_NUM_BYTES);
+            
+        eprintln!("QUICKWIT DEBUG: Reading footer num bytes...");
         let footer_num_bytes: u32 = u32::from_le_bytes(
             num_bytes_file_metadata
                 .read_bytes()?
@@ -175,11 +180,23 @@ impl BundleStorageFileOffsets {
                 .try_into()
                 .unwrap(),
         );
+        eprintln!("QUICKWIT DEBUG: Footer num bytes: {}", footer_num_bytes);
 
+        eprintln!("QUICKWIT DEBUG: Reading bundle storage file offsets data...");
         let mut bundle_storage_file_offsets_data = tantivy_files_data
             .slice_from_end(footer_num_bytes as usize)
             .read_bytes()?;
-        BundleStorageFileOffsetsVersions::try_read_component(&mut bundle_storage_file_offsets_data)
+        eprintln!("QUICKWIT DEBUG: Bundle storage file offsets data size: {}", bundle_storage_file_offsets_data.len());
+        
+        eprintln!("QUICKWIT DEBUG: Calling try_read_component...");
+        let result = BundleStorageFileOffsetsVersions::try_read_component(&mut bundle_storage_file_offsets_data);
+        
+        match &result {
+            Ok(file_offsets) => eprintln!("QUICKWIT DEBUG: Successfully read component with {} files", file_offsets.files.len()),
+            Err(e) => eprintln!("QUICKWIT DEBUG: try_read_component failed: {}", e),
+        }
+        
+        result
     }
 
     /// Returns file offsets for given path.
