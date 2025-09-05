@@ -639,7 +639,9 @@ pub struct CloudPremConfig {
             pub dd_application_key: Option<String>,
         ),
     )]
-    pub websocket_config: Option<WebsocketConfig>,
+    pub datadog_config: Option<WebsocketConfig>,
+    #[serde(default)]
+    pub reverse_connection: bool,
 }
 
 impl CloudPremConfig {

@@ -81,11 +81,14 @@ pub(crate) async fn start_cloudprem_server(
             CloudPremServiceImpl::new(search_service, services.cluster.clone());
         let cloudprem_service_client =
             CloudPremServiceClient::tower().build(cloudprem_service_impl);
-        if let Some(websocket_config) = cloudprem_config.websocket_config {
+        if cloudprem_config.reverse_connection {
+            let datadog_config = cloudprem_config.datadog_config.clone().ok_or_else(|| {
+                anyhow::anyhow!("site and api keys need to be configured to use reverse connection")
+            })?;
             tokio::spawn(maintain_websocket(
-                websocket_config.site,
-                websocket_config.dd_api_key,
-                websocket_config.dd_application_key,
+                datadog_config.site,
+                datadog_config.dd_api_key,
+                datadog_config.dd_application_key,
                 cloudprem_service_client.clone(),
             ));
         }
