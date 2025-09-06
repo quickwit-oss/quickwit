@@ -196,7 +196,7 @@ impl S3CompatibleObjectStorage {
         let thread_id = std::thread::current().id();
         eprintln!("QUICKWIT DEBUG: [Thread {:?}] S3 storage created from URI: '{}', bucket: '{}', prefix: '{}'", 
                   thread_id, uri.as_str(), bucket, prefix.display());
-        eprintln!("QUICKWIT DEBUG: [Thread {:?}] S3 storage instance created at: {:p}", thread_id, &*s3_client);
+        eprintln!("QUICKWIT DEBUG: [Thread {:?}] S3 storage instance created", thread_id);
         let retry_params = RetryParams::aggressive();
         let disable_multi_object_delete = s3_storage_config.disable_multi_object_delete;
         let disable_multipart_upload = s3_storage_config.disable_multipart_upload;

@@ -76,7 +76,7 @@ pub async fn read_split_footer(
 pub fn split_footer(file_slice: FileSlice) -> io::Result<(FileSlice, FileSlice)> {
     let thread_id = std::thread::current().id();
     eprintln!("QUICKWIT DEBUG: [Thread {:?}] split_footer called with file_slice size: {}", thread_id, file_slice.len());
-    eprintln!("QUICKWIT DEBUG: [Thread {:?}] split_footer file_slice range: {:?}", thread_id, file_slice.range());
+    eprintln!("QUICKWIT DEBUG: [Thread {:?}] split_footer file_slice len: {}", thread_id, file_slice.len());
     
     let (body_and_footer_slice, footer_len_slice) = file_slice.split_from_end(4);
     eprintln!("QUICKWIT DEBUG: [Thread {:?}] split_footer after split_from_end(4): body_and_footer_slice size: {}, footer_len_slice size: {}", 
@@ -146,11 +146,11 @@ impl BundleDirectory {
     pub fn open_bundle(file: FileSlice) -> anyhow::Result<BundleDirectory> {
         let thread_id = std::thread::current().id();
         eprintln!("QUICKWIT DEBUG: [Thread {:?}] BundleDirectory::open_bundle - opening file offsets with file size: {}", thread_id, file.len());
-        eprintln!("QUICKWIT DEBUG: [Thread {:?}] BundleDirectory::open_bundle - file slice range: {:?}", thread_id, file.range());
+        eprintln!("QUICKWIT DEBUG: [Thread {:?}] BundleDirectory::open_bundle - file slice len: {}", thread_id, file.len());
         eprintln!("QUICKWIT DEBUG: [Thread {:?}] BundleDirectory::open_bundle - about to call BundleStorageFileOffsets::open with cloned file", thread_id);
         
         let cloned_file = file.clone();
-        eprintln!("QUICKWIT DEBUG: [Thread {:?}] BundleDirectory::open_bundle - cloned file size: {}, range: {:?}", thread_id, cloned_file.len(), cloned_file.range());
+        eprintln!("QUICKWIT DEBUG: [Thread {:?}] BundleDirectory::open_bundle - cloned file size: {}", thread_id, cloned_file.len());
         
         let file_offsets = BundleStorageFileOffsets::open(cloned_file)?;
         eprintln!("QUICKWIT DEBUG: [Thread {:?}] BundleStorageFileOffsets::open succeeded", thread_id);

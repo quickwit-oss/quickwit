@@ -168,7 +168,7 @@ impl BundleStorageFileOffsets {
     pub fn open(file: FileSlice) -> anyhow::Result<Self> {
         let thread_id = std::thread::current().id();
         eprintln!("QUICKWIT DEBUG: [Thread {:?}] BundleStorageFileOffsets::open - file size: {}", thread_id, file.len());
-        eprintln!("QUICKWIT DEBUG: [Thread {:?}] BundleStorageFileOffsets::open - file slice range: {:?}", thread_id, file.range());
+        eprintln!("QUICKWIT DEBUG: [Thread {:?}] BundleStorageFileOffsets::open - file slice len: {}", thread_id, file.len());
         eprintln!("QUICKWIT DEBUG: [Thread {:?}] BundleStorageFileOffsets::open - call stack trace:", thread_id);
         
         // Print a simplified stack trace to understand the call path
