@@ -166,7 +166,19 @@ impl BundleStorageFileOffsets {
     /// See docs/internals/split-format.md
     /// [Files, FileMetadata, FileMetadata Len]
     pub fn open(file: FileSlice) -> anyhow::Result<Self> {
-        eprintln!("QUICKWIT DEBUG: BundleStorageFileOffsets::open - file size: {}", file.len());
+        let thread_id = std::thread::current().id();
+        eprintln!("QUICKWIT DEBUG: [Thread {:?}] BundleStorageFileOffsets::open - file size: {}", thread_id, file.len());
+        eprintln!("QUICKWIT DEBUG: [Thread {:?}] BundleStorageFileOffsets::open - file slice range: {:?}", thread_id, file.range());
+        eprintln!("QUICKWIT DEBUG: [Thread {:?}] BundleStorageFileOffsets::open - call stack trace:", thread_id);
+        
+        // Print a simplified stack trace to understand the call path
+        let backtrace = std::backtrace::Backtrace::force_capture();
+        let backtrace_str = format!("{}", backtrace);
+        for (i, line) in backtrace_str.lines().take(8).enumerate() {
+            if line.contains("tantivy4java") || line.contains("quickwit") || line.contains("bundle") || line.contains("split") {
+                eprintln!("QUICKWIT DEBUG: [Thread {:?}]   {}: {}", thread_id, i, line.trim());
+            }
+        }
         
         eprintln!("QUICKWIT DEBUG: Splitting file from end for metadata length...");
         let (tantivy_files_data, num_bytes_file_metadata) =
