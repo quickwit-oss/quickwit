@@ -50,6 +50,7 @@ aws-smithy-runtime-api,https://github.com/smithy-lang/smithy-rs,Apache-2.0,"AWS 
 aws-smithy-types,https://github.com/smithy-lang/smithy-rs,Apache-2.0,"AWS Rust SDK Team <aws-sdk-rust@amazon.com>, Russell Cohen <rcoh@amazon.com>"
 aws-smithy-xml,https://github.com/smithy-lang/smithy-rs,Apache-2.0,"AWS Rust SDK Team <aws-sdk-rust@amazon.com>, Russell Cohen <rcoh@amazon.com>"
 aws-types,https://github.com/smithy-lang/smithy-rs,Apache-2.0,"AWS Rust SDK Team <aws-sdk-rust@amazon.com>, Russell Cohen <rcoh@amazon.com>"
+aws_lambda_events,https://github.com/awslabs/aws-lambda-rust-runtime,MIT,"Christian Legnitto <christian@legnitto.com>, Sam Rijs <srijs@airpost.net>, David Calavera <dcalaver@amazon.com>"
 axum,https://github.com/tokio-rs/axum,MIT,The axum Authors
 axum-core,https://github.com/tokio-rs/axum,MIT,The axum-core Authors
 backtrace,https://github.com/rust-lang/backtrace-rs,MIT OR Apache-2.0,The Rust Project Developers
@@ -240,6 +241,9 @@ itoa,https://github.com/dtolnay/itoa,MIT OR Apache-2.0,David Tolnay <dtolnay@gma
 jobserver,https://github.com/rust-lang/jobserver-rs,MIT OR Apache-2.0,Alex Crichton <alex@alexcrichton.com>
 js-sys,https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/js-sys,MIT OR Apache-2.0,The wasm-bindgen Developers
 json_comments,https://github.com/tmccombs/json-comments-rs,Apache-2.0,Thayne McCombs <astrothayne@gmail.com>
+lambda_http,https://github.com/awslabs/aws-lambda-rust-runtime,Apache-2.0,"David Calavera <dcalaver@amazon.com>, Harold Sun <sunhua@amazon.com>"
+lambda_runtime,https://github.com/awslabs/aws-lambda-rust-runtime,Apache-2.0,"David Calavera <dcalaver@amazon.com>, Harold Sun <sunhua@amazon.com>"
+lambda_runtime_api_client,https://github.com/awslabs/aws-lambda-rust-runtime,Apache-2.0,"David Calavera <dcalaver@amazon.com>, Harold Sun <sunhua@amazon.com>"
 lazy_static,https://github.com/rust-lang-nursery/lazy-static.rs,MIT OR Apache-2.0,Marvin Löbel <loebel.marvin@gmail.com>
 lazycell,https://github.com/indiv0/lazycell,MIT OR Apache-2.0,"Alex Crichton <alex@alexcrichton.com>, Nikita Pekin <contact@nikitapek.in>"
 levenshtein_automata,https://github.com/tantivy-search/levenshtein-automata,MIT,Paul Masurel <paul.masurel@gmail.com>
@@ -310,6 +314,7 @@ oneshot,https://github.com/faern/oneshot,MIT OR Apache-2.0,Linus Färnstrand <fa
 oorandom,https://hg.sr.ht/~icefox/oorandom,MIT,Simon Heath <icefox@dreamquest.io>
 openssl-probe,https://github.com/alexcrichton/openssl-probe,MIT OR Apache-2.0,Alex Crichton <alex@alexcrichton.com>
 opentelemetry,https://github.com/open-telemetry/opentelemetry-rust,Apache-2.0,The opentelemetry Authors
+opentelemetry-http,https://github.com/open-telemetry/opentelemetry-rust,Apache-2.0,The opentelemetry-http Authors
 opentelemetry-otlp,https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-otlp,Apache-2.0,The opentelemetry-otlp Authors
 opentelemetry-proto,https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-proto,Apache-2.0,The opentelemetry-proto Authors
 opentelemetry_sdk,https://github.com/open-telemetry/opentelemetry-rust,Apache-2.0,The opentelemetry_sdk Authors
@@ -368,6 +373,7 @@ prost-build,https://github.com/tokio-rs/prost,Apache-2.0,"Dan Burkert <dan@danbu
 prost-derive,https://github.com/tokio-rs/prost,Apache-2.0,"Dan Burkert <dan@danburkert.com>, Lucio Franco <luciofranco14@gmail.com>, Casper Meijn <casper@meijn.net>, Tokio Contributors <team@tokio.rs>"
 prost-types,https://github.com/tokio-rs/prost,Apache-2.0,"Dan Burkert <dan@danburkert.com>, Lucio Franco <luciofranco14@gmail.com>, Casper Meijn <casper@meijn.net>, Tokio Contributors <team@tokio.rs>"
 protobuf,https://github.com/stepancheg/rust-protobuf,MIT,Stepan Koltsov <stepan.koltsov@gmail.com>
+query_map,https://github.com/calavera/query-map-rs,MIT,The query_map Authors
 quick-error,http://github.com/tailhook/quick-error,MIT OR Apache-2.0,"Paul Colomiets <paul@colomiets.name>, Colin Kiegel <kiegel@gmx.de>"
 quinn,https://github.com/quinn-rs/quinn,MIT OR Apache-2.0,The quinn Authors
 quinn-proto,https://github.com/quinn-rs/quinn,MIT OR Apache-2.0,The quinn-proto Authors
@@ -428,8 +434,10 @@ semver,https://github.com/dtolnay/semver,MIT OR Apache-2.0,David Tolnay <dtolnay
 separator,https://github.com/saghm/rust-separator,MIT,Saghm Rossi <saghmrossi@gmail.com>
 serde,https://github.com/serde-rs/serde,MIT OR Apache-2.0,"Erick Tryzelaar <erick.tryzelaar@gmail.com>, David Tolnay <dtolnay@gmail.com>"
 serde_derive,https://github.com/serde-rs/serde,MIT OR Apache-2.0,"Erick Tryzelaar <erick.tryzelaar@gmail.com>, David Tolnay <dtolnay@gmail.com>"
+serde_dynamo,https://github.com/zenlist/serde_dynamo,MIT,Bryan Burgers <bryan@burgers.io>
 serde_json,https://github.com/serde-rs/json,MIT OR Apache-2.0,"Erick Tryzelaar <erick.tryzelaar@gmail.com>, David Tolnay <dtolnay@gmail.com>"
 serde_json_borrow,https://github.com/PSeitz/serde_json_borrow,MIT,Pascal Seitz <pascal.seitz@gmail.com>
+serde_path_to_error,https://github.com/dtolnay/path-to-error,MIT OR Apache-2.0,David Tolnay <dtolnay@gmail.com>
 serde_qs,https://github.com/samscott89/serde_qs,MIT OR Apache-2.0,Sam Scott <sam@osohq.com>
 serde_spanned,https://github.com/toml-rs/toml,MIT OR Apache-2.0,The serde_spanned Authors
 serde_urlencoded,https://github.com/nox/serde_urlencoded,MIT OR Apache-2.0,Anthony Ramine <n.oxyde@gmail.com>
