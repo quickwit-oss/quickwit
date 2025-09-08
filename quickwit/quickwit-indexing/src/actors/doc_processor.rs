@@ -324,9 +324,13 @@ impl Serialize for DocProcessorCounter {
 }
 
 impl DocProcessorCounter {
-    fn for_index_and_doc_processor_outcome(index: &str, outcome: &str) -> DocProcessorCounter {
+    fn for_index_and_doc_processor_outcome(
+        index: &str,
+        pipeline_uid: &str,
+        outcome: &str,
+    ) -> DocProcessorCounter {
         let index_label = quickwit_common::metrics::index_label(index);
-        let labels = [index_label, outcome];
+        let labels = [index_label, pipeline_uid, outcome];
 
         DocProcessorCounter {
             num_docs: Default::default(),
@@ -365,6 +369,7 @@ impl DocProcessorCounter {
 pub struct DocProcessorCounters {
     index_id: IndexId,
     source_id: SourceId,
+    pipeline_uid: String,
 
     /// Overall number of documents received, partitioned
     /// into 5 categories:
@@ -389,24 +394,41 @@ pub struct DocProcessorCounters {
 }
 
 impl DocProcessorCounters {
-    pub fn new(index_id: IndexId, source_id: SourceId) -> Self {
-        let valid_docs =
-            DocProcessorCounter::for_index_and_doc_processor_outcome(&index_id, "valid");
-        let doc_mapper_errors =
-            DocProcessorCounter::for_index_and_doc_processor_outcome(&index_id, "doc_mapper_error");
+    pub fn new(index_id: IndexId, source_id: SourceId, pipeline_uid: String) -> Self {
+        let valid_docs = DocProcessorCounter::for_index_and_doc_processor_outcome(
+            &index_id,
+            &pipeline_uid,
+            "valid",
+        );
+        let doc_mapper_errors = DocProcessorCounter::for_index_and_doc_processor_outcome(
+            &index_id,
+            &pipeline_uid,
+            "doc_mapper_error",
+        );
         let processing_pipeline_errors = DocProcessorCounter::for_index_and_doc_processor_outcome(
             &index_id,
+            &pipeline_uid,
             "processing_pipeline_error",
         );
-        let transform_errors =
-            DocProcessorCounter::for_index_and_doc_processor_outcome(&index_id, "transform_error");
-        let json_parse_errors =
-            DocProcessorCounter::for_index_and_doc_processor_outcome(&index_id, "json_parse_error");
-        let otlp_parse_errors =
-            DocProcessorCounter::for_index_and_doc_processor_outcome(&index_id, "otlp_parse_error");
+        let transform_errors = DocProcessorCounter::for_index_and_doc_processor_outcome(
+            &index_id,
+            &pipeline_uid,
+            "transform_error",
+        );
+        let json_parse_errors = DocProcessorCounter::for_index_and_doc_processor_outcome(
+            &index_id,
+            &pipeline_uid,
+            "json_parse_error",
+        );
+        let otlp_parse_errors = DocProcessorCounter::for_index_and_doc_processor_outcome(
+            &index_id,
+            &pipeline_uid,
+            "otlp_parse_error",
+        );
         DocProcessorCounters {
             index_id,
             source_id,
+            pipeline_uid,
 
             valid: valid_docs,
             doc_mapper_errors,
@@ -514,6 +536,7 @@ impl DocProcessor {
     pub fn try_new(
         index_id: IndexId,
         source_id: SourceId,
+        pipeline_uid: String,
         doc_mapper: Arc<DocMapper>,
         indexer_mailbox: Mailbox<Indexer>,
         transform_config_opt: Option<TransformConfig>,
@@ -544,7 +567,7 @@ impl DocProcessor {
             doc_mapper,
             indexer_mailbox,
             timestamp_field_opt,
-            counters: Arc::new(DocProcessorCounters::new(index_id, source_id)),
+            counters: Arc::new(DocProcessorCounters::new(index_id, source_id, pipeline_uid)),
             publish_lock: PublishLock::default(),
             #[cfg(feature = "vrl")]
             transform_opt: transform_config_opt
@@ -775,6 +798,7 @@ mod tests {
         let doc_processor = DocProcessor::try_new(
             index_id.to_string(),
             source_id.to_string(),
+            "pipeline1".to_string(),
             doc_mapper.clone(),
             indexer_mailbox,
             None,
@@ -862,6 +886,7 @@ mod tests {
         let doc_processor = DocProcessor::try_new(
             "my-index".to_string(),
             "my-source".to_string(),
+            "pipeline1".to_string(),
             doc_mapper,
             indexer_mailbox,
             None,
@@ -910,6 +935,7 @@ mod tests {
         let doc_processor = DocProcessor::try_new(
             "my-index".to_string(),
             "my-source".to_string(),
+            "pipeline1".to_string(),
             doc_mapper,
             indexer_mailbox,
             None,
@@ -942,6 +968,7 @@ mod tests {
         let doc_processor = DocProcessor::try_new(
             "my-index".to_string(),
             "my-source".to_string(),
+            "pipeline1".to_string(),
             doc_mapper,
             indexer_mailbox,
             None,
@@ -988,6 +1015,7 @@ mod tests {
         let doc_processor = DocProcessor::try_new(
             "my-index".to_string(),
             "my-source".to_string(),
+            "pipeline1".to_string(),
             doc_mapper,
             indexer_mailbox,
             None,
@@ -1065,6 +1093,7 @@ mod tests {
         let doc_processor = DocProcessor::try_new(
             "my-index".to_string(),
             "my-source".to_string(),
+            "pipeline1".to_string(),
             doc_mapper,
             indexer_mailbox,
             None,
@@ -1144,6 +1173,7 @@ mod tests {
         let doc_processor = DocProcessor::try_new(
             "my-index".to_string(),
             "my-source".to_string(),
+            "pipeline1".to_string(),
             doc_mapper,
             indexer_mailbox,
             None,
@@ -1217,6 +1247,7 @@ mod tests {
         let doc_processor = DocProcessor::try_new(
             "my-index".to_string(),
             "my-source".to_string(),
+            "pipeline1".to_string(),
             doc_mapper,
             indexer_mailbox,
             None,
@@ -1303,6 +1334,7 @@ mod tests_vrl {
         let doc_processor = DocProcessor::try_new(
             index_id.to_string(),
             source_id.to_string(),
+            "pipeline1".to_string(),
             doc_mapper.clone(),
             indexer_mailbox,
             Some(transform_config),
@@ -1394,6 +1426,7 @@ mod tests_vrl {
         let doc_processor = DocProcessor::try_new(
             index_id.to_string(),
             source_id.to_string(),
+            "pipeline1".to_string(),
             doc_mapper.clone(),
             indexer_mailbox,
             Some(transform_config),

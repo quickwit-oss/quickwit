@@ -432,6 +432,7 @@ impl IndexingPipeline {
         let doc_processor = DocProcessor::try_new(
             index_id.to_string(),
             source_id.to_string(),
+            self.params.pipeline_id.pipeline_uid.to_string(),
             self.params.doc_mapper.clone(),
             indexer_mailbox,
             self.params.source_config.transform_config.clone(),
