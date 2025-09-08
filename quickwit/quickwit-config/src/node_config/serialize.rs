@@ -948,6 +948,7 @@ mod tests {
             assert_eq!(
                 node_config.peer_seed_addrs().await.unwrap(),
                 vec![
+                    "unresolvable.example.com:1789".to_string(),
                     "localhost:1789".to_string(),
                     "localhost:1337".to_string(),
                     "127.0.0.1:1789".to_string(),
