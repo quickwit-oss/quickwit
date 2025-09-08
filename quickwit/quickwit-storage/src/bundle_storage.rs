@@ -19,6 +19,7 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{fmt, io};
+use quickwit_common::tantivy4java_debug;
 
 use anyhow::Context;
 use async_trait::async_trait;
@@ -167,24 +168,24 @@ impl BundleStorageFileOffsets {
     /// [Files, FileMetadata, FileMetadata Len]
     pub fn open(file: FileSlice) -> anyhow::Result<Self> {
         let thread_id = std::thread::current().id();
-        eprintln!("QUICKWIT DEBUG: [Thread {:?}] BundleStorageFileOffsets::open - file size: {}", thread_id, file.len());
-        eprintln!("QUICKWIT DEBUG: [Thread {:?}] BundleStorageFileOffsets::open - file slice len: {}", thread_id, file.len());
-        eprintln!("QUICKWIT DEBUG: [Thread {:?}] BundleStorageFileOffsets::open - call stack trace:", thread_id);
+        tantivy4java_debug!("QUICKWIT DEBUG: [Thread {:?}] BundleStorageFileOffsets::open - file size: {}", thread_id, file.len());
+        tantivy4java_debug!("QUICKWIT DEBUG: [Thread {:?}] BundleStorageFileOffsets::open - file slice len: {}", thread_id, file.len());
+        tantivy4java_debug!("QUICKWIT DEBUG: [Thread {:?}] BundleStorageFileOffsets::open - call stack trace:", thread_id);
         
         // Print a simplified stack trace to understand the call path
         let backtrace = std::backtrace::Backtrace::force_capture();
         let backtrace_str = format!("{}", backtrace);
         for (i, line) in backtrace_str.lines().take(8).enumerate() {
             if line.contains("tantivy4java") || line.contains("quickwit") || line.contains("bundle") || line.contains("split") {
-                eprintln!("QUICKWIT DEBUG: [Thread {:?}]   {}: {}", thread_id, i, line.trim());
+                tantivy4java_debug!("QUICKWIT DEBUG: [Thread {:?}]   {}: {}", thread_id, i, line.trim());
             }
         }
         
-        eprintln!("QUICKWIT DEBUG: Splitting file from end for metadata length...");
+        tantivy4java_debug!("QUICKWIT DEBUG: Splitting file from end for metadata length...");
         let (tantivy_files_data, num_bytes_file_metadata) =
             file.split_from_end(BUNDLE_METADATA_LENGTH_NUM_BYTES);
             
-        eprintln!("QUICKWIT DEBUG: Reading footer num bytes...");
+        tantivy4java_debug!("QUICKWIT DEBUG: Reading footer num bytes...");
         let footer_num_bytes: u32 = u32::from_le_bytes(
             num_bytes_file_metadata
                 .read_bytes()?
@@ -192,20 +193,20 @@ impl BundleStorageFileOffsets {
                 .try_into()
                 .unwrap(),
         );
-        eprintln!("QUICKWIT DEBUG: Footer num bytes: {}", footer_num_bytes);
+        tantivy4java_debug!("QUICKWIT DEBUG: Footer num bytes: {}", footer_num_bytes);
 
-        eprintln!("QUICKWIT DEBUG: Reading bundle storage file offsets data...");
+        tantivy4java_debug!("QUICKWIT DEBUG: Reading bundle storage file offsets data...");
         let mut bundle_storage_file_offsets_data = tantivy_files_data
             .slice_from_end(footer_num_bytes as usize)
             .read_bytes()?;
-        eprintln!("QUICKWIT DEBUG: Bundle storage file offsets data size: {}", bundle_storage_file_offsets_data.len());
+        tantivy4java_debug!("QUICKWIT DEBUG: Bundle storage file offsets data size: {}", bundle_storage_file_offsets_data.len());
         
-        eprintln!("QUICKWIT DEBUG: Calling try_read_component...");
+        tantivy4java_debug!("QUICKWIT DEBUG: Calling try_read_component...");
         let result = BundleStorageFileOffsetsVersions::try_read_component(&mut bundle_storage_file_offsets_data);
         
         match &result {
-            Ok(file_offsets) => eprintln!("QUICKWIT DEBUG: Successfully read component with {} files", file_offsets.files.len()),
-            Err(e) => eprintln!("QUICKWIT DEBUG: try_read_component failed: {}", e),
+            Ok(file_offsets) => tantivy4java_debug!("QUICKWIT DEBUG: Successfully read component with {} files", file_offsets.files.len()),
+            Err(e) => tantivy4java_debug!("QUICKWIT DEBUG: try_read_component failed: {}", e),
         }
         
         result

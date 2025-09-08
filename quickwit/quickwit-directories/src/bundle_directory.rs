@@ -17,6 +17,7 @@ use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{fmt, io};
+use quickwit_common::tantivy4java_debug;
 
 use quickwit_storage::{BundleStorageFileOffsets, OwnedBytes, Storage, StorageResult};
 use tantivy::directory::error::OpenReadError;
@@ -75,20 +76,20 @@ pub async fn read_split_footer(
 /// Return two slices for given split: `[body and bundle meta data] [hotcache]`
 pub fn split_footer(file_slice: FileSlice) -> io::Result<(FileSlice, FileSlice)> {
     let thread_id = std::thread::current().id();
-    eprintln!("QUICKWIT DEBUG: [Thread {:?}] split_footer called with file_slice size: {}", thread_id, file_slice.len());
-    eprintln!("QUICKWIT DEBUG: [Thread {:?}] split_footer file_slice len: {}", thread_id, file_slice.len());
+    tantivy4java_debug!("QUICKWIT DEBUG: [Thread {:?}] split_footer called with file_slice size: {}", thread_id, file_slice.len());
+    tantivy4java_debug!("QUICKWIT DEBUG: [Thread {:?}] split_footer file_slice len: {}", thread_id, file_slice.len());
     
     let (body_and_footer_slice, footer_len_slice) = file_slice.split_from_end(4);
-    eprintln!("QUICKWIT DEBUG: [Thread {:?}] split_footer after split_from_end(4): body_and_footer_slice size: {}, footer_len_slice size: {}", 
-              thread_id, body_and_footer_slice.len(), footer_len_slice.len());
+    tantivy4java_debug!("QUICKWIT DEBUG: [Thread {:?}] split_footer after split_from_end(4): body_and_footer_slice size: {}, footer_len_slice size: {}", 
+               thread_id, body_and_footer_slice.len(), footer_len_slice.len());
     
     let footer_len_bytes = footer_len_slice.read_bytes()?;
     let footer_len = u32::from_le_bytes(footer_len_bytes.as_slice().try_into().unwrap());
-    eprintln!("QUICKWIT DEBUG: [Thread {:?}] split_footer footer_len: {}", thread_id, footer_len);
+    tantivy4java_debug!("QUICKWIT DEBUG: [Thread {:?}] split_footer footer_len: {}", thread_id, footer_len);
     
     let (body_and_bundle_metadata, hotcache) = body_and_footer_slice.split_from_end(footer_len as usize);
-    eprintln!("QUICKWIT DEBUG: [Thread {:?}] split_footer final result: body_and_bundle_metadata size: {}, hotcache size: {}", 
-              thread_id, body_and_bundle_metadata.len(), hotcache.len());
+    tantivy4java_debug!("QUICKWIT DEBUG: [Thread {:?}] split_footer final result: body_and_bundle_metadata size: {}, hotcache size: {}", 
+               thread_id, body_and_bundle_metadata.len(), hotcache.len());
     
     Ok((body_and_bundle_metadata, hotcache))
 }
@@ -124,19 +125,19 @@ impl BundleDirectory {
 
     /// Opens a split file.
     pub fn open_split(split_file: FileSlice) -> io::Result<BundleDirectory> {
-        eprintln!("QUICKWIT DEBUG: BundleDirectory::open_split - starting with file size: {}", split_file.len());
+        tantivy4java_debug!("QUICKWIT DEBUG: BundleDirectory::open_split - starting with file size: {}", split_file.len());
         
         // First we remove the hotcache from our file slice.
-        eprintln!("QUICKWIT DEBUG: Calling split_footer to extract body and hotcache...");
+        tantivy4java_debug!("QUICKWIT DEBUG: Calling split_footer to extract body and hotcache...");
         let (body_and_bundle_metadata, _hot_cache) = split_footer(split_file)?;
-        eprintln!("QUICKWIT DEBUG: split_footer succeeded, body size: {}", body_and_bundle_metadata.len());
+        tantivy4java_debug!("QUICKWIT DEBUG: split_footer succeeded, body size: {}", body_and_bundle_metadata.len());
         
-        eprintln!("QUICKWIT DEBUG: Calling BundleDirectory::open_bundle...");
+        tantivy4java_debug!("QUICKWIT DEBUG: Calling BundleDirectory::open_bundle...");
         let result = BundleDirectory::open_bundle(body_and_bundle_metadata).map_err(io::Error::other);
         
         match &result {
-            Ok(_) => eprintln!("QUICKWIT DEBUG: BundleDirectory::open_bundle succeeded"),
-            Err(e) => eprintln!("QUICKWIT DEBUG: BundleDirectory::open_bundle failed: {}", e),
+            Ok(_) => tantivy4java_debug!("QUICKWIT DEBUG: BundleDirectory::open_bundle succeeded"),
+            Err(e) => tantivy4java_debug!("QUICKWIT DEBUG: BundleDirectory::open_bundle failed: {}", e),
         }
         
         result
@@ -145,15 +146,15 @@ impl BundleDirectory {
     /// Opens a BundleDirectory, given a file containing the bundle data.
     pub fn open_bundle(file: FileSlice) -> anyhow::Result<BundleDirectory> {
         let thread_id = std::thread::current().id();
-        eprintln!("QUICKWIT DEBUG: [Thread {:?}] BundleDirectory::open_bundle - opening file offsets with file size: {}", thread_id, file.len());
-        eprintln!("QUICKWIT DEBUG: [Thread {:?}] BundleDirectory::open_bundle - file slice len: {}", thread_id, file.len());
-        eprintln!("QUICKWIT DEBUG: [Thread {:?}] BundleDirectory::open_bundle - about to call BundleStorageFileOffsets::open with cloned file", thread_id);
+        tantivy4java_debug!("QUICKWIT DEBUG: [Thread {:?}] BundleDirectory::open_bundle - opening file offsets with file size: {}", thread_id, file.len());
+        tantivy4java_debug!("QUICKWIT DEBUG: [Thread {:?}] BundleDirectory::open_bundle - file slice len: {}", thread_id, file.len());
+        tantivy4java_debug!("QUICKWIT DEBUG: [Thread {:?}] BundleDirectory::open_bundle - about to call BundleStorageFileOffsets::open with cloned file", thread_id);
         
         let cloned_file = file.clone();
-        eprintln!("QUICKWIT DEBUG: [Thread {:?}] BundleDirectory::open_bundle - cloned file size: {}", thread_id, cloned_file.len());
+        tantivy4java_debug!("QUICKWIT DEBUG: [Thread {:?}] BundleDirectory::open_bundle - cloned file size: {}", thread_id, cloned_file.len());
         
         let file_offsets = BundleStorageFileOffsets::open(cloned_file)?;
-        eprintln!("QUICKWIT DEBUG: [Thread {:?}] BundleStorageFileOffsets::open succeeded", thread_id);
+        tantivy4java_debug!("QUICKWIT DEBUG: [Thread {:?}] BundleStorageFileOffsets::open succeeded", thread_id);
         Ok(BundleDirectory { file, file_offsets })
     }
 }

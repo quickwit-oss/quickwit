@@ -1448,6 +1448,14 @@ async fn leaf_search_single_split_wrapper(
     let timer = crate::SEARCH_METRICS
         .leaf_search_split_duration_secs
         .start_timer();
+    
+    // Debug: Dump the QueryAst before calling leaf_search_single_split
+    debug!(
+        split_id = split.split_id,
+        query_ast = %request.query_ast,
+        "QueryAst debug dump before leaf_search_single_split"
+    );
+    
     let leaf_search_single_split_res = leaf_search_single_split(
         &searcher_context,
         request,

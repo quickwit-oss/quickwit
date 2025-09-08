@@ -18,6 +18,7 @@ use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::{fmt, io};
+use quickwit_common::tantivy4java_debug;
 
 use anyhow::{Context as AnyhhowContext, anyhow};
 use async_trait::async_trait;
@@ -193,10 +194,17 @@ impl S3CompatibleObjectStorage {
             let message = format!("failed to extract bucket name from S3 URI: {uri}");
             StorageResolverError::InvalidUri(message)
         })?;
-        let thread_id = std::thread::current().id();
-        eprintln!("QUICKWIT DEBUG: [Thread {:?}] S3 storage created from URI: '{}', bucket: '{}', prefix: '{}'", 
-                  thread_id, uri.as_str(), bucket, prefix.display());
-        eprintln!("QUICKWIT DEBUG: [Thread {:?}] S3 storage instance created", thread_id);
+        // Conditional debug logging
+        tantivy4java_debug!("QUICKWIT DEBUG: S3 storage created from URI: '{}', bucket: '{}', prefix: '{}'", 
+                   uri.as_str(), bucket, prefix.display());
+        tantivy4java_debug!("QUICKWIT DEBUG: S3 storage instance created");
+        
+        // Add stack trace to understand what's calling this
+        tantivy4java_debug!("QUICKWIT DEBUG: S3 storage creation stack trace:");
+        // let backtrace_str = format!("{}", backtrace);
+        // for (i, line) in backtrace_str.lines().take(15).enumerate() {
+        //     tantivy4java_debug!("QUICKWIT DEBUG: [Thread {:?}]   {}: {}", thread_id, i, line.trim());
+        // }
         let retry_params = RetryParams::aggressive();
         let disable_multi_object_delete = s3_storage_config.disable_multi_object_delete;
         let disable_multipart_upload = s3_storage_config.disable_multipart_upload;
@@ -292,10 +300,9 @@ impl S3CompatibleObjectStorage {
         // FIXME: This may not work on Windows.
         let key_path = self.prefix.join(relative_path);
         let key_str = key_path.to_string_lossy().to_string();
-        let thread_id = std::thread::current().id();
-        eprintln!("QUICKWIT DEBUG: [Thread {:?}] key() called with relative_path: '{}', prefix: '{}', result: '{}'", 
-                  thread_id, relative_path.display(), self.prefix.display(), key_str);
-        eprintln!("QUICKWIT DEBUG: [Thread {:?}] key() called on storage instance: {:p}", thread_id, self);
+        tantivy4java_debug!("QUICKWIT DEBUG: key() called with relative_path: '{}', prefix: '{}', result: '{}'", 
+                   relative_path.display(), self.prefix.display(), key_str);
+        tantivy4java_debug!("QUICKWIT DEBUG: key() called on storage instance: {:p}", self);
         key_str
     }
 
@@ -842,24 +849,24 @@ impl Storage for S3CompatibleObjectStorage {
     #[instrument(level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
         let _permit = REQUEST_SEMAPHORE.acquire().await;
-        let thread_id = std::thread::current().id();
+        // let thread_id = std::thread::current().id();
         let key = self.key(path);
-        eprintln!("QUICKWIT DEBUG: [Thread {:?}] ===== S3 GET_SLICE REQUEST =====", thread_id);
-        eprintln!("QUICKWIT DEBUG: [Thread {:?}] get_slice path: '{}'", thread_id, path.display());
-        eprintln!("QUICKWIT DEBUG: [Thread {:?}] get_slice range: {:?}", thread_id, range);
-        eprintln!("QUICKWIT DEBUG: [Thread {:?}] get_slice key: '{}'", thread_id, key);
-        eprintln!("QUICKWIT DEBUG: [Thread {:?}] get_slice storage instance: {:p}", thread_id, self);
+        tantivy4java_debug!("QUICKWIT DEBUG: ===== S3 GET_SLICE REQUEST =====");
+        tantivy4java_debug!("QUICKWIT DEBUG: get_slice path: '{}'", path.display());
+        tantivy4java_debug!("QUICKWIT DEBUG: get_slice range: {:?}", range);
+        tantivy4java_debug!("QUICKWIT DEBUG: get_slice key: '{}'", key);
+        tantivy4java_debug!("QUICKWIT DEBUG: get_slice storage instance: {:p}", self);
         
         let result = self.get_to_vec(path, Some(range.clone())).await;
         
-        match &result {
-            Ok(bytes) => {
-                eprintln!("QUICKWIT DEBUG: [Thread {:?}] get_slice SUCCESS: received {} bytes", thread_id, bytes.len());
-            },
-            Err(err) => {
-                eprintln!("QUICKWIT DEBUG: [Thread {:?}] get_slice FAILED: {}", thread_id, err);
-            }
-        }
+        // match &result {
+        //     Ok(bytes) => {
+        //         tantivy4java_debug!("QUICKWIT DEBUG: [Thread {:?}] get_slice SUCCESS: received {} bytes", thread_id, bytes.len());
+        //     },
+        //     Err(err) => {
+        //         tantivy4java_debug!("QUICKWIT DEBUG: [Thread {:?}] get_slice FAILED: {}", thread_id, err);
+        //     }
+        // }
         
         result
             .map(OwnedBytes::new)
@@ -893,23 +900,23 @@ impl Storage for S3CompatibleObjectStorage {
     #[instrument(level = "debug", skip(self), fields(num_bytes_fetched))]
     async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
         let _permit = REQUEST_SEMAPHORE.acquire().await;
-        let thread_id = std::thread::current().id();
+        // let thread_id = std::thread::current().id();
         let key = self.key(path);
-        eprintln!("QUICKWIT DEBUG: [Thread {:?}] ===== S3 GET_ALL REQUEST =====", thread_id);
-        eprintln!("QUICKWIT DEBUG: [Thread {:?}] get_all path: '{}'", thread_id, path.display());
-        eprintln!("QUICKWIT DEBUG: [Thread {:?}] get_all key: '{}'", thread_id, key);
-        eprintln!("QUICKWIT DEBUG: [Thread {:?}] get_all storage instance: {:p}", thread_id, self);
+        tantivy4java_debug!("QUICKWIT DEBUG: ===== S3 GET_ALL REQUEST =====");
+        tantivy4java_debug!("QUICKWIT DEBUG: get_all path: '{}'", path.display());
+        tantivy4java_debug!("QUICKWIT DEBUG: get_all key: '{}'", key);
+        tantivy4java_debug!("QUICKWIT DEBUG: get_all storage instance: {:p}", self);
         
         let result = self.get_to_vec(path, None).await;
         
-        match &result {
-            Ok(bytes) => {
-                eprintln!("QUICKWIT DEBUG: [Thread {:?}] get_all SUCCESS: received {} bytes", thread_id, bytes.len());
-            },
-            Err(err) => {
-                eprintln!("QUICKWIT DEBUG: [Thread {:?}] get_all FAILED: {}", thread_id, err);
-            }
-        }
+        // match &result {
+        //     Ok(bytes) => {
+        //         tantivy4java_debug!("QUICKWIT DEBUG: [Thread {:?}] get_all SUCCESS: received {} bytes", thread_id, bytes.len());
+        //     },
+        //     Err(err) => {
+        //         tantivy4java_debug!("QUICKWIT DEBUG: [Thread {:?}] get_all FAILED: {}", thread_id, err);
+        //     }
+        // }
         
         let bytes = result
             .map(OwnedBytes::new)
@@ -928,28 +935,28 @@ impl Storage for S3CompatibleObjectStorage {
         let _permit = REQUEST_SEMAPHORE.acquire().await;
         let bucket = self.bucket.clone();
         let key = self.key(path);
-        let thread_id = std::thread::current().id();
-        eprintln!("QUICKWIT DEBUG: [Thread {:?}] ===== S3 HEAD REQUEST DETAILS =====", thread_id);
-        eprintln!("QUICKWIT DEBUG: [Thread {:?}] file_num_bytes called with:", thread_id);
-        eprintln!("QUICKWIT DEBUG: [Thread {:?}]   input path: '{}'", thread_id, path.display());
-        eprintln!("QUICKWIT DEBUG: [Thread {:?}]   storage URI: '{}'", thread_id, self.uri.as_str());
-        eprintln!("QUICKWIT DEBUG: [Thread {:?}]   storage bucket: '{}'", thread_id, bucket);
-        eprintln!("QUICKWIT DEBUG: [Thread {:?}]   storage prefix: '{}'", thread_id, self.prefix.display());
-        eprintln!("QUICKWIT DEBUG: [Thread {:?}]   computed key: '{}'", thread_id, key);
-        eprintln!("QUICKWIT DEBUG: [Thread {:?}]   storage instance: {:p}", thread_id, self);
+        // let thread_id = std::thread::current().id();
+        tantivy4java_debug!("QUICKWIT DEBUG: ===== S3 HEAD REQUEST DETAILS =====");
+        tantivy4java_debug!("QUICKWIT DEBUG: file_num_bytes called with:");
+        tantivy4java_debug!("QUICKWIT DEBUG:   input path: '{}'", path.display());
+        tantivy4java_debug!("QUICKWIT DEBUG:   storage URI: '{}'", self.uri.as_str());
+        tantivy4java_debug!("QUICKWIT DEBUG:   storage bucket: '{}'", bucket);
+        tantivy4java_debug!("QUICKWIT DEBUG:   storage prefix: '{}'", self.prefix.display());
+        tantivy4java_debug!("QUICKWIT DEBUG:   computed key: '{}'", key);
+        tantivy4java_debug!("QUICKWIT DEBUG:   storage instance: {:p}", self);
         
         // Try to get AWS config details for debugging
-        eprintln!("QUICKWIT DEBUG:   AWS credentials: [using environment/default provider]");
+        tantivy4java_debug!("QUICKWIT DEBUG:   AWS credentials: [using environment/default provider]");
         
-        if let Some(region) = self.s3_client.config().region() {
-            eprintln!("QUICKWIT DEBUG:   AWS region: '{}'", region.as_ref());
-        } else {
-            eprintln!("QUICKWIT DEBUG:   AWS region: not set");
-        }
+        // if let Some(region) = self.s3_client.config().region() {
+        //     tantivy4java_debug!("QUICKWIT DEBUG:   AWS region: '{}'", region.as_ref());
+        // } else {
+        //     tantivy4java_debug!("QUICKWIT DEBUG:   AWS region: not set");
+        // }
         
-        eprintln!("QUICKWIT DEBUG: =====================================");
+        tantivy4java_debug!("QUICKWIT DEBUG: =====================================");
         let head_object_output = aws_retry(&self.retry_params, || async {
-            eprintln!("QUICKWIT DEBUG: Sending HEAD object request to S3 with bucket='{}' key='{}'", bucket, key);
+            tantivy4java_debug!("QUICKWIT DEBUG: Sending HEAD object request to S3 with bucket='{}' key='{}'", bucket, key);
             self.s3_client
                 .head_object()
                 .bucket(&bucket)
@@ -959,13 +966,13 @@ impl Storage for S3CompatibleObjectStorage {
         })
         .await
         .map_err(|e| {
-            eprintln!("QUICKWIT DEBUG: HEAD object request FAILED: {:?}", e);
-            eprintln!("QUICKWIT DEBUG: Failed request was: bucket='{}' key='{}'", bucket, key);
+            tantivy4java_debug!("QUICKWIT DEBUG: HEAD object request FAILED: {:?}", e);
+            tantivy4java_debug!("QUICKWIT DEBUG: Failed request was: bucket='{}' key='{}'", bucket, key);
             e
         })?;
 
         let size = head_object_output.content_length().unwrap_or(0) as u64;
-        eprintln!("QUICKWIT DEBUG: [Thread {:?}] HEAD object request SUCCEEDED, content_length: {}", thread_id, size);
+        tantivy4java_debug!("QUICKWIT DEBUG: HEAD object request SUCCEEDED, content_length: {}", size);
         Ok(size)
     }
 

@@ -15,6 +15,7 @@
 #![deny(clippy::disallowed_methods)]
 
 mod coolid;
+pub mod debug;
 
 #[cfg(feature = "jemalloc-profiled")]
 pub(crate) mod alloc_tracker;
