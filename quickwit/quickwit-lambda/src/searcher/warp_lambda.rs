@@ -23,7 +23,7 @@ use std::str::FromStr;
 use std::task::{Context, Poll};
 
 use anyhow::anyhow;
-use http_body_util::BodyExt;
+use http_body_util::{BodyExt, Full};
 use lambda_http::http::HeaderValue;
 use lambda_http::{
     Adapter, Body as LambdaBody, Error as LambdaError, Request, RequestExt, Response, Service,
@@ -32,26 +32,11 @@ use lambda_http::{
 use mime_guess::{Mime, mime};
 use once_cell::sync::Lazy;
 use tracing::{Instrument, info_span};
+use warp::hyper::body::{Body, Bytes};
 pub use {lambda_http, warp};
-use hyper::body::Bytes;
-use futures::stream::StreamExt;
-use http_body_util::{combinators::BoxBody, Full, Empty};
-use warp::hyper::body::{Body, Frame};
-
-pub struct WarpBody();
-
-impl Body for WarpBody {
-    type Data = Bytes;
-    type Error = Infallible;
-    fn poll_frame(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        Pin::new(&mut self).poll_frame(cx)
-    }
-}
-
 
 pub type WarpRequest = http::Request<Full<Bytes>>;
 pub type WarpResponse = http::Response<Full<Bytes>>;
-
 
 static PLAINTEXT_MIMES: Lazy<HashSet<Mime>> = Lazy::new(|| {
     HashSet::from_iter([
@@ -61,28 +46,34 @@ static PLAINTEXT_MIMES: Lazy<HashSet<Mime>> = Lazy::new(|| {
     ])
 });
 
-pub async fn run<'a, S>(service: S) -> Result<(), LambdaError>
+pub async fn run<'a, S, B>(service: S) -> Result<(), LambdaError>
 where
-    S: Service<WarpRequest, Response = WarpResponse, Error = Infallible> + Send + 'a,
+    S: Service<WarpRequest, Response = http::Response<B>, Error = Infallible> + Send + 'a,
     S::Future: Send + 'a,
+    B: Body<Data = quickwit_proto::bytes::Bytes> + Send,
+    B::Error: std::error::Error + Send + Sync + 'static,
 {
     lambda_runtime::run(Adapter::from(WarpAdapter::new(service))).await
 }
 
 #[derive(Clone)]
-pub struct WarpAdapter<'a, S>
+pub struct WarpAdapter<'a, S, B>
 where
-    S: Service<WarpRequest, Response = WarpResponse, Error = Infallible>,
+    S: Service<WarpRequest, Response = http::Response<B>, Error = Infallible>,
     S::Future: Send + 'a,
+    B: Body<Data = quickwit_proto::bytes::Bytes> + Send,
+    B::Error: std::error::Error + Send + Sync + 'static,
 {
     warp_service: S,
     _phantom_data: PhantomData<&'a WarpResponse>,
 }
 
-impl<'a, S> WarpAdapter<'a, S>
+impl<'a, S, B> WarpAdapter<'a, S, B>
 where
-    S: Service<WarpRequest, Response = WarpResponse, Error = Infallible>,
+    S: Service<WarpRequest, Response = http::Response<B>, Error = Infallible>,
     S::Future: Send + 'a,
+    B: Body<Data = quickwit_proto::bytes::Bytes> + Send,
+    B::Error: std::error::Error + Send + Sync + 'static,
 {
     pub fn new(warp_service: S) -> Self {
         Self {
@@ -92,10 +83,12 @@ where
     }
 }
 
-impl<'a, S> Service<Request> for WarpAdapter<'a, S>
+impl<'a, S, B> Service<Request> for WarpAdapter<'a, S, B>
 where
-    S: Service<WarpRequest, Response = WarpResponse, Error = Infallible> + 'a,
+    S: Service<WarpRequest, Response = http::Response<B>, Error = Infallible> + 'a,
     S::Future: Send + 'a,
+    B: Body<Data = quickwit_proto::bytes::Bytes> + Send,
+    B::Error: std::error::Error + Send + Sync + 'static,
 {
     type Response = Response<LambdaBody>;
     type Error = LambdaError;
@@ -183,10 +176,14 @@ fn warp_parts_to_lambda_parts(
     parts
 }
 
-async fn warp_body_to_lambda_body(
+async fn warp_body_to_lambda_body<B>(
     parts: &lambda_http::http::response::Parts,
-    warp_body: Full<Bytes>,
-) -> Result<LambdaBody, LambdaError> {
+    warp_body: B,
+) -> Result<LambdaBody, LambdaError>
+where
+    B: Body<Data = quickwit_proto::bytes::Bytes> + Send,
+    B::Error: std::error::Error + Send + Sync + 'static,
+{
     // Concatenate all bytes into a single buffer
     let body_bytes = warp_body.collect().await?.to_bytes().to_vec();
 

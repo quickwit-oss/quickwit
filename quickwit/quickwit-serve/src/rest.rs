@@ -23,6 +23,7 @@ use quickwit_config::{disable_ingest_v1, enable_ingest_v2};
 use quickwit_search::SearchService;
 use tokio::net::TcpListener;
 use tokio_rustls::TlsAcceptor;
+use tokio_util::either::Either;
 use tower::ServiceBuilder;
 use tower_http::compression::CompressionLayer;
 use tower_http::compression::predicate::{NotForContentType, Predicate, SizeAbove};
@@ -220,27 +221,27 @@ pub(crate) async fn start_rest_server(
     );
 
     let service = TowerToHyperService::new(service);
-    readiness_trigger.await;
 
     let server = Builder::new(TokioExecutor::new());
     let graceful = hyper_util::server::graceful::GracefulShutdown::new();
     let mut shutdown_signal = std::pin::pin!(shutdown_signal);
+    readiness_trigger.await;
 
-    if let Some(tls_config) = &quickwit_services.node_config.rest_config.tls {
-        let rustls_config = tls::make_rustls_config(tls_config)?;
-        let acceptor = TlsAcceptor::from(rustls_config);
+    loop {
+        tokio::select! {
+            conn = tcp_listener.accept() => {
+                let (stream, _remote_addr) = match conn {
+                    Ok(conn) => conn,
+                    Err(err) => {
+                        error!("failed to accept connection: {err:#}");
+                        continue;
+                    }
+                };
 
-        loop {
-            tokio::select! {
-                conn = tcp_listener.accept() => {
-                    let (stream, _remote_addr) = match conn {
-                        Ok(conn) => conn,
-                        Err(err) => {
-                            error!("failed to accept connection: {err:#}");
-                            continue;
-                        }
-                    };
-
+                let either_stream =
+                if let Some(tls_config) = &quickwit_services.node_config.rest_config.tls {
+                    let rustls_config = tls::make_rustls_config(tls_config)?;
+                    let acceptor = TlsAcceptor::from(rustls_config);
                     let tls_stream = match acceptor.accept(stream).await {
                         Ok(tls_stream) => tls_stream,
                         Err(err) => {
@@ -248,48 +249,22 @@ pub(crate) async fn start_rest_server(
                             continue;
                         }
                     };
+                    Either::Left(tls_stream)
+                } else {
+                    Either::Right(stream)
+                };
 
-                    let service_clone = service.clone();
-                    let conn = server.serve_connection_with_upgrades(TokioIo::new(tls_stream), service_clone);
-                    let conn = graceful.watch(conn.into_owned());
-
-                    tokio::spawn(async move {
-                        if let Err(err) = conn.await {
-                            error!("failed to serve connection: {err:#}");
-                        }
-                    });
-                },
-                _ = &mut shutdown_signal => {
-                    info!("REST server shutdown signal received");
-                    break;
-                }
-            }
-        }
-    } else {
-        loop {
-            tokio::select! {
-                conn = tcp_listener.accept() => {
-                    let (stream, _remote_addr) = match conn {
-                        Ok(conn) => conn,
-                        Err(err) => {
-                            error!("failed to accept connection: {err:#}");
-                            continue;
-                        }
-                    };
-                    let io = TokioIo::new(stream);
-                    let service_clone = service.clone();
-                    let conn = server.serve_connection_with_upgrades(io, service_clone);
-                    let conn = graceful.watch(conn.into_owned());
-                    tokio::spawn(async move {
-                        if let Err(e) = conn.await {
-                            error!(err=?e, "Error serving connection");
-                        }
-                    });
-                },
-                _ = &mut shutdown_signal => {
-                    info!("REST server shutdown signal received");
-                    break;
-                }
+                let conn = server.serve_connection_with_upgrades(TokioIo::new(either_stream), service.clone());
+                let conn = graceful.watch(conn.into_owned());
+                tokio::spawn(async move {
+                    if let Err(err) = conn.await {
+                        error!("failed to serve connection: {err:#}");
+                    }
+                });
+            },
+            _ = &mut shutdown_signal => {
+                info!("REST server shutdown signal received");
+                break;
             }
         }
     }
@@ -301,35 +276,6 @@ pub(crate) async fn start_rest_server(
     }
 
     Ok(())
-
-    // TODO: use EitherIncoming logic above
-    // let incoming = AddrIncoming::from_listener(tcp_listener)?;
-
-    // let maybe_tls_incoming =
-    //     if let Some(tls_config) = &quickwit_services.node_config.rest_config.tls {
-    //         let rustls_config = tls::make_rustls_config(tls_config)?;
-    //         EitherIncoming::Left(tls::TlsAcceptor::new(rustls_config, incoming))
-    //     } else {
-    //         EitherIncoming::Right(incoming)
-    //     };
-
-    // `graceful_shutdown()` seems to be blocking in presence of existing connections.
-    // The following approach of dropping the serve supposedly is not bullet proof, but it seems to
-    // work in our unit test.
-    //
-    // See more of the discussion here:
-    // https://github.com/hyperium/hyper/issues/2386
-
-    // let serve_fut = async move {
-    //     tokio::select! {
-    //          res = warp::hyper::Server::builder(maybe_tls_incoming).serve(Shared::new(service))
-    // => { res }          _ = shutdown_signal => { Ok(()) }
-    //     }
-    // };
-
-    // let (serve_res, _trigger_res) = tokio::join!(serve_fut, readiness_trigger);
-    // serve_res?;
-    // Ok(())
 }
 
 fn search_routes(
@@ -617,50 +563,6 @@ mod tls {
         Ok(Arc::new(cfg))
     }
 }
-
-// enum EitherIncoming<L, R> {
-//     Left(L),
-//     Right(R),
-// }
-
-// impl<L, R> EitherIncoming<L, R> {
-//     pub fn as_pin_mut(self: Pin<&mut Self>) -> EitherIncoming<Pin<&mut L>, Pin<&mut R>> {
-//         // SAFETY: `get_unchecked_mut` is fine because we don't move anything.
-//         // We can use `new_unchecked` because the `inner` parts are guaranteed
-//         // to be pinned, as they come from `self` which is pinned, and we never
-//         // offer an unpinned `&mut A` or `&mut B` through `Pin<&mut Self>`. We
-//         // also don't have an implementation of `Drop`, nor manual `Unpin`.
-//         unsafe {
-//             match self.get_unchecked_mut() {
-//                 EitherIncoming::Left(inner) => EitherIncoming::Left(Pin::new_unchecked(inner)),
-//                 EitherIncoming::Right(inner) => EitherIncoming::Right(Pin::new_unchecked(inner)),
-//             }
-//         }
-//     }
-// }
-
-// impl<L, R, E> Accept for EitherIncoming<L, R>
-// where
-//     L: Accept<Error = E>,
-//     R: Accept<Error = E>,
-// {
-//     type Conn = tokio_util::either::Either<L::Conn, R::Conn>;
-//     type Error = E;
-
-//     fn poll_accept(
-//         self: Pin<&mut Self>,
-//         cx: &mut std::task::Context<'_>,
-//     ) -> std::task::Poll<Option<Result<Self::Conn, Self::Error>>> {
-//         match self.as_pin_mut() {
-//             EitherIncoming::Left(l) => l
-//                 .poll_accept(cx)
-//                 .map(|opt| opt.map(|res| res.map(tokio_util::either::Either::Left))),
-//             EitherIncoming::Right(r) => r
-//                 .poll_accept(cx)
-//                 .map(|opt| opt.map(|res| res.map(tokio_util::either::Either::Right))),
-//         }
-//     }
-// }
 
 #[cfg(test)]
 mod tests {
