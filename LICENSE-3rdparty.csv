@@ -126,6 +126,7 @@ convert_case,https://github.com/rutrum/convert-case,MIT,David Purdum <purdum41@g
 convert_case,https://github.com/rutrum/convert-case,MIT,rutrum <dave@rutrum.net>
 core-foundation,https://github.com/servo/core-foundation-rs,MIT OR Apache-2.0,The Servo Project Developers
 core-foundation-sys,https://github.com/servo/core-foundation-rs,MIT OR Apache-2.0,The Servo Project Developers
+cpu-time,https://github.com/tailhook/cpu-time,MIT OR Apache-2.0,Paul Colomiets <paul@colomiets.name>
 cpufeatures,https://github.com/RustCrypto/utils,MIT OR Apache-2.0,RustCrypto Developers
 crc,https://github.com/mrhooray/crc-rs,MIT OR Apache-2.0,"Rui Hu <code@mrhooray.com>, Akhil Velagapudi <4@4khil.com>"
 crc-catalog,https://github.com/akhilles/crc-catalog,MIT OR Apache-2.0,Akhil Velagapudi <akhilvelagapudi@gmail.com>

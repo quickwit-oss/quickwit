@@ -51,6 +51,7 @@ ulid = { workspace = true }
 utoipa = { workspace = true }
 vrl = { workspace = true, optional = true }
 warp = { workspace = true, optional = true }
+cpu-time = "1"
 
 quickwit-actors = { workspace = true }
 quickwit-aws = { workspace = true }

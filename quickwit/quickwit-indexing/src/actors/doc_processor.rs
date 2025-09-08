@@ -200,49 +200,58 @@ fn try_into_json_docs(
     }
 }
 
-fn parse_raw_doc(
+fn parse_raw_doc<'a>(
     input_format: SourceInputFormat,
     raw_doc: Bytes,
     num_bytes: usize,
-    pipeline_opt: Option<&Pipeline>,
-) -> impl Iterator<Item = Result<JsonDoc, DocProcessorError>> + '_ {
+    pipeline_opt: Option<&'a Pipeline>,
+    pipeline_cpu_micros_sum: &'a mut u64,
+) -> impl Iterator<Item = Result<JsonDoc, DocProcessorError>> + 'a {
     let json_doc_iter = try_into_json_docs(input_format, raw_doc, num_bytes);
     let Some(pipeline) = pipeline_opt else {
         return itertools::Either::Left(json_doc_iter);
     };
-    let json_doc_iter = json_doc_iter.map(|json_doc_res: Result<JsonDoc, DocProcessorError>| {
-        let mut json_doc = json_doc_res?;
-        use serde::de::IntoDeserializer;
-        let deserializer = json_doc.json_obj.into_deserializer();
-        let Ok(doc) = DatadogLogMsg::deserialize(deserializer) else {
-            return Err(DocProcessorError::JsonParsing(
-                "Document was not a DatadogLogMsg.".to_string(),
-            ));
-        };
-        let mut processed_log = ProcessedLog::from_datadog_log_msg(doc);
+    let json_doc_iter =
+        json_doc_iter.map(move |json_doc_res: Result<JsonDoc, DocProcessorError>| {
+            let mut json_doc = json_doc_res?;
+            use serde::de::IntoDeserializer;
+            let deserializer = json_doc.json_obj.into_deserializer();
+            let Ok(doc) = DatadogLogMsg::deserialize(deserializer) else {
+                return Err(DocProcessorError::JsonParsing(
+                    "Document was not a DatadogLogMsg.".to_string(),
+                ));
+            };
+            let mut processed_log = ProcessedLog::from_datadog_log_msg(doc);
 
-        if let Err(pipeline_error) = pipeline.apply(&mut processed_log) {
-            return Err(DocProcessorError::Pipeline(pipeline_error));
-        }
-        let Ok(json_value) = serde_json::to_value(processed_log) else {
-            return Err(DocProcessorError::JsonParsing(
-                "failed to serialize processed log into JSON value. This should never happen, \
-                 please report"
-                    .to_string(),
-            ));
-        };
-        let JsonValue::Object(json_obj) = json_value else {
-            return Err(DocProcessorError::JsonParsing(
-                "serialized processed log was not a a JSON object. This should never happen, \
-                 please report"
-                    .to_string(),
-            ));
-        };
-        json_doc.json_obj = json_obj;
-        json_doc.num_bytes = serialized_json_obj_approx(&json_doc.json_obj);
+            // Measure thread CPU time around the processing pipeline application.
+            let start = cpu_time::ThreadTime::try_now();
+            let apply_res = pipeline.apply(&mut processed_log);
+            if let Ok(cpu_delta) = start.and_then(|start| start.try_elapsed()) {
+                *pipeline_cpu_micros_sum += cpu_delta.as_micros() as u64;
+            }
 
-        Ok(json_doc)
-    });
+            if let Err(pipeline_error) = apply_res {
+                return Err(DocProcessorError::Pipeline(pipeline_error));
+            }
+            let Ok(json_value) = serde_json::to_value(processed_log) else {
+                return Err(DocProcessorError::JsonParsing(
+                    "failed to serialize processed log into JSON value. This should never happen, \
+                     please report"
+                        .to_string(),
+                ));
+            };
+            let JsonValue::Object(json_obj) = json_value else {
+                return Err(DocProcessorError::JsonParsing(
+                    "serialized processed log was not a a JSON object. This should never happen, \
+                     please report"
+                        .to_string(),
+                ));
+            };
+            json_doc.json_obj = json_obj;
+            json_doc.num_bytes = serialized_json_obj_approx(&json_doc.json_obj);
+
+            Ok(json_doc)
+        });
     itertools::Either::Right(json_doc_iter)
 }
 
@@ -391,6 +400,10 @@ pub struct DocProcessorCounters {
     ///
     /// Includes both valid and invalid documents.
     pub num_bytes_total: AtomicU64,
+    /// Total thread CPU time spent in the processing pipeline (microseconds)
+    /// for this DocProcessor instance.
+    #[serde(skip)]
+    processing_pipeline_cpu_micros_total: IntCounter,
 }
 
 impl DocProcessorCounters {
@@ -425,6 +438,10 @@ impl DocProcessorCounters {
             &pipeline_uid,
             "otlp_parse_error",
         );
+        let index_label = quickwit_common::metrics::index_label(&index_id);
+        let processing_pipeline_cpu_micros_total = crate::metrics::INDEXER_METRICS
+            .processing_pipeline_thread_cpu_micros_total
+            .with_label_values([index_label, &pipeline_uid]);
         DocProcessorCounters {
             index_id,
             source_id,
@@ -437,6 +454,7 @@ impl DocProcessorCounters {
             json_parse_errors,
             otlp_parse_errors,
             num_bytes_total: Default::default(),
+            processing_pipeline_cpu_micros_total,
         }
     }
 
@@ -607,11 +625,13 @@ impl DocProcessor {
         // #[cfg(not(feature = "vrl"))]
         // let transform_opt: Option<&mut VrlProgram> = None;
 
+        let mut pipeline_cpu_micros_sum: u64 = 0;
         for json_doc_result in parse_raw_doc(
             self.input_format,
             raw_doc,
             num_bytes,
             self.pipeline_opt.as_ref(),
+            &mut pipeline_cpu_micros_sum,
         ) {
             let processed_doc_result =
                 json_doc_result.and_then(|json_doc| self.process_json_doc(json_doc));
@@ -632,6 +652,10 @@ impl DocProcessor {
                 }
             }
         }
+        let micros = pipeline_cpu_micros_sum;
+        self.counters
+            .processing_pipeline_cpu_micros_total
+            .inc_by(micros);
     }
 
     fn process_json_doc(&self, json_doc: JsonDoc) -> Result<ProcessedDoc, DocProcessorError> {

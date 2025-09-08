@@ -36,6 +36,7 @@ pub struct IndexerMetrics {
     pub dd_indexed_events: DDCounters,
     pub dd_indexed_events_bytes: DDCounters,
     pub dd_pending_merge_ops: Gauge,
+    pub processing_pipeline_thread_cpu_micros_total: IntCounterVec<2>,
 }
 
 impl Default for IndexerMetrics {
@@ -136,6 +137,13 @@ impl Default for IndexerMetrics {
                 ],
             ),
             dd_pending_merge_ops: gauge!("pending_merge_ops.gauge"),
+            processing_pipeline_thread_cpu_micros_total: new_counter_vec(
+                "processing_pipeline_thread_cpu_micros_total",
+                "Total thread CPU time spent in processing pipeline (microseconds).",
+                "indexing",
+                &[],
+                ["index", "pipeline_uid"],
+            ),
         }
     }
 }
