@@ -13,7 +13,6 @@
 // limitations under the License.
 
 pub mod search;
-pub mod search_stream;
 
 use std::collections::HashSet;
 use std::net::SocketAddr;

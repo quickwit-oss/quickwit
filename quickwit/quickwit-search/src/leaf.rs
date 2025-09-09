@@ -909,27 +909,6 @@ impl QueryAstTransformer for RemoveTimestampRange<'_> {
     }
 }
 
-pub(crate) fn rewrite_start_end_time_bounds(
-    start_timestamp_opt: &mut Option<i64>,
-    end_timestamp_opt: &mut Option<i64>,
-    split: &SplitIdAndFooterOffsets,
-) {
-    if let (Some(split_start), Some(split_end)) = (split.timestamp_start, split.timestamp_end) {
-        if let Some(start_timestamp) = start_timestamp_opt {
-            // both starts are inclusive
-            if *start_timestamp <= split_start {
-                *start_timestamp_opt = None;
-            }
-        }
-        if let Some(end_timestamp) = end_timestamp_opt {
-            // search end is exclusive, split end is inclusive
-            if *end_timestamp > split_end {
-                *end_timestamp_opt = None;
-            }
-        }
-    }
-}
-
 /// Checks if request is a simple all query.
 /// Simple in this case would still including sorting
 fn is_simple_all_query(search_request: &SearchRequest) -> bool {

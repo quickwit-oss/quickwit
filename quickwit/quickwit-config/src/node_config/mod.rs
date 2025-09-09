@@ -268,7 +268,9 @@ pub struct SearcherConfig {
     pub split_footer_cache_capacity: ByteSize,
     pub partial_request_cache_capacity: ByteSize,
     pub max_num_concurrent_split_searches: usize,
-    pub max_num_concurrent_split_streams: usize,
+    // Deprecated: stream search requests are no longer supported.
+    #[serde(alias = "max_num_concurrent_split_streams", default, skip_serializing)]
+    pub _max_num_concurrent_split_streams: Option<serde::de::IgnoredAny>,
     // Strangely, if None, this will also have the effect of not forwarding
     // to searcher.
     // TODO document and fix if necessary.
@@ -322,8 +324,8 @@ impl Default for SearcherConfig {
             fast_field_cache_capacity: ByteSize::gb(1),
             split_footer_cache_capacity: ByteSize::mb(500),
             partial_request_cache_capacity: ByteSize::mb(64),
-            max_num_concurrent_split_streams: 100,
             max_num_concurrent_split_searches: 100,
+            _max_num_concurrent_split_streams: None,
             aggregation_memory_limit: ByteSize::mb(500),
             aggregation_bucket_limit: 65000,
             split_cache: None,
@@ -352,16 +354,6 @@ impl SearcherConfig {
                     "max_num_concurrent_split_searches ({}) must be lower or equal to \
                      split_cache.max_file_descriptors ({})",
                     self.max_num_concurrent_split_searches,
-                    split_cache_limits.max_file_descriptors
-                );
-            }
-            if self.max_num_concurrent_split_streams
-                > split_cache_limits.max_file_descriptors.get() as usize
-            {
-                anyhow::bail!(
-                    "max_num_concurrent_split_streams ({}) must be lower or equal to \
-                     split_cache.max_file_descriptors ({})",
-                    self.max_num_concurrent_split_streams,
                     split_cache_limits.max_file_descriptors
                 );
             }

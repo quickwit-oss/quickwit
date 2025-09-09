@@ -91,7 +91,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Remove support for 2-digit years in java datetime parser (#5596)
 - Remove DocMapper trait (#5508)
 - Remove support for AWS Lambda (#5884)
-
+- Remove search stream endpoint (#5886)
 
 # [0.8.1]
 

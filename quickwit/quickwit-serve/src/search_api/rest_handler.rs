@@ -15,20 +15,15 @@
 use std::convert::TryFrom;
 use std::sync::Arc;
 
-use futures::stream::StreamExt;
 use percent_encoding::percent_decode_str;
 use quickwit_config::validate_index_id_pattern;
-use quickwit_proto::ServiceError;
-use quickwit_proto::search::{CountHits, OutputFormat, SortField, SortOrder};
-use quickwit_proto::types::IndexId;
+use quickwit_proto::search::{CountHits, SortField, SortOrder};
 use quickwit_query::query_ast::query_ast_from_user_text;
 use quickwit_search::{SearchError, SearchPlanResponseRest, SearchResponseRest, SearchService};
-use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
 use tracing::info;
-use warp::hyper::header::{CONTENT_TYPE, HeaderValue};
-use warp::hyper::{HeaderMap, StatusCode};
-use warp::{Filter, Rejection, Reply, reply};
+use warp::{Filter, Rejection};
 
 use crate::rest_api_response::into_rest_api_response;
 use crate::simple_list::{from_simple_list, to_simple_list};
@@ -39,13 +34,11 @@ use crate::{BodyFormat, with_arg};
     paths(
         search_get_handler,
         search_post_handler,
-        search_stream_handler,
         search_plan_get_handler,
         search_plan_post_handler,
     ),
     components(schemas(
         BodyFormat,
-        OutputFormat,
         SearchRequestQueryString,
         SearchResponseRest,
         SearchPlanResponseRest,
@@ -148,25 +141,6 @@ impl Serialize for SortBy {
 
 fn default_max_hits() -> u64 {
     20
-}
-
-// Deserialize a string field and return and error if it's empty.
-// We have 2 issues with this implementation:
-// - this is not generic and thus nos sustainable and we may need to
-//   use an external crate for validation in the future like
-//   this one https://github.com/Keats/validator.
-// - the error does not mention the field name and this is not user friendly. There
-//   is an external crate that can help https://github.com/dtolnay/path-to-error but
-//   I did not find a way to plug it to serde_qs.
-// Conclusion: the best way I found to reject a user query that contains an empty
-// string on an mandatory field is this serializer.
-fn deserialize_non_empty_string<'de, D>(deserializer: D) -> Result<String, D::Error>
-where D: Deserializer<'de> {
-    let value = String::deserialize(deserializer)?;
-    if value.is_empty() {
-        return Err(de::Error::custom("expected a non-empty string field"));
-    }
-    Ok(value)
 }
 
 /// This struct represents the QueryString passed to
@@ -431,27 +405,6 @@ pub fn search_post_handler(
 #[utoipa::path(
     get,
     tag = "Search",
-    path = "/{index_id}/search/stream",
-    responses(
-        (status = 200, description = "Successfully executed search.")
-    ),
-    params(
-        SearchStreamRequestQueryString,
-        ("index_id" = String, Path, description = "The index ID to search."),
-    )
-)]
-/// Stream Search Index
-pub fn search_stream_handler(
-    search_service: Arc<dyn SearchService>,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    search_stream_filter()
-        .and(with_arg(search_service))
-        .then(search_stream)
-}
-
-#[utoipa::path(
-    get,
-    tag = "Search",
     path = "/{index_id}/search-plan",
     responses(
         (status = 200, description = "Metadata about how a request would be executed.", body = SearchPlanResponseRest)
@@ -495,133 +448,9 @@ pub fn search_plan_post_handler(
         .then(search_plan)
 }
 
-/// This struct represents the search stream query passed to
-/// the REST API.
-#[derive(Deserialize, Debug, Eq, PartialEq, utoipa::IntoParams)]
-#[into_params(parameter_in = Query)]
-#[serde(deny_unknown_fields)]
-struct SearchStreamRequestQueryString {
-    /// Query text. The query language is that of tantivy.
-    pub query: String,
-    // Fields to search on.
-    #[param(rename = "search_field")]
-    #[serde(default)]
-    #[serde(rename(deserialize = "search_field"))]
-    #[serde(deserialize_with = "from_simple_list")]
-    pub search_fields: Option<Vec<String>>,
-    /// Fields to extract snippet on
-    #[serde(default)]
-    #[serde(rename(deserialize = "snippet_fields"))] // TODO: Was this supposed to be `snippet_field`? - CF
-    #[serde(deserialize_with = "from_simple_list")]
-    pub snippet_fields: Option<Vec<String>>,
-    /// If set, restricts search to documents with a `timestamp >= start_timestamp`.
-    pub start_timestamp: Option<i64>,
-    /// If set, restricts search to documents with a `timestamp < end_timestamp``.
-    pub end_timestamp: Option<i64>,
-    /// The fast field to extract.
-    #[serde(deserialize_with = "deserialize_non_empty_string")]
-    pub fast_field: String,
-    /// The requested output format.
-    #[serde(default)]
-    pub output_format: OutputFormat,
-    #[serde(default)]
-    pub partition_by_field: Option<String>,
-}
-
-async fn search_stream_endpoint(
-    index_id: IndexId,
-    search_request: SearchStreamRequestQueryString,
-    search_service: &dyn SearchService,
-) -> Result<warp::hyper::Body, SearchError> {
-    let query_ast = query_ast_from_user_text(&search_request.query, search_request.search_fields);
-    let query_ast_json = serde_json::to_string(&query_ast)?;
-    let request = quickwit_proto::search::SearchStreamRequest {
-        index_id,
-        query_ast: query_ast_json,
-        snippet_fields: search_request.snippet_fields.unwrap_or_default(),
-        start_timestamp: search_request.start_timestamp,
-        end_timestamp: search_request.end_timestamp,
-        fast_field: search_request.fast_field,
-        output_format: search_request.output_format as i32,
-        partition_by_field: search_request.partition_by_field,
-    };
-    let mut data = search_service.root_search_stream(request).await?;
-    let (mut sender, body) = warp::hyper::Body::channel();
-    tokio::spawn(async move {
-        while let Some(result) = data.next().await {
-            match result {
-                Ok(bytes) => {
-                    if sender.send_data(bytes).await.is_err() {
-                        sender.abort();
-                        break;
-                    }
-                }
-                Err(error) => {
-                    // Add trailer to signal to the client that there is an error. Only works
-                    // if the request is made with an http2 client that can read it... and
-                    // actually this seems pretty rare, for example `curl` will not show this
-                    // trailer. Thus we also call `sender.abort()` so that the
-                    // client will see something wrong happened. But he will
-                    // need to look at the logs to understand that.
-                    tracing::error!(error=?error, "error when streaming search results");
-                    let header_value_str =
-                        format!("Error when streaming search results: {error:?}.");
-                    let header_value = HeaderValue::from_str(header_value_str.as_str())
-                        .unwrap_or_else(|_| HeaderValue::from_static("Search stream error"));
-                    let mut trailers = HeaderMap::new();
-                    trailers.insert("X-Stream-Error", header_value);
-                    let _ = sender.send_trailers(trailers).await;
-                    sender.abort();
-                    break;
-                }
-            };
-        }
-    });
-    Ok(body)
-}
-
-fn make_streaming_reply(result: Result<warp::hyper::Body, SearchError>) -> impl Reply {
-    let status_code: StatusCode;
-    let body = match result {
-        Ok(body) => {
-            status_code = StatusCode::OK;
-            warp::reply::Response::new(body)
-        }
-        Err(error) => {
-            status_code =
-                crate::convert_status_code_to_legacy_http(error.error_code().http_status_code());
-            warp::reply::Response::new(warp::hyper::Body::from(error.to_string()))
-        }
-    };
-    reply::with_status(body, status_code)
-}
-
-async fn search_stream(
-    index_id: IndexId,
-    request: SearchStreamRequestQueryString,
-    search_service: Arc<dyn SearchService>,
-) -> impl warp::Reply {
-    info!(index_id=%index_id,request=?request, "search_stream");
-    let content_type = match request.output_format {
-        OutputFormat::ClickHouseRowBinary => "application/octet-stream",
-        OutputFormat::Csv => "text/csv",
-    };
-    let reply =
-        make_streaming_reply(search_stream_endpoint(index_id, request, &*search_service).await);
-    reply::with_header(reply, CONTENT_TYPE, content_type)
-}
-
-fn search_stream_filter()
--> impl Filter<Extract = (String, SearchStreamRequestQueryString), Error = Rejection> + Clone {
-    warp::path!(String / "search" / "stream")
-        .and(warp::get())
-        .and(serde_qs::warp::query(serde_qs::Config::default()))
-}
-
 #[cfg(test)]
 mod tests {
     use assert_json_diff::{assert_json_eq, assert_json_include};
-    use bytes::Bytes;
     use mockall::predicate;
     use quickwit_search::{MockSearchService, SearchError};
     use serde_json::{Value as JsonValue, json};
@@ -635,7 +464,6 @@ mod tests {
         let mock_search_service_in_arc = Arc::new(mock_search_service);
         search_get_handler(mock_search_service_in_arc.clone())
             .or(search_post_handler(mock_search_service_in_arc.clone()))
-            .or(search_stream_handler(mock_search_service_in_arc.clone()))
             .or(search_plan_get_handler(mock_search_service_in_arc.clone()))
             .or(search_plan_post_handler(mock_search_service_in_arc.clone()))
             .recover(recover_fn)
@@ -1161,110 +989,6 @@ mod tests {
         let body = String::from_utf8_lossy(response.body());
         assert!(body.contains("invalid query"));
         Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_rest_search_stream_api() {
-        let mut mock_search_service = MockSearchService::new();
-        mock_search_service
-            .expect_root_search_stream()
-            .return_once(|_| {
-                Ok(Box::pin(futures::stream::iter(vec![
-                    Ok(Bytes::from("first row\n")),
-                    Ok(Bytes::from("second row")),
-                ])))
-            });
-        let rest_search_stream_api_handler = search_handler(mock_search_service);
-        let response = warp::test::request()
-            .path(
-                "/my-index/search/stream?query=obama&search_field=body&fast_field=external_id&\
-                 output_format=csv",
-            )
-            .reply(&rest_search_stream_api_handler)
-            .await;
-        assert_eq!(response.status(), 200);
-        let body = String::from_utf8_lossy(response.body());
-        assert_eq!(body, "first row\nsecond row");
-    }
-
-    #[tokio::test]
-    async fn test_rest_search_stream_api_csv() {
-        let (index, req) = warp::test::request()
-            .path("/my-index/search/stream?query=obama&fast_field=external_id&output_format=csv")
-            .filter(&super::search_stream_filter())
-            .await
-            .unwrap();
-        assert_eq!(&index, "my-index");
-        assert_eq!(
-            &req,
-            &super::SearchStreamRequestQueryString {
-                query: "obama".to_string(),
-                search_fields: None,
-                snippet_fields: None,
-                start_timestamp: None,
-                end_timestamp: None,
-                fast_field: "external_id".to_string(),
-                output_format: OutputFormat::Csv,
-                partition_by_field: None,
-            }
-        );
-    }
-
-    #[tokio::test]
-    async fn test_rest_search_stream_api_click_house_row_binary() {
-        let (index, req) = warp::test::request()
-            .path(
-                "/my-index/search/stream?query=obama&fast_field=external_id&\
-                 output_format=click_house_row_binary",
-            )
-            .filter(&super::search_stream_filter())
-            .await
-            .unwrap();
-        assert_eq!(&index, "my-index");
-        assert_eq!(
-            &req,
-            &super::SearchStreamRequestQueryString {
-                query: "obama".to_string(),
-                search_fields: None,
-                snippet_fields: None,
-                start_timestamp: None,
-                end_timestamp: None,
-                fast_field: "external_id".to_string(),
-                output_format: OutputFormat::ClickHouseRowBinary,
-                partition_by_field: None,
-            }
-        );
-    }
-
-    #[tokio::test]
-    async fn test_rest_search_stream_api_error() {
-        let rejection = warp::test::request()
-            .path(
-                "/my-index/search/stream?query=obama&fast_field=external_id&\
-                 output_format=ClickHouseRowBinary",
-            )
-            .filter(&super::search_stream_filter())
-            .await
-            .unwrap_err();
-        let parse_error = rejection.find::<serde_qs::Error>().unwrap();
-        assert_eq!(
-            parse_error.to_string(),
-            "unknown variant `ClickHouseRowBinary`, expected `csv` or `click_house_row_binary`"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_rest_search_stream_api_error_empty_fastfield() {
-        let rejection = warp::test::request()
-            .path(
-                "/my-index/search/stream?query=obama&fast_field=&\
-                 output_format=click_house_row_binary",
-            )
-            .filter(&super::search_stream_filter())
-            .await
-            .unwrap_err();
-        let parse_error = rejection.find::<serde_qs::Error>().unwrap();
-        assert_eq!(parse_error.to_string(), "expected a non-empty string field");
     }
 
     #[tokio::test]

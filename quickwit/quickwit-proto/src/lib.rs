@@ -104,21 +104,6 @@ pub mod opentelemetry {
     }
 }
 
-impl TryFrom<search::SearchStreamRequest> for search::SearchRequest {
-    type Error = anyhow::Error;
-
-    fn try_from(search_stream_req: search::SearchStreamRequest) -> Result<Self, Self::Error> {
-        Ok(Self {
-            index_id_patterns: vec![search_stream_req.index_id],
-            query_ast: search_stream_req.query_ast,
-            snippet_fields: search_stream_req.snippet_fields,
-            start_timestamp: search_stream_req.start_timestamp,
-            end_timestamp: search_stream_req.end_timestamp,
-            ..Default::default()
-        })
-    }
-}
-
 impl TryFrom<metastore::DeleteQuery> for search::SearchRequest {
     type Error = anyhow::Error;
 
