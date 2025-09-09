@@ -556,62 +556,6 @@ pub struct LeafListTermsResponse {
     pub num_attempted_splits: u64,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct SearchStreamRequest {
-    /// Index ID
-    #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
-    /// Quickwit Query AST encoded in Json
-    #[prost(string, tag = "11")]
-    pub query_ast: ::prost::alloc::string::String,
-    /// The time filter is interpreted as a semi-open interval. [start, end)
-    #[prost(int64, optional, tag = "4")]
-    pub start_timestamp: ::core::option::Option<i64>,
-    #[prost(int64, optional, tag = "5")]
-    pub end_timestamp: ::core::option::Option<i64>,
-    /// Name of the fast field to extract
-    #[prost(string, tag = "6")]
-    pub fast_field: ::prost::alloc::string::String,
-    /// The output format
-    #[prost(enumeration = "OutputFormat", tag = "7")]
-    pub output_format: i32,
-    /// The field by which we want to partition
-    #[prost(string, optional, tag = "9")]
-    pub partition_by_field: ::core::option::Option<::prost::alloc::string::String>,
-    /// Fields to extract snippet on.
-    #[prost(string, repeated, tag = "10")]
-    pub snippet_fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct LeafSearchStreamRequest {
-    /// Stream request. This is a perfect copy of the original stream request,
-    /// that was sent to root.
-    #[prost(message, optional, tag = "1")]
-    pub request: ::core::option::Option<SearchStreamRequest>,
-    /// Index split ids to apply the query on.
-    /// This ids are resolved from the index_uri defined in the stream request.
-    #[prost(message, repeated, tag = "2")]
-    pub split_offsets: ::prost::alloc::vec::Vec<SplitIdAndFooterOffsets>,
-    /// `DocMapper` as json serialized trait.
-    #[prost(string, tag = "5")]
-    pub doc_mapper: ::prost::alloc::string::String,
-    /// Index URI. The index URI defines the location of the storage that contains the
-    /// split files.
-    #[prost(string, tag = "6")]
-    pub index_uri: ::prost::alloc::string::String,
-}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct LeafSearchStreamResponse {
-    /// Row of data serialized in bytes.
-    #[prost(bytes = "vec", tag = "1")]
-    pub data: ::prost::alloc::vec::Vec<u8>,
-    /// Split id.
-    #[prost(string, tag = "2")]
-    pub split_id: ::prost::alloc::string::String,
-}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -753,40 +697,6 @@ impl SortDatetimeFormat {
         match value {
             "UNIX_TIMESTAMP_MILLIS" => Some(Self::UnixTimestampMillis),
             "UNIX_TIMESTAMP_NANOS" => Some(Self::UnixTimestampNanos),
-            _ => None,
-        }
-    }
-}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[serde(rename_all = "snake_case")]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum OutputFormat {
-    /// Comma Separated Values format (<https://datatracker.ietf.org/doc/html/rfc4180>).
-    /// The delimiter is `,`.
-    ///
-    /// < This will be the default value
-    Csv = 0,
-    /// Format data by row in ClickHouse binary format.
-    /// <https://clickhouse.tech/docs/en/interfaces/formats/#rowbinary>
-    ClickHouseRowBinary = 1,
-}
-impl OutputFormat {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Csv => "CSV",
-            Self::ClickHouseRowBinary => "CLICK_HOUSE_ROW_BINARY",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "CSV" => Some(Self::Csv),
-            "CLICK_HOUSE_ROW_BINARY" => Some(Self::ClickHouseRowBinary),
             _ => None,
         }
     }
@@ -964,33 +874,6 @@ pub mod search_service_client {
             req.extensions_mut()
                 .insert(GrpcMethod::new("quickwit.search.SearchService", "FetchDocs"));
             self.inner.unary(req, path, codec).await
-        }
-        /// Perform a leaf stream on a given set of splits.
-        pub async fn leaf_search_stream(
-            &mut self,
-            request: impl tonic::IntoRequest<super::LeafSearchStreamRequest>,
-        ) -> std::result::Result<
-            tonic::Response<tonic::codec::Streaming<super::LeafSearchStreamResponse>>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.search.SearchService/LeafSearchStream",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new("quickwit.search.SearchService", "LeafSearchStream"),
-                );
-            self.inner.server_streaming(req, path, codec).await
         }
         /// Root list terms API.
         /// This RPC identifies the set of splits on which the query should run on,
@@ -1269,23 +1152,6 @@ pub mod search_service_server {
             request: tonic::Request<super::FetchDocsRequest>,
         ) -> std::result::Result<
             tonic::Response<super::FetchDocsResponse>,
-            tonic::Status,
-        >;
-        /// Server streaming response type for the LeafSearchStream method.
-        type LeafSearchStreamStream: tonic::codegen::tokio_stream::Stream<
-                Item = std::result::Result<
-                    super::LeafSearchStreamResponse,
-                    tonic::Status,
-                >,
-            >
-            + std::marker::Send
-            + 'static;
-        /// Perform a leaf stream on a given set of splits.
-        async fn leaf_search_stream(
-            &self,
-            request: tonic::Request<super::LeafSearchStreamRequest>,
-        ) -> std::result::Result<
-            tonic::Response<Self::LeafSearchStreamStream>,
             tonic::Status,
         >;
         /// Root list terms API.
@@ -1567,54 +1433,6 @@ pub mod search_service_server {
                                 max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/quickwit.search.SearchService/LeafSearchStream" => {
-                    #[allow(non_camel_case_types)]
-                    struct LeafSearchStreamSvc<T: SearchService>(pub Arc<T>);
-                    impl<
-                        T: SearchService,
-                    > tonic::server::ServerStreamingService<
-                        super::LeafSearchStreamRequest,
-                    > for LeafSearchStreamSvc<T> {
-                        type Response = super::LeafSearchStreamResponse;
-                        type ResponseStream = T::LeafSearchStreamStream;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::ResponseStream>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::LeafSearchStreamRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as SearchService>::leaf_search_stream(&inner, request)
-                                    .await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = LeafSearchStreamSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.server_streaming(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)
