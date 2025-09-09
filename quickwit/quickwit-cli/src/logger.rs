@@ -286,7 +286,7 @@ impl EventFormat<'_> {
             .map(|log_format| log_format.eq_ignore_ascii_case("json"))
             .unwrap_or(false)
         {
-            let json_format = tracing_subscriber::fmt::format().json();
+            let json_format = tracing_subscriber::fmt::format().json().flatten_event(true);
             EventFormat::Json(json_format)
         } else {
             let full_format = tracing_subscriber::fmt::format()
