@@ -528,7 +528,6 @@ mod tls {
         let certfile = fs::File::open(filename)
             .map_err(|error| io_error(format!("failed to open {filename}: {error}")))?;
         let mut reader = io::BufReader::new(certfile);
-
         // Load and return certificate.
         rustls_pemfile::certs(&mut reader).collect()
     }
