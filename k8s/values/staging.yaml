@@ -141,6 +141,9 @@ searcher:
       cpu: "4"
       memory: "4Gi"
 
+seed:
+  min_num_shards: 12
+
 janitor:
   resources:
     limits:
