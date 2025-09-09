@@ -37,9 +37,6 @@ service SearchService {
   /// This methods takes `PartialHit`s and returns `Hit`s.
   rpc FetchDocs(FetchDocsRequest) returns (FetchDocsResponse);
 
-  // Perform a leaf stream on a given set of splits.
-  rpc LeafSearchStream(LeafSearchStreamRequest) returns (stream LeafSearchStreamResponse);
-
   // Root list terms API.
   // This RPC identifies the set of splits on which the query should run on,
   // and dispatches the several calls to `LeafListTerms`.
@@ -577,74 +574,4 @@ message LeafListTermsResponse {
 
   // Total number of single split search attempted.
   uint64 num_attempted_splits = 4;
-}
-
-// -- Stream -------------------
-
-enum OutputFormat {
-  // Comma Separated Values format (https://datatracker.ietf.org/doc/html/rfc4180).
-  // The delimiter is `,`.
-  CSV = 0; //< This will be the default value
-  // Format data by row in ClickHouse binary format.
-  // https://clickhouse.tech/docs/en/interfaces/formats/#rowbinary
-  CLICK_HOUSE_ROW_BINARY = 1;
-}
-
-message SearchStreamRequest {
-  // Index ID
-  string index_id = 1;
-
-  // deprecated `query`.
-  reserved 2;
-
-  // Quickwit Query AST encoded in Json
-  string query_ast = 11;
-
-  // deprecated `search_fields`
-  reserved 3;
-
-  // The time filter is interpreted as a semi-open interval. [start, end)
-  optional int64 start_timestamp = 4;
-  optional int64 end_timestamp = 5;
-
-  // Name of the fast field to extract
-  string fast_field = 6;
-
-  // The output format
-  OutputFormat output_format = 7;
-
-  reserved 8; // deprecated field: tags
-
-  // The field by which we want to partition
-  optional string partition_by_field = 9;
-
-  // Fields to extract snippet on.
-  repeated string snippet_fields = 10;
-}
-
-message LeafSearchStreamRequest {
-  // Stream request. This is a perfect copy of the original stream request,
-  // that was sent to root.
-  SearchStreamRequest request = 1;
-
-  // Index split ids to apply the query on.
-  // This ids are resolved from the index_uri defined in the stream request.
-  repeated SplitIdAndFooterOffsets split_offsets = 2;
-
-  // `DocMapper` as json serialized trait.
-  string doc_mapper = 5;
-
-  // Index URI. The index URI defines the location of the storage that contains the
-  // split files.
-  string index_uri = 6;
-
-}
-
-
-message LeafSearchStreamResponse {
-  // Row of data serialized in bytes.
-  bytes data = 1;
-
-  // Split id.
-  string split_id = 2;
 }

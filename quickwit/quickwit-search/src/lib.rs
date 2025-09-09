@@ -22,7 +22,6 @@ mod cluster_client;
 mod collector;
 mod error;
 mod fetch_docs;
-mod filters;
 mod find_trace_ids_collector;
 mod leaf;
 mod leaf_cache;
@@ -35,7 +34,6 @@ mod root;
 mod scroll_context;
 mod search_job_placer;
 mod search_response_rest;
-mod search_stream;
 mod service;
 pub(crate) mod top_k_collector;
 
@@ -90,7 +88,6 @@ pub use crate::search_job_placer::{Job, SearchJobPlacer};
 pub use crate::search_response_rest::{
     AggregationResults, SearchPlanResponseRest, SearchResponseRest,
 };
-pub use crate::search_stream::root_search_stream;
 pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
 
 /// A pool of searcher clients identified by their gRPC socket address.

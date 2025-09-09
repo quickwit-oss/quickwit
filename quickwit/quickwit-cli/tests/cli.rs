@@ -960,18 +960,6 @@ async fn test_all_local_index() {
     let result: Value = serde_json::from_str(&query_response).unwrap();
     assert_eq!(result["num_hits"], Value::Number(Number::from(2i64)));
 
-    let search_stream_response = reqwest::get(format!(
-        "http://127.0.0.1:{}/api/v1/{}/search/stream?query=level:info&output_format=csv&fast_field=ts",
-        test_env.rest_listen_port,
-        test_env.index_id
-    ))
-    .await
-    .unwrap()
-    .text()
-    .await
-    .unwrap();
-    assert_eq!(search_stream_response, "72057597000000\n72057608000000\n");
-
     let args = DeleteIndexArgs {
         client_args: test_env.default_client_args(),
         index_id,
