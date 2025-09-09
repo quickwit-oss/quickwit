@@ -7,7 +7,6 @@ aho-corasick,https://github.com/BurntSushi/aho-corasick,Unlicense OR MIT,Andrew 
 aliasable,https://github.com/avitex/rust-aliasable,MIT,avitex <avitex@wfxlabs.com>
 alloca,https://github.com/playXE/alloca-rs,MIT,"Adel Prokurov <adel.prokurov@gmail.com>, StackOverflowExcept1on"
 allocator-api2,https://github.com/zakarumych/allocator-api2,MIT OR Apache-2.0,Zakarum <zaq.dev@icloud.com>
-android-tzdata,https://github.com/RumovZ/android-tzdata,MIT OR Apache-2.0,RumovZ
 android_system_properties,https://github.com/nical/android_system_properties,MIT OR Apache-2.0,Nicolas Silva <nical@fastmail.com>
 anes,https://github.com/zrzka/anes-rs,MIT OR Apache-2.0,Robert Vojta <rvojta@me.com>
 ansi-str,https://github.com/zhiburt/ansi-str,MIT,Maxim Zhiburt <zhiburt@gmail.com>
@@ -51,7 +50,6 @@ aws-smithy-runtime-api,https://github.com/smithy-lang/smithy-rs,Apache-2.0,"AWS 
 aws-smithy-types,https://github.com/smithy-lang/smithy-rs,Apache-2.0,"AWS Rust SDK Team <aws-sdk-rust@amazon.com>, Russell Cohen <rcoh@amazon.com>"
 aws-smithy-xml,https://github.com/smithy-lang/smithy-rs,Apache-2.0,"AWS Rust SDK Team <aws-sdk-rust@amazon.com>, Russell Cohen <rcoh@amazon.com>"
 aws-types,https://github.com/smithy-lang/smithy-rs,Apache-2.0,"AWS Rust SDK Team <aws-sdk-rust@amazon.com>, Russell Cohen <rcoh@amazon.com>"
-aws_lambda_events,https://github.com/awslabs/aws-lambda-rust-runtime,MIT,"Christian Legnitto <christian@legnitto.com>, Sam Rijs <srijs@airpost.net>, David Calavera <dcalaver@amazon.com>"
 axum,https://github.com/tokio-rs/axum,MIT,The axum Authors
 axum-core,https://github.com/tokio-rs/axum,MIT,The axum-core Authors
 backtrace,https://github.com/rust-lang/backtrace-rs,MIT OR Apache-2.0,The Rust Project Developers
@@ -99,6 +97,8 @@ coarsetime,https://github.com/jedisct1/rust-coarsetime,ISC,Frank Denis <github@p
 cobs,https://github.com/jamesmunns/cobs.rs,MIT OR Apache-2.0,"Allen Welkie <>, James Munns <james@onevariable.com>"
 colorchoice,https://github.com/rust-cli/anstyle,MIT OR Apache-2.0,The colorchoice Authors
 colored,https://github.com/mackwic/colored,MPL-2.0,Thomas Wickham <mackwic@gmail.com>
+compression-codecs,https://github.com/Nullus157/async-compression,MIT OR Apache-2.0,"Wim Looman <wim@nemo157.com>, Allen Bui <fairingrey@gmail.com>"
+compression-core,https://github.com/Nullus157/async-compression,MIT OR Apache-2.0,"Wim Looman <wim@nemo157.com>, Allen Bui <fairingrey@gmail.com>"
 console,https://github.com/console-rs/console,MIT,Armin Ronacher <armin.ronacher@active-4.com>
 const-oid,https://github.com/RustCrypto/formats/tree/master/const-oid,Apache-2.0 OR MIT,RustCrypto Developers
 constant_time_eq,https://github.com/cesarb/constant_time_eq,CC0-1.0,Cesar Eduardo Barros <cesarb@cesarb.eti.br>
@@ -161,6 +161,7 @@ fastdivide,https://github.com/fulmicoton/fastdivide,zlib-acknowledgement OR MIT,
 fastrand,https://github.com/smol-rs/fastrand,Apache-2.0 OR MIT,Stjepan Glavina <stjepang@gmail.com>
 ff,https://github.com/zkcrypto/ff,MIT OR Apache-2.0,"Sean Bowe <ewillbefull@gmail.com>, Jack Grigg <thestr4d@gmail.com>"
 filetime,https://github.com/alexcrichton/filetime,MIT OR Apache-2.0,Alex Crichton <alex@alexcrichton.com>
+find-msvc-tools,https://github.com/rust-lang/cc-rs,MIT OR Apache-2.0,The find-msvc-tools Authors
 fixedbitset,https://github.com/petgraph/fixedbitset,MIT OR Apache-2.0,bluss
 flate2,https://github.com/rust-lang/flate2-rs,MIT OR Apache-2.0,"Alex Crichton <alex@alexcrichton.com>, Josh Triplett <josh@joshtriplett.org>"
 float-cmp,https://github.com/mikedilger/float-cmp,MIT,Mike Dilger <mike@mikedilger.com>
@@ -238,11 +239,8 @@ is_terminal_polyfill,https://github.com/polyfill-rs/is_terminal_polyfill,MIT OR 
 itertools,https://github.com/rust-itertools/itertools,MIT OR Apache-2.0,bluss
 itoa,https://github.com/dtolnay/itoa,MIT OR Apache-2.0,David Tolnay <dtolnay@gmail.com>
 jobserver,https://github.com/rust-lang/jobserver-rs,MIT OR Apache-2.0,Alex Crichton <alex@alexcrichton.com>
-js-sys,https://github.com/rustwasm/wasm-bindgen/tree/master/crates/js-sys,MIT OR Apache-2.0,The wasm-bindgen Developers
+js-sys,https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/js-sys,MIT OR Apache-2.0,The wasm-bindgen Developers
 json_comments,https://github.com/tmccombs/json-comments-rs,Apache-2.0,Thayne McCombs <astrothayne@gmail.com>
-lambda_http,https://github.com/awslabs/aws-lambda-rust-runtime,Apache-2.0,"David Calavera <dcalaver@amazon.com>, Harold Sun <sunhua@amazon.com>"
-lambda_runtime,https://github.com/awslabs/aws-lambda-rust-runtime,Apache-2.0,"David Calavera <dcalaver@amazon.com>, Harold Sun <sunhua@amazon.com>"
-lambda_runtime_api_client,https://github.com/awslabs/aws-lambda-rust-runtime,Apache-2.0,"David Calavera <dcalaver@amazon.com>, Harold Sun <sunhua@amazon.com>"
 lazy_static,https://github.com/rust-lang-nursery/lazy-static.rs,MIT OR Apache-2.0,Marvin Löbel <loebel.marvin@gmail.com>
 lazycell,https://github.com/indiv0/lazycell,MIT OR Apache-2.0,"Alex Crichton <alex@alexcrichton.com>, Nikita Pekin <contact@nikitapek.in>"
 levenshtein_automata,https://github.com/tantivy-search/levenshtein-automata,MIT,Paul Masurel <paul.masurel@gmail.com>
@@ -306,7 +304,7 @@ num-rational,https://github.com/rust-num/num-rational,MIT OR Apache-2.0,The Rust
 num-traits,https://github.com/rust-num/num-traits,MIT OR Apache-2.0,The Rust Project Developers
 num_cpus,https://github.com/seanmonstar/num_cpus,MIT OR Apache-2.0,Sean McArthur <sean@seanmonstar.com>
 number_prefix,https://github.com/ogham/rust-number-prefix,MIT,Benjamin Sago <ogham@bsago.me>
-numfmt,https://github.com/kdr-aus/numfmt,MIT,Kurt Lawrence <kurtlawrence.info>
+numfmt,https://github.com/kurtlawrence/numfmt,MIT,Kurt Lawrence <kurtlawrence.info>
 object,https://github.com/gimli-rs/object,Apache-2.0 OR MIT,The object Authors
 once_cell,https://github.com/matklad/once_cell,MIT OR Apache-2.0,Aleksey Kladov <aleksey.kladov@gmail.com>
 once_cell_polyfill,https://github.com/polyfill-rs/once_cell_polyfill,MIT OR Apache-2.0,The once_cell_polyfill Authors
@@ -314,14 +312,12 @@ oneshot,https://github.com/faern/oneshot,MIT OR Apache-2.0,Linus Färnstrand <fa
 oorandom,https://hg.sr.ht/~icefox/oorandom,MIT,Simon Heath <icefox@dreamquest.io>
 openssl-probe,https://github.com/alexcrichton/openssl-probe,MIT OR Apache-2.0,Alex Crichton <alex@alexcrichton.com>
 opentelemetry,https://github.com/open-telemetry/opentelemetry-rust,Apache-2.0,The opentelemetry Authors
-opentelemetry-http,https://github.com/open-telemetry/opentelemetry-rust,Apache-2.0,The opentelemetry-http Authors
 opentelemetry-otlp,https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-otlp,Apache-2.0,The opentelemetry-otlp Authors
 opentelemetry-proto,https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-proto,Apache-2.0,The opentelemetry-proto Authors
 opentelemetry_sdk,https://github.com/open-telemetry/opentelemetry-rust,Apache-2.0,The opentelemetry_sdk Authors
 ouroboros,https://github.com/someguynamedjosh/ouroboros,MIT OR Apache-2.0,Josh <someguynamedjosh@github.com>
 ouroboros_macro,https://github.com/someguynamedjosh/ouroboros,MIT OR Apache-2.0,Josh <someguynamedjosh@github.com>
 outref,https://github.com/Nugine/outref,MIT,The outref Authors
-overload,https://github.com/danaugrs/overload,MIT,Daniel Salvadori <danaugrs@gmail.com>
 ownedbytes,https://github.com/quickwit-oss/tantivy,MIT,"Paul Masurel <paul@quickwit.io>, Pascal Seitz <pascal@quickwit.io>"
 p256,https://github.com/RustCrypto/elliptic-curves/tree/master/p256,Apache-2.0 OR MIT,RustCrypto Developers
 papergrid,https://github.com/zhiburt/tabled,MIT,Maxim Zhiburt <zhiburt@gmail.com>
@@ -374,7 +370,6 @@ prost-build,https://github.com/tokio-rs/prost,Apache-2.0,"Dan Burkert <dan@danbu
 prost-derive,https://github.com/tokio-rs/prost,Apache-2.0,"Dan Burkert <dan@danburkert.com>, Lucio Franco <luciofranco14@gmail.com>, Casper Meijn <casper@meijn.net>, Tokio Contributors <team@tokio.rs>"
 prost-types,https://github.com/tokio-rs/prost,Apache-2.0,"Dan Burkert <dan@danburkert.com>, Lucio Franco <luciofranco14@gmail.com>, Casper Meijn <casper@meijn.net>, Tokio Contributors <team@tokio.rs>"
 protobuf,https://github.com/stepancheg/rust-protobuf,MIT,Stepan Koltsov <stepan.koltsov@gmail.com>
-query_map,https://github.com/calavera/query-map-rs,MIT,The query_map Authors
 quick-error,http://github.com/tailhook/quick-error,MIT OR Apache-2.0,"Paul Colomiets <paul@colomiets.name>, Colin Kiegel <kiegel@gmx.de>"
 quinn,https://github.com/quinn-rs/quinn,MIT OR Apache-2.0,The quinn Authors
 quinn-proto,https://github.com/quinn-rs/quinn,MIT OR Apache-2.0,The quinn-proto Authors
@@ -386,17 +381,15 @@ rand_chacha,https://github.com/rust-random/rand,MIT OR Apache-2.0,"The Rand Proj
 rand_core,https://github.com/rust-random/rand,MIT OR Apache-2.0,"The Rand Project Developers, The Rust Project Developers"
 rand_distr,https://github.com/rust-random/rand,MIT OR Apache-2.0,The Rand Project Developers
 rand_xorshift,https://github.com/rust-random/rngs,MIT OR Apache-2.0,"The Rand Project Developers, The Rust Project Developers"
-rayon,https://github.com/rayon-rs/rayon,MIT OR Apache-2.0,"Niko Matsakis <niko@alum.mit.edu>, Josh Stone <cuviper@gmail.com>"
-rayon-core,https://github.com/rayon-rs/rayon,MIT OR Apache-2.0,"Niko Matsakis <niko@alum.mit.edu>, Josh Stone <cuviper@gmail.com>"
+rayon,https://github.com/rayon-rs/rayon,MIT OR Apache-2.0,The rayon Authors
+rayon-core,https://github.com/rayon-rs/rayon,MIT OR Apache-2.0,The rayon-core Authors
 redox_syscall,https://gitlab.redox-os.org/redox-os/syscall,MIT,Jeremy Soller <jackpot51@gmail.com>
 ref-cast,https://github.com/dtolnay/ref-cast,MIT OR Apache-2.0,David Tolnay <dtolnay@gmail.com>
 ref-cast-impl,https://github.com/dtolnay/ref-cast,MIT OR Apache-2.0,David Tolnay <dtolnay@gmail.com>
 regex,https://github.com/rust-lang/regex,MIT OR Apache-2.0,"The Rust Project Developers, Andrew Gallant <jamslam@gmail.com>"
-regex-automata,https://github.com/BurntSushi/regex-automata,Unlicense OR MIT,Andrew Gallant <jamslam@gmail.com>
-regex-automata,https://github.com/rust-lang/regex/tree/master/regex-automata,MIT OR Apache-2.0,"The Rust Project Developers, Andrew Gallant <jamslam@gmail.com>"
-regex-lite,https://github.com/rust-lang/regex/tree/master/regex-lite,MIT OR Apache-2.0,"The Rust Project Developers, Andrew Gallant <jamslam@gmail.com>"
-regex-syntax,https://github.com/rust-lang/regex,MIT OR Apache-2.0,The Rust Project Developers
-regex-syntax,https://github.com/rust-lang/regex/tree/master/regex-syntax,MIT OR Apache-2.0,"The Rust Project Developers, Andrew Gallant <jamslam@gmail.com>"
+regex-automata,https://github.com/rust-lang/regex,MIT OR Apache-2.0,"The Rust Project Developers, Andrew Gallant <jamslam@gmail.com>"
+regex-lite,https://github.com/rust-lang/regex,MIT OR Apache-2.0,"The Rust Project Developers, Andrew Gallant <jamslam@gmail.com>"
+regex-syntax,https://github.com/rust-lang/regex,MIT OR Apache-2.0,"The Rust Project Developers, Andrew Gallant <jamslam@gmail.com>"
 reqwest,https://github.com/seanmonstar/reqwest,MIT OR Apache-2.0,Sean McArthur <sean@seanmonstar.com>
 reqwest-middleware,https://github.com/TrueLayer/reqwest-middleware,MIT OR Apache-2.0,Rodrigo Gryzinski <rodrigo.gryzinski@truelayer.com>
 reqwest-retry,https://github.com/TrueLayer/reqwest-middleware,MIT OR Apache-2.0,Rodrigo Gryzinski <rodrigo.gryzinski@truelayer.com>
@@ -437,10 +430,8 @@ semver,https://github.com/dtolnay/semver,MIT OR Apache-2.0,David Tolnay <dtolnay
 separator,https://github.com/saghm/rust-separator,MIT,Saghm Rossi <saghmrossi@gmail.com>
 serde,https://github.com/serde-rs/serde,MIT OR Apache-2.0,"Erick Tryzelaar <erick.tryzelaar@gmail.com>, David Tolnay <dtolnay@gmail.com>"
 serde_derive,https://github.com/serde-rs/serde,MIT OR Apache-2.0,"Erick Tryzelaar <erick.tryzelaar@gmail.com>, David Tolnay <dtolnay@gmail.com>"
-serde_dynamo,https://github.com/zenlist/serde_dynamo,MIT,Bryan Burgers <bryan@burgers.io>
 serde_json,https://github.com/serde-rs/json,MIT OR Apache-2.0,"Erick Tryzelaar <erick.tryzelaar@gmail.com>, David Tolnay <dtolnay@gmail.com>"
 serde_json_borrow,https://github.com/PSeitz/serde_json_borrow,MIT,Pascal Seitz <pascal.seitz@gmail.com>
-serde_path_to_error,https://github.com/dtolnay/path-to-error,MIT OR Apache-2.0,David Tolnay <dtolnay@gmail.com>
 serde_qs,https://github.com/samscott89/serde_qs,MIT OR Apache-2.0,Sam Scott <sam@osohq.com>
 serde_spanned,https://github.com/toml-rs/toml,MIT OR Apache-2.0,The serde_spanned Authors
 serde_urlencoded,https://github.com/nox/serde_urlencoded,MIT OR Apache-2.0,Anthony Ramine <n.oxyde@gmail.com>
@@ -555,14 +546,14 @@ warp,https://github.com/seanmonstar/warp,MIT,Sean McArthur <sean@seanmonstar.com
 wasi,https://github.com/bytecodealliance/wasi,Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT,The Cranelift Project Developers
 wasi,https://github.com/bytecodealliance/wasi-rs,Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT,The Cranelift Project Developers
 wasix,https://github.com/wasix-org/wasix-abi-rust,Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT,"The Cranelift Project Developers, john-sharratt"
-wasm-bindgen,https://github.com/rustwasm/wasm-bindgen,MIT OR Apache-2.0,The wasm-bindgen Developers
-wasm-bindgen-backend,https://github.com/rustwasm/wasm-bindgen/tree/master/crates/backend,MIT OR Apache-2.0,The wasm-bindgen Developers
-wasm-bindgen-futures,https://github.com/rustwasm/wasm-bindgen/tree/master/crates/futures,MIT OR Apache-2.0,The wasm-bindgen Developers
-wasm-bindgen-macro,https://github.com/rustwasm/wasm-bindgen/tree/master/crates/macro,MIT OR Apache-2.0,The wasm-bindgen Developers
-wasm-bindgen-macro-support,https://github.com/rustwasm/wasm-bindgen/tree/master/crates/macro-support,MIT OR Apache-2.0,The wasm-bindgen Developers
-wasm-bindgen-shared,https://github.com/rustwasm/wasm-bindgen/tree/master/crates/shared,MIT OR Apache-2.0,The wasm-bindgen Developers
+wasm-bindgen,https://github.com/wasm-bindgen/wasm-bindgen,MIT OR Apache-2.0,The wasm-bindgen Developers
+wasm-bindgen-backend,https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/backend,MIT OR Apache-2.0,The wasm-bindgen Developers
+wasm-bindgen-futures,https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/futures,MIT OR Apache-2.0,The wasm-bindgen Developers
+wasm-bindgen-macro,https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/macro,MIT OR Apache-2.0,The wasm-bindgen Developers
+wasm-bindgen-macro-support,https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/macro-support,MIT OR Apache-2.0,The wasm-bindgen Developers
+wasm-bindgen-shared,https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/shared,MIT OR Apache-2.0,The wasm-bindgen Developers
 wasm-timer,https://github.com/tomaka/wasm-timer,MIT,Pierre Krieger <pierre.krieger1708@gmail.com>
-web-sys,https://github.com/rustwasm/wasm-bindgen/tree/master/crates/web-sys,MIT OR Apache-2.0,The wasm-bindgen Developers
+web-sys,https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/web-sys,MIT OR Apache-2.0,The wasm-bindgen Developers
 web-time,https://github.com/daxpedda/web-time,MIT OR Apache-2.0,The web-time Authors
 webpki-roots,https://github.com/rustls/webpki-roots,CDLA-Permissive-2.0,The webpki-roots Authors
 which,https://github.com/harryfei/which-rs,MIT,Harry Fei <tiziyuanfang@gmail.com>
@@ -577,10 +568,12 @@ windows-core,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
 windows-implement,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
 windows-interface,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
 windows-link,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
+windows-link,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,The windows-link Authors
 windows-registry,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
 windows-result,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
 windows-strings,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
 windows-sys,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
+windows-sys,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,The windows-sys Authors
 windows-targets,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
 windows_aarch64_gnullvm,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
 windows_aarch64_msvc,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
@@ -591,7 +584,7 @@ windows_x86_64_gnu,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Mic
 windows_x86_64_gnullvm,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
 windows_x86_64_msvc,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
 winnow,https://github.com/winnow-rs/winnow,MIT,The winnow Authors
-wit-bindgen-rt,https://github.com/bytecodealliance/wit-bindgen,Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT,The wit-bindgen-rt Authors
+wit-bindgen,https://github.com/bytecodealliance/wit-bindgen,Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT,Alex Crichton <alex@alexcrichton.com>
 writeable,https://github.com/unicode-org/icu4x,Unicode-3.0,The ICU4X Project Developers
 xattr,https://github.com/Stebalien/xattr,MIT OR Apache-2.0,Steven Allen <steven@stebalien.com>
 xmlparser,https://github.com/RazrFalcon/xmlparser,MIT OR Apache-2.0,Yevhenii Reizner <razrfalcon@gmail.com>
