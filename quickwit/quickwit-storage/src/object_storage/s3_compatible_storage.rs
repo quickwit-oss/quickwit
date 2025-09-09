@@ -871,6 +871,7 @@ impl Storage for S3CompatibleObjectStorage {
         result
             .map(OwnedBytes::new)
             .map_err(|err| {
+                tantivy4java_debug!("QUICKWIT DEBUG: get_slice error occurred: {:?}", err);
                 err.add_context(format!(
                     "failed to fetch slice {:?} for object: {}/{}",
                     range,

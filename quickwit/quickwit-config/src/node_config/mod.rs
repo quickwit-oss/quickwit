@@ -275,7 +275,7 @@ pub struct SearcherConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub split_cache: Option<SplitCacheLimits>,
     #[serde(default = "SearcherConfig::default_request_timeout_secs")]
-    request_timeout_secs: NonZeroU64,
+    pub request_timeout_secs: NonZeroU64,
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub storage_timeout_policy: Option<StorageTimeoutPolicy>,

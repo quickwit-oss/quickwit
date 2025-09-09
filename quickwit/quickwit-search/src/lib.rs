@@ -24,7 +24,7 @@ mod error;
 mod fetch_docs;
 mod filters;
 mod find_trace_ids_collector;
-mod leaf;
+pub mod leaf;
 pub mod leaf_cache;
 mod list_fields;
 pub mod list_fields_cache;

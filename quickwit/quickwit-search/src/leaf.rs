@@ -144,7 +144,7 @@ fn configure_storage_retries(
 /// - An ephemeral unbounded cache directory (whose lifetime is tied to the
 /// returned `Index` if no `ByteRangeCache` is provided).
 #[instrument(skip_all, fields(split_footer_start=split_and_footer_offsets.split_footer_start, split_footer_end=split_and_footer_offsets.split_footer_end))]
-pub(crate) async fn open_index_with_caches(
+pub async fn open_index_with_caches(
     searcher_context: &SearcherContext,
     index_storage: Arc<dyn Storage>,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,

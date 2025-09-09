@@ -51,7 +51,22 @@ where E: std::error::Error + ToStorageErrorKind + Send + Sync + 'static
             SdkError::TimeoutError(_) => StorageErrorKind::Timeout,
             _ => StorageErrorKind::Internal,
         };
-        let source = anyhow::anyhow!("{}", DisplayErrorContext(error));
+        let source = if let SdkError::DispatchFailure(failure) = &error {
+            // For DNS lookup failures, try to extract the hostname from the error
+            let error_str = format!("{}", DisplayErrorContext(&error));
+            if error_str.contains("dns error") && error_str.contains("failed to lookup address information") {
+                // Try to extract hostname from the error context
+                if let Some(hostname) = extract_hostname_from_dispatch_failure(&failure) {
+                    anyhow::anyhow!("dns error: failed to lookup address information for hostname '{}': {}", hostname, error_str)
+                } else {
+                    anyhow::anyhow!("dns error (hostname not extractable): {}", error_str)
+                }
+            } else {
+                anyhow::anyhow!("{}", DisplayErrorContext(error))
+            }
+        } else {
+            anyhow::anyhow!("{}", DisplayErrorContext(error))
+        };
         error_kind.with_error(source)
     }
 }
@@ -127,4 +142,106 @@ impl ToStorageErrorKind for HeadObjectError {
             _ => StorageErrorKind::Service,
         }
     }
+}
+
+/// Attempts to extract the hostname that failed DNS resolution from a DispatchFailure.
+/// This is a best-effort approach using pattern matching on the error string.
+fn extract_hostname_from_dispatch_failure(failure: &impl std::fmt::Debug) -> Option<String> {
+    // Convert the failure to string to extract hostname
+    let error_string = format!("{:?}", failure);
+    
+    // Look for patterns that might contain the hostname
+    // Common patterns in hyper/AWS SDK errors for DNS failures:
+    // - "tcp connect error: dns error: failed to lookup address information"  
+    // - Connection attempts often have the hostname embedded
+    
+    // Try to find hostname in various patterns
+    if let Some(hostname) = extract_hostname_from_error_string(&error_string) {
+        return Some(hostname);
+    }
+    
+    // If we can't extract it from the error string, return None
+    None
+}
+
+/// Extract hostname from error string patterns
+fn extract_hostname_from_error_string(error_str: &str) -> Option<String> {
+    // Pattern 1: Look for "Connect" followed by hostname
+    if let Some(start) = error_str.find("Connect(") {
+        let substr = &error_str[start + 8..];
+        if let Some(end) = substr.find(')') {
+            let hostname = substr[..end].trim_matches('"');
+            if !hostname.is_empty() && hostname != "Unknown" {
+                return Some(hostname.to_string());
+            }
+        }
+    }
+    
+    // Pattern 2: Look for hostname in connection error messages
+    if let Some(start) = error_str.find("connection: ") {
+        let substr = &error_str[start + 12..];
+        if let Some(end) = substr.find(' ') {
+            let hostname = substr[..end].trim_matches('"');
+            if !hostname.is_empty() && hostname != "Unknown" {
+                return Some(hostname.to_string());
+            }
+        }
+    }
+    
+    // Pattern 3: Look for "Host: " pattern
+    if let Some(start) = error_str.find("Host: ") {
+        let substr = &error_str[start + 6..];
+        if let Some(end) = substr.find(&[' ', '\n', '\r', ',', ')'][..]) {
+            let hostname = substr[..end].trim_matches('"');
+            if !hostname.is_empty() {
+                return Some(hostname.to_string());
+            }
+        }
+    }
+    
+    // Pattern 4: Extract from URL-like patterns s3://bucket or https://endpoint
+    if let Some(hostname) = extract_hostname_from_url_pattern(error_str) {
+        return Some(hostname);
+    }
+    
+    None
+}
+
+/// Extract hostname from URL patterns in error strings
+fn extract_hostname_from_url_pattern(error_str: &str) -> Option<String> {
+    // Look for https:// or http:// patterns
+    for prefix in &["https://", "http://"] {
+        if let Some(start) = error_str.find(prefix) {
+            let url_start = start + prefix.len();
+            let substr = &error_str[url_start..];
+            
+            // Find the end of hostname (before path or query)
+            let hostname_end = substr.find(&['/', '?', ' ', '\n', '\r', ')', '"'][..])
+                .unwrap_or(substr.len());
+            
+            let hostname = &substr[..hostname_end];
+            if !hostname.is_empty() && !hostname.contains("Unknown") {
+                return Some(hostname.to_string());
+            }
+        }
+    }
+    
+    // Look for s3:// patterns
+    if let Some(start) = error_str.find("s3://") {
+        let url_start = start + 5;
+        let substr = &error_str[url_start..];
+        
+        // Find the end of bucket name
+        let bucket_end = substr.find(&['/', ' ', '\n', '\r', ')', '"'][..])
+            .unwrap_or(substr.len());
+        
+        let bucket = &substr[..bucket_end];
+        if !bucket.is_empty() {
+            // For s3://, we might want to show the bucket, but the actual hostname 
+            // would be the S3 endpoint. Let's return the s3:// URL for context.
+            return Some(format!("s3://{}", bucket));
+        }
+    }
+    
+    None
 }
