@@ -39,7 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Retry on S3 internal error (#5504)
 - Allow specifying OTEL index ID in header (#5503)
 - Add a metric to count storage errors and their error code (#5497)
-- Add support for concatenated fields (#4773, #5369, #5331) 
+- Add support for concatenated fields (#4773, #5369, #5331)
 - Add number of splits per root/leaf search histograms (#5472)
 - Introduce a searcher config option to timeout get requests (#5467)
 - Add fingerprint to task in cluster state (#5464)
@@ -52,7 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add more env var config for Postgres (#5365)
 - Enable str fast field range queries (#5324)
 - Allow querying non-existing fields (#5308)
-- Support updating doc mapper through api (#5253) 
+- Support updating doc mapper through api (#5253)
 - Add optional special handling for hex in code tokenizer (#5200)
 - Added a circuit breaker layer (#5134)
 - Various performance optimizations in Tantivy (https://github.com/quickwit-oss/tantivy/blob/main/CHANGELOG.md)
@@ -83,7 +83,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix grafana searchers dashboard (#5455)
 - Fix jaeger http endpoint (#5378)
 - Fix file re-ingestion after EOF (#5330)
-- Fix source path in Lambda distrib (#5327)
 - Fix configuration interpolation (#5403)
 - Fix jaeger duration parse error (#5518)
 - Fix unit conversion in jaeger http search endpoint (#5519)
@@ -91,6 +90,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - Remove support for 2-digit years in java datetime parser (#5596)
 - Remove DocMapper trait (#5508)
+- Remove support for AWS Lambda (#5884)
 
 
 # [0.8.1]
