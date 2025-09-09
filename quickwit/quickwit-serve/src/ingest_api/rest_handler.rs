@@ -98,9 +98,7 @@ fn ingest_filter(
             config.content_length_limit.as_u64(),
         ))
         .and(get_body_bytes())
-        .and(serde_qs::warp::query::<IngestOptions>(
-            serde_qs::Config::default(),
-        ))
+        .and(warp::query::<IngestOptions>())
 }
 
 fn ingest_handler(

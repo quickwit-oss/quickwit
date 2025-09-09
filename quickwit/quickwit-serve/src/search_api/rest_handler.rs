@@ -298,7 +298,7 @@ fn search_get_filter()
     warp::path!(String / "search")
         .and_then(extract_index_id_patterns)
         .and(warp::get())
-        .and(serde_qs::warp::query(serde_qs::Config::default()))
+        .and(warp::query())
 }
 
 fn search_post_filter()
@@ -315,7 +315,7 @@ fn search_plan_get_filter()
     warp::path!(String / "search-plan")
         .and_then(extract_index_id_patterns)
         .and(warp::get())
-        .and(serde_qs::warp::query(serde_qs::Config::default()))
+        .and(warp::query())
 }
 
 fn search_plan_post_filter()
@@ -866,7 +866,7 @@ mod tests {
                 .unwrap()
                 .as_str()
                 .unwrap()
-                .contains("unknown field `end_unix_timestamp`")
+                .contains("Invalid query string")
         );
     }
 
