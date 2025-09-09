@@ -19,7 +19,6 @@ members = [
   "quickwit-integration-tests",
   "quickwit-jaeger",
   "quickwit-janitor",
-  "quickwit-lambda",
   "quickwit-macros",
   "quickwit-metastore",
 
@@ -36,7 +35,7 @@ members = [
   "quickwit-telemetry",
 ]
 
-# The following list excludes `quickwit-metastore-utils` and `quickwit-lambda`
+# The following list excludes `quickwit-metastore-utils`
 # from the default member to ease build/deps.
 default-members = [
   "quickwit-actors",
