@@ -257,11 +257,6 @@ async fn balance_channel_for_service(
     BalanceChannel::from_stream(service_change_stream)
 }
 
-fn convert_status_code_to_legacy_http(status_code: http::StatusCode) -> warp::http::StatusCode {
-    warp::http::StatusCode::from_u16(status_code.as_u16())
-        .unwrap_or(warp::http::StatusCode::INTERNAL_SERVER_ERROR)
-}
-
 async fn start_ingest_client_if_needed(
     node_config: &NodeConfig,
     universe: &Universe,
