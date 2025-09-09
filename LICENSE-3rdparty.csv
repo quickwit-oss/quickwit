@@ -50,7 +50,6 @@ aws-smithy-runtime-api,https://github.com/smithy-lang/smithy-rs,Apache-2.0,"AWS 
 aws-smithy-types,https://github.com/smithy-lang/smithy-rs,Apache-2.0,"AWS Rust SDK Team <aws-sdk-rust@amazon.com>, Russell Cohen <rcoh@amazon.com>"
 aws-smithy-xml,https://github.com/smithy-lang/smithy-rs,Apache-2.0,"AWS Rust SDK Team <aws-sdk-rust@amazon.com>, Russell Cohen <rcoh@amazon.com>"
 aws-types,https://github.com/smithy-lang/smithy-rs,Apache-2.0,"AWS Rust SDK Team <aws-sdk-rust@amazon.com>, Russell Cohen <rcoh@amazon.com>"
-aws_lambda_events,https://github.com/awslabs/aws-lambda-rust-runtime,MIT,"Christian Legnitto <christian@legnitto.com>, Sam Rijs <srijs@airpost.net>, David Calavera <dcalaver@amazon.com>"
 axum,https://github.com/tokio-rs/axum,MIT,The axum Authors
 axum-core,https://github.com/tokio-rs/axum,MIT,The axum-core Authors
 backtrace,https://github.com/rust-lang/backtrace-rs,MIT OR Apache-2.0,The Rust Project Developers
@@ -106,9 +105,7 @@ constant_time_eq,https://github.com/cesarb/constant_time_eq,CC0-1.0,Cesar Eduard
 core-foundation,https://github.com/servo/core-foundation-rs,MIT OR Apache-2.0,The Servo Project Developers
 core-foundation-sys,https://github.com/servo/core-foundation-rs,MIT OR Apache-2.0,The Servo Project Developers
 cpufeatures,https://github.com/RustCrypto/utils,MIT OR Apache-2.0,RustCrypto Developers
-crc,https://github.com/mrhooray/crc-rs,MIT OR Apache-2.0,"Rui Hu <code@mrhooray.com>, Akhil Velagapudi <4@4khil.com>"
-crc-catalog,https://github.com/akhilles/crc-catalog,MIT OR Apache-2.0,Akhil Velagapudi <akhilvelagapudi@gmail.com>
-crc-fast,https://github.com/awesomized/crc-fast-rust,MIT OR Apache-2.0,Don MacAskill
+crc32c,https://github.com/zowens/crc32c,Apache-2.0 OR MIT,Zack Owens
 crc32fast,https://github.com/srijs/rust-crc32fast,MIT OR Apache-2.0,"Sam Rijs <srijs@airpost.net>, Alex Crichton <alex@alexcrichton.com>"
 criterion-plot,https://github.com/bheisler/criterion.rs,MIT OR Apache-2.0,"Jorge Aparicio <japaricious@gmail.com>, Brook Heisler <brookheisler@gmail.com>"
 cron,https://github.com/zslayton/cron,MIT OR Apache-2.0,Zack Slayton <zack.slayton@gmail.com>
@@ -243,11 +240,7 @@ itoa,https://github.com/dtolnay/itoa,MIT OR Apache-2.0,David Tolnay <dtolnay@gma
 jobserver,https://github.com/rust-lang/jobserver-rs,MIT OR Apache-2.0,Alex Crichton <alex@alexcrichton.com>
 js-sys,https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/js-sys,MIT OR Apache-2.0,The wasm-bindgen Developers
 json_comments,https://github.com/tmccombs/json-comments-rs,Apache-2.0,Thayne McCombs <astrothayne@gmail.com>
-lambda_http,https://github.com/awslabs/aws-lambda-rust-runtime,Apache-2.0,"David Calavera <dcalaver@amazon.com>, Harold Sun <sunhua@amazon.com>"
-lambda_runtime,https://github.com/awslabs/aws-lambda-rust-runtime,Apache-2.0,"David Calavera <dcalaver@amazon.com>, Harold Sun <sunhua@amazon.com>"
-lambda_runtime_api_client,https://github.com/awslabs/aws-lambda-rust-runtime,Apache-2.0,"David Calavera <dcalaver@amazon.com>, Harold Sun <sunhua@amazon.com>"
 lazy_static,https://github.com/rust-lang-nursery/lazy-static.rs,MIT OR Apache-2.0,Marvin Löbel <loebel.marvin@gmail.com>
-lazycell,https://github.com/indiv0/lazycell,MIT OR Apache-2.0,"Alex Crichton <alex@alexcrichton.com>, Nikita Pekin <contact@nikitapek.in>"
 levenshtein_automata,https://github.com/tantivy-search/levenshtein-automata,MIT,Paul Masurel <paul.masurel@gmail.com>
 libc,https://github.com/rust-lang/libc,MIT OR Apache-2.0,The Rust Project Developers
 libloading,https://github.com/nagisa/rust_libloading,ISC,Simonas Kazlauskas <libloading@kazlauskas.me>
@@ -316,7 +309,6 @@ oneshot,https://github.com/faern/oneshot,MIT OR Apache-2.0,Linus Färnstrand <fa
 oorandom,https://hg.sr.ht/~icefox/oorandom,MIT,Simon Heath <icefox@dreamquest.io>
 openssl-probe,https://github.com/alexcrichton/openssl-probe,MIT OR Apache-2.0,Alex Crichton <alex@alexcrichton.com>
 opentelemetry,https://github.com/open-telemetry/opentelemetry-rust,Apache-2.0,The opentelemetry Authors
-opentelemetry-http,https://github.com/open-telemetry/opentelemetry-rust,Apache-2.0,The opentelemetry-http Authors
 opentelemetry-otlp,https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-otlp,Apache-2.0,The opentelemetry-otlp Authors
 opentelemetry-proto,https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-proto,Apache-2.0,The opentelemetry-proto Authors
 opentelemetry_sdk,https://github.com/open-telemetry/opentelemetry-rust,Apache-2.0,The opentelemetry_sdk Authors
@@ -375,7 +367,6 @@ prost-build,https://github.com/tokio-rs/prost,Apache-2.0,"Dan Burkert <dan@danbu
 prost-derive,https://github.com/tokio-rs/prost,Apache-2.0,"Dan Burkert <dan@danburkert.com>, Lucio Franco <luciofranco14@gmail.com>, Casper Meijn <casper@meijn.net>, Tokio Contributors <team@tokio.rs>"
 prost-types,https://github.com/tokio-rs/prost,Apache-2.0,"Dan Burkert <dan@danburkert.com>, Lucio Franco <luciofranco14@gmail.com>, Casper Meijn <casper@meijn.net>, Tokio Contributors <team@tokio.rs>"
 protobuf,https://github.com/stepancheg/rust-protobuf,MIT,Stepan Koltsov <stepan.koltsov@gmail.com>
-query_map,https://github.com/calavera/query-map-rs,MIT,The query_map Authors
 quick-error,http://github.com/tailhook/quick-error,MIT OR Apache-2.0,"Paul Colomiets <paul@colomiets.name>, Colin Kiegel <kiegel@gmx.de>"
 quinn,https://github.com/quinn-rs/quinn,MIT OR Apache-2.0,The quinn Authors
 quinn-proto,https://github.com/quinn-rs/quinn,MIT OR Apache-2.0,The quinn-proto Authors
@@ -408,7 +399,6 @@ rust-embed-impl,https://github.com/pyros2097/rust-embed,MIT,pyros2097 <pyros2097
 rust-embed-utils,https://github.com/pyros2097/rust-embed,MIT,pyros2097 <pyros2097@gmail.com>
 rust-stemmers,https://github.com/CurrySoftware/rust-stemmers,MIT OR BSD-3-Clause,"Jakob Demler <jdemler@curry-software.com>, CurrySoftware <info@curry-software.com>"
 rustc-demangle,https://github.com/rust-lang/rustc-demangle,MIT OR Apache-2.0,Alex Crichton <alex@alexcrichton.com>
-rustc-hash,https://github.com/rust-lang-nursery/rustc-hash,Apache-2.0 OR MIT,The Rust Project Developers
 rustc-hash,https://github.com/rust-lang/rustc-hash,Apache-2.0 OR MIT,The Rust Project Developers
 rustix,https://github.com/bytecodealliance/rustix,Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT,"Dan Gohman <dev@sunfishcode.online>, Jakub Konka <kubkon@jakubkonka.com>"
 rustls,https://github.com/rustls/rustls,Apache-2.0 OR ISC OR MIT,The rustls Authors
@@ -436,10 +426,8 @@ semver,https://github.com/dtolnay/semver,MIT OR Apache-2.0,David Tolnay <dtolnay
 separator,https://github.com/saghm/rust-separator,MIT,Saghm Rossi <saghmrossi@gmail.com>
 serde,https://github.com/serde-rs/serde,MIT OR Apache-2.0,"Erick Tryzelaar <erick.tryzelaar@gmail.com>, David Tolnay <dtolnay@gmail.com>"
 serde_derive,https://github.com/serde-rs/serde,MIT OR Apache-2.0,"Erick Tryzelaar <erick.tryzelaar@gmail.com>, David Tolnay <dtolnay@gmail.com>"
-serde_dynamo,https://github.com/zenlist/serde_dynamo,MIT,Bryan Burgers <bryan@burgers.io>
 serde_json,https://github.com/serde-rs/json,MIT OR Apache-2.0,"Erick Tryzelaar <erick.tryzelaar@gmail.com>, David Tolnay <dtolnay@gmail.com>"
 serde_json_borrow,https://github.com/PSeitz/serde_json_borrow,MIT,Pascal Seitz <pascal.seitz@gmail.com>
-serde_path_to_error,https://github.com/dtolnay/path-to-error,MIT OR Apache-2.0,David Tolnay <dtolnay@gmail.com>
 serde_qs,https://github.com/samscott89/serde_qs,MIT OR Apache-2.0,Sam Scott <sam@osohq.com>
 serde_spanned,https://github.com/toml-rs/toml,MIT OR Apache-2.0,The serde_spanned Authors
 serde_urlencoded,https://github.com/nox/serde_urlencoded,MIT OR Apache-2.0,Anthony Ramine <n.oxyde@gmail.com>
@@ -561,7 +549,6 @@ wasm-timer,https://github.com/tomaka/wasm-timer,MIT,Pierre Krieger <pierre.krieg
 web-sys,https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/web-sys,MIT OR Apache-2.0,The wasm-bindgen Developers
 web-time,https://github.com/daxpedda/web-time,MIT OR Apache-2.0,The web-time Authors
 webpki-roots,https://github.com/rustls/webpki-roots,CDLA-Permissive-2.0,The webpki-roots Authors
-which,https://github.com/harryfei/which-rs,MIT,Harry Fei <tiziyuanfang@gmail.com>
 whichlang,https://github.com/quickwit-oss/whichlang,MIT,"Quickwit, Inc. <hello@quickwit.io>"
 winapi,https://github.com/retep998/winapi-rs,MIT,Peter Atashian <retep998@gmail.com>
 winapi,https://github.com/retep998/winapi-rs,MIT OR Apache-2.0,Peter Atashian <retep998@gmail.com>
