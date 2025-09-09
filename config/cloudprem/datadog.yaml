@@ -45,7 +45,7 @@ doc_mapping:
       indexed: false
     - name: message
       type: text
-      tokenizer: default # +lowercase case insensitive search on message
+      tokenizer: datadog # +lowercase case insensitive search on message
       record: position
       fast: true
       fieldnorms: false
@@ -80,7 +80,7 @@ doc_mapping:
     # We need to move errors from custom to its own field because the tokenization is different
     - name: error
       type: json
-      tokenizer: default
+      tokenizer: datadog
       record: position
       fast: false # We can use custom.error for aggregations instead
       # downstream expects the error to be in custom.error, so we will store it only there
@@ -174,9 +174,8 @@ doc_mapping:
       fast: true
       indexed: false
       stored: false
-    # TODO: Needs to be populated
     - name: tiebreaker
-      type: i64
+      type: i64 # actually i32, is populated in ProcessedLog constructor
       fast: true
       indexed: false
       stored: true
