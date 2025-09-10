@@ -20,8 +20,8 @@ use quickwit_common::metrics::{
 };
 
 pub struct IndexerMetrics {
-    pub processed_docs_total: IntCounterVec<2>,
-    pub processed_bytes: IntCounterVec<2>,
+    pub processed_docs_total: IntCounterVec<3>,
+    pub processed_bytes: IntCounterVec<3>,
     pub indexing_pipelines: IntGaugeVec<1>,
     pub backpressure_micros: IntCounterVec<1>,
     pub available_concurrent_upload_permits: IntGaugeVec<1>,
@@ -43,19 +43,19 @@ impl Default for IndexerMetrics {
         IndexerMetrics {
             processed_docs_total: new_counter_vec(
                 "processed_docs_total",
-                "Number of processed docs by index, source and processed status in [valid, \
+                "Number of processed docs by index, pipeline and processed status in [valid, \
                  schema_error, parse_error, transform_error]",
                 "indexing",
                 &[],
-                ["index", "docs_processed_status"],
+                ["index", "pipeline_uid", "docs_processed_status"],
             ),
             processed_bytes: new_counter_vec(
                 "processed_bytes",
-                "Number of bytes of processed documents by index, source and processed status in \
-                 [valid, schema_error, parse_error, transform_error]",
+                "Number of bytes of processed documents by index, pipeline and processed status \
+                 in [valid, schema_error, parse_error, transform_error]",
                 "indexing",
                 &[],
-                ["index", "docs_processed_status"],
+                ["index", "pipeline_uid", "docs_processed_status"],
             ),
             indexing_pipelines: new_gauge_vec(
                 "indexing_pipelines",
