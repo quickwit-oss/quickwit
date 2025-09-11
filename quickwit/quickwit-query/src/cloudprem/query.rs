@@ -268,11 +268,8 @@ fn build_search_query(search_query: AttributeSearchQueryNode) -> Result<QueryAst
             operator: crate::BooleanOperand::And,
         },
         SearchQueryMode::WesQuoted => FullTextMode::Phrase { slop: 0 },
-        SearchQueryMode::WesPrefix => {
-            return Err(unsupported_query_error("WES prefix query"));
-        }
-        SearchQueryMode::WesGlob => {
-            return Err(unsupported_query_error("WES globing query"));
+        SearchQueryMode::WesPrefix | SearchQueryMode::WesGlob => {
+            return Err(unsupported_query_error("full-text search with wildcard"));
         }
     };
     let string_pattern = if let Some(pattern) = search_query.structured_text {
