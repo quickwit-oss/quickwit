@@ -119,7 +119,6 @@ pub enum QuickwitFeature {
     Jaeger,
     Otlp,
     PostgresqMetastore,
-    AwsLambda,
 }
 
 fn hashed_host_username() -> String {
