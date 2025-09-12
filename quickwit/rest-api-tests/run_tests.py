@@ -18,6 +18,31 @@ import yaml
 from os import mkdir
 from os import path as osp
 
+# Simple !include constructor for YAML to allow reusing fragments across files.
+# Usage examples:
+#   - !include path/to/file.yaml                -> includes full file content
+#   - !include path/to/file.yaml::doc_mapping   -> includes the 'doc_mapping' key
+#   - !include path/to/file.yaml::a.b.c         -> includes nested key a -> b -> c
+def _yaml_include(loader, node):
+    value = loader.construct_scalar(node)
+    if "::" in value:
+        filepath, subpath = value.split("::", 1)
+    else:
+        filepath, subpath = value, None
+    with open(filepath, "r") as f:
+        included = yaml.load(f, Loader=yaml.Loader)
+    if subpath:
+        cur = included
+        for seg in filter(None, subpath.split(".")):
+            if not isinstance(cur, dict) or seg not in cur:
+                raise KeyError(f"!include path '{subpath}' not found in {filepath}")
+            cur = cur[seg]
+        return cur
+    return included
+
+# Register the constructor on the default Loader used by this script.
+yaml.Loader.add_constructor("!include", _yaml_include)
+
 def debug_http():
     old_send = http.client.HTTPConnection.send
     def new_send(self, data):
