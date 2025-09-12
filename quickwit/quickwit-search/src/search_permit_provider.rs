@@ -212,10 +212,10 @@ impl SearchPermitActor {
         while let Some((permit_requester_tx, next_permit_size)) =
             self.pop_next_request_if_serviceable()
         {
-            let mut ongoing_gauge_guard = GaugeGuard::from_gauge(
+            let ongoing_gauge_guard = GaugeGuard::from_gauge_with_initial_value(
                 &crate::SEARCH_METRICS.leaf_search_single_split_tasks_ongoing,
+                1,
             );
-            ongoing_gauge_guard.add(1);
             self.total_memory_allocated += next_permit_size;
             self.num_warmup_slots_available -= 1;
             permit_requester_tx

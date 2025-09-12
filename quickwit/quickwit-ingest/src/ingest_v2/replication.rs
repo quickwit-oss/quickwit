@@ -504,8 +504,10 @@ impl ReplicationTask {
             )));
         }
         let request_size_bytes = replicate_request.num_bytes();
-        let mut gauge_guard = GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.ingester_replicate);
-        gauge_guard.add(request_size_bytes as i64);
+        let _gauge_guard = GaugeGuard::from_gauge_with_initial_value(
+            &MEMORY_METRICS.in_flight.ingester_replicate,
+            request_size_bytes as i64,
+        );
 
         self.current_replication_seqno += 1;
 

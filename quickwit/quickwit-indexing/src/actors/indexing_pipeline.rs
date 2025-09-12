@@ -159,9 +159,8 @@ impl IndexingPipeline {
         let indexing_pipelines_gauge = crate::metrics::INDEXER_METRICS
             .indexing_pipelines
             .with_label_values([&params.pipeline_id.index_uid.index_id]);
-        let mut indexing_pipelines_gauge_guard =
-            OwnedGaugeGuard::from_gauge(indexing_pipelines_gauge);
-        indexing_pipelines_gauge_guard.add(1);
+        let indexing_pipelines_gauge_guard =
+            OwnedGaugeGuard::from_gauge_with_initial_value(indexing_pipelines_gauge, 1);
         let params_fingerprint = params.params_fingerprint;
         IndexingPipeline {
             params,
