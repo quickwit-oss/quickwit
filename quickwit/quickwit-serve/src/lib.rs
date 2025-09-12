@@ -602,35 +602,13 @@ pub async fn serve_quickwit(
 
     // Any node can serve index management requests (create/update/delete index, add/remove source,
     // etc.), so we always instantiate an index manager.
-    let mut index_manager = IndexManager::new(
+    let index_manager = IndexManager::new(
         metastore_through_control_plane.clone(),
         storage_resolver.clone(),
     );
 
-    if node_config.is_service_enabled(QuickwitService::Indexer)
-        && node_config.indexer_config.enable_otlp_endpoint
-    {
-        {
-            let otel_logs_index_config =
-                OtlpGrpcLogsService::index_config(&node_config.default_index_root_uri)
-                    .context("failed to load OTEL logs index config")?;
-            let otel_traces_index_config =
-                OtlpGrpcTracesService::index_config(&node_config.default_index_root_uri)
-                    .context("failed to load OTEL traces index config")?;
-
-            for (index_name, index_config) in [
-                ("OTEL logs", otel_logs_index_config),
-                ("OTEL traces", otel_traces_index_config),
-            ] {
-                match index_manager.create_index(index_config, false).await {
-                    Ok(_)
-                    | Err(IndexServiceError::Metastore(MetastoreError::AlreadyExists(
-                        EntityKind::Index { .. },
-                    ))) => {}
-                    Err(error) => bail!("failed to create {index_name} index: {error}",),
-                };
-            }
-        }
+    if node_config.is_service_enabled(QuickwitService::Indexer) {
+        create_managed_indexes(&node_config, index_manager.clone()).await?;
     }
 
     let split_cache_opt: Option<Arc<SplitCache>> =
@@ -1398,6 +1376,46 @@ async fn check_cluster_configuration(
             index_uris=%index_uris,
             "Found some file-backed indexes in the metastore. Some nodes in the cluster may not have access to all index files."
         );
+    }
+    Ok(())
+}
+
+async fn create_managed_indexes(
+    node_config: &NodeConfig,
+    mut index_manager: IndexManager,
+) -> anyhow::Result<()> {
+    let mut indexes_to_create = Vec::new();
+    if node_config.indexer_config.enable_otlp_endpoint {
+        let otel_logs_index_config =
+            OtlpGrpcLogsService::index_config(&node_config.default_index_root_uri)
+                .context("failed to load OTEL logs index config")?;
+        let otel_traces_index_config =
+            OtlpGrpcTracesService::index_config(&node_config.default_index_root_uri)
+                .context("failed to load OTEL traces index config")?;
+
+        indexes_to_create.push(("OTEL logs", otel_logs_index_config));
+        indexes_to_create.push(("OTEL traces", otel_traces_index_config));
+    }
+
+    if node_config.cloudprem_config.create_datadog_index {
+        let datadog_index_config_bytes = include_bytes!("../../../config/cloudprem/datadog.yaml");
+        let datadog_index_config = quickwit_config::load_index_config_from_user_config(
+            quickwit_config::ConfigFormat::Yaml,
+            datadog_index_config_bytes,
+            &node_config.default_index_root_uri,
+        )?;
+
+        indexes_to_create.push(("Datadog", datadog_index_config));
+    }
+
+    for (index_name, index_config) in indexes_to_create {
+        match index_manager.create_index(index_config, false).await {
+            Ok(_)
+            | Err(IndexServiceError::Metastore(MetastoreError::AlreadyExists(
+                EntityKind::Index { .. },
+            ))) => {}
+            Err(error) => bail!("failed to create {index_name} index: {error}"),
+        };
     }
     Ok(())
 }

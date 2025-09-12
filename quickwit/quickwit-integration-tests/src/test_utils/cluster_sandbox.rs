@@ -57,6 +57,7 @@ use super::shutdown::NodeShutdownHandle;
 pub struct TestNodeConfig {
     pub services: HashSet<QuickwitService>,
     pub enable_otlp: bool,
+    pub create_datadog_index: bool,
 }
 
 pub struct ClusterSandboxBuilder {
@@ -80,6 +81,7 @@ impl ClusterSandboxBuilder {
         self.node_configs.push(TestNodeConfig {
             services: HashSet::from_iter(services),
             enable_otlp: false,
+            create_datadog_index: false,
         });
         self
     }
@@ -91,6 +93,19 @@ impl ClusterSandboxBuilder {
         self.node_configs.push(TestNodeConfig {
             services: HashSet::from_iter(services),
             enable_otlp: true,
+            create_datadog_index: false,
+        });
+        self
+    }
+
+    pub fn add_node_with_datadog(
+        mut self,
+        services: impl IntoIterator<Item = QuickwitService>,
+    ) -> Self {
+        self.node_configs.push(TestNodeConfig {
+            services: HashSet::from_iter(services),
+            enable_otlp: false,
+            create_datadog_index: true,
         });
         self
     }
@@ -140,6 +155,7 @@ impl ClusterSandboxBuilder {
                 QuickwitUri::from_str(&format!("ram:///{unique_dir_name}/metastore")).unwrap();
             config.default_index_root_uri =
                 QuickwitUri::from_str(&format!("ram:///{unique_dir_name}/indexes")).unwrap();
+            config.cloudprem_config.create_datadog_index = node_builder.create_datadog_index;
             peers.push(config.gossip_advertise_addr.to_string());
             resolved_node_configs.push((config, node_builder.services.clone()));
         }

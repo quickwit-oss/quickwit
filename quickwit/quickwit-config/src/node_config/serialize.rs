@@ -1375,6 +1375,7 @@ mod tests {
                     },
                     datadog_config: None,
                     enable_reverse_connection: false,
+                    create_datadog_index: false,
                 },
                 ..NodeConfigBuilder::default()
                     .build_and_validate(&HashMap::new())

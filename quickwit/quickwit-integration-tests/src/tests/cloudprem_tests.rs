@@ -572,3 +572,38 @@ async fn test_aggregation_group_and_time_grouping_count() {
 
     sandbox.shutdown().await.unwrap();
 }
+
+#[tokio::test]
+async fn test_create_managed_indexes_on_startup() {
+    quickwit_common::setup_logging_for_tests();
+    let sandbox = ClusterSandboxBuilder::default()
+        .add_node([QuickwitService::Searcher])
+        .add_node([QuickwitService::Metastore])
+        .add_node_with_otlp([QuickwitService::Indexer])
+        .add_node_with_datadog([QuickwitService::Indexer])
+        .add_node([QuickwitService::ControlPlane])
+        .add_node([QuickwitService::Janitor])
+        .build_and_start()
+        .await;
+
+    let indexes = sandbox
+        .rest_client(QuickwitService::Indexer)
+        .indexes()
+        .list()
+        .await
+        .unwrap();
+
+    assert_eq!(indexes.len(), 3);
+
+    let index_ids: [&str; 3] = [
+        indexes[0].index_id(),
+        indexes[1].index_id(),
+        indexes[2].index_id(),
+    ];
+
+    assert!(index_ids.contains(&"otel-logs-v0_9"));
+    assert!(index_ids.contains(&"otel-traces-v0_9"));
+    assert!(index_ids.contains(&"datadog"));
+
+    sandbox.shutdown().await.unwrap();
+}

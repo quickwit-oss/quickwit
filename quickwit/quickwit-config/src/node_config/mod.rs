@@ -642,11 +642,24 @@ pub struct CloudPremConfig {
     pub datadog_config: Option<WebsocketConfig>,
     #[serde(default)]
     pub enable_reverse_connection: bool,
+    #[serde(default = "CloudPremConfig::default_create_datadog_index")]
+    pub create_datadog_index: bool,
 }
 
 impl CloudPremConfig {
     pub fn validate(&self) -> anyhow::Result<()> {
         self.grpc_config.validate()
+    }
+
+    fn default_create_datadog_index() -> bool {
+        #[cfg(any(test, feature = "testsuite"))]
+        {
+            false
+        }
+        #[cfg(not(any(test, feature = "testsuite")))]
+        {
+            true
+        }
     }
 }
 
