@@ -321,12 +321,17 @@ pub mod test_helpers {
     pub async fn start_mock_sqs_get_queue_attributes_endpoint() -> (String, oneshot::Sender<()>) {
         let hello = warp::path!().map(|| "{}");
         let (tx, rx) = oneshot::channel();
-        let server = warp::serve(hello).bind(([127, 0, 0, 1], 0)).await;
-        let signal_future = async {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("listener should bind");
+        let addr = listener.local_addr().unwrap();
+
+        let server = warp::serve(hello).incoming(listener).graceful(async {
             rx.await.ok();
-        };
-        server.graceful(signal_future);
-        let queue_url = "http://127.0.0.1:0/".to_string();
+        });
+        tokio::spawn(server.run());
+
+        let queue_url = format!("http://{}:{}/", addr.ip(), addr.port());
         (queue_url, tx)
     }
 
