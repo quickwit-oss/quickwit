@@ -158,7 +158,9 @@ impl IndexingPipeline {
     pub fn new(params: IndexingPipelineParams) -> Self {
         let indexing_pipelines_gauge = crate::metrics::INDEXER_METRICS
             .indexing_pipelines
-            .with_label_values([&params.pipeline_id.index_uid.index_id]);
+            .with_label_values([&quickwit_common::metrics::index_label(
+                &params.pipeline_id.index_uid.index_id,
+            )]);
         let indexing_pipelines_gauge_guard =
             OwnedGaugeGuard::from_gauge_with_initial_value(indexing_pipelines_gauge, 1);
         let params_fingerprint = params.params_fingerprint;
