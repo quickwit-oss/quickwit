@@ -17,8 +17,9 @@
 use bytesize::ByteSize;
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
-    exponential_buckets, linear_buckets, new_counter, new_counter_vec, new_gauge_vec,
-    new_histogram, new_histogram_vec, Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge,
+    Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, exponential_buckets,
+    linear_buckets, new_counter, new_counter_vec, new_gauge, new_gauge_vec, new_histogram,
+    new_histogram_vec,
 };
 
 pub struct SearchMetrics {
@@ -34,6 +35,12 @@ pub struct SearchMetrics {
     pub leaf_search_single_split_tasks_pending: IntGauge,
     pub leaf_search_single_split_tasks_ongoing: IntGauge,
     pub leaf_search_single_split_warmup_num_bytes: Histogram,
+    pub searcher_local_kv_store_size_bytes: IntGauge,
+}
+
+/// From 0.008s to 131.072s
+fn duration_buckets() -> Vec<f64> {
+    exponential_buckets(0.008, 2.0, 15).unwrap()
 }
 
 impl Default for SearchMetrics {
@@ -83,7 +90,7 @@ impl Default for SearchMetrics {
                 "search",
                 &[("kind", "server")],
                 ["status"],
-                exponential_buckets(0.001, 2.0, 15).unwrap(),
+                duration_buckets(),
             ),
             root_search_targeted_splits: new_histogram_vec(
                 "root_search_targeted_splits",
@@ -106,7 +113,7 @@ impl Default for SearchMetrics {
                 "search",
                 &[("kind", "server")],
                 ["status"],
-                exponential_buckets(0.001, 2.0, 15).unwrap(),
+                duration_buckets(),
             ),
             leaf_search_targeted_splits: new_histogram_vec(
                 "leaf_search_targeted_splits",
@@ -127,7 +134,7 @@ impl Default for SearchMetrics {
                 "Number of seconds required to run a leaf search over a single split. The timer \
                  starts after the semaphore is obtained.",
                 "search",
-                exponential_buckets(0.001, 2.0, 15).unwrap(),
+                duration_buckets(),
             ),
             leaf_search_single_split_tasks_ongoing: leaf_search_single_split_tasks
                 .with_label_values(["ongoing"]),
@@ -145,6 +152,13 @@ impl Default for SearchMetrics {
                 "search",
                 &[],
                 ["affinity"],
+            ),
+            searcher_local_kv_store_size_bytes: new_gauge(
+                "searcher_local_kv_store_size_bytes",
+                "Size of the searcher kv store in bytes. This store is used to cache scroll \
+                 contexts.",
+                "search",
+                &[],
             ),
         }
     }

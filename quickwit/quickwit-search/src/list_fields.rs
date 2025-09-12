@@ -26,8 +26,8 @@ use quickwit_common::uri::Uri;
 use quickwit_metastore::SplitMetadata;
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_proto::search::{
-    deserialize_split_fields, LeafListFieldsRequest, ListFields, ListFieldsEntryResponse,
-    ListFieldsRequest, ListFieldsResponse, SplitIdAndFooterOffsets,
+    LeafListFieldsRequest, ListFields, ListFieldsEntryResponse, ListFieldsRequest,
+    ListFieldsResponse, SplitIdAndFooterOffsets, deserialize_split_fields,
 };
 use quickwit_proto::types::{IndexId, IndexUid};
 use quickwit_storage::Storage;
@@ -35,13 +35,13 @@ use quickwit_storage::Storage;
 use crate::leaf::open_split_bundle;
 use crate::search_job_placer::group_jobs_by_index_id;
 use crate::service::SearcherContext;
-use crate::{list_relevant_splits, resolve_index_patterns, ClusterClient, SearchError, SearchJob};
+use crate::{ClusterClient, SearchError, SearchJob, list_relevant_splits, resolve_index_patterns};
 
 /// Get the list of splits for the request which we need to scan.
-pub async fn get_fields_from_split<'a>(
+pub async fn get_fields_from_split(
     searcher_context: &SearcherContext,
     index_id: IndexId,
-    split_and_footer_offsets: &'a SplitIdAndFooterOffsets,
+    split_and_footer_offsets: &SplitIdAndFooterOffsets,
     index_storage: Arc<dyn Storage>,
 ) -> anyhow::Result<Box<dyn Iterator<Item = ListFieldsEntryResponse> + Send>> {
     if let Some(list_fields) = searcher_context
@@ -59,10 +59,7 @@ pub async fn get_fields_from_split<'a>(
     let serialized_split_fields_len = serialized_split_fields.len();
     let mut list_fields = deserialize_split_fields(serialized_split_fields)
         .with_context(|| {
-            format!(
-                "could not read split fields (serialized len: {})",
-                serialized_split_fields_len,
-            )
+            format!("could not read split fields (serialized len: {serialized_split_fields_len})",)
         })?
         .fields;
     for list_field_entry in list_fields.iter_mut() {
@@ -91,10 +88,12 @@ fn merge_same_field_group(
 ) -> ListFieldsEntryResponse {
     // Make sure all fields have the same name and type in current_group
     assert!(!current_group.is_empty());
-    assert!(current_group
-        .windows(2)
-        .all(|window| window[0].field_name == window[1].field_name
-            && window[0].field_type == window[1].field_type));
+    assert!(
+        current_group
+            .windows(2)
+            .all(|window| window[0].field_name == window[1].field_name
+                && window[0].field_type == window[1].field_type)
+    );
 
     if current_group.len() == 1 {
         return current_group.pop().unwrap();
@@ -277,7 +276,7 @@ pub struct IndexMetasForLeafSearch {
 }
 
 /// Performs a distributed list fields request.
-/// 1. Sends leaf request over gRPC to multiple leaf nodes.
+/// 1. Sends leaf requests over gRPC to multiple leaf nodes.
 /// 2. Merges the search results.
 /// 3. Builds the response and returns.
 pub async fn root_list_fields(

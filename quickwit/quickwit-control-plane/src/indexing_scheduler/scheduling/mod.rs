@@ -474,7 +474,7 @@ fn assign_shards(
     let mut shard_to_indexer: HashMap<ShardId, String> =
         HashMap::with_capacity(missing_shards.len());
 
-    // In a first pass we first assign as many shards on the their hosting nodes as possible.
+    // In a first pass we first assign as many shards on their hosting nodes as possible.
     let mut remaining_missing_shards: Vec<ShardId> = Vec::new();
     for shard_id in missing_shards {
         // As a heuristic, we pick the first node hosting the shard that is available.
@@ -536,7 +536,10 @@ fn assert_post_condition_physical_plan_match_solution(
     assert_eq!(num_indexers, id_to_ord_map.indexer_ids.len());
     let mut reconstructed_solution = SchedulingSolution::with_num_indexers(num_indexers);
     convert_physical_plan_to_solution(physical_plan, id_to_ord_map, &mut reconstructed_solution);
-    assert_eq!(solution, &reconstructed_solution);
+    assert_eq!(
+        solution.indexer_assignments,
+        reconstructed_solution.indexer_assignments
+    );
 }
 
 fn add_shard_to_indexer(
@@ -576,7 +579,7 @@ fn add_shard_to_indexer(
     }
 }
 
-// If the total node capacities is lower than 110% of the problem load, this
+// If the total node capacities is lower than 120% of the problem load, this
 // function scales the load of the indexer to reach this limit.
 fn inflate_node_capacities_if_necessary(problem: &mut SchedulingProblem) {
     // First we scale the problem to the point where any indexer can fit the largest shard.
@@ -745,14 +748,13 @@ mod tests {
 
     use fnv::FnvHashMap;
     use itertools::Itertools;
-    use quickwit_proto::indexing::{mcpu, CpuCapacity, IndexingTask};
+    use quickwit_proto::indexing::{CpuCapacity, IndexingTask, mcpu};
     use quickwit_proto::types::{IndexUid, NodeId, PipelineUid, ShardId, SourceUid};
     use rand::seq::SliceRandom;
 
     use super::{
-        build_physical_indexing_plan,
-        convert_scheduling_solution_to_physical_plan_single_node_single_source, SourceToSchedule,
-        SourceToScheduleType,
+        SourceToSchedule, SourceToScheduleType, build_physical_indexing_plan,
+        convert_scheduling_solution_to_physical_plan_single_node_single_source,
     };
     use crate::indexing_plan::PhysicalIndexingPlan;
     use crate::indexing_scheduler::get_shard_locality_metrics;

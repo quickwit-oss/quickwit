@@ -22,13 +22,13 @@ use anyhow::Context;
 use futures_util::future;
 use itertools::Itertools;
 use quickwit_actors::ActorExitStatus;
-use quickwit_cli::tool::{local_ingest_docs_cli, LocalIngestDocsArgs};
+use quickwit_cli::tool::{LocalIngestDocsArgs, local_ingest_docs_cli};
 use quickwit_common::new_coolid;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::test_utils::wait_until_predicate;
 use quickwit_common::uri::Uri as QuickwitUri;
-use quickwit_config::service::QuickwitService;
 use quickwit_config::NodeConfig;
+use quickwit_config::service::QuickwitService;
 use quickwit_metastore::{MetastoreResolver, SplitState};
 use quickwit_proto::jaeger::storage::v1::span_reader_plugin_client::SpanReaderPluginClient;
 use quickwit_proto::opentelemetry::proto::collector::logs::v1::logs_service_client::LogsServiceClient;
@@ -36,13 +36,14 @@ use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_cl
 use quickwit_proto::types::NodeId;
 use quickwit_rest_client::models::IngestSource;
 use quickwit_rest_client::rest_client::{
-    CommitType, QuickwitClient, QuickwitClientBuilder, DEFAULT_BASE_URL,
+    CommitType, DEFAULT_BASE_URL, QuickwitClient, QuickwitClientBuilder,
 };
 use quickwit_serve::tcp_listener::for_tests::TestTcpListenerResolver;
 use quickwit_serve::{
-    serve_quickwit, ListSplitsQueryParams, RestIngestResponse, SearchRequestQueryString,
+    ListSplitsQueryParams, RestIngestResponse, SearchRequestQueryString, serve_quickwit,
 };
 use quickwit_storage::StorageResolver;
+use rand::Rng;
 use reqwest::Url;
 use serde_json::Value;
 use tempfile::TempDir;
@@ -164,7 +165,7 @@ impl ClusterSandboxBuilder {
     }
 }
 
-/// Intermediate state where the ports of all the the test cluster nodes have
+/// Intermediate state where the ports of all the test cluster nodes have
 /// been reserved and the configurations have been generated.
 pub struct ResolvedClusterConfig {
     temp_dir: TempDir,
@@ -175,6 +176,10 @@ pub struct ResolvedClusterConfig {
 impl ResolvedClusterConfig {
     /// Start a cluster using this config and waits for the nodes to be ready
     pub async fn start(self) -> ClusterSandbox {
+        rustls::crypto::ring::default_provider()
+            .install_default()
+            .expect("rustls crypto ring default provider installation should not fail");
+
         let mut node_shutdown_handles = Vec::new();
         let runtimes_config = RuntimesConfig::light_for_tests();
         let storage_resolver = StorageResolver::unconfigured();
@@ -266,7 +271,7 @@ impl ClusterSandbox {
         self.node_configs
             .iter()
             .find(|config| config.1.contains(&service))
-            .unwrap_or_else(|| panic!("No {:?} node", service))
+            .unwrap_or_else(|| panic!("No {service:?} node"))
             .0
             .clone()
     }
@@ -480,13 +485,20 @@ impl ClusterSandbox {
             .ok_or(anyhow::anyhow!("No indexer node found"))?;
         // NodeConfig cannot be serialized, we write our own simplified config
         let mut tmp_config_file = tempfile::Builder::new().suffix(".yaml").tempfile().unwrap();
+        // we suffix data_dir with a random slug to save us from multiple local ingestion trying to
+        // concurrently do something, and cleanup the directory to start a new ingestion.
+        let data_dir = test_conf
+            .0
+            .data_dir_path
+            .join(rand::thread_rng().r#gen::<u64>().to_string());
+        tokio::fs::create_dir(&data_dir).await?;
         let node_config = format!(
             r#"
                 version: 0.8
                 metastore_uri: {}
                 data_dir: {:?}
                 "#,
-            test_conf.0.metastore_uri, test_conf.0.data_dir_path
+            test_conf.0.metastore_uri, data_dir
         );
         tmp_config_file.write_all(node_config.as_bytes())?;
         tmp_config_file.flush()?;
@@ -535,8 +547,7 @@ impl ClusterSandbox {
         );
         assert_eq!(
             search_response.num_hits, expected_num_hits,
-            "unexpected num_hits for query {}",
-            query
+            "unexpected num_hits for query {query}"
         );
     }
 

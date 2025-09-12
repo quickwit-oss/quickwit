@@ -15,12 +15,12 @@
 use std::collections::HashMap;
 
 use quickwit_common::rate_limited_warn;
-use quickwit_config::{validate_identifier, validate_index_id_pattern, INGEST_V2_SOURCE_ID};
+use quickwit_config::{INGEST_V2_SOURCE_ID, validate_identifier, validate_index_id_pattern};
 use quickwit_ingest::{CommitType, IngestServiceError};
+use quickwit_proto::ingest::DocBatchV2;
 use quickwit_proto::ingest::router::{
     IngestRequestV2, IngestRouterService, IngestRouterServiceClient, IngestSubrequest,
 };
-use quickwit_proto::ingest::DocBatchV2;
 use quickwit_proto::opentelemetry::proto::common::v1::any_value::Value as OtlpValue;
 use quickwit_proto::opentelemetry::proto::common::v1::{
     AnyValue as OtlpAnyValue, ArrayValue as OtlpArrayValue, KeyValue as OtlpKeyValue,
@@ -36,8 +36,8 @@ mod trace_id;
 mod traces;
 
 pub use logs::{
-    parse_otlp_logs_json, parse_otlp_logs_protobuf, JsonLogIterator, OtlpGrpcLogsService,
-    OtlpLogsError, OTEL_LOGS_INDEX_ID,
+    JsonLogIterator, OTEL_LOGS_INDEX_ID, OtlpGrpcLogsService, OtlpLogsError, parse_otlp_logs_json,
+    parse_otlp_logs_protobuf,
 };
 pub use span_id::{SpanId, TryFromSpanIdError};
 #[cfg(any(test, feature = "testsuite"))]
@@ -45,9 +45,9 @@ pub use test_utils::make_resource_spans_for_test;
 use tonic::Status;
 pub use trace_id::{TraceId, TryFromTraceIdError};
 pub use traces::{
-    parse_otlp_spans_json, parse_otlp_spans_protobuf, Event, JsonSpanIterator, Link,
+    Event, JsonSpanIterator, Link, OTEL_TRACES_INDEX_ID, OTEL_TRACES_INDEX_ID_PATTERN,
     OtlpGrpcTracesService, OtlpTracesError, Span, SpanFingerprint, SpanKind, SpanStatus,
-    OTEL_TRACES_INDEX_ID, OTEL_TRACES_INDEX_ID_PATTERN,
+    parse_otlp_spans_json, parse_otlp_spans_protobuf,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -177,6 +177,7 @@ fn is_zero(count: &u32) -> bool {
     *count == 0
 }
 
+#[allow(clippy::result_large_err)]
 pub fn extract_otel_traces_index_id_patterns_from_metadata(
     metadata: &tonic::metadata::MetadataMap,
 ) -> Result<Vec<String>, Status> {
@@ -205,6 +206,7 @@ pub fn extract_otel_traces_index_id_patterns_from_metadata(
     Ok(index_id_patterns)
 }
 
+#[allow(clippy::result_large_err)]
 pub(crate) fn extract_otel_index_id_from_metadata(
     metadata: &tonic::metadata::MetadataMap,
     otel_signal: OtelSignal,
@@ -247,8 +249,7 @@ async fn ingest_doc_batch_v2(
     let num_responses = response.successes.len() + response.failures.len();
     if num_responses != 1 {
         return Err(IngestServiceError::Internal(format!(
-            "expected a single failure or success, got {}",
-            num_responses
+            "expected a single failure or success, got {num_responses}"
         )));
     }
     if response.successes.pop().is_some() {
@@ -266,7 +267,7 @@ mod tests {
     use quickwit_proto::opentelemetry::proto::common::v1::{
         ArrayValue as OtlpArrayValue, KeyValueList as OtlpKeyValueList,
     };
-    use serde_json::{json, Value as JsonValue};
+    use serde_json::{Value as JsonValue, json};
 
     use super::*;
     use crate::otlp::{extract_attributes, oltp_value_to_json_value, parse_log_record_body};

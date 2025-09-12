@@ -13,14 +13,14 @@
 // limitations under the License.
 
 use elasticsearch_dsl::search::ErrorCause;
-use hyper::StatusCode;
 use quickwit_common::{rate_limited_debug, rate_limited_error};
 use quickwit_index_management::IndexServiceError;
 use quickwit_ingest::IngestServiceError;
-use quickwit_proto::ingest::IngestV2Error;
 use quickwit_proto::ServiceError;
+use quickwit_proto::ingest::IngestV2Error;
 use quickwit_search::SearchError;
 use serde::{Deserialize, Serialize};
+use warp::hyper::StatusCode;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ElasticsearchError {

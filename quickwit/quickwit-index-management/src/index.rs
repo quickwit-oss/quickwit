@@ -21,7 +21,7 @@ use itertools::Itertools;
 use quickwit_common::fs::{empty_dir, get_cache_directory_path};
 use quickwit_common::pretty::PrettySample;
 use quickwit_common::rate_limited_error;
-use quickwit_config::{validate_identifier, IndexConfig, SourceConfig};
+use quickwit_config::{IndexConfig, SourceConfig, validate_identifier};
 use quickwit_indexing::check_source_connectivity;
 use quickwit_metastore::{
     AddSourceRequestExt, CreateIndexResponseExt, IndexMetadata, IndexMetadataResponseExt,
@@ -29,10 +29,10 @@ use quickwit_metastore::{
     MetastoreServiceStreamSplitsExt, SplitInfo, SplitMetadata, SplitState, UpdateSourceRequestExt,
 };
 use quickwit_proto::metastore::{
-    serde_utils, AddSourceRequest, CreateIndexRequest, DeleteIndexRequest, EntityKind,
-    IndexMetadataRequest, ListIndexesMetadataRequest, ListSplitsRequest,
-    MarkSplitsForDeletionRequest, MetastoreError, MetastoreService, MetastoreServiceClient,
-    ResetSourceCheckpointRequest, UpdateSourceRequest,
+    AddSourceRequest, CreateIndexRequest, DeleteIndexRequest, EntityKind, IndexMetadataRequest,
+    ListIndexesMetadataRequest, ListSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError,
+    MetastoreService, MetastoreServiceClient, ResetSourceCheckpointRequest, UpdateSourceRequest,
+    serde_utils,
 };
 use quickwit_proto::types::{IndexUid, SplitId};
 use quickwit_proto::{ServiceError, ServiceErrorCode};
@@ -41,8 +41,8 @@ use thiserror::Error;
 use tracing::{error, info};
 
 use crate::garbage_collection::{
-    delete_splits_from_storage_and_metastore, run_garbage_collect, DeleteSplitsError,
-    SplitRemovalInfo,
+    DeleteSplitsError, SplitRemovalInfo, delete_splits_from_storage_and_metastore,
+    run_garbage_collect,
 };
 
 #[derive(Error, Debug)]
@@ -251,7 +251,7 @@ impl IndexService {
             if index_id_pattern.contains('*') {
                 return Err(IndexServiceError::Metastore(
                     MetastoreError::InvalidArgument {
-                        message: format!("index_id pattern {} contains *", index_id_pattern),
+                        message: format!("index_id pattern {index_id_pattern} contains *"),
                     },
                 ));
             }
@@ -324,14 +324,8 @@ impl IndexService {
             Ok(concatenated_split_infos)
         } else {
             Err(IndexServiceError::Metastore(MetastoreError::Internal {
-                message: format!(
-                    "errors occurred when deleting indexes: {:?}",
-                    index_id_patterns
-                ),
-                cause: format!(
-                    "errors: {:?}\ndeleted indexes: {:?}",
-                    delete_errors, delete_responses
-                ),
+                message: format!("errors occurred when deleting indexes: {index_id_patterns:?}"),
+                cause: format!("errors: {delete_errors:?}\ndeleted indexes: {delete_responses:?}"),
             }))
         }
     }
@@ -559,9 +553,9 @@ pub async fn validate_storage_uri(
 mod tests {
 
     use quickwit_common::uri::Uri;
-    use quickwit_config::{IndexConfig, CLI_SOURCE_ID, INGEST_API_SOURCE_ID, INGEST_V2_SOURCE_ID};
+    use quickwit_config::{CLI_SOURCE_ID, INGEST_API_SOURCE_ID, INGEST_V2_SOURCE_ID, IndexConfig};
     use quickwit_metastore::{
-        metastore_for_test, MetastoreServiceExt, SplitMetadata, StageSplitsRequestExt,
+        MetastoreServiceExt, SplitMetadata, StageSplitsRequestExt, metastore_for_test,
     };
     use quickwit_proto::metastore::StageSplitsRequest;
     use quickwit_storage::PutPayload;
@@ -588,17 +582,19 @@ mod tests {
         assert!(index_metadata_0.sources.contains_key(INGEST_API_SOURCE_ID));
         assert!(index_metadata_0.sources.contains_key(INGEST_V2_SOURCE_ID));
 
-        assert!(metastore
-            .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
-            .await
-            .is_ok());
+        assert!(
+            metastore
+                .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
+                .await
+                .is_ok()
+        );
 
         let error = index_service
             .create_index(index_config.clone(), false)
             .await
             .unwrap_err();
         let IndexServiceError::Metastore(inner_error) = error else {
-            panic!("expected `MetastoreError` variant, got {:?}", error)
+            panic!("expected `MetastoreError` variant, got {error:?}")
         };
         assert!(
             matches!(inner_error, MetastoreError::AlreadyExists(EntityKind::Index { index_id }) if index_id == index_metadata_0.index_id())
@@ -653,7 +649,7 @@ mod tests {
             .unwrap();
         assert_eq!(splits.len(), 1);
 
-        let split_path_str = format!("{}.split", split_id);
+        let split_path_str = format!("{split_id}.split");
         let split_path = Path::new(&split_path_str);
         let payload: Box<dyn PutPayload> = Box::new(vec![0]);
         storage.put(split_path, payload).await.unwrap();

@@ -23,8 +23,8 @@ use mrecordlog::error::{AppendError, DeleteQueueError};
 use quickwit_proto::ingest::DocBatchV2;
 use quickwit_proto::types::{Position, QueueId};
 
-use crate::mrecordlog_async::MultiRecordLogAsync;
 use crate::MRecord;
+use crate::mrecordlog_async::MultiRecordLogAsync;
 
 #[derive(Debug, thiserror::Error)]
 pub(super) enum AppendDocBatchError {

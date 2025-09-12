@@ -29,16 +29,16 @@ pub use index_metadata::IndexMetadata;
 use itertools::Itertools;
 use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_config::{
-    DocMapping, FileSourceParams, IndexConfig, IndexingSettings, RetentionPolicy, SearchSettings,
-    SourceConfig, SourceParams,
+    DocMapping, FileSourceParams, IndexConfig, IndexingSettings, IngestSettings, RetentionPolicy,
+    SearchSettings, SourceConfig, SourceParams,
 };
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore::{
-    serde_utils, AddSourceRequest, CreateIndexRequest, CreateIndexResponse, DeleteTask,
-    IndexMetadataFailure, IndexMetadataRequest, IndexMetadataResponse, IndexesMetadataResponse,
+    AddSourceRequest, CreateIndexRequest, CreateIndexResponse, DeleteTask, IndexMetadataFailure,
+    IndexMetadataRequest, IndexMetadataResponse, IndexesMetadataResponse,
     ListIndexesMetadataResponse, ListSplitsRequest, ListSplitsResponse, MetastoreError,
     MetastoreResult, MetastoreService, MetastoreServiceClient, MetastoreServiceStream,
-    PublishSplitsRequest, StageSplitsRequest, UpdateIndexRequest, UpdateSourceRequest,
+    PublishSplitsRequest, StageSplitsRequest, UpdateIndexRequest, UpdateSourceRequest, serde_utils,
 };
 use quickwit_proto::types::{IndexUid, NodeId, SplitId};
 use time::OffsetDateTime;
@@ -185,11 +185,24 @@ pub trait UpdateIndexRequestExt {
     /// Creates a new [`UpdateIndexRequest`] from the different updated fields.
     fn try_from_updates(
         index_uid: impl Into<IndexUid>,
+        doc_mapping: &DocMapping,
+        indexing_settings: &IndexingSettings,
+        ingest_settings: &IngestSettings,
         search_settings: &SearchSettings,
         retention_policy_opt: &Option<RetentionPolicy>,
-        indexing_settings: &IndexingSettings,
-        doc_mapping: &DocMapping,
     ) -> MetastoreResult<UpdateIndexRequest>;
+
+    /// Deserializes the `doc_mapping_json` field of an `[UpdateIndexRequest]` into a
+    /// [`DocMapping`] object.
+    fn deserialize_doc_mapping(&self) -> MetastoreResult<DocMapping>;
+
+    /// Deserializes the `indexing_settings_json` field of an [`UpdateIndexRequest`] into a
+    /// [`IndexingSettings`] object.
+    fn deserialize_indexing_settings(&self) -> MetastoreResult<IndexingSettings>;
+
+    /// Deserializes the `ingest_settings_json` field of an [`UpdateIndexRequest`] into a
+    /// [`IngestSettings`] object.
+    fn deserialize_ingest_settings(&self) -> MetastoreResult<IngestSettings>;
 
     /// Deserializes the `search_settings_json` field of an [`UpdateIndexRequest`] into a
     /// [`SearchSettings`] object.
@@ -198,40 +211,46 @@ pub trait UpdateIndexRequestExt {
     /// Deserializes the `retention_policy_json` field of an [`UpdateIndexRequest`] into a
     /// [`RetentionPolicy`] object.
     fn deserialize_retention_policy(&self) -> MetastoreResult<Option<RetentionPolicy>>;
-
-    /// Deserializes the `indexing_settings_json` field of an [`UpdateIndexRequest`] into a
-    /// [`IndexingSettings`] object.
-    fn deserialize_indexing_settings(&self) -> MetastoreResult<IndexingSettings>;
-
-    /// Deserilalize the `doc_mapping_json` field of an `[UpdateIndexRequest]` into a
-    /// [`DocMapping`] object.
-    fn deserialize_doc_mapping(&self) -> MetastoreResult<DocMapping>;
 }
 
 impl UpdateIndexRequestExt for UpdateIndexRequest {
     fn try_from_updates(
         index_uid: impl Into<IndexUid>,
+        doc_mapping: &DocMapping,
+        indexing_settings: &IndexingSettings,
+        ingest_settings: &IngestSettings,
         search_settings: &SearchSettings,
         retention_policy_opt: &Option<RetentionPolicy>,
-        indexing_settings: &IndexingSettings,
-        doc_mapping: &DocMapping,
     ) -> MetastoreResult<UpdateIndexRequest> {
+        let doc_mapping_json = serde_utils::to_json_str(doc_mapping)?;
+        let indexing_settings_json = serde_utils::to_json_str(indexing_settings)?;
+        let ingest_settings_json = serde_utils::to_json_str(ingest_settings)?;
         let search_settings_json = serde_utils::to_json_str(search_settings)?;
-        let retention_policy_json = retention_policy_opt
+        let retention_policy_json_opt = retention_policy_opt
             .as_ref()
             .map(serde_utils::to_json_str)
             .transpose()?;
-        let indexing_settings_json = serde_utils::to_json_str(indexing_settings)?;
-        let doc_mapping_json = serde_utils::to_json_str(doc_mapping)?;
 
         let update_request = UpdateIndexRequest {
             index_uid: Some(index_uid.into()),
-            search_settings_json,
-            retention_policy_json,
-            indexing_settings_json,
             doc_mapping_json,
+            indexing_settings_json,
+            ingest_settings_json,
+            search_settings_json,
+            retention_policy_json_opt,
         };
         Ok(update_request)
+    }
+    fn deserialize_doc_mapping(&self) -> MetastoreResult<DocMapping> {
+        serde_utils::from_json_str(&self.doc_mapping_json)
+    }
+
+    fn deserialize_indexing_settings(&self) -> MetastoreResult<IndexingSettings> {
+        serde_utils::from_json_str(&self.indexing_settings_json)
+    }
+
+    fn deserialize_ingest_settings(&self) -> MetastoreResult<IngestSettings> {
+        serde_utils::from_json_str(&self.ingest_settings_json)
     }
 
     fn deserialize_search_settings(&self) -> MetastoreResult<SearchSettings> {
@@ -239,18 +258,10 @@ impl UpdateIndexRequestExt for UpdateIndexRequest {
     }
 
     fn deserialize_retention_policy(&self) -> MetastoreResult<Option<RetentionPolicy>> {
-        self.retention_policy_json
+        self.retention_policy_json_opt
             .as_ref()
-            .map(|policy| serde_utils::from_json_str(policy))
+            .map(|policy_json| serde_utils::from_json_str(policy_json))
             .transpose()
-    }
-
-    fn deserialize_indexing_settings(&self) -> MetastoreResult<IndexingSettings> {
-        serde_utils::from_json_str(&self.indexing_settings_json)
-    }
-
-    fn deserialize_doc_mapping(&self) -> MetastoreResult<DocMapping> {
-        serde_utils::from_json_str(&self.doc_mapping_json)
     }
 }
 
@@ -269,10 +280,10 @@ pub trait IndexMetadataResponseExt {
 impl IndexMetadataResponseExt for IndexMetadataResponse {
     fn try_from_index_metadata(index_metadata: &IndexMetadata) -> MetastoreResult<Self> {
         let index_metadata_serialized_json = serde_utils::to_json_str(index_metadata)?;
-        let request = Self {
+        let response = Self {
             index_metadata_serialized_json,
         };
-        Ok(request)
+        Ok(response)
     }
 
     fn deserialize_index_metadata(&self) -> MetastoreResult<IndexMetadata> {
@@ -585,10 +596,10 @@ impl ListSplitsResponseExt for ListSplitsResponse {
 
     fn try_from_splits(splits: impl IntoIterator<Item = Split>) -> MetastoreResult<Self> {
         let splits_serialized_json = serde_utils::to_json_str(&splits.into_iter().collect_vec())?;
-        let request = Self {
+        let response = Self {
             splits_serialized_json,
         };
-        Ok(request)
+        Ok(response)
     }
 
     async fn deserialize_splits(self) -> MetastoreResult<Vec<Split>> {
@@ -643,6 +654,9 @@ pub struct ListSplitsQuery {
 
     /// The time range to filter by.
     pub time_range: FilterRange<i64>,
+
+    /// The maximum time range end to filter by.
+    pub max_time_range_end: Option<i64>,
 
     /// The delete opstamp range to filter by.
     pub delete_opstamp: FilterRange<u64>,
@@ -710,6 +724,7 @@ impl ListSplitsQuery {
             split_states: Vec::new(),
             tags: None,
             time_range: Default::default(),
+            max_time_range_end: None,
             delete_opstamp: Default::default(),
             update_timestamp: Default::default(),
             create_timestamp: Default::default(),
@@ -733,6 +748,7 @@ impl ListSplitsQuery {
             split_states: Vec::new(),
             tags: None,
             time_range: Default::default(),
+            max_time_range_end: None,
             delete_opstamp: Default::default(),
             update_timestamp: Default::default(),
             create_timestamp: Default::default(),
@@ -752,6 +768,7 @@ impl ListSplitsQuery {
             split_states: Vec::new(),
             tags: None,
             time_range: Default::default(),
+            max_time_range_end: None,
             delete_opstamp: Default::default(),
             update_timestamp: Default::default(),
             create_timestamp: Default::default(),
@@ -822,6 +839,13 @@ impl ListSplitsQuery {
     /// *greater than* the provided value.
     pub fn with_time_range_start_gt(mut self, v: i64) -> Self {
         self.time_range.start = Bound::Excluded(v);
+        self
+    }
+
+    /// Retains only splits with a time range end that is
+    /// *less than or equal to* the provided value.
+    pub fn with_max_time_range_end(mut self, v: i64) -> Self {
+        self.max_time_range_end = Some(v);
         self
     }
 

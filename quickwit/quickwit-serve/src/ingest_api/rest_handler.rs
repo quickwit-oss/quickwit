@@ -13,15 +13,15 @@
 // limitations under the License.
 
 use bytes::{Buf, Bytes};
-use quickwit_config::{IngestApiConfig, INGEST_V2_SOURCE_ID};
+use quickwit_config::{INGEST_V2_SOURCE_ID, IngestApiConfig, validate_identifier};
 use quickwit_ingest::{
     CommitType, DocBatchBuilder, DocBatchV2Builder, FetchResponse, IngestRequest, IngestService,
     IngestServiceClient, IngestServiceError, TailRequest,
 };
+use quickwit_proto::ingest::CommitTypeV2;
 use quickwit_proto::ingest::router::{
     IngestRequestV2, IngestRouterService, IngestRouterServiceClient, IngestSubrequest,
 };
-use quickwit_proto::ingest::CommitTypeV2;
 use quickwit_proto::types::{DocUidGenerator, IndexId};
 use serde::Deserialize;
 use warp::{Filter, Rejection};
@@ -30,7 +30,7 @@ use super::RestIngestResponse;
 use crate::decompression::get_body_bytes;
 use crate::format::extract_format_from_qs;
 use crate::rest_api_response::into_rest_api_response;
-use crate::{with_arg, Body, BodyFormat};
+use crate::{Body, BodyFormat, with_arg};
 
 #[derive(utoipa::OpenApi)]
 #[openapi(paths(ingest, tail_endpoint,))]
@@ -98,9 +98,7 @@ fn ingest_filter(
             config.content_length_limit.as_u64(),
         ))
         .and(get_body_bytes())
-        .and(serde_qs::warp::query::<IngestOptions>(
-            serde_qs::Config::default(),
-        ))
+        .and(warp::query::<IngestOptions>())
 }
 
 fn ingest_handler(
@@ -215,6 +213,14 @@ async fn ingest_v2(
         None
     };
 
+    // Validate index ID early because propagating back the right error (400)
+    // from deeper ingest layers is harder
+    if validate_identifier("", &index_id).is_err() {
+        return Err(IngestServiceError::BadRequest(
+            "invalid index ID".to_string(),
+        ));
+    }
+
     let subrequest = IngestSubrequest {
         subrequest_id: 0,
         index_id,
@@ -287,12 +293,12 @@ pub(crate) mod tests {
     use quickwit_actors::{Mailbox, Universe};
     use quickwit_config::IngestApiConfig;
     use quickwit_ingest::{
-        init_ingest_api, CreateQueueIfNotExistsRequest, FetchRequest, FetchResponse,
-        IngestApiService, IngestServiceClient, SuggestTruncateRequest, QUEUES_DIR_NAME,
+        CreateQueueIfNotExistsRequest, FetchRequest, FetchResponse, IngestApiService,
+        IngestServiceClient, QUEUES_DIR_NAME, SuggestTruncateRequest, init_ingest_api,
     };
     use quickwit_proto::ingest::router::IngestRouterServiceClient;
 
-    use super::{ingest_api_handlers, RestIngestResponse};
+    use super::{RestIngestResponse, ingest_api_handlers};
     use crate::ingest_api::lines;
 
     #[test]

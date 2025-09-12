@@ -19,8 +19,8 @@ use anyhow::bail;
 use async_trait::async_trait;
 use quickwit_actors::{ActorContext, ActorExitStatus, Mailbox};
 use quickwit_ingest::{
-    get_ingest_api_service, CreateQueueIfNotExistsRequest, DocCommand, FetchRequest, FetchResponse,
-    GetPartitionId, IngestApiService, SuggestTruncateRequest,
+    CreateQueueIfNotExistsRequest, DocCommand, FetchRequest, FetchResponse, GetPartitionId,
+    IngestApiService, SuggestTruncateRequest, get_ingest_api_service,
 };
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
 use quickwit_proto::metastore::SourceType;
@@ -254,16 +254,16 @@ mod tests {
     use quickwit_actors::Universe;
     use quickwit_common::rand::append_random_suffix;
     use quickwit_config::{
-        IngestApiConfig, SourceConfig, SourceInputFormat, SourceParams, INGEST_API_SOURCE_ID,
+        INGEST_API_SOURCE_ID, IngestApiConfig, SourceConfig, SourceInputFormat, SourceParams,
     };
-    use quickwit_ingest::{init_ingest_api, CommitType, DocBatchBuilder, IngestRequest};
+    use quickwit_ingest::{CommitType, DocBatchBuilder, IngestRequest, init_ingest_api};
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
     use quickwit_proto::types::{IndexId, IndexUid};
 
     use super::*;
     use crate::models::RawDocBatch;
-    use crate::source::tests::SourceRuntimeBuilder;
     use crate::source::SourceActor;
+    use crate::source::tests::SourceRuntimeBuilder;
 
     fn make_ingest_request(
         index_id: IndexId,
@@ -293,7 +293,7 @@ mod tests {
     fn make_source_config() -> SourceConfig {
         SourceConfig {
             source_id: INGEST_API_SOURCE_ID.to_string(),
-            num_pipelines: NonZeroUsize::new(1).unwrap(),
+            num_pipelines: NonZeroUsize::MIN,
             enabled: true,
             source_params: SourceParams::IngestApi,
             transform_config: None,

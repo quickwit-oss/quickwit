@@ -16,7 +16,7 @@ use async_trait::async_trait;
 use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, ActorState, Handler, Healthz,
 };
-use serde_json::{json, Value as JsonValue};
+use serde_json::{Value as JsonValue, json};
 
 use crate::actors::{DeleteTaskService, GarbageCollector, RetentionPolicyExecutor};
 
@@ -40,11 +40,13 @@ impl JanitorService {
     }
 
     fn is_healthy(&self) -> bool {
-        self.delete_task_service_handle
-            .as_ref()
-            .map_or(true, |delete_task_service_handle| {
+        let delete_task_is_not_failure: bool =
+            if let Some(delete_task_service_handle) = &self.delete_task_service_handle {
                 delete_task_service_handle.state() != ActorState::Failure
-            })
+            } else {
+                true
+            };
+        delete_task_is_not_failure
             && self.garbage_collector_handle.state() != ActorState::Failure
             && self.retention_policy_executor_handle.state() != ActorState::Failure
     }

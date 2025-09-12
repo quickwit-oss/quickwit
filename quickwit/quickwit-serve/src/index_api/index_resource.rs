@@ -17,7 +17,7 @@ use std::sync::Arc;
 use bytes::Bytes;
 use quickwit_common::uri::Uri;
 use quickwit_config::{
-    load_index_config_update, validate_index_id_pattern, ConfigFormat, NodeConfig,
+    ConfigFormat, NodeConfig, load_index_config_update, validate_index_id_pattern,
 };
 use quickwit_index_management::{IndexService, IndexServiceError};
 use quickwit_metastore::{
@@ -81,7 +81,7 @@ pub fn list_indexes_metadata_handler(
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path!("indexes")
         .and(warp::get())
-        .and(serde_qs::warp::query(serde_qs::Config::default()))
+        .and(warp::query())
         .and(with_arg(metastore))
         .then(list_indexes_metadata)
         .and(extract_format_from_qs())
@@ -238,7 +238,7 @@ pub fn create_index_handler(
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path!("indexes")
         .and(warp::post())
-        .and(serde_qs::warp::query(serde_qs::Config::default()))
+        .and(warp::query())
         .and(extract_config_format())
         .and(warp::body::content_length_limit(1024 * 1024))
         .and(warp::filters::body::bytes())
@@ -284,15 +284,31 @@ pub async fn create_index(
         .await
 }
 
+/// Query parameters for update index queries
+#[derive(Deserialize, Debug, Eq, PartialEq, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct UpdateQueryParams {
+    /// Create the index if it doesn't exist yet
+    #[serde(default)]
+    pub create: bool,
+}
+
+fn update_index_qp() -> impl Filter<Extract = (UpdateQueryParams,), Error = Rejection> + Clone {
+    warp::query::<UpdateQueryParams>()
+}
+
 pub fn update_index_handler(
-    metastore: MetastoreServiceClient,
+    index_service: IndexService,
+    node_config: Arc<NodeConfig>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path!("indexes" / String)
         .and(warp::put())
         .and(extract_config_format())
+        .and(update_index_qp())
         .and(warp::body::content_length_limit(1024 * 1024))
         .and(warp::filters::body::bytes())
-        .and(with_arg(metastore))
+        .and(with_arg(index_service))
+        .and(with_arg(node_config))
         .then(update_index)
         .map(log_failure("failed to update index"))
         .and(extract_format_from_qs())
@@ -310,6 +326,7 @@ pub fn update_index_handler(
     ),
     params(
         ("index_id" = String, Path, description = "The index ID to update."),
+        UpdateQueryParams,
     )
 )]
 /// Updates an existing index.
@@ -323,29 +340,65 @@ pub fn update_index_handler(
 pub async fn update_index(
     target_index_id: IndexId,
     config_format: ConfigFormat,
+    query_params: UpdateQueryParams,
     index_config_bytes: Bytes,
-    metastore: MetastoreServiceClient,
+    mut index_service: IndexService,
+    node_config: Arc<NodeConfig>,
 ) -> Result<IndexMetadata, IndexServiceError> {
     info!(index_id = %target_index_id, "update-index");
 
+    let metastore = index_service.metastore();
     let index_metadata_request = IndexMetadataRequest::for_index_id(target_index_id.to_string());
-    let current_index_metadata = metastore
-        .index_metadata(index_metadata_request)
-        .await?
-        .deserialize_index_metadata()?;
+    let current_index_metadata_res = metastore.index_metadata(index_metadata_request).await;
+
+    let current_index_metadata_ser = match current_index_metadata_res {
+        Ok(index_metadata) => index_metadata,
+        Err(MetastoreError::NotFound(_)) if query_params.create => {
+            let index_config = quickwit_config::load_index_config_from_user_config(
+                config_format,
+                &index_config_bytes,
+                &node_config.default_index_root_uri,
+            )
+            .map_err(IndexServiceError::InvalidConfig)?;
+            if index_config.index_id != target_index_id {
+                return Err(IndexServiceError::InvalidConfig(anyhow::anyhow!(
+                    "`index_id` in config file does not match index_id from query path"
+                )));
+            }
+            info!(index_id = %index_config.index_id, "create-index-on-update");
+            match index_service.create_index(index_config, false).await {
+                Err(IndexServiceError::Metastore(MetastoreError::AlreadyExists(_))) => {
+                    // If the index was created just after we tried to update it, try to update as
+                    // if nothing happened. But if it gets deleted again before we update it, just
+                    // error out
+                    let index_metadata_request =
+                        IndexMetadataRequest::for_index_id(target_index_id.to_string());
+                    metastore.index_metadata(index_metadata_request).await?
+                }
+                other => return other,
+            }
+        }
+        Err(e) => return Err(e.into()),
+    };
+    let current_index_metadata = current_index_metadata_ser.deserialize_index_metadata()?;
     let index_uid = current_index_metadata.index_uid.clone();
     let current_index_config = current_index_metadata.into_index_config();
 
-    let new_index_config =
-        load_index_config_update(config_format, &index_config_bytes, &current_index_config)
-            .map_err(IndexServiceError::InvalidConfig)?;
+    let new_index_config = load_index_config_update(
+        config_format,
+        &index_config_bytes,
+        &node_config.default_index_root_uri,
+        &current_index_config,
+    )
+    .map_err(IndexServiceError::InvalidConfig)?;
 
     let update_request = UpdateIndexRequest::try_from_updates(
         index_uid,
+        &new_index_config.doc_mapping,
+        &new_index_config.indexing_settings,
+        &new_index_config.ingest_settings,
         &new_index_config.search_settings,
         &new_index_config.retention_policy_opt,
-        &new_index_config.indexing_settings,
-        &new_index_config.doc_mapping,
     )?;
     let update_resp = metastore.update_index(update_request).await?;
     Ok(update_resp.deserialize_index_metadata()?)
@@ -396,7 +449,7 @@ pub fn delete_index_handler(
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path!("indexes" / String)
         .and(warp::delete())
-        .and(serde_qs::warp::query(serde_qs::Config::default()))
+        .and(warp::query())
         .and(with_arg(index_service))
         .then(delete_index)
         .and(extract_format_from_qs())

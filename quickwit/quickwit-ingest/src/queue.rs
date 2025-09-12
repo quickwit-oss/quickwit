@@ -134,7 +134,7 @@ impl Queues {
     // Append a batch of records to a target queue.
     //
     // This operation is atomic: the batch of records is either entirely added or not.
-    pub async fn append_batch<'a>(
+    pub async fn append_batch(
         &mut self,
         queue_id: &str,
         records_it: impl Iterator<Item = impl Buf> + Send + 'static,
@@ -229,8 +229,8 @@ mod tests {
     use tokio::sync::watch;
 
     use super::Queues;
-    use crate::error::IngestServiceError;
     use crate::IngestApiService;
+    use crate::error::IngestServiceError;
 
     const TEST_QUEUE_ID: &str = "my-queue";
     const TEST_QUEUE_ID2: &str = "my-queue2";

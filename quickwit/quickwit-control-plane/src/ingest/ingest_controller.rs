@@ -16,15 +16,16 @@ use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
 use std::future::Future;
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
 
 use fnv::FnvHashSet;
-use futures::stream::FuturesUnordered;
 use futures::StreamExt;
+use futures::stream::FuturesUnordered;
 use quickwit_actors::Mailbox;
-use quickwit_common::pretty::PrettySample;
 use quickwit_common::Progress;
+use quickwit_common::pretty::PrettySample;
 use quickwit_ingest::{IngesterPool, LeaderId, LocalShardsUpdate};
 use quickwit_proto::control_plane::{
     AdviseResetShardsRequest, AdviseResetShardsResponse, GetOrCreateOpenShardsFailureReason,
@@ -40,17 +41,17 @@ use quickwit_proto::ingest::{
     Shard, ShardIdPosition, ShardIdPositions, ShardIds, ShardPKey, ShardState,
 };
 use quickwit_proto::metastore::{
-    serde_utils, MetastoreResult, MetastoreService, MetastoreServiceClient, OpenShardSubrequest,
-    OpenShardsRequest, OpenShardsResponse,
+    MetastoreResult, MetastoreService, MetastoreServiceClient, OpenShardSubrequest,
+    OpenShardsRequest, OpenShardsResponse, serde_utils,
 };
 use quickwit_proto::types::{IndexUid, NodeId, NodeIdRef, Position, ShardId, SourceUid};
 use rand::rngs::ThreadRng;
 use rand::seq::SliceRandom;
-use rand::{thread_rng, Rng, RngCore};
+use rand::{Rng, RngCore, thread_rng};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, OwnedMutexGuard};
 use tokio::task::JoinHandle;
-use tracing::{debug, enabled, error, info, warn, Level};
+use tracing::{Level, debug, enabled, error, info, warn};
 use ulid::Ulid;
 
 use super::scaling_arbiter::ScalingArbiter;
@@ -393,18 +394,24 @@ impl IngestController {
             &local_shards_update.source_uid,
             &local_shards_update.shard_infos,
         );
-        let Some(scaling_mode) = self.scaling_arbiter.should_scale(shard_stats) else {
+        let min_shards = model
+            .index_metadata(&local_shards_update.source_uid.index_uid)
+            .expect("index should exist")
+            .index_config
+            .ingest_settings
+            .min_shards;
+
+        let Some(scaling_mode) = self.scaling_arbiter.should_scale(shard_stats, min_shards) else {
             return Ok(());
         };
-
         match scaling_mode {
-            ScalingMode::Up(shards) => {
+            ScalingMode::Up(num_shards) => {
                 self.try_scale_up_shards(
                     local_shards_update.source_uid,
                     shard_stats,
                     model,
                     progress,
-                    shards,
+                    num_shards,
                 )
                 .await?;
             }
@@ -412,6 +419,7 @@ impl IngestController {
                 self.try_scale_down_shards(
                     local_shards_update.source_uid,
                     shard_stats,
+                    min_shards,
                     model,
                     progress,
                 )
@@ -443,7 +451,7 @@ impl IngestController {
         let mut get_or_create_open_shards_successes = Vec::with_capacity(num_subrequests);
         let mut get_or_create_open_shards_failures = Vec::new();
 
-        let mut num_missing_shards_per_source_uids = HashMap::new();
+        let mut per_source_num_shards_to_open = HashMap::new();
 
         let unavailable_leaders: FnvHashSet<NodeId> = get_open_shards_request
             .unavailable_leaders
@@ -464,19 +472,24 @@ impl IngestController {
                     .index_uid(&get_open_shards_subrequest.index_id)
                     .expect("index should exist")
                     .clone();
+                let min_shards = model
+                    .index_metadata(&index_uid)
+                    .expect("index should exist")
+                    .index_config
+                    .ingest_settings
+                    .min_shards
+                    .get();
                 let source_uid = SourceUid {
                     index_uid,
                     source_id: get_open_shards_subrequest.source_id.clone(),
                 };
-                *num_missing_shards_per_source_uids
-                    .entry(source_uid)
-                    .or_default() += 1;
+                per_source_num_shards_to_open.insert(source_uid, min_shards);
             }
         }
 
         if let Err(metastore_error) = self
             .try_open_shards(
-                num_missing_shards_per_source_uids,
+                per_source_num_shards_to_open,
                 model,
                 &unavailable_leaders,
                 progress,
@@ -743,26 +756,26 @@ impl IngestController {
     /// The number of successfully open shards is returned.
     async fn try_open_shards(
         &mut self,
-        shards_per_source: HashMap<SourceUid, usize>,
+        per_source_num_shards_to_open: HashMap<SourceUid, usize>,
         model: &mut ControlPlaneModel,
         unavailable_leaders: &FnvHashSet<NodeId>,
         progress: &Progress,
     ) -> MetastoreResult<HashMap<SourceUid, usize>> {
-        let num_shards: usize = shards_per_source.values().sum();
+        let total_num_shards_to_open: usize = per_source_num_shards_to_open.values().sum();
 
-        if num_shards == 0 {
+        if total_num_shards_to_open == 0 {
             return Ok(HashMap::new());
         }
         // TODO unavailable leaders
         let Some(leader_follower_pairs) =
-            self.allocate_shards(num_shards, unavailable_leaders, model)
+            self.allocate_shards(total_num_shards_to_open, unavailable_leaders, model)
         else {
             return Ok(HashMap::new());
         };
 
-        let source_uids_with_multiplicity = shards_per_source
+        let source_uids_with_multiplicity = per_source_num_shards_to_open
             .iter()
-            .flat_map(|(source_uid, count)| std::iter::repeat(source_uid).take(*count));
+            .flat_map(|(source_uid, count)| std::iter::repeat_n(source_uid, *count));
 
         let mut init_shard_subrequests: Vec<InitShardSubrequest> = Vec::new();
 
@@ -854,13 +867,15 @@ impl IngestController {
         &self,
         source_uid: SourceUid,
         shard_stats: ShardStats,
+        min_shards: NonZeroUsize,
         model: &mut ControlPlaneModel,
         progress: &Progress,
     ) -> MetastoreResult<()> {
-        if shard_stats.num_open_shards == 0 {
+        // The scaling arbiter should not suggest scaling down if the number of shards is already
+        // below the minimum, but we're just being defensive here.
+        if shard_stats.num_open_shards <= min_shards.get() {
             return Ok(());
         }
-
         if !model
             .acquire_scaling_permits(&source_uid, ScalingMode::Down)
             .unwrap_or(false)
@@ -1234,15 +1249,15 @@ mod tests {
 
     use std::collections::BTreeSet;
     use std::str::FromStr;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     use itertools::Itertools;
     use quickwit_actors::Universe;
     use quickwit_common::setup_logging_for_tests;
     use quickwit_common::shared_consts::DEFAULT_SHARD_THROUGHPUT_LIMIT;
     use quickwit_common::tower::DelayLayer;
-    use quickwit_config::{DocMapping, SourceConfig, INGEST_V2_SOURCE_ID};
+    use quickwit_config::{DocMapping, INGEST_V2_SOURCE_ID, SourceConfig};
     use quickwit_ingest::{RateMibPerSec, ShardInfo};
     use quickwit_metastore::IndexMetadata;
     use quickwit_proto::control_plane::GetOrCreateOpenShardsSubrequest;
@@ -2625,12 +2640,19 @@ mod tests {
             num_open_shards: 2,
             ..Default::default()
         };
+        let min_shards = NonZeroUsize::MIN;
         let mut model = ControlPlaneModel::default();
         let progress = Progress::default();
 
         // Test could not find a scale down candidate.
         controller
-            .try_scale_down_shards(source_uid.clone(), shard_stats, &mut model, &progress)
+            .try_scale_down_shards(
+                source_uid.clone(),
+                shard_stats,
+                min_shards,
+                &mut model,
+                &progress,
+            )
             .await
             .unwrap();
 
@@ -2646,7 +2668,13 @@ mod tests {
 
         // Test ingester is unavailable.
         controller
-            .try_scale_down_shards(source_uid.clone(), shard_stats, &mut model, &progress)
+            .try_scale_down_shards(
+                source_uid.clone(),
+                shard_stats,
+                min_shards,
+                &mut model,
+                &progress,
+            )
             .await
             .unwrap();
 
@@ -2686,14 +2714,26 @@ mod tests {
 
         // Test failed to close shard.
         controller
-            .try_scale_down_shards(source_uid.clone(), shard_stats, &mut model, &progress)
+            .try_scale_down_shards(
+                source_uid.clone(),
+                shard_stats,
+                min_shards,
+                &mut model,
+                &progress,
+            )
             .await
             .unwrap();
         assert!(model.all_shards().all(|shard| shard.is_open()));
 
         // Test successfully closed shard.
         controller
-            .try_scale_down_shards(source_uid.clone(), shard_stats, &mut model, &progress)
+            .try_scale_down_shards(
+                source_uid.clone(),
+                shard_stats,
+                min_shards,
+                &mut model,
+                &progress,
+            )
             .await
             .unwrap();
         assert!(model.all_shards().all(|shard| shard.is_closed()));
@@ -2710,7 +2750,13 @@ mod tests {
 
         // Test rate limited.
         controller
-            .try_scale_down_shards(source_uid.clone(), shard_stats, &mut model, &progress)
+            .try_scale_down_shards(
+                source_uid.clone(),
+                shard_stats,
+                min_shards,
+                &mut model,
+                &progress,
+            )
             .await
             .unwrap();
         assert!(model.all_shards().any(|shard| shard.is_open()));
@@ -3370,7 +3416,7 @@ mod tests {
     fn test_allocate_shards_aux(shard_counts: &[usize]) {
         let mut shard_counts_map: HashMap<NodeId, usize> = HashMap::new();
         let shards: Vec<String> = (0..shard_counts.len())
-            .map(|i| format!("shard-{}", i))
+            .map(|i| format!("shard-{i}"))
             .collect();
         for (shard, &shard_count) in shards.into_iter().zip(shard_counts.iter()) {
             shard_counts_map.insert(NodeId::from(shard), shard_count);

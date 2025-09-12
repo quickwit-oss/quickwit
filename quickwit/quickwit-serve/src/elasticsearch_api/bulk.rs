@@ -16,22 +16,22 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use bytesize::ByteSize;
-use hyper::StatusCode;
 use quickwit_ingest::{
     CommitType, DocBatchBuilder, IngestRequest, IngestService, IngestServiceClient,
 };
 use quickwit_proto::ingest::router::IngestRouterServiceClient;
 use quickwit_proto::types::IndexId;
+use warp::http::StatusCode;
 use warp::{Filter, Rejection};
 
-use super::bulk_v2::{elastic_bulk_ingest_v2, ElasticBulkResponse};
+use super::bulk_v2::{ElasticBulkResponse, elastic_bulk_ingest_v2};
 use crate::elasticsearch_api::filter::{elastic_bulk_filter, elastic_index_bulk_filter};
 use crate::elasticsearch_api::make_elastic_api_response;
 use crate::elasticsearch_api::model::{BulkAction, ElasticBulkOptions, ElasticsearchError};
 use crate::format::extract_format_from_qs;
 use crate::ingest_api::lines;
 use crate::rest::recover_fn;
-use crate::{with_arg, Body};
+use crate::{Body, with_arg};
 
 /// POST `_elastic/_bulk`
 pub fn es_compat_bulk_handler(
@@ -173,7 +173,6 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use hyper::StatusCode;
     use quickwit_config::{IngestApiConfig, NodeConfig};
     use quickwit_index_management::IndexService;
     use quickwit_ingest::{FetchRequest, IngestServiceClient, SuggestTruncateRequest};
@@ -182,6 +181,7 @@ mod tests {
     use quickwit_proto::metastore::MetastoreServiceClient;
     use quickwit_search::MockSearchService;
     use quickwit_storage::StorageResolver;
+    use warp::hyper::StatusCode;
 
     use crate::elasticsearch_api::bulk_v2::ElasticBulkResponse;
     use crate::elasticsearch_api::elastic_api_handlers;

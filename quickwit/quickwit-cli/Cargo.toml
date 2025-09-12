@@ -22,6 +22,7 @@ path = "src/generate_markdown.rs"
 
 [dependencies]
 anyhow = { workspace = true }
+backtrace = { workspace = true, optional = true }
 bytesize = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
@@ -39,6 +40,7 @@ opentelemetry = { workspace = true }
 opentelemetry_sdk = { workspace = true }
 opentelemetry-otlp = { workspace = true }
 reqwest = { workspace = true }
+rustls = { workspace = true }
 serde_json = { workspace = true }
 tabled = { workspace = true }
 tempfile = { workspace = true }
@@ -81,6 +83,11 @@ quickwit-storage = { workspace = true, features = ["testsuite"] }
 
 [features]
 jemalloc = ["dep:tikv-jemalloc-ctl", "dep:tikv-jemallocator"]
+jemalloc-profiled = [
+  "dep:backtrace",
+  "quickwit-common/jemalloc-profiled",
+  "quickwit-serve/jemalloc-profiled"
+]
 ci-test = []
 pprof = ["quickwit-serve/pprof"]
 openssl-support = ["openssl-probe"]
@@ -126,6 +133,10 @@ release-macos-feature-vendored-set = [
   "quickwit-storage/gcs",
   "quickwit-metastore/postgres",
   "quickwit-doc-mapper/multilang",
+]
+release-jemalloc-profiled = [
+  "release-feature-set",
+  "jemalloc-profiled",
 ]
 
 [package.metadata.cargo-machete]

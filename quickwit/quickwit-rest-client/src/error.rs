@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use reqwest::StatusCode;
+use reqwest_middleware::Error as MiddlewareError;
 use serde::Deserialize;
 use thiserror::Error;
 
@@ -25,7 +26,7 @@ pub enum Error {
     #[error("API error: {0}")]
     Api(#[from] ApiError),
     // Error returned by reqwest lib.
-    #[error(transparent)]
+    #[error("client error: {0:?}")]
     Client(#[from] reqwest::Error),
     // IO Error returned by tokio lib.
     #[error("IO error: {0}")]
@@ -33,9 +34,9 @@ pub enum Error {
     // Internal error returned by quickwit client lib.
     #[error("internal Quickwit client error: {0}")]
     Internal(String),
-    // Json serialization/deserialization error.
-    #[error("Serde JSON error: {0}")]
-    Json(#[from] serde_json::error::Error),
+    // Error returned by reqwest middleware.
+    #[error("client middleware error: {0:?}")]
+    Middleware(anyhow::Error),
     // Error returned by url lib when parsing a string.
     #[error("URL parsing error: {0}")]
     UrlParse(String),
@@ -44,14 +45,26 @@ pub enum Error {
 impl Error {
     pub fn status_code(&self) -> Option<StatusCode> {
         match &self {
-            Error::Client(err) => err.status(),
-            Error::Api(err) => Some(err.code),
-            _ => None,
+            Self::Api(error) => Some(error.code),
+            Self::Client(error) => error.status(),
+            Self::Internal(_) => Some(StatusCode::INTERNAL_SERVER_ERROR),
+            Self::Io(_) => Some(StatusCode::INTERNAL_SERVER_ERROR),
+            Self::Middleware(_) => Some(StatusCode::INTERNAL_SERVER_ERROR),
+            Self::UrlParse(_) => Some(StatusCode::BAD_REQUEST),
         }
     }
 }
 
-#[derive(Error, Debug)]
+impl From<MiddlewareError> for Error {
+    fn from(error: MiddlewareError) -> Self {
+        match error {
+            MiddlewareError::Middleware(error) => Error::Middleware(error),
+            MiddlewareError::Reqwest(error) => Error::Client(error),
+        }
+    }
+}
+
+#[derive(Debug, Error)]
 pub struct ApiError {
     pub message: Option<String>,
     pub code: StatusCode,

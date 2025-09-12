@@ -16,8 +16,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use assert_json_diff::{assert_json_eq, assert_json_include};
 use quickwit_config::SearcherConfig;
-use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_doc_mapper::DocMapper;
+use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_indexing::TestSandbox;
 use quickwit_opentelemetry::otlp::TraceId;
 use quickwit_proto::search::{
@@ -25,14 +25,14 @@ use quickwit_proto::search::{
     SortValue,
 };
 use quickwit_query::query_ast::{
-    qast_helper, qast_json_helper, query_ast_from_user_text, QueryAst,
+    QueryAst, qast_helper, qast_json_helper, query_ast_from_user_text,
 };
-use serde_json::{json, Value as JsonValue};
+use serde_json::{Value as JsonValue, json};
+use tantivy::Term;
 use tantivy::schema::OwnedValue as TantivyValue;
 use tantivy::time::OffsetDateTime;
-use tantivy::Term;
 
-use self::leaf::leaf_search;
+use self::leaf::single_doc_mapping_leaf_search;
 use super::*;
 use crate::find_trace_ids_collector::Span;
 use crate::list_terms::leaf_list_terms;
@@ -446,8 +446,8 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn test_single_node_without_timestamp_with_query_start_timestamp_enabled(
-) -> anyhow::Result<()> {
+async fn test_single_node_without_timestamp_with_query_start_timestamp_enabled()
+-> anyhow::Result<()> {
     let index_id = "single-node-no-timestamp";
     let doc_mapping_yaml = r#"
             tag_fields:
@@ -586,12 +586,14 @@ async fn single_node_search_sort_by_field(
         Ok(single_node_response) => {
             assert_eq!(single_node_response.num_hits, 30);
             assert_eq!(single_node_response.hits.len(), 15);
-            assert!(single_node_response.hits.windows(2).all(|hits| hits[0]
-                .partial_hit
-                .as_ref()
-                .unwrap()
-                .sort_value
-                >= hits[1].partial_hit.as_ref().unwrap().sort_value));
+            assert!(
+                single_node_response.hits.windows(2).all(|hits| hits[0]
+                    .partial_hit
+                    .as_ref()
+                    .unwrap()
+                    .sort_value
+                    >= hits[1].partial_hit.as_ref().unwrap().sort_value)
+            );
             test_sandbox.assert_quit().await;
             Ok(())
         }
@@ -1049,7 +1051,7 @@ async fn test_search_util(test_sandbox: &TestSandbox, query: &str) -> Vec<u32> {
 
     let agg_limits = searcher_context.get_aggregation_limits();
 
-    let search_response = leaf_search(
+    let search_response = single_doc_mapping_leaf_search(
         searcher_context,
         request,
         test_sandbox.storage(),
@@ -1381,17 +1383,20 @@ async fn test_single_node_aggregation() -> anyhow::Result<()> {
         test_sandbox.storage_resolver(),
     )
     .await?;
-    let agg_res_json: JsonValue = serde_json::from_str(&single_node_result.aggregation.unwrap())?;
+    let agg_res_struct =
+        AggregationResults::from_postcard(&single_node_result.aggregation_postcard.unwrap())?;
+    let agg_res_json = serde_json::to_string(&agg_res_struct)?;
+    let agg_res_parsed_json: JsonValue = serde_json::from_str(&agg_res_json)?;
     assert_eq!(
-        agg_res_json["expensive_colors"]["buckets"][0]["key"],
+        agg_res_parsed_json["expensive_colors"]["buckets"][0]["key"],
         "white"
     );
     assert_eq!(
-        agg_res_json["expensive_colors"]["buckets"][1]["key"],
+        agg_res_parsed_json["expensive_colors"]["buckets"][1]["key"],
         "blue"
     );
     assert_eq!(
-        agg_res_json["expensive_colors"]["buckets"][2]["key"],
+        agg_res_parsed_json["expensive_colors"]["buckets"][2]["key"],
         "green"
     );
     assert!(single_node_result.elapsed_time_micros > 10);
@@ -1829,8 +1834,8 @@ async fn test_single_node_find_trace_ids_collector() {
         )
         .await
         .unwrap();
-        let aggregation = single_node_result.aggregation.unwrap();
-        let trace_ids: Vec<Span> = serde_json::from_str(&aggregation).unwrap();
+        let aggregation_postcard = single_node_result.aggregation_postcard.unwrap();
+        let trace_ids: Vec<Span> = postcard::from_bytes(&aggregation_postcard).unwrap();
         assert_eq!(trace_ids.len(), 3);
 
         assert_eq!(trace_ids[0].trace_id, qux_trace_id);

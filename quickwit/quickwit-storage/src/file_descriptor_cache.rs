@@ -138,10 +138,7 @@ impl FileDescriptorCache {
         let file: File = tokio::task::spawn_blocking(move || std::fs::File::open(split_path))
             .await
             .map_err(|join_error| {
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("Failed to open file: {:?}", join_error),
-                )
+                io::Error::other(format!("failed to open file: {join_error:?}"))
             })??;
         let split_file = SplitFile(Arc::new(SplitFileInner {
             num_bytes,

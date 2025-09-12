@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use hyper::header::HeaderValue;
 use once_cell::sync::Lazy;
 use quickwit_telemetry::payload::TelemetryEvent;
 use regex::Regex;
 use rust_embed::RustEmbed;
+use warp::hyper::header::HeaderValue;
 use warp::path::Tail;
 use warp::reply::Response;
 use warp::{Filter, Rejection};
@@ -45,7 +45,7 @@ async fn serve_file(path: Tail) -> Result<impl warp::Reply, Rejection> {
     serve_impl(path.as_str()).await
 }
 
-async fn serve_impl(path: &str) -> Result<impl warp::Reply, Rejection> {
+async fn serve_impl(path: &str) -> Result<impl warp::Reply + use<>, Rejection> {
     static PATH_PTN: Lazy<Regex> = Lazy::new(|| Regex::new(PATH_PATTERN).unwrap());
     let path_to_file = if PATH_PTN.is_match(path) {
         path
@@ -60,7 +60,7 @@ async fn serve_impl(path: &str) -> Result<impl warp::Reply, Rejection> {
     let asset = Asset::get(path_to_file).ok_or_else(warp::reject::not_found)?;
     let mime = mime_guess::from_path(path_to_file).first_or_octet_stream();
 
-    let mut res = Response::new(asset.data.into());
+    let mut res = Response::new(asset.data.into_owned().into());
     res.headers_mut().insert(
         "content-type",
         HeaderValue::from_str(mime.as_ref()).unwrap(),

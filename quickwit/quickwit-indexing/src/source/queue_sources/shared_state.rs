@@ -16,7 +16,7 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use quickwit_metastore::checkpoint::PartitionId;
 use quickwit_proto::metastore::{
     AcquireShardsRequest, MetastoreService, MetastoreServiceClient, OpenShardSubrequest,
@@ -373,13 +373,13 @@ mod tests {
         (0..message_number)
             .map(|i| PreProcessedMessage {
                 metadata: MessageMetadata {
-                    ack_id: format!("ackid{}", i),
+                    ack_id: format!("ackid{i}"),
                     delivery_attempts: 0,
                     initial_deadline: Instant::now(),
-                    message_id: format!("mid{}", i),
+                    message_id: format!("mid{i}"),
                 },
                 payload: PreProcessedPayload::ObjectUri(
-                    Uri::from_str(&format!("s3://bucket/key{}", i)).unwrap(),
+                    Uri::from_str(&format!("s3://bucket/key{i}")).unwrap(),
                 ),
             })
             .collect()

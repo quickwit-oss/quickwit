@@ -14,8 +14,8 @@
 
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
-    new_counter, new_counter_vec, new_gauge_vec, new_histogram_vec, HistogramVec, IntCounter,
-    IntCounterVec, IntGaugeVec,
+    HistogramVec, IntCounter, IntCounterVec, IntGaugeVec, new_counter, new_counter_vec,
+    new_gauge_vec, new_histogram_vec,
 };
 
 pub struct ServeMetrics {
@@ -48,7 +48,8 @@ impl Default for ServeMetrics {
                 "",
                 &[],
                 ["method", "status_code"],
-                quickwit_common::metrics::exponential_buckets(0.02, 2.0, 8).unwrap(),
+                // last bucket is 163.84s
+                quickwit_common::metrics::exponential_buckets(0.02, 2.0, 14).unwrap(),
             ),
             ongoing_requests: new_gauge_vec(
                 "ongoing_requests",

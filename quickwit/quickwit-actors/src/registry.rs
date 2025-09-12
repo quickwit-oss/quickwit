@@ -166,8 +166,7 @@ impl ActorRegistry {
 
     pub fn get_one<A: Actor>(&self) -> Option<Mailbox<A>> {
         let mut lock = self.actors.write().unwrap();
-        let opt = get_iter::<A>(&mut lock).next();
-        opt
+        get_iter::<A>(&mut lock).next()
     }
 
     fn gc(&self) {
@@ -256,8 +255,8 @@ impl ActorJoinHandle {
 mod tests {
     use std::time::Duration;
 
-    use crate::tests::PingReceiverActor;
     use crate::Universe;
+    use crate::tests::PingReceiverActor;
 
     #[tokio::test]
     async fn test_registry() {

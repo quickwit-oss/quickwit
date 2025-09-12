@@ -13,7 +13,6 @@
 // limitations under the License.
 
 pub mod search;
-pub mod search_stream;
 
 use std::collections::HashSet;
 use std::net::SocketAddr;
@@ -82,7 +81,7 @@ mod tests {
 
     use quickwit_proto::search::{FetchDocsResponse, SplitIdAndFooterOffsets};
 
-    use crate::retry::{retry_client, DefaultRetryPolicy, RetryPolicy};
+    use crate::retry::{DefaultRetryPolicy, RetryPolicy, retry_client};
     use crate::{
         MockSearchService, SearchError, SearchJobPlacer, SearchServiceClient, SearcherPool,
     };

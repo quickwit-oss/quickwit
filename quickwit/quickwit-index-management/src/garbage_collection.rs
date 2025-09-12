@@ -22,7 +22,7 @@ use futures::{Future, StreamExt};
 use itertools::Itertools;
 use quickwit_common::metrics::IntCounter;
 use quickwit_common::pretty::PrettySample;
-use quickwit_common::{rate_limited_info, Progress};
+use quickwit_common::{Progress, rate_limited_info};
 use quickwit_metastore::{
     ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitInfo,
     SplitMetadata, SplitState,
@@ -266,11 +266,7 @@ async fn delete_splits(
             }
         }
     }
-    if error_encountered {
-        Err(())
-    } else {
-        Ok(())
-    }
+    if error_encountered { Err(()) } else { Ok(()) }
 }
 
 /// Fetch the list metadata from the metastore and returns them as a Vec.
@@ -520,15 +516,15 @@ mod tests {
     use quickwit_common::ServiceStream;
     use quickwit_config::IndexConfig;
     use quickwit_metastore::{
-        metastore_for_test, CreateIndexRequestExt, ListSplitsQuery,
-        MetastoreServiceStreamSplitsExt, SplitMetadata, SplitState, StageSplitsRequestExt,
+        CreateIndexRequestExt, ListSplitsQuery, MetastoreServiceStreamSplitsExt, SplitMetadata,
+        SplitState, StageSplitsRequestExt, metastore_for_test,
     };
     use quickwit_proto::metastore::{
         CreateIndexRequest, EntityKind, MockMetastoreService, StageSplitsRequest,
     };
     use quickwit_proto::types::IndexUid;
     use quickwit_storage::{
-        storage_for_test, BulkDeleteError, DeleteFailure, MockStorage, PutPayload,
+        BulkDeleteError, DeleteFailure, MockStorage, PutPayload, storage_for_test,
     };
 
     use super::*;
@@ -804,7 +800,7 @@ mod tests {
             .await
             .unwrap();
 
-        let split_path_str = format!("{}.split", split_id);
+        let split_path_str = format!("{split_id}.split");
         let split_path = Path::new(&split_path_str);
         let payload: Box<dyn PutPayload> = Box::new(vec![0]);
         storage.put(split_path, payload).await.unwrap();
@@ -836,14 +832,16 @@ mod tests {
             Path::new(&format!("{split_id}.split"))
         );
         assert!(!storage.exists(split_path).await.unwrap());
-        assert!(metastore
-            .list_splits(ListSplitsRequest::try_from_index_uid(index_uid).unwrap())
-            .await
-            .unwrap()
-            .collect_splits()
-            .await
-            .unwrap()
-            .is_empty());
+        assert!(
+            metastore
+                .list_splits(ListSplitsRequest::try_from_index_uid(index_uid).unwrap())
+                .await
+                .unwrap()
+                .collect_splits()
+                .await
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[tokio::test]

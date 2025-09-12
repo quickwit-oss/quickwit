@@ -113,8 +113,7 @@ impl BundleDirectory {
     pub fn open_split(split_file: FileSlice) -> io::Result<BundleDirectory> {
         // First we remove the hotcache from our file slice.
         let (body_and_bundle_metadata, _hot_cache) = split_footer(split_file)?;
-        BundleDirectory::open_bundle(body_and_bundle_metadata)
-            .map_err(|anyhow_err| io::Error::new(io::ErrorKind::Other, anyhow_err))
+        BundleDirectory::open_bundle(body_and_bundle_metadata).map_err(io::Error::other)
     }
 
     /// Opens a BundleDirectory, given a file containing the bundle data.

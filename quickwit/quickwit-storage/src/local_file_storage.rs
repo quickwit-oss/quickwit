@@ -20,8 +20,8 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use futures::future::{BoxFuture, FutureExt};
 use futures::StreamExt;
+use futures::future::{BoxFuture, FutureExt};
 use quickwit_common::ignore_error_kind;
 use quickwit_common::uri::Uri;
 use quickwit_config::StorageBackend;
@@ -452,7 +452,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_try_delete_dir_all() -> anyhow::Result<()> {
-        let path_root = tempfile::tempdir()?.into_path();
+        let path_root = tempfile::tempdir()?.keep();
         let dir_path = path_root.clone().join("foo/bar/baz");
         tokio::fs::create_dir_all(dir_path.clone()).await?;
 

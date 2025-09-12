@@ -12,9 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod environment;
-mod handler;
-mod ingest;
-mod model;
+use warp::Filter;
 
-pub use handler::handler;
+fn not_implemented_handler() -> impl warp::Reply {
+    warp::reply::with_status(
+        "Quickwit was compiled without the `jemalloc-profiled` feature",
+        warp::http::StatusCode::NOT_IMPLEMENTED,
+    )
+}
+
+pub fn heap_prof_handlers()
+-> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
+    let start_profiler = { warp::path!("heap-prof" / "start").map(not_implemented_handler) };
+    let stop_profiler = { warp::path!("heap-prof" / "stop").map(not_implemented_handler) };
+    start_profiler.or(stop_profiler)
+}

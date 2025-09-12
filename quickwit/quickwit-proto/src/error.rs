@@ -18,8 +18,8 @@ use std::fmt::Debug;
 
 use anyhow::Context;
 use quickwit_actors::AskError;
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use tonic::metadata::BinaryMetadataValue;
 use tracing::{error, warn};
 
@@ -183,6 +183,7 @@ fn decode_error<E: DeserializeOwned>(header_value: &BinaryMetadataValue) -> anyh
     Ok(service_error)
 }
 
+#[allow(clippy::result_large_err)]
 pub fn convert_to_grpc_result<T, E: GrpcServiceError>(
     result: Result<T, E>,
 ) -> tonic::Result<tonic::Response<T>> {

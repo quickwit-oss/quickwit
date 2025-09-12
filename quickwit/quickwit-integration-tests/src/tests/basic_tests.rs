@@ -14,7 +14,8 @@
 
 use std::time::Duration;
 
-use hyper::{Body, Method, Request, StatusCode};
+use hyper::{Method, Request, StatusCode};
+use hyper_util::rt::TokioExecutor;
 use quickwit_config::service::QuickwitService;
 use quickwit_serve::SearchRequestQueryString;
 
@@ -25,7 +26,7 @@ async fn test_ui_redirect_on_get() {
     quickwit_common::setup_logging_for_tests();
     let sandbox = ClusterSandboxBuilder::build_and_start_standalone().await;
     let node_config = sandbox.node_configs.first().unwrap();
-    let client = hyper::Client::builder()
+    let client = hyper_util::client::legacy::Client::builder(TokioExecutor::new())
         .pool_idle_timeout(Duration::from_secs(30))
         .http2_only(true)
         .build_http();
@@ -37,7 +38,7 @@ async fn test_ui_redirect_on_get() {
     let post_request = Request::builder()
         .uri(root_uri)
         .method(Method::POST)
-        .body(Body::from("{}"))
+        .body("{}".to_string())
         .unwrap();
     let response = client.request(post_request).await.unwrap();
     assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
@@ -133,12 +134,14 @@ async fn test_multi_nodes_cluster() {
         .await
         .unwrap();
 
-    assert!(sandbox
-        .rest_client(QuickwitService::Indexer)
-        .node_health()
-        .is_live()
-        .await
-        .unwrap());
+    assert!(
+        sandbox
+            .rest_client(QuickwitService::Indexer)
+            .node_health()
+            .is_live()
+            .await
+            .unwrap()
+    );
 
     // Assert that at least 1 indexing pipelines is successfully started
     sandbox.wait_for_indexing_pipelines(1).await.unwrap();

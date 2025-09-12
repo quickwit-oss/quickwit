@@ -25,7 +25,7 @@ use fnv::{FnvHashMap, FnvHashSet};
 use itertools::Itertools;
 use once_cell::sync::OnceCell;
 use quickwit_common::pretty::PrettySample;
-use quickwit_config::{indexing_pipeline_params_fingerprint, FileSourceParams, SourceParams};
+use quickwit_config::{FileSourceParams, SourceParams, indexing_pipeline_params_fingerprint};
 use quickwit_proto::indexing::{
     ApplyIndexingPlanRequest, CpuCapacity, IndexingService, IndexingTask, PIPELINE_FULL_CAPACITY,
     PIPELINE_THROUGHPUT,
@@ -571,12 +571,12 @@ fn get_indexing_plans_diff<'a>(
 ) -> IndexingPlansDiff<'a> {
     // Nodes diff.
     let running_node_ids: FnvHashSet<&str> = running_plan
-        .iter()
-        .map(|(node_id, _)| node_id.as_str())
+        .keys()
+        .map(|node_id| node_id.as_str())
         .collect();
     let planned_node_ids: FnvHashSet<&str> = last_applied_plan
-        .iter()
-        .map(|(node_id, _)| node_id.as_str())
+        .keys()
+        .map(|node_id| node_id.as_str())
         .collect();
     let missing_node_ids: FnvHashSet<&str> = planned_node_ids
         .difference(&running_node_ids)

@@ -22,19 +22,18 @@ mod cluster_client;
 mod collector;
 mod error;
 mod fetch_docs;
-mod filters;
 mod find_trace_ids_collector;
 mod leaf;
 mod leaf_cache;
 mod list_fields;
 mod list_fields_cache;
 mod list_terms;
+mod metrics_trackers;
 mod retry;
 mod root;
 mod scroll_context;
 mod search_job_placer;
 mod search_response_rest;
-mod search_stream;
 mod service;
 pub(crate) mod top_k_collector;
 
@@ -60,7 +59,7 @@ pub type Result<T> = std::result::Result<T, SearchError>;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::{Arc, OnceLock};
 
-pub use find_trace_ids_collector::FindTraceIdsCollector;
+pub use find_trace_ids_collector::{FindTraceIdsCollector, Span};
 use quickwit_config::SearcherConfig;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_metastore::{
@@ -76,20 +75,19 @@ pub use service::SearcherContext;
 use tantivy::DocAddress;
 
 pub use crate::client::{
-    create_search_client_from_channel, create_search_client_from_grpc_addr, SearchServiceClient,
+    SearchServiceClient, create_search_client_from_channel, create_search_client_from_grpc_addr,
 };
 pub use crate::cluster_client::ClusterClient;
-pub use crate::error::{parse_grpc_error, SearchError};
+pub use crate::error::{SearchError, parse_grpc_error};
 use crate::fetch_docs::fetch_docs;
 pub use crate::root::{
-    check_all_index_metadata_found, jobs_to_leaf_request, root_search, search_plan,
-    IndexMetasForLeafSearch, SearchJob,
+    IndexMetasForLeafSearch, SearchJob, check_all_index_metadata_found, jobs_to_leaf_request,
+    root_search, search_plan,
 };
 pub use crate::search_job_placer::{Job, SearchJobPlacer};
 pub use crate::search_response_rest::{
     AggregationResults, SearchPlanResponseRest, SearchResponseRest,
 };
-pub use crate::search_stream::root_search_stream;
 pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
 
 /// A pool of searcher clients identified by their gRPC socket address.
@@ -362,7 +360,7 @@ fn merge_resource_stats(
             stat_accs.cpu_thread_pool_wait_microsecs += new_stats.cpu_thread_pool_wait_microsecs;
             stat_accs.cpu_microsecs += new_stats.cpu_microsecs;
         } else {
-            *stat_accs_opt = Some(new_stats.clone());
+            *stat_accs_opt = Some(*new_stats);
         }
     }
 }

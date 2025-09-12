@@ -498,7 +498,7 @@ impl KinesisSourceParams {
     fn validate_update(&self, other: &Self) -> anyhow::Result<()> {
         // Changing the stream would likely mess up the checkpoints because the
         // Kinesis shard IDs are used as metastore checkpoint PartitionId, and
-        // there uniqueness is only guarantied within a stream.
+        // there uniqueness is only guaranteed within a stream.
         ensure!(
             self.stream_name == other.stream_name,
             "Kinesis stream_name cannot be updated"
@@ -871,9 +871,11 @@ mod tests {
             "#;
             let error = load_source_config_from_user_config(ConfigFormat::Json, content.as_bytes())
                 .unwrap_err();
-            assert!(error
-                .to_string()
-                .contains("`desired_num_pipelines` must be"));
+            assert!(
+                error
+                    .to_string()
+                    .contains("`desired_num_pipelines` must be")
+            );
         }
         // {
         //     let content = r#"

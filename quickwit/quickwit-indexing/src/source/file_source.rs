@@ -30,7 +30,7 @@ use crate::source::{Source, SourceContext, SourceRuntime, TypedSourceFactory};
 
 enum FileSourceState {
     #[cfg(feature = "queue-sources")]
-    Notification(QueueCoordinator),
+    Notification(Box<QueueCoordinator>),
     Filepath {
         batch_reader: ObjectUriBatchReader,
         num_bytes_processed: u64,
@@ -101,7 +101,7 @@ impl Source for FileSource {
     }
 
     fn name(&self) -> String {
-        format!("{:?}", self)
+        format!("{self:?}")
     }
 
     #[allow(unused_variables)]
@@ -180,7 +180,7 @@ impl TypedSourceFactory for FileSourceFactory {
             )) => {
                 let coordinator =
                     QueueCoordinator::try_from_sqs_config(sqs_config, source_runtime).await?;
-                FileSourceState::Notification(coordinator)
+                FileSourceState::Notification(Box::new(coordinator))
             }
             #[cfg(not(feature = "sqs"))]
             FileSourceParams::Notifications(quickwit_config::FileSourceNotification::Sqs(_)) => {
@@ -211,10 +211,10 @@ mod tests {
     use super::*;
     use crate::models::RawDocBatch;
     use crate::source::doc_file_reader::file_test_helpers::{
-        generate_dummy_doc_file, generate_index_doc_file, DUMMY_DOC,
+        DUMMY_DOC, generate_dummy_doc_file, generate_index_doc_file,
     };
     use crate::source::tests::SourceRuntimeBuilder;
-    use crate::source::{SourceActor, BATCH_NUM_BYTES_LIMIT};
+    use crate::source::{BATCH_NUM_BYTES_LIMIT, SourceActor};
 
     #[tokio::test]
     async fn test_file_source() {
@@ -232,7 +232,7 @@ mod tests {
         };
         let source_config = SourceConfig {
             source_id: "test-file-source".to_string(),
-            num_pipelines: NonZeroUsize::new(1).unwrap(),
+            num_pipelines: NonZeroUsize::MIN,
             enabled: true,
             source_params: SourceParams::File(params.clone()),
             transform_config: None,
@@ -284,7 +284,7 @@ mod tests {
         let params = FileSourceParams::Filepath(uri.clone());
         let source_config = SourceConfig {
             source_id: "test-file-source".to_string(),
-            num_pipelines: NonZeroUsize::new(1).unwrap(),
+            num_pipelines: NonZeroUsize::MIN,
             enabled: true,
             source_params: SourceParams::File(params.clone()),
             transform_config: None,
@@ -348,7 +348,7 @@ mod tests {
         let params = FileSourceParams::Filepath(uri.clone());
         let source_config = SourceConfig {
             source_id: "test-file-source".to_string(),
-            num_pipelines: NonZeroUsize::new(1).unwrap(),
+            num_pipelines: NonZeroUsize::MIN,
             enabled: true,
             source_params: SourceParams::File(params.clone()),
             transform_config: None,
@@ -408,13 +408,13 @@ mod localstack_tests {
 
     use super::*;
     use crate::models::RawDocBatch;
+    use crate::source::SourceActor;
     use crate::source::doc_file_reader::file_test_helpers::generate_dummy_doc_file;
     use crate::source::queue_sources::sqs_queue::test_helpers::{
         create_queue, get_localstack_sqs_client, send_message,
     };
     use crate::source::test_setup_helper::setup_index;
     use crate::source::tests::SourceRuntimeBuilder;
-    use crate::source::SourceActor;
 
     #[tokio::test]
     async fn test_file_source_sqs_notifications() {

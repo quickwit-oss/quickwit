@@ -20,7 +20,7 @@ use serde_json::json;
 
 use super::assert_hits_unordered;
 use crate::ingest_json;
-use crate::test_utils::{ingest, ClusterSandboxBuilder};
+use crate::test_utils::{ClusterSandboxBuilder, ingest};
 
 #[tokio::test]
 async fn test_update_search_settings_on_multi_nodes_cluster() {
@@ -71,12 +71,14 @@ async fn test_update_search_settings_on_multi_nodes_cluster() {
         )
         .await
         .unwrap();
-    assert!(sandbox
-        .rest_client(QuickwitService::Indexer)
-        .node_health()
-        .is_live()
-        .await
-        .unwrap());
+    assert!(
+        sandbox
+            .rest_client(QuickwitService::Indexer)
+            .node_health()
+            .is_live()
+            .await
+            .unwrap()
+    );
 
     // Wait until indexing pipelines are started
     sandbox.wait_for_indexing_pipelines(1).await.unwrap();
@@ -118,6 +120,7 @@ async fn test_update_search_settings_on_multi_nodes_cluster() {
               default_search_fields: [title, body]
             "#,
             quickwit_config::ConfigFormat::Yaml,
+            false,
         )
         .await
         .unwrap();

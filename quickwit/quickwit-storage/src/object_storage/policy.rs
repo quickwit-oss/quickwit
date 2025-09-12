@@ -63,8 +63,7 @@ impl MultiPartPolicy {
     }
 }
 
-// Default values from https://github.com/apache/hadoop/blob/trunk/hadoop-tools/hadoop-aws/src/main/java/org/apache/hadoop/fs/s3a/Constants.java
-// The best default value may however differ depending on vendors.
+// The best default value may differ depending on vendors.
 impl Default for MultiPartPolicy {
     fn default() -> Self {
         MultiPartPolicy {

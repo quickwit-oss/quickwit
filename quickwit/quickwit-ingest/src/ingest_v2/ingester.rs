@@ -22,8 +22,8 @@ use std::time::{Duration, Instant};
 use anyhow::Context;
 use async_trait::async_trait;
 use bytesize::ByteSize;
-use futures::stream::FuturesUnordered;
 use futures::StreamExt;
+use futures::stream::FuturesUnordered;
 use mrecordlog::error::CreateQueueError;
 use once_cell::sync::OnceCell;
 use quickwit_cluster::Cluster;
@@ -32,7 +32,7 @@ use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::pubsub::{EventBroker, EventSubscriber};
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
 use quickwit_common::tower::Pool;
-use quickwit_common::{rate_limited_error, rate_limited_warn, ServiceStream};
+use quickwit_common::{ServiceStream, rate_limited_error, rate_limited_warn};
 use quickwit_proto::control_plane::{
     AdviseResetShardsRequest, ControlPlaneService, ControlPlaneServiceClient,
 };
@@ -52,13 +52,14 @@ use quickwit_proto::ingest::{
     ShardState,
 };
 use quickwit_proto::types::{
-    queue_id, split_queue_id, IndexUid, NodeId, Position, QueueId, ShardId, SourceId, SubrequestId,
+    IndexUid, NodeId, Position, QueueId, ShardId, SourceId, SubrequestId, queue_id, split_queue_id,
 };
-use serde_json::{json, Value as JsonValue};
+use serde_json::{Value as JsonValue, json};
 use tokio::sync::Semaphore;
 use tokio::time::{sleep, timeout};
 use tracing::{debug, error, info, warn};
 
+use super::IngesterPool;
 use super::broadcast::BroadcastLocalShardsTask;
 use super::doc_mapper::validate_doc_batch;
 use super::fetch::FetchStreamTask;
@@ -66,7 +67,7 @@ use super::idle::CloseIdleShardsTask;
 use super::metrics::INGEST_V2_METRICS;
 use super::models::IngesterShard;
 use super::mrecordlog_utils::{
-    append_non_empty_doc_batch, check_enough_capacity, AppendDocBatchError,
+    AppendDocBatchError, append_non_empty_doc_batch, check_enough_capacity,
 };
 use super::rate_meter::RateMeter;
 use super::replication::{
@@ -74,12 +75,11 @@ use super::replication::{
     SYN_REPLICATION_STREAM_CAPACITY,
 };
 use super::state::{IngesterState, InnerIngesterState, WeakIngesterState};
-use super::IngesterPool;
 use crate::ingest_v2::doc_mapper::get_or_try_build_doc_mapper;
 use crate::ingest_v2::metrics::report_wal_usage;
 use crate::ingest_v2::models::IngesterShardType;
 use crate::mrecordlog_async::MultiRecordLogAsync;
-use crate::{estimate_size, with_lock_metrics, FollowerId};
+use crate::{FollowerId, estimate_size, with_lock_metrics};
 
 /// Minimum interval between two reset shards operations.
 const MIN_RESET_SHARDS_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
@@ -1056,7 +1056,7 @@ impl Ingester {
                     "status": "initializing",
                     "shards": [],
                     "mrecordlog": {},
-                })
+                });
             }
         };
         let mut per_index_shards_json: HashMap<IndexUid, Vec<JsonValue>> = HashMap::new();
@@ -1292,7 +1292,7 @@ mod tests {
     use std::sync::atomic::{AtomicU16, Ordering};
 
     use bytes::Bytes;
-    use quickwit_cluster::{create_cluster_for_test_with_id, ChannelTransport};
+    use quickwit_cluster::{ChannelTransport, create_cluster_for_test_with_id};
     use quickwit_common::shared_consts::INGESTER_PRIMARY_SHARDS_PREFIX;
     use quickwit_common::tower::ConstantRate;
     use quickwit_config::service::QuickwitService;
@@ -1304,17 +1304,17 @@ mod tests {
     use quickwit_proto::ingest::{
         DocBatchV2, ParseFailureReason, ShardIdPosition, ShardIdPositions, ShardIds, ShardPKey,
     };
-    use quickwit_proto::types::{queue_id, DocMappingUid, DocUid, ShardId, SourceUid};
+    use quickwit_proto::types::{DocMappingUid, DocUid, ShardId, SourceUid, queue_id};
     use tokio::task::yield_now;
     use tokio::time::timeout;
     use tonic::transport::{Endpoint, Server};
 
     use super::*;
+    use crate::MRecord;
+    use crate::ingest_v2::DEFAULT_IDLE_SHARD_TIMEOUT;
     use crate::ingest_v2::broadcast::ShardInfos;
     use crate::ingest_v2::doc_mapper::try_build_doc_mapper;
     use crate::ingest_v2::fetch::tests::{into_fetch_eof, into_fetch_payload};
-    use crate::ingest_v2::DEFAULT_IDLE_SHARD_TIMEOUT;
-    use crate::MRecord;
 
     const MAX_GRPC_MESSAGE_SIZE: ByteSize = ByteSize::mib(1);
 
@@ -2529,6 +2529,7 @@ mod tests {
             "127.0.0.1:7777".parse().unwrap(),
             follower_channel,
             MAX_GRPC_MESSAGE_SIZE,
+            None,
         );
 
         leader_ctx

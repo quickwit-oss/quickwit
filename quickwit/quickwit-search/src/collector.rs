@@ -25,7 +25,7 @@ use quickwit_proto::search::{
 };
 use quickwit_proto::types::SplitId;
 use serde::Deserialize;
-use tantivy::aggregation::agg_req::{get_fast_field_names, Aggregations};
+use tantivy::aggregation::agg_req::{Aggregations, get_fast_field_names};
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tantivy::aggregation::{AggregationLimitsGuard, AggregationSegmentCollector};
 use tantivy::collector::{Collector, SegmentCollector};
@@ -34,8 +34,8 @@ use tantivy::fastfield::Column;
 use tantivy::{DateTime, DocId, Score, SegmentOrdinal, SegmentReader, TantivyError};
 
 use crate::find_trace_ids_collector::{FindTraceIdsCollector, FindTraceIdsSegmentCollector, Span};
-use crate::top_k_collector::{specialized_top_k_segment_collector, QuickwitSegmentTopKCollector};
-use crate::{merge_resource_stats, merge_resource_stats_it, GlobalDocAddress};
+use crate::top_k_collector::{QuickwitSegmentTopKCollector, specialized_top_k_segment_collector};
+use crate::{GlobalDocAddress, merge_resource_stats, merge_resource_stats_it};
 
 #[derive(Clone, Debug)]
 pub(crate) enum SortByComponent {
@@ -176,7 +176,7 @@ impl SortingFieldExtractorComponent {
             SortingFieldExtractorComponent::FastField { sort_column, .. } => {
                 sort_column.first(doc_id)
             }
-            SortingFieldExtractorComponent::Score { .. } => Some((score as f64).to_u64()),
+            SortingFieldExtractorComponent::Score => Some((score as f64).to_u64()),
         }
     }
 
@@ -441,8 +441,7 @@ impl TryFrom<ColumnType> for SortFieldType {
             ColumnType::DateTime => Ok(SortFieldType::DateTime),
             ColumnType::Bool => Ok(SortFieldType::Bool),
             _ => Err(TantivyError::InvalidArgument(format!(
-                "Unsupported sort field type `{:?}`.",
-                column_type
+                "Unsupported sort field type `{column_type:?}`."
             ))),
         }
     }
@@ -641,7 +640,7 @@ enum QuickwitIncrementalAggregations {
 impl QuickwitIncrementalAggregations {
     fn add(&mut self, intermediate_result: Vec<u8>) -> tantivy::Result<()> {
         match self {
-            QuickwitIncrementalAggregations::FindTraceIdsAggregation(collector, ref mut state) => {
+            QuickwitIncrementalAggregations::FindTraceIdsAggregation(collector, state) => {
                 let fruits: Vec<Span> =
                     postcard::from_bytes(&intermediate_result).map_err(map_error)?;
                 state.push(fruits);
@@ -1013,13 +1012,13 @@ pub(crate) fn sort_by_from_request(search_request: &SearchRequest) -> SortByPair
         .into()
     } else if num_sort_fields == 1 {
         let sort_field = &search_request.sort_fields[0];
-        let order = SortOrder::from_i32(sort_field.sort_order).unwrap_or(SortOrder::Desc);
+        let order = SortOrder::try_from(sort_field.sort_order).unwrap_or(SortOrder::Desc);
         to_sort_by_component(&sort_field.field_name, order).into()
     } else if num_sort_fields == 2 {
         let sort_field1 = &search_request.sort_fields[0];
-        let order1 = SortOrder::from_i32(sort_field1.sort_order).unwrap_or(SortOrder::Desc);
+        let order1 = SortOrder::try_from(sort_field1.sort_order).unwrap_or(SortOrder::Desc);
         let sort_field2 = &search_request.sort_fields[1];
-        let order2 = SortOrder::from_i32(sort_field2.sort_order).unwrap_or(SortOrder::Desc);
+        let order2 = SortOrder::try_from(sort_field2.sort_order).unwrap_or(SortOrder::Desc);
         SortByPair {
             first: to_sort_by_component(&sort_field1.field_name, order1),
             second: Some(to_sort_by_component(&sort_field2.field_name, order2)),
@@ -1294,10 +1293,10 @@ mod tests {
         LeafSearchResponse, PartialHit, ResourceStats, SearchRequest, SortByValue, SortField,
         SortOrder, SortValue, SplitSearchError,
     };
-    use tantivy::collector::Collector;
     use tantivy::TantivyDocument;
+    use tantivy::collector::Collector;
 
-    use super::{make_merge_collector, IncrementalCollector};
+    use super::{IncrementalCollector, make_merge_collector};
     use crate::collector::top_k_partial_hits;
 
     #[test]
@@ -1410,9 +1409,9 @@ mod tests {
     }
 
     fn make_index() -> tantivy::Index {
+        use tantivy::Index;
         use tantivy::indexer::UserOperation;
         use tantivy::schema::{NumericOptions, Schema};
-        use tantivy::Index;
 
         let dataset = sort_dataset();
 
@@ -1466,10 +1465,10 @@ mod tests {
         let reverse_int = |val: &Option<u64>| val.as_ref().map(|val| u64::MAX - val);
         let cmp_doc_id_desc = |a: &Doc, b: &Doc| b.0.cmp(&a.0);
         let cmp_doc_id_asc = |a: &Doc, b: &Doc| a.0.cmp(&b.0);
-        let cmp_1_desc = |a: &Doc, b: &Doc| b.1 .0.cmp(&a.1 .0);
-        let cmp_1_asc = |a: &Doc, b: &Doc| reverse_int(&b.1 .0).cmp(&reverse_int(&a.1 .0));
-        let cmp_2_desc = |a: &Doc, b: &Doc| b.1 .1.cmp(&a.1 .1);
-        let cmp_2_asc = |a: &Doc, b: &Doc| reverse_int(&b.1 .1).cmp(&reverse_int(&a.1 .1));
+        let cmp_1_desc = |a: &Doc, b: &Doc| b.1.0.cmp(&a.1.0);
+        let cmp_1_asc = |a: &Doc, b: &Doc| reverse_int(&b.1.0).cmp(&reverse_int(&a.1.0));
+        let cmp_2_desc = |a: &Doc, b: &Doc| b.1.1.cmp(&a.1.1);
+        let cmp_2_asc = |a: &Doc, b: &Doc| reverse_int(&b.1.1).cmp(&reverse_int(&a.1.1));
 
         {
             // the logic for sorting isn't easy to wrap one's head around. These simple tests are
@@ -1598,8 +1597,8 @@ mod tests {
                                 )
                             })
                             .collect::<Vec<_>>();
-                        eprintln!("expected: {:#?}", expected_docids);
-                        eprintln!("got: {:#?}", got_docids);
+                        eprintln!("expected: {expected_docids:#?}");
+                        eprintln!("got: {got_docids:#?}");
                         panic!("mismatch ordering for \"{sort_str}\":{slice_len}");
                     }
                 }
@@ -1621,8 +1620,8 @@ mod tests {
 
         let reverse_int = |val: &Option<u64>| val.as_ref().map(|val| u64::MAX - val);
         let cmp_doc_id_desc = |a: &Doc, b: &Doc| b.0.cmp(&a.0);
-        let cmp_1_desc = |a: &Doc, b: &Doc| b.1 .0.cmp(&a.1 .0);
-        let cmp_2_asc = |a: &Doc, b: &Doc| reverse_int(&b.1 .1).cmp(&reverse_int(&a.1 .1));
+        let cmp_1_desc = |a: &Doc, b: &Doc| b.1.0.cmp(&a.1.0);
+        let cmp_2_asc = |a: &Doc, b: &Doc| reverse_int(&b.1.1).cmp(&reverse_int(&a.1.1));
 
         let sort_function =
             |a: &Doc, b: &Doc| cmp_1_desc(a, b).then(cmp_2_asc(a, b).then(cmp_doc_id_desc(a, b)));

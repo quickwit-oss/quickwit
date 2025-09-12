@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use hyper::StatusCode;
 use serde::Deserialize;
 use tracing::{error, info};
+use warp::hyper::StatusCode;
 use warp::{Filter, Rejection};
 
-use crate::{with_arg, EnvFilterReloadFn};
+use crate::{EnvFilterReloadFn, with_arg};
 
 #[derive(Deserialize)]
 struct EnvFilter {
@@ -40,14 +40,17 @@ pub fn log_level_handler(
                     Ok(_) => {
                         info!(filter = env_filter.filter, "setting log level");
                         warp::reply::with_status(
-                            format!("set log level to:[{}]", env_filter.filter),
+                            format!("set log level to: [{}]", env_filter.filter),
                             StatusCode::OK,
                         )
                     }
-                    Err(_) => {
-                        error!(filter = env_filter.filter, "invalid log level");
+                    Err(err) => {
+                        error!(filter = env_filter.filter, %err, "failed to set log level");
                         warp::reply::with_status(
-                            format!("invalid log level:[{}]", env_filter.filter),
+                            format!(
+                                "failed to set log level to: [{}], {}",
+                                env_filter.filter, err
+                            ),
                             StatusCode::BAD_REQUEST,
                         )
                     }

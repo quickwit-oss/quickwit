@@ -18,6 +18,7 @@ mod doc_batch;
 pub mod error;
 mod ingest_api_service;
 #[path = "codegen/ingest_service.rs"]
+#[allow(clippy::disallowed_methods)]
 mod ingest_service;
 mod ingest_v2;
 mod memory_capacity;
@@ -30,7 +31,7 @@ mod queue;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 pub use doc_batch::*;
 pub use error::IngestServiceError;
 pub use ingest_api_service::{GetMemoryCapacity, GetPartitionId, IngestApiService};
@@ -83,7 +84,7 @@ pub async fn init_ingest_api(
     Ok(ingest_api_service)
 }
 
-/// Returns the instance of the single IngestApiService via a copy of it's Mailbox.
+/// Returns the instance of the single IngestApiService via a copy of its Mailbox.
 pub async fn get_ingest_api_service(
     queues_dir_path: &Path,
 ) -> anyhow::Result<Mailbox<IngestApiService>> {

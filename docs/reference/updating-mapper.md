@@ -6,6 +6,12 @@ Quickwit allows updating the mapping it uses to add more fields to an existing i
 
 When you update a doc mapping for an index, Quickwit will restart indexing pipelines to take the changes into account. As both this operation and the document ingestion are asynchronous, there is no strict happens-before relationship between ingestion and update. This means a document ingested just before the update may be indexed according to the newer doc mapper, and document ingested just after the update may be indexed with the older doc mapper.
 
+:::warning
+
+If you use the ingest or ES bulk API (V2), the old doc mapping will still be used to validate new documents that end up being persisted on existing shards (see [#5738](https://github.com/quickwit-oss/quickwit/issues/5738)).
+
+:::
+
 ## Querying
 
 Quickwit always validate queries against the most recent mapping.
@@ -38,7 +44,7 @@ Conversion from a type to itself is omitted. Conversions that never succeed and 
 | date | text | convert to rfc3339 textual representation |
 | ip | text | convert to IPv6 representation. For IPv4, convert to IPv4-mapped IPv6 address (`::ffff:1.2.3.4`) |
 | bool | text | convert to "true" or false" |
-| u64/i64/f64 | bool | convert 0/0.0 to false and 1/1.0 to true, otherise omit |
+| u64/i64/f64 | bool | convert 0/0.0 to false and 1/1.0 to true, otherwise omit |
 | text | bool | convert if "true" or "false" (lowercase), otherwise omit |
 | text | ip | convert if valid IPv4 or IPv6, otherwise omit |
 | text | f64 | convert if valid floating point number, otherwise omit |

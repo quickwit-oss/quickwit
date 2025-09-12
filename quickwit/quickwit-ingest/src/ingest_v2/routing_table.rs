@@ -18,7 +18,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use quickwit_proto::ingest::{Shard, ShardIds, ShardState};
 use quickwit_proto::types::{IndexId, IndexUid, NodeId, ShardId, SourceId};
-use serde_json::{json, Value as JsonValue};
+use serde_json::{Value as JsonValue, json};
 use tracing::{info, warn};
 
 use crate::IngesterPool;
@@ -496,8 +496,8 @@ impl RoutingTable {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_proto::ingest::ingester::IngesterServiceClient;
     use quickwit_proto::ingest::ShardState;
+    use quickwit_proto::ingest::ingester::IngesterServiceClient;
 
     use super::*;
 

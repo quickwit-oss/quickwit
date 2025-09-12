@@ -19,8 +19,8 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use predicates::str;
-use quickwit_cli::service::RunCliCommand;
 use quickwit_cli::ClientArgs;
+use quickwit_cli::service::RunCliCommand;
 use quickwit_common::net::find_available_tcp_port;
 use quickwit_common::test_utils::wait_for_server_ready;
 use quickwit_common::uri::Uri;
@@ -30,7 +30,7 @@ use quickwit_proto::metastore::{IndexMetadataRequest, MetastoreService, Metastor
 use quickwit_proto::types::IndexId;
 use quickwit_storage::{Storage, StorageResolver};
 use reqwest::Url;
-use tempfile::{tempdir, TempDir};
+use tempfile::{TempDir, tempdir};
 use tracing::error;
 
 pub const PACKAGE_BIN_NAME: &str = "quickwit";
@@ -288,7 +288,7 @@ pub async fn upload_test_file(
     filename: &str,
 ) -> Uri {
     let test_data = tokio::fs::read(local_src_path).await.unwrap();
-    let src_location = format!("s3://{}/{}", bucket, prefix);
+    let src_location = format!("s3://{bucket}/{prefix}");
     let storage_uri = Uri::from_str(&src_location).unwrap();
     let storage = storage_resolver.resolve(&storage_uri).await.unwrap();
     storage

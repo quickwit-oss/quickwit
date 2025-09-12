@@ -32,11 +32,11 @@ use quickwit_proto::search::{
 use quickwit_query::query_ast::{BoolQuery, QueryAst, QueryAstTransformer, RangeQuery, TermQuery};
 use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_storage::{
-    wrap_storage_with_cache, BundleStorage, ByteRangeCache, MemorySizedCache, OwnedBytes,
-    SplitCache, Storage, StorageResolver, TimeoutAndRetryStorage,
+    BundleStorage, ByteRangeCache, MemorySizedCache, OwnedBytes, SplitCache, Storage,
+    StorageResolver, TimeoutAndRetryStorage, wrap_storage_with_cache,
 };
-use tantivy::aggregation::agg_req::{AggregationVariants, Aggregations};
 use tantivy::aggregation::AggregationLimitsGuard;
+use tantivy::aggregation::agg_req::{AggregationVariants, Aggregations};
 use tantivy::directory::FileSlice;
 use tantivy::fastfield::FastFieldReaders;
 use tantivy::schema::Field;
@@ -44,11 +44,10 @@ use tantivy::{DateTime, Index, ReloadPolicy, Searcher, TantivyError, Term};
 use tokio::task::JoinError;
 use tracing::*;
 
-use crate::collector::{make_collector_for_split, make_merge_collector, IncrementalCollector};
-use crate::metrics::SEARCH_METRICS;
+use crate::collector::{IncrementalCollector, make_collector_for_split, make_merge_collector};
 use crate::root::is_metadata_count_request_with_ast;
-use crate::search_permit_provider::{compute_initial_memory_allocation, SearchPermit};
-use crate::service::{deserialize_doc_mapper, SearcherContext};
+use crate::search_permit_provider::{SearchPermit, compute_initial_memory_allocation};
+use crate::service::{SearcherContext, deserialize_doc_mapper};
 use crate::{QuickwitAggregations, SearchError};
 
 #[instrument(skip_all)]
@@ -910,27 +909,6 @@ impl QueryAstTransformer for RemoveTimestampRange<'_> {
     }
 }
 
-pub(crate) fn rewrite_start_end_time_bounds(
-    start_timestamp_opt: &mut Option<i64>,
-    end_timestamp_opt: &mut Option<i64>,
-    split: &SplitIdAndFooterOffsets,
-) {
-    if let (Some(split_start), Some(split_end)) = (split.timestamp_start, split.timestamp_end) {
-        if let Some(start_timestamp) = start_timestamp_opt {
-            // both starts are inclusive
-            if *start_timestamp <= split_start {
-                *start_timestamp_opt = None;
-            }
-        }
-        if let Some(end_timestamp) = end_timestamp_opt {
-            // search end is exclusive, split end is inclusive
-            if *end_timestamp > split_end {
-                *end_timestamp_opt = None;
-            }
-        }
-    }
-}
-
 /// Checks if request is a simple all query.
 /// Simple in this case would still including sorting
 fn is_simple_all_query(search_request: &SearchRequest) -> bool {
@@ -1070,10 +1048,9 @@ impl CanSplitDoBetter {
         match self {
             CanSplitDoBetter::SplitIdHigher(_) => {
                 // In this case there is no sort order, we order by split id.
-                // If the the first split has enough documents, we can convert the other queries to
+                // If the first split has enough documents, we can convert the other queries to
                 // count only queries
-                for (_split, ref mut request) in split_with_req.iter_mut().skip(min_required_splits)
-                {
+                for (_split, request) in split_with_req.iter_mut().skip(min_required_splits) {
                     disable_search_request_hits(request);
                 }
             }
@@ -1099,8 +1076,7 @@ impl CanSplitDoBetter {
                     .max()
                     // if min_required_splits is 0, we choose a value that disables all splits
                     .unwrap_or(i64::MIN);
-                for (split, ref mut request) in split_with_req.iter_mut().skip(min_required_splits)
-                {
+                for (split, request) in split_with_req.iter_mut().skip(min_required_splits) {
                     if split.timestamp_start() > biggest_end_timestamp {
                         disable_search_request_hits(request);
                     }
@@ -1120,8 +1096,7 @@ impl CanSplitDoBetter {
                     .min()
                     // if min_required_splits is 0, we choose a value that disables all splits
                     .unwrap_or(i64::MAX);
-                for (split, ref mut request) in split_with_req.iter_mut().skip(min_required_splits)
-                {
+                for (split, request) in split_with_req.iter_mut().skip(min_required_splits) {
                     if split.timestamp_end() < smallest_start_timestamp {
                         disable_search_request_hits(request);
                     }
@@ -1178,9 +1153,10 @@ impl CanSplitDoBetter {
     }
 }
 
-/// `multi_leaf_search` searches multiple indices and multiple splits.
+/// Searches multiple splits, potentially in multiple indexes, sitting on different storages and
+/// having different doc mappings.
 #[instrument(skip_all, fields(index = ?leaf_search_request.search_request.as_ref().unwrap().index_id_patterns))]
-pub async fn multi_leaf_search(
+pub async fn multi_index_leaf_search(
     searcher_context: Arc<SearcherContext>,
     leaf_search_request: LeafSearchRequest,
     storage_resolver: &StorageResolver,
@@ -1228,18 +1204,25 @@ pub async fn multi_leaf_search(
             })?
             .clone();
 
-        let leaf_request_future = tokio::spawn(
-            resolve_storage_and_leaf_search(
-                searcher_context.clone(),
-                search_request.clone(),
-                index_uri,
-                storage_resolver.clone(),
-                leaf_search_request_ref.split_offsets,
-                doc_mapper,
-                aggregation_limits.clone(),
-            )
-            .in_current_span(),
-        );
+        let leaf_request_future = tokio::spawn({
+            let storage_resolver = storage_resolver.clone();
+            let searcher_context = searcher_context.clone();
+            let search_request = search_request.clone();
+            let aggregation_limits = aggregation_limits.clone();
+            async move {
+                let storage = storage_resolver.resolve(&index_uri).await?;
+                single_doc_mapping_leaf_search(
+                    searcher_context,
+                    search_request,
+                    storage,
+                    leaf_search_request_ref.split_offsets,
+                    doc_mapper,
+                    aggregation_limits,
+                )
+                .await
+            }
+            .in_current_span()
+        });
         leaf_request_tasks.push(leaf_request_future);
     }
 
@@ -1258,7 +1241,7 @@ pub async fn multi_leaf_search(
             Err(err) => {
                 incremental_merge_collector.add_failed_split(SplitSearchError {
                     split_id: "unknown".to_string(),
-                    error: format!("{}", err),
+                    error: format!("{err}"),
                     retryable_error: true,
                 });
             }
@@ -1270,29 +1253,6 @@ pub async fn multi_leaf_search(
         .instrument(info_span!("incremental_merge_finalize"))
         .await
         .context("failed to merge split search responses")?
-}
-
-/// Resolves storage and calls leaf_search
-#[allow(clippy::too_many_arguments)]
-async fn resolve_storage_and_leaf_search(
-    searcher_context: Arc<SearcherContext>,
-    search_request: Arc<SearchRequest>,
-    index_uri: quickwit_common::uri::Uri,
-    storage_resolver: StorageResolver,
-    splits: Vec<SplitIdAndFooterOffsets>,
-    doc_mapper: Arc<DocMapper>,
-    aggregations_limits: AggregationLimitsGuard,
-) -> crate::Result<LeafSearchResponse> {
-    let storage = storage_resolver.resolve(&index_uri).await?;
-    leaf_search(
-        searcher_context.clone(),
-        search_request.clone(),
-        storage.clone(),
-        splits,
-        doc_mapper,
-        aggregations_limits,
-    )
-    .await
 }
 
 /// Optimizes the search_request based on CanSplitDoBetter
@@ -1318,14 +1278,14 @@ fn disable_search_request_hits(search_request: &mut SearchRequest) {
     search_request.sort_fields.clear();
 }
 
-/// `leaf` step of search.
+/// Searches multiple splits for a specific index and a single doc mapping
 ///
 /// The leaf search collects all kind of information, and returns a set of
 /// [PartialHit](quickwit_proto::search::PartialHit) candidates. The root will be in
 /// charge to consolidate, identify the actual final top hits to display, and
 /// fetch the actual documents to convert the partial hits into actual Hits.
 #[instrument(skip_all, fields(index = ?request.index_id_patterns))]
-pub async fn leaf_search(
+pub async fn single_doc_mapping_leaf_search(
     searcher_context: Arc<SearcherContext>,
     request: Arc<SearchRequest>,
     index_storage: Arc<dyn Storage>,
@@ -1447,15 +1407,6 @@ pub async fn leaf_search(
             .await
             .context("failed to merge split search responses");
 
-    let label_values = match leaf_search_response_reresult {
-        Ok(Ok(_)) => ["success"],
-        _ => ["error"],
-    };
-    SEARCH_METRICS
-        .leaf_search_targeted_splits
-        .with_label_values(label_values)
-        .observe(num_splits as f64);
-
     Ok(leaf_search_response_reresult??)
 }
 
@@ -1529,12 +1480,12 @@ mod tests {
 
     use bytes::BufMut;
     use quickwit_directories::write_hotcache;
-    use rand::{thread_rng, Rng};
+    use rand::{Rng, thread_rng};
+    use tantivy::TantivyDocument;
     use tantivy::directory::RamDirectory;
     use tantivy::schema::{
         BytesOptions, FieldEntry, Schema, TextFieldIndexing, TextOptions, Value,
     };
-    use tantivy::TantivyDocument;
 
     use super::*;
 
@@ -1800,12 +1751,14 @@ mod tests {
                     ..BoolQuery::default()
                 })],
                 // time bound
-                filter: vec![RangeQuery {
-                    field: "timestamp".to_string(),
-                    lower_bound: Bound::Included(1_700_002_000_000_000_000u64.into()),
-                    upper_bound: Bound::Unbounded,
-                }
-                .into()],
+                filter: vec![
+                    RangeQuery {
+                        field: "timestamp".to_string(),
+                        lower_bound: Bound::Included(1_700_002_000_000_000_000u64.into()),
+                        upper_bound: Bound::Unbounded,
+                    }
+                    .into(),
+                ],
                 ..BoolQuery::default()
             }),
         );

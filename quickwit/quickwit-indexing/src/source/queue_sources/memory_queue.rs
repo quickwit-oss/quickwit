@@ -22,8 +22,8 @@ use async_trait::async_trait;
 use quickwit_storage::OwnedBytes;
 use ulid::Ulid;
 
-use super::message::{MessageMetadata, RawMessage};
 use super::Queue;
+use super::message::{MessageMetadata, RawMessage};
 
 #[derive(Default)]
 struct InnerState {
@@ -170,7 +170,7 @@ mod tests {
     fn prefilled_queue(nb_message: usize) -> Arc<MemoryQueueForTests> {
         let memory_queue = MemoryQueueForTests::new();
         for i in 0..nb_message {
-            let payload = format!("Test message {}", i);
+            let payload = format!("Test message {i}");
             let ack_id = i.to_string();
             memory_queue.send_message(payload.clone(), &ack_id);
         }
@@ -188,7 +188,7 @@ mod tests {
                 .unwrap();
             assert_eq!(messages.len(), 1);
             let message = &messages[0];
-            let exp_payload = format!("Test message {}", i);
+            let exp_payload = format!("Test message {i}");
             let exp_ack_id = i.to_string();
             assert_eq!(message.payload.as_ref(), exp_payload.as_bytes());
             assert_eq!(message.metadata.ack_id, exp_ack_id);
@@ -204,7 +204,7 @@ mod tests {
             .unwrap();
         assert_eq!(messages.len(), 2);
         for (i, message) in messages.iter().enumerate() {
-            let exp_payload = format!("Test message {}", i);
+            let exp_payload = format!("Test message {i}");
             let exp_ack_id = i.to_string();
             assert_eq!(message.payload.as_ref(), exp_payload.as_bytes());
             assert_eq!(message.metadata.ack_id, exp_ack_id);

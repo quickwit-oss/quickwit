@@ -18,7 +18,7 @@ use quickwit_doc_mapper::QueryParserError;
 use quickwit_proto::error::grpc_error_to_grpc_status;
 use quickwit_proto::metastore::{EntityKind, MetastoreError};
 use quickwit_proto::search::SplitSearchError;
-use quickwit_proto::{tonic, GrpcServiceError, ServiceError, ServiceErrorCode};
+use quickwit_proto::{GrpcServiceError, ServiceError, ServiceErrorCode, tonic};
 use quickwit_storage::StorageResolverError;
 use serde::{Deserialize, Serialize};
 use tantivy::TantivyError;

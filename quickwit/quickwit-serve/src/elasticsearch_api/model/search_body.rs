@@ -21,8 +21,8 @@ use serde::de::{MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 
 use super::ElasticDateFormat;
-use crate::elasticsearch_api::model::{default_elasticsearch_sort_order, SortField};
 use crate::elasticsearch_api::TrackTotalHits;
+use crate::elasticsearch_api::model::{SortField, default_elasticsearch_sort_order};
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(untagged)]

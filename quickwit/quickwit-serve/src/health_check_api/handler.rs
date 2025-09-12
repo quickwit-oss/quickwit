@@ -118,7 +118,7 @@ async fn get_readiness(cluster: Cluster) -> impl warp::Reply {
 #[cfg(test)]
 mod tests {
 
-    use quickwit_cluster::{create_cluster_for_test, ChannelTransport};
+    use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
 
     #[tokio::test]
     async fn test_rest_search_api_health_checks() {

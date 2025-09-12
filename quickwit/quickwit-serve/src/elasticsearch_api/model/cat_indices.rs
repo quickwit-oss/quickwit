@@ -15,9 +15,9 @@
 use std::collections::HashSet;
 use std::ops::AddAssign;
 
-use hyper::StatusCode;
 use quickwit_metastore::{IndexMetadata, SplitMetadata};
 use serde::{Deserialize, Serialize, Serializer};
+use warp::hyper::StatusCode;
 
 use super::ElasticsearchError;
 use crate::simple_list::{from_simple_list, to_simple_list};
@@ -53,15 +53,13 @@ pub struct CatIndexQueryParams {
     pub v: Option<bool>,
 }
 impl CatIndexQueryParams {
+    #[allow(clippy::result_large_err)]
     pub fn validate(&self) -> Result<(), ElasticsearchError> {
         if let Some(format) = &self.format {
             if format.to_lowercase() != "json" {
                 return Err(ElasticsearchError::new(
                     StatusCode::BAD_REQUEST,
-                    format!(
-                        "Format {:?} is not supported. Only format=json is supported.",
-                        format
-                    ),
+                    format!("Format {format:?} is not supported. Only format=json is supported."),
                     None,
                 ));
             }
@@ -75,7 +73,7 @@ impl CatIndexQueryParams {
         let unsupported_parameter_error = |field: &str| {
             ElasticsearchError::new(
                 StatusCode::BAD_REQUEST,
-                format!("Parameter {:?} is not supported.", field),
+                format!("Parameter {field:?} is not supported."),
                 None,
             )
         };
@@ -211,7 +209,7 @@ fn format_byte_size(bytes: u64) -> String {
     const GIGABYTE: u64 = MEGABYTE * 1024;
     const TERABYTE: u64 = GIGABYTE * 1024;
     if bytes < KILOBYTE {
-        format!("{}b", bytes)
+        format!("{bytes}b")
     } else if bytes < MEGABYTE {
         format!("{:.1}kb", bytes as f64 / KILOBYTE as f64)
     } else if bytes < GIGABYTE {

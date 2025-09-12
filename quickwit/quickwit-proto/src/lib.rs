@@ -13,15 +13,15 @@
 // limitations under the License.
 
 #![allow(clippy::derive_partial_eq_without_eq)]
-#![deny(clippy::disallowed_methods)]
+#![allow(clippy::disallowed_methods)]
 #![allow(rustdoc::invalid_html_tags)]
 
 use std::cmp::Ordering;
 
 use ::opentelemetry::global;
 use ::opentelemetry::propagation::{Extractor, Injector};
-use tonic::service::Interceptor;
 use tonic::Status;
+use tonic::service::Interceptor;
 use tracing::Span;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
@@ -101,21 +101,6 @@ pub mod opentelemetry {
                 include!("codegen/opentelemetry/opentelemetry.proto.trace.v1.rs");
             }
         }
-    }
-}
-
-impl TryFrom<search::SearchStreamRequest> for search::SearchRequest {
-    type Error = anyhow::Error;
-
-    fn try_from(search_stream_req: search::SearchStreamRequest) -> Result<Self, Self::Error> {
-        Ok(Self {
-            index_id_patterns: vec![search_stream_req.index_id],
-            query_ast: search_stream_req.query_ast,
-            snippet_fields: search_stream_req.snippet_fields,
-            start_timestamp: search_stream_req.start_timestamp,
-            end_timestamp: search_stream_req.end_timestamp,
-            ..Default::default()
-        })
     }
 }
 

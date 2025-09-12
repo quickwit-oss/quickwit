@@ -20,7 +20,7 @@ use anyhow::ensure;
 use itertools::Itertools;
 use quickwit_common::get_bool_from_env;
 use serde::{Deserialize, Serialize};
-use serde_with::{serde_as, EnumMap};
+use serde_with::{EnumMap, serde_as};
 
 /// Lists the storage backends supported by Quickwit.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -279,16 +279,16 @@ impl AzureStorageConfig {
         }
     }
 
-    /// Attempts to find the account name in the environment variable `QW_AZURE_STORAGE_ACCOUNT` or
-    /// the config.
+    /// Attempts to find the storage account name in the environment variable
+    /// `QW_AZURE_STORAGE_ACCOUNT` or node config.
     pub fn resolve_account_name(&self) -> Option<String> {
         env::var(Self::AZURE_STORAGE_ACCOUNT_ENV_VAR)
             .ok()
             .or_else(|| self.account_name.clone())
     }
 
-    /// Attempts to find the access key in the environment variable `QW_AZURE_STORAGE_ACCESS_KEY` or
-    /// the config.
+    /// Attempts to find the storage account access key in the environment variable
+    /// `QW_AZURE_STORAGE_ACCESS_KEY` or node config.
     pub fn resolve_access_key(&self) -> Option<String> {
         env::var(Self::AZURE_STORAGE_ACCESS_KEY_ENV_VAR)
             .ok()
@@ -347,6 +347,7 @@ impl S3StorageConfig {
                 self.disable_multipart_upload = true;
             }
             Some(StorageBackendFlavor::MinIO) => {
+                self.region = Some("minio".to_string());
                 self.force_path_style_access = true;
             }
             _ => {}
@@ -497,6 +498,7 @@ mod tests {
         assert!(gcs_storage_config.disable_multipart_upload);
 
         let minio_storage_config = storage_configs[3].as_s3().unwrap();
+        assert_eq!(minio_storage_config.region, Some("minio".to_string()));
         assert!(minio_storage_config.force_path_style_access);
     }
 

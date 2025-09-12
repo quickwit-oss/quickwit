@@ -12,13 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
-use bytes::Bytes;
 use quickwit_common::uri::Uri;
 use quickwit_config::SearcherConfig;
 use quickwit_doc_mapper::DocMapper;
@@ -26,29 +24,25 @@ use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_proto::search::{
     FetchDocsRequest, FetchDocsResponse, GetKvRequest, Hit, LeafListFieldsRequest,
     LeafListTermsRequest, LeafListTermsResponse, LeafSearchRequest, LeafSearchResponse,
-    LeafSearchStreamRequest, LeafSearchStreamResponse, ListFieldsRequest, ListFieldsResponse,
-    ListTermsRequest, ListTermsResponse, PutKvRequest, ReportSplitsRequest, ReportSplitsResponse,
-    ScrollRequest, SearchPlanResponse, SearchRequest, SearchResponse, SearchStreamRequest,
-    SnippetRequest,
+    ListFieldsRequest, ListFieldsResponse, ListTermsRequest, ListTermsResponse, PutKvRequest,
+    ReportSplitsRequest, ReportSplitsResponse, ScrollRequest, SearchPlanResponse, SearchRequest,
+    SearchResponse, SnippetRequest,
 };
 use quickwit_storage::{
     MemorySizedCache, QuickwitCache, SplitCache, StorageCache, StorageResolver,
 };
 use tantivy::aggregation::AggregationLimitsGuard;
-use tokio::sync::Semaphore;
-use tokio_stream::wrappers::UnboundedReceiverStream;
 
-use crate::leaf::multi_leaf_search;
+use crate::leaf::multi_index_leaf_search;
 use crate::leaf_cache::LeafSearchCache;
 use crate::list_fields::{leaf_list_fields, root_list_fields};
 use crate::list_fields_cache::ListFieldsCache;
 use crate::list_terms::{leaf_list_terms, root_list_terms};
-use crate::metrics::SEARCH_METRICS;
+use crate::metrics_trackers::LeafSearchMetricsFuture;
 use crate::root::fetch_docs_phase;
 use crate::scroll_context::{MiniKV, ScrollContext, ScrollKeyAndStartOffset};
 use crate::search_permit_provider::SearchPermitProvider;
-use crate::search_stream::{leaf_search_stream, root_search_stream};
-use crate::{fetch_docs, root_search, search_plan, ClusterClient, SearchError};
+use crate::{ClusterClient, SearchError, fetch_docs, root_search, search_plan};
 
 #[derive(Clone)]
 /// The search service implementation.
@@ -57,7 +51,7 @@ pub struct SearchServiceImpl {
     storage_resolver: StorageResolver,
     cluster_client: ClusterClient,
     searcher_context: Arc<SearcherContext>,
-    search_after_cache: MiniKV,
+    local_kv_store: MiniKV,
 }
 
 /// Trait representing a search service.
@@ -88,18 +82,6 @@ pub trait SearchService: 'static + Send + Sync {
     /// Fetches the documents contents from the document store.
     /// This methods takes `PartialHit`s and returns `Hit`s.
     async fn fetch_docs(&self, request: FetchDocsRequest) -> crate::Result<FetchDocsResponse>;
-
-    /// Performs a root search returning a receiver for streaming
-    async fn root_search_stream(
-        &self,
-        request: SearchStreamRequest,
-    ) -> crate::Result<Pin<Box<dyn futures::Stream<Item = crate::Result<Bytes>> + Send>>>;
-
-    /// Performs a leaf search on a given set of splits and returns a stream.
-    async fn leaf_search_stream(
-        &self,
-        request: LeafSearchStreamRequest,
-    ) -> crate::Result<UnboundedReceiverStream<crate::Result<LeafSearchStreamResponse>>>;
 
     /// Root search API.
     /// This RPC identifies the set of splits on which the query should run on,
@@ -165,7 +147,7 @@ impl SearchServiceImpl {
             storage_resolver,
             cluster_client,
             searcher_context,
-            search_after_cache: MiniKV::default(),
+            local_kv_store: MiniKV::default(),
         }
     }
 }
@@ -198,30 +180,23 @@ impl SearchService for SearchServiceImpl {
         if leaf_search_request.search_request.is_none() {
             return Err(SearchError::Internal("no search request".to_string()));
         }
-        let start = Instant::now();
-        let leaf_search_response_result = multi_leaf_search(
-            self.searcher_context.clone(),
-            leaf_search_request,
-            &self.storage_resolver,
-        )
-        .await;
+        let num_splits = leaf_search_request
+            .leaf_requests
+            .iter()
+            .map(|req| req.split_offsets.len())
+            .sum::<usize>();
 
-        let elapsed = start.elapsed().as_secs_f64();
-        let label_values = if leaf_search_response_result.is_ok() {
-            ["success"]
-        } else {
-            ["error"]
-        };
-        SEARCH_METRICS
-            .leaf_search_requests_total
-            .with_label_values(label_values)
-            .inc();
-        SEARCH_METRICS
-            .leaf_search_request_duration_seconds
-            .with_label_values(label_values)
-            .observe(elapsed);
-
-        leaf_search_response_result
+        LeafSearchMetricsFuture {
+            tracked: multi_index_leaf_search(
+                self.searcher_context.clone(),
+                leaf_search_request,
+                &self.storage_resolver,
+            ),
+            start: Instant::now(),
+            targeted_splits: num_splits,
+            status: None,
+        }
+        .await
     }
 
     async fn fetch_docs(
@@ -244,40 +219,6 @@ impl SearchService for SearchServiceImpl {
         .await?;
 
         Ok(fetch_docs_response)
-    }
-
-    async fn root_search_stream(
-        &self,
-        stream_request: SearchStreamRequest,
-    ) -> crate::Result<Pin<Box<dyn futures::Stream<Item = crate::Result<Bytes>> + Send>>> {
-        let data = root_search_stream(
-            stream_request,
-            self.metastore.clone(),
-            self.cluster_client.clone(),
-        )
-        .await?;
-        Ok(Box::pin(data))
-    }
-
-    async fn leaf_search_stream(
-        &self,
-        leaf_stream_request: LeafSearchStreamRequest,
-    ) -> crate::Result<UnboundedReceiverStream<crate::Result<LeafSearchStreamResponse>>> {
-        let stream_request = leaf_stream_request
-            .request
-            .ok_or_else(|| SearchError::Internal("no search request".to_string()))?;
-        let index_uri = Uri::from_str(&leaf_stream_request.index_uri)?;
-        let storage = self.storage_resolver.resolve(&index_uri).await?;
-        let doc_mapper = deserialize_doc_mapper(&leaf_stream_request.doc_mapper)?;
-        let leaf_receiver = leaf_search_stream(
-            self.searcher_context.clone(),
-            stream_request,
-            storage,
-            leaf_stream_request.split_offsets,
-            doc_mapper,
-        )
-        .await;
-        Ok(leaf_receiver)
     }
 
     async fn root_list_terms(
@@ -322,13 +263,13 @@ impl SearchService for SearchServiceImpl {
 
     async fn put_kv(&self, put_request: PutKvRequest) {
         let ttl = Duration::from_secs(put_request.ttl_secs as u64);
-        self.search_after_cache
+        self.local_kv_store
             .put(put_request.key, put_request.payload, ttl)
             .await;
     }
 
     async fn get_kv(&self, get_request: GetKvRequest) -> Option<Vec<u8>> {
-        let payload: Vec<u8> = self.search_after_cache.get(&get_request.key).await?;
+        let payload: Vec<u8> = self.local_kv_store.get(&get_request.key).await?;
         Some(payload)
     }
 
@@ -447,7 +388,7 @@ pub(crate) async fn scroll(
         elapsed_time_micros: start.elapsed().as_micros() as u64,
         scroll_id: Some(next_scroll_id.to_string()),
         errors: Vec::new(),
-        aggregation: None,
+        aggregation_postcard: None,
         failed_splits: scroll_context.failed_splits,
         num_successful_splits: scroll_context.num_successful_splits,
     })
@@ -464,8 +405,6 @@ pub struct SearcherContext {
     pub search_permit_provider: SearchPermitProvider,
     /// Split footer cache.
     pub split_footer_cache: MemorySizedCache<String>,
-    /// Counting semaphore to limit concurrent split stream requests.
-    pub split_stream_semaphore: Semaphore,
     /// Recent sub-query cache.
     pub leaf_search_cache: LeafSearchCache,
     /// Search split cache. `None` if no split cache is configured.
@@ -480,12 +419,12 @@ impl std::fmt::Debug for SearcherContext {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         f.debug_struct("SearcherContext")
             .field("searcher_config", &self.searcher_config)
-            .field("split_stream_semaphore", &self.split_stream_semaphore)
             .finish()
     }
 }
 
 impl SearcherContext {
+    /// Create a default SearcherContext
     #[cfg(test)]
     pub fn for_test() -> SearcherContext {
         let searcher_config = SearcherConfig::default();
@@ -503,8 +442,6 @@ impl SearcherContext {
             searcher_config.max_num_concurrent_split_searches,
             searcher_config.warmup_memory_budget,
         );
-        let split_stream_semaphore =
-            Semaphore::new(searcher_config.max_num_concurrent_split_streams);
         let fast_field_cache_capacity = searcher_config.fast_field_cache_capacity.as_u64() as usize;
         let storage_long_term_cache = Arc::new(QuickwitCache::new(fast_field_cache_capacity));
         let leaf_search_cache =
@@ -521,7 +458,6 @@ impl SearcherContext {
             fast_fields_cache: storage_long_term_cache,
             search_permit_provider: leaf_search_split_semaphore,
             split_footer_cache: global_split_footer_cache,
-            split_stream_semaphore,
             leaf_search_cache,
             list_fields_cache,
             split_cache_opt,

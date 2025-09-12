@@ -14,14 +14,14 @@
 
 use std::collections::HashMap;
 
-use base64::prelude::{Engine, BASE64_STANDARD};
-use hyper::StatusCode;
+use base64::prelude::{BASE64_STANDARD, Engine};
 use itertools::Itertools;
 use prost_types::{Duration, Timestamp};
 use quickwit_proto::jaeger::api_v2::{KeyValue, Log, Process, Span, SpanRef, ValueType};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use serde_with::serde_as;
+use warp::hyper::StatusCode;
 
 pub(super) const DEFAULT_NUMBER_OF_TRACES: i32 = 20;
 
@@ -105,7 +105,7 @@ impl JaegerTrace {
                 span.process_id = Some(process_id.clone());
             } else {
                 process_counter += 1;
-                current_process.key = format!("p{}", process_counter);
+                current_process.key = format!("p{process_counter}");
                 span.process_id = Some(current_process.key.clone());
                 process_map.insert(current_process.key.clone(), current_process.clone());
                 service_name_to_process_id.insert(
@@ -341,7 +341,7 @@ fn convert_duration_to_microsecs(duration: Duration) -> i64 {
 mod tests {
     use quickwit_proto::jaeger::api_v2::Log;
 
-    use crate::jaeger_api::model::{build_jaeger_traces, JaegerSpan};
+    use crate::jaeger_api::model::{JaegerSpan, build_jaeger_traces};
 
     #[test]
     fn test_convert_grpc_jaeger_spans_into_jaeger_ui_model() {

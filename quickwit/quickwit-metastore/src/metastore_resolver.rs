@@ -65,7 +65,7 @@ impl MetastoreResolver {
             _ => {
                 return Err(MetastoreResolverError::UnsupportedBackend(
                     "no implementation exists for this backend".to_string(),
-                ))
+                ));
             }
         };
         let (metastore_factory, metastore_config) = self

@@ -15,7 +15,6 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
-use hyper::StatusCode;
 use itertools::Itertools;
 use quickwit_jaeger::JaegerService;
 use quickwit_proto::jaeger::storage::v1::{
@@ -23,21 +22,22 @@ use quickwit_proto::jaeger::storage::v1::{
     SpansResponseChunk, TraceQueryParameters,
 };
 use quickwit_proto::tonic;
-use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
+use tokio_stream::wrappers::ReceiverStream;
 use tracing::error;
+use warp::hyper::StatusCode;
 use warp::{Filter, Rejection};
 
 use super::model::build_jaeger_traces;
 use super::parse_duration::{parse_duration_with_units, to_well_known_timestamp};
 use crate::jaeger_api::model::{
-    JaegerError, JaegerResponseBody, JaegerSpan, JaegerTrace, TracesSearchQueryParams,
-    DEFAULT_NUMBER_OF_TRACES,
+    DEFAULT_NUMBER_OF_TRACES, JaegerError, JaegerResponseBody, JaegerSpan, JaegerTrace,
+    TracesSearchQueryParams,
 };
 use crate::rest::recover_fn;
 use crate::rest_api_response::RestApiResponse;
 use crate::search_api::extract_index_id_patterns;
-use crate::{require, BodyFormat};
+use crate::{BodyFormat, require};
 
 #[derive(utoipa::OpenApi)]
 #[openapi(paths(
@@ -139,7 +139,7 @@ pub fn jaeger_traces_search_handler(
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     jaeger_api_path_filter()
         .and(warp::path!("traces"))
-        .and(serde_qs::warp::query(serde_qs::Config::default()))
+        .and(warp::query())
         .and(require(jaeger_service_opt))
         .then(jaeger_traces_search)
         .map(|result| make_jaeger_api_response(result, BodyFormat::default()))
@@ -177,7 +177,7 @@ async fn jaeger_services(
         .await
         .map_err(|error| JaegerError {
             status: StatusCode::INTERNAL_SERVER_ERROR,
-            message: format!("failed to fetch services: {}", error),
+            message: format!("failed to fetch services: {error}"),
         })?;
     Ok(JaegerResponseBody::<Vec<String>> {
         data: get_services_response.services,
@@ -391,12 +391,14 @@ mod tests {
             .await;
         assert_eq!(resp.status(), 200);
         let actual_response_json: JsonValue = serde_json::from_slice(resp.body())?;
-        assert!(actual_response_json
-            .get("data")
-            .unwrap()
-            .as_array()
-            .unwrap()
-            .is_empty());
+        assert!(
+            actual_response_json
+                .get("data")
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
         Ok(())
     }
 
@@ -427,12 +429,14 @@ mod tests {
             .await;
         assert_eq!(resp.status(), 200);
         let actual_response_json: JsonValue = serde_json::from_slice(resp.body()).unwrap();
-        assert!(actual_response_json
-            .get("data")
-            .unwrap()
-            .as_array()
-            .unwrap()
-            .is_empty());
+        assert!(
+            actual_response_json
+                .get("data")
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[tokio::test]
@@ -473,7 +477,7 @@ mod tests {
                     hits: Vec::new(),
                     elapsed_time_micros: 0,
                     errors: Vec::new(),
-                    aggregation: None,
+                    aggregation_postcard: None,
                     scroll_id: None,
                     failed_splits: Vec::new(),
                     num_successful_splits: 1,
@@ -506,7 +510,7 @@ mod tests {
                     hits: Vec::new(),
                     elapsed_time_micros: 0,
                     errors: Vec::new(),
-                    aggregation: None,
+                    aggregation_postcard: None,
                     scroll_id: None,
                     failed_splits: Vec::new(),
                     num_successful_splits: 1,
@@ -523,11 +527,13 @@ mod tests {
 
         assert_eq!(resp.status(), 200);
         let actual_response_json: JsonValue = serde_json::from_slice(resp.body()).unwrap();
-        assert!(actual_response_json
-            .get("data")
-            .unwrap()
-            .as_array()
-            .unwrap()
-            .is_empty());
+        assert!(
+            actual_response_json
+                .get("data")
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
     }
 }

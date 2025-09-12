@@ -23,6 +23,7 @@
 // For the individual detailed API documentation however, you should refer to elastic
 // documentation.
 
+pub mod aggregations;
 mod elastic_query_dsl;
 mod error;
 mod json_literal;
@@ -40,8 +41,8 @@ pub use tantivy::query::Query as TantivyQuery;
 #[cfg(feature = "multilang")]
 pub use tokenizers::MultiLangTokenizer;
 pub use tokenizers::{
-    create_default_quickwit_tokenizer_manager, get_quickwit_fastfield_normalizer_manager,
-    CodeTokenizer, DEFAULT_REMOVE_TOKEN_LENGTH,
+    CodeTokenizer, DEFAULT_REMOVE_TOKEN_LENGTH, create_default_quickwit_tokenizer_manager,
+    get_quickwit_fastfield_normalizer_manager,
 };
 
 #[derive(Serialize, Deserialize, Debug, Default, Copy, Clone, Eq, PartialEq)]

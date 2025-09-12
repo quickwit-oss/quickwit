@@ -16,6 +16,7 @@ use quickwit_common::uri::Uri;
 use serde::{Deserialize, Serialize};
 
 use super::{IndexIdPattern, IndexTemplate, IndexTemplateId};
+use crate::index_config::IngestSettings;
 use crate::{DocMapping, IndexingSettings, RetentionPolicy, SearchSettings};
 
 #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
@@ -49,6 +50,8 @@ pub struct IndexTemplateV0_8 {
     #[serde(default)]
     pub indexing_settings: IndexingSettings,
     #[serde(default)]
+    pub ingest_settings: IngestSettings,
+    #[serde(default)]
     pub search_settings: SearchSettings,
     #[serde(default)]
     pub retention: Option<RetentionPolicy>,
@@ -78,6 +81,7 @@ impl From<IndexTemplateV0_8> for IndexTemplate {
             description: index_template_v0_8.description,
             doc_mapping: index_template_v0_8.doc_mapping,
             indexing_settings: index_template_v0_8.indexing_settings,
+            ingest_settings: index_template_v0_8.ingest_settings,
             search_settings: index_template_v0_8.search_settings,
             retention_policy_opt: index_template_v0_8.retention,
         }
@@ -94,6 +98,7 @@ impl From<IndexTemplate> for IndexTemplateV0_8 {
             description: index_template.description,
             doc_mapping: index_template.doc_mapping,
             indexing_settings: index_template.indexing_settings,
+            ingest_settings: index_template.ingest_settings,
             search_settings: index_template.search_settings,
             retention: index_template.retention_policy_opt,
         }

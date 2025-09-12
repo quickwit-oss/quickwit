@@ -14,7 +14,7 @@
 
 use std::time::Duration;
 
-use hyper::Body;
+use hyper_util::rt::TokioExecutor;
 use quickwit_config::service::QuickwitService;
 use quickwit_serve::SearchRequestQueryString;
 
@@ -36,10 +36,10 @@ async fn test_tls_rest() {
     });
     let sandbox = sandbox_config.start().await;
     let node_config = sandbox.node_configs.first().unwrap();
-    let client = hyper::Client::builder()
+    let client = hyper_util::client::legacy::Client::builder(TokioExecutor::new())
         .pool_idle_timeout(Duration::from_secs(30))
         .http2_only(true)
-        .build_http::<Body>();
+        .build_http::<String>();
     let root_uri = format!("http://{}/", node_config.0.rest_config.listen_addr)
         .parse::<hyper::Uri>()
         .unwrap();
@@ -58,6 +58,8 @@ async fn test_tls_rest() {
             .len(),
         0
     );
+
+    sandbox.shutdown().await.unwrap();
 }
 
 #[tokio::test]
@@ -106,12 +108,14 @@ async fn test_tls_grpc() {
         .await
         .unwrap();
 
-    assert!(sandbox
-        .rest_client(QuickwitService::Indexer)
-        .node_health()
-        .is_live()
-        .await
-        .unwrap());
+    assert!(
+        sandbox
+            .rest_client(QuickwitService::Indexer)
+            .node_health()
+            .is_live()
+            .await
+            .unwrap()
+    );
 
     // Assert that at least 1 indexing pipelines is successfully started
     sandbox.wait_for_indexing_pipelines(1).await.unwrap();

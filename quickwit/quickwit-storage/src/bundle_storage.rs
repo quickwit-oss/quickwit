@@ -25,8 +25,8 @@ use async_trait::async_trait;
 use quickwit_common::chunk_range;
 use quickwit_common::uri::Uri;
 use serde::{Deserialize, Serialize};
-use tantivy::directory::FileSlice;
 use tantivy::HasLen;
+use tantivy::directory::FileSlice;
 use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncWriteExt};
 use tracing::error;
@@ -315,7 +315,7 @@ impl fmt::Debug for BundleStorage {
 fn unsupported_operation(paths: &[&Path]) -> StorageError {
     let msg = "Unsupported operation. BundleStorage only supports async reads";
     error!(paths=?paths, msg);
-    io::Error::new(io::ErrorKind::Other, format!("{msg}: {paths:?}")).into()
+    io::Error::other(format!("{msg}: {paths:?}")).into()
 }
 
 #[cfg(test)]

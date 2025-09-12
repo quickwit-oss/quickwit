@@ -19,12 +19,13 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use quickwit_actors::{
-    Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Mailbox, QueueCapacity,
-    Supervisable, HEARTBEAT,
+    Actor, ActorContext, ActorExitStatus, ActorHandle, HEARTBEAT, Handler, Health, Mailbox,
+    QueueCapacity, Supervisable,
 };
+use quickwit_common::KillSwitch;
+use quickwit_common::metrics::OwnedGaugeGuard;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::TempDirectory;
-use quickwit_common::KillSwitch;
 use quickwit_config::{IndexingSettings, RetentionPolicy, SourceConfig};
 use quickwit_doc_mapper::DocMapper;
 use quickwit_ingest::IngesterPool;
@@ -36,6 +37,7 @@ use tokio::sync::Semaphore;
 use tracing::{debug, error, info, instrument};
 
 use super::MergePlanner;
+use crate::SplitsUpdateMailbox;
 use crate::actors::doc_processor::DocProcessor;
 use crate::actors::index_serializer::IndexSerializer;
 use crate::actors::publisher::PublisherType;
@@ -45,10 +47,9 @@ use crate::actors::{Indexer, Packager, Publisher, Uploader};
 use crate::merge_policy::MergePolicy;
 use crate::models::IndexingStatistics;
 use crate::source::{
-    quickwit_supported_sources, AssignShards, Assignment, SourceActor, SourceRuntime,
+    AssignShards, Assignment, SourceActor, SourceRuntime, quickwit_supported_sources,
 };
 use crate::split_store::IndexingSplitStore;
-use crate::SplitsUpdateMailbox;
 
 const SUPERVISE_INTERVAL: Duration = Duration::from_secs(1);
 
@@ -120,6 +121,7 @@ pub struct IndexingPipeline {
     // requiring a respawn of the pipeline.
     // We keep the list of shards here however, to reassign them after a respawn.
     shard_ids: BTreeSet<ShardId>,
+    _indexing_pipelines_gauge_guard: OwnedGaugeGuard,
 }
 
 #[async_trait]
@@ -154,6 +156,10 @@ impl Actor for IndexingPipeline {
 
 impl IndexingPipeline {
     pub fn new(params: IndexingPipelineParams) -> Self {
+        let indexing_pipelines_gauge = crate::metrics::INDEXER_METRICS
+            .indexing_pipelines
+            .with_label_values([&params.pipeline_id.index_uid.index_id]);
+        let indexing_pipelines_gauge_guard = OwnedGaugeGuard::from_gauge(indexing_pipelines_gauge);
         let params_fingerprint = params.params_fingerprint;
         IndexingPipeline {
             params,
@@ -165,6 +171,7 @@ impl IndexingPipeline {
                 ..Default::default()
             },
             shard_ids: Default::default(),
+            _indexing_pipelines_gauge_guard: indexing_pipelines_gauge_guard,
         }
     }
 
@@ -304,7 +311,7 @@ impl IndexingPipeline {
         skip_all,
         fields(
             index=%self.params.pipeline_id.index_uid.index_id,
-            gen=self.generation()
+            r#gen=self.generation()
         ))]
     async fn spawn_pipeline(&mut self, ctx: &ActorContext<Self>) -> anyhow::Result<()> {
         let _spawn_pipeline_permit = ctx
@@ -604,7 +611,7 @@ mod tests {
     use quickwit_actors::{Command, Universe};
     use quickwit_common::ServiceStream;
     use quickwit_config::{IndexingSettings, SourceInputFormat, SourceParams};
-    use quickwit_doc_mapper::{default_doc_mapper_for_test, DocMapper};
+    use quickwit_doc_mapper::{DocMapper, default_doc_mapper_for_test};
     use quickwit_metastore::checkpoint::IndexCheckpointDelta;
     use quickwit_metastore::{IndexMetadata, IndexMetadataResponseExt, PublishSplitsRequestExt};
     use quickwit_proto::metastore::{
@@ -945,7 +952,7 @@ mod tests {
             .process_pending_and_observe()
             .await;
         assert_eq!(obs.generation, 1);
-        // Let's shutdown the indexer, this will trigger the the indexing pipeline failure and the
+        // Let's shutdown the indexer, this will trigger the indexing pipeline failure and the
         // restart.
         let indexer = universe.get::<Indexer>().into_iter().next().unwrap();
         let _ = indexer.ask(Command::Quit).await;

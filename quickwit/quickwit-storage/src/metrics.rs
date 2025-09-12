@@ -16,8 +16,8 @@
 
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
-    new_counter, new_counter_vec, new_gauge, new_histogram_vec, GaugeGuard, Histogram, IntCounter,
-    IntCounterVec, IntGauge,
+    GaugeGuard, Histogram, IntCounter, IntCounterVec, IntGauge, new_counter, new_counter_vec,
+    new_gauge, new_histogram_vec,
 };
 
 /// Counters associated to storage operations.

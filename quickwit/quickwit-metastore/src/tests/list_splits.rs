@@ -18,7 +18,7 @@ use futures::TryStreamExt;
 use itertools::Itertools;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_config::IndexConfig;
-use quickwit_doc_mapper::tag_pruning::{no_tag, tag, TagFilterAst};
+use quickwit_doc_mapper::tag_pruning::{TagFilterAst, no_tag, tag};
 use quickwit_proto::metastore::{
     CreateIndexRequest, ListSplitsRequest, ListStaleSplitsRequest, MarkSplitsForDeletionRequest,
     PublishSplitsRequest, StageSplitsRequest,
@@ -28,7 +28,7 @@ use time::OffsetDateTime;
 use tokio::time::sleep;
 use tracing::info;
 
-use super::{to_btree_set, DefaultForTest};
+use super::{DefaultForTest, to_btree_set};
 use crate::metastore::MetastoreServiceStreamSplitsExt;
 use crate::tests::{cleanup_index, collect_split_ids};
 use crate::{
@@ -1661,8 +1661,8 @@ pub async fn test_metastore_list_splits_from_all_indexes<
                 &split.split_metadata.split_id,
             )
         })
-        // when running this test against a clean database, this line isn't neeeded. In practice,
-        // any test that leaves any split behind breaks this tes tif we remove this filter
+        // when running this test against a clean database, this line isn't needed. In practice,
+        // any test that leaves any split behind breaks this test if we remove this filter
         .filter(|(index_uid, _split_id)| {
             [index_uid_1.clone(), index_uid_2.clone()].contains(index_uid)
         })

@@ -16,9 +16,13 @@
 
 mod coolid;
 
+#[cfg(feature = "jemalloc-profiled")]
+pub(crate) mod alloc_tracker;
 pub mod binary_heap;
 pub mod fs;
 pub mod io;
+#[cfg(feature = "jemalloc-profiled")]
+pub mod jemalloc_profiled;
 mod kill_switch;
 pub mod metrics;
 pub mod net;
@@ -181,11 +185,7 @@ macro_rules! ignore_error_kind {
 pub const fn div_ceil_u32(lhs: u32, rhs: u32) -> u32 {
     let d = lhs / rhs;
     let r = lhs % rhs;
-    if r > 0 {
-        d + 1
-    } else {
-        d
-    }
+    if r > 0 { d + 1 } else { d }
 }
 
 #[inline]
@@ -213,24 +213,28 @@ pub fn num_cpus() -> usize {
 
 // The following are helpers to build named tasks.
 //
-// Named tasks require the tokio feature `tracing` to be enabled.
-// If the `named_tasks` feature is disabled, this is no-op.
+// Named tasks require the tokio feature `tracing` to be enabled. If the
+// `named_tasks` feature is disabled, this is no-op.
 //
-// By default, these function will just ignore the name passed and just act
-// like a regular call to `tokio::spawn`.
+// By default, these function will just ignore the name passed and just act like
+// a regular call to `tokio::spawn`.
 //
-// If the user compiles `quickwit-cli` with the `tokio-console` feature,
-// then tasks will automatically be named. This is not just "visual sugar".
+// If the user compiles `quickwit-cli` with the `tokio-console` feature, then
+// tasks will automatically be named. This is not just "visual sugar".
 //
-// Without names, tasks will only show their spawn site on tokio-console.
-// This is a catastrophy for actors who all share the same spawn site.
+// Without names, tasks will only show their spawn site on tokio-console. This
+// is a catastrophy for actors who all share the same spawn site.
+//
+// The #[track_caller] annotation is used to show the right spawn site in the
+// Tokio TRACE spans (only available when the tokio/tracing feature is on).
 //
 // # Naming
 //
-// Actors will get named after their type, which is fine.
-// For other tasks, please use `snake_case`.
+// Actors will get named after their type, which is fine. For other tasks,
+// please use `snake_case`.
 
 #[cfg(not(all(tokio_unstable, feature = "named_tasks")))]
+#[track_caller]
 pub fn spawn_named_task<F>(future: F, _name: &'static str) -> tokio::task::JoinHandle<F::Output>
 where
     F: Future + Send + 'static,
@@ -240,6 +244,7 @@ where
 }
 
 #[cfg(not(all(tokio_unstable, feature = "named_tasks")))]
+#[track_caller]
 pub fn spawn_named_task_on<F>(
     future: F,
     _name: &'static str,
@@ -253,6 +258,7 @@ where
 }
 
 #[cfg(all(tokio_unstable, feature = "named_tasks"))]
+#[track_caller]
 pub fn spawn_named_task<F>(future: F, name: &'static str) -> tokio::task::JoinHandle<F::Output>
 where
     F: Future + Send + 'static,
@@ -265,6 +271,7 @@ where
 }
 
 #[cfg(all(tokio_unstable, feature = "named_tasks"))]
+#[track_caller]
 pub fn spawn_named_task_on<F>(
     future: F,
     name: &'static str,
@@ -304,11 +311,15 @@ mod tests {
 
     #[test]
     fn test_get_from_env() {
+        // SAFETY: this test may not be entirely sound if not run with nextest or --test-threads=1
+        // as this is only a test, and it would be extremely inconvenient to run it in a different
+        // way, we are keeping it that way
+
         const TEST_KEY: &str = "TEST_KEY";
         assert_eq!(super::get_from_env(TEST_KEY, 10), 10);
-        std::env::set_var(TEST_KEY, "15");
+        unsafe { std::env::set_var(TEST_KEY, "15") };
         assert_eq!(super::get_from_env(TEST_KEY, 10), 15);
-        std::env::set_var(TEST_KEY, "1invalidnumber");
+        unsafe { std::env::set_var(TEST_KEY, "1invalidnumber") };
         assert_eq!(super::get_from_env(TEST_KEY, 10), 10);
     }
 

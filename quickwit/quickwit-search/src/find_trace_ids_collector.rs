@@ -27,8 +27,11 @@ use tantivy::{DateTime, DocId, Score, SegmentReader};
 type TermOrd = u64;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Metadata about a single span
 pub struct Span {
+    /// The trace id this span is part of
     pub trace_id: TraceId,
+    /// The start timestamp of the span
     #[serde(with = "serde_datetime")]
     pub span_timestamp: DateTime,
 }
@@ -354,8 +357,8 @@ mod serde_datetime {
 
 #[cfg(test)]
 mod tests {
-    use tantivy::time::OffsetDateTime;
     use tantivy::DateTime;
+    use tantivy::time::OffsetDateTime;
 
     use super::*;
     use crate::collector::QuickwitAggregations;

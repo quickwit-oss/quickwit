@@ -194,14 +194,14 @@ impl IngesterShard {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_config::{build_doc_mapper, DocMapping, SearchSettings};
+    use quickwit_config::{DocMapping, SearchSettings, build_doc_mapper};
 
     use super::*;
 
     impl IngesterShard {
         #[track_caller]
         pub fn assert_is_solo(&self) {
-            assert!(matches!(self.shard_type, IngesterShardType::Solo { .. }))
+            assert!(matches!(self.shard_type, IngesterShardType::Solo))
         }
 
         #[track_caller]

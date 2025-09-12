@@ -21,13 +21,13 @@ use futures::StreamExt;
 use itertools::Itertools;
 use quickwit_common::pretty::PrettySample;
 use quickwit_common::uri::Uri;
-use quickwit_common::{get_bool_from_env, rate_limited_error, ServiceStream};
+use quickwit_common::{ServiceStream, get_bool_from_env, rate_limited_error};
 use quickwit_config::{
-    validate_index_id_pattern, IndexTemplate, IndexTemplateId, PostgresMetastoreConfig,
+    IndexTemplate, IndexTemplateId, PostgresMetastoreConfig, validate_index_id_pattern,
 };
 use quickwit_proto::ingest::{Shard, ShardState};
 use quickwit_proto::metastore::{
-    serde_utils, AcquireShardsRequest, AcquireShardsResponse, AddSourceRequest, CreateIndexRequest,
+    AcquireShardsRequest, AcquireShardsResponse, AddSourceRequest, CreateIndexRequest,
     CreateIndexResponse, CreateIndexTemplateRequest, DeleteIndexRequest,
     DeleteIndexTemplatesRequest, DeleteQuery, DeleteShardsRequest, DeleteShardsResponse,
     DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, EmptyResponse, EntityKind,
@@ -43,7 +43,7 @@ use quickwit_proto::metastore::{
     OpenShardSubresponse, OpenShardsRequest, OpenShardsResponse, PruneShardsRequest,
     PublishSplitsRequest, ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest,
     UpdateIndexRequest, UpdateSourceRequest, UpdateSplitsDeleteOpstampRequest,
-    UpdateSplitsDeleteOpstampResponse,
+    UpdateSplitsDeleteOpstampResponse, serde_utils,
 };
 use quickwit_proto::types::{IndexId, IndexUid, Position, PublishToken, ShardId, SourceId};
 use sea_query::{Alias, Asterisk, Expr, Func, PostgresQueryBuilder, Query, UnionType};
@@ -59,8 +59,8 @@ use super::pool::TrackedPool;
 use super::split_stream::SplitStream;
 use super::utils::{append_query_filters_and_order_by, establish_connection};
 use super::{
-    QW_POSTGRES_READ_ONLY_ENV_KEY, QW_POSTGRES_SKIP_MIGRATIONS_ENV_KEY,
-    QW_POSTGRES_SKIP_MIGRATION_LOCKING_ENV_KEY,
+    QW_POSTGRES_READ_ONLY_ENV_KEY, QW_POSTGRES_SKIP_MIGRATION_LOCKING_ENV_KEY,
+    QW_POSTGRES_SKIP_MIGRATIONS_ENV_KEY,
 };
 use crate::checkpoint::{
     IndexCheckpointDelta, PartitionId, SourceCheckpoint, SourceCheckpointDelta,
@@ -69,8 +69,8 @@ use crate::file_backed::MutationOccurred;
 use crate::metastore::postgres::model::Shards;
 use crate::metastore::postgres::utils::split_maturity_timestamp;
 use crate::metastore::{
-    use_shard_api, IndexesMetadataResponseExt, PublishSplitsRequestExt, UpdateSourceRequestExt,
-    STREAM_SPLITS_CHUNK_SIZE,
+    IndexesMetadataResponseExt, PublishSplitsRequestExt, STREAM_SPLITS_CHUNK_SIZE,
+    UpdateSourceRequestExt, use_shard_api,
 };
 use crate::{
     AddSourceRequestExt, CreateIndexRequestExt, IndexMetadata, IndexMetadataResponseExt,
@@ -415,19 +415,22 @@ impl MetastoreService for PostgresqlMetastore {
         &self,
         request: UpdateIndexRequest,
     ) -> MetastoreResult<IndexMetadataResponse> {
-        let retention_policy_opt = request.deserialize_retention_policy()?;
-        let search_settings = request.deserialize_search_settings()?;
-        let indexing_settings = request.deserialize_indexing_settings()?;
         let doc_mapping = request.deserialize_doc_mapping()?;
+        let indexing_settings = request.deserialize_indexing_settings()?;
+        let ingest_settings = request.deserialize_ingest_settings()?;
+        let search_settings = request.deserialize_search_settings()?;
+        let retention_policy_opt = request.deserialize_retention_policy()?;
 
         let index_uid: IndexUid = request.index_uid().clone();
         let updated_index_metadata = run_with_tx!(self.connection_pool, tx, "update index", {
             mutate_index_metadata::<MetastoreError, _>(tx, index_uid, |index_metadata| {
-                let mut mutation_occurred =
-                    index_metadata.set_retention_policy(retention_policy_opt);
-                mutation_occurred |= index_metadata.set_search_settings(search_settings);
-                mutation_occurred |= index_metadata.set_indexing_settings(indexing_settings);
-                mutation_occurred |= index_metadata.set_doc_mapping(doc_mapping);
+                let mutation_occurred = index_metadata.update_index_config(
+                    doc_mapping,
+                    indexing_settings,
+                    ingest_settings,
+                    search_settings,
+                    retention_policy_opt,
+                );
                 Ok(MutationOccurred::from(mutation_occurred))
             })
             .await
@@ -880,7 +883,7 @@ impl MetastoreService for PostgresqlMetastore {
                                 return Err(MetastoreError::Internal {
                                     message: "failed to fetch splits".to_string(),
                                     cause: error.to_string(),
-                                })
+                                });
                             }
                         };
                         let split: Split = match pg_split.try_into() {
@@ -889,7 +892,7 @@ impl MetastoreService for PostgresqlMetastore {
                                 return Err(MetastoreError::Internal {
                                     message: "failed to convert `PgSplit` to `Split`".to_string(),
                                     cause: error.to_string(),
-                                })
+                                });
                             }
                         };
                         splits.push(split);
@@ -1820,9 +1823,9 @@ mod tests {
     use super::*;
     use crate::metastore::postgres::metastore::build_index_id_patterns_sql_query;
     use crate::metastore::postgres::model::{PgShard, Splits};
-    use crate::tests::shard::ReadWriteShardsForTest;
     use crate::tests::DefaultForTest;
-    use crate::{metastore_test_suite, ListSplitsQuery, SplitState};
+    use crate::tests::shard::ReadWriteShardsForTest;
+    use crate::{ListSplitsQuery, SplitState, metastore_test_suite};
 
     #[async_trait]
     impl ReadWriteShardsForTest for PostgresqlMetastore {
@@ -1850,7 +1853,7 @@ mod tests {
                     source_id,
                     update_timestamp,
                 } = shard;
-                let shard_state_name = ShardState::from_i32(shard_state)
+                let shard_state_name = ShardState::try_from(shard_state)
                     .unwrap()
                     .as_json_str_name();
                 let update_timestamp = OffsetDateTime::from_unix_timestamp(update_timestamp)
@@ -2106,6 +2109,17 @@ mod tests {
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             r#"SELECT * FROM "splits" WHERE "split_state" IN ('Staged')"#
+        );
+
+        let mut select_statement = Query::select();
+        let sql = select_statement.column(Asterisk).from(Splits::Table);
+
+        let query = ListSplitsQuery::for_all_indexes().with_max_time_range_end(42);
+        append_query_filters_and_order_by(sql, &query);
+
+        assert_eq!(
+            sql.to_string(PostgresQueryBuilder),
+            r#"SELECT * FROM "splits" WHERE "time_range_end" <= 42"#
         );
     }
 

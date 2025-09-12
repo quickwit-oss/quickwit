@@ -21,7 +21,7 @@ use quickwit_common::Progress;
 use quickwit_proto::metastore::SourceType;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
-use super::{BatchBuilder, BATCH_NUM_BYTES_LIMIT};
+use super::{BATCH_NUM_BYTES_LIMIT, BatchBuilder};
 use crate::actors::DocProcessor;
 use crate::source::{Source, SourceContext, SourceRuntime, TypedSourceFactory};
 
@@ -97,7 +97,7 @@ impl Source for StdinSource {
     }
 
     fn name(&self) -> String {
-        format!("{:?}", self)
+        format!("{self:?}")
     }
 
     fn observable_state(&self) -> serde_json::Value {
@@ -108,10 +108,10 @@ impl Source for StdinSource {
     }
 }
 
-pub struct FileSourceFactory;
+pub struct StdinSourceFactory;
 
 #[async_trait]
-impl TypedSourceFactory for FileSourceFactory {
+impl TypedSourceFactory for StdinSourceFactory {
     type Source = StdinSource;
     type Params = ();
 

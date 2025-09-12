@@ -28,11 +28,11 @@ use quickwit_config::PubSubSourceParams;
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
 use quickwit_proto::metastore::SourceType;
 use quickwit_proto::types::Position;
-use serde_json::{json, Value as JsonValue};
+use serde_json::{Value as JsonValue, json};
 use tokio::time;
 use tracing::{debug, info, warn};
 
-use super::{SourceActor, BATCH_NUM_BYTES_LIMIT, EMIT_BATCHES_TIMEOUT};
+use super::{BATCH_NUM_BYTES_LIMIT, EMIT_BATCHES_TIMEOUT, SourceActor};
 use crate::actors::DocProcessor;
 use crate::source::{BatchBuilder, Source, SourceContext, SourceRuntime, TypedSourceFactory};
 
@@ -216,7 +216,7 @@ impl Source for GcpPubSubSource {
     }
 
     fn name(&self) -> String {
-        format!("{:?}", self)
+        format!("{self:?}")
     }
 
     fn observable_state(&self) -> JsonValue {
@@ -306,7 +306,7 @@ mod gcp_pubsub_emulator_tests {
         let source_id = append_random_suffix("test-gcp-pubsub-source--source");
         SourceConfig {
             source_id,
-            num_pipelines: NonZeroUsize::new(1).unwrap(),
+            num_pipelines: NonZeroUsize::MIN,
             enabled: true,
             source_params: SourceParams::PubSub(PubSubSourceParams {
                 project_id: Some(GCP_TEST_PROJECT.to_string()),
@@ -377,7 +377,7 @@ mod gcp_pubsub_emulator_tests {
         let mut pubsub_messages = Vec::with_capacity(6);
         for i in 0..6 {
             let pubsub_message = PubsubMessage {
-                data: format!("Message {}", i).into(),
+                data: format!("Message {i}").into(),
                 ..Default::default()
             };
             pubsub_messages.push(pubsub_message);

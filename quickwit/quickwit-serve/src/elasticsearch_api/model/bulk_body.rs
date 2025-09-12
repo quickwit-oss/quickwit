@@ -50,8 +50,8 @@ pub struct BulkActionMeta {
 
 #[cfg(test)]
 mod tests {
-    use crate::elasticsearch_api::model::bulk_body::BulkActionMeta;
     use crate::elasticsearch_api::model::BulkAction;
+    use crate::elasticsearch_api::model::bulk_body::BulkActionMeta;
 
     #[test]
     fn test_bulk_action_serde() {

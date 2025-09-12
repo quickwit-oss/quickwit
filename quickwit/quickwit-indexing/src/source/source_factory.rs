@@ -26,7 +26,7 @@ use crate::source::SourceRuntime;
 #[async_trait]
 pub trait SourceFactory: Send + Sync + 'static {
     async fn create_source(&self, source_runtime: SourceRuntime)
-        -> anyhow::Result<Box<dyn Source>>;
+    -> anyhow::Result<Box<dyn Source>>;
 }
 
 #[async_trait]
@@ -123,7 +123,7 @@ mod tests {
         let index_uid = IndexUid::new_with_random_ulid("test-index");
         let source_config = SourceConfig {
             source_id: "test-source".to_string(),
-            num_pipelines: NonZeroUsize::new(1).unwrap(),
+            num_pipelines: NonZeroUsize::MIN,
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,

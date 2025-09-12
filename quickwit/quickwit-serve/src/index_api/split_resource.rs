@@ -141,7 +141,7 @@ pub fn list_splits_handler(
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path!("indexes" / String / "splits")
         .and(warp::get())
-        .and(serde_qs::warp::query(serde_qs::Config::default()))
+        .and(warp::query())
         .and(with_arg(metastore))
         .then(list_splits)
         .and(extract_format_from_qs())

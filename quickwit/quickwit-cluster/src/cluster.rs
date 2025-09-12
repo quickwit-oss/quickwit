@@ -22,26 +22,26 @@ use std::time::Duration;
 use anyhow::Context;
 use chitchat::transport::Transport;
 use chitchat::{
-    spawn_chitchat, Chitchat, ChitchatConfig, ChitchatHandle, ChitchatId, ClusterStateSnapshot,
-    FailureDetectorConfig, KeyChangeEvent, ListenerHandle, NodeState,
+    Chitchat, ChitchatConfig, ChitchatHandle, ChitchatId, ClusterStateSnapshot,
+    FailureDetectorConfig, KeyChangeEvent, ListenerHandle, NodeState, spawn_chitchat,
 };
 use itertools::Itertools;
+use quickwit_common::tower::ClientGrpcConfig;
 use quickwit_proto::indexing::{IndexingPipelineId, IndexingTask, PipelineMetrics};
 use quickwit_proto::types::{NodeId, NodeIdRef, PipelineUid, ShardId};
 use serde::{Deserialize, Serialize};
-use tokio::sync::{mpsc, watch, Mutex, RwLock};
+use tokio::sync::{Mutex, RwLock, mpsc, watch};
 use tokio::time::timeout;
-use tokio_stream::wrappers::WatchStream;
 use tokio_stream::StreamExt;
-use tonic::transport::ClientTlsConfig;
+use tokio_stream::wrappers::WatchStream;
 use tracing::{info, warn};
 
-use crate::change::{compute_cluster_change_events, ClusterChange, ClusterChangeStreamFactory};
+use crate::change::{ClusterChange, ClusterChangeStreamFactory, compute_cluster_change_events};
 use crate::grpc_gossip::spawn_catchup_callback_task;
 use crate::member::{
-    build_cluster_member, ClusterMember, NodeStateExt, ENABLED_SERVICES_KEY,
-    GRPC_ADVERTISE_ADDR_KEY, PIPELINE_METRICS_PREFIX, READINESS_KEY, READINESS_VALUE_NOT_READY,
-    READINESS_VALUE_READY,
+    ClusterMember, ENABLED_SERVICES_KEY, GRPC_ADVERTISE_ADDR_KEY, NodeStateExt,
+    PIPELINE_METRICS_PREFIX, READINESS_KEY, READINESS_VALUE_NOT_READY, READINESS_VALUE_READY,
+    build_cluster_member,
 };
 use crate::metrics::spawn_metrics_task;
 use crate::{ClusterChangeStream, ClusterNode};
@@ -62,9 +62,10 @@ pub struct Cluster {
     self_chitchat_id: ChitchatId,
     /// Socket address (UDP) the node listens on for receiving gossip messages.
     pub gossip_listen_addr: SocketAddr,
-    // TODO this should become an ArcSwap<ClienTlsConfig> or something so that
-    // some task can watch for new certificates and update this (hot reloading)
-    tls_config: Option<ClientTlsConfig>,
+    // TODO this object contains a tls config. We might want to change it to a
+    // ArcSwap<ClientGrpcConfig> or something so that some task can watch for new certificates
+    // and update this (hot reloading)
+    client_grpc_config: ClientGrpcConfig,
     gossip_interval: Duration,
     inner: Arc<RwLock<InnerCluster>>,
 }
@@ -115,7 +116,7 @@ impl Cluster {
         gossip_interval: Duration,
         failure_detector_config: FailureDetectorConfig,
         transport: &dyn Transport,
-        tls_config: Option<ClientTlsConfig>,
+        client_grpc_config: ClientGrpcConfig,
     ) -> anyhow::Result<Self> {
         info!(
             cluster_id=%cluster_id,
@@ -186,7 +187,7 @@ impl Cluster {
             weak_chitchat,
             live_nodes_rx,
             catchup_callback_rx.clone(),
-            tls_config.clone(),
+            client_grpc_config.clone(),
         )
         .await;
 
@@ -204,7 +205,7 @@ impl Cluster {
             gossip_listen_addr,
             gossip_interval,
             inner: Arc::new(RwLock::new(inner)),
-            tls_config,
+            client_grpc_config,
         };
         spawn_change_stream_task(cluster.clone()).await;
         Ok(cluster)
@@ -379,15 +380,19 @@ impl Cluster {
         }
     }
 
-    /// Leaves the cluster.
-    pub async fn shutdown(self) {
+    #[cfg(any(test, feature = "testsuite"))]
+    pub async fn leave(&self) {
         info!(
             cluster_id=%self.cluster_id,
             node_id=%self.self_chitchat_id.node_id,
-            "Leaving the cluster."
+            "leaving the cluster"
         );
         self.set_self_node_readiness(false).await;
         tokio::time::sleep(self.gossip_interval * 2).await;
+    }
+
+    pub async fn initiate_shutdown(&self) -> anyhow::Result<()> {
+        self.inner.read().await.chitchat_handle.initiate_shutdown()
     }
 
     /// This exposes in chitchat some metrics about the CPU usage of cooperative pipelines.
@@ -431,6 +436,16 @@ impl Cluster {
 
     pub async fn chitchat(&self) -> Arc<Mutex<Chitchat>> {
         self.inner.read().await.chitchat_handle.chitchat()
+    }
+
+    pub async fn chitchat_server_termination_watcher(
+        &self,
+    ) -> impl Future<Output = anyhow::Result<()>> + use<> {
+        self.inner
+            .read()
+            .await
+            .chitchat_handle
+            .termination_watcher()
     }
 }
 
@@ -560,7 +575,7 @@ fn chitchat_kv_to_indexing_task(key: &str, value: &str) -> Option<IndexingTask> 
 async fn spawn_change_stream_task(cluster: Cluster) {
     let cluster_guard = cluster.inner.read().await;
     let cluster_id = cluster_guard.cluster_id.clone();
-    let tls_config = cluster.tls_config.clone();
+    let client_grpc_config = cluster.client_grpc_config.clone();
     let self_chitchat_id = cluster_guard.self_chitchat_id.clone();
     let chitchat = cluster_guard.chitchat_handle.chitchat();
     let weak_cluster = Arc::downgrade(&cluster.inner);
@@ -584,7 +599,7 @@ async fn spawn_change_stream_task(cluster: Cluster) {
                 previous_live_nodes,
                 &previous_live_node_states,
                 &new_live_node_states,
-                tls_config.as_ref(),
+                &client_grpc_config,
             )
             .await;
             if !events.is_empty() {
@@ -701,7 +716,7 @@ pub async fn create_cluster_for_test_with_id(
         Duration::from_millis(25),
         failure_detector_config,
         transport,
-        None,
+        Default::default(),
     )
     .await?;
     cluster.set_self_node_readiness(self_node_readiness).await;
@@ -732,7 +747,7 @@ pub async fn create_cluster_for_test(
 
     static GOSSIP_ADVERTISE_PORT_SEQUENCE: AtomicU16 = AtomicU16::new(1u16);
     let gossip_advertise_port = GOSSIP_ADVERTISE_PORT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-    let node_id: NodeId = format!("node-{}", gossip_advertise_port).into();
+    let node_id: NodeId = format!("node-{gossip_advertise_port}").into();
 
     let enabled_services = enabled_services
         .iter()
@@ -833,7 +848,7 @@ mod tests {
             self_node_state.get(READINESS_KEY).unwrap(),
             READINESS_VALUE_NOT_READY
         );
-        node.shutdown().await;
+        node.leave().await;
     }
 
     #[tokio::test]
@@ -870,19 +885,20 @@ mod tests {
         expected_members.sort();
         assert_eq!(members, expected_members);
 
-        node_2.shutdown().await;
+        node_2.leave().await;
         node_1
             .wait_for_ready_members(|members| members.len() == 2, wait_secs)
             .await
             .unwrap();
 
-        node_3.shutdown().await;
+        node_3.leave().await;
         node_1
             .wait_for_ready_members(|members| members.len() == 1, wait_secs)
             .await
             .unwrap();
 
-        node_1.shutdown().await;
+        node_1.leave().await;
+        drop(node_1);
 
         let cluster_changes: Vec<ClusterChange> = node_1_change_stream.collect().await;
         assert_eq!(cluster_changes.len(), 6);

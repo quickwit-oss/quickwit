@@ -117,7 +117,7 @@ impl Source for VecSource {
     }
 
     fn name(&self) -> String {
-        format!("{:?}", self)
+        format!("{self:?}")
     }
 
     fn observable_state(&self) -> JsonValue {
@@ -139,8 +139,8 @@ mod tests {
 
     use super::*;
     use crate::models::RawDocBatch;
-    use crate::source::tests::SourceRuntimeBuilder;
     use crate::source::SourceActor;
+    use crate::source::tests::SourceRuntimeBuilder;
 
     #[tokio::test]
     async fn test_vec_source() -> anyhow::Result<()> {
@@ -157,7 +157,7 @@ mod tests {
         let index_uid = IndexUid::new_with_random_ulid("test-index");
         let source_config = SourceConfig {
             source_id: "test-vec-source".to_string(),
-            num_pipelines: NonZeroUsize::new(1).unwrap(),
+            num_pipelines: NonZeroUsize::MIN,
             enabled: true,
             source_params: SourceParams::Vec(params.clone()),
             transform_config: None,
@@ -205,7 +205,7 @@ mod tests {
         let index_uid = IndexUid::new_with_random_ulid("test-index");
         let source_config = SourceConfig {
             source_id: "test-vec-source".to_string(),
-            num_pipelines: NonZeroUsize::new(1).unwrap(),
+            num_pipelines: NonZeroUsize::MIN,
             enabled: true,
             source_params: SourceParams::Vec(params.clone()),
             transform_config: None,

@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::time::{Duration, Instant};
 
-use anyhow::{anyhow, bail, Context};
+use anyhow::{Context, anyhow, bail};
 use async_trait::async_trait;
 use bytes::Bytes;
 use itertools::Itertools;
@@ -34,17 +34,17 @@ use rdkafka::error::KafkaError;
 use rdkafka::message::BorrowedMessage;
 use rdkafka::util::Timeout;
 use rdkafka::{ClientContext, Message, Offset, TopicPartitionList};
-use serde_json::{json, Value as JsonValue};
+use serde_json::{Value as JsonValue, json};
 use tokio::sync::{mpsc, watch};
-use tokio::task::{spawn_blocking, JoinHandle};
+use tokio::task::{JoinHandle, spawn_blocking};
 use tokio::time;
 use tracing::{debug, info, warn};
 
 use crate::actors::DocProcessor;
 use crate::models::{NewPublishLock, PublishLock};
 use crate::source::{
-    BatchBuilder, Source, SourceContext, SourceRuntime, TypedSourceFactory, BATCH_NUM_BYTES_LIMIT,
-    EMIT_BATCHES_TIMEOUT,
+    BATCH_NUM_BYTES_LIMIT, BatchBuilder, EMIT_BATCHES_TIMEOUT, Source, SourceContext,
+    SourceRuntime, TypedSourceFactory,
 };
 
 type GroupId = String;
@@ -127,7 +127,7 @@ macro_rules! return_if_err {
 /// The API of the rebalance callback is better explained in the docs of `librdkafka`:
 /// <https://docs.confluent.io/2.0.0/clients/librdkafka/classRdKafka_1_1RebalanceCb.html>
 impl ConsumerContext for RdKafkaContext {
-    fn pre_rebalance(&self, rebalance: &Rebalance) {
+    fn pre_rebalance(&self, _consumer: &BaseConsumer<Self>, rebalance: &Rebalance) {
         crate::metrics::INDEXER_METRICS.kafka_rebalance_total.inc();
         quickwit_common::rate_limited_info!(limit_per_min = 3, topic = self.topic, "rebalance");
         if let Rebalance::Revoke(tpl) = rebalance {
@@ -521,7 +521,7 @@ impl Source for KafkaSource {
     }
 
     fn name(&self) -> String {
-        format!("{:?}", self)
+        format!("{self:?}")
     }
 
     fn observable_state(&self) -> JsonValue {
@@ -774,7 +774,7 @@ mod kafka_broker_tests {
     use super::*;
     use crate::source::test_setup_helper::setup_index;
     use crate::source::tests::SourceRuntimeBuilder;
-    use crate::source::{quickwit_supported_sources, RawDocBatch, SourceActor};
+    use crate::source::{RawDocBatch, SourceActor, quickwit_supported_sources};
 
     fn create_base_consumer(group_id: &str) -> BaseConsumer {
         ClientConfig::new()
@@ -785,11 +785,10 @@ mod kafka_broker_tests {
     }
 
     fn create_admin_client() -> AdminClient<DefaultClientContext> {
-        let admin_client = ClientConfig::new()
+        ClientConfig::new()
             .set("bootstrap.servers", "localhost:9092")
             .create()
-            .unwrap();
-        admin_client
+            .unwrap()
     }
 
     async fn create_topic(
@@ -854,7 +853,7 @@ mod kafka_broker_tests {
                     Duration::from_secs(1),
                 )
                 .await
-                .map(|(partition, offset)| (id, partition, offset))
+                .map(|delivery| (id, delivery.partition, delivery.offset))
                 .map_err(|(err, _)| err)
         });
         let message_map = futures::future::try_join_all(tasks)
@@ -875,7 +874,7 @@ mod kafka_broker_tests {
         let source_id = append_random_suffix("test-kafka-source--source");
         let source_config = SourceConfig {
             source_id: source_id.clone(),
-            num_pipelines: NonZeroUsize::new(1).unwrap(),
+            num_pipelines: NonZeroUsize::MIN,
             enabled: true,
             source_params: SourceParams::Kafka(KafkaSourceParams {
                 topic: topic.to_string(),

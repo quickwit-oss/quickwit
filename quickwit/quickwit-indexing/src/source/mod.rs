@@ -98,8 +98,8 @@ use quickwit_config::{
     FileSourceNotification, FileSourceParams, IndexingSettings, SourceConfig, SourceParams,
 };
 use quickwit_ingest::IngesterPool;
-use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
 use quickwit_metastore::IndexMetadataResponseExt;
+use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::{
     IndexMetadataRequest, MetastoreError, MetastoreResult, MetastoreService,
@@ -115,6 +115,7 @@ pub use vec_source::{VecSource, VecSourceFactory};
 pub use void_source::{VoidSource, VoidSourceFactory};
 
 use self::doc_file_reader::dir_and_filename;
+use self::stdin_source::StdinSourceFactory;
 use crate::actors::DocProcessor;
 use crate::models::RawDocBatch;
 use crate::source::ingest::IngestSourceFactory;
@@ -415,6 +416,7 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
         source_factory.add_source(SourceType::Kinesis, KinesisSourceFactory);
         #[cfg(feature = "pulsar")]
         source_factory.add_source(SourceType::Pulsar, PulsarSourceFactory);
+        source_factory.add_source(SourceType::Stdin, StdinSourceFactory);
         source_factory.add_source(SourceType::Vec, VecSourceFactory);
         source_factory.add_source(SourceType::Void, VoidSourceFactory);
         source_factory
@@ -571,8 +573,8 @@ mod tests {
     use std::num::NonZeroUsize;
 
     use quickwit_config::{SourceInputFormat, VecSourceParams};
-    use quickwit_metastore::checkpoint::IndexCheckpointDelta;
     use quickwit_metastore::IndexMetadata;
+    use quickwit_metastore::checkpoint::IndexCheckpointDelta;
     use quickwit_proto::metastore::{IndexMetadataResponse, MockMetastoreService};
     use quickwit_proto::types::NodeId;
 
@@ -683,7 +685,7 @@ mod tests {
         {
             let source_config = SourceConfig {
                 source_id: "void".to_string(),
-                num_pipelines: NonZeroUsize::new(1).unwrap(),
+                num_pipelines: NonZeroUsize::MIN,
                 enabled: true,
                 source_params: SourceParams::void(),
                 transform_config: None,
@@ -694,7 +696,7 @@ mod tests {
         {
             let source_config = SourceConfig {
                 source_id: "vec".to_string(),
-                num_pipelines: NonZeroUsize::new(1).unwrap(),
+                num_pipelines: NonZeroUsize::MIN,
                 enabled: true,
                 source_params: SourceParams::Vec(VecSourceParams::default()),
                 transform_config: None,
@@ -705,7 +707,7 @@ mod tests {
         {
             let source_config = SourceConfig {
                 source_id: "file".to_string(),
-                num_pipelines: NonZeroUsize::new(1).unwrap(),
+                num_pipelines: NonZeroUsize::MIN,
                 enabled: true,
                 source_params: SourceParams::file_from_str("file-does-not-exist.json").unwrap(),
                 transform_config: None,
@@ -720,7 +722,7 @@ mod tests {
         {
             let source_config = SourceConfig {
                 source_id: "file".to_string(),
-                num_pipelines: NonZeroUsize::new(1).unwrap(),
+                num_pipelines: NonZeroUsize::MIN,
                 enabled: true,
                 source_params: SourceParams::file_from_str("data/test_corpus.json").unwrap(),
                 transform_config: None,

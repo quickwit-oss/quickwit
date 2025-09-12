@@ -14,13 +14,14 @@
 
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
-    new_counter, new_counter_vec, new_gauge, new_gauge_vec, IntCounter, IntCounterVec, IntGauge,
-    IntGaugeVec,
+    IntCounter, IntCounterVec, IntGauge, IntGaugeVec, new_counter, new_counter_vec, new_gauge,
+    new_gauge_vec,
 };
 
 pub struct IndexerMetrics {
     pub processed_docs_total: IntCounterVec<2>,
     pub processed_bytes: IntCounterVec<2>,
+    pub indexing_pipelines: IntGaugeVec<1>,
     pub backpressure_micros: IntCounterVec<1>,
     pub available_concurrent_upload_permits: IntGaugeVec<1>,
     pub split_builders: IntGauge,
@@ -50,6 +51,13 @@ impl Default for IndexerMetrics {
                 "indexing",
                 &[],
                 ["index", "docs_processed_status"],
+            ),
+            indexing_pipelines: new_gauge_vec(
+                "indexing_pipelines",
+                "Number of running indexing pipelines",
+                "indexing",
+                &[],
+                ["index"],
             ),
             backpressure_micros: new_counter_vec(
                 "backpressure_micros",

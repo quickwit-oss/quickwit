@@ -383,8 +383,8 @@ pub fn no_tag(tag: impl ToString) -> TagFilterAst {
 }
 #[cfg(test)]
 mod test {
-    use quickwit_query::query_ast::{QueryAst, UserInputQuery};
     use quickwit_query::BooleanOperand;
+    use quickwit_query::query_ast::{QueryAst, UserInputQuery};
 
     use super::extract_tags_from_query;
     use crate::tag_pruning::TagFilterAst;

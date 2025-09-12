@@ -20,9 +20,9 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
 
-use anyhow::{anyhow, bail, Context};
+use anyhow::{Context, anyhow, bail};
 use bytesize::ByteSize;
-use clap::{arg, Arg, ArgAction, ArgMatches, Command};
+use clap::{Arg, ArgAction, ArgMatches, Command, arg};
 use colored::Colorize;
 use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
@@ -36,16 +36,16 @@ use quickwit_proto::types::IndexId;
 use quickwit_rest_client::models::{IngestSource, SearchResponseRestClient};
 use quickwit_rest_client::rest_client::{CommitType, IngestEvent};
 use quickwit_serve::{ListSplitsQueryParams, SearchRequestQueryString, SortBy};
-use quickwit_storage::{load_file, StorageResolver};
+use quickwit_storage::{StorageResolver, load_file};
 use tabled::settings::object::{FirstRow, Rows, Segment};
 use tabled::settings::panel::Footer;
 use tabled::settings::{Alignment, Disable, Format, Modify, Panel, Rotate, Style};
 use tabled::{Table, Tabled};
-use tracing::{debug, Level};
+use tracing::{Level, debug};
 
 use crate::checklist::{GREEN_COLOR, RED_COLOR};
 use crate::stats::{mean, percentile, std_deviation};
-use crate::{client_args, make_table, prompt_confirmation, ClientArgs};
+use crate::{ClientArgs, client_args, make_table, prompt_confirmation};
 
 pub fn build_index_command() -> Command {
     Command::new("index")
@@ -60,6 +60,7 @@ pub fn build_index_command() -> Command {
                         .display_order(1)
                         .required(true),
                     arg!(--overwrite "Overwrites pre-existing index. This will delete all existing data stored at `index-uri` before creating a new index.")
+                        .display_order(2)
                         .required(false),
                 ])
             )
@@ -75,6 +76,9 @@ pub fn build_index_command() -> Command {
                 arg!(--"index-config" <INDEX_CONFIG> "Location of the index config file.")
                     .display_order(2)
                     .required(true),
+                arg!(--"create" "Create the index if it does not already exists.")
+                    .display_order(3)
+                    .required(false),
             ])
         )
         .subcommand(
@@ -110,6 +114,7 @@ pub fn build_index_command() -> Command {
                 .long_about("Displays descriptive statistics of an index. Displayed statistics are: number of published splits, number of documents, splits min/max timestamps, size of splits.")
                 .args(&[
                     arg!(--index <INDEX> "ID of the target index")
+                        .display_order(1)
                         .required(true),
                 ])
             )
@@ -210,6 +215,7 @@ pub struct UpdateIndexArgs {
     pub client_args: ClientArgs,
     pub index_id: IndexId,
     pub index_config_uri: Uri,
+    pub create: bool,
     pub assume_yes: bool,
 }
 
@@ -298,7 +304,7 @@ impl IndexCliCommand {
         let client_args = ClientArgs::parse(&mut matches)?;
         let index_id = matches
             .remove_one::<String>("index")
-            .expect("`index` should be a required arg.");
+            .expect("`index` should be a required arg");
         let assume_yes = matches.get_flag("yes");
         Ok(Self::Clear(ClearIndexArgs {
             client_args,
@@ -312,7 +318,7 @@ impl IndexCliCommand {
         let index_config_uri = matches
             .remove_one::<String>("index-config")
             .map(|uri| Uri::from_str(&uri))
-            .expect("`index-config` should be a required arg.")?;
+            .expect("`index-config` should be a required arg")?;
         let overwrite = matches.get_flag("overwrite");
         let assume_yes = matches.get_flag("yes");
 
@@ -328,17 +334,19 @@ impl IndexCliCommand {
         let client_args = ClientArgs::parse(&mut matches)?;
         let index_id = matches
             .remove_one::<String>("index")
-            .expect("`index` should be a required arg.");
+            .expect("`index` should be a required arg");
         let index_config_uri = matches
             .remove_one::<String>("index-config")
             .map(|uri| Uri::from_str(&uri))
-            .expect("`index-config` should be a required arg.")?;
+            .expect("`index-config` should be a required arg")?;
+        let create = matches.get_flag("create");
         let assume_yes = matches.get_flag("yes");
 
         Ok(Self::Update(UpdateIndexArgs {
             index_id,
             client_args,
             index_config_uri,
+            create,
             assume_yes,
         }))
     }
@@ -347,7 +355,8 @@ impl IndexCliCommand {
         let client_args = ClientArgs::parse(&mut matches)?;
         let index_id = matches
             .remove_one::<String>("index")
-            .expect("`index` should be a required arg.");
+            .expect("`index` should be a required arg");
+
         Ok(Self::Describe(DescribeIndexArgs {
             client_args,
             index_id,
@@ -363,7 +372,7 @@ impl IndexCliCommand {
         let client_args = ClientArgs::parse_for_ingest(&mut matches)?;
         let index_id = matches
             .remove_one::<String>("index")
-            .expect("`index` should be a required arg.");
+            .expect("`index` should be a required arg");
         let input_path_opt = if let Some(input_path) = matches.remove_one::<String>("input-path") {
             Uri::from_str(&input_path)?
                 .filepath()
@@ -401,7 +410,7 @@ impl IndexCliCommand {
     fn parse_search_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
         let index_id = matches
             .remove_one::<String>("index")
-            .expect("`index` should be a required arg.");
+            .expect("`index` should be a required arg");
         let query = matches
             .remove_one::<String>("query")
             .context("`query` should be a required arg")?;
@@ -450,7 +459,7 @@ impl IndexCliCommand {
         let client_args = ClientArgs::parse(&mut matches)?;
         let index_id = matches
             .remove_one::<String>("index")
-            .expect("`index` should be a required arg.");
+            .expect("`index` should be a required arg");
         let dry_run = matches.get_flag("dry-run");
         let assume_yes = matches.get_flag("yes");
         Ok(Self::Delete(DeleteIndexArgs {
@@ -545,7 +554,12 @@ pub async fn update_index_cli(args: UpdateIndexArgs) -> anyhow::Result<()> {
     }
     qw_client
         .indexes()
-        .update(&args.index_id, &index_config_str, config_format)
+        .update(
+            &args.index_id,
+            &index_config_str,
+            config_format,
+            args.create,
+        )
         .await?;
     println!("{} Index successfully updated.", "✔".color(GREEN_COLOR));
     Ok(())
@@ -683,7 +697,7 @@ fn display_timestamp(timestamp: &Option<i64>) -> String {
             let datetime = chrono::DateTime::from_timestamp_millis(*timestamp * 1000)
                 .map(|datetime| datetime.format("%Y-%m-%d %H:%M:%S").to_string())
                 .unwrap_or_else(|| "Invalid timestamp!".to_string());
-            format!("{} (Timestamp: {})", datetime, timestamp)
+            format!("{datetime} (Timestamp: {timestamp})")
         }
         _ => "Timestamp does not exist for the index.".to_string(),
     }
@@ -782,14 +796,12 @@ impl IndexStats {
             tables.push(size_stats_table);
         }
 
-        let table = Table::builder(tables.into_iter().map(|table| table.to_string()))
+        Table::builder(tables.into_iter().map(|table| table.to_string()))
             .build()
             .with(Modify::new(Segment::all()).with(Alignment::center_vertical()))
             .with(Disable::row(FirstRow))
             .with(Style::empty())
-            .to_string();
-
-        table
+            .to_string()
     }
 }
 
@@ -1089,16 +1101,16 @@ pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchRespons
             serde_json::from_str(&aggs_string).context("failed to deserialize aggregations")
         })
         .transpose()?;
-    let sort_by = args
-        .sort_by_score
-        .then_some(SortBy {
-            sort_fields: vec![SortField {
-                field_name: "_score".to_string(),
-                sort_order: SortOrder::Desc as i32,
-                sort_datetime_format: None,
-            }],
-        })
-        .unwrap_or_default();
+    let sort_fields = if args.sort_by_score {
+        vec![SortField {
+            field_name: "_score".to_string(),
+            sort_order: SortOrder::Desc as i32,
+            sort_datetime_format: None,
+        }]
+    } else {
+        Vec::new()
+    };
+    let sort_by = SortBy { sort_fields };
     let search_request = SearchRequestQueryString {
         query: args.query,
         aggs,

@@ -26,7 +26,7 @@ use std::ops::Bound;
 use itertools::Itertools;
 use quickwit_common::pretty::PrettySample;
 use quickwit_config::{
-    DocMapping, IndexingSettings, RetentionPolicy, SearchSettings, SourceConfig,
+    DocMapping, IndexingSettings, IngestSettings, RetentionPolicy, SearchSettings, SourceConfig,
 };
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsResponse, DeleteQuery, DeleteShardsRequest,
@@ -42,8 +42,8 @@ use tracing::{info, warn};
 
 use super::MutationOccurred;
 use crate::checkpoint::IndexCheckpointDelta;
-use crate::metastore::{use_shard_api, SortBy};
-use crate::{split_tag_filter, IndexMetadata, ListSplitsQuery, Split, SplitMetadata, SplitState};
+use crate::metastore::{SortBy, use_shard_api};
+use crate::{IndexMetadata, ListSplitsQuery, Split, SplitMetadata, SplitState, split_tag_filter};
 
 /// A `FileBackedIndex` object carries an index metadata and its split metadata.
 // This struct is meant to be used only within the [`FileBackedMetastore`]. The public visibility is
@@ -214,24 +214,21 @@ impl FileBackedIndex {
         &self.metadata
     }
 
-    /// Replaces the retention policy in the index config, returning whether a mutation occurred.
-    pub fn set_retention_policy(&mut self, retention_policy_opt: Option<RetentionPolicy>) -> bool {
-        self.metadata.set_retention_policy(retention_policy_opt)
-    }
-
-    /// Replaces the search settings in the index config, returning whether a mutation occurred.
-    pub fn set_search_settings(&mut self, search_settings: SearchSettings) -> bool {
-        self.metadata.set_search_settings(search_settings)
-    }
-
-    /// Replaces the indexing settings in the index config, returning whether a mutation occurred.
-    pub fn set_indexing_settings(&mut self, search_settings: IndexingSettings) -> bool {
-        self.metadata.set_indexing_settings(search_settings)
-    }
-
-    /// Replaces the doc mapping in the index config, returning whether a mutation occurred.
-    pub fn set_doc_mapping(&mut self, doc_mapping: DocMapping) -> bool {
-        self.metadata.set_doc_mapping(doc_mapping)
+    pub fn update_index_config(
+        &mut self,
+        doc_mapping: DocMapping,
+        indexing_settings: IndexingSettings,
+        ingest_settings: IngestSettings,
+        search_settings: SearchSettings,
+        retention_policy_opt: Option<RetentionPolicy>,
+    ) -> bool {
+        self.metadata.update_index_config(
+            doc_mapping,
+            indexing_settings,
+            ingest_settings,
+            search_settings,
+            retention_policy_opt,
+        )
     }
 
     /// Stages a single split.
@@ -738,6 +735,11 @@ fn split_query_predicate(split: &&Split, query: &ListSplitsQuery) -> bool {
         if !query.time_range.overlaps_with(range.clone()) {
             return false;
         }
+        if let Some(v) = query.max_time_range_end {
+            if range.end() > &v {
+                return false;
+            }
+        }
     }
 
     if let Some(node_id) = &query.node_id {
@@ -891,6 +893,12 @@ mod tests {
             });
         assert!(split_query_predicate(&&split_1, &query));
         assert!(!split_query_predicate(&&split_2, &query));
+        assert!(!split_query_predicate(&&split_3, &query));
+
+        let query = ListSplitsQuery::for_index(IndexUid::new_with_random_ulid("test-index"))
+            .with_max_time_range_end(50);
+        assert!(split_query_predicate(&&split_1, &query));
+        assert!(split_query_predicate(&&split_2, &query));
         assert!(!split_query_predicate(&&split_3, &query));
     }
 

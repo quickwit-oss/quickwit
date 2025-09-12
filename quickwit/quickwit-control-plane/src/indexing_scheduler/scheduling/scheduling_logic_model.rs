@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
+use std::collections::btree_map::Entry;
 use std::num::NonZeroU32;
 
 use quickwit_proto::indexing::CpuCapacity;
@@ -89,9 +89,11 @@ impl SchedulingProblem {
         indexer_cpu_capacities: Vec<CpuCapacity>,
     ) -> SchedulingProblem {
         assert!(!indexer_cpu_capacities.is_empty());
-        assert!(indexer_cpu_capacities
-            .iter()
-            .all(|cpu_capacity| cpu_capacity.cpu_millis() > 0));
+        assert!(
+            indexer_cpu_capacities
+                .iter()
+                .all(|cpu_capacity| cpu_capacity.cpu_millis() > 0)
+        );
         // TODO assert for affinity.
         SchedulingProblem {
             sources: Vec::new(),
@@ -207,7 +209,12 @@ impl IndexerAssignment {
             .unwrap_or(0u32)
     }
 
+    /// Add shards to a source (noop of `num_shards` is 0).
     pub fn add_shards(&mut self, source_ord: u32, num_shards: u32) {
+        // No need to fill indexer_assignments with empty assignments.
+        if num_shards == 0 {
+            return;
+        }
         *self.num_shards_per_source.entry(source_ord).or_default() += num_shards;
     }
 
@@ -227,15 +234,18 @@ impl IndexerAssignment {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct SchedulingSolution {
     pub indexer_assignments: Vec<IndexerAssignment>,
+    // used for tests
+    pub capacity_scaling_iterations: usize,
 }
 
 impl SchedulingSolution {
     pub fn with_num_indexers(num_indexers: usize) -> SchedulingSolution {
         SchedulingSolution {
             indexer_assignments: (0..num_indexers).map(IndexerAssignment::new).collect(),
+            capacity_scaling_iterations: 0,
         }
     }
     pub fn num_indexers(&self) -> usize {

@@ -172,10 +172,10 @@ where
 }
 
 impl<
-        V1: Copy + PartialEq + Eq + PartialOrd + Ord + IntoOptionU64 + Debug + MinValue,
-        V2: Copy + PartialEq + Eq + PartialOrd + Ord + IntoOptionU64 + Debug + MinValue,
-        const REVERSE_DOCID: bool,
-    > Hit<V1, V2, REVERSE_DOCID>
+    V1: Copy + PartialEq + Eq + PartialOrd + Ord + IntoOptionU64 + Debug + MinValue,
+    V2: Copy + PartialEq + Eq + PartialOrd + Ord + IntoOptionU64 + Debug + MinValue,
+    const REVERSE_DOCID: bool,
+> Hit<V1, V2, REVERSE_DOCID>
 {
     #[inline]
     fn into_segment_partial_hit(self) -> SegmentPartialHit {
@@ -432,9 +432,9 @@ struct SpecSortingFieldExtractor<V1, V2> {
 }
 
 impl<
-        V1: Copy + PartialEq + PartialOrd + Ord + IntoOptionU64 + Debug,
-        V2: Copy + PartialEq + PartialOrd + Ord + IntoOptionU64 + Debug,
-    > SpecSortingFieldExtractor<V1, V2>
+    V1: Copy + PartialEq + PartialOrd + Ord + IntoOptionU64 + Debug,
+    V2: Copy + PartialEq + PartialOrd + Ord + IntoOptionU64 + Debug,
+> SpecSortingFieldExtractor<V1, V2>
 {
     fn new(
         first: SortingFieldExtractorComponent,
@@ -548,10 +548,10 @@ struct SpecializedSegmentTopKCollector<
 }
 
 impl<
-        V1: Copy + PartialEq + Eq + PartialOrd + Ord + IntoOptionU64 + Debug + MinValue + 'static,
-        V2: Copy + PartialEq + Eq + PartialOrd + Ord + IntoOptionU64 + Debug + MinValue + 'static,
-        const REVERSE_DOCID: bool,
-    > SpecializedSegmentTopKCollector<V1, V2, REVERSE_DOCID>
+    V1: Copy + PartialEq + Eq + PartialOrd + Ord + IntoOptionU64 + Debug + MinValue + 'static,
+    V2: Copy + PartialEq + Eq + PartialOrd + Ord + IntoOptionU64 + Debug + MinValue + 'static,
+    const REVERSE_DOCID: bool,
+> SpecializedSegmentTopKCollector<V1, V2, REVERSE_DOCID>
 {
     pub fn new(
         split_id: SplitId,
@@ -571,10 +571,10 @@ impl<
     }
 }
 impl<
-        V1: Copy + PartialEq + Eq + PartialOrd + Ord + IntoOptionU64 + Debug + MinValue,
-        V2: Copy + PartialEq + Eq + PartialOrd + Ord + IntoOptionU64 + Debug + MinValue,
-        const REVERSE_DOCID: bool,
-    > QuickwitSegmentTopKCollector for SpecializedSegmentTopKCollector<V1, V2, REVERSE_DOCID>
+    V1: Copy + PartialEq + Eq + PartialOrd + Ord + IntoOptionU64 + Debug + MinValue,
+    V2: Copy + PartialEq + Eq + PartialOrd + Ord + IntoOptionU64 + Debug + MinValue,
+    const REVERSE_DOCID: bool,
+> QuickwitSegmentTopKCollector for SpecializedSegmentTopKCollector<V1, V2, REVERSE_DOCID>
 {
     fn collect_top_k_block(&mut self, docs: &[DocId]) {
         self.hit_fetcher.fetch_data(docs);

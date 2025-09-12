@@ -16,8 +16,8 @@ use std::convert::Infallible;
 use std::fmt;
 use std::future::Future;
 use std::ops::Deref;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use quickwit_common::metrics::IntCounter;
@@ -25,11 +25,11 @@ use quickwit_common::{KillSwitch, Progress, ProtectedZoneGuard};
 use tokio::sync::{oneshot, watch};
 use tracing::{debug, error};
 
+#[cfg(any(test, feature = "testsuite"))]
+use crate::Universe;
 use crate::actor_state::AtomicState;
 use crate::registry::ActorRegistry;
 use crate::spawn_builder::{SpawnBuilder, SpawnContext};
-#[cfg(any(test, feature = "testsuite"))]
-use crate::Universe;
 use crate::{
     Actor, ActorExitStatus, ActorState, AskError, Command, DeferableReplyHandler, Mailbox,
     SendError, TrySendError,
@@ -225,7 +225,7 @@ impl<A: Actor> ActorContext<A> {
     /// If the reply is important, chances are the `.ask(...)` method is
     /// more indicated.
     ///
-    /// Droppping the receiver channel will not cancel the
+    /// Dropping the receiver channel will not cancel the
     /// processing of the message. It is a very common usage.
     /// In fact most actors are expected to send message in a
     /// fire-and-forget fashion.

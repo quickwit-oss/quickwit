@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use hyper::StatusCode;
 use tracing::error;
+use warp::hyper::StatusCode;
 use warp::reply::with_status;
 
 #[derive(utoipa::OpenApi)]
@@ -22,7 +22,7 @@ use warp::reply::with_status;
 /// other bits of information attached.
 ///
 /// If a crate plans to encompass different schemas, handlers, etc...
-/// Then it should have it's own specific API group.
+/// Then it should have its own specific API group.
 pub struct MetricsApi;
 
 #[utoipa::path(

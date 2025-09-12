@@ -134,7 +134,7 @@ If a parameter appears both as a query string parameter and in the JSON payload,
 | `q`                | `String`      | The search query.                                                                | (Optional)    |
 | `size`             | `Integer`     | Number of hits to return.                                                        | 10            |
 | `sort`             | `String`      | Describes how documents should be ranked. See [Sort order](#sort-order)          | (Optional)    |
-| `scroll`           | `Duration`    | Creates a scroll context for "time to live". See [Scroll](#_scroll--scroll-api). | (Optional)    |
+| `scroll`           | `Duration`    | Creates a scroll context for "time to live". See [Scroll](#_searchscroll--scroll-api). | (Optional)    |
 | `allow_partial_search_results` | `Boolean` | Returns a partial response if some (but not all) of the split searches were unsuccessful. | `true` |
 
 #### Supported Request Body parameters
@@ -279,6 +279,11 @@ First, the client needs to call the `search api` with a `scroll` query parameter
 
 Each subsequent call to the `_search/scroll` endpoint will return a new `scroll_id` pointing to the next page.
 
+:::tip
+
+Using `_search` and then `_search/scroll` is somewhat similar to using `_search` with the `search_after` parameter, except that it creates a lightweight snapshot view of the dataset during the initial call to `_search`. Further calls to `_search/scroll` only return results from that view, thus ensuring more consistent results.
+
+:::
 
 ### `_cat` &nbsp; Cat API
 
@@ -666,6 +671,12 @@ Moreover, while Quickwit does not support `best_fields` or `cross_fields`, it wi
 ### `term`
 
 [Elasticsearch reference documentation](https://www.elastic.co/guide/en/elasticsearch/reference/8.8/query-dsl-term-query.html)
+
+:::note
+
+When working on text, it is recommended to only use `term` queries on fields configured with `tokenizer: raw`. This is the Quickwit equivalent of the Elasticsearch `keyword` type.
+
+:::
 
 #### Example
 

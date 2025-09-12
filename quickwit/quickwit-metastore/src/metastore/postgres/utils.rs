@@ -19,7 +19,7 @@ use std::time::Duration;
 
 use quickwit_common::uri::Uri;
 use quickwit_proto::metastore::{MetastoreError, MetastoreResult};
-use sea_query::{any, Expr, Func, Order, SelectStatement};
+use sea_query::{Expr, Func, Order, SelectStatement, any};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{ConnectOptions, Postgres};
 use tracing::error;
@@ -121,6 +121,10 @@ pub(super) fn append_query_filters_and_order_by(
     if let Some(tags) = &query.tags {
         sql.cond_where(generate_sql_condition(tags));
     };
+
+    if let Some(v) = query.max_time_range_end {
+        sql.cond_where(Expr::col(Splits::TimeRangeEnd).lte(v));
+    }
 
     match query.time_range.start {
         Bound::Included(v) => {

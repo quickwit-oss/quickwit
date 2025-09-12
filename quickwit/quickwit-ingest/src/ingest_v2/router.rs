@@ -38,7 +38,7 @@ use quickwit_proto::ingest::{
     CommitTypeV2, IngestV2Error, IngestV2Result, RateLimitingCause, ShardState,
 };
 use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceId, SubrequestId};
-use serde_json::{json, Value as JsonValue};
+use serde_json::{Value as JsonValue, json};
 use tokio::sync::{Mutex, Semaphore};
 use tokio::time::error::Elapsed;
 use tracing::{error, info};
@@ -51,8 +51,8 @@ use super::ingester::PERSIST_REQUEST_TIMEOUT;
 use super::metrics::IngestResultMetrics;
 use super::routing_table::{NextOpenShardError, RoutingTable};
 use super::workbench::IngestWorkbench;
-use super::{pending_subrequests, IngesterPool};
-use crate::{get_ingest_router_buffer_size, LeaderId};
+use super::{IngesterPool, pending_subrequests};
+use crate::{LeaderId, get_ingest_router_buffer_size};
 
 /// Duration after which ingest requests time out with [`IngestV2Error::Timeout`].
 fn ingest_request_timeout() -> Duration {
@@ -155,7 +155,7 @@ impl IngestRouter {
     }
 
     /// Inspects the shard table for each subrequest and returns the appropriate
-    /// [`GetOrCreateOpenShardsRequest`] request if open shards do not exist for all the them.
+    /// [`GetOrCreateOpenShardsRequest`] request if open shards do not exist for all of them.
     async fn make_get_or_create_open_shard_request(
         &self,
         workbench: &mut IngestWorkbench,
@@ -716,10 +716,10 @@ mod tests {
     use tokio::task::yield_now;
 
     use super::*;
+    use crate::RateMibPerSec;
     use crate::ingest_v2::broadcast::ShardInfo;
     use crate::ingest_v2::routing_table::{RoutingEntry, RoutingTableEntry};
     use crate::ingest_v2::workbench::SubworkbenchFailure;
-    use crate::RateMibPerSec;
 
     #[tokio::test]
     async fn test_router_make_get_or_create_open_shard_request() {
@@ -1403,9 +1403,11 @@ mod tests {
             Some(SubworkbenchFailure::Internal)
         ));
 
-        assert!(!workbench
-            .unavailable_leaders
-            .contains(&NodeId::from("test-ingester-1")));
+        assert!(
+            !workbench
+                .unavailable_leaders
+                .contains(&NodeId::from("test-ingester-1"))
+        );
         let persist_futures = FuturesUnordered::new();
         persist_futures.push(async {
             let persist_summary = PersistRequestSummary {
@@ -1423,9 +1425,11 @@ mod tests {
         // We do not remove the leader from the pool.
         assert!(!ingester_pool.is_empty());
         // ... but we mark it as unavailable.
-        assert!(workbench
-            .unavailable_leaders
-            .contains(&NodeId::from("test-ingester-1")));
+        assert!(
+            workbench
+                .unavailable_leaders
+                .contains(&NodeId::from("test-ingester-1"))
+        );
 
         let subworkbench = workbench.subworkbenches.get(&1).unwrap();
         assert!(matches!(

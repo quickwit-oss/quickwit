@@ -14,7 +14,7 @@
 
 use bytesize::ByteSize;
 
-use crate::types::{queue_id, Position, QueueId};
+use crate::types::{Position, QueueId, queue_id};
 
 include!("../codegen/quickwit/quickwit.ingest.ingester.rs");
 

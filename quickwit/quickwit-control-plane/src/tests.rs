@@ -18,7 +18,7 @@ use std::time::Duration;
 use fnv::FnvHashMap;
 use futures::{Stream, StreamExt};
 use quickwit_actors::{Inbox, Mailbox, Observe, Universe};
-use quickwit_cluster::{create_cluster_for_test, ChannelTransport, Cluster, ClusterChange};
+use quickwit_cluster::{ChannelTransport, Cluster, ClusterChange, create_cluster_for_test};
 use quickwit_common::test_utils::wait_until_predicate;
 use quickwit_common::tower::{Change, Pool};
 use quickwit_config::service::QuickwitService;
@@ -34,9 +34,9 @@ use quickwit_proto::metastore::{
 use quickwit_proto::types::NodeId;
 use serde_json::json;
 
-use crate::control_plane::{ControlPlane, CONTROL_PLAN_LOOP_INTERVAL};
-use crate::indexing_scheduler::MIN_DURATION_BETWEEN_SCHEDULING;
 use crate::IndexerNodeInfo;
+use crate::control_plane::{CONTROL_PLAN_LOOP_INTERVAL, ControlPlane};
+use crate::indexing_scheduler::MIN_DURATION_BETWEEN_SCHEDULING;
 
 fn index_metadata_for_test(index_id: &str, source_id: &str, num_pipelines: usize) -> IndexMetadata {
     let mut index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/test-index");
@@ -387,7 +387,7 @@ async fn test_scheduler_scheduling_multiple_indexers() {
     assert_eq!(scheduler_state.num_schedule_indexing_plan, 1);
 
     // Shutdown cluster and wait until the new scheduling.
-    cluster_indexer_2.shutdown().await;
+    cluster_indexer_2.leave().await;
 
     cluster
         .wait_for_ready_members(

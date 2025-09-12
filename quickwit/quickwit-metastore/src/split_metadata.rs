@@ -22,7 +22,7 @@ use std::time::Duration;
 use bytesize::ByteSize;
 use quickwit_proto::types::{DocMappingUid, IndexUid, SourceId, SplitId};
 use serde::{Deserialize, Serialize};
-use serde_with::{serde_as, DurationMilliSeconds};
+use serde_with::{DurationMilliSeconds, serde_as};
 use time::OffsetDateTime;
 
 use crate::split_metadata_version::VersionedSplitMetadata;
@@ -165,7 +165,7 @@ impl fmt::Debug for SplitMetadata {
             }
             if tags_iter.next().is_some() {
                 let remaining_count = self.tags.len() - 4;
-                tags_str.push_str(&format!("and {} more", remaining_count));
+                tags_str.push_str(&format!("and {remaining_count} more"));
             } else {
                 tags_str.pop();
                 tags_str.pop();
@@ -432,7 +432,7 @@ mod tests {
                                \"{\\\"🐱\\\", \\\"😻\\\", \\\"😼\\\", \\\"😿\\\", and 1 more}\", \
                                footer_offsets: 0..1024, delete_opstamp: 0, num_merge_ops: 0 }";
 
-        assert_eq!(format!("{:?}", split_metadata), expected_output);
+        assert_eq!(format!("{split_metadata:?}"), expected_output);
     }
 
     #[test]

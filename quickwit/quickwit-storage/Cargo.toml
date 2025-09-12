@@ -18,6 +18,7 @@ bytes = { workspace = true }
 bytesize = { workspace = true }
 fnv = { workspace = true }
 futures = { workspace = true }
+http-body-util = { workspace = true}
 hyper = { workspace = true }
 lru = { workspace = true }
 md5 = { workspace = true }
@@ -43,6 +44,7 @@ aws-sdk-s3 = { workspace = true }
 aws-smithy-types = { workspace = true }
 
 azure_core = { workspace = true, optional = true }
+azure_identity = { workspace = true, optional = true }
 azure_storage = { workspace = true, optional = true }
 azure_storage_blobs = { workspace = true, optional = true }
 
@@ -69,8 +71,10 @@ quickwit-common = { workspace = true, features = ["testsuite"] }
 [features]
 azure = [
   "azure_core",
+  "azure_identity",
   "azure_storage",
   "azure_storage_blobs",
+  "azure_core/hmac_rust",
   "azure_core/enable_reqwest_rustls",
   "azure_storage/enable_reqwest_rustls",
   "azure_storage_blobs/enable_reqwest_rustls",

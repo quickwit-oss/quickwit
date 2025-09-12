@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 
 use super::super::TrackTotalHits;
 use super::MultiSearchHeader;
-use crate::elasticsearch_api::model::{default_elasticsearch_sort_order, SortField};
+use crate::elasticsearch_api::model::{SortField, default_elasticsearch_sort_order};
 use crate::simple_list::{from_simple_list, to_simple_list};
 
 #[serde_with::skip_serializing_none]
@@ -237,8 +237,7 @@ fn parse_sort_field_str(sort_field_str: &str) -> Result<SortField, SearchError> 
     if let Some((field, order_str)) = sort_field_str.split_once(':') {
         let order = parse_str_like_json(order_str).ok_or_else(|| {
             SearchError::InvalidArgument(format!(
-                "invalid sort order `{}`. expected `asc` or `desc`",
-                field
+                "invalid sort order `{field}`. expected `asc` or `desc`"
             ))
         })?;
         Ok(SortField {

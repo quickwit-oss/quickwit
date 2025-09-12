@@ -15,9 +15,9 @@
 use quickwit_common::rand::append_random_suffix;
 use quickwit_config::IndexTemplate;
 use quickwit_proto::metastore::{
-    serde_utils, CreateIndexTemplateRequest, DeleteIndexTemplatesRequest, EntityKind,
+    CreateIndexTemplateRequest, DeleteIndexTemplatesRequest, EntityKind,
     FindIndexTemplateMatchesRequest, GetIndexTemplateRequest, ListIndexTemplatesRequest,
-    MetastoreError, MetastoreResult, MetastoreService,
+    MetastoreError, MetastoreResult, MetastoreService, serde_utils,
 };
 
 use super::DefaultForTest;

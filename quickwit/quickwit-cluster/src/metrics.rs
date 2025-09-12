@@ -19,7 +19,7 @@ use std::time::Duration;
 
 use chitchat::{Chitchat, ChitchatId};
 use once_cell::sync::Lazy;
-use quickwit_common::metrics::{new_counter, new_gauge, IntCounter, IntGauge};
+use quickwit_common::metrics::{IntCounter, IntGauge, new_counter, new_gauge};
 use tokio::sync::Mutex;
 
 use crate::member::NodeStateExt;

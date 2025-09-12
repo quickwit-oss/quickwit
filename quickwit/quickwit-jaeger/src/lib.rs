@@ -24,9 +24,9 @@ use prost::Message;
 use prost_types::{Duration as WellKnownDuration, Timestamp as WellKnownTimestamp};
 use quickwit_config::JaegerConfig;
 use quickwit_opentelemetry::otlp::{
-    extract_otel_traces_index_id_patterns_from_metadata, Event as QwEvent, Link as QwLink,
-    Span as QwSpan, SpanFingerprint, SpanId, SpanKind as QwSpanKind, SpanStatus as QwSpanStatus,
-    TraceId, OTEL_TRACES_INDEX_ID,
+    Event as QwEvent, Link as QwLink, OTEL_TRACES_INDEX_ID, Span as QwSpan, SpanFingerprint,
+    SpanId, SpanKind as QwSpanKind, SpanStatus as QwSpanStatus, TraceId,
+    extract_otel_traces_index_id_patterns_from_metadata,
 };
 use quickwit_proto::jaeger::api_v2::{
     KeyValue as JaegerKeyValue, Log as JaegerLog, Process as JaegerProcess, Span as JaegerSpan,
@@ -40,19 +40,19 @@ use quickwit_proto::jaeger::storage::v1::{
 };
 use quickwit_proto::opentelemetry::proto::trace::v1::status::StatusCode as OtlpStatusCode;
 use quickwit_proto::search::{CountHits, ListTermsRequest, SearchRequest};
-use quickwit_query::query_ast::{BoolQuery, QueryAst, RangeQuery, TermQuery, UserInputQuery};
 use quickwit_query::BooleanOperand;
+use quickwit_query::query_ast::{BoolQuery, QueryAst, RangeQuery, TermQuery, UserInputQuery};
 use quickwit_search::{FindTraceIdsCollector, SearchService};
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
 use tantivy::collector::Collector;
-use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
+use time::format_description::well_known::Rfc3339;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status};
 use tracing::field::Empty;
-use tracing::{debug, error, instrument, warn, Span as RuntimeSpan};
+use tracing::{Span as RuntimeSpan, debug, error, instrument, warn};
 
 use crate::metrics::JAEGER_SERVICE_METRICS;
 
@@ -282,11 +282,11 @@ impl JaegerService {
         };
         let search_response = self.search_service.root_search(search_request).await?;
 
-        let Some(agg_result_json) = search_response.aggregation else {
+        let Some(agg_result_postcard) = search_response.aggregation_postcard else {
             debug!("the query matched no traces");
             return Ok((Vec::new(), 0..=0));
         };
-        let trace_ids = collect_trace_ids(&agg_result_json)?;
+        let trace_ids = collect_trace_ids(&agg_result_postcard)?;
         debug!("the query matched {} traces.", trace_ids.0.len());
         Ok(trace_ids)
     }
@@ -756,6 +756,7 @@ fn build_aggregations_query(num_traces: usize) -> String {
     query
 }
 
+#[allow(clippy::result_large_err)]
 fn qw_span_to_jaeger_span(qw_span_json: &str) -> Result<JaegerSpan, Status> {
     let mut qw_span: QwSpan = json_deserialize(qw_span_json, "span")?;
 
@@ -1027,6 +1028,7 @@ fn otlp_attributes_to_jaeger_tags_inner(
 
 /// Converts OpenTelemetry links to Jaeger span references.
 /// <https://opentelemetry.io/docs/specs/otel/trace/sdk_exporters/jaeger/#links>
+#[allow(clippy::result_large_err)]
 fn otlp_links_to_jaeger_references(
     trace_id: &TraceId,
     parent_span_id_opt: Option<SpanId>,
@@ -1058,6 +1060,7 @@ fn otlp_links_to_jaeger_references(
     Ok(references)
 }
 
+#[allow(clippy::result_large_err)]
 fn qw_event_to_jaeger_log(event: QwEvent) -> Result<JaegerLog, Status> {
     let timestamp = to_well_known_timestamp(event.event_timestamp_nanos);
     // "OpenTelemetry Event’s name field should be added to Jaeger Log’s fields map as follows: name
@@ -1087,9 +1090,12 @@ fn qw_event_to_jaeger_log(event: QwEvent) -> Result<JaegerLog, Status> {
     Ok(log)
 }
 
-fn collect_trace_ids(trace_ids_json: &str) -> Result<(Vec<TraceId>, TimeIntervalSecs), Status> {
+#[allow(clippy::result_large_err)]
+fn collect_trace_ids(
+    trace_ids_postcard: &[u8],
+) -> Result<(Vec<TraceId>, TimeIntervalSecs), Status> {
     let collector_fruit: <FindTraceIdsCollector as Collector>::Fruit =
-        json_deserialize(trace_ids_json, "trace IDs aggregation")?;
+        postcard_deserialize(trace_ids_postcard, "trace IDs aggregation")?;
     if collector_fruit.is_empty() {
         return Ok((Vec::new(), 0..=0));
     }
@@ -1105,6 +1111,7 @@ fn collect_trace_ids(trace_ids_json: &str) -> Result<(Vec<TraceId>, TimeInterval
     Ok((trace_ids, start..=end))
 }
 
+#[allow(clippy::result_large_err)]
 fn json_deserialize<'a, T>(json: &'a str, label: &'static str) -> Result<T, Status>
 where T: Deserialize<'a> {
     match serde_json::from_str(json) {
@@ -1118,11 +1125,25 @@ where T: Deserialize<'a> {
     }
 }
 
+#[allow(clippy::result_large_err)]
+fn postcard_deserialize<'a, T>(json: &'a [u8], label: &'static str) -> Result<T, Status>
+where T: Deserialize<'a> {
+    match postcard::from_bytes(json) {
+        Ok(deserialized) => Ok(deserialized),
+        Err(error) => {
+            error!("failed to deserialize {label}: {error:?}");
+            Err(Status::internal(format!(
+                "Failed to deserialize {label}: {error:?}."
+            )))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use quickwit_opentelemetry::otlp::{OtelSignal, OTEL_TRACES_INDEX_ID_PATTERN};
+    use quickwit_opentelemetry::otlp::{OTEL_TRACES_INDEX_ID_PATTERN, OtelSignal};
     use quickwit_proto::jaeger::api_v2::ValueType;
-    use quickwit_search::{encode_term_for_test, MockSearchService, QuickwitAggregations};
+    use quickwit_search::{MockSearchService, QuickwitAggregations, encode_term_for_test};
     use serde_json::json;
 
     use super::*;
@@ -1131,7 +1152,7 @@ mod tests {
     fn get_must(ast: QueryAst) -> Vec<QueryAst> {
         match ast {
             QueryAst::Bool(boolean_query) => boolean_query.must,
-            _ => panic!("expected `QueryAst::Bool`, got `{:?}`", ast),
+            _ => panic!("expected `QueryAst::Bool`, got `{ast:?}`"),
         }
     }
 
@@ -1139,7 +1160,7 @@ mod tests {
     fn get_must_not(ast: QueryAst) -> Vec<QueryAst> {
         match ast {
             QueryAst::Bool(boolean_query) => boolean_query.must_not,
-            _ => panic!("expected `QueryAst::Bool`, got `{:?}`", ast),
+            _ => panic!("expected `QueryAst::Bool`, got `{ast:?}`"),
         }
     }
 
@@ -1188,11 +1209,13 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 )),
-                vec![TermQuery {
-                    field: "service_name".to_string(),
-                    value: service_name.to_string(),
-                }
-                .into()]
+                vec![
+                    TermQuery {
+                        field: "service_name".to_string(),
+                        value: service_name.to_string(),
+                    }
+                    .into()
+                ]
             );
         }
         {
@@ -1244,11 +1267,13 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 )),
-                vec![TermQuery {
-                    field: "span_kind".to_string(),
-                    value: "3".to_string(),
-                }
-                .into()]
+                vec![
+                    TermQuery {
+                        field: "span_kind".to_string(),
+                        value: "3".to_string(),
+                    }
+                    .into()
+                ]
             );
         }
         {
@@ -1271,11 +1296,13 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 )),
-                vec![TermQuery {
-                    field: "span_name".to_string(),
-                    value: span_name.to_string(),
-                }
-                .into()]
+                vec![
+                    TermQuery {
+                        field: "span_name".to_string(),
+                        value: span_name.to_string(),
+                    }
+                    .into()
+                ]
             );
         }
         {
@@ -1298,11 +1325,13 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 )),
-                vec![TermQuery {
-                    field: "span_status.code".to_string(),
-                    value: "error".to_string(),
-                }
-                .into(),],
+                vec![
+                    TermQuery {
+                        field: "span_status.code".to_string(),
+                        value: "error".to_string(),
+                    }
+                    .into(),
+                ],
             );
         }
         {
@@ -1325,11 +1354,13 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 )),
-                vec![TermQuery {
-                    field: "span_status.code".to_string(),
-                    value: "error".to_string(),
-                }
-                .into(),],
+                vec![
+                    TermQuery {
+                        field: "span_status.code".to_string(),
+                        value: "error".to_string(),
+                    }
+                    .into(),
+                ],
             );
         }
         {
@@ -1353,27 +1384,29 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 )),
-                vec![BoolQuery {
-                    should: vec![
-                        TermQuery {
-                            field: "resource_attributes.foo".to_string(),
-                            value: tag_value.to_string(),
-                        }
-                        .into(),
-                        TermQuery {
-                            field: "span_attributes.foo".to_string(),
-                            value: tag_value.to_string(),
-                        }
-                        .into(),
-                        TermQuery {
-                            field: "events.event_attributes.foo".to_string(),
-                            value: tag_value.to_string(),
-                        }
-                        .into(),
-                    ],
-                    ..Default::default()
-                }
-                .into()]
+                vec![
+                    BoolQuery {
+                        should: vec![
+                            TermQuery {
+                                field: "resource_attributes.foo".to_string(),
+                                value: tag_value.to_string(),
+                            }
+                            .into(),
+                            TermQuery {
+                                field: "span_attributes.foo".to_string(),
+                                value: tag_value.to_string(),
+                            }
+                            .into(),
+                            TermQuery {
+                                field: "events.event_attributes.foo".to_string(),
+                                value: tag_value.to_string(),
+                            }
+                            .into(),
+                        ],
+                        ..Default::default()
+                    }
+                    .into()
+                ]
             );
         }
         {
@@ -1397,11 +1430,13 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 )),
-                vec![TermQuery {
-                    field: "events.event_name".to_string(),
-                    value: event_name.to_string(),
-                }
-                .into()]
+                vec![
+                    TermQuery {
+                        field: "events.event_name".to_string(),
+                        value: event_name.to_string(),
+                    }
+                    .into()
+                ]
             );
         }
         {
@@ -1548,12 +1583,14 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 )),
-                vec![RangeQuery {
-                    field: "span_start_timestamp_nanos".to_string(),
-                    lower_bound: Bound::Included("1970-01-01T00:00:03Z".to_string().into()),
-                    upper_bound: Bound::Unbounded
-                }
-                .into()]
+                vec![
+                    RangeQuery {
+                        field: "span_start_timestamp_nanos".to_string(),
+                        lower_bound: Bound::Included("1970-01-01T00:00:03Z".to_string().into()),
+                        upper_bound: Bound::Unbounded
+                    }
+                    .into()
+                ]
             );
         }
         {
@@ -1576,12 +1613,14 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 )),
-                vec![RangeQuery {
-                    field: "span_start_timestamp_nanos".to_string(),
-                    lower_bound: Bound::Unbounded,
-                    upper_bound: Bound::Included("1970-01-01T00:00:33Z".to_string().into()),
-                }
-                .into()]
+                vec![
+                    RangeQuery {
+                        field: "span_start_timestamp_nanos".to_string(),
+                        lower_bound: Bound::Unbounded,
+                        upper_bound: Bound::Included("1970-01-01T00:00:33Z".to_string().into()),
+                    }
+                    .into()
+                ]
             );
         }
         {
@@ -1604,12 +1643,14 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 )),
-                vec![RangeQuery {
-                    field: "span_start_timestamp_nanos".to_string(),
-                    lower_bound: Bound::Included("1970-01-01T00:00:03Z".to_string().into()),
-                    upper_bound: Bound::Included("1970-01-01T00:00:33Z".to_string().into()),
-                }
-                .into()]
+                vec![
+                    RangeQuery {
+                        field: "span_start_timestamp_nanos".to_string(),
+                        lower_bound: Bound::Included("1970-01-01T00:00:03Z".to_string().into()),
+                        upper_bound: Bound::Included("1970-01-01T00:00:33Z".to_string().into()),
+                    }
+                    .into()
+                ]
             );
         }
         {
@@ -1632,12 +1673,14 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 )),
-                vec![RangeQuery {
-                    field: "span_duration_millis".to_string(),
-                    lower_bound: Bound::Included(7u64.into()),
-                    upper_bound: Bound::Unbounded
-                }
-                .into()]
+                vec![
+                    RangeQuery {
+                        field: "span_duration_millis".to_string(),
+                        lower_bound: Bound::Included(7u64.into()),
+                        upper_bound: Bound::Unbounded
+                    }
+                    .into()
+                ]
             );
         }
         {
@@ -1660,12 +1703,14 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 )),
-                vec![RangeQuery {
-                    field: "span_duration_millis".to_string(),
-                    lower_bound: Bound::Unbounded,
-                    upper_bound: Bound::Included(77u64.into()),
-                }
-                .into()]
+                vec![
+                    RangeQuery {
+                        field: "span_duration_millis".to_string(),
+                        lower_bound: Bound::Unbounded,
+                        upper_bound: Bound::Included(77u64.into()),
+                    }
+                    .into()
+                ]
             );
         }
         {
@@ -1688,12 +1733,14 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 )),
-                vec![RangeQuery {
-                    field: "span_duration_millis".to_string(),
-                    lower_bound: Bound::Included(7u64.into()),
-                    upper_bound: Bound::Included(77u64.into()),
-                }
-                .into()]
+                vec![
+                    RangeQuery {
+                        field: "span_duration_millis".to_string(),
+                        lower_bound: Bound::Included(7u64.into()),
+                        upper_bound: Bound::Included(77u64.into()),
+                    }
+                    .into()
+                ]
             );
         }
         {
@@ -2470,34 +2517,50 @@ mod tests {
 
     #[test]
     fn test_collect_trace_ids() {
+        use quickwit_opentelemetry::otlp::TraceId;
+        use quickwit_search::Span;
+        use tantivy::DateTime;
         {
-            let agg_result_json = r#"[]"#;
-            let (trace_ids, _span_timestamps_range) = collect_trace_ids(agg_result_json).unwrap();
+            let agg_result: Vec<Span> = Vec::new();
+            let agg_result_postcard = postcard::to_stdvec(&agg_result).unwrap();
+            let (trace_ids, _span_timestamps_range) =
+                collect_trace_ids(&agg_result_postcard).unwrap();
             assert!(trace_ids.is_empty());
         }
         {
-            let agg_result_json = r#"[
-                {
-                    "trace_id": "01010101010101010101010101010101",
-                    "span_timestamp": 1684857492783747000
-                }
-            ]"#;
-            let (trace_ids, span_timestamps_range) = collect_trace_ids(agg_result_json).unwrap();
+            let agg_result = vec![Span {
+                trace_id: TraceId::new([
+                    0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+                    0x01, 0x01, 0x01,
+                ]),
+                span_timestamp: DateTime::from_timestamp_nanos(1684857492783747000),
+            }];
+            let agg_result_postcard = postcard::to_stdvec(&agg_result).unwrap();
+            let (trace_ids, span_timestamps_range) =
+                collect_trace_ids(&agg_result_postcard).unwrap();
             assert_eq!(trace_ids.len(), 1);
             assert_eq!(span_timestamps_range, 1684857492..=1684857492);
         }
         {
-            let agg_result_json = r#"[
-                {
-                    "trace_id": "0102030405060708090a0b0c0d0e0f10",
-                    "span_timestamp": 1684857492783747000
+            let agg_result = vec![
+                Span {
+                    trace_id: TraceId::new([
+                        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c,
+                        0x0d, 0x0e, 0x0f, 0x10,
+                    ]),
+                    span_timestamp: DateTime::from_timestamp_nanos(1684857492783747000),
                 },
-                {
-                    "trace_id": "02020202020202020202020202020202",
-                    "span_timestamp": 1684857826019627000
-                }
-            ]"#;
-            let (trace_ids, span_timestamps_range) = collect_trace_ids(agg_result_json).unwrap();
+                Span {
+                    trace_id: TraceId::new([
+                        0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02,
+                        0x02, 0x02, 0x02, 0x02,
+                    ]),
+                    span_timestamp: DateTime::from_timestamp_nanos(1684857826019627000),
+                },
+            ];
+            let agg_result_postcard = postcard::to_stdvec(&agg_result).unwrap();
+            let (trace_ids, span_timestamps_range) =
+                collect_trace_ids(&agg_result_postcard).unwrap();
             assert_eq!(trace_ids.len(), 2);
             assert_eq!(span_timestamps_range, 1684857492..=1684857826);
         }

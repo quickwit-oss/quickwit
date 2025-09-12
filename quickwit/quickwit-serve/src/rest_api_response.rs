@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use hyper::header::CONTENT_TYPE;
-use hyper::http::HeaderValue;
-use hyper::{Body, Response, StatusCode};
 use quickwit_proto::ServiceError;
 use serde::{self, Serialize};
 use warp::Reply;
+use warp::hyper::StatusCode;
+use warp::hyper::header::CONTENT_TYPE;
+use warp::hyper::http::HeaderValue;
 
 use crate::format::BodyFormat;
 
@@ -69,10 +69,10 @@ impl RestApiResponse {
 
 impl Reply for RestApiResponse {
     #[inline]
-    fn into_response(self) -> Response<Body> {
+    fn into_response(self) -> warp::reply::Response {
         match self.inner {
             Ok(body) => {
-                let mut response = Response::new(body.into());
+                let mut response = warp::reply::Response::new(body.into());
                 response
                     .headers_mut()
                     .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));

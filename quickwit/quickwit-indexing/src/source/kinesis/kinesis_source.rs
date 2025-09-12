@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::time::Duration;
 
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use async_trait::async_trait;
 use aws_sdk_kinesis::Client as KinesisClient;
 use bytes::Bytes;
@@ -28,7 +28,7 @@ use quickwit_config::{KinesisSourceParams, RegionOrEndpoint};
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
 use quickwit_proto::metastore::SourceType;
 use quickwit_proto::types::Position;
-use serde_json::{json, Value as JsonValue};
+use serde_json::{Value as JsonValue, json};
 use tokio::sync::mpsc;
 use tokio::time;
 use tracing::{info, warn};
@@ -38,8 +38,8 @@ use super::shard_consumer::{ShardConsumer, ShardConsumerHandle, ShardConsumerMes
 use crate::actors::DocProcessor;
 use crate::source::kinesis::helpers::get_kinesis_client;
 use crate::source::{
-    BatchBuilder, Source, SourceContext, SourceRuntime, TypedSourceFactory, BATCH_NUM_BYTES_LIMIT,
-    EMIT_BATCHES_TIMEOUT,
+    BATCH_NUM_BYTES_LIMIT, BatchBuilder, EMIT_BATCHES_TIMEOUT, Source, SourceContext,
+    SourceRuntime, TypedSourceFactory,
 };
 
 type ShardId = String;
@@ -312,7 +312,7 @@ impl Source for KinesisSource {
     }
 
     fn name(&self) -> String {
-        format!("{:?}", self)
+        format!("{self:?}")
     }
 
     fn observable_state(&self) -> JsonValue {
@@ -363,11 +363,11 @@ mod tests {
 
     use super::*;
     use crate::models::RawDocBatch;
+    use crate::source::SourceActor;
     use crate::source::kinesis::helpers::tests::{
         make_shard_id, put_records_into_shards, setup, teardown,
     };
     use crate::source::tests::SourceRuntimeBuilder;
-    use crate::source::SourceActor;
 
     // Sequence number
     type SeqNo = String;

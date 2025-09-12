@@ -79,7 +79,7 @@ impl CloseIdleShardsTask {
 #[cfg(test)]
 mod tests {
     use quickwit_proto::ingest::ShardState;
-    use quickwit_proto::types::{queue_id, IndexUid, Position, ShardId};
+    use quickwit_proto::types::{IndexUid, Position, ShardId, queue_id};
 
     use super::*;
     use crate::ingest_v2::models::IngesterShard;

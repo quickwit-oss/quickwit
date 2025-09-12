@@ -17,11 +17,11 @@ use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 use std::time::Duration;
 
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use bytesize::ByteSize;
 use http::HeaderMap;
 use quickwit_common::fs::get_disk_size;
-use quickwit_common::net::{find_private_ip, get_short_hostname, Host};
+use quickwit_common::net::{Host, find_private_ip, get_short_hostname};
 use quickwit_common::new_coolid;
 use quickwit_common::uri::Uri;
 use quickwit_proto::types::NodeId;
@@ -35,8 +35,8 @@ use crate::service::QuickwitService;
 use crate::storage_config::StorageConfigs;
 use crate::templating::render_config;
 use crate::{
-    validate_identifier, validate_node_id, ConfigFormat, IndexerConfig, IngestApiConfig,
-    JaegerConfig, MetastoreConfigs, NodeConfig, SearcherConfig, TlsConfig,
+    ConfigFormat, IndexerConfig, IngestApiConfig, JaegerConfig, MetastoreConfigs, NodeConfig,
+    SearcherConfig, TlsConfig, validate_identifier, validate_node_id,
 };
 
 pub const DEFAULT_CLUSTER_ID: &str = "quickwit-default-cluster";
@@ -662,7 +662,7 @@ mod tests {
                 split_footer_cache_capacity: ByteSize::gb(1),
                 partial_request_cache_capacity: ByteSize::mb(64),
                 max_num_concurrent_split_searches: 150,
-                max_num_concurrent_split_streams: 120,
+                _max_num_concurrent_split_streams: Some(serde::de::IgnoredAny),
                 split_cache: None,
                 request_timeout_secs: NonZeroU64::new(30).unwrap(),
                 storage_timeout_policy: Some(crate::StorageTimeoutPolicy {
@@ -718,8 +718,10 @@ mod tests {
         )
         .await
         .unwrap_err();
-        assert!(format!("{parsing_error:?}")
-            .contains("unknown field `max_num_concurrent_split_searches_with_typo`"));
+        assert!(
+            format!("{parsing_error:?}")
+                .contains("unknown field `max_num_concurrent_split_searches_with_typo`")
+        );
     }
 
     #[tokio::test]
@@ -946,6 +948,7 @@ mod tests {
             assert_eq!(
                 node_config.peer_seed_addrs().await.unwrap(),
                 vec![
+                    "unresolvable.example.com:1789".to_string(),
                     "localhost:1789".to_string(),
                     "localhost:1337".to_string(),
                     "127.0.0.1:1789".to_string(),
@@ -1055,13 +1058,15 @@ mod tests {
             node_id: 1
             metastore_uri: ''
         "#;
-            assert!(load_node_config_with_env(
-                ConfigFormat::Yaml,
-                config_yaml.as_bytes(),
-                &Default::default()
-            )
-            .await
-            .is_err());
+            assert!(
+                load_node_config_with_env(
+                    ConfigFormat::Yaml,
+                    config_yaml.as_bytes(),
+                    &Default::default()
+                )
+                .await
+                .is_err()
+            );
         }
         {
             let config_yaml = r#"
@@ -1070,13 +1075,15 @@ mod tests {
             metastore_uri: postgres://username:password@host:port/db
             default_index_root_uri: ''
         "#;
-            assert!(load_node_config_with_env(
-                ConfigFormat::Yaml,
-                config_yaml.as_bytes(),
-                &Default::default()
-            )
-            .await
-            .is_err());
+            assert!(
+                load_node_config_with_env(
+                    ConfigFormat::Yaml,
+                    config_yaml.as_bytes(),
+                    &Default::default()
+                )
+                .await
+                .is_err()
+            );
         }
     }
 
@@ -1156,9 +1163,11 @@ mod tests {
             max_trace_duration_secs: 0
         "#;
         let error = serde_yaml::from_str::<JaegerConfig>(jaeger_config_yaml).unwrap_err();
-        assert!(error
-            .to_string()
-            .contains("max_trace_duration_secs: invalid value: integer `0`"))
+        assert!(
+            error
+                .to_string()
+                .contains("max_trace_duration_secs: invalid value: integer `0`")
+        )
     }
 
     #[tokio::test]
