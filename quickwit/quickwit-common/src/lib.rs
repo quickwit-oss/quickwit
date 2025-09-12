@@ -19,6 +19,7 @@ mod coolid;
 #[cfg(feature = "jemalloc-profiled")]
 pub(crate) mod alloc_tracker;
 pub mod binary_heap;
+mod cpus;
 pub mod fs;
 pub mod io;
 #[cfg(feature = "jemalloc-profiled")]
@@ -56,6 +57,7 @@ use std::ops::{Range, RangeInclusive};
 use std::str::FromStr;
 
 pub use coolid::new_coolid;
+pub use cpus::num_cpus;
 pub use kill_switch::KillSwitch;
 pub use path_hasher::PathHasher;
 pub use progress::{Progress, ProtectedZoneGuard};
@@ -196,18 +198,6 @@ pub const fn div_ceil(lhs: i64, rhs: i64) -> i64 {
         d + 1
     } else {
         d
-    }
-}
-
-/// Return the number of vCPU/hyperthreads available.
-/// This number is usually not equal to the number of cpu cores
-pub fn num_cpus() -> usize {
-    match std::thread::available_parallelism() {
-        Ok(num_cpus) => num_cpus.get(),
-        Err(io_error) => {
-            error!(error=?io_error, "failed to detect the number of threads available: arbitrarily returning 2");
-            2
-        }
     }
 }
 
