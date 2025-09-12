@@ -395,9 +395,7 @@ fn get_actor_inboxes_count_gauge_guard() -> GaugeGuard<'static> {
             &[],
         )
     });
-    let mut gauge_guard = GaugeGuard::from_gauge(gauge);
-    gauge_guard.add(1);
-    gauge_guard
+    GaugeGuard::from_gauge_with_initial_value(gauge, 1)
 }
 
 pub(crate) fn create_mailbox<A: Actor>(

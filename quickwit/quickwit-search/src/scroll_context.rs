@@ -148,9 +148,10 @@ impl Default for MiniKV {
 
 impl MiniKV {
     pub async fn put(&self, key: Vec<u8>, payload: Vec<u8>, ttl: Duration) {
-        let mut metric_guard =
-            GaugeGuard::from_gauge(&crate::SEARCH_METRICS.searcher_local_kv_store_size_bytes);
-        metric_guard.add(payload.len() as i64);
+        let metric_guard = GaugeGuard::from_gauge_with_initial_value(
+            &crate::SEARCH_METRICS.searcher_local_kv_store_size_bytes,
+            payload.len() as i64,
+        );
         let mut cache_lock = self.ttl_with_cache.write().await;
         cache_lock.insert(
             key,

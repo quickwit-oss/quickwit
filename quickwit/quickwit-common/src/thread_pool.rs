@@ -85,9 +85,8 @@ impl ThreadPool {
     {
         let span = tracing::Span::current();
         let ongoing_tasks = self.ongoing_tasks.clone();
-        let mut pending_tasks_guard: OwnedGaugeGuard =
-            OwnedGaugeGuard::from_gauge(self.pending_tasks.clone());
-        pending_tasks_guard.add(1i64);
+        let pending_tasks_guard: OwnedGaugeGuard =
+            OwnedGaugeGuard::from_gauge_with_initial_value(self.pending_tasks.clone(), 1i64);
         let (tx, rx) = oneshot::channel();
         self.thread_pool.spawn(move || {
             drop(pending_tasks_guard);
@@ -95,8 +94,8 @@ impl ThreadPool {
                 return;
             }
             let _guard = span.enter();
-            let mut ongoing_task_guard = GaugeGuard::from_gauge(&ongoing_tasks);
-            ongoing_task_guard.add(1i64);
+            let _ongoing_task_guard =
+                GaugeGuard::from_gauge_with_initial_value(&ongoing_tasks, 1i64);
             let result = cpu_intensive_fn();
             let _ = tx.send(result);
         });

@@ -240,9 +240,8 @@ where T: fmt::Debug
 
 impl<T> InFlightValue<T> {
     pub fn new(value: T, value_size: ByteSize, gauge: &'static IntGauge) -> Self {
-        let mut gauge_guard = GaugeGuard::from_gauge(gauge);
-        gauge_guard.add(value_size.as_u64() as i64);
-
+        let gauge_guard =
+            GaugeGuard::from_gauge_with_initial_value(gauge, value_size.as_u64() as i64);
         Self(value, gauge_guard)
     }
 

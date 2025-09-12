@@ -232,12 +232,13 @@ pub static CACHE_METRICS_FOR_TESTS: Lazy<CacheMetrics> =
 pub fn object_storage_get_slice_in_flight_guards(
     get_request_size: usize,
 ) -> (GaugeGuard<'static>, GaugeGuard<'static>) {
-    let mut bytes_guard = GaugeGuard::from_gauge(
+    let bytes_guard = GaugeGuard::from_gauge_with_initial_value(
         &crate::STORAGE_METRICS.object_storage_get_slice_in_flight_num_bytes,
+        get_request_size as i64,
     );
-    bytes_guard.add(get_request_size as i64);
-    let mut count_guard =
-        GaugeGuard::from_gauge(&crate::STORAGE_METRICS.object_storage_get_slice_in_flight_count);
-    count_guard.add(1);
+    let count_guard = GaugeGuard::from_gauge_with_initial_value(
+        &crate::STORAGE_METRICS.object_storage_get_slice_in_flight_count,
+        1,
+    );
     (bytes_guard, count_guard)
 }

@@ -34,9 +34,10 @@ impl RawDocBatch {
         force_commit: bool,
     ) -> Self {
         let delta = docs.iter().map(|doc| doc.len() as i64).sum::<i64>();
-        let mut gauge_guard =
-            GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.doc_processor_mailbox);
-        gauge_guard.add(delta);
+        let gauge_guard = GaugeGuard::from_gauge_with_initial_value(
+            &MEMORY_METRICS.in_flight.doc_processor_mailbox,
+            delta,
+        );
 
         Self {
             docs,
@@ -67,7 +68,10 @@ impl fmt::Debug for RawDocBatch {
 
 impl Default for RawDocBatch {
     fn default() -> Self {
-        let _gauge_guard = GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.doc_processor_mailbox);
+        let _gauge_guard = GaugeGuard::from_gauge_with_initial_value(
+            &MEMORY_METRICS.in_flight.doc_processor_mailbox,
+            0i64,
+        );
         Self {
             docs: Vec::new(),
             checkpoint_delta: SourceCheckpointDelta::default(),
