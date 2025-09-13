@@ -635,9 +635,13 @@ async fn search_partial_hits_phase_with_scroll(
 /// metadata count.
 ///
 /// This is done by exclusion, so we will need to keep it up to date if fields are added.
-pub fn is_metadata_count_request(request: &SearchRequest) -> bool {
+pub fn is_metadata_count_request(request: &SearchRequest, split: &SplitMetadata) -> bool {
     let query_ast: QueryAst = serde_json::from_str(&request.query_ast).unwrap();
-    is_metadata_count_request_with_ast(&query_ast, request)
+
+    let start_time = split.time_range.as_ref().map(|x| x.start()).copied();
+    let end_time = split.time_range.as_ref().map(|x| x.end()).copied();
+
+    is_metadata_count_request_with_ast(&query_ast, request, start_time, end_time)
 }
 
 /// Check if the request is a count request without any filters, so we can just return the split
@@ -646,7 +650,12 @@ pub fn is_metadata_count_request(request: &SearchRequest) -> bool {
 /// This is done by exclusion, so we will need to keep it up to date if fields are added.
 ///
 /// The passed query_ast should match the serialized on in request.
-pub fn is_metadata_count_request_with_ast(query_ast: &QueryAst, request: &SearchRequest) -> bool {
+pub fn is_metadata_count_request_with_ast(
+    query_ast: &QueryAst,
+    request: &SearchRequest,
+    split_start_timestamp: Option<i64>,
+    split_end_timestamp: Option<i64>,
+) -> bool {
     if query_ast != &QueryAst::MatchAll {
         return false;
     }
@@ -654,14 +663,17 @@ pub fn is_metadata_count_request_with_ast(query_ast: &QueryAst, request: &Search
         return false;
     }
 
-    // If the start and end timestamp encompass the whole split, it is still a count query.
-    // We remove this currently on the leaf level, but not yet on the root level.
-    // There's a small advantage when we would do this on the root level, since we have the
-    // counts available on the split. On the leaf it is currently required to open the split
-    // to get the count.
-    if request.start_timestamp.is_some() || request.end_timestamp.is_some() {
-        return false;
+    match (request.start_timestamp, split_start_timestamp) {
+        (Some(request_start), Some(split_start)) if split_start >= request_start => {}
+        (Some(_), _) => return false,
+        (None, _) => {}
     }
+    match (request.end_timestamp, split_end_timestamp) {
+        (Some(request_end), Some(split_end)) if split_end < request_end => {}
+        (Some(_), _) => return false,
+        (None, _) => {}
+    }
+
     if request.aggregation_request.is_some() || !request.snippet_fields.is_empty() {
         return false;
     }
@@ -669,19 +681,16 @@ pub fn is_metadata_count_request_with_ast(query_ast: &QueryAst, request: &Search
 }
 
 /// Get a leaf search response that returns the num_docs of the split
-pub fn get_count_from_metadata(split_metadatas: &[SplitMetadata]) -> Vec<LeafSearchResponse> {
-    split_metadatas
-        .iter()
-        .map(|metadata| LeafSearchResponse {
-            num_hits: metadata.num_docs as u64,
-            partial_hits: Vec::new(),
-            failed_splits: Vec::new(),
-            num_attempted_splits: 1,
-            num_successful_splits: 1,
-            intermediate_aggregation_result: None,
-            resource_stats: None,
-        })
-        .collect()
+pub fn get_count_from_metadata(metadata: &SplitMetadata) -> LeafSearchResponse {
+    LeafSearchResponse {
+        num_hits: metadata.num_docs as u64,
+        partial_hits: Vec::new(),
+        failed_splits: Vec::new(),
+        num_attempted_splits: 1,
+        num_successful_splits: 1,
+        intermediate_aggregation_result: None,
+        resource_stats: None,
+    }
 }
 
 /// Returns true if the query is particularly memory intensive.
@@ -729,26 +738,31 @@ pub(crate) async fn search_partial_hits_phase(
     split_metadatas: &[SplitMetadata],
     cluster_client: &ClusterClient,
 ) -> crate::Result<LeafSearchResponse> {
-    let leaf_search_responses: Vec<LeafSearchResponse> =
-        if is_metadata_count_request(search_request) {
-            get_count_from_metadata(split_metadatas)
+    let mut leaf_search_responses: Vec<LeafSearchResponse> =
+        Vec::with_capacity(split_metadatas.len());
+    let mut leaf_search_jobs = Vec::new();
+    for split in split_metadatas {
+        if is_metadata_count_request(search_request, split) {
+            leaf_search_responses.push(get_count_from_metadata(split));
         } else {
-            let jobs: Vec<SearchJob> = split_metadatas.iter().map(SearchJob::from).collect();
-            let assigned_leaf_search_jobs = cluster_client
-                .search_job_placer
-                .assign_jobs(jobs, &HashSet::default())
-                .await?;
-            let mut leaf_request_tasks = Vec::new();
-            for (client, client_jobs) in assigned_leaf_search_jobs {
-                let leaf_request = jobs_to_leaf_request(
-                    search_request,
-                    indexes_metas_for_leaf_search,
-                    client_jobs,
-                )?;
-                leaf_request_tasks.push(cluster_client.leaf_search(leaf_request, client.clone()));
-            }
-            try_join_all(leaf_request_tasks).await?
-        };
+            leaf_search_jobs.push(SearchJob::from(split));
+        }
+    }
+
+    if !leaf_search_jobs.is_empty() {
+        let assigned_leaf_search_jobs = cluster_client
+            .search_job_placer
+            .assign_jobs(leaf_search_jobs, &HashSet::default())
+            .await?;
+        let mut leaf_request_tasks = Vec::new();
+        for (client, client_jobs) in assigned_leaf_search_jobs {
+            let leaf_request =
+                jobs_to_leaf_request(search_request, indexes_metas_for_leaf_search, client_jobs)?;
+            leaf_request_tasks.push(cluster_client.leaf_search(leaf_request, client.clone()));
+        }
+        let executed_leaf_search_responses = try_join_all(leaf_request_tasks).await?;
+        leaf_search_responses.extend(executed_leaf_search_responses);
+    }
 
     // Creates a collector which merges responses into one
     let merge_collector =
@@ -5044,6 +5058,113 @@ mod tests {
         assert_eq!(search_response.num_hits, 1);
         assert_eq!(search_response.hits.len(), 1);
         assert_eq!(search_response.failed_splits.len(), 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_count_from_metastore_in_contained_time_range() -> anyhow::Result<()> {
+        let search_request = quickwit_proto::search::SearchRequest {
+            start_timestamp: Some(122_000),
+            end_timestamp: Some(129_000),
+            index_id_patterns: vec!["test-index".to_string()],
+            query_ast: serde_json::to_string(&QueryAst::MatchAll)
+                .expect("MatchAll should be JSON serializable."),
+            max_hits: 0,
+            ..Default::default()
+        };
+
+        let index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
+        let index_uid = index_metadata.index_uid.clone();
+
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore
+            .expect_list_indexes_metadata()
+            .returning(move |_q| {
+                Ok(ListIndexesMetadataResponse::for_test(vec![
+                    index_metadata.clone(),
+                ]))
+            });
+        mock_metastore.expect_list_splits().returning(move |_req| {
+            let splits = vec![
+                MockSplitBuilder::new_with_time_range("split_before", Some(100_000..=110_000))
+                    .with_index_uid(&index_uid)
+                    .build(),
+                MockSplitBuilder::new_with_time_range(
+                    "split_overlap_start",
+                    Some(120_000..=123_000),
+                )
+                .with_index_uid(&index_uid)
+                .build(),
+                MockSplitBuilder::new_with_time_range("split_overlap_end", Some(128_000..=140_000))
+                    .with_index_uid(&index_uid)
+                    .build(),
+                MockSplitBuilder::new_with_time_range(
+                    "split_covering_whole",
+                    Some(100_000..=200_000),
+                )
+                .with_index_uid(&index_uid)
+                .build(),
+                MockSplitBuilder::new_with_time_range("split_inside", Some(124_000..=126_000))
+                    .with_index_uid(&index_uid)
+                    .build(),
+            ];
+            let resp = ListSplitsResponse::try_from_splits(splits).unwrap();
+            Ok(ServiceStream::from(vec![Ok(resp)]))
+        });
+
+        let mut mock_search = MockSearchService::new();
+        mock_search
+            .expect_leaf_search()
+            .withf(|leaf_search_req| {
+                let mut expected = HashSet::new();
+
+                // Notice split_inside is not included.
+                expected.insert("split_before");
+                expected.insert("split_covering_whole");
+                expected.insert("split_overlap_end");
+                expected.insert("split_overlap_start");
+
+                leaf_search_req.leaf_requests.len() == 1
+                    && leaf_search_req.leaf_requests[0]
+                        .split_offsets
+                        .iter()
+                        .map(|s| s.split_id.as_str())
+                        .collect::<HashSet<&str>>()
+                        == expected
+            })
+            .times(1)
+            .returning(|_| {
+                Ok(quickwit_proto::search::LeafSearchResponse {
+                    num_hits: 5,
+                    partial_hits: vec![],
+                    failed_splits: Vec::new(),
+                    num_attempted_splits: 0,
+                    ..Default::default()
+                })
+            });
+        mock_search.expect_fetch_docs().returning(|fetch_req| {
+            Ok(quickwit_proto::search::FetchDocsResponse {
+                hits: get_doc_for_fetch_req(fetch_req),
+            })
+        });
+
+        let searcher_pool = searcher_pool_for_test([("127.0.0.1:1001", mock_search)]);
+        let search_job_placer = SearchJobPlacer::new(searcher_pool);
+        let cluster_client = ClusterClient::new(search_job_placer);
+
+        let ctx = SearcherContext::for_test();
+        let resp = root_search(
+            &ctx,
+            search_request,
+            MetastoreServiceClient::from_mock(mock_metastore),
+            &cluster_client,
+        )
+        .await?;
+
+        assert_eq!(resp.num_hits, 15);
+        assert_eq!(resp.hits.len(), 0);
+        assert_eq!(resp.num_successful_splits, 1);
+
         Ok(())
     }
 }
