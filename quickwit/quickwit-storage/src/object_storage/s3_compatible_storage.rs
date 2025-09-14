@@ -851,11 +851,21 @@ impl Storage for S3CompatibleObjectStorage {
         let _permit = REQUEST_SEMAPHORE.acquire().await;
         // let thread_id = std::thread::current().id();
         let key = self.key(path);
+        let range_size = range.end - range.start;
         tantivy4java_debug!("QUICKWIT DEBUG: ===== S3 GET_SLICE REQUEST =====");
         tantivy4java_debug!("QUICKWIT DEBUG: get_slice path: '{}'", path.display());
-        tantivy4java_debug!("QUICKWIT DEBUG: get_slice range: {:?}", range);
+        tantivy4java_debug!("QUICKWIT DEBUG: get_slice range: {} to {} ({} bytes)", range.start, range.end, range_size);
         tantivy4java_debug!("QUICKWIT DEBUG: get_slice key: '{}'", key);
         tantivy4java_debug!("QUICKWIT DEBUG: get_slice storage instance: {:p}", self);
+        
+        // Track large vs small requests for hotcache analysis
+        if range_size > 1_000_000 { // > 1MB
+            tantivy4java_debug!("QUICKWIT DEBUG: 🔥 LARGE REQUEST: {} MB - POTENTIAL HOTCACHE MISS!", range_size / 1_000_000);
+        } else if range_size > 100_000 { // > 100KB  
+            tantivy4java_debug!("QUICKWIT DEBUG: ⚠️  MEDIUM REQUEST: {} KB", range_size / 1000);
+        } else {
+            tantivy4java_debug!("QUICKWIT DEBUG: ✅ SMALL REQUEST: {} bytes - LIKELY HOTCACHE", range_size);
+        }
         
         let result = self.get_to_vec(path, Some(range.clone())).await;
         

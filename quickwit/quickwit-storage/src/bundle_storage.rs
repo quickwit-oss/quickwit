@@ -75,7 +75,16 @@ impl BundleStorage {
         bundle_filepath: PathBuf,
         split_data: FileSlice,
     ) -> anyhow::Result<(FileSlice, Self)> {
+        tantivy4java_debug!("🔍 QUICKWIT DEBUG: BundleStorage::open_from_split_data called");
+        tantivy4java_debug!("🔍 QUICKWIT DEBUG: Bundle filepath: {:?}", bundle_filepath);
+        tantivy4java_debug!("🔍 QUICKWIT DEBUG: Split data size: {} bytes", split_data.len());
+        tantivy4java_debug!("🔍 QUICKWIT DEBUG: Storage URI: {}", storage.uri());
+        
         let (hotcache, metadata) = BundleStorageFileOffsets::open_from_split_data(split_data)?;
+        
+        tantivy4java_debug!("🔍 QUICKWIT DEBUG: BundleStorageFileOffsets::open_from_split_data completed");
+        tantivy4java_debug!("🔍 QUICKWIT DEBUG: Hotcache size: {} bytes", hotcache.len());
+        
         Ok((
             hotcache,
             BundleStorage {
@@ -149,6 +158,9 @@ impl BundleStorageFileOffsets {
     /// [Files, FileMetadata, FileMetadata Len, HotCache, HotCache Len]
     /// Returns (Hotcache, Self)
     fn open_from_split_data(file: FileSlice) -> anyhow::Result<(FileSlice, Self)> {
+        tantivy4java_debug!("🔍 QUICKWIT DEBUG: BundleStorageFileOffsets::open_from_split_data called");
+        tantivy4java_debug!("🔍 QUICKWIT DEBUG: Input file slice size: {} bytes", file.len());
+        
         let (bundle_and_hotcache_bytes, hotcache_num_bytes_data) =
             file.split_from_end(SPLIT_HOTBYTES_FOOTER_LENGTH_NUM_BYTES);
         let hotcache_num_bytes: u32 = u32::from_le_bytes(
@@ -158,8 +170,16 @@ impl BundleStorageFileOffsets {
                 .try_into()
                 .unwrap(),
         );
+        
+        tantivy4java_debug!("🔍 QUICKWIT DEBUG: Hotcache num bytes read from footer: {}", hotcache_num_bytes);
+        tantivy4java_debug!("🔍 QUICKWIT DEBUG: Bundle and hotcache bytes size: {}", bundle_and_hotcache_bytes.len());
+        
         let (bundle, hotcache) =
             bundle_and_hotcache_bytes.split_from_end(hotcache_num_bytes as usize);
+            
+        tantivy4java_debug!("🔍 QUICKWIT DEBUG: Bundle size after split: {} bytes", bundle.len());
+        tantivy4java_debug!("🔍 QUICKWIT DEBUG: Hotcache size after split: {} bytes", hotcache.len());
+        
         Ok((hotcache, Self::open(bundle)?))
     }
 

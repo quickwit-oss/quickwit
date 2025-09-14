@@ -23,6 +23,7 @@ use anyhow::Context;
 use bytesize::ByteSize;
 use futures::future::try_join_all;
 use quickwit_common::pretty::PrettySample;
+use tantivy::HasLen;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_doc_mapper::{Automaton, DocMapper, FastFieldWarmupInfo, TermRange, WarmupInfo};
 use quickwit_proto::search::{
@@ -44,6 +45,15 @@ use tantivy::{DateTime, Index, ReloadPolicy, Searcher, TantivyError, Term};
 use tokio::task::JoinError;
 use tracing::*;
 
+// Debug macro that checks TANTIVY4JAVA_DEBUG environment variable
+macro_rules! debug_println {
+    ($($arg:tt)*) => {
+        if std::env::var("TANTIVY4JAVA_DEBUG").map(|v| v == "1" || v.to_lowercase() == "true").unwrap_or(false) {
+            eprintln!($($arg)*);
+        }
+    };
+}
+
 use crate::collector::{IncrementalCollector, make_collector_for_split, make_merge_collector};
 use crate::root::is_metadata_count_request_with_ast;
 use crate::search_permit_provider::{SearchPermit, compute_initial_memory_allocation};
@@ -56,13 +66,29 @@ async fn get_split_footer_from_cache_or_fetch(
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
     footer_cache: &MemorySizedCache<String>,
 ) -> anyhow::Result<OwnedBytes> {
+    debug_println!("🔍 QUICKWIT DEBUG: get_split_footer_from_cache_or_fetch called for split: '{}'", split_and_footer_offsets.split_id);
+    debug_println!("🔍 QUICKWIT DEBUG: Footer range to fetch: {} to {} ({} bytes)", 
+             split_and_footer_offsets.split_footer_start,
+             split_and_footer_offsets.split_footer_end,
+             split_and_footer_offsets.split_footer_end - split_and_footer_offsets.split_footer_start);
+    
     {
         let possible_val = footer_cache.get(&split_and_footer_offsets.split_id);
         if let Some(footer_data) = possible_val {
+            debug_println!("🔍 QUICKWIT DEBUG: ✅ Footer found in cache, size: {} bytes", footer_data.len());
             return Ok(footer_data);
         }
     }
+    debug_println!("🔍 QUICKWIT DEBUG: ❌ Footer not in cache, will fetch from storage");
     let split_file = PathBuf::from(format!("{}.split", split_and_footer_offsets.split_id));
+    debug_println!("🔍 QUICKWIT DEBUG: About to call index_storage.get_slice()");
+    debug_println!("🔍 QUICKWIT DEBUG: Split file: {:?}", split_file);
+    debug_println!("🔍 QUICKWIT DEBUG: Range: {}..{} ({} bytes)", 
+             split_and_footer_offsets.split_footer_start,
+             split_and_footer_offsets.split_footer_end,
+             split_and_footer_offsets.split_footer_end - split_and_footer_offsets.split_footer_start);
+    debug_println!("🔍 QUICKWIT DEBUG: Storage URI: {}", index_storage.uri());
+    
     let footer_data_opt = index_storage
         .get_slice(
             &split_file,
@@ -77,6 +103,8 @@ async fn get_split_footer_from_cache_or_fetch(
                 split_and_footer_offsets.split_id
             )
         })?;
+    
+    debug_println!("🔍 QUICKWIT DEBUG: ✅ index_storage.get_slice() completed, fetched {} bytes", footer_data_opt.len());
 
     footer_cache.put(
         split_and_footer_offsets.split_id.to_owned(),
@@ -94,13 +122,22 @@ pub async fn open_split_bundle(
     index_storage: Arc<dyn Storage>,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
 ) -> anyhow::Result<(FileSlice, BundleStorage)> {
+    debug_println!("🔍 QUICKWIT DEBUG: open_split_bundle called with split_id: '{}'", split_and_footer_offsets.split_id);
+    debug_println!("🔍 QUICKWIT DEBUG: Footer offsets: {} to {} ({} bytes)", 
+             split_and_footer_offsets.split_footer_start, 
+             split_and_footer_offsets.split_footer_end,
+             split_and_footer_offsets.split_footer_end - split_and_footer_offsets.split_footer_start);
+    
     let split_file = PathBuf::from(format!("{}.split", split_and_footer_offsets.split_id));
+    debug_println!("🔍 QUICKWIT DEBUG: Split file path: {:?}", split_file);
+    
     let footer_data = get_split_footer_from_cache_or_fetch(
         index_storage.clone(),
         split_and_footer_offsets,
         &searcher_context.split_footer_cache,
     )
     .await?;
+    debug_println!("🔍 QUICKWIT DEBUG: Footer data fetched, size: {} bytes", footer_data.len());
 
     // We wrap the top-level storage with the split cache.
     // This is before the bundle storage: at this point, this storage is reading `.split` files.
@@ -111,11 +148,17 @@ pub async fn open_split_bundle(
             index_storage.clone()
         };
 
+    debug_println!("🔍 QUICKWIT DEBUG: About to call BundleStorage::open_from_split_data");
+    debug_println!("🔍 QUICKWIT DEBUG: Footer data size passed to BundleStorage: {} bytes", footer_data.len());
+    
     let (hotcache_bytes, bundle_storage) = BundleStorage::open_from_split_data(
         index_storage_with_split_cache,
         split_file,
         FileSlice::new(Arc::new(footer_data)),
     )?;
+    
+    debug_println!("🔍 QUICKWIT DEBUG: BundleStorage::open_from_split_data completed");
+    debug_println!("🔍 QUICKWIT DEBUG: Hotcache bytes size: {} bytes", hotcache_bytes.len());
 
     Ok((hotcache_bytes, bundle_storage))
 }

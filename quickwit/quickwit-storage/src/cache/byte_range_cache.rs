@@ -371,15 +371,33 @@ impl ByteRangeCache {
 
     /// If available, returns the cached view of the slice.
     pub fn get_slice(&self, path: &Path, byte_range: Range<usize>) -> Option<OwnedBytes> {
-        self.inner_arc
+        let range_size = byte_range.end - byte_range.start;
+        let result = self.inner_arc
             .need_mut_byte_range_cache
             .lock()
             .unwrap()
-            .get_slice(path, byte_range)
+            .get_slice(path, byte_range.clone());
+        
+        // Use tantivy4java_debug! macro for consistent debugging
+        use quickwit_common::tantivy4java_debug;
+        
+        match &result {
+            Some(_) => {
+                tantivy4java_debug!("QUICKWIT DEBUG: 🎯 CACHE HIT: {} bytes for path '{}'", range_size, path.display());
+            },
+            None => {
+                tantivy4java_debug!("QUICKWIT DEBUG: ❌ CACHE MISS: {} bytes for path '{}' - WILL DOWNLOAD", range_size, path.display());
+            }
+        }
+        
+        result
     }
 
     /// Put the given amount of data in the cache.
     pub fn put_slice(&self, path: PathBuf, byte_range: Range<usize>, bytes: OwnedBytes) {
+        use quickwit_common::tantivy4java_debug;
+        let range_size = byte_range.end - byte_range.start;
+        tantivy4java_debug!("QUICKWIT DEBUG: 💾 CACHE PUT: {} bytes for path '{}'", range_size, path.display());
         let mut need_mut_byte_range_cache_locked =
             self.inner_arc.need_mut_byte_range_cache.lock().unwrap();
         need_mut_byte_range_cache_locked.put_slice(path, byte_range, bytes);
