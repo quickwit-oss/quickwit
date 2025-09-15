@@ -18,7 +18,7 @@ mod scheduling;
 use std::cmp::Ordering;
 use std::fmt;
 use std::num::NonZeroU32;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use fnv::{FnvHashMap, FnvHashSet};
@@ -177,8 +177,19 @@ fn compute_load_per_shard(shard_entries: &[&ShardEntry]) -> NonZeroU32 {
         const MIN_CPU_LOAD_PER_SHARD: u32 = 50u32;
         NonZeroU32::new((num_cpu_millis as u32).max(MIN_CPU_LOAD_PER_SHARD)).unwrap()
     } else {
-        NonZeroU32::new(PIPELINE_FULL_CAPACITY.cpu_millis() / 4).unwrap()
+        get_default_load_per_shard()
     }
+}
+
+fn get_default_load_per_shard() -> NonZeroU32 {
+    static DEFAULT_LOAD_PER_SHARD: OnceLock<NonZeroU32> = OnceLock::new();
+    *DEFAULT_LOAD_PER_SHARD.get_or_init(|| {
+        let default_load_per_shard = quickwit_common::get_from_env(
+            "QW_DEFAULT_LOAD_PER_SHARD",
+            PIPELINE_FULL_CAPACITY.cpu_millis() / 4,
+        );
+        NonZeroU32::new(default_load_per_shard).unwrap()
+    })
 }
 
 fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
