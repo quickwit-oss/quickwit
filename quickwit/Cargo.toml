@@ -351,6 +351,7 @@ tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "7963b0b", d
   "mmap",
   "quickwit",
   "zstd-compression",
+  "columnar-zstd-compression",
 ] }
 tantivy-fst = "0.5"
 

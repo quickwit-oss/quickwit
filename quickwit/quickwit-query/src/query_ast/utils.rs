@@ -195,7 +195,7 @@ fn compute_tantivy_ast_query_for_json(
 ) -> Result<TantivyQueryAst, InvalidQuery> {
     let mut bool_query = TantivyBoolQuery::default();
     let term = Term::from_field_json_path(field, json_path, json_options.is_expand_dots_enabled());
-    if let Some(term) = convert_to_fast_value_and_append_to_json_term(term, text, true) {
+    if let Some(term) = convert_to_fast_value_and_append_to_json_term(&term, text, true) {
         bool_query
             .should
             .push(TantivyTermQuery::new(term, IndexRecordOption::Basic).into());
