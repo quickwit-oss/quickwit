@@ -84,43 +84,42 @@ pub fn split_file(split_id: impl Display) -> String {
     format!("{split_id}.split")
 }
 
-pub fn get_from_env<T: FromStr + Debug>(key: &str, default_value: T) -> T {
-    if let Ok(value_str) = std::env::var(key) {
-        if let Ok(value) = T::from_str(&value_str) {
-            info!(value=?value, "using environment variable `{key}` value");
-            return value;
-        } else {
-            error!(value=%value_str, "failed to parse environment variable `{key}` value");
-        }
-    }
-    info!(value=?default_value, "using environment variable `{key}` default value");
-    default_value
+fn get_from_env_opt_aux<T: Debug>(
+    key: &str,
+    parse_fn: impl FnOnce(&str) -> Option<T>,
+) -> Option<T> {
+    let value_str = std::env::var(key).ok()?;
+    let Some(value) = parse_fn(&value_str) else {
+        error!(value=%value_str, "failed to parse environment variable `{key}` value");
+        return None;
+    };
+    info!(value=?value, "using environment variable `{key}` value");
+    Some(value)
 }
 
-pub fn get_bool_from_env(key: &str, default_value: bool) -> bool {
-    if let Ok(value_str) = std::env::var(key) {
-        if let Some(value) = parse_bool_lenient(&value_str) {
-            info!(value=%value, "using environment variable `{key}` value");
-            return value;
-        } else {
-            error!(value=%value_str, "failed to parse environment variable `{key}` value");
-        }
+pub fn get_from_env<T: FromStr + Debug>(key: &str, default_value: T) -> T {
+    if let Some(value) = get_from_env_opt(key) {
+        value
+    } else {
+        info!(default_value=?default_value, "using environment variable `{key}` default value");
+        default_value
     }
-    info!(value=?default_value, "using environment variable `{key}` default value");
-    default_value
 }
 
 pub fn get_from_env_opt<T: FromStr + Debug>(key: &str) -> Option<T> {
-    let Some(value_str) = std::env::var(key).ok() else {
-        info!("environment variable `{key}` is not set");
-        return None;
-    };
-    if let Ok(value) = T::from_str(&value_str) {
-        info!(value=?value, "using environment variable `{key}` value");
-        Some(value)
+    get_from_env_opt_aux(key, |val_str| val_str.parse().ok())
+}
+
+pub fn get_bool_from_env_opt(key: &str) -> Option<bool> {
+    get_from_env_opt_aux(key, parse_bool_lenient)
+}
+
+pub fn get_bool_from_env(key: &str, default_value: bool) -> bool {
+    if let Some(flag_value) = get_bool_from_env_opt(key) {
+        flag_value
     } else {
-        error!(value=%value_str, "failed to parse environment variable `{key}` value");
-        None
+        info!(default_value=%default_value, "using environment variable `{key}` default value");
+        default_value
     }
 }
 
