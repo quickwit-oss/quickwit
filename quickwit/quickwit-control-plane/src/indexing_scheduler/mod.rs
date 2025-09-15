@@ -42,6 +42,8 @@ use crate::metrics::ShardLocalityMetrics;
 use crate::model::{ControlPlaneModel, ShardEntry, ShardLocations};
 use crate::{IndexerNodeInfo, IndexerPool};
 
+const DEFAULT_ENABLE_VARIABLE_SHARD_LOAD: bool = false;
+
 pub(crate) const MIN_DURATION_BETWEEN_SCHEDULING: Duration =
     if cfg!(any(test, feature = "testsuite")) {
         Duration::from_millis(50)
@@ -121,7 +123,30 @@ impl fmt::Debug for IndexingScheduler {
 fn enable_variable_shard_load() -> bool {
     static IS_SHARD_LOAD_CP_ENABLED: OnceCell<bool> = OnceCell::new();
     *IS_SHARD_LOAD_CP_ENABLED.get_or_init(|| {
-        !quickwit_common::get_bool_from_env("QW_DISABLE_VARIABLE_SHARD_LOAD", false)
+        if let Some(enable_flag) =
+            quickwit_common::get_bool_from_env_opt("QW_ENABLE_VARIABLE_SHARD_LOAD")
+        {
+            return enable_flag;
+        }
+        // For backward compatibility, if QW_DISABLE_VARIABLE_SHARD_LOAD is set, we accept this
+        // value too.
+        if let Some(disable_flag) =
+            quickwit_common::get_bool_from_env_opt("QW_DISABLE_VARIABLE_SHARD_LOAD")
+        {
+            warn!(
+                disable = disable_flag,
+                "QW_DISABLE_VARIABLE_SHARD_LOAD is deprecated. Please use \
+                 QW_ENABLE_VARIABLE_SHARD_LOAD instead. We will use your setting in this version, \
+                 but will likely ignore it in future versions."
+            );
+            return !disable_flag;
+        }
+        // Defaulting to false
+        info!(
+            "QW_ENABLE_VARIABLE_SHARD_LOAD not set, defaulting to {}",
+            DEFAULT_ENABLE_VARIABLE_SHARD_LOAD
+        );
+        DEFAULT_ENABLE_VARIABLE_SHARD_LOAD
     })
 }
 
