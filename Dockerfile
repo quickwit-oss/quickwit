@@ -32,6 +32,7 @@ RUN apt-get -y update \
 
 COPY quickwit /quickwit
 COPY config/quickwit.yaml /quickwit/config/quickwit.yaml
+COPY config/cloudprem/datadog.yaml /config/cloudprem/datadog.yaml
 COPY --from=ui-builder /quickwit/quickwit-ui/build /quickwit/quickwit-ui/build
 
 WORKDIR /quickwit
