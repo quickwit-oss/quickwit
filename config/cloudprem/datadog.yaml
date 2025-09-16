@@ -6,6 +6,10 @@ index_id: datadog
 indexing_settings:
   commit_timeout_secs: 30
 
+retention:
+  period: 30 days
+  schedule: daily
+  
 search_settings:
   default_search_fields: []
 

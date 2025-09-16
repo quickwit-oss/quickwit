@@ -605,5 +605,24 @@ async fn test_create_managed_indexes_on_startup() {
     assert!(index_ids.contains(&"otel-traces-v0_9"));
     assert!(index_ids.contains(&"datadog"));
 
+    sandbox
+        .rest_client(QuickwitService::Indexer)
+        .indexes()
+        .delete(index_ids[0], false)
+        .await
+        .unwrap();
+    sandbox
+        .rest_client(QuickwitService::Indexer)
+        .indexes()
+        .delete(index_ids[1], false)
+        .await
+        .unwrap();
+    sandbox
+        .rest_client(QuickwitService::Indexer)
+        .indexes()
+        .delete(index_ids[2], false)
+        .await
+        .unwrap();
+
     sandbox.shutdown().await.unwrap();
 }
