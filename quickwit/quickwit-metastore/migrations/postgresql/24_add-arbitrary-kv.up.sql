@@ -1,0 +1,4 @@
+CREATE TABLE IF NOT EXISTS kv (
+    key VARCHAR(50) PRIMARY KEY,
+    value TEXT NOT NULL
+);
