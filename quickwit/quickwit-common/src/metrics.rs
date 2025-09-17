@@ -13,11 +13,9 @@
 // limitations under the License.
 
 use std::collections::{BTreeMap, HashMap};
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 
-use metrics::{
-    Counter, Gauge as MetricsGauge, Histogram as MetricsHistogram, Label, counter, gauge, histogram,
-};
+use metrics::{Counter, Gauge as MetricsGauge, Label, counter, gauge};
 use once_cell::sync::Lazy;
 use prometheus::{Gauge, HistogramOpts, Opts, TextEncoder};
 pub use prometheus::{
@@ -372,88 +370,6 @@ impl Default for SystemMetrics {
             dd_network_bytes_recv: counter!("network.bytes_recv.counter"),
             dd_network_bytes_sent: counter!("network.bytes_sent.counter"),
         }
-    }
-}
-
-#[derive(Clone)]
-pub struct DDCounters {
-    inner: Arc<DDCounterInner>,
-}
-
-struct DDCounterInner {
-    counters: HashMap<&'static str, Counter>,
-    other: Counter,
-}
-
-impl DDCounters {
-    pub fn new(name: &'static str, label_key: &'static str, label_values: &[&'static str]) -> Self {
-        let mut counters = HashMap::with_capacity(label_values.len());
-        for &label_value in label_values {
-            counters.insert(
-                label_value,
-                counter!(name, vec![Label::new(label_key, label_value)]),
-            );
-        }
-        let other = counter!(name, vec![Label::new(label_key, "other")]);
-        let inner = DDCounterInner { counters, other };
-        Self {
-            inner: Arc::new(inner),
-        }
-    }
-
-    pub fn get(&self, label_value: &str) -> &Counter {
-        if let Some(counter) = self.inner.counters.get(label_value) {
-            counter
-        } else {
-            &self.inner.other
-        }
-    }
-}
-
-impl std::fmt::Debug for DDCounters {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        self.inner.counters.fmt(f)
-    }
-}
-
-#[derive(Clone)]
-pub struct DDHistograms {
-    inner: Arc<DDHistogramInner>,
-}
-
-struct DDHistogramInner {
-    histograms: HashMap<&'static str, MetricsHistogram>,
-    other: MetricsHistogram,
-}
-
-impl DDHistograms {
-    pub fn new(name: &'static str, label_key: &'static str, label_values: &[&'static str]) -> Self {
-        let mut histograms = HashMap::with_capacity(label_values.len());
-        for &label_value in label_values {
-            histograms.insert(
-                label_value,
-                histogram!(name, vec![Label::new(label_key, label_value)]),
-            );
-        }
-        let other = histogram!(name, vec![Label::new(label_key, "other")]);
-        let inner = DDHistogramInner { histograms, other };
-        Self {
-            inner: Arc::new(inner),
-        }
-    }
-
-    pub fn get(&self, label_value: &str) -> &MetricsHistogram {
-        if let Some(histogram) = self.inner.histograms.get(label_value) {
-            histogram
-        } else {
-            &self.inner.other
-        }
-    }
-}
-
-impl std::fmt::Debug for DDHistograms {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        self.inner.histograms.fmt(f)
     }
 }
 

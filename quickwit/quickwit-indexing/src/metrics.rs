@@ -14,9 +14,10 @@
 
 use metrics::{Gauge, gauge};
 use once_cell::sync::Lazy;
+use quickwit_common::dd_metrics::DDCounters;
 use quickwit_common::metrics::{
-    DDCounters, IntCounter, IntCounterVec, IntGauge, IntGaugeVec, new_counter, new_counter_vec,
-    new_gauge, new_gauge_vec,
+    IntCounter, IntCounterVec, IntGauge, IntGaugeVec, new_counter, new_counter_vec, new_gauge,
+    new_gauge_vec,
 };
 
 pub struct IndexerMetrics {

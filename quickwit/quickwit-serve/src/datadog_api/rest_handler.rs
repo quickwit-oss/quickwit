@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::sync::LazyLock;
+
+use quickwit_common::dd_metrics::{DD_STATUS_CODES, DDCounters};
 use quickwit_common::rate_limited_error;
 use quickwit_config::INGEST_V2_SOURCE_ID;
 use quickwit_doc_transforms::DatadogLogMsg;
@@ -31,6 +34,9 @@ use crate::rest_api_response::into_rest_api_response;
 use crate::{Body, BodyFormat, with_arg};
 
 const DATADOG_INDEX_ID: &str = "datadog";
+
+pub static DD_INGEST_METRICS: LazyLock<DDCounters> =
+    LazyLock::new(|| DDCounters::new("ingest_requests.count", "status_code", DD_STATUS_CODES));
 
 #[derive(utoipa::OpenApi)]
 #[openapi(paths(datadog_logs,))]
@@ -182,6 +188,7 @@ async fn datadog_ingest_logs(
     );
 
     if num_failures == 0 {
+        DD_INGEST_METRICS.get("200").increment(1);
         return Ok(());
     }
     let failure_reason = response.failures[0].reason();
@@ -208,6 +215,9 @@ async fn datadog_ingest_logs(
         IngestFailureReason::LoadShedding => (ServiceErrorCode::Internal, "load shedding)"),
         IngestFailureReason::CircuitBreaker => (ServiceErrorCode::Internal, "circuit breaker)"),
     };
+    let status_code = error_code.http_status_code();
+    DD_INGEST_METRICS.get(status_code.as_str()).increment(1);
+
     Err(DatadogApiError::Ingest(
         error_code,
         error_message.to_string(),

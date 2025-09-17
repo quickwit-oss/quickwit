@@ -20,7 +20,7 @@ use futures::{Future, ready};
 use pin_project::{pin_project, pinned_drop};
 use tower::{Layer, Service};
 
-use crate::metrics::{DDCounters, DDHistograms};
+use crate::dd_metrics::{DDCounters, DDHistograms};
 
 #[derive(Clone)]
 pub struct DDGrpcMetrics<S> {

@@ -68,6 +68,8 @@ jemalloc-profiled = [
 [dev-dependencies]
 binggan = { workspace = true }
 hyper-util = { workspace = true }
+metrics-util = "0.20"
+ordered-float = "4.6"
 proptest = { workspace = true }
 serde_json = { workspace = true }
 serial_test = { workspace = true }
@@ -78,4 +80,3 @@ tokio = { workspace = true, features = ["test-util"] }
 [[bench]]
 name = "serialized_json_size_bench"
 harness = false
-
