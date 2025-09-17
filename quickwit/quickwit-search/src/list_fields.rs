@@ -12,17 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use anyhow::Context;
 use futures::future;
 use futures::future::try_join_all;
 use itertools::Itertools;
-use once_cell::sync::OnceCell;
-use quickwit_common::shared_consts::SPLIT_FIELDS_FILE_NAME;
+use quickwit_common::shared_consts::{FIELD_PRESENCE_FIELD_NAME, SPLIT_FIELDS_FILE_NAME};
 use quickwit_common::uri::Uri;
 use quickwit_metastore::SplitMetadata;
 use quickwit_proto::metastore::MetastoreServiceClient;
@@ -36,7 +34,10 @@ use quickwit_storage::Storage;
 use crate::leaf::open_split_bundle;
 use crate::search_job_placer::group_jobs_by_index_id;
 use crate::service::SearcherContext;
-use crate::{ClusterClient, SearchError, SearchJob, list_relevant_splits, resolve_index_patterns};
+use crate::{
+    ClusterClient, SearchError, SearchJob, list_relevant_splits, resolve_index_patterns,
+    search_thread_pool,
+};
 
 /// QW_FIELD_LIST_SIZE_LIMIT defines a hard limit on the number of fields that
 /// can be returned (error otherwise).
@@ -45,11 +46,10 @@ use crate::{ClusterClient, SearchError, SearchJob, list_relevant_splits, resolve
 /// a JSON type with random field names. This leads to huge memory consumption
 /// when building the response. This is a workaround until a way is found to
 /// prune the long tail of rare fields.
-fn get_field_list_size_limit() -> usize {
-    static FIELD_LIST_SIZE_LIMIT: OnceCell<usize> = OnceCell::new();
-    *FIELD_LIST_SIZE_LIMIT
-        .get_or_init(|| quickwit_common::get_from_env("QW_FIELD_LIST_SIZE_LIMIT", 100_000))
-}
+static MAX_FIELDS: LazyLock<usize> =
+    LazyLock::new(|| quickwit_common::get_from_env("QW_FIELD_LIST_SIZE_LIMIT", 100_000));
+
+const DYNAMIC_FIELD_PREFIX: &str = "_dynamic.";
 
 /// Get the list of splits for the request which we need to scan.
 pub async fn get_fields_from_split(
@@ -57,12 +57,12 @@ pub async fn get_fields_from_split(
     index_id: IndexId,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
     index_storage: Arc<dyn Storage>,
-) -> anyhow::Result<Box<dyn Iterator<Item = ListFieldsEntryResponse> + Send>> {
+) -> anyhow::Result<Vec<ListFieldsEntryResponse>> {
     if let Some(list_fields) = searcher_context
         .list_fields_cache
         .get(split_and_footer_offsets.clone())
     {
-        return Ok(Box::new(list_fields.fields.into_iter()));
+        return Ok(list_fields.fields);
     }
     let (_, split_bundle) =
         open_split_bundle(searcher_context, index_storage, split_and_footer_offsets).await?;
@@ -71,19 +71,25 @@ pub async fn get_fields_from_split(
         .get_all(Path::new(SPLIT_FIELDS_FILE_NAME))
         .await?;
     let serialized_split_fields_len = serialized_split_fields.len();
-    let mut list_fields = deserialize_split_fields(serialized_split_fields)
-        .with_context(|| {
+    let list_fields_proto =
+        deserialize_split_fields(serialized_split_fields).with_context(|| {
             format!("could not read split fields (serialized len: {serialized_split_fields_len})",)
-        })?
-        .fields;
+        })?;
+
+    let mut list_fields = list_fields_proto.fields;
+    list_fields.retain(|list_field_entry| list_field_entry.field_name != FIELD_PRESENCE_FIELD_NAME);
+
     for list_field_entry in list_fields.iter_mut() {
         list_field_entry.index_ids = vec![index_id.to_string()];
+
+        if list_field_entry.field_name.starts_with(DYNAMIC_FIELD_PREFIX) {
+            list_field_entry.field_name.replace_range(..DYNAMIC_FIELD_PREFIX.len(), "");
+        }
     }
-    // Prepare for grouping by field name and type
-    list_fields.sort_by(|left, right| match left.field_name.cmp(&right.field_name) {
-        Ordering::Equal => left.field_type.cmp(&right.field_type),
-        other => other,
+    list_fields.sort_unstable_by(|left, right| {
+        left.field_name.cmp(&right.field_name).then_with(|| left.field_type.cmp(&right.field_type))
     });
+
     // Put result into cache
     searcher_context.list_fields_cache.put(
         split_and_footer_offsets.clone(),
@@ -92,7 +98,7 @@ pub async fn get_fields_from_split(
         },
     );
 
-    Ok(Box::new(list_fields.into_iter()))
+    Ok(list_fields)
 }
 
 /// `current_group` needs to contain at least one element.
@@ -110,9 +116,13 @@ fn merge_same_field_group(
     );
 
     if current_group.len() == 1 {
-        return current_group.pop().unwrap();
+        return current_group
+            .pop()
+            .expect("`current_group` should not be empty");
     }
-    let metadata = &current_group.last().unwrap();
+    let metadata = current_group
+        .last()
+        .expect("`current_group` should not be empty");
     let searchable = current_group.iter().any(|entry| entry.searchable);
     let aggregatable = current_group.iter().any(|entry| entry.aggregatable);
     let field_name = metadata.field_name.to_string();
@@ -134,7 +144,7 @@ fn merge_same_field_group(
         // Not searchable => no need to list all the indices
         Vec::new()
     };
-    non_searchable_index_ids.sort();
+    non_searchable_index_ids.sort_unstable();
     non_searchable_index_ids.dedup();
 
     let mut non_aggregatable_index_ids = if aggregatable {
@@ -154,14 +164,15 @@ fn merge_same_field_group(
         // Not aggregatable => no need to list all the indices
         Vec::new()
     };
-    non_aggregatable_index_ids.sort();
+    non_aggregatable_index_ids.sort_unstable();
     non_aggregatable_index_ids.dedup();
     let mut index_ids: Vec<String> = current_group
         .drain(..)
         .flat_map(|entry| entry.index_ids.into_iter())
         .collect();
-    index_ids.sort();
+    index_ids.sort_unstable();
     index_ids.dedup();
+
     ListFieldsEntryResponse {
         field_name,
         field_type,
@@ -198,10 +209,10 @@ fn merge_leaf_list_fields(
                 flush_group(&mut responses, &mut current_group);
             }
         }
-        if responses.len() >= get_field_list_size_limit() {
+        if responses.len() >= *MAX_FIELDS {
             return Err(SearchError::Internal(format!(
                 "list fields response exceeded {} fields",
-                get_field_list_size_limit()
+                *MAX_FIELDS
             )));
         }
         current_group.push(entry);
@@ -248,10 +259,9 @@ pub async fn leaf_list_fields(
     index_storage: Arc<dyn Storage>,
     searcher_context: &SearcherContext,
     split_ids: &[SplitIdAndFooterOffsets],
-    field_patterns: &[String],
+    field_patterns_ref: &[String],
 ) -> crate::Result<ListFieldsResponse> {
-    let mut iter_per_split = Vec::new();
-    let get_field_futures: Vec<_> = split_ids
+    let single_split_list_fields_futures: Vec<_> = split_ids
         .iter()
         .map(|split_id| {
             get_fields_from_split(
@@ -262,27 +272,24 @@ pub async fn leaf_list_fields(
             )
         })
         .collect();
-    let result = future::join_all(get_field_futures).await;
-    // This only works well, if the field data is in a local cache.
-    for fields in result {
-        let list_fields_iter = match fields {
-            Ok(fields) => fields,
-            Err(_err) => Box::new(std::iter::empty()),
-        };
-        let list_fields_iter = list_fields_iter
-            .map(|mut entry| {
-                // We don't want to leak the _dynamic hack to the user API.
-                if entry.field_name.starts_with("_dynamic.") {
-                    entry.field_name.replace_range(.."_dynamic.".len(), "");
-                }
-                entry
-            })
-            .filter(|field| matches_any_pattern(&field.field_name, field_patterns))
-            // remove internal fields
-            .filter(|field| field.field_name != "_field_presence");
-        iter_per_split.push(list_fields_iter);
-    }
-    let fields = merge_leaf_list_fields(iter_per_split)?;
+
+    let single_split_list_fields = future::try_join_all(single_split_list_fields_futures).await?;
+    let field_patterns = field_patterns_ref.to_vec();
+
+    let fields = search_thread_pool()
+        .run_cpu_intensive(move || {
+            let filtered_list_fields = single_split_list_fields
+                .into_iter()
+                .map(|list_fields| {
+                    list_fields
+                        .into_iter()
+                        .filter(|field| matches_any_pattern(&field.field_name, &field_patterns))
+                })
+                .collect();
+            merge_leaf_list_fields(filtered_list_fields)
+        })
+        .await
+        .context("failed to merge single split list fields")??;
     Ok(ListFieldsResponse { fields })
 }
 
@@ -352,13 +359,18 @@ pub async fn root_list_fields(
             leaf_request_tasks.push(cluster_client.leaf_list_fields(leaf_request, client.clone()));
         }
     }
-    let leaf_search_responses: Vec<ListFieldsResponse> = try_join_all(leaf_request_tasks).await?;
-    let fields = merge_leaf_list_fields(
-        leaf_search_responses
-            .into_iter()
-            .map(|resp| resp.fields.into_iter())
-            .collect_vec(),
-    )?;
+    let leaf_list_fields_protos: Vec<ListFieldsResponse> = try_join_all(leaf_request_tasks).await?;
+    let fields = search_thread_pool()
+        .run_cpu_intensive(move || {
+            let leaf_list_fields = leaf_list_fields_protos
+                .into_iter()
+                .map(|leaf_list_fields_proto| leaf_list_fields_proto.fields.into_iter())
+                .collect();
+            merge_leaf_list_fields(leaf_list_fields)
+        })
+        .await
+        .context("failed to merge leaf list fields responses")??;
+
     Ok(ListFieldsResponse { fields })
 }
 
