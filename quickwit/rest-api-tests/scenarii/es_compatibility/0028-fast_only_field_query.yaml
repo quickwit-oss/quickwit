@@ -1,0 +1,62 @@
+# Search for a term in a field that is not indexed but is a fast field
+engines:
+  - quickwit
+endpoint: "fast_only/_search"
+params:
+  size: 0
+json:
+  query:
+    term:
+      fast_text: "abc-123"
+expected:
+  hits:
+    total:
+      value: 1
+      relation: "eq"
+---
+engines:
+  - quickwit
+endpoint: "fast_only/_search"
+params:
+  size: 0
+json:
+  query:
+    term:
+      fast_text: "zzz"
+expected:
+  hits:
+    total:
+      value: 0
+      relation: "eq"
+
+---
+engines:
+  - quickwit
+endpoint: "fast_only/_search"
+params:
+  size: 0
+json:
+  query:
+    term:
+      obj.nested_text: "abc-123"
+expected:
+  hits:
+    total:
+      value: 1
+      relation: "eq"
+
+---
+engines:
+  - quickwit
+endpoint: "fast_only/_search"
+params:
+  size: 0
+json:
+  query:
+    term:
+      obj.nested_text: "zzz"
+expected:
+  hits:
+    total:
+      value: 0
+      relation: "eq"
