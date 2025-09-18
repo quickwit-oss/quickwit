@@ -65,3 +65,41 @@ params:
   refresh: "true"
 headers: {"Content-Type": "application/json", "content-encoding": "gzip"}
 body_from_file: gharchive-bulk.json.gz
+---
+# Delete possibly remaining index
+method: DELETE
+api_root: http://localhost:7280/api/v1/
+endpoint: indexes/fast_only
+status_code: null
+---
+# Create a dedicated index with a root fast-only field
+method: POST
+api_root: http://localhost:7280/api/v1/
+endpoint: indexes/
+json:
+  version: "0.7"
+  index_id: fast_only
+  doc_mapping:
+    field_mappings:
+      - name: fast_text
+        type: text
+        fast: true
+        indexed: false
+      - name: obj
+        type: object
+        field_mappings:
+          - name: nested_text
+            type: text
+            fast: true
+            indexed: false
+sleep_after: 1
+---
+# Ingest a couple documents into fast_only
+method: POST
+api_root: http://localhost:7280/api/v1/
+endpoint: fast_only/ingest
+params:
+  commit: force
+ndjson:
+  - {"fast_text": "abc-123", "obj": {"nested_text": "abc-123"}}
+  - {"fast_text": "def-456", "obj": {"nested_text": "ghi-789"}}

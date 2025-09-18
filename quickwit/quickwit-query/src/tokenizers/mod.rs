@@ -28,7 +28,7 @@ use self::chinese_compatible::ChineseTokenizer;
 pub use self::code_tokenizer::CodeTokenizer;
 #[cfg(feature = "multilang")]
 pub use self::multilang::MultiLangTokenizer;
-pub use self::tokenizer_manager::TokenizerManager;
+pub use self::tokenizer_manager::{RAW_TOKENIZER_NAME, TokenizerManager};
 
 pub const DEFAULT_REMOVE_TOKEN_LENGTH: usize = 255;
 

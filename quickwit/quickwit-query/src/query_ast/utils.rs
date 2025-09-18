@@ -17,7 +17,7 @@ use tantivy::json_utils::convert_to_fast_value_and_append_to_json_term;
 use tantivy::query::TermQuery as TantivyTermQuery;
 use tantivy::schema::{
     Field, FieldEntry, FieldType, IndexRecordOption, JsonObjectOptions, Schema as TantivySchema,
-    Type,
+    TextFieldIndexing, Type,
 };
 
 use crate::InvalidQuery;
@@ -25,7 +25,7 @@ use crate::MatchAllOrNone::MatchNone as TantivyEmptyQuery;
 use crate::json_literal::InterpretUserInput;
 use crate::query_ast::full_text_query::FullTextParams;
 use crate::query_ast::tantivy_query_ast::{TantivyBoolQuery, TantivyQueryAst};
-use crate::tokenizers::TokenizerManager;
+use crate::tokenizers::{RAW_TOKENIZER_NAME, TokenizerManager};
 
 pub(crate) const DYNAMIC_FIELD_NAME: &str = "_dynamic";
 
@@ -147,12 +147,18 @@ fn compute_query_with_field(
             Ok(make_term_query(term))
         }
         FieldType::Str(text_options) => {
-            let text_field_indexing = text_options.get_indexing_options().ok_or_else(|| {
-                InvalidQuery::SchemaError(format!(
-                    "field {} is not full-text searchable",
-                    field_entry.name()
-                ))
-            })?;
+            let columnar_opt = TextFieldIndexing::default()
+                .set_fieldnorms(false)
+                .set_tokenizer(RAW_TOKENIZER_NAME);
+            let text_field_indexing = text_options
+                .get_indexing_options()
+                .or_else(|| text_options.is_fast().then_some(&columnar_opt))
+                .ok_or_else(|| {
+                    InvalidQuery::SchemaError(format!(
+                        "field {} is not full-text searchable",
+                        field_entry.name()
+                    ))
+                })?;
             let terms = full_text_params.tokenize_text_into_terms(
                 field,
                 value,
