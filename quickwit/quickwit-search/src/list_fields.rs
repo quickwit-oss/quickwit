@@ -129,9 +129,13 @@ fn make_sorted_and_dedup(list_fields: &mut Vec<ListFieldsEntryResponse>) {
     // We defensively make sure there are no duplicates here.
     list_fields.dedup_by(|left, right| {
         if left.field_name == right.field_name && left.field_type == right.field_type {
+            rate_limited_warn!(
+                limit_per_min = 1,
+                left.field_name,
+                "duplicate fields found, please report"
+            );
             true
         } else {
-            rate_limited_warn!(limit_per_min=1, field_name=%left.field_name, "duplicate fields found. please report");
             false
         }
     });
