@@ -14,12 +14,14 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use std::str::FromStr;
 use std::sync::{Arc, LazyLock};
 
 use anyhow::Context;
 use futures::future;
 use futures::future::try_join_all;
 use itertools::Itertools;
+use quickwit_common::rate_limited_warn;
 use quickwit_common::shared_consts::{FIELD_PRESENCE_FIELD_NAME, SPLIT_FIELDS_FILE_NAME};
 use quickwit_common::uri::Uri;
 use quickwit_metastore::SplitMetadata;
@@ -46,13 +48,14 @@ use crate::{
 /// a JSON type with random field names. This leads to huge memory consumption
 /// when building the response. This is a workaround until a way is found to
 /// prune the long tail of rare fields.
-static MAX_FIELDS: LazyLock<usize> =
+static FIELD_LIST_SIZE_LIMIT: LazyLock<usize> =
     LazyLock::new(|| quickwit_common::get_from_env("QW_FIELD_LIST_SIZE_LIMIT", 100_000));
 
 const DYNAMIC_FIELD_PREFIX: &str = "_dynamic.";
 
-/// Get the list of splits for the request which we need to scan.
-pub async fn get_fields_from_split(
+/// Get the list of fields in the given split.
+/// The returned list is guaranteed to be strictly sorted by (field_name, field_type).
+async fn get_fields_from_split(
     searcher_context: &SearcherContext,
     index_id: IndexId,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
@@ -82,13 +85,19 @@ pub async fn get_fields_from_split(
     for list_field_entry in list_fields.iter_mut() {
         list_field_entry.index_ids = vec![index_id.to_string()];
 
-        if list_field_entry.field_name.starts_with(DYNAMIC_FIELD_PREFIX) {
-            list_field_entry.field_name.replace_range(..DYNAMIC_FIELD_PREFIX.len(), "");
+        if list_field_entry
+            .field_name
+            .starts_with(DYNAMIC_FIELD_PREFIX)
+        {
+            list_field_entry
+                .field_name
+                .replace_range(..DYNAMIC_FIELD_PREFIX.len(), "");
         }
     }
-    list_fields.sort_unstable_by(|left, right| {
-        left.field_name.cmp(&right.field_name).then_with(|| left.field_type.cmp(&right.field_type))
-    });
+
+    // We sort our fields, as the removal of dynamic_field prefix could have caused them to be out
+    // of order. We also defensively make sure there are no duplicates here.
+    make_sorted_and_dedup(&mut list_fields);
 
     // Put result into cache
     searcher_context.list_fields_cache.put(
@@ -99,6 +108,33 @@ pub async fn get_fields_from_split(
     );
 
     Ok(list_fields)
+}
+
+fn field_order(
+    left: &ListFieldsEntryResponse,
+    right: &ListFieldsEntryResponse,
+) -> std::cmp::Ordering {
+    left.field_name
+        .cmp(&right.field_name)
+        .then_with(|| left.field_type.cmp(&right.field_type))
+}
+
+// Sorts and deduplicates the list of fields.
+//
+// If somehow we end up with duplicate fields, only the first one is kept,
+// and we log a warning.
+fn make_sorted_and_dedup(list_fields: &mut Vec<ListFieldsEntryResponse>) {
+    list_fields.sort_unstable_by(field_order);
+
+    // We defensively make sure there are no duplicates here.
+    list_fields.dedup_by(|left, right| {
+        if left.field_name == right.field_name && left.field_type == right.field_type {
+            true
+        } else {
+            rate_limited_warn!(limit_per_min=1, field_name=%left.field_name, "duplicate fields found. please report");
+            false
+        }
+    });
 }
 
 /// `current_group` needs to contain at least one element.
@@ -209,10 +245,10 @@ fn merge_leaf_list_fields(
                 flush_group(&mut responses, &mut current_group);
             }
         }
-        if responses.len() >= *MAX_FIELDS {
+        if responses.len() >= *FIELD_LIST_SIZE_LIMIT {
             return Err(SearchError::Internal(format!(
                 "list fields response exceeded {} fields",
-                *MAX_FIELDS
+                *FIELD_LIST_SIZE_LIMIT
             )));
         }
         current_group.push(entry);
@@ -224,30 +260,46 @@ fn merge_leaf_list_fields(
     Ok(responses)
 }
 
-fn matches_any_pattern(field_name: &str, field_patterns: &[String]) -> bool {
-    if field_patterns.is_empty() {
-        return true;
-    }
+// Returns true if any of the patterns match the field name.
+fn matches_any_pattern(field_name: &str, field_patterns: &[FieldPattern]) -> bool {
     field_patterns
         .iter()
-        .any(|pattern| matches_pattern(pattern, field_name))
+        .any(|pattern| pattern.matches(field_name))
 }
 
-/// Supports up to 1 wildcard.
-fn matches_pattern(field_pattern: &str, field_name: &str) -> bool {
-    match field_pattern.find('*') {
-        None => field_pattern == field_name,
-        Some(index) => {
-            if index == 0 {
-                // "*field"
-                field_name.ends_with(&field_pattern[1..])
-            } else if index == field_pattern.len() - 1 {
-                // "field*"
-                field_name.starts_with(&field_pattern[..index])
-            } else {
-                // "fi*eld"
-                field_name.starts_with(&field_pattern[..index])
-                    && field_name.ends_with(&field_pattern[index + 1..])
+enum FieldPattern {
+    Match { field: String },
+    Wildcard { prefix: String, suffix: String },
+}
+
+impl FromStr for FieldPattern {
+    type Err = crate::SearchError;
+
+    fn from_str(field_pattern: &str) -> crate::Result<Self> {
+        match field_pattern.find('*') {
+            None => Ok(FieldPattern::Match {
+                field: field_pattern.to_string(),
+            }),
+            Some(pos) => {
+                let prefix = field_pattern[..pos].to_string();
+                let suffix = field_pattern[pos + 1..].to_string();
+                if suffix.contains("*") {
+                    return Err(crate::SearchError::InvalidArgument(format!(
+                        "invalid field pattern `{field_pattern}`: we only support one wildcard"
+                    )));
+                }
+                Ok(FieldPattern::Wildcard { prefix, suffix })
+            }
+        }
+    }
+}
+
+impl FieldPattern {
+    pub fn matches(&self, field_name: &str) -> bool {
+        match self {
+            FieldPattern::Match { field } => field == field_name,
+            FieldPattern::Wildcard { prefix, suffix } => {
+                field_name.starts_with(prefix) && field_name.ends_with(suffix)
             }
         }
     }
@@ -259,8 +311,13 @@ pub async fn leaf_list_fields(
     index_storage: Arc<dyn Storage>,
     searcher_context: &SearcherContext,
     split_ids: &[SplitIdAndFooterOffsets],
-    field_patterns_ref: &[String],
+    field_patterns_str: &[String],
 ) -> crate::Result<ListFieldsResponse> {
+    let field_patterns: Vec<FieldPattern> = field_patterns_str
+        .iter()
+        .map(|pattern_str| FieldPattern::from_str(pattern_str))
+        .collect::<crate::Result<_>>()?;
+
     let single_split_list_fields_futures: Vec<_> = split_ids
         .iter()
         .map(|split_id| {
@@ -273,20 +330,41 @@ pub async fn leaf_list_fields(
         })
         .collect();
 
-    let single_split_list_fields = future::try_join_all(single_split_list_fields_futures).await?;
-    let field_patterns = field_patterns_ref.to_vec();
+    let mut single_split_list_fields_vec: Vec<Vec<ListFieldsEntryResponse>> =
+        future::try_join_all(single_split_list_fields_futures).await?;
 
     let fields = search_thread_pool()
         .run_cpu_intensive(move || {
-            let filtered_list_fields = single_split_list_fields
+            for single_split_list_fields in &mut single_split_list_fields_vec {
+                // This contract is enforced on a different node, etc. so we defensively check that
+                // the fields are sorted and deduplicated.
+                if !single_split_list_fields.is_sorted_by(|left, right| {
+                    // Checking on less ensure that this is both sorted AND that there are no
+                    // duplicates
+                    field_order(left, right) == std::cmp::Ordering::Less
+                }) {
+                    rate_limited_warn!(
+                        limit_per_min = 1,
+                        "contract breach: fields returned by a leaf are not strictly sorted! \
+                         please report"
+                    );
+                    make_sorted_and_dedup(single_split_list_fields);
+                }
+            }
+
+            let filtered_list_fields_sorted_iters: Vec<_> = single_split_list_fields_vec
                 .into_iter()
-                .map(|list_fields| {
-                    list_fields
-                        .into_iter()
-                        .filter(|field| matches_any_pattern(&field.field_name, &field_patterns))
+                .map(|list_fields_sorted| {
+                    list_fields_sorted.into_iter().filter(|field| {
+                        if field_patterns.is_empty() {
+                            true
+                        } else {
+                            matches_any_pattern(&field.field_name, &field_patterns)
+                        }
+                    })
                 })
                 .collect();
-            merge_leaf_list_fields(filtered_list_fields)
+            merge_leaf_list_fields(filtered_list_fields_sorted_iters)
         })
         .await
         .context("failed to merge single split list fields")??;
@@ -409,37 +487,6 @@ mod tests {
     use quickwit_proto::search::{ListFieldType, ListFieldsEntryResponse};
 
     use super::*;
-
-    #[test]
-    fn test_pattern() {
-        assert!(matches_any_pattern("field", &["field".to_string()]));
-        assert!(matches_any_pattern("field", &["fi*eld".to_string()]));
-        assert!(matches_any_pattern("field", &["*field".to_string()]));
-        assert!(matches_any_pattern("field", &["field*".to_string()]));
-
-        assert!(matches_any_pattern("field1", &["field*".to_string()]));
-        assert!(!matches_any_pattern("field1", &["*field".to_string()]));
-        assert!(!matches_any_pattern("field1", &["fi*eld".to_string()]));
-        assert!(!matches_any_pattern("field1", &["field".to_string()]));
-
-        // 2nd pattern matches
-        assert!(matches_any_pattern(
-            "field",
-            &["a".to_string(), "field".to_string()]
-        ));
-        assert!(matches_any_pattern(
-            "field",
-            &["a".to_string(), "fi*eld".to_string()]
-        ));
-        assert!(matches_any_pattern(
-            "field",
-            &["a".to_string(), "*field".to_string()]
-        ));
-        assert!(matches_any_pattern(
-            "field",
-            &["a".to_string(), "field*".to_string()]
-        ));
-    }
 
     #[test]
     fn merge_leaf_list_fields_identical_test() {
@@ -719,5 +766,33 @@ mod tests {
             ],
         };
         assert_eq!(resp, vec![expected]);
+    }
+
+    #[test]
+    fn test_field_pattern() {
+        let prefix_pattern = FieldPattern::from_str("toto*").unwrap();
+        assert!(!prefix_pattern.matches(""));
+        assert!(!prefix_pattern.matches("tot3"));
+        assert!(!prefix_pattern.matches("atoto"));
+        assert!(prefix_pattern.matches("toto"));
+        assert!(prefix_pattern.matches("totowhatever"));
+
+        let suffix_pattern = FieldPattern::from_str("*toto").unwrap();
+        assert!(!suffix_pattern.matches(""));
+        assert!(!suffix_pattern.matches("3tot"));
+        assert!(!suffix_pattern.matches("totoa"));
+        assert!(suffix_pattern.matches("toto"));
+        assert!(suffix_pattern.matches("whatevertoto"));
+
+        let inner_pattern = FieldPattern::from_str("to*ti").unwrap();
+        assert!(!inner_pattern.matches(""));
+        assert!(!inner_pattern.matches("tot"));
+        assert!(!inner_pattern.matches("totia"));
+        assert!(!inner_pattern.matches("atoti"));
+        assert!(inner_pattern.matches("toti"));
+        assert!(!inner_pattern.matches("tito"));
+        assert!(inner_pattern.matches("towhateverti"));
+
+        assert!(FieldPattern::from_str("to**").is_err());
     }
 }
