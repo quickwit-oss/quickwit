@@ -45,12 +45,86 @@ impl<'a> QueryAstVisitor<'a> for RangeQueryFields {
     }
 }
 
-struct ExistsQueryFastFields {
-    fields: HashSet<FastFieldWarmupInfo>,
+/// Term Queries on fields which are fast but not indexed.
+struct TermSearchOnColumnar<'f> {
+    fields: &'f mut HashSet<FastFieldWarmupInfo>,
+    schema: Schema,
+}
+impl<'a, 'f> QueryAstVisitor<'a> for TermSearchOnColumnar<'f> {
+    type Err = Infallible;
+
+    fn visit_term_set(&mut self, term_set_query: &'a TermSetQuery) -> Result<(), Infallible> {
+        for field in term_set_query.terms_per_field.keys() {
+            if let Some((_field, field_entry, path)) =
+                find_field_or_hit_dynamic(field, &self.schema)
+            {
+                if field_entry.is_fast() && !field_entry.is_indexed() {
+                    self.fields.insert(FastFieldWarmupInfo {
+                        name: if path.is_empty() {
+                            field_entry.name().to_string()
+                        } else {
+                            format!("{}.{}", field_entry.name(), path)
+                        },
+                        with_subfields: false,
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn visit_term(
+        &mut self,
+        term_query: &'a quickwit_query::query_ast::TermQuery,
+    ) -> Result<(), Infallible> {
+        if let Some((_field, field_entry, path)) =
+            find_field_or_hit_dynamic(&term_query.field, &self.schema)
+        {
+            if field_entry.is_fast() && !field_entry.is_indexed() {
+                self.fields.insert(FastFieldWarmupInfo {
+                    name: if path.is_empty() {
+                        field_entry.name().to_string()
+                    } else {
+                        format!("{}.{}", field_entry.name(), path)
+                    },
+                    with_subfields: false,
+                });
+            }
+        }
+        Ok(())
+    }
+    /// We also need to visit full text queries because they can be converted to term queries
+    /// on fast fields. We only care about the field being fast and not indexed AND the tokenizer
+    /// being `raw` or None.
+    fn visit_full_text(&mut self, full_text_query: &'a FullTextQuery) -> Result<(), Infallible> {
+        if let Some((_field, field_entry, path)) =
+            find_field_or_hit_dynamic(&full_text_query.field, &self.schema)
+        {
+            if field_entry.is_fast()
+                && !field_entry.is_indexed()
+                && (full_text_query.params.tokenizer.is_none()
+                    || full_text_query.params.tokenizer.as_deref() == Some("raw"))
+            {
+                self.fields.insert(FastFieldWarmupInfo {
+                    name: if path.is_empty() {
+                        field_entry.name().to_string()
+                    } else {
+                        format!("{}.{}", field_entry.name(), path)
+                    },
+                    with_subfields: false,
+                });
+            }
+        }
+        Ok(())
+    }
+}
+
+struct ExistsQueryFastFields<'f> {
+    fields: &'f mut HashSet<FastFieldWarmupInfo>,
     schema: Schema,
 }
 
-impl<'a> QueryAstVisitor<'a> for ExistsQueryFastFields {
+impl<'a, 'f> QueryAstVisitor<'a> for ExistsQueryFastFields<'f> {
     type Err = Infallible;
 
     fn visit_exists(&mut self, exists_query: &'a FieldPresenceQuery) -> Result<(), Infallible> {
@@ -88,18 +162,11 @@ pub(crate) fn build_query(
     search_fields: &[String],
     with_validation: bool,
 ) -> Result<(Box<dyn Query>, WarmupInfo), QueryParserError> {
+    let mut fast_fields: HashSet<FastFieldWarmupInfo> = HashSet::new();
+
     let mut range_query_fields = RangeQueryFields::default();
     // This cannot fail. The error type is Infallible.
-    let _: Result<(), Infallible> = range_query_fields.visit(query_ast);
-
-    let mut exists_query_fields = ExistsQueryFastFields {
-        fields: HashSet::new(),
-        schema: schema.clone(),
-    };
-    // This cannot fail. The error type is Infallible.
-    let _: Result<(), Infallible> = exists_query_fields.visit(query_ast);
-
-    let mut fast_fields = HashSet::new();
+    let Ok(_) = range_query_fields.visit(query_ast);
     let range_query_fast_fields =
         range_query_fields
             .range_query_field_names
@@ -109,7 +176,18 @@ pub(crate) fn build_query(
                 with_subfields: false,
             });
     fast_fields.extend(range_query_fast_fields);
-    fast_fields.extend(exists_query_fields.fields);
+
+    let Ok(_) = TermSearchOnColumnar {
+        fields: &mut fast_fields,
+        schema: schema.clone(),
+    }
+    .visit(query_ast);
+
+    let Ok(_) = ExistsQueryFastFields {
+        fields: &mut fast_fields,
+        schema: schema.clone(),
+    }
+    .visit(query_ast);
 
     let query = query_ast.build_tantivy_query(
         &schema,
@@ -125,6 +203,9 @@ pub(crate) fn build_query(
     let mut terms_grouped_by_field: HashMap<Field, HashMap<_, bool>> = Default::default();
     query.query_terms(&mut |term, need_position| {
         let field = term.field();
+        if !schema.get_field_entry(field).is_indexed() {
+            return;
+        }
         *terms_grouped_by_field
             .entry(field)
             .or_default()
