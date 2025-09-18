@@ -48,12 +48,12 @@ impl<'de, V: Deserialize<'de>> Visitor<'de> for OneFieldMapVisitor<V> {
 
     fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
     where A: serde::de::MapAccess<'de> {
-        if let Some(num_keys) = map.size_hint() {
-            if num_keys != 1 {
-                return Err(serde::de::Error::custom(format!(
-                    "expected a single field. got {num_keys}"
-                )));
-            }
+        if let Some(num_keys) = map.size_hint()
+            && num_keys != 1
+        {
+            return Err(serde::de::Error::custom(format!(
+                "expected a single field. got {num_keys}"
+            )));
         }
         let Some((key, val)) = map.next_entry()? else {
             return Err(serde::de::Error::custom(

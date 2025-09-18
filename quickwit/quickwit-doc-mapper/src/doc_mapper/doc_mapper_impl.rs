@@ -367,14 +367,14 @@ fn validate_fields_tokenizers(
                 .map(|text_options: &tantivy::schema::TextFieldIndexing| text_options.tokenizer()),
             _ => None,
         };
-        if let Some(tokenizer_name) = tokenizer_name_opt {
-            if tokenizer_manager.get_tokenizer(tokenizer_name).is_none() {
-                bail!(
-                    "unknown tokenizer `{}` for field `{}`",
-                    tokenizer_name,
-                    field_entry.name()
-                );
-            }
+        if let Some(tokenizer_name) = tokenizer_name_opt
+            && tokenizer_manager.get_tokenizer(tokenizer_name).is_none()
+        {
+            bail!(
+                "unknown tokenizer `{}` for field `{}`",
+                tokenizer_name,
+                field_entry.name()
+            );
         }
     }
     Ok(())
@@ -523,27 +523,27 @@ impl DocMapper {
             &mut dynamic_json_obj,
         )?;
 
-        if let Some(dynamic_field) = self.dynamic_field {
-            if !dynamic_json_obj.is_empty() {
-                if !self.concatenate_dynamic_fields.is_empty() {
-                    let json_obj_values =
-                        JsonValueIterator::new(serde_json::Value::Object(dynamic_json_obj.clone()))
-                            .flat_map(map_primitive_json_to_tantivy);
+        if let Some(dynamic_field) = self.dynamic_field
+            && !dynamic_json_obj.is_empty()
+        {
+            if !self.concatenate_dynamic_fields.is_empty() {
+                let json_obj_values =
+                    JsonValueIterator::new(serde_json::Value::Object(dynamic_json_obj.clone()))
+                        .flat_map(map_primitive_json_to_tantivy);
 
-                    for value in json_obj_values {
-                        for concatenate_dynamic_field in self.concatenate_dynamic_fields.iter() {
-                            document.add_field_value(*concatenate_dynamic_field, &value);
-                        }
+                for value in json_obj_values {
+                    for concatenate_dynamic_field in self.concatenate_dynamic_fields.iter() {
+                        document.add_field_value(*concatenate_dynamic_field, &value);
                     }
                 }
-                document.add_object(
-                    dynamic_field,
-                    dynamic_json_obj
-                        .into_iter()
-                        .map(|(key, val)| (key, TantivyValue::from(val)))
-                        .collect(),
-                );
             }
+            document.add_object(
+                dynamic_field,
+                dynamic_json_obj
+                    .into_iter()
+                    .map(|(key, val)| (key, TantivyValue::from(val)))
+                    .collect(),
+            );
         }
 
         if let Some(document_size_field) = self.document_size_field {

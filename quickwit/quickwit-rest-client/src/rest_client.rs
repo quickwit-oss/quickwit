@@ -276,7 +276,7 @@ impl QuickwitClient {
         Ok(search_response)
     }
 
-    pub fn indexes(&self) -> IndexClient {
+    pub fn indexes(&self) -> IndexClient<'_> {
         IndexClient::new(&self.transport, self.timeout)
     }
 
@@ -288,15 +288,15 @@ impl QuickwitClient {
         SourceClient::new(&self.transport, self.timeout, index_id)
     }
 
-    pub fn cluster(&self) -> ClusterClient {
+    pub fn cluster(&self) -> ClusterClient<'_> {
         ClusterClient::new(&self.transport, self.timeout)
     }
 
-    pub fn node_stats(&self) -> NodeStatsClient {
+    pub fn node_stats(&self) -> NodeStatsClient<'_> {
         NodeStatsClient::new(&self.transport, self.timeout)
     }
 
-    pub fn node_health(&self) -> NodeHealthClient {
+    pub fn node_health(&self) -> NodeHealthClient<'_> {
         NodeHealthClient::new(&self.transport, self.timeout)
     }
 

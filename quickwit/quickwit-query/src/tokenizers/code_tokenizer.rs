@@ -313,9 +313,9 @@ fn get_char_type(c: char) -> CharType {
             CharType::LowerCase
         }
     } else if c.is_numeric() {
-        return CharType::Numeric;
+        CharType::Numeric
     } else {
-        return CharType::Delimiter;
+        CharType::Delimiter
     }
 }
 
@@ -377,7 +377,7 @@ impl ProcessingHexState {
                     // end of sequence, check if size is multiple of 2, or try to generate code
                     // state. We use next_char_offset as it already takes into account the size of
                     // the last character
-                    if (next_char_offset - self.start_offset) % 2 == 0 {
+                    if (next_char_offset - self.start_offset).is_multiple_of(2) {
                         return HexResult::Emit(self.start_offset..next_char_offset);
                     }
                 }
@@ -411,7 +411,7 @@ impl ProcessingHexState {
 
     fn finalize(&self) -> HexResult {
         let next_char_offset = self.current_char_offset + self.current_char.len_utf8();
-        if (next_char_offset - self.start_offset) % 2 == 0 {
+        if (next_char_offset - self.start_offset).is_multiple_of(2) {
             return HexResult::Emit(self.start_offset..next_char_offset);
         }
         self.to_processing_chars_state()

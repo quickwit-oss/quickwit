@@ -74,10 +74,10 @@ impl<K: Hash + Eq + Clone, V: Clone> AsyncDebouncer<K, V> {
 
         // explicit scope to drop the lock
         let weak_fut_opt = { self.cache.lock().unwrap().get(&key).cloned() };
-        if let Some(weak_future) = weak_fut_opt {
-            if let Some(future) = weak_future.upgrade() {
-                return future.await;
-            }
+        if let Some(weak_future) = weak_fut_opt
+            && let Some(future) = weak_future.upgrade()
+        {
+            return future.await;
         }
 
         let fut = Box::pin(build_a_future()) as BoxFuture<'static, V>;
