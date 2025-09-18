@@ -5,11 +5,13 @@ endpoint: "_cat/indices?format=json"
 expected:
 - index: empty_index
   docs.count: '0'
-- dataset.size: 222.8kb
+- index: fast_only
+  docs.count: '2'
+- index: gharchive
+  dataset.size: 222.8kb
   docs.count: '100'
   docs.deleted: '0'
   health: green
-  index: gharchive
   pri: '1'
   pri.store.size:
       $expect: 270 < float(val[:-2]) < 280
