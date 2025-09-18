@@ -93,6 +93,30 @@ impl<'a, 'f> QueryAstVisitor<'a> for TermSearchOnColumnar<'f> {
         }
         Ok(())
     }
+    /// We also need to visit full text queries because they can be converted to term queries
+    /// on fast fields. We only care about the field being fast and not indexed AND the tokenizer
+    /// being `raw` or None.
+    fn visit_full_text(&mut self, full_text_query: &'a FullTextQuery) -> Result<(), Infallible> {
+        if let Some((_field, field_entry, path)) =
+            find_field_or_hit_dynamic(&full_text_query.field, &self.schema)
+        {
+            if field_entry.is_fast()
+                && !field_entry.is_indexed()
+                && (full_text_query.params.tokenizer.is_none()
+                    || full_text_query.params.tokenizer.as_deref() == Some("raw"))
+            {
+                self.fields.insert(FastFieldWarmupInfo {
+                    name: if path.is_empty() {
+                        field_entry.name().to_string()
+                    } else {
+                        format!("{}.{}", field_entry.name(), path)
+                    },
+                    with_subfields: false,
+                });
+            }
+        }
+        Ok(())
+    }
 }
 
 struct ExistsQueryFastFields<'f> {
