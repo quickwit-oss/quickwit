@@ -57,17 +57,17 @@ impl<'a, 'f> QueryAstVisitor<'a> for TermSearchOnColumnar<'f> {
         for field in term_set_query.terms_per_field.keys() {
             if let Some((_field, field_entry, path)) =
                 find_field_or_hit_dynamic(field, &self.schema)
+                && field_entry.is_fast()
+                && !field_entry.is_indexed()
             {
-                if field_entry.is_fast() && !field_entry.is_indexed() {
-                    self.fields.insert(FastFieldWarmupInfo {
-                        name: if path.is_empty() {
-                            field_entry.name().to_string()
-                        } else {
-                            format!("{}.{}", field_entry.name(), path)
-                        },
-                        with_subfields: false,
-                    });
-                }
+                self.fields.insert(FastFieldWarmupInfo {
+                    name: if path.is_empty() {
+                        field_entry.name().to_string()
+                    } else {
+                        format!("{}.{}", field_entry.name(), path)
+                    },
+                    with_subfields: false,
+                });
             }
         }
         Ok(())
@@ -79,17 +79,17 @@ impl<'a, 'f> QueryAstVisitor<'a> for TermSearchOnColumnar<'f> {
     ) -> Result<(), Infallible> {
         if let Some((_field, field_entry, path)) =
             find_field_or_hit_dynamic(&term_query.field, &self.schema)
+            && field_entry.is_fast()
+            && !field_entry.is_indexed()
         {
-            if field_entry.is_fast() && !field_entry.is_indexed() {
-                self.fields.insert(FastFieldWarmupInfo {
-                    name: if path.is_empty() {
-                        field_entry.name().to_string()
-                    } else {
-                        format!("{}.{}", field_entry.name(), path)
-                    },
-                    with_subfields: false,
-                });
-            }
+            self.fields.insert(FastFieldWarmupInfo {
+                name: if path.is_empty() {
+                    field_entry.name().to_string()
+                } else {
+                    format!("{}.{}", field_entry.name(), path)
+                },
+                with_subfields: false,
+            });
         }
         Ok(())
     }
@@ -99,21 +99,19 @@ impl<'a, 'f> QueryAstVisitor<'a> for TermSearchOnColumnar<'f> {
     fn visit_full_text(&mut self, full_text_query: &'a FullTextQuery) -> Result<(), Infallible> {
         if let Some((_field, field_entry, path)) =
             find_field_or_hit_dynamic(&full_text_query.field, &self.schema)
+            && field_entry.is_fast()
+            && !field_entry.is_indexed()
+            && (full_text_query.params.tokenizer.is_none()
+                || full_text_query.params.tokenizer.as_deref() == Some("raw"))
         {
-            if field_entry.is_fast()
-                && !field_entry.is_indexed()
-                && (full_text_query.params.tokenizer.is_none()
-                    || full_text_query.params.tokenizer.as_deref() == Some("raw"))
-            {
-                self.fields.insert(FastFieldWarmupInfo {
-                    name: if path.is_empty() {
-                        field_entry.name().to_string()
-                    } else {
-                        format!("{}.{}", field_entry.name(), path)
-                    },
-                    with_subfields: false,
-                });
-            }
+            self.fields.insert(FastFieldWarmupInfo {
+                name: if path.is_empty() {
+                    field_entry.name().to_string()
+                } else {
+                    format!("{}.{}", field_entry.name(), path)
+                },
+                with_subfields: false,
+            });
         }
         Ok(())
     }

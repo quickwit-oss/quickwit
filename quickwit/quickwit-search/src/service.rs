@@ -371,15 +371,15 @@ pub(crate) async fn scroll(
         partial_hits.last().cloned().unwrap_or_default(),
     );
 
-    if let Some(scroll_ttl_secs) = scroll_request.scroll_ttl_secs {
-        if scroll_context_modified {
-            scroll_context.clear_cache_if_unneeded();
-            let payload = scroll_context.serialize();
-            let scroll_ttl = Duration::from_secs(scroll_ttl_secs as u64);
-            cluster_client
-                .put_kv(&scroll_key, &payload, scroll_ttl)
-                .await;
-        }
+    if let Some(scroll_ttl_secs) = scroll_request.scroll_ttl_secs
+        && scroll_context_modified
+    {
+        scroll_context.clear_cache_if_unneeded();
+        let payload = scroll_context.serialize();
+        let scroll_ttl = Duration::from_secs(scroll_ttl_secs as u64);
+        cluster_client
+            .put_kv(&scroll_key, &payload, scroll_ttl)
+            .await;
     }
 
     Ok(SearchResponse {

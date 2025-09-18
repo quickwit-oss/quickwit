@@ -244,10 +244,10 @@ impl Storage for LocalFileStorage {
 
     async fn delete(&self, path: &Path) -> StorageResult<()> {
         self.delete_single_file(path).await?;
-        if let Some(parent) = path.parent() {
-            if let Err(error) = delete_all_dirs_if_empty(&self.root, parent).await {
-                warn!(error=?error, path=%path.display(), "failed to delete directory");
-            }
+        if let Some(parent) = path.parent()
+            && let Err(error) = delete_all_dirs_if_empty(&self.root, parent).await
+        {
+            warn!(error=?error, path=%path.display(), "failed to delete directory");
         }
         Ok(())
     }

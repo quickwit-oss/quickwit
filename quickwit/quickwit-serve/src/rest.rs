@@ -78,17 +78,6 @@ impl std::fmt::Display for TooManyRequests {
     }
 }
 
-#[derive(Debug)]
-pub struct InternalError(pub String);
-
-impl warp::reject::Reject for InternalError {}
-
-impl std::fmt::Display for InternalError {
-    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
-        write!(f, "internal error: {}", self.0)
-    }
-}
-
 /// Env variable key to define the minimum size above which a response should be compressed.
 /// If unset, no compression is applied.
 const QW_MINIMUM_COMPRESSION_SIZE_KEY: &str = "QW_MINIMUM_COMPRESSION_SIZE";

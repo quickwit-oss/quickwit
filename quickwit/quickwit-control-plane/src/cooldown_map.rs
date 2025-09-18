@@ -53,13 +53,12 @@ impl<K: Hash + Eq> CooldownMap<K> {
             }
         } else {
             let capacity: usize = self.0.cap().into();
-            if self.0.len() == capacity {
-                if let Some((_, deadline)) = self.0.peek_lru() {
-                    if *deadline > now {
-                        // the oldest entry is not outdated, grow the LRU
-                        self.0.resize(NonZeroUsize::new(capacity * 2).unwrap());
-                    }
-                }
+            if self.0.len() == capacity
+                && let Some((_, deadline)) = self.0.peek_lru()
+                && *deadline > now
+            {
+                // the oldest entry is not outdated, grow the LRU
+                self.0.resize(NonZeroUsize::new(capacity * 2).unwrap());
             }
             self.0.push(key, now + cooldown_interval);
             CooldownStatus::Ready

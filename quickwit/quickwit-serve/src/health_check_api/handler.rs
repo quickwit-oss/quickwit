@@ -75,17 +75,17 @@ async fn get_liveness(
 ) -> impl warp::Reply {
     let mut is_live = true;
 
-    if let Some(indexer_service) = indexer_service_opt {
-        if !indexer_service.ask(Healthz).await.unwrap_or(false) {
-            error!("indexer service is unhealthy");
-            is_live = false;
-        }
+    if let Some(indexer_service) = indexer_service_opt
+        && !indexer_service.ask(Healthz).await.unwrap_or(false)
+    {
+        error!("indexer service is unhealthy");
+        is_live = false;
     }
-    if let Some(janitor_service) = janitor_service_opt {
-        if !janitor_service.ask(Healthz).await.unwrap_or(false) {
-            error!("janitor service is unhealthy");
-            is_live = false;
-        }
+    if let Some(janitor_service) = janitor_service_opt
+        && !janitor_service.ask(Healthz).await.unwrap_or(false)
+    {
+        error!("janitor service is unhealthy");
+        is_live = false;
     }
     let status_code = if is_live {
         StatusCode::OK

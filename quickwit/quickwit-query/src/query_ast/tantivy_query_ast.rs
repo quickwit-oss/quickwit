@@ -322,13 +322,14 @@ impl TantivyBoolQuery {
         } else {
             let num_children =
                 self.must.len() + self.should.len() + self.must_not.len() + self.filter.len();
-            if num_children == 1 && self.minimum_should_match.is_none() {
-                if let Some(ast) = self.must.pop().or(self.should.pop()) {
-                    return ast;
-                }
-                // We do not optimize a single filter clause for the moment.
-                // We do need a mechanism to make sure we keep the boost of 0.
+            if num_children == 1
+                && self.minimum_should_match.is_none()
+                && let Some(ast) = self.must.pop().or(self.should.pop())
+            {
+                return ast;
             }
+            // We do not optimize a single filter clause for the moment.
+            // We do need a mechanism to make sure we keep the boost of 0.
         }
 
         TantivyQueryAst::Bool(self)
@@ -895,10 +896,10 @@ mod tests {
                 }
             }
 
-            if let Some(minimum_should_match) = self.minimum_should_match {
-                if minimum_should_match > matching_should_count {
-                    return None;
-                }
+            if let Some(minimum_should_match) = self.minimum_should_match
+                && minimum_should_match > matching_should_count
+            {
+                return None;
             }
 
             if self.must.len() + self.filter.len() > 0 {

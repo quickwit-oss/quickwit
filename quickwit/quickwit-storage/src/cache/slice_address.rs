@@ -36,11 +36,11 @@ pub(crate) struct SliceAddressRef<'a> {
 }
 
 pub(crate) trait SliceAddressKey {
-    fn key(&self) -> SliceAddressRef;
+    fn key(&self) -> SliceAddressRef<'_>;
 }
 
 impl SliceAddressKey for SliceAddress {
-    fn key(&self) -> SliceAddressRef {
+    fn key(&self) -> SliceAddressRef<'_> {
         SliceAddressRef {
             path: self.path.as_path(),
             byte_range: self.byte_range.clone(),
@@ -49,7 +49,7 @@ impl SliceAddressKey for SliceAddress {
 }
 
 impl SliceAddressKey for SliceAddressRef<'_> {
-    fn key(&self) -> SliceAddressRef {
+    fn key(&self) -> SliceAddressRef<'_> {
         self.clone()
     }
 }
@@ -59,15 +59,15 @@ impl<'a> Borrow<dyn SliceAddressKey + 'a> for SliceAddress {
         self
     }
 }
-impl PartialEq for (dyn SliceAddressKey + '_) {
+impl PartialEq for dyn SliceAddressKey + '_ {
     fn eq(&self, other: &Self) -> bool {
         self.key().eq(&other.key())
     }
 }
 
-impl Eq for (dyn SliceAddressKey + '_) {}
+impl Eq for dyn SliceAddressKey + '_ {}
 
-impl Hash for (dyn SliceAddressKey + '_) {
+impl Hash for dyn SliceAddressKey + '_ {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.key().hash(state)
     }

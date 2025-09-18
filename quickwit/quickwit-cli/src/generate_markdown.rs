@@ -81,10 +81,10 @@ fn markdown_for_command_helper(
         if !about.trim().is_empty() {
             println!("{about}  ");
         }
-    } else if let Some(about) = subcommand.get_about() {
-        if !about.to_string().trim().is_empty() {
-            println!("{about}  ");
-        }
+    } else if let Some(about) = subcommand.get_about()
+        && !about.to_string().trim().is_empty()
+    {
+        println!("{about}  ");
     }
 
     if let Some(note) = note {
@@ -181,10 +181,10 @@ fn generate_markdown_from_clap(command: &Command) {
     for command in commands {
         let command_name = command.get_name(); // index, split, source
         println!("## {command_name}");
-        if let Some(about) = command.get_long_about().or_else(|| command.get_about()) {
-            if !about.to_string().trim().is_empty() {
-                println!("{about}\n");
-            }
+        if let Some(about) = command.get_long_about().or_else(|| command.get_about())
+            && !about.to_string().trim().is_empty()
+        {
+            println!("{about}\n");
         }
 
         if command.get_subcommands().count() == 0 {

@@ -103,7 +103,7 @@ impl<O: Ord, T> Ord for OrderItemPair<O, T> {
 
 impl<O: Ord, T> PartialOrd for OrderItemPair<O, T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.order.cmp(&other.order))
+        Some(self.cmp(other))
     }
 }
 

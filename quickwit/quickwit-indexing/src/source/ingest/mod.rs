@@ -302,10 +302,10 @@ impl IngestSource {
         );
         // Let's record all shards that have reached Eof as complete.
         for (shard, truncate_up_to_position_inclusive) in &truncate_up_to_positions {
-            if truncate_up_to_position_inclusive.is_eof() {
-                if let Some(assigned_shard) = self.assigned_shards.get_mut(shard) {
-                    assigned_shard.status = IndexingStatus::Complete;
-                }
+            if truncate_up_to_position_inclusive.is_eof()
+                && let Some(assigned_shard) = self.assigned_shards.get_mut(shard)
+            {
+                assigned_shard.status = IndexingStatus::Complete;
             }
         }
 

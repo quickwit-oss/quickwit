@@ -127,16 +127,15 @@ pub fn pprof_handlers() -> impl Filter<Extract = impl warp::Reply, Error = warp:
     async fn save_flamegraph(profiler_state: Arc<Mutex<ProfilerState>>) {
         let handle = quickwit_common::thread_pool::run_cpu_intensive(move || {
             let mut state = profiler_state.lock().unwrap();
-            if let Some(profiler) = state.profiler_guard.take() {
-                if let Ok(report) = profiler
+            if let Some(profiler) = state.profiler_guard.take()
+                && let Ok(report) = profiler
                     .report()
                     .frames_post_processor(frames_post_processor)
                     .build()
-                {
-                    let mut buffer = Vec::new();
-                    if report.flamegraph(&mut buffer).is_ok() {
-                        state.flamegraph_data = Some(buffer);
-                    }
+            {
+                let mut buffer = Vec::new();
+                if report.flamegraph(&mut buffer).is_ok() {
+                    state.flamegraph_data = Some(buffer);
                 }
             }
         });

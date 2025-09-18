@@ -845,11 +845,11 @@ impl Handler<PruneShardsRequest> for ControlPlane {
             ),
             interval,
         );
-        if let CooldownStatus::Ready = status {
-            if let Err(metastore_error) = self.metastore.prune_shards(request).await {
-                return convert_metastore_error(metastore_error);
-            };
-        }
+        if let CooldownStatus::Ready = status
+            && let Err(metastore_error) = self.metastore.prune_shards(request).await
+        {
+            return convert_metastore_error(metastore_error);
+        };
         // Return ok regardless of whether the call was successful or debounced
         Ok(Ok(EmptyResponse {}))
     }
@@ -951,13 +951,12 @@ impl ControlPlaneEventSubscriber {
 #[async_trait]
 impl EventSubscriber<LocalShardsUpdate> for ControlPlaneEventSubscriber {
     async fn handle_event(&mut self, local_shards_update: LocalShardsUpdate) {
-        if let Some(control_plane_mailbox) = self.0.upgrade() {
-            if let Err(error) = control_plane_mailbox
+        if let Some(control_plane_mailbox) = self.0.upgrade()
+            && let Err(error) = control_plane_mailbox
                 .send_message(local_shards_update)
                 .await
-            {
-                error!(error=%error, "failed to forward local shards update to control plane");
-            }
+        {
+            error!(error=%error, "failed to forward local shards update to control plane");
         }
     }
 }
@@ -965,13 +964,12 @@ impl EventSubscriber<LocalShardsUpdate> for ControlPlaneEventSubscriber {
 #[async_trait]
 impl EventSubscriber<ShardPositionsUpdate> for ControlPlaneEventSubscriber {
     async fn handle_event(&mut self, shard_positions_update: ShardPositionsUpdate) {
-        if let Some(control_plane_mailbox) = self.0.upgrade() {
-            if let Err(error) = control_plane_mailbox
+        if let Some(control_plane_mailbox) = self.0.upgrade()
+            && let Err(error) = control_plane_mailbox
                 .send_message(shard_positions_update)
                 .await
-            {
-                error!(error=%error, "failed to forward shard positions update to control plane");
-            }
+        {
+            error!(error=%error, "failed to forward shard positions update to control plane");
         }
     }
 }
@@ -1096,17 +1094,17 @@ async fn watcher_indexers(
         };
         match cluster_change {
             ClusterChange::Add(node) => {
-                if node.enabled_services().contains(&QuickwitService::Indexer) {
-                    if let Err(error) = mailbox.send_message(IndexerJoined(node)).await {
-                        error!(error=%error, "failed to forward `IndexerJoined` event to control plane");
-                    }
+                if node.enabled_services().contains(&QuickwitService::Indexer)
+                    && let Err(error) = mailbox.send_message(IndexerJoined(node)).await
+                {
+                    error!(error=%error, "failed to forward `IndexerJoined` event to control plane");
                 }
             }
             ClusterChange::Remove(node) => {
-                if node.enabled_services().contains(&QuickwitService::Indexer) {
-                    if let Err(error) = mailbox.send_message(IndexerLeft(node)).await {
-                        error!(error=%error, "failed to forward `IndexerLeft` event to control plane");
-                    }
+                if node.enabled_services().contains(&QuickwitService::Indexer)
+                    && let Err(error) = mailbox.send_message(IndexerLeft(node)).await
+                {
+                    error!(error=%error, "failed to forward `IndexerLeft` event to control plane");
                 }
             }
             ClusterChange::Update(_) => {

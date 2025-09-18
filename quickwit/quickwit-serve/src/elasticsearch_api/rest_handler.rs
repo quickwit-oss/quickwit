@@ -1000,10 +1000,10 @@ fn convert_to_es_search_response(
     _source_includes: Option<Vec<String>>,
     allow_partial_results: bool,
 ) -> Result<ElasticsearchResponse, ElasticsearchError> {
-    if !allow_partial_results || resp.num_successful_splits == 0 {
-        if let Some(search_error) = SearchError::from_split_errors(&resp.failed_splits) {
-            return Err(ElasticsearchError::from(search_error));
-        }
+    if (!allow_partial_results || resp.num_successful_splits == 0)
+        && let Some(search_error) = SearchError::from_split_errors(&resp.failed_splits)
+    {
+        return Err(ElasticsearchError::from(search_error));
     }
     let hits: Vec<ElasticHit> = resp
         .hits

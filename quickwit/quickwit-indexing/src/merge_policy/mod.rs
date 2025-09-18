@@ -207,7 +207,7 @@ impl fmt::Debug for SplitShortDebug<'_> {
     }
 }
 
-fn splits_short_debug(splits: &[SplitMetadata]) -> Vec<SplitShortDebug> {
+fn splits_short_debug(splits: &[SplitMetadata]) -> Vec<SplitShortDebug<'_>> {
     splits.iter().map(SplitShortDebug).collect()
 }
 

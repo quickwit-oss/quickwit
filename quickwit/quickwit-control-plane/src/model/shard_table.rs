@@ -172,7 +172,7 @@ fn remove_shard_from_ingesters_internal(
 impl ShardTable {
     /// Returns a ShardLocations object that maps each shard to the list of ingesters hosting it.
     /// All shards are considered regardless of their state (including unavailable).
-    pub fn shard_locations(&self) -> ShardLocations {
+    pub fn shard_locations(&self) -> ShardLocations<'_> {
         let mut shard_locations = ShardLocations::default();
         for (ingester_id, source_shards) in &self.ingester_shards {
             for shard_ids in source_shards.values() {
@@ -275,13 +275,13 @@ impl ShardTable {
         };
         let table_entry = ShardTableEntry::default();
         let previous_table_entry_opt = self.table_entries.insert(source_uid, table_entry);
-        if let Some(previous_table_entry) = previous_table_entry_opt {
-            if !previous_table_entry.is_empty() {
-                error!(
-                    "shard table entry for index `{}` and source `{}` already exists",
-                    index_uid.index_id, source_id
-                );
-            }
+        if let Some(previous_table_entry) = previous_table_entry_opt
+            && !previous_table_entry.is_empty()
+        {
+            error!(
+                "shard table entry for index `{}` and source `{}` already exists",
+                index_uid.index_id, source_id
+            );
         }
         self.check_invariant();
     }

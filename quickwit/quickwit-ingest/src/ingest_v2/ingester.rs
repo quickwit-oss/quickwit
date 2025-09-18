@@ -762,13 +762,13 @@ impl Ingester {
                     }
                 };
 
-                if let Some(expected_position_inclusive) = subrequest.expected_position_inclusive {
-                    if expected_position_inclusive != current_position_inclusive {
-                        return Err(IngestV2Error::Internal(format!(
-                            "bad replica position: expected {expected_position_inclusive:?}, got \
-                             {current_position_inclusive:?}"
-                        )));
-                    }
+                if let Some(expected_position_inclusive) = subrequest.expected_position_inclusive
+                    && expected_position_inclusive != current_position_inclusive
+                {
+                    return Err(IngestV2Error::Internal(format!(
+                        "bad replica position: expected {expected_position_inclusive:?}, got \
+                         {current_position_inclusive:?}"
+                    )));
                 }
                 state_guard
                     .shards

@@ -944,19 +944,14 @@ enum CanSplitDoBetter {
 impl CanSplitDoBetter {
     /// Create a CanSplitDoBetter from a SearchRequest
     fn from_request(request: &SearchRequest, timestamp_field_name: Option<&str>) -> Self {
-        if request.max_hits == 0 {
-            if let Some(aggregation) = &request.aggregation_request {
-                if let Ok(crate::QuickwitAggregations::FindTraceIdsAggregation(
-                    find_trace_aggregation,
-                )) = serde_json::from_str(aggregation)
-                {
-                    if Some(find_trace_aggregation.span_timestamp_field_name.as_str())
-                        == timestamp_field_name
-                    {
-                        return CanSplitDoBetter::FindTraceIdsAggregation(None);
-                    }
-                }
-            }
+        if request.max_hits == 0
+            && let Some(aggregation) = &request.aggregation_request
+            && let Ok(crate::QuickwitAggregations::FindTraceIdsAggregation(find_trace_aggregation)) =
+                serde_json::from_str(aggregation)
+            && Some(find_trace_aggregation.span_timestamp_field_name.as_str())
+                == timestamp_field_name
+        {
+            return CanSplitDoBetter::FindTraceIdsAggregation(None);
         }
 
         if request.sort_fields.is_empty() {
