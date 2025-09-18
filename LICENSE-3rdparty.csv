@@ -73,7 +73,7 @@ bytecount,https://github.com/llogiq/bytecount,Apache-2.0 OR MIT,"Andre Bogus <bo
 byteorder,https://github.com/BurntSushi/byteorder,Unlicense OR MIT,Andrew Gallant <jamslam@gmail.com>
 bytes,https://github.com/tokio-rs/bytes,MIT,"Carl Lerche <me@carllerche.com>, Sean McArthur <sean@seanmonstar.com>"
 bytes-utils,https://github.com/vorner/bytes-utils,Apache-2.0 OR MIT,Michal 'vorner' Vaner <vorner@vorner.cz>
-bytesize,https://github.com/bytesize-rs/bytesize,Apache-2.0,Hyunsik Choi <hyunsik.choi@gmail.com>
+bytesize,https://github.com/bytesize-rs/bytesize,Apache-2.0,"Hyunsik Choi <hyunsik.choi@gmail.com>, MrCroxx <mrcroxx@outlook.com>, Rob Ede <robjtede@icloud.com>"
 bytestring,https://github.com/actix/actix-net,MIT OR Apache-2.0,"Nikolay Kim <fafhrd91@gmail.com>, Rob Ede <robjtede@icloud.com>"
 bzip2,https://github.com/alexcrichton/bzip2-rs,MIT OR Apache-2.0,Alex Crichton <alex@alexcrichton.com>
 bzip2-sys,https://github.com/alexcrichton/bzip2-rs,MIT OR Apache-2.0,Alex Crichton <alex@alexcrichton.com>
@@ -100,6 +100,7 @@ colored,https://github.com/mackwic/colored,MPL-2.0,Thomas Wickham <mackwic@gmail
 compression-codecs,https://github.com/Nullus157/async-compression,MIT OR Apache-2.0,"Wim Looman <wim@nemo157.com>, Allen Bui <fairingrey@gmail.com>"
 compression-core,https://github.com/Nullus157/async-compression,MIT OR Apache-2.0,"Wim Looman <wim@nemo157.com>, Allen Bui <fairingrey@gmail.com>"
 console,https://github.com/console-rs/console,MIT,Armin Ronacher <armin.ronacher@active-4.com>
+console,https://github.com/console-rs/console,MIT,The console Authors
 const-oid,https://github.com/RustCrypto/formats/tree/master/const-oid,Apache-2.0 OR MIT,RustCrypto Developers
 constant_time_eq,https://github.com/cesarb/constant_time_eq,CC0-1.0,Cesar Eduardo Barros <cesarb@cesarb.eti.br>
 core-foundation,https://github.com/servo/core-foundation-rs,MIT OR Apache-2.0,The Servo Project Developers
@@ -126,7 +127,7 @@ deadpool,https://github.com/bikeshedder/deadpool,MIT OR Apache-2.0,Michael P. Ju
 deadpool-runtime,https://github.com/bikeshedder/deadpool,MIT OR Apache-2.0,Michael P. Jung <michael.jung@terreon.de>
 der,https://github.com/RustCrypto/formats/tree/master/der,Apache-2.0 OR MIT,RustCrypto Developers
 deranged,https://github.com/jhpratt/deranged,MIT OR Apache-2.0,Jacob Pratt <jacob@jhpratt.dev>
-dialoguer,https://github.com/mitsuhiko/dialoguer,MIT,"Armin Ronacher <armin.ronacher@active-4.com>, Pavan Kumar Sunkara <pavan.sss1991@gmail.com>"
+dialoguer,https://github.com/console-rs/dialoguer,MIT,The dialoguer Authors
 diff,https://github.com/utkarshkukreti/diff.rs,MIT OR Apache-2.0,Utkarsh Kukreti <utkarshkukreti@gmail.com>
 difflib,https://github.com/DimaKudosh/difflib,MIT,Dima Kudosh <dimakudosh@gmail.com>
 digest,https://github.com/RustCrypto/traits,MIT OR Apache-2.0,RustCrypto Developers
@@ -151,8 +152,9 @@ encoding-index-tradchinese,https://github.com/lifthrasiir/rust-encoding,CC0-1.0,
 encoding_index_tests,https://github.com/lifthrasiir/rust-encoding,CC0-1.0,Kang Seonghoon <public+rust@mearie.org>
 encoding_rs,https://github.com/hsivonen/encoding_rs,(Apache-2.0 OR MIT) AND BSD-3-Clause,Henri Sivonen <hsivonen@hsivonen.fi>
 encoding_rs_io,https://github.com/BurntSushi/encoding_rs_io,MIT OR Apache-2.0,Andrew Gallant <jamslam@gmail.com>
-enum-iterator,https://github.com/stephaneyfx/enum-iterator,MIT,Stephane Raux <stephaneyfx@gmail.com>
+enum-iterator,https://github.com/stephaneyfx/enum-iterator,0BSD,Stephane Raux <stephaneyfx@gmail.com>
 enum-iterator-derive,https://github.com/stephaneyfx/enum-iterator,0BSD,Stephane Raux <stephaneyfx@gmail.com>
+env_filter,https://github.com/rust-cli/env_logger,MIT OR Apache-2.0,The env_filter Authors
 env_logger,https://github.com/rust-cli/env_logger,MIT OR Apache-2.0,The env_logger Authors
 equivalent,https://github.com/indexmap-rs/equivalent,Apache-2.0 OR MIT,The equivalent Authors
 errno,https://github.com/lambda-fairy/rust-errno,MIT OR Apache-2.0,"Chris Wong <lambda.fairy@gmail.com>, Dan Gohman <dev@sunfishcode.online>"
@@ -237,6 +239,8 @@ is-terminal,https://github.com/sunfishcode/is-terminal,MIT,"softprops <d.tangren
 is_terminal_polyfill,https://github.com/polyfill-rs/is_terminal_polyfill,MIT OR Apache-2.0,The is_terminal_polyfill Authors
 itertools,https://github.com/rust-itertools/itertools,MIT OR Apache-2.0,bluss
 itoa,https://github.com/dtolnay/itoa,MIT OR Apache-2.0,David Tolnay <dtolnay@gmail.com>
+jiff,https://github.com/BurntSushi/jiff,Unlicense OR MIT,Andrew Gallant <jamslam@gmail.com>
+jiff-static,https://github.com/BurntSushi/jiff,Unlicense OR MIT,Andrew Gallant <jamslam@gmail.com>
 jobserver,https://github.com/rust-lang/jobserver-rs,MIT OR Apache-2.0,Alex Crichton <alex@alexcrichton.com>
 js-sys,https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/js-sys,MIT OR Apache-2.0,The wasm-bindgen Developers
 json_comments,https://github.com/tmccombs/json-comments-rs,Apache-2.0,Thayne McCombs <astrothayne@gmail.com>
@@ -346,6 +350,7 @@ pnet_packet,https://github.com/libpnet/libpnet,MIT OR Apache-2.0,Robert Clipsham
 pnet_sys,https://github.com/libpnet/libpnet,MIT OR Apache-2.0,"Robert Clipsham <robert@octarineparrot.com>, Linus Färnstrand <faern@faern.net>"
 pnet_transport,https://github.com/libpnet/libpnet,MIT OR Apache-2.0,Robert Clipsham <robert@octarineparrot.com>
 portable-atomic,https://github.com/taiki-e/portable-atomic,Apache-2.0 OR MIT,The portable-atomic Authors
+portable-atomic-util,https://github.com/taiki-e/portable-atomic,Apache-2.0 OR MIT,The portable-atomic-util Authors
 postcard,https://github.com/jamesmunns/postcard,MIT OR Apache-2.0,James Munns <james@onevariable.com>
 potential_utf,https://github.com/unicode-org/icu4x,Unicode-3.0,The ICU4X Project Developers
 powerfmt,https://github.com/jhpratt/powerfmt,MIT OR Apache-2.0,Jacob Pratt <jacob@jhpratt.dev>
@@ -425,6 +430,7 @@ security-framework-sys,https://github.com/kornelski/rust-security-framework,MIT 
 semver,https://github.com/dtolnay/semver,MIT OR Apache-2.0,David Tolnay <dtolnay@gmail.com>
 separator,https://github.com/saghm/rust-separator,MIT,Saghm Rossi <saghmrossi@gmail.com>
 serde,https://github.com/serde-rs/serde,MIT OR Apache-2.0,"Erick Tryzelaar <erick.tryzelaar@gmail.com>, David Tolnay <dtolnay@gmail.com>"
+serde_core,https://github.com/serde-rs/serde,MIT OR Apache-2.0,"Erick Tryzelaar <erick.tryzelaar@gmail.com>, David Tolnay <dtolnay@gmail.com>"
 serde_derive,https://github.com/serde-rs/serde,MIT OR Apache-2.0,"Erick Tryzelaar <erick.tryzelaar@gmail.com>, David Tolnay <dtolnay@gmail.com>"
 serde_json,https://github.com/serde-rs/json,MIT OR Apache-2.0,"Erick Tryzelaar <erick.tryzelaar@gmail.com>, David Tolnay <dtolnay@gmail.com>"
 serde_json_borrow,https://github.com/PSeitz/serde_json_borrow,MIT,Pascal Seitz <pascal.seitz@gmail.com>
