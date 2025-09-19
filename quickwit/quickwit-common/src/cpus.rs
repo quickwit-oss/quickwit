@@ -88,7 +88,7 @@ fn parse_cpu_to_mcpu(cpu_string: &str) -> Result<usize, &'static str> {
 //
 // We then get the number of vCPUs by ceiling any non integer value.
 fn get_num_cpus_from_env(env_key: &str) -> Option<usize> {
-    let k8s_cpu_limit_str: String = crate::get_from_env_opt(env_key)?;
+    let k8s_cpu_limit_str: String = crate::get_from_env_opt(env_key, false)?;
     let mcpus = parse_cpu_to_mcpu(&k8s_cpu_limit_str)
         .inspect_err(|err_msg| {
             warn!(

@@ -152,7 +152,7 @@ impl EventFormat<'_> {
     /// Gets the log format from the environment variable `QW_LOG_FORMAT`. Returns a JSON
     /// formatter if the variable is set to `json`, otherwise returns a full formatter.
     fn get_from_env() -> Self {
-        if get_from_env_opt::<String>("QW_LOG_FORMAT")
+        if get_from_env_opt::<String>("QW_LOG_FORMAT", false)
             .map(|log_format| log_format.eq_ignore_ascii_case("json"))
             .unwrap_or(false)
         {

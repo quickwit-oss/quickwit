@@ -38,9 +38,9 @@ impl LoadShield {
         let max_in_flight_env_key = format!("QW_{endpoint_group_uppercase}_MAX_IN_FLIGHT");
         let max_concurrency_env_key = format!("QW_{endpoint_group_uppercase}_MAX_CONCURRENCY");
         let max_in_flight_opt: Option<usize> =
-            quickwit_common::get_from_env_opt(&max_in_flight_env_key);
+            quickwit_common::get_from_env_opt(&max_in_flight_env_key, false);
         let max_concurrency_opt: Option<usize> =
-            quickwit_common::get_from_env_opt(&max_concurrency_env_key);
+            quickwit_common::get_from_env_opt(&max_concurrency_env_key, false);
         let in_flight_semaphore_opt = max_in_flight_opt.map(Semaphore::new);
         let concurrency_semaphore_opt = max_concurrency_opt.map(Semaphore::new);
         let pending_gauge = crate::metrics::SERVE_METRICS

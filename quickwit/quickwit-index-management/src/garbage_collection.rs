@@ -292,14 +292,15 @@ async fn list_splits_metadata(
 fn get_maximum_split_deletion_rate_per_sec() -> Option<usize> {
     static MAX_SPLIT_DELETION_RATE_PER_SEC: OnceLock<Option<usize>> = OnceLock::new();
     *MAX_SPLIT_DELETION_RATE_PER_SEC.get_or_init(|| {
-        quickwit_common::get_from_env_opt::<usize>("QW_MAX_SPLIT_DELETION_RATE_PER_SEC")
+        quickwit_common::get_from_env_opt::<usize>("QW_MAX_SPLIT_DELETION_RATE_PER_SEC", false)
     })
 }
 
 fn get_index_gc_concurrency() -> Option<usize> {
     static INDEX_GC_CONCURRENCY: OnceLock<Option<usize>> = OnceLock::new();
-    *INDEX_GC_CONCURRENCY
-        .get_or_init(|| quickwit_common::get_from_env_opt::<usize>("QW_INDEX_GC_CONCURRENCY"))
+    *INDEX_GC_CONCURRENCY.get_or_init(|| {
+        quickwit_common::get_from_env_opt::<usize>("QW_INDEX_GC_CONCURRENCY", false)
+    })
 }
 
 /// Removes any splits marked for deletion which haven't been
