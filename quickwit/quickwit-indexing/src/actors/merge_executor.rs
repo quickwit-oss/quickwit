@@ -163,7 +163,7 @@ impl Handler<MergeScratch> for MergeExecutor {
     }
 }
 
-fn combine_index_meta(mut index_metas: Vec<IndexMeta>) -> anyhow::Result<IndexMeta> {
+pub fn combine_index_meta(mut index_metas: Vec<IndexMeta>) -> anyhow::Result<IndexMeta> {
     let mut union_index_meta = index_metas.pop().with_context(|| "only one IndexMeta")?;
     for index_meta in index_metas {
         union_index_meta.segments.extend(index_meta.segments);
@@ -171,7 +171,7 @@ fn combine_index_meta(mut index_metas: Vec<IndexMeta>) -> anyhow::Result<IndexMe
     Ok(union_index_meta)
 }
 
-fn open_split_directories(
+pub fn open_split_directories(
     // Directories containing the splits to merge
     tantivy_dirs: &[Box<dyn Directory>],
     tokenizer_manager: &TokenizerManager,
@@ -189,7 +189,7 @@ fn open_split_directories(
 }
 
 /// Creates a directory with a single `meta.json` file describe in `index_meta`
-fn create_shadowing_meta_json_directory(index_meta: IndexMeta) -> anyhow::Result<RamDirectory> {
+pub fn create_shadowing_meta_json_directory(index_meta: IndexMeta) -> anyhow::Result<RamDirectory> {
     let union_index_meta_json = serde_json::to_string_pretty(&index_meta)?;
     let ram_directory = RamDirectory::default();
     ram_directory.atomic_write(Path::new("meta.json"), union_index_meta_json.as_bytes())?;
@@ -565,7 +565,75 @@ impl MergeExecutor {
     }
 }
 
-fn open_index<T: Into<Box<dyn Directory>>>(
+/// Standalone version of merge_split_directories for external use
+/// This is a copy-paste of the existing merge_split_directories logic
+/// but without actor system dependencies
+pub async fn merge_split_directories_standalone(
+    union_index_meta: IndexMeta,
+    split_directories: Vec<Box<dyn Directory>>,
+    delete_tasks: Vec<DeleteTask>,
+    doc_mapper_opt: Option<Arc<DocMapper>>,
+    output_path: &Path,
+    io_controls: IoControls,
+    tokenizer_manager: &TokenizerManager,
+) -> anyhow::Result<ControlledDirectory> {
+    // This is literally copy-paste from existing merge_split_directories method
+    let shadowing_meta_json_directory = create_shadowing_meta_json_directory(union_index_meta)?;
+
+    // This directory is here to receive the merged split, as well as the final meta.json file.
+    let output_directory = ControlledDirectory::new(
+        Box::new(MmapDirectory::open_with_madvice(
+            output_path,
+            Advice::Sequential,
+        )?),
+        io_controls, // Parameter instead of self.io_controls
+    );
+    let mut directory_stack: Vec<Box<dyn Directory>> = vec![
+        output_directory.box_clone(),
+        Box::new(shadowing_meta_json_directory),
+    ];
+    directory_stack.extend(split_directories.into_iter());
+    let union_directory = UnionDirectory::union_of(directory_stack);
+    let union_index = open_index(union_directory, tokenizer_manager)?;
+
+    let mut index_writer: IndexWriter = union_index.writer_with_num_threads(1, 15_000_000)?;
+    let num_delete_tasks = delete_tasks.len();
+    if num_delete_tasks > 0 {
+        let doc_mapper = doc_mapper_opt
+            .ok_or_else(|| anyhow!("doc mapper must be present if there are delete tasks"))?;
+        for delete_task in delete_tasks {
+            let delete_query = delete_task
+                .delete_query
+                .expect("A delete task must have a delete query.");
+            let query_ast: QueryAst = serde_json::from_str(&delete_query.query_ast)
+                .context("invalid query_ast json")?;
+            let parsed_query_ast = query_ast.parse_user_query(&[]).context("invalid query")?;
+            let (query, _) = doc_mapper.query(union_index.schema(), &parsed_query_ast, false)?;
+            index_writer.delete_query(query)?;
+        }
+        debug!("commit-delete-operations");
+        index_writer.commit()?;
+    }
+    let segment_ids: Vec<SegmentId> = union_index
+        .searchable_segment_metas()?
+        .into_iter()
+        .map(|segment_meta| segment_meta.id())
+        .collect();
+    // A merge is useless if there is no delete and only one segment.
+    if num_delete_tasks == 0 && segment_ids.len() <= 1 {
+        return Ok(output_directory);
+    }
+    // If after deletion there is no longer any document, don't try to merge.
+    if num_delete_tasks != 0 && segment_ids.is_empty() {
+        return Ok(output_directory);
+    }
+    debug!(segment_ids=?segment_ids,"merging-segments");
+    // TODO it would be nice if tantivy could let us run the merge in the current thread.
+    index_writer.merge(&segment_ids).await?;
+    Ok(output_directory)
+}
+
+pub fn open_index<T: Into<Box<dyn Directory>>>(
     directory: T,
     tokenizer_manager: &TokenizerManager,
 ) -> tantivy::Result<Index> {

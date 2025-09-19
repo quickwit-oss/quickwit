@@ -18,7 +18,7 @@ mod index_serializer;
 mod indexer;
 mod indexing_pipeline;
 mod indexing_service;
-mod merge_executor;
+pub mod merge_executor;
 mod merge_pipeline;
 mod merge_planner;
 mod merge_scheduler_service;

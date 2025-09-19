@@ -29,6 +29,13 @@ pub use crate::actors::{
     FinishPendingMergesAndShutdownPipeline, IndexingError, IndexingPipeline,
     IndexingPipelineParams, IndexingService, PublisherType, Sequencer, SplitsUpdateMailbox,
 };
+pub use crate::actors::merge_executor::{
+    combine_index_meta,
+    open_split_directories,
+    create_shadowing_meta_json_directory,
+    open_index,
+    merge_split_directories_standalone,
+};
 pub use crate::controlled_directory::ControlledDirectory;
 use crate::models::IndexingStatistics;
 pub use crate::split_store::{IndexingSplitStore, get_tantivy_directory_from_split_bundle};
