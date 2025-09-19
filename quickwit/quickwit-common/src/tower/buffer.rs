@@ -92,12 +92,11 @@ where E: error::Error + From<BufferError> + Clone + 'static {
         return BufferError::Closed.into();
     }
     // This happens when the inner service returns an error on `poll_ready`.
-    if let Some(service_error) = error.downcast_ref::<ServiceError>() {
-        if let Some(source) = service_error.source() {
-            if let Some(inner) = source.downcast_ref::<E>() {
-                return inner.clone();
-            }
-        }
+    if let Some(service_error) = error.downcast_ref::<ServiceError>()
+        && let Some(source) = service_error.source()
+        && let Some(inner) = source.downcast_ref::<E>()
+    {
+        return inner.clone();
     }
     // This will happen only if the buffer service implementation adds a new error type.
     BufferError::Unknown.into()

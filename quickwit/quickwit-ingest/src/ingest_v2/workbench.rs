@@ -169,13 +169,13 @@ impl IngestWorkbench {
             );
             return;
         };
-        if let Some(publish_tracker) = &mut self.publish_tracker {
-            if let Some(position) = &persist_success.replication_position_inclusive {
-                publish_tracker.track_persisted_shard_position(
-                    persist_success.shard_id().clone(),
-                    position.clone(),
-                );
-            }
+        if let Some(publish_tracker) = &mut self.publish_tracker
+            && let Some(position) = &persist_success.replication_position_inclusive
+        {
+            publish_tracker.track_persisted_shard_position(
+                persist_success.shard_id().clone(),
+                position.clone(),
+            );
         }
         self.num_successes += 1;
         subworkbench.num_attempts += 1;

@@ -246,14 +246,14 @@ impl FileBackedIndex {
         // Check whether the split exists.
         // If the split exists, we check what state it is in. If it's anything other than `Staged`
         // something has gone very wrong and we should abort the operation.
-        if let Some(split) = self.splits.get(split_metadata.split_id()) {
-            if split.split_state != SplitState::Staged {
-                let entity = EntityKind::Split {
-                    split_id: split.split_id().to_string(),
-                };
-                let message = "split is not staged".to_string();
-                return Err(MetastoreError::FailedPrecondition { entity, message });
-            }
+        if let Some(split) = self.splits.get(split_metadata.split_id())
+            && split.split_state != SplitState::Staged
+        {
+            let entity = EntityKind::Split {
+                split_id: split.split_id().to_string(),
+            };
+            let message = "split is not staged".to_string();
+            return Err(MetastoreError::FailedPrecondition { entity, message });
         }
         let now_timestamp = OffsetDateTime::now_utc().unix_timestamp();
         let split = Split {
@@ -735,17 +735,17 @@ fn split_query_predicate(split: &&Split, query: &ListSplitsQuery) -> bool {
         if !query.time_range.overlaps_with(range.clone()) {
             return false;
         }
-        if let Some(v) = query.max_time_range_end {
-            if range.end() > &v {
-                return false;
-            }
+        if let Some(v) = query.max_time_range_end
+            && range.end() > &v
+        {
+            return false;
         }
     }
 
-    if let Some(node_id) = &query.node_id {
-        if split.split_metadata.node_id != *node_id {
-            return false;
-        }
+    if let Some(node_id) = &query.node_id
+        && split.split_metadata.node_id != *node_id
+    {
+        return false;
     }
 
     if let Some((index_uid, split_id)) = &query.after_split {
