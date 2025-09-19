@@ -105,91 +105,87 @@ impl std::fmt::Debug for DDHistograms {
 
 #[cfg(test)]
 mod tests {
-    use metrics::Key;
-    use metrics_util::debugging::{DebugValue, DebuggingRecorder};
-    use metrics_util::{CompositeKey, MetricKind};
+    use metrics_util::debugging::{DebugValue, DebuggingRecorder, Snapshot};
     use ordered_float::OrderedFloat;
 
     use super::*;
 
+    fn snapshot_as_map_for_test(snapshot: Snapshot) -> HashMap<String, DebugValue> {
+        snapshot
+            .into_vec()
+            .into_iter()
+            .map(|(composite_key, _, _, value)| {
+                (
+                    format!("{:?}:{}", composite_key.kind(), composite_key.key()),
+                    value,
+                )
+            })
+            .collect()
+    }
+
     #[test]
     fn test_dd_counters() {
-        let recorder = DebuggingRecorder::new();
+        let recorder = DebuggingRecorder::default();
         let snapshotter = recorder.snapshotter();
-        metrics::set_global_recorder(Box::leak(Box::new(recorder))).unwrap();
+        metrics::with_local_recorder(&recorder, move || {
+            let counters = DDCounters::new("test.counter", "label", &["value1", "value2"]);
+            counters.get("value1").increment(1);
+            counters.get("value2").increment(2);
+            counters.get("value3").increment(3);
 
-        let counters = DDCounters::new("test.counter", "label", &["value1", "value2"]);
-        counters.get("value1").increment(1);
-        counters.get("value2").increment(2);
-        counters.get("value3").increment(3);
-
-        #[allow(clippy::mutable_key_type)]
-        let metrics = snapshotter.snapshot().into_hashmap();
-
-        let key = CompositeKey::new(
-            MetricKind::Counter,
-            Key::from_parts("test.counter", vec![Label::new("label", "value1")]),
-        );
-        let (_, _, counter) = metrics.get(&key).unwrap();
-        assert_eq!(*counter, DebugValue::Counter(1));
-
-        let key = CompositeKey::new(
-            MetricKind::Counter,
-            Key::from_parts("test.counter", vec![Label::new("label", "value2")]),
-        );
-        let (_, _, counter) = metrics.get(&key).unwrap();
-        assert_eq!(*counter, DebugValue::Counter(2));
-
-        let key = CompositeKey::new(
-            MetricKind::Counter,
-            Key::from_parts("test.counter", vec![Label::new("label", "other")]),
-        );
-        let (_, _, counter) = metrics.get(&key).unwrap();
-        assert_eq!(*counter, DebugValue::Counter(3));
+            let snapshot = snapshot_as_map_for_test(snapshotter.snapshot());
+            assert_eq!(snapshot.len(), 3);
+            assert_eq!(
+                snapshot
+                    .get("Counter:Key(test.counter, [label = value1])")
+                    .unwrap(),
+                &DebugValue::Counter(1)
+            );
+            assert_eq!(
+                snapshot
+                    .get("Counter:Key(test.counter, [label = value2])")
+                    .unwrap(),
+                &DebugValue::Counter(2)
+            );
+            assert_eq!(
+                snapshot
+                    .get("Counter:Key(test.counter, [label = other])")
+                    .unwrap(),
+                &DebugValue::Counter(3)
+            );
+        });
     }
 
     #[test]
     fn test_dd_histograms() {
-        let recorder = DebuggingRecorder::new();
+        let recorder = DebuggingRecorder::default();
         let snapshotter = recorder.snapshotter();
-        metrics::set_global_recorder(Box::leak(Box::new(recorder))).unwrap();
+        metrics::with_local_recorder(&recorder, move || {
+            let histograms = DDHistograms::new("test.histogram", "label", &["value1", "value2"]);
+            histograms.get("value1").record(1.0);
+            histograms.get("value2").record(2.0);
+            histograms.get("value3").record(3.0);
 
-        let histograms = DDHistograms::new("test.histogram", "label", &["value1", "value2"]);
-        histograms.get("value1").record(1.0);
-        histograms.get("value2").record(2.0);
-        histograms.get("value3").record(3.0);
-
-        #[allow(clippy::mutable_key_type)]
-        let metrics = snapshotter.snapshot().into_hashmap();
-
-        let key = CompositeKey::new(
-            MetricKind::Histogram,
-            Key::from_parts("test.histogram", vec![Label::new("label", "value1")]),
-        );
-        let (_, _, histogram) = metrics.get(&key).unwrap();
-        assert_eq!(
-            *histogram,
-            DebugValue::Histogram(vec![OrderedFloat::from(1.0)])
-        );
-
-        let key = CompositeKey::new(
-            MetricKind::Histogram,
-            Key::from_parts("test.histogram", vec![Label::new("label", "value2")]),
-        );
-        let (_, _, histogram) = metrics.get(&key).unwrap();
-        assert_eq!(
-            *histogram,
-            DebugValue::Histogram(vec![OrderedFloat::from(2.0)])
-        );
-
-        let key = CompositeKey::new(
-            MetricKind::Histogram,
-            Key::from_parts("test.histogram", vec![Label::new("label", "other")]),
-        );
-        let (_, _, histogram) = metrics.get(&key).unwrap();
-        assert_eq!(
-            *histogram,
-            DebugValue::Histogram(vec![OrderedFloat::from(3.0)])
-        );
+            let snapshot = snapshot_as_map_for_test(snapshotter.snapshot());
+            assert_eq!(snapshot.len(), 3);
+            assert_eq!(
+                snapshot
+                    .get("Histogram:Key(test.histogram, [label = value1])")
+                    .unwrap(),
+                &DebugValue::Histogram(vec![OrderedFloat::from(1.0)])
+            );
+            assert_eq!(
+                snapshot
+                    .get("Histogram:Key(test.histogram, [label = value2])")
+                    .unwrap(),
+                &DebugValue::Histogram(vec![OrderedFloat::from(2.0)])
+            );
+            assert_eq!(
+                snapshot
+                    .get("Histogram:Key(test.histogram, [label = other])")
+                    .unwrap(),
+                &DebugValue::Histogram(vec![OrderedFloat::from(3.0)])
+            );
+        });
     }
 }
