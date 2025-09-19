@@ -300,13 +300,13 @@ mod openapi_schema_tests {
                 }
                 RefOr::T(schema) => {
                     for (_, content) in &schema.content {
-                        if let RefOr::Ref(r) = &content.schema {
-                            if !schema_lookup.contains(&r.ref_location) {
-                                resolve_once.push(CheckResolve::new(
-                                    r.ref_location.clone(),
-                                    schema_item.clone(),
-                                ));
-                            }
+                        if let RefOr::Ref(r) = &content.schema
+                            && !schema_lookup.contains(&r.ref_location)
+                        {
+                            resolve_once.push(CheckResolve::new(
+                                r.ref_location.clone(),
+                                schema_item.clone(),
+                            ));
                         }
                     }
                     schema_lookup.insert(path);
@@ -383,17 +383,15 @@ mod openapi_schema_tests {
                     }
                 }
 
-                if let Some(ref props) = object.additional_properties {
-                    if let AdditionalProperties::RefOr(ref r) = **props {
-                        match r {
-                            RefOr::Ref(r) => resolve_once.push(CheckResolve::new(
-                                r.ref_location.clone(),
-                                parent_location.to_owned(),
-                            )),
-                            RefOr::T(schema) => {
-                                resolve_schema(resolve_once, parent_location, schema)
-                            }
-                        }
+                if let Some(ref props) = object.additional_properties
+                    && let AdditionalProperties::RefOr(ref r) = **props
+                {
+                    match r {
+                        RefOr::Ref(r) => resolve_once.push(CheckResolve::new(
+                            r.ref_location.clone(),
+                            parent_location.to_owned(),
+                        )),
+                        RefOr::T(schema) => resolve_schema(resolve_once, parent_location, schema),
                     }
                 }
             }
@@ -459,28 +457,28 @@ mod openapi_schema_tests {
                     }
                 }
 
-                if let Some(ref props) = object.additional_properties {
-                    if let AdditionalProperties::RefOr(ref r) = **props {
-                        match r {
-                            RefOr::Ref(r) => {
-                                if !schemas_lookup.contains(&r.ref_location) {
-                                    errors.push((
-                                        parent_location.to_string(),
-                                        method.to_string(),
-                                        path,
-                                        String::new(),
-                                    ));
-                                }
+                if let Some(ref props) = object.additional_properties
+                    && let AdditionalProperties::RefOr(ref r) = **props
+                {
+                    match r {
+                        RefOr::Ref(r) => {
+                            if !schemas_lookup.contains(&r.ref_location) {
+                                errors.push((
+                                    parent_location.to_string(),
+                                    method.to_string(),
+                                    path,
+                                    String::new(),
+                                ));
                             }
-                            RefOr::T(schema) => check_schema(
-                                method,
-                                path,
-                                schemas_lookup,
-                                errors,
-                                parent_location,
-                                schema,
-                            ),
                         }
+                        RefOr::T(schema) => check_schema(
+                            method,
+                            path,
+                            schemas_lookup,
+                            errors,
+                            parent_location,
+                            schema,
+                        ),
                     }
                 }
             }

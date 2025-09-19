@@ -777,14 +777,14 @@ pub(crate) async fn search_partial_hits_phase(
         "Merged leaf search response."
     );
 
-    if let Some(resource_stats) = &leaf_search_response.resource_stats {
-        if is_top_5pct_memory_intensive(
+    if let Some(resource_stats) = &leaf_search_response.resource_stats
+        && is_top_5pct_memory_intensive(
             resource_stats.short_lived_cache_num_bytes,
             resource_stats.split_num_docs,
-        ) {
-            // We log at most 5 times per minute.
-            quickwit_common::rate_limited_info!(limit_per_min=5, split_num_docs=resource_stats.split_num_docs, %search_request.query_ast, short_lived_cached_num_bytes=resource_stats.short_lived_cache_num_bytes, query=%search_request.query_ast, "memory intensive query");
-        }
+        )
+    {
+        // We log at most 5 times per minute.
+        quickwit_common::rate_limited_info!(limit_per_min=5, split_num_docs=resource_stats.split_num_docs, %search_request.query_ast, short_lived_cached_num_bytes=resource_stats.short_lived_cache_num_bytes, query=%search_request.query_ast, "memory intensive query");
     }
 
     if !leaf_search_response.failed_splits.is_empty() {
@@ -908,19 +908,19 @@ fn build_hit_with_position(
         .sort_value
         .as_mut()
         .and_then(|sort_field| sort_field.sort_value.as_mut());
-    if let Some(sort_by_value) = sort_value_opt {
-        if let Some(output_datetime_format) = &sort_field_1_datetime_format_opt {
-            convert_sort_datetime_value(sort_by_value, *output_datetime_format)?;
-        }
+    if let Some(sort_by_value) = sort_value_opt
+        && let Some(output_datetime_format) = &sort_field_1_datetime_format_opt
+    {
+        convert_sort_datetime_value(sort_by_value, *output_datetime_format)?;
     }
     let sort_value_2_opt = partial_hit_ref
         .sort_value2
         .as_mut()
         .and_then(|sort_field| sort_field.sort_value.as_mut());
-    if let Some(sort_by_value) = sort_value_2_opt {
-        if let Some(output_datetime_format) = &sort_field_2_datetime_format_opt {
-            convert_sort_datetime_value(sort_by_value, *output_datetime_format)?;
-        }
+    if let Some(sort_by_value) = sort_value_2_opt
+        && let Some(output_datetime_format) = &sort_field_2_datetime_format_opt
+    {
+        convert_sort_datetime_value(sort_by_value, *output_datetime_format)?;
     }
     let position = *hit_order.get(&key).expect("hit order must be present");
     let index_id = split_id_to_index_id_map
@@ -942,13 +942,13 @@ fn build_hit_with_position(
 fn get_sort_field_datetime_format(
     sort_field: Option<&SortField>,
 ) -> crate::Result<Option<SortDatetimeFormat>> {
-    if let Some(sort_field) = sort_field {
-        if let Some(sort_field_datetime_format_int) = &sort_field.sort_datetime_format {
-            let sort_field_datetime_format =
-                SortDatetimeFormat::try_from(*sort_field_datetime_format_int)
-                    .context("invalid sort datetime format")?;
-            return Ok(Some(sort_field_datetime_format));
-        }
+    if let Some(sort_field) = sort_field
+        && let Some(sort_field_datetime_format_int) = &sort_field.sort_datetime_format
+    {
+        let sort_field_datetime_format =
+            SortDatetimeFormat::try_from(*sort_field_datetime_format_int)
+                .context("invalid sort datetime format")?;
+        return Ok(Some(sort_field_datetime_format));
     }
     Ok(None)
 }

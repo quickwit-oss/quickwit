@@ -139,7 +139,7 @@ impl Uri {
     }
 
     /// Strips sensitive information such as credentials from URI.
-    fn as_redacted_str(&self) -> Cow<str> {
+    fn as_redacted_str(&self) -> Cow<'_, str> {
         if self.protocol().is_database() {
             static DATABASE_URI_PATTERN: OnceCell<Regex> = OnceCell::new();
             DATABASE_URI_PATTERN

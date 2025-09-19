@@ -778,13 +778,11 @@ impl IndexingService {
         // If at least one ingest source has been removed, the related index has possibly been
         // deleted. Thus we run a garbage collect to remove queues of potentially deleted
         // indexes.
-        if should_gc_ingest_api_queues {
-            if let Err(error) = self.run_ingest_api_queues_gc().await {
-                warn!(
-                    %error,
-                    "failed to garbage collect ingest API queues",
-                );
-            }
+        if should_gc_ingest_api_queues && let Err(error) = self.run_ingest_api_queues_gc().await {
+            warn!(
+                %error,
+                "failed to garbage collect ingest API queues",
+            );
         }
     }
 
@@ -1194,7 +1192,7 @@ mod tests {
         };
         let create_index_request = CreateIndexRequest::try_from_index_and_source_configs(
             &index_config,
-            &[source_config.clone()],
+            std::slice::from_ref(&source_config),
         )
         .unwrap();
         metastore.create_index(create_index_request).await.unwrap();

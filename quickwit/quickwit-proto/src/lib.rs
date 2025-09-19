@@ -124,10 +124,10 @@ pub struct MutMetadataMap<'a>(&'a mut tonic::metadata::MetadataMap);
 impl Injector for MutMetadataMap<'_> {
     /// Sets a key-value pair in the [`MetadataMap`]. No-op if the key or value is invalid.
     fn set(&mut self, key: &str, value: String) {
-        if let Ok(metadata_key) = tonic::metadata::MetadataKey::from_bytes(key.as_bytes()) {
-            if let Ok(metadata_value) = tonic::metadata::MetadataValue::try_from(&value) {
-                self.0.insert(metadata_key, metadata_value);
-            }
+        if let Ok(metadata_key) = tonic::metadata::MetadataKey::from_bytes(key.as_bytes())
+            && let Ok(metadata_value) = tonic::metadata::MetadataValue::try_from(&value)
+        {
+            self.0.insert(metadata_key, metadata_value);
         }
     }
 }

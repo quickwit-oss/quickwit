@@ -660,21 +660,20 @@ impl QuickwitIncrementalAggregations {
     fn virtual_worst_hit(&self) -> Option<PartialHit> {
         match self {
             QuickwitIncrementalAggregations::FindTraceIdsAggregation(collector, state) => {
-                if let Some(first) = state.first() {
-                    if first.len() >= collector.num_traces {
-                        if let Some(last_elem) = first.last() {
-                            let timestamp = last_elem.span_timestamp.into_timestamp_nanos();
-                            return Some(PartialHit {
-                                sort_value: Some(SortByValue {
-                                    sort_value: Some(SortValue::I64(timestamp)),
-                                }),
-                                sort_value2: None,
-                                split_id: SplitId::new(),
-                                segment_ord: 0,
-                                doc_id: 0,
-                            });
-                        }
-                    }
+                if let Some(first) = state.first()
+                    && first.len() >= collector.num_traces
+                    && let Some(last_elem) = first.last()
+                {
+                    let timestamp = last_elem.span_timestamp.into_timestamp_nanos();
+                    return Some(PartialHit {
+                        sort_value: Some(SortByValue {
+                            sort_value: Some(SortValue::I64(timestamp)),
+                        }),
+                        sort_value2: None,
+                        split_id: SplitId::new(),
+                        segment_ord: 0,
+                        doc_id: 0,
+                    });
                 }
                 None
             }
@@ -1251,7 +1250,7 @@ impl IncrementalCollector {
     /// Get the worst top-hit. Can be used to skip splits if they can't possibly do better.
     ///
     /// Only returns a result if enough hits were recorded already.
-    pub(crate) fn peek_worst_hit(&self) -> Option<Cow<PartialHit>> {
+    pub(crate) fn peek_worst_hit(&self) -> Option<Cow<'_, PartialHit>> {
         if self.top_k_hits.max_len() == 0 {
             return self
                 .incremental_aggregation

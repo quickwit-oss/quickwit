@@ -270,12 +270,12 @@ impl FileBackedMetastore {
         view: impl FnOnce(&FileBackedIndex) -> MetastoreResult<T>,
     ) -> MetastoreResult<T> {
         let locked_index = self.get_locked_index(index_id).await?;
-        if let Some(incarnation_id) = incarnation_id_opt {
-            if locked_index.index_uid().incarnation_id != incarnation_id {
-                return Err(MetastoreError::NotFound(EntityKind::Index {
-                    index_id: index_id.to_string(),
-                }));
-            }
+        if let Some(incarnation_id) = incarnation_id_opt
+            && locked_index.index_uid().incarnation_id != incarnation_id
+        {
+            return Err(MetastoreError::NotFound(EntityKind::Index {
+                index_id: index_id.to_string(),
+            }));
         }
         view(&locked_index)
     }
@@ -375,13 +375,13 @@ impl FileBackedMetastore {
                 return Err((metastore_error, index_id_opt, index_uid_opt));
             }
         };
-        if let Some(index_uid) = &index_uid_opt {
-            if index_metadata.index_uid != *index_uid {
-                let metastore_error = MetastoreError::NotFound(EntityKind::Index {
-                    index_id: index_id.to_string(),
-                });
-                return Err((metastore_error, index_id_opt, index_uid_opt));
-            }
+        if let Some(index_uid) = &index_uid_opt
+            && index_metadata.index_uid != *index_uid
+        {
+            let metastore_error = MetastoreError::NotFound(EntityKind::Index {
+                index_id: index_id.to_string(),
+            });
+            return Err((metastore_error, index_id_opt, index_uid_opt));
         }
         Ok(index_metadata)
     }

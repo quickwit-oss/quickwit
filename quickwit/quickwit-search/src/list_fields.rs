@@ -244,10 +244,10 @@ fn merge_leaf_list_fields(
     };
 
     for entry in merged {
-        if let Some(last) = current_group.last() {
-            if last.field_name != entry.field_name || last.field_type != entry.field_type {
-                flush_group(&mut responses, &mut current_group);
-            }
+        if let Some(last) = current_group.last()
+            && (last.field_name != entry.field_name || last.field_type != entry.field_type)
+        {
+            flush_group(&mut responses, &mut current_group);
         }
         if responses.len() >= *FIELD_LIST_SIZE_LIMIT {
             return Err(SearchError::Internal(format!(

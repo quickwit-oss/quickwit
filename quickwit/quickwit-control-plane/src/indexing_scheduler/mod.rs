@@ -354,12 +354,11 @@ impl IndexingScheduler {
                 self.rebuild_plan(model);
                 return;
             };
-        if let Some(last_applied_plan_timestamp) = self.state.last_applied_plan_timestamp {
-            if Instant::now().duration_since(last_applied_plan_timestamp)
+        if let Some(last_applied_plan_timestamp) = self.state.last_applied_plan_timestamp
+            && Instant::now().duration_since(last_applied_plan_timestamp)
                 < MIN_DURATION_BETWEEN_SCHEDULING
-            {
-                return;
-            }
+        {
+            return;
         }
         let indexers: Vec<IndexerNodeInfo> = self.get_indexers_from_indexer_pool();
         let running_indexing_tasks_by_node_id: FnvHashMap<String, Vec<IndexingTask>> = indexers
