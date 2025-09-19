@@ -20,6 +20,7 @@ use quickwit_config::{IndexTemplate, IndexTemplateId};
 use quickwit_proto::metastore::MetastoreResult;
 use quickwit_proto::types::IndexId;
 use quickwit_storage::Storage;
+use uuid::Uuid;
 
 use super::LazyIndexStatus;
 use super::index_template_matcher::IndexTemplateMatcher;
@@ -31,6 +32,7 @@ pub(super) struct MetastoreState {
     pub indexes: HashMap<IndexId, LazyIndexStatus>,
     pub templates: HashMap<IndexTemplateId, IndexTemplate>,
     pub template_matcher: IndexTemplateMatcher,
+    pub identity: Uuid,
 }
 
 impl MetastoreState {
@@ -64,6 +66,7 @@ impl MetastoreState {
             indexes,
             templates: manifest.templates,
             template_matcher,
+            identity: manifest.identity,
         };
         Ok(state)
     }
@@ -82,6 +85,10 @@ impl MetastoreState {
             })
             .collect();
         let templates = self.templates.clone();
-        Manifest { indexes, templates }
+        Manifest {
+            indexes,
+            templates,
+            identity: self.identity,
+        }
     }
 }

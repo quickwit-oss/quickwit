@@ -31,15 +31,15 @@ use quickwit_proto::metastore::{
     CreateIndexResponse, CreateIndexTemplateRequest, DeleteIndexRequest,
     DeleteIndexTemplatesRequest, DeleteQuery, DeleteShardsRequest, DeleteShardsResponse,
     DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, EmptyResponse, EntityKind,
-    FindIndexTemplateMatchesRequest, FindIndexTemplateMatchesResponse, GetIndexTemplateRequest,
-    GetIndexTemplateResponse, IndexMetadataFailure, IndexMetadataFailureReason,
-    IndexMetadataRequest, IndexMetadataResponse, IndexTemplateMatch, IndexesMetadataRequest,
-    IndexesMetadataResponse, LastDeleteOpstampRequest, LastDeleteOpstampResponse,
-    ListDeleteTasksRequest, ListDeleteTasksResponse, ListIndexTemplatesRequest,
-    ListIndexTemplatesResponse, ListIndexesMetadataRequest, ListIndexesMetadataResponse,
-    ListShardsRequest, ListShardsResponse, ListShardsSubresponse, ListSplitsRequest,
-    ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError,
-    MetastoreResult, MetastoreService, MetastoreServiceStream, OpenShardSubrequest,
+    FindIndexTemplateMatchesRequest, FindIndexTemplateMatchesResponse, GetClusterIdentityRequest,
+    GetClusterIdentityResponse, GetIndexTemplateRequest, GetIndexTemplateResponse,
+    IndexMetadataFailure, IndexMetadataFailureReason, IndexMetadataRequest, IndexMetadataResponse,
+    IndexTemplateMatch, IndexesMetadataRequest, IndexesMetadataResponse, LastDeleteOpstampRequest,
+    LastDeleteOpstampResponse, ListDeleteTasksRequest, ListDeleteTasksResponse,
+    ListIndexTemplatesRequest, ListIndexTemplatesResponse, ListIndexesMetadataRequest,
+    ListIndexesMetadataResponse, ListShardsRequest, ListShardsResponse, ListShardsSubresponse,
+    ListSplitsRequest, ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest,
+    MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceStream, OpenShardSubrequest,
     OpenShardSubresponse, OpenShardsRequest, OpenShardsResponse, PruneShardsRequest,
     PublishSplitsRequest, ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest,
     UpdateIndexRequest, UpdateSourceRequest, UpdateSplitsDeleteOpstampRequest,
@@ -51,6 +51,7 @@ use sea_query_binder::SqlxBinder;
 use sqlx::{Acquire, Executor, Postgres, Transaction};
 use time::OffsetDateTime;
 use tracing::{debug, info, instrument, warn};
+use uuid::Uuid;
 
 use super::error::convert_sqlx_err;
 use super::migrator::run_migrations;
@@ -1663,6 +1664,26 @@ impl MetastoreService for PostgresqlMetastore {
             .execute(&self.connection_pool)
             .await?;
         Ok(EmptyResponse {})
+    }
+
+    async fn get_cluster_identity(
+        &self,
+        _: GetClusterIdentityRequest,
+    ) -> MetastoreResult<GetClusterIdentityResponse> {
+        let (uuid,) = sqlx::query_as(
+            r"
+                WITH insert AS (
+                    INSERT INTO kv (key, value)
+                           VALUES ('cluster_identity', $1)
+                           ON CONFLICT (key) DO NOTHING
+                )
+                SELECT value FROM kv where key = 'cluster_identity';
+                ",
+        )
+        .bind(Uuid::new_v4().hyphenated().to_string())
+        .fetch_one(&self.connection_pool)
+        .await?;
+        Ok(GetClusterIdentityResponse { uuid })
     }
 }
 

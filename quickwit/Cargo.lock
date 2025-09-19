@@ -7224,6 +7224,7 @@ dependencies = [
  "tracing-subscriber",
  "ulid",
  "utoipa",
+ "uuid",
 ]
 
 [[package]]

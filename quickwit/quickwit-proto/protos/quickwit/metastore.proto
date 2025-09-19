@@ -198,6 +198,9 @@ service MetastoreService {
 
   // Deletes index templates.
   rpc DeleteIndexTemplates(DeleteIndexTemplatesRequest) returns (EmptyResponse);
+
+  // Get cluster identity
+  rpc GetClusterIdentity(GetClusterIdentityRequest) returns (GetClusterIdentityResponse);
 }
 
 message EmptyResponse {
@@ -529,4 +532,11 @@ message ListIndexTemplatesResponse {
 
 message DeleteIndexTemplatesRequest {
   repeated string template_ids = 1;
+}
+
+message GetClusterIdentityRequest {
+}
+
+message GetClusterIdentityResponse {
+  string uuid = 1;
 }

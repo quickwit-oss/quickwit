@@ -488,6 +488,15 @@ pub struct DeleteIndexTemplatesRequest {
     pub template_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct GetClusterIdentityRequest {}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetClusterIdentityResponse {
+    #[prost(string, tag = "1")]
+    pub uuid: ::prost::alloc::string::String,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -743,6 +752,11 @@ impl RpcName for DeleteIndexTemplatesRequest {
         "delete_index_templates"
     }
 }
+impl RpcName for GetClusterIdentityRequest {
+    fn rpc_name() -> &'static str {
+        "get_cluster_identity"
+    }
+}
 pub type MetastoreServiceStream<T> = quickwit_common::ServiceStream<
     crate::metastore::MetastoreResult<T>,
 >;
@@ -920,6 +934,11 @@ pub trait MetastoreService: std::fmt::Debug + Send + Sync + 'static {
         &self,
         request: DeleteIndexTemplatesRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse>;
+    /// Get cluster identity
+    async fn get_cluster_identity(
+        &self,
+        request: GetClusterIdentityRequest,
+    ) -> crate::metastore::MetastoreResult<GetClusterIdentityResponse>;
     async fn check_connectivity(&self) -> anyhow::Result<()>;
     fn endpoints(&self) -> Vec<quickwit_common::uri::Uri>;
 }
@@ -1216,6 +1235,12 @@ impl MetastoreService for MetastoreServiceClient {
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.inner.0.delete_index_templates(request).await
     }
+    async fn get_cluster_identity(
+        &self,
+        request: GetClusterIdentityRequest,
+    ) -> crate::metastore::MetastoreResult<GetClusterIdentityResponse> {
+        self.inner.0.get_cluster_identity(request).await
+    }
     async fn check_connectivity(&self) -> anyhow::Result<()> {
         self.inner.0.check_connectivity().await
     }
@@ -1421,6 +1446,12 @@ pub mod mock_metastore_service {
             request: super::DeleteIndexTemplatesRequest,
         ) -> crate::metastore::MetastoreResult<super::EmptyResponse> {
             self.inner.lock().await.delete_index_templates(request).await
+        }
+        async fn get_cluster_identity(
+            &self,
+            request: super::GetClusterIdentityRequest,
+        ) -> crate::metastore::MetastoreResult<super::GetClusterIdentityResponse> {
+            self.inner.lock().await.get_cluster_identity(request).await
         }
         async fn check_connectivity(&self) -> anyhow::Result<()> {
             self.inner.lock().await.check_connectivity().await
@@ -1929,6 +1960,22 @@ impl tower::Service<DeleteIndexTemplatesRequest> for InnerMetastoreServiceClient
         Box::pin(fut)
     }
 }
+impl tower::Service<GetClusterIdentityRequest> for InnerMetastoreServiceClient {
+    type Response = GetClusterIdentityResponse;
+    type Error = crate::metastore::MetastoreError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: GetClusterIdentityRequest) -> Self::Future {
+        let svc = self.clone();
+        let fut = async move { svc.0.get_cluster_identity(request).await };
+        Box::pin(fut)
+    }
+}
 /// A tower service stack is a set of tower services.
 #[derive(Debug)]
 struct MetastoreServiceTowerServiceStack {
@@ -2087,6 +2134,11 @@ struct MetastoreServiceTowerServiceStack {
     delete_index_templates_svc: quickwit_common::tower::BoxService<
         DeleteIndexTemplatesRequest,
         EmptyResponse,
+        crate::metastore::MetastoreError,
+    >,
+    get_cluster_identity_svc: quickwit_common::tower::BoxService<
+        GetClusterIdentityRequest,
+        GetClusterIdentityResponse,
         crate::metastore::MetastoreError,
     >,
 }
@@ -2277,6 +2329,12 @@ impl MetastoreService for MetastoreServiceTowerServiceStack {
         request: DeleteIndexTemplatesRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.delete_index_templates_svc.clone().ready().await?.call(request).await
+    }
+    async fn get_cluster_identity(
+        &self,
+        request: GetClusterIdentityRequest,
+    ) -> crate::metastore::MetastoreResult<GetClusterIdentityResponse> {
+        self.get_cluster_identity_svc.clone().ready().await?.call(request).await
     }
     async fn check_connectivity(&self) -> anyhow::Result<()> {
         self.inner.0.check_connectivity().await
@@ -2595,6 +2653,16 @@ type DeleteIndexTemplatesLayer = quickwit_common::tower::BoxLayer<
     EmptyResponse,
     crate::metastore::MetastoreError,
 >;
+type GetClusterIdentityLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        GetClusterIdentityRequest,
+        GetClusterIdentityResponse,
+        crate::metastore::MetastoreError,
+    >,
+    GetClusterIdentityRequest,
+    GetClusterIdentityResponse,
+    crate::metastore::MetastoreError,
+>;
 #[derive(Debug, Default)]
 pub struct MetastoreServiceTowerLayerStack {
     create_index_layers: Vec<CreateIndexLayer>,
@@ -2628,6 +2696,7 @@ pub struct MetastoreServiceTowerLayerStack {
     find_index_template_matches_layers: Vec<FindIndexTemplateMatchesLayer>,
     list_index_templates_layers: Vec<ListIndexTemplatesLayer>,
     delete_index_templates_layers: Vec<DeleteIndexTemplatesLayer>,
+    get_cluster_identity_layers: Vec<GetClusterIdentityLayer>,
 }
 impl MetastoreServiceTowerLayerStack {
     pub fn stack_layer<L>(mut self, layer: L) -> Self
@@ -3423,6 +3492,33 @@ impl MetastoreServiceTowerLayerStack {
         >>::Service as tower::Service<
             DeleteIndexTemplatesRequest,
         >>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    GetClusterIdentityRequest,
+                    GetClusterIdentityResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                GetClusterIdentityRequest,
+                GetClusterIdentityResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service: tower::Service<
+                GetClusterIdentityRequest,
+                Response = GetClusterIdentityResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                GetClusterIdentityRequest,
+                GetClusterIdentityResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service as tower::Service<
+            GetClusterIdentityRequest,
+        >>::Future: Send + 'static,
     {
         self.create_index_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
@@ -3485,6 +3581,8 @@ impl MetastoreServiceTowerLayerStack {
         self.list_index_templates_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.delete_index_templates_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.get_cluster_identity_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self
     }
@@ -4104,6 +4202,28 @@ impl MetastoreServiceTowerLayerStack {
             .push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
+    pub fn stack_get_cluster_identity_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    GetClusterIdentityRequest,
+                    GetClusterIdentityResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                GetClusterIdentityRequest,
+                Response = GetClusterIdentityResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<
+            GetClusterIdentityRequest,
+        >>::Future: Send + 'static,
+    {
+        self.get_cluster_identity_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
     pub fn build<T>(self, instance: T) -> MetastoreServiceClient
     where
         T: MetastoreService,
@@ -4412,6 +4532,14 @@ impl MetastoreServiceTowerLayerStack {
                 quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
+        let get_cluster_identity_svc = self
+            .get_cluster_identity_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
+                |svc, layer| layer.layer(svc),
+            );
         let tower_svc_stack = MetastoreServiceTowerServiceStack {
             inner: inner_client,
             create_index_svc,
@@ -4445,6 +4573,7 @@ impl MetastoreServiceTowerLayerStack {
             find_index_template_matches_svc,
             list_index_templates_svc,
             delete_index_templates_svc,
+            get_cluster_identity_svc,
         };
         MetastoreServiceClient::new(tower_svc_stack)
     }
@@ -4727,6 +4856,15 @@ where
             Response = EmptyResponse,
             Error = crate::metastore::MetastoreError,
             Future = BoxFuture<EmptyResponse, crate::metastore::MetastoreError>,
+        >
+        + tower::Service<
+            GetClusterIdentityRequest,
+            Response = GetClusterIdentityResponse,
+            Error = crate::metastore::MetastoreError,
+            Future = BoxFuture<
+                GetClusterIdentityResponse,
+                crate::metastore::MetastoreError,
+            >,
         >,
 {
     async fn create_index(
@@ -4913,6 +5051,12 @@ where
         &self,
         request: DeleteIndexTemplatesRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        self.clone().call(request).await
+    }
+    async fn get_cluster_identity(
+        &self,
+        request: GetClusterIdentityRequest,
+    ) -> crate::metastore::MetastoreResult<GetClusterIdentityResponse> {
         self.clone().call(request).await
     }
     async fn check_connectivity(&self) -> anyhow::Result<()> {
@@ -5404,6 +5548,20 @@ where
                 DeleteIndexTemplatesRequest::rpc_name(),
             ))
     }
+    async fn get_cluster_identity(
+        &self,
+        request: GetClusterIdentityRequest,
+    ) -> crate::metastore::MetastoreResult<GetClusterIdentityResponse> {
+        self.inner
+            .clone()
+            .get_cluster_identity(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                GetClusterIdentityRequest::rpc_name(),
+            ))
+    }
     async fn check_connectivity(&self) -> anyhow::Result<()> {
         if self.connection_addrs_rx.borrow().is_empty() {
             anyhow::bail!("no server currently available")
@@ -5779,6 +5937,17 @@ for MetastoreServiceGrpcServerAdapter {
         self.inner
             .0
             .delete_index_templates(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(crate::error::grpc_error_to_grpc_status)
+    }
+    async fn get_cluster_identity(
+        &self,
+        request: tonic::Request<GetClusterIdentityRequest>,
+    ) -> Result<tonic::Response<GetClusterIdentityResponse>, tonic::Status> {
+        self.inner
+            .0
+            .get_cluster_identity(request.into_inner())
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -6798,6 +6967,36 @@ pub mod metastore_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// Get cluster identity
+        pub async fn get_cluster_identity(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetClusterIdentityRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetClusterIdentityResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.metastore.MetastoreService/GetClusterIdentity",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit.metastore.MetastoreService",
+                        "GetClusterIdentity",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -7038,6 +7237,14 @@ pub mod metastore_service_grpc_server {
             &self,
             request: tonic::Request<super::DeleteIndexTemplatesRequest>,
         ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status>;
+        /// Get cluster identity
+        async fn get_cluster_identity(
+            &self,
+            request: tonic::Request<super::GetClusterIdentityRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetClusterIdentityResponse>,
+            tonic::Status,
+        >;
     }
     /// Metastore meant to manage Quickwit's indexes, their splits and delete tasks.
     ///
@@ -8625,6 +8832,55 @@ pub mod metastore_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = DeleteIndexTemplatesSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.metastore.MetastoreService/GetClusterIdentity" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetClusterIdentitySvc<T: MetastoreServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: MetastoreServiceGrpc,
+                    > tonic::server::UnaryService<super::GetClusterIdentityRequest>
+                    for GetClusterIdentitySvc<T> {
+                        type Response = super::GetClusterIdentityResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetClusterIdentityRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as MetastoreServiceGrpc>::get_cluster_identity(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetClusterIdentitySvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
