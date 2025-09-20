@@ -219,8 +219,10 @@ impl std::fmt::Debug for GaugeGuard<'_> {
 }
 
 impl<'a> GaugeGuard<'a> {
-    pub fn from_gauge(gauge: &'a IntGauge) -> Self {
-        Self { gauge, delta: 0i64 }
+    pub fn from_gauge_with_initial_value(gauge: &'a IntGauge, initial_value: i64) -> Self {
+        let mut gauge = Self { gauge, delta: 0i64 };
+        gauge.add(initial_value);
+        gauge
     }
 
     pub fn get(&self) -> i64 {
@@ -256,8 +258,10 @@ impl std::fmt::Debug for OwnedGaugeGuard {
 }
 
 impl OwnedGaugeGuard {
-    pub fn from_gauge(gauge: IntGauge) -> Self {
-        Self { gauge, delta: 0i64 }
+    pub fn from_gauge_with_initial_value(gauge: IntGauge, initial_value: i64) -> Self {
+        let mut gauge = Self { gauge, delta: 0i64 };
+        gauge.add(initial_value);
+        gauge
     }
 
     pub fn get(&self) -> i64 {

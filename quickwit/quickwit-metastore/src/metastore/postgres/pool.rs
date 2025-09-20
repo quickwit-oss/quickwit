@@ -59,9 +59,8 @@ impl<'a, DB: Database> Acquire<'a> for &TrackedPool<DB> {
             .set(self.inner_pool.num_idle() as i64);
 
         Box::pin(async move {
-            let mut gauge_guard = GaugeGuard::from_gauge(&POSTGRES_METRICS.acquire_connections);
-            gauge_guard.add(1);
-
+            let _gauge_guard =
+                GaugeGuard::from_gauge_with_initial_value(&POSTGRES_METRICS.acquire_connections, 1);
             let conn = acquire_conn_fut.await?;
             Ok(conn)
         })

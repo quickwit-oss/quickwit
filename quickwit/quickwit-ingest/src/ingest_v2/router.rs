@@ -603,8 +603,10 @@ impl IngestRouterService for IngestRouter {
     async fn ingest(&self, ingest_request: IngestRequestV2) -> IngestV2Result<IngestResponseV2> {
         let request_size_bytes = ingest_request.num_bytes();
 
-        let mut gauge_guard = GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.ingest_router);
-        gauge_guard.add(request_size_bytes as i64);
+        let _gauge_guard = GaugeGuard::from_gauge_with_initial_value(
+            &MEMORY_METRICS.in_flight.ingest_router,
+            request_size_bytes as i64,
+        );
         let num_subrequests = ingest_request.subrequests.len();
 
         let _permit = self
