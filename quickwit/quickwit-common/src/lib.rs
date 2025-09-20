@@ -87,18 +87,23 @@ pub fn split_file(split_id: impl Display) -> String {
 fn get_from_env_opt_aux<T: Debug>(
     key: &str,
     parse_fn: impl FnOnce(&str) -> Option<T>,
+    sensitive: bool,
 ) -> Option<T> {
     let value_str = std::env::var(key).ok()?;
     let Some(value) = parse_fn(&value_str) else {
         error!(value=%value_str, "failed to parse environment variable `{key}` value");
         return None;
     };
-    info!(value=?value, "using environment variable `{key}` value");
+    if sensitive {
+        info!("using environment variable `{key}` value");
+    } else {
+        info!(value=?value, "using environment variable `{key}` value");
+    }
     Some(value)
 }
 
-pub fn get_from_env<T: FromStr + Debug>(key: &str, default_value: T) -> T {
-    if let Some(value) = get_from_env_opt(key) {
+pub fn get_from_env<T: FromStr + Debug>(key: &str, default_value: T, sensitive: bool) -> T {
+    if let Some(value) = get_from_env_opt(key, sensitive) {
         value
     } else {
         info!(default_value=?default_value, "using environment variable `{key}` default value");
@@ -106,12 +111,12 @@ pub fn get_from_env<T: FromStr + Debug>(key: &str, default_value: T) -> T {
     }
 }
 
-pub fn get_from_env_opt<T: FromStr + Debug>(key: &str) -> Option<T> {
-    get_from_env_opt_aux(key, |val_str| val_str.parse().ok())
+pub fn get_from_env_opt<T: FromStr + Debug>(key: &str, sensitive: bool) -> Option<T> {
+    get_from_env_opt_aux(key, |val_str| val_str.parse().ok(), sensitive)
 }
 
 pub fn get_bool_from_env_opt(key: &str) -> Option<bool> {
-    get_from_env_opt_aux(key, parse_bool_lenient)
+    get_from_env_opt_aux(key, parse_bool_lenient, false)
 }
 
 pub fn get_bool_from_env(key: &str, default_value: bool) -> bool {
@@ -305,11 +310,11 @@ mod tests {
         // way, we are keeping it that way
 
         const TEST_KEY: &str = "TEST_KEY";
-        assert_eq!(super::get_from_env(TEST_KEY, 10), 10);
+        assert_eq!(super::get_from_env(TEST_KEY, 10, false), 10);
         unsafe { std::env::set_var(TEST_KEY, "15") };
-        assert_eq!(super::get_from_env(TEST_KEY, 10), 15);
+        assert_eq!(super::get_from_env(TEST_KEY, 10, false), 15);
         unsafe { std::env::set_var(TEST_KEY, "1invalidnumber") };
-        assert_eq!(super::get_from_env(TEST_KEY, 10), 10);
+        assert_eq!(super::get_from_env(TEST_KEY, 10, false), 10);
     }
 
     #[test]
