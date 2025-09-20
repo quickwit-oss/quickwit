@@ -89,12 +89,12 @@ struct CompressionPredicate {
 
 impl CompressionPredicate {
     fn from_env() -> CompressionPredicate {
-        let minimum_compression_size_opt: Option<u16> = quickwit_common::get_from_env_opt::<usize>(
-            QW_MINIMUM_COMPRESSION_SIZE_KEY,
-        )
-        .map(|minimum_compression_size: usize| {
-            u16::try_from(minimum_compression_size).unwrap_or(u16::MAX)
-        });
+        let minimum_compression_size_opt: Option<u16> =
+            quickwit_common::get_from_env_opt::<usize>(QW_MINIMUM_COMPRESSION_SIZE_KEY, false).map(
+                |minimum_compression_size: usize| {
+                    u16::try_from(minimum_compression_size).unwrap_or(u16::MAX)
+                },
+            );
         let size_above_opt = minimum_compression_size_opt.map(SizeAbove::new);
         CompressionPredicate { size_above_opt }
     }

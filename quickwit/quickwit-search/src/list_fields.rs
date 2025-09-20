@@ -49,7 +49,7 @@ use crate::{
 /// when building the response. This is a workaround until a way is found to
 /// prune the long tail of rare fields.
 static FIELD_LIST_SIZE_LIMIT: LazyLock<usize> =
-    LazyLock::new(|| quickwit_common::get_from_env("QW_FIELD_LIST_SIZE_LIMIT", 100_000));
+    LazyLock::new(|| quickwit_common::get_from_env("QW_FIELD_LIST_SIZE_LIMIT", 100_000, false));
 
 const DYNAMIC_FIELD_PREFIX: &str = "_dynamic.";
 

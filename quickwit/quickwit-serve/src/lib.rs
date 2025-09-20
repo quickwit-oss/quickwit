@@ -148,6 +148,7 @@ fn get_metastore_client_max_concurrency() -> usize {
     quickwit_common::get_from_env(
         METASTORE_CLIENT_MAX_CONCURRENCY_ENV_KEY,
         DEFAULT_METASTORE_CLIENT_MAX_CONCURRENCY,
+        false,
     )
 }
 

@@ -101,7 +101,7 @@ const DEFAULT_BATCH_NUM_BYTES: usize = 1024 * 1024; // 1 MiB
 fn get_batch_num_bytes() -> usize {
     static BATCH_NUM_BYTES_CELL: OnceCell<usize> = OnceCell::new();
     *BATCH_NUM_BYTES_CELL.get_or_init(|| {
-        quickwit_common::get_from_env("QW_INGEST_BATCH_NUM_BYTES", DEFAULT_BATCH_NUM_BYTES)
+        quickwit_common::get_from_env("QW_INGEST_BATCH_NUM_BYTES", DEFAULT_BATCH_NUM_BYTES, false)
     })
 }
 

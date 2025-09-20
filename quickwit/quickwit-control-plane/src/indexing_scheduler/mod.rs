@@ -187,6 +187,7 @@ fn get_default_load_per_shard() -> NonZeroU32 {
         let default_load_per_shard = quickwit_common::get_from_env(
             "QW_DEFAULT_LOAD_PER_SHARD",
             PIPELINE_FULL_CAPACITY.cpu_millis() / 4,
+            false,
         );
         NonZeroU32::new(default_load_per_shard).unwrap()
     })
