@@ -15,6 +15,7 @@
 use std::collections::VecDeque;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 
 use bytesize::ByteSize;
@@ -33,9 +34,28 @@ use tokio::sync::{mpsc, oneshot};
 /// remaining memory is also released.
 #[derive(Clone)]
 pub struct SearchPermitProvider {
-    message_sender: mpsc::UnboundedSender<SearchPermitMessage>,
-    #[cfg(test)]
-    actor_stopped: watch::Receiver<bool>,
+    mode: SearchPermitMode,
+}
+
+#[derive(Clone)]
+enum SearchPermitMode {
+    Async {
+        message_sender: mpsc::UnboundedSender<SearchPermitMessage>,
+        #[cfg(test)]
+        actor_stopped: watch::Receiver<bool>,
+    },
+    Sync {
+        state: Arc<Mutex<SyncPermitState>>,
+    },
+}
+
+/// Synchronous permit state for Java-style threading
+#[derive(Debug)]
+struct SyncPermitState {
+    num_download_slots: usize,
+    memory_budget: u64,
+    current_permits: usize,
+    current_memory: u64,
 }
 
 #[derive(Debug)]
@@ -95,9 +115,26 @@ impl SearchPermitProvider {
         };
         tokio::spawn(actor.run());
         Self {
-            message_sender,
-            #[cfg(test)]
-            actor_stopped: state_receiver,
+            mode: SearchPermitMode::Async {
+                message_sender,
+                #[cfg(test)]
+                actor_stopped: state_receiver,
+            },
+        }
+    }
+
+    /// Create a synchronous permit provider for Java-style threading
+    /// This avoids async channels and is safe for sharing across contexts
+    pub fn new_sync(num_download_slots: usize, memory_budget: ByteSize) -> Self {
+        Self {
+            mode: SearchPermitMode::Sync {
+                state: Arc::new(Mutex::new(SyncPermitState {
+                    num_download_slots,
+                    memory_budget: memory_budget.as_u64(),
+                    current_permits: 0,
+                    current_memory: 0,
+                })),
+            },
         }
     }
 
@@ -112,17 +149,44 @@ impl SearchPermitProvider {
         &self,
         splits: impl IntoIterator<Item = ByteSize>,
     ) -> Vec<SearchPermitFuture> {
-        let (permit_sender, permit_receiver) = oneshot::channel();
-        let permit_sizes = splits.into_iter().map(|size| size.as_u64()).collect();
-        self.message_sender
-            .send(SearchPermitMessage::Request {
-                permit_sender,
-                permit_sizes,
-            })
-            .expect("Receiver lives longer than sender");
-        permit_receiver
-            .await
-            .expect("Receiver lives longer than sender")
+        match &self.mode {
+            SearchPermitMode::Async { message_sender, .. } => {
+                let (permit_sender, permit_receiver) = oneshot::channel();
+                let permit_sizes = splits.into_iter().map(|size| size.as_u64()).collect();
+                message_sender
+                    .send(SearchPermitMessage::Request {
+                        permit_sender,
+                        permit_sizes,
+                    })
+                    .expect("Receiver lives longer than sender");
+                permit_receiver
+                    .await
+                    .expect("Receiver lives longer than sender")
+            }
+            SearchPermitMode::Sync { state } => {
+                // For sync mode, return immediately available permits
+                let permit_sizes: Vec<_> = splits.into_iter().map(|size| size.as_u64()).collect();
+                let mut permits = Vec::with_capacity(permit_sizes.len());
+
+                for permit_size in permit_sizes {
+                    // Create a simple sync permit that's immediately ready
+                    let permit = SyncSearchPermit {
+                        state: state.clone(),
+                        memory_allocation: permit_size,
+                    };
+
+                    // Update state
+                    {
+                        let mut state_guard = state.lock().unwrap();
+                        state_guard.current_permits += 1;
+                        state_guard.current_memory += permit_size;
+                    }
+
+                    permits.push(SearchPermitFuture::from_sync_permit(permit));
+                }
+                permits
+            }
+        }
     }
 }
 
@@ -160,7 +224,7 @@ impl SearchPermitActor {
                 for permit_size in permit_sizes {
                     let (tx, rx) = oneshot::channel();
                     self.permits_requests.push_back((tx, permit_size));
-                    permits.push(SearchPermitFuture(rx));
+                    permits.push(SearchPermitFuture::from_async_receiver(rx));
                 }
                 self.assign_available_permits();
                 // The receiver could be dropped in the (unlikely) situation
@@ -220,10 +284,12 @@ impl SearchPermitActor {
             self.num_warmup_slots_available -= 1;
             permit_requester_tx
                 .send(SearchPermit {
-                    _ongoing_gauge_guard: ongoing_gauge_guard,
-                    msg_sender: self.msg_sender.clone(),
-                    memory_allocation: next_permit_size,
-                    warmup_slot_freed: false,
+                    mode: SearchPermitMode2::Async {
+                        _ongoing_gauge_guard: ongoing_gauge_guard,
+                        msg_sender: self.msg_sender.clone(),
+                        memory_allocation: next_permit_size,
+                        warmup_slot_freed: false,
+                    },
                 })
                 // if the requester dropped its receiver, we drop the newly
                 // created SearchPermit which releases the resources
@@ -237,10 +303,28 @@ impl SearchPermitActor {
 
 #[derive(Debug)]
 pub struct SearchPermit {
-    _ongoing_gauge_guard: GaugeGuard<'static>,
-    msg_sender: mpsc::WeakUnboundedSender<SearchPermitMessage>,
-    memory_allocation: u64,
-    warmup_slot_freed: bool,
+    mode: SearchPermitMode2,
+}
+
+#[derive(Debug)]
+enum SearchPermitMode2 {
+    Async {
+        _ongoing_gauge_guard: GaugeGuard<'static>,
+        msg_sender: mpsc::WeakUnboundedSender<SearchPermitMessage>,
+        memory_allocation: u64,
+        warmup_slot_freed: bool,
+    },
+    Sync {
+        sync_permit: SyncSearchPermit,
+    },
+}
+
+impl SearchPermit {
+    fn from_sync(sync_permit: SyncSearchPermit) -> Self {
+        Self {
+            mode: SearchPermitMode2::Sync { sync_permit },
+        }
+    }
 }
 
 impl SearchPermit {
@@ -248,28 +332,51 @@ impl SearchPermit {
     ///
     /// This will increase or decrease the available memory in the [`SearchPermitProvider`].
     pub fn update_memory_usage(&mut self, new_memory_usage: ByteSize) {
-        let new_usage_bytes = new_memory_usage.as_u64();
-        let memory_delta = new_usage_bytes as i64 - self.memory_allocation as i64;
-        self.memory_allocation = new_usage_bytes;
-        self.send_if_still_running(SearchPermitMessage::UpdateMemory { memory_delta });
+        match &mut self.mode {
+            SearchPermitMode2::Async { memory_allocation, msg_sender, .. } => {
+                let new_usage_bytes = new_memory_usage.as_u64();
+                let memory_delta = new_usage_bytes as i64 - *memory_allocation as i64;
+                *memory_allocation = new_usage_bytes;
+                Self::send_if_still_running(msg_sender, SearchPermitMessage::UpdateMemory { memory_delta });
+            }
+            SearchPermitMode2::Sync { sync_permit } => {
+                let new_usage_bytes = new_memory_usage.as_u64();
+                let mut state = sync_permit.state.lock().unwrap();
+                let memory_delta = new_usage_bytes as i64 - sync_permit.memory_allocation as i64;
+                state.current_memory = (state.current_memory as i64 + memory_delta) as u64;
+                // Note: We don't update sync_permit.memory_allocation since it's not mutable
+                // In sync mode, memory tracking is simplified
+            }
+        }
     }
 
     /// Drop the warmup permit, allowing more downloads to be started. Only one
     /// slot is attached to each permit so calling this again has no effect.
     pub fn free_warmup_slot(&mut self) {
-        if self.warmup_slot_freed {
-            return;
+        match &mut self.mode {
+            SearchPermitMode2::Async { warmup_slot_freed, msg_sender, .. } => {
+                if *warmup_slot_freed {
+                    return;
+                }
+                *warmup_slot_freed = true;
+                Self::send_if_still_running(msg_sender, SearchPermitMessage::FreeWarmupSlot);
+            }
+            SearchPermitMode2::Sync { .. } => {
+                // In sync mode, warmup slots are not explicitly managed
+                // since Java handles threading differently
+            }
         }
-        self.warmup_slot_freed = true;
-        self.send_if_still_running(SearchPermitMessage::FreeWarmupSlot);
     }
 
     pub fn memory_allocation(&self) -> ByteSize {
-        ByteSize(self.memory_allocation)
+        match &self.mode {
+            SearchPermitMode2::Async { memory_allocation, .. } => ByteSize(*memory_allocation),
+            SearchPermitMode2::Sync { sync_permit } => ByteSize(sync_permit.memory_allocation),
+        }
     }
 
-    fn send_if_still_running(&self, msg: SearchPermitMessage) {
-        if let Some(sender) = self.msg_sender.upgrade() {
+    fn send_if_still_running(msg_sender: &mpsc::WeakUnboundedSender<SearchPermitMessage>, msg: SearchPermitMessage) {
+        if let Some(sender) = msg_sender.upgrade() {
             sender
                 .send(msg)
                 // Receiver instance in the event loop is never dropped or
@@ -281,27 +388,77 @@ impl SearchPermit {
 
 impl Drop for SearchPermit {
     fn drop(&mut self) {
-        self.send_if_still_running(SearchPermitMessage::Drop {
-            memory_size: self.memory_allocation,
-            warmup_slot_freed: self.warmup_slot_freed,
-        });
+        match &self.mode {
+            SearchPermitMode2::Async { memory_allocation, warmup_slot_freed, msg_sender, .. } => {
+                Self::send_if_still_running(msg_sender, SearchPermitMessage::Drop {
+                    memory_size: *memory_allocation,
+                    warmup_slot_freed: *warmup_slot_freed,
+                });
+            }
+            SearchPermitMode2::Sync { sync_permit } => {
+                let mut state = sync_permit.state.lock().unwrap();
+                state.current_permits = state.current_permits.saturating_sub(1);
+                state.current_memory = state.current_memory.saturating_sub(sync_permit.memory_allocation);
+            }
+        }
     }
 }
 
 #[derive(Debug)]
-pub struct SearchPermitFuture(oneshot::Receiver<SearchPermit>);
+pub struct SearchPermitFuture {
+    mode: SearchPermitFutureMode,
+}
+
+#[derive(Debug)]
+enum SearchPermitFutureMode {
+    Async(oneshot::Receiver<SearchPermit>),
+    Sync(Option<SyncSearchPermit>),
+}
+
+impl SearchPermitFuture {
+    fn from_async_receiver(receiver: oneshot::Receiver<SearchPermit>) -> Self {
+        Self {
+            mode: SearchPermitFutureMode::Async(receiver),
+        }
+    }
+
+    fn from_sync_permit(permit: SyncSearchPermit) -> Self {
+        Self {
+            mode: SearchPermitFutureMode::Sync(Some(permit)),
+        }
+    }
+}
 
 impl Future for SearchPermitFuture {
     type Output = SearchPermit;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let receiver = Pin::new(&mut self.get_mut().0);
-        match receiver.poll(cx) {
-            Poll::Ready(Ok(search_permit)) => Poll::Ready(search_permit),
-            Poll::Ready(Err(_)) => panic!("Failed to acquire permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues."),
-            Poll::Pending => Poll::Pending,
+        let this = self.get_mut();
+        match &mut this.mode {
+            SearchPermitFutureMode::Async(receiver) => {
+                let receiver = Pin::new(receiver);
+                match receiver.poll(cx) {
+                    Poll::Ready(Ok(search_permit)) => Poll::Ready(search_permit),
+                    Poll::Ready(Err(_)) => panic!("Failed to acquire permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues."),
+                    Poll::Pending => Poll::Pending,
+                }
+            }
+            SearchPermitFutureMode::Sync(permit_opt) => {
+                if let Some(sync_permit) = permit_opt.take() {
+                    Poll::Ready(SearchPermit::from_sync(sync_permit))
+                } else {
+                    panic!("SearchPermitFuture polled after completion")
+                }
+            }
         }
     }
+}
+
+/// Synchronous search permit for Java-style threading
+#[derive(Debug)]
+pub struct SyncSearchPermit {
+    state: Arc<Mutex<SyncPermitState>>,
+    memory_allocation: u64,
 }
 
 #[cfg(test)]

@@ -49,7 +49,7 @@ use tracing::*;
 macro_rules! debug_println {
     ($($arg:tt)*) => {
         if std::env::var("TANTIVY4JAVA_DEBUG").map(|v| v == "1" || v.to_lowercase() == "true").unwrap_or(false) {
-            eprintln!($($arg)*);
+            eprintln!("[{}] {}", chrono::Utc::now().format("%H:%M:%S%.3f"), format!($($arg)*));
         }
     };
 }
