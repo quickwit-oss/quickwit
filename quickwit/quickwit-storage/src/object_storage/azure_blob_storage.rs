@@ -274,7 +274,7 @@ impl AzureBlobStorage {
             chunk_range(0..total_len as usize, part_len as usize).map(into_u64_range);
 
         let blob_client = self.container_client.blob_client(name);
-        let mut upload_blocks_stream_result = tokio_stream::iter(multipart_ranges.enumerate())
+        let upload_blocks_stream = tokio_stream::iter(multipart_ranges.enumerate())
             .map(|(num, range)| {
                 let moved_blob_client = blob_client.clone();
                 let moved_payload = payload.clone();
@@ -284,7 +284,8 @@ impl AzureBlobStorage {
                     .inc_by(range.end - range.start);
                 async move {
                     retry(&self.retry_params, || async {
-                        let block_id = format!("block:{num}");
+                        // zero pad block ids to make them sortable as strings
+                        let block_id = format!("block:{:05}", num);
                         let (data, hash_digest) =
                             extract_range_data_and_hash(moved_payload.box_clone(), range.clone())
                                 .await?;
@@ -301,16 +302,22 @@ impl AzureBlobStorage {
             })
             .buffer_unordered(self.multipart_policy.max_concurrent_uploads());
 
-        // Concurrently upload block with limit.
-        let mut block_list = BlockList::default();
-        while let Some(put_block_result) = upload_blocks_stream_result.next().await {
-            match put_block_result {
-                Ok(block_id) => block_list
-                    .blocks
-                    .push(BlobBlockType::new_uncommitted(block_id)),
-                Err(error) => return Err(error.into()),
-            }
-        }
+        // Collect and sort block ids to preserve part order for put_block_list.
+        // Azure docs: "The put block list operation enforces the order in which blocks
+        // are to be combined to create a blob".
+        // https://docs.microsoft.com/en-us/rest/api/storageservices/put-block-list
+        let mut block_ids: Vec<String> = upload_blocks_stream
+            .try_collect()
+            .await
+            .map_err(StorageError::from)?;
+        block_ids.sort_unstable();
+
+        let block_list = BlockList {
+            blocks: block_ids
+                .into_iter()
+                .map(BlobBlockType::new_uncommitted)
+                .collect(),
+        };
 
         // Commit all uploaded blocks.
         blob_client
